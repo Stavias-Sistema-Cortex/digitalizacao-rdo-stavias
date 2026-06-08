@@ -11,6 +11,8 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
     "moduleResolution": "node",
     "incremental": true,
     "strict": true,
