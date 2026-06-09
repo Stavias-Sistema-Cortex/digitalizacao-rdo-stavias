@@ -1,0 +1,5 @@
+data/raw/
+data/private/
+.env
+.env.*
+!.env.example
