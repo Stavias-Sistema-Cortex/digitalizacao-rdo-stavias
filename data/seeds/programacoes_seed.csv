@@ -1,0 +1,2 @@
+codigo_contrato,data_programacao,equipe,encarregado,engenheiro,cliente,servico,tipo_servico,cidade,uf,rodovia,sentido,faixa,km_inicial,km_final,extensao_m,largura_m,espessura_cm,area_m2,volume_m3,fonte_arquivo,linha_origem,observacoes
+CW38386,2026-06-17,Equipe teste seed,Encarregado teste,Engenheiro teste,Intervias,Fresagem e recomposição,Pavimentação,Rio Claro,SP,SP-191,Norte,Faixa 1,10+000,10+500,,,5.000,500.000,25.000,Programação Diária-Semanal (1).xlsm,2,Seed inicial de programação operacional.

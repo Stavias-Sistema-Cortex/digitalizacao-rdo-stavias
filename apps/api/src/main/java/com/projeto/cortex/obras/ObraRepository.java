@@ -5,10 +5,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ObraRepository extends JpaRepository<Obra, String> {
 
     boolean existsByCodigoContrato(String codigoContrato);
+
+    Optional<Obra> findByCodigoContrato(String codigoContrato);
 
     @Query("""
             SELECT o

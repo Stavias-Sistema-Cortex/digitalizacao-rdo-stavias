@@ -8,6 +8,8 @@ import java.util.List;
 
 public interface ProgramacaoOperacionalRepository extends JpaRepository<ProgramacaoOperacional, String> {
 
+    boolean existsByHashOrigem(String hashOrigem);
+
     @Query("""
             SELECT p
             FROM ProgramacaoOperacional p
