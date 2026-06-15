@@ -24,6 +24,11 @@ cortex:
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}
 
+  sync:
+    enabled: ${CORTEX_SYNC_ENABLED:false}
+    initial-delay-ms: ${CORTEX_SYNC_INITIAL_DELAY_MS:60000}
+    fixed-delay-ms: ${CORTEX_SYNC_FIXED_DELAY_MS:300000}
+
   sources:
     zld:
       url: ${ZLD_DB_URL:}

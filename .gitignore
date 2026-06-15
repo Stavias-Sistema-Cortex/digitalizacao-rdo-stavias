@@ -12,3 +12,4 @@ apps/api/target/
 .env
 .env.*
 !.env.example
+.env.local
