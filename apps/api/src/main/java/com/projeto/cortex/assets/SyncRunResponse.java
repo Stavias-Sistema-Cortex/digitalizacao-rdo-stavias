@@ -1,12 +1,14 @@
 package com.projeto.cortex.assets;
 
-public record AssetImportResult(
-        String syncRunId,
+public record SyncRunResponse(
+        String id,
+        String connectorName,
         String sourceDatabase,
         String sourceTable,
+        String startedAt,
+        String finishedAt,
         String status,
         int recordsRead,
-        int recordsProcessed,
         int recordsInserted,
         int recordsUpdated,
         int recordsDeactivated,
