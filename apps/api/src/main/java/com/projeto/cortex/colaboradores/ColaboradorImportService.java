@@ -1,9 +1,5 @@
 package com.projeto.cortex.colaboradores;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Connection;
@@ -15,6 +11,9 @@ import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
 
 @Service
 public class ColaboradorImportService {
@@ -26,6 +25,7 @@ public class ColaboradorImportService {
     private static final String SQL_SELECT_USUARIOS = """
             SELECT
                 u.id_usuario,
+                u.cpf,
                 u.nome,
                 u.email,
                 u.ativo,
@@ -129,6 +129,8 @@ public class ColaboradorImportService {
         int idUsuario = resultSet.getInt("id_usuario");
         String pkOrigem = String.valueOf(idUsuario);
 
+        String cpfNormalizado = normalizarCpf(resultSet.getString("cpf"));
+
         Timestamp criadoEmTimestamp = resultSet.getTimestamp("criado_em");
         LocalDateTime criadoEmOrigem = criadoEmTimestamp == null
                 ? null
@@ -138,6 +140,8 @@ public class ColaboradorImportService {
                 stableColaboradorId(pkOrigem),
                 pkOrigem,
                 pkOrigem,
+                gerarCpfHash(cpfNormalizado),
+                mascararCpf(cpfNormalizado),
                 resultSet.getString("nome"),
                 resultSet.getString("email"),
                 getNullableString(resultSet, "id_grupo"),
@@ -157,6 +161,8 @@ public class ColaboradorImportService {
                     tabela_origem,
                     pk_origem,
                     codigo_colaborador,
+                    cpf_hash,
+                    cpf_mascarado,
                     nome,
                     email,
                     id_grupo_origem,
@@ -170,9 +176,11 @@ public class ColaboradorImportService {
                     visto_por_ultimo_em,
                     deletado_em
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON DUPLICATE KEY UPDATE
                     codigo_colaborador = VALUES(codigo_colaborador),
+                    cpf_hash = VALUES(cpf_hash),
+                    cpf_mascarado = VALUES(cpf_mascarado),
                     nome = VALUES(nome),
                     email = VALUES(email),
                     id_grupo_origem = VALUES(id_grupo_origem),
@@ -193,6 +201,8 @@ public class ColaboradorImportService {
                 TABELA_ORIGEM,
                 usuario.pkOrigem(),
                 usuario.codigoColaborador(),
+                usuario.cpfHash(),
+                usuario.cpfMascarado(),
                 usuario.nome(),
                 usuario.email(),
                 usuario.idGrupoOrigem(),
@@ -369,6 +379,8 @@ public class ColaboradorImportService {
         String valor = String.join("|",
                 nullToEmpty(usuario.pkOrigem()),
                 nullToEmpty(usuario.codigoColaborador()),
+                nullToEmpty(usuario.cpfHash()),
+                nullToEmpty(usuario.cpfMascarado()),
                 nullToEmpty(usuario.nome()),
                 nullToEmpty(usuario.email()),
                 nullToEmpty(usuario.idGrupoOrigem()),
@@ -382,6 +394,38 @@ public class ColaboradorImportService {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hash = digest.digest(valor.getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(hash);
+    }
+
+    private String normalizarCpf(String cpf) {
+        if (cpf == null) {
+            return null;
+        }
+
+        String apenasNumeros = cpf.replaceAll("\\D", "");
+
+        if (apenasNumeros.isBlank()) {
+            return null;
+        }
+
+        return apenasNumeros;
+    }
+
+    private String gerarCpfHash(String cpfNormalizado) throws Exception {
+        if (cpfNormalizado == null) {
+            return null;
+        }
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(cpfNormalizado.getBytes(StandardCharsets.UTF_8));
+        return HexFormat.of().formatHex(hash);
+    }
+
+    private String mascararCpf(String cpfNormalizado) {
+        if (cpfNormalizado == null || cpfNormalizado.length() != 11) {
+            return null;
+        }
+
+        return "***.***.***-" + cpfNormalizado.substring(9);
     }
 
     private String stableColaboradorId(String pkOrigem) {
@@ -433,6 +477,8 @@ public class ColaboradorImportService {
             String id,
             String pkOrigem,
             String codigoColaborador,
+            String cpfHash,
+            String cpfMascarado,
             String nome,
             String email,
             String idGrupoOrigem,

@@ -26,6 +26,12 @@ public class Colaborador {
     @Column(name = "codigo_colaborador")
     private String codigoColaborador;
 
+    @Column(name = "cpf_hash")
+    private String cpfHash;
+
+    @Column(name = "cpf_mascarado")
+    private String cpfMascarado;
+
     @Column(name = "nome", nullable = false)
     private String nome;
 
@@ -89,6 +95,14 @@ public class Colaborador {
 
     public String getCodigoColaborador() {
         return codigoColaborador;
+    }
+
+    public String getCpfHash() {
+        return cpfHash;
+    }
+
+    public String getCpfMascarado() {
+        return cpfMascarado;
     }
 
     public String getNome() {
