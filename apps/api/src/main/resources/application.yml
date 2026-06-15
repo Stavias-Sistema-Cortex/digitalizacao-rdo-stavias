@@ -1,4 +1,8 @@
 spring:
+  output:
+    ansi:
+      enabled: ALWAYS
+
   datasource:
     url: ${CORTEX_DB_URL:jdbc:mysql://127.0.0.1:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${CORTEX_DB_USER:cortex_app}
@@ -15,3 +19,10 @@ spring:
 
 server:
   port: 8080
+
+cortex:
+  sources:
+    zld:
+      url: ${ZLD_DB_URL:}
+      username: ${ZLD_DB_USER:}
+      password: ${ZLD_DB_PASSWORD:}
