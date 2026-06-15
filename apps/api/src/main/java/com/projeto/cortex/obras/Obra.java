@@ -1,0 +1,211 @@
+package com.projeto.cortex.obras;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "obra")
+public class Obra {
+
+    @Id
+    private String id;
+
+    @Column(name = "codigo_contrato", nullable = false)
+    private String codigoContrato;
+
+    @Column(name = "codigo_cw")
+    private String codigoCw;
+
+    @Column(name = "codigo_interno")
+    private String codigoInterno;
+
+    @Column(name = "nome", nullable = false)
+    private String nome;
+
+    @Column(name = "cliente")
+    private String cliente;
+
+    @Column(name = "descricao")
+    private String descricao;
+
+    @Column(name = "cidade")
+    private String cidade;
+
+    @Column(name = "uf")
+    private String uf;
+
+    @Column(name = "rodovia")
+    private String rodovia;
+
+    @Column(name = "status", nullable = false)
+    private String status;
+
+    @Column(name = "fonte_criacao", nullable = false)
+    private String fonteCriacao;
+
+    @Column(name = "fonte_arquivo")
+    private String fonteArquivo;
+
+    @Column(name = "observacoes")
+    private String observacoes;
+
+    @Column(name = "criado_em")
+    private LocalDateTime criadoEm;
+
+    @Column(name = "atualizado_em")
+    private LocalDateTime atualizadoEm;
+
+    @Column(name = "arquivado_em")
+    private LocalDateTime arquivadoEm;
+
+    @Column(name = "versao_linha")
+    private long versaoLinha;
+
+    protected Obra() {
+    }
+
+    private Obra(
+            String codigoContrato,
+            String codigoCw,
+            String codigoInterno,
+            String nome,
+            String cliente,
+            String descricao,
+            String cidade,
+            String uf,
+            String rodovia,
+            String status,
+            String fonteCriacao,
+            String fonteArquivo,
+            String observacoes
+    ) {
+        LocalDateTime agora = LocalDateTime.now();
+
+        this.id = UUID.randomUUID().toString();
+        this.codigoContrato = codigoContrato;
+        this.codigoCw = codigoCw;
+        this.codigoInterno = codigoInterno;
+        this.nome = nome;
+        this.cliente = cliente;
+        this.descricao = descricao;
+        this.cidade = cidade;
+        this.uf = uf;
+        this.rodovia = rodovia;
+        this.status = status;
+        this.fonteCriacao = fonteCriacao;
+        this.fonteArquivo = fonteArquivo;
+        this.observacoes = observacoes;
+        this.criadoEm = agora;
+        this.atualizadoEm = agora;
+        this.versaoLinha = 0;
+    }
+
+    public static Obra criar(
+            String codigoContrato,
+            String codigoCw,
+            String codigoInterno,
+            String nome,
+            String cliente,
+            String descricao,
+            String cidade,
+            String uf,
+            String rodovia,
+            String status,
+            String fonteCriacao,
+            String fonteArquivo,
+            String observacoes
+    ) {
+        return new Obra(
+                codigoContrato,
+                codigoCw,
+                codigoInterno,
+                nome,
+                cliente,
+                descricao,
+                cidade,
+                uf,
+                rodovia,
+                status,
+                fonteCriacao,
+                fonteArquivo,
+                observacoes
+        );
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getCodigoContrato() {
+        return codigoContrato;
+    }
+
+    public String getCodigoCw() {
+        return codigoCw;
+    }
+
+    public String getCodigoInterno() {
+        return codigoInterno;
+    }
+
+    public String getNome() {
+        return nome;
+    }
+
+    public String getCliente() {
+        return cliente;
+    }
+
+    public String getDescricao() {
+        return descricao;
+    }
+
+    public String getCidade() {
+        return cidade;
+    }
+
+    public String getUf() {
+        return uf;
+    }
+
+    public String getRodovia() {
+        return rodovia;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public String getFonteCriacao() {
+        return fonteCriacao;
+    }
+
+    public String getFonteArquivo() {
+        return fonteArquivo;
+    }
+
+    public String getObservacoes() {
+        return observacoes;
+    }
+
+    public LocalDateTime getCriadoEm() {
+        return criadoEm;
+    }
+
+    public LocalDateTime getAtualizadoEm() {
+        return atualizadoEm;
+    }
+
+    public LocalDateTime getArquivadoEm() {
+        return arquivadoEm;
+    }
+
+    public long getVersaoLinha() {
+        return versaoLinha;
+    }
+}
