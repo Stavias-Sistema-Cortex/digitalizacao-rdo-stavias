@@ -18,9 +18,12 @@ spring:
     locations: classpath:db/migration
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 cortex:
+  import:
+    enabled: ${CORTEX_IMPORT_ENABLED:false}
+
   sources:
     zld:
       url: ${ZLD_DB_URL:}
