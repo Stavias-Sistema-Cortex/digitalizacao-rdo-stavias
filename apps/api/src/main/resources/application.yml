@@ -29,3 +29,8 @@ cortex:
       url: ${ZLD_DB_URL:}
       username: ${ZLD_DB_USER:}
       password: ${ZLD_DB_PASSWORD:}
+
+    acad:
+      url: ${ACAD_DB_URL:}
+      username: ${ACAD_DB_USER:}
+      password: ${ACAD_DB_PASSWORD:}
