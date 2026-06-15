@@ -1,124 +1,302 @@
-# Córtex API — Developer Runbook
+# Córtex API — Runbook de Desenvolvimento
 
-## Scope
+Este documento explica como rodar e testar o backend do Córtex localmente.
 
-The API currently supports:
+## 1. Escopo atual do backend
+
+A API atualmente suporta:
 
 - Health check
-- Asset registry using local MySQL cortex_dev
-- Import from dbstavias_zld.ativos
-- Asset search by code, name, and category
-- Sync run history
-- Terminal scripts for developer visualization
+- Cadastro de ativos
+- Importação de ativos a partir de dbstavias_zld.ativos
+- Busca de ativos por código, nome e categoria
+- Cadastro de colaboradores
+- Importação de colaboradores a partir de dbstavias_acad.usuarios
+- Busca de colaboradores por código, nome, email, grupo e perfil
+- Histórico de execuções de sincronização
+- Scripts de terminal para visualização em desenvolvimento
+- Docker
+- Docker Compose local
+- CI básico no GitHub Actions
 
-## Required Environment Variables
+## 2. Portas usadas em desenvolvimento
 
-Local API:
+API local com banco MySQL local:
 
-export CORTEX_DB_PASSWORD='your-local-cortex-password'
+- API: http://localhost:8080
+- Banco: cortex_dev no MySQL local
 
-Import-enabled mode:
+API via Docker Compose:
+
+- API: http://localhost:8081
+- Banco: MySQL Docker na porta 3307
+
+Importante:
+
+Os dados importados manualmente da Stavias normalmente estão no banco local cortex_dev usado pela API em 8080.
+
+O Docker Compose usa outro banco, dentro do Docker. Esse banco começa vazio.
+
+Então:
+
+- Use 8080 para testar dados reais já importados localmente.
+- Use 8081 para testar se a stack Docker sobe corretamente.
+
+## 3. Variáveis de ambiente
+
+Para rodar a API local:
+
+export CORTEX_DB_PASSWORD='sua-senha-local-do-cortex'
+
+Para ativar importações:
 
 export CORTEX_IMPORT_ENABLED=true
+
+Para importar ativos da ZLD:
+
 export ZLD_DB_URL='jdbc:mysql://dbstavias_zld.mysql.dbaas.com.br:3306/dbstavias_zld?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
-export ZLD_DB_USER='your-zld-user'
-export ZLD_DB_PASSWORD='your-zld-password'
+export ZLD_DB_USER='usuario-zld'
+export ZLD_DB_PASSWORD='senha-zld'
 
-Never commit real secrets.
+Para importar colaboradores da Academy:
 
-## Run API in Safe Mode
+export ACAD_DB_URL='jdbc:mysql://dbstavias_acad.mysql.dbaas.com.br:3306/dbstavias_acad?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+export ACAD_DB_USER='usuario-acad'
+export ACAD_DB_PASSWORD='senha-acad'
 
-cd apps/api
-export CORTEX_DB_PASSWORD='your-local-cortex-password'
-mvn spring-boot:run
+Nunca commitar senhas reais.
 
-Test:
+## 4. Rodar API local
+
+Da raiz do repo:
+
+./scripts/dev/run-api.sh
+
+A API sobe em:
+
+http://localhost:8080
+
+Testar health check:
 
 curl -s http://localhost:8080/api/health | jq
-curl -s "http://localhost:8080/api/assets?query=CBA" | jq
-curl -i -X POST http://localhost:8080/api/assets/import/zld
 
-Expected:
+Resultado esperado:
 
-- /api/health returns UP
-- /api/assets?query=CBA returns CBA assets
-- /api/assets/import/zld returns 403 Forbidden
+status: UP
 
-## Run API with Import Enabled
+## 5. Rodar API com Docker Compose
 
-Stop the API first with CTRL + C.
+Da raiz do repo:
 
-Then:
+./scripts/dev/run-compose.sh
 
-cd apps/api
+A API sobe em:
 
-export CORTEX_DB_PASSWORD='your-local-cortex-password'
-export CORTEX_IMPORT_ENABLED=true
+http://localhost:8081
 
-export ZLD_DB_URL='jdbc:mysql://dbstavias_zld.mysql.dbaas.com.br:3306/dbstavias_zld?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
-export ZLD_DB_USER='your-zld-user'
-export ZLD_DB_PASSWORD='your-zld-password'
+O MySQL Docker sobe em:
 
-mvn spring-boot:run
+localhost:3307
 
-Test:
+Testar:
 
-curl -s -X POST http://localhost:8080/api/assets/import/zld | jq
-curl -s "http://localhost:8080/api/assets/import/runs" | jq
+curl -s http://localhost:8081/api/health | jq
 
-Expected import result:
+Parar:
 
-status: SUCCESS
-recordsRead: 130
-recordsProcessed: 130
-recordsInserted: 0 if data already exists
-recordsUpdated: 0 if nothing changed
+./scripts/dev/stop-compose.sh
 
-## Terminal Scripts
+Observação:
 
-From repo root:
+O banco Docker é separado do banco local. Por isso, buscas podem retornar vazias no Compose mesmo quando funcionam na API local.
+
+## 6. Endpoints de ativos
+
+Listar ativos:
+
+GET /api/assets
+
+Buscar ativos:
+
+GET /api/assets?query=CBA
+GET /api/assets?query=VOLVO
+GET /api/assets?query=CAM BASCULANTE
+
+Importar ativos da ZLD:
+
+POST /api/assets/import/zld
+
+Em modo seguro, esse endpoint deve retornar:
+
+403 Forbidden
+
+Isso é correto quando:
+
+CORTEX_IMPORT_ENABLED=false
+
+## 7. Scripts de ativos
+
+Buscar ativos:
 
 ./scripts/dev/assets.sh CBA
 ./scripts/dev/assets.sh VOLVO
 ./scripts/dev/assets.sh "CAM BASCULANTE"
+
+Importar ativos:
+
 ./scripts/dev/import-assets.sh
+
+Ver histórico de sync:
+
 ./scripts/dev/sync-runs.sh
 
-## Build Check
+Para usar com Docker Compose na porta 8081:
 
-From repo root:
+CORTEX_API_BASE_URL=http://localhost:8081 ./scripts/dev/assets.sh CBA
+
+## 8. Endpoints de colaboradores
+
+Listar colaboradores:
+
+GET /api/colaboradores
+
+Buscar colaboradores:
+
+GET /api/colaboradores?query=paulo
+GET /api/colaboradores?query=liderança
+GET /api/colaboradores?query=admin
+
+Importar colaboradores da Academy:
+
+POST /api/colaboradores/import/acad
+
+Em modo seguro, esse endpoint deve retornar:
+
+403 Forbidden
+
+Isso é correto quando:
+
+CORTEX_IMPORT_ENABLED=false
+
+## 9. Scripts de colaboradores
+
+Buscar colaboradores:
+
+./scripts/dev/colaboradores.sh paulo
+./scripts/dev/colaboradores.sh liderança
+./scripts/dev/colaboradores.sh admin
+
+Importar colaboradores:
+
+./scripts/dev/import-colaboradores.sh
+
+Para usar com Docker Compose na porta 8081:
+
+CORTEX_API_BASE_URL=http://localhost:8081 ./scripts/dev/colaboradores.sh paulo
+
+Observação:
+
+Se o Compose estiver usando banco vazio, o resultado pode ser vazio. Para ver dados reais importados da Academy, use a API local em 8080.
+
+## 10. Fluxo de dados dos ativos
+
+dbstavias_zld.ativos
+  -> AssetImportService
+  -> cortex_dev.asset
+  -> GET /api/assets
+  -> scripts/dev/assets.sh
+  -> frontend futuramente
+
+Campos principais:
+
+ativos.id       -> source_pk
+ativos.prefixo  -> external_code
+ativos.tipo     -> category
+ativos.modelo   -> name
+
+## 11. Fluxo de dados dos colaboradores
+
+dbstavias_acad.usuarios
+  -> ColaboradorImportService
+  -> cortex_dev.colaborador
+  -> GET /api/colaboradores
+  -> scripts/dev/colaboradores.sh
+  -> frontend futuramente
+
+Campos principais:
+
+usuarios.id_usuario  -> pk_origem
+usuarios.nome        -> nome
+usuarios.email       -> email
+usuarios.ativo       -> ativo
+usuarios.id_grupo    -> id_grupo_origem
+grupos.nome          -> nome_grupo
+usuarios.id_perfil   -> id_perfil_origem
+perfil.nome_perfil   -> nome_perfil
+usuarios.criado_em   -> criado_em_origem
+
+CPF não é exposto pela API do Córtex nesta versão.
+
+## 12. Histórico de sincronização
+
+Todas as importações registram execução em:
+
+source_sync_run
+
+E checkpoint em:
+
+source_sync_checkpoint
+
+Ver histórico pelo terminal:
+
+./scripts/dev/sync-runs.sh
+
+## 13. Build local
+
+Compilar API:
 
 mvn -f apps/api/pom.xml clean compile
 
-Expected:
+Resultado esperado:
 
 BUILD SUCCESS
 
-## Git Safety Rules
+## 14. Git safety
 
-Do not commit:
+Não commitar:
 
 - .env
 - .env.*
 - apps/api/target/
 - .DS_Store
 - .neurotrace/
-- real passwords
+- senhas reais
+- credenciais da Stavias
 
-Before committing:
+Antes de commitar:
 
 git status
 
-## Current Architecture Flow
+## 15. Estado atual do backend
 
-dbstavias_zld.ativos
-  -> AssetImportService
-  -> cortex_dev.asset
-  -> GET /api/assets
-  -> terminal scripts / future web frontend
+O backend já possui:
 
-Sync history flow:
+- cadastro de ativos
+- importação real da ZLD
+- cadastro de colaboradores
+- importação real da Academy
+- proteção de importação por variável de ambiente
+- scripts de terminal
+- Dockerfile
+- Docker Compose local
+- CI no GitHub Actions
 
-POST /api/assets/import/zld
-  -> source_sync_run
-  -> source_sync_checkpoint
+Ainda não possui:
+
+- frontend web
+- autenticação
+- permissões
+- RDO digital
+- modo offline/PWA
+- Mapbox
+- deploy real
