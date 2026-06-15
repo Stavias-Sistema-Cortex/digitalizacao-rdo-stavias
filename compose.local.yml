@@ -1,0 +1,36 @@
+services:
+  cortex-mysql:
+    image: mysql:8.4
+    container_name: cortex-mysql-local
+    environment:
+      MYSQL_DATABASE: cortex_dev
+      MYSQL_USER: cortex_app
+      MYSQL_PASSWORD: cortex_dev_password
+      MYSQL_ROOT_PASSWORD: cortex_root_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - cortex_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ucortex_app", "-pcortex_dev_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  cortex-api:
+    build:
+      context: ./apps/api
+    container_name: cortex-api-local
+    depends_on:
+      cortex-mysql:
+        condition: service_healthy
+    environment:
+      CORTEX_DB_URL: jdbc:mysql://cortex-mysql:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      CORTEX_DB_USER: cortex_app
+      CORTEX_DB_PASSWORD: cortex_dev_password
+      CORTEX_IMPORT_ENABLED: "false"
+    ports:
+      - "8081:8080"
+
+volumes:
+  cortex_mysql_data:
