@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: ${CORTEX_DB_URL:jdbc:mysql://127.0.0.1:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${CORTEX_DB_USER:cortex_app}
+    password: ${CORTEX_DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080

@@ -1,6 +1,12 @@
-package main.java.com.projeto.cortex;
+package com.projeto.cortex;
 
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-public class cortexApplication {
-    
+@SpringBootApplication
+public class CortexApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(CortexApplication.class, args);
+    }
 }

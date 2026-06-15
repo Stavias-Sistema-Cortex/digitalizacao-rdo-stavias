@@ -1,6 +1,0 @@
-CREATE TABLE asset (
-
-
-
-);
-
