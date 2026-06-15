@@ -1,24 +1,4 @@
-data/raw/
-data/private/
-.env
-.env.*
-!.env.example
-# Java / Maven build output
-target/
-apps/api/target/
-
-# macOS
-.DS_Store
-
-# local tooling
-.neurotrace/
-
-# secrets
-.env
-.env.*
-!.env.example
-
-# Java / Maven build output
+# Java / Maven
 target/
 apps/api/target/
 
