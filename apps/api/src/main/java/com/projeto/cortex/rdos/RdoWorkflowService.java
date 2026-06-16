@@ -12,10 +12,16 @@ public class RdoWorkflowService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RdoQueryService queryService;
+    private final RdoMemoryPublisher memoryPublisher;
 
-    public RdoWorkflowService(JdbcTemplate jdbcTemplate, RdoQueryService queryService) {
+    public RdoWorkflowService(
+            JdbcTemplate jdbcTemplate,
+            RdoQueryService queryService,
+            RdoMemoryPublisher memoryPublisher
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
+        this.memoryPublisher = memoryPublisher;
     }
 
     @Transactional
@@ -46,7 +52,16 @@ public class RdoWorkflowService {
                 rdoId
         );
 
-        return queryService.buscarPorId(rdoId);
+        RdoResponse response = queryService.buscarPorId(rdoId);
+
+        memoryPublisher.registrarRdoEnviado(
+                rdoId,
+                response.obraId(),
+                response.programacaoId(),
+                response.numeroRdo()
+        );
+
+        return response;
     }
 
     private String buscarStatus(String rdoId) {

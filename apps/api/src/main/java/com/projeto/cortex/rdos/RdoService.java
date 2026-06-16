@@ -19,9 +19,11 @@ import java.util.UUID;
 public class RdoService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final RdoMemoryPublisher memoryPublisher;
 
-    public RdoService(JdbcTemplate jdbcTemplate) {
+    public RdoService(JdbcTemplate jdbcTemplate, RdoMemoryPublisher memoryPublisher) {
         this.jdbcTemplate = jdbcTemplate;
+        this.memoryPublisher = memoryPublisher;
     }
 
     @Transactional
@@ -125,6 +127,14 @@ public class RdoService {
         List<RdoResponse.ControleGeometricoItem> controles = inserirControlesGeometricos(
                 rdoId,
                 request.controlesGeometricos()
+        );
+
+        memoryPublisher.registrarRdoCriado(
+                rdoId,
+                request.obraId(),
+                programacao == null ? null : programacao.id(),
+                request.numeroRdo(),
+                status
         );
 
         return new RdoResponse(

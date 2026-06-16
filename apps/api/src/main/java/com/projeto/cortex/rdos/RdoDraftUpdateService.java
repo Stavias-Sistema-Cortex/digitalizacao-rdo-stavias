@@ -18,10 +18,16 @@ public class RdoDraftUpdateService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RdoQueryService queryService;
+    private final RdoMemoryPublisher memoryPublisher;
 
-    public RdoDraftUpdateService(JdbcTemplate jdbcTemplate, RdoQueryService queryService) {
+    public RdoDraftUpdateService(
+            JdbcTemplate jdbcTemplate,
+            RdoQueryService queryService,
+            RdoMemoryPublisher memoryPublisher
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
+        this.memoryPublisher = memoryPublisher;
     }
 
     @Transactional
@@ -125,6 +131,14 @@ public class RdoDraftUpdateService {
         inserirEquipamentos(rdoId, request.equipamentos());
         inserirMateriais(rdoId, request.materiais());
         inserirControlesGeometricos(rdoId, request.controlesGeometricos());
+
+        memoryPublisher.registrarRdoEditado(
+                rdoId,
+                request.obraId(),
+                programacao == null ? null : programacao.id(),
+                request.numeroRdo(),
+                "RASCUNHO"
+        );
 
         return queryService.buscarPorId(rdoId);
     }
