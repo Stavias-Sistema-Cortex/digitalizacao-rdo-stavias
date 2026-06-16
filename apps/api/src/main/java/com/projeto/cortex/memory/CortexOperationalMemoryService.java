@@ -212,13 +212,19 @@ public class CortexOperationalMemoryService {
     }
 
     private long proximaCommitSeq() {
-        jdbcTemplate.update(
+        int linhasAtualizadas = jdbcTemplate.update(
                 """
                 UPDATE cortex_evento_commit_sequence
                 SET ultima_commit_seq = LAST_INSERT_ID(ultima_commit_seq + 1)
                 WHERE id = 1
                 """
         );
+
+        if (linhasAtualizadas != 1) {
+            throw new IllegalStateException(
+                    "Sequência de commit do córtex não inicializada (linha id=1 ausente)."
+            );
+        }
 
         Long commitSeq = jdbcTemplate.queryForObject(
                 "SELECT LAST_INSERT_ID()",

@@ -46,7 +46,14 @@ public class RdoService {
             );
         }
 
-        String rdoId = UUID.randomUUID().toString();
+        String rdoId = primeiroNaoVazio(request.id(), UUID.randomUUID().toString());
+
+        if (rdoExiste(rdoId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Já existe um RDO com este id: " + rdoId
+            );
+        }
         String status = "RASCUNHO";
         String diaSemana = diaSemanaPt(request.dataRdo());
 
@@ -403,6 +410,17 @@ public class RdoService {
         }
 
         return response;
+    }
+
+
+    private boolean rdoExiste(String rdoId) {
+        Integer total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM rdo WHERE id = ?",
+                Integer.class,
+                rdoId
+        );
+
+        return total != null && total > 0;
     }
 
     private ObraDados buscarObra(String obraId) {

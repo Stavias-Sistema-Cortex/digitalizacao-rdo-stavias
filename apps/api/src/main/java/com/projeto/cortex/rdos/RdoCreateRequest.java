@@ -6,6 +6,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 public record RdoCreateRequest(
+        String id,
         String obraId,
         String programacaoId,
 
