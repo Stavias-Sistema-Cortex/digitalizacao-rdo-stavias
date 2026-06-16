@@ -98,6 +98,9 @@ public class ProgramacaoOperacional {
     @Column(name = "hash_origem")
     private String hashOrigem;
 
+    @Column(name = "chave_negocio")
+    private String chaveNegocio;
+
     @Column(name = "observacoes")
     private String observacoes;
 
@@ -144,6 +147,7 @@ public class ProgramacaoOperacional {
             String fonteArquivo,
             Integer linhaOrigem,
             String hashOrigem,
+            String chaveNegocio,
             String observacoes
     ) {
         LocalDateTime agora = LocalDateTime.now();
@@ -176,6 +180,7 @@ public class ProgramacaoOperacional {
         this.fonteArquivo = fonteArquivo;
         this.linhaOrigem = linhaOrigem;
         this.hashOrigem = hashOrigem;
+        this.chaveNegocio = chaveNegocio;
         this.observacoes = observacoes;
         this.criadoEm = agora;
         this.atualizadoEm = agora;
@@ -240,8 +245,142 @@ public class ProgramacaoOperacional {
                 fonteArquivo,
                 linhaOrigem,
                 hashOrigem,
+                null,
                 observacoes
         );
+    }
+
+    public static ProgramacaoOperacional criarComChaveNegocio(
+            String obraId,
+            String codigoContratoOrigem,
+            String obraNomeOrigem,
+            LocalDate dataProgramacao,
+            String equipe,
+            String encarregado,
+            String engenheiro,
+            String cliente,
+            String servico,
+            String tipoServico,
+            String cidade,
+            String uf,
+            String rodovia,
+            String sentido,
+            String faixa,
+            String kmInicial,
+            String kmFinal,
+            BigDecimal extensaoM,
+            BigDecimal larguraM,
+            BigDecimal espessuraCm,
+            BigDecimal areaM2,
+            BigDecimal volumeM3,
+            String status,
+            String fonteCriacao,
+            String fonteArquivo,
+            Integer linhaOrigem,
+            String hashOrigem,
+            String chaveNegocio,
+            String observacoes
+    ) {
+        return new ProgramacaoOperacional(
+                obraId,
+                codigoContratoOrigem,
+                obraNomeOrigem,
+                dataProgramacao,
+                equipe,
+                encarregado,
+                engenheiro,
+                cliente,
+                servico,
+                tipoServico,
+                cidade,
+                uf,
+                rodovia,
+                sentido,
+                faixa,
+                kmInicial,
+                kmFinal,
+                extensaoM,
+                larguraM,
+                espessuraCm,
+                areaM2,
+                volumeM3,
+                status,
+                fonteCriacao,
+                fonteArquivo,
+                linhaOrigem,
+                hashOrigem,
+                chaveNegocio,
+                observacoes
+        );
+    }
+
+    public boolean temMesmoHashOrigem(String novoHashOrigem) {
+        return java.util.Objects.equals(this.hashOrigem, novoHashOrigem);
+    }
+
+    public void atualizarDeSeed(
+            String obraId,
+            String codigoContratoOrigem,
+            String obraNomeOrigem,
+            LocalDate dataProgramacao,
+            String equipe,
+            String encarregado,
+            String engenheiro,
+            String cliente,
+            String servico,
+            String tipoServico,
+            String cidade,
+            String uf,
+            String rodovia,
+            String sentido,
+            String faixa,
+            String kmInicial,
+            String kmFinal,
+            BigDecimal extensaoM,
+            BigDecimal larguraM,
+            BigDecimal espessuraCm,
+            BigDecimal areaM2,
+            BigDecimal volumeM3,
+            String status,
+            String fonteCriacao,
+            String fonteArquivo,
+            Integer linhaOrigem,
+            String hashOrigem,
+            String chaveNegocio,
+            String observacoes
+    ) {
+        this.obraId = obraId;
+        this.codigoContratoOrigem = codigoContratoOrigem;
+        this.obraNomeOrigem = obraNomeOrigem;
+        this.dataProgramacao = dataProgramacao;
+        this.equipe = equipe;
+        this.encarregado = encarregado;
+        this.engenheiro = engenheiro;
+        this.cliente = cliente;
+        this.servico = servico;
+        this.tipoServico = tipoServico;
+        this.cidade = cidade;
+        this.uf = uf;
+        this.rodovia = rodovia;
+        this.sentido = sentido;
+        this.faixa = faixa;
+        this.kmInicial = kmInicial;
+        this.kmFinal = kmFinal;
+        this.extensaoM = extensaoM;
+        this.larguraM = larguraM;
+        this.espessuraCm = espessuraCm;
+        this.areaM2 = areaM2;
+        this.volumeM3 = volumeM3;
+        this.status = status;
+        this.fonteCriacao = fonteCriacao;
+        this.fonteArquivo = fonteArquivo;
+        this.linhaOrigem = linhaOrigem;
+        this.hashOrigem = hashOrigem;
+        this.chaveNegocio = chaveNegocio;
+        this.observacoes = observacoes;
+        this.canceladoEm = null;
+        this.atualizadoEm = LocalDateTime.now();
+        this.versaoLinha++;
     }
 
     public String getId() { return id; }

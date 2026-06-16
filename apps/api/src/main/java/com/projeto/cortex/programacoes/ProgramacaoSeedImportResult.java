@@ -5,6 +5,7 @@ public record ProgramacaoSeedImportResult(
         String caminhoArquivo,
         int registrosLidos,
         int registrosInseridos,
+        int registrosAtualizados,
         int registrosIgnorados,
         int registrosComErro
 ) {

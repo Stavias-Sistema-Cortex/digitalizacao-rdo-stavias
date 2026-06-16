@@ -5,10 +5,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ProgramacaoOperacionalRepository extends JpaRepository<ProgramacaoOperacional, String> {
 
     boolean existsByHashOrigem(String hashOrigem);
+
+    Optional<ProgramacaoOperacional> findByChaveNegocio(String chaveNegocio);
 
     @Query("""
             SELECT p
