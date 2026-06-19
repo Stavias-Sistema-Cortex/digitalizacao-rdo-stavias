@@ -180,7 +180,7 @@ public class RdoDraftUpdateService {
                     """,
                     UUID.randomUUID().toString(),
                     rdoId,
-                    item.colaboradorId(),
+                    nuloSeVazio(item.colaboradorId()),
                     item.nomeColaborador(),
                     item.cargo(),
                     primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO"),
@@ -203,7 +203,7 @@ public class RdoDraftUpdateService {
                     """,
                     UUID.randomUUID().toString(),
                     rdoId,
-                    item.assetId(),
+                    nuloSeVazio(item.assetId()),
                     item.prefixo(),
                     item.descricao(),
                     item.tipoEquipamento(),
@@ -442,6 +442,14 @@ public class RdoDraftUpdateService {
         }
 
         return null;
+    }
+
+    private String nuloSeVazio(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+
+        return valor;
     }
 
     private String diaSemanaPt(java.time.LocalDate data) {

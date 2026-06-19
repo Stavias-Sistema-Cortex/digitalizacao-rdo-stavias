@@ -3,11 +3,17 @@ package com.projeto.cortex.sync;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
 import com.projeto.cortex.rdos.RdoWorkflowService;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
@@ -15,12 +21,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 @Service
 public class SyncService {
@@ -316,8 +316,13 @@ public class SyncService {
 
         RdoResponse response = aplicarOperacao(mutacao);
         long commitSeq = commitSeqEntidade("RDO", response.id());
+        long versaoEntidade = versaoAtualEntidade(
+                "RDO",
+                response.id()
+        );
 
-        JsonNode resultado = objectMapper.valueToTree(response);
+        ObjectNode resultado = objectMapper.valueToTree(response);
+        resultado.put("versaoEntidade", versaoEntidade);
 
         jdbcTemplate.update(
                 """

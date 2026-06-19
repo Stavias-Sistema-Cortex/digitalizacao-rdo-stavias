@@ -178,6 +178,7 @@ public class RdoService {
             String id = UUID.randomUUID().toString();
             BigDecimal quantidade = valorOuUm(item.quantidade());
             String tipoVinculo = primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO");
+            String colaboradorId = nuloSeVazio(item.colaboradorId());
 
             jdbcTemplate.update(
                     """
@@ -196,7 +197,7 @@ public class RdoService {
                     """,
                     id,
                     rdoId,
-                    item.colaboradorId(),
+                    colaboradorId,
                     item.nomeColaborador(),
                     item.cargo(),
                     tipoVinculo,
@@ -208,7 +209,7 @@ public class RdoService {
 
             response.add(new RdoResponse.MaoObraItem(
                     id,
-                    item.colaboradorId(),
+                    colaboradorId,
                     item.nomeColaborador(),
                     item.cargo(),
                     tipoVinculo,
@@ -229,6 +230,7 @@ public class RdoService {
             String id = UUID.randomUUID().toString();
             BigDecimal quantidade = valorOuUm(item.quantidade());
             String tipoVinculo = primeiroNaoVazio(item.tipoVinculo(), "PROPRIO");
+            String assetId = nuloSeVazio(item.assetId());
 
             jdbcTemplate.update(
                     """
@@ -248,7 +250,7 @@ public class RdoService {
                     """,
                     id,
                     rdoId,
-                    item.assetId(),
+                    assetId,
                     item.prefixo(),
                     item.descricao(),
                     item.tipoEquipamento(),
@@ -261,7 +263,7 @@ public class RdoService {
 
             response.add(new RdoResponse.EquipamentoItem(
                     id,
-                    item.assetId(),
+                    assetId,
                     item.prefixo(),
                     item.descricao(),
                     item.tipoEquipamento(),
@@ -589,6 +591,14 @@ public class RdoService {
         }
 
         return null;
+    }
+
+    private String nuloSeVazio(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return null;
+        }
+
+        return valor;
     }
 
     private String diaSemanaPt(LocalDate data) {
