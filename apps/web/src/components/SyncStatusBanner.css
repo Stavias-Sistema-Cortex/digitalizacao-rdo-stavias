@@ -1,0 +1,146 @@
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 16px auto;
+  padding: 14px 18px;
+  width: min(
+    calc(100% - 32px),
+    1200px
+  );
+  border: 1px solid
+    rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  background: rgba(
+    255,
+    255,
+    255,
+    0.94
+  );
+  box-shadow:
+    0 8px 24px
+    rgba(15, 23, 42, 0.06);
+}
+
+.sync-banner__indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sync-banner__indicator strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.94rem;
+}
+
+.sync-banner__indicator p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.84rem;
+}
+
+.sync-banner__dot {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  border-radius: 999px;
+  background: #64748b;
+  box-shadow:
+    0 0 0 4px
+    rgba(100, 116, 139, 0.14);
+}
+
+.sync-banner__metadata {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  color: #64748b;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.sync-banner__metadata button {
+  padding: 7px 11px;
+  border: 1px solid
+    rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sync-banner__metadata button:hover {
+  background:
+    rgba(15, 23, 42, 0.05);
+}
+
+.sync-banner--synced
+  .sync-banner__dot {
+  background: #15803d;
+  box-shadow:
+    0 0 0 4px
+    rgba(21, 128, 61, 0.14);
+}
+
+.sync-banner--syncing
+  .sync-banner__dot {
+  background: #2563eb;
+  box-shadow:
+    0 0 0 4px
+    rgba(37, 99, 235, 0.14);
+  animation:
+    sync-pulse 1.2s infinite;
+}
+
+.sync-banner--pending
+  .sync-banner__dot {
+  background: #d97706;
+  box-shadow:
+    0 0 0 4px
+    rgba(217, 119, 6, 0.14);
+}
+
+.sync-banner--offline
+  .sync-banner__dot {
+  background: #64748b;
+}
+
+.sync-banner--error
+  .sync-banner__dot,
+.sync-banner--conflict
+  .sync-banner__dot {
+  background: #dc2626;
+  box-shadow:
+    0 0 0 4px
+    rgba(220, 38, 38, 0.14);
+}
+
+@keyframes sync-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (
+  max-width: 700px
+) {
+  .sync-banner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .sync-banner__metadata {
+    width: 100%;
+    justify-content: space-between;
+    text-align: left;
+  }
+}

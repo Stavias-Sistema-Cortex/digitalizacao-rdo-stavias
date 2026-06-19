@@ -1,0 +1,379 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: #18211d;
+  background: #f3f5f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.page-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 42px 0 120px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 28px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #68756e;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  max-width: 720px;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.subtitle {
+  max-width: 720px;
+  margin: 16px 0 0;
+  color: #68756e;
+  line-height: 1.6;
+}
+
+.status-panel {
+  min-width: 220px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid #dce2de;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.status-label,
+.status-id {
+  color: #718078;
+  font-size: 0.78rem;
+}
+
+.status-badge {
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e9f2eb;
+  color: #2f6643;
+  font-size: 0.78rem;
+}
+
+.notice {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid #bfd5c5;
+  border-radius: 12px;
+  background: #eff8f1;
+  color: #2d5c3b;
+}
+
+.form-card {
+  margin-bottom: 18px;
+  padding: 26px;
+  border: 1px solid #dfe4e1;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(32, 50, 41, 0.04);
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #edf0ee;
+  margin-bottom: 22px;
+}
+
+.section-heading > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+.section-heading p {
+  margin: 0;
+  max-width: 520px;
+  color: #738078;
+  line-height: 1.5;
+}
+
+.section-number {
+  display: inline-flex;
+  min-width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border-radius: 10px;
+  background: #1f3328;
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.collection-heading {
+  align-items: center;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.add-button {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border: 1px solid #cad3ce;
+  border-radius: 10px;
+  background: white;
+  color: #243e30;
+  font-weight: 700;
+}
+
+.add-button:hover {
+  background: #f4f7f5;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #34443b;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+label small {
+  color: #839087;
+  font-size: 0.72rem;
+  font-weight: 450;
+  line-height: 1.4;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #cfd7d2;
+  border-radius: 10px;
+  background: #fbfcfb;
+  color: #18211d;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+
+input,
+select {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+textarea {
+  padding: 12px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #4b745b;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(75, 116, 91, 0.12);
+}
+
+.full-width {
+  margin-top: 20px;
+}
+
+.collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.collection-row {
+  padding: 18px;
+  border: 1px solid #e0e5e2;
+  border-radius: 14px;
+  background: #fafbfa;
+}
+
+.row-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.danger-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a33b3b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.json-preview pre {
+  max-height: 520px;
+  overflow: auto;
+  margin: 0;
+  padding: 18px;
+  border-radius: 12px;
+  background: #142019;
+  color: #dce9e1;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
+.action-bar {
+  position: sticky;
+  bottom: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(203, 213, 207, 0.88);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 15px 40px rgba(25, 44, 34, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.button {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-weight: 750;
+}
+
+.button.secondary {
+  border: 1px solid #cbd5cf;
+  background: white;
+  color: #294033;
+}
+
+.button.primary {
+  border: 1px solid #1f3328;
+  background: #1f3328;
+  color: white;
+}
+
+.button.primary:hover {
+  background: #2b4837;
+}
+
+@media (max-width: 900px) {
+  .topbar,
+  .section-heading,
+  .section-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .status-panel {
+    width: 100%;
+  }
+
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .section-actions {
+    gap: 10px;
+  }
+
+  .add-button {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 620px) {
+  .page-shell {
+    width: min(100% - 20px, 1180px);
+    padding-top: 24px;
+  }
+
+  .form-card {
+    padding: 18px;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-bar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .button {
+    width: 100%;
+  }
+}
+
+.notice-error {
+  border-color: #e2bebe;
+  background: #fff1f1;
+  color: #8a2e2e;
+}
+
+.button:disabled,
+.add-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
