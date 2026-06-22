@@ -51,9 +51,16 @@ public class StaviaIntentClassifier {
         if (containsAny(
                 normalized,
                 "equipamento",
+                "equipamentos",
                 "ativo",
+                "ativos",
                 "maquina",
-                "veiculo"
+                "maquinas",
+                "veiculo",
+                "veiculos",
+                "fresadora",
+                "caminhao",
+                "prefixo"
         )) {
             return StaviaIntent.CONSULTAR_ATIVO;
         }

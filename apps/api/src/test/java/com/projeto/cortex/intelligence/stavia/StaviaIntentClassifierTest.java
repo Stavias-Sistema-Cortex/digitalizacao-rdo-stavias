@@ -109,4 +109,27 @@ class StaviaIntentClassifierTest {
         );
     }
 
+
+    @Test
+    void shouldClassifyEquipmentQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Quais equipamentos foram usados nesta obra?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_ATIVO
+        );
+    }
+
+    @Test
+    void shouldClassifyEquipmentPrefixQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Qual é o prefixo da fresadora?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_ATIVO
+        );
+    }
+
 }

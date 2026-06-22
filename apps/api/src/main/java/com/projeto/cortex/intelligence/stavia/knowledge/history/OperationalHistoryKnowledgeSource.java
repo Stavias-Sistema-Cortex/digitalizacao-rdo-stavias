@@ -59,12 +59,12 @@ public class OperationalHistoryKnowledgeSource
                     CONSULTAR_HISTORICO,
                     CONSULTAR_RDO,
                     CONSULTAR_PROGRAMACAO,
-CONSULTAR_ATIVO,
                     CONSULTAR_OCORRENCIA,
                     RESUMIR_OBRA -> true;
 
             case CONSULTAR_OBRA,
                     CONSULTAR_EQUIPE,
+                    CONSULTAR_ATIVO,
                     CONSULTAR_PDOC,
                     DESCONHECIDA -> false;
         };

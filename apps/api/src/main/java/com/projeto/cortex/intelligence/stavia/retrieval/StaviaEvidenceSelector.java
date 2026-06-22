@@ -80,9 +80,7 @@ public class StaviaEvidenceSelector {
 
             case CONSULTAR_ATIVO ->
                     Set.of(
-                            StaviaEvidenceTypes.ATIVO,
-                            StaviaEvidenceTypes.EQUIPAMENTO,
-                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA
+                            StaviaEvidenceTypes.EQUIPAMENTO
                     );
 
             case CONSULTAR_OCORRENCIA ->

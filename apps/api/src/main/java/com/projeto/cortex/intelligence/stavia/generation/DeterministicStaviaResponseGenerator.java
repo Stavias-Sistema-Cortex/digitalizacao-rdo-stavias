@@ -591,6 +591,10 @@ public class DeterministicStaviaResponseGenerator
                         "registro[\\p{Cf}\\s]*não",
                         "registro não"
                 )
+                .replaceAll(
+                        "identificado[\\p{Cf}\\s]*no",
+                        "identificado no"
+                )
                 .replaceAll("[ \\t]{2,}", " ")
                 .trim();
     }

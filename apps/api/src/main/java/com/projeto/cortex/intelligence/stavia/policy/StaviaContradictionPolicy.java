@@ -179,6 +179,9 @@ public class StaviaContradictionPolicy {
                 StaviaEvidenceTypes.EQUIPE.equals(
                         evidence.type()
                 )
+                || StaviaEvidenceTypes.EQUIPAMENTO.equals(
+                        evidence.type()
+                )
         ) {
             return evidence.type()
                     + ":"

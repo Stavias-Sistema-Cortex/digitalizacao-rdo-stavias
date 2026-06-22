@@ -26,7 +26,6 @@ public class OntologyKnowledgeSource
                     StaviaIntent.CONSULTAR_ESTADO_ATUAL,
                     StaviaIntent.CONSULTAR_RDO,
                     StaviaIntent.CONSULTAR_PROGRAMACAO,
-                    StaviaIntent.CONSULTAR_ATIVO,
                     StaviaIntent.RESUMIR_OBRA
             );
 
