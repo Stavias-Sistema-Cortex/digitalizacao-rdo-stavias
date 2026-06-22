@@ -17,6 +17,19 @@ public interface ObraRepository extends JpaRepository<Obra, String> {
             SELECT o
             FROM Obra o
             WHERE o.arquivadoEm IS NULL
+              AND (
+                    o.id = :identificador
+                 OR o.codigoContrato = :identificador
+                 OR o.codigoCw = :identificador
+                 OR o.codigoInterno = :identificador
+              )
+            """)
+    List<Obra> findAtivasByIdentificador(String identificador);
+
+    @Query("""
+            SELECT o
+            FROM Obra o
+            WHERE o.arquivadoEm IS NULL
             ORDER BY o.atualizadoEm DESC, o.id DESC
             """)
     List<Obra> listar(Pageable pageable);
