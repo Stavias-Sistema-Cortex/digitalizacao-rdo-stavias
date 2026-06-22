@@ -182,6 +182,9 @@ public class StaviaContradictionPolicy {
                 || StaviaEvidenceTypes.EQUIPAMENTO.equals(
                         evidence.type()
                 )
+                || StaviaEvidenceTypes.OCORRENCIA.equals(
+                        evidence.type()
+                )
         ) {
             return evidence.type()
                     + ":"

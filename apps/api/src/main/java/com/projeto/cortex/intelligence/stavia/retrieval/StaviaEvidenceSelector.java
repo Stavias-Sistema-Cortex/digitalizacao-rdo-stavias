@@ -85,9 +85,7 @@ public class StaviaEvidenceSelector {
 
             case CONSULTAR_OCORRENCIA ->
                     Set.of(
-                            StaviaEvidenceTypes.OCORRENCIA,
-                            StaviaEvidenceTypes.INCIDENTE,
-                            StaviaEvidenceTypes.EVENTO_OPERACIONAL
+                            StaviaEvidenceTypes.OCORRENCIA
                     );
 
             case CONSULTAR_PDOC ->
