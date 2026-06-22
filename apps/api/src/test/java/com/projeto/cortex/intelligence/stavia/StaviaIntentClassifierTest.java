@@ -86,4 +86,27 @@ class StaviaIntentClassifierTest {
         );
     }
 
+
+    @Test
+    void shouldClassifyWhoWorkedQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Quem trabalhou nesta obra?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_EQUIPE
+        );
+    }
+
+    @Test
+    void shouldClassifyLaborCountQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Quantas pessoas foram registradas na mão de obra?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_EQUIPE
+        );
+    }
+
 }

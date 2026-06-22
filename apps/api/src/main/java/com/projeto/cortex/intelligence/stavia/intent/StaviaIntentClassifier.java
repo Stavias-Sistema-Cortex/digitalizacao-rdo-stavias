@@ -39,7 +39,11 @@ public class StaviaIntentClassifier {
                 "equipe",
                 "colaborador",
                 "encarregado",
-                "engenheiro"
+                "engenheiro",
+                "mao de obra",
+                "quem trabalhou",
+                "quantas pessoas",
+                "quantos trabalhadores"
         )) {
             return StaviaIntent.CONSULTAR_EQUIPE;
         }

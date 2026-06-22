@@ -75,9 +75,7 @@ public class StaviaEvidenceSelector {
 
             case CONSULTAR_EQUIPE ->
                     Set.of(
-                            StaviaEvidenceTypes.EQUIPE,
-                            StaviaEvidenceTypes.COLABORADOR,
-                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA
+                            StaviaEvidenceTypes.EQUIPE
                     );
 
             case CONSULTAR_ATIVO ->

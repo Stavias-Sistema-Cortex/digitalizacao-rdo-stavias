@@ -176,6 +176,16 @@ public class StaviaContradictionPolicy {
                 evidence.attributes();
 
         if (
+                StaviaEvidenceTypes.EQUIPE.equals(
+                        evidence.type()
+                )
+        ) {
+            return evidence.type()
+                    + ":"
+                    + evidence.id();
+        }
+
+        if (
                 StaviaEvidenceTypes.RELACAO_ONTOLOGICA.equals(
                         evidence.type()
                 )

@@ -583,7 +583,14 @@ public class DeterministicStaviaResponseGenerator
             String answer
     ) {
         return answer
-                .replace("aindanão", "ainda não")
+                .replaceAll(
+                        "ainda[\\p{Cf}\\s]*não",
+                        "ainda não"
+                )
+                .replaceAll(
+                        "registro[\\p{Cf}\\s]*não",
+                        "registro não"
+                )
                 .replaceAll("[ \\t]{2,}", " ")
                 .trim();
     }
