@@ -62,6 +62,87 @@ class OccurrenceKnowledgeSourceTest {
         ).isEqualTo(false);
     }
 
+    @Test
+    void shouldNotFlagWordThatMerelyContainsTermAsSubstring() {
+        OccurrenceKnowledgeSource source =
+                new OccurrenceKnowledgeSource(
+                        worksiteId ->
+                                List.of(
+                                        substringNote(worksiteId)
+                                )
+                );
+
+        List<StaviaEvidence> evidences =
+                source.retrieve(request());
+
+        assertThat(evidences).isEmpty();
+    }
+
+    @Test
+    void shouldNotFlagNegatedOccurrence() {
+        OccurrenceKnowledgeSource source =
+                new OccurrenceKnowledgeSource(
+                        worksiteId ->
+                                List.of(
+                                        negatedNote(worksiteId)
+                                )
+                );
+
+        List<StaviaEvidence> evidences =
+                source.retrieve(request());
+
+        assertThat(evidences).isEmpty();
+    }
+
+    @Test
+    void shouldExposeDetectedTermForOccurrence() {
+        OccurrenceKnowledgeSource source =
+                new OccurrenceKnowledgeSource(
+                        worksiteId ->
+                                List.of(
+                                        occurrence(worksiteId)
+                                )
+                );
+
+        List<StaviaEvidence> evidences =
+                source.retrieve(request());
+
+        assertThat(evidences).hasSize(1);
+        assertThat(
+                evidences.getFirst().attributes().get(
+                        "termoDetectado"
+                )
+        ).isEqualTo("quebra");
+    }
+
+    private OccurrenceRecord substringNote(
+            String worksiteId
+    ) {
+        return new OccurrenceRecord(
+                "rdo-3",
+                worksiteId,
+                "RDO-003",
+                LocalDate.of(2026, 1, 23),
+                "ENVIADO",
+                "Área será preparada para concretagem.",
+                LocalDateTime.of(2026, 1, 23, 18, 0)
+        );
+    }
+
+    private OccurrenceRecord negatedNote(
+            String worksiteId
+    ) {
+        return new OccurrenceRecord(
+                "rdo-4",
+                worksiteId,
+                "RDO-004",
+                LocalDate.of(2026, 1, 24),
+                "ENVIADO",
+                "Sem paralisação na frente hoje.",
+                LocalDateTime.of(2026, 1, 24, 18, 0)
+        );
+    }
+
     private StaviaKnowledgeRequest request() {
         return new StaviaKnowledgeRequest(
                 new StaviaQuestion(

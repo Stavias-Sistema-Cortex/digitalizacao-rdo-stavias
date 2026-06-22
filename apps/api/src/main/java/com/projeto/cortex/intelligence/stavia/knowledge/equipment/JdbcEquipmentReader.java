@@ -3,10 +3,11 @@ package com.projeto.cortex.intelligence.stavia.knowledge.equipment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.sql.Date;
-import java.sql.Time;
-import java.sql.Timestamp;
 import java.util.List;
+
+import static com.projeto.cortex.intelligence.stavia.knowledge.JdbcRecordMappers.toLocalDate;
+import static com.projeto.cortex.intelligence.stavia.knowledge.JdbcRecordMappers.toLocalDateTime;
+import static com.projeto.cortex.intelligence.stavia.knowledge.JdbcRecordMappers.toLocalTime;
 
 @Component
 public class JdbcEquipmentReader
@@ -149,29 +150,5 @@ public class JdbcEquipmentReader
                         ),
                 worksiteId.trim()
         );
-    }
-
-    private java.time.LocalDate toLocalDate(
-            Date value
-    ) {
-        return value == null
-                ? null
-                : value.toLocalDate();
-    }
-
-    private java.time.LocalTime toLocalTime(
-            Time value
-    ) {
-        return value == null
-                ? null
-                : value.toLocalTime();
-    }
-
-    private java.time.LocalDateTime toLocalDateTime(
-            Timestamp value
-    ) {
-        return value == null
-                ? null
-                : value.toLocalDateTime();
     }
 }

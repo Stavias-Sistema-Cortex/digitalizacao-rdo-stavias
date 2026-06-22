@@ -10,11 +10,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,17 +35,13 @@ class StaviaControllerTest {
                                 List.of()
                         ),
                         StaviaIntent.CONSULTAR_RDO,
+                        1.0,
                         Map.of(),
                         List.of()
                 );
 
         when(
-                queryService.query(
-                        any(),
-                        eq(Set.of(
-                                StaviaEngine.REQUIRED_PERMISSION
-                        ))
-                )
+                queryService.query(any())
         ).thenReturn(expected);
 
         StaviaController controller =
@@ -64,11 +58,6 @@ class StaviaControllerTest {
 
         assertThat(result).isSameAs(expected);
 
-        verify(queryService).query(
-                any(),
-                eq(Set.of(
-                        StaviaEngine.REQUIRED_PERMISSION
-                ))
-        );
+        verify(queryService).query(any());
     }
 }

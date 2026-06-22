@@ -3,9 +3,10 @@ package com.projeto.cortex.intelligence.stavia.knowledge.occurrence;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import java.sql.Date;
-import java.sql.Timestamp;
 import java.util.List;
+
+import static com.projeto.cortex.intelligence.stavia.knowledge.JdbcRecordMappers.toLocalDate;
+import static com.projeto.cortex.intelligence.stavia.knowledge.JdbcRecordMappers.toLocalDateTime;
 
 @Component
 public class JdbcOccurrenceReader
@@ -69,21 +70,5 @@ public class JdbcOccurrenceReader
                         ),
                 worksiteId.trim()
         );
-    }
-
-    private java.time.LocalDate toLocalDate(
-            Date value
-    ) {
-        return value == null
-                ? null
-                : value.toLocalDate();
-    }
-
-    private java.time.LocalDateTime toLocalDateTime(
-            Timestamp value
-    ) {
-        return value == null
-                ? null
-                : value.toLocalDateTime();
     }
 }

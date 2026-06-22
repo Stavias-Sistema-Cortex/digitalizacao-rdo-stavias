@@ -116,6 +116,27 @@ public class StaviaEngine {
             );
         }
 
+        return answer(
+                question,
+                context,
+                intentClassifier.classify(question.text())
+        );
+    }
+
+    public StaviaAnswer answer(
+            StaviaQuestion question,
+            StaviaContext context,
+            StaviaIntent intent
+    ) {
+        if (question == null) {
+            return insufficientAnswer(
+                    "A pergunta da Stav.IA não foi informada.",
+                    List.of(
+                            "A consulta não pôde ser processada."
+                    )
+            );
+        }
+
         if (context == null) {
             return insufficientAnswer(
                     "O contexto da Stav.IA não foi informado.",
@@ -134,10 +155,11 @@ public class StaviaEngine {
             );
         }
 
-        StaviaIntent intent =
-                intentClassifier.classify(
-                        question.text()
-                );
+        if (intent == null) {
+            intent = intentClassifier.classify(
+                    question.text()
+            );
+        }
 
         List<StaviaEvidence> selectedEvidence =
                 evidenceSelector.select(

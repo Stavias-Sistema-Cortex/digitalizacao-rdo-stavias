@@ -6,6 +6,7 @@ import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -188,7 +189,7 @@ public class TeamKnowledgeSource
                 new StringBuilder();
 
         summary.append("O RDO ")
-                .append(fallback(
+                .append(StaviaText.fallback(
                         record.rdoNumber(),
                         record.rdoId()
                 ));
@@ -219,7 +220,7 @@ public class TeamKnowledgeSource
                     );
         } else {
             summary.append("o grupo de mão de obra ")
-                    .append(fallback(
+                    .append(StaviaText.fallback(
                             record.recordedName(),
                             "sem identificação nominal"
                     ));
@@ -292,15 +293,6 @@ public class TeamKnowledgeSource
                     value.trim()
             );
         }
-    }
-
-    private String fallback(
-            String preferred,
-            String alternative
-    ) {
-        return hasText(preferred)
-                ? preferred.trim()
-                : alternative;
     }
 
     private boolean hasText(

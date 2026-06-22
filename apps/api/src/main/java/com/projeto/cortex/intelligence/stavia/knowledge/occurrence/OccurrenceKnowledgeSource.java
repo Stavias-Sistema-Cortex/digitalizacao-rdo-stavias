@@ -6,16 +6,17 @@ import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.stereotype.Component;
 
-import java.text.Normalizer;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class OccurrenceKnowledgeSource
@@ -24,8 +25,8 @@ public class OccurrenceKnowledgeSource
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
-    private static final Set<String> OCCURRENCE_TERMS =
-            Set.of(
+    private static final List<String> OCCURRENCE_TERMS =
+            List.of(
                     "acidente",
                     "atraso",
                     "avaria",
@@ -43,6 +44,35 @@ public class OccurrenceKnowledgeSource
                     "risco",
                     "sinistro"
             );
+
+    /**
+     * Whole-word matchers compiled once per term so that an operational term is
+     * only detected as a standalone word (e.g. "parada" must not match inside
+     * "preparada").
+     */
+    private static final Map<String, Pattern> TERM_PATTERNS =
+            compileTermPatterns();
+
+    /**
+     * Negation cues that, when present in a clause, mean the surrounding
+     * operational term is being denied ("sem paralisação", "não houve
+     * acidente") and must not be reported as an occurrence.
+     */
+    private static final Set<String> NEGATION_CUES =
+            Set.of(
+                    "sem",
+                    "nao",
+                    "nenhum",
+                    "nenhuma",
+                    "nada"
+            );
+
+    /**
+     * Splits observations into independent clauses so a negation in one clause
+     * does not suppress a real occurrence reported in another.
+     */
+    private static final Pattern CLAUSE_SEPARATOR =
+            Pattern.compile("[.;,:!?\\n]+");
 
     private final OccurrenceReader occurrenceReader;
 
@@ -91,12 +121,69 @@ public class OccurrenceKnowledgeSource
                         request.worksiteId()
                 )
                 .stream()
-                .filter(this::containsOccurrence)
-                .map(this::toEvidence)
+                .map(this::toEvidenceOrNull)
+                .filter(Objects::nonNull)
                 .toList();
     }
 
-    private boolean containsOccurrence(
+    /**
+     * Returns the first operational term that appears as a whole word in a
+     * clause that is not negated, or {@code null} when the observation does not
+     * describe an occurrence.
+     */
+    private String detectOccurrenceTerm(
+            String observations
+    ) {
+        String normalized =
+                StaviaText.normalize(observations);
+
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        for (String clause : CLAUSE_SEPARATOR.split(normalized)) {
+            if (isNegated(clause)) {
+                continue;
+            }
+
+            String detected = earliestTerm(clause);
+
+            if (detected != null) {
+                return detected;
+            }
+        }
+
+        return null;
+    }
+
+    private String earliestTerm(String clause) {
+        String earliest = null;
+        int earliestAt = Integer.MAX_VALUE;
+
+        for (Map.Entry<String, Pattern> entry
+                : TERM_PATTERNS.entrySet()) {
+            var matcher = entry.getValue().matcher(clause);
+
+            if (matcher.find() && matcher.start() < earliestAt) {
+                earliest = entry.getKey();
+                earliestAt = matcher.start();
+            }
+        }
+
+        return earliest;
+    }
+
+    private boolean isNegated(String clause) {
+        for (String token : StaviaText.tokenize(clause)) {
+            if (NEGATION_CUES.contains(token)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private StaviaEvidence toEvidenceOrNull(
             OccurrenceRecord record
     ) {
         if (
@@ -104,19 +191,22 @@ public class OccurrenceKnowledgeSource
                 || record.observations() == null
                 || record.observations().isBlank()
         ) {
-            return false;
+            return null;
         }
 
-        String normalized =
-                normalize(record.observations());
+        String detectedTerm =
+                detectOccurrenceTerm(record.observations());
 
-        return OCCURRENCE_TERMS
-                .stream()
-                .anyMatch(normalized::contains);
+        if (detectedTerm == null) {
+            return null;
+        }
+
+        return toEvidence(record, detectedTerm);
     }
 
     private StaviaEvidence toEvidence(
-            OccurrenceRecord record
+            OccurrenceRecord record,
+            String detectedTerm
     ) {
         Map<String, Object> attributes =
                 new LinkedHashMap<>();
@@ -140,6 +230,10 @@ public class OccurrenceKnowledgeSource
         attributes.put(
                 "observacoes",
                 record.observations().trim()
+        );
+        attributes.put(
+                "termoDetectado",
+                detectedTerm
         );
         attributes.put(
                 "ocorrenciaEstruturada",
@@ -180,7 +274,7 @@ public class OccurrenceKnowledgeSource
 
         summary.append("O RDO ")
                 .append(
-                        fallback(
+                        StaviaText.fallback(
                                 record.rdoNumber(),
                                 record.rdoId()
                         )
@@ -210,25 +304,17 @@ public class OccurrenceKnowledgeSource
         return summary.toString();
     }
 
-    private String normalize(
-            String value
-    ) {
-        return Normalizer.normalize(
-                        value,
-                        Normalizer.Form.NFD
-                )
-                .replaceAll("\\p{M}", "")
-                .toLowerCase(Locale.ROOT)
-                .trim();
-    }
+    private static Map<String, Pattern> compileTermPatterns() {
+        Map<String, Pattern> patterns =
+                new LinkedHashMap<>();
 
-    private String fallback(
-            String preferred,
-            String alternative
-    ) {
-        return preferred != null
-                && !preferred.isBlank()
-                ? preferred.trim()
-                : alternative;
+        for (String term : OCCURRENCE_TERMS) {
+            patterns.put(
+                    term,
+                    StaviaText.wordPattern(term)
+            );
+        }
+
+        return Map.copyOf(patterns);
     }
 }

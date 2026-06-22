@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia;
 
+import com.projeto.cortex.intelligence.stavia.intent.StaviaClassification;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntentClassifier;
 import org.junit.jupiter.api.Test;
@@ -130,6 +131,53 @@ class StaviaIntentClassifierTest {
         ).isEqualTo(
                 StaviaIntent.CONSULTAR_ATIVO
         );
+    }
+
+    @Test
+    void shouldNotClassifyOccurrenceFromTermBuriedInsideWord() {
+        assertThat(
+                classifier.classify(
+                        "Esta área foi preparada para a próxima etapa?"
+                )
+        ).isNotEqualTo(
+                StaviaIntent.CONSULTAR_OCORRENCIA
+        );
+    }
+
+    @Test
+    void shouldReportHigherConfidenceForUnambiguousQuestion() {
+        StaviaClassification ambiguous =
+                classifier.classifyDetailed(
+                        "De qual programação operacional "
+                                + "cada RDO desta obra foi gerado?"
+                );
+
+        StaviaClassification direct =
+                classifier.classifyDetailed(
+                        "Qual é a data da obra?"
+                );
+
+        assertThat(ambiguous.intent())
+                .isEqualTo(
+                        StaviaIntent.CONSULTAR_PROGRAMACAO
+                );
+
+        assertThat(direct.confidence())
+                .isGreaterThan(ambiguous.confidence());
+    }
+
+    @Test
+    void shouldReportZeroConfidenceForUnknownIntent() {
+        StaviaClassification classification =
+                classifier.classifyDetailed(
+                        "Bom dia, tudo certo por aí?"
+                );
+
+        assertThat(classification.intent())
+                .isEqualTo(StaviaIntent.DESCONHECIDA);
+
+        assertThat(classification.confidence())
+                .isEqualTo(0.0);
     }
 
 }

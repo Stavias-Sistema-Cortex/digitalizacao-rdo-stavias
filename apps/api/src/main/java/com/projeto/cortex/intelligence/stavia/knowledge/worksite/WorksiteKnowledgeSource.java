@@ -6,6 +6,7 @@ import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -179,7 +180,7 @@ public class WorksiteKnowledgeSource
                 new StringBuilder();
 
         summary.append("A obra ")
-                .append(fallback(
+                .append(StaviaText.fallback(
                         obra.nome(),
                         obra.id()
                 ));
@@ -317,14 +318,6 @@ public class WorksiteKnowledgeSource
         }
     }
 
-    private String fallback(
-            String preferred,
-            String fallback
-    ) {
-        return hasText(preferred)
-                ? preferred.trim()
-                : fallback;
-    }
 
     private boolean hasText(
             String value

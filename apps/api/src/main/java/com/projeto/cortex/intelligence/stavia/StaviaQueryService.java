@@ -1,7 +1,9 @@
 package com.projeto.cortex.intelligence.stavia;
 
+import com.projeto.cortex.intelligence.stavia.access.StaviaAccessPolicy;
 import com.projeto.cortex.intelligence.stavia.context.StaviaContextBuilder;
 import com.projeto.cortex.intelligence.stavia.context.StaviaRawContext;
+import com.projeto.cortex.intelligence.stavia.intent.StaviaClassification;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntentClassifier;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeBundle;
@@ -23,12 +25,14 @@ public class StaviaQueryService {
     private final StaviaKnowledgeOrchestrator knowledgeOrchestrator;
     private final StaviaContextBuilder contextBuilder;
     private final StaviaEngine engine;
+    private final StaviaAccessPolicy accessPolicy;
 
     public StaviaQueryService(
             StaviaIntentClassifier intentClassifier,
             StaviaKnowledgeOrchestrator knowledgeOrchestrator,
             StaviaContextBuilder contextBuilder,
-            StaviaEngine engine
+            StaviaEngine engine,
+            StaviaAccessPolicy accessPolicy
     ) {
         this.intentClassifier = require(
                 intentClassifier,
@@ -49,11 +53,15 @@ public class StaviaQueryService {
                 engine,
                 "O motor da Stav.IA deve ser informado."
         );
+
+        this.accessPolicy = require(
+                accessPolicy,
+                "A política de acesso da Stav.IA deve ser informada."
+        );
     }
 
     public StaviaQueryResult query(
-            StaviaQuestion question,
-            Set<String> permissions
+            StaviaQuestion question
     ) {
         if (question == null) {
             throw new IllegalArgumentException(
@@ -62,9 +70,11 @@ public class StaviaQueryService {
         }
 
         Set<String> normalizedPermissions =
-                permissions == null
-                        ? Set.of()
-                        : Set.copyOf(permissions);
+                Set.copyOf(
+                        accessPolicy.permissionsFor(
+                                question.userId()
+                        )
+                );
 
         if (
                 question.obraId() == null
@@ -82,6 +92,7 @@ public class StaviaQueryService {
             return new StaviaQueryResult(
                     answer,
                     StaviaIntent.DESCONHECIDA,
+                    0.0,
                     java.util.Map.of(),
                     List.of(
                             "A consulta não informou uma obra."
@@ -89,8 +100,36 @@ public class StaviaQueryService {
             );
         }
 
-        StaviaIntent intent =
-                intentClassifier.classify(question.text());
+        if (
+                !accessPolicy.canAccessWorksite(
+                        question.userId(),
+                        question.obraId()
+                )
+        ) {
+            StaviaAnswer answer =
+                    engine.answer(
+                            question,
+                            new StaviaContext(
+                                    Set.of(),
+                                    List.of()
+                            )
+                    );
+
+            return new StaviaQueryResult(
+                    answer,
+                    StaviaIntent.DESCONHECIDA,
+                    0.0,
+                    java.util.Map.of(),
+                    List.of(
+                            "O usuário não tem acesso a esta obra."
+                    )
+            );
+        }
+
+        StaviaClassification classification =
+                intentClassifier.classifyDetailed(question.text());
+
+        StaviaIntent intent = classification.intent();
 
         StaviaKnowledgeRequest knowledgeRequest =
                 new StaviaKnowledgeRequest(
@@ -127,12 +166,14 @@ public class StaviaQueryService {
         StaviaAnswer answer =
                 engine.answer(
                         question,
-                        context
+                        context,
+                        intent
                 );
 
         return new StaviaQueryResult(
                 answer,
                 intent,
+                classification.confidence(),
                 knowledgeBundle.consultedSources(),
                 knowledgeBundle.warnings()
         );

@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia;
 
+import com.projeto.cortex.intelligence.stavia.access.StaviaAccessPolicy;
 import com.projeto.cortex.intelligence.stavia.context.StaviaContextBuilder;
 import com.projeto.cortex.intelligence.stavia.generation.DeterministicStaviaResponseGenerator;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
@@ -89,7 +90,13 @@ class StaviaQueryServiceTest {
                                 List.of(historySource)
                         ),
                         new StaviaContextBuilder(),
-                        engine
+                        engine,
+                        policy(
+                                Set.of(
+                                        StaviaEngine.REQUIRED_PERMISSION
+                                ),
+                                true
+                        )
                 );
 
         StaviaQueryResult result =
@@ -98,9 +105,6 @@ class StaviaQueryServiceTest {
                                 "Mostre o histórico da obra.",
                                 "usuario-1",
                                 "obra-1"
-                        ),
-                        Set.of(
-                                StaviaEngine.REQUIRED_PERMISSION
                         )
                 );
 
@@ -116,6 +120,10 @@ class StaviaQueryServiceTest {
         assertEquals(
                 StaviaIntent.CONSULTAR_HISTORICO,
                 result.intent()
+        );
+
+        assertTrue(
+                result.intentConfidence() > 0.0
         );
 
         assertEquals(
@@ -195,7 +203,8 @@ class StaviaQueryServiceTest {
                                 List.of(protectedSource)
                         ),
                         new StaviaContextBuilder(),
-                        engine
+                        engine,
+                        policy(Set.of(), true)
                 );
 
         StaviaQueryResult result =
@@ -204,8 +213,7 @@ class StaviaQueryServiceTest {
                                 "Mostre o histórico da obra.",
                                 "usuario-sem-permissao",
                                 "obra-1"
-                        ),
-                        Set.of()
+                        )
                 );
 
         assertTrue(
@@ -220,5 +228,110 @@ class StaviaQueryServiceTest {
                 result.consultedKnowledgeSources()
                         .isEmpty()
         );
+    }
+
+    @Test
+    void shouldDenyAccessToUnauthorizedWorksite() {
+        StaviaKnowledgeSource anySource =
+                new StaviaKnowledgeSource() {
+
+                    @Override
+                    public String sourceName() {
+                        return "fonte-qualquer";
+                    }
+
+                    @Override
+                    public String sourceVersion() {
+                        return "1.0.0";
+                    }
+
+                    @Override
+                    public boolean supports(
+                            StaviaKnowledgeRequest request
+                    ) {
+                        return true;
+                    }
+
+                    @Override
+                    public List<StaviaEvidence> retrieve(
+                            StaviaKnowledgeRequest request
+                    ) {
+                        return List.of(
+                                new StaviaEvidence(
+                                        StaviaEvidenceTypes.EVENTO_OPERACIONAL,
+                                        "evento-1",
+                                        "Evento de outra obra.",
+                                        Instant.now(),
+                                        true,
+                                        Map.of()
+                                )
+                        );
+                    }
+                };
+
+        StaviaEngine engine =
+                new StaviaEngine(
+                        new StaviaIntentClassifier(),
+                        new StaviaEvidenceSelector(),
+                        new StaviaGroundingValidator(),
+                        new StaviaEvidenceQualityPolicy(),
+                        new StaviaContradictionPolicy(),
+                        new DeterministicStaviaResponseGenerator()
+                );
+
+        StaviaQueryService service =
+                new StaviaQueryService(
+                        new StaviaIntentClassifier(),
+                        new StaviaKnowledgeOrchestrator(
+                                List.of(anySource)
+                        ),
+                        new StaviaContextBuilder(),
+                        engine,
+                        policy(
+                                Set.of(
+                                        StaviaEngine.REQUIRED_PERMISSION
+                                ),
+                                false
+                        )
+                );
+
+        StaviaQueryResult result =
+                service.query(
+                        new StaviaQuestion(
+                                "Mostre o histórico da obra.",
+                                "usuario-1",
+                                "obra-de-outro"
+                        )
+                );
+
+        assertTrue(
+                result.answer().insufficientData()
+        );
+
+        assertTrue(
+                result.consultedKnowledgeSources()
+                        .isEmpty()
+        );
+    }
+
+    private StaviaAccessPolicy policy(
+            Set<String> permissions,
+            boolean canAccessWorksite
+    ) {
+        return new StaviaAccessPolicy() {
+
+            @Override
+            public Set<String> permissionsFor(String userId) {
+                return permissions;
+            }
+
+            @Override
+            public boolean canAccessWorksite(
+                    String userId,
+                    String worksiteId
+            ) {
+                return canAccessWorksite;
+            }
+        };
     }
 }

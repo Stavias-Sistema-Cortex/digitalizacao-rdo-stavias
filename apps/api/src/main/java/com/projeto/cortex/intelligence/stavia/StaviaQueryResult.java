@@ -9,6 +9,7 @@ import java.util.Map;
 public record StaviaQueryResult(
         StaviaAnswer answer,
         StaviaIntent intent,
+        double intentConfidence,
         Map<String, String> consultedKnowledgeSources,
         List<String> knowledgeWarnings
 ) {
@@ -23,6 +24,12 @@ public record StaviaQueryResult(
         if (intent == null) {
             throw new IllegalArgumentException(
                     "A intenção da consulta deve ser informada."
+            );
+        }
+
+        if (intentConfidence < 0.0 || intentConfidence > 1.0) {
+            throw new IllegalArgumentException(
+                    "A confiança da intenção deve estar entre 0 e 1."
             );
         }
 

@@ -1,166 +1,211 @@
 package com.projeto.cortex.intelligence.stavia.intent;
 
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.stereotype.Component;
 
-import java.text.Normalizer;
-import java.util.Locale;
+import java.util.List;
 
+/**
+ * Scores the question against every intent instead of returning the first match
+ * in a fragile if/else cascade. Each intent contributes a score equal to the
+ * number of its signal phrases that appear as anchored words in the question;
+ * the highest score wins, ties are broken by the declared priority order, and a
+ * confidence in {@code [0,1]} reports how unambiguous the winner was.
+ *
+ * <p>Matching is word-anchored (see {@link StaviaText}): the stem "comec" still
+ * matches "começou", but "parada" no longer matches inside "preparada".
+ */
 @Component
 public class StaviaIntentClassifier {
 
+    /**
+     * Intents in priority order (highest first). When two intents tie on score
+     * the earlier one wins, preserving the historical cascade semantics
+     * (programação and histórico outrank a bare RDO mention).
+     */
+    private static final List<IntentRule> RULES =
+            List.of(
+                    rule(
+                            StaviaIntent.CONSULTAR_PROGRAMACAO,
+                            "programacao",
+                            "programado",
+                            "planejado"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_HISTORICO,
+                            "historico",
+                            "mudou",
+                            "ultimas 24",
+                            "aconteceu"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_RDO,
+                            "rdo",
+                            "relatorio diario"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_EQUIPE,
+                            "equipe",
+                            "colaborador",
+                            "encarregado",
+                            "engenheiro",
+                            "mao de obra",
+                            "quem trabalhou",
+                            "quantas pessoas",
+                            "quantos trabalhadores"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_ATIVO,
+                            "equipamento",
+                            "ativo",
+                            "maquina",
+                            "veiculo",
+                            "fresadora",
+                            "caminhao",
+                            "prefixo"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_OCORRENCIA,
+                            "ocorrencia",
+                            "incidente",
+                            "problema",
+                            "parada"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_PDOC,
+                            "pdoc",
+                            "previsao de custo",
+                            "risco de estouro",
+                            "risco de custo",
+                            "projecao de custo",
+                            "custo final estimado",
+                            "probabilidade de ultrapassar"
+                    ),
+                    rule(
+                            StaviaIntent.RESUMIR_OBRA,
+                            "resumo",
+                            "resuma",
+                            "visao geral"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_ESTADO_ATUAL,
+                            "estado atual",
+                            "situacao atual",
+                            "como esta"
+                    ),
+                    ruleRequiring(
+                            StaviaIntent.CONSULTAR_OBRA,
+                            List.of("obra"),
+                            List.of(
+                                    "data",
+                                    "quando",
+                                    "comec",
+                                    "inicio",
+                                    "termin",
+                                    "fim",
+                                    "nome",
+                                    "codigo",
+                                    "cw",
+                                    "contrato",
+                                    "cliente",
+                                    "cidade",
+                                    "local",
+                                    "rodovia",
+                                    "cadastro",
+                                    "cadastrada",
+                                    "criada",
+                                    "atualizada",
+                                    "status",
+                                    "qual obra",
+                                    "que obra"
+                            )
+                    )
+            );
+
     public StaviaIntent classify(String question) {
-        String normalized = normalize(question);
-
-        if (containsAny(
-                normalized,
-                "programacao",
-                "programado",
-                "planejado"
-        )) {
-            return StaviaIntent.CONSULTAR_PROGRAMACAO;
-        }
-
-        if (containsAny(
-                normalized,
-                "historico",
-                "mudou",
-                "ultimas 24",
-                "aconteceu"
-        )) {
-            return StaviaIntent.CONSULTAR_HISTORICO;
-        }
-
-        if (containsAny(normalized, "rdo", "relatorio diario")) {
-            return StaviaIntent.CONSULTAR_RDO;
-        }
-
-        if (containsAny(
-                normalized,
-                "equipe",
-                "colaborador",
-                "encarregado",
-                "engenheiro",
-                "mao de obra",
-                "quem trabalhou",
-                "quantas pessoas",
-                "quantos trabalhadores"
-        )) {
-            return StaviaIntent.CONSULTAR_EQUIPE;
-        }
-
-        if (containsAny(
-                normalized,
-                "equipamento",
-                "equipamentos",
-                "ativo",
-                "ativos",
-                "maquina",
-                "maquinas",
-                "veiculo",
-                "veiculos",
-                "fresadora",
-                "caminhao",
-                "prefixo"
-        )) {
-            return StaviaIntent.CONSULTAR_ATIVO;
-        }
-
-        if (containsAny(
-                normalized,
-                "ocorrencia",
-                "incidente",
-                "problema",
-                "parada"
-        )) {
-            return StaviaIntent.CONSULTAR_OCORRENCIA;
-        }
-
-        if (containsAny(
-                normalized,
-                "pdoc",
-                "previsao de custo",
-                "risco de estouro",
-                "risco de custo",
-                "projecao de custo",
-                "custo final estimado",
-                "probabilidade de ultrapassar"
-        )) {
-            return StaviaIntent.CONSULTAR_PDOC;
-        }
-
-        if (containsAny(
-                normalized,
-                "resumo",
-                "resuma",
-                "visao geral"
-        )) {
-            return StaviaIntent.RESUMIR_OBRA;
-        }
-
-        if (containsAny(
-                normalized,
-                "estado atual",
-                "situacao atual",
-                "como esta"
-        )) {
-            return StaviaIntent.CONSULTAR_ESTADO_ATUAL;
-        }
-
-        if (
-                normalized.contains("obra")
-                && containsAny(
-                        normalized,
-                        "data",
-                        "quando",
-                        "comec",
-                        "inicio",
-                        "termin",
-                        "fim",
-                        "nome",
-                        "codigo",
-                        "cw",
-                        "contrato",
-                        "cliente",
-                        "cidade",
-                        "local",
-                        "rodovia",
-                        "cadastro",
-                        "cadastrada",
-                        "criada",
-                        "atualizada",
-                        "status",
-                        "qual obra",
-                        "que obra"
-                )
-        ) {
-            return StaviaIntent.CONSULTAR_OBRA;
-        }
-
-        return StaviaIntent.DESCONHECIDA;
+        return classifyDetailed(question).intent();
     }
 
-    private boolean containsAny(
-            String value,
-            String... candidates
-    ) {
-        for (String candidate : candidates) {
-            if (value.contains(candidate)) {
-                return true;
+    public StaviaClassification classifyDetailed(String question) {
+        String normalized = StaviaText.normalize(question);
+
+        IntentRule winner = null;
+        int winnerScore = 0;
+        int totalScore = 0;
+
+        for (IntentRule candidate : RULES) {
+            int score = candidate.score(normalized);
+
+            if (score == 0) {
+                continue;
+            }
+
+            totalScore += score;
+
+            if (score > winnerScore) {
+                winnerScore = score;
+                winner = candidate;
             }
         }
 
-        return false;
+        if (winner == null) {
+            return new StaviaClassification(
+                    StaviaIntent.DESCONHECIDA,
+                    0.0
+            );
+        }
+
+        return new StaviaClassification(
+                winner.intent(),
+                (double) winnerScore / totalScore
+        );
     }
 
-    private String normalize(String value) {
-        String normalized = Normalizer.normalize(
-                value,
-                Normalizer.Form.NFD
+    private static IntentRule rule(
+            StaviaIntent intent,
+            String... signals
+    ) {
+        return new IntentRule(
+                intent,
+                List.of(),
+                List.of(signals)
         );
+    }
 
-        return normalized
-                .replaceAll("\\p{M}", "")
-                .toLowerCase(Locale.ROOT)
-                .trim();
+    private static IntentRule ruleRequiring(
+            StaviaIntent intent,
+            List<String> required,
+            List<String> signals
+    ) {
+        return new IntentRule(intent, required, signals);
+    }
+
+    /**
+     * A single intent's matching rule: it only fires when every {@code required}
+     * term is present, and then scores by how many {@code signals} match.
+     */
+    private record IntentRule(
+            StaviaIntent intent,
+            List<String> required,
+            List<String> signals
+    ) {
+
+        int score(String normalized) {
+            for (String term : required) {
+                if (!StaviaText.containsWord(normalized, term)) {
+                    return 0;
+                }
+            }
+
+            int matched = 0;
+
+            for (String term : signals) {
+                if (StaviaText.containsWord(normalized, term)) {
+                    matched++;
+                }
+            }
+
+            return matched;
+        }
     }
 }
