@@ -1,0 +1,167 @@
+package com.projeto.cortex.intelligence.stavia;
+
+import com.projeto.cortex.intelligence.stavia.context.StaviaContextBuilder;
+import com.projeto.cortex.intelligence.stavia.context.StaviaRawContext;
+import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
+import com.projeto.cortex.intelligence.stavia.intent.StaviaIntentClassifier;
+import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeBundle;
+import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeOrchestrator;
+import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
+import com.projeto.cortex.intelligence.stavia.model.StaviaAnswer;
+import com.projeto.cortex.intelligence.stavia.model.StaviaContext;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Set;
+
+@Service
+public class StaviaQueryService {
+
+    private final StaviaIntentClassifier intentClassifier;
+    private final StaviaKnowledgeOrchestrator knowledgeOrchestrator;
+    private final StaviaContextBuilder contextBuilder;
+    private final StaviaEngine engine;
+
+    public StaviaQueryService(
+            StaviaIntentClassifier intentClassifier,
+            StaviaKnowledgeOrchestrator knowledgeOrchestrator,
+            StaviaContextBuilder contextBuilder,
+            StaviaEngine engine
+    ) {
+        this.intentClassifier = require(
+                intentClassifier,
+                "O classificador de intenção deve ser informado."
+        );
+
+        this.knowledgeOrchestrator = require(
+                knowledgeOrchestrator,
+                "O orquestrador de conhecimento deve ser informado."
+        );
+
+        this.contextBuilder = require(
+                contextBuilder,
+                "O builder de contexto deve ser informado."
+        );
+
+        this.engine = require(
+                engine,
+                "O motor da Stav.IA deve ser informado."
+        );
+    }
+
+    public StaviaQueryResult query(
+            StaviaQuestion question,
+            Set<String> permissions
+    ) {
+        if (question == null) {
+            throw new IllegalArgumentException(
+                    "A pergunta deve ser informada."
+            );
+        }
+
+        Set<String> normalizedPermissions =
+                permissions == null
+                        ? Set.of()
+                        : Set.copyOf(permissions);
+
+        if (
+                question.obraId() == null
+                || question.obraId().isBlank()
+        ) {
+            StaviaAnswer answer =
+                    engine.answer(
+                            question,
+                            new StaviaContext(
+                                    normalizedPermissions,
+                                    List.of()
+                            )
+                    );
+
+            return new StaviaQueryResult(
+                    answer,
+                    StaviaIntent.DESCONHECIDA,
+                    java.util.Map.of(),
+                    List.of(
+                            "A consulta não informou uma obra."
+                    )
+            );
+        }
+
+        StaviaIntent intent =
+                intentClassifier.classify(question.text());
+
+        StaviaKnowledgeRequest knowledgeRequest =
+                new StaviaKnowledgeRequest(
+                        question,
+                        intent,
+                        question.obraId(),
+                        normalizedPermissions
+                );
+
+        StaviaKnowledgeBundle knowledgeBundle =
+                knowledgeOrchestrator.retrieve(
+                        knowledgeRequest
+                );
+
+        StaviaRawContext rawContext =
+                new StaviaRawContext(
+                        question.userId(),
+                        question.obraId(),
+                        normalizedPermissions,
+                        knowledgeBundle.evidences()
+                                .stream()
+                                .map(evidence ->
+                                        toRawEvidence(
+                                                question.obraId(),
+                                                evidence
+                                        )
+                                )
+                                .toList()
+                );
+
+        StaviaContext context =
+                contextBuilder.build(rawContext);
+
+        StaviaAnswer answer =
+                engine.answer(
+                        question,
+                        context
+                );
+
+        return new StaviaQueryResult(
+                answer,
+                intent,
+                knowledgeBundle.consultedSources(),
+                knowledgeBundle.warnings()
+        );
+    }
+
+    private StaviaRawContext.RawEvidence toRawEvidence(
+            String worksiteId,
+            StaviaEvidence evidence
+    ) {
+        return new StaviaRawContext.RawEvidence(
+                evidence.type(),
+                evidence.id(),
+                worksiteId,
+                StaviaEngine.REQUIRED_PERMISSION,
+                evidence.summary(),
+                evidence.updatedAt(),
+                evidence.validated(),
+                evidence.attributes()
+        );
+    }
+
+    private static <T> T require(
+            T value,
+            String message
+    ) {
+        if (value == null) {
+            throw new IllegalArgumentException(message);
+        }
+
+        return value;
+    }
+}

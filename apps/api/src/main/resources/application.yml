@@ -39,3 +39,6 @@ cortex:
       url: ${ACAD_DB_URL:}
       username: ${ACAD_DB_USER:}
       password: ${ACAD_DB_PASSWORD:}
+
+  stavia:
+    generator-mode: ${CORTEX_STAVIA_GENERATOR_MODE:deterministic}
