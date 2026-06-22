@@ -13,26 +13,55 @@ interface StatusContent {
   description: string;
 }
 
+function pluralize(
+  count: number,
+  singular: string,
+  plural: string,
+): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function getStatusContent(
   status: SyncUiStatus,
   pendingCount: number,
+  syncingCount: number,
   errorCount: number,
   conflictCount: number,
 ): StatusContent {
+  const localChangesCount =
+    pendingCount +
+    syncingCount +
+    errorCount +
+    conflictCount;
+
   switch (status) {
     case "OFFLINE":
       return {
-        title: "Offline",
+        title: "Sem conexão",
         description:
-          pendingCount > 0
-            ? `${pendingCount} alteração(ões) salva(s) no dispositivo aguardando conexão.`
+          localChangesCount > 0
+            ? `${pluralize(
+                localChangesCount,
+                "alteração permanece",
+                "alterações permanecem",
+              )} salva${
+                localChangesCount === 1 ? "" : "s"
+              } neste dispositivo e será${
+                localChangesCount === 1 ? "" : "ão"
+              } sincronizada${
+                localChangesCount === 1 ? "" : "s"
+              } quando a conexão retornar.`
             : "Os dados continuam disponíveis e podem ser salvos neste dispositivo.",
       };
 
     case "PENDING":
       return {
         title: "Aguardando sincronização",
-        description: `${pendingCount} alteração(ões) pendente(s). O sistema tentará novamente automaticamente.`,
+        description: `${pluralize(
+          pendingCount,
+          "alteração está pendente",
+          "alterações estão pendentes",
+        )}. O sistema tentará sincronizar automaticamente.`,
       };
 
     case "SYNCING":
@@ -44,14 +73,26 @@ function getStatusContent(
 
     case "ERROR":
       return {
-        title: "Dados precisam de correção",
-        description: `${errorCount} operação(ões) foram rejeitadas pelo servidor.`,
+        title: "Falha na sincronização",
+        description: `${pluralize(
+          errorCount,
+          "alteração não pôde ser sincronizada",
+          "alterações não puderam ser sincronizadas",
+        )}. Os dados continuam salvos neste dispositivo.`,
       };
 
     case "CONFLICT":
       return {
         title: "Conflito de versão",
-        description: `${conflictCount} operação(ões) possuem uma versão mais recente no servidor.`,
+        description: `${pluralize(
+          conflictCount,
+          "RDO possui",
+          "RDOs possuem",
+        )} uma versão mais recente no servidor. ${
+          conflictCount === 1
+            ? "Esse registro está temporariamente bloqueado"
+            : "Esses registros estão temporariamente bloqueados"
+        } para edição.`,
       };
 
     case "SYNCED":
@@ -94,12 +135,14 @@ export function SyncStatusBanner() {
       getStatusContent(
         snapshot.status,
         snapshot.pendingCount,
+        snapshot.syncingCount,
         snapshot.errorCount,
         snapshot.conflictCount,
       ),
     [
       snapshot.status,
       snapshot.pendingCount,
+      snapshot.syncingCount,
       snapshot.errorCount,
       snapshot.conflictCount,
     ],
@@ -137,12 +180,11 @@ export function SyncStatusBanner() {
       </div>
 
       <div className="sync-banner__metadata">
-        {lastSyncText && (
-          <span>
-            Última sincronização:{" "}
-            {lastSyncText}
-          </span>
-        )}
+        <span>
+          {lastSyncText
+            ? `Última sincronização: ${lastSyncText}`
+            : "Ainda não sincronizado"}
+        </span>
 
         <button
           type="button"

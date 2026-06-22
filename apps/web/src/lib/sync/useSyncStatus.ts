@@ -188,12 +188,16 @@ export function useSyncStatus(): {
       () => {
         void refresh();
       },
-      1_000,
+      5_000,
     );
 
-    void refresh();
+    const initialRefreshId =
+      window.setTimeout(() => {
+        void refresh();
+      }, 0);
 
     return () => {
+      window.clearTimeout(initialRefreshId);
       window.removeEventListener(
         "online",
         handleConnectionChange,

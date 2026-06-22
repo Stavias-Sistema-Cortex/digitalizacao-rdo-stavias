@@ -30,14 +30,13 @@ export function useRdoLocalPersistence() {
     });
 
     try {
-      const result =
-        await saveRdoDraftAtomically(draft);
+      await saveRdoDraftAtomically(draft);
 
       setState({
         isSaving: false,
         isSyncing: false,
         message:
-          `RDO salvo localmente. Mutação ${result.mutation.clientMutationId.slice(0, 8)} aguardando sincronização.`,
+          "RDO salvo neste dispositivo e aguardando sincronização.",
         error: "",
       });
     } catch (error: unknown) {
@@ -66,7 +65,10 @@ export function useRdoLocalPersistence() {
     try {
       const summary = await syncNow();
 
-      const recebidos = `${summary.pulled} evento(s) recebido(s)`;
+      const recebidos =
+        summary.pulled === 1
+          ? "1 atualização recebida"
+          : `${summary.pulled} atualizações recebidas`;
 
       // Mutações rejeitadas pelo servidor (erro/conflito) não são sucesso:
       // reporta como falha para evitar um falso positivo de status.
@@ -74,11 +76,19 @@ export function useRdoLocalPersistence() {
         const problemas: string[] = [];
 
         if (summary.errors > 0) {
-          problemas.push(`${summary.errors} com erro`);
+          problemas.push(
+            summary.errors === 1
+              ? "1 alteração com erro"
+              : `${summary.errors} alterações com erro`,
+          );
         }
 
         if (summary.conflicts > 0) {
-          problemas.push(`${summary.conflicts} em conflito`);
+          problemas.push(
+            summary.conflicts === 1
+              ? "1 alteração em conflito"
+              : `${summary.conflicts} alterações em conflito`,
+          );
         }
 
         setState({
@@ -86,8 +96,11 @@ export function useRdoLocalPersistence() {
           isSyncing: false,
           message: "",
           error:
-            `Sincronização incompleta: ${summary.applied} aplicada(s), ` +
-            `${problemas.join(" e ")}. ${recebidos}.`,
+            `Sincronização incompleta: ${
+              summary.applied === 1
+                ? "1 alteração aplicada"
+                : `${summary.applied} alterações aplicadas`
+            }; ${problemas.join(" e ")}. ${recebidos}.`,
         });
 
         return;
@@ -99,7 +112,8 @@ export function useRdoLocalPersistence() {
         setState({
           isSaving: false,
           isSyncing: false,
-          message: `Nenhuma mutação pendente para sincronizar. ${recebidos}.`,
+          message:
+            `Nenhuma alteração pendente para sincronizar. ${recebidos}.`,
           error: "",
         });
 
@@ -109,7 +123,12 @@ export function useRdoLocalPersistence() {
       setState({
         isSaving: false,
         isSyncing: false,
-        message: `Sincronização concluída: ${summary.applied} aplicada(s). ${recebidos}.`,
+        message:
+          `Sincronização concluída: ${
+            summary.applied === 1
+              ? "1 alteração aplicada"
+              : `${summary.applied} alterações aplicadas`
+          }. ${recebidos}.`,
         error: "",
       });
     } catch (error: unknown) {

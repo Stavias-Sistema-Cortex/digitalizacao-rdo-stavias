@@ -56,13 +56,22 @@ public class JdbcOperationalHistoryReader
                 """
                 WITH RECURSIVE related_nodes AS (
                     SELECT
-                        'OBRA' AS entity_type,
-                        ? AS entity_id,
+                        CAST(
+                            'OBRA'
+                            AS CHAR(80) CHARACTER SET utf8mb4
+                        ) COLLATE utf8mb4_unicode_ci AS entity_type,
+
+                        CAST(
+                            ?
+                            AS CHAR(36) CHARACTER SET ascii
+                        ) COLLATE ascii_bin AS entity_id,
+
                         0 AS depth,
+
                         CAST(
                             CONCAT('|OBRA:', ?, '|')
-                            AS CHAR(4000)
-                        ) AS traversal_path
+                            AS CHAR(4000) CHARACTER SET utf8mb4
+                        ) COLLATE utf8mb4_unicode_ci AS traversal_path
 
                     UNION ALL
 

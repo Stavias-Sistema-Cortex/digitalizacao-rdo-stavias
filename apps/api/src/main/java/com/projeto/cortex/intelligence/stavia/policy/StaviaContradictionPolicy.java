@@ -1,6 +1,7 @@
 package com.projeto.cortex.intelligence.stavia.policy;
 
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -22,6 +23,18 @@ public class StaviaContradictionPolicy {
                     "programacaoid"
             );
 
+    private static final Set<String> NON_COMPARABLE_FIELDS =
+            Set.of(
+                    "eventtype",
+                    "commitsequence",
+                    "relationtype",
+                    "source",
+                    "payload",
+                    "observations",
+                    "updatedat",
+                    "createdat"
+            );
+
     public StaviaContradictionAssessment assess(
             List<StaviaEvidence> evidences
     ) {
@@ -29,25 +42,34 @@ public class StaviaContradictionPolicy {
             return StaviaContradictionAssessment.none();
         }
 
-        Map<String, Set<String>> valuesByField =
-                collectValuesByField(evidences);
+        Map<String, Map<String, Set<String>>> valuesByScope =
+                collectComparableValues(evidences);
 
-        List<String> conflictingFields = new ArrayList<>();
+        Set<String> conflictingFields =
+                new LinkedHashSet<>();
+
         boolean critical = false;
 
-        for (Map.Entry<String, Set<String>> entry
-                : valuesByField.entrySet()) {
+        for (Map<String, Set<String>> valuesByField
+                : valuesByScope.values()) {
 
-            if (entry.getValue().size() <= 1) {
-                continue;
-            }
+            for (Map.Entry<String, Set<String>> entry
+                    : valuesByField.entrySet()) {
 
-            conflictingFields.add(entry.getKey());
+                if (entry.getValue().size() <= 1) {
+                    continue;
+                }
 
-            if (CRITICAL_FIELDS.contains(
-                    entry.getKey().toLowerCase(Locale.ROOT)
-            )) {
-                critical = true;
+                conflictingFields.add(entry.getKey());
+
+                if (
+                        CRITICAL_FIELDS.contains(
+                                entry.getKey()
+                                        .toLowerCase(Locale.ROOT)
+                        )
+                ) {
+                    critical = true;
+                }
             }
         }
 
@@ -55,32 +77,36 @@ public class StaviaContradictionPolicy {
             return StaviaContradictionAssessment.none();
         }
 
-        List<String> warnings = new ArrayList<>();
+        List<String> warnings =
+                new ArrayList<>();
 
         warnings.add(
-                "Foram encontradas informações contraditórias nos campos: "
+                "Foram encontradas informações contraditórias "
+                        + "sobre o mesmo objeto nos campos: "
                         + String.join(", ", conflictingFields)
                         + "."
         );
 
         if (critical) {
             warnings.add(
-                    "A contradição afeta campos críticos e impede uma conclusão segura."
+                    "A contradição afeta campos críticos e "
+                            + "impede uma conclusão segura."
             );
         }
 
         return new StaviaContradictionAssessment(
                 true,
                 critical,
-                conflictingFields,
+                List.copyOf(conflictingFields),
                 warnings
         );
     }
 
-    private Map<String, Set<String>> collectValuesByField(
+    private Map<String, Map<String, Set<String>>>
+    collectComparableValues(
             List<StaviaEvidence> evidences
     ) {
-        Map<String, Set<String>> valuesByField =
+        Map<String, Map<String, Set<String>>> valuesByScope =
                 new LinkedHashMap<>();
 
         for (StaviaEvidence evidence : evidences) {
@@ -88,8 +114,41 @@ public class StaviaContradictionPolicy {
                 continue;
             }
 
+            /*
+             * Eventos representam momentos históricos distintos.
+             * Diferenças entre eventos não constituem contradição.
+             */
+            if (
+                    StaviaEvidenceTypes.EVENTO_OPERACIONAL.equals(
+                            evidence.type()
+                    )
+            ) {
+                continue;
+            }
+
+            String scope =
+                    comparisonScope(evidence);
+
+            Map<String, Set<String>> valuesByField =
+                    valuesByScope.computeIfAbsent(
+                            scope,
+                            ignored -> new LinkedHashMap<>()
+                    );
+
             for (Map.Entry<String, Object> attribute
                     : evidence.attributes().entrySet()) {
+
+                String normalizedField =
+                        attribute.getKey()
+                                .toLowerCase(Locale.ROOT);
+
+                if (
+                        NON_COMPARABLE_FIELDS.contains(
+                                normalizedField
+                        )
+                ) {
+                    continue;
+                }
 
                 String normalizedValue =
                         normalizeValue(attribute.getValue());
@@ -107,11 +166,101 @@ public class StaviaContradictionPolicy {
             }
         }
 
-        return valuesByField;
+        return valuesByScope;
+    }
+
+    private String comparisonScope(
+            StaviaEvidence evidence
+    ) {
+        Map<String, Object> attributes =
+                evidence.attributes();
+
+        if (
+                StaviaEvidenceTypes.RELACAO_ONTOLOGICA.equals(
+                        evidence.type()
+                )
+        ) {
+            return String.join(
+                    ":",
+                    evidence.type(),
+                    normalizedAttribute(
+                            attributes,
+                            "originId",
+                            evidence.id()
+                    ),
+                    normalizedAttribute(
+                            attributes,
+                            "relationType",
+                            "RELACAO"
+                    )
+            );
+        }
+
+        String entityId =
+                firstPresentAttribute(
+                        attributes,
+                        "entityId",
+                        "originId",
+                        "obraId"
+                );
+
+        if (entityId == null) {
+            entityId = evidence.type();
+        }
+
+        return evidence.type() + ":" + entityId;
+    }
+
+    private String firstPresentAttribute(
+            Map<String, Object> attributes,
+            String... fields
+    ) {
+        for (String field : fields) {
+            Object value = attributes.get(field);
+
+            if (value == null) {
+                continue;
+            }
+
+            String normalized =
+                    String.valueOf(value).trim();
+
+            if (!normalized.isEmpty()) {
+                return normalized;
+            }
+        }
+
+        return null;
+    }
+
+    private String normalizedAttribute(
+            Map<String, Object> attributes,
+            String field,
+            String fallback
+    ) {
+        Object value = attributes.get(field);
+
+        if (value == null) {
+            return fallback;
+        }
+
+        String normalized =
+                String.valueOf(value).trim();
+
+        return normalized.isEmpty()
+                ? fallback
+                : normalized;
     }
 
     private String normalizeValue(Object value) {
         if (value == null) {
+            return null;
+        }
+
+        if (
+                value instanceof Map<?, ?>
+                || value instanceof Iterable<?>
+        ) {
             return null;
         }
 
