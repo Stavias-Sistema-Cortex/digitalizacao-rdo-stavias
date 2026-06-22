@@ -11,10 +11,6 @@ public class StaviaIntentClassifier {
     public StaviaIntent classify(String question) {
         String normalized = normalize(question);
 
-        if (containsAny(normalized, "rdo", "relatorio diario")) {
-            return StaviaIntent.CONSULTAR_RDO;
-        }
-
         if (containsAny(
                 normalized,
                 "programacao",
@@ -22,6 +18,20 @@ public class StaviaIntentClassifier {
                 "planejado"
         )) {
             return StaviaIntent.CONSULTAR_PROGRAMACAO;
+        }
+
+        if (containsAny(
+                normalized,
+                "historico",
+                "mudou",
+                "ultimas 24",
+                "aconteceu"
+        )) {
+            return StaviaIntent.CONSULTAR_HISTORICO;
+        }
+
+        if (containsAny(normalized, "rdo", "relatorio diario")) {
+            return StaviaIntent.CONSULTAR_RDO;
         }
 
         if (containsAny(
@@ -52,16 +62,6 @@ public class StaviaIntentClassifier {
                 "parada"
         )) {
             return StaviaIntent.CONSULTAR_OCORRENCIA;
-        }
-
-        if (containsAny(
-                normalized,
-                "historico",
-                "mudou",
-                "ultimas 24",
-                "aconteceu"
-        )) {
-            return StaviaIntent.CONSULTAR_HISTORICO;
         }
 
         if (containsAny(

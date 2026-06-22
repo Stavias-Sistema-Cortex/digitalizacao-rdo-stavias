@@ -146,4 +146,52 @@ class StaviaEvidenceQualityPolicyTest {
                 Map.of()
         );
     }
+
+    @Test
+    void shouldDowngradeUncalibratedSimulatedPdocEvidence() {
+        StaviaEvidence pdocEvidence =
+                new StaviaEvidence(
+                        "PDOC",
+                        "PDOC:obra-1:2026-06-22",
+                        "Análise PDOC simulada.",
+                        NOW.minus(
+                                Duration.ofHours(1)
+                        ),
+                        false,
+                        Map.of(
+                                "calibrationStatus",
+                                "NOT_CALIBRATED",
+                                "sourceMode",
+                                "LOCAL_SIMULATED"
+                        )
+                );
+
+        StaviaQualityAssessment assessment =
+                policy.assess(
+                        List.of(pdocEvidence)
+                );
+
+        assertEquals(
+                StaviaEvidenceQuality.BAIXA,
+                assessment.quality()
+        );
+
+        assertTrue(
+                assessment.warnings()
+                        .contains(
+                                "O PDOC ainda não foi calibrado "
+                                        + "com dados históricos reais."
+                        )
+        );
+
+        assertTrue(
+                assessment.warnings()
+                        .contains(
+                                "A análise utiliza um snapshot local "
+                                        + "simulado e não representa "
+                                        + "os custos reais da obra."
+                        )
+        );
+    }
+
 }

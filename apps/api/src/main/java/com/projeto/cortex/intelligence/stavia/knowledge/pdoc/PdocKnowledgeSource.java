@@ -120,6 +120,17 @@ public class PdocKnowledgeSource
                 "calibrationStatus",
                 result.calibrationStatus().name()
         );
+
+        String sourceMode =
+                snapshotProvider
+                        instanceof LocalSimulatedPdocSnapshotProvider
+                        ? "LOCAL_SIMULATED"
+                        : "OPERATIONAL";
+
+        attributes.put(
+                "sourceMode",
+                sourceMode
+        );
         attributes.put(
                 "projectPhase",
                 result.projectPhase().name()
@@ -170,6 +181,19 @@ public class PdocKnowledgeSource
                         .toList()
         );
 
+        boolean calibrated =
+                !"NOT_CALIBRATED".equals(
+                        result.calibrationStatus().name()
+                );
+
+        boolean simulated =
+                "LOCAL_SIMULATED".equals(
+                        attributes.get("sourceMode")
+                );
+
+        boolean validated =
+                calibrated && !simulated;
+
         return new StaviaEvidence(
                 StaviaEvidenceTypes.PDOC,
                 "PDOC:" + result.obraId()
@@ -178,7 +202,7 @@ public class PdocKnowledgeSource
                 result.referenceDate()
                         .atStartOfDay()
                         .toInstant(ZoneOffset.UTC),
-                true,
+                validated,
                 attributes
         );
     }

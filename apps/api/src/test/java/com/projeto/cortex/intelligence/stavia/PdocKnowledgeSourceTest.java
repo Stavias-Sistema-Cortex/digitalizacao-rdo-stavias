@@ -63,6 +63,22 @@ class PdocKnowledgeSourceTest {
                         "drivers"
                 )
         );
+
+        assertFalse(evidence.validated());
+
+        assertEquals(
+                "NOT_CALIBRATED",
+                evidence.attributes().get(
+                        "calibrationStatus"
+                )
+        );
+
+        assertEquals(
+                "OPERATIONAL",
+                evidence.attributes().get(
+                        "sourceMode"
+                )
+        );
     }
 
     @Test

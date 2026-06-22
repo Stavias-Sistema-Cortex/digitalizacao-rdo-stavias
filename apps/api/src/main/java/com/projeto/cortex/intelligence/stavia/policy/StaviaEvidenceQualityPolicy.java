@@ -117,6 +117,11 @@ public class StaviaEvidenceQualityPolicy {
             );
         }
 
+        addPdocWarnings(
+                evidences,
+                warnings
+        );
+
         boolean stale =
                 staleCount > 0 || missingDateCount > 0;
 
@@ -133,6 +138,60 @@ public class StaviaEvidenceQualityPolicy {
                 stale,
                 warnings
         );
+    }
+
+    private void addPdocWarnings(
+            List<StaviaEvidence> evidences,
+            List<String> warnings
+    ) {
+        boolean hasUncalibratedPdoc =
+                evidences.stream()
+                        .filter(evidence ->
+                                "PDOC".equals(
+                                        evidence.type()
+                                )
+                        )
+                        .anyMatch(evidence ->
+                                "NOT_CALIBRATED".equals(
+                                        String.valueOf(
+                                                evidence.attributes()
+                                                        .get(
+                                                                "calibrationStatus"
+                                                        )
+                                        )
+                                )
+                        );
+
+        boolean hasLocalSimulatedPdoc =
+                evidences.stream()
+                        .filter(evidence ->
+                                "PDOC".equals(
+                                        evidence.type()
+                                )
+                        )
+                        .anyMatch(evidence ->
+                                "LOCAL_SIMULATED".equals(
+                                        String.valueOf(
+                                                evidence.attributes()
+                                                        .get(
+                                                                "sourceMode"
+                                                        )
+                                        )
+                                )
+                        );
+
+        if (hasUncalibratedPdoc) {
+            warnings.add(
+                    "O PDOC ainda não foi calibrado com dados históricos reais."
+            );
+        }
+
+        if (hasLocalSimulatedPdoc) {
+            warnings.add(
+                    "A análise utiliza um snapshot local simulado "
+                            + "e não representa os custos reais da obra."
+            );
+        }
     }
 
     private boolean isStale(
