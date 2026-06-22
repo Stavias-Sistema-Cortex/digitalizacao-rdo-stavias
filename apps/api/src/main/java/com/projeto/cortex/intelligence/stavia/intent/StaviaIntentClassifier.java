@@ -89,11 +89,40 @@ public class StaviaIntentClassifier {
         if (containsAny(
                 normalized,
                 "estado atual",
-                "status",
                 "situacao atual",
                 "como esta"
         )) {
             return StaviaIntent.CONSULTAR_ESTADO_ATUAL;
+        }
+
+        if (
+                normalized.contains("obra")
+                && containsAny(
+                        normalized,
+                        "data",
+                        "quando",
+                        "comec",
+                        "inicio",
+                        "termin",
+                        "fim",
+                        "nome",
+                        "codigo",
+                        "cw",
+                        "contrato",
+                        "cliente",
+                        "cidade",
+                        "local",
+                        "rodovia",
+                        "cadastro",
+                        "cadastrada",
+                        "criada",
+                        "atualizada",
+                        "status",
+                        "qual obra",
+                        "que obra"
+                )
+        ) {
+            return StaviaIntent.CONSULTAR_OBRA;
         }
 
         return StaviaIntent.DESCONHECIDA;

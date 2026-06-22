@@ -36,6 +36,11 @@ public class StaviaEvidenceSelector {
             StaviaIntent intent
     ) {
         return switch (intent) {
+            case CONSULTAR_OBRA ->
+                    Set.of(
+                            StaviaEvidenceTypes.OBRA
+                    );
+
             case CONSULTAR_ESTADO_ATUAL ->
                     Set.of(
                             StaviaEvidenceTypes.OBRA,

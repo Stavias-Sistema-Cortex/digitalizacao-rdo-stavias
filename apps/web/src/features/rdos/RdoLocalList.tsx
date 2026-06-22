@@ -7,6 +7,7 @@ interface RdoLocalListProps {
   onCreate: () => void;
   onOpen: (record: LocalRdoRecord) => void;
   onRefresh: () => void;
+  onOpenStavia: () => void;
 }
 
 function formatDate(value: string): string {
@@ -26,6 +27,7 @@ export function RdoLocalList({
   onCreate,
   onOpen,
   onRefresh,
+  onOpenStavia,
 }: RdoLocalListProps) {
   return (
     <main className="page-shell">
@@ -51,6 +53,14 @@ export function RdoLocalList({
             disabled={isLoading}
           >
             Atualizar
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onOpenStavia}
+          >
+            Abrir Stav.IA
           </button>
 
           <button

@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import { SyncStatusBanner } from "../../components/SyncStatusBanner";
+import { StaviaPanel } from "../stavia/StaviaPanel";
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
 import { createEmptyRdo } from "./createEmptyRdo";
@@ -16,6 +17,9 @@ import type { RdoDraft } from "./rdo.types";
 type WorkspaceMode =
   | {
       type: "LIST";
+    }
+  | {
+      type: "STAVIA";
     }
   | {
       type: "FORM";
@@ -60,7 +64,13 @@ export function RdoWorkspacePage() {
     }, []);
 
   useEffect(() => {
-    void loadRecords();
+    const timeoutId = window.setTimeout(() => {
+      void loadRecords();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, [loadRecords]);
 
   function handleCreate() {
@@ -92,7 +102,17 @@ export function RdoWorkspacePage() {
 
   let pageContent;
 
-  if (mode.type === "FORM") {
+  if (mode.type === "STAVIA") {
+    pageContent = (
+      <StaviaPanel
+        onBack={() => {
+          setMode({
+            type: "LIST",
+          });
+        }}
+      />
+    );
+  } else if (mode.type === "FORM") {
     pageContent = (
       <RdoCreatePage
         key={mode.draft.id}
@@ -116,6 +136,11 @@ export function RdoWorkspacePage() {
         onOpen={handleOpen}
         onRefresh={() => {
           void loadRecords();
+        }}
+        onOpenStavia={() => {
+          setMode({
+            type: "STAVIA",
+          });
         }}
       />
     );

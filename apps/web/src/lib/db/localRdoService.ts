@@ -21,7 +21,9 @@ function nowUtc(): string {
 function removeLocalId<T extends { localId: string }>(
   item: T,
 ): Omit<T, "localId"> {
-  const { localId: _localId, ...payload } = item;
+  const { localId, ...payload } = item;
+
+  void localId;
 
   return payload;
 }
@@ -52,7 +54,8 @@ function buildEquipamentoPayload(
 function isMaterialEmpty(
   item: RdoDraft["materiais"][number],
 ): boolean {
-  const { localId: _localId, ...fields } = item;
+  const { localId, ...fields } = item;
+  void localId;
 
   return Object.values(fields).every(
     (value) =>

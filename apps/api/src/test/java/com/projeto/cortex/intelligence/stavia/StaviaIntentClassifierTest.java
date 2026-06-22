@@ -52,4 +52,38 @@ class StaviaIntentClassifierTest {
                 );
     }
 
+
+    @Test
+    void shouldClassifyWorksiteDateQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Qual é a data da obra?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_OBRA
+        );
+    }
+
+    @Test
+    void shouldClassifyWorksiteCodeQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Qual é o código CW desta obra?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_OBRA
+        );
+    }
+
+    @Test
+    void shouldClassifyWorksiteStartQuestion() {
+        assertThat(
+                classifier.classify(
+                        "Quando esta obra começou?"
+                )
+        ).isEqualTo(
+                StaviaIntent.CONSULTAR_OBRA
+        );
+    }
+
 }

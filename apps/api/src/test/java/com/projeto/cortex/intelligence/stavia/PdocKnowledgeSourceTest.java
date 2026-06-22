@@ -177,4 +177,49 @@ class PdocKnowledgeSourceTest {
                 5_000
         );
     }
+
+    @Test
+    void shouldNotSupportGeneralWorksiteQueries() {
+        PdocKnowledgeSource source =
+                new PdocKnowledgeSource(
+                        worksiteId -> Optional.empty()
+                );
+
+        StaviaKnowledgeRequest currentStateRequest =
+                new StaviaKnowledgeRequest(
+                        new StaviaQuestion(
+                                "Qual é o estado atual da obra?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_ESTADO_ATUAL,
+                        "obra-1",
+                        Set.of(
+                                StaviaEngine.REQUIRED_PERMISSION
+                        )
+                );
+
+        StaviaKnowledgeRequest summaryRequest =
+                new StaviaKnowledgeRequest(
+                        new StaviaQuestion(
+                                "Resuma esta obra.",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.RESUMIR_OBRA,
+                        "obra-1",
+                        Set.of(
+                                StaviaEngine.REQUIRED_PERMISSION
+                        )
+                );
+
+        assertFalse(
+                source.supports(currentStateRequest)
+        );
+
+        assertFalse(
+                source.supports(summaryRequest)
+        );
+    }
+
 }

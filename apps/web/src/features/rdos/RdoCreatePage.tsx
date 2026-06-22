@@ -32,7 +32,9 @@ function parseNumericInput(value: string): NumericInput {
 function removeLocalId<T extends { localId: string }>(
   item: T,
 ): Omit<T, "localId"> {
-  const { localId: _localId, ...payload } = item;
+  const { localId, ...payload } = item;
+
+  void localId;
 
   return payload;
 }

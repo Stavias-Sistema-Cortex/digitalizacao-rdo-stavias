@@ -72,11 +72,8 @@ public class PdocKnowledgeSource
             return false;
         }
 
-        return request.intent() == StaviaIntent.CONSULTAR_PDOC
-                || request.intent()
-                        == StaviaIntent.CONSULTAR_ESTADO_ATUAL
-                || request.intent()
-                        == StaviaIntent.RESUMIR_OBRA;
+        return request.intent()
+                == StaviaIntent.CONSULTAR_PDOC;
     }
 
     @Override

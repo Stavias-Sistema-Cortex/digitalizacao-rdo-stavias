@@ -77,12 +77,18 @@ async function requestJson<T>(
     ) {
       throw new Error(
         `Tempo limite excedido ao chamar ${path}.`,
+        {
+          cause: error,
+        },
       );
     }
 
     if (error instanceof TypeError) {
       throw new Error(
         "Não foi possível conectar ao backend do Córtex.",
+        {
+          cause: error,
+        },
       );
     }
 

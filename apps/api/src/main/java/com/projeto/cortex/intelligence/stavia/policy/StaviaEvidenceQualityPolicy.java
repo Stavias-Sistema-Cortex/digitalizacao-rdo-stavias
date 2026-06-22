@@ -1,6 +1,7 @@
 package com.projeto.cortex.intelligence.stavia.policy;
 
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -198,6 +199,14 @@ public class StaviaEvidenceQualityPolicy {
             StaviaEvidence evidence,
             Instant now
     ) {
+        if (
+                StaviaEvidenceTypes.OBRA.equals(
+                        evidence.type()
+                )
+        ) {
+            return false;
+        }
+
         if (evidence.updatedAt() == null) {
             return false;
         }

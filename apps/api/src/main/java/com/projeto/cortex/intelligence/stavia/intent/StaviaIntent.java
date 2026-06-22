@@ -1,6 +1,7 @@
 package com.projeto.cortex.intelligence.stavia.intent;
 
 public enum StaviaIntent {
+    CONSULTAR_OBRA,
     CONSULTAR_ESTADO_ATUAL,
     CONSULTAR_HISTORICO,
     CONSULTAR_RDO,

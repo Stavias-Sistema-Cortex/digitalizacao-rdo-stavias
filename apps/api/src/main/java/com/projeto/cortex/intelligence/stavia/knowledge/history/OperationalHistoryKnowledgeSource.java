@@ -54,8 +54,20 @@ public class OperationalHistoryKnowledgeSource
             return false;
         }
 
-        return request.intent()
-                != StaviaIntent.DESCONHECIDA;
+        return switch (request.intent()) {
+            case CONSULTAR_ESTADO_ATUAL,
+                    CONSULTAR_HISTORICO,
+                    CONSULTAR_RDO,
+                    CONSULTAR_PROGRAMACAO,
+                    CONSULTAR_EQUIPE,
+                    CONSULTAR_ATIVO,
+                    CONSULTAR_OCORRENCIA,
+                    RESUMIR_OBRA -> true;
+
+            case CONSULTAR_OBRA,
+                    CONSULTAR_PDOC,
+                    DESCONHECIDA -> false;
+        };
     }
 
     @Override
