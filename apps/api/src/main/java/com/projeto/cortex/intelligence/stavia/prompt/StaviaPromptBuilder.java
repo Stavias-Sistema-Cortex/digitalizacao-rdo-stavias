@@ -2,6 +2,7 @@ package com.projeto.cortex.intelligence.stavia.prompt;
 
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceKeys;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import com.projeto.cortex.intelligence.stavia.version.StaviaVersions;
 import org.springframework.stereotype.Component;
@@ -80,8 +81,6 @@ public class StaviaPromptBuilder {
     private String evidenceKey(
             StaviaEvidence evidence
     ) {
-        return evidence.type()
-                + ":"
-                + evidence.id();
+        return StaviaEvidenceKeys.key(evidence);
     }
 }

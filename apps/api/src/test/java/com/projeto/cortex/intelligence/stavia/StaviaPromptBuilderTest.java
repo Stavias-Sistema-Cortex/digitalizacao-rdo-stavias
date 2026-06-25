@@ -75,6 +75,30 @@ class StaviaPromptBuilderTest {
     }
 
     @Test
+    void shouldDeriveSourceKeyWithVersionSuffixLikeTheEngine() {
+        StaviaPrompt prompt =
+                builder.build(
+                        new StaviaQuestion("Qual a receita?", "usuario-1", "obra-1"),
+                        StaviaIntent.CONSULTAR_RECEITA,
+                        List.of(
+                                new StaviaEvidence(
+                                        "PREVISAO_FINANCEIRA",
+                                        "fin-1",
+                                        "Snapshot financeiro.",
+                                        Instant.parse("2026-06-22T12:00:00Z"),
+                                        true,
+                                        Map.of("versao", "7")
+                                )
+                        )
+                );
+
+        assertEquals(
+                "PREVISAO_FINANCEIRA:fin-1:version:7",
+                prompt.evidences().getFirst().sourceKey()
+        );
+    }
+
+    @Test
     void shouldRejectPromptWithoutEvidence() {
         assertThrows(
                 IllegalArgumentException.class,
