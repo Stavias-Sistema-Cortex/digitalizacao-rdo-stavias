@@ -71,4 +71,15 @@ class StaviaInterpretationCoordinatorTest {
 
         assertEquals(Origin.LLM, coordinator.interpret(q()).origin());
     }
+
+    @Test
+    void shouldUseDeterministicOnUnknownMode() {
+        StaviaQuestionInterpreter llm = question -> {
+            throw new AssertionError("LLM não deveria ser chamado para modo desconhecido");
+        };
+        StaviaInterpretationCoordinator coordinator =
+                new StaviaInterpretationCoordinator(deterministic, llm, "foo", 0.45);
+
+        assertEquals(Origin.DETERMINISTICO, coordinator.interpret(q()).origin());
+    }
 }

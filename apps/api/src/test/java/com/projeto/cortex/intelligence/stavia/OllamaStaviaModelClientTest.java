@@ -15,11 +15,13 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class OllamaStaviaModelClientTest {
 
@@ -40,7 +42,7 @@ class OllamaStaviaModelClientTest {
                 return canned;
             }
         };
-        return new OllamaStaviaModelClient(chat, new DeterministicStaviaModelClient());
+        return new OllamaStaviaModelClient(chat, new DeterministicStaviaModelClient(), new StaviaLlmProperties());
     }
 
     @Test
@@ -59,5 +61,39 @@ class OllamaStaviaModelClientTest {
         // o fallback determinístico concatena os resumos e cita a fonte
         assertEquals(List.of("RDO:rdo-1"), response.sourceKeys());
         assertTrue(response.text().contains("O RDO 1 foi registrado"));
+    }
+
+    @Test
+    void shouldCapEvidencesAtMaxEvidences() {
+        StaviaLlmProperties props = new StaviaLlmProperties(); // maxEvidences = 50
+        String[] capturedUserMessage = {null};
+
+        OllamaChatClient chat = new OllamaChatClient(
+                RestClient.builder(), props, Clock.systemUTC()) {
+            @Override
+            public String chat(List<ChatMessage> messages, double temperature) {
+                capturedUserMessage[0] = messages.get(1).content();
+                throw new OllamaUnavailableException("capturando");
+            }
+        };
+
+        List<StaviaPromptEvidence> evidences = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            evidences.add(new StaviaPromptEvidence(
+                    "KEY:" + i, "RDO", "Resumo " + i,
+                    Instant.parse("2026-06-22T12:00:00Z"), true, Map.of()));
+        }
+        StaviaPrompt bigPrompt = new StaviaPrompt(
+                StaviaVersions.PROMPT, "Instrução.", "Qual o RDO?", "CONSULTAR_RDO", evidences);
+
+        new OllamaStaviaModelClient(chat, new DeterministicStaviaModelClient(), props)
+                .generate(bigPrompt);
+
+        assertNotNull(capturedUserMessage[0]);
+        long count = capturedUserMessage[0].lines()
+                .filter(line -> line.contains("sourceKey="))
+                .count();
+        assertTrue(count <= props.getMaxEvidences(),
+                "Esperado no máximo " + props.getMaxEvidences() + " evidências, mas obteve " + count);
     }
 }

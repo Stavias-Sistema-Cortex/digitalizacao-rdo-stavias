@@ -33,7 +33,8 @@ public class StaviaInterpretationCoordinator {
     public StaviaInterpretation interpret(StaviaQuestion question) {
         StaviaInterpretation fallback = deterministic.interpret(question).orElseThrow();
 
-        if (llm == null || "deterministic".equals(mode)) {
+        boolean llmMode = "llm".equals(mode) || "llm-on-doubt".equals(mode);
+        if (llm == null || !llmMode) {
             return fallback;
         }
 

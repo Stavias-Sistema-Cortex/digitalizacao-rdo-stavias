@@ -3,9 +3,9 @@ package com.projeto.cortex.intelligence.stavia.generation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.intelligence.stavia.llm.OllamaChatClient;
+import com.projeto.cortex.intelligence.stavia.llm.StaviaLlmProperties;
 import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.prompt.StaviaPrompt;
-import com.projeto.cortex.intelligence.stavia.prompt.StaviaPromptEvidence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,14 +25,17 @@ public class OllamaStaviaModelClient implements StaviaModelClient {
 
     private final OllamaChatClient chatClient;
     private final DeterministicStaviaModelClient fallback;
+    private final StaviaLlmProperties props;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public OllamaStaviaModelClient(
             OllamaChatClient chatClient,
-            DeterministicStaviaModelClient fallback
+            DeterministicStaviaModelClient fallback,
+            StaviaLlmProperties props
     ) {
         this.chatClient = chatClient;
         this.fallback = fallback;
+        this.props = props;
     }
 
     @Override
@@ -79,10 +82,10 @@ public class OllamaStaviaModelClient implements StaviaModelClient {
     private String userMessage(StaviaPrompt prompt) {
         StringBuilder builder = new StringBuilder();
         builder.append("Pergunta: ").append(prompt.userQuestion()).append("\n\nEvidências:\n");
-        for (StaviaPromptEvidence evidence : prompt.evidences()) {
-            builder.append("- sourceKey=").append(evidence.sourceKey())
-                    .append(" | ").append(evidence.summary()).append("\n");
-        }
+        prompt.evidences().stream()
+                .limit(props.getMaxEvidences())
+                .forEach(evidence -> builder.append("- sourceKey=").append(evidence.sourceKey())
+                        .append(" | ").append(evidence.summary()).append("\n"));
         return builder.toString();
     }
 }
