@@ -30,6 +30,16 @@ cortex:
     fixed-delay-ms: ${CORTEX_SYNC_FIXED_DELAY_MS:300000}
 
   sources:
+    zeladoria:
+      url: ${CORTEX_ZELADORIA_DB_URL:${ZLD_DB_URL:}}
+      username: ${CORTEX_ZELADORIA_DB_USER:${ZLD_DB_USER:}}
+      password: ${CORTEX_ZELADORIA_DB_PASSWORD:${ZLD_DB_PASSWORD:}}
+
+    academy:
+      url: ${CORTEX_ACADEMY_DB_URL:${ACAD_DB_URL:}}
+      username: ${CORTEX_ACADEMY_DB_USER:${ACAD_DB_USER:}}
+      password: ${CORTEX_ACADEMY_DB_PASSWORD:${ACAD_DB_PASSWORD:}}
+
     zld:
       url: ${ZLD_DB_URL:}
       username: ${ZLD_DB_USER:}
@@ -42,3 +52,14 @@ cortex:
 
   stavia:
     generator-mode: ${CORTEX_STAVIA_GENERATOR_MODE:deterministic}
+    interpreter-mode: ${CORTEX_STAVIA_INTERPRETER_MODE:deterministic}
+    llm:
+      base-url: ${CORTEX_STAVIA_LLM_BASE_URL:http://localhost:11434/v1}
+      model: ${CORTEX_STAVIA_LLM_MODEL:qwen2.5:7b-instruct}
+      api-key: ${CORTEX_STAVIA_LLM_API_KEY:ollama}
+      connect-timeout-ms: 2000
+      read-timeout-ms: ${CORTEX_STAVIA_LLM_READ_TIMEOUT_MS:20000}
+      max-evidences: 50
+      confidence-threshold: 0.45
+      breaker-failure-threshold: 3
+      breaker-open-seconds: 30

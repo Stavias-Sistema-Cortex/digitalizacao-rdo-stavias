@@ -32,6 +32,12 @@ public final class StaviaVersions {
     public static final String ONTOLOGY_SOURCE =
             "STAVIA-ONTOLOGY-SOURCE-0.1.0";
 
+    public static final String INTERPRETATION =
+            "STAVIA-INTERPRETATION-0.1.0";
+
+    public static final String LLM_CHAT_CLIENT =
+            "STAVIA-OLLAMA-CHAT-0.1.0";
+
     private StaviaVersions() {
         throw new IllegalStateException(
                 "Esta classe não deve ser instanciada."
