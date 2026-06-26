@@ -19,6 +19,10 @@ public class OllamaChatClient {
     private final ObjectMapper mapper = new ObjectMapper();
     private final Clock clock;
 
+    // Circuit-breaker state
+    private int consecutiveFailures = 0;
+    private java.time.Instant openUntil = java.time.Instant.MIN;
+
     public OllamaChatClient(RestClient.Builder builder, StaviaLlmProperties props, Clock clock) {
         this.props = props;
         this.clock = clock;
@@ -26,6 +30,11 @@ public class OllamaChatClient {
     }
 
     public String chat(List<ChatMessage> messages, double temperature) {
+        // Circuit-breaker: short-circuit WITHOUT counting as a new failure
+        if (clock.instant().isBefore(openUntil)) {
+            throw new OllamaUnavailableException("Modelo local indisponível (circuito aberto).");
+        }
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", props.getModel());
         body.put("temperature", temperature);
@@ -44,26 +53,40 @@ public class OllamaChatClient {
                     .retrieve()
                     .body(String.class);
         } catch (RuntimeException exception) {
-            throw new OllamaUnavailableException(
-                    "Falha ao chamar o modelo local.", exception);
+            throw fail("Falha ao chamar o modelo local.", exception);
         }
 
         if (raw == null || raw.isBlank()) {
-            throw new OllamaUnavailableException("Resposta vazia do modelo.");
+            throw fail("Resposta vazia do modelo.", null);
         }
 
         try {
             JsonNode root = mapper.readTree(raw);
             JsonNode content = root.path("choices").path(0).path("message").path("content");
             if (content.isMissingNode() || content.asText().isBlank()) {
-                throw new OllamaUnavailableException("Resposta do modelo sem conteúdo.");
+                throw fail("Resposta do modelo sem conteúdo.", null);
             }
+            consecutiveFailures = 0;
             return content.asText();
         } catch (OllamaUnavailableException e) {
             throw e;
         } catch (Exception exception) {
-            throw new OllamaUnavailableException(
-                    "Resposta do modelo ilegível.", exception);
+            throw fail("Resposta do modelo ilegível.", exception);
+        }
+    }
+
+    private RuntimeException fail(String message, Throwable cause) {
+        registerFailure();
+        return cause == null
+                ? new OllamaUnavailableException(message)
+                : new OllamaUnavailableException(message, cause);
+    }
+
+    private void registerFailure() {
+        consecutiveFailures++;
+        if (consecutiveFailures >= props.getBreakerFailureThreshold()) {
+            openUntil = clock.instant().plusSeconds(props.getBreakerOpenSeconds());
+            consecutiveFailures = 0;
         }
     }
 }
