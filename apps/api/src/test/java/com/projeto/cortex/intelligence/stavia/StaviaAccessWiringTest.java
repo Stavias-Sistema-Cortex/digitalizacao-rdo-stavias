@@ -7,11 +7,18 @@ import com.projeto.cortex.intelligence.stavia.api.StaviaController;
 import com.projeto.cortex.intelligence.stavia.context.StaviaContextBuilder;
 import com.projeto.cortex.intelligence.stavia.generation.DeterministicStaviaResponseGenerator;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntentClassifier;
+import com.projeto.cortex.intelligence.stavia.interpret.DeterministicQuestionInterpreter;
+import com.projeto.cortex.intelligence.stavia.interpret.LlmQuestionInterpreter;
+import com.projeto.cortex.intelligence.stavia.interpret.StaviaInterpretationConfiguration;
+import com.projeto.cortex.intelligence.stavia.interpret.StaviaInterpretationPromptBuilder;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeOrchestrator;
+import com.projeto.cortex.intelligence.stavia.llm.StaviaLlmProperties;
+import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlanner;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaContradictionPolicy;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaEvidenceQualityPolicy;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaGroundingValidator;
 import com.projeto.cortex.intelligence.stavia.retrieval.StaviaEvidenceSelector;
+import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
@@ -90,7 +97,14 @@ class StaviaAccessWiringTest {
             StaviaContradictionPolicy.class,
             DeterministicStaviaResponseGenerator.class,
             LocalStaviaAccessPolicy.class,
-            DenyAllStaviaAccessPolicy.class
+            DenyAllStaviaAccessPolicy.class,
+            StaviaInterpretationConfiguration.class,
+            DeterministicQuestionInterpreter.class,
+            LlmQuestionInterpreter.class,
+            StaviaQueryPlanner.class,
+            StaviaSemanticCatalog.class,
+            StaviaInterpretationPromptBuilder.class,
+            StaviaLlmProperties.class
     })
     static class StaviaQueryConfiguration {
     }

@@ -46,6 +46,47 @@ public class StaviaQueryService {
             StaviaKnowledgeOrchestrator knowledgeOrchestrator,
             StaviaContextBuilder contextBuilder,
             StaviaEngine engine,
+            StaviaAccessPolicy accessPolicy,
+            StaviaInterpretationCoordinator coordinator
+    ) {
+        this.intentClassifier = require(
+                intentClassifier,
+                "O classificador de intenção deve ser informado."
+        );
+
+        this.knowledgeOrchestrator = require(
+                knowledgeOrchestrator,
+                "O orquestrador de conhecimento deve ser informado."
+        );
+
+        this.contextBuilder = require(
+                contextBuilder,
+                "O builder de contexto deve ser informado."
+        );
+
+        this.engine = require(
+                engine,
+                "O motor da Stav.IA deve ser informado."
+        );
+
+        this.accessPolicy = require(
+                accessPolicy,
+                "A política de acesso da Stav.IA deve ser informada."
+        );
+
+        this.queryPlanner = new StaviaQueryPlanner(new StaviaSemanticCatalog());
+
+        this.coordinator = require(
+                coordinator,
+                "O coordinator de interpretação da Stav.IA deve ser informado."
+        );
+    }
+
+    public StaviaQueryService(
+            StaviaIntentClassifier intentClassifier,
+            StaviaKnowledgeOrchestrator knowledgeOrchestrator,
+            StaviaContextBuilder contextBuilder,
+            StaviaEngine engine,
             StaviaAccessPolicy accessPolicy
     ) {
         this(
