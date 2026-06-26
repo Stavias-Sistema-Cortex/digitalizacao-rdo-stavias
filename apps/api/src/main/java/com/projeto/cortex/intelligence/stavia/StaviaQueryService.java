@@ -3,9 +3,11 @@ package com.projeto.cortex.intelligence.stavia;
 import com.projeto.cortex.intelligence.stavia.access.StaviaAccessPolicy;
 import com.projeto.cortex.intelligence.stavia.context.StaviaContextBuilder;
 import com.projeto.cortex.intelligence.stavia.context.StaviaRawContext;
-import com.projeto.cortex.intelligence.stavia.intent.StaviaClassification;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntentClassifier;
+import com.projeto.cortex.intelligence.stavia.interpret.DeterministicQuestionInterpreter;
+import com.projeto.cortex.intelligence.stavia.interpret.StaviaInterpretation;
+import com.projeto.cortex.intelligence.stavia.interpret.StaviaInterpretationCoordinator;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeBundle;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeOrchestrator;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
@@ -13,6 +15,12 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaAnswer;
 import com.projeto.cortex.intelligence.stavia.model.StaviaContext;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
+import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlan;
+import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlanner;
+import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -21,18 +29,44 @@ import java.util.Set;
 @Service
 public class StaviaQueryService {
 
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(StaviaQueryService.class);
+
     private final StaviaIntentClassifier intentClassifier;
     private final StaviaKnowledgeOrchestrator knowledgeOrchestrator;
     private final StaviaContextBuilder contextBuilder;
     private final StaviaEngine engine;
     private final StaviaAccessPolicy accessPolicy;
+    private final StaviaQueryPlanner queryPlanner;
+    private final StaviaInterpretationCoordinator coordinator;
 
+    @Autowired
     public StaviaQueryService(
             StaviaIntentClassifier intentClassifier,
             StaviaKnowledgeOrchestrator knowledgeOrchestrator,
             StaviaContextBuilder contextBuilder,
             StaviaEngine engine,
             StaviaAccessPolicy accessPolicy
+    ) {
+        this(
+                intentClassifier,
+                knowledgeOrchestrator,
+                contextBuilder,
+                engine,
+                accessPolicy,
+                new StaviaQueryPlanner(
+                        new StaviaSemanticCatalog()
+                )
+        );
+    }
+
+    public StaviaQueryService(
+            StaviaIntentClassifier intentClassifier,
+            StaviaKnowledgeOrchestrator knowledgeOrchestrator,
+            StaviaContextBuilder contextBuilder,
+            StaviaEngine engine,
+            StaviaAccessPolicy accessPolicy,
+            StaviaQueryPlanner queryPlanner
     ) {
         this.intentClassifier = require(
                 intentClassifier,
@@ -58,6 +92,15 @@ public class StaviaQueryService {
                 accessPolicy,
                 "A política de acesso da Stav.IA deve ser informada."
         );
+
+        this.queryPlanner = require(
+                queryPlanner,
+                "O planejador de consultas da Stav.IA deve ser informado."
+        );
+
+        this.coordinator = new StaviaInterpretationCoordinator(
+                new DeterministicQuestionInterpreter(intentClassifier, queryPlanner),
+                null, "deterministic", 0.45);
     }
 
     public StaviaQueryResult query(
@@ -106,6 +149,12 @@ public class StaviaQueryService {
                         question.obraId()
                 )
         ) {
+            LOGGER.warn(
+                    "Consulta Stav.IA negada por obra. worksiteIdPresent={} userIdPresent={}",
+                    question.obraId() != null && !question.obraId().isBlank(),
+                    question.userId() != null && !question.userId().isBlank()
+            );
+
             StaviaAnswer answer =
                     engine.answer(
                             question,
@@ -126,17 +175,27 @@ public class StaviaQueryService {
             );
         }
 
-        StaviaClassification classification =
-                intentClassifier.classifyDetailed(question.text());
+        StaviaInterpretation interpretation = coordinator.interpret(question);
+        StaviaQueryPlan plan = interpretation.plan();
+        StaviaIntent intent = interpretation.intent();
 
-        StaviaIntent intent = classification.intent();
+        LOGGER.info(
+                "Planner Stav.IA concluído. classifiedIntent={} effectiveIntent={} planDomain={} operation={} requestedAttributes={} requiredSources={}",
+                interpretation.classification().intent(),
+                intent,
+                plan.domain(),
+                plan.operation(),
+                plan.requestedAttributes().size(),
+                plan.requiredSources()
+        );
 
         StaviaKnowledgeRequest knowledgeRequest =
                 new StaviaKnowledgeRequest(
                         question,
                         intent,
                         question.obraId(),
-                        normalizedPermissions
+                        normalizedPermissions,
+                        plan
                 );
 
         StaviaKnowledgeBundle knowledgeBundle =
@@ -173,7 +232,7 @@ public class StaviaQueryService {
         return new StaviaQueryResult(
                 answer,
                 intent,
-                classification.confidence(),
+                interpretation.classification().confidence(),
                 knowledgeBundle.consultedSources(),
                 knowledgeBundle.warnings()
         );
