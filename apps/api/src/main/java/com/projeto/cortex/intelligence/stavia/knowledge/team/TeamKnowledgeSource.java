@@ -2,6 +2,7 @@ package com.projeto.cortex.intelligence.stavia.knowledge.team;
 
 import com.projeto.cortex.intelligence.stavia.StaviaEngine;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
+import com.projeto.cortex.intelligence.stavia.interpret.StaviaEntityFilters;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
@@ -69,12 +70,26 @@ public class TeamKnowledgeSource
     public List<StaviaEvidence> retrieve(
             StaviaKnowledgeRequest request
     ) {
+        StaviaEntityFilters filters =
+                StaviaEntityFilters.from(
+                        request.plan().entities()
+                );
+
         return teamReader
                 .findByWorksiteId(
                         request.worksiteId()
                 )
                 .stream()
                 .filter(this::hasUsableInformation)
+                .filter(rec ->
+                        filters.matchesRole(rec.role())
+                        && filters.matchesCollaborator(
+                                StaviaText.fallback(
+                                        rec.registeredCollaboratorName(),
+                                        rec.recordedName()
+                                )
+                        )
+                )
                 .map(this::toEvidence)
                 .toList();
     }

@@ -7,6 +7,11 @@ import com.projeto.cortex.intelligence.stavia.knowledge.team.TeamRecord;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
+import com.projeto.cortex.intelligence.stavia.planning.QueryDomain;
+import com.projeto.cortex.intelligence.stavia.planning.QueryOperation;
+import com.projeto.cortex.intelligence.stavia.planning.ResolvedEntity;
+import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlan;
+import com.projeto.cortex.intelligence.stavia.planning.TemporalFilter;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -79,11 +84,47 @@ class TeamKnowledgeSourceTest {
         );
     }
 
+    @Test
+    void shouldFilterTeamByRole() {
+        TeamKnowledgeSource source = new TeamKnowledgeSource(
+                worksiteId -> List.of(
+                        groupedRecord(worksiteId, "Apontador", "mao-obra-apontador"),
+                        groupedRecord(worksiteId, "Servente", "mao-obra-servente")
+                )
+        );
+
+        StaviaQueryPlan plan = new StaviaQueryPlan(
+                QueryDomain.EQUIPE, QueryOperation.READ_ATTRIBUTE,
+                List.of(ResolvedEntity.roleByLabel("apontador")),
+                TemporalFilter.none(), List.of(), List.of(), List.of(), List.of(),
+                false, false, false);
+
+        StaviaKnowledgeRequest request = new StaviaKnowledgeRequest(
+                new StaviaQuestion("Quem é o apontador da obra?", "u1", "obra-1"),
+                StaviaIntent.CONSULTAR_EQUIPE,
+                "obra-1",
+                Set.of(StaviaEngine.REQUIRED_PERMISSION),
+                plan);
+
+        List<StaviaEvidence> evidences = source.retrieve(request);
+
+        assertThat(evidences).hasSize(1);
+        assertThat(evidences.getFirst().summary().toLowerCase()).contains("apontador");
+    }
+
     private TeamRecord groupedRecord(
             String worksiteId
     ) {
+        return groupedRecord(worksiteId, "Operador", "mao-obra-1");
+    }
+
+    private TeamRecord groupedRecord(
+            String worksiteId,
+            String role,
+            String laborRecordId
+    ) {
         return new TeamRecord(
-                "mao-obra-1",
+                laborRecordId,
                 worksiteId,
                 "rdo-1",
                 "RDO-001",
@@ -96,7 +137,7 @@ class TeamKnowledgeSourceTest {
                 null,
                 "Equipe operacional teste",
                 null,
-                "Operador",
+                role,
                 "CONTRATADO",
                 new BigDecimal("4.000"),
                 null,
