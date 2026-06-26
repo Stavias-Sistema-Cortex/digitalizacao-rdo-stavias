@@ -12,6 +12,7 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.model.StaviaConfidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaContext;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceKeys;
 import com.projeto.cortex.intelligence.stavia.model.StaviaExecutionMetadata;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaContradictionAssessment;
@@ -177,10 +178,10 @@ public class StaviaEngine {
         }
 
         List<StaviaEvidence> limitedSources =
-                selectedEvidence
-                        .stream()
-                        .limit(5)
-                        .toList();
+                limitSources(
+                        intent,
+                        selectedEvidence
+                );
 
         StaviaContradictionAssessment contradictionAssessment =
                 contradictionPolicy.assess(
@@ -279,6 +280,30 @@ public class StaviaEngine {
         );
     }
 
+    private List<StaviaEvidence> limitSources(
+            StaviaIntent intent,
+            List<StaviaEvidence> selectedEvidence
+    ) {
+        int limit = switch (intent) {
+            case CONSULTAR_HISTORICO -> 200;
+            case CONSULTAR_EQUIPE,
+                    CONSULTAR_ATIVO,
+                    CONSULTAR_OCORRENCIA,
+                    CONSULTAR_ALOCACAO_COLABORADOR,
+                    CONSULTAR_FREQUENCIA,
+                    CONSULTAR_BANCO_HORAS,
+                    CONSULTAR_RDO,
+                    CONSULTAR_PROGRAMACAO -> 50;
+            case RESUMIR_OBRA -> 25;
+            default -> 5;
+        };
+
+        return selectedEvidence
+                .stream()
+                .limit(limit)
+                .toList();
+    }
+
     private StaviaAnswer insufficientAnswer(
             String answer,
             List<String> warnings
@@ -335,9 +360,7 @@ public class StaviaEngine {
     private String evidenceKey(
             StaviaEvidence evidence
     ) {
-        return evidence.type()
-                + ":"
-                + evidence.id();
+        return StaviaEvidenceKeys.key(evidence);
     }
 
     private StaviaConfidence mapConfidence(
