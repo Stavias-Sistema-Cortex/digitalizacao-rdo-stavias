@@ -2,6 +2,7 @@ package com.projeto.cortex.intelligence.stavia.knowledge;
 
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
+import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlan;
 
 import java.util.Set;
 
@@ -9,7 +10,8 @@ public record StaviaKnowledgeRequest(
         StaviaQuestion question,
         StaviaIntent intent,
         String worksiteId,
-        Set<String> permissions
+        Set<String> permissions,
+        StaviaQueryPlan plan
 ) {
 
     public StaviaKnowledgeRequest {
@@ -36,5 +38,24 @@ public record StaviaKnowledgeRequest(
         permissions = permissions == null
                 ? Set.of()
                 : Set.copyOf(permissions);
+
+        plan = plan == null
+                ? StaviaQueryPlan.empty()
+                : plan;
+    }
+
+    public StaviaKnowledgeRequest(
+            StaviaQuestion question,
+            StaviaIntent intent,
+            String worksiteId,
+            Set<String> permissions
+    ) {
+        this(
+                question,
+                intent,
+                worksiteId,
+                permissions,
+                StaviaQueryPlan.empty()
+        );
     }
 }

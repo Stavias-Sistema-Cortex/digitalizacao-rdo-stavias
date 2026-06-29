@@ -7,6 +7,8 @@ import java.util.List;
 @Service
 public class ColaboradorService {
 
+    private static final int MAX_LOOKUP_RESULTS = 50;
+
     private final ColaboradorRepository colaboradorRepository;
 
     public ColaboradorService(ColaboradorRepository colaboradorRepository) {
@@ -23,6 +25,7 @@ public class ColaboradorService {
         }
 
         return colaboradores.stream()
+                .limit(MAX_LOOKUP_RESULTS)
                 .map(ColaboradorResponse::from)
                 .toList();
     }

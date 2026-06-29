@@ -222,15 +222,20 @@ public class StaviaEngine {
         StaviaGeneratedResponse generatedResponse =
                 generationResult.response();
 
+        boolean generatedInsufficientAnswer =
+                generatedResponse.answerType()
+                        == StaviaAnswerType.INFORMACAO_INSUFICIENTE;
+
         List<StaviaEvidence> citedSources =
-                resolveGeneratedSources(
-                        generatedResponse,
-                        limitedSources
-                );
+                generatedInsufficientAnswer
+                        ? List.of()
+                        : resolveGeneratedSources(
+                                generatedResponse,
+                                limitedSources
+                        );
 
         if (
-                generatedResponse.answerType()
-                        != StaviaAnswerType.INFORMACAO_INSUFICIENTE
+                !generatedInsufficientAnswer
                 && citedSources.isEmpty()
         ) {
             return insufficientAnswer(
@@ -244,12 +249,14 @@ public class StaviaEngine {
         StaviaAnswer draftAnswer =
                 new StaviaAnswer(
                         generatedResponse.text(),
-                        mapConfidence(
-                                qualityAssessment.quality()
-                        ),
+                        generatedInsufficientAnswer
+                                ? StaviaConfidence.INDETERMINADA
+                                : mapConfidence(
+                                        qualityAssessment.quality()
+                                ),
                         generatedResponse.answerType(),
                         citedSources,
-                        false,
+                        generatedInsufficientAnswer,
                         buildWarnings(
                                 limitedSources,
                                 qualityAssessment,

@@ -33,7 +33,7 @@ class OllamaChatClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("http://localhost:11434/v1/chat/completions"))
                 .andExpect(method(POST))
-                .andExpect(jsonPath("$.model").value("qwen2.5:7b-instruct"))
+                .andExpect(jsonPath("$.model").value("gemma4:latest"))
                 .andExpect(jsonPath("$.response_format.type").value("json_object"))
                 .andRespond(withSuccess(
                         "{\"choices\":[{\"message\":{\"content\":\"{\\\"ok\\\":true}\"}}]}",

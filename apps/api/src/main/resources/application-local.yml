@@ -1,0 +1,8 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+
+cortex:
+  import:
+    enabled: ${CORTEX_IMPORT_ENABLED:false}

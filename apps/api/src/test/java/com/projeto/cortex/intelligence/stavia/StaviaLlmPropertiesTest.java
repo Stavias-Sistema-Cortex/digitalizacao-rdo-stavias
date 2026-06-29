@@ -11,7 +11,8 @@ class StaviaLlmPropertiesTest {
     void shouldExposeSaneDefaults() {
         StaviaLlmProperties props = new StaviaLlmProperties();
         assertEquals("http://localhost:11434/v1", props.getBaseUrl());
-        assertEquals("qwen2.5:7b-instruct", props.getModel());
+        assertEquals("gemma4:latest", props.getModel());
+        assertEquals(45000, props.getReadTimeoutMs());
         assertEquals(3, props.getBreakerFailureThreshold());
         assertEquals(30, props.getBreakerOpenSeconds());
         assertEquals(50, props.getMaxEvidences());

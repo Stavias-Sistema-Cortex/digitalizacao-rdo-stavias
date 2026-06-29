@@ -5,6 +5,7 @@ import com.projeto.cortex.intelligence.stavia.generation.StaviaGeneratedResponse
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +47,7 @@ class DeterministicStaviaResponseGeneratorTest {
 
         assertTrue(
                 response.text().contains(
-                        "O RDO 1 foi registrado"
+                        "RDO 1"
                 )
         );
 
@@ -72,6 +73,421 @@ class DeterministicStaviaResponseGeneratorTest {
         );
     }
 
+    @Test
+    void shouldListTeamMembersWithoutRepeatingTheSamePerson() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Quem são os apontadores?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_EQUIPE,
+                List.of(
+                        teamEvidence("equipe-1", "rdo-1", "Maria Souza", "Apontador"),
+                        teamEvidence("equipe-2", "rdo-2", "Maria Souza", "Apontador")
+                )
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("Maria Souza — Apontador"));
+        assertTrue(response.text().contains("registrado em 2 RDOs"));
+    }
+
+    @Test
+    void shouldComposeGranularHistoryTimeline() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "Qual é o histórico de alterações dos RDOs?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_HISTORICO,
+                        List.of(
+                                eventEvidence(
+                                        "evento-1",
+                                        1L,
+                                        "RDO_CRIADO",
+                                        Map.of(
+                                                "numeroRdo",
+                                                "RDO-1",
+                                                "status",
+                                                "RASCUNHO"
+                                        )
+                                ),
+                                eventEvidence(
+                                        "evento-2",
+                                        2L,
+                                        "RDO_EDITADO",
+                                        Map.of(
+                                                "numeroRdo",
+                                                "RDO-1",
+                                                "alteracoes",
+                                                List.of(
+                                                        Map.of(
+                                                                "campo",
+                                                                "condicaoManha",
+                                                                "rotulo",
+                                                                "Condição da manhã",
+                                                                "valorAnterior",
+                                                                "Nublado",
+                                                                "valorNovo",
+                                                                "Chuva"
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                );
+
+        assertTrue(response.text().contains("Foi encontrado 1 RDO"));
+        assertTrue(response.text().contains("RDO RDO-1"));
+        assertTrue(response.text().contains("RDO criado como rascunho"));
+        assertTrue(
+                response.text().contains(
+                        "Condição da manhã alterada de Nublado para Chuva"
+                )
+        );
+    }
+
+    @Test
+    void shouldComposeProgrammingAnswerWithoutProgramacaoAsFact() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "De qual programação operacional cada RDO foi gerado?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_PROGRAMACAO,
+                        List.of(
+                                new StaviaEvidence(
+                                        StaviaEvidenceTypes.RDO,
+                                        "rdo-1",
+                                        "RDO RDO-1 sem programação operacional associada.",
+                                        Instant.parse(
+                                                "2026-06-25T12:00:00Z"
+                                        ),
+                                        true,
+                                        Map.of(
+                                                "numeroRdo",
+                                                "RDO-1",
+                                                "dataRdo",
+                                                "2026-06-25",
+                                                "status",
+                                                "RASCUNHO"
+                                        )
+                                )
+                        )
+                );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(
+                response.text().contains(
+                        "não possui programação operacional associada"
+                )
+        );
+    }
+
+    @Test
+    void shouldComposeLatestWeatherAttributeAnswer() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "Qual é a condição de clima mais recente?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_RDO,
+                        List.of(
+                                rdoAttribute(
+                                        "condicaoManha",
+                                        "Manhã",
+                                        "Chuva"
+                                ),
+                                rdoAttribute(
+                                        "condicaoTarde",
+                                        "Tarde",
+                                        "Nublado"
+                                ),
+                                rdoAttribute(
+                                        "condicaoNoite",
+                                        "Noite",
+                                        "Não aplicável"
+                                ),
+                                rdoAttribute(
+                                        "pluviometriaMm",
+                                        "Pluviometria",
+                                        "0"
+                                )
+                        )
+                );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("Manhã: Chuva"));
+        assertTrue(response.text().contains("Tarde: Nublado"));
+        assertTrue(response.text().contains("Pluviometria: 0 mm"));
+        assertTrue(response.text().contains("RDO-TESTE-3"));
+        assertTrue(response.text().contains("não consta como validado"));
+        assertEquals(
+                List.of(
+                        "RDO_ATTRIBUTE:rdo-3:condicaoManha",
+                        "RDO_ATTRIBUTE:rdo-3:condicaoTarde",
+                        "RDO_ATTRIBUTE:rdo-3:condicaoNoite",
+                        "RDO_ATTRIBUTE:rdo-3:pluviometriaMm"
+                ),
+                response.sourceKeys()
+        );
+    }
+
+    @Test
+    void shouldAnswerDirectWorksiteCityWithOnlyTheCity() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "Qual é a cidade da obra?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_OBRA,
+                        List.of(
+                                new StaviaEvidence(
+                                        StaviaEvidenceTypes.OBRA,
+                                        "obra-1",
+                                        "Obra localizada em São Paulo/SP.",
+                                        Instant.parse("2026-06-25T12:00:00Z"),
+                                        true,
+                                        Map.of(
+                                                "obraId", "obra-1",
+                                                "cidade", "São Paulo",
+                                                "uf", "SP",
+                                                "rodovia", "SP-348"
+                                        )
+                                )
+                        )
+                );
+
+        assertEquals("São Paulo", response.text());
+    }
+
+    @Test
+    void shouldAnswerDirectRdoShiftWithOnlyTheShift() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "Qual é o turno dessa obra?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_RDO,
+                        List.of(
+                                rdoAttribute(
+                                        "turno",
+                                        "Turno",
+                                        "DIURNO"
+                                )
+                        )
+                );
+
+        assertEquals("Diurno", response.text());
+    }
+
+    @Test
+    void shouldComposeInsufficientPdocSnapshotAnswer() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "Qual é o risco de estouro de custos segundo o PDOC?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_PDOC,
+                        List.of(
+                                new StaviaEvidence(
+                                        StaviaEvidenceTypes.PDOC,
+                                        "pdoc-1",
+                                        "Snapshot PDOC com dados insuficientes.",
+                                        Instant.parse(
+                                                "2026-06-25T12:00:00Z"
+                                        ),
+                                        true,
+                                        Map.of(
+                                                "statusExecucao",
+                                                "INSUFFICIENT_DATA",
+                                                "codigoCw",
+                                                "CW38386",
+                                                "dataReferencia",
+                                                "2026-06-08",
+                                                "missingRequiredFields",
+                                                List.of(
+                                                        "approvedBudget",
+                                                        "actualCost",
+                                                        "committedCost",
+                                                        "actualExecutedQuantity"
+                                                )
+                                        )
+                                )
+                        )
+                );
+
+        assertTrue(response.text().contains("PDOC foi executado"));
+        assertTrue(response.text().contains("orçamento aprovado"));
+        assertTrue(response.text().contains("P50, P80, P95"));
+    }
+
+    @Test
+    void shouldComposeCollaboratorProfileFromLegacyAllocations() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Quem é Abner Pereira?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR,
+                List.of(
+                        allocationEvidence(
+                                "alocacao-1",
+                                "obra-1",
+                                "CW38386",
+                                "4ª Intervenção",
+                                null
+                        ),
+                        allocationEvidence(
+                                "alocacao-2",
+                                "obra-2",
+                                "ENG-NASC-101.2025",
+                                "Via Nascentes",
+                                "Apontador"
+                        )
+                )
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("ABNER PEREIRA LANZA"));
+        assertTrue(response.text().contains("aparece como Apontador"));
+        assertTrue(response.text().contains("CW38386"));
+        assertTrue(response.text().contains("Via Nascentes"));
+    }
+
+    @Test
+    void shouldAnswerCollaboratorProfileFromAcademyCatalogWhenNoAllocationExists() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Quem é Abner Pereira?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR,
+                List.of(
+                        collaboratorEvidence()
+                )
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("ABNER PEREIRA LANZA"));
+        assertTrue(response.text().contains("cadastrado no Academy"));
+        assertTrue(response.text().contains("Não encontrei registro operacional"));
+    }
+
+    @Test
+    void shouldComposeOperationalSegmentAnswer() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "O que aconteceu entre o km 10 e o km 12?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        new StaviaEvidence(
+                                StaviaEvidenceTypes.TRECHO_OPERACIONAL,
+                                "trecho-1",
+                                "Controle geométrico do km 10 ao km 12.",
+                                Instant.parse("2026-06-25T12:00:00Z"),
+                                true,
+                                Map.of(
+                                        "numeroRdo", "RDO-12",
+                                        "rodovia", "BR-101",
+                                        "kmInicial", "10",
+                                        "kmFinal", "12",
+                                        "subtrecho", "Faixa norte",
+                                        "dataRdo", "2026-06-25",
+                                        "status", "ENVIADO",
+                                        "comprimentoM", 2000
+                                )
+                        )
+                )
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("RDO RDO-12"));
+        assertTrue(response.text().contains("km 10 a 12"));
+        assertTrue(response.text().contains("BR-101"));
+    }
+
+    @Test
+    void shouldComposeSegmentMeasurementTotals() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Qual é a área total executada nesta obra?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        segmentEvidence(
+                                "trecho-1",
+                                "100.500",
+                                "12.250",
+                                "50.000"
+                        ),
+                        segmentEvidence(
+                                "trecho-2",
+                                "200.000",
+                                "24.500",
+                                "100.000"
+                        )
+                )
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("2 controles geométricos"));
+        assertTrue(response.text().contains("300.5 m²"));
+        assertTrue(response.text().contains("150 m"));
+    }
+
+    @Test
+    void shouldExplainWhenSegmentHasNoGeometricControl() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "O que aconteceu entre o km 10 e o km 12?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        new StaviaEvidence(
+                                StaviaEvidenceTypes.TRECHO_OPERACIONAL,
+                                "sem-dados-trecho",
+                                "Nenhum controle geométrico foi localizado.",
+                                null,
+                                true,
+                                Map.of(
+                                        "classe", "SEM_DADOS_TRECHO",
+                                        "kmConsultaInicial", 10,
+                                        "kmConsultaFinal", 12
+                                )
+                        )
+                )
+        );
+
+        assertTrue(
+                response.text().contains(
+                        "Não há controles geométricos cadastrados entre os km 10 e 12"
+                )
+        );
+    }
+
     private StaviaEvidence evidence(
             String id,
             String summary
@@ -84,7 +500,165 @@ class DeterministicStaviaResponseGeneratorTest {
                         "2026-06-22T12:00:00Z"
                 ),
                 true,
-                Map.of()
+                Map.of(
+                        "numeroRdo",
+                        "1",
+                        "dataRdo",
+                        "2026-06-22",
+                        "status",
+                        "ENVIADO"
+                )
+        );
+    }
+
+    private StaviaEvidence teamEvidence(
+            String id,
+            String rdoId,
+            String name,
+            String role
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.EQUIPE,
+                id,
+                "Registro de mão de obra",
+                Instant.parse("2026-06-22T12:00:00Z"),
+                true,
+                Map.of(
+                        "rdoId", rdoId,
+                        "nomeColaboradorCadastrado", name,
+                        "cargo", role
+                )
+        );
+    }
+
+    private StaviaEvidence allocationEvidence(
+            String id,
+            String obraId,
+            String code,
+            String worksite,
+            String role
+    ) {
+        java.util.Map<String, Object> attributes =
+                new java.util.LinkedHashMap<>();
+        attributes.put("colaboradorNome", "ABNER PEREIRA LANZA");
+        attributes.put("obraId", obraId);
+        attributes.put("codigoCw", code);
+        attributes.put("obraNome", worksite);
+        attributes.put("data", "2026-06-25");
+        attributes.put("status", "RASCUNHO");
+        if (role != null) {
+            attributes.put("funcao", role);
+        }
+
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
+                id,
+                "Registro de alocação de ABNER PEREIRA LANZA.",
+                Instant.parse("2026-06-25T12:00:00Z"),
+                false,
+                attributes
+        );
+    }
+
+    private StaviaEvidence collaboratorEvidence() {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.COLABORADOR,
+                "COLABORADOR_ACADEMY:abner",
+                "ABNER PEREIRA LANZA está cadastrado no Academy.",
+                Instant.parse("2026-06-25T12:00:00Z"),
+                true,
+                Map.of(
+                        "colaboradorNome", "ABNER PEREIRA LANZA",
+                        "codigoColaborador", "485",
+                        "nomeGrupo", "Básico"
+                )
+        );
+    }
+
+    private StaviaEvidence segmentEvidence(
+            String id,
+            String area,
+            String volume,
+            String length
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.TRECHO_OPERACIONAL,
+                id,
+                "Controle geométrico registrado.",
+                Instant.parse("2026-06-25T12:00:00Z"),
+                true,
+                Map.of(
+                        "obraId", "obra-1",
+                        "numeroRdo", "RDO-12",
+                        "dataRdo", "2026-06-25",
+                        "areaM2", area,
+                        "volumeM3", volume,
+                        "comprimentoM", length
+                )
+        );
+    }
+
+    private StaviaEvidence eventEvidence(
+            String id,
+            long commitSequence,
+            String eventType,
+            Map<String, Object> payload
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.EVENTO_OPERACIONAL,
+                id,
+                "Evento " + eventType,
+                Instant.parse("2026-06-25T12:00:00Z")
+                        .plusSeconds(commitSequence),
+                true,
+                Map.of(
+                        "commitSequence",
+                        commitSequence,
+                        "eventType",
+                        eventType,
+                        "entityType",
+                        "RDO",
+                        "entityId",
+                        "rdo-1",
+                        "payload",
+                        payload
+                )
+        );
+    }
+
+    private StaviaEvidence rdoAttribute(
+            String field,
+            String label,
+            String value
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.RDO_ATTRIBUTE,
+                "rdo-3:" + field,
+                label + ": " + value,
+                Instant.parse("2026-06-25T12:00:00Z"),
+                false,
+                Map.of(
+                        "obraId",
+                        "obra-1",
+                        "codigoObra",
+                        "CW38386",
+                        "rdoId",
+                        "rdo-3",
+                        "rdoNumero",
+                        "RDO-TESTE-3",
+                        "campo",
+                        field,
+                        "rotulo",
+                        label,
+                        "valor",
+                        value,
+                        "dataRdo",
+                        "2026-06-25",
+                        "statusRdo",
+                        "RASCUNHO",
+                        "fonte",
+                        "cadastro-rdos"
+                )
         );
     }
 }

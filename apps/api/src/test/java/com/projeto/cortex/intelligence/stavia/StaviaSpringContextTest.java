@@ -37,7 +37,7 @@ class StaviaSpringContextTest {
                     );
 
     @Test
-    void shouldCreateEngineWithDeterministicGeneratorByDefault() {
+    void shouldCreateEngineWithPromptGeneratorByDefault() {
         contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
 
@@ -52,7 +52,7 @@ class StaviaSpringContextTest {
                             StaviaResponseGenerator.class
                     )
             ).isInstanceOf(
-                    DeterministicStaviaResponseGenerator.class
+                    PromptBasedStaviaResponseGenerator.class
             );
 
             StaviaAnswer answer =
@@ -67,10 +67,10 @@ class StaviaSpringContextTest {
     }
 
     @Test
-    void shouldCreateEngineWithPromptGeneratorWhenConfigured() {
+    void shouldCreateEngineWithDeterministicGeneratorWhenConfigured() {
         contextRunner
                 .withPropertyValues(
-                        "cortex.stavia.generator-mode=prompt"
+                        "cortex.stavia.generator-mode=deterministic"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
@@ -88,7 +88,7 @@ class StaviaSpringContextTest {
                                     StaviaResponseGenerator.class
                             )
                     ).isInstanceOf(
-                            PromptBasedStaviaResponseGenerator.class
+                            DeterministicStaviaResponseGenerator.class
                     );
 
                     StaviaAnswer answer =

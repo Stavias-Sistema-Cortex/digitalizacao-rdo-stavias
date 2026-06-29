@@ -75,7 +75,7 @@ class OperationalHistoryKnowledgeSourceTest {
 
         assertTrue(
                 evidence.summary().contains(
-                        "RDO_ENVIADO"
+                        "enviado"
                 )
         );
 

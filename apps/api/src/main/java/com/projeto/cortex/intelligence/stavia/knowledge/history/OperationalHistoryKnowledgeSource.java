@@ -4,14 +4,18 @@ import com.projeto.cortex.intelligence.stavia.StaviaEngine;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
+import com.projeto.cortex.intelligence.stavia.knowledge.registry.StaviaSourceDescriptor;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.planning.QueryDomain;
+import com.projeto.cortex.intelligence.stavia.planning.QueryOperation;
 import com.projeto.cortex.intelligence.stavia.version.StaviaVersions;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class OperationalHistoryKnowledgeSource
@@ -39,6 +43,46 @@ public class OperationalHistoryKnowledgeSource
     }
 
     @Override
+    public StaviaSourceDescriptor descriptor() {
+        return new StaviaSourceDescriptor(
+                sourceName(),
+                sourceVersion(),
+                Set.of(
+                        QueryDomain.ONTOLOGIA,
+                        QueryDomain.OBRA,
+                        QueryDomain.RDO,
+                        QueryDomain.PROGRAMACAO,
+                        QueryDomain.COLABORADOR,
+                        QueryDomain.EQUIPE,
+                        QueryDomain.EQUIPAMENTO,
+                        QueryDomain.FINANCEIRO,
+                        QueryDomain.FREQUENCIA,
+                        QueryDomain.BANCO_HORAS
+                ),
+                Set.of(
+                        "OBRA",
+                        "RDO",
+                        "PROGRAMACAO_OPERACIONAL",
+                        "COLABORADOR",
+                        "EQUIPAMENTO",
+                        "CONTEXTO_OBRA"
+                ),
+                Set.of(),
+                Set.of(),
+                Set.of(
+                        QueryOperation.TRAVERSE_RELATIONSHIP,
+                        QueryOperation.SUMMARIZE,
+                        QueryOperation.LIST_OBJECTS,
+                        QueryOperation.READ_ATTRIBUTE
+                ),
+                Set.of(StaviaEngine.REQUIRED_PERMISSION),
+                "Eventos operacionais locais do Córtex",
+                90,
+                MAXIMUM_EVENTS
+        );
+    }
+
+    @Override
     public boolean supports(
             StaviaKnowledgeRequest request
     ) {
@@ -54,18 +98,38 @@ public class OperationalHistoryKnowledgeSource
             return false;
         }
 
+        if (
+                request.plan() != null
+                        && request.plan().planned()
+                        && (
+                        request.plan().requiresHistory()
+                                || request.plan().requiredSources()
+                                        .contains(sourceName())
+                )
+        ) {
+            return true;
+        }
+
         return switch (request.intent()) {
-            case CONSULTAR_ESTADO_ATUAL,
-                    CONSULTAR_HISTORICO,
-                    CONSULTAR_RDO,
-                    CONSULTAR_PROGRAMACAO,
+            case CONSULTAR_HISTORICO,
                     RESUMIR_OBRA -> true;
 
             case CONSULTAR_OBRA,
+                    CONSULTAR_ESTADO_ATUAL,
+                    CONSULTAR_RDO,
+                    CONSULTAR_PROGRAMACAO,
                     CONSULTAR_EQUIPE,
                     CONSULTAR_ATIVO,
                     CONSULTAR_OCORRENCIA,
                     CONSULTAR_PDOC,
+                    CONSULTAR_RECEITA,
+                    CONSULTAR_MARGEM,
+                    CONSULTAR_PREVISAO_FINANCEIRA,
+                    CONSULTAR_PRODUCAO,
+                    CONSULTAR_RECEITA_EM_RISCO,
+                    CONSULTAR_ALOCACAO_COLABORADOR,
+                    CONSULTAR_FREQUENCIA,
+                    CONSULTAR_BANCO_HORAS,
                     DESCONHECIDA -> false;
         };
     }
@@ -144,23 +208,84 @@ public class OperationalHistoryKnowledgeSource
     private String buildSummary(
             OperationalHistoryEvent event
     ) {
+        Object numeroRdo = event.payload().get("numeroRdo");
+        String rdoLabel =
+                numeroRdo == null
+                        || String.valueOf(numeroRdo).isBlank()
+                        ? "RDO"
+                        : "RDO " + numeroRdo;
+
+        if ("RDO_CRIADO".equals(event.eventType())) {
+            return rdoLabel + " criado.";
+        }
+
+        if ("RDO_ENVIADO".equals(event.eventType())) {
+            return rdoLabel + " enviado.";
+        }
+
+        if ("RDO_EDITADO".equals(event.eventType())) {
+            Object alterations =
+                    event.payload().get("alteracoes");
+
+            if (alterations instanceof List<?> list
+                    && !list.isEmpty()) {
+                Object first = list.getFirst();
+
+                if (first instanceof Map<?, ?> map) {
+                    Object label = map.get("rotulo");
+                    Object before = map.get("valorAnterior");
+                    Object after = map.get("valorNovo");
+
+                    if (label != null) {
+                        StringBuilder summary =
+                                new StringBuilder();
+
+                        summary.append(label)
+                                .append(" ")
+                                .append(
+                                        changedVerb(
+                                                String.valueOf(label)
+                                        )
+                                );
+
+                        if (before != null || after != null) {
+                            summary.append(": ")
+                                    .append(valueText(before))
+                                    .append(" -> ")
+                                    .append(valueText(after));
+                        }
+
+                        summary.append(".");
+                        return summary.toString();
+                    }
+                }
+
+                return rdoLabel
+                        + " editado com "
+                        + list.size()
+                        + " alteração(ões).";
+            }
+
+            return rdoLabel
+                    + " editado sem detalhamento dos campos alterados.";
+        }
+
         String base =
                 "Evento "
                         + event.eventType()
                         + " registrado para "
-                        + event.entityType()
-                        + " "
-                        + event.entityId();
-
-        Object status = event.payload().get("status");
-        Object numeroRdo = event.payload().get("numeroRdo");
+                        + event.entityType();
 
         if (
                 numeroRdo != null
                 && !String.valueOf(numeroRdo).isBlank()
         ) {
-            base += ", RDO " + numeroRdo;
+            base += " " + numeroRdo;
+        } else {
+            base += " " + event.entityId();
         }
+
+        Object status = event.payload().get("status");
 
         if (
                 status != null
@@ -170,5 +295,53 @@ public class OperationalHistoryKnowledgeSource
         }
 
         return base + ".";
+    }
+
+    private String valueText(Object value) {
+        if (value == null || String.valueOf(value).isBlank()) {
+            return "não informado";
+        }
+
+        return String.valueOf(value);
+    }
+
+    private String changedVerb(String label) {
+        String normalized =
+                normalize(label);
+
+        if (normalized.endsWith("oes")
+                || normalized.endsWith("coes")
+                || normalized.endsWith("as")) {
+            return "alteradas";
+        }
+
+        if (normalized.endsWith("ais")
+                || normalized.endsWith("os")
+                || normalized.endsWith("s")) {
+            return "alterados";
+        }
+
+        if (normalized.endsWith("a")
+                || normalized.endsWith("ao")
+                || normalized.endsWith("cao")
+                || normalized.endsWith("gem")) {
+            return "alterada";
+        }
+
+        return "alterado";
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return "";
+        }
+
+        return java.text.Normalizer.normalize(
+                        value,
+                        java.text.Normalizer.Form.NFD
+                )
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .trim();
     }
 }

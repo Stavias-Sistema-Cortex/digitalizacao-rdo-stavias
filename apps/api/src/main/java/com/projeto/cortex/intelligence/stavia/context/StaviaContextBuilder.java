@@ -22,9 +22,9 @@ public class StaviaContextBuilder {
                 .filter(Objects::nonNull)
                 .filter(this::hasMinimumData)
                 .filter(evidence ->
-                        belongsToRequestedWorksite(
+                        belongsToRequestedScope(
                                 rawContext.obraId(),
-                                evidence.obraId()
+                                evidence
                         )
                 )
                 .filter(evidence ->
@@ -50,17 +50,23 @@ public class StaviaContextBuilder {
                 && hasText(evidence.summary());
     }
 
-    private boolean belongsToRequestedWorksite(
+    private boolean belongsToRequestedScope(
             String requestedObraId,
-            String evidenceObraId
+            StaviaRawContext.RawEvidence evidence
     ) {
         if (!hasText(requestedObraId)) {
             return true;
         }
 
-        return Objects.equals(
+        if (Objects.equals(
                 requestedObraId.trim(),
-                normalizeOptional(evidenceObraId)
+                normalizeOptional(evidence.obraId())
+        )) {
+            return true;
+        }
+
+        return Boolean.TRUE.equals(
+                evidence.attributes().get("crossWorksiteAuthorized")
         );
     }
 

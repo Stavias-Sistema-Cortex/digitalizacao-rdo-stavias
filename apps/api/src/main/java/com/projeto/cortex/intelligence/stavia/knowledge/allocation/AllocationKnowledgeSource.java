@@ -7,15 +7,20 @@ import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.planning.QueryOperation;
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +48,7 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
 
     @Override
     public String sourceVersion() {
-        return "STAVIA-ALLOCATION-SOURCE-0.1.0";
+        return "STAVIA-ALLOCATION-SOURCE-0.2.0";
     }
 
     @Override
@@ -62,6 +67,12 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
     @Override
     public List<StaviaEvidence> retrieve(StaviaKnowledgeRequest request) {
         LocalDate date = extractDate(request.question().text());
+        StaviaEntityFilters filters =
+                StaviaEntityFilters.from(request.plan().entities());
+
+        if (isCrossWorksiteRelationship(request, filters)) {
+            return retrieveAcrossWorks(filters, date);
+        }
 
         String sql = """
                 SELECT
@@ -106,51 +117,7 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
 
         List<StaviaEvidence> rows = jdbcTemplate.query(
                 sql,
-                (rs, rowNumber) -> {
-                    Map<String, Object> attributes = new LinkedHashMap<>();
-                    attributes.put("alocacaoId", rs.getString("id"));
-                    attributes.put("colaboradorId", rs.getString("colaborador_id"));
-                    attributes.put("colaboradorNome", rs.getString("colaborador_nome"));
-                    attributes.put("data", rs.getDate("data_alocacao").toLocalDate().toString());
-                    putTime(attributes, "horaInicio", rs.getTime("hora_inicio"));
-                    putTime(attributes, "horaFim", rs.getTime("hora_fim"));
-                    attributes.put("minutos", rs.getInt("minutos"));
-                    put(attributes, "percentualDia", rs.getBigDecimal("percentual_dia"));
-                    attributes.put("obraId", rs.getString("obra_id"));
-                    attributes.put("codigoContrato", rs.getString("codigo_contrato"));
-                    attributes.put("codigoCw", rs.getString("codigo_cw"));
-                    attributes.put("obraNome", rs.getString("obra_nome"));
-                    putText(attributes, "equipe", rs.getString("equipe"));
-                    putText(attributes, "servicoNome", rs.getString("servico_nome"));
-                    putText(attributes, "rdoId", rs.getString("rdo_id"));
-                    putText(attributes, "turno", rs.getString("turno"));
-                    putText(attributes, "funcao", rs.getString("funcao"));
-                    putText(attributes, "tipoAlocacao", rs.getString("tipo_alocacao"));
-                    putText(attributes, "fonte", rs.getString("fonte"));
-                    putText(attributes, "status", rs.getString("status"));
-                    put(attributes, "custoTotal", rs.getBigDecimal("custo_total"));
-
-                    return new StaviaEvidence(
-                            StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
-                            "ALOCACAO_COLABORADOR:" + rs.getString("id"),
-                            summary(
-                                    rs.getString("colaborador_nome"),
-                                    rs.getDate("data_alocacao").toLocalDate(),
-                                    rs.getString("codigo_cw"),
-                                    rs.getString("codigo_contrato"),
-                                    rs.getString("equipe"),
-                                    rs.getString("servico_nome"),
-                                    rs.getInt("minutos")
-                            ),
-                            rs.getTimestamp("atualizado_em") == null
-                                    ? null
-                                    : rs.getTimestamp("atualizado_em")
-                                            .toLocalDateTime()
-                                            .toInstant(ZoneOffset.UTC),
-                            "VALIDADA".equals(rs.getString("status")),
-                            attributes
-                    );
-                },
+                (rs, rowNumber) -> toEvidence(rs, "ALOCACAO_COLABORADOR:"),
                 request.worksiteId(),
                 request.worksiteId(),
                 request.worksiteId(),
@@ -158,7 +125,214 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
                 date,
                 date
         );
-        return filterByEntities(rows, StaviaEntityFilters.from(request.plan().entities()));
+        return filterByEntities(rows, filters);
+    }
+
+    /**
+     * A question such as "Abner está em outra obra?" has to look beyond the
+     * worksite supplied as context. Modern allocations are queried first and
+     * the RDO workforce records fill the historical gap for entries created
+     * before the allocation table existed.
+     */
+    private List<StaviaEvidence> retrieveAcrossWorks(
+            StaviaEntityFilters filters,
+            LocalDate date
+    ) {
+        String collaborator = filters.collaboratorName().orElseThrow();
+        SqlNameFilter nameFilter = nameFilter(collaborator);
+        List<StaviaEvidence> evidences = new ArrayList<>();
+
+        String allocationsSql = """
+                SELECT
+                    aloc.id,
+                    aloc.colaborador_id,
+                    col.nome AS colaborador_nome,
+                    aloc.data_alocacao,
+                    aloc.hora_inicio,
+                    aloc.hora_fim,
+                    aloc.minutos,
+                    aloc.percentual_dia,
+                    aloc.obra_id,
+                    obra.codigo_contrato,
+                    obra.codigo_cw,
+                    obra.nome AS obra_nome,
+                    aloc.equipe,
+                    aloc.servico_nome,
+                    aloc.rdo_id,
+                    aloc.turno,
+                    aloc.funcao,
+                    aloc.tipo_alocacao,
+                    aloc.fonte,
+                    aloc.status,
+                    aloc.custo_total,
+                    aloc.atualizado_em
+                FROM alocacao_colaborador aloc
+                JOIN colaborador col
+                  ON col.id = aloc.colaborador_id
+                JOIN obra
+                  ON obra.id = aloc.obra_id
+                WHERE aloc.status <> 'CANCELADA'
+                  AND (? IS NULL OR aloc.data_alocacao = ?)
+                  AND %s
+                ORDER BY aloc.data_alocacao DESC, aloc.hora_inicio, col.nome
+                LIMIT 100
+                """.formatted(nameFilter.condition());
+
+        List<Object> allocationParameters = new ArrayList<>();
+        allocationParameters.add(date);
+        allocationParameters.add(date);
+        allocationParameters.addAll(nameFilter.parameters());
+        evidences.addAll(jdbcTemplate.query(
+                allocationsSql,
+                (rs, rowNumber) -> toEvidence(rs, "ALOCACAO_COLABORADOR:"),
+                allocationParameters.toArray()
+        ));
+
+        String legacySql = """
+                SELECT
+                    mo.id,
+                    COALESCE(mo.colaborador_id, col.id) AS colaborador_id,
+                    COALESCE(col.nome, mo.nome_colaborador) AS colaborador_nome,
+                    r.data_rdo AS data_alocacao,
+                    mo.hora_inicio,
+                    mo.hora_fim,
+                    NULL AS minutos,
+                    NULL AS percentual_dia,
+                    r.obra_id,
+                    obra.codigo_contrato,
+                    obra.codigo_cw,
+                    obra.nome AS obra_nome,
+                    NULL AS equipe,
+                    NULL AS servico_nome,
+                    r.id AS rdo_id,
+                    r.turno,
+                    mo.cargo AS funcao,
+                    mo.tipo_vinculo AS tipo_alocacao,
+                    'RDO_LEGADO' AS fonte,
+                    r.status,
+                    NULL AS custo_total,
+                    mo.atualizado_em
+                FROM rdo r
+                JOIN rdo_mao_obra mo
+                  ON mo.rdo_id = r.id
+                LEFT JOIN colaborador col
+                  ON col.id = mo.colaborador_id
+                 AND col.deletado_em IS NULL
+                JOIN obra
+                  ON obra.id = r.obra_id
+                WHERE (? IS NULL OR r.data_rdo = ?)
+                  AND %s
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM alocacao_colaborador aloc
+                      WHERE aloc.rdo_id = r.id
+                        AND aloc.colaborador_id = mo.colaborador_id
+                        AND aloc.status <> 'CANCELADA'
+                  )
+                ORDER BY r.data_rdo DESC, mo.hora_inicio, colaborador_nome
+                LIMIT 100
+                """.formatted(
+                nameFilter.condition().replace("LOWER(col.nome)",
+                        "LOWER(COALESCE(col.nome, mo.nome_colaborador))")
+        );
+
+        List<Object> legacyParameters = new ArrayList<>();
+        legacyParameters.add(date);
+        legacyParameters.add(date);
+        legacyParameters.addAll(nameFilter.parameters());
+        evidences.addAll(jdbcTemplate.query(
+                legacySql,
+                (rs, rowNumber) -> toEvidence(rs, "ALOCACAO_LEGADO:"),
+                legacyParameters.toArray()
+        ));
+
+        return filterByEntities(evidences, filters);
+    }
+
+    private boolean isCrossWorksiteRelationship(
+            StaviaKnowledgeRequest request,
+            StaviaEntityFilters filters
+    ) {
+        return request.plan().operation()
+                == QueryOperation.TRAVERSE_RELATIONSHIP
+                && filters.collaboratorName().isPresent();
+    }
+
+    private SqlNameFilter nameFilter(String collaborator) {
+        String[] tokens = StaviaText.normalize(collaborator).split("\\s+");
+        List<String> meaningfulTokens = new ArrayList<>();
+
+        for (int index = tokens.length > 1 ? 1 : 0;
+                index < tokens.length;
+                index++) {
+            if (tokens[index].length() >= 3) {
+                meaningfulTokens.add(tokens[index]);
+            }
+        }
+
+        if (meaningfulTokens.isEmpty()) {
+            return new SqlNameFilter("1 = 1", List.of());
+        }
+
+        String condition = meaningfulTokens.stream()
+                .map(ignored -> "LOWER(col.nome) LIKE ?")
+                .collect(java.util.stream.Collectors.joining(" AND "));
+        List<Object> parameters = meaningfulTokens.stream()
+                .map(token -> (Object) ("%" + token + "%"))
+                .toList();
+
+        return new SqlNameFilter(condition, parameters);
+    }
+
+    private StaviaEvidence toEvidence(
+            ResultSet rs,
+            String idPrefix
+    ) throws SQLException {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("alocacaoId", rs.getString("id"));
+        putText(attributes, "colaboradorId", rs.getString("colaborador_id"));
+        putText(attributes, "colaboradorNome", rs.getString("colaborador_nome"));
+
+        LocalDate data = rs.getDate("data_alocacao").toLocalDate();
+        attributes.put("data", data.toString());
+        putTime(attributes, "horaInicio", rs.getTime("hora_inicio"));
+        putTime(attributes, "horaFim", rs.getTime("hora_fim"));
+        putObject(attributes, "minutos", rs.getObject("minutos"));
+        put(attributes, "percentualDia", rs.getBigDecimal("percentual_dia"));
+        putText(attributes, "obraId", rs.getString("obra_id"));
+        putText(attributes, "codigoContrato", rs.getString("codigo_contrato"));
+        putText(attributes, "codigoCw", rs.getString("codigo_cw"));
+        putText(attributes, "obraNome", rs.getString("obra_nome"));
+        putText(attributes, "equipe", rs.getString("equipe"));
+        putText(attributes, "servicoNome", rs.getString("servico_nome"));
+        putText(attributes, "rdoId", rs.getString("rdo_id"));
+        putText(attributes, "turno", rs.getString("turno"));
+        putText(attributes, "funcao", rs.getString("funcao"));
+        putText(attributes, "tipoAlocacao", rs.getString("tipo_alocacao"));
+        putText(attributes, "fonte", rs.getString("fonte"));
+        putText(attributes, "status", rs.getString("status"));
+        put(attributes, "custoTotal", rs.getBigDecimal("custo_total"));
+
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
+                idPrefix + rs.getString("id"),
+                summary(
+                        rs.getString("colaborador_nome"),
+                        data,
+                        rs.getString("codigo_cw"),
+                        rs.getString("codigo_contrato"),
+                        rs.getString("equipe"),
+                        rs.getString("servico_nome"),
+                        rs.getObject("minutos", Integer.class)
+                ),
+                rs.getTimestamp("atualizado_em") == null
+                        ? null
+                        : rs.getTimestamp("atualizado_em")
+                                .toLocalDateTime()
+                                .toInstant(ZoneOffset.UTC),
+                isValidated(rs.getString("status")),
+                attributes
+        );
     }
 
     public static List<StaviaEvidence> filterByEntities(
@@ -183,21 +357,30 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
             String codigoContrato,
             String equipe,
             String servico,
-            int minutos
+            Integer minutos
     ) {
         String codigo = hasText(codigoCw) ? codigoCw : codigoContrato;
-        BigDecimal horas = BigDecimal.valueOf(minutos)
-                .divide(BigDecimal.valueOf(60), 2, java.math.RoundingMode.HALF_UP);
 
         StringBuilder summary = new StringBuilder();
         summary.append(colaborador)
                 .append(" esteve na obra ")
                 .append(codigo)
                 .append(" em ")
-                .append(DATE_BR.format(data))
-                .append(" por ")
-                .append(horas)
-                .append(" hora(s)");
+                .append(DATE_BR.format(data));
+
+        if (minutos != null) {
+            BigDecimal horas = BigDecimal.valueOf(minutos)
+                    .divide(
+                            BigDecimal.valueOf(60),
+                            2,
+                            java.math.RoundingMode.HALF_UP
+                    );
+            summary.append(" por ")
+                    .append(horas)
+                    .append(" hora(s)");
+        } else {
+            summary.append(" (registro legado de mão de obra)");
+        }
 
         if (hasText(equipe)) {
             summary.append(", equipe ").append(equipe);
@@ -239,6 +422,12 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
         }
     }
 
+    private void putObject(Map<String, Object> attributes, String key, Object value) {
+        if (value != null) {
+            attributes.put(key, value);
+        }
+    }
+
     private void putTime(
             Map<String, Object> attributes,
             String key,
@@ -252,5 +441,17 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private boolean isValidated(String status) {
+        return "VALIDADA".equals(status)
+                || "ENVIADO".equals(status)
+                || "APROVADO".equals(status);
+    }
+
+    private record SqlNameFilter(
+            String condition,
+            List<Object> parameters
+    ) {
     }
 }

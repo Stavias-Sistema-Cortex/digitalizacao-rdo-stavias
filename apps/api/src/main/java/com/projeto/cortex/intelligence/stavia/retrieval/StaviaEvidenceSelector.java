@@ -38,7 +38,8 @@ public class StaviaEvidenceSelector {
         return switch (intent) {
             case CONSULTAR_OBRA ->
                     Set.of(
-                            StaviaEvidenceTypes.OBRA
+                            StaviaEvidenceTypes.OBRA,
+                            StaviaEvidenceTypes.CONTEXTO_OBRA
                     );
 
             case CONSULTAR_ESTADO_ATUAL ->
@@ -48,29 +49,31 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.RDO,
                             StaviaEvidenceTypes.PROGRAMACAO_OPERACIONAL,
                             StaviaEvidenceTypes.PDOC,
-                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA
+                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
+                            StaviaEvidenceTypes.CONTEXTO_OBRA
                     );
 
             case CONSULTAR_HISTORICO ->
                     Set.of(
-                            StaviaEvidenceTypes.EVENTO_OPERACIONAL,
-                            StaviaEvidenceTypes.RDO,
-                            StaviaEvidenceTypes.OCORRENCIA,
-                            StaviaEvidenceTypes.INCIDENTE
+                            StaviaEvidenceTypes.EVENTO_OPERACIONAL
                     );
 
             case CONSULTAR_RDO ->
                     Set.of(
                             StaviaEvidenceTypes.RDO,
-                            StaviaEvidenceTypes.EVENTO_OPERACIONAL,
-                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA
+                            StaviaEvidenceTypes.RDO_ATTRIBUTE,
+                            StaviaEvidenceTypes.TRECHO_OPERACIONAL,
+                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
+                            StaviaEvidenceTypes.CONTEXTO_OBRA
                     );
 
             case CONSULTAR_PROGRAMACAO ->
                     Set.of(
+                            StaviaEvidenceTypes.RDO,
+                            StaviaEvidenceTypes.RDO_ATTRIBUTE,
                             StaviaEvidenceTypes.PROGRAMACAO_OPERACIONAL,
-                            StaviaEvidenceTypes.EVENTO_OPERACIONAL,
-                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA
+                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
+                            StaviaEvidenceTypes.CONTEXTO_OBRA
                     );
 
             case CONSULTAR_EQUIPE ->
@@ -80,6 +83,7 @@ public class StaviaEvidenceSelector {
 
             case CONSULTAR_ATIVO ->
                     Set.of(
+                            StaviaEvidenceTypes.ATIVO,
                             StaviaEvidenceTypes.EQUIPAMENTO
                     );
 
@@ -93,12 +97,36 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.PDOC
                     );
 
+            case CONSULTAR_RECEITA,
+                 CONSULTAR_MARGEM,
+                 CONSULTAR_PREVISAO_FINANCEIRA,
+                 CONSULTAR_PRODUCAO,
+                 CONSULTAR_RECEITA_EM_RISCO ->
+                    Set.of(
+                            StaviaEvidenceTypes.PREVISAO_FINANCEIRA,
+                            StaviaEvidenceTypes.PDOC
+                    );
+
+            case CONSULTAR_ALOCACAO_COLABORADOR ->
+                    Set.of(
+                            StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
+                            StaviaEvidenceTypes.COLABORADOR
+                    );
+
+            case CONSULTAR_FREQUENCIA,
+                 CONSULTAR_BANCO_HORAS ->
+                    Set.of(
+                            StaviaEvidenceTypes.FREQUENCIA,
+                            StaviaEvidenceTypes.ALOCACAO_COLABORADOR
+                    );
+
             case RESUMIR_OBRA ->
                     Set.of(
                             StaviaEvidenceTypes.OBRA,
                             StaviaEvidenceTypes.ESTADO,
                             StaviaEvidenceTypes.EVENTO_OPERACIONAL,
                             StaviaEvidenceTypes.RDO,
+                            StaviaEvidenceTypes.RDO_ATTRIBUTE,
                             StaviaEvidenceTypes.PROGRAMACAO_OPERACIONAL,
                             StaviaEvidenceTypes.OCORRENCIA,
                             StaviaEvidenceTypes.INCIDENTE,
@@ -107,7 +135,11 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.ATIVO,
                             StaviaEvidenceTypes.EQUIPAMENTO,
                             StaviaEvidenceTypes.PDOC,
-                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA
+                            StaviaEvidenceTypes.PREVISAO_FINANCEIRA,
+                            StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
+                            StaviaEvidenceTypes.FREQUENCIA,
+                            StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
+                            StaviaEvidenceTypes.CONTEXTO_OBRA
                     );
 
             case DESCONHECIDA ->

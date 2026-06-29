@@ -31,7 +31,7 @@ class StaviaGeneratorConfigurationTest {
                     );
 
     @Test
-    void shouldUseDeterministicGeneratorByDefault() {
+    void shouldUsePromptBasedGeneratorByDefault() {
         contextRunner.run(context -> {
             Map<String, StaviaResponseGenerator> generators =
                     context.getBeansOfType(
@@ -46,16 +46,16 @@ class StaviaGeneratorConfigurationTest {
                             .iterator()
                             .next()
             ).isInstanceOf(
-                    DeterministicStaviaResponseGenerator.class
+                    PromptBasedStaviaResponseGenerator.class
             );
         });
     }
 
     @Test
-    void shouldUsePromptBasedGeneratorWhenConfigured() {
+    void shouldUseDeterministicGeneratorWhenConfigured() {
         contextRunner
                 .withPropertyValues(
-                        "cortex.stavia.generator-mode=prompt"
+                        "cortex.stavia.generator-mode=deterministic"
                 )
                 .run(context -> {
                     Map<String, StaviaResponseGenerator> generators =
@@ -71,7 +71,7 @@ class StaviaGeneratorConfigurationTest {
                                     .iterator()
                                     .next()
                     ).isInstanceOf(
-                            PromptBasedStaviaResponseGenerator.class
+                            DeterministicStaviaResponseGenerator.class
                     );
                 });
     }

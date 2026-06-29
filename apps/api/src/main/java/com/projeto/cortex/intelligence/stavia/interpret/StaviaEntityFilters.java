@@ -57,7 +57,41 @@ public record StaviaEntityFilters(
         if (collaboratorNameNormalized == null) {
             return true;
         }
-        return StaviaText.normalize(candidate).contains(collaboratorNameNormalized);
+
+        String normalizedCandidate = StaviaText.normalize(candidate);
+
+        if (normalizedCandidate.contains(collaboratorNameNormalized)) {
+            return true;
+        }
+
+        String[] requestedTokens = collaboratorNameNormalized.split("\\s+");
+        String[] candidateTokens = normalizedCandidate.split("\\s+");
+
+        if (requestedTokens.length < 2 || candidateTokens.length == 0) {
+            return false;
+        }
+
+        for (String requested : requestedTokens) {
+            boolean matched = false;
+
+            for (String available : candidateTokens) {
+                if (requested.equals(available)
+                        || (requested.length() >= 4
+                                && levenshteinDistance(
+                                        requested,
+                                        available
+                                ) <= 1)) {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public boolean matchesRole(String candidate) {
@@ -66,5 +100,39 @@ public record StaviaEntityFilters(
         }
         String normalized = StaviaText.normalize(candidate);
         return rolesNormalized.stream().anyMatch(normalized::contains);
+    }
+
+    private int levenshteinDistance(String left, String right) {
+        int[] previous = new int[right.length() + 1];
+        int[] current = new int[right.length() + 1];
+
+        for (int index = 0; index <= right.length(); index++) {
+            previous[index] = index;
+        }
+
+        for (int leftIndex = 1; leftIndex <= left.length(); leftIndex++) {
+            current[0] = leftIndex;
+
+            for (int rightIndex = 1; rightIndex <= right.length(); rightIndex++) {
+                int cost = left.charAt(leftIndex - 1)
+                        == right.charAt(rightIndex - 1)
+                        ? 0
+                        : 1;
+
+                current[rightIndex] = Math.min(
+                        Math.min(
+                                current[rightIndex - 1] + 1,
+                                previous[rightIndex] + 1
+                        ),
+                        previous[rightIndex - 1] + cost
+                );
+            }
+
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+
+        return previous[right.length()];
     }
 }

@@ -1,6 +1,7 @@
 package com.projeto.cortex.intelligence.stavia;
 
 import com.projeto.cortex.intelligence.stavia.generation.StaviaResponseGenerator;
+import com.projeto.cortex.intelligence.stavia.generation.StaviaGeneratedResponse;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntentClassifier;
 import com.projeto.cortex.intelligence.stavia.model.StaviaAnswer;
 import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
@@ -89,5 +90,53 @@ class StaviaEngineGenerationFailureTest {
                                 )
                         )
         );
+    }
+
+    @Test
+    void shouldKeepGeneratedInsufficientAnswerConsistentWithGroundingPolicy() {
+        StaviaResponseGenerator insufficientGenerator =
+                (question, intent, evidences) ->
+                        new StaviaGeneratedResponse(
+                                "Não existem dados suficientes para concluir.",
+                                StaviaAnswerType.INFORMACAO_INSUFICIENTE,
+                                List.of("RDO:rdo-1")
+                        );
+
+        StaviaEngine engine = new StaviaEngine(
+                new StaviaIntentClassifier(),
+                new StaviaEvidenceSelector(),
+                new StaviaGroundingValidator(),
+                new StaviaEvidenceQualityPolicy(),
+                new StaviaContradictionPolicy(),
+                insufficientGenerator
+        );
+
+        StaviaAnswer answer = engine.answer(
+                new StaviaQuestion(
+                        "Qual foi o último RDO?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                new StaviaContext(
+                        Set.of(StaviaEngine.REQUIRED_PERMISSION),
+                        List.of(
+                                new StaviaEvidence(
+                                        "RDO",
+                                        "rdo-1",
+                                        "O RDO 1 foi registrado.",
+                                        Instant.now(),
+                                        true,
+                                        Map.of()
+                                )
+                        )
+                )
+        );
+
+        assertTrue(answer.insufficientData());
+        assertEquals(
+                StaviaAnswerType.INFORMACAO_INSUFICIENTE,
+                answer.answerType()
+        );
+        assertTrue(answer.sources().isEmpty());
     }
 }

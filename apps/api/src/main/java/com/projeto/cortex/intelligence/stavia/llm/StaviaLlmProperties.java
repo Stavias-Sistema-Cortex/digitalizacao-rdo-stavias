@@ -8,10 +8,10 @@ import org.springframework.stereotype.Component;
 public class StaviaLlmProperties {
 
     private String baseUrl = "http://localhost:11434/v1";
-    private String model = "qwen2.5:7b-instruct";
+    private String model = "gemma4:latest";
     private String apiKey = "ollama";
     private int connectTimeoutMs = 2000;
-    private int readTimeoutMs = 20000;
+    private int readTimeoutMs = 45000;
     private int maxEvidences = 50;
     private double confidenceThreshold = 0.45;
     private int breakerFailureThreshold = 3;

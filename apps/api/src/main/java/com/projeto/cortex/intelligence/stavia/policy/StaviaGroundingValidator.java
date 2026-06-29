@@ -5,6 +5,7 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.model.StaviaConfidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaContext;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceKeys;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -156,8 +157,6 @@ public class StaviaGroundingValidator {
     private String evidenceKey(
             StaviaEvidence evidence
     ) {
-        return evidence.type()
-                + ":"
-                + evidence.id();
+        return StaviaEvidenceKeys.key(evidence);
     }
 }

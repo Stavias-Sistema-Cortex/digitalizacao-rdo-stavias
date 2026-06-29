@@ -52,6 +52,41 @@ class StaviaContextBuilderTest {
     }
 
     @Test
+    void shouldKeepExplicitlyAuthorizedCrossWorksiteEvidence() {
+        StaviaRawContext rawContext =
+                new StaviaRawContext(
+                        "usuario-1",
+                        "obra-1",
+                        Set.of("RDO_VISUALIZAR"),
+                        List.of(
+                                evidence(
+                                        "ALOCACAO_COLABORADOR",
+                                        "alocacao-1",
+                                        "obra-1",
+                                        "RDO_VISUALIZAR"
+                                ),
+                                new StaviaRawContext.RawEvidence(
+                                        "ALOCACAO_COLABORADOR",
+                                        "alocacao-outra-obra",
+                                        "obra-2",
+                                        "RDO_VISUALIZAR",
+                                        "Alocação em outra obra autorizada.",
+                                        Instant.now(),
+                                        true,
+                                        Map.of(
+                                                "crossWorksiteAuthorized",
+                                                true
+                                        )
+                                )
+                        )
+                );
+
+        StaviaContext context = builder.build(rawContext);
+
+        assertEquals(2, context.evidences().size());
+    }
+
+    @Test
     void shouldFilterEvidenceWithoutPermission() {
         StaviaRawContext rawContext =
                 new StaviaRawContext(

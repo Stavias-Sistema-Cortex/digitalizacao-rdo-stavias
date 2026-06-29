@@ -1,6 +1,7 @@
 package com.projeto.cortex.intelligence.stavia;
 
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaContradictionAssessment;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaContradictionPolicy;
 import org.junit.jupiter.api.Test;
@@ -124,6 +125,63 @@ class StaviaContradictionPolicyTest {
         assertFalse(assessment.contradictory());
     }
 
+    @Test
+    void shouldNotCompareDifferentRdoAttributesAsContradictions() {
+        StaviaContradictionAssessment assessment =
+                policy.assess(
+                        List.of(
+                                rdoAttribute(
+                                        "condicaoManha",
+                                        "Manhã",
+                                        "Chuva"
+                                ),
+                                rdoAttribute(
+                                        "condicaoTarde",
+                                        "Tarde",
+                                        "Nublado"
+                                ),
+                                rdoAttribute(
+                                        "condicaoNoite",
+                                        "Noite",
+                                        "Estável"
+                                ),
+                                rdoAttribute(
+                                        "pluviometriaMm",
+                                        "Pluviometria",
+                                        "12.5"
+                                )
+                        )
+                );
+
+        assertFalse(assessment.contradictory());
+    }
+
+    @Test
+    void shouldDetectContradictionForSameRdoAttributeField() {
+        StaviaContradictionAssessment assessment =
+                policy.assess(
+                        List.of(
+                                rdoAttribute(
+                                        "condicaoManha",
+                                        "Manhã",
+                                        "Chuva"
+                                ),
+                                rdoAttribute(
+                                        "condicaoManha",
+                                        "Manhã",
+                                        "Sol"
+                                )
+                        )
+                );
+
+        assertTrue(assessment.contradictory());
+        assertFalse(assessment.critical());
+        assertTrue(
+                assessment.conflictingFields()
+                        .contains("valor")
+        );
+    }
+
     private StaviaEvidence evidence(
             String id,
             Map<String, Object> attributes
@@ -137,6 +195,34 @@ class StaviaContradictionPolicyTest {
                 ),
                 true,
                 attributes
+        );
+    }
+
+    private StaviaEvidence rdoAttribute(
+            String field,
+            String label,
+            String value
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.RDO_ATTRIBUTE,
+                "rdo-1:" + field,
+                label + ": " + value,
+                Instant.parse(
+                        "2026-06-22T12:00:00Z"
+                ),
+                false,
+                Map.of(
+                        "rdoId",
+                        "rdo-1",
+                        "campo",
+                        field,
+                        "rotulo",
+                        label,
+                        "valor",
+                        value,
+                        "obraId",
+                        "CW38386"
+                )
         );
     }
 }

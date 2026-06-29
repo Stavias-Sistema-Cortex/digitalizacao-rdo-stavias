@@ -175,14 +175,26 @@ public class StaviaContradictionPolicy {
         Map<String, Object> attributes =
                 evidence.attributes();
 
-        if (
-                StaviaEvidenceTypes.EQUIPE.equals(
-                        evidence.type()
-                )
-                || StaviaEvidenceTypes.EQUIPAMENTO.equals(
-                        evidence.type()
-                )
+            if (
+                    StaviaEvidenceTypes.EQUIPE.equals(
+                            evidence.type()
+                    )
+                    || StaviaEvidenceTypes.COLABORADOR.equals(
+                            evidence.type()
+                    )
+                    || StaviaEvidenceTypes.ATIVO.equals(
+                            evidence.type()
+                    )
+                    || StaviaEvidenceTypes.EQUIPAMENTO.equals(
+                            evidence.type()
+                    )
                 || StaviaEvidenceTypes.OCORRENCIA.equals(
+                        evidence.type()
+                )
+                || StaviaEvidenceTypes.TRECHO_OPERACIONAL.equals(
+                        evidence.type()
+                )
+                || StaviaEvidenceTypes.CONTEXTO_OBRA.equals(
                         evidence.type()
                 )
         ) {
@@ -208,6 +220,27 @@ public class StaviaContradictionPolicy {
                             attributes,
                             "relationType",
                             "RELACAO"
+                    )
+            );
+        }
+
+        if (
+                StaviaEvidenceTypes.RDO_ATTRIBUTE.equals(
+                        evidence.type()
+                )
+        ) {
+            return String.join(
+                    ":",
+                    evidence.type(),
+                    normalizedAttribute(
+                            attributes,
+                            "rdoId",
+                            evidence.id()
+                    ),
+                    normalizedAttribute(
+                            attributes,
+                            "campo",
+                            "atributo"
                     )
             );
         }

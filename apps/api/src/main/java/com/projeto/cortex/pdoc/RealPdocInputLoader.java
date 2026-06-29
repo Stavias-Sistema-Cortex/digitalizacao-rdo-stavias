@@ -43,59 +43,111 @@ public class RealPdocInputLoader implements PdocInputLoader {
                 ? buscarRdosAtrasados(obra.getId(), referenceDate)
                 : 0;
         SyncStats sync = buscarSyncStats(obra.getId());
+        FinanceStats finance = buscarFinanceStats(obra.getId(), referenceDate);
+        ServiceQuantityStats serviceQuantity =
+                buscarServiceQuantityStats(obra.getId(), referenceDate);
 
-        QuantityChoice quantity = escolherQuantidade(programacao, rdo);
+        QuantityChoice quantity =
+                escolherQuantidade(programacao, rdo, serviceQuantity);
 
         Map<String, Object> inputs = new LinkedHashMap<>();
         Map<String, PdocInputOrigin> origins = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
         List<String> missing = new ArrayList<>();
 
+        PdocDataAvailability budgetAvailability =
+                finance.hasBudgetData()
+                        ? PdocDataAvailability.DIRECT
+                        : PdocDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
                 "approvedBudget",
                 "Orçamento total aprovado",
-                PdocDataAvailability.ABSENT,
-                null,
-                null,
-                "Não há tabela ou campo de orçamento aprovado nas migrations atuais.",
+                budgetAvailability,
+                finance.hasBudgetData() ? finance.approvedBudget() : null,
+                "item_contratual.valor_total",
+                finance.hasBudgetData()
+                        ? "Soma dos valores totais dos itens contratuais ativos da obra."
+                        : "Não há itens contratuais ativos com valor total para formar orçamento aprovado.",
                 true
         );
-        warnings.add("Orçamento total aprovado ausente; o PDOC não será calculado sem esse dado financeiro.");
+        if (!finance.hasBudgetData()) {
+            warnings.add(
+                    "Orçamento total aprovado ausente; o PDOC não será calculado sem itens contratuais ativos."
+            );
+        }
 
+        PdocDataAvailability actualCostAvailability =
+                finance.hasActualCostData()
+                        ? PdocDataAvailability.DIRECT
+                        : PdocDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
                 "actualCost",
                 "Custo realizado",
-                PdocDataAvailability.ABSENT,
-                null,
-                null,
-                "Não há tabela ou campo de custo realizado nas migrations atuais.",
+                actualCostAvailability,
+                finance.hasActualCostData() ? finance.actualCost() : null,
+                "execucao_servico_rdo.custo_realizado + alocacao_colaborador.custo_total",
+                finance.hasActualCostData()
+                        ? "Soma dos custos realizados lançados nas execuções de serviço e alocações de colaboradores."
+                        : "Não há custo realizado informado em execução de serviço ou alocação de colaborador.",
                 true
         );
-        warnings.add("Custo realizado ausente; o PDOC não será calculado sem esse dado financeiro.");
+        if (!finance.hasActualCostData()) {
+            warnings.add(
+                    "Custo realizado ausente; o PDOC não será calculado sem esse dado financeiro."
+            );
+        }
 
+        PdocDataAvailability committedCostAvailability =
+                finance.hasActualCostData()
+                        ? PdocDataAvailability.AMBIGUOUS
+                        : PdocDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
                 "committedCost",
                 "Custo comprometido",
-                PdocDataAvailability.ABSENT,
-                null,
-                null,
-                "Não há tabela ou campo de custo comprometido nas migrations atuais.",
+                committedCostAvailability,
+                finance.hasActualCostData() ? finance.committedCost() : null,
+                "execucao_servico_rdo.custo_realizado + alocacao_colaborador.custo_total",
+                finance.hasActualCostData()
+                        ? "Proxy operacional: enquanto não há ledger de comprometido, usa o custo realizado estruturado."
+                        : "Não há custo comprometido nem proxy operacional calculável.",
                 true
         );
-        warnings.add("Custo comprometido ausente; o PDOC não usará estimativas financeiras substitutas.");
+        if (finance.hasActualCostData()) {
+            warnings.add(
+                    "Custo comprometido ainda não tem ledger próprio; o PDOC usa custo realizado estruturado como proxy auditável."
+            );
+        } else {
+            warnings.add(
+                    "Custo comprometido ausente; o PDOC não usará estimativas financeiras substitutas."
+            );
+        }
 
         BigDecimal totalPlanned = quantity == null ? null : quantity.totalPlanned();
         BigDecimal plannedUntilReference = quantity == null ? null : quantity.plannedUntilReference();
         BigDecimal actualExecuted = quantity == null ? null : quantity.actualExecuted();
+
+        if (quantity != null && "ITEM_CONTRATUAL".equals(quantity.metric())) {
+            warnings.add(
+                    "Quantidade física derivada de itens contratuais e execuções de serviço; sem curva temporal, o total contratado foi usado como planejado até a referência."
+            );
+            if (
+                    serviceQuantity.contractUnitCount() > 1
+                            || serviceQuantity.executionUnitCount() > 1
+            ) {
+                warnings.add(
+                        "Há múltiplas unidades de medida nos itens/execuções; o PDOC agregou quantidades apenas para manter rastreabilidade, não como unidade física homogênea."
+                );
+            }
+        }
 
         put(
                 inputs,
@@ -331,9 +383,9 @@ public class RealPdocInputLoader implements PdocInputLoader {
 
         PdocInputBundle.SourceValues sourceValues =
                 new PdocInputBundle.SourceValues(
-                        null,
-                        null,
-                        null,
+                        finance.hasBudgetData() ? finance.approvedBudget() : null,
+                        finance.hasActualCostData() ? finance.actualCost() : null,
+                        finance.hasActualCostData() ? finance.committedCost() : null,
                         toDouble(totalPlanned),
                         toDouble(plannedUntilReference),
                         toDouble(actualExecuted),
@@ -347,7 +399,7 @@ public class RealPdocInputLoader implements PdocInputLoader {
                         rdo.rdoCount() > 0 ? rdo.observationCount() : 0,
                         sync.pendingEvents(),
                         sync.hoursSinceLastSync() == null ? 168 : sync.hoursSinceLastSync(),
-                        false,
+                        finance.hasBudgetData(),
                         programacao.recordCount() > 0,
                         actualExecuted != null,
                         hasMaterial,
@@ -572,9 +624,159 @@ public class RealPdocInputLoader implements PdocInputLoader {
         );
     }
 
+    private FinanceStats buscarFinanceStats(
+            String obraId,
+            LocalDate referenceDate
+    ) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT
+                    (
+                        SELECT COUNT(*)
+                        FROM item_contratual
+                        WHERE obra_id = ?
+                          AND status = 'ATIVO'
+                    ) AS item_count,
+                    (
+                        SELECT SUM(valor_total)
+                        FROM item_contratual
+                        WHERE obra_id = ?
+                          AND status = 'ATIVO'
+                    ) AS approved_budget,
+                    (
+                        SELECT COUNT(*)
+                        FROM execucao_servico_rdo
+                        WHERE obra_id = ?
+                          AND data_execucao <= ?
+                          AND cancelada = 0
+                          AND custo_realizado IS NOT NULL
+                    ) AS execution_cost_rows,
+                    (
+                        SELECT SUM(custo_realizado)
+                        FROM execucao_servico_rdo
+                        WHERE obra_id = ?
+                          AND data_execucao <= ?
+                          AND cancelada = 0
+                    ) AS execution_cost,
+                    (
+                        SELECT COUNT(*)
+                        FROM alocacao_colaborador
+                        WHERE obra_id = ?
+                          AND data_alocacao <= ?
+                          AND status <> 'CANCELADA'
+                          AND custo_total IS NOT NULL
+                    ) AS allocation_cost_rows,
+                    (
+                        SELECT SUM(custo_total)
+                        FROM alocacao_colaborador
+                        WHERE obra_id = ?
+                          AND data_alocacao <= ?
+                          AND status <> 'CANCELADA'
+                    ) AS allocation_cost
+                """,
+                (rs, rowNumber) -> {
+                    BigDecimal executionCost =
+                            valueOrZero(rs.getBigDecimal("execution_cost"));
+                    BigDecimal allocationCost =
+                            valueOrZero(rs.getBigDecimal("allocation_cost"));
+
+                    return new FinanceStats(
+                            rs.getInt("item_count"),
+                            rs.getBigDecimal("approved_budget"),
+                            rs.getInt("execution_cost_rows"),
+                            rs.getInt("allocation_cost_rows"),
+                            executionCost.add(allocationCost)
+                    );
+                },
+                obraId,
+                obraId,
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate
+        );
+    }
+
+    private ServiceQuantityStats buscarServiceQuantityStats(
+            String obraId,
+            LocalDate referenceDate
+    ) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT
+                    (
+                        SELECT COUNT(*)
+                        FROM item_contratual
+                        WHERE obra_id = ?
+                          AND status = 'ATIVO'
+                    ) AS item_count,
+                    (
+                        SELECT COUNT(DISTINCT unidade_medida)
+                        FROM item_contratual
+                        WHERE obra_id = ?
+                          AND status = 'ATIVO'
+                    ) AS contract_unit_count,
+                    (
+                        SELECT SUM(quantidade_contratada)
+                        FROM item_contratual
+                        WHERE obra_id = ?
+                          AND status = 'ATIVO'
+                    ) AS total_planned,
+                    (
+                        SELECT COUNT(*)
+                        FROM execucao_servico_rdo
+                        WHERE obra_id = ?
+                          AND data_execucao <= ?
+                          AND cancelada = 0
+                    ) AS execution_count,
+                    (
+                        SELECT COUNT(DISTINCT unidade_medida)
+                        FROM execucao_servico_rdo
+                        WHERE obra_id = ?
+                          AND data_execucao <= ?
+                          AND cancelada = 0
+                    ) AS execution_unit_count,
+                    (
+                        SELECT SUM(CASE
+                                WHEN producao_rejeitada = 0
+                                 AND status_validacao IN ('REGISTRADA', 'VALIDADA')
+                                    THEN quantidade_executada
+                                ELSE 0
+                            END)
+                        FROM execucao_servico_rdo
+                        WHERE obra_id = ?
+                          AND data_execucao <= ?
+                          AND cancelada = 0
+                    ) AS actual_executed
+                """,
+                (rs, rowNumber) -> new ServiceQuantityStats(
+                        rs.getInt("item_count"),
+                        rs.getInt("contract_unit_count"),
+                        rs.getBigDecimal("total_planned"),
+                        rs.getInt("execution_count"),
+                        rs.getInt("execution_unit_count"),
+                        valueOrZero(rs.getBigDecimal("actual_executed"))
+                ),
+                obraId,
+                obraId,
+                obraId,
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate
+        );
+    }
+
     private QuantityChoice escolherQuantidade(
             ProgramacaoStats programacao,
-            RdoStats rdo
+            RdoStats rdo,
+            ServiceQuantityStats serviceQuantity
     ) {
         if (positive(programacao.totalAreaM2())) {
             return new QuantityChoice(
@@ -606,6 +808,21 @@ public class RealPdocInputLoader implements PdocInputLoader {
                     programacao.totalExtensionM(),
                     valueOrZero(programacao.extensionUntilReference()),
                     null
+            );
+        }
+
+        if (
+                serviceQuantity != null
+                        && positive(serviceQuantity.totalPlanned())
+                        && serviceQuantity.executionCount() > 0
+        ) {
+            return new QuantityChoice(
+                    "ITEM_CONTRATUAL",
+                    "item_contratual.quantidade_contratada",
+                    "execucao_servico_rdo.quantidade_executada",
+                    serviceQuantity.totalPlanned(),
+                    serviceQuantity.totalPlanned(),
+                    valueOrZero(serviceQuantity.actualExecuted())
             );
         }
 
@@ -782,6 +999,38 @@ public class RealPdocInputLoader implements PdocInputLoader {
     private record SyncStats(
             int pendingEvents,
             Integer hoursSinceLastSync
+    ) {
+    }
+
+    private record FinanceStats(
+            int itemCount,
+            BigDecimal approvedBudget,
+            int executionCostRows,
+            int allocationCostRows,
+            BigDecimal actualCost
+    ) {
+        private boolean hasBudgetData() {
+            return itemCount > 0
+                    && approvedBudget != null
+                    && approvedBudget.compareTo(BigDecimal.ZERO) > 0;
+        }
+
+        private boolean hasActualCostData() {
+            return executionCostRows > 0 || allocationCostRows > 0;
+        }
+
+        private BigDecimal committedCost() {
+            return actualCost == null ? BigDecimal.ZERO : actualCost;
+        }
+    }
+
+    private record ServiceQuantityStats(
+            int itemCount,
+            int contractUnitCount,
+            BigDecimal totalPlanned,
+            int executionCount,
+            int executionUnitCount,
+            BigDecimal actualExecuted
     ) {
     }
 

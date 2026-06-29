@@ -21,6 +21,23 @@ class StaviaEntityFiltersTest {
     }
 
     @Test
+    void shouldTolerateOneCharacterMistakeInAFullCollaboratorName() {
+        StaviaEntityFilters filters = StaviaEntityFilters.from(
+                List.of(
+                        ResolvedEntity.collaboratorByName(
+                                "Aber Pereira Lanza"
+                        )
+                )
+        );
+
+        assertTrue(
+                filters.matchesCollaborator(
+                        "ABNER PEREIRA LANZA"
+                )
+        );
+    }
+
+    @Test
     void shouldMatchRoleByLabel() {
         StaviaEntityFilters filters = StaviaEntityFilters.from(
                 List.of(ResolvedEntity.roleByLabel("apontador")));

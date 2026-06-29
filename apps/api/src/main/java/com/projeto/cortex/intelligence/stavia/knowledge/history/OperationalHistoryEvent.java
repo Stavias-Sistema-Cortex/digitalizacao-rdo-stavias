@@ -1,6 +1,8 @@
 package com.projeto.cortex.intelligence.stavia.knowledge.history;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record OperationalHistoryEvent(
@@ -29,7 +31,9 @@ public record OperationalHistoryEvent(
 
         payload = payload == null
                 ? Map.of()
-                : Map.copyOf(payload);
+                : Collections.unmodifiableMap(
+                        new LinkedHashMap<>(payload)
+                );
     }
 
     private static void requireText(

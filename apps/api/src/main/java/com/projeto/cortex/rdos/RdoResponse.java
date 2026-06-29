@@ -30,7 +30,9 @@ public record RdoResponse(
         List<MaoObraItem> maoObra,
         List<EquipamentoItem> equipamentos,
         List<MaterialItem> materiais,
-        List<ControleGeometricoItem> controlesGeometricos
+        List<ControleGeometricoItem> controlesGeometricos,
+        List<ServicoExecutadoItem> servicosExecutados,
+        List<AlocacaoColaboradorItem> alocacoesColaboradores
 ) {
 
     public record MaoObraItem(
@@ -75,6 +77,45 @@ public record RdoResponse(
             BigDecimal volumeM3,
             BigDecimal densidade,
             BigDecimal massaTonelada
+    ) {
+    }
+
+    public record ServicoExecutadoItem(
+            String id,
+            String servicoNome,
+            String itemContratualId,
+            BigDecimal quantidadeExecutada,
+            String unidade,
+            String trechoInicial,
+            String trechoFinal,
+            String localizacao,
+            String turno,
+            String statusValidacao,
+            String estadoReceita,
+            BigDecimal receitaOperacionalEstimativa,
+            BigDecimal custoRealizado,
+            boolean retrabalho,
+            boolean producaoRejeitada
+    ) {
+    }
+
+    public record AlocacaoColaboradorItem(
+            String id,
+            String colaboradorId,
+            String equipe,
+            String servicoNome,
+            LocalTime horaInicio,
+            LocalTime horaFim,
+            Integer minutos,
+            BigDecimal percentualDia,
+            String turno,
+            String funcao,
+            String centroCusto,
+            String tipoAlocacao,
+            String fonte,
+            String status,
+            BigDecimal custoHora,
+            BigDecimal custoTotal
     ) {
     }
 }

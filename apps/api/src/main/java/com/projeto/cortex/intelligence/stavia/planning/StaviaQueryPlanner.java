@@ -1,0 +1,832 @@
+package com.projeto.cortex.intelligence.stavia.planning;
+
+import com.projeto.cortex.intelligence.stavia.intent.StaviaClassification;
+import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
+import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
+import com.projeto.cortex.intelligence.stavia.semantic.OperationalRoleLexicon;
+import com.projeto.cortex.intelligence.stavia.semantic.SemanticAttribute;
+import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Component
+public class StaviaQueryPlanner {
+
+    private static final ZoneId BUSINESS_ZONE =
+            ZoneId.of("America/Sao_Paulo");
+    private static final DateTimeFormatter DATE_BR =
+            DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final Pattern DATE_PATTERN =
+            Pattern.compile("(\\d{2}/\\d{2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})");
+    private static final Pattern KM_REFERENCE =
+            Pattern.compile("(?iu)\\bkm\\s*\\d");
+
+    private final StaviaSemanticCatalog catalog;
+    private final OperationalRoleLexicon roleLexicon;
+    private final Clock clock;
+
+    public StaviaQueryPlanner() {
+        this(
+                new StaviaSemanticCatalog(),
+                new OperationalRoleLexicon(),
+                Clock.system(BUSINESS_ZONE)
+        );
+    }
+
+    @Autowired
+    public StaviaQueryPlanner(
+            ObjectProvider<StaviaSemanticCatalog> catalog
+    ) {
+        this(
+                catalog == null
+                        ? new StaviaSemanticCatalog()
+                        : catalog.getIfAvailable(
+                                StaviaSemanticCatalog::new
+                        ),
+                new OperationalRoleLexicon(),
+                Clock.system(BUSINESS_ZONE)
+        );
+    }
+
+    public StaviaQueryPlanner(StaviaSemanticCatalog catalog) {
+        this(
+                catalog,
+                new OperationalRoleLexicon(),
+                Clock.system(BUSINESS_ZONE)
+        );
+    }
+
+    public StaviaQueryPlanner(
+            StaviaSemanticCatalog catalog,
+            Clock clock
+    ) {
+        this(catalog, new OperationalRoleLexicon(), clock);
+    }
+
+    public StaviaQueryPlanner(
+            StaviaSemanticCatalog catalog,
+            OperationalRoleLexicon roleLexicon,
+            Clock clock
+    ) {
+        this.catalog = catalog;
+        this.roleLexicon = roleLexicon == null
+                ? new OperationalRoleLexicon()
+                : roleLexicon;
+        this.clock = clock == null
+                ? Clock.system(BUSINESS_ZONE)
+                : clock;
+    }
+
+    public StaviaQueryPlan plan(
+            StaviaQuestion question,
+            StaviaClassification classification
+    ) {
+        if (question == null) {
+            return StaviaQueryPlan.empty();
+        }
+
+        String normalized =
+                StaviaText.normalize(question.text());
+
+        if (normalized.isBlank()) {
+            return StaviaQueryPlan.empty();
+        }
+
+        StaviaQueryPlan combined =
+                combinedRainAllocationPlan(question, normalized);
+
+        if (combined.planned()) {
+            return combined;
+        }
+
+        StaviaQueryPlan contextDocuments =
+                contextDocumentPlan(question, normalized);
+
+        if (contextDocuments.planned()) {
+            return contextDocuments;
+        }
+
+        StaviaQueryPlan segment = segmentPlan(question, normalized);
+
+        if (segment.planned()) {
+            return segment;
+        }
+
+        StaviaQueryPlan crossWorksiteAllocation =
+                crossWorksiteAllocationPlan(
+                        question,
+                        normalized
+                );
+
+        if (crossWorksiteAllocation.planned()) {
+            return crossWorksiteAllocation;
+        }
+
+        StaviaQueryPlan collaboratorProfile =
+                collaboratorProfilePlan(question, normalized);
+
+        if (collaboratorProfile.planned()) {
+            return collaboratorProfile;
+        }
+
+        StaviaQueryPlan assetCatalog =
+                assetCatalogPlan(question, normalized);
+
+        if (assetCatalog.planned()) {
+            return assetCatalog;
+        }
+
+        StaviaQueryPlan team = teamPlan(
+                question,
+                classification
+        );
+
+        if (team.planned()) {
+            return team;
+        }
+
+        List<SemanticAttribute> worksiteAttributes =
+                catalog.matchAttributes(
+                        QueryDomain.OBRA,
+                        question.text()
+                );
+
+        if (!worksiteAttributes.isEmpty()) {
+            return new StaviaQueryPlan(
+                    QueryDomain.OBRA,
+                    QueryOperation.READ_ATTRIBUTE,
+                    entities(question),
+                    TemporalFilter.none(),
+                    worksiteAttributes.stream()
+                            .map(SemanticAttribute::name)
+                            .distinct()
+                            .toList(),
+                    List.of(),
+                    List.of(),
+                    List.of("cadastro-de-obras"),
+                    false,
+                    false,
+                    false
+            );
+        }
+
+        List<SemanticAttribute> rdoAttributes =
+                catalog.matchAttributes(
+                        QueryDomain.RDO,
+                        question.text()
+                );
+
+        if (!rdoAttributes.isEmpty()) {
+            boolean latest =
+                    requestsLatest(normalized)
+                            || classification == null
+                            || classification.intent()
+                                    == StaviaIntent.DESCONHECIDA;
+
+            return new StaviaQueryPlan(
+                    QueryDomain.RDO,
+                    QueryOperation.READ_ATTRIBUTE,
+                    entities(question),
+                    temporalFilter(normalized, latest),
+                    expandRdoAttributeNames(rdoAttributes),
+                    List.of(),
+                    List.of(),
+                    List.of(
+                            "cadastro-rdos",
+                            "historico-operacional"
+                    ),
+                    latest,
+                    containsAny(normalized, "historico", "dias", "semana"),
+                    containsAny(normalized, "comparar", "comparacao", "mudou")
+            );
+        }
+
+        return StaviaQueryPlan.empty();
+    }
+
+    private StaviaQueryPlan contextDocumentPlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        if (!containsAny(
+                normalized,
+                "contexto",
+                "anexo",
+                "arquivo",
+                "documento",
+                "pdf",
+                "imagem",
+                "foto"
+        )) {
+            return StaviaQueryPlan.empty();
+        }
+
+        return new StaviaQueryPlan(
+                QueryDomain.OBRA,
+                QueryOperation.LIST_OBJECTS,
+                entities(question),
+                TemporalFilter.none(),
+                List.of(
+                        "descricao",
+                        "nomeArquivo",
+                        "textoExtraido",
+                        "contentType"
+                ),
+                List.of("CONTEXTUALIZA"),
+                List.of(),
+                List.of("contexto-da-obra"),
+                false,
+                true,
+                false
+        );
+    }
+
+    /**
+     * A map click can be translated to the same range query as natural
+     * language such as "o que aconteceu entre o km 10 e o km 12?". The
+     * records are read directly from the local RDO geometric controls.
+     */
+    private StaviaQueryPlan segmentPlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        boolean kilometreQuestion =
+                KM_REFERENCE.matcher(normalized).find();
+        boolean measurementQuestion =
+                containsAny(
+                        normalized,
+                        "area",
+                        "área",
+                        "m2",
+                        "m²",
+                        "metro quadrado",
+                        "metros quadrados",
+                        "volume",
+                        "m3",
+                        "m³",
+                        "metro cubico",
+                        "metro cúbico",
+                        "metros cubicos",
+                        "metros cúbicos"
+                );
+
+        if (!kilometreQuestion && !measurementQuestion) {
+            return StaviaQueryPlan.empty();
+        }
+
+        List<AggregationSpec> aggregations =
+                measurementQuestion
+                        ? List.of(
+                                new AggregationSpec(
+                                        "SUM",
+                                        "areaM2",
+                                        null
+                                ),
+                                new AggregationSpec(
+                                        "SUM",
+                                        "volumeM3",
+                                        null
+                                )
+                        )
+                        : List.of();
+
+        return new StaviaQueryPlan(
+                QueryDomain.RDO,
+                QueryOperation.READ_ATTRIBUTE,
+                entities(question),
+                TemporalFilter.none(),
+                List.of(
+                        "subtrecho",
+                        "kmInicial",
+                        "kmFinal",
+                        "comprimentoM",
+                        "areaM2",
+                        "volumeM3"
+                ),
+                List.of("OCORRE_NO_TRECHO"),
+                aggregations,
+                List.of("trechos-operacionais"),
+                false,
+                true,
+                false
+        );
+    }
+
+    /**
+     * Plans relationship questions such as "Abner está em outra obra?"
+     * without waiting for the local model. The allocation source then resolves
+     * the person against both current allocations and the legacy RDO workforce
+     * records across the Córtex.
+     */
+    private StaviaQueryPlan crossWorksiteAllocationPlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        if (!containsAny(
+                normalized,
+                "outra obra",
+                "outras obras",
+                "em qual obra",
+                "em quais obras",
+                "quais sao as obras que",
+                "quais obras que",
+                "trabalhou em outra",
+                "trabalha em outra",
+                "alocado em outra"
+        )) {
+            return StaviaQueryPlan.empty();
+        }
+
+        String collaborator =
+                collaboratorNameInWorksiteListQuestion(question.text());
+
+        if (collaborator == null) {
+            collaborator = collaboratorNameBeforeRelationship(question.text());
+        }
+
+        if (collaborator == null) {
+            return StaviaQueryPlan.empty();
+        }
+
+        List<ResolvedEntity> relationEntities =
+                new ArrayList<>(entities(question));
+        relationEntities.add(
+                ResolvedEntity.collaboratorByName(collaborator)
+        );
+
+        return new StaviaQueryPlan(
+                QueryDomain.COLABORADOR,
+                QueryOperation.TRAVERSE_RELATIONSHIP,
+                relationEntities,
+                TemporalFilter.none(),
+                List.of(),
+                List.of("ALOCADO_EM"),
+                List.of(),
+                List.of(
+                        "alocacao-colaborador",
+                        "cadastro-colaboradores-academy"
+                ),
+                false,
+                true,
+                false
+        );
+    }
+
+    /**
+     * Plans a direct person lookup (for example, "Quem é Abner Pereira?").
+     * It deliberately uses the same relationship traversal as an allocation
+     * query, because a collaborator's historical role and worksite are stored
+     * in both current allocations and legacy RDO workforce records.
+     */
+    private StaviaQueryPlan collaboratorProfilePlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        if (!normalized.startsWith("quem e ")) {
+            return StaviaQueryPlan.empty();
+        }
+
+        String collaborator = collaboratorNameAfterProfilePrompt(question.text());
+        if (collaborator == null) {
+            return StaviaQueryPlan.empty();
+        }
+
+        List<ResolvedEntity> profileEntities =
+                new ArrayList<>(entities(question));
+        profileEntities.add(
+                ResolvedEntity.collaboratorByName(collaborator)
+        );
+
+        return new StaviaQueryPlan(
+                QueryDomain.COLABORADOR,
+                QueryOperation.TRAVERSE_RELATIONSHIP,
+                profileEntities,
+                TemporalFilter.none(),
+                List.of(),
+                List.of("PERFIL_COLABORADOR"),
+                List.of(),
+                List.of(
+                        "alocacao-colaborador",
+                        "cadastro-colaboradores-academy"
+                ),
+                false,
+                true,
+                false
+        );
+    }
+
+    private String collaboratorNameBeforeRelationship(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+
+        String candidate = question
+                .replaceFirst(
+                        "(?iu)\\s+(está|esta|trabalha|trabalhou|atua|foi\\s+alocado|tem\\s+alocação|tem\\s+alocacao).*?$",
+                        ""
+                )
+                .replaceFirst(
+                        "(?iu)^\\s*(o|a)?\\s*(colaborador|funcionário|funcionario|trabalhador)\\s+",
+                        ""
+                )
+                .replaceAll("[?!.]+$", "")
+                .trim();
+
+        if (candidate.isBlank() || candidate.split("\\s+").length < 2) {
+            return null;
+        }
+
+        return candidate;
+    }
+
+    private String collaboratorNameInWorksiteListQuestion(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+
+        String candidate = question
+                .replaceFirst(
+                        "(?iu)^\\s*quais\\s+(?:são|sao)\\s+(?:as\\s+)?obras\\s+que\\s+(?:(?:o|a)\\s+)?",
+                        ""
+                )
+                .replaceFirst(
+                        "(?iu)^\\s*quais\\s+obras\\s+que\\s+(?:(?:o|a)\\s+)?",
+                        ""
+                )
+                .replaceFirst(
+                        "(?iu)^\\s*em\\s+quais\\s+obras\\s+(?:(?:o|a)\\s+)?",
+                        ""
+                );
+
+        if (candidate.equals(question)) {
+            return null;
+        }
+
+        candidate = candidate
+                .replaceFirst(
+                        "(?iu)\\s+(está|esta|trabalha|trabalhou|atua|foi\\s+alocado|tem\\s+alocação|tem\\s+alocacao).*?$",
+                        ""
+                )
+                .replaceAll("[?!.]+$", "")
+                .trim();
+
+        if (candidate.split("\\s+").length < 2
+                || roleLexicon.mentionsTeam(candidate)) {
+            return null;
+        }
+
+        return candidate;
+    }
+
+    private String collaboratorNameAfterProfilePrompt(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+
+        String candidate = question
+                .replaceFirst(
+                        "(?iu)^\\s*quem\\s+(?:é|e)\\s+(?:(?:o|a)\\s+)?(?:(?:colaborador|funcionário|funcionario|trabalhador)\\s+)?",
+                        ""
+                )
+                .replaceAll("[?!.]+$", "")
+                .trim();
+
+        if (candidate.split("\\s+").length < 2
+                || roleLexicon.mentionsTeam(candidate)) {
+            return null;
+        }
+
+        return candidate;
+    }
+
+    private StaviaQueryPlan assetCatalogPlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        boolean asksCatalog =
+                containsAny(
+                        normalized,
+                        "zeladoria",
+                        "cadastro de ativo",
+                        "cadastro de ativos",
+                        "cadastro de equipamento",
+                        "cadastro de equipamentos",
+                        "ativos cadastrados",
+                        "equipamentos cadastrados",
+                        "ativos existem",
+                        "equipamentos existem",
+                        "quais ativos",
+                        "quais equipamentos cadastrados"
+                );
+
+        if (!asksCatalog) {
+            return StaviaQueryPlan.empty();
+        }
+
+        return new StaviaQueryPlan(
+                QueryDomain.EQUIPAMENTO,
+                QueryOperation.LIST_OBJECTS,
+                entities(question),
+                TemporalFilter.none(),
+                List.of(),
+                List.of("CADASTRADO_EM_ZELADORIA"),
+                List.of(),
+                List.of("cadastro-ativos-zeladoria"),
+                false,
+                false,
+                false
+        );
+    }
+
+    private StaviaQueryPlan teamPlan(
+            StaviaQuestion question,
+            StaviaClassification classification
+    ) {
+        boolean teamIntent = classification != null
+                && classification.intent()
+                        == StaviaIntent.CONSULTAR_EQUIPE;
+
+        if (!teamIntent && !roleLexicon.mentionsTeam(question.text())) {
+            return StaviaQueryPlan.empty();
+        }
+
+        List<ResolvedEntity> teamEntities =
+                new ArrayList<>(entities(question));
+
+        roleLexicon.rolesMentioned(question.text())
+                .stream()
+                .map(ResolvedEntity::roleByLabel)
+                .forEach(teamEntities::add);
+
+        return new StaviaQueryPlan(
+                QueryDomain.EQUIPE,
+                QueryOperation.READ_ATTRIBUTE,
+                teamEntities,
+                TemporalFilter.none(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("mao-de-obra-dos-rdos"),
+                false,
+                false,
+                false
+        );
+    }
+
+    public StaviaIntent effectiveIntent(
+            StaviaIntent classifiedIntent,
+            StaviaQueryPlan plan
+    ) {
+        if (plan != null
+                && plan.planned()
+                && plan.requiredSources().contains("trechos-operacionais")) {
+            return StaviaIntent.CONSULTAR_RDO;
+        }
+
+        if (plan != null
+                && plan.planned()
+                && plan.requiredSources().contains("contexto-da-obra")) {
+            return StaviaIntent.CONSULTAR_OBRA;
+        }
+
+        if (classifiedIntent != null
+                && classifiedIntent != StaviaIntent.DESCONHECIDA) {
+            return classifiedIntent;
+        }
+
+        if (plan == null || !plan.planned()) {
+            return StaviaIntent.DESCONHECIDA;
+        }
+
+        return switch (plan.domain()) {
+            case RDO -> StaviaIntent.CONSULTAR_RDO;
+            case COLABORADOR, EQUIPE -> StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR;
+            case EQUIPAMENTO -> StaviaIntent.CONSULTAR_ATIVO;
+            case FINANCEIRO -> StaviaIntent.CONSULTAR_PREVISAO_FINANCEIRA;
+            case FREQUENCIA -> StaviaIntent.CONSULTAR_FREQUENCIA;
+            case BANCO_HORAS -> StaviaIntent.CONSULTAR_BANCO_HORAS;
+            case OBRA -> StaviaIntent.CONSULTAR_OBRA;
+            case PROGRAMACAO -> StaviaIntent.CONSULTAR_PROGRAMACAO;
+            default -> StaviaIntent.DESCONHECIDA;
+        };
+    }
+
+    public double effectiveConfidence(
+            double classifiedConfidence,
+            StaviaIntent classifiedIntent,
+            StaviaQueryPlan plan
+    ) {
+        if (plan != null
+                && plan.planned()
+                && plan.requiredSources().contains("trechos-operacionais")) {
+            return 0.95;
+        }
+
+        if (plan != null
+                && plan.planned()
+                && plan.requiredSources().contains("contexto-da-obra")) {
+            return 0.9;
+        }
+
+        if (classifiedIntent != StaviaIntent.DESCONHECIDA) {
+            return classifiedConfidence;
+        }
+
+        return plan != null && plan.planned()
+                ? 0.75
+                : classifiedConfidence;
+    }
+
+    private StaviaQueryPlan combinedRainAllocationPlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        if (!containsAny(normalized, "ultimo dia de chuva", "dia de chuva")
+                || !containsAny(normalized, "colaborador", "colaboradores")
+                || !containsAny(normalized, "equipamento", "equipamentos", "maquina", "maquinas")) {
+            return StaviaQueryPlan.empty();
+        }
+
+        return new StaviaQueryPlan(
+                QueryDomain.RDO,
+                QueryOperation.TRAVERSE_RELATIONSHIP,
+                entities(question),
+                TemporalFilter.latest("DATA_RDO_COM_CHUVA"),
+                List.of("pluviometriaMm", "condicaoManha", "condicaoTarde", "condicaoNoite"),
+                List.of("ALOCACAO_COLABORADOR", "ALOCACAO_EQUIPAMENTO"),
+                List.of(),
+                List.of("cadastro-rdos", "alocacao-colaborador", "equipamentos-dos-rdos"),
+                true,
+                true,
+                false
+        );
+    }
+
+    private List<String> expandRdoAttributeNames(
+            List<SemanticAttribute> matched
+    ) {
+        List<String> names = new ArrayList<>();
+
+        boolean climate =
+                matched.stream()
+                        .map(SemanticAttribute::name)
+                        .anyMatch(name ->
+                                name.startsWith("condicao")
+                                        || "pluviometriaMm".equals(name)
+                        );
+
+        if (climate) {
+            names.add("condicaoManha");
+            names.add("condicaoTarde");
+            names.add("condicaoNoite");
+            names.add("pluviometriaMm");
+        }
+
+        matched.stream()
+                .map(SemanticAttribute::name)
+                .forEach(names::add);
+
+        return names.stream()
+                .distinct()
+                .toList();
+    }
+
+    private List<ResolvedEntity> entities(StaviaQuestion question) {
+        if (question.obraId() == null || question.obraId().isBlank()) {
+            return List.of();
+        }
+
+        return List.of(
+                ResolvedEntity.worksiteById(question.obraId())
+        );
+    }
+
+    private TemporalFilter temporalFilter(
+            String normalized,
+            boolean latest
+    ) {
+        LocalDate today =
+                LocalDate.now(clock.withZone(BUSINESS_ZONE));
+
+        if (containsAny(normalized, "hoje")) {
+            return new TemporalFilter(
+                    today,
+                    today,
+                    "HOJE",
+                    null,
+                    null
+            );
+        }
+
+        if (containsAny(normalized, "ontem")) {
+            LocalDate yesterday = today.minusDays(1);
+            return new TemporalFilter(
+                    yesterday,
+                    yesterday,
+                    "ONTEM",
+                    null,
+                    null
+            );
+        }
+
+        if (containsAny(normalized, "esta semana")) {
+            LocalDate start = today.minusDays(today.getDayOfWeek().getValue() - 1L);
+            return new TemporalFilter(
+                    start,
+                    today,
+                    "ESTA_SEMANA",
+                    null,
+                    null
+            );
+        }
+
+        if (containsAny(normalized, "semana passada")) {
+            LocalDate thisWeekStart = today.minusDays(today.getDayOfWeek().getValue() - 1L);
+            return new TemporalFilter(
+                    thisWeekStart.minusWeeks(1),
+                    thisWeekStart.minusDays(1),
+                    "SEMANA_PASSADA",
+                    null,
+                    null
+            );
+        }
+
+        LocalDate explicit = extractDate(normalized);
+        if (explicit != null) {
+            return new TemporalFilter(
+                    explicit,
+                    explicit,
+                    null,
+                    null,
+                    null
+            );
+        }
+
+        if (latest) {
+            return TemporalFilter.latest("RDO_STATUS_E_DATA_OPERACIONAL");
+        }
+
+        return TemporalFilter.none();
+    }
+
+    private LocalDate extractDate(String normalized) {
+        Matcher matcher = DATE_PATTERN.matcher(normalized);
+
+        if (!matcher.find()) {
+            return null;
+        }
+
+        String value = matcher.group(1);
+
+        try {
+            if (value.contains("/")) {
+                return LocalDate.parse(value, DATE_BR);
+            }
+
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
+    private boolean requestsLatest(String normalized) {
+        return containsAny(
+                normalized,
+                "mais recente",
+                "ultimo",
+                "ultima",
+                "atual",
+                "atualmente",
+                "ultimo rdo"
+        );
+    }
+
+    private boolean containsAny(
+            String value,
+            String... candidates
+    ) {
+        String lower =
+                value.toLowerCase(Locale.ROOT);
+
+        for (String candidate : candidates) {
+            if (lower.contains(candidate)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

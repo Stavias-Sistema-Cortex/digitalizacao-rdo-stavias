@@ -1,19 +1,11 @@
 package com.projeto.cortex.sync;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.projeto.cortex.rdos.RdoCreateRequest;
-import com.projeto.cortex.rdos.RdoDraftUpdateService;
-import com.projeto.cortex.rdos.RdoResponse;
-import com.projeto.cortex.rdos.RdoService;
-import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
@@ -21,6 +13,17 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.projeto.cortex.rdos.RdoCreateRequest;
+import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoQueryService;
+import com.projeto.cortex.rdos.RdoResponse;
+import com.projeto.cortex.rdos.RdoService;
+import com.projeto.cortex.rdos.RdoWorkflowService;
 
 @Service
 public class SyncService {
@@ -51,6 +54,7 @@ public class SyncService {
     private final RdoService rdoService;
     private final RdoDraftUpdateService rdoDraftUpdateService;
     private final RdoWorkflowService rdoWorkflowService;
+    private final RdoQueryService rdoQueryService;
 
     public SyncService(
             JdbcTemplate jdbcTemplate,
@@ -58,7 +62,8 @@ public class SyncService {
             TransactionTemplate transactionTemplate,
             RdoService rdoService,
             RdoDraftUpdateService rdoDraftUpdateService,
-            RdoWorkflowService rdoWorkflowService
+            RdoWorkflowService rdoWorkflowService,
+            RdoQueryService rdoQueryService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -66,6 +71,7 @@ public class SyncService {
         this.rdoService = rdoService;
         this.rdoDraftUpdateService = rdoDraftUpdateService;
         this.rdoWorkflowService = rdoWorkflowService;
+        this.rdoQueryService = rdoQueryService;
     }
 
     public SyncPullResponse pull(long afterCommitSeq, Integer requestedLimit) {
@@ -526,6 +532,9 @@ public class SyncService {
         return switch (mutacao.operacao()) {
             case "CRIAR_RDO" -> {
                 RdoCreateRequest request = toValue(mutacao.payload(), RdoCreateRequest.class);
+                if (request.id() != null && !request.id().isBlank() && rdoExiste(request.id())) {
+                    yield rdoQueryService.buscarPorId(request.id());
+                }
                 yield rdoService.criarRascunho(request);
             }
             case "ATUALIZAR_RDO_RASCUNHO" -> {
@@ -610,6 +619,20 @@ public class SyncService {
         }
 
         return commitSeq;
+    }
+
+    private boolean rdoExiste(String rdoId) {
+        Integer total = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM rdo
+                WHERE id = ?
+                """,
+                Integer.class,
+                rdoId
+        );
+
+        return total != null && total > 0;
     }
 
     private SyncPushResponse.ResultadoMutacao buscarResultadoMutacaoExistenteOuNull(

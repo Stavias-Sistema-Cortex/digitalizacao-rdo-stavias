@@ -1,6 +1,8 @@
 package com.projeto.cortex.intelligence.stavia.model;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record StaviaEvidence(
@@ -37,6 +39,8 @@ public record StaviaEvidence(
 
         attributes = attributes == null
                 ? Map.of()
-                : Map.copyOf(attributes);
+                : Collections.unmodifiableMap(
+                        new LinkedHashMap<>(attributes)
+                );
     }
 }

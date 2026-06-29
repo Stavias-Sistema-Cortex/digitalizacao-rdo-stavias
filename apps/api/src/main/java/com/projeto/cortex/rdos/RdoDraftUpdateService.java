@@ -1,7 +1,8 @@
 package com.projeto.cortex.rdos;
 
-import org.springframework.dao.DataAccessException;
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,20 +20,32 @@ public class RdoDraftUpdateService {
     private final JdbcTemplate jdbcTemplate;
     private final RdoQueryService queryService;
     private final RdoMemoryPublisher memoryPublisher;
+    private final RdoChangeAuditService auditService;
+    private final RdoOperationalDetailService operationalDetailService;
+    private final PrevisaoFinanceiraService previsaoFinanceiraService;
 
     public RdoDraftUpdateService(
             JdbcTemplate jdbcTemplate,
             RdoQueryService queryService,
-            RdoMemoryPublisher memoryPublisher
+            RdoMemoryPublisher memoryPublisher,
+            RdoChangeAuditService auditService,
+            RdoOperationalDetailService operationalDetailService,
+            PrevisaoFinanceiraService previsaoFinanceiraService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
         this.memoryPublisher = memoryPublisher;
+        this.auditService = auditService;
+        this.operationalDetailService = operationalDetailService;
+        this.previsaoFinanceiraService = previsaoFinanceiraService;
     }
 
     @Transactional
     public RdoResponse atualizarRascunho(String rdoId, RdoCreateRequest request) {
-        validarRdoEditavel(rdoId);
+        RdoChangeAuditService.RdoAuditSnapshot estadoAnterior =
+                auditService.carregar(rdoId);
+
+        validarRdoEditavel(estadoAnterior);
 
         if (request.obraId() == null || request.obraId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "obraId é obrigatório.");
@@ -131,34 +144,50 @@ public class RdoDraftUpdateService {
         inserirEquipamentos(rdoId, request.equipamentos());
         inserirMateriais(rdoId, request.materiais());
         inserirControlesGeometricos(rdoId, request.controlesGeometricos());
+        operationalDetailService.substituirDetalhes(
+                rdoId,
+                request.obraId(),
+                programacao == null ? null : programacao.id(),
+                request.dataRdo(),
+                request.turno(),
+                request.servicosExecutados(),
+                request.alocacoesColaboradores()
+        );
+
+        RdoChangeAuditService.RdoAuditSnapshot estadoNovo =
+                auditService.carregar(rdoId);
 
         memoryPublisher.registrarRdoEditado(
                 rdoId,
                 request.obraId(),
                 programacao == null ? null : programacao.id(),
                 request.numeroRdo(),
-                "RASCUNHO"
+                "RASCUNHO",
+                estadoAnterior.versaoLinha(),
+                estadoNovo.versaoLinha(),
+                auditService.calcularAlteracoes(
+                        estadoAnterior,
+                        estadoNovo
+                        )
+        );
+
+        previsaoFinanceiraService.recalcularAposMudancaRdo(
+                request.obraId(),
+                request.dataRdo(),
+                null
         );
 
         return queryService.buscarPorId(rdoId);
     }
 
-    private void validarRdoEditavel(String rdoId) {
-        try {
-            String status = jdbcTemplate.queryForObject(
-                    "SELECT status FROM rdo WHERE id = ?",
-                    String.class,
-                    rdoId
+    private void validarRdoEditavel(
+            RdoChangeAuditService.RdoAuditSnapshot snapshot
+    ) {
+        if (!"RASCUNHO".equals(snapshot.status())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Apenas RDO em RASCUNHO pode ser editado."
             );
-
-            if (!"RASCUNHO".equals(status)) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "Apenas RDO em RASCUNHO pode ser editado."
-                );
-            }
-        } catch (DataAccessException exception) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "RDO não encontrado: " + rdoId);
         }
     }
 

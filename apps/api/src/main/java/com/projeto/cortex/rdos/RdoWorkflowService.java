@@ -1,5 +1,6 @@
 package com.projeto.cortex.rdos;
 
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,15 +14,18 @@ public class RdoWorkflowService {
     private final JdbcTemplate jdbcTemplate;
     private final RdoQueryService queryService;
     private final RdoMemoryPublisher memoryPublisher;
+    private final PrevisaoFinanceiraService previsaoFinanceiraService;
 
     public RdoWorkflowService(
             JdbcTemplate jdbcTemplate,
             RdoQueryService queryService,
-            RdoMemoryPublisher memoryPublisher
+            RdoMemoryPublisher memoryPublisher,
+            PrevisaoFinanceiraService previsaoFinanceiraService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
         this.memoryPublisher = memoryPublisher;
+        this.previsaoFinanceiraService = previsaoFinanceiraService;
     }
 
     @Transactional
@@ -59,6 +63,12 @@ public class RdoWorkflowService {
                 response.obraId(),
                 response.programacaoId(),
                 response.numeroRdo()
+        );
+
+        previsaoFinanceiraService.recalcularAposMudancaRdo(
+                response.obraId(),
+                response.dataRdo(),
+                null
         );
 
         return response;

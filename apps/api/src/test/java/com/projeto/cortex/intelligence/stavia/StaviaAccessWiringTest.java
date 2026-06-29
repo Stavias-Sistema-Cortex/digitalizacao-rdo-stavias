@@ -37,6 +37,9 @@ class StaviaAccessWiringTest {
 
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
+                    .withPropertyValues(
+                            "cortex.stavia.generator-mode=deterministic"
+                    )
                     .withUserConfiguration(
                             StaviaQueryConfiguration.class
                     );
@@ -65,7 +68,9 @@ class StaviaAccessWiringTest {
 
     @Test
     void shouldWireFailClosedPolicyAndNoControllerOutsideLocalProfile() {
-        contextRunner.run(context -> {
+        contextRunner
+                .withPropertyValues("spring.profiles.active=not-local")
+                .run(context -> {
             assertThat(context).hasNotFailed();
 
             assertThat(context)

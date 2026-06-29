@@ -16,9 +16,14 @@ import java.util.List;
 public class RdoQueryService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final RdoOperationalDetailService operationalDetailService;
 
-    public RdoQueryService(JdbcTemplate jdbcTemplate) {
+    public RdoQueryService(
+            JdbcTemplate jdbcTemplate,
+            RdoOperationalDetailService operationalDetailService
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.operationalDetailService = operationalDetailService;
     }
 
     public RdoResponse buscarPorId(String id) {
@@ -44,7 +49,9 @@ public class RdoQueryService {
                 listarMaoObra(id),
                 listarEquipamentos(id),
                 listarMateriais(id),
-                listarControlesGeometricos(id)
+                listarControlesGeometricos(id),
+                operationalDetailService.listarServicos(id),
+                operationalDetailService.listarAlocacoes(id)
         );
     }
 

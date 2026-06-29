@@ -203,6 +203,9 @@ public class StaviaEvidenceQualityPolicy {
                 StaviaEvidenceTypes.OBRA.equals(
                         evidence.type()
                 )
+                        || StaviaEvidenceTypes.CONTEXTO_OBRA.equals(
+                        evidence.type()
+                )
         ) {
             return false;
         }

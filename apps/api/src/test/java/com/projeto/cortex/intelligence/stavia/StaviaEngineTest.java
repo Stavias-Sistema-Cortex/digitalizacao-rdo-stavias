@@ -8,6 +8,7 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.model.StaviaConfidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaContext;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaGroundingValidator;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaContradictionPolicy;
@@ -22,6 +23,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -148,6 +150,65 @@ class StaviaEngineTest {
         assertEquals(
                 StaviaConfidence.INDETERMINADA,
                 answer.confidence()
+        );
+    }
+
+    @Test
+    void shouldNotTruncateHistoryToFiveSources() {
+        StaviaQuestion question =
+                new StaviaQuestion(
+                        "Qual é o histórico de alterações dos RDOs desta obra?",
+                        "usuario-1",
+                        "obra-1"
+                );
+
+        List<StaviaEvidence> events =
+                IntStream.rangeClosed(1, 6)
+                        .mapToObj(index ->
+                                new StaviaEvidence(
+                                        StaviaEvidenceTypes.EVENTO_OPERACIONAL,
+                                        "evento-" + index,
+                                        "Evento " + index,
+                                        NOW.plusSeconds(index),
+                                        true,
+                                        Map.of(
+                                                "commitSequence",
+                                                (long) index,
+                                                "eventType",
+                                                index == 1
+                                                        ? "RDO_CRIADO"
+                                                        : "RDO_EDITADO",
+                                                "entityType",
+                                                "RDO",
+                                                "entityId",
+                                                "rdo-1",
+                                                "payload",
+                                                Map.of(
+                                                        "numeroRdo",
+                                                        "RDO-1"
+                                                )
+                                        )
+                                )
+                        )
+                        .toList();
+
+        StaviaContext context =
+                new StaviaContext(
+                        Set.of(
+                                StaviaEngine.REQUIRED_PERMISSION
+                        ),
+                        events
+                );
+
+        StaviaAnswer answer =
+                engine.answer(question, context);
+
+        assertFalse(answer.insufficientData());
+        assertEquals(6, answer.sources().size());
+        assertTrue(
+                answer.answer().contains(
+                        "6 eventos registrados"
+                )
         );
     }
 }

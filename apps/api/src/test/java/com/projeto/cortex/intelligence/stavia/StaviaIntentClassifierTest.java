@@ -53,6 +53,42 @@ class StaviaIntentClassifierTest {
                 );
     }
 
+    @Test
+    void shouldClassifyPortugueseIntentVariationsDistinctly() {
+        assertThat(
+                classifier.classify(
+                        "Liste os RDOs vinculados a esta obra"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+
+        assertThat(
+                classifier.classify(
+                        "Quais mudanças ocorreram nos relatórios diários?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_HISTORICO);
+
+        assertThat(
+                classifier.classify(
+                        "Qual RDO foi gerado a partir da programação?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_PROGRAMACAO);
+
+        assertThat(
+                classifier.classify(
+                        "Há risco de estouro do orçamento segundo o PDOC?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_PDOC);
+    }
+
+    @Test
+    void shouldPrioritizePdocCostRiskOverGenericOccurrenceRisk() {
+        assertThat(
+                classifier.classify(
+                        "Qual é o risco de estouro de custos desta obra?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_PDOC);
+    }
+
 
     @Test
     void shouldClassifyWorksiteDateQuestion() {
@@ -108,6 +144,21 @@ class StaviaIntentClassifierTest {
         ).isEqualTo(
                 StaviaIntent.CONSULTAR_EQUIPE
         );
+    }
+
+    @Test
+    void shouldClassifyOperationalRolesAsTeamQuestions() {
+        assertThat(
+                classifier.classify(
+                        "Quem são os operadores desta obra?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_EQUIPE);
+
+        assertThat(
+                classifier.classify(
+                        "Tem apontadores trabalhando hoje?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_EQUIPE);
     }
 
 

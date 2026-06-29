@@ -137,6 +137,81 @@ class RealPdocInputLoaderMysqlIntegrationTest {
                 .isNotEqualTo(BigDecimal.ZERO);
     }
 
+    @Test
+    void shouldLoadFinancialInputsFromContractAndExecutedServices() {
+        Obra obra = Obra.criar(
+                "CW-FIN",
+                "CW-FIN",
+                "Teste Financeiro",
+                "Obra teste financeiro",
+                "Intervias",
+                null,
+                "Leme",
+                "SP",
+                "SP 330",
+                "ATIVA",
+                "TESTE",
+                null,
+                null
+        );
+        insertObra(obra);
+
+        String rdoId =
+                insertRdo(
+                        obra,
+                        LocalDate.of(2026, 6, 20),
+                        "Produção financeira registrada."
+                );
+        String itemId =
+                insertItemContratual(
+                        obra,
+                        "PAV-001",
+                        "Pavimentação",
+                        "m2",
+                        "1000.000",
+                        "25.0000",
+                        "25000.00"
+                );
+
+        insertExecucaoServico(
+                rdoId,
+                obra,
+                itemId,
+                LocalDate.of(2026, 6, 20),
+                "100.000",
+                "m2",
+                "2500.00",
+                "1700.00"
+        );
+
+        PdocInputBundle bundle =
+                loader.load(obra, LocalDate.of(2026, 6, 20));
+
+        assertThat(bundle.canCalculate()).isTrue();
+        assertThat(bundle.missingRequiredFields()).isEmpty();
+        assertThat(bundle.inputs().get("quantityMetric"))
+                .isEqualTo("ITEM_CONTRATUAL");
+
+        assertDecimalInput(bundle, "approvedBudget", "25000.00");
+        assertDecimalInput(bundle, "actualCost", "1700.00");
+        assertDecimalInput(bundle, "committedCost", "1700.00");
+        assertDecimalInput(bundle, "totalPlannedQuantity", "1000.000");
+        assertDecimalInput(bundle, "plannedExecutedQuantity", "1000.000");
+        assertDecimalInput(bundle, "actualExecutedQuantity", "100.000");
+
+        assertThat(bundle.origins().get("approvedBudget").availability())
+                .isEqualTo(PdocDataAvailability.DIRECT);
+        assertThat(bundle.origins().get("actualCost").availability())
+                .isEqualTo(PdocDataAvailability.DIRECT);
+        assertThat(bundle.origins().get("committedCost").availability())
+                .isEqualTo(PdocDataAvailability.AMBIGUOUS);
+        assertThat(bundle.warnings())
+                .anySatisfy(warning ->
+                        assertThat(warning).contains("itens contratuais e execuções de serviço"))
+                .anySatisfy(warning ->
+                        assertThat(warning).contains("custo realizado estruturado como proxy"));
+    }
+
     private void assertDecimalInput(
             PdocInputBundle bundle,
             String field,
@@ -333,6 +408,76 @@ class RealPdocInputLoaderMysqlIntegrationTest {
                 "ENVIAR_RDO",
                 "{}",
                 "APLICADA"
+        );
+    }
+
+    private String insertItemContratual(
+            Obra obra,
+            String codigoItem,
+            String descricao,
+            String unidade,
+            String quantidade,
+            String precoUnitario,
+            String valorTotal
+    ) {
+        String id = uuid();
+        jdbcTemplate.update(
+                """
+                INSERT INTO item_contratual (
+                    id, obra_id, contrato, codigo_item, descricao,
+                    unidade_medida, quantidade_contratada, preco_unitario,
+                    valor_total, status, fonte
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                id,
+                obra.getId(),
+                obra.getCodigoContrato(),
+                codigoItem,
+                descricao,
+                unidade,
+                new BigDecimal(quantidade),
+                new BigDecimal(precoUnitario),
+                new BigDecimal(valorTotal),
+                "ATIVO",
+                "TESTE"
+        );
+        return id;
+    }
+
+    private void insertExecucaoServico(
+            String rdoId,
+            Obra obra,
+            String itemId,
+            LocalDate data,
+            String quantidade,
+            String unidade,
+            String receita,
+            String custo
+    ) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, item_contratual_id,
+                    quantidade_executada, unidade_medida, data_execucao,
+                    status_validacao, estado_receita,
+                    receita_operacional_estimativa, custo_realizado,
+                    fonte, chave_execucao
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                uuid(),
+                rdoId,
+                obra.getId(),
+                "Pavimentação",
+                itemId,
+                new BigDecimal(quantidade),
+                unidade,
+                data,
+                "REGISTRADA",
+                "RECEITA_ESTIMADA",
+                new BigDecimal(receita),
+                new BigDecimal(custo),
+                "TESTE",
+                uuid()
         );
     }
 

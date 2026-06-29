@@ -1,5 +1,6 @@
 package com.projeto.cortex.rdos;
 
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,10 +21,19 @@ public class RdoService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RdoMemoryPublisher memoryPublisher;
+    private final RdoOperationalDetailService operationalDetailService;
+    private final PrevisaoFinanceiraService previsaoFinanceiraService;
 
-    public RdoService(JdbcTemplate jdbcTemplate, RdoMemoryPublisher memoryPublisher) {
+    public RdoService(
+            JdbcTemplate jdbcTemplate,
+            RdoMemoryPublisher memoryPublisher,
+            RdoOperationalDetailService operationalDetailService,
+            PrevisaoFinanceiraService previsaoFinanceiraService
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryPublisher = memoryPublisher;
+        this.operationalDetailService = operationalDetailService;
+        this.previsaoFinanceiraService = previsaoFinanceiraService;
     }
 
     @Transactional
@@ -144,6 +154,23 @@ public class RdoService {
                 status
         );
 
+        RdoOperationalDetailService.RdoOperationalDetails detalhes =
+                operationalDetailService.substituirDetalhes(
+                        rdoId,
+                        request.obraId(),
+                        programacao == null ? null : programacao.id(),
+                        request.dataRdo(),
+                        request.turno(),
+                        request.servicosExecutados(),
+                        request.alocacoesColaboradores()
+                );
+
+        previsaoFinanceiraService.recalcularAposMudancaRdo(
+                request.obraId(),
+                request.dataRdo(),
+                null
+        );
+
         return new RdoResponse(
                 rdoId,
                 request.obraId(),
@@ -164,7 +191,9 @@ public class RdoService {
                 maoObra,
                 equipamentos,
                 materiais,
-                controles
+                controles,
+                detalhes.servicosExecutados(),
+                detalhes.alocacoesColaboradores()
         );
     }
 

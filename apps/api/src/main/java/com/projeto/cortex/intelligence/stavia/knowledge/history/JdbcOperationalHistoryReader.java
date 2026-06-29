@@ -59,7 +59,7 @@ public class JdbcOperationalHistoryReader
                         CAST(
                             'OBRA'
                             AS CHAR(80) CHARACTER SET utf8mb4
-                        ) COLLATE utf8mb4_unicode_ci AS entity_type,
+                        ) COLLATE utf8mb4_0900_ai_ci AS entity_type,
 
                         CAST(
                             ?
@@ -71,7 +71,7 @@ public class JdbcOperationalHistoryReader
                         CAST(
                             CONCAT('|OBRA:', ?, '|')
                             AS CHAR(4000) CHARACTER SET utf8mb4
-                        ) COLLATE utf8mb4_unicode_ci AS traversal_path
+                        ) COLLATE utf8mb4_0900_ai_ci AS traversal_path
 
                     UNION ALL
 
@@ -164,7 +164,7 @@ public class JdbcOperationalHistoryReader
                 JOIN unique_nodes node
                   ON node.entity_type = event.tipo_entidade
                  AND node.entity_id = event.entidade_id
-                ORDER BY event.commit_seq DESC
+                ORDER BY event.commit_seq ASC
                 LIMIT ?
                 """,
                 (resultSet, rowNumber) -> {

@@ -4,8 +4,11 @@ import com.projeto.cortex.intelligence.stavia.StaviaEngine;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeSource;
+import com.projeto.cortex.intelligence.stavia.knowledge.registry.StaviaSourceDescriptor;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.planning.QueryDomain;
+import com.projeto.cortex.intelligence.stavia.planning.QueryOperation;
 import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class WorksiteKnowledgeSource
@@ -40,7 +44,38 @@ public class WorksiteKnowledgeSource
 
     @Override
     public String sourceVersion() {
-        return "STAVIA-WORKSITE-SOURCE-0.1.0";
+        return "STAVIA-WORKSITE-SOURCE-0.2.0";
+    }
+
+    @Override
+    public StaviaSourceDescriptor descriptor() {
+        return new StaviaSourceDescriptor(
+                sourceName(),
+                sourceVersion(),
+                Set.of(QueryDomain.OBRA),
+                Set.of(StaviaEvidenceTypes.OBRA),
+                Set.of(
+                        "cidade",
+                        "uf",
+                        "rodovia",
+                        "cliente",
+                        "nome",
+                        "status",
+                        "codigo",
+                        "codigoCw",
+                        "codigoContrato",
+                        "codigoInterno"
+                ),
+                Set.of(),
+                Set.of(
+                        QueryOperation.READ_ATTRIBUTE,
+                        QueryOperation.SUMMARIZE
+                ),
+                Set.of(StaviaEngine.REQUIRED_PERMISSION),
+                "Cadastro local de obras no Córtex",
+                5,
+                1
+        );
     }
 
     @Override
@@ -59,7 +94,15 @@ public class WorksiteKnowledgeSource
             return false;
         }
 
-        return request.intent()
+        boolean plannedWorksiteAttribute =
+                request.plan() != null
+                        && request.plan().planned()
+                        && request.plan().domain() == QueryDomain.OBRA
+                        && request.plan().operation()
+                                == QueryOperation.READ_ATTRIBUTE;
+
+        return plannedWorksiteAttribute
+                || request.intent()
                 == StaviaIntent.CONSULTAR_OBRA
                 || request.intent()
                 == StaviaIntent.CONSULTAR_ESTADO_ATUAL

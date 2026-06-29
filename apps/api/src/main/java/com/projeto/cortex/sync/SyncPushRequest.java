@@ -1,9 +1,9 @@
 package com.projeto.cortex.sync;
 
-import com.fasterxml.jackson.databind.JsonNode;
-
 import java.time.LocalDateTime;
 import java.util.List;
+
+import com.fasterxml.jackson.databind.JsonNode;
 
 public record SyncPushRequest(
         String dispositivoId,

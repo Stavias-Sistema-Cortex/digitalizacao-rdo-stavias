@@ -7,6 +7,8 @@ import java.util.List;
 @Service
 public class AssetService {
 
+    private static final int MAX_LOOKUP_RESULTS = 50;
+
     private final AssetRepository assetRepository;
 
     public AssetService(AssetRepository assetRepository) {
@@ -23,6 +25,7 @@ public class AssetService {
         }
 
         return assets.stream()
+                .limit(MAX_LOOKUP_RESULTS)
                 .map(AssetResponse::from)
                 .toList();
     }

@@ -38,7 +38,9 @@ public record RdoCreateRequest(
         List<MaoObraItem> maoObra,
         List<EquipamentoItem> equipamentos,
         List<MaterialItem> materiais,
-        List<ControleGeometricoItem> controlesGeometricos
+        List<ControleGeometricoItem> controlesGeometricos,
+        List<ServicoExecutadoItem> servicosExecutados,
+        List<AlocacaoColaboradorItem> alocacoesColaboradores
 ) {
 
     public record MaoObraItem(
@@ -91,6 +93,41 @@ public record RdoCreateRequest(
             BigDecimal espessura2Cm,
             BigDecimal espessura3Cm,
             BigDecimal densidade,
+            String observacoes
+    ) {
+    }
+
+    public record ServicoExecutadoItem(
+            String servicoNome,
+            String itemContratualId,
+            BigDecimal quantidadeExecutada,
+            String unidade,
+            String trechoInicial,
+            String trechoFinal,
+            String localizacao,
+            String turno,
+            String statusValidacao,
+            BigDecimal custoRealizado,
+            Boolean retrabalho,
+            Boolean producaoRejeitada,
+            String observacoes
+    ) {
+    }
+
+    public record AlocacaoColaboradorItem(
+            String colaboradorId,
+            String equipe,
+            String servicoNome,
+            LocalTime horaInicio,
+            LocalTime horaFim,
+            BigDecimal percentualDia,
+            String turno,
+            String funcao,
+            String centroCusto,
+            String tipoAlocacao,
+            String fonte,
+            String status,
+            BigDecimal custoHora,
             String observacoes
     ) {
     }

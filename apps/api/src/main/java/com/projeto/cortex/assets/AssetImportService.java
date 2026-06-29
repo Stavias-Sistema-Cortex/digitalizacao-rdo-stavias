@@ -1,17 +1,16 @@
 package com.projeto.cortex.assets;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.projeto.cortex.integracoes.ZeladoriaSourceAdapter;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -20,20 +19,20 @@ public class AssetImportService {
     private static final String CONNECTOR_NAME = "zld_asset_import";
     private static final String SOURCE_DATABASE = "dbstavias_zld";
     private static final String SOURCE_TABLE = "ativos";
+    private static final int MAX_IMPORT_ROWS = 10_000;
 
     private final JdbcTemplate cortexJdbcTemplate;
+    private final ZeladoriaSourceAdapter zeladoriaSourceAdapter;
+    private final CortexOperationalMemoryService memoryService;
 
-    @Value("${cortex.sources.zld.url:}")
-    private String zldUrl;
-
-    @Value("${cortex.sources.zld.username:}")
-    private String zldUsername;
-
-    @Value("${cortex.sources.zld.password:}")
-    private String zldPassword;
-
-    public AssetImportService(JdbcTemplate cortexJdbcTemplate) {
+    public AssetImportService(
+            JdbcTemplate cortexJdbcTemplate,
+            ZeladoriaSourceAdapter zeladoriaSourceAdapter,
+            CortexOperationalMemoryService memoryService
+    ) {
         this.cortexJdbcTemplate = cortexJdbcTemplate;
+        this.zeladoriaSourceAdapter = zeladoriaSourceAdapter;
+        this.memoryService = memoryService;
     }
 
     public AssetImportResult importFromZldAtivos() {
@@ -49,18 +48,6 @@ public class AssetImportService {
         try {
             createSyncRun(syncRunId);
             runCreated = true;
-
-            validateZldConfig();
-
-            String selectSql = """
-                    SELECT
-                        id,
-                        prefixo,
-                        tipo,
-                        modelo
-                    FROM ativos
-                    ORDER BY id
-                    """;
 
             String upsertSql = """
                     INSERT INTO asset (
@@ -98,47 +85,65 @@ public class AssetImportService {
                         source_hash = VALUES(source_hash)
                     """;
 
-            try (
-                    Connection connection = DriverManager.getConnection(zldUrl, zldUsername, zldPassword);
-                    Statement statement = connection.createStatement();
-                    ResultSet resultSet = statement.executeQuery(selectSql)
-            ) {
-                while (resultSet.next()) {
-                    String sourcePk = resultSet.getString("id");
-                    String prefixo = resultSet.getString("prefixo");
-                    String tipo = resultSet.getString("tipo");
-                    String modelo = resultSet.getString("modelo");
+            for (ZeladoriaSourceAdapter.AtivoZeladoriaRecord sourceAsset
+                    : zeladoriaSourceAdapter.fetchAssets(MAX_IMPORT_ROWS)) {
+                String sourcePk = sourceAsset.id();
+                String prefixo = sourceAsset.prefixo();
+                String tipo = sourceAsset.tipo();
+                String modelo = sourceAsset.modelo();
 
-                    String assetId = stableAssetId(sourcePk);
-                    String name = normalizeName(modelo, prefixo);
-                    String sourceHash = hashRow(sourcePk, prefixo, tipo, modelo);
+                String assetId = stableAssetId(sourcePk);
+                String name = normalizeName(modelo, prefixo);
+                String sourceHash = hashRow(sourcePk, prefixo, tipo, modelo);
 
-                    String existingHash = findExistingSourceHash(sourcePk);
+                String existingHash = findExistingSourceHash(sourcePk);
 
-                    recordsRead++;
+                recordsRead++;
 
-                    if (existingHash == null) {
-                        recordsInserted++;
-                    } else if (!existingHash.equals(sourceHash)) {
-                        recordsUpdated++;
-                    }
-
-                    cortexJdbcTemplate.update(
-                            upsertSql,
-                            assetId,
-                            SOURCE_DATABASE,
-                            SOURCE_TABLE,
-                            sourcePk,
-                            prefixo,
-                            name,
-                            tipo,
-                            sourceHash
-                    );
+                if (existingHash == null) {
+                    recordsInserted++;
+                } else if (!existingHash.equals(sourceHash)) {
+                    recordsUpdated++;
                 }
+
+                cortexJdbcTemplate.update(
+                        upsertSql,
+                        assetId,
+                        SOURCE_DATABASE,
+                        SOURCE_TABLE,
+                        sourcePk,
+                        prefixo,
+                        name,
+                        tipo,
+                        sourceHash
+                );
+
+                registrarAtivoNaMemoria(
+                        syncRunId,
+                        assetId,
+                        sourcePk,
+                        prefixo,
+                        tipo,
+                        modelo,
+                        name,
+                        sourceHash,
+                        existingHash == null,
+                        existingHash != null
+                                && !existingHash.equals(sourceHash)
+                );
             }
 
             finishSyncRunSuccess(syncRunId, recordsRead, recordsInserted, recordsUpdated, recordsDeactivated);
             upsertCheckpointSuccess();
+            registrarImportacaoNaMemoria(
+                    syncRunId,
+                    "SUCCESS",
+                    recordsRead,
+                    recordsInserted,
+                    recordsUpdated,
+                    recordsDeactivated,
+                    null
+            );
 
             return new AssetImportResult(
                     syncRunId,
@@ -167,6 +172,16 @@ public class AssetImportService {
                 );
                 upsertCheckpointFailureSafely(errorMessage);
             }
+
+            registrarImportacaoNaMemoria(
+                    syncRunId,
+                    "FAILED",
+                    recordsRead,
+                    recordsInserted,
+                    recordsUpdated,
+                    recordsDeactivated,
+                    errorMessage
+            );
 
             throw new IllegalStateException("Failed to import assets from dbstavias_zld.ativos", exception);
         }
@@ -391,10 +406,127 @@ public class AssetImportService {
         );
     }
 
-    private void validateZldConfig() {
-        if (isBlank(zldUrl) || isBlank(zldUsername) || isBlank(zldPassword)) {
-            throw new IllegalStateException("Missing ZLD database configuration. Set ZLD_DB_URL, ZLD_DB_USER, and ZLD_DB_PASSWORD.");
+    private void registrarAtivoNaMemoria(
+            String syncRunId,
+            String assetId,
+            String sourcePk,
+            String prefixo,
+            String tipo,
+            String modelo,
+            String name,
+            String sourceHash,
+            boolean inserted,
+            boolean updated
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("legacySystem", SOURCE_DATABASE);
+        metadata.put("legacyTable", SOURCE_TABLE);
+        metadata.put("legacyId", sourcePk);
+        metadata.put("importBatchId", syncRunId);
+        metadata.put("sourceHash", sourceHash);
+
+        memoryService.registrarObjeto(
+                "ATIVO",
+                assetId,
+                prefixo,
+                name,
+                "ATIVO",
+                "IMPORTACAO_LEGADO",
+                "asset",
+                metadata
+        );
+
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("prefixo", prefixo);
+        fields.put("tipo", tipo);
+        fields.put("modelo", modelo);
+        fields.put("nome", name);
+        fields.put("source_database", SOURCE_DATABASE);
+        fields.put("source_table", SOURCE_TABLE);
+        fields.put("source_pk", sourcePk);
+        fields.put("source_hash", sourceHash);
+
+        memoryService.registrarEvidencias(
+                "ATIVO",
+                assetId,
+                "IMPORTACAO_LEGADO",
+                fields
+        );
+
+        memoryService.registrarMapeamentoLegado(
+                "ATIVO",
+                assetId,
+                SOURCE_DATABASE,
+                SOURCE_TABLE,
+                sourcePk,
+                sourceHash,
+                syncRunId,
+                fields
+        );
+
+        if (!inserted && !updated) {
+            return;
         }
+
+        Map<String, Object> payload = new LinkedHashMap<>(metadata);
+        payload.put("schemaVersion", 1);
+        payload.put("assetId", assetId);
+        payload.put("prefixo", prefixo);
+        payload.put("tipo", tipo);
+        payload.put("modelo", modelo);
+        payload.put("nome", name);
+
+        memoryService.registrarEvento(
+                "ATIVO",
+                assetId,
+                inserted
+                        ? "ATIVO_IMPORTADO_DO_LEGADO"
+                        : "ATIVO_ATUALIZADO_DO_LEGADO",
+                "IMPORTACAO_LEGADO",
+                payload
+        );
+    }
+
+    private void registrarImportacaoNaMemoria(
+            String syncRunId,
+            String status,
+            int recordsRead,
+            int recordsInserted,
+            int recordsUpdated,
+            int recordsDeactivated,
+            String errorMessage
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("schemaVersion", 1);
+        payload.put("connectorName", CONNECTOR_NAME);
+        payload.put("sourceDatabase", SOURCE_DATABASE);
+        payload.put("sourceTable", SOURCE_TABLE);
+        payload.put("recordsRead", recordsRead);
+        payload.put("recordsInserted", recordsInserted);
+        payload.put("recordsUpdated", recordsUpdated);
+        payload.put("recordsDeactivated", recordsDeactivated);
+        payload.put("errorMessage", errorMessage);
+
+        memoryService.registrarObjeto(
+                "IMPORTACAO_LEGADA",
+                syncRunId,
+                CONNECTOR_NAME + ":" + SOURCE_TABLE,
+                "Importação " + CONNECTOR_NAME,
+                status,
+                "IMPORTACAO_LEGADO",
+                "source_sync_run",
+                payload
+        );
+
+        memoryService.registrarEvento(
+                "IMPORTACAO_LEGADA",
+                syncRunId,
+                "SUCCESS".equals(status)
+                        ? "IMPORTACAO_LEGADA_CONCLUIDA"
+                        : "IMPORTACAO_LEGADA_FALHOU",
+                "IMPORTACAO_LEGADO",
+                payload
+        );
     }
 
     private String stableAssetId(String sourcePk) {

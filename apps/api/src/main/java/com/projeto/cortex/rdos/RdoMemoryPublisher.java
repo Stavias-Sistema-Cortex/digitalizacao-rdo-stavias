@@ -5,6 +5,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -45,6 +46,7 @@ public class RdoMemoryPublisher {
                 "RDO_CRIADO",
                 FONTE,
                 payloadBase(
+                        rdoId,
                         obraId,
                         programacaoId,
                         numeroRdo,
@@ -58,7 +60,10 @@ public class RdoMemoryPublisher {
             String obraId,
             String programacaoId,
             String numeroRdo,
-            String status
+            String status,
+            long versaoAnterior,
+            long versaoNova,
+            List<Map<String, Object>> alteracoes
     ) {
         registrarObjetoERelacoes(
                 rdoId,
@@ -73,11 +78,15 @@ public class RdoMemoryPublisher {
                 rdoId,
                 "RDO_EDITADO",
                 FONTE,
-                payloadBase(
+                payloadEdicao(
+                        rdoId,
                         obraId,
                         programacaoId,
                         numeroRdo,
-                        status
+                        status,
+                        versaoAnterior,
+                        versaoNova,
+                        alteracoes
                 )
         );
     }
@@ -102,11 +111,54 @@ public class RdoMemoryPublisher {
                 "RDO_ENVIADO",
                 FONTE,
                 payloadBase(
+                        rdoId,
                         obraId,
                         programacaoId,
                         numeroRdo,
                         "ENVIADO"
                 )
+        );
+    }
+
+    public void registrarRdoImportado(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            String numeroRdo,
+            String importacaoId,
+            String arquivo,
+            String aba,
+            Integer linha,
+            String status
+    ) {
+        registrarObjetoERelacoes(
+                rdoId,
+                obraId,
+                programacaoId,
+                numeroRdo,
+                status
+        );
+
+        Map<String, Object> payload = payloadBase(
+                rdoId,
+                obraId,
+                programacaoId,
+                numeroRdo,
+                status
+        );
+        payload.put("schemaVersion", 1);
+        payload.put("importacaoId", importacaoId);
+        payload.put("arquivo", arquivo);
+        payload.put("aba", aba);
+        payload.put("linha", linha);
+        payload.put("fonteCriacao", "IMPORTACAO_HISTORICA");
+
+        memoryService.registrarEvento(
+                "RDO",
+                rdoId,
+                "RDO_IMPORTADO",
+                "IMPORTACAO_HISTORICA",
+                payload
         );
     }
 
@@ -159,6 +211,12 @@ public class RdoMemoryPublisher {
                 FONTE
         );
 
+        registrarAtributosRdo(rdoId);
+        registrarMaoObraRdo(rdoId);
+        registrarEquipamentosRdo(rdoId);
+        registrarMateriaisRdo(rdoId);
+        registrarControlesGeometricosRdo(rdoId);
+
         memoryService.substituirRelacaoAtiva(
                 "RDO",
                 rdoId,
@@ -180,6 +238,377 @@ public class RdoMemoryPublisher {
                     "RDO gerado a partir da programação operacional."
             );
         }
+    }
+
+    private void registrarAtributosRdo(String rdoId) {
+        jdbcTemplate.query(
+                """
+                SELECT
+                    numero_rdo,
+                    data_rdo,
+                    dia_semana,
+                    cliente,
+                    contrato,
+                    rodovia,
+                    cidade,
+                    uf,
+                    turno,
+                    hora_inicio,
+                    hora_fim,
+                    status,
+                    obra_id,
+                    programacao_id,
+                    fonte_criacao
+                FROM rdo
+                WHERE id = ?
+                """,
+                resultSet -> {
+                    if (!resultSet.next()) {
+                        return null;
+                    }
+
+                    Map<String, Object> fields = new LinkedHashMap<>();
+                    fields.put("numero_rdo", resultSet.getString("numero_rdo"));
+                    fields.put("data_rdo", resultSet.getDate("data_rdo"));
+                    fields.put("dia_semana", resultSet.getString("dia_semana"));
+                    fields.put("cliente", resultSet.getString("cliente"));
+                    fields.put("contrato", resultSet.getString("contrato"));
+                    fields.put("rodovia", resultSet.getString("rodovia"));
+                    fields.put("cidade", resultSet.getString("cidade"));
+                    fields.put("uf", resultSet.getString("uf"));
+                    fields.put("turno", resultSet.getString("turno"));
+                    fields.put("hora_inicio", resultSet.getTime("hora_inicio"));
+                    fields.put("hora_fim", resultSet.getTime("hora_fim"));
+                    fields.put("status", resultSet.getString("status"));
+                    fields.put("obra_id", resultSet.getString("obra_id"));
+                    fields.put("programacao_id", resultSet.getString("programacao_id"));
+                    fields.put("fonte_criacao", resultSet.getString("fonte_criacao"));
+
+                    memoryService.registrarEvidencias(
+                            "RDO",
+                            rdoId,
+                            FONTE,
+                            fields
+                    );
+
+                    return null;
+                },
+                rdoId
+        );
+    }
+
+    private void registrarMaoObraRdo(String rdoId) {
+        jdbcTemplate.query(
+                """
+                SELECT
+                    id,
+                    colaborador_id,
+                    nome_colaborador,
+                    cargo,
+                    tipo_vinculo,
+                    quantidade
+                FROM rdo_mao_obra
+                WHERE rdo_id = ?
+                """,
+                resultSet -> {
+                    while (resultSet.next()) {
+                        String itemId = resultSet.getString("id");
+                        String colaboradorId = resultSet.getString("colaborador_id");
+                        String nome = primeiroNaoVazio(
+                                resultSet.getString("nome_colaborador"),
+                                resultSet.getString("cargo"),
+                                itemId
+                        );
+
+                        memoryService.registrarObjeto(
+                                "RDO_MAO_OBRA",
+                                itemId,
+                                itemId,
+                                "Mão de obra " + nome,
+                                "REGISTRADA",
+                                FONTE,
+                                "rdo_mao_obra",
+                                metadataRdo(rdoId)
+                        );
+
+                        memoryService.registrarRelacaoAtiva(
+                                "RDO",
+                                rdoId,
+                                "RDO_MAO_OBRA",
+                                itemId,
+                                "REGISTRA_MAO_DE_OBRA",
+                                FONTE,
+                                "RDO registra item de mão de obra."
+                        );
+
+                        if (colaboradorId != null && !colaboradorId.isBlank()) {
+                            memoryService.registrarRelacaoAtiva(
+                                    "RDO_MAO_OBRA",
+                                    itemId,
+                                    "COLABORADOR",
+                                    colaboradorId,
+                                    "REFERENCIA_COLABORADOR",
+                                    FONTE,
+                                    "Item de mão de obra referencia colaborador cadastrado."
+                            );
+                        }
+
+                        Map<String, Object> fields = new LinkedHashMap<>();
+                        fields.put("colaborador_id", colaboradorId);
+                        fields.put("nome_colaborador", resultSet.getString("nome_colaborador"));
+                        fields.put("cargo", resultSet.getString("cargo"));
+                        fields.put("tipo_vinculo", resultSet.getString("tipo_vinculo"));
+                        fields.put("quantidade", resultSet.getBigDecimal("quantidade"));
+
+                        memoryService.registrarEvidencias(
+                                "RDO_MAO_OBRA",
+                                itemId,
+                                FONTE,
+                                fields
+                        );
+                    }
+
+                    return null;
+                },
+                rdoId
+        );
+    }
+
+    private void registrarEquipamentosRdo(String rdoId) {
+        jdbcTemplate.query(
+                """
+                SELECT
+                    id,
+                    asset_id,
+                    prefixo,
+                    descricao,
+                    tipo_equipamento,
+                    tipo_vinculo,
+                    quantidade
+                FROM rdo_equipamento
+                WHERE rdo_id = ?
+                """,
+                resultSet -> {
+                    while (resultSet.next()) {
+                        String itemId = resultSet.getString("id");
+                        String assetId = resultSet.getString("asset_id");
+                        String nome = primeiroNaoVazio(
+                                resultSet.getString("prefixo"),
+                                resultSet.getString("descricao"),
+                                itemId
+                        );
+
+                        memoryService.registrarObjeto(
+                                "RDO_EQUIPAMENTO",
+                                itemId,
+                                resultSet.getString("prefixo"),
+                                "Equipamento " + nome,
+                                "REGISTRADO",
+                                FONTE,
+                                "rdo_equipamento",
+                                metadataRdo(rdoId)
+                        );
+
+                        memoryService.registrarRelacaoAtiva(
+                                "RDO",
+                                rdoId,
+                                "RDO_EQUIPAMENTO",
+                                itemId,
+                                "USA_EQUIPAMENTO",
+                                FONTE,
+                                "RDO usa equipamento."
+                        );
+
+                        if (assetId != null && !assetId.isBlank()) {
+                            memoryService.registrarRelacaoAtiva(
+                                    "RDO_EQUIPAMENTO",
+                                    itemId,
+                                    "ATIVO",
+                                    assetId,
+                                    "REFERENCIA_ATIVO",
+                                    FONTE,
+                                    "Item de equipamento referencia ativo cadastrado."
+                            );
+                        }
+
+                        Map<String, Object> fields = new LinkedHashMap<>();
+                        fields.put("asset_id", assetId);
+                        fields.put("prefixo", resultSet.getString("prefixo"));
+                        fields.put("descricao", resultSet.getString("descricao"));
+                        fields.put("tipo_equipamento", resultSet.getString("tipo_equipamento"));
+                        fields.put("tipo_vinculo", resultSet.getString("tipo_vinculo"));
+                        fields.put("quantidade", resultSet.getBigDecimal("quantidade"));
+
+                        memoryService.registrarEvidencias(
+                                "RDO_EQUIPAMENTO",
+                                itemId,
+                                FONTE,
+                                fields
+                        );
+                    }
+
+                    return null;
+                },
+                rdoId
+        );
+    }
+
+    private void registrarMateriaisRdo(String rdoId) {
+        jdbcTemplate.query(
+                """
+                SELECT
+                    id,
+                    material_nome,
+                    unidade,
+                    quantidade_prevista,
+                    quantidade_usinada,
+                    quantidade_aplicada,
+                    quantidade_sobra,
+                    nota_fiscal,
+                    fornecedor
+                FROM rdo_material
+                WHERE rdo_id = ?
+                """,
+                resultSet -> {
+                    while (resultSet.next()) {
+                        String itemId = resultSet.getString("id");
+                        String materialNome = resultSet.getString("material_nome");
+
+                        memoryService.registrarObjeto(
+                                "MATERIAL_RDO",
+                                itemId,
+                                materialNome,
+                                "Material " + materialNome,
+                                "REGISTRADO",
+                                FONTE,
+                                "rdo_material",
+                                metadataRdo(rdoId)
+                        );
+
+                        memoryService.registrarRelacaoAtiva(
+                                "RDO",
+                                rdoId,
+                                "MATERIAL_RDO",
+                                itemId,
+                                "CONSOME_MATERIAL",
+                                FONTE,
+                                "RDO registra consumo ou movimentação de material."
+                        );
+
+                        Map<String, Object> fields = new LinkedHashMap<>();
+                        fields.put("material_nome", materialNome);
+                        fields.put("unidade", resultSet.getString("unidade"));
+                        fields.put("quantidade_prevista", resultSet.getBigDecimal("quantidade_prevista"));
+                        fields.put("quantidade_usinada", resultSet.getBigDecimal("quantidade_usinada"));
+                        fields.put("quantidade_aplicada", resultSet.getBigDecimal("quantidade_aplicada"));
+                        fields.put("quantidade_sobra", resultSet.getBigDecimal("quantidade_sobra"));
+                        fields.put("nota_fiscal", resultSet.getString("nota_fiscal"));
+                        fields.put("fornecedor", resultSet.getString("fornecedor"));
+
+                        memoryService.registrarEvidencias(
+                                "MATERIAL_RDO",
+                                itemId,
+                                FONTE,
+                                fields
+                        );
+                    }
+
+                    return null;
+                },
+                rdoId
+        );
+    }
+
+    private void registrarControlesGeometricosRdo(String rdoId) {
+        jdbcTemplate.query(
+                """
+                SELECT
+                    id,
+                    subtrecho,
+                    estaca_inicial,
+                    estaca_final,
+                    km_inicial,
+                    km_final,
+                    comprimento_m,
+                    largura_m,
+                    espessura_media_cm,
+                    area_m2,
+                    volume_m3,
+                    massa_tonelada
+                FROM rdo_controle_geometrico
+                WHERE rdo_id = ?
+                """,
+                resultSet -> {
+                    while (resultSet.next()) {
+                        String itemId = resultSet.getString("id");
+                        String nome = primeiroNaoVazio(
+                                resultSet.getString("subtrecho"),
+                                resultSet.getString("km_inicial"),
+                                itemId
+                        );
+
+                        memoryService.registrarObjeto(
+                                "CONTROLE_GEOMETRICO",
+                                itemId,
+                                itemId,
+                                "Controle geométrico " + nome,
+                                "REGISTRADO",
+                                FONTE,
+                                "rdo_controle_geometrico",
+                                metadataRdo(rdoId)
+                        );
+
+                        memoryService.registrarRelacaoAtiva(
+                                "RDO",
+                                rdoId,
+                                "CONTROLE_GEOMETRICO",
+                                itemId,
+                                "POSSUI_CONTROLE_GEOMETRICO",
+                                FONTE,
+                                "RDO possui controle geométrico."
+                        );
+
+                        Map<String, Object> fields = new LinkedHashMap<>();
+                        fields.put("subtrecho", resultSet.getString("subtrecho"));
+                        fields.put("estaca_inicial", resultSet.getString("estaca_inicial"));
+                        fields.put("estaca_final", resultSet.getString("estaca_final"));
+                        fields.put("km_inicial", resultSet.getString("km_inicial"));
+                        fields.put("km_final", resultSet.getString("km_final"));
+                        fields.put("comprimento_m", resultSet.getBigDecimal("comprimento_m"));
+                        fields.put("largura_m", resultSet.getBigDecimal("largura_m"));
+                        fields.put("espessura_media_cm", resultSet.getBigDecimal("espessura_media_cm"));
+                        fields.put("area_m2", resultSet.getBigDecimal("area_m2"));
+                        fields.put("volume_m3", resultSet.getBigDecimal("volume_m3"));
+                        fields.put("massa_tonelada", resultSet.getBigDecimal("massa_tonelada"));
+
+                        memoryService.registrarEvidencias(
+                                "CONTROLE_GEOMETRICO",
+                                itemId,
+                                FONTE,
+                                fields
+                        );
+                    }
+
+                    return null;
+                },
+                rdoId
+        );
+    }
+
+    private Map<String, Object> metadataRdo(String rdoId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("rdoId", rdoId);
+        return metadata;
+    }
+
+    private String primeiroNaoVazio(String... valores) {
+        for (String valor : valores) {
+            if (valor != null && !valor.isBlank()) {
+                return valor.trim();
+            }
+        }
+
+        return "";
     }
 
     private ObraMemoryData buscarObra(String obraId) {
@@ -289,6 +718,7 @@ public class RdoMemoryPublisher {
     }
 
     private Map<String, Object> payloadBase(
+            String rdoId,
             String obraId,
             String programacaoId,
             String numeroRdo,
@@ -297,10 +727,41 @@ public class RdoMemoryPublisher {
         Map<String, Object> payload =
                 new LinkedHashMap<>();
 
+        payload.put("rdoId", rdoId);
         payload.put("obraId", obraId);
         payload.put("programacaoId", programacaoId);
         payload.put("numeroRdo", numeroRdo);
         payload.put("status", status);
+
+        return payload;
+    }
+
+    private Map<String, Object> payloadEdicao(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            String numeroRdo,
+            String status,
+            long versaoAnterior,
+            long versaoNova,
+            List<Map<String, Object>> alteracoes
+    ) {
+        Map<String, Object> payload =
+                payloadBase(
+                        rdoId,
+                        obraId,
+                        programacaoId,
+                        numeroRdo,
+                        status
+                );
+
+        payload.put("schemaVersion", 1);
+        payload.put("versaoAnterior", versaoAnterior);
+        payload.put("versaoNova", versaoNova);
+        payload.put(
+                "alteracoes",
+                alteracoes == null ? List.of() : alteracoes
+        );
 
         return payload;
     }

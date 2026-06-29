@@ -14,6 +14,12 @@ public final class StaviaEvidenceTypes {
     public static final String RDO =
             "RDO";
 
+    public static final String RDO_ATTRIBUTE =
+            "RDO_ATTRIBUTE";
+
+    public static final String TRECHO_OPERACIONAL =
+            "TRECHO_OPERACIONAL";
+
     public static final String PROGRAMACAO_OPERACIONAL =
             "PROGRAMACAO_OPERACIONAL";
 
@@ -38,8 +44,29 @@ public final class StaviaEvidenceTypes {
     public static final String PDOC =
             "PDOC";
 
+    public static final String PREVISAO_FINANCEIRA =
+            "PREVISAO_FINANCEIRA";
+
+    public static final String ALOCACAO_COLABORADOR =
+            "ALOCACAO_COLABORADOR";
+
+    public static final String FREQUENCIA =
+            "FREQUENCIA";
+
     public static final String RELACAO_ONTOLOGICA =
             "RELACAO_ONTOLOGICA";
+
+    public static final String OBJETO_ONTOLOGICO =
+            "OBJETO_ONTOLOGICO";
+
+    public static final String ATRIBUTO_ONTOLOGICO =
+            "ATRIBUTO_ONTOLOGICO";
+
+    public static final String MAPEAMENTO_LEGADO =
+            "MAPEAMENTO_LEGADO";
+
+    public static final String CONTEXTO_OBRA =
+            "CONTEXTO_OBRA";
 
     private StaviaEvidenceTypes() {
     }

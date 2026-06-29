@@ -14,7 +14,8 @@ import java.util.List;
 @ConditionalOnProperty(
         prefix = "cortex.stavia",
         name = "generator-mode",
-        havingValue = "prompt"
+        havingValue = "prompt",
+        matchIfMissing = true
 )
 public class PromptBasedStaviaResponseGenerator
         implements StaviaResponseGenerator {
