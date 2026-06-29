@@ -1,21 +1,32 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 import { getLocalRdo } from "../../lib/db/rdoRepository";
+import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 import {
+  createEmptyAlocacaoColaborador,
   createEmptyControleGeometrico,
   createEmptyEquipamento,
   createEmptyMaoObra,
   createEmptyMaterial,
   createEmptyRdo,
+  createEmptyServicoExecutado,
 } from "./createEmptyRdo";
 import type {
+  AlocacaoColaboradorDraft,
   ControleGeometricoDraft,
   EquipamentoDraft,
   MaoObraDraft,
   MaterialDraft,
   NumericInput,
   RdoDraft,
+  ServicoExecutadoDraft,
 } from "./rdo.types";
+import {
+  buscarAssets,
+  buscarColaboradores,
+  type AssetLookup,
+  type ColaboradorLookup,
+} from "./rdoLookupApi";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 
 interface RdoCreatePageProps {
@@ -57,6 +68,10 @@ function buildPayload(draft: RdoDraft) {
         ? null
         : draft.pluviometriaMm,
     observacoes: draft.observacoes,
+    servicosExecutados:
+      draft.servicosExecutados.map(removeLocalId),
+    alocacoesColaboradores:
+      draft.alocacoesColaboradores.map(removeLocalId),
     maoObra: draft.maoObra.map(removeLocalId),
     equipamentos:
       draft.equipamentos.map(removeLocalId),
@@ -64,6 +79,206 @@ function buildPayload(draft: RdoDraft) {
     controlesGeometricos:
       draft.controlesGeometricos.map(removeLocalId),
   };
+}
+
+interface LookupFieldProps<TItem> {
+  label: string;
+  value: string;
+  placeholder: string;
+  emptyMessage: string;
+  search: (query: string) => Promise<TItem[]>;
+  onQueryChange: (value: string) => void;
+  onSelect: (item: TItem) => void;
+  getKey: (item: TItem) => string;
+  getTitle: (item: TItem) => string;
+  getSubtitle: (item: TItem) => string;
+}
+
+function LookupField<TItem>({
+  label,
+  value,
+  placeholder,
+  emptyMessage,
+  search,
+  onQueryChange,
+  onSelect,
+  getKey,
+  getTitle,
+  getSubtitle,
+}: LookupFieldProps<TItem>) {
+  const inputId = useId();
+  const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [items, setItems] = useState<TItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const searchTimeoutRef = useRef<number | null>(null);
+  const blurTimeoutRef = useRef<number | null>(null);
+  const requestIdRef = useRef(0);
+
+  const runSearch = (query: string) => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setIsLoading(true);
+    setError(null);
+
+    search(query)
+      .then((results) => {
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        setItems(results);
+      })
+      .catch((unknownError) => {
+        if (requestIdRef.current !== requestId) {
+          return;
+        }
+
+        setItems([]);
+        setError(
+          unknownError instanceof Error
+            ? unknownError.message
+            : "Nao foi possivel carregar a lista.",
+        );
+      })
+      .finally(() => {
+        if (requestIdRef.current === requestId) {
+          setIsLoading(false);
+        }
+      });
+  };
+
+  const queueSearch = (query: string, delay = 180) => {
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = window.setTimeout(() => {
+      runSearch(query);
+    }, delay);
+  };
+
+  const handleFocus = () => {
+    if (blurTimeoutRef.current !== null) {
+      window.clearTimeout(blurTimeoutRef.current);
+    }
+
+    setIsOpen(true);
+    queueSearch(value, 0);
+  };
+
+  const handleBlur = () => {
+    blurTimeoutRef.current = window.setTimeout(() => {
+      setIsOpen(false);
+    }, 120);
+  };
+
+  return (
+    <div className="lookup-field">
+      <label htmlFor={inputId}>
+        {label}
+      </label>
+
+      <div className="lookup-combobox">
+        <input
+          id={inputId}
+          value={value}
+          placeholder={placeholder}
+          autoComplete="off"
+          aria-expanded={isOpen}
+          aria-controls={`${inputId}-options`}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onChange={(event) => {
+            onQueryChange(event.target.value);
+            setIsOpen(true);
+            queueSearch(event.target.value);
+          }}
+        />
+
+        {isOpen ? (
+          <div
+            id={`${inputId}-options`}
+            className="lookup-panel"
+            role="listbox"
+          >
+            {isLoading ? (
+              <div className="lookup-state">
+                Buscando...
+              </div>
+            ) : null}
+
+            {!isLoading && error ? (
+              <div className="lookup-state">
+                {error}
+              </div>
+            ) : null}
+
+            {!isLoading && !error && items.length === 0 ? (
+              <div className="lookup-state">
+                {emptyMessage}
+              </div>
+            ) : null}
+
+            {!isLoading && !error
+              ? items.map((item) => (
+                  <button
+                    key={getKey(item)}
+                    type="button"
+                    className="lookup-option"
+                    role="option"
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      onSelect(item);
+                      setIsOpen(false);
+                    }}
+                  >
+                    <span className="lookup-title">
+                      {getTitle(item)}
+                    </span>
+                    <span className="lookup-subtitle">
+                      {getSubtitle(item)}
+                    </span>
+                  </button>
+                ))
+              : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function getColaboradorTitle(colaborador: ColaboradorLookup) {
+  return (
+    [colaborador.nome, colaborador.codigoColaborador]
+      .filter(Boolean)
+      .join(" · ") || colaborador.id
+  );
+}
+
+function getColaboradorSubtitle(colaborador: ColaboradorLookup) {
+  return (
+    [
+      colaborador.nomeGrupo,
+      colaborador.nomePerfil,
+      colaborador.email,
+    ]
+      .filter(Boolean)
+      .join(" · ") || colaborador.id
+  );
+}
+
+function getAssetTitle(asset: AssetLookup) {
+  return (
+    [asset.externalCode, asset.name]
+      .filter(Boolean)
+      .join(" · ") || asset.id
+  );
+}
+
+function getAssetSubtitle(asset: AssetLookup) {
+  return asset.category || asset.id;
 }
 
 export function RdoCreatePage({
@@ -78,6 +293,10 @@ export function RdoCreatePage({
 
   const [showJson, setShowJson] = useState(false);
   const [notice, setNotice] = useState("");
+  const [
+    alocacaoColaboradorLabels,
+    setAlocacaoColaboradorLabels,
+  ] = useState<Record<string, string>>({});
 
   const {
     isSaving,
@@ -147,6 +366,36 @@ export function RdoCreatePage({
     }));
   }
 
+  function updateServicoExecutado(
+    localId: string,
+    patch: Partial<ServicoExecutadoDraft>,
+  ) {
+    setDraft((current) => ({
+      ...current,
+      servicosExecutados:
+        current.servicosExecutados.map((item) =>
+          item.localId === localId
+            ? { ...item, ...patch }
+            : item,
+        ),
+    }));
+  }
+
+  function updateAlocacaoColaborador(
+    localId: string,
+    patch: Partial<AlocacaoColaboradorDraft>,
+  ) {
+    setDraft((current) => ({
+      ...current,
+      alocacoesColaboradores:
+        current.alocacoesColaboradores.map((item) =>
+          item.localId === localId
+            ? { ...item, ...patch }
+            : item,
+        ),
+    }));
+  }
+
   function updateControle(
     localId: string,
     patch: Partial<ControleGeometricoDraft>,
@@ -164,12 +413,22 @@ export function RdoCreatePage({
 
   function removeCollectionItem(
     collection:
+      | "servicosExecutados"
+      | "alocacoesColaboradores"
       | "maoObra"
       | "equipamentos"
       | "materiais"
       | "controlesGeometricos",
     localId: string,
   ) {
+    if (collection === "alocacoesColaboradores") {
+      setAlocacaoColaboradorLabels((current) => {
+        const next = { ...current };
+        delete next[localId];
+        return next;
+      });
+    }
+
     setDraft((current) => ({
       ...current,
       [collection]: current[collection].filter(
@@ -276,7 +535,9 @@ export function RdoCreatePage({
             </span>
 
             <strong className="status-badge">
-              {draft.syncStatus}
+              {formatLocalSyncStatus(
+                draft.syncStatus,
+              )}
             </strong>
 
             <span className="status-id">
@@ -536,6 +797,589 @@ export function RdoCreatePage({
       <section className="form-card">
         <CollectionHeader
           number="03"
+          title="Serviços executados"
+          description="Serviços, quantidades, item contratual e custo realizado."
+          onAdd={() =>
+            setDraft((current) => ({
+              ...current,
+              servicosExecutados: [
+                ...current.servicosExecutados,
+                createEmptyServicoExecutado(),
+              ],
+            }))
+          }
+        />
+
+        <div className="collection-list">
+          {draft.servicosExecutados.map((item, index) => (
+            <div
+              className="collection-row"
+              key={item.localId}
+            >
+              <div className="row-title">
+                <strong>
+                  Serviço {index + 1}
+                </strong>
+
+                <button
+                  type="button"
+                  className="danger-link"
+                  onClick={() =>
+                    removeCollectionItem(
+                      "servicosExecutados",
+                      item.localId,
+                    )
+                  }
+                >
+                  Remover
+                </button>
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  Serviço
+                  <input
+                    value={item.servicoNome}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          servicoNome:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Item contratual ID
+                  <input
+                    value={item.itemContratualId}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          itemContratualId:
+                            event.target.value,
+                        },
+                      )
+                    }
+                    placeholder="UUID do item contratual"
+                  />
+                </label>
+
+                <NumericField
+                  label="Quantidade executada"
+                  value={item.quantidadeExecutada}
+                  onChange={(value) =>
+                    updateServicoExecutado(
+                      item.localId,
+                      {
+                        quantidadeExecutada: value,
+                      },
+                    )
+                  }
+                />
+
+                <label>
+                  Unidade
+                  <input
+                    value={item.unidade}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          unidade:
+                            event.target.value,
+                        },
+                      )
+                    }
+                    placeholder="m², m³, t..."
+                  />
+                </label>
+
+                <label>
+                  Status de validação
+                  <select
+                    value={item.statusValidacao}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          statusValidacao:
+                            event.target
+                              .value as ServicoExecutadoDraft["statusValidacao"],
+                        },
+                      )
+                    }
+                  >
+                    <option value="REGISTRADA">
+                      Registrada
+                    </option>
+                    <option value="VALIDADA">
+                      Validada
+                    </option>
+                    <option value="REJEITADA">
+                      Rejeitada
+                    </option>
+                  </select>
+                </label>
+
+                <NumericField
+                  label="Custo realizado"
+                  value={item.custoRealizado}
+                  onChange={(value) =>
+                    updateServicoExecutado(
+                      item.localId,
+                      {
+                        custoRealizado: value,
+                      },
+                    )
+                  }
+                />
+
+                <label>
+                  Trecho inicial
+                  <input
+                    value={item.trechoInicial}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          trechoInicial:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Trecho final
+                  <input
+                    value={item.trechoFinal}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          trechoFinal:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Localização
+                  <input
+                    value={item.localizacao}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          localizacao:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={item.retrabalho}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          retrabalho:
+                            event.target.checked,
+                        },
+                      )
+                    }
+                  />
+                  Retrabalho
+                </label>
+
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={item.producaoRejeitada}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          producaoRejeitada:
+                            event.target.checked,
+                        },
+                      )
+                    }
+                  />
+                  Produção rejeitada
+                </label>
+              </div>
+
+              <label className="full-width">
+                Observações do serviço
+                <textarea
+                  rows={3}
+                  value={item.observacoes}
+                  onChange={(event) =>
+                    updateServicoExecutado(
+                      item.localId,
+                      {
+                        observacoes:
+                          event.target.value,
+                      },
+                    )
+                  }
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="form-card">
+        <CollectionHeader
+          number="04"
+          title="Rateio de colaboradores"
+          description="Horas, percentual e origem da alocação operacional."
+          onAdd={() =>
+            setDraft((current) => ({
+              ...current,
+              alocacoesColaboradores: [
+                ...current.alocacoesColaboradores,
+                createEmptyAlocacaoColaborador(),
+              ],
+            }))
+          }
+        />
+
+        <div className="collection-list">
+          {draft.alocacoesColaboradores.map((item, index) => (
+            <div
+              className="collection-row"
+              key={item.localId}
+            >
+              <div className="row-title">
+                <strong>
+                  Rateio {index + 1}
+                </strong>
+
+                <button
+                  type="button"
+                  className="danger-link"
+                  onClick={() =>
+                    removeCollectionItem(
+                      "alocacoesColaboradores",
+                      item.localId,
+                    )
+                  }
+                >
+                  Remover
+                </button>
+              </div>
+
+              <div className="form-grid">
+                <LookupField
+                  label="Colaborador"
+                  value={
+                    alocacaoColaboradorLabels[
+                      item.localId
+                    ] ?? item.colaboradorId
+                  }
+                  placeholder="Digite nome, codigo, email ou equipe"
+                  emptyMessage="Nenhum colaborador encontrado. Confira se a base Academy foi sincronizada."
+                  search={buscarColaboradores}
+                  onQueryChange={(value) => {
+                    setAlocacaoColaboradorLabels(
+                      (current) => ({
+                        ...current,
+                        [item.localId]: value,
+                      }),
+                    );
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        colaboradorId: "",
+                      },
+                    );
+                  }}
+                  onSelect={(colaborador) => {
+                    setAlocacaoColaboradorLabels(
+                      (current) => ({
+                        ...current,
+                        [item.localId]:
+                          getColaboradorTitle(colaborador),
+                      }),
+                    );
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        colaboradorId: colaborador.id,
+                        equipe:
+                          colaborador.nomeGrupo ??
+                          item.equipe,
+                        funcao:
+                          colaborador.nomePerfil ??
+                          item.funcao,
+                      },
+                    );
+                  }}
+                  getKey={(colaborador) => colaborador.id}
+                  getTitle={getColaboradorTitle}
+                  getSubtitle={getColaboradorSubtitle}
+                />
+
+                <label>
+                  Equipe
+                  <input
+                    value={item.equipe}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          equipe:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Serviço
+                  <input
+                    value={item.servicoNome}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          servicoNome:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Início
+                  <input
+                    type="time"
+                    value={item.horaInicio}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          horaInicio:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Fim
+                  <input
+                    type="time"
+                    value={item.horaFim}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          horaFim:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <NumericField
+                  label="Percentual do dia"
+                  value={item.percentualDia}
+                  onChange={(value) =>
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        percentualDia: value,
+                      },
+                    )
+                  }
+                />
+
+                <label>
+                  Turno
+                  <select
+                    value={item.turno}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          turno:
+                            event.target
+                              .value as AlocacaoColaboradorDraft["turno"],
+                        },
+                      )
+                    }
+                  >
+                    <option value="">
+                      Usar turno do RDO
+                    </option>
+                    <option value="DIURNO">
+                      Diurno
+                    </option>
+                    <option value="NOTURNO">
+                      Noturno
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  Função
+                  <input
+                    value={item.funcao}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          funcao:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Centro de custo
+                  <input
+                    value={item.centroCusto}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          centroCusto:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Tipo de alocação
+                  <select
+                    value={item.tipoAlocacao}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          tipoAlocacao:
+                            event.target
+                              .value as AlocacaoColaboradorDraft["tipoAlocacao"],
+                        },
+                      )
+                    }
+                  >
+                    <option value="TRABALHO">
+                      Trabalho
+                    </option>
+                    <option value="DESLOCAMENTO">
+                      Deslocamento
+                    </option>
+                    <option value="TREINAMENTO">
+                      Treinamento
+                    </option>
+                    <option value="MANUTENCAO">
+                      Manutenção
+                    </option>
+                    <option value="APOIO">
+                      Apoio
+                    </option>
+                    <option value="ADMINISTRATIVO">
+                      Administrativo
+                    </option>
+                    <option value="AFASTAMENTO">
+                      Afastamento
+                    </option>
+                    <option value="OUTRO">
+                      Outro
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  Status
+                  <select
+                    value={item.status}
+                    onChange={(event) =>
+                      updateAlocacaoColaborador(
+                        item.localId,
+                        {
+                          status:
+                            event.target
+                              .value as AlocacaoColaboradorDraft["status"],
+                        },
+                      )
+                    }
+                  >
+                    <option value="REGISTRADA">
+                      Registrada
+                    </option>
+                    <option value="VALIDADA">
+                      Validada
+                    </option>
+                    <option value="CONFLITO">
+                      Conflito
+                    </option>
+                  </select>
+                </label>
+
+                <NumericField
+                  label="Custo/hora"
+                  value={item.custoHora}
+                  onChange={(value) =>
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        custoHora: value,
+                      },
+                    )
+                  }
+                />
+              </div>
+
+              <label className="full-width">
+                Observações do rateio
+                <textarea
+                  rows={3}
+                  value={item.observacoes}
+                  onChange={(event) =>
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        observacoes:
+                          event.target.value,
+                      },
+                    )
+                  }
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="form-card">
+        <CollectionHeader
+          number="05"
           title="Mão de obra"
           description="Colaboradores e equipes envolvidos no serviço."
           onAdd={() =>
@@ -575,21 +1419,43 @@ export function RdoCreatePage({
               </div>
 
               <div className="form-grid">
-                <label>
-                  Colaborador ID
-                  <input
-                    value={item.colaboradorId}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          colaboradorId:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
+                <LookupField
+                  label="Colaborador"
+                  value={
+                    item.nomeColaborador ||
+                    item.colaboradorId
+                  }
+                  placeholder="Digite nome, codigo, email ou equipe"
+                  emptyMessage="Nenhum colaborador encontrado. Confira se a base Academy foi sincronizada."
+                  search={buscarColaboradores}
+                  onQueryChange={(value) =>
+                    updateMaoObra(
+                      item.localId,
+                      {
+                        colaboradorId: "",
+                        nomeColaborador: value,
+                      },
+                    )
+                  }
+                  onSelect={(colaborador) =>
+                    updateMaoObra(
+                      item.localId,
+                      {
+                        colaboradorId: colaborador.id,
+                        nomeColaborador:
+                          colaborador.nome ??
+                          colaborador.codigoColaborador ??
+                          colaborador.id,
+                        cargo:
+                          colaborador.nomePerfil ??
+                          item.cargo,
+                      },
+                    )
+                  }
+                  getKey={(colaborador) => colaborador.id}
+                  getTitle={getColaboradorTitle}
+                  getSubtitle={getColaboradorSubtitle}
+                />
 
                 <label>
                   Nome
@@ -676,7 +1542,7 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="04"
+          number="06"
           title="Equipamentos"
           description="Equipamentos utilizados durante a execução."
           onAdd={() =>
@@ -717,21 +1583,46 @@ export function RdoCreatePage({
                 </div>
 
                 <div className="form-grid">
-                  <label>
-                    Asset ID
-                    <input
-                      value={item.assetId}
-                      onChange={(event) =>
-                        updateEquipamento(
-                          item.localId,
-                          {
-                            assetId:
-                              event.target.value,
-                          },
-                        )
-                      }
-                    />
-                  </label>
+                  <LookupField
+                    label="Asset"
+                    value={
+                      item.prefixo ||
+                      item.descricao ||
+                      item.assetId
+                    }
+                    placeholder="Digite prefixo, nome ou categoria"
+                    emptyMessage="Nenhum asset encontrado. Confira se a base Zeladoria foi sincronizada."
+                    search={buscarAssets}
+                    onQueryChange={(value) =>
+                      updateEquipamento(
+                        item.localId,
+                        {
+                          assetId: "",
+                          prefixo: value,
+                        },
+                      )
+                    }
+                    onSelect={(asset) =>
+                      updateEquipamento(
+                        item.localId,
+                        {
+                          assetId: asset.id,
+                          prefixo:
+                            asset.externalCode ??
+                            item.prefixo,
+                          descricao:
+                            asset.name ??
+                            item.descricao,
+                          tipoEquipamento:
+                            asset.category ??
+                            item.tipoEquipamento,
+                        },
+                      )
+                    }
+                    getKey={(asset) => asset.id}
+                    getTitle={getAssetTitle}
+                    getSubtitle={getAssetSubtitle}
+                  />
 
                   <label>
                     Prefixo
@@ -835,7 +1726,7 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="05"
+          number="07"
           title="Materiais"
           description="Materiais previstos, usinados e aplicados."
           onAdd={() =>
@@ -965,7 +1856,7 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="06"
+          number="08"
           title="Controle geométrico"
           description="Medições e dimensões dos trechos executados."
           onAdd={() =>

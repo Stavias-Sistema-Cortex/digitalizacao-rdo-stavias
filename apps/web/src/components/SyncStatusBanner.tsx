@@ -1,11 +1,13 @@
 import {
   useMemo,
+  useState,
 } from "react";
 
 import {
   useSyncStatus,
   type SyncUiStatus,
 } from "../lib/sync/useSyncStatus";
+import { syncNow } from "../lib/sync/syncEngine";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -129,6 +131,10 @@ function formatLastSync(
 export function SyncStatusBanner() {
   const { snapshot, refresh } =
     useSyncStatus();
+  const [manualSyncError, setManualSyncError] =
+    useState("");
+  const [isManualSyncing, setIsManualSyncing] =
+    useState(false);
 
   const content = useMemo(
     () =>
@@ -151,6 +157,30 @@ export function SyncStatusBanner() {
   const lastSyncText = formatLastSync(
     snapshot.lastSyncCompletedAt,
   );
+
+  const visibleSyncError =
+    manualSyncError ||
+    (snapshot.status === "ERROR"
+      ? snapshot.lastSyncError
+      : null);
+
+  async function handleSyncNow(): Promise<void> {
+    setIsManualSyncing(true);
+    setManualSyncError("");
+
+    try {
+      await syncNow();
+    } catch (error: unknown) {
+      setManualSyncError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao sincronizar agora.",
+      );
+    } finally {
+      setIsManualSyncing(false);
+      await refresh();
+    }
+  }
 
   return (
     <aside
@@ -186,13 +216,22 @@ export function SyncStatusBanner() {
             : "Ainda não sincronizado"}
         </span>
 
+        {visibleSyncError && (
+          <span className="sync-banner__error">
+            {visibleSyncError}
+          </span>
+        )}
+
         <button
           type="button"
           onClick={() => {
-            void refresh();
+            void handleSyncNow();
           }}
+          disabled={isManualSyncing}
         >
-          Atualizar status
+          {isManualSyncing
+            ? "Sincronizando"
+            : "Sincronizar agora"}
         </button>
       </div>
     </aside>

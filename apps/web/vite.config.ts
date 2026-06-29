@@ -2,6 +2,17 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+const cortexApiTarget =
+  process.env.CORTEX_API_TARGET ??
+  "http://127.0.0.1:8080";
+
+const apiProxy = {
+  "/api": {
+    target: cortexApiTarget,
+    changeOrigin: true,
+  },
+};
+
 export default defineConfig({
   plugins: [
     react(),
@@ -56,7 +67,7 @@ export default defineConfig({
         navigateFallback: "/index.html",
 
         globPatterns: [
-          "**/*.{js,css,html,svg,png,ico,webp,woff2}",
+          "**/*.{js,css,html,svg,png,ico,webp,woff,woff2,ttf}",
         ],
 
         cleanupOutdatedCaches: true,
@@ -102,6 +113,22 @@ export default defineConfig({
               },
             },
           },
+
+          {
+            urlPattern: ({ request }) =>
+              request.destination === "font",
+
+            handler: "CacheFirst",
+
+            options: {
+              cacheName: "cortex-fonts",
+
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+            },
+          },
         ],
       },
 
@@ -121,17 +148,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
 
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8080",
-        changeOrigin: true,
-      },
-    },
+    proxy: apiProxy,
   },
 
   preview: {
     host: "127.0.0.1",
     port: 4173,
     strictPort: true,
+    proxy: apiProxy,
   },
 });

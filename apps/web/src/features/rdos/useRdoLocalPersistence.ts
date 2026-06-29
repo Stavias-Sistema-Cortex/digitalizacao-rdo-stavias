@@ -36,7 +36,7 @@ export function useRdoLocalPersistence() {
         isSaving: false,
         isSyncing: false,
         message:
-          "RDO salvo neste dispositivo e aguardando sincronização.",
+          "RDO salvo apenas neste dispositivo. Pendente de sincronização.",
         error: "",
       });
     } catch (error: unknown) {

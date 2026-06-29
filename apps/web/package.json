@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "CORTEX_API_TARGET=http://127.0.0.1:8080 vite --host 127.0.0.1 --port 5173",
     "build": "tsc -b && vite build",
+    "build:local": "tsc -b && VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8080/api vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:local": "CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
     "idb": "^8.0.3",

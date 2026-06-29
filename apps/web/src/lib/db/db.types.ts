@@ -34,6 +34,25 @@ export interface LocalRdoRecord {
   updatedAt: string;
 }
 
+export interface LocalRdoChildRecord {
+  id: string;
+  rdoId: string;
+  localId: string;
+  syncStatus: LocalSyncStatus;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type LocalRdoMaoObraRecord = LocalRdoChildRecord;
+
+export type LocalRdoEquipamentoRecord = LocalRdoChildRecord;
+
+export type LocalRdoMaterialRecord = LocalRdoChildRecord;
+
+export type LocalRdoControleGeometricoRecord =
+  LocalRdoChildRecord;
+
 export interface OutboxMutationRecord {
   clientMutationId: string;
   entidadeTipo: SyncEntityType;
@@ -43,6 +62,7 @@ export interface OutboxMutationRecord {
   payload: Record<string, unknown>;
   status: OutboxMutationStatus;
   tentativas: number;
+  ultimaTentativaEm: string | null;
   ultimoErro: string | null;
   conflito: Record<string, unknown> | null;
   criadaNoClienteEm: string;
@@ -93,5 +113,12 @@ export interface RdoAttachmentRecord {
   ultimoErro: string | null;
 
   createdAt: string;
+  updatedAt: string;
+}
+
+export interface StaviaSnapshotRecord {
+  key: "default";
+  snapshot: import("../../features/stavia/stavia.types").StaviaSnapshot;
+  localSyncedAt: string;
   updatedAt: string;
 }

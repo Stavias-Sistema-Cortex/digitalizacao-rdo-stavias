@@ -1,249 +1,1612 @@
+/* ============================================================
+   Stav.IA — design tokens (scoped to the panel)
+   ============================================================ */
 .stavia-page {
-  padding-bottom: 120px;
+  --stav-yellow: #fed203;
+  --stav-yellow-deep: #f4c400;
+  --stav-teal: #026965;
+  --stav-teal-700: #015551;
+  --stav-ink: #0b3b39;
+  --stav-cream: #fffdf5;
+  --stav-violet: #7b61ff;
+
+  min-height: 100vh;
+  padding: 24px;
+  background: #f8f8f4;
+  color: var(--stav-ink);
+  font-family:
+    "Poppins",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
-.stavia-status-offline {
-  background: #fff1f1;
-  color: #8a2e2e;
+.stavia-page :focus-visible {
+  outline: 2px solid var(--stav-teal);
+  outline-offset: 2px;
 }
 
-.stavia-form-grid {
-  display: grid;
-  grid-template-columns:
-    minmax(240px, 0.8fr)
-    minmax(0, 1.8fr);
-  gap: 20px;
-}
-
-.stavia-suggestions {
+/* ============================================================
+   Floating launcher
+   ============================================================ */
+.stavia-launcher {
+  position: fixed;
+  z-index: 82;
+  top: auto;
+  right: 24px;
+  bottom: 24px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 22px;
+  align-items: center;
+  justify-content: center;
+  width: 156px;
+  height: 58px;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      135deg,
+      rgb(255 246 139 / 42%),
+      rgb(254 210 3 / 0%) 42%
+    ),
+    #fed203;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 58%),
+    inset 0 -10px 18px rgb(190 145 0 / 14%),
+    0 12px 30px -8px rgb(20 40 35 / 30%);
+  cursor: grab;
+  overflow: hidden;
+  touch-action: none;
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    );
+  -webkit-user-select: none;
+  user-select: none;
+  will-change: transform;
+  transition:
+    transform 460ms cubic-bezier(0.18, 0.9, 0.22, 1.18),
+    box-shadow 260ms ease,
+    filter 260ms ease;
 }
 
-.stavia-suggestions > span {
-  color: #68756e;
-  font-size: 0.78rem;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.stavia-launcher::before {
+  position: absolute;
+  inset: -48% -22%;
+  content: "";
+  background:
+    radial-gradient(
+      circle at 22% 24%,
+      rgb(255 255 255 / 62%),
+      rgb(255 255 255 / 0%) 28%
+    ),
+    linear-gradient(
+      120deg,
+      rgb(255 255 255 / 0%) 28%,
+      rgb(255 255 255 / 38%) 47%,
+      rgb(255 255 255 / 0%) 67%
+    );
+  opacity: 0.46;
+  transform: translateX(-26%) rotate(-8deg);
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 260ms ease;
 }
 
-.stavia-suggestions > div {
+.stavia-launcher:hover {
+  filter: saturate(1.08) brightness(1.02);
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    )
+    scale(1.045);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 70%),
+    inset 0 -12px 22px rgb(190 145 0 / 16%),
+    0 18px 40px -8px rgb(20 40 35 / 34%);
+}
+
+.stavia-launcher:hover::before {
+  opacity: 0.76;
+  transform: translateX(24%) rotate(8deg);
+}
+
+.stavia-launcher:active {
+  cursor: grabbing;
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    )
+    scale(0.98);
+}
+
+.stavia-launcher.is-dragging,
+.stavia-launcher.is-dragging:hover,
+.stavia-launcher.is-dragging:active {
+  cursor: grabbing;
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    )
+    scale(1.025);
+  transition:
+    box-shadow 180ms ease,
+    filter 180ms ease;
+}
+
+.stavia-launcher img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 122px;
+  height: 42px;
+  mix-blend-mode: screen;
+  object-fit: cover;
+  object-position: center;
+  filter: contrast(1.22) brightness(1.14);
+  pointer-events: none;
+}
+
+/* ============================================================
+   Floating overlay + card frame (violet halo signature)
+   ============================================================ */
+.stavia-floating-overlay {
+  position: fixed;
+  z-index: 78;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: clamp(74px, 8vh, 112px) clamp(18px, 4vw, 56px)
+    clamp(22px, 5vh, 54px);
+  background: rgb(13 18 16 / 28%);
+  overflow-y: auto;
+  backdrop-filter: blur(6px) saturate(1.04);
+  -webkit-backdrop-filter: blur(6px) saturate(1.04);
+}
+
+.stavia-floating-card {
+  position: relative;
+  z-index: 1;
+  width: min(1040px, calc(100vw - 64px));
+  border-radius: 22px;
+  background: transparent;
+  animation: stavia-card-in 280ms cubic-bezier(0.18, 0.82, 0.28, 1);
+  box-shadow:
+    0 18px 48px -24px rgb(20 40 35 / 55%),
+    0 6px 16px -10px rgb(20 40 35 / 35%);
+  overflow: visible;
+}
+
+@keyframes stavia-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.stavia-page--floating {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+/* ============================================================
+   Hero panel (yellow surface)
+   ============================================================ */
+.stavia-hero-panel {
+  position: relative;
+  display: grid;
+  gap: 20px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 30px clamp(22px, 3vw, 40px);
+  border: 1px solid #e7bd00;
+  border-radius: 22px;
+  background: #fed203;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 35%);
+  overflow: visible;
+}
+
+.stavia-page--floating .stavia-hero-panel {
+  margin: 0;
+  padding: 32px clamp(24px, 4vw, 48px) 28px;
+  border-radius: 22px;
+  background: #fed203;
+}
+
+/* ============================================================
+   Header (close / back)
+   ============================================================ */
+.stavia-hero-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+}
+
+.stavia-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--stav-teal);
+  color: #fff;
+  font:
+    600 0.92rem "Poppins",
+    sans-serif;
+  cursor: pointer;
+  transition:
+    filter 0.16s ease,
+    background 0.16s ease;
+}
+
+.stavia-back-button:hover {
+  background: var(--stav-teal-700);
+}
+
+.stavia-page--floating .stavia-hero-header {
+  position: absolute;
+  z-index: 5;
+  top: 20px;
+  right: 22px;
+  left: auto;
+  justify-content: flex-end;
+}
+
+.stavia-page--floating .stavia-back-button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e7bd00;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 85%);
+  color: var(--stav-ink);
+}
+
+.stavia-page--floating .stavia-back-button:hover {
+  background: #fff;
+  filter: none;
+}
+
+.stavia-back-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ============================================================
+   Intro row (logo pill + copy)
+   ============================================================ */
+.stavia-intro-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(260px, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.stavia-logo-card {
+  width: min(358px, 100%);
+  min-height: 94px;
+  display: grid;
+  place-items: center;
+  padding: 0 24px;
+  border: 1px solid #efe7cf;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 20px -16px rgb(20 40 35 / 45%);
+  overflow: hidden;
+}
+
+.stavia-logo-card img {
+  display: block;
+  width: 108%;
+  max-width: none;
+  height: 108px;
+  object-fit: cover;
+  object-position: center;
+}
+
+.stavia-intro-wrap {
+  display: flex;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.stavia-info-dot {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--stav-teal);
+}
+
+.stavia-info-dot svg {
+  width: 15px;
+  height: 15px;
+}
+
+.stavia-intro-copy {
+  margin: 0;
+  max-width: 560px;
+  color: var(--stav-ink);
+  font:
+    500 0.98rem / 1.5 "Poppins",
+    sans-serif;
+}
+
+.stavia-page--floating .stavia-intro-row {
+  grid-template-columns: minmax(280px, 0.78fr) minmax(280px, 1fr);
+  gap: clamp(20px, 3.6vw, 44px);
+  min-height: 108px;
+}
+
+.stavia-page--floating .stavia-logo-card {
+  position: relative;
+  z-index: 4;
+  transform: translateY(-62px);
+  margin-bottom: -66px;
+  box-shadow: 0 12px 26px -18px rgb(20 40 35 / 45%);
+}
+
+.stavia-page--floating .stavia-intro-wrap {
+  padding: 2px 52px 0 0;
+}
+
+.stavia-page--floating .stavia-intro-copy {
+  font-size: clamp(0.95rem, 1.2vw, 1.05rem);
+}
+
+/* ============================================================
+   Banners / inline messages
+   ============================================================ */
+.stavia-offline-banner,
+.stavia-message {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff7cf;
+  border: 1px solid #ecd97a;
+  color: var(--stav-ink);
+  font:
+    500 0.9rem / 1.45 "Poppins",
+    sans-serif;
+}
+
+.stavia-message.is-error {
+  background: #fff0ed;
+  border-color: #f4cdc4;
+  color: #8b2d21;
+}
+
+.stavia-message.is-success {
+  background: #eef9df;
+  border-color: #d4e8b3;
+  color: #315115;
+}
+
+/* ============================================================
+   Suggestions (eyebrow + 3D wheel)
+   ============================================================ */
+.stavia-suggestions-title {
+  margin: 4px 0 -10px;
+  color: rgb(11 59 57 / 62%);
+  font:
+    500 0.92rem "Poppins",
+    sans-serif;
+  text-align: center;
+}
+
+.stavia-suggestion-crawl {
+  position: relative;
+  display: block;
+  height: clamp(150px, 19vh, 200px);
+  overflow: hidden;
+  perspective: 900px;
+  --stavia-wheel-duration: 24s;
+  --stavia-wheel-step: -3s;
+  --stavia-wheel-radius: clamp(94px, 11vw, 142px);
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 16%,
+    #000 76%,
+    transparent 100%
+  );
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 16%,
+    #000 76%,
+    transparent 100%
+  );
+}
+
+.stavia-suggestion-crawl-track {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+}
+
+.stavia-suggestion-crawl:hover button,
+.stavia-suggestion-crawl:focus-within button {
+  animation-play-state: paused;
+}
+
+.stavia-suggestion-crawl button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(720px, 92%);
+  min-height: 0;
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgb(255 255 255 / 90%);
+  font:
+    italic 500 clamp(1.15rem, 2.2vw, 1.85rem) / 1.3 "Poppins",
+    sans-serif;
+  text-align: center;
+  text-shadow: 0 6px 18px rgb(84 68 0 / 22%);
+  cursor: pointer;
+  transform-style: preserve-3d;
+  animation: stavia-suggestion-wheel var(--stavia-wheel-duration) linear
+    infinite;
+  animation-delay: calc(var(--stavia-tip-index) * var(--stavia-wheel-step));
+  transition:
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.stavia-suggestion-crawl button:hover,
+.stavia-suggestion-crawl button:focus-visible {
+  color: #fff;
+  outline: none;
+}
+
+.stavia-suggestion-crawl button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@keyframes stavia-suggestion-wheel {
+  0% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translate(-50%, -50%) rotateX(0deg)
+      translateZ(var(--stavia-wheel-radius)) scale(1);
+  }
+
+  12.5% {
+    opacity: 0.74;
+    filter: blur(0.2px);
+    transform: translate(-50%, -50%) rotateX(-45deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.94);
+  }
+
+  25% {
+    opacity: 0.36;
+    filter: blur(0.7px);
+    transform: translate(-50%, -50%) rotateX(-90deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.84);
+  }
+
+  37.5% {
+    opacity: 0.12;
+    filter: blur(1.1px);
+    transform: translate(-50%, -50%) rotateX(-135deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.76);
+  }
+
+  50% {
+    opacity: 0.04;
+    filter: blur(1.3px);
+    transform: translate(-50%, -50%) rotateX(-180deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.72);
+  }
+
+  62.5% {
+    opacity: 0.12;
+    filter: blur(1.1px);
+    transform: translate(-50%, -50%) rotateX(-225deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.76);
+  }
+
+  75% {
+    opacity: 0.36;
+    filter: blur(0.7px);
+    transform: translate(-50%, -50%) rotateX(-270deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.84);
+  }
+
+  87.5% {
+    opacity: 0.74;
+    filter: blur(0.2px);
+    transform: translate(-50%, -50%) rotateX(-315deg)
+      translateZ(var(--stavia-wheel-radius)) scale(0.94);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translate(-50%, -50%) rotateX(-360deg)
+      translateZ(var(--stavia-wheel-radius)) scale(1);
+  }
+}
+
+/* ============================================================
+   Tip box + selected context (glassy chips)
+   ============================================================ */
+.stavia-tip-box,
+.stavia-selected-context {
+  border-radius: 12px;
+  background: rgb(255 255 255 / 88%);
+  border: 1px solid #f0e4b0;
+}
+
+.stavia-tip-box {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  padding: 14px 18px;
 }
 
-.stavia-suggestions button {
-  padding: 8px 11px;
-  border: 1px solid #d4dcd7;
-  border-radius: 999px;
-  background: #f7f9f7;
-  color: #32453a;
-  font-size: 0.76rem;
-  text-align: left;
+.stavia-tip-box strong {
+  color: var(--stav-teal);
+  font:
+    600 0.92rem "Poppins",
+    sans-serif;
 }
 
-.stavia-suggestions button:hover {
-  background: #edf3ef;
+.stavia-tip-box span {
+  color: var(--stav-ink);
+  font:
+    500 0.9rem / 1.45 "Poppins",
+    sans-serif;
 }
 
-.stavia-suggestions button:disabled {
+.stavia-selected-context {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 18px;
+}
+
+.stavia-selected-context div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stavia-selected-context span {
+  color: rgb(11 59 57 / 60%);
+  font:
+    600 0.68rem "Poppins",
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stavia-selected-context strong {
+  overflow: hidden;
+  color: var(--stav-ink);
+  font:
+    600 0.98rem "Poppins",
+    sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-selected-context small {
+  color: rgb(11 59 57 / 62%);
+  font:
+    500 0.8rem / 1.4 "Poppins",
+    sans-serif;
+}
+
+/* ============================================================
+   Button system
+   ============================================================ */
+.stavia-secondary-action,
+.stavia-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  border-radius: 10px;
+  font:
+    600 0.9rem "Poppins",
+    sans-serif;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.stavia-secondary-action {
+  padding: 0 18px;
+  border: 1px solid rgb(2 105 101 / 30%);
+  background: #fff;
+  color: var(--stav-teal);
+}
+
+.stavia-secondary-action:hover {
+  background: #f4faf8;
+  border-color: rgb(2 105 101 / 50%);
+}
+
+.stavia-secondary-action.compact {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 0.84rem;
+}
+
+.stavia-primary-action {
+  padding: 0 20px;
+  border: 1px solid var(--stav-teal-700);
+  background: var(--stav-teal);
+  color: #fff;
+}
+
+.stavia-primary-action:hover {
+  background: var(--stav-teal-700);
+}
+
+.stavia-primary-action.compact {
+  height: 38px;
+  padding: 0 18px;
+  font-size: 0.84rem;
+}
+
+/* ============================================================
+   Prompt (hero pill)
+   ============================================================ */
+.stavia-query-box {
+  display: grid;
+  gap: 12px;
+}
+
+.stavia-prompt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--stav-ink);
+  font:
+    500 0.78rem "Poppins",
+    sans-serif;
+}
+
+.stavia-prompt-meta .stavia-network-pill {
+  margin-right: auto;
+}
+
+.stavia-meta-time {
+  opacity: 0.85;
+}
+
+.stavia-network-pill {
+  padding: 5px 10px;
+  border-radius: 7px;
+  font:
+    600 0.72rem "Poppins",
+    sans-serif;
+}
+
+.stavia-network-pill.is-online {
+  background: rgb(255 255 255 / 92%);
+  color: var(--stav-teal);
+}
+
+.stavia-network-pill.is-offline {
+  background: #fff3f0;
+  color: #8a2e20;
+}
+
+.stavia-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgb(2 105 101 / 28%);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--stav-teal);
+  font:
+    600 0.76rem "Poppins",
+    sans-serif;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.stavia-refresh-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.stavia-refresh-button:hover {
+  background: #f4faf8;
+}
+
+.stavia-question-shell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid #d7cfa6;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 6px 16px -12px rgb(20 40 35 / 45%);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.stavia-question-shell:focus-within {
+  border-color: var(--stav-teal);
+  box-shadow: 0 0 0 3px rgb(2 105 101 / 14%);
+}
+
+.stavia-plus-button {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgb(2 105 101 / 9%);
+  color: var(--stav-teal);
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.stavia-plus-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.stavia-plus-button:hover {
+  background: rgb(2 105 101 / 16%);
+}
+
+.stavia-plus-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.stavia-question-shell textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  max-height: 140px;
+  padding: 8px 4px;
+  border: 0;
+  background: transparent;
+  color: #15302d;
+  font:
+    400 1.02rem / 1.45 "Poppins",
+    sans-serif;
+  resize: none;
+  outline: none;
+}
+
+.stavia-question-shell textarea::placeholder {
+  color: rgb(11 59 57 / 45%);
+}
+
+.stavia-send-button {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: var(--stav-teal);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.stavia-send-button svg {
+  width: 19px;
+  height: 19px;
+}
+
+.stavia-send-button:hover {
+  background: var(--stav-teal-700);
+}
+
+.stavia-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgb(255 255 255 / 35%);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: stavia-spin 0.7s linear infinite;
+}
+
+@keyframes stavia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* attachment tray (shown when a file is selected) */
+.stavia-attach-tray {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid #d7cfa6;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.stavia-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--stav-teal);
+  font:
+    600 0.82rem "Poppins",
+    sans-serif;
+}
+
+.stavia-attach-chip span {
+  overflow: hidden;
+  max-width: 160px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-attach-chip svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.stavia-attach-tray input[type="text"] {
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #d7cfa6;
+  border-radius: 8px;
+  background: #fff;
+  color: #15302d;
+  font:
+    400 0.86rem "Poppins",
+    sans-serif;
+  outline: none;
+}
+
+.stavia-attach-tray input[type="text"]:focus {
+  border-color: var(--stav-teal);
+}
+
+.stavia-attach-remove {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(2 105 101 / 9%);
+  color: var(--stav-teal);
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.stavia-attach-remove svg {
+  width: 15px;
+  height: 15px;
+}
+
+.stavia-attach-remove:hover {
+  background: rgb(2 105 101 / 16%);
+}
+
+/* context hint (quiet) */
+.stavia-context-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+}
+
+.stavia-context-hint svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: rgb(11 59 57 / 50%);
+}
+
+.stavia-context-hint input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  border-bottom: 1px solid rgb(11 59 57 / 18%);
+  background: transparent;
+  color: var(--stav-ink);
+  font:
+    400 0.84rem "Poppins",
+    sans-serif;
+  outline: none;
+}
+
+.stavia-context-hint input::placeholder {
+  color: rgb(11 59 57 / 42%);
+}
+
+.stavia-context-hint input:focus {
+  border-bottom-color: var(--stav-teal);
+}
+
+/* disabled states */
+.stavia-back-button:disabled,
+.stavia-secondary-action:disabled,
+.stavia-primary-action:disabled,
+.stavia-refresh-button:disabled,
+.stavia-send-button:disabled,
+.stavia-plus-button:has(input:disabled) {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.56;
+  transform: none;
+  filter: none;
 }
 
-.stavia-submit-row {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 24px;
+/* ============================================================
+   Context selector modal
+   ============================================================ */
+.stavia-context-modal-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgb(13 18 16 / 50%);
 }
 
-.stavia-response-header {
+.stavia-context-modal {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 14px;
+  width: min(920px, 100%);
+  max-height: min(780px, 92vh);
+  padding: 22px;
+  border: 1px solid #e7dfc6;
+  border-radius: 16px;
+  background: var(--stav-cream);
+  box-shadow: 0 24px 60px -30px rgb(0 0 0 / 45%);
+}
+
+.stavia-context-modal-header {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #edf0ee;
+  gap: 16px;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #ece6cf;
 }
 
-.stavia-response-header h2 {
+.stavia-context-modal-header p {
+  margin: 0 0 4px;
+  color: rgb(11 59 57 / 60%);
+  font:
+    600 0.7rem "Poppins",
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stavia-context-modal-header h2 {
   margin: 0;
+  color: var(--stav-ink);
+  font:
+    700 1.3rem "Poppins",
+    sans-serif;
 }
 
-.stavia-confidence {
-  flex: 0 0 auto;
-  padding: 7px 11px;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 750;
+.stavia-context-modal-header span {
+  display: block;
+  margin-top: 6px;
+  color: #52615c;
+  font:
+    500 0.86rem / 1.4 "Poppins",
+    sans-serif;
 }
 
-.stavia-confidence--alta {
-  background: #e8f4eb;
-  color: #2f6643;
+.stavia-modal-close {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(2 105 101 / 28%);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--stav-teal);
+  font:
+    600 1.4rem "Poppins",
+    sans-serif;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.16s ease;
 }
 
-.stavia-confidence--media {
-  background: #fff5d9;
-  color: #7d5d09;
+.stavia-modal-close:hover {
+  background: #f3fbf3;
 }
 
-.stavia-confidence--baixa,
-.stavia-confidence--indeterminada {
-  background: #fff0e8;
-  color: #914621;
+.stavia-context-modal-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.stavia-context-modal-tools input {
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgb(2 105 101 / 28%);
+  border-radius: 10px;
+  background: #fff;
+  color: #20251f;
+  font:
+    400 0.92rem "Poppins",
+    sans-serif;
+  outline: none;
+}
+
+.stavia-context-modal-tools input:focus {
+  border-color: var(--stav-teal);
+  box-shadow: 0 0 0 3px rgb(2 105 101 / 14%);
+}
+
+.stavia-context-modal-summary {
+  color: var(--stav-ink);
+  font:
+    600 0.84rem "Poppins",
+    sans-serif;
+}
+
+.stavia-context-option-list {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  padding-right: 4px;
+  overflow: auto;
+}
+
+.stavia-context-empty {
+  padding: 18px;
+  border: 1px dashed #d9ca85;
+  border-radius: 10px;
+  background: #fff8df;
+  color: #6d5310;
+  font:
+    500 0.9rem / 1.45 "Poppins",
+    sans-serif;
+}
+
+.stavia-context-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.48fr);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #e6e1d2;
+  border-radius: 12px;
+  background: #fff;
+  color: #20251f;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.stavia-context-option:hover,
+.stavia-context-option.is-selected {
+  border-color: var(--stav-teal);
+  background: #f3fbf3;
+}
+
+.stavia-context-option span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.stavia-context-option strong,
+.stavia-context-option em,
+.stavia-context-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stavia-context-option strong {
+  color: var(--stav-ink);
+  font:
+    600 0.98rem "Poppins",
+    sans-serif;
+  white-space: nowrap;
+}
+
+.stavia-context-option em {
+  color: #52615c;
+  font:
+    500 0.88rem "Poppins",
+    sans-serif;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.stavia-context-option small {
+  color: #746a55;
+  font:
+    500 0.8rem "Poppins",
+    sans-serif;
+  white-space: nowrap;
+}
+
+.stavia-context-option code {
+  display: block;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 12px;
+  background: #f4f7f3;
+  color: #31514d;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* ============================================================
+   Workspace (chat + answer)
+   ============================================================ */
+.stavia-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  max-width: 1180px;
+  margin: 18px auto 0;
+}
+
+.stavia-page--floating .stavia-workspace {
+  grid-template-columns: 1fr;
+  width: 100%;
+  max-width: none;
+}
+
+.stavia-chat-panel,
+.stavia-answer-panel {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #ece4c8;
+  border-radius: 14px;
+  background: #fffdf5;
+}
+
+.stavia-chat-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.stavia-page--floating .stavia-chat-panel {
+  max-height: 260px;
+  overflow: hidden;
+}
+
+.stavia-page--floating .stavia-answer-panel {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.stavia-answer-panel {
+  align-self: start;
+}
+
+.stavia-chat-header,
+.stavia-answer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgb(2 105 101 / 14%);
+}
+
+.stavia-chat-header p,
+.stavia-answer-header span {
+  margin: 0 0 4px;
+  color: rgb(11 59 57 / 60%);
+  font:
+    600 0.7rem "Poppins",
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stavia-chat-header h2 {
+  margin: 0;
+  color: var(--stav-ink);
+  font:
+    700 1.15rem "Poppins",
+    sans-serif;
+}
+
+.stavia-answer-header strong {
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: #ecf7dc;
+  color: var(--stav-teal);
+  font:
+    600 0.78rem "Poppins",
+    sans-serif;
+}
+
+.stavia-empty-chat {
+  margin: 18px 0 0;
+  color: #706a58;
+  font:
+    500 0.92rem "Poppins",
+    sans-serif;
+}
+
+.stavia-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+  max-height: min(420px, 48vh);
+  padding-right: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+.stavia-page--floating .stavia-chat-thread {
+  max-height: 174px;
+}
+
+.stavia-chat-message {
+  width: min(760px, 92%);
+  padding: 13px 15px;
+  border: 1px solid #ece4c8;
+  border-radius: 12px;
+  background: #fff;
+  color: #22251e;
+}
+
+.stavia-chat-message--usuario {
+  align-self: flex-end;
+  border-color: var(--stav-teal-700);
+  background: var(--stav-teal);
+  color: #fffef8;
+  border-bottom-right-radius: 4px;
+}
+
+.stavia-chat-message--stavia {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.stavia-chat-message > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.stavia-chat-message strong {
+  font:
+    600 0.84rem "Poppins",
+    sans-serif;
+}
+
+.stavia-chat-message span,
+.stavia-chat-message small {
+  color: #817864;
+  font-size: 0.74rem;
+}
+
+.stavia-chat-message--usuario span,
+.stavia-chat-message--usuario small {
+  color: #d8ead0;
+}
+
+.stavia-chat-message p,
+.stavia-answer-text {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.65;
+}
+
+.stavia-chat-message small {
+  display: block;
+  margin-top: 10px;
 }
 
 .stavia-answer-text {
-  margin: 24px 0;
-  color: #24342b;
-  font-size: 1.05rem;
-  line-height: 1.75;
-}
-
-.stavia-response-metadata {
-  display: grid;
-  grid-template-columns:
-    repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
-}
-
-.stavia-response-metadata div {
-  padding: 14px;
-  border: 1px solid #e2e7e4;
-  border-radius: 12px;
-  background: #fafbfa;
-}
-
-.stavia-response-metadata dt {
-  margin-bottom: 5px;
-  color: #77847c;
-  font-size: 0.72rem;
-}
-
-.stavia-response-metadata dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: #24342b;
-  font-size: 0.84rem;
-  font-weight: 700;
+  margin-top: 16px;
+  color: var(--stav-ink);
+  font-size: 1rem;
 }
 
 .stavia-warning-box {
-  margin-top: 20px;
-  padding: 16px;
-  border: 1px solid #ead7a7;
-  border-radius: 12px;
-  background: #fff9e8;
-  color: #6f5412;
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #e6d28c;
+  border-radius: 10px;
+  background: #fff8df;
+  color: #6d5310;
 }
 
-.stavia-warning-box ul {
-  margin: 10px 0 0;
-  padding-left: 20px;
-  line-height: 1.6;
+.stavia-warning-box p {
+  margin: 0;
 }
 
 .stavia-sources {
-  margin-top: 26px;
+  margin-top: 18px;
 }
 
 .stavia-sources h3 {
-  margin-bottom: 14px;
+  margin: 0 0 10px;
+  font:
+    700 1rem "Poppins",
+    sans-serif;
 }
 
 .stavia-source {
-  margin-bottom: 10px;
-  border: 1px solid #dfe5e1;
-  border-radius: 12px;
-  background: #fbfcfb;
+  margin-top: 8px;
+  border: 1px solid rgb(2 105 101 / 14%);
+  border-radius: 10px;
+  background: #fbf8ed;
 }
 
 .stavia-source summary {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  padding: 15px;
+  gap: 12px;
+  padding: 12px 14px;
   cursor: pointer;
-  color: #314239;
 }
 
-.stavia-source summary > span:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+.stavia-source summary span {
+  font-weight: 600;
 }
 
 .stavia-source summary small {
-  color: #78857d;
-}
-
-.stavia-source > p,
-.stavia-source > dl,
-.stavia-source > pre {
-  margin-right: 15px;
-  margin-left: 15px;
-}
-
-.stavia-source > p {
-  line-height: 1.6;
-}
-
-.stavia-source dl div {
-  display: grid;
-  grid-template-columns: 70px 1fr;
-  gap: 10px;
-}
-
-.stavia-source dt {
-  color: #78857d;
-  font-size: 0.78rem;
-}
-
-.stavia-source dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: 0.8rem;
+  color: #756b55;
 }
 
 .stavia-source pre {
-  max-height: 360px;
+  max-height: 320px;
+  margin: 0;
+  padding: 12px 14px;
+  border-top: 1px solid rgb(2 105 101 / 14%);
+  color: #263026;
+  font-size: 0.78rem;
+  line-height: 1.45;
   overflow: auto;
-  margin-bottom: 15px;
-  padding: 14px;
-  border-radius: 10px;
-  background: #142019;
-  color: #dce9e1;
-  font-family:
-    "SFMono-Regular", Consolas,
-    "Liberation Mono", monospace;
-  font-size: 0.74rem;
-  line-height: 1.55;
 }
 
-@media (max-width: 760px) {
-  .stavia-form-grid,
-  .stavia-response-metadata {
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 920px) {
+  .stavia-launcher {
+    top: auto;
+    right: 16px;
+    bottom: 18px;
+    transform:
+      translate3d(
+        var(--stavia-launcher-x, 0),
+        var(--stavia-launcher-y, 0),
+        0
+      );
+  }
+
+  .stavia-launcher:hover,
+  .stavia-launcher:active,
+  .stavia-launcher.is-dragging {
+    transform:
+      translate3d(
+        var(--stavia-launcher-x, 0),
+        var(--stavia-launcher-y, 0),
+        0
+      )
+      scale(1.02);
+  }
+
+  .stavia-floating-overlay {
+    padding: 70px 12px 14px;
+  }
+
+  .stavia-floating-card {
+    width: min(100%, calc(100vw - 24px));
+    border-radius: 18px;
+  }
+
+  .stavia-page {
+    padding: 14px;
+  }
+
+  .stavia-hero-panel {
+    padding: 22px 16px 20px;
+    border-radius: 18px;
+  }
+
+  .stavia-page--floating .stavia-hero-panel {
+    padding: 24px 16px 20px;
+    border-radius: 18px;
+  }
+
+  .stavia-page--floating .stavia-hero-header {
+    top: 12px;
+    right: 12px;
+  }
+
+  .stavia-intro-row,
+  .stavia-page--floating .stavia-intro-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    min-height: 0;
+  }
+
+  .stavia-logo-card {
+    max-width: 320px;
+    min-height: 86px;
+  }
+
+  .stavia-logo-card img {
+    height: 94px;
+  }
+
+  .stavia-page--floating .stavia-logo-card {
+    transform: translateY(-54px);
+    margin-bottom: -50px;
+  }
+
+  .stavia-page--floating .stavia-intro-wrap {
+    padding: 0 50px 0 0;
+  }
+
+  .stavia-suggestion-crawl {
+    height: 168px;
+  }
+
+  .stavia-selected-context,
+  .stavia-attach-tray,
+  .stavia-context-modal-tools,
+  .stavia-context-option,
+  .stavia-workspace {
     grid-template-columns: 1fr;
   }
 
-  .stavia-response-header,
-  .stavia-source summary {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .stavia-submit-row {
-    justify-content: stretch;
-  }
-
-  .stavia-submit-row button {
+  .stavia-selected-context .stavia-secondary-action,
+  .stavia-attach-tray .stavia-primary-action {
     width: 100%;
+    justify-content: center;
+  }
+
+  .stavia-context-option strong,
+  .stavia-context-option em,
+  .stavia-context-option small,
+  .stavia-selected-context strong {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 560px) {
+  .stavia-launcher {
+    width: 132px;
+    height: 52px;
+  }
+
+  .stavia-launcher img {
+    width: 102px;
+    height: 36px;
+  }
+
+  .stavia-suggestion-crawl {
+    height: 150px;
+  }
+
+  .stavia-question-shell {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .stavia-plus-button {
+    width: 42px;
+    height: 42px;
+  }
+
+  .stavia-send-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .stavia-floating-card {
+    animation: none;
+  }
+
+  .stavia-suggestion-crawl {
+    height: auto;
+    overflow: visible;
+    perspective: none;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
+  .stavia-suggestion-crawl-track {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    transform: none;
+    animation: none;
+  }
+
+  .stavia-suggestion-crawl-track button:nth-child(n + 7) {
+    display: none;
+  }
+
+  .stavia-suggestion-crawl button {
+    position: static;
+    width: auto;
+    min-height: 52px;
+    padding: 12px 16px;
+    border: 1px solid rgb(255 255 255 / 55%);
+    border-radius: 10px;
+    background: rgb(255 255 255 / 22%);
+    color: #fff;
+    font:
+      italic 500 0.95rem / 1.3 "Poppins",
+      sans-serif;
+    text-align: left;
+    transform: none;
+    animation: none;
   }
 }

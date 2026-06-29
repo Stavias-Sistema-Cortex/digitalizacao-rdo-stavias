@@ -1,4 +1,5 @@
 import type { LocalRdoRecord } from "../../lib/db/db.types";
+import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -8,6 +9,7 @@ interface RdoLocalListProps {
   onOpen: (record: LocalRdoRecord) => void;
   onRefresh: () => void;
   onOpenStavia: () => void;
+  onOpenIntegracoes: () => void;
 }
 
 function formatDate(value: string): string {
@@ -28,6 +30,7 @@ export function RdoLocalList({
   onOpen,
   onRefresh,
   onOpenStavia,
+  onOpenIntegracoes,
 }: RdoLocalListProps) {
   return (
     <main className="page-shell">
@@ -61,6 +64,14 @@ export function RdoLocalList({
             onClick={onOpenStavia}
           >
             Abrir Stav.IA
+          </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onOpenIntegracoes}
+          >
+            Integrações
           </button>
 
           <button
@@ -112,7 +123,9 @@ export function RdoLocalList({
           >
             <div className="local-rdo-card-header">
               <span className="status-badge">
-                {record.syncStatus}
+                {formatLocalSyncStatus(
+                  record.syncStatus,
+                )}
               </span>
 
               <span className="status-id">

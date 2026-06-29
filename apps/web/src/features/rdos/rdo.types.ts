@@ -59,6 +59,48 @@ export interface ControleGeometricoDraft {
   densidade: NumericInput;
 }
 
+export interface ServicoExecutadoDraft {
+  localId: string;
+  servicoNome: string;
+  itemContratualId: string;
+  quantidadeExecutada: NumericInput;
+  unidade: string;
+  trechoInicial: string;
+  trechoFinal: string;
+  localizacao: string;
+  statusValidacao: "REGISTRADA" | "VALIDADA" | "REJEITADA";
+  custoRealizado: NumericInput;
+  retrabalho: boolean;
+  producaoRejeitada: boolean;
+  observacoes: string;
+}
+
+export interface AlocacaoColaboradorDraft {
+  localId: string;
+  colaboradorId: string;
+  equipe: string;
+  servicoNome: string;
+  horaInicio: string;
+  horaFim: string;
+  percentualDia: NumericInput;
+  turno: "" | TurnoRdo;
+  funcao: string;
+  centroCusto: string;
+  tipoAlocacao:
+    | "TRABALHO"
+    | "DESLOCAMENTO"
+    | "TREINAMENTO"
+    | "MANUTENCAO"
+    | "APOIO"
+    | "ADMINISTRATIVO"
+    | "AFASTAMENTO"
+    | "OUTRO";
+  fonte: string;
+  status: "REGISTRADA" | "VALIDADA" | "CONFLITO";
+  custoHora: NumericInput;
+  observacoes: string;
+}
+
 export interface RdoDraft {
   id: string;
   obraId: string;
@@ -73,6 +115,8 @@ export interface RdoDraft {
   condicaoNoite: CondicaoClimatica;
   pluviometriaMm: NumericInput;
   observacoes: string;
+  servicosExecutados: ServicoExecutadoDraft[];
+  alocacoesColaboradores: AlocacaoColaboradorDraft[];
   maoObra: MaoObraDraft[];
   equipamentos: EquipamentoDraft[];
   materiais: MaterialDraft[];

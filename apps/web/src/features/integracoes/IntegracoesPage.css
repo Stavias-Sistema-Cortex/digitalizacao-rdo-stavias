@@ -1,0 +1,62 @@
+.integracoes-table-card {
+  overflow-x: auto;
+}
+
+.integracoes-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.integracoes-table th,
+.integracoes-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #edf0ee;
+  text-align: left;
+  vertical-align: top;
+}
+
+.integracoes-table th {
+  color: #607068;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.integracoes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.integracoes-actions .secondary-button {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.integracoes-report dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+
+.integracoes-report dt {
+  margin-bottom: 6px;
+  color: #718078;
+  font-size: 0.76rem;
+}
+
+.integracoes-report dd {
+  margin: 0;
+  color: #25372d;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .integracoes-report dl {
+    grid-template-columns: 1fr;
+  }
+}

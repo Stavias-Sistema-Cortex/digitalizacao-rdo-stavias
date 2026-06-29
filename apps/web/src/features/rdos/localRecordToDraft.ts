@@ -1,17 +1,21 @@
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import {
+  createEmptyAlocacaoColaborador,
   createEmptyControleGeometrico,
   createEmptyEquipamento,
   createEmptyMaoObra,
   createEmptyMaterial,
+  createEmptyServicoExecutado,
 } from "./createEmptyRdo";
 import type {
+  AlocacaoColaboradorDraft,
   ControleGeometricoDraft,
   EquipamentoDraft,
   MaoObraDraft,
   MaterialDraft,
   NumericInput,
   RdoDraft,
+  ServicoExecutadoDraft,
 } from "./rdo.types";
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -45,6 +49,7 @@ function mapMaoObra(value: unknown): MaoObraDraft[] {
 
     return {
       ...empty,
+      localId: asString(item.localId, empty.localId),
       colaboradorId: asString(item.colaboradorId),
       nomeColaborador: asString(item.nomeColaborador),
       cargo: asString(item.cargo),
@@ -66,6 +71,7 @@ function mapEquipamentos(
 
     return {
       ...empty,
+      localId: asString(item.localId, empty.localId),
       assetId: asString(item.assetId),
       prefixo: asString(item.prefixo),
       descricao: asString(item.descricao),
@@ -86,6 +92,7 @@ function mapMateriais(value: unknown): MaterialDraft[] {
 
     return {
       ...empty,
+      localId: asString(item.localId, empty.localId),
       materialNome: asString(item.materialNome),
       unidade: asString(item.unidade),
       quantidadePrevista: asNumericInput(
@@ -110,6 +117,7 @@ function mapControles(
 
     return {
       ...empty,
+      localId: asString(item.localId, empty.localId),
       subtrecho: asString(item.subtrecho),
       kmInicial: asString(item.kmInicial),
       kmFinal: asString(item.kmFinal),
@@ -119,6 +127,74 @@ function mapControles(
       espessura2Cm: asNumericInput(item.espessura2Cm),
       espessura3Cm: asNumericInput(item.espessura3Cm),
       densidade: asNumericInput(item.densidade),
+    };
+  });
+}
+
+function mapServicosExecutados(
+  value: unknown,
+): ServicoExecutadoDraft[] {
+  return asArray(value).map((rawItem) => {
+    const item = asObject(rawItem);
+    const empty = createEmptyServicoExecutado();
+
+    return {
+      ...empty,
+      localId: asString(item.localId, empty.localId),
+      servicoNome: asString(item.servicoNome),
+      itemContratualId: asString(item.itemContratualId),
+      quantidadeExecutada: asNumericInput(
+        item.quantidadeExecutada,
+      ),
+      unidade: asString(item.unidade),
+      trechoInicial: asString(item.trechoInicial),
+      trechoFinal: asString(item.trechoFinal),
+      localizacao: asString(item.localizacao),
+      statusValidacao: asString(
+        item.statusValidacao,
+        empty.statusValidacao,
+      ) as ServicoExecutadoDraft["statusValidacao"],
+      custoRealizado: asNumericInput(item.custoRealizado),
+      retrabalho: item.retrabalho === true,
+      producaoRejeitada: item.producaoRejeitada === true,
+      observacoes: asString(item.observacoes),
+    };
+  });
+}
+
+function mapAlocacoesColaboradores(
+  value: unknown,
+): AlocacaoColaboradorDraft[] {
+  return asArray(value).map((rawItem) => {
+    const item = asObject(rawItem);
+    const empty = createEmptyAlocacaoColaborador();
+
+    return {
+      ...empty,
+      localId: asString(item.localId, empty.localId),
+      colaboradorId: asString(item.colaboradorId),
+      equipe: asString(item.equipe),
+      servicoNome: asString(item.servicoNome),
+      horaInicio: asString(item.horaInicio, empty.horaInicio),
+      horaFim: asString(item.horaFim, empty.horaFim),
+      percentualDia: asNumericInput(item.percentualDia),
+      turno: asString(
+        item.turno,
+        empty.turno,
+      ) as AlocacaoColaboradorDraft["turno"],
+      funcao: asString(item.funcao),
+      centroCusto: asString(item.centroCusto),
+      tipoAlocacao: asString(
+        item.tipoAlocacao,
+        empty.tipoAlocacao,
+      ) as AlocacaoColaboradorDraft["tipoAlocacao"],
+      fonte: asString(item.fonte, empty.fonte),
+      status: asString(
+        item.status,
+        empty.status,
+      ) as AlocacaoColaboradorDraft["status"],
+      custoHora: asNumericInput(item.custoHora),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -155,6 +231,12 @@ export function localRecordToDraft(
         ? ""
         : asNumericInput(payload.pluviometriaMm),
     observacoes: asString(payload.observacoes),
+    servicosExecutados: mapServicosExecutados(
+      payload.servicosExecutados,
+    ),
+    alocacoesColaboradores: mapAlocacoesColaboradores(
+      payload.alocacoesColaboradores,
+    ),
     maoObra: mapMaoObra(payload.maoObra),
     equipamentos: mapEquipamentos(payload.equipamentos),
     materiais: mapMateriais(payload.materiais),

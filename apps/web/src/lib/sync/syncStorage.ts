@@ -1,6 +1,8 @@
 import { getCortexDb } from "../db/cortexDb";
 import type {
+  LocalRdoChildRecord,
   LocalRdoRecord,
+  LocalSyncStatus,
   OutboxMutationRecord,
   ProcessedEventRecord,
 } from "../db/db.types";
@@ -13,11 +15,73 @@ function nowUtc(): string {
   return new Date().toISOString();
 }
 
+type RdoChildStoreName =
+  | "rdoMaoObra"
+  | "rdoEquipamentos"
+  | "rdoMateriais"
+  | "rdoControlesGeometricos";
+
+interface RdoChildStoreUpdater {
+  index: (name: "by-rdo-id") => {
+    getAll: (
+      query: string,
+    ) => Promise<LocalRdoChildRecord[]>;
+  };
+  put: (
+    value: LocalRdoChildRecord,
+  ) => Promise<IDBValidKey>;
+}
+
+interface RdoChildSyncTransaction {
+  objectStore: (
+    name: RdoChildStoreName,
+  ) => RdoChildStoreUpdater;
+}
+
+const RDO_CHILD_STORE_NAMES = [
+  "rdoMaoObra",
+  "rdoEquipamentos",
+  "rdoMateriais",
+  "rdoControlesGeometricos",
+] as const;
+
+const RDO_SYNC_TRANSACTION_STORES = [
+  "outbox_mutations",
+  "rdos",
+  ...RDO_CHILD_STORE_NAMES,
+] as const;
+
+async function updateRdoChildrenSyncStatus(
+  transaction: RdoChildSyncTransaction,
+  rdoId: string,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): Promise<void> {
+  await Promise.all(
+    RDO_CHILD_STORE_NAMES.map(async (storeName) => {
+      const store = transaction.objectStore(storeName);
+      const records = await store
+        .index("by-rdo-id")
+        .getAll(rdoId);
+
+      await Promise.all(
+        records.map((record: LocalRdoChildRecord) =>
+          store.put({
+            ...record,
+            syncStatus,
+            updatedAt: timestamp,
+          }),
+        ),
+      );
+    }),
+  );
+}
+
 export async function recoverInterruptedMutations(): Promise<void> {
   const database = await getCortexDb();
 
   const transaction = database.transaction(
-    ["outbox_mutations", "rdos"],
+    RDO_SYNC_TRANSACTION_STORES,
     "readwrite",
   );
 
@@ -47,6 +111,13 @@ export async function recoverInterruptedMutations(): Promise<void> {
         syncStatus: "PENDING_SYNC",
         updatedAt: nowUtc(),
       });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        nowUtc(),
+      );
     }
   }
 
@@ -59,7 +130,7 @@ export async function markMutationAsSyncing(
   const database = await getCortexDb();
 
   const transaction = database.transaction(
-    ["outbox_mutations", "rdos"],
+    RDO_SYNC_TRANSACTION_STORES,
     "readwrite",
   );
 
@@ -91,6 +162,7 @@ export async function markMutationAsSyncing(
     ...currentMutation,
     status: "SYNCING",
     tentativas: currentMutation.tentativas + 1,
+    ultimaTentativaEm: nowUtc(),
     ultimoErro: null,
     updatedAt: nowUtc(),
   });
@@ -98,11 +170,20 @@ export async function markMutationAsSyncing(
   const rdo = await rdoStore.get(currentMutation.entidadeId);
 
   if (rdo) {
+    const timestamp = nowUtc();
+
     await rdoStore.put({
       ...rdo,
       syncStatus: "SYNCING",
-      updatedAt: nowUtc(),
+      updatedAt: timestamp,
     });
+
+    await updateRdoChildrenSyncStatus(
+      transaction,
+      currentMutation.entidadeId,
+      "SYNCING",
+      timestamp,
+    );
   }
 
   await transaction.done;
@@ -114,7 +195,7 @@ export async function applyPushResultAtomically(
   const database = await getCortexDb();
 
   const transaction = database.transaction(
-    ["outbox_mutations", "rdos"],
+    RDO_SYNC_TRANSACTION_STORES,
     "readwrite",
   );
 
@@ -159,6 +240,13 @@ export async function applyPushResultAtomically(
         versaoEntidade: resultVersion,
         updatedAt: timestamp,
       });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNCED",
+        timestamp,
+      );
     }
   } else if (result.status === "DESCARTADA") {
     await outboxStore.put({
@@ -176,6 +264,13 @@ export async function applyPushResultAtomically(
         syncStatus: "CONFLICT",
         updatedAt: timestamp,
       });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "CONFLICT",
+        timestamp,
+      );
     }
   } else {
     await outboxStore.put({
@@ -193,6 +288,13 @@ export async function applyPushResultAtomically(
         syncStatus: "ERROR",
         updatedAt: timestamp,
       });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "ERROR",
+        timestamp,
+      );
     }
   }
 
@@ -206,7 +308,7 @@ export async function returnMutationToPending(
   const database = await getCortexDb();
 
   const transaction = database.transaction(
-    ["outbox_mutations", "rdos"],
+    RDO_SYNC_TRANSACTION_STORES,
     "readwrite",
   );
 
@@ -221,11 +323,13 @@ export async function returnMutationToPending(
     return;
   }
 
+  const timestamp = nowUtc();
+
   await outboxStore.put({
     ...mutation,
     status: "PENDING",
     ultimoErro: errorMessage,
-    updatedAt: nowUtc(),
+    updatedAt: timestamp,
   });
 
   const rdo = await rdoStore.get(mutation.entidadeId);
@@ -234,8 +338,15 @@ export async function returnMutationToPending(
     await rdoStore.put({
       ...rdo,
       syncStatus: "PENDING_SYNC",
-      updatedAt: nowUtc(),
+      updatedAt: timestamp,
     });
+
+    await updateRdoChildrenSyncStatus(
+      transaction,
+      mutation.entidadeId,
+      "PENDING_SYNC",
+      timestamp,
+    );
   }
 
   await transaction.done;

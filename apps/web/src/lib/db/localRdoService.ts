@@ -1,17 +1,45 @@
 import type {
+  AlocacaoColaboradorDraft,
+  ControleGeometricoDraft,
   EquipamentoDraft,
   MaoObraDraft,
+  MaterialDraft,
   RdoDraft,
+  ServicoExecutadoDraft,
 } from "../../features/rdos/rdo.types";
 import { getCortexDb } from "./cortexDb";
 import type {
+  LocalRdoChildRecord,
   LocalRdoRecord,
+  LocalSyncStatus,
   OutboxMutationRecord,
 } from "./db.types";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
   mutation: OutboxMutationRecord;
+}
+
+type RdoChildStoreName =
+  | "rdoMaoObra"
+  | "rdoEquipamentos"
+  | "rdoMateriais"
+  | "rdoControlesGeometricos";
+
+interface RdoChildStoreWriter {
+  index: (name: "by-rdo-id") => {
+    getAllKeys: (query: string) => Promise<string[]>;
+  };
+  delete: (key: string) => Promise<void>;
+  put: (
+    value: LocalRdoChildRecord,
+  ) => Promise<string>;
+}
+
+interface RdoChildWriteTransaction {
+  objectStore: (
+    name: RdoChildStoreName,
+  ) => RdoChildStoreWriter;
 }
 
 function nowUtc(): string {
@@ -51,6 +79,65 @@ function buildEquipamentoPayload(
     assetId: nullIfEmpty(base.assetId),
   };
 }
+
+function buildServicoExecutadoPayload(
+  item: ServicoExecutadoDraft,
+) {
+  const base = removeLocalId(item);
+
+  return {
+    ...base,
+    itemContratualId: nullIfEmpty(
+      base.itemContratualId,
+    ),
+    unidade: nullIfEmpty(base.unidade),
+    trechoInicial: nullIfEmpty(base.trechoInicial),
+    trechoFinal: nullIfEmpty(base.trechoFinal),
+    localizacao: nullIfEmpty(base.localizacao),
+    observacoes: nullIfEmpty(base.observacoes),
+  };
+}
+
+function buildAlocacaoPayload(
+  item: AlocacaoColaboradorDraft,
+) {
+  const base = removeLocalId(item);
+
+  return {
+    ...base,
+    colaboradorId: nullIfEmpty(base.colaboradorId),
+    equipe: nullIfEmpty(base.equipe),
+    servicoNome: nullIfEmpty(base.servicoNome),
+    horaInicio: nullIfEmpty(base.horaInicio),
+    horaFim: nullIfEmpty(base.horaFim),
+    turno: nullIfEmpty(base.turno),
+    funcao: nullIfEmpty(base.funcao),
+    centroCusto: nullIfEmpty(base.centroCusto),
+    fonte: nullIfEmpty(base.fonte),
+    observacoes: nullIfEmpty(base.observacoes),
+  };
+}
+
+function isServicoExecutadoEmpty(
+  item: ServicoExecutadoDraft,
+): boolean {
+  return (
+    item.servicoNome.trim() === "" &&
+    item.quantidadeExecutada === "" &&
+    item.itemContratualId.trim() === ""
+  );
+}
+
+function isAlocacaoEmpty(
+  item: AlocacaoColaboradorDraft,
+): boolean {
+  return (
+    item.colaboradorId.trim() === "" &&
+    item.equipe.trim() === "" &&
+    item.servicoNome.trim() === ""
+  );
+}
+
 function isMaterialEmpty(
   item: RdoDraft["materiais"][number],
 ): boolean {
@@ -66,7 +153,7 @@ function isMaterialEmpty(
   );
 }
 
-function buildRdoPayload(
+function buildRdoSyncPayload(
   draft: RdoDraft,
 ): Record<string, unknown> {
   return {
@@ -86,6 +173,14 @@ function buildRdoPayload(
         ? null
         : draft.pluviometriaMm,
     observacoes: draft.observacoes,
+    servicosExecutados:
+      draft.servicosExecutados
+        .filter((item) => !isServicoExecutadoEmpty(item))
+        .map(buildServicoExecutadoPayload),
+    alocacoesColaboradores:
+      draft.alocacoesColaboradores
+        .filter((item) => !isAlocacaoEmpty(item))
+        .map(buildAlocacaoPayload),
     maoObra: draft.maoObra.map(
       buildMaoObraPayload,
     ),
@@ -93,14 +188,202 @@ function buildRdoPayload(
       buildEquipamentoPayload,
     ),
     materiais: draft.materiais
-  .filter((item) => !isMaterialEmpty(item))
-  .map(removeLocalId),
+      .filter((item) => !isMaterialEmpty(item))
+      .map(removeLocalId),
 
-  controlesGeometricos:
+    controlesGeometricos:
       draft.controlesGeometricos.map(
         removeLocalId,
       ),
   };
+}
+
+function buildRdoLocalPayload(
+  draft: RdoDraft,
+): Record<string, unknown> {
+  return {
+    id: draft.id,
+    obraId: draft.obraId,
+    programacaoId: draft.programacaoId || null,
+    numeroRdo: draft.numeroRdo,
+    dataRdo: draft.dataRdo,
+    turno: draft.turno,
+    horaInicio: draft.horaInicio,
+    horaFim: draft.horaFim,
+    condicaoManha: draft.condicaoManha,
+    condicaoTarde: draft.condicaoTarde,
+    condicaoNoite: draft.condicaoNoite,
+    pluviometriaMm: draft.pluviometriaMm,
+    observacoes: draft.observacoes,
+    servicosExecutados: draft.servicosExecutados,
+    alocacoesColaboradores:
+      draft.alocacoesColaboradores,
+    maoObra: draft.maoObra,
+    equipamentos: draft.equipamentos,
+    materiais: draft.materiais,
+    controlesGeometricos:
+      draft.controlesGeometricos,
+  };
+}
+
+function childRecordId(
+  rdoId: string,
+  collection: string,
+  localId: string,
+): string {
+  return `${rdoId}:${collection}:${localId}`;
+}
+
+function buildChildRecord<TItem extends { localId: string }>(
+  rdoId: string,
+  collection: string,
+  item: TItem,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): LocalRdoChildRecord {
+  return {
+    id: childRecordId(
+      rdoId,
+      collection,
+      item.localId,
+    ),
+    rdoId,
+    localId: item.localId,
+    syncStatus,
+    payload: removeLocalId(item),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+function buildMaoObraRecords(
+  draft: RdoDraft,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): LocalRdoChildRecord[] {
+  return draft.maoObra.map((item: MaoObraDraft) =>
+    buildChildRecord(
+      draft.id,
+      "maoObra",
+      item,
+      syncStatus,
+      timestamp,
+    ),
+  );
+}
+
+function buildEquipamentoRecords(
+  draft: RdoDraft,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): LocalRdoChildRecord[] {
+  return draft.equipamentos.map((item: EquipamentoDraft) =>
+    buildChildRecord(
+      draft.id,
+      "equipamentos",
+      item,
+      syncStatus,
+      timestamp,
+    ),
+  );
+}
+
+function buildMaterialRecords(
+  draft: RdoDraft,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): LocalRdoChildRecord[] {
+  return draft.materiais.map((item: MaterialDraft) =>
+    buildChildRecord(
+      draft.id,
+      "materiais",
+      item,
+      syncStatus,
+      timestamp,
+    ),
+  );
+}
+
+function buildControleGeometricoRecords(
+  draft: RdoDraft,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): LocalRdoChildRecord[] {
+  return draft.controlesGeometricos.map(
+    (item: ControleGeometricoDraft) =>
+      buildChildRecord(
+        draft.id,
+        "controlesGeometricos",
+        item,
+        syncStatus,
+        timestamp,
+      ),
+  );
+}
+
+async function replaceStoreRecords(
+  store: RdoChildStoreWriter,
+  rdoId: string,
+  records: LocalRdoChildRecord[],
+): Promise<void> {
+  const existingKeys =
+    await store.index("by-rdo-id").getAllKeys(rdoId);
+
+  await Promise.all(
+    existingKeys.map((key) => store.delete(key)),
+  );
+
+  await Promise.all(
+    records.map((record) => store.put(record)),
+  );
+}
+
+async function replaceChildRecords(
+  transaction: RdoChildWriteTransaction,
+  draft: RdoDraft,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+): Promise<void> {
+  await Promise.all([
+    replaceStoreRecords(
+      transaction.objectStore("rdoMaoObra"),
+      draft.id,
+      buildMaoObraRecords(
+        draft,
+        syncStatus,
+        timestamp,
+      ),
+    ),
+    replaceStoreRecords(
+      transaction.objectStore("rdoEquipamentos"),
+      draft.id,
+      buildEquipamentoRecords(
+        draft,
+        syncStatus,
+        timestamp,
+      ),
+    ),
+    replaceStoreRecords(
+      transaction.objectStore("rdoMateriais"),
+      draft.id,
+      buildMaterialRecords(
+        draft,
+        syncStatus,
+        timestamp,
+      ),
+    ),
+    replaceStoreRecords(
+      transaction.objectStore(
+        "rdoControlesGeometricos",
+      ),
+      draft.id,
+      buildControleGeometricoRecords(
+        draft,
+        syncStatus,
+        timestamp,
+      ),
+    ),
+  ]);
 }
 
 function validateDraft(draft: RdoDraft): void {
@@ -132,7 +415,8 @@ export async function saveNewRdoDraftAtomically(
 
   const database = await getCortexDb();
   const timestamp = nowUtc();
-  const payload = buildRdoPayload(draft);
+  const localPayload = buildRdoLocalPayload(draft);
+  const syncPayload = buildRdoSyncPayload(draft);
 
   const rdo: LocalRdoRecord = {
     id: draft.id,
@@ -144,7 +428,7 @@ export async function saveNewRdoDraftAtomically(
     statusRdo: "RASCUNHO",
     syncStatus: "PENDING_SYNC",
     versaoEntidade: null,
-    payload,
+    payload: localPayload,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -155,9 +439,10 @@ export async function saveNewRdoDraftAtomically(
     entidadeId: draft.id,
     operacao: "CRIAR_RDO",
     baseVersao: null,
-    payload,
+    payload: syncPayload,
     status: "PENDING",
     tentativas: 0,
+    ultimaTentativaEm: null,
     ultimoErro: null,
     conflito: null,
     criadaNoClienteEm: timestamp,
@@ -165,7 +450,14 @@ export async function saveNewRdoDraftAtomically(
   };
 
   const transaction = database.transaction(
-    ["rdos", "outbox_mutations"],
+    [
+      "rdos",
+      "outbox_mutations",
+      "rdoMaoObra",
+      "rdoEquipamentos",
+      "rdoMateriais",
+      "rdoControlesGeometricos",
+    ],
     "readwrite",
   );
 
@@ -191,6 +483,12 @@ export async function saveNewRdoDraftAtomically(
   await Promise.all([
     rdoStore.add(rdo),
     outboxStore.add(mutation),
+    replaceChildRecords(
+      transaction,
+      draft,
+      "PENDING_SYNC",
+      timestamp,
+    ),
   ]);
 
   await transaction.done;
@@ -208,10 +506,18 @@ export async function saveExistingRdoDraftAtomically(
 
   const database = await getCortexDb();
   const timestamp = nowUtc();
-  const payload = buildRdoPayload(draft);
+  const localPayload = buildRdoLocalPayload(draft);
+  const syncPayload = buildRdoSyncPayload(draft);
 
   const transaction = database.transaction(
-    ["rdos", "outbox_mutations"],
+    [
+      "rdos",
+      "outbox_mutations",
+      "rdoMaoObra",
+      "rdoEquipamentos",
+      "rdoMateriais",
+      "rdoControlesGeometricos",
+    ],
     "readwrite",
   );
 
@@ -284,9 +590,10 @@ export async function saveExistingRdoDraftAtomically(
   ) {
     mutation = {
       ...existingCreateMutation,
-      payload,
+      payload: syncPayload,
       status: "PENDING",
       tentativas: 0,
+      ultimaTentativaEm: null,
       ultimoErro: null,
       conflito: null,
       updatedAt: timestamp,
@@ -326,9 +633,10 @@ export async function saveExistingRdoDraftAtomically(
         ...existingUpdateMutation,
         baseVersao:
           existingRdo.versaoEntidade,
-        payload,
+        payload: syncPayload,
         status: "PENDING",
         tentativas: 0,
+        ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
         updatedAt: timestamp,
@@ -343,9 +651,10 @@ export async function saveExistingRdoDraftAtomically(
           "ATUALIZAR_RDO_RASCUNHO",
         baseVersao:
           existingRdo.versaoEntidade,
-        payload,
+        payload: syncPayload,
         status: "PENDING",
         tentativas: 0,
+        ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
         criadaNoClienteEm: timestamp,
@@ -361,7 +670,7 @@ export async function saveExistingRdoDraftAtomically(
       draft.programacaoId || null,
     numeroRdo: draft.numeroRdo,
     dataRdo: draft.dataRdo,
-    payload,
+    payload: localPayload,
     syncStatus: "PENDING_SYNC",
     updatedAt: timestamp,
   };
@@ -369,6 +678,12 @@ export async function saveExistingRdoDraftAtomically(
   await Promise.all([
     rdoStore.put(updatedRdo),
     outboxStore.put(mutation),
+    replaceChildRecords(
+      transaction,
+      draft,
+      "PENDING_SYNC",
+      timestamp,
+    ),
   ]);
 
   await transaction.done;

@@ -8,8 +8,11 @@ import type {
   SyncPushRequest,
   SyncPushResponse,
 } from "./sync.types";
-
-const API_PREFIX = "/api";
+import {
+  apiFetch,
+  readResponseBody,
+  responseErrorMessage,
+} from "../api/apiClient";
 
 interface RequestOptions extends RequestInit {
   timeoutMs?: number;
@@ -21,93 +24,96 @@ async function requestJson<T>(
 ): Promise<T> {
   const {
     timeoutMs = 20_000,
-    headers,
     ...fetchOptions
   } = options;
 
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(
-    () => controller.abort(),
+  const response = await apiFetch(path, {
+    ...fetchOptions,
     timeoutMs,
-  );
+    timeoutErrorMessage:
+      "Tempo limite excedido ao sincronizar com o Córtex local.",
+  });
 
-  try {
-    const response = await fetch(`${API_PREFIX}${path}`, {
-      ...fetchOptions,
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        ...headers,
-      },
-    });
+  const body = await readResponseBody(response);
 
-    const responseText = await response.text();
-
-    let body: unknown = null;
-
-    if (responseText.trim()) {
-      try {
-        body = JSON.parse(responseText);
-      } catch {
-        body = responseText;
-      }
-    }
-
-    if (!response.ok) {
-      const serverMessage =
-        typeof body === "object" &&
-        body !== null &&
-        "message" in body &&
-        typeof body.message === "string"
-          ? body.message
-          : typeof body === "string"
-            ? body
-            : `HTTP ${response.status}`;
-
-      throw new Error(
-        `Falha na API ${response.status}: ${serverMessage}`,
-      );
-    }
-
-    return body as T;
-  } catch (error: unknown) {
-    if (
-      error instanceof DOMException &&
-      error.name === "AbortError"
-    ) {
-      throw new Error(
-        `Tempo limite excedido ao chamar ${path}.`,
-        {
-          cause: error,
-        },
-      );
-    }
-
-    if (error instanceof TypeError) {
-      throw new Error(
-        "Não foi possível conectar ao backend do Córtex.",
-        {
-          cause: error,
-        },
-      );
-    }
-
-    throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
+  if (!response.ok) {
+    throw new Error(
+      `Falha na API ${response.status}: ${responseErrorMessage(
+        body,
+        response.status,
+      )}`,
+    );
   }
+
+  return body as T;
 }
 
 function normalizePullResponse(
   raw: SyncPullResponse & {
-    events?: SyncPullEvent[];
+    events?: unknown[];
   },
 ): SyncPullResponse {
-  const eventos = Array.isArray(raw.eventos)
+  const rawEvents = Array.isArray(raw.eventos)
     ? raw.eventos
     : Array.isArray(raw.events)
       ? raw.events
       : [];
+
+  const eventos = rawEvents
+    .filter(
+      (event): event is Record<string, unknown> =>
+        typeof event === "object" &&
+        event !== null &&
+        !Array.isArray(event),
+    )
+    .map((event) => {
+      const normalized: SyncPullEvent = {
+        commitSeq:
+          typeof event.commitSeq === "number"
+            ? event.commitSeq
+            : 0,
+        eventoId:
+          typeof event.eventoId === "string"
+            ? event.eventoId
+            : typeof event.id === "string"
+              ? event.id
+              : "",
+        tipoEvento:
+          typeof event.tipoEvento === "string"
+            ? event.tipoEvento
+            : "",
+        entidadeTipo:
+          typeof event.entidadeTipo === "string"
+            ? event.entidadeTipo
+            : typeof event.tipoEntidade === "string"
+              ? event.tipoEntidade
+              : "",
+        entidadeId:
+          typeof event.entidadeId === "string"
+            ? event.entidadeId
+            : "",
+        ocorridoEmUtc:
+          typeof event.ocorridoEmUtc === "string"
+            ? event.ocorridoEmUtc
+            : undefined,
+        criadoEmUtc:
+          typeof event.criadoEmUtc === "string"
+            ? event.criadoEmUtc
+            : undefined,
+        versaoEntidade:
+          typeof event.versaoEntidade === "number"
+            ? event.versaoEntidade
+            : null,
+        payload:
+          typeof event.payload === "object" &&
+          event.payload !== null &&
+          !Array.isArray(event.payload)
+            ? (event.payload as Record<string, unknown>)
+            : null,
+      };
+
+      return normalized;
+    });
 
   return {
     eventos,

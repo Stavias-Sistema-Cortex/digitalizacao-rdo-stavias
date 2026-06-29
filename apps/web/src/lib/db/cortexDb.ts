@@ -5,15 +5,20 @@ import {
 } from "idb";
 
 import type {
+  LocalRdoControleGeometricoRecord,
+  LocalRdoEquipamentoRecord,
+  LocalRdoMaoObraRecord,
+  LocalRdoMaterialRecord,
   LocalRdoRecord,
   OutboxMutationRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
+  StaviaSnapshotRecord,
   SyncStateRecord,
 } from "./db.types";
 
 const DATABASE_NAME = "cortex-web";
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 5;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -23,6 +28,46 @@ interface CortexDbSchema extends DBSchema {
       "by-sync-status": LocalRdoRecord["syncStatus"];
       "by-updated-at": string;
       "by-obra-id": string;
+    };
+  };
+
+  rdoMaoObra: {
+    key: string;
+    value: LocalRdoMaoObraRecord;
+    indexes: {
+      "by-rdo-id": string;
+      "by-sync-status": LocalRdoMaoObraRecord["syncStatus"];
+      "by-updated-at": string;
+    };
+  };
+
+  rdoEquipamentos: {
+    key: string;
+    value: LocalRdoEquipamentoRecord;
+    indexes: {
+      "by-rdo-id": string;
+      "by-sync-status": LocalRdoEquipamentoRecord["syncStatus"];
+      "by-updated-at": string;
+    };
+  };
+
+  rdoMateriais: {
+    key: string;
+    value: LocalRdoMaterialRecord;
+    indexes: {
+      "by-rdo-id": string;
+      "by-sync-status": LocalRdoMaterialRecord["syncStatus"];
+      "by-updated-at": string;
+    };
+  };
+
+  rdoControlesGeometricos: {
+    key: string;
+    value: LocalRdoControleGeometricoRecord;
+    indexes: {
+      "by-rdo-id": string;
+      "by-sync-status": LocalRdoControleGeometricoRecord["syncStatus"];
+      "by-updated-at": string;
     };
   };
 
@@ -59,6 +104,14 @@ interface CortexDbSchema extends DBSchema {
       "by-created-at": string;
     };
   };
+
+  stavia_snapshots: {
+    key: "default";
+    value: StaviaSnapshotRecord;
+    indexes: {
+      "by-updated-at": string;
+    };
+  };
 }
 
 let databasePromise:
@@ -85,6 +138,114 @@ export function getCortexDb(): Promise<
           rdoStore.createIndex("by-sync-status", "syncStatus");
           rdoStore.createIndex("by-updated-at", "updatedAt");
           rdoStore.createIndex("by-obra-id", "obraId");
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "rdoMaoObra",
+          )
+        ) {
+          const rdoMaoObraStore =
+            database.createObjectStore(
+              "rdoMaoObra",
+              {
+                keyPath: "id",
+              },
+            );
+
+          rdoMaoObraStore.createIndex(
+            "by-rdo-id",
+            "rdoId",
+          );
+          rdoMaoObraStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          rdoMaoObraStore.createIndex(
+            "by-updated-at",
+            "updatedAt",
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "rdoEquipamentos",
+          )
+        ) {
+          const rdoEquipamentosStore =
+            database.createObjectStore(
+              "rdoEquipamentos",
+              {
+                keyPath: "id",
+              },
+            );
+
+          rdoEquipamentosStore.createIndex(
+            "by-rdo-id",
+            "rdoId",
+          );
+          rdoEquipamentosStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          rdoEquipamentosStore.createIndex(
+            "by-updated-at",
+            "updatedAt",
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "rdoMateriais",
+          )
+        ) {
+          const rdoMateriaisStore =
+            database.createObjectStore(
+              "rdoMateriais",
+              {
+                keyPath: "id",
+              },
+            );
+
+          rdoMateriaisStore.createIndex(
+            "by-rdo-id",
+            "rdoId",
+          );
+          rdoMateriaisStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          rdoMateriaisStore.createIndex(
+            "by-updated-at",
+            "updatedAt",
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "rdoControlesGeometricos",
+          )
+        ) {
+          const rdoControlesStore =
+            database.createObjectStore(
+              "rdoControlesGeometricos",
+              {
+                keyPath: "id",
+              },
+            );
+
+          rdoControlesStore.createIndex(
+            "by-rdo-id",
+            "rdoId",
+          );
+          rdoControlesStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          rdoControlesStore.createIndex(
+            "by-updated-at",
+            "updatedAt",
+          );
         }
 
         if (
@@ -165,6 +326,25 @@ export function getCortexDb(): Promise<
           attachmentStore.createIndex(
             "by-created-at",
             "createdAt",
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "stavia_snapshots",
+          )
+        ) {
+          const staviaSnapshotStore =
+            database.createObjectStore(
+              "stavia_snapshots",
+              {
+                keyPath: "key",
+              },
+            );
+
+          staviaSnapshotStore.createIndex(
+            "by-updated-at",
+            "updatedAt",
           );
         }
       },

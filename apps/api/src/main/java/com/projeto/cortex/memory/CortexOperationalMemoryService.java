@@ -216,7 +216,7 @@ public class CortexOperationalMemoryService {
                     tipo_campo = VALUES(tipo_campo),
                     confianca = VALUES(confianca),
                     valido_em = CURRENT_TIMESTAMP(6),
-                    metadados_json = COALESCE(VALUES(metadados_json), metadados_json)
+                    metadados_json = COALESCE(VALUES(metadados_json), cortex_evidencia_operacional.metadados_json)
                 """,
                 UUID.randomUUID().toString(),
                 nomeCampo.trim(),

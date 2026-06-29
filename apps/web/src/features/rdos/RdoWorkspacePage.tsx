@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import { SyncStatusBanner } from "../../components/SyncStatusBanner";
+import { IntegracoesPage } from "../integracoes/IntegracoesPage";
 import { StaviaPanel } from "../stavia/StaviaPanel";
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
@@ -19,7 +20,7 @@ type WorkspaceMode =
       type: "LIST";
     }
   | {
-      type: "STAVIA";
+      type: "INTEGRACOES";
     }
   | {
       type: "FORM";
@@ -41,6 +42,8 @@ export function RdoWorkspacePage() {
 
   const [loadError, setLoadError] =
     useState("");
+  const [isStaviaOpen, setIsStaviaOpen] =
+    useState(false);
 
   const loadRecords =
     useCallback(async () => {
@@ -102,9 +105,9 @@ export function RdoWorkspacePage() {
 
   let pageContent;
 
-  if (mode.type === "STAVIA") {
+  if (mode.type === "INTEGRACOES") {
     pageContent = (
-      <StaviaPanel
+      <IntegracoesPage
         onBack={() => {
           setMode({
             type: "LIST",
@@ -138,8 +141,11 @@ export function RdoWorkspacePage() {
           void loadRecords();
         }}
         onOpenStavia={() => {
+          setIsStaviaOpen(true);
+        }}
+        onOpenIntegracoes={() => {
           setMode({
-            type: "STAVIA",
+            type: "INTEGRACOES",
           });
         }}
       />
@@ -150,6 +156,18 @@ export function RdoWorkspacePage() {
     <>
       <SyncStatusBanner />
       {pageContent}
+      {mode.type !== "INTEGRACOES" && (
+        <StaviaPanel
+          key={mode.type === "FORM"
+            ? `${mode.draft.obraId}:${mode.draft.id}`
+            : "stavia-floating-global"}
+          variant="floating"
+          isOpen={isStaviaOpen}
+          onOpenChange={setIsStaviaOpen}
+          initialObraId={mode.type === "FORM" ? mode.draft.obraId : ""}
+          initialRdoId={mode.type === "FORM" ? mode.draft.id : ""}
+        />
+      )}
     </>
   );
 }
