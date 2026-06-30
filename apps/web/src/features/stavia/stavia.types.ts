@@ -118,6 +118,8 @@ export interface StaviaSnapshotControleGeometrico {
 }
 
 export interface StaviaSnapshotAlocacao {
+  colaboradorId: string | null;
+  nomeColaborador: string | null;
   equipe: string | null;
   servicoNome: string | null;
   horaInicio: string | null;
@@ -125,6 +127,17 @@ export interface StaviaSnapshotAlocacao {
   turno: string | null;
   funcao: string | null;
   status: string | null;
+}
+
+export interface StaviaSnapshotServicoExecutado {
+  servicoNome: string | null;
+  quantidadeExecutada: number | string | null;
+  unidade: string | null;
+  trechoInicial: string | null;
+  trechoFinal: string | null;
+  localizacao: string | null;
+  turno: string | null;
+  statusValidacao: string | null;
 }
 
 export interface StaviaSnapshotRdo {
@@ -143,6 +156,7 @@ export interface StaviaSnapshotRdo {
   status: string | null;
   observacoes: string | null;
   updatedAt: string | null;
+  servicosExecutados: StaviaSnapshotServicoExecutado[];
   maoObra: StaviaSnapshotMaoObra[];
   equipamentos: StaviaSnapshotEquipamento[];
   materiais: StaviaSnapshotMaterial[];

@@ -1,3 +1,5 @@
+import { getSession, setSession } from "../../features/auth/authSession";
+
 const DEFAULT_API_PREFIX = "/api";
 
 export interface ApiRequestOptions extends RequestInit {
@@ -21,9 +23,18 @@ export function apiUrl(path: string): string {
   return `${configuredBaseUrl.replace(/\/+$/, "")}${normalizedPath}`;
 }
 
-export async function apiFetch(
+const AUTH_PATHS = ["/auth/login", "/auth/cpf-filter"];
+
+function isAuthPath(path: string): boolean {
+  return AUTH_PATHS.some(
+    (authPath) => path === authPath || path.startsWith(`${authPath}/`),
+  );
+}
+
+async function rawFetch(
   path: string,
-  options: ApiRequestOptions = {},
+  options: ApiRequestOptions,
+  authHeader: string | undefined,
 ): Promise<Response> {
   const {
     timeoutMs = 20_000,
@@ -47,6 +58,7 @@ export async function apiFetch(
       signal: controller.signal,
       headers: {
         Accept: "application/json",
+        ...(authHeader ? { Authorization: authHeader } : {}),
         ...headers,
       },
     });
@@ -70,6 +82,68 @@ export async function apiFetch(
   } finally {
     window.clearTimeout(timeoutId);
   }
+}
+
+/**
+ * Reautentica silenciosamente usando o CPF da sessão para renovar o token
+ * (ex.: sessão offline que voltou a ter conexão, ou token expirado).
+ */
+async function reautenticarComCpf(cpfDigits: string): Promise<string | null> {
+  try {
+    const response = await fetch(apiUrl("/auth/login"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ cpf: cpfDigits, senha: cpfDigits }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const body = (await response.json()) as { token?: unknown };
+    const token = typeof body.token === "string" ? body.token : null;
+    if (!token) {
+      return null;
+    }
+
+    const session = getSession();
+    if (session) {
+      setSession({ ...session, token });
+    }
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+export async function apiFetch(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<Response> {
+  const session = getSession();
+  const authHeader = session?.token ? `Bearer ${session.token}` : undefined;
+
+  let response = await rawFetch(path, options, authHeader);
+
+  // Token ausente/expirado: tenta uma renovação silenciosa e repete a chamada.
+  const online =
+    typeof navigator === "undefined" || navigator.onLine;
+  if (
+    response.status === 401 &&
+    !isAuthPath(path) &&
+    session?.cpf &&
+    online
+  ) {
+    const novoToken = await reautenticarComCpf(session.cpf);
+    if (novoToken) {
+      response = await rawFetch(path, options, `Bearer ${novoToken}`);
+    }
+  }
+
+  return response;
 }
 
 export async function readResponseBody(

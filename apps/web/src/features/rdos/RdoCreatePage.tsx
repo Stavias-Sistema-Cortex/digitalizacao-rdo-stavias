@@ -27,7 +27,13 @@ import {
   type AssetLookup,
   type ColaboradorLookup,
 } from "./rdoLookupApi";
+import {
+  formatRdoServiceType,
+  searchRdoServiceTypes,
+  type RdoServiceType,
+} from "./rdoServiceTypes";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
+import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
@@ -281,6 +287,29 @@ function getAssetSubtitle(asset: AssetLookup) {
   return asset.category || asset.id;
 }
 
+function buscarTiposServico(
+  query: string,
+): Promise<RdoServiceType[]> {
+  return Promise.resolve(searchRdoServiceTypes(query));
+}
+
+function getTipoServicoTitle(serviceType: RdoServiceType) {
+  return serviceType.displayName;
+}
+
+function getTipoServicoSubtitle(serviceType: RdoServiceType) {
+  return (
+    [
+      serviceType.parentCode && serviceType.parentName
+        ? `${serviceType.parentCode} - ${serviceType.parentName}`
+        : null,
+      `Nivel ${serviceType.level}`,
+    ]
+      .filter(Boolean)
+      .join(" · ")
+  );
+}
+
 export function RdoCreatePage({
   initialDraft,
   isExisting,
@@ -501,6 +530,12 @@ export function RdoCreatePage({
 
   return (
     <main className="page-shell">
+      <datalist id="rdo-unidades">
+        {UNIDADES_RDO.map((unidade) => (
+          <option key={unidade} value={unidade} />
+        ))}
+      </datalist>
+
       <header className="topbar">
         <div>
           <p className="eyebrow">
@@ -836,21 +871,33 @@ export function RdoCreatePage({
               </div>
 
               <div className="form-grid">
-                <label>
-                  Serviço
-                  <input
-                    value={item.servicoNome}
-                    onChange={(event) =>
-                      updateServicoExecutado(
-                        item.localId,
-                        {
-                          servicoNome:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
+                <LookupField
+                  label="Tipo de serviço"
+                  value={item.servicoNome}
+                  placeholder="Pesquise por codigo, frente ou servico"
+                  emptyMessage="Nenhum tipo de servico encontrado."
+                  search={buscarTiposServico}
+                  onQueryChange={(value) =>
+                    updateServicoExecutado(
+                      item.localId,
+                      {
+                        servicoNome: value,
+                      },
+                    )
+                  }
+                  onSelect={(serviceType) =>
+                    updateServicoExecutado(
+                      item.localId,
+                      {
+                        servicoNome:
+                          formatRdoServiceType(serviceType),
+                      },
+                    )
+                  }
+                  getKey={(serviceType) => serviceType.catalogId}
+                  getTitle={getTipoServicoTitle}
+                  getSubtitle={getTipoServicoSubtitle}
+                />
 
                 <label>
                   Item contratual ID
@@ -886,12 +933,14 @@ export function RdoCreatePage({
                   Unidade
                   <input
                     value={item.unidade}
+                    list="rdo-unidades"
                     onChange={(event) =>
                       updateServicoExecutado(
                         item.localId,
                         {
-                          unidade:
+                          unidade: normalizarUnidade(
                             event.target.value,
+                          ),
                         },
                       )
                     }
@@ -1151,21 +1200,33 @@ export function RdoCreatePage({
                   />
                 </label>
 
-                <label>
-                  Serviço
-                  <input
-                    value={item.servicoNome}
-                    onChange={(event) =>
-                      updateAlocacaoColaborador(
-                        item.localId,
-                        {
-                          servicoNome:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
+                <LookupField
+                  label="Tipo de serviço"
+                  value={item.servicoNome}
+                  placeholder="Pesquise por codigo, frente ou servico"
+                  emptyMessage="Nenhum tipo de servico encontrado."
+                  search={buscarTiposServico}
+                  onQueryChange={(value) =>
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        servicoNome: value,
+                      },
+                    )
+                  }
+                  onSelect={(serviceType) =>
+                    updateAlocacaoColaborador(
+                      item.localId,
+                      {
+                        servicoNome:
+                          formatRdoServiceType(serviceType),
+                      },
+                    )
+                  }
+                  getKey={(serviceType) => serviceType.catalogId}
+                  getTitle={getTipoServicoTitle}
+                  getSubtitle={getTipoServicoSubtitle}
+                />
 
                 <label>
                   Início
@@ -1787,12 +1848,14 @@ export function RdoCreatePage({
                     Unidade
                     <input
                       value={item.unidade}
+                      list="rdo-unidades"
                       onChange={(event) =>
                         updateMaterial(
                           item.localId,
                           {
-                            unidade:
+                            unidade: normalizarUnidade(
                               event.target.value,
+                            ),
                           },
                         )
                       }

@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import { SyncStatusBanner } from "../../components/SyncStatusBanner";
+import { clearSession } from "../auth/authSession";
 import { IntegracoesPage } from "../integracoes/IntegracoesPage";
 import { StaviaPanel } from "../stavia/StaviaPanel";
 import type { LocalRdoRecord } from "../../lib/db/db.types";
@@ -103,6 +104,11 @@ export function RdoWorkspacePage() {
     });
   }
 
+  function handleLogout() {
+    clearSession();
+    window.location.assign("/");
+  }
+
   let pageContent;
 
   if (mode.type === "INTEGRACOES") {
@@ -155,6 +161,13 @@ export function RdoWorkspacePage() {
   return (
     <>
       <SyncStatusBanner />
+      <button
+        type="button"
+        className="logout-button"
+        onClick={handleLogout}
+      >
+        Sair
+      </button>
       {pageContent}
       {mode.type !== "INTEGRACOES" && (
         <StaviaPanel

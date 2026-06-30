@@ -583,3 +583,26 @@ textarea:focus {
   cursor: not-allowed;
   opacity: 0.55;
 }
+
+.logout-button {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid #cbd5cf;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #243e30;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(25, 44, 34, 0.12);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.logout-button:hover {
+  background: #ffffff;
+  border-color: #b6c3bc;
+}

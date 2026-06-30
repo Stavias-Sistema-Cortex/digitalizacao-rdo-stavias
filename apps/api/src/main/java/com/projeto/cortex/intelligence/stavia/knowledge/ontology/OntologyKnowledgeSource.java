@@ -95,6 +95,7 @@ public class OntologyKnowledgeSource
                         "RDO_EQUIPAMENTO",
                         "MATERIAL_RDO",
                         "CONTROLE_GEOMETRICO",
+                        "SERVICO",
                         "EXECUCAO_SERVICO_RDO",
                         "ALOCACAO_COLABORADOR",
                         "ITEM_CONTRATUAL",
@@ -124,7 +125,13 @@ public class OntologyKnowledgeSource
                         "USA_EQUIPAMENTO",
                         "REFERENCIA_ATIVO",
                         "CONSOME_MATERIAL",
-                        "POSSUI_CONTROLE_GEOMETRICO"
+                        "POSSUI_CONTROLE_GEOMETRICO",
+                        "EXECUTA",
+                        "EXECUTA_SERVICO",
+                        "REGISTRA_SERVICO",
+                        "TEM_SERVICO_EXECUTADO",
+                        "ATUOU_EM_SERVICO",
+                        "RESPONSAVEL_PELO_SERVICO"
                 ),
                 Set.of(
                         QueryOperation.TRAVERSE_RELATIONSHIP,
@@ -444,6 +451,21 @@ public class OntologyKnowledgeSource
 
             case "POSSUI_CONTROLE_GEOMETRICO" ->
                     "possui controle geométrico";
+
+            case "EXECUTA", "EXECUTA_SERVICO" ->
+                    "executa serviço";
+
+            case "REGISTRA_SERVICO" ->
+                    "registra serviço";
+
+            case "TEM_SERVICO_EXECUTADO" ->
+                    "tem serviço executado";
+
+            case "ATUOU_EM_SERVICO" ->
+                    "atuou em serviço";
+
+            case "RESPONSAVEL_PELO_SERVICO" ->
+                    "é responsável pelo serviço";
 
             default ->
                     relationType

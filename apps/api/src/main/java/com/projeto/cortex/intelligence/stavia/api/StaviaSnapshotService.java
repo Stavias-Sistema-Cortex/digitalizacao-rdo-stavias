@@ -45,6 +45,8 @@ public class StaviaSnapshotService {
                 materiais(rdoIds);
         Map<String, List<StaviaSnapshotResponse.ControleGeometricoSnapshot>> controles =
                 controles(rdoIds);
+        Map<String, List<StaviaSnapshotResponse.ServicoExecutadoSnapshot>> servicos =
+                servicosExecutados(rdoIds);
         Map<String, List<StaviaSnapshotResponse.AlocacaoSnapshot>> alocacoes =
                 alocacoes(rdoIds);
 
@@ -66,6 +68,7 @@ public class StaviaSnapshotService {
                                 rdo.status(),
                                 rdo.observacoes(),
                                 rdo.updatedAt(),
+                                servicos.getOrDefault(rdo.id(), List.of()),
                                 maoObra.getOrDefault(rdo.id(), List.of()),
                                 equipamentos.getOrDefault(rdo.id(), List.of()),
                                 materiais.getOrDefault(rdo.id(), List.of()),
@@ -348,6 +351,56 @@ public class StaviaSnapshotService {
         );
     }
 
+    private Map<String, List<StaviaSnapshotResponse.ServicoExecutadoSnapshot>>
+    servicosExecutados(List<String> rdoIds) {
+        if (rdoIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return grouped(
+                jdbcTemplate.query(
+                        """
+                        SELECT
+                            rdo_id,
+                            servico_nome,
+                            quantidade_executada,
+                            unidade_medida,
+                            trecho_inicial,
+                            trecho_final,
+                            localizacao,
+                            turno,
+                            status_validacao
+                        FROM execucao_servico_rdo servico
+                        JOIN (
+                            SELECT id
+                            FROM rdo
+                            WHERE cancelado_em IS NULL
+                            ORDER BY data_rdo DESC, atualizado_em DESC, id
+                            LIMIT ?
+                        ) recent_rdo ON recent_rdo.id = servico.rdo_id
+                        WHERE servico.cancelada = 0
+                        ORDER BY servico.rdo_id, servico.servico_nome
+                        LIMIT ?
+                        """,
+                        (rs, rowNum) -> new GroupedItem<>(
+                                rs.getString("rdo_id"),
+                                new StaviaSnapshotResponse.ServicoExecutadoSnapshot(
+                                        rs.getString("servico_nome"),
+                                        rs.getBigDecimal("quantidade_executada"),
+                                        rs.getString("unidade_medida"),
+                                        rs.getString("trecho_inicial"),
+                                        rs.getString("trecho_final"),
+                                        rs.getString("localizacao"),
+                                        rs.getString("turno"),
+                                        rs.getString("status_validacao")
+                                )
+                        ),
+                        MAX_RDOS,
+                        MAX_CHILD_ROWS
+                )
+        );
+    }
+
     private Map<String, List<StaviaSnapshotResponse.AlocacaoSnapshot>>
     alocacoes(List<String> rdoIds) {
         if (rdoIds.isEmpty()) {
@@ -359,6 +412,8 @@ public class StaviaSnapshotService {
                         """
                         SELECT
                             rdo_id,
+                            al.colaborador_id,
+                            colaborador.nome AS nome_colaborador,
                             equipe,
                             servico_nome,
                             hora_inicio,
@@ -367,6 +422,8 @@ public class StaviaSnapshotService {
                             funcao,
                             status
                         FROM alocacao_colaborador al
+                        LEFT JOIN colaborador
+                          ON colaborador.id = al.colaborador_id
                         JOIN (
                             SELECT id
                             FROM rdo
@@ -380,6 +437,8 @@ public class StaviaSnapshotService {
                         (rs, rowNum) -> new GroupedItem<>(
                                 rs.getString("rdo_id"),
                                 new StaviaSnapshotResponse.AlocacaoSnapshot(
+                                        rs.getString("colaborador_id"),
+                                        rs.getString("nome_colaborador"),
                                         rs.getString("equipe"),
                                         rs.getString("servico_nome"),
                                         toLocalTime(rs.getTime("hora_inicio")),

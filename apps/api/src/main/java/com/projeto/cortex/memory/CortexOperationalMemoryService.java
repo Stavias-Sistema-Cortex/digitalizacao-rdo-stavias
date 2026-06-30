@@ -482,6 +482,7 @@ public class CortexOperationalMemoryService {
             case "PROGRAMACAO_OPERACIONAL" -> "programacao_operacional";
             case "COLABORADOR" -> "colaborador";
             case "ATIVO", "EQUIPAMENTO" -> "asset";
+            case "SERVICO" -> "catalogo_tipo_servico";
             case "EXECUCAO_SERVICO_RDO" -> "execucao_servico_rdo";
             case "ALOCACAO_COLABORADOR" -> "alocacao_colaborador";
             case "ITEM_CONTRATUAL" -> "item_contratual";

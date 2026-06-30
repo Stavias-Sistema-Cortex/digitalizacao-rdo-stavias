@@ -5,10 +5,24 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ColaboradorRepository extends JpaRepository<Colaborador, String> {
 
     List<Colaborador> findByDeletadoEmIsNullOrderByNomeAsc();
+
+    Optional<Colaborador> findFirstByCpfHashAndAtivoTrueAndDeletadoEmIsNull(
+            String cpfHash
+    );
+
+    @Query("""
+            SELECT c.cpfHash
+            FROM Colaborador c
+            WHERE c.ativo = true
+              AND c.deletadoEm IS NULL
+              AND c.cpfHash IS NOT NULL
+            """)
+    List<String> findHashesAtivos();
 
     @Query("""
             SELECT c

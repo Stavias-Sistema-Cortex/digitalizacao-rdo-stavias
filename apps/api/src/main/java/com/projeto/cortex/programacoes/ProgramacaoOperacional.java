@@ -333,7 +333,7 @@ public class ProgramacaoOperacional {
             String uf,
             String rodovia,
             String sentido,
-            String faixa,
+            String faixa, 
             String kmInicial,
             String kmFinal,
             BigDecimal extensaoM,

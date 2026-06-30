@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class RdoOperationalDetailService {
@@ -29,6 +31,8 @@ public class RdoOperationalDetailService {
     private static final String FONTE = "RDO_API";
     private static final BigDecimal MINUTOS_DIA_PADRAO =
             BigDecimal.valueOf(480);
+    private static final Pattern CODIGO_SERVICO_PATTERN =
+            Pattern.compile("^\\s*([0-9]+(?:\\.[0-9]+)*)\\s+-\\s+(.+?)\\s*$");
 
     private final JdbcTemplate jdbcTemplate;
     private final CortexOperationalMemoryService memoryService;
@@ -459,6 +463,7 @@ public class RdoOperationalDetailService {
                     programacaoId,
                     item.equipe(),
                     item.servicoNome(),
+                    item.funcao(),
                     tipoAlocacao,
                     status,
                     intervalo.minutos(),
@@ -866,13 +871,17 @@ public class RdoOperationalDetailService {
             BigDecimal receita,
             BigDecimal custo
     ) {
+        ServicoCatalogado servico = servicoCatalogado(servicoNome);
+
         memoryService.registrarObjeto(
                 "EXECUCAO_SERVICO_RDO",
                 execucaoId,
                 execucaoId,
-                servicoNome,
+                servico.displayName(),
                 statusValidacao,
-                FONTE
+                FONTE,
+                "execucao_servico_rdo",
+                execucaoServicoMetadata(rdoId, obraId, programacaoId, servico)
         );
 
         memoryService.registrarRelacaoAtiva(
@@ -892,6 +901,35 @@ public class RdoOperationalDetailService {
                 "OCORRE_EM",
                 FONTE,
                 "Execução de serviço vinculada à obra."
+        );
+
+        registrarServicoCatalogado(servico);
+        memoryService.registrarRelacaoAtiva(
+                "EXECUCAO_SERVICO_RDO",
+                execucaoId,
+                "SERVICO",
+                servico.id(),
+                "EXECUTA_SERVICO",
+                FONTE,
+                "Execução do RDO realiza tipo de serviço."
+        );
+        memoryService.registrarRelacaoAtiva(
+                "RDO",
+                rdoId,
+                "SERVICO",
+                servico.id(),
+                "REGISTRA_SERVICO",
+                FONTE,
+                "RDO registra tipo de serviço executado."
+        );
+        memoryService.registrarRelacaoAtiva(
+                "OBRA",
+                obraId,
+                "SERVICO",
+                servico.id(),
+                "TEM_SERVICO_EXECUTADO",
+                FONTE,
+                "Obra possui execução histórica deste tipo de serviço."
         );
         memoryService.registrarRelacaoAtiva(
                 "EXECUCAO_SERVICO_RDO",
@@ -927,7 +965,10 @@ public class RdoOperationalDetailService {
         payload.put("schemaVersion", 1);
         payload.put("rdoId", rdoId);
         payload.put("obraId", obraId);
-        payload.put("servico", servicoNome);
+        payload.put("servico", servico.displayName());
+        payload.put("servicoId", servico.id());
+        payload.put("servicoCodigo", servico.codigo());
+        payload.put("servicoNome", servico.nome());
         payload.put("statusValidacao", statusValidacao);
         payload.put("receitaOperacionalEstimativa", receita);
         payload.put("custoRealizado", custo);
@@ -949,6 +990,7 @@ public class RdoOperationalDetailService {
             String programacaoId,
             String equipe,
             String servicoNome,
+            String funcao,
             String tipoAlocacao,
             String status,
             int minutos,
@@ -1008,24 +1050,47 @@ public class RdoOperationalDetailService {
         );
 
         if (servicoNome != null && !servicoNome.isBlank()) {
-            String servicoId = stableUuid("SERVICO|" + servicoNome);
-            memoryService.registrarObjeto(
-                    "SERVICO",
-                    servicoId,
-                    servicoNome,
-                    servicoNome,
-                    "ATIVO",
-                    FONTE
-            );
+            ServicoCatalogado servico = servicoCatalogado(servicoNome);
+            registrarServicoCatalogado(servico);
             memoryService.registrarRelacaoAtiva(
                     "ALOCACAO_COLABORADOR",
                     alocacaoId,
                     "SERVICO",
-                    servicoId,
+                    servico.id(),
                     "EXECUTA",
                     FONTE,
                     "Alocação executa serviço."
             );
+            memoryService.registrarRelacaoAtiva(
+                    "COLABORADOR",
+                    colaborador.id(),
+                    "SERVICO",
+                    servico.id(),
+                    "ATUOU_EM_SERVICO",
+                    FONTE,
+                    "Colaborador atuou historicamente neste tipo de serviço."
+            );
+
+            if (ehResponsavelOperacional(funcao)) {
+                memoryService.registrarRelacaoAtiva(
+                        "COLABORADOR",
+                        colaborador.id(),
+                        "SERVICO",
+                        servico.id(),
+                        "RESPONSAVEL_POR",
+                        FONTE,
+                        "Colaborador identificado como encarregado ou responsável pelo serviço."
+                );
+                memoryService.registrarRelacaoAtiva(
+                        "ALOCACAO_COLABORADOR",
+                        alocacaoId,
+                        "SERVICO",
+                        servico.id(),
+                        "RESPONSAVEL_PELO_SERVICO",
+                        FONTE,
+                        "Alocação marca encarregado ou responsável pelo serviço."
+                );
+            }
         }
 
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -1036,6 +1101,7 @@ public class RdoOperationalDetailService {
         payload.put("programacaoId", programacaoId);
         payload.put("equipe", equipe);
         payload.put("servico", servicoNome);
+        payload.put("funcao", funcao);
         payload.put("tipoAlocacao", tipoAlocacao);
         payload.put("status", status);
         payload.put("minutos", minutos);
@@ -1048,6 +1114,108 @@ public class RdoOperationalDetailService {
                 FONTE,
                 payload
         );
+    }
+
+    private Map<String, Object> execucaoServicoMetadata(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            ServicoCatalogado servico
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("rdoId", rdoId);
+        metadata.put("obraId", obraId);
+        metadata.put("programacaoId", programacaoId);
+        metadata.put("servicoId", servico.id());
+        metadata.put("servicoCodigo", servico.codigo());
+        metadata.put("servicoNome", servico.nome());
+        metadata.put("servicoDisplay", servico.displayName());
+        metadata.put("servicoCanonico", servico.canonicalName());
+        return metadata;
+    }
+
+    private void registrarServicoCatalogado(
+            ServicoCatalogado servico
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("schemaVersion", 1);
+        metadata.put("codigoServico", servico.codigo());
+        metadata.put("nomeServico", servico.nome());
+        metadata.put("nomeCanonico", servico.canonicalName());
+        metadata.put("valorOriginal", servico.rawName());
+
+        memoryService.registrarObjeto(
+                "SERVICO",
+                servico.id(),
+                servico.codigo(),
+                servico.displayName(),
+                "ATIVO",
+                FONTE,
+                "catalogo_tipo_servico",
+                metadata
+        );
+
+        Map<String, Object> evidencias = new LinkedHashMap<>();
+        evidencias.put("codigo_servico", servico.codigo());
+        evidencias.put("nome_servico", servico.nome());
+        evidencias.put("nome_canonico", servico.canonicalName());
+        evidencias.put("display_name", servico.displayName());
+        memoryService.registrarEvidencias(
+                "SERVICO",
+                servico.id(),
+                FONTE,
+                evidencias
+        );
+    }
+
+    private ServicoCatalogado servicoCatalogado(
+            String servicoNome
+    ) {
+        String rawName = primeiroNaoVazio(servicoNome, "Serviço sem nome");
+        Matcher matcher = CODIGO_SERVICO_PATTERN.matcher(rawName);
+
+        String codigo = null;
+        String nome = rawName;
+        if (matcher.matches()) {
+            codigo = matcher.group(1).trim();
+            nome = matcher.group(2).trim();
+        }
+
+        String canonicalName = canonicalText(nome);
+        String stableKey = codigo == null
+                ? "SERVICO|" + canonicalName
+                : "SERVICO|" + codigo + "|" + canonicalName;
+        String id = stableUuid(stableKey);
+        String displayName = codigo == null
+                ? nome
+                : codigo + " - " + nome;
+
+        return new ServicoCatalogado(
+                id,
+                codigo,
+                nome,
+                displayName,
+                canonicalName,
+                rawName
+        );
+    }
+
+    private boolean ehResponsavelOperacional(String funcao) {
+        String canonical = canonicalText(funcao);
+        return canonical.contains("encarregado")
+                || canonical.contains("responsavel")
+                || canonical.contains("supervisor")
+                || canonical.contains("lider");
+    }
+
+    private String canonicalText(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+
+        return value.toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private BigDecimal escala3(BigDecimal value) {
@@ -1132,6 +1300,16 @@ public class RdoOperationalDetailService {
             String id,
             String nome,
             boolean ativo
+    ) {
+    }
+
+    private record ServicoCatalogado(
+            String id,
+            String codigo,
+            String nome,
+            String displayName,
+            String canonicalName,
+            String rawName
     ) {
     }
 

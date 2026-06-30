@@ -55,11 +55,24 @@ public record StaviaSnapshotResponse(
             String status,
             String observacoes,
             LocalDateTime updatedAt,
+            List<ServicoExecutadoSnapshot> servicosExecutados,
             List<MaoObraSnapshot> maoObra,
             List<EquipamentoSnapshot> equipamentos,
             List<MaterialSnapshot> materiais,
             List<ControleGeometricoSnapshot> controlesGeometricos,
             List<AlocacaoSnapshot> alocacoesColaboradores
+    ) {
+    }
+
+    public record ServicoExecutadoSnapshot(
+            String servicoNome,
+            BigDecimal quantidadeExecutada,
+            String unidade,
+            String trechoInicial,
+            String trechoFinal,
+            String localizacao,
+            String turno,
+            String statusValidacao
     ) {
     }
 
@@ -102,6 +115,8 @@ public record StaviaSnapshotResponse(
     }
 
     public record AlocacaoSnapshot(
+            String colaboradorId,
+            String nomeColaborador,
             String equipe,
             String servicoNome,
             LocalTime horaInicio,

@@ -17,6 +17,7 @@ export interface StaviaLocalContext {
 }
 
 type LocalIntent =
+  | "SERVICOS_DA_OBRA"
   | "COLABORADORES_DA_OBRA"
   | "TURNO"
   | "EQUIPAMENTOS"
@@ -33,6 +34,7 @@ type LocalIntent =
   | "DESCONHECIDA";
 
 type CompositeTopic =
+  | "SERVICOS_DA_OBRA"
   | "LOCALIZACAO_OBRA"
   | "TURNO"
   | "COLABORADORES_DA_OBRA"
@@ -171,6 +173,30 @@ function requestedCompositeTopics(
   normalizedQuestion: string,
 ): CompositeTopic[] {
   const topics: CompositeTopic[] = [];
+
+  if (
+    hasAny(normalizedQuestion, [
+      "servico",
+      "servicos",
+      "tipo de servico",
+      "tipos de servico",
+      "servico feito",
+      "servico executado",
+      "o que foi feito",
+      "o que executou",
+      "atividade executada",
+      "atividades executadas",
+      "fresagem",
+      "recomposicao",
+      "revestimento",
+      "drenagem",
+      "sinalizacao",
+      "encarregado responsavel",
+      "responsavel pelo servico",
+    ])
+  ) {
+    topics.push("SERVICOS_DA_OBRA");
+  }
 
   if (
     hasAny(normalizedQuestion, [
@@ -384,6 +410,30 @@ function detectIntent(question: string): LocalIntent {
     ])
   ) {
     return "OBRAS_POR_CIDADE";
+  }
+
+  if (
+    hasAny(normalized, [
+      "servico",
+      "servicos",
+      "tipo de servico",
+      "tipos de servico",
+      "servico feito",
+      "servico executado",
+      "o que foi feito",
+      "o que executou",
+      "atividade executada",
+      "atividades executadas",
+      "fresagem",
+      "recomposicao",
+      "revestimento",
+      "drenagem",
+      "sinalizacao",
+      "encarregado responsavel",
+      "responsavel pelo servico",
+    ])
+  ) {
+    return "SERVICOS_DA_OBRA";
   }
 
   if (
@@ -1087,6 +1137,7 @@ function collaboratorEntries(
       ),
       ...rdo.alocacoesColaboradores.map((item) =>
         [
+          text(item.nomeColaborador),
           text(item.equipe),
           text(item.funcao),
           text(item.servicoNome),
@@ -1136,6 +1187,200 @@ function materialNames(
           .join(" · "),
       ),
     ),
+  );
+}
+
+function isResponsibleRole(
+  value: string | null | undefined,
+): boolean {
+  const normalized = normalizeText(value);
+  return (
+    normalized.includes("encarregado") ||
+    normalized.includes("responsavel") ||
+    normalized.includes("supervisor") ||
+    normalized.includes("lider")
+  );
+}
+
+function sameServiceName(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  const normalizedLeft = normalizeText(left);
+  const normalizedRight = normalizeText(right);
+
+  return (
+    normalizedLeft.length > 0 &&
+    normalizedRight.length > 0 &&
+    (normalizedLeft === normalizedRight ||
+      normalizedLeft.includes(normalizedRight) ||
+      normalizedRight.includes(normalizedLeft))
+  );
+}
+
+function serviceQueryTerms(question: string): string[] {
+  const genericTerms = new Set([
+    "servico",
+    "servicos",
+    "tipo",
+    "tipos",
+    "feito",
+    "feita",
+    "feitos",
+    "feitas",
+    "executado",
+    "executada",
+    "executados",
+    "executadas",
+    "encarregado",
+    "responsavel",
+    "responsaveis",
+    "obra",
+  ]);
+
+  return terms(question).filter((term) => !genericTerms.has(term));
+}
+
+function responsibleLabelsForService(
+  rdo: StaviaSnapshotRdo,
+  serviceName: string,
+): string[] {
+  const related = rdo.alocacoesColaboradores.filter((item) =>
+    sameServiceName(item.servicoNome, serviceName),
+  );
+  const responsible = related.filter((item) =>
+    isResponsibleRole(item.funcao),
+  );
+  const source = responsible.length > 0 ? responsible : related;
+
+  return unique(
+    source.map((item) =>
+      [
+        text(item.nomeColaborador) ||
+          text(item.equipe) ||
+          text(item.colaboradorId),
+        text(item.funcao),
+      ]
+        .filter(Boolean)
+        .join(" - "),
+    ),
+  );
+}
+
+function serviceEntries(
+  rdos: StaviaSnapshotRdo[],
+  question = "",
+): string[] {
+  const filterTerms = serviceQueryTerms(question);
+  const entries: Array<{ searchText: string; label: string }> = [];
+
+  for (const rdo of uniqueRdosById(rdos)) {
+    const rdoLabel = [
+      rdo.numeroRdo ? `RDO ${rdo.numeroRdo}` : "RDO sem número",
+      rdo.dataRdo,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    const services =
+      (rdo.servicosExecutados ?? []).length > 0
+        ? rdo.servicosExecutados ?? []
+        : unique(
+            rdo.alocacoesColaboradores.map(
+              (item) => item.servicoNome,
+            ),
+          ).map((servicoNome) => ({
+            servicoNome,
+            quantidadeExecutada: null,
+            unidade: null,
+            trechoInicial: null,
+            trechoFinal: null,
+            localizacao: null,
+            turno: null,
+            statusValidacao: null,
+          }));
+
+    for (const service of services) {
+      const serviceName = text(service.servicoNome);
+      if (!serviceName) {
+        continue;
+      }
+
+      const responsaveis = responsibleLabelsForService(
+        rdo,
+        serviceName,
+      );
+      const quantidade = service.quantidadeExecutada
+        ? `${service.quantidadeExecutada}${
+            service.unidade ? ` ${service.unidade}` : ""
+          }`
+        : "";
+      const trecho =
+        service.trechoInicial || service.trechoFinal
+          ? [service.trechoInicial, service.trechoFinal]
+              .filter(Boolean)
+              .join(" a ")
+          : text(service.localizacao);
+
+      const label = [
+        rdoLabel,
+        serviceName,
+        quantidade,
+        trecho ? `trecho ${trecho}` : "",
+        service.turno
+          ? `turno ${readableStatus(service.turno)}`
+          : "",
+        service.statusValidacao
+          ? readableStatus(service.statusValidacao)
+          : "",
+        responsaveis.length > 0
+          ? `responsável: ${responsaveis.join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+      entries.push({
+        searchText: normalizeText(
+          [serviceName, label, responsaveis.join(" ")].join(" "),
+        ),
+        label,
+      });
+    }
+  }
+
+  const filtered =
+    filterTerms.length === 0
+      ? entries
+      : entries.filter((entry) =>
+          filterTerms.every((term) =>
+            entry.searchText.includes(term),
+          ),
+        );
+
+  return unique(filtered.map((entry) => entry.label));
+}
+
+function answerServices(
+  resolved: ResolvedContext,
+  question: string,
+): StaviaConsultaResponse {
+  const values = serviceEntries(selectedRdos(resolved), question);
+
+  if (values.length === 0) {
+    return answer(
+      "Não encontrei serviços executados para este contexto.",
+      "SERVICOS_DA_OBRA",
+      {
+        confidence: "MEDIA",
+        insufficientData: true,
+      },
+    );
+  }
+
+  return answer(
+    `Serviços encontrados:\n\n${limitedBulletList(values)}`,
+    "SERVICOS_DA_OBRA",
   );
 }
 
@@ -1291,6 +1536,15 @@ function answerComposite(
       shift
         ? `Turno: ${shift}.`
         : "Turno: não encontrei turno registrado para este contexto.",
+    );
+  }
+
+  if (topics.includes("SERVICOS_DA_OBRA")) {
+    const services = serviceEntries(rdos);
+    sections.push(
+      services.length > 0
+        ? `Serviços:\n${limitedBulletList(services, 12)}`
+        : "Serviços: nenhum registro encontrado para este contexto.",
     );
   }
 
@@ -1741,6 +1995,8 @@ export function responderComSnapshotStavia({
         resolved,
         requestedCompositeTopics(normalizeText(pergunta)),
       );
+    case "SERVICOS_DA_OBRA":
+      return answerServices(resolved, pergunta);
     case "COLABORADORES_DA_OBRA":
       return answerCollaborators(resolved);
     case "TURNO":

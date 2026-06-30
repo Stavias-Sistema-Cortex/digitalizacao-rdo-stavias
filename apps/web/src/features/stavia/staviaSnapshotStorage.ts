@@ -10,6 +10,7 @@ import type {
   StaviaSnapshotMaterial,
   StaviaSnapshotObra,
   StaviaSnapshotRdo,
+  StaviaSnapshotServicoExecutado,
 } from "./stavia.types";
 
 const SNAPSHOT_KEY = "default" as const;
@@ -132,6 +133,8 @@ function mapAlocacoes(
     const item = asObject(raw);
 
     return {
+      colaboradorId: asString(item.colaboradorId),
+      nomeColaborador: asString(item.nomeColaborador),
       equipe: asString(item.equipe),
       servicoNome: asString(item.servicoNome),
       horaInicio: asString(item.horaInicio),
@@ -139,6 +142,27 @@ function mapAlocacoes(
       turno: asString(item.turno),
       funcao: asString(item.funcao),
       status: asString(item.status),
+    };
+  });
+}
+
+function mapServicosExecutados(
+  value: unknown,
+): StaviaSnapshotServicoExecutado[] {
+  return asArray(value).map((raw) => {
+    const item = asObject(raw);
+
+    return {
+      servicoNome: asString(item.servicoNome),
+      quantidadeExecutada: asNumberOrString(
+        item.quantidadeExecutada,
+      ),
+      unidade: asString(item.unidade),
+      trechoInicial: asString(item.trechoInicial),
+      trechoFinal: asString(item.trechoFinal),
+      localizacao: asString(item.localizacao),
+      turno: asString(item.turno),
+      statusValidacao: asString(item.statusValidacao),
     };
   });
 }
@@ -164,6 +188,9 @@ function localRdoToSnapshot(
     status: record.statusRdo,
     observacoes: asString(payload.observacoes),
     updatedAt: record.updatedAt,
+    servicosExecutados: mapServicosExecutados(
+      payload.servicosExecutados,
+    ),
     maoObra: mapMaoObra(payload.maoObra),
     equipamentos: mapEquipamentos(payload.equipamentos),
     materiais: mapMateriais(payload.materiais),
