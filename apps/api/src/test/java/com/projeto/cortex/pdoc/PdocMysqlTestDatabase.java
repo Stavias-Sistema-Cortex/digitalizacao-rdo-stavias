@@ -17,8 +17,8 @@ final class PdocMysqlTestDatabase {
     private static final String URL_OPTIONS =
             "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
                     + "&connectTimeout=2000&socketTimeout=10000";
+    private static final String ROOT_PASSWORD_ENV = "CORTEX_MYSQL_ROOT_PASSWORD";
     private static final String ROOT_USER = "root";
-    private static final String ROOT_PASSWORD = "cortex_root_password";
 
     private final String databaseName;
 
@@ -27,10 +27,13 @@ final class PdocMysqlTestDatabase {
     }
 
     static boolean isAvailable() {
+        if (rootPassword().isBlank()) {
+            return false;
+        }
         try (Connection ignored = DriverManager.getConnection(
                 HOST_URL + URL_OPTIONS,
                 ROOT_USER,
-                ROOT_PASSWORD
+                rootPassword()
         )) {
             return true;
         } catch (Exception exception) {
@@ -55,13 +58,13 @@ final class PdocMysqlTestDatabase {
         DriverManagerDataSource dataSource = new DriverManagerDataSource();
         dataSource.setUrl(jdbcUrl());
         dataSource.setUsername(ROOT_USER);
-        dataSource.setPassword(ROOT_PASSWORD);
+        dataSource.setPassword(requiredRootPassword());
         return dataSource;
     }
 
     void migrate() {
         Flyway.configure()
-                .dataSource(jdbcUrl(), ROOT_USER, ROOT_PASSWORD)
+                .dataSource(jdbcUrl(), ROOT_USER, requiredRootPassword())
                 .locations("filesystem:src/main/resources/db/migration")
                 .load()
                 .migrate();
@@ -71,7 +74,7 @@ final class PdocMysqlTestDatabase {
         try (Connection connection = DriverManager.getConnection(
                 HOST_URL + URL_OPTIONS,
                 ROOT_USER,
-                ROOT_PASSWORD
+                requiredRootPassword()
         );
              Statement statement = connection.createStatement()) {
             statement.execute("DROP DATABASE IF EXISTS `" + databaseName + "`");
@@ -84,7 +87,7 @@ final class PdocMysqlTestDatabase {
         try (Connection connection = DriverManager.getConnection(
                 HOST_URL + URL_OPTIONS,
                 ROOT_USER,
-                ROOT_PASSWORD
+                requiredRootPassword()
         );
              Statement statement = connection.createStatement()) {
             statement.execute("DROP DATABASE IF EXISTS `" + databaseName + "`");
@@ -106,5 +109,20 @@ final class PdocMysqlTestDatabase {
     private static String sanitize(String value) {
         return value.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9_]", "_");
+    }
+
+    static String rootPassword() {
+        return System.getenv().getOrDefault(ROOT_PASSWORD_ENV, "");
+    }
+
+    private static String requiredRootPassword() {
+        String password = rootPassword();
+        if (password.isBlank()) {
+            throw new IllegalStateException(
+                    "Defina " + ROOT_PASSWORD_ENV
+                            + " para executar testes MySQL locais."
+            );
+        }
+        return password;
     }
 }

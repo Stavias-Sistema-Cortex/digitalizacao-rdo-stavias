@@ -109,8 +109,12 @@ public class RdoService {
                     condicao_noite,
                     pluviometria_mm,
                     status,
-                    observacoes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    observacoes,
+                    preenchido_por,
+                    apontador_rdo,
+                    encarregado_obra,
+                    fiscalizacao_campo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rdoId,
                 request.obraId(),
@@ -135,7 +139,11 @@ public class RdoService {
                 request.condicaoNoite(),
                 request.pluviometriaMm(),
                 status,
-                request.observacoes()
+                request.observacoes(),
+                nuloSeVazio(request.preenchidoPor()),
+                nuloSeVazio(request.apontadorRdo()),
+                nuloSeVazio(request.encarregadoObra()),
+                nuloSeVazio(request.fiscalizacaoCampo())
         );
 
         List<RdoResponse.MaoObraItem> maoObra = inserirMaoObra(rdoId, request.maoObra());
@@ -183,11 +191,19 @@ public class RdoService {
                 rodovia,
                 cidade,
                 uf,
+                kmInicialProgramado,
+                kmFinalProgramado,
+                request.kmInicialInterditado(),
+                request.kmFinalInterditado(),
                 request.turno(),
                 request.horaInicio(),
                 request.horaFim(),
                 status,
                 request.observacoes(),
+                nuloSeVazio(request.preenchidoPor()),
+                nuloSeVazio(request.apontadorRdo()),
+                nuloSeVazio(request.encarregadoObra()),
+                nuloSeVazio(request.fiscalizacaoCampo()),
                 maoObra,
                 equipamentos,
                 materiais,
@@ -358,7 +374,10 @@ public class RdoService {
                     item.quantidadePrevista(),
                     item.quantidadeUsinada(),
                     item.quantidadeAplicada(),
-                    sobra
+                    sobra,
+                    item.notaFiscal(),
+                    item.fornecedor(),
+                    item.observacoes()
             ));
         }
 
@@ -390,10 +409,15 @@ public class RdoService {
                         id,
                         rdo_id,
                         subtrecho,
+                        numero,
                         estaca_inicial,
                         estaca_final,
                         km_inicial,
                         km_final,
+                        pista,
+                        faixa,
+                        ordem_servico,
+                        atividade_observacoes,
                         comprimento_m,
                         largura_m,
                         espessura_1_cm,
@@ -405,15 +429,20 @@ public class RdoService {
                         densidade,
                         massa_tonelada,
                         observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     id,
                     rdoId,
                     item.subtrecho(),
+                    item.numero(),
                     item.estacaInicial(),
                     item.estacaFinal(),
                     item.kmInicial(),
                     item.kmFinal(),
+                    item.pista(),
+                    item.faixa(),
+                    item.ordemServico(),
+                    item.atividadeObservacoes(),
                     item.comprimentoM(),
                     item.larguraM(),
                     item.espessura1Cm(),
@@ -430,13 +459,26 @@ public class RdoService {
             response.add(new RdoResponse.ControleGeometricoItem(
                     id,
                     item.subtrecho(),
+                    item.numero(),
+                    item.estacaInicial(),
+                    item.estacaFinal(),
+                    item.kmInicial(),
+                    item.kmFinal(),
+                    item.pista(),
+                    item.faixa(),
+                    item.ordemServico(),
+                    item.atividadeObservacoes(),
                     item.comprimentoM(),
                     item.larguraM(),
+                    item.espessura1Cm(),
+                    item.espessura2Cm(),
+                    item.espessura3Cm(),
                     espessuraMediaCm,
                     areaM2,
                     volumeM3,
                     item.densidade(),
-                    massaTonelada
+                    massaTonelada,
+                    item.observacoes()
             ));
         }
 

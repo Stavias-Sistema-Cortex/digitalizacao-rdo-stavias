@@ -1,5 +1,6 @@
 package com.projeto.cortex.pdoc;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,9 +14,14 @@ import java.time.LocalDate;
 public class PdocController {
 
     private final PdocApplicationService service;
+    private final CurrentUserService currentUserService;
 
-    public PdocController(PdocApplicationService service) {
+    public PdocController(
+            PdocApplicationService service,
+            CurrentUserService currentUserService
+    ) {
         this.service = service;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping("/api/obras/{obraId}/pdoc/calcular")
@@ -27,6 +33,7 @@ public class PdocController {
             @RequestParam(required = false) String tipoDisparo,
             @RequestParam(required = false) String eventoOrigemId
     ) {
+        currentUserService.requireAdmin();
         return service.calcular(
                 obraId,
                 dataReferencia,
@@ -37,6 +44,7 @@ public class PdocController {
 
     @GetMapping("/api/obras/{obraId}/pdoc/atual")
     public PdocResultadoResponse atual(@PathVariable String obraId) {
+        currentUserService.requireWorksiteAccess(obraId);
         return service.buscarAtual(obraId);
     }
 
@@ -46,6 +54,7 @@ public class PdocController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
+        currentUserService.requireWorksiteAccess(obraId);
         return service.buscarHistorico(obraId, page, size);
     }
 }

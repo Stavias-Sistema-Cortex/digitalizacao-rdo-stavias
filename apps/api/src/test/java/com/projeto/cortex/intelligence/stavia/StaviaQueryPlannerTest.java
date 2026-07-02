@@ -283,6 +283,75 @@ class StaviaQueryPlannerTest {
     }
 
     @Test
+    void shouldExtractCollaboratorAfterEmQualObraQuestion() {
+        StaviaQueryPlan plan = planner.plan(
+                new StaviaQuestion(
+                        "Baseado nos RDOs, em qual obra está Adalberto Canovas Neto?\n"
+                                + "Contexto ontológico selecionado: obraId=obra-atual rdoId=rdo-1",
+                        "usuario-1",
+                        "obra-atual"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR,
+                        1.0
+                )
+        );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.COLABORADOR);
+        assertThat(plan.operation())
+                .isEqualTo(QueryOperation.TRAVERSE_RELATIONSHIP);
+        assertThat(plan.requestedRelationships())
+                .containsExactly("ALOCADO_EM");
+        assertThat(plan.entities())
+                .extracting("type", "value")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "OBRA",
+                                "obra-atual"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "COLABORADOR",
+                                "Adalberto Canovas Neto"
+                        )
+                );
+        assertThat(planner.effectiveIntent(
+                StaviaIntent.CONSULTAR_RDO,
+                plan
+        )).isEqualTo(StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR);
+    }
+
+    @Test
+    void shouldExtractCollaboratorBeforeEmQualObraVerb() {
+        StaviaQueryPlan plan = planner.plan(
+                new StaviaQuestion(
+                        "Em qual obra o Adalberto Canovas Neto está?",
+                        "usuario-1",
+                        "obra-atual"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR,
+                        1.0
+                )
+        );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.COLABORADOR);
+        assertThat(plan.operation())
+                .isEqualTo(QueryOperation.TRAVERSE_RELATIONSHIP);
+        assertThat(plan.entities())
+                .extracting("type", "value")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "OBRA",
+                                "obra-atual"
+                        ),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "COLABORADOR",
+                                "Adalberto Canovas Neto"
+                        )
+                );
+    }
+
+    @Test
     void shouldPlanZeladoriaAssetCatalogQuestionWithoutLlm() {
         StaviaQueryPlan plan = planner.plan(
                 new StaviaQuestion(

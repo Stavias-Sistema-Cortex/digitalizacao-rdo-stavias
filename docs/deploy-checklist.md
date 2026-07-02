@@ -34,6 +34,7 @@ Obrigatórias para a API iniciar:
 - CORTEX_DB_URL
 - CORTEX_DB_USER
 - CORTEX_DB_PASSWORD
+- CORTEX_AUTH_JWT_SECRET
 
 Opcionais para importação da fonte ZLD:
 
@@ -77,7 +78,8 @@ O container precisa rodar em modo seguro:
 docker run --rm -p 8081:8080 \
   -e CORTEX_DB_URL='jdbc:mysql://host.docker.internal:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
   -e CORTEX_DB_USER='cortex_app' \
-  -e CORTEX_DB_PASSWORD='senha-local' \
+  -e CORTEX_DB_PASSWORD="$CORTEX_DB_PASSWORD" \
+  -e CORTEX_AUTH_JWT_SECRET="$CORTEX_AUTH_JWT_SECRET" \
   -e CORTEX_IMPORT_ENABLED='false' \
   cortex-api:local
 

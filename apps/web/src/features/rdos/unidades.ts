@@ -29,3 +29,7 @@ export function normalizarUnidade(value: string): string {
     .replace(/m\^?3\b/gi, "m³")
     .replace(/m\^?2\b/gi, "m²");
 }
+
+
+
+

@@ -9,6 +9,23 @@ if [ ! -f "$COMPOSE_FILE" ]; then
   exit 1
 fi
 
+source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+
+if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
+  echo "Missing CORTEX_DB_PASSWORD."
+  exit 1
+fi
+
+if [ -z "${CORTEX_MYSQL_ROOT_PASSWORD:-}" ]; then
+  echo "Missing CORTEX_MYSQL_ROOT_PASSWORD."
+  exit 1
+fi
+
+if [ -z "${CORTEX_AUTH_JWT_SECRET:-}" ]; then
+  echo "Missing CORTEX_AUTH_JWT_SECRET."
+  exit 1
+fi
+
 docker compose -f "$COMPOSE_FILE" up --build -d
 
 echo ""

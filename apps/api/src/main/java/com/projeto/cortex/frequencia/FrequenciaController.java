@@ -1,5 +1,6 @@
 package com.projeto.cortex.frequencia;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,9 +19,14 @@ import java.time.LocalDate;
 public class FrequenciaController {
 
     private final FrequenciaService frequenciaService;
+    private final CurrentUserService currentUserService;
 
-    public FrequenciaController(FrequenciaService frequenciaService) {
+    public FrequenciaController(
+            FrequenciaService frequenciaService,
+            CurrentUserService currentUserService
+    ) {
         this.frequenciaService = frequenciaService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping("/frequencia")
@@ -33,6 +39,7 @@ public class FrequenciaController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate fim
     ) {
+        currentUserService.requireSelfOrAdmin(colaboradorId);
         return frequenciaService.buscarResumo(
                 colaboradorId,
                 inicio,
@@ -46,6 +53,7 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody JornadaPlanejadaRequest request
     ) {
+        currentUserService.requireSelfOrAdmin(colaboradorId);
         return frequenciaService.registrarJornada(
                 colaboradorId,
                 request
@@ -58,6 +66,7 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody RegistroPresencaRequest request
     ) {
+        currentUserService.requireSelfOrAdmin(colaboradorId);
         return frequenciaService.registrarPresenca(
                 colaboradorId,
                 request
@@ -70,6 +79,7 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody OcorrenciaFrequenciaRequest request
     ) {
+        currentUserService.requireSelfOrAdmin(colaboradorId);
         return frequenciaService.registrarOcorrencia(
                 colaboradorId,
                 request
@@ -86,6 +96,7 @@ public class FrequenciaController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate fim
     ) {
+        currentUserService.requireSelfOrAdmin(colaboradorId);
         return frequenciaService.buscarBancoHoras(
                 colaboradorId,
                 inicio,
@@ -99,8 +110,10 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody AjusteBancoHorasRequest request
     ) {
+        currentUserService.requireSelfOrAdmin(colaboradorId);
         return frequenciaService.ajustarBancoHoras(
                 colaboradorId,
+                currentUserService.requireUserId(),
                 request
         );
     }

@@ -350,6 +350,7 @@ public class FrequenciaService {
     @Transactional
     public BancoHorasResumoResponse ajustarBancoHoras(
             String colaboradorId,
+            String usuarioAutenticadoId,
             AjusteBancoHorasRequest request
     ) {
         if (request == null) {
@@ -392,10 +393,10 @@ public class FrequenciaService {
             );
         }
 
-        if (request.usuarioId() == null || request.usuarioId().isBlank()) {
+        if (usuarioAutenticadoId == null || usuarioAutenticadoId.isBlank()) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "usuarioId é obrigatório para ajuste de banco de horas."
+                    HttpStatus.UNAUTHORIZED,
+                    "Usuário autenticado é obrigatório para ajuste de banco de horas."
             );
         }
 
@@ -449,7 +450,7 @@ public class FrequenciaService {
                 minutosNovo,
                 delta,
                 request.motivo().trim(),
-                request.usuarioId().trim(),
+                usuarioAutenticadoId.trim(),
                 status,
                 nuloSeVazio(request.aprovadoPor()),
                 nuloSeVazio(request.aprovadoPor())
@@ -475,7 +476,7 @@ public class FrequenciaService {
                         "status",
                         status,
                         "usuarioId",
-                        request.usuarioId().trim()
+                        usuarioAutenticadoId.trim()
                 )
         );
 

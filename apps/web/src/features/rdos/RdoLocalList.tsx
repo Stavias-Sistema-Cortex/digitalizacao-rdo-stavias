@@ -1,3 +1,6 @@
+import { useRef } from "react";
+
+import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 
@@ -6,6 +9,8 @@ interface RdoLocalListProps {
   isLoading: boolean;
   error: string;
   onCreate: () => void;
+  onImportRdoFile: (file: File) => void;
+  isImporting: boolean;
   onOpen: (record: LocalRdoRecord) => void;
   onRefresh: () => void;
   onOpenStavia: () => void;
@@ -27,11 +32,15 @@ export function RdoLocalList({
   isLoading,
   error,
   onCreate,
+  onImportRdoFile,
+  isImporting,
   onOpen,
   onRefresh,
   onOpenStavia,
   onOpenIntegracoes,
 }: RdoLocalListProps) {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
   return (
     <main className="page-shell">
       <header className="topbar">
@@ -81,8 +90,35 @@ export function RdoLocalList({
           >
             Novo RDO
           </button>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={isImporting}
+          >
+            {isImporting ? "Importando..." : "Importar RDO"}
+          </button>
+
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".pdf,.xlsx,.xls,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+            className="visually-hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) {
+                onImportRdoFile(file);
+              }
+            }}
+          />
         </div>
       </header>
+
+      <ProgramacaoSemanalImport
+        onRdoCreated={onRefresh}
+      />
 
       {error && (
         <div className="notice notice-error">

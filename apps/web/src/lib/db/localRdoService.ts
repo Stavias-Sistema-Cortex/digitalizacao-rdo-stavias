@@ -94,6 +94,7 @@ function buildServicoExecutadoPayload(
     trechoInicial: nullIfEmpty(base.trechoInicial),
     trechoFinal: nullIfEmpty(base.trechoFinal),
     localizacao: nullIfEmpty(base.localizacao),
+    turno: nullIfEmpty(base.turno),
     observacoes: nullIfEmpty(base.observacoes),
   };
 }
@@ -128,6 +129,16 @@ function isServicoExecutadoEmpty(
   );
 }
 
+function isServicoExecutadoSyncable(
+  item: ServicoExecutadoDraft,
+): boolean {
+  if (isServicoExecutadoEmpty(item)) {
+    return false;
+  }
+
+  return item.quantidadeExecutada !== "";
+}
+
 function isAlocacaoEmpty(
   item: AlocacaoColaboradorDraft,
 ): boolean {
@@ -153,6 +164,42 @@ function isMaterialEmpty(
   );
 }
 
+function isMaoObraEmpty(item: MaoObraDraft): boolean {
+  return (
+    item.colaboradorId.trim() === "" &&
+    item.nomeColaborador.trim() === "" &&
+    item.cargo.trim() === "" &&
+    item.quantidade === ""
+  );
+}
+
+function isEquipamentoEmpty(
+  item: EquipamentoDraft,
+): boolean {
+  return (
+    item.assetId.trim() === "" &&
+    item.prefixo.trim() === "" &&
+    item.descricao.trim() === "" &&
+    item.tipoEquipamento.trim() === "" &&
+    item.quantidade === ""
+  );
+}
+
+function isControleEmpty(
+  item: ControleGeometricoDraft,
+): boolean {
+  const { localId, ...fields } = item;
+  void localId;
+
+  return Object.values(fields).every(
+    (value) =>
+      value === null ||
+      value === undefined ||
+      (typeof value === "string" &&
+        value.trim() === ""),
+  );
+}
+
 function buildRdoSyncPayload(
   draft: RdoDraft,
 ): Record<string, unknown> {
@@ -162,6 +209,23 @@ function buildRdoSyncPayload(
     programacaoId: draft.programacaoId || null,
     numeroRdo: draft.numeroRdo,
     dataRdo: draft.dataRdo,
+    cliente: nullIfEmpty(draft.cliente),
+    contrato: nullIfEmpty(draft.contrato),
+    rodovia: nullIfEmpty(draft.rodovia),
+    cidade: nullIfEmpty(draft.cidade),
+    uf: nullIfEmpty(draft.uf),
+    kmInicialProgramado: nullIfEmpty(
+      draft.kmInicialProgramado,
+    ),
+    kmFinalProgramado: nullIfEmpty(
+      draft.kmFinalProgramado,
+    ),
+    kmInicialInterditado: nullIfEmpty(
+      draft.kmInicialInterditado,
+    ),
+    kmFinalInterditado: nullIfEmpty(
+      draft.kmFinalInterditado,
+    ),
     turno: draft.turno,
     horaInicio: draft.horaInicio || null,
     horaFim: draft.horaFim || null,
@@ -173,28 +237,34 @@ function buildRdoSyncPayload(
         ? null
         : draft.pluviometriaMm,
     observacoes: draft.observacoes,
+    preenchidoPor: nullIfEmpty(draft.preenchidoPor),
+    apontadorRdo: nullIfEmpty(draft.apontadorRdo),
+    encarregadoObra: nullIfEmpty(draft.encarregadoObra),
+    fiscalizacaoCampo: nullIfEmpty(
+      draft.fiscalizacaoCampo,
+    ),
     servicosExecutados:
       draft.servicosExecutados
-        .filter((item) => !isServicoExecutadoEmpty(item))
+        .filter(isServicoExecutadoSyncable)
         .map(buildServicoExecutadoPayload),
     alocacoesColaboradores:
       draft.alocacoesColaboradores
         .filter((item) => !isAlocacaoEmpty(item))
         .map(buildAlocacaoPayload),
-    maoObra: draft.maoObra.map(
-      buildMaoObraPayload,
-    ),
-    equipamentos: draft.equipamentos.map(
-      buildEquipamentoPayload,
-    ),
+    maoObra: draft.maoObra
+      .filter((item) => !isMaoObraEmpty(item))
+      .map(buildMaoObraPayload),
+    equipamentos: draft.equipamentos
+      .filter((item) => !isEquipamentoEmpty(item))
+      .map(buildEquipamentoPayload),
     materiais: draft.materiais
       .filter((item) => !isMaterialEmpty(item))
       .map(removeLocalId),
 
     controlesGeometricos:
-      draft.controlesGeometricos.map(
-        removeLocalId,
-      ),
+      draft.controlesGeometricos
+        .filter((item) => !isControleEmpty(item))
+        .map(removeLocalId),
   };
 }
 
@@ -207,6 +277,19 @@ function buildRdoLocalPayload(
     programacaoId: draft.programacaoId || null,
     numeroRdo: draft.numeroRdo,
     dataRdo: draft.dataRdo,
+    cliente: draft.cliente,
+    contrato: draft.contrato,
+    rodovia: draft.rodovia,
+    cidade: draft.cidade,
+    uf: draft.uf,
+    kmInicialProgramado:
+      draft.kmInicialProgramado,
+    kmFinalProgramado:
+      draft.kmFinalProgramado,
+    kmInicialInterditado:
+      draft.kmInicialInterditado,
+    kmFinalInterditado:
+      draft.kmFinalInterditado,
     turno: draft.turno,
     horaInicio: draft.horaInicio,
     horaFim: draft.horaFim,
@@ -215,6 +298,10 @@ function buildRdoLocalPayload(
     condicaoNoite: draft.condicaoNoite,
     pluviometriaMm: draft.pluviometriaMm,
     observacoes: draft.observacoes,
+    preenchidoPor: draft.preenchidoPor,
+    apontadorRdo: draft.apontadorRdo,
+    encarregadoObra: draft.encarregadoObra,
+    fiscalizacaoCampo: draft.fiscalizacaoCampo,
     servicosExecutados: draft.servicosExecutados,
     alocacoesColaboradores:
       draft.alocacoesColaboradores,
@@ -497,6 +584,114 @@ export async function saveNewRdoDraftAtomically(
     rdo,
     mutation,
   };
+}
+
+export async function repairRdoCreateMutationsForSync(): Promise<number> {
+  const database = await getCortexDb();
+  const timestamp = nowUtc();
+  const transaction = database.transaction(
+    [
+      "rdos",
+      "outbox_mutations",
+      "rdoMaoObra",
+      "rdoEquipamentos",
+      "rdoMateriais",
+      "rdoControlesGeometricos",
+    ],
+    "readwrite",
+  );
+
+  const outboxStore =
+    transaction.objectStore(
+      "outbox_mutations",
+    );
+  const rdoStore =
+    transaction.objectStore("rdos");
+  const candidates = [
+    ...(await outboxStore
+      .index("by-status")
+      .getAll("PENDING")),
+    ...(await outboxStore
+      .index("by-status")
+      .getAll("ERROR")),
+  ];
+
+  let repaired = 0;
+
+  for (const mutation of candidates) {
+    if (
+      mutation.entidadeTipo !== "RDO" ||
+      mutation.operacao !== "CRIAR_RDO"
+    ) {
+      continue;
+    }
+
+    const rdo = await rdoStore.get(
+      mutation.entidadeId,
+    );
+
+    if (!rdo || rdo.syncStatus === "SYNCED") {
+      continue;
+    }
+
+    const draft = {
+      ...(rdo.payload as Partial<RdoDraft>),
+      id: rdo.id,
+      obraId: rdo.obraId,
+      programacaoId: rdo.programacaoId ?? "",
+      numeroRdo: rdo.numeroRdo,
+      dataRdo: rdo.dataRdo,
+    } as RdoDraft;
+
+    const repairedMutation: OutboxMutationRecord = {
+      ...mutation,
+      clientMutationId:
+        mutation.status === "ERROR"
+          ? crypto.randomUUID()
+          : mutation.clientMutationId,
+      payload: buildRdoSyncPayload(draft),
+      status: "PENDING",
+      tentativas:
+        mutation.status === "ERROR"
+          ? 0
+          : mutation.tentativas,
+      ultimaTentativaEm:
+        mutation.status === "ERROR"
+          ? null
+          : mutation.ultimaTentativaEm,
+      ultimoErro: null,
+      conflito: null,
+      updatedAt: timestamp,
+    };
+
+    if (mutation.status === "ERROR") {
+      await outboxStore.delete(
+        mutation.clientMutationId,
+      );
+      await outboxStore.add(repairedMutation);
+    } else {
+      await outboxStore.put(repairedMutation);
+    }
+
+    await rdoStore.put({
+      ...rdo,
+      syncStatus: "PENDING_SYNC",
+      updatedAt: timestamp,
+    });
+
+    await replaceChildRecords(
+      transaction,
+      draft,
+      "PENDING_SYNC",
+      timestamp,
+    );
+
+    repaired += 1;
+  }
+
+  await transaction.done;
+
+  return repaired;
 }
 
 export async function saveExistingRdoDraftAtomically(

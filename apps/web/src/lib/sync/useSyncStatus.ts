@@ -48,6 +48,7 @@ function determineStatus(input: {
   syncingCount: number;
   errorCount: number;
   conflictCount: number;
+  lastSyncError: string | null;
 }): SyncUiStatus {
   if (!input.isOnline) {
     return "OFFLINE";
@@ -66,6 +67,10 @@ function determineStatus(input: {
     input.syncingCount > 0
   ) {
     return "SYNCING";
+  }
+
+  if (input.lastSyncError) {
+    return "ERROR";
   }
 
   if (input.pendingCount > 0) {
@@ -126,6 +131,8 @@ export function useSyncStatus(): {
           syncingCount,
           errorCount,
           conflictCount,
+          lastSyncError:
+            syncState.lastSyncError,
         }),
         isOnline,
         pendingCount,

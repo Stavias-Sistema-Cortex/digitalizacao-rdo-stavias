@@ -1,4 +1,8 @@
-import { getSession, setSession } from "../../features/auth/authSession";
+import {
+  clearSession,
+  getSession,
+  setSession,
+} from "../../features/auth/authSession";
 
 const DEFAULT_API_PREFIX = "/api";
 
@@ -23,7 +27,7 @@ export function apiUrl(path: string): string {
   return `${configuredBaseUrl.replace(/\/+$/, "")}${normalizedPath}`;
 }
 
-const AUTH_PATHS = ["/auth/login", "/auth/cpf-filter"];
+const AUTH_PATHS = ["/auth/login"];
 
 function isAuthPath(path: string): boolean {
   return AUTH_PATHS.some(
@@ -140,6 +144,8 @@ export async function apiFetch(
     const novoToken = await reautenticarComCpf(session.cpf);
     if (novoToken) {
       response = await rawFetch(path, options, `Bearer ${novoToken}`);
+    } else {
+      clearSession();
     }
   }
 

@@ -52,6 +52,10 @@ export function createEmptyMaterial(): MaterialDraft {
     quantidadePrevista: "",
     quantidadeUsinada: "",
     quantidadeAplicada: "",
+    quantidadeSobra: "",
+    notaFiscal: "",
+    fornecedor: "",
+    observacoes: "",
   };
 }
 
@@ -65,6 +69,7 @@ export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
     trechoInicial: "",
     trechoFinal: "",
     localizacao: "",
+    turno: "",
     statusValidacao: "REGISTRADA",
     custoRealizado: "",
     retrabalho: false,
@@ -97,14 +102,22 @@ export function createEmptyControleGeometrico(): ControleGeometricoDraft {
   return {
     localId: createLocalId(),
     subtrecho: "",
+    numero: "",
+    estacaInicial: "",
+    estacaFinal: "",
     kmInicial: "",
     kmFinal: "",
+    pista: "",
+    faixa: "",
+    ordemServico: "",
+    atividadeObservacoes: "",
     comprimentoM: "",
     larguraM: "",
     espessura1Cm: "",
     espessura2Cm: "",
     espessura3Cm: "",
     densidade: "",
+    observacoes: "",
   };
 }
 
@@ -115,6 +128,15 @@ export function createEmptyRdo(): RdoDraft {
     programacaoId: "",
     numeroRdo: "",
     dataRdo: currentLocalDate(),
+    cliente: "",
+    contrato: "",
+    rodovia: "",
+    cidade: "",
+    uf: "",
+    kmInicialProgramado: "",
+    kmFinalProgramado: "",
+    kmInicialInterditado: "",
+    kmFinalInterditado: "",
     turno: "DIURNO",
     horaInicio: "07:00",
     horaFim: "17:00",
@@ -123,6 +145,10 @@ export function createEmptyRdo(): RdoDraft {
     condicaoNoite: "NAO_APLICAVEL",
     pluviometriaMm: 0,
     observacoes: "",
+    preenchidoPor: "",
+    apontadorRdo: "",
+    encarregadoObra: "",
+    fiscalizacaoCampo: "",
     servicosExecutados: [createEmptyServicoExecutado()],
     alocacoesColaboradores: [
       createEmptyAlocacaoColaborador(),

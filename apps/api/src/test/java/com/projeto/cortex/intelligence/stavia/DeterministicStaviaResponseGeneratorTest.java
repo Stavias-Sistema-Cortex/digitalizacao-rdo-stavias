@@ -370,6 +370,40 @@ class DeterministicStaviaResponseGeneratorTest {
     }
 
     @Test
+    void shouldAnswerWorksiteQuestionForCollaboratorUsingEmQualObraWording() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Baseado nos RDOs, em qual obra está Abner Pereira Lanza?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR,
+                List.of(
+                        allocationEvidence(
+                                "alocacao-1",
+                                "obra-1",
+                                "CW38386",
+                                "4ª Intervenção",
+                                null
+                        ),
+                        allocationEvidence(
+                                "alocacao-2",
+                                "obra-2",
+                                "ENG-NASC-101.2025",
+                                "Via Nascentes",
+                                "Apontador"
+                        )
+                )
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("ABNER PEREIRA LANZA"));
+        assertTrue(response.text().contains("possui registros nas seguintes obras"));
+        assertTrue(response.text().contains("CW38386"));
+        assertTrue(response.text().contains("Via Nascentes"));
+    }
+
+    @Test
     void shouldAnswerCollaboratorProfileFromAcademyCatalogWhenNoAllocationExists() {
         StaviaGeneratedResponse response = generator.generate(
                 new StaviaQuestion(

@@ -28,8 +28,9 @@ public class AuthController {
     @PostMapping("/api/auth/login")
     public LoginResponse login(@RequestBody LoginRequest request) {
         String cpf = request == null ? null : request.cpf();
+        String senha = request == null ? null : request.senha();
 
-        return authService.autenticarPorCpf(cpf)
+        return authService.autenticarPorCpf(cpf, senha)
                 .map(profile -> profile.withToken(
                         jwtService.gerarToken(profile.colaboradorId())
                 ))

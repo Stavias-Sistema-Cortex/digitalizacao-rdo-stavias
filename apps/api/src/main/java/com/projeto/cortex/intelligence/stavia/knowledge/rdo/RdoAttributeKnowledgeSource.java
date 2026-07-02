@@ -26,10 +26,25 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
     private static final List<String> SUPPORTED_ATTRIBUTES =
             List.of(
                     "turno",
+                    "cliente",
+                    "cidade",
+                    "contrato",
+                    "rodovia",
+                    "uf",
+                    "kmInicialProgramado",
+                    "kmFinalProgramado",
+                    "kmInicialInterditado",
+                    "kmFinalInterditado",
+                    "horaInicio",
+                    "horaFim",
                     "condicaoManha",
                     "condicaoTarde",
                     "condicaoNoite",
-                    "pluviometriaMm"
+                    "pluviometriaMm",
+                    "preenchidoPor",
+                    "apontadorRdo",
+                    "encarregadoObra",
+                    "fiscalizacaoCampo"
             );
 
     private final RdoAttributeReader reader;
@@ -148,10 +163,25 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
         Object value =
                 switch (attribute) {
                     case "turno" -> record.turno();
+                    case "cliente" -> record.cliente();
+                    case "cidade" -> record.cidade();
+                    case "contrato" -> record.contrato();
+                    case "rodovia" -> record.rodovia();
+                    case "uf" -> record.uf();
+                    case "kmInicialProgramado" -> record.kmInicialProgramado();
+                    case "kmFinalProgramado" -> record.kmFinalProgramado();
+                    case "kmInicialInterditado" -> record.kmInicialInterditado();
+                    case "kmFinalInterditado" -> record.kmFinalInterditado();
+                    case "horaInicio" -> record.horaInicio();
+                    case "horaFim" -> record.horaFim();
                     case "condicaoManha" -> record.condicaoManha();
                     case "condicaoTarde" -> record.condicaoTarde();
                     case "condicaoNoite" -> record.condicaoNoite();
                     case "pluviometriaMm" -> record.pluviometriaMm();
+                    case "preenchidoPor" -> record.preenchidoPor();
+                    case "apontadorRdo" -> record.apontadorRdo();
+                    case "encarregadoObra" -> record.encarregadoObra();
+                    case "fiscalizacaoCampo" -> record.fiscalizacaoCampo();
                     default -> null;
                 };
 
@@ -237,10 +267,25 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
     private String label(String attribute) {
         return switch (attribute) {
             case "turno" -> "Turno";
+            case "cliente" -> "Cliente";
+            case "cidade" -> "Cidade";
+            case "contrato" -> "Contrato";
+            case "rodovia" -> "Rodovia";
+            case "uf" -> "UF";
+            case "kmInicialProgramado" -> "Trecho programado inicial";
+            case "kmFinalProgramado" -> "Trecho programado final";
+            case "kmInicialInterditado" -> "Trecho interditado inicial";
+            case "kmFinalInterditado" -> "Trecho interditado final";
+            case "horaInicio" -> "Hora inicial";
+            case "horaFim" -> "Hora final";
             case "condicaoManha" -> "Manhã";
             case "condicaoTarde" -> "Tarde";
             case "condicaoNoite" -> "Noite";
             case "pluviometriaMm" -> "Pluviometria";
+            case "preenchidoPor" -> "Preenchido por";
+            case "apontadorRdo" -> "Apontador do RDO";
+            case "encarregadoObra" -> "Encarregado da obra";
+            case "fiscalizacaoCampo" -> "Fiscalização de campo";
             default -> attribute;
         };
     }

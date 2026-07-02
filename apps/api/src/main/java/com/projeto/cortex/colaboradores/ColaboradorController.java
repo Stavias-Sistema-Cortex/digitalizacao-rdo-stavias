@@ -1,5 +1,6 @@
 package com.projeto.cortex.colaboradores;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,27 +16,32 @@ public class ColaboradorController {
 
     private final ColaboradorService colaboradorService;
     private final ColaboradorImportService colaboradorImportService;
+    private final CurrentUserService currentUserService;
 
     @Value("${cortex.import.enabled:false}")
     private boolean importEnabled;
 
     public ColaboradorController(
             ColaboradorService colaboradorService,
-            ColaboradorImportService colaboradorImportService
+            ColaboradorImportService colaboradorImportService,
+            CurrentUserService currentUserService
     ) {
         this.colaboradorService = colaboradorService;
         this.colaboradorImportService = colaboradorImportService;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping("/api/colaboradores")
     public List<ColaboradorResponse> listarColaboradores(
             @RequestParam(required = false) String query
     ) {
+        currentUserService.requireAdmin();
         return colaboradorService.listarColaboradores(query);
     }
 
     @PostMapping("/api/colaboradores/import/acad")
     public ColaboradorImportResult importarDaAcademy() {
+        currentUserService.requireAdmin();
         if (!importEnabled) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,

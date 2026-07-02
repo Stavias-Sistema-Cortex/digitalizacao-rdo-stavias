@@ -3,6 +3,7 @@ import {
   useRef,
 } from "react";
 
+import { getSession } from "../../features/auth/authSession";
 import { syncNow } from "./syncEngine";
 
 const SYNC_INTERVAL_MS = 30_000;
@@ -24,6 +25,10 @@ export function useAutomaticSync(): void {
       trigger: AutomaticSyncTrigger,
     ): Promise<void> {
       if (disposed || !navigator.onLine) {
+        return;
+      }
+
+      if (!getSession()?.token) {
         return;
       }
 

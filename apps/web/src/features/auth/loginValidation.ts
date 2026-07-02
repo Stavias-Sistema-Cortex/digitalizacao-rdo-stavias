@@ -1,12 +1,11 @@
 /*
  * Validação do formulário de login do Sistema Córtex.
- * O acesso é feito por CPF do colaborador (login e senha são o CPF).
+ * O acesso é feito somente pelo CPF do colaborador (validado na Academy).
  * Mantida fora do componente para facilitar testes e o Fast Refresh do Vite.
  */
 
 export type LoginFieldErrors = {
   cpf?: string;
-  senha?: string;
 };
 
 export function onlyDigits(value: string): string {
@@ -49,24 +48,14 @@ export function isValidCpf(value: string): boolean {
   return digit(9) === Number(d[9]) && digit(10) === Number(d[10]);
 }
 
-export function validateLoginForm(
-  cpf: string,
-  senha: string,
-): LoginFieldErrors {
+export function validateLoginForm(cpf: string): LoginFieldErrors {
   const errors: LoginFieldErrors = {};
   const cpfDigits = onlyDigits(cpf);
-  const senhaDigits = onlyDigits(senha);
 
   if (!cpfDigits) {
     errors.cpf = "Informe seu CPF para continuar.";
   } else if (!isValidCpf(cpfDigits)) {
     errors.cpf = "Informe um CPF válido.";
-  }
-
-  if (!senha) {
-    errors.senha = "Informe sua senha.";
-  } else if (!errors.cpf && senhaDigits !== cpfDigits) {
-    errors.senha = "A senha é o seu CPF.";
   }
 
   return errors;

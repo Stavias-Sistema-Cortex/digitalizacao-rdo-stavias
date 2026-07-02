@@ -12,6 +12,7 @@ class StaviaLlmPropertiesTest {
         StaviaLlmProperties props = new StaviaLlmProperties();
         assertEquals("http://localhost:11434/v1", props.getBaseUrl());
         assertEquals("gemma4:latest", props.getModel());
+        assertEquals("", props.getApiKey());
         assertEquals(45000, props.getReadTimeoutMs());
         assertEquals(3, props.getBreakerFailureThreshold());
         assertEquals(30, props.getBreakerOpenSeconds());

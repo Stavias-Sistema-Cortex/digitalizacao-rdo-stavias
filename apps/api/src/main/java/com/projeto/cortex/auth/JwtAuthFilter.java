@@ -5,20 +5,20 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.Set;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.stereotype.Component;
 
 /**
  * Protege as rotas /api/** exigindo um JWT válido em "Authorization: Bearer".
- * Exceções (pré-autenticação): login, filtro de CPF e health.
+ * Exceções (pré-autenticação): login e health.
  */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final Set<String> LIBERADAS = Set.of(
             "/api/auth/login",
-            "/api/auth/cpf-filter",
             "/api/health"
     );
 
@@ -51,7 +51,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 ? header.substring(7)
                 : null;
 
-        if (!jwtService.tokenValido(token)) {
+        Optional<String> subject = jwtService.subject(token);
+        if (subject.isEmpty()) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write(
@@ -60,6 +61,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        request.setAttribute(
+                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                subject.get()
+        );
         filterChain.doFilter(request, response);
     }
 }

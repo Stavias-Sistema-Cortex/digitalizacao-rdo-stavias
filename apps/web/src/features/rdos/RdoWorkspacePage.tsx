@@ -5,12 +5,13 @@ import {
 } from "react";
 
 import { SyncStatusBanner } from "../../components/SyncStatusBanner";
-import { clearSession } from "../auth/authSession";
+import { clearSession, getSession } from "../auth/authSession";
 import { IntegracoesPage } from "../integracoes/IntegracoesPage";
 import { StaviaPanel } from "../stavia/StaviaPanel";
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
 import { createEmptyRdo } from "./createEmptyRdo";
+import { importarRdoArquivo } from "./importRdoExcel";
 import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
 import { RdoLocalList } from "./RdoLocalList";
@@ -27,6 +28,7 @@ type WorkspaceMode =
       type: "FORM";
       draft: RdoDraft;
       isExisting: boolean;
+      initialNotice?: string;
     };
 
 export function RdoWorkspacePage() {
@@ -40,6 +42,8 @@ export function RdoWorkspacePage() {
 
   const [isLoading, setIsLoading] =
     useState(true);
+  const [isImporting, setIsImporting] =
+    useState(false);
 
   const [loadError, setLoadError] =
     useState("");
@@ -96,6 +100,39 @@ export function RdoWorkspacePage() {
     });
   }
 
+  async function handleImportRdoFile(file: File) {
+    setIsImporting(true);
+    setLoadError("");
+
+    try {
+      const session = getSession();
+      const imported = await importarRdoArquivo(
+        file,
+        session?.nome ??
+          session?.cpfMascarado ??
+          "",
+      );
+
+      setMode({
+        type: "FORM",
+        draft: imported.draft,
+        isExisting: false,
+        initialNotice: [
+          imported.summary,
+          ...imported.warnings,
+        ].join(" "),
+      });
+    } catch (error: unknown) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao importar o arquivo de RDO.",
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
   async function handleBackToList() {
     await loadRecords();
 
@@ -127,6 +164,7 @@ export function RdoWorkspacePage() {
         key={mode.draft.id}
         initialDraft={mode.draft}
         isExisting={mode.isExisting}
+        initialNotice={mode.initialNotice}
         onBackToList={() => {
           void handleBackToList();
         }}
@@ -142,6 +180,10 @@ export function RdoWorkspacePage() {
         isLoading={isLoading}
         error={loadError}
         onCreate={handleCreate}
+        onImportRdoFile={(file) => {
+          void handleImportRdoFile(file);
+        }}
+        isImporting={isImporting}
         onOpen={handleOpen}
         onRefresh={() => {
           void loadRecords();

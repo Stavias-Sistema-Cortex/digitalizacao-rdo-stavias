@@ -15,6 +15,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -33,8 +35,29 @@ class OllamaChatClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("http://localhost:11434/v1/chat/completions"))
                 .andExpect(method(POST))
+                .andExpect(headerDoesNotExist("Authorization"))
                 .andExpect(jsonPath("$.model").value("gemma4:latest"))
                 .andExpect(jsonPath("$.response_format.type").value("json_object"))
+                .andRespond(withSuccess(
+                        "{\"choices\":[{\"message\":{\"content\":\"{\\\"ok\\\":true}\"}}]}",
+                        MediaType.APPLICATION_JSON));
+
+        OllamaChatClient client = new OllamaChatClient(builder, props, clock);
+        String content = client.chat(
+                List.of(new OllamaChatClient.ChatMessage("user", "oi")), 0.0);
+
+        assertEquals("{\"ok\":true}", content);
+        server.verify();
+    }
+
+    @Test
+    void shouldSendAuthorizationOnlyWhenApiKeyIsConfigured() {
+        props.setApiKey("test-only-llm-key");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://localhost:11434/v1/chat/completions"))
+                .andExpect(method(POST))
+                .andExpect(header("Authorization", "Bearer test-only-llm-key"))
                 .andRespond(withSuccess(
                         "{\"choices\":[{\"message\":{\"content\":\"{\\\"ok\\\":true}\"}}]}",
                         MediaType.APPLICATION_JSON));

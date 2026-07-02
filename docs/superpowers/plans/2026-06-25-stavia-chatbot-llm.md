@@ -1061,7 +1061,7 @@ public class StaviaLlmProperties {
 
     private String baseUrl = "http://localhost:11434/v1";
     private String model = "qwen2.5:7b-instruct";
-    private String apiKey = "ollama";
+    private String apiKey = "";
     private int connectTimeoutMs = 2000;
     private int readTimeoutMs = 20000;
     private int maxEvidences = 50;
@@ -1099,7 +1099,7 @@ public class StaviaLlmProperties {
     llm:
       base-url: ${CORTEX_STAVIA_LLM_BASE_URL:http://localhost:11434/v1}
       model: ${CORTEX_STAVIA_LLM_MODEL:qwen2.5:7b-instruct}
-      api-key: ${CORTEX_STAVIA_LLM_API_KEY:ollama}
+      api-key: ${CORTEX_STAVIA_LLM_API_KEY:}
       connect-timeout-ms: 2000
       read-timeout-ms: ${CORTEX_STAVIA_LLM_READ_TIMEOUT_MS:20000}
       max-evidences: 50
@@ -1270,10 +1270,13 @@ public class OllamaChatClient {
 
         String raw;
         try {
-            raw = restClient.post()
+            RestClient.RequestBodySpec request = restClient.post()
                     .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .header("Authorization", "Bearer " + props.getApiKey())
+                    .contentType(MediaType.APPLICATION_JSON);
+            if (StringUtils.hasText(props.getApiKey())) {
+                request = request.header("Authorization", "Bearer " + props.getApiKey());
+            }
+            raw = request
                     .body(body)
                     .retrieve()
                     .body(String.class);

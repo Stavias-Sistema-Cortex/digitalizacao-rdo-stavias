@@ -1,4 +1,6 @@
 const SESSION_KEY = "cortex.auth.sessao";
+export const AUTH_SESSION_CHANGED_EVENT =
+  "cortex-auth-session-changed";
 
 export type AuthSession = {
   colaboradorId: string | null;
@@ -33,8 +35,14 @@ export function getSession(): AuthSession | null {
 
 export function setSession(session: AuthSession): void {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  window.dispatchEvent(
+    new Event(AUTH_SESSION_CHANGED_EVENT),
+  );
 }
 
 export function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
+  window.dispatchEvent(
+    new Event(AUTH_SESSION_CHANGED_EVENT),
+  );
 }

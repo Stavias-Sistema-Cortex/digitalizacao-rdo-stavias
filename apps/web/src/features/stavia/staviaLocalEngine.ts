@@ -6,6 +6,7 @@ import type {
   StaviaSnapshot,
   StaviaSnapshotObra,
   StaviaSnapshotPdoc,
+  StaviaSnapshotProgramacao,
   StaviaSnapshotRdo,
 } from "./stavia.types";
 
@@ -27,6 +28,7 @@ type LocalIntent =
   | "PDOC"
   | "OBRAS_POR_CIDADE"
   | "CONTAGEM_RDOS_OBRA"
+  | "DETALHE_RDO"
   | "RESUMO_RDO"
   | "OCORRENCIAS"
   | "CONSULTA_COMPOSTA"
@@ -329,6 +331,46 @@ function requestedCompositeTopics(
   return topics;
 }
 
+function isRdoDetailQuestion(normalizedQuestion: string): boolean {
+  return hasAny(normalizedQuestion, [
+    "trecho programado",
+    "programado inicial",
+    "programado final",
+    "km inicial programado",
+    "km final programado",
+    "trecho inicial",
+    "trecho final",
+    "km inicial",
+    "km final",
+    "preenchido por",
+    "quem preencheu",
+    "apontador",
+    "encarregado",
+    "encarregado da obra",
+    "encarregado obra",
+    "fiscalizacao",
+    "fiscalização",
+    "programacao diaria",
+    "programação diária",
+    "programacao prevista",
+    "programação prevista",
+    "programacao semanal",
+    "programação semanal",
+    "periodo",
+    "período",
+    "area",
+    "área",
+    "volume",
+    "extensao",
+    "extensão",
+    "largura",
+    "espessura",
+    "tonelada",
+    "massa",
+    "cap",
+  ]);
+}
+
 function detectIntent(question: string): LocalIntent {
   const normalized = normalizeText(question);
 
@@ -359,6 +401,10 @@ function detectIntent(question: string): LocalIntent {
     ])
   ) {
     return "STATUS_SINCRONIZACAO";
+  }
+
+  if (isRdoDetailQuestion(normalized)) {
+    return "DETALHE_RDO";
   }
 
   if (requestedCompositeTopics(normalized).length > 1) {
@@ -1008,7 +1054,18 @@ function sourceForRdo(rdo: StaviaSnapshotRdo): StaviaEvidence {
       cidade: rdo.cidade,
       contrato: rdo.contrato,
       rodovia: rdo.rodovia,
+      cliente: rdo.cliente,
+      kmInicialProgramado: rdo.kmInicialProgramado,
+      kmFinalProgramado: rdo.kmFinalProgramado,
+      kmInicialInterditado: rdo.kmInicialInterditado,
+      kmFinalInterditado: rdo.kmFinalInterditado,
       turno: rdo.turno,
+      horaInicio: rdo.horaInicio,
+      horaFim: rdo.horaFim,
+      preenchidoPor: rdo.preenchidoPor,
+      apontadorRdo: rdo.apontadorRdo,
+      encarregadoObra: rdo.encarregadoObra,
+      fiscalizacaoCampo: rdo.fiscalizacaoCampo,
       status: rdo.status,
     },
   };
@@ -1114,10 +1171,27 @@ function collaboratorNames(
 ): string[] {
   return unique(
     rdos.flatMap((rdo) => [
+      rdo.encarregadoObra,
+      rdo.apontadorRdo,
+      rdo.preenchidoPor,
+      rdo.fiscalizacaoCampo,
       ...rdo.maoObra.map((item) => item.nomeColaborador),
       ...rdo.alocacoesColaboradores.map((item) => item.equipe),
     ]),
   );
+}
+
+function rdoResponsibleEntries(rdo: StaviaSnapshotRdo): string[] {
+  return [
+    [rdo.encarregadoObra, "Encarregado da obra"],
+    [rdo.apontadorRdo, "Apontador do RDO"],
+    [rdo.preenchidoPor, "Preenchido por"],
+    [rdo.fiscalizacaoCampo, "Fiscalização de campo"],
+  ]
+    .map(([name, role]) =>
+      [text(name), role].filter(Boolean).join(" · "),
+    )
+    .filter(Boolean);
 }
 
 function collaboratorEntries(
@@ -1125,6 +1199,7 @@ function collaboratorEntries(
 ): string[] {
   return unique(
     rdos.flatMap((rdo) => [
+      ...rdoResponsibleEntries(rdo),
       ...rdo.maoObra.map((item) =>
         [
           text(item.nomeColaborador),
@@ -1149,6 +1224,31 @@ function collaboratorEntries(
           .join(" · "),
       ),
     ]),
+  );
+}
+
+function programacaoCollaboratorEntries(
+  programacoes: StaviaSnapshotProgramacao[],
+): string[] {
+  return unique(
+    programacoes.flatMap((programacao) =>
+      [
+        [
+          programacao.encarregado,
+          "Encarregado da programação",
+          programacao.dataProgramacao,
+        ],
+        [
+          programacao.engenheiro,
+          "Engenheiro",
+          programacao.dataProgramacao,
+        ],
+      ].map(([name, role, date]) =>
+        [text(name), role, date ? `data ${date}` : ""]
+          .filter(Boolean)
+          .join(" · "),
+      ),
+    ),
   );
 }
 
@@ -1385,10 +1485,16 @@ function answerServices(
 }
 
 function answerCollaborators(
+  snapshot: StaviaSnapshot,
   resolved: ResolvedContext,
 ): StaviaConsultaResponse {
   const rdos = selectedRdos(resolved);
-  const names = collaboratorEntries(rdos);
+  const names = unique([
+    ...collaboratorEntries(rdos),
+    ...programacaoCollaboratorEntries(
+      programacoesForResolved(snapshot, resolved),
+    ),
+  ]);
 
   if (names.length === 0) {
     return answer(
@@ -1402,7 +1508,7 @@ function answerCollaborators(
   }
 
   return answer(
-    `${resolved.rdo ? "Colaboradores encontrados neste RDO" : "Colaboradores encontrados nesta obra"}:\n\n${limitedBulletList(names)}`,
+    `${resolved.rdo ? "Equipe/responsáveis encontrados neste RDO" : "Equipe/responsáveis encontrados nesta obra"}:\n\n${limitedBulletList(names)}`,
     "COLABORADORES_DA_OBRA",
   );
 }
@@ -1509,6 +1615,399 @@ function answerLocation(
   }
 
   return answer(parts.join("\n"), "LOCALIZACAO_OBRA");
+}
+
+function formatValue(
+  value: number | string | null | undefined,
+  unit?: string,
+): string {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  const textValue =
+    typeof value === "number"
+      ? new Intl.NumberFormat("pt-BR", {
+          maximumFractionDigits: 3,
+        }).format(value)
+      : String(value).trim();
+
+  return unit ? `${textValue} ${unit}` : textValue;
+}
+
+function sumValues(
+  values: Array<number | string | null | undefined>,
+): number | null {
+  let total = 0;
+  let found = false;
+
+  for (const value of values) {
+    if (value === null || value === undefined || value === "") {
+      continue;
+    }
+
+    const parsed =
+      typeof value === "number"
+        ? value
+        : Number(String(value).replace(",", "."));
+
+    if (Number.isNaN(parsed)) {
+      continue;
+    }
+
+    total += parsed;
+    found = true;
+  }
+
+  return found ? Number(total.toFixed(3)) : null;
+}
+
+function programacoesForResolved(
+  snapshot: StaviaSnapshot,
+  resolved: ResolvedContext,
+): StaviaSnapshotProgramacao[] {
+  const rdos = selectedRdos(resolved);
+  const rdoIds = new Set(rdos.map((rdo) => rdo.id));
+  const programacaoIds = new Set(
+    rdos
+      .map((rdo) => rdo.programacaoId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const obraId = resolved.obra?.id ?? resolved.rdo?.obraId;
+  const dates = new Set(
+    rdos
+      .map((rdo) => rdo.dataRdo)
+      .filter((date): date is string => Boolean(date)),
+  );
+
+  return (snapshot.programacoes ?? [])
+    .filter((programacao) => {
+      if (programacaoIds.has(programacao.id)) {
+        return true;
+      }
+
+      if (
+        programacao.rdoId &&
+        rdoIds.has(programacao.rdoId)
+      ) {
+        return true;
+      }
+
+      const dataProgramacao = programacao.dataProgramacao;
+
+      return (
+        Boolean(obraId) &&
+        programacao.obraId === obraId &&
+        dataProgramacao !== null &&
+        dates.has(dataProgramacao)
+      );
+    })
+    .sort((left, right) =>
+      (right.dataProgramacao ?? "").localeCompare(
+        left.dataProgramacao ?? "",
+      ),
+    );
+}
+
+function firstProgramacaoValue(
+  programacoes: StaviaSnapshotProgramacao[],
+  picker: (
+    programacao: StaviaSnapshotProgramacao,
+  ) => number | string | null | undefined,
+): number | string | null {
+  for (const programacao of programacoes) {
+    const value = picker(programacao);
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function answerSingleRdoValue(
+  label: string,
+  value: number | string | null | undefined,
+  resolved: ResolvedContext,
+  unit?: string,
+): StaviaConsultaResponse {
+  const formatted = formatValue(value, unit);
+
+  if (!formatted) {
+    return answer(
+      `${label}: não encontrei esse campo preenchido no contexto selecionado.`,
+      "DETALHE_RDO",
+      {
+        confidence: "MEDIA",
+        insufficientData: true,
+        sources: selectedRdos(resolved).map(sourceForRdo),
+      },
+    );
+  }
+
+  return answer(`${label}: ${formatted}.`, "DETALHE_RDO", {
+    confidence: "ALTA",
+    sources: selectedRdos(resolved).map(sourceForRdo),
+  });
+}
+
+function programacaoLine(
+  programacao: StaviaSnapshotProgramacao,
+): string {
+  const trecho =
+    programacao.kmInicial || programacao.kmFinal
+      ? `km ${[programacao.kmInicial, programacao.kmFinal]
+          .filter(Boolean)
+          .join(" a ")}`
+      : "";
+
+  return [
+    programacao.dataProgramacao,
+    text(programacao.servico) || "serviço não informado",
+    trecho,
+    programacao.periodo
+      ? `período ${readableStatus(programacao.periodo)}`
+      : "",
+    programacao.encarregado
+      ? `encarregado: ${programacao.encarregado}`
+      : "",
+    programacao.areaM2
+      ? `área ${formatValue(programacao.areaM2, "m²")}`
+      : "",
+    programacao.volumeM3
+      ? `volume ${formatValue(programacao.volumeM3, "m³")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function answerRdoDetail(
+  snapshot: StaviaSnapshot,
+  resolved: ResolvedContext,
+  question: string,
+): StaviaConsultaResponse {
+  const rdo = resolved.rdo ?? resolved.rdos[0];
+  if (!rdo) {
+    return contextMissingAnswer(resolved);
+  }
+
+  const normalized = normalizeText(question);
+  const programacoes = programacoesForResolved(snapshot, resolved);
+  const rdos = selectedRdos(resolved);
+
+  if (
+    hasAny(normalized, ["trecho programado"]) ||
+    (hasAny(normalized, ["programado"]) &&
+      hasAny(normalized, ["trecho", "km"]))
+  ) {
+    if (hasAny(normalized, ["final", "fim"])) {
+      return answerSingleRdoValue(
+        "Trecho programado final",
+        rdo.kmFinalProgramado ??
+          firstProgramacaoValue(
+            programacoes,
+            (programacao) => programacao.kmFinal,
+          ),
+        resolved,
+      );
+    }
+
+    if (hasAny(normalized, ["inicial", "inicio", "início"])) {
+      return answerSingleRdoValue(
+        "Trecho programado inicial",
+        rdo.kmInicialProgramado ??
+          firstProgramacaoValue(
+            programacoes,
+            (programacao) => programacao.kmInicial,
+          ),
+        resolved,
+      );
+    }
+
+    const start =
+      rdo.kmInicialProgramado ??
+      firstProgramacaoValue(
+        programacoes,
+        (programacao) => programacao.kmInicial,
+      );
+    const end =
+      rdo.kmFinalProgramado ??
+      firstProgramacaoValue(
+        programacoes,
+        (programacao) => programacao.kmFinal,
+      );
+
+    return answerSingleRdoValue(
+      "Trecho programado",
+      [start, end].filter(Boolean).join(" a "),
+      resolved,
+    );
+  }
+
+  if (hasAny(normalized, ["preenchido por", "quem preencheu"])) {
+    return answerSingleRdoValue(
+      "Preenchido por",
+      rdo.preenchidoPor,
+      resolved,
+    );
+  }
+
+  if (hasAny(normalized, ["apontador"])) {
+    return answerSingleRdoValue(
+      "Apontador do RDO",
+      rdo.apontadorRdo ?? rdo.preenchidoPor,
+      resolved,
+    );
+  }
+
+  if (hasAny(normalized, ["encarregado"])) {
+    return answerSingleRdoValue(
+      "Encarregado",
+      rdo.encarregadoObra ??
+        firstProgramacaoValue(
+          programacoes,
+          (programacao) => programacao.encarregado,
+        ),
+      resolved,
+    );
+  }
+
+  if (hasAny(normalized, ["fiscalizacao", "fiscalização", "fiscal"])) {
+    return answerSingleRdoValue(
+      "Fiscalização de campo",
+      rdo.fiscalizacaoCampo,
+      resolved,
+    );
+  }
+
+  if (hasAny(normalized, ["periodo", "período", "turno"])) {
+    return answerSingleRdoValue(
+      "Período/turno",
+      firstProgramacaoValue(
+        programacoes,
+        (programacao) => programacao.periodo,
+      ) ?? rdo.turno,
+      resolved,
+    );
+  }
+
+  if (hasAny(normalized, ["area", "área"])) {
+    const area =
+      sumValues(rdos.flatMap((item) =>
+        item.controlesGeometricos.map((controle) => controle.areaM2),
+      )) ??
+      sumValues(programacoes.map((programacao) => programacao.areaM2));
+
+    return answerSingleRdoValue("Área", area, resolved, "m²");
+  }
+
+  if (hasAny(normalized, ["volume"])) {
+    const volume =
+      sumValues(rdos.flatMap((item) =>
+        item.controlesGeometricos.map(
+          (controle) => controle.volumeM3,
+        ),
+      )) ??
+      sumValues(programacoes.map((programacao) => programacao.volumeM3));
+
+    return answerSingleRdoValue("Volume", volume, resolved, "m³");
+  }
+
+  if (hasAny(normalized, ["extensao", "extensão", "comprimento"])) {
+    const extensao =
+      sumValues(rdos.flatMap((item) =>
+        item.controlesGeometricos.map(
+          (controle) => controle.comprimentoM,
+        ),
+      )) ??
+      sumValues(
+        programacoes.map((programacao) => programacao.extensaoM),
+      );
+
+    return answerSingleRdoValue(
+      "Extensão/comprimento",
+      extensao,
+      resolved,
+      "m",
+    );
+  }
+
+  if (hasAny(normalized, ["tonelada", "massa"])) {
+    const massa =
+      sumValues(
+        programacoes.map(
+          (programacao) => programacao.toneladaMassa,
+        ),
+      ) ??
+      sumValues(
+        rdos.flatMap((item) =>
+          item.materiais.map(
+            (material) =>
+              material.quantidadePrevista ??
+              material.quantidadeAplicada,
+          ),
+        ),
+      );
+
+    return answerSingleRdoValue(
+      "Massa prevista",
+      massa,
+      resolved,
+      "t",
+    );
+  }
+
+  if (hasAny(normalized, ["cap"])) {
+    const cap =
+      firstProgramacaoValue(
+        programacoes,
+        (programacao) => programacao.cap,
+      ) ??
+      firstProgramacaoValue(
+        programacoes,
+        (programacao) => programacao.tipoCap,
+      );
+
+    return answerSingleRdoValue("CAP", cap, resolved);
+  }
+
+  if (
+    hasAny(normalized, [
+      "programacao diaria",
+      "programação diária",
+      "programacao prevista",
+      "programação prevista",
+      "programacao semanal",
+      "programação semanal",
+    ])
+  ) {
+    if (programacoes.length === 0) {
+      return answer(
+        "Não encontrei programação diária vinculada ao contexto selecionado.",
+        "DETALHE_RDO",
+        {
+          confidence: "MEDIA",
+          insufficientData: true,
+          sources: [sourceForRdo(rdo)],
+        },
+      );
+    }
+
+    return answer(
+      `Programação prevista:\n\n${limitedBulletList(
+        programacoes.map(programacaoLine),
+        12,
+      )}`,
+      "DETALHE_RDO",
+      {
+        confidence: "ALTA",
+        sources: [sourceForRdo(rdo)],
+      },
+    );
+  }
+
+  return answerSummary(resolved);
 }
 
 function answerComposite(
@@ -1998,13 +2497,15 @@ export function responderComSnapshotStavia({
     case "SERVICOS_DA_OBRA":
       return answerServices(resolved, pergunta);
     case "COLABORADORES_DA_OBRA":
-      return answerCollaborators(resolved);
+      return answerCollaborators(snapshot, resolved);
     case "TURNO":
       return answerShift(resolved);
     case "EQUIPAMENTOS":
       return answerEquipment(resolved);
     case "MATERIAIS":
       return answerMaterials(resolved);
+    case "DETALHE_RDO":
+      return answerRdoDetail(snapshot, resolved, pergunta);
     case "LOCALIZACAO_OBRA":
       return answerLocation(resolved);
     case "CONTAGEM_RDOS_OBRA":

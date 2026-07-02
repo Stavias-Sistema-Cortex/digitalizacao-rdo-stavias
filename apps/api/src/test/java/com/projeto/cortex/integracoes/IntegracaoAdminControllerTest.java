@@ -1,5 +1,6 @@
 package com.projeto.cortex.integracoes;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,8 +14,10 @@ class IntegracaoAdminControllerTest {
     void shouldReturnDisabledActionWhenManualImportIsDisabled() {
         IntegracaoAdminService service =
                 mock(IntegracaoAdminService.class);
+        CurrentUserService currentUserService =
+                mock(CurrentUserService.class);
         IntegracaoAdminController controller =
-                new IntegracaoAdminController(service);
+                new IntegracaoAdminController(service, currentUserService);
 
         IntegracaoActionResponse response =
                 controller.sincronizar("academy");

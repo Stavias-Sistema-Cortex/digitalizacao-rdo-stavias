@@ -9,7 +9,7 @@ public class StaviaLlmProperties {
 
     private String baseUrl = "http://localhost:11434/v1";
     private String model = "gemma4:latest";
-    private String apiKey = "ollama";
+    private String apiKey = "";
     private int connectTimeoutMs = 2000;
     private int readTimeoutMs = 45000;
     private int maxEvidences = 50;

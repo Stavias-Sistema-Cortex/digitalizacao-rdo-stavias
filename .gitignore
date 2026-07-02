@@ -1,6 +1,7 @@
 # Java / Maven
 target/
 apps/api/target/
+tmp/
 
 # macOS
 .DS_Store

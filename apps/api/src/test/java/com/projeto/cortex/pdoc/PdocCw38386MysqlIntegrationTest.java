@@ -2,6 +2,7 @@ package com.projeto.cortex.pdoc;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.intelligence.PdocContextBuilder;
 import com.projeto.cortex.intelligence.PdocEngine;
 import com.projeto.cortex.obras.Obra;
@@ -11,6 +12,7 @@ import com.projeto.cortex.programacoes.ProgramacaoSeedImportService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,12 +49,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "cortex.sync.enabled=false",
         "cortex.import.enabled=false",
+        "cortex.auth.jwt-secret=test-only-jwt-secret-0000000000000000",
         "spring.jpa.hibernate.ddl-auto=none",
         "debug=false",
         "logging.level.root=INFO",
         "logging.level.org.springframework=INFO"
 })
 @AutoConfigureMockMvc
+@EnabledIfEnvironmentVariable(named = "CORTEX_MYSQL_ROOT_PASSWORD", matches = ".+")
 class PdocCw38386MysqlIntegrationTest {
 
     private static PdocMysqlTestDatabase database;
@@ -62,7 +66,7 @@ class PdocCw38386MysqlIntegrationTest {
         database = PdocMysqlTestDatabase.create("cw38386");
         registry.add("spring.datasource.url", database::jdbcUrl);
         registry.add("spring.datasource.username", () -> "root");
-        registry.add("spring.datasource.password", () -> "cortex_root_password");
+        registry.add("spring.datasource.password", PdocMysqlTestDatabase::rootPassword);
     }
 
     @Autowired
@@ -226,7 +230,10 @@ class PdocCw38386MysqlIntegrationTest {
                 new PdocEngine()
         );
         MockMvc raceMvc = MockMvcBuilders
-                .standaloneSetup(new PdocController(raceService))
+                .standaloneSetup(new PdocController(
+                        raceService,
+                        mock(CurrentUserService.class)
+                ))
                 .setControllerAdvice(new PdocExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();

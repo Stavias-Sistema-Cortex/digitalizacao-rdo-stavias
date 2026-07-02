@@ -44,19 +44,31 @@ export interface MaterialDraft {
   quantidadePrevista: NumericInput;
   quantidadeUsinada: NumericInput;
   quantidadeAplicada: NumericInput;
+  quantidadeSobra: NumericInput;
+  notaFiscal: string;
+  fornecedor: string;
+  observacoes: string;
 }
 
 export interface ControleGeometricoDraft {
   localId: string;
   subtrecho: string;
+  numero: string;
+  estacaInicial: string;
+  estacaFinal: string;
   kmInicial: string;
   kmFinal: string;
+  pista: string;
+  faixa: string;
+  ordemServico: string;
+  atividadeObservacoes: string;
   comprimentoM: NumericInput;
   larguraM: NumericInput;
   espessura1Cm: NumericInput;
   espessura2Cm: NumericInput;
   espessura3Cm: NumericInput;
   densidade: NumericInput;
+  observacoes: string;
 }
 
 export interface ServicoExecutadoDraft {
@@ -68,6 +80,7 @@ export interface ServicoExecutadoDraft {
   trechoInicial: string;
   trechoFinal: string;
   localizacao: string;
+  turno: "" | TurnoRdo;
   statusValidacao: "REGISTRADA" | "VALIDADA" | "REJEITADA";
   custoRealizado: NumericInput;
   retrabalho: boolean;
@@ -107,6 +120,15 @@ export interface RdoDraft {
   programacaoId: string;
   numeroRdo: string;
   dataRdo: string;
+  cliente: string;
+  contrato: string;
+  rodovia: string;
+  cidade: string;
+  uf: string;
+  kmInicialProgramado: string;
+  kmFinalProgramado: string;
+  kmInicialInterditado: string;
+  kmFinalInterditado: string;
   turno: TurnoRdo;
   horaInicio: string;
   horaFim: string;
@@ -115,6 +137,10 @@ export interface RdoDraft {
   condicaoNoite: CondicaoClimatica;
   pluviometriaMm: NumericInput;
   observacoes: string;
+  preenchidoPor: string;
+  apontadorRdo: string;
+  encarregadoObra: string;
+  fiscalizacaoCampo: string;
   servicosExecutados: ServicoExecutadoDraft[];
   alocacoesColaboradores: AlocacaoColaboradorDraft[];
   maoObra: MaoObraDraft[];

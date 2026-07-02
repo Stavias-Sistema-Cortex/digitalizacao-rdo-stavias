@@ -175,7 +175,7 @@ public class RdoImportacaoHistoricaService {
                     importacaoId
             );
 
-            return buscar(importacaoId);
+            return buscar(importacaoId, usuarioId, false);
         } catch (ResponseStatusException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -187,9 +187,14 @@ public class RdoImportacaoHistoricaService {
         }
     }
 
-    public RdoImportacaoResponse buscar(String importacaoId) {
+    public RdoImportacaoResponse buscar(
+            String importacaoId,
+            String usuarioAutenticadoId,
+            boolean admin
+    ) {
         ImportacaoCabecalho cabecalho =
                 buscarCabecalho(importacaoId);
+        validarAcessoImportacao(cabecalho, usuarioAutenticadoId, admin);
 
         List<RdoImportacaoLinhaResponse> linhas =
                 jdbcTemplate.query(
@@ -250,7 +255,8 @@ public class RdoImportacaoHistoricaService {
     @Transactional
     public RdoImportacaoResponse confirmar(
             String importacaoId,
-            RdoImportacaoConfirmRequest request
+            RdoImportacaoConfirmRequest request,
+            boolean admin
     ) {
         ImportacaoCabecalho cabecalho =
                 buscarCabecalho(importacaoId);
@@ -261,6 +267,7 @@ public class RdoImportacaoHistoricaService {
         boolean dryRun = request != null && request.dryRun();
         String usuarioId =
                 request == null ? null : request.usuarioId();
+        validarAcessoImportacao(cabecalho, usuarioId, admin);
 
         List<ImportLine> linhas =
                 linhasValidas(importacaoId);
@@ -340,7 +347,7 @@ public class RdoImportacaoHistoricaService {
                 importacaoId
         );
 
-        return buscar(importacaoId);
+        return buscar(importacaoId, usuarioId, admin);
     }
 
     private ResultadoDuplicidade tratarDuplicidade(
@@ -423,9 +430,22 @@ public class RdoImportacaoHistoricaService {
                     numero_rdo,
                     data_rdo,
                     dia_semana,
+                    cliente,
+                    contrato,
+                    rodovia,
+                    cidade,
+                    uf,
+                    km_inicial_programado,
+                    km_final_programado,
+                    km_inicial_interditado,
+                    km_final_interditado,
                     turno,
                     hora_inicio,
                     hora_fim,
+                    condicao_manha,
+                    condicao_tarde,
+                    condicao_noite,
+                    pluviometria_mm,
                     status,
                     fonte_criacao,
                     importacao_rdo_id,
@@ -435,10 +455,14 @@ public class RdoImportacaoHistoricaService {
                     data_original,
                     data_importacao,
                     usuario_importacao,
+                    preenchido_por,
+                    apontador_rdo,
+                    encarregado_obra,
+                    fiscalizacao_campo,
                     versao_mapeamento,
                     chave_negocio_importacao,
                     observacoes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ENVIADO', 'IMPORTACAO_HISTORICA', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ENVIADO', 'IMPORTACAO_HISTORICA', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rdoId,
                 linha.obraId(),
@@ -446,15 +470,32 @@ public class RdoImportacaoHistoricaService {
                 linha.numeroRdo(),
                 linha.dataRdo(),
                 diaSemanaPt(linha.dataRdo()),
+                text(payload, "cliente"),
+                text(payload, "contrato"),
+                text(payload, "rodovia"),
+                text(payload, "cidade"),
+                text(payload, "uf"),
+                text(payload, "kmInicialProgramado"),
+                text(payload, "kmFinalProgramado"),
+                text(payload, "kmInicialInterditado"),
+                text(payload, "kmFinalInterditado"),
                 turno,
                 parseTime(text(payload, "horaInicio")),
                 parseTime(text(payload, "horaFim")),
+                text(payload, "condicaoManha"),
+                text(payload, "condicaoTarde"),
+                text(payload, "condicaoNoite"),
+                decimal(payload, "pluviometriaMm"),
                 cabecalho.id(),
                 cabecalho.nomeArquivo(),
                 linha.aba(),
                 linha.numeroLinha(),
                 linha.dataRdo(),
                 usuarioId,
+                text(payload, "preenchidoPor"),
+                text(payload, "apontadorRdo"),
+                text(payload, "encarregadoObra"),
+                text(payload, "fiscalizacaoCampo"),
                 cabecalho.versaoMapeamento(),
                 linha.chaveNegocio(),
                 text(payload, "observacoes")
@@ -480,6 +521,7 @@ public class RdoImportacaoHistoricaService {
                 turno,
                 payload
         );
+        inserirColecoesImportadas(rdoId, payload);
 
         return rdoId;
     }
@@ -505,6 +547,10 @@ public class RdoImportacaoHistoricaService {
                     data_original = ?,
                     data_importacao = CURRENT_TIMESTAMP(6),
                     usuario_importacao = ?,
+                    preenchido_por = ?,
+                    apontador_rdo = ?,
+                    encarregado_obra = ?,
+                    fiscalizacao_campo = ?,
                     versao_mapeamento = ?,
                     chave_negocio_importacao = ?,
                     versao_linha = versao_linha + 1
@@ -516,11 +562,16 @@ public class RdoImportacaoHistoricaService {
                 linha.numeroLinha(),
                 linha.dataRdo(),
                 usuarioId,
+                text(linha.payloadNormalizado(), "preenchidoPor"),
+                text(linha.payloadNormalizado(), "apontadorRdo"),
+                text(linha.payloadNormalizado(), "encarregadoObra"),
+                text(linha.payloadNormalizado(), "fiscalizacaoCampo"),
                 cabecalho.versaoMapeamento(),
                 linha.chaveNegocio(),
                 rdoId
         );
 
+        apagarColecoesImportadas(rdoId);
         inserirServicoImportado(
                 rdoId,
                 linha.obraId(),
@@ -529,6 +580,7 @@ public class RdoImportacaoHistoricaService {
                 text(linha.payloadNormalizado(), "turno"),
                 linha.payloadNormalizado()
         );
+        inserirColecoesImportadas(rdoId, linha.payloadNormalizado());
 
         rdoMemoryPublisher.registrarRdoImportado(
                 rdoId,
@@ -584,6 +636,237 @@ public class RdoImportacaoHistoricaService {
                 List.of(item),
                 List.of()
         );
+    }
+
+    private void inserirColecoesImportadas(String rdoId, JsonNode payload) {
+        inserirMaoObraImportada(rdoId, payload.get("maoObra"));
+        inserirEquipamentosImportados(rdoId, payload.get("equipamentos"));
+        inserirMateriaisImportados(rdoId, payload.get("materiais"));
+        inserirControlesImportados(rdoId, payload.get("controlesGeometricos"));
+    }
+
+    private void apagarColecoesImportadas(String rdoId) {
+        jdbcTemplate.update("DELETE FROM rdo_controle_geometrico WHERE rdo_id = ?", rdoId);
+        jdbcTemplate.update("DELETE FROM rdo_material WHERE rdo_id = ?", rdoId);
+        jdbcTemplate.update("DELETE FROM rdo_equipamento WHERE rdo_id = ?", rdoId);
+        jdbcTemplate.update("DELETE FROM rdo_mao_obra WHERE rdo_id = ?", rdoId);
+    }
+
+    private void inserirMaoObraImportada(String rdoId, JsonNode itens) {
+        if (itens == null || !itens.isArray()) {
+            return;
+        }
+
+        for (JsonNode item : itens) {
+            String nome = text(item, "nomeColaborador");
+            String cargo = text(item, "cargo");
+            BigDecimal quantidade = valorOuUm(decimal(item, "quantidade"));
+
+            if (isBlank(nome) && isBlank(cargo)) {
+                continue;
+            }
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO rdo_mao_obra (
+                        id,
+                        rdo_id,
+                        colaborador_id,
+                        nome_colaborador,
+                        cargo,
+                        tipo_vinculo,
+                        quantidade,
+                        hora_inicio,
+                        hora_fim,
+                        observacoes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    UUID.randomUUID().toString(),
+                    rdoId,
+                    nuloSeVazio(text(item, "colaboradorId")),
+                    nome,
+                    cargo,
+                    primeiroNaoVazio(text(item, "tipoVinculo"), "CONTRATADO"),
+                    quantidade,
+                    parseTime(text(item, "horaInicio")),
+                    parseTime(text(item, "horaFim")),
+                    text(item, "observacoes")
+            );
+        }
+    }
+
+    private void inserirEquipamentosImportados(String rdoId, JsonNode itens) {
+        if (itens == null || !itens.isArray()) {
+            return;
+        }
+
+        for (JsonNode item : itens) {
+            String prefixo = text(item, "prefixo");
+            String descricao = text(item, "descricao");
+            String tipoEquipamento = text(item, "tipoEquipamento");
+            BigDecimal quantidade = valorOuUm(decimal(item, "quantidade"));
+
+            if (isBlank(prefixo) && isBlank(descricao) && isBlank(tipoEquipamento)) {
+                continue;
+            }
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO rdo_equipamento (
+                        id,
+                        rdo_id,
+                        asset_id,
+                        prefixo,
+                        descricao,
+                        tipo_equipamento,
+                        tipo_vinculo,
+                        quantidade,
+                        hora_inicio,
+                        hora_fim,
+                        observacoes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    UUID.randomUUID().toString(),
+                    rdoId,
+                    nuloSeVazio(text(item, "assetId")),
+                    prefixo,
+                    descricao,
+                    tipoEquipamento,
+                    primeiroNaoVazio(text(item, "tipoVinculo"), "PROPRIO"),
+                    quantidade,
+                    parseTime(text(item, "horaInicio")),
+                    parseTime(text(item, "horaFim")),
+                    text(item, "observacoes")
+            );
+        }
+    }
+
+    private void inserirMateriaisImportados(String rdoId, JsonNode itens) {
+        if (itens == null || !itens.isArray()) {
+            return;
+        }
+
+        for (JsonNode item : itens) {
+            String materialNome = text(item, "materialNome");
+            if (isBlank(materialNome)) {
+                continue;
+            }
+
+            BigDecimal sobra = calcularSobra(
+                    decimal(item, "quantidadeUsinada"),
+                    decimal(item, "quantidadeAplicada"),
+                    decimal(item, "quantidadeSobra")
+            );
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO rdo_material (
+                        id,
+                        rdo_id,
+                        material_nome,
+                        unidade,
+                        quantidade_prevista,
+                        quantidade_usinada,
+                        quantidade_aplicada,
+                        quantidade_sobra,
+                        nota_fiscal,
+                        fornecedor,
+                        observacoes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    UUID.randomUUID().toString(),
+                    rdoId,
+                    materialNome,
+                    text(item, "unidade"),
+                    decimal(item, "quantidadePrevista"),
+                    decimal(item, "quantidadeUsinada"),
+                    decimal(item, "quantidadeAplicada"),
+                    sobra,
+                    text(item, "notaFiscal"),
+                    text(item, "fornecedor"),
+                    text(item, "observacoes")
+            );
+        }
+    }
+
+    private void inserirControlesImportados(String rdoId, JsonNode itens) {
+        if (itens == null || !itens.isArray()) {
+            return;
+        }
+
+        for (JsonNode item : itens) {
+            if (isBlank(text(item, "subtrecho"))
+                    && isBlank(text(item, "kmInicial"))
+                    && isBlank(text(item, "kmFinal"))
+                    && decimal(item, "comprimentoM") == null
+                    && decimal(item, "larguraM") == null) {
+                continue;
+            }
+
+            BigDecimal espessuraMediaCm = calcularMedia(
+                    decimal(item, "espessura1Cm"),
+                    decimal(item, "espessura2Cm"),
+                    decimal(item, "espessura3Cm")
+            );
+            BigDecimal areaM2 =
+                    calcularArea(decimal(item, "comprimentoM"), decimal(item, "larguraM"));
+            BigDecimal volumeM3 = calcularVolume(areaM2, espessuraMediaCm);
+            BigDecimal massaTonelada =
+                    calcularMassa(volumeM3, decimal(item, "densidade"));
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO rdo_controle_geometrico (
+                        id,
+                        rdo_id,
+                        subtrecho,
+                        numero,
+                        estaca_inicial,
+                        estaca_final,
+                        km_inicial,
+                        km_final,
+                        pista,
+                        faixa,
+                        ordem_servico,
+                        atividade_observacoes,
+                        comprimento_m,
+                        largura_m,
+                        espessura_1_cm,
+                        espessura_2_cm,
+                        espessura_3_cm,
+                        espessura_media_cm,
+                        area_m2,
+                        volume_m3,
+                        densidade,
+                        massa_tonelada,
+                        observacoes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    UUID.randomUUID().toString(),
+                    rdoId,
+                    text(item, "subtrecho"),
+                    text(item, "numero"),
+                    text(item, "estacaInicial"),
+                    text(item, "estacaFinal"),
+                    text(item, "kmInicial"),
+                    text(item, "kmFinal"),
+                    text(item, "pista"),
+                    text(item, "faixa"),
+                    text(item, "ordemServico"),
+                    text(item, "atividadeObservacoes"),
+                    decimal(item, "comprimentoM"),
+                    decimal(item, "larguraM"),
+                    decimal(item, "espessura1Cm"),
+                    decimal(item, "espessura2Cm"),
+                    decimal(item, "espessura3Cm"),
+                    espessuraMediaCm,
+                    areaM2,
+                    volumeM3,
+                    decimal(item, "densidade"),
+                    massaTonelada,
+                    text(item, "observacoes")
+            );
+        }
     }
 
     private void inserirLinha(
@@ -712,10 +995,27 @@ public class RdoImportacaoHistoricaService {
         normalized.put("obraId", obraId);
         normalized.put("numeroRdo", trim(numeroRdo));
         normalized.put("dataRdo", dataRdo == null ? null : dataRdo.toString());
+        normalized.put("cliente", trim(first(row.values(), "cliente")));
+        normalized.put("contrato", trim(first(row.values(), "contrato")));
+        normalized.put("rodovia", trim(first(row.values(), "rodovia")));
+        normalized.put("cidade", trim(first(row.values(), "cidade")));
+        normalized.put("uf", trim(first(row.values(), "uf")));
+        normalized.put("kmInicialProgramado", trim(first(row.values(), "kmInicialProgramado")));
+        normalized.put("kmFinalProgramado", trim(first(row.values(), "kmFinalProgramado")));
+        normalized.put("kmInicialInterditado", trim(first(row.values(), "kmInicialInterditado")));
+        normalized.put("kmFinalInterditado", trim(first(row.values(), "kmFinalInterditado")));
         normalized.put("turno", trim(first(row.values(), "turno")));
         normalized.put("horaInicio", trim(first(row.values(), "horaInicio")));
         normalized.put("horaFim", trim(first(row.values(), "horaFim")));
+        normalized.put("condicaoManha", trim(first(row.values(), "condicaoManha")));
+        normalized.put("condicaoTarde", trim(first(row.values(), "condicaoTarde")));
+        normalized.put("condicaoNoite", trim(first(row.values(), "condicaoNoite")));
+        normalized.put("pluviometriaMm", decimal(first(row.values(), "pluviometriaMm")));
         normalized.put("observacoes", trim(first(row.values(), "observacoes")));
+        normalized.put("preenchidoPor", trim(first(row.values(), "preenchidoPor")));
+        normalized.put("apontadorRdo", trim(first(row.values(), "apontadorRdo")));
+        normalized.put("encarregadoObra", trim(first(row.values(), "encarregadoObra")));
+        normalized.put("fiscalizacaoCampo", trim(first(row.values(), "fiscalizacaoCampo")));
         normalized.put("servicoNome", trim(servico));
         normalized.put("itemContratualId", trim(itemContratualId));
         normalized.put("codigoItem", trim(codigoItem));
@@ -725,6 +1025,10 @@ public class RdoImportacaoHistoricaService {
         normalized.put("trechoFinal", trim(first(row.values(), "trechoFinal")));
         normalized.put("localizacao", trim(first(row.values(), "localizacao")));
         normalized.put("custoRealizado", decimal(first(row.values(), "custoRealizado")));
+        copyOriginalCollection(row.original(), normalized, "maoObra");
+        copyOriginalCollection(row.original(), normalized, "equipamentos");
+        copyOriginalCollection(row.original(), normalized, "materiais");
+        copyOriginalCollection(row.original(), normalized, "controlesGeometricos");
 
         String key = obraId == null || dataRdo == null || isBlank(numeroRdo)
                 ? null
@@ -754,7 +1058,7 @@ public class RdoImportacaoHistoricaService {
         }
 
         if (lower.endsWith(".xlsx") || lower.endsWith(".xlsm") || lower.endsWith(".xls")) {
-            return readWorkbook(bytes);
+            return readWorkbook(filename, bytes);
         }
 
         throw new ResponseStatusException(
@@ -791,11 +1095,16 @@ public class RdoImportacaoHistoricaService {
         return new SheetRows("CSV", mapping, rows);
     }
 
-    private List<SheetRows> readWorkbook(byte[] bytes) throws Exception {
+    private List<SheetRows> readWorkbook(String filename, byte[] bytes) throws Exception {
         List<SheetRows> result = new ArrayList<>();
         DataFormatter formatter = new DataFormatter(Locale.forLanguageTag("pt-BR"));
 
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+            SheetRows legacyRdo = readLegacyRdoWorkbook(filename, workbook, formatter);
+            if (legacyRdo != null) {
+                return List.of(legacyRdo);
+            }
+
             for (Sheet sheet : workbook) {
                 Row headerRow = firstNonEmptyRow(sheet);
                 if (headerRow == null) {
@@ -837,6 +1146,475 @@ public class RdoImportacaoHistoricaService {
         }
 
         return result;
+    }
+
+    private SheetRows readLegacyRdoWorkbook(
+            String filename,
+            Workbook workbook,
+            DataFormatter formatter
+    ) {
+        Sheet frente = findSheet(workbook, "frente");
+        Sheet verso = findSheet(workbook, "verso");
+
+        if (frente == null || !containsAny(frente, formatter, List.of(
+                "RELATÓRIO DIÁRIO DE OBRA",
+                "MÃO DE OBRA",
+                "EQUIPAMENTOS"
+        ))) {
+            return null;
+        }
+
+        Map<String, Object> original = new LinkedHashMap<>();
+        Map<String, String> values = new LinkedHashMap<>();
+
+        String contrato = first(
+                rangeText(frente, formatter, 6, "Q", "U"),
+                rangeText(frente, formatter, 5, "Q", "U")
+                        .replace("N° DA OBRA", "")
+                        .trim()
+        );
+        String dataRdo = first(
+                rangeText(frente, formatter, 6, "AA", "AE"),
+                verso == null ? null : rangeText(verso, formatter, 4, "AB", "AD")
+        );
+        String numeroRdo = filename == null || filename.isBlank()
+                ? "RDO importado"
+                : filename.replaceFirst("\\.[^.]+$", "");
+
+        put(values, "obra", contrato);
+        put(values, "numeroRdo", numeroRdo);
+        put(values, "dataRdo", dataRdo);
+        put(values, "cliente", rangeText(frente, formatter, 6, "B", "P"));
+        put(values, "contrato", contrato);
+        put(values, "rodovia", rangeText(frente, formatter, 6, "V", "Z"));
+        put(values, "kmInicialProgramado", rangeText(frente, formatter, 10, "Q", "U"));
+        put(values, "kmFinalProgramado", rangeText(frente, formatter, 12, "Q", "U"));
+        put(values, "kmInicialInterditado", rangeText(frente, formatter, 10, "V", "Z"));
+        put(values, "kmFinalInterditado", rangeText(frente, formatter, 12, "V", "Z"));
+        put(values, "turno", detectTurno(frente, formatter));
+        put(values, "horaInicio", first(
+                rangeText(frente, formatter, 10, "AA", "AE"),
+                rangeText(frente, formatter, 10, "AF", "AJ")
+        ));
+        put(values, "horaFim", first(
+                rangeText(frente, formatter, 12, "AA", "AE"),
+                rangeText(frente, formatter, 12, "AF", "AJ")
+        ));
+        put(values, "condicaoManha", detectCondicao(frente, formatter, 10));
+        put(values, "condicaoTarde", detectCondicao(frente, formatter, 11));
+        put(values, "condicaoNoite", detectCondicao(frente, formatter, 12));
+        put(values, "pluviometriaMm", rangeText(frente, formatter, 10, "M", "P"));
+
+        List<Map<String, Object>> maoObra = parseLegacyMaoObra(frente, formatter);
+        List<Map<String, Object>> equipamentos = parseLegacyEquipamentos(frente, formatter);
+        List<Map<String, Object>> controles = new ArrayList<>();
+        controles.addAll(parseLegacyTrechoTrabalhado(frente, formatter));
+        if (verso != null) {
+            controles.addAll(parseLegacyControleGeometrico(verso, formatter));
+        }
+
+        List<Map<String, Object>> materiais =
+                verso == null
+                        ? List.of()
+                        : parseLegacyMateriais(verso, formatter);
+        String observacoes =
+                verso == null
+                        ? null
+                        : rangeText(verso, formatter, 63, 69, "B", "AD");
+        String apontador =
+                verso == null
+                        ? null
+                        : rangeText(verso, formatter, 71, "B", "J");
+        String encarregado =
+                verso == null
+                        ? null
+                        : rangeText(verso, formatter, 71, "L", "T");
+        String fiscalizacao =
+                verso == null
+                        ? null
+                        : rangeText(verso, formatter, 71, "V", "AD");
+
+        put(values, "observacoes", observacoes);
+        put(values, "preenchidoPor", apontador);
+        put(values, "apontadorRdo", apontador);
+        put(values, "encarregadoObra", encarregado);
+        put(values, "fiscalizacaoCampo", fiscalizacao);
+
+        original.putAll(values);
+        original.put("maoObra", maoObra);
+        original.put("equipamentos", equipamentos);
+        original.put("materiais", materiais);
+        original.put("controlesGeometricos", controles);
+
+        Map<String, String> mapping = new LinkedHashMap<>();
+        values.keySet().forEach(field -> mapping.put(field, field));
+        mapping.put("maoObra", "maoObra");
+        mapping.put("equipamentos", "equipamentos");
+        mapping.put("materiais", "materiais");
+        mapping.put("controlesGeometricos", "controlesGeometricos");
+
+        return new SheetRows(
+                "RDO_LEGACY_V1",
+                mapping,
+                List.of(new RawRow(1, original, values))
+        );
+    }
+
+    private Sheet findSheet(Workbook workbook, String token) {
+        String normalizedToken = normalize(token);
+        for (Sheet sheet : workbook) {
+            if (normalize(sheet.getSheetName()).contains(normalizedToken)) {
+                return sheet;
+            }
+        }
+        if ("frente".equals(normalizedToken) && workbook.getNumberOfSheets() > 0) {
+            return workbook.getSheetAt(0);
+        }
+        return null;
+    }
+
+    private boolean containsAny(
+            Sheet sheet,
+            DataFormatter formatter,
+            List<String> terms
+    ) {
+        int lastRow = Math.min(sheet.getLastRowNum(), 80);
+        for (int rowIndex = 0; rowIndex <= lastRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) {
+                continue;
+            }
+            for (Cell cell : row) {
+                String value = normalize(formatter.formatCellValue(cell));
+                for (String term : terms) {
+                    if (value.contains(normalize(term))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<Map<String, Object>> parseLegacyMaoObra(
+            Sheet sheet,
+            DataFormatter formatter
+    ) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int row = 16; row <= 28; row++) {
+            result.addAll(parseLegacyMaoObraBlock(sheet, formatter, row, "B", "G", "J"));
+            result.addAll(parseLegacyMaoObraBlock(sheet, formatter, row, "M", "R", "U"));
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> parseLegacyMaoObraBlock(
+            Sheet sheet,
+            DataFormatter formatter,
+            int row,
+            String cargoColumn,
+            String contratadoColumn,
+            String subcontratadoColumn
+    ) {
+        String cargo = rangeText(sheet, formatter, row, cargoColumn, cargoColumn);
+        if (isBlank(cargo)) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        addLegacyMaoObra(result, cargo, "CONTRATADO", rangeText(sheet, formatter, row, contratadoColumn, contratadoColumn));
+        addLegacyMaoObra(result, cargo, "TERCEIRIZADO", rangeText(sheet, formatter, row, subcontratadoColumn, subcontratadoColumn));
+        return result;
+    }
+
+    private void addLegacyMaoObra(
+            List<Map<String, Object>> result,
+            String cargo,
+            String tipoVinculo,
+            String quantidade
+    ) {
+        if (decimal(quantidade) == null) {
+            return;
+        }
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("cargo", cargo);
+        item.put("tipoVinculo", tipoVinculo);
+        item.put("quantidade", quantidade);
+        result.add(item);
+    }
+
+    private List<Map<String, Object>> parseLegacyEquipamentos(
+            Sheet sheet,
+            DataFormatter formatter
+    ) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int row = 36; row <= 51; row++) {
+            result.addAll(parseLegacyEquipamentoBlock(sheet, formatter, row, "B", "I", "L", "O"));
+            result.addAll(parseLegacyEquipamentoBlock(sheet, formatter, row, "T", "AB", "AE", "AH"));
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> parseLegacyEquipamentoBlock(
+            Sheet sheet,
+            DataFormatter formatter,
+            int row,
+            String descricaoColumn,
+            String proprioColumn,
+            String subcontratadoColumn,
+            String prefixoColumn
+    ) {
+        String descricao = rangeText(sheet, formatter, row, descricaoColumn, descricaoColumn);
+        String prefixo = rangeText(sheet, formatter, row, prefixoColumn, prefixoColumn);
+        if (isBlank(descricao)) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        addLegacyEquipamento(result, descricao, prefixo, "PROPRIO", rangeText(sheet, formatter, row, proprioColumn, proprioColumn));
+        addLegacyEquipamento(result, descricao, prefixo, "TERCEIRIZADO", rangeText(sheet, formatter, row, subcontratadoColumn, subcontratadoColumn));
+        if (result.isEmpty() && !isBlank(prefixo)) {
+            addLegacyEquipamento(result, descricao, prefixo, "PROPRIO", "1");
+        }
+        return result;
+    }
+
+    private void addLegacyEquipamento(
+            List<Map<String, Object>> result,
+            String descricao,
+            String prefixo,
+            String tipoVinculo,
+            String quantidade
+    ) {
+        BigDecimal parsedQuantity = decimal(quantidade);
+        if (parsedQuantity == null) {
+            return;
+        }
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("prefixo", prefixo);
+        item.put("descricao", descricao);
+        item.put("tipoEquipamento", descricao);
+        item.put("tipoVinculo", tipoVinculo);
+        item.put("quantidade", quantidade);
+        result.add(item);
+    }
+
+    private List<Map<String, Object>> parseLegacyMateriais(
+            Sheet sheet,
+            DataFormatter formatter
+    ) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int row = 8; row <= 18; row++) {
+            result.addAll(parseLegacyMaterialBlock(sheet, formatter, row, "B", "E", "G", "H"));
+            result.addAll(parseLegacyMaterialBlock(sheet, formatter, row, "L", "O", "Q", "R"));
+            result.addAll(parseLegacyMaterialBlock(sheet, formatter, row, "V", "Y", "AA", "AB"));
+        }
+        String usinado = extractNumberText(rangeText(sheet, formatter, 19, "B", "G"));
+        String sobra = extractNumberText(rangeText(sheet, formatter, 21, "B", "G"));
+        result.forEach(item -> {
+            if (!isBlank(usinado)) {
+                item.putIfAbsent("quantidadeUsinada", usinado);
+            }
+            if (!isBlank(sobra)) {
+                item.putIfAbsent("quantidadeSobra", sobra);
+            }
+        });
+        return result;
+    }
+
+    private List<Map<String, Object>> parseLegacyMaterialBlock(
+            Sheet sheet,
+            DataFormatter formatter,
+            int row,
+            String materialColumn,
+            String quantidadeColumn,
+            String unidadeColumn,
+            String notaFiscalColumn
+    ) {
+        String material = rangeText(sheet, formatter, row, materialColumn, materialColumn);
+        String quantidade = rangeText(sheet, formatter, row, quantidadeColumn, quantidadeColumn);
+        String unidade = rangeText(sheet, formatter, row, unidadeColumn, unidadeColumn);
+        String notaFiscal = rangeText(sheet, formatter, row, notaFiscalColumn, notaFiscalColumn);
+        if (isBlank(material) && isBlank(quantidade) && isBlank(unidade) && isBlank(notaFiscal)) {
+            return List.of();
+        }
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("materialNome", material);
+        item.put("unidade", unidade);
+        item.put("quantidadeAplicada", quantidade);
+        item.put("notaFiscal", notaFiscal);
+        return List.of(item);
+    }
+
+    private List<Map<String, Object>> parseLegacyTrechoTrabalhado(
+            Sheet sheet,
+            DataFormatter formatter
+    ) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int row = 60; row <= 82; row++) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("kmInicial", rangeText(sheet, formatter, row, "B", "D"));
+            item.put("kmFinal", rangeText(sheet, formatter, row, "E", "G"));
+            item.put("numero", rangeText(sheet, formatter, row, "H", "I"));
+            item.put("comprimentoM", rangeText(sheet, formatter, row, "J", "K"));
+            item.put("larguraM", rangeText(sheet, formatter, row, "L", "M"));
+            String espessuraM = rangeText(sheet, formatter, row, "N", "O");
+            item.put("espessura1Cm", toCentimetersText(espessuraM));
+            item.put("pista", rangeText(sheet, formatter, row, "P", "Q"));
+            item.put("faixa", rangeText(sheet, formatter, row, "R", "S"));
+            item.put("ordemServico", rangeText(sheet, formatter, row, "T", "W"));
+            item.put("atividadeObservacoes", rangeText(sheet, formatter, row, "X", "AJ"));
+            item.put("observacoes", item.get("atividadeObservacoes"));
+            item.put("subtrecho", first(
+                    (String) item.get("numero"),
+                    (String) item.get("kmInicial"),
+                    (String) item.get("kmFinal")
+            ));
+            if (hasAnyValue(item)) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    private List<Map<String, Object>> parseLegacyControleGeometrico(
+            Sheet sheet,
+            DataFormatter formatter
+    ) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int row = 26; row <= 61; row++) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("subtrecho", rangeText(sheet, formatter, row, "B", "E"));
+            item.put("comprimentoM", rangeText(sheet, formatter, row, "F", "H"));
+            item.put("larguraM", rangeText(sheet, formatter, row, "I", "K"));
+            item.put("espessura1Cm", toCentimetersText(rangeText(sheet, formatter, row, "L", "N")));
+            item.put("espessura2Cm", toCentimetersText(rangeText(sheet, formatter, row, "O", "Q")));
+            item.put("espessura3Cm", toCentimetersText(rangeText(sheet, formatter, row, "R", "T")));
+            String massa = rangeText(sheet, formatter, row, "AA", "AD");
+            if (!isBlank(massa)) {
+                item.put("observacoes", "Massa informada no Excel: " + massa + " t");
+            }
+            if (hasAnyValue(item)) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
+    private String detectTurno(Sheet sheet, DataFormatter formatter) {
+        String diurno = first(
+                rangeText(sheet, formatter, 10, "AA", "AE"),
+                rangeText(sheet, formatter, 12, "AA", "AE")
+        );
+        String noturno = first(
+                rangeText(sheet, formatter, 10, "AF", "AJ"),
+                rangeText(sheet, formatter, 12, "AF", "AJ")
+        );
+        return isBlank(diurno) && !isBlank(noturno) ? "NOTURNO" : "DIURNO";
+    }
+
+    private String detectCondicao(
+            Sheet sheet,
+            DataFormatter formatter,
+            int row
+    ) {
+        if (!isBlank(rangeText(sheet, formatter, row, "D", "F"))) {
+            return "BOM";
+        }
+        if (!isBlank(rangeText(sheet, formatter, row, "G", "I"))) {
+            return "CHUVA";
+        }
+        if (!isBlank(rangeText(sheet, formatter, row, "J", "L"))) {
+            return "IMPOSSIBILITADO";
+        }
+        return null;
+    }
+
+    private String rangeText(
+            Sheet sheet,
+            DataFormatter formatter,
+            int row,
+            String startColumn,
+            String endColumn
+    ) {
+        return rangeText(sheet, formatter, row, row, startColumn, endColumn);
+    }
+
+    private String rangeText(
+            Sheet sheet,
+            DataFormatter formatter,
+            int startRow,
+            int endRow,
+            String startColumn,
+            String endColumn
+    ) {
+        int start = columnIndex(startColumn);
+        int end = columnIndex(endColumn);
+        List<String> values = new ArrayList<>();
+        for (int rowNumber = startRow; rowNumber <= endRow; rowNumber++) {
+            Row row = sheet.getRow(rowNumber - 1);
+            if (row == null) {
+                continue;
+            }
+            for (int column = start; column <= end; column++) {
+                String value = formatter.formatCellValue(row.getCell(column));
+                if (!isBlank(value)) {
+                    values.add(value.trim());
+                }
+            }
+        }
+        return String.join(" ", values).trim();
+    }
+
+    private int columnIndex(String column) {
+        int result = 0;
+        for (int index = 0; index < column.length(); index++) {
+            result = result * 26 + (column.charAt(index) - 'A' + 1);
+        }
+        return result - 1;
+    }
+
+    private void put(Map<String, String> values, String key, String value) {
+        if (!isBlank(value)) {
+            values.put(key, value.trim());
+        }
+    }
+
+    private void copyOriginalCollection(
+            Map<String, Object> original,
+            Map<String, Object> normalized,
+            String key
+    ) {
+        Object value = original.get(key);
+        if (value instanceof List<?> list && !list.isEmpty()) {
+            normalized.put(key, list);
+        }
+    }
+
+    private String toCentimetersText(String metersText) {
+        BigDecimal meters = decimal(extractNumberText(metersText));
+        return meters == null
+                ? null
+                : meters.multiply(BigDecimal.valueOf(100))
+                        .setScale(3, RoundingMode.HALF_UP)
+                        .stripTrailingZeros()
+                        .toPlainString();
+    }
+
+    private String extractNumberText(String value) {
+        if (isBlank(value)) {
+            return null;
+        }
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("-?\\d[\\d.,]*").matcher(value);
+        return matcher.find() ? matcher.group() : null;
+    }
+
+    private boolean hasAnyValue(Map<String, Object> item) {
+        return item.values().stream().anyMatch(value -> {
+            if (value == null) {
+                return false;
+            }
+            return !(value instanceof String text) || !text.isBlank();
+        });
     }
 
     private Row firstNonEmptyRow(Sheet sheet) {
@@ -895,10 +1673,25 @@ public class RdoImportacaoHistoricaService {
             case "obra", "obra_id", "obraid", "codigo_obra", "codigoobra", "codigo_contrato", "contrato", "codigo_cw", "cw" -> "obra";
             case "numero_rdo", "numerordo", "numero", "rdo", "n_rdo", "nro_rdo" -> "numeroRdo";
             case "data_rdo", "datardo", "data", "data_operacional" -> "dataRdo";
+            case "cliente", "obra_nome", "nome_obra" -> "cliente";
+            case "rodovia", "rod" -> "rodovia";
+            case "cidade", "municipio" -> "cidade";
+            case "uf", "estado" -> "uf";
+            case "km_inicial_programado", "kminicialprogramado", "trecho_programado_inicial" -> "kmInicialProgramado";
+            case "km_final_programado", "kmfinalprogramado", "trecho_programado_final" -> "kmFinalProgramado";
+            case "km_inicial_interditado", "kminicialinterditado", "trecho_interditado_inicial" -> "kmInicialInterditado";
+            case "km_final_interditado", "kmfinalinterditado", "trecho_interditado_final" -> "kmFinalInterditado";
             case "turno" -> "turno";
             case "hora_inicio", "horainicio", "inicio" -> "horaInicio";
             case "hora_fim", "horafim", "fim" -> "horaFim";
+            case "condicao_manha", "clima_manha" -> "condicaoManha";
+            case "condicao_tarde", "clima_tarde" -> "condicaoTarde";
+            case "condicao_noite", "clima_noite" -> "condicaoNoite";
+            case "pluviometria", "pluviometria_mm", "chuva_mm" -> "pluviometriaMm";
             case "observacoes", "observacao", "obs" -> "observacoes";
+            case "preenchido_por", "preenchidopor", "apontador_rdo", "apontador" -> "preenchidoPor";
+            case "encarregado_obra", "encarregado" -> "encarregadoObra";
+            case "fiscalizacao_campo", "fiscalizacao" -> "fiscalizacaoCampo";
             case "servico", "servico_nome", "serviconome", "atividade" -> "servicoNome";
             case "quantidade", "quantidade_executada", "qtd", "qtd_executada" -> "quantidadeExecutada";
             case "unidade", "unidade_medida", "un" -> "unidade";
@@ -981,6 +1774,7 @@ public class RdoImportacaoHistoricaService {
                     quantidade_importada,
                     quantidade_rejeitada,
                     quantidade_duplicada,
+                    usuario_id,
                     criado_em,
                     confirmado_em
                 FROM importacao_rdo
@@ -999,6 +1793,7 @@ public class RdoImportacaoHistoricaService {
                         rs.getInt("quantidade_importada"),
                         rs.getInt("quantidade_rejeitada"),
                         rs.getInt("quantidade_duplicada"),
+                        rs.getString("usuario_id"),
                         toLocalDateTime(rs.getTimestamp("criado_em")),
                         toLocalDateTime(rs.getTimestamp("confirmado_em"))
                 ),
@@ -1013,6 +1808,29 @@ public class RdoImportacaoHistoricaService {
         }
 
         return result.getFirst();
+    }
+
+    private void validarAcessoImportacao(
+            ImportacaoCabecalho cabecalho,
+            String usuarioAutenticadoId,
+            boolean admin
+    ) {
+        if (admin) {
+            return;
+        }
+        if (usuarioAutenticadoId == null || usuarioAutenticadoId.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Usuário autenticado é obrigatório para acessar a importação."
+            );
+        }
+        if (cabecalho.usuarioId() == null
+                || !cabecalho.usuarioId().equals(usuarioAutenticadoId.trim())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Você não pode acessar importação de outro usuário."
+            );
+        }
     }
 
     private List<RdoImportacaoErroResponse> buscarErros(String linhaId) {
@@ -1244,6 +2062,15 @@ public class RdoImportacaoHistoricaService {
                 : file.getOriginalFilename();
     }
 
+    private String first(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
     private String first(Map<String, String> map, String... keys) {
         for (String key : keys) {
             String value = map.get(key);
@@ -1272,6 +2099,9 @@ public class RdoImportacaoHistoricaService {
         }
         try {
             String normalized = value.trim();
+            if (List.of("x", "sim", "ok").contains(normalized.toLowerCase(Locale.ROOT))) {
+                return BigDecimal.ONE.setScale(3, RoundingMode.HALF_UP);
+            }
             if (normalized.contains(",")) {
                 normalized = normalized
                         .replace(".", "")
@@ -1282,6 +2112,75 @@ public class RdoImportacaoHistoricaService {
         } catch (NumberFormatException exception) {
             return null;
         }
+    }
+
+    private BigDecimal valorOuUm(BigDecimal valor) {
+        return valor == null ? BigDecimal.ONE : valor;
+    }
+
+    private String nuloSeVazio(String valor) {
+        return isBlank(valor) ? null : valor.trim();
+    }
+
+    private String primeiroNaoVazio(String... valores) {
+        return first(valores);
+    }
+
+    private BigDecimal calcularSobra(
+            BigDecimal quantidadeUsinada,
+            BigDecimal quantidadeAplicada,
+            BigDecimal quantidadeSobraInformada
+    ) {
+        if (quantidadeSobraInformada != null) {
+            return arredondar(quantidadeSobraInformada);
+        }
+        if (quantidadeUsinada == null || quantidadeAplicada == null) {
+            return null;
+        }
+        return arredondar(quantidadeUsinada.subtract(quantidadeAplicada));
+    }
+
+    private BigDecimal calcularMedia(BigDecimal... valores) {
+        BigDecimal soma = BigDecimal.ZERO;
+        int quantidade = 0;
+        for (BigDecimal valor : valores) {
+            if (valor != null) {
+                soma = soma.add(valor);
+                quantidade++;
+            }
+        }
+        return quantidade == 0
+                ? null
+                : soma.divide(BigDecimal.valueOf(quantidade), 3, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calcularArea(BigDecimal comprimentoM, BigDecimal larguraM) {
+        if (comprimentoM == null || larguraM == null) {
+            return null;
+        }
+        return arredondar(comprimentoM.multiply(larguraM));
+    }
+
+    private BigDecimal calcularVolume(BigDecimal areaM2, BigDecimal espessuraMediaCm) {
+        if (areaM2 == null || espessuraMediaCm == null) {
+            return null;
+        }
+        return arredondar(
+                areaM2.multiply(
+                        espessuraMediaCm.divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+                )
+        );
+    }
+
+    private BigDecimal calcularMassa(BigDecimal volumeM3, BigDecimal densidade) {
+        if (volumeM3 == null || densidade == null) {
+            return null;
+        }
+        return arredondar(volumeM3.multiply(densidade));
+    }
+
+    private BigDecimal arredondar(BigDecimal valor) {
+        return valor == null ? null : valor.setScale(3, RoundingMode.HALF_UP);
     }
 
     private LocalDate parseDate(String value) {
@@ -1433,6 +2332,7 @@ public class RdoImportacaoHistoricaService {
             int quantidadeImportada,
             int quantidadeRejeitada,
             int quantidadeDuplicada,
+            String usuarioId,
             LocalDateTime criadoEm,
             LocalDateTime confirmadoEm
     ) {

@@ -3,11 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-if [ -f "$ROOT_DIR/.env" ]; then
-  set -a
-  source "$ROOT_DIR/.env"
-  set +a
-fi
+source "$ROOT_DIR/scripts/dev/load-local-env.sh"
 
 if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
   echo "Missing CORTEX_DB_PASSWORD."
@@ -18,8 +14,36 @@ if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
   exit 1
 fi
 
+if [ -z "${CORTEX_AUTH_JWT_SECRET:-}" ]; then
+  echo "Missing CORTEX_AUTH_JWT_SECRET."
+  echo "Set it with a long random value in your shell or local .env."
+  exit 1
+fi
+
 cd "$ROOT_DIR/apps/api"
 
-export CORTEX_IMPORT_ENABLED="${CORTEX_IMPORT_ENABLED:-false}"
+export CORTEX_IMPORT_ENABLED="${CORTEX_IMPORT_ENABLED:-true}"
+export CORTEX_SYNC_ENABLED="${CORTEX_SYNC_ENABLED:-true}"
+export CORTEX_STAVIA_GENERATOR_MODE="${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}"
+export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}"
+
+API_PORT="${PORT:-${SERVER_PORT:-8080}}"
+API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"
+
+if command -v lsof >/dev/null 2>&1 &&
+  lsof -nP -iTCP:"$API_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  if curl -fsS "$API_HEALTH_URL" >/dev/null 2>&1; then
+    echo "Córtex API já está rodando em ${API_HEALTH_URL}."
+    echo "Abra o app ou use Ctrl+C no terminal onde a API está rodando antes de iniciar outra instância."
+    exit 0
+  fi
+
+  echo "A porta ${API_PORT} já está em uso, mas não respondeu ao health check do Córtex."
+  echo "Processo usando a porta:"
+  lsof -nP -iTCP:"$API_PORT" -sTCP:LISTEN
+  echo ""
+  echo "Pare esse processo ou defina PORT/SERVER_PORT para outra porta antes de rodar a API."
+  exit 1
+fi
 
 mvn spring-boot:run

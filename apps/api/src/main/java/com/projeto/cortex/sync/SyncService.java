@@ -18,6 +18,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
@@ -55,6 +56,7 @@ public class SyncService {
     private final RdoDraftUpdateService rdoDraftUpdateService;
     private final RdoWorkflowService rdoWorkflowService;
     private final RdoQueryService rdoQueryService;
+    private final CurrentUserService currentUserService;
 
     public SyncService(
             JdbcTemplate jdbcTemplate,
@@ -63,7 +65,8 @@ public class SyncService {
             RdoService rdoService,
             RdoDraftUpdateService rdoDraftUpdateService,
             RdoWorkflowService rdoWorkflowService,
-            RdoQueryService rdoQueryService
+            RdoQueryService rdoQueryService,
+            CurrentUserService currentUserService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -72,9 +75,17 @@ public class SyncService {
         this.rdoDraftUpdateService = rdoDraftUpdateService;
         this.rdoWorkflowService = rdoWorkflowService;
         this.rdoQueryService = rdoQueryService;
+        this.currentUserService = currentUserService;
     }
 
-    public SyncPullResponse pull(long afterCommitSeq, Integer requestedLimit) {
+    public SyncPullResponse pull(
+            String dispositivoId,
+            long afterCommitSeq,
+            Integer requestedLimit
+    ) {
+        String currentUserId = currentUserService.requireUserId();
+        validarDispositivoDoUsuario(dispositivoId, currentUserId);
+
         if (afterCommitSeq < 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "afterCommitSeq não pode ser negativo.");
         }
@@ -124,6 +135,17 @@ public class SyncService {
                 ? afterCommitSeq
                 : eventos.get(eventos.size() - 1).commitSeq();
 
+        jdbcTemplate.update(
+                """
+                UPDATE sync_dispositivo
+                SET visto_por_ultimo_em = CURRENT_TIMESTAMP(6)
+                WHERE id = ?
+                  AND usuario_id = ?
+                """,
+                dispositivoId.trim(),
+                currentUserId
+        );
+
         return new SyncPullResponse(
                 afterCommitSeq,
                 nextCommitSeq,
@@ -135,8 +157,20 @@ public class SyncService {
     }
 
     public SyncDeviceResponse registrarDispositivo(SyncDeviceRequest request) {
-        String id = primeiroNaoVazio(request.id(), UUID.randomUUID().toString());
-        String tipo = primeiroNaoVazio(request.tipo(), "WEB");
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Dados do dispositivo são obrigatórios."
+            );
+        }
+
+        String currentUserId = currentUserService.requireUserId();
+        String id = primeiroNaoVazio(
+                request.id(),
+                UUID.randomUUID().toString()
+        ).trim();
+        validarDispositivoDisponivelOuDoUsuario(id, currentUserId);
+        String tipo = primeiroNaoVazio(request.tipo(), "WEB").trim();
 
         jdbcTemplate.update(
                 """
@@ -158,7 +192,7 @@ public class SyncService {
                 id,
                 request.nome(),
                 tipo,
-                request.usuarioId()
+                currentUserId
         );
 
         jdbcTemplate.update(
@@ -178,7 +212,14 @@ public class SyncService {
     }
 
     public SyncAckResponse ack(SyncAckRequest request) {
-        validarDispositivoExiste(request.dispositivoId());
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Dados de ACK são obrigatórios."
+            );
+        }
+        String currentUserId = currentUserService.requireUserId();
+        validarDispositivoDoUsuario(request.dispositivoId(), currentUserId);
 
         if (request.ultimoEventoRecebidoCommitSeq() < 0) {
             throw new ResponseStatusException(
@@ -220,8 +261,10 @@ public class SyncService {
                 UPDATE sync_dispositivo
                 SET visto_por_ultimo_em = CURRENT_TIMESTAMP(6)
                 WHERE id = ?
+                  AND usuario_id = ?
                 """,
-                request.dispositivoId()
+                request.dispositivoId(),
+                currentUserId
         );
 
         return new SyncAckResponse(
@@ -232,7 +275,14 @@ public class SyncService {
     }
 
     public SyncPushResponse push(SyncPushRequest request) {
-        validarDispositivoExiste(request.dispositivoId());
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Dados de push são obrigatórios."
+            );
+        }
+        String currentUserId = currentUserService.requireUserId();
+        validarDispositivoDoUsuario(request.dispositivoId(), currentUserId);
 
         List<SyncPushRequest.MutacaoCliente> mutacoes = request.mutacoes() == null
                 ? List.of()
@@ -256,8 +306,10 @@ public class SyncService {
                 UPDATE sync_dispositivo
                 SET visto_por_ultimo_em = CURRENT_TIMESTAMP(6)
                 WHERE id = ?
+                  AND usuario_id = ?
                 """,
-                request.dispositivoId()
+                request.dispositivoId(),
+                currentUserId
         );
 
         jdbcTemplate.update(
@@ -532,18 +584,23 @@ public class SyncService {
         return switch (mutacao.operacao()) {
             case "CRIAR_RDO" -> {
                 RdoCreateRequest request = toValue(mutacao.payload(), RdoCreateRequest.class);
+                currentUserService.requireWorksiteAccess(request.obraId());
                 if (request.id() != null && !request.id().isBlank() && rdoExiste(request.id())) {
+                    currentUserService.requireRdoAccess(request.id());
                     yield rdoQueryService.buscarPorId(request.id());
                 }
                 yield rdoService.criarRascunho(request);
             }
             case "ATUALIZAR_RDO_RASCUNHO" -> {
                 String entidadeId = exigirEntidadeId(mutacao);
+                currentUserService.requireRdoAccess(entidadeId);
                 RdoCreateRequest request = toValue(mutacao.payload(), RdoCreateRequest.class);
+                currentUserService.requireWorksiteAccess(request.obraId());
                 yield rdoDraftUpdateService.atualizarRascunho(entidadeId, request);
             }
             case "ENVIAR_RDO" -> {
                 String entidadeId = exigirEntidadeId(mutacao);
+                currentUserService.requireRdoAccess(entidadeId);
                 yield rdoWorkflowService.enviar(entidadeId);
             }
             default -> throw new ResponseStatusException(
@@ -712,7 +769,40 @@ public class SyncService {
         );
     }
 
-    private void validarDispositivoExiste(String dispositivoId) {
+    private void validarDispositivoDisponivelOuDoUsuario(
+            String dispositivoId,
+            String currentUserId
+    ) {
+        if (dispositivoId == null || dispositivoId.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "dispositivoId é obrigatório."
+            );
+        }
+
+        String owner = jdbcTemplate.query(
+                """
+                SELECT usuario_id
+                FROM sync_dispositivo
+                WHERE id = ?
+                LIMIT 1
+                """,
+                rs -> rs.next() ? rs.getString("usuario_id") : null,
+                dispositivoId.trim()
+        );
+
+        if (owner != null && !owner.equals(currentUserId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Dispositivo já registrado para outro usuário."
+            );
+        }
+    }
+
+    private void validarDispositivoDoUsuario(
+            String dispositivoId,
+            String currentUserId
+    ) {
         if (dispositivoId == null || dispositivoId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dispositivoId é obrigatório.");
         }
@@ -722,16 +812,18 @@ public class SyncService {
                 SELECT COUNT(*)
                 FROM sync_dispositivo
                 WHERE id = ?
+                  AND usuario_id = ?
                   AND ativo = 1
                 """,
                 Integer.class,
-                dispositivoId
+                dispositivoId.trim(),
+                currentUserId
         );
 
         if (total == null || total == 0) {
             throw new ResponseStatusException(
-                    HttpStatus.NOT_FOUND,
-                    "Dispositivo não registrado ou inativo."
+                    HttpStatus.FORBIDDEN,
+                    "Dispositivo não pertence ao usuário autenticado ou está inativo."
             );
         }
     }

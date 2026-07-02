@@ -1,5 +1,6 @@
 package com.projeto.cortex.integracoes;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,18 +13,22 @@ import java.util.List;
 public class IntegracaoAdminController {
 
     private final IntegracaoAdminService service;
+    private final CurrentUserService currentUserService;
 
     @Value("${cortex.import.enabled:false}")
     private boolean importEnabled;
 
     public IntegracaoAdminController(
-            IntegracaoAdminService service
+            IntegracaoAdminService service,
+            CurrentUserService currentUserService
     ) {
         this.service = service;
+        this.currentUserService = currentUserService;
     }
 
     @GetMapping("/api/integracoes")
     public List<IntegracaoStatusResponse> listar() {
+        currentUserService.requireAdmin();
         return service.listStatus();
     }
 
@@ -31,6 +36,7 @@ public class IntegracaoAdminController {
     public IntegracaoActionResponse testarConexao(
             @PathVariable String id
     ) {
+        currentUserService.requireAdmin();
         return service.testConnection(id);
     }
 
@@ -38,6 +44,7 @@ public class IntegracaoAdminController {
     public IntegracaoActionResponse sincronizar(
             @PathVariable String id
     ) {
+        currentUserService.requireAdmin();
         if (!importEnabled) {
             return new IntegracaoActionResponse(
                     id,

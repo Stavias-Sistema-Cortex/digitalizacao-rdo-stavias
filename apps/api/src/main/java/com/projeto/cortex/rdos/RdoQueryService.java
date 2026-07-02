@@ -41,11 +41,19 @@ public class RdoQueryService {
                 cabecalho.rodovia(),
                 cabecalho.cidade(),
                 cabecalho.uf(),
+                cabecalho.kmInicialProgramado(),
+                cabecalho.kmFinalProgramado(),
+                cabecalho.kmInicialInterditado(),
+                cabecalho.kmFinalInterditado(),
                 cabecalho.turno(),
                 cabecalho.horaInicio(),
                 cabecalho.horaFim(),
                 cabecalho.status(),
                 cabecalho.observacoes(),
+                cabecalho.preenchidoPor(),
+                cabecalho.apontadorRdo(),
+                cabecalho.encarregadoObra(),
+                cabecalho.fiscalizacaoCampo(),
                 listarMaoObra(id),
                 listarEquipamentos(id),
                 listarMateriais(id),
@@ -165,11 +173,19 @@ public class RdoQueryService {
                         rodovia,
                         cidade,
                         uf,
+                        km_inicial_programado,
+                        km_final_programado,
+                        km_inicial_interditado,
+                        km_final_interditado,
                         turno,
                         hora_inicio,
                         hora_fim,
                         status,
-                        observacoes
+                        observacoes,
+                        preenchido_por,
+                        apontador_rdo,
+                        encarregado_obra,
+                        fiscalizacao_campo
                     FROM rdo
                     WHERE id = ?
                     """,
@@ -185,11 +201,19 @@ public class RdoQueryService {
                             rs.getString("rodovia"),
                             rs.getString("cidade"),
                             rs.getString("uf"),
+                            rs.getString("km_inicial_programado"),
+                            rs.getString("km_final_programado"),
+                            rs.getString("km_inicial_interditado"),
+                            rs.getString("km_final_interditado"),
                             rs.getString("turno"),
                             toLocalTime(rs.getTime("hora_inicio")),
                             toLocalTime(rs.getTime("hora_fim")),
                             rs.getString("status"),
-                            rs.getString("observacoes")
+                            rs.getString("observacoes"),
+                            rs.getString("preenchido_por"),
+                            rs.getString("apontador_rdo"),
+                            rs.getString("encarregado_obra"),
+                            rs.getString("fiscalizacao_campo")
                     ),
                     id
             );
@@ -262,7 +286,10 @@ public class RdoQueryService {
                     quantidade_prevista,
                     quantidade_usinada,
                     quantidade_aplicada,
-                    quantidade_sobra
+                    quantidade_sobra,
+                    nota_fiscal,
+                    fornecedor,
+                    observacoes
                 FROM rdo_material
                 WHERE rdo_id = ?
                 ORDER BY material_nome, id
@@ -274,7 +301,10 @@ public class RdoQueryService {
                         rs.getBigDecimal("quantidade_prevista"),
                         rs.getBigDecimal("quantidade_usinada"),
                         rs.getBigDecimal("quantidade_aplicada"),
-                        rs.getBigDecimal("quantidade_sobra")
+                        rs.getBigDecimal("quantidade_sobra"),
+                        rs.getString("nota_fiscal"),
+                        rs.getString("fornecedor"),
+                        rs.getString("observacoes")
                 ),
                 rdoId
         );
@@ -286,13 +316,26 @@ public class RdoQueryService {
                 SELECT
                     id,
                     subtrecho,
+                    numero,
+                    estaca_inicial,
+                    estaca_final,
+                    km_inicial,
+                    km_final,
+                    pista,
+                    faixa,
+                    ordem_servico,
+                    atividade_observacoes,
                     comprimento_m,
                     largura_m,
+                    espessura_1_cm,
+                    espessura_2_cm,
+                    espessura_3_cm,
                     espessura_media_cm,
                     area_m2,
                     volume_m3,
                     densidade,
-                    massa_tonelada
+                    massa_tonelada,
+                    observacoes
                 FROM rdo_controle_geometrico
                 WHERE rdo_id = ?
                 ORDER BY subtrecho, id
@@ -300,13 +343,26 @@ public class RdoQueryService {
                 (rs, rowNum) -> new RdoResponse.ControleGeometricoItem(
                         rs.getString("id"),
                         rs.getString("subtrecho"),
+                        rs.getString("numero"),
+                        rs.getString("estaca_inicial"),
+                        rs.getString("estaca_final"),
+                        rs.getString("km_inicial"),
+                        rs.getString("km_final"),
+                        rs.getString("pista"),
+                        rs.getString("faixa"),
+                        rs.getString("ordem_servico"),
+                        rs.getString("atividade_observacoes"),
                         rs.getBigDecimal("comprimento_m"),
                         rs.getBigDecimal("largura_m"),
+                        rs.getBigDecimal("espessura_1_cm"),
+                        rs.getBigDecimal("espessura_2_cm"),
+                        rs.getBigDecimal("espessura_3_cm"),
                         rs.getBigDecimal("espessura_media_cm"),
                         rs.getBigDecimal("area_m2"),
                         rs.getBigDecimal("volume_m3"),
                         rs.getBigDecimal("densidade"),
-                        rs.getBigDecimal("massa_tonelada")
+                        rs.getBigDecimal("massa_tonelada"),
+                        rs.getString("observacoes")
                 ),
                 rdoId
         );
@@ -340,11 +396,19 @@ public class RdoQueryService {
             String rodovia,
             String cidade,
             String uf,
+            String kmInicialProgramado,
+            String kmFinalProgramado,
+            String kmInicialInterditado,
+            String kmFinalInterditado,
             String turno,
             LocalTime horaInicio,
             LocalTime horaFim,
             String status,
-            String observacoes
+            String observacoes,
+            String preenchidoPor,
+            String apontadorRdo,
+            String encarregadoObra,
+            String fiscalizacaoCampo
     ) {
     }
 }

@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia.api;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.intelligence.stavia.StaviaQueryResult;
 import com.projeto.cortex.intelligence.stavia.StaviaQueryService;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
@@ -19,33 +20,44 @@ public class StaviaController {
 
     private final StaviaQueryService queryService;
     private final ObjectProvider<StaviaSnapshotService> snapshotService;
+    private final CurrentUserService currentUserService;
 
     @Autowired
     public StaviaController(
             StaviaQueryService queryService,
-            ObjectProvider<StaviaSnapshotService> snapshotService
+            ObjectProvider<StaviaSnapshotService> snapshotService,
+            CurrentUserService currentUserService
     ) {
         this.queryService = queryService;
         this.snapshotService = snapshotService;
+        this.currentUserService = currentUserService;
     }
 
     public StaviaController(
-            StaviaQueryService queryService
+            StaviaQueryService queryService,
+            CurrentUserService currentUserService
     ) {
-        this(queryService, null);
+        this(queryService, null, currentUserService);
     }
 
     @PostMapping("/api/stavia/consultas")
     public StaviaQueryResult consultar(
             @RequestBody StaviaConsultaRequest request
     ) {
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A consulta da Stav.IA deve ser informada."
+            );
+        }
+        String authenticatedUserId = currentUserService.requireUserId();
         // Permissions and worksite access are resolved by the StaviaAccessPolicy
         // inside the query service, derived from the user — the controller no
         // longer fabricates the required permission for every caller.
         StaviaQuestion question =
                 new StaviaQuestion(
                         questionWithContext(request),
-                        request.usuarioId(),
+                        authenticatedUserId,
                         firstNonBlank(
                                 request.obraId(),
                                 request.ultimoObraId()
@@ -57,6 +69,7 @@ public class StaviaController {
 
     @GetMapping("/api/stavia/snapshot")
     public StaviaSnapshotResponse snapshot() {
+        currentUserService.requireAdmin();
         StaviaSnapshotService service = snapshotService == null
                 ? null
                 : snapshotService.getIfAvailable();

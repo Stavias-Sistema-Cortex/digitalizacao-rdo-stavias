@@ -13,8 +13,10 @@
     "preview:local": "CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
+    "@e965/xlsx": "^0.20.3",
     "idb": "^8.0.3",
     "jspdf": "^4.2.1",
+    "pdfjs-dist": "^6.1.200",
     "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

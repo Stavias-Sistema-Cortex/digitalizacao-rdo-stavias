@@ -48,7 +48,7 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
 
     @Override
     public String sourceVersion() {
-        return "STAVIA-ALLOCATION-SOURCE-0.2.0";
+        return "STAVIA-ALLOCATION-SOURCE-0.3.0";
     }
 
     @Override
@@ -221,6 +221,7 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
                 JOIN obra
                   ON obra.id = r.obra_id
                 WHERE (? IS NULL OR r.data_rdo = ?)
+                  AND r.cancelado_em IS NULL
                   AND %s
                   AND NOT EXISTS (
                       SELECT 1
@@ -244,6 +245,181 @@ public class AllocationKnowledgeSource implements StaviaKnowledgeSource {
                 legacySql,
                 (rs, rowNumber) -> toEvidence(rs, "ALOCACAO_LEGADO:"),
                 legacyParameters.toArray()
+        ));
+
+        String rdoHeaderSql = """
+                SELECT *
+                FROM (
+                    SELECT
+                        CONCAT(r.id, ':encarregado_obra') AS id,
+                        NULL AS colaborador_id,
+                        r.encarregado_obra AS colaborador_nome,
+                        r.data_rdo AS data_alocacao,
+                        r.hora_inicio,
+                        r.hora_fim,
+                        NULL AS minutos,
+                        NULL AS percentual_dia,
+                        r.obra_id,
+                        obra.codigo_contrato,
+                        obra.codigo_cw,
+                        obra.nome AS obra_nome,
+                        NULL AS equipe,
+                        NULL AS servico_nome,
+                        r.id AS rdo_id,
+                        r.turno,
+                        'Encarregado da obra' AS funcao,
+                        'RDO_CABECALHO' AS tipo_alocacao,
+                        'RDO_CABECALHO' AS fonte,
+                        r.status,
+                        NULL AS custo_total,
+                        r.atualizado_em
+                    FROM rdo r
+                    JOIN obra
+                      ON obra.id = r.obra_id
+                    WHERE r.cancelado_em IS NULL
+                      AND r.encarregado_obra IS NOT NULL
+                      AND r.encarregado_obra <> ''
+
+                    UNION ALL
+
+                    SELECT
+                        CONCAT(r.id, ':apontador_rdo') AS id,
+                        NULL AS colaborador_id,
+                        r.apontador_rdo AS colaborador_nome,
+                        r.data_rdo AS data_alocacao,
+                        r.hora_inicio,
+                        r.hora_fim,
+                        NULL AS minutos,
+                        NULL AS percentual_dia,
+                        r.obra_id,
+                        obra.codigo_contrato,
+                        obra.codigo_cw,
+                        obra.nome AS obra_nome,
+                        NULL AS equipe,
+                        NULL AS servico_nome,
+                        r.id AS rdo_id,
+                        r.turno,
+                        'Apontador do RDO' AS funcao,
+                        'RDO_CABECALHO' AS tipo_alocacao,
+                        'RDO_CABECALHO' AS fonte,
+                        r.status,
+                        NULL AS custo_total,
+                        r.atualizado_em
+                    FROM rdo r
+                    JOIN obra
+                      ON obra.id = r.obra_id
+                    WHERE r.cancelado_em IS NULL
+                      AND r.apontador_rdo IS NOT NULL
+                      AND r.apontador_rdo <> ''
+
+                    UNION ALL
+
+                    SELECT
+                        CONCAT(r.id, ':preenchido_por') AS id,
+                        NULL AS colaborador_id,
+                        r.preenchido_por AS colaborador_nome,
+                        r.data_rdo AS data_alocacao,
+                        r.hora_inicio,
+                        r.hora_fim,
+                        NULL AS minutos,
+                        NULL AS percentual_dia,
+                        r.obra_id,
+                        obra.codigo_contrato,
+                        obra.codigo_cw,
+                        obra.nome AS obra_nome,
+                        NULL AS equipe,
+                        NULL AS servico_nome,
+                        r.id AS rdo_id,
+                        r.turno,
+                        'Preenchido por' AS funcao,
+                        'RDO_CABECALHO' AS tipo_alocacao,
+                        'RDO_CABECALHO' AS fonte,
+                        r.status,
+                        NULL AS custo_total,
+                        r.atualizado_em
+                    FROM rdo r
+                    JOIN obra
+                      ON obra.id = r.obra_id
+                    WHERE r.cancelado_em IS NULL
+                      AND r.preenchido_por IS NOT NULL
+                      AND r.preenchido_por <> ''
+                ) rdo_cabecalho
+                WHERE (? IS NULL OR data_alocacao = ?)
+                  AND %s
+                ORDER BY data_alocacao DESC, colaborador_nome
+                LIMIT 100
+                """.formatted(
+                nameFilter.condition().replace("LOWER(col.nome)",
+                        "LOWER(colaborador_nome)")
+        );
+
+        List<Object> rdoHeaderParameters = new ArrayList<>();
+        rdoHeaderParameters.add(date);
+        rdoHeaderParameters.add(date);
+        rdoHeaderParameters.addAll(nameFilter.parameters());
+        evidences.addAll(jdbcTemplate.query(
+                rdoHeaderSql,
+                (rs, rowNumber) -> toEvidence(rs, "ALOCACAO_RDO_CABECALHO:"),
+                rdoHeaderParameters.toArray()
+        ));
+
+        String programmingSql = """
+                SELECT
+                    p.id,
+                    p.encarregado_colaborador_id AS colaborador_id,
+                    COALESCE(c.nome, p.encarregado) AS colaborador_nome,
+                    p.data_programacao AS data_alocacao,
+                    NULL AS hora_inicio,
+                    NULL AS hora_fim,
+                    NULL AS minutos,
+                    NULL AS percentual_dia,
+                    p.obra_id,
+                    obra.codigo_contrato,
+                    obra.codigo_cw,
+                    obra.nome AS obra_nome,
+                    p.equipe,
+                    p.servico AS servico_nome,
+                    (
+                        SELECT r.id
+                        FROM rdo r
+                        WHERE r.programacao_id = p.id
+                          AND r.cancelado_em IS NULL
+                        ORDER BY r.data_rdo DESC, r.atualizado_em DESC, r.id
+                        LIMIT 1
+                    ) AS rdo_id,
+                    p.periodo AS turno,
+                    'Encarregado da programação' AS funcao,
+                    'PROGRAMACAO_OPERACIONAL' AS tipo_alocacao,
+                    'PROGRAMACAO_OPERACIONAL' AS fonte,
+                    p.status,
+                    NULL AS custo_total,
+                    p.atualizado_em
+                FROM programacao_operacional p
+                LEFT JOIN colaborador c
+                  ON c.id = p.encarregado_colaborador_id
+                 AND c.deletado_em IS NULL
+                JOIN obra
+                  ON obra.id = p.obra_id
+                WHERE p.cancelado_em IS NULL
+                  AND p.encarregado IS NOT NULL
+                  AND p.encarregado <> ''
+                  AND (? IS NULL OR p.data_programacao = ?)
+                  AND %s
+                ORDER BY p.data_programacao DESC, colaborador_nome
+                LIMIT 100
+                """.formatted(
+                nameFilter.condition().replace("LOWER(col.nome)",
+                        "LOWER(COALESCE(c.nome, p.encarregado))")
+        );
+
+        List<Object> programmingParameters = new ArrayList<>();
+        programmingParameters.add(date);
+        programmingParameters.add(date);
+        programmingParameters.addAll(nameFilter.parameters());
+        evidences.addAll(jdbcTemplate.query(
+                programmingSql,
+                (rs, rowNumber) -> toEvidence(rs, "ALOCACAO_PROGRAMACAO:"),
+                programmingParameters.toArray()
         ));
 
         return filterByEntities(evidences, filters);

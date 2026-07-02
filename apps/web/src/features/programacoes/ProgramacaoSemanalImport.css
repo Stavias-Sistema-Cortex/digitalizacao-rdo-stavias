@@ -1,0 +1,224 @@
+.programacao-import {
+  display: grid;
+  gap: 18px;
+}
+
+.programacao-import__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.programacao-import__lead {
+  margin: 0;
+  color: #516159;
+  font-size: 0.9rem;
+}
+
+.programacao-import__summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.programacao-import__summary div {
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: #f7f9f6;
+}
+
+.programacao-import__summary span {
+  display: block;
+  margin-bottom: 6px;
+  color: #68756f;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.programacao-import__summary strong {
+  display: block;
+  color: #1f3328;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.programacao-import__warnings {
+  display: grid;
+  gap: 8px;
+}
+
+.programacao-import__warnings span {
+  padding: 10px 12px;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 251, 235, 0.9);
+  color: #92400e;
+  font-size: 0.82rem;
+}
+
+.programacao-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.programacao-day {
+  display: grid;
+  gap: 4px;
+  min-height: 92px;
+  padding: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  color: #1f3328;
+  text-align: left;
+  cursor: pointer;
+}
+
+.programacao-day span {
+  color: #607068;
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
+.programacao-day strong {
+  font-size: 0.94rem;
+}
+
+.programacao-day em {
+  align-self: end;
+  color: #607068;
+  font-size: 0.76rem;
+  font-style: normal;
+}
+
+.programacao-day--com_dados {
+  border-color: rgba(21, 128, 61, 0.28);
+  background: #f2f8f4;
+}
+
+.programacao-day--baixada {
+  border-color: rgba(217, 119, 6, 0.22);
+  background: #fff7ed;
+}
+
+.programacao-day--selected {
+  outline: 3px solid rgba(24, 59, 42, 0.18);
+  border-color: #183b2a;
+}
+
+.programacao-day-detail {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
+}
+
+.programacao-day-detail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.programacao-day-detail__header h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+}
+
+.programacao-day-detail__header p {
+  margin: 0;
+  color: #607068;
+  font-size: 0.84rem;
+}
+
+.programacao-lines-table-wrap {
+  overflow-x: auto;
+}
+
+.programacao-lines-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.programacao-lines-table th,
+.programacao-lines-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid #e6ebe8;
+  text-align: left;
+  vertical-align: top;
+}
+
+.programacao-lines-table th {
+  color: #607068;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.programacao-lines-table td {
+  color: #22352a;
+}
+
+.programacao-lines-table td span,
+.programacao-lines-table td strong,
+.programacao-lines-table td small {
+  display: block;
+}
+
+.programacao-lines-table td small {
+  margin-top: 4px;
+  color: #68756f;
+}
+
+.programacao-lines-table input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 8px;
+  font: inherit;
+}
+
+.programacao-match {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.programacao-match--ok {
+  background: rgba(21, 128, 61, 0.12);
+  color: #166534;
+}
+
+.programacao-match--missing {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+@media (max-width: 900px) {
+  .programacao-import__toolbar,
+  .programacao-day-detail__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .programacao-import__summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .programacao-week-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .programacao-import__summary,
+  .programacao-week-grid {
+    grid-template-columns: 1fr;
+  }
+}

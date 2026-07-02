@@ -10,6 +10,7 @@ public record StaviaSnapshotResponse(
         Metadata metadata,
         List<ObraSnapshot> obras,
         List<RdoSnapshot> rdos,
+        List<ProgramacaoSnapshot> programacoes,
         List<PdocSnapshot> pdocs
 ) {
 
@@ -45,15 +46,28 @@ public record StaviaSnapshotResponse(
             String programacaoId,
             String numeroRdo,
             LocalDate dataRdo,
+            String cliente,
             String cidade,
             String contrato,
             String rodovia,
             String uf,
+            String kmInicialProgramado,
+            String kmFinalProgramado,
+            String kmInicialInterditado,
+            String kmFinalInterditado,
             String turno,
             LocalTime horaInicio,
             LocalTime horaFim,
+            String condicaoManha,
+            String condicaoTarde,
+            String condicaoNoite,
+            BigDecimal pluviometriaMm,
             String status,
             String observacoes,
+            String preenchidoPor,
+            String apontadorRdo,
+            String encarregadoObra,
+            String fiscalizacaoCampo,
             LocalDateTime updatedAt,
             List<ServicoExecutadoSnapshot> servicosExecutados,
             List<MaoObraSnapshot> maoObra,
@@ -105,12 +119,17 @@ public record StaviaSnapshotResponse(
 
     public record ControleGeometricoSnapshot(
             String subtrecho,
+            String numero,
             String kmInicial,
             String kmFinal,
+            String pista,
+            String faixa,
+            String ordemServico,
             BigDecimal comprimentoM,
             BigDecimal larguraM,
             BigDecimal areaM2,
-            BigDecimal volumeM3
+            BigDecimal volumeM3,
+            String atividadeObservacoes
     ) {
     }
 
@@ -140,6 +159,45 @@ public record StaviaSnapshotResponse(
             BigDecimal probabilidadeExceder10Pct,
             BigDecimal scoreHeuristico,
             BigDecimal confianca
+    ) {
+    }
+
+    public record ProgramacaoSnapshot(
+            String id,
+            String obraId,
+            String rdoId,
+            LocalDate dataProgramacao,
+            String equipe,
+            String fechamento,
+            String encarregado,
+            String encarregadoColaboradorId,
+            String engenheiro,
+            String cliente,
+            String servico,
+            String tipoServico,
+            String cidade,
+            String uf,
+            String rodovia,
+            String sentido,
+            String periodo,
+            String faixa,
+            String kmInicial,
+            String kmFinal,
+            BigDecimal extensaoM,
+            BigDecimal larguraM,
+            BigDecimal espessuraCm,
+            BigDecimal areaM2,
+            BigDecimal volumeM3,
+            BigDecimal toneladaMassa,
+            String tipoCap,
+            BigDecimal teorCapProjeto,
+            BigDecimal cap,
+            String status,
+            String fonteCriacao,
+            String fonteArquivo,
+            Integer linhaOrigem,
+            String observacoes,
+            LocalDateTime updatedAt
     ) {
     }
 }

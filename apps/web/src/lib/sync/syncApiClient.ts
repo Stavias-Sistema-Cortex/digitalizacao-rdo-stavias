@@ -165,9 +165,11 @@ export async function pushMutationsApi(
 
 export async function pullEventsApi(
   afterCommitSeq: number,
+  dispositivoId: string,
   limit = 100,
 ): Promise<SyncPullResponse> {
   const query = new URLSearchParams({
+    dispositivoId,
     afterCommitSeq: String(afterCommitSeq),
     limit: String(limit),
   });

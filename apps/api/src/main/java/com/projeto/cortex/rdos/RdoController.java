@@ -1,5 +1,6 @@
 package com.projeto.cortex.rdos;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,22 +22,28 @@ public class RdoController {
     private final RdoQueryService queryService;
     private final RdoDraftUpdateService draftUpdateService;
     private final RdoWorkflowService workflowService;
+    private final CurrentUserService currentUserService;
 
     public RdoController(
             RdoService service,
             RdoQueryService queryService,
             RdoDraftUpdateService draftUpdateService,
-            RdoWorkflowService workflowService
+            RdoWorkflowService workflowService,
+            CurrentUserService currentUserService
     ) {
         this.service = service;
         this.queryService = queryService;
         this.draftUpdateService = draftUpdateService;
         this.workflowService = workflowService;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping("/api/rdos")
     @ResponseStatus(HttpStatus.CREATED)
     public RdoResponse criar(@RequestBody RdoCreateRequest request) {
+        currentUserService.requireWorksiteAccess(
+                request == null ? null : request.obraId()
+        );
         return service.criarRascunho(request);
     }
 
@@ -47,11 +54,13 @@ public class RdoController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate data
     ) {
+        currentUserService.requireWorksiteAccess(obraId);
         return queryService.listarPorObra(obraId, data);
     }
 
     @GetMapping("/api/rdos/{id}")
     public RdoResponse buscarPorId(@PathVariable String id) {
+        currentUserService.requireRdoAccess(id);
         return queryService.buscarPorId(id);
     }
 
@@ -60,11 +69,16 @@ public class RdoController {
             @PathVariable String id,
             @RequestBody RdoCreateRequest request
     ) {
+        currentUserService.requireRdoAccess(id);
+        currentUserService.requireWorksiteAccess(
+                request == null ? null : request.obraId()
+        );
         return draftUpdateService.atualizarRascunho(id, request);
     }
 
     @PostMapping("/api/rdos/{id}/enviar")
     public RdoResponse enviar(@PathVariable String id) {
+        currentUserService.requireRdoAccess(id);
         return workflowService.enviar(id);
     }
 }

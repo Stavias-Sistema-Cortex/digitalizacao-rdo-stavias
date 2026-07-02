@@ -32,8 +32,14 @@ public class ProgramacaoOperacional {
     @Column(name = "equipe")
     private String equipe;
 
+    @Column(name = "fechamento")
+    private String fechamento;
+
     @Column(name = "encarregado")
     private String encarregado;
+
+    @Column(name = "encarregado_colaborador_id")
+    private String encarregadoColaboradorId;
 
     @Column(name = "engenheiro")
     private String engenheiro;
@@ -59,6 +65,9 @@ public class ProgramacaoOperacional {
     @Column(name = "sentido")
     private String sentido;
 
+    @Column(name = "periodo")
+    private String periodo;
+
     @Column(name = "faixa")
     private String faixa;
 
@@ -82,6 +91,18 @@ public class ProgramacaoOperacional {
 
     @Column(name = "volume_m3")
     private BigDecimal volumeM3;
+
+    @Column(name = "tonelada_massa")
+    private BigDecimal toneladaMassa;
+
+    @Column(name = "tipo_cap")
+    private String tipoCap;
+
+    @Column(name = "teor_cap_projeto")
+    private BigDecimal teorCapProjeto;
+
+    @Column(name = "cap")
+    private BigDecimal cap;
 
     @Column(name = "status", nullable = false)
     private String status;
@@ -383,13 +404,33 @@ public class ProgramacaoOperacional {
         this.versaoLinha++;
     }
 
+    public void aplicarDetalhesProgramacaoSemanal(
+            String fechamento,
+            String periodo,
+            BigDecimal toneladaMassa,
+            String tipoCap,
+            BigDecimal teorCapProjeto,
+            BigDecimal cap,
+            String encarregadoColaboradorId
+    ) {
+        this.fechamento = fechamento;
+        this.periodo = periodo;
+        this.toneladaMassa = toneladaMassa;
+        this.tipoCap = tipoCap;
+        this.teorCapProjeto = teorCapProjeto;
+        this.cap = cap;
+        this.encarregadoColaboradorId = encarregadoColaboradorId;
+    }
+
     public String getId() { return id; }
     public String getObraId() { return obraId; }
     public String getCodigoContratoOrigem() { return codigoContratoOrigem; }
     public String getObraNomeOrigem() { return obraNomeOrigem; }
     public LocalDate getDataProgramacao() { return dataProgramacao; }
     public String getEquipe() { return equipe; }
+    public String getFechamento() { return fechamento; }
     public String getEncarregado() { return encarregado; }
+    public String getEncarregadoColaboradorId() { return encarregadoColaboradorId; }
     public String getEngenheiro() { return engenheiro; }
     public String getCliente() { return cliente; }
     public String getServico() { return servico; }
@@ -398,6 +439,7 @@ public class ProgramacaoOperacional {
     public String getUf() { return uf; }
     public String getRodovia() { return rodovia; }
     public String getSentido() { return sentido; }
+    public String getPeriodo() { return periodo; }
     public String getFaixa() { return faixa; }
     public String getKmInicial() { return kmInicial; }
     public String getKmFinal() { return kmFinal; }
@@ -406,6 +448,10 @@ public class ProgramacaoOperacional {
     public BigDecimal getEspessuraCm() { return espessuraCm; }
     public BigDecimal getAreaM2() { return areaM2; }
     public BigDecimal getVolumeM3() { return volumeM3; }
+    public BigDecimal getToneladaMassa() { return toneladaMassa; }
+    public String getTipoCap() { return tipoCap; }
+    public BigDecimal getTeorCapProjeto() { return teorCapProjeto; }
+    public BigDecimal getCap() { return cap; }
     public String getStatus() { return status; }
     public String getFonteCriacao() { return fonteCriacao; }
     public String getFonteArquivo() { return fonteArquivo; }

@@ -104,6 +104,10 @@ function mapMateriais(value: unknown): MaterialDraft[] {
       quantidadeAplicada: asNumericInput(
         item.quantidadeAplicada,
       ),
+      quantidadeSobra: asNumericInput(item.quantidadeSobra),
+      notaFiscal: asString(item.notaFiscal),
+      fornecedor: asString(item.fornecedor),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -119,14 +123,22 @@ function mapControles(
       ...empty,
       localId: asString(item.localId, empty.localId),
       subtrecho: asString(item.subtrecho),
+      numero: asString(item.numero),
+      estacaInicial: asString(item.estacaInicial),
+      estacaFinal: asString(item.estacaFinal),
       kmInicial: asString(item.kmInicial),
       kmFinal: asString(item.kmFinal),
+      pista: asString(item.pista),
+      faixa: asString(item.faixa),
+      ordemServico: asString(item.ordemServico),
+      atividadeObservacoes: asString(item.atividadeObservacoes),
       comprimentoM: asNumericInput(item.comprimentoM),
       larguraM: asNumericInput(item.larguraM),
       espessura1Cm: asNumericInput(item.espessura1Cm),
       espessura2Cm: asNumericInput(item.espessura2Cm),
       espessura3Cm: asNumericInput(item.espessura3Cm),
       densidade: asNumericInput(item.densidade),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -150,6 +162,10 @@ function mapServicosExecutados(
       trechoInicial: asString(item.trechoInicial),
       trechoFinal: asString(item.trechoFinal),
       localizacao: asString(item.localizacao),
+      turno: asString(
+        item.turno,
+        empty.turno,
+      ) as ServicoExecutadoDraft["turno"],
       statusValidacao: asString(
         item.statusValidacao,
         empty.statusValidacao,
@@ -210,6 +226,21 @@ export function localRecordToDraft(
     programacaoId: record.programacaoId ?? "",
     numeroRdo: record.numeroRdo,
     dataRdo: record.dataRdo,
+    cliente: asString(payload.cliente),
+    contrato: asString(payload.contrato),
+    rodovia: asString(payload.rodovia),
+    cidade: asString(payload.cidade),
+    uf: asString(payload.uf),
+    kmInicialProgramado: asString(
+      payload.kmInicialProgramado,
+    ),
+    kmFinalProgramado: asString(payload.kmFinalProgramado),
+    kmInicialInterditado: asString(
+      payload.kmInicialInterditado,
+    ),
+    kmFinalInterditado: asString(
+      payload.kmFinalInterditado,
+    ),
     turno:
       asString(payload.turno) === "NOTURNO"
         ? "NOTURNO"
@@ -231,6 +262,10 @@ export function localRecordToDraft(
         ? ""
         : asNumericInput(payload.pluviometriaMm),
     observacoes: asString(payload.observacoes),
+    preenchidoPor: asString(payload.preenchidoPor),
+    apontadorRdo: asString(payload.apontadorRdo),
+    encarregadoObra: asString(payload.encarregadoObra),
+    fiscalizacaoCampo: asString(payload.fiscalizacaoCampo),
     servicosExecutados: mapServicosExecutados(
       payload.servicosExecutados,
     ),

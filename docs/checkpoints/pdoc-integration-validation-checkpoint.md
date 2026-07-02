@@ -750,14 +750,14 @@ docker compose -f compose.local.yml up -d cortex-mysql
 
 cd apps/api
 DB="cortex_pdoc_validation_$(date +%s)"
-MYSQL_PWD=cortex_root_password mysql -h 127.0.0.1 -P 3307 -uroot -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+MYSQL_PWD="$CORTEX_MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -P 3307 -uroot -e "DROP DATABASE IF EXISTS \`$DB\`; CREATE DATABASE \`$DB\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 for n in $(seq 1 16); do
   f=$(ls src/main/resources/db/migration/V${n}__*.sql)
   echo "Applying $(basename "$f")"
-  MYSQL_PWD=cortex_root_password mysql -h 127.0.0.1 -P 3307 -uroot "$DB" < "$f" || exit 1
+  MYSQL_PWD="$CORTEX_MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -P 3307 -uroot "$DB" < "$f" || exit 1
 done
-MYSQL_PWD=cortex_root_password mysql -h 127.0.0.1 -P 3307 -uroot "$DB" -e "SHOW CREATE TABLE pdoc_snapshot;"
-MYSQL_PWD=cortex_root_password mysql -h 127.0.0.1 -P 3307 -uroot -e "DROP DATABASE \`$DB\`;"
+MYSQL_PWD="$CORTEX_MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -P 3307 -uroot "$DB" -e "SHOW CREATE TABLE pdoc_snapshot;"
+MYSQL_PWD="$CORTEX_MYSQL_ROOT_PASSWORD" mysql -h 127.0.0.1 -P 3307 -uroot -e "DROP DATABASE \`$DB\`;"
 
 cd /Users/joaolucas/digitalizacao-rdo-stavias
 docker compose -f compose.local.yml down

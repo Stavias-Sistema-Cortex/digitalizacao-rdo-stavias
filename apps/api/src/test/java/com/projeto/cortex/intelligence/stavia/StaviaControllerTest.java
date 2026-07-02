@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.intelligence.stavia.api.StaviaConsultaRequest;
 import com.projeto.cortex.intelligence.stavia.api.StaviaController;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
@@ -13,6 +14,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +25,8 @@ class StaviaControllerTest {
     void shouldDelegateAuthorizedLocalQuery() {
         StaviaQueryService queryService =
                 mock(StaviaQueryService.class);
+        CurrentUserService currentUserService =
+                mock(CurrentUserService.class);
 
         StaviaQueryResult expected =
                 new StaviaQueryResult(
@@ -43,21 +47,27 @@ class StaviaControllerTest {
         when(
                 queryService.query(any())
         ).thenReturn(expected);
+        when(currentUserService.requireUserId())
+                .thenReturn("usuario-autenticado");
 
         StaviaController controller =
-                new StaviaController(queryService);
+                new StaviaController(queryService, currentUserService);
 
         StaviaQueryResult result =
                 controller.consultar(
                         new StaviaConsultaRequest(
                                 "Quais RDOs pertencem à obra?",
-                                "validacao-local",
+                                "usuario-forjado",
                                 "obra-1"
                         )
                 );
 
         assertThat(result).isSameAs(expected);
 
-        verify(queryService).query(any());
+        var questionCaptor =
+                forClass(com.projeto.cortex.intelligence.stavia.model.StaviaQuestion.class);
+        verify(queryService).query(questionCaptor.capture());
+        assertThat(questionCaptor.getValue().userId())
+                .isEqualTo("usuario-autenticado");
     }
 }

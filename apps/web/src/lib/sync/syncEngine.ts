@@ -1,3 +1,5 @@
+import { getSession } from "../../features/auth/authSession";
+import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
 import { acknowledgeCurrentCursor } from "./ackCursor";
 import { pullEvents } from "./pullEvents";
@@ -16,6 +18,12 @@ async function executeSync(): Promise<SyncRunSummary> {
     );
   }
 
+  if (!getSession()?.token) {
+    throw new Error(
+      "Faça login novamente para sincronizar com o servidor.",
+    );
+  }
+
   await updateSyncState({
     isSyncing: true,
     lastSyncStartedAt: new Date().toISOString(),
@@ -24,10 +32,11 @@ async function executeSync(): Promise<SyncRunSummary> {
 
   try {
     await recoverInterruptedMutations();
+    await repairRdoCreateMutationsForSync();
 
     const deviceId = await ensureRegisteredDevice();
     const pushSummary = await pushOutbox(deviceId);
-    const pullSummary = await pullEvents();
+    const pullSummary = await pullEvents(deviceId);
 
     const acknowledgedCommitSeq =
       await acknowledgeCurrentCursor(deviceId);

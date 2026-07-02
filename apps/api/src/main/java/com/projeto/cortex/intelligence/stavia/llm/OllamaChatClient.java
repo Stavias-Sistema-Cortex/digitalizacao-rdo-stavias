@@ -3,6 +3,7 @@ package com.projeto.cortex.intelligence.stavia.llm;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
@@ -45,10 +46,13 @@ public class OllamaChatClient {
 
         String raw;
         try {
-            raw = restClient.post()
+            RestClient.RequestBodySpec request = restClient.post()
                     .uri("/chat/completions")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .header("Authorization", "Bearer " + props.getApiKey())
+                    .contentType(MediaType.APPLICATION_JSON);
+            if (StringUtils.hasText(props.getApiKey())) {
+                request = request.header("Authorization", "Bearer " + props.getApiKey());
+            }
+            raw = request
                     .body(body)
                     .retrieve()
                     .body(String.class);

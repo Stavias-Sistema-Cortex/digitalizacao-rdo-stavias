@@ -34,6 +34,10 @@ public record RdoCreateRequest(
         BigDecimal pluviometriaMm,
 
         String observacoes,
+        String preenchidoPor,
+        String apontadorRdo,
+        String encarregadoObra,
+        String fiscalizacaoCampo,
 
         List<MaoObraItem> maoObra,
         List<EquipamentoItem> equipamentos,
@@ -83,10 +87,15 @@ public record RdoCreateRequest(
 
     public record ControleGeometricoItem(
             String subtrecho,
+            String numero,
             String estacaInicial,
             String estacaFinal,
             String kmInicial,
             String kmFinal,
+            String pista,
+            String faixa,
+            String ordemServico,
+            String atividadeObservacoes,
             BigDecimal comprimentoM,
             BigDecimal larguraM,
             BigDecimal espessura1Cm,

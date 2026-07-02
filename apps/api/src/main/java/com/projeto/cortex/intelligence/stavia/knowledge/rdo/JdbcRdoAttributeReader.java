@@ -4,9 +4,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Date;
+import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 @Repository
@@ -46,11 +48,26 @@ public class JdbcRdoAttributeReader implements RdoAttributeReader {
                     r.data_rdo,
                     r.status,
                     r.fonte_criacao,
+                    r.cliente,
+                    r.cidade,
+                    r.contrato,
+                    r.rodovia,
+                    r.uf,
+                    r.km_inicial_programado,
+                    r.km_final_programado,
+                    r.km_inicial_interditado,
+                    r.km_final_interditado,
                     r.turno,
+                    r.hora_inicio,
+                    r.hora_fim,
                     r.condicao_manha,
                     r.condicao_tarde,
                     r.condicao_noite,
                     r.pluviometria_mm,
+                    r.preenchido_por,
+                    r.apontador_rdo,
+                    r.encarregado_obra,
+                    r.fiscalizacao_campo,
                     r.criado_em,
                     r.atualizado_em,
                     r.enviado_em,
@@ -68,6 +85,14 @@ public class JdbcRdoAttributeReader implements RdoAttributeReader {
                      OR r.condicao_noite IS NOT NULL
                      OR r.pluviometria_mm IS NOT NULL
                      OR r.turno IS NOT NULL
+                     OR r.km_inicial_programado IS NOT NULL
+                     OR r.km_final_programado IS NOT NULL
+                     OR r.km_inicial_interditado IS NOT NULL
+                     OR r.km_final_interditado IS NOT NULL
+                     OR r.preenchido_por IS NOT NULL
+                     OR r.apontador_rdo IS NOT NULL
+                     OR r.encarregado_obra IS NOT NULL
+                     OR r.fiscalizacao_campo IS NOT NULL
                   )
                 ORDER BY
                     CASE
@@ -88,11 +113,26 @@ public class JdbcRdoAttributeReader implements RdoAttributeReader {
                         toLocalDate(resultSet.getDate("data_rdo")),
                         resultSet.getString("status"),
                         resultSet.getString("fonte_criacao"),
+                        resultSet.getString("cliente"),
+                        resultSet.getString("cidade"),
+                        resultSet.getString("contrato"),
+                        resultSet.getString("rodovia"),
+                        resultSet.getString("uf"),
+                        resultSet.getString("km_inicial_programado"),
+                        resultSet.getString("km_final_programado"),
+                        resultSet.getString("km_inicial_interditado"),
+                        resultSet.getString("km_final_interditado"),
                         resultSet.getString("turno"),
+                        toLocalTime(resultSet.getTime("hora_inicio")),
+                        toLocalTime(resultSet.getTime("hora_fim")),
                         resultSet.getString("condicao_manha"),
                         resultSet.getString("condicao_tarde"),
                         resultSet.getString("condicao_noite"),
                         resultSet.getBigDecimal("pluviometria_mm"),
+                        resultSet.getString("preenchido_por"),
+                        resultSet.getString("apontador_rdo"),
+                        resultSet.getString("encarregado_obra"),
+                        resultSet.getString("fiscalizacao_campo"),
                         toLocalDateTime(resultSet.getTimestamp("criado_em")),
                         toLocalDateTime(resultSet.getTimestamp("atualizado_em")),
                         toLocalDateTime(resultSet.getTimestamp("enviado_em")),
@@ -115,5 +155,9 @@ public class JdbcRdoAttributeReader implements RdoAttributeReader {
         return timestamp == null
                 ? null
                 : timestamp.toLocalDateTime();
+    }
+
+    private LocalTime toLocalTime(Time time) {
+        return time == null ? null : time.toLocalTime();
     }
 }

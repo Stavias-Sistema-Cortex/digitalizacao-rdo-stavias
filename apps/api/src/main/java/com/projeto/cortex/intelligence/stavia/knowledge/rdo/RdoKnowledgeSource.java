@@ -92,11 +92,42 @@ public class RdoKnowledgeSource implements StaviaKnowledgeSource {
                 "programacaoStatus",
                 record.programacaoStatus()
         );
+        putText(attributes, "programacaoFechamento", record.programacaoFechamento());
+        putText(attributes, "programacaoEncarregado", record.programacaoEncarregado());
+        putText(attributes, "programacaoPeriodo", record.programacaoPeriodo());
+        putText(attributes, "programacaoFaixa", record.programacaoFaixa());
+        putText(attributes, "programacaoKmInicial", record.programacaoKmInicial());
+        putText(attributes, "programacaoKmFinal", record.programacaoKmFinal());
+        putDecimal(attributes, "programacaoExtensaoM", record.programacaoExtensaoM());
+        putDecimal(attributes, "programacaoAreaM2", record.programacaoAreaM2());
+        putDecimal(attributes, "programacaoVolumeM3", record.programacaoVolumeM3());
+        putDecimal(attributes, "programacaoToneladaMassa", record.programacaoToneladaMassa());
+        putText(attributes, "programacaoTipoCap", record.programacaoTipoCap());
+        putDecimal(attributes, "programacaoCap", record.programacaoCap());
         putText(attributes, "numeroRdo", record.numeroRdo());
         putDate(attributes, "dataRdo", record.dataRdo());
+        putText(attributes, "cliente", record.cliente());
+        putText(attributes, "cidade", record.cidade());
+        putText(attributes, "contrato", record.contrato());
+        putText(attributes, "rodovia", record.rodovia());
+        putText(attributes, "uf", record.uf());
+        putText(attributes, "kmInicialProgramado", record.kmInicialProgramado());
+        putText(attributes, "kmFinalProgramado", record.kmFinalProgramado());
+        putText(attributes, "kmInicialInterditado", record.kmInicialInterditado());
+        putText(attributes, "kmFinalInterditado", record.kmFinalInterditado());
         putText(attributes, "turno", record.turno());
+        putTime(attributes, "horaInicio", record.horaInicio());
+        putTime(attributes, "horaFim", record.horaFim());
+        putText(attributes, "condicaoManha", record.condicaoManha());
+        putText(attributes, "condicaoTarde", record.condicaoTarde());
+        putText(attributes, "condicaoNoite", record.condicaoNoite());
+        putDecimal(attributes, "pluviometriaMm", record.pluviometriaMm());
         putText(attributes, "status", record.status());
         putText(attributes, "observacoes", record.observacoes());
+        putText(attributes, "preenchidoPor", record.preenchidoPor());
+        putText(attributes, "apontadorRdo", record.apontadorRdo());
+        putText(attributes, "encarregadoObra", record.encarregadoObra());
+        putText(attributes, "fiscalizacaoCampo", record.fiscalizacaoCampo());
 
         attributes.put("totalMaoObra", record.totalMaoObra());
         attributes.put("totalEquipamentos", record.totalEquipamentos());
@@ -161,6 +192,24 @@ public class RdoKnowledgeSource implements StaviaKnowledgeSource {
                         .append(record.programacaoServico().trim())
                         .append(")");
             }
+
+            if (hasText(record.programacaoKmInicial())
+                    || hasText(record.programacaoKmFinal())) {
+                summary.append(", trecho previsto km ")
+                        .append(
+                                StaviaText.fallback(
+                                        record.programacaoKmInicial(),
+                                        "?"
+                                )
+                        )
+                        .append(" a ")
+                        .append(
+                                StaviaText.fallback(
+                                        record.programacaoKmFinal(),
+                                        "?"
+                                )
+                        );
+            }
         } else {
             summary.append(", sem programação operacional associada");
         }
@@ -199,6 +248,26 @@ public class RdoKnowledgeSource implements StaviaKnowledgeSource {
     ) {
         if (value != null) {
             attributes.put(key, value.toString());
+        }
+    }
+
+    private void putTime(
+            Map<String, Object> attributes,
+            String key,
+            java.time.LocalTime value
+    ) {
+        if (value != null) {
+            attributes.put(key, value.toString());
+        }
+    }
+
+    private void putDecimal(
+            Map<String, Object> attributes,
+            String key,
+            java.math.BigDecimal value
+    ) {
+        if (value != null) {
+            attributes.put(key, value.stripTrailingZeros().toPlainString());
         }
     }
 

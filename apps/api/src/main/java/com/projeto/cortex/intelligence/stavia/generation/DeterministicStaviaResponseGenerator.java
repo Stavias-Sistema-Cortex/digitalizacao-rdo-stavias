@@ -866,6 +866,50 @@ public class DeterministicStaviaResponseGenerator
                     .orElse("");
         }
 
+        List<StaviaEvidence> directAttributes =
+                attributes.stream()
+                        .filter(evidence ->
+                                hasText(
+                                        attributeText(
+                                                evidence.attributes(),
+                                                "valor"
+                                        )
+                                )
+                        )
+                        .filter(evidence ->
+                                !attributeText(
+                                        evidence.attributes(),
+                                        "campo"
+                                ).startsWith("condicao")
+                                        && !"pluviometriaMm".equals(
+                                                attributeText(
+                                                        evidence.attributes(),
+                                                        "campo"
+                                                )
+                                        )
+                        )
+                        .toList();
+
+        if (!directAttributes.isEmpty()) {
+            Map<String, Object> evidenceAttributes =
+                    directAttributes.getFirst().attributes();
+            String label =
+                    fallback(
+                            attributeText(evidenceAttributes, "rotulo"),
+                            attributeText(evidenceAttributes, "campo")
+                    );
+            String value =
+                    attributeText(evidenceAttributes, "valor");
+            String unit =
+                    attributeText(evidenceAttributes, "unidade");
+
+            return label
+                    + ": "
+                    + value
+                    + (hasText(unit) ? " " + unit : "")
+                    + ".";
+        }
+
         return "";
     }
 
@@ -1197,8 +1241,63 @@ public class DeterministicStaviaResponseGenerator
                     .append("\"");
         }
 
+        String start =
+                attributeText(attributes, "programacaoKmInicial");
+        String end =
+                attributeText(attributes, "programacaoKmFinal");
+
+        if (hasText(start) || hasText(end)) {
+            line.append(", no trecho km ")
+                    .append(hasText(start) ? start : "?")
+                    .append(" a ")
+                    .append(hasText(end) ? end : "?");
+        }
+
+        appendSentenceDetail(
+                line,
+                "período",
+                attributeText(attributes, "programacaoPeriodo")
+        );
+        appendSentenceDetail(
+                line,
+                "encarregado",
+                attributeText(attributes, "programacaoEncarregado")
+        );
+        appendSentenceDetail(
+                line,
+                "área",
+                withUnit(attributeText(attributes, "programacaoAreaM2"), "m²")
+        );
+        appendSentenceDetail(
+                line,
+                "volume",
+                withUnit(attributeText(attributes, "programacaoVolumeM3"), "m³")
+        );
+        appendSentenceDetail(
+                line,
+                "massa",
+                withUnit(attributeText(attributes, "programacaoToneladaMassa"), "t")
+        );
+
         line.append(".");
         return line.toString();
+    }
+
+    private void appendSentenceDetail(
+            StringBuilder line,
+            String label,
+            String value
+    ) {
+        if (hasText(value)) {
+            line.append(", ")
+                    .append(label)
+                    .append(" ")
+                    .append(value);
+        }
+    }
+
+    private String withUnit(String value, String unit) {
+        return hasText(value) ? value + " " + unit : "";
     }
 
     private String buildPdocAnswer(
@@ -1818,7 +1917,9 @@ public class DeterministicStaviaResponseGenerator
         String normalized = normalizeText(question.text()).trim();
         return normalized.startsWith("quais sao as obras que")
                 || normalized.startsWith("quais obras que")
-                || normalized.startsWith("em quais obras");
+                || normalized.startsWith("em quais obras")
+                || normalized.contains("em qual obra")
+                || normalized.contains("em quais obras");
     }
 
     private String buildCollaboratorWorksitesAnswer(

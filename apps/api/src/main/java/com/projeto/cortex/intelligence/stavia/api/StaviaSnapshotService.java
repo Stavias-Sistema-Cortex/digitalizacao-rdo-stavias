@@ -3,6 +3,7 @@ package com.projeto.cortex.intelligence.stavia.api;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Time;
@@ -58,15 +59,28 @@ public class StaviaSnapshotService {
                                 rdo.programacaoId(),
                                 rdo.numeroRdo(),
                                 rdo.dataRdo(),
+                                rdo.cliente(),
                                 rdo.cidade(),
                                 rdo.contrato(),
                                 rdo.rodovia(),
                                 rdo.uf(),
+                                rdo.kmInicialProgramado(),
+                                rdo.kmFinalProgramado(),
+                                rdo.kmInicialInterditado(),
+                                rdo.kmFinalInterditado(),
                                 rdo.turno(),
                                 rdo.horaInicio(),
                                 rdo.horaFim(),
+                                rdo.condicaoManha(),
+                                rdo.condicaoTarde(),
+                                rdo.condicaoNoite(),
+                                rdo.pluviometriaMm(),
                                 rdo.status(),
                                 rdo.observacoes(),
+                                rdo.preenchidoPor(),
+                                rdo.apontadorRdo(),
+                                rdo.encarregadoObra(),
+                                rdo.fiscalizacaoCampo(),
                                 rdo.updatedAt(),
                                 servicos.getOrDefault(rdo.id(), List.of()),
                                 maoObra.getOrDefault(rdo.id(), List.of()),
@@ -89,6 +103,7 @@ public class StaviaSnapshotService {
                 ),
                 obras,
                 rdos,
+                programacoes(),
                 pdocs()
         );
     }
@@ -139,15 +154,28 @@ public class StaviaSnapshotService {
                     programacao_id,
                     numero_rdo,
                     data_rdo,
+                    cliente,
                     cidade,
                     contrato,
                     rodovia,
                     uf,
+                    km_inicial_programado,
+                    km_final_programado,
+                    km_inicial_interditado,
+                    km_final_interditado,
                     turno,
                     hora_inicio,
                     hora_fim,
+                    condicao_manha,
+                    condicao_tarde,
+                    condicao_noite,
+                    pluviometria_mm,
                     status,
                     observacoes,
+                    preenchido_por,
+                    apontador_rdo,
+                    encarregado_obra,
+                    fiscalizacao_campo,
                     atualizado_em
                 FROM rdo
                 WHERE cancelado_em IS NULL
@@ -160,15 +188,28 @@ public class StaviaSnapshotService {
                         rs.getString("programacao_id"),
                         rs.getString("numero_rdo"),
                         toLocalDate(rs, "data_rdo"),
+                        rs.getString("cliente"),
                         rs.getString("cidade"),
                         rs.getString("contrato"),
                         rs.getString("rodovia"),
                         rs.getString("uf"),
+                        rs.getString("km_inicial_programado"),
+                        rs.getString("km_final_programado"),
+                        rs.getString("km_inicial_interditado"),
+                        rs.getString("km_final_interditado"),
                         rs.getString("turno"),
                         toLocalTime(rs.getTime("hora_inicio")),
                         toLocalTime(rs.getTime("hora_fim")),
+                        rs.getString("condicao_manha"),
+                        rs.getString("condicao_tarde"),
+                        rs.getString("condicao_noite"),
+                        rs.getBigDecimal("pluviometria_mm"),
                         rs.getString("status"),
                         rs.getString("observacoes"),
+                        rs.getString("preenchido_por"),
+                        rs.getString("apontador_rdo"),
+                        rs.getString("encarregado_obra"),
+                        rs.getString("fiscalizacao_campo"),
                         toLocalDateTime(rs.getTimestamp("atualizado_em"))
                 ),
                 MAX_RDOS
@@ -316,12 +357,17 @@ public class StaviaSnapshotService {
                         SELECT
                             rdo_id,
                             subtrecho,
+                            numero,
                             km_inicial,
                             km_final,
+                            pista,
+                            faixa,
+                            ordem_servico,
                             comprimento_m,
                             largura_m,
                             area_m2,
-                            volume_m3
+                            volume_m3,
+                            atividade_observacoes
                         FROM rdo_controle_geometrico cg
                         JOIN (
                             SELECT id
@@ -337,12 +383,17 @@ public class StaviaSnapshotService {
                                 rs.getString("rdo_id"),
                                 new StaviaSnapshotResponse.ControleGeometricoSnapshot(
                                         rs.getString("subtrecho"),
+                                        rs.getString("numero"),
                                         rs.getString("km_inicial"),
                                         rs.getString("km_final"),
+                                        rs.getString("pista"),
+                                        rs.getString("faixa"),
+                                        rs.getString("ordem_servico"),
                                         rs.getBigDecimal("comprimento_m"),
                                         rs.getBigDecimal("largura_m"),
                                         rs.getBigDecimal("area_m2"),
-                                        rs.getBigDecimal("volume_m3")
+                                        rs.getBigDecimal("volume_m3"),
+                                        rs.getString("atividade_observacoes")
                                 )
                         ),
                         MAX_RDOS,
@@ -499,6 +550,98 @@ public class StaviaSnapshotService {
         );
     }
 
+    private List<StaviaSnapshotResponse.ProgramacaoSnapshot> programacoes() {
+        return jdbcTemplate.query(
+                """
+                SELECT
+                    p.id,
+                    p.obra_id,
+                    (
+                        SELECT r.id
+                        FROM rdo r
+                        WHERE r.programacao_id = p.id
+                          AND r.cancelado_em IS NULL
+                        ORDER BY r.data_rdo DESC, r.atualizado_em DESC, r.id
+                        LIMIT 1
+                    ) AS rdo_id,
+                    p.data_programacao,
+                    p.equipe,
+                    p.fechamento,
+                    p.encarregado,
+                    p.encarregado_colaborador_id,
+                    p.engenheiro,
+                    p.cliente,
+                    p.servico,
+                    p.tipo_servico,
+                    p.cidade,
+                    p.uf,
+                    p.rodovia,
+                    p.sentido,
+                    p.periodo,
+                    p.faixa,
+                    p.km_inicial,
+                    p.km_final,
+                    p.extensao_m,
+                    p.largura_m,
+                    p.espessura_cm,
+                    p.area_m2,
+                    p.volume_m3,
+                    p.tonelada_massa,
+                    p.tipo_cap,
+                    p.teor_cap_projeto,
+                    p.cap,
+                    p.status,
+                    p.fonte_criacao,
+                    p.fonte_arquivo,
+                    p.linha_origem,
+                    p.observacoes,
+                    p.atualizado_em
+                FROM programacao_operacional p
+                WHERE p.cancelado_em IS NULL
+                ORDER BY p.data_programacao DESC, p.atualizado_em DESC, p.id
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new StaviaSnapshotResponse.ProgramacaoSnapshot(
+                        rs.getString("id"),
+                        rs.getString("obra_id"),
+                        rs.getString("rdo_id"),
+                        toLocalDate(rs, "data_programacao"),
+                        rs.getString("equipe"),
+                        rs.getString("fechamento"),
+                        rs.getString("encarregado"),
+                        rs.getString("encarregado_colaborador_id"),
+                        rs.getString("engenheiro"),
+                        rs.getString("cliente"),
+                        rs.getString("servico"),
+                        rs.getString("tipo_servico"),
+                        rs.getString("cidade"),
+                        rs.getString("uf"),
+                        rs.getString("rodovia"),
+                        rs.getString("sentido"),
+                        rs.getString("periodo"),
+                        rs.getString("faixa"),
+                        rs.getString("km_inicial"),
+                        rs.getString("km_final"),
+                        rs.getBigDecimal("extensao_m"),
+                        rs.getBigDecimal("largura_m"),
+                        rs.getBigDecimal("espessura_cm"),
+                        rs.getBigDecimal("area_m2"),
+                        rs.getBigDecimal("volume_m3"),
+                        rs.getBigDecimal("tonelada_massa"),
+                        rs.getString("tipo_cap"),
+                        rs.getBigDecimal("teor_cap_projeto"),
+                        rs.getBigDecimal("cap"),
+                        rs.getString("status"),
+                        rs.getString("fonte_criacao"),
+                        rs.getString("fonte_arquivo"),
+                        toInteger(rs, "linha_origem"),
+                        rs.getString("observacoes"),
+                        toLocalDateTime(rs.getTimestamp("atualizado_em"))
+                ),
+                MAX_RDOS
+        );
+    }
+
     private LocalDateTime databaseUpdatedAt() {
         return jdbcTemplate.queryForObject(
                 """
@@ -507,6 +650,8 @@ public class StaviaSnapshotService {
                     SELECT MAX(atualizado_em) AS updated_at FROM obra
                     UNION ALL
                     SELECT MAX(atualizado_em) AS updated_at FROM rdo
+                    UNION ALL
+                    SELECT MAX(atualizado_em) AS updated_at FROM programacao_operacional
                     UNION ALL
                     SELECT MAX(executado_em) AS updated_at FROM pdoc_snapshot
                 ) updates
@@ -546,6 +691,12 @@ public class StaviaSnapshotService {
         return time == null ? null : time.toLocalTime();
     }
 
+    private Integer toInteger(ResultSet rs, String column)
+            throws SQLException {
+        int value = rs.getInt(column);
+        return rs.wasNull() ? null : value;
+    }
+
     private record GroupedItem<T>(String rdoId, T value) {
     }
 
@@ -555,15 +706,28 @@ public class StaviaSnapshotService {
             String programacaoId,
             String numeroRdo,
             LocalDate dataRdo,
+            String cliente,
             String cidade,
             String contrato,
             String rodovia,
             String uf,
+            String kmInicialProgramado,
+            String kmFinalProgramado,
+            String kmInicialInterditado,
+            String kmFinalInterditado,
             String turno,
             LocalTime horaInicio,
             LocalTime horaFim,
+            String condicaoManha,
+            String condicaoTarde,
+            String condicaoNoite,
+            BigDecimal pluviometriaMm,
             String status,
             String observacoes,
+            String preenchidoPor,
+            String apontadorRdo,
+            String encarregadoObra,
+            String fiscalizacaoCampo,
             LocalDateTime updatedAt
     ) {
     }

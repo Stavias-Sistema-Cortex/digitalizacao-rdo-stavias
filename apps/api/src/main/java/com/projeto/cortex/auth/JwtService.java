@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Optional;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Emissão e validação de tokens JWT (HS256) sem dependências externas.
- * O segredo vem de configuração (env), com fallback apenas para desenvolvimento.
+ * O segredo vem de configuração server-side obrigatória.
  */
 @Service
 public class JwtService {
@@ -24,7 +25,7 @@ public class JwtService {
     private final long ttlSeconds;
 
     public JwtService(
-            @Value("${cortex.auth.jwt-secret:dev-insecure-secret-change-me}")
+            @Value("${cortex.auth.jwt-secret}")
             String secret,
             @Value("${cortex.auth.jwt-ttl-seconds:43200}") long ttlSeconds
     ) {
@@ -49,13 +50,17 @@ public class JwtService {
     }
 
     public boolean tokenValido(String token) {
+        return subject(token).isPresent();
+    }
+
+    public Optional<String> subject(String token) {
         if (token == null || token.isBlank()) {
-            return false;
+            return Optional.empty();
         }
 
         String[] parts = token.split("\\.");
         if (parts.length != 3) {
-            return false;
+            return Optional.empty();
         }
 
         String signingInput = parts[0] + "." + parts[1];
@@ -65,20 +70,26 @@ public class JwtService {
         try {
             provided = B64D.decode(parts[2]);
         } catch (RuntimeException exception) {
-            return false;
+            return Optional.empty();
         }
 
         if (!MessageDigest.isEqual(expected, provided)) {
-            return false;
+            return Optional.empty();
         }
 
         try {
             String payloadJson =
                     new String(B64D.decode(parts[1]), StandardCharsets.UTF_8);
             long exp = extractLong(payloadJson, "exp");
-            return Instant.now().getEpochSecond() < exp;
+            if (Instant.now().getEpochSecond() >= exp) {
+                return Optional.empty();
+            }
+            String subject = extractString(payloadJson, "sub");
+            return subject.isBlank()
+                    ? Optional.empty()
+                    : Optional.of(subject);
         } catch (RuntimeException exception) {
-            return false;
+            return Optional.empty();
         }
     }
 
@@ -117,5 +128,39 @@ public class JwtService {
             end++;
         }
         return Long.parseLong(json.substring(cursor, end));
+    }
+
+    private static String extractString(String json, String key) {
+        int keyIndex = json.indexOf("\"" + key + "\"");
+        if (keyIndex < 0) {
+            return "";
+        }
+        int colon = json.indexOf(":", keyIndex);
+        if (colon < 0) {
+            return "";
+        }
+        int start = json.indexOf("\"", colon + 1);
+        if (start < 0) {
+            return "";
+        }
+        StringBuilder value = new StringBuilder();
+        boolean escaped = false;
+        for (int index = start + 1; index < json.length(); index++) {
+            char current = json.charAt(index);
+            if (escaped) {
+                value.append(current);
+                escaped = false;
+                continue;
+            }
+            if (current == '\\') {
+                escaped = true;
+                continue;
+            }
+            if (current == '"') {
+                return value.toString();
+            }
+            value.append(current);
+        }
+        return "";
     }
 }

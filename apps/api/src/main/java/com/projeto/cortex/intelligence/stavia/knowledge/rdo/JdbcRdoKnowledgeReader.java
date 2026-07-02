@@ -1,9 +1,11 @@
 package com.projeto.cortex.intelligence.stavia.knowledge.rdo;
 
 import java.sql.Date;
+import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,11 +46,42 @@ public class JdbcRdoKnowledgeReader implements RdoKnowledgeReader {
                     p.data_programacao AS programacao_data,
                     p.servico AS programacao_servico,
                     p.status AS programacao_status,
+                    p.fechamento AS programacao_fechamento,
+                    p.encarregado AS programacao_encarregado,
+                    p.periodo AS programacao_periodo,
+                    p.faixa AS programacao_faixa,
+                    p.km_inicial AS programacao_km_inicial,
+                    p.km_final AS programacao_km_final,
+                    p.extensao_m AS programacao_extensao_m,
+                    p.area_m2 AS programacao_area_m2,
+                    p.volume_m3 AS programacao_volume_m3,
+                    p.tonelada_massa AS programacao_tonelada_massa,
+                    p.tipo_cap AS programacao_tipo_cap,
+                    p.cap AS programacao_cap,
                     r.numero_rdo,
                     r.data_rdo,
+                    r.cliente,
+                    r.cidade,
+                    r.contrato,
+                    r.rodovia,
+                    r.uf,
+                    r.km_inicial_programado,
+                    r.km_final_programado,
+                    r.km_inicial_interditado,
+                    r.km_final_interditado,
                     r.turno,
+                    r.hora_inicio,
+                    r.hora_fim,
+                    r.condicao_manha,
+                    r.condicao_tarde,
+                    r.condicao_noite,
+                    r.pluviometria_mm,
                     r.status,
                     r.observacoes,
+                    r.preenchido_por,
+                    r.apontador_rdo,
+                    r.encarregado_obra,
+                    r.fiscalizacao_campo,
                     r.criado_em,
                     r.atualizado_em,
                     (
@@ -103,13 +136,84 @@ public class JdbcRdoKnowledgeReader implements RdoKnowledgeReader {
                                 resultSet.getString(
                                         "programacao_status"
                                 ),
+                                resultSet.getString(
+                                        "programacao_fechamento"
+                                ),
+                                resultSet.getString(
+                                        "programacao_encarregado"
+                                ),
+                                resultSet.getString(
+                                        "programacao_periodo"
+                                ),
+                                resultSet.getString(
+                                        "programacao_faixa"
+                                ),
+                                resultSet.getString(
+                                        "programacao_km_inicial"
+                                ),
+                                resultSet.getString(
+                                        "programacao_km_final"
+                                ),
+                                resultSet.getBigDecimal(
+                                        "programacao_extensao_m"
+                                ),
+                                resultSet.getBigDecimal(
+                                        "programacao_area_m2"
+                                ),
+                                resultSet.getBigDecimal(
+                                        "programacao_volume_m3"
+                                ),
+                                resultSet.getBigDecimal(
+                                        "programacao_tonelada_massa"
+                                ),
+                                resultSet.getString(
+                                        "programacao_tipo_cap"
+                                ),
+                                resultSet.getBigDecimal(
+                                        "programacao_cap"
+                                ),
                                 resultSet.getString("numero_rdo"),
                                 toLocalDate(
                                         resultSet.getDate("data_rdo")
                                 ),
+                                resultSet.getString("cliente"),
+                                resultSet.getString("cidade"),
+                                resultSet.getString("contrato"),
+                                resultSet.getString("rodovia"),
+                                resultSet.getString("uf"),
+                                resultSet.getString(
+                                        "km_inicial_programado"
+                                ),
+                                resultSet.getString(
+                                        "km_final_programado"
+                                ),
+                                resultSet.getString(
+                                        "km_inicial_interditado"
+                                ),
+                                resultSet.getString(
+                                        "km_final_interditado"
+                                ),
                                 resultSet.getString("turno"),
+                                toLocalTime(
+                                        resultSet.getTime("hora_inicio")
+                                ),
+                                toLocalTime(
+                                        resultSet.getTime("hora_fim")
+                                ),
+                                resultSet.getString("condicao_manha"),
+                                resultSet.getString("condicao_tarde"),
+                                resultSet.getString("condicao_noite"),
+                                resultSet.getBigDecimal(
+                                        "pluviometria_mm"
+                                ),
                                 resultSet.getString("status"),
                                 resultSet.getString("observacoes"),
+                                resultSet.getString("preenchido_por"),
+                                resultSet.getString("apontador_rdo"),
+                                resultSet.getString("encarregado_obra"),
+                                resultSet.getString(
+                                        "fiscalizacao_campo"
+                                ),
                                 resultSet.getInt("total_mao_obra"),
                                 resultSet.getInt("total_equipamentos"),
                                 resultSet.getInt("total_materiais"),
@@ -139,5 +243,9 @@ public class JdbcRdoKnowledgeReader implements RdoKnowledgeReader {
         return timestamp == null
                 ? null
                 : timestamp.toLocalDateTime();
+    }
+
+    private LocalTime toLocalTime(Time time) {
+        return time == null ? null : time.toLocalTime();
     }
 }

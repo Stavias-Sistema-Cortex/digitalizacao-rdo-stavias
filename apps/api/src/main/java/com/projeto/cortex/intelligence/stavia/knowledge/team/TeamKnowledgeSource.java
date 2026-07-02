@@ -203,10 +203,17 @@ public class TeamKnowledgeSource
         StringBuilder summary =
                 new StringBuilder();
 
-        summary.append("O RDO ")
+        boolean fromProgramacao =
+                "PROGRAMACAO_OPERACIONAL".equals(
+                        record.linkType()
+                );
+
+        summary.append(fromProgramacao ? "A " : "O RDO ")
                 .append(StaviaText.fallback(
                         record.rdoNumber(),
-                        record.rdoId()
+                        fromProgramacao
+                                ? "programação"
+                                : record.rdoId()
                 ));
 
         if (record.rdoDate() != null) {
@@ -233,6 +240,9 @@ public class TeamKnowledgeSource
                     .append(
                             registeredCollaborator.trim()
                     );
+        } else if (isHeaderResponsibleRecord(record)
+                && hasText(record.recordedName())) {
+            summary.append(record.recordedName().trim());
         } else {
             summary.append("o grupo de mão de obra ")
                     .append(StaviaText.fallback(
@@ -266,7 +276,8 @@ public class TeamKnowledgeSource
             );
         }
 
-        if (!hasText(record.collaboratorId())) {
+        if (!hasText(record.collaboratorId())
+                && !isHeaderResponsibleRecord(record)) {
             summary.append(
                     ". O registro não identifica "
                             + "individualmente os trabalhadores"
@@ -286,6 +297,16 @@ public class TeamKnowledgeSource
                             record.registeredCollaboratorName()
                     )
                     || record.quantity() != null
+                );
+    }
+
+    private boolean isHeaderResponsibleRecord(
+            TeamRecord record
+    ) {
+        return record != null
+                && (
+                    "RDO_CABECALHO".equals(record.linkType())
+                    || "PROGRAMACAO_OPERACIONAL".equals(record.linkType())
                 );
     }
 

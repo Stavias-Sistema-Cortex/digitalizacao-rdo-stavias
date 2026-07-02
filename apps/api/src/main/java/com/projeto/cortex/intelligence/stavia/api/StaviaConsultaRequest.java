@@ -25,14 +25,8 @@ public record StaviaConsultaRequest(
             );
         }
 
-        if (usuarioId == null || usuarioId.isBlank()) {
-            throw new IllegalArgumentException(
-                    "O usuário deve ser informado."
-            );
-        }
-
         pergunta = pergunta.trim();
-        usuarioId = usuarioId.trim();
+        usuarioId = normalizeOptional(usuarioId);
 
         obraId = obraId == null || obraId.isBlank()
                 ? null

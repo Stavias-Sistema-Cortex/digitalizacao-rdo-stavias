@@ -32,12 +32,18 @@ import {
   searchRdoServiceTypes,
   type RdoServiceType,
 } from "./rdoServiceTypes";
+import {
+  calcularControleGeometrico,
+  calcularSobraMaterial,
+  formatCalculatedNumber,
+} from "./rdoCalculations";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
   isExisting: boolean;
+  initialNotice?: string;
   onBackToList: () => void;
   onSaved: () => void;
 }
@@ -63,6 +69,19 @@ function buildPayload(draft: RdoDraft) {
     programacaoId: draft.programacaoId || null,
     numeroRdo: draft.numeroRdo,
     dataRdo: draft.dataRdo,
+    cliente: draft.cliente || null,
+    contrato: draft.contrato || null,
+    rodovia: draft.rodovia || null,
+    cidade: draft.cidade || null,
+    uf: draft.uf || null,
+    kmInicialProgramado:
+      draft.kmInicialProgramado || null,
+    kmFinalProgramado:
+      draft.kmFinalProgramado || null,
+    kmInicialInterditado:
+      draft.kmInicialInterditado || null,
+    kmFinalInterditado:
+      draft.kmFinalInterditado || null,
     turno: draft.turno,
     horaInicio: draft.horaInicio || null,
     horaFim: draft.horaFim || null,
@@ -74,6 +93,11 @@ function buildPayload(draft: RdoDraft) {
         ? null
         : draft.pluviometriaMm,
     observacoes: draft.observacoes,
+    preenchidoPor: draft.preenchidoPor || null,
+    apontadorRdo: draft.apontadorRdo || null,
+    encarregadoObra: draft.encarregadoObra || null,
+    fiscalizacaoCampo:
+      draft.fiscalizacaoCampo || null,
     servicosExecutados:
       draft.servicosExecutados.map(removeLocalId),
     alocacoesColaboradores:
@@ -313,6 +337,7 @@ function getTipoServicoSubtitle(serviceType: RdoServiceType) {
 export function RdoCreatePage({
   initialDraft,
   isExisting,
+  initialNotice,
   onBackToList,
   onSaved,
 }: RdoCreatePageProps) {
@@ -321,7 +346,7 @@ export function RdoCreatePage({
   );
 
   const [showJson, setShowJson] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(initialNotice ?? "");
   const [
     alocacaoColaboradorLabels,
     setAlocacaoColaboradorLabels,
@@ -678,6 +703,75 @@ export function RdoCreatePage({
           </label>
 
           <label>
+            Cliente / Obra no Excel
+            <input
+              value={draft.cliente}
+              onChange={(event) =>
+                updateField(
+                  "cliente",
+                  event.target.value,
+                )
+              }
+              placeholder="Nome da obra ou cliente"
+            />
+          </label>
+
+          <label>
+            Contrato / N° da obra
+            <input
+              value={draft.contrato}
+              onChange={(event) =>
+                updateField(
+                  "contrato",
+                  event.target.value,
+                )
+              }
+              placeholder="Ex.: CW38386"
+            />
+          </label>
+
+          <label>
+            Rodovia
+            <input
+              value={draft.rodovia}
+              onChange={(event) =>
+                updateField(
+                  "rodovia",
+                  event.target.value,
+                )
+              }
+              placeholder="Ex.: SP-348"
+            />
+          </label>
+
+          <label>
+            Cidade
+            <input
+              value={draft.cidade}
+              onChange={(event) =>
+                updateField(
+                  "cidade",
+                  event.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            UF
+            <input
+              value={draft.uf}
+              maxLength={2}
+              onChange={(event) =>
+                updateField(
+                  "uf",
+                  event.target.value.toUpperCase(),
+                )
+              }
+            />
+          </label>
+
+          <label>
             Turno
             <select
               value={draft.turno}
@@ -720,6 +814,114 @@ export function RdoCreatePage({
               onChange={(event) =>
                 updateField(
                   "horaFim",
+                  event.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Trecho programado inicial
+            <input
+              value={draft.kmInicialProgramado}
+              onChange={(event) =>
+                updateField(
+                  "kmInicialProgramado",
+                  event.target.value,
+                )
+              }
+              placeholder="Km/estaca inicial"
+            />
+          </label>
+
+          <label>
+            Trecho programado final
+            <input
+              value={draft.kmFinalProgramado}
+              onChange={(event) =>
+                updateField(
+                  "kmFinalProgramado",
+                  event.target.value,
+                )
+              }
+              placeholder="Km/estaca final"
+            />
+          </label>
+
+          <label>
+            Trecho interditado inicial
+            <input
+              value={draft.kmInicialInterditado}
+              onChange={(event) =>
+                updateField(
+                  "kmInicialInterditado",
+                  event.target.value,
+                )
+              }
+              placeholder="Km/estaca inicial"
+            />
+          </label>
+
+          <label>
+            Trecho interditado final
+            <input
+              value={draft.kmFinalInterditado}
+              onChange={(event) =>
+                updateField(
+                  "kmFinalInterditado",
+                  event.target.value,
+                )
+              }
+              placeholder="Km/estaca final"
+            />
+          </label>
+
+          <label>
+            Preenchido por
+            <input
+              value={draft.preenchidoPor}
+              onChange={(event) =>
+                updateField(
+                  "preenchidoPor",
+                  event.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Apontador do RDO
+            <input
+              value={draft.apontadorRdo}
+              onChange={(event) =>
+                updateField(
+                  "apontadorRdo",
+                  event.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Encarregado da obra
+            <input
+              value={draft.encarregadoObra}
+              onChange={(event) =>
+                updateField(
+                  "encarregadoObra",
+                  event.target.value,
+                )
+              }
+            />
+          </label>
+
+          <label>
+            Fiscalização de campo
+            <input
+              value={draft.fiscalizacaoCampo}
+              onChange={(event) =>
+                updateField(
+                  "fiscalizacaoCampo",
                   event.target.value,
                 )
               }
@@ -971,6 +1173,33 @@ export function RdoCreatePage({
                     </option>
                     <option value="REJEITADA">
                       Rejeitada
+                    </option>
+                  </select>
+                </label>
+
+                <label>
+                  Turno do serviço
+                  <select
+                    value={item.turno}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          turno:
+                            event.target
+                              .value as ServicoExecutadoDraft["turno"],
+                        },
+                      )
+                    }
+                  >
+                    <option value="">
+                      Usar turno do RDO
+                    </option>
+                    <option value="DIURNO">
+                      Diurno
+                    </option>
+                    <option value="NOTURNO">
+                      Noturno
                     </option>
                   </select>
                 </label>
@@ -1910,7 +2139,78 @@ export function RdoCreatePage({
                       )
                     }
                   />
+
+                  <NumericField
+                    label="Quantidade sobra"
+                    value={item.quantidadeSobra}
+                    onChange={(value) =>
+                      updateMaterial(
+                        item.localId,
+                        {
+                          quantidadeSobra: value,
+                        },
+                      )
+                    }
+                  />
+
+                  <label>
+                    Nota fiscal
+                    <input
+                      value={item.notaFiscal}
+                      onChange={(event) =>
+                        updateMaterial(
+                          item.localId,
+                          {
+                            notaFiscal:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Fornecedor
+                    <input
+                      value={item.fornecedor}
+                      onChange={(event) =>
+                        updateMaterial(
+                          item.localId,
+                          {
+                            fornecedor:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
                 </div>
+
+                <div className="computed-grid">
+                  <CalculatedMetric
+                    label="Sobra calculada"
+                    value={`${formatCalculatedNumber(
+                      calcularSobraMaterial(item),
+                    )} ${item.unidade || ""}`.trim()}
+                  />
+                </div>
+
+                <label className="full-width">
+                  Observações do material
+                  <textarea
+                    rows={3}
+                    value={item.observacoes}
+                    onChange={(event) =>
+                      updateMaterial(
+                        item.localId,
+                        {
+                          observacoes:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
               </div>
             ),
           )}
@@ -1977,6 +2277,54 @@ export function RdoCreatePage({
                   </label>
 
                   <label>
+                    Número
+                    <input
+                      value={item.numero}
+                      onChange={(event) =>
+                        updateControle(
+                          item.localId,
+                          {
+                            numero:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Estaca inicial
+                    <input
+                      value={item.estacaInicial}
+                      onChange={(event) =>
+                        updateControle(
+                          item.localId,
+                          {
+                            estacaInicial:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Estaca final
+                    <input
+                      value={item.estacaFinal}
+                      onChange={(event) =>
+                        updateControle(
+                          item.localId,
+                          {
+                            estacaFinal:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
                     KM inicial
                     <input
                       value={item.kmInicial}
@@ -2007,6 +2355,54 @@ export function RdoCreatePage({
                         )
                       }
                       placeholder="100.500"
+                    />
+                  </label>
+
+                  <label>
+                    Pista
+                    <input
+                      value={item.pista}
+                      onChange={(event) =>
+                        updateControle(
+                          item.localId,
+                          {
+                            pista:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Faixa
+                    <input
+                      value={item.faixa}
+                      onChange={(event) =>
+                        updateControle(
+                          item.localId,
+                          {
+                            faixa:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Ordem de serviço
+                    <input
+                      value={item.ordemServico}
+                      onChange={(event) =>
+                        updateControle(
+                          item.localId,
+                          {
+                            ordemServico:
+                              event.target.value,
+                          },
+                        )
+                      }
                     />
                   </label>
 
@@ -2088,6 +2484,76 @@ export function RdoCreatePage({
                     }
                   />
                 </div>
+
+                <div className="computed-grid">
+                  {(() => {
+                    const calculo =
+                      calcularControleGeometrico(item);
+
+                    return (
+                      <>
+                        <CalculatedMetric
+                          label="Espessura média"
+                          value={`${formatCalculatedNumber(
+                            calculo.espessuraMediaCm,
+                          )} cm`}
+                        />
+                        <CalculatedMetric
+                          label="Área"
+                          value={`${formatCalculatedNumber(
+                            calculo.areaM2,
+                          )} m²`}
+                        />
+                        <CalculatedMetric
+                          label="Volume"
+                          value={`${formatCalculatedNumber(
+                            calculo.volumeM3,
+                          )} m³`}
+                        />
+                        <CalculatedMetric
+                          label="Massa"
+                          value={`${formatCalculatedNumber(
+                            calculo.massaTonelada,
+                          )} t`}
+                        />
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <label className="full-width">
+                  Atividades executadas / observações
+                  <textarea
+                    rows={3}
+                    value={item.atividadeObservacoes}
+                    onChange={(event) =>
+                      updateControle(
+                        item.localId,
+                        {
+                          atividadeObservacoes:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label className="full-width">
+                  Observações do controle
+                  <textarea
+                    rows={3}
+                    value={item.observacoes}
+                    onChange={(event) =>
+                      updateControle(
+                        item.localId,
+                        {
+                          observacoes:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
               </div>
             ),
           )}
@@ -2239,5 +2705,22 @@ function NumericField({
         }
       />
     </label>
+  );
+}
+
+interface CalculatedMetricProps {
+  label: string;
+  value: string;
+}
+
+function CalculatedMetric({
+  label,
+  value,
+}: CalculatedMetricProps) {
+  return (
+    <div className="calculated-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }

@@ -10,7 +10,9 @@ export interface PullEventsSummary {
   lastAppliedCommitSeq: number;
 }
 
-export async function pullEvents(): Promise<PullEventsSummary> {
+export async function pullEvents(
+  deviceId: string,
+): Promise<PullEventsSummary> {
   const initialState = await getSyncState();
 
   let cursor = initialState.lastPulledCommitSeq;
@@ -20,6 +22,7 @@ export async function pullEvents(): Promise<PullEventsSummary> {
   while (page < MAX_PAGES_PER_RUN) {
     const response = await pullEventsApi(
       cursor,
+      deviceId,
       PAGE_LIMIT,
     );
 

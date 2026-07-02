@@ -226,10 +226,127 @@ public class StaviaSemanticCatalog {
                                         "turno",
                                         "turno da obra",
                                         "turno do rdo",
+                                        "periodo",
+                                        "período",
+                                        "periodo de trabalho",
                                         "diurno",
                                         "noturno"
                                 ),
                                 "ENUM",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmInicialProgramado",
+                                List.of(
+                                        "trecho programado inicial",
+                                        "km inicial programado",
+                                        "trecho inicial programado",
+                                        "inicio programado",
+                                        "início programado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmFinalProgramado",
+                                List.of(
+                                        "trecho programado final",
+                                        "km final programado",
+                                        "trecho final programado",
+                                        "final programado",
+                                        "fim programado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmInicialInterditado",
+                                List.of(
+                                        "trecho interditado inicial",
+                                        "km inicial interditado",
+                                        "inicio interditado",
+                                        "início interditado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmFinalInterditado",
+                                List.of(
+                                        "trecho interditado final",
+                                        "km final interditado",
+                                        "final interditado",
+                                        "fim interditado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "preenchidoPor",
+                                List.of(
+                                        "preenchido por",
+                                        "quem preencheu",
+                                        "quem fez o rdo",
+                                        "responsavel pelo preenchimento",
+                                        "responsável pelo preenchimento"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "apontadorRdo",
+                                List.of(
+                                        "apontador",
+                                        "apontador rdo",
+                                        "apontador do rdo"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "encarregadoObra",
+                                List.of(
+                                        "encarregado",
+                                        "encarregado da obra",
+                                        "encarregado obra"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "fiscalizacaoCampo",
+                                List.of(
+                                        "fiscalizacao",
+                                        "fiscalização",
+                                        "fiscalizacao de campo",
+                                        "fiscalização de campo",
+                                        "fiscal"
+                                ),
+                                "TEXT",
                                 null,
                                 "cadastro-rdos",
                                 false

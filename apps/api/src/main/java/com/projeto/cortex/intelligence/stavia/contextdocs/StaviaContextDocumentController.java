@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia.contextdocs;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,11 +17,14 @@ import java.util.List;
 public class StaviaContextDocumentController {
 
     private final StaviaContextDocumentService service;
+    private final CurrentUserService currentUserService;
 
     public StaviaContextDocumentController(
-            StaviaContextDocumentService service
+            StaviaContextDocumentService service,
+            CurrentUserService currentUserService
     ) {
         this.service = service;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping(
@@ -36,10 +40,11 @@ public class StaviaContextDocumentController {
             @RequestPart(value = "descricao", required = false)
             String descricao
     ) {
+        currentUserService.requireAdmin();
         return service.adicionar(
                 obraId,
                 arquivo,
-                usuarioId,
+                currentUserService.requireUserId(),
                 descricao
         );
     }
@@ -48,6 +53,7 @@ public class StaviaContextDocumentController {
     public List<StaviaContextDocumentResponse> listar(
             @PathVariable String obraId
     ) {
+        currentUserService.requireAdmin();
         return service.listar(obraId);
     }
 }

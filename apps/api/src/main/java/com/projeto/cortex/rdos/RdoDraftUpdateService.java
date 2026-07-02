@@ -109,6 +109,10 @@ public class RdoDraftUpdateService {
                     condicao_noite = ?,
                     pluviometria_mm = ?,
                     observacoes = ?,
+                    preenchido_por = ?,
+                    apontador_rdo = ?,
+                    encarregado_obra = ?,
+                    fiscalizacao_campo = ?,
                     versao_linha = versao_linha + 1
                 WHERE id = ?
                   AND status = 'RASCUNHO'
@@ -135,6 +139,10 @@ public class RdoDraftUpdateService {
                 request.condicaoNoite(),
                 request.pluviometriaMm(),
                 request.observacoes(),
+                nuloSeVazio(request.preenchidoPor()),
+                nuloSeVazio(request.apontadorRdo()),
+                nuloSeVazio(request.encarregadoObra()),
+                nuloSeVazio(request.fiscalizacaoCampo()),
                 rdoId
         );
 
@@ -296,19 +304,25 @@ public class RdoDraftUpdateService {
                     """
                     INSERT INTO rdo_controle_geometrico (
                         id, rdo_id, subtrecho, estaca_inicial, estaca_final,
-                        km_inicial, km_final, comprimento_m, largura_m,
+                        numero, km_inicial, km_final, pista, faixa,
+                        ordem_servico, atividade_observacoes, comprimento_m, largura_m,
                         espessura_1_cm, espessura_2_cm, espessura_3_cm,
                         espessura_media_cm, area_m2, volume_m3,
                         densidade, massa_tonelada, observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     UUID.randomUUID().toString(),
                     rdoId,
                     item.subtrecho(),
                     item.estacaInicial(),
                     item.estacaFinal(),
+                    item.numero(),
                     item.kmInicial(),
                     item.kmFinal(),
+                    item.pista(),
+                    item.faixa(),
+                    item.ordemServico(),
+                    item.atividadeObservacoes(),
                     item.comprimentoM(),
                     item.larguraM(),
                     item.espessura1Cm(),

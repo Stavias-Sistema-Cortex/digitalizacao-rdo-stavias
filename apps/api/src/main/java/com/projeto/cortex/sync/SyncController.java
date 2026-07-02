@@ -17,10 +17,11 @@ public class SyncController {
 
     @GetMapping("/api/sync/pull")
     public SyncPullResponse pull(
+            @RequestParam String dispositivoId,
             @RequestParam(defaultValue = "0") long afterCommitSeq,
             @RequestParam(required = false) Integer limit
     ) {
-        return service.pull(afterCommitSeq, limit);
+        return service.pull(dispositivoId, afterCommitSeq, limit);
     }
 
     @PostMapping("/api/sync/dispositivos")

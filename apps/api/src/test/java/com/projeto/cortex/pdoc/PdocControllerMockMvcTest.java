@@ -1,12 +1,15 @@
 package com.projeto.cortex.pdoc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
@@ -44,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "logging.level.org.springframework=INFO"
         }
 )
+@AutoConfigureMockMvc(addFilters = false)
 @Import({
         PdocApplicationService.class,
         PdocExceptionHandler.class
@@ -58,6 +62,12 @@ class PdocControllerMockMvcTest {
 
     @MockBean
     private ObraRepository obraRepository;
+
+    @MockBean
+    private JwtService jwtService;
+
+    @MockBean
+    private CurrentUserService currentUserService;
 
     @MockBean
     private PdocInputLoader inputLoader;

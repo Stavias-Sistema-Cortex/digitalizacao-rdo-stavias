@@ -2,6 +2,7 @@ import {
   getSyncState,
   updateSyncState,
 } from "../db/syncStateRepository";
+import { getSession } from "../../features/auth/authSession";
 import { registerDeviceApi } from "./syncApiClient";
 
 function createDeviceName(): string {
@@ -15,18 +16,28 @@ function createDeviceName(): string {
 
 export async function ensureRegisteredDevice(): Promise<string> {
   const currentState = await getSyncState();
+  const session = getSession();
+  const usuarioId =
+    session?.colaboradorId?.trim() || null;
 
-  if (currentState.deviceId) {
-    return currentState.deviceId;
+  if (!session?.token || !usuarioId) {
+    throw new Error(
+      "Faça login novamente para sincronizar com o servidor.",
+    );
   }
 
-  const generatedDeviceId = crypto.randomUUID();
+  const sameUser =
+    currentState.usuarioId === usuarioId;
+  const deviceId =
+    sameUser && currentState.deviceId
+      ? currentState.deviceId
+      : crypto.randomUUID();
 
   const response = await registerDeviceApi({
-    id: generatedDeviceId,
+    id: deviceId,
     nome: createDeviceName(),
     tipo: "WEB",
-    usuarioId: null,
+    usuarioId,
   });
 
   if (
@@ -40,6 +51,13 @@ export async function ensureRegisteredDevice(): Promise<string> {
 
   await updateSyncState({
     deviceId: response.id,
+    usuarioId,
+    ...(sameUser
+      ? {}
+      : {
+          lastPulledCommitSeq: 0,
+          lastAckedCommitSeq: 0,
+        }),
   });
 
   return response.id;

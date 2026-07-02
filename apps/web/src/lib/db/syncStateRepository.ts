@@ -7,6 +7,7 @@ function createDefaultSyncState(): SyncStateRecord {
   return {
     key: SYNC_STATE_KEY,
     deviceId: null,
+    usuarioId: null,
     lastPulledCommitSeq: 0,
     lastAckedCommitSeq: 0,
     isSyncing: false,

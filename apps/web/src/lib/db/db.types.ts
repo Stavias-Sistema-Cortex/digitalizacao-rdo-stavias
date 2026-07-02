@@ -72,6 +72,7 @@ export interface OutboxMutationRecord {
 export interface SyncStateRecord {
   key: "default";
   deviceId: string | null;
+  usuarioId: string | null;
   lastPulledCommitSeq: number;
   lastAckedCommitSeq: number;
   isSyncing: boolean;

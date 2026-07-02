@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,15 @@ class JwtServiceTest {
     void tokenRecemGeradoEhValido() {
         JwtService service = new JwtService(SECRET, 3600);
         assertTrue(service.tokenValido(service.gerarToken("colab-1")));
+    }
+
+    @Test
+    void tokenValidoExpoeSubjectAutenticado() {
+        JwtService service = new JwtService(SECRET, 3600);
+        assertEquals(
+                "colab-1",
+                service.subject(service.gerarToken("colab-1")).orElseThrow()
+        );
     }
 
     @Test

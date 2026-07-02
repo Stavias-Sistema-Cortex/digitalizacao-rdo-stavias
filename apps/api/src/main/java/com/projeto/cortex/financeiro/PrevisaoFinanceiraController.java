@@ -1,5 +1,6 @@
 package com.projeto.cortex.financeiro;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,9 +15,14 @@ import java.util.List;
 public class PrevisaoFinanceiraController {
 
     private final PrevisaoFinanceiraService service;
+    private final CurrentUserService currentUserService;
 
-    public PrevisaoFinanceiraController(PrevisaoFinanceiraService service) {
+    public PrevisaoFinanceiraController(
+            PrevisaoFinanceiraService service,
+            CurrentUserService currentUserService
+    ) {
         this.service = service;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping("/api/obras/{obraId}/previsao-financeira/calcular")
@@ -28,6 +34,7 @@ public class PrevisaoFinanceiraController {
             @RequestParam(required = false) String tipoDisparo,
             @RequestParam(required = false) String eventoOrigemId
     ) {
+        currentUserService.requireAdmin();
         return service.calcular(
                 obraId,
                 dataReferencia,
@@ -38,6 +45,7 @@ public class PrevisaoFinanceiraController {
 
     @GetMapping("/api/obras/{obraId}/previsao-financeira/atual")
     public PrevisaoFinanceiraResponse atual(@PathVariable String obraId) {
+        currentUserService.requireWorksiteAccess(obraId);
         return service.buscarAtual(obraId);
     }
 
@@ -47,6 +55,7 @@ public class PrevisaoFinanceiraController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
+        currentUserService.requireWorksiteAccess(obraId);
         return service.buscarHistorico(obraId, page, size);
     }
 }

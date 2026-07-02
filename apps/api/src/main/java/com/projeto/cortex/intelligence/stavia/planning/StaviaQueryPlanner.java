@@ -112,6 +112,16 @@ public class StaviaQueryPlanner {
             return combined;
         }
 
+        StaviaQueryPlan crossWorksiteAllocation =
+                crossWorksiteAllocationPlan(
+                        question,
+                        normalized
+                );
+
+        if (crossWorksiteAllocation.planned()) {
+            return crossWorksiteAllocation;
+        }
+
         StaviaQueryPlan contextDocuments =
                 contextDocumentPlan(question, normalized);
 
@@ -123,16 +133,6 @@ public class StaviaQueryPlanner {
 
         if (segment.planned()) {
             return segment;
-        }
-
-        StaviaQueryPlan crossWorksiteAllocation =
-                crossWorksiteAllocationPlan(
-                        question,
-                        normalized
-                );
-
-        if (crossWorksiteAllocation.planned()) {
-            return crossWorksiteAllocation;
         }
 
         StaviaQueryPlan collaboratorProfile =
@@ -351,10 +351,21 @@ public class StaviaQueryPlanner {
         }
 
         String collaborator =
-                collaboratorNameInWorksiteListQuestion(question.text());
+                collaboratorNameAfterWorksiteRelationship(question.text());
 
         if (collaborator == null) {
-            collaborator = collaboratorNameBeforeRelationship(question.text());
+            collaborator =
+                    collaboratorNameBeforeWorksiteRelationship(question.text());
+        }
+
+        if (collaborator == null) {
+            collaborator =
+                    collaboratorNameInWorksiteListQuestion(question.text());
+        }
+
+        if (collaborator == null) {
+            collaborator =
+                    collaboratorNameBeforeRelationship(question.text());
         }
 
         if (collaborator == null) {
@@ -383,6 +394,53 @@ public class StaviaQueryPlanner {
                 true,
                 false
         );
+    }
+
+    private String collaboratorNameAfterWorksiteRelationship(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+
+        String candidate = question.replaceFirst(
+                "(?iu)^.*?\\bem\\s+qu(?:al|ais)\\s+obras?\\s+"
+                        + "(?:está|esta|trabalha|trabalhou|atua|"
+                        + "foi\\s+alocado|tem\\s+alocação|tem\\s+alocacao)"
+                        + "\\s+(?:(?:o|a)\\s+)?"
+                        + "(?:(?:colaborador|funcionário|funcionario|trabalhador)\\s+)?",
+                ""
+        );
+
+        if (candidate.equals(question)) {
+            return null;
+        }
+
+        return cleanCollaboratorCandidate(candidate);
+    }
+
+    private String collaboratorNameBeforeWorksiteRelationship(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+
+        String candidate = question.replaceFirst(
+                "(?iu)^.*?\\bem\\s+qu(?:al|ais)\\s+obras?\\s+"
+                        + "(?:(?:o|a)\\s+)?"
+                        + "(?:(?:colaborador|funcionário|funcionario|trabalhador)\\s+)?",
+                ""
+        );
+
+        if (candidate.equals(question)) {
+            return null;
+        }
+
+        candidate = candidate.replaceFirst(
+                "(?iu)\\s+(está|esta|trabalha|trabalhou|atua|"
+                        + "foi\\s+alocado|tem\\s+alocação|tem\\s+alocacao)"
+                        + "(?:\\s|[?!.]|$).*?$",
+                ""
+        );
+
+        return cleanCollaboratorCandidate(candidate);
     }
 
     /**
@@ -445,11 +503,7 @@ public class StaviaQueryPlanner {
                 .replaceAll("[?!.]+$", "")
                 .trim();
 
-        if (candidate.isBlank() || candidate.split("\\s+").length < 2) {
-            return null;
-        }
-
-        return candidate;
+        return cleanCollaboratorCandidate(candidate);
     }
 
     private String collaboratorNameInWorksiteListQuestion(String question) {
@@ -483,12 +537,7 @@ public class StaviaQueryPlanner {
                 .replaceAll("[?!.]+$", "")
                 .trim();
 
-        if (candidate.split("\\s+").length < 2
-                || roleLexicon.mentionsTeam(candidate)) {
-            return null;
-        }
-
-        return candidate;
+        return cleanCollaboratorCandidate(candidate);
     }
 
     private String collaboratorNameAfterProfilePrompt(String question) {
@@ -504,12 +553,32 @@ public class StaviaQueryPlanner {
                 .replaceAll("[?!.]+$", "")
                 .trim();
 
-        if (candidate.split("\\s+").length < 2
-                || roleLexicon.mentionsTeam(candidate)) {
+        return cleanCollaboratorCandidate(candidate);
+    }
+
+    private String cleanCollaboratorCandidate(String candidate) {
+        if (candidate == null) {
             return null;
         }
 
-        return candidate;
+        String cleaned = candidate
+                .replaceFirst(
+                        "(?is)\\R\\s*Contexto\\s+ontol[oó]gico\\s+selecionado:.*$",
+                        ""
+                )
+                .replaceFirst(
+                        "(?is)\\R\\s*Contexto\\s+informado:.*$",
+                        ""
+                )
+                .replaceAll("[?!.]+$", "")
+                .trim();
+
+        if (cleaned.split("\\s+").length < 2
+                || roleLexicon.mentionsTeam(cleaned)) {
+            return null;
+        }
+
+        return cleaned;
     }
 
     private StaviaQueryPlan assetCatalogPlan(
@@ -600,6 +669,13 @@ public class StaviaQueryPlanner {
                 && plan.planned()
                 && plan.requiredSources().contains("contexto-da-obra")) {
             return StaviaIntent.CONSULTAR_OBRA;
+        }
+
+        if (plan != null
+                && plan.planned()
+                && plan.domain() == QueryDomain.COLABORADOR
+                && plan.operation() == QueryOperation.TRAVERSE_RELATIONSHIP) {
+            return StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR;
         }
 
         if (classifiedIntent != null

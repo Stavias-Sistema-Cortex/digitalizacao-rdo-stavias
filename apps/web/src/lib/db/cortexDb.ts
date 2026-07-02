@@ -384,6 +384,7 @@ export async function initializeCortexDb(): Promise<void> {
     const initialSyncState: SyncStateRecord = {
       key: "default",
       deviceId: null,
+      usuarioId: null,
       lastPulledCommitSeq: 0,
       lastAckedCommitSeq: 0,
       isSyncing: false,

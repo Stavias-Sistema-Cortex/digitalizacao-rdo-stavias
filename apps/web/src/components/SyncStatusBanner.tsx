@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -74,6 +75,14 @@ function getStatusContent(
       };
 
     case "ERROR":
+      if (errorCount === 0) {
+        return {
+          title: "Falha na sincronização",
+          description:
+            "Não foi possível confirmar a sincronização com o servidor. Os dados locais continuam salvos neste dispositivo.",
+        };
+      }
+
       return {
         title: "Falha na sincronização",
         description: `${pluralize(
@@ -136,17 +145,20 @@ export function SyncStatusBanner() {
   const [isManualSyncing, setIsManualSyncing] =
     useState(false);
 
+  const displayedStatus: SyncUiStatus =
+    manualSyncError ? "ERROR" : snapshot.status;
+
   const content = useMemo(
     () =>
       getStatusContent(
-        snapshot.status,
+        displayedStatus,
         snapshot.pendingCount,
         snapshot.syncingCount,
         snapshot.errorCount,
         snapshot.conflictCount,
       ),
     [
-      snapshot.status,
+      displayedStatus,
       snapshot.pendingCount,
       snapshot.syncingCount,
       snapshot.errorCount,
@@ -160,9 +172,23 @@ export function SyncStatusBanner() {
 
   const visibleSyncError =
     manualSyncError ||
-    (snapshot.status === "ERROR"
+    (displayedStatus === "ERROR"
       ? snapshot.lastSyncError
       : null);
+
+  useEffect(() => {
+    if (
+      manualSyncError &&
+      !snapshot.lastSyncError &&
+      snapshot.status !== "ERROR"
+    ) {
+      setManualSyncError("");
+    }
+  }, [
+    manualSyncError,
+    snapshot.lastSyncError,
+    snapshot.status,
+  ]);
 
   async function handleSyncNow(): Promise<void> {
     setIsManualSyncing(true);
@@ -184,7 +210,7 @@ export function SyncStatusBanner() {
 
   return (
     <aside
-      className={`sync-banner sync-banner--${snapshot.status.toLowerCase()}`}
+      className={`sync-banner sync-banner--${displayedStatus.toLowerCase()}`}
       role="status"
       aria-live="polite"
     >

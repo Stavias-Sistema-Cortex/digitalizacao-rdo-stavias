@@ -19,10 +19,14 @@ public class AuthService {
         this.colaboradorRepository = colaboradorRepository;
     }
 
-    public Optional<LoginResponse> autenticarPorCpf(String cpfRaw) {
+    public Optional<LoginResponse> autenticarPorCpf(String cpfRaw, String senhaRaw) {
         String normalizado = CpfHasher.normalizar(cpfRaw);
+        String senhaNormalizada = CpfHasher.normalizar(senhaRaw);
 
-        if (normalizado == null || normalizado.length() != 11) {
+        if (normalizado == null
+                || normalizado.length() != 11
+                || senhaNormalizada == null
+                || !normalizado.equals(senhaNormalizada)) {
             return Optional.empty();
         }
 

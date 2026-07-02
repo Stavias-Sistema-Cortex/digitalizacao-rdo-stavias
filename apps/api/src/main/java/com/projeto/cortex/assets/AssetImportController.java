@@ -1,5 +1,6 @@
 package com.projeto.cortex.assets;
 
+import com.projeto.cortex.auth.CurrentUserService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,16 +15,22 @@ import java.util.List;
 public class AssetImportController {
 
     private final AssetImportService assetImportService;
+    private final CurrentUserService currentUserService;
 
     @Value("${cortex.import.enabled:false}")
     private boolean importEnabled;
 
-    public AssetImportController(AssetImportService assetImportService) {
+    public AssetImportController(
+            AssetImportService assetImportService,
+            CurrentUserService currentUserService
+    ) {
         this.assetImportService = assetImportService;
+        this.currentUserService = currentUserService;
     }
 
     @PostMapping("/api/assets/import/zld")
     public AssetImportResult importFromZld() {
+        currentUserService.requireAdmin();
         if (!importEnabled) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
@@ -36,6 +43,7 @@ public class AssetImportController {
 
     @GetMapping("/api/assets/import/runs")
     public List<SyncRunResponse> listRecentRuns(@RequestParam(defaultValue = "10") int limit) {
+        currentUserService.requireAdmin();
         return assetImportService.listRecentRuns(limit);
     }
 }

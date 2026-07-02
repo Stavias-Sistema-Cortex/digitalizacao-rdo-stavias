@@ -109,12 +109,17 @@ export interface StaviaSnapshotMaterial {
 
 export interface StaviaSnapshotControleGeometrico {
   subtrecho: string | null;
+  numero: string | null;
   kmInicial: string | null;
   kmFinal: string | null;
+  pista: string | null;
+  faixa: string | null;
+  ordemServico: string | null;
   comprimentoM: number | string | null;
   larguraM: number | string | null;
   areaM2: number | string | null;
   volumeM3: number | string | null;
+  atividadeObservacoes: string | null;
 }
 
 export interface StaviaSnapshotAlocacao {
@@ -146,15 +151,28 @@ export interface StaviaSnapshotRdo {
   programacaoId: string | null;
   numeroRdo: string | null;
   dataRdo: string | null;
+  cliente: string | null;
   cidade: string | null;
   contrato: string | null;
   rodovia: string | null;
   uf: string | null;
+  kmInicialProgramado: string | null;
+  kmFinalProgramado: string | null;
+  kmInicialInterditado: string | null;
+  kmFinalInterditado: string | null;
   turno: string | null;
   horaInicio: string | null;
   horaFim: string | null;
+  condicaoManha: string | null;
+  condicaoTarde: string | null;
+  condicaoNoite: string | null;
+  pluviometriaMm: number | string | null;
   status: string | null;
   observacoes: string | null;
+  preenchidoPor: string | null;
+  apontadorRdo: string | null;
+  encarregadoObra: string | null;
+  fiscalizacaoCampo: string | null;
   updatedAt: string | null;
   servicosExecutados: StaviaSnapshotServicoExecutado[];
   maoObra: StaviaSnapshotMaoObra[];
@@ -162,6 +180,44 @@ export interface StaviaSnapshotRdo {
   materiais: StaviaSnapshotMaterial[];
   controlesGeometricos: StaviaSnapshotControleGeometrico[];
   alocacoesColaboradores: StaviaSnapshotAlocacao[];
+}
+
+export interface StaviaSnapshotProgramacao {
+  id: string;
+  obraId: string;
+  rdoId: string | null;
+  dataProgramacao: string | null;
+  equipe: string | null;
+  fechamento: string | null;
+  encarregado: string | null;
+  encarregadoColaboradorId: string | null;
+  engenheiro: string | null;
+  cliente: string | null;
+  servico: string | null;
+  tipoServico: string | null;
+  cidade: string | null;
+  uf: string | null;
+  rodovia: string | null;
+  sentido: string | null;
+  periodo: string | null;
+  faixa: string | null;
+  kmInicial: string | null;
+  kmFinal: string | null;
+  extensaoM: number | string | null;
+  larguraM: number | string | null;
+  espessuraCm: number | string | null;
+  areaM2: number | string | null;
+  volumeM3: number | string | null;
+  toneladaMassa: number | string | null;
+  tipoCap: string | null;
+  teorCapProjeto: number | string | null;
+  cap: number | string | null;
+  status: string | null;
+  fonteCriacao: string | null;
+  fonteArquivo: string | null;
+  linhaOrigem: number | string | null;
+  observacoes: string | null;
+  updatedAt: string | null;
 }
 
 export interface StaviaSnapshotPdoc {
@@ -183,5 +239,6 @@ export interface StaviaSnapshot {
   metadata: StaviaSnapshotMetadata;
   obras: StaviaSnapshotObra[];
   rdos: StaviaSnapshotRdo[];
+  programacoes: StaviaSnapshotProgramacao[];
   pdocs: StaviaSnapshotPdoc[];
 }

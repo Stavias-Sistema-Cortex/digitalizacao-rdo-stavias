@@ -34,7 +34,10 @@ CREATE TABLE stavia_contexto_obra (
                 'ARQUIVO_ARMAZENADO_SEM_EXTRACAO'
             )
         )
-);
+)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8mb4
+COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_stavia_contexto_obra
     ON stavia_contexto_obra (obra_id, ativo, criado_em);

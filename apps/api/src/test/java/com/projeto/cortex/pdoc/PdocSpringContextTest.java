@@ -1,6 +1,7 @@
 package com.projeto.cortex.pdoc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -18,7 +19,8 @@ class PdocSpringContextTest {
                     .withBean(ObjectMapper.class, ObjectMapper::new)
                     .withBean(ObraRepository.class, () -> mock(ObraRepository.class))
                     .withBean(PdocInputLoader.class, () -> mock(PdocInputLoader.class))
-                    .withBean(PdocSnapshotRepository.class, () -> mock(PdocSnapshotRepository.class));
+                    .withBean(PdocSnapshotRepository.class, () -> mock(PdocSnapshotRepository.class))
+                    .withBean(CurrentUserService.class, () -> mock(CurrentUserService.class));
 
     @Test
     void shouldStartPdocSpringSlice() {

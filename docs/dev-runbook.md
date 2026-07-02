@@ -47,6 +47,7 @@ Então:
 Para rodar a API local:
 
 export CORTEX_DB_PASSWORD='sua-senha-local-do-cortex'
+export CORTEX_AUTH_JWT_SECRET='gere-um-segredo-longo-local'
 
 Para ativar importações:
 
@@ -54,13 +55,13 @@ export CORTEX_IMPORT_ENABLED=true
 
 Para importar ativos da ZLD:
 
-export ZLD_DB_URL='jdbc:mysql://dbstavias_zld.mysql.dbaas.com.br:3306/dbstavias_zld?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+export ZLD_DB_URL='jdbc:mysql://<host-zld>:3306/<database-zld>?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
 export ZLD_DB_USER='usuario-zld'
 export ZLD_DB_PASSWORD='senha-zld'
 
 Para importar colaboradores da Academy:
 
-export ACAD_DB_URL='jdbc:mysql://dbstavias_acad.mysql.dbaas.com.br:3306/dbstavias_acad?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+export ACAD_DB_URL='jdbc:mysql://<host-academy>:3306/<database-academy>?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
 export ACAD_DB_USER='usuario-acad'
 export ACAD_DB_PASSWORD='senha-acad'
 

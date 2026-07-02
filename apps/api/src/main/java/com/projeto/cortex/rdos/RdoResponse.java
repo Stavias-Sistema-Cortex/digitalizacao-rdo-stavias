@@ -19,6 +19,10 @@ public record RdoResponse(
         String rodovia,
         String cidade,
         String uf,
+        String kmInicialProgramado,
+        String kmFinalProgramado,
+        String kmInicialInterditado,
+        String kmFinalInterditado,
 
         String turno,
         LocalTime horaInicio,
@@ -26,6 +30,10 @@ public record RdoResponse(
 
         String status,
         String observacoes,
+        String preenchidoPor,
+        String apontadorRdo,
+        String encarregadoObra,
+        String fiscalizacaoCampo,
 
         List<MaoObraItem> maoObra,
         List<EquipamentoItem> equipamentos,
@@ -63,20 +71,36 @@ public record RdoResponse(
             BigDecimal quantidadePrevista,
             BigDecimal quantidadeUsinada,
             BigDecimal quantidadeAplicada,
-            BigDecimal quantidadeSobra
+            BigDecimal quantidadeSobra,
+            String notaFiscal,
+            String fornecedor,
+            String observacoes
     ) {
     }
 
     public record ControleGeometricoItem(
             String id,
             String subtrecho,
+            String numero,
+            String estacaInicial,
+            String estacaFinal,
+            String kmInicial,
+            String kmFinal,
+            String pista,
+            String faixa,
+            String ordemServico,
+            String atividadeObservacoes,
             BigDecimal comprimentoM,
             BigDecimal larguraM,
+            BigDecimal espessura1Cm,
+            BigDecimal espessura2Cm,
+            BigDecimal espessura3Cm,
             BigDecimal espessuraMediaCm,
             BigDecimal areaM2,
             BigDecimal volumeM3,
             BigDecimal densidade,
-            BigDecimal massaTonelada
+            BigDecimal massaTonelada,
+            String observacoes
     ) {
     }
 

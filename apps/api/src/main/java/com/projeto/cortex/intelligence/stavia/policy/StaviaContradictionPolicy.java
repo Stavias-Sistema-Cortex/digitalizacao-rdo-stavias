@@ -182,6 +182,9 @@ public class StaviaContradictionPolicy {
                     || StaviaEvidenceTypes.COLABORADOR.equals(
                             evidence.type()
                     )
+                    || StaviaEvidenceTypes.ALOCACAO_COLABORADOR.equals(
+                            evidence.type()
+                    )
                     || StaviaEvidenceTypes.ATIVO.equals(
                             evidence.type()
                     )

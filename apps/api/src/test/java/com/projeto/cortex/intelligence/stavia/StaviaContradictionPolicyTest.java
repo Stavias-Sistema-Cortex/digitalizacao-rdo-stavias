@@ -182,6 +182,48 @@ class StaviaContradictionPolicyTest {
         );
     }
 
+    @Test
+    void shouldNotCompareDifferentAllocationRecordsAsContradictions() {
+        StaviaContradictionAssessment assessment =
+                policy.assess(
+                        List.of(
+                                allocationEvidence(
+                                        "rdo-mdo-1",
+                                        Map.of(
+                                                "obraId",
+                                                "obra-1",
+                                                "colaboradorNome",
+                                                "Adalberto Canovas Neto",
+                                                "funcao",
+                                                "Encarregado",
+                                                "fonte",
+                                                "RDO_LEGADO",
+                                                "data",
+                                                "2026-05-15"
+                                        )
+                                ),
+                                allocationEvidence(
+                                        "programacao-1",
+                                        Map.of(
+                                                "obraId",
+                                                "obra-1",
+                                                "colaboradorNome",
+                                                "Adalberto Canovas Neto",
+                                                "funcao",
+                                                "Encarregado da programação",
+                                                "fonte",
+                                                "PROGRAMACAO_OPERACIONAL",
+                                                "data",
+                                                "2026-05-14"
+                                        )
+                                )
+                        )
+                );
+
+        assertFalse(assessment.contradictory());
+        assertFalse(assessment.critical());
+    }
+
     private StaviaEvidence evidence(
             String id,
             Map<String, Object> attributes
@@ -223,6 +265,22 @@ class StaviaContradictionPolicyTest {
                         "obraId",
                         "CW38386"
                 )
+        );
+    }
+
+    private StaviaEvidence allocationEvidence(
+            String id,
+            Map<String, Object> attributes
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
+                id,
+                "Registro de alocação " + id,
+                Instant.parse(
+                        "2026-06-22T12:00:00Z"
+                ),
+                true,
+                attributes
         );
     }
 }
