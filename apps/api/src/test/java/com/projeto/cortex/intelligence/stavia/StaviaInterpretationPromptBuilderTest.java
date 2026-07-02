@@ -31,4 +31,21 @@ class StaviaInterpretationPromptBuilderTest {
         assertTrue(messages.get(0).content().contains("CONSULTAR_RDO"));
         assertTrue(messages.get(1).content().contains("Quem é o apontador da obra?"));
     }
+
+    @Test
+    void shouldIncludeRdoOntologyVocabulary() {
+        List<OllamaChatClient.ChatMessage> messages =
+                builder.build(new StaviaQuestion(
+                        "Qual a quantidade prevista de CAP 30/45?",
+                        "u1",
+                        "obra-1"
+                ));
+
+        String system = messages.get(0).content();
+
+        assertTrue(system.contains("material.quantidadePrevista"));
+        assertTrue(system.contains("execucaoServico"));
+        assertTrue(system.contains("\"operation\""));
+        assertTrue(system.contains("\"identity\""));
+    }
 }

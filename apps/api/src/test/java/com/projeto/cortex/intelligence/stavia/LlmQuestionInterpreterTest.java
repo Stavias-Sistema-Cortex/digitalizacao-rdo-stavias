@@ -70,4 +70,44 @@ class LlmQuestionInterpreterTest {
     void shouldReturnEmptyOnMalformedJson() {
         assertTrue(interpreterReturning("isso não é json").interpret(q("qualquer")).isEmpty());
     }
+
+    @Test
+    void shouldBuildOntologyPlanFromLlmJson() {
+        String json = "{\"intent\":\"CONSULTAR_RDO\",\"entities\":[],"
+                + "\"attributes\":[\"material.quantidadePrevista\"],"
+                + "\"operation\":\"READ\",\"identity\":\"cap 30/45\","
+                + "\"confidence\":0.9}";
+
+        StaviaInterpretation interpretation =
+                interpreterReturning(json)
+                        .interpret(q("Qual a quantidade prevista de CAP 30/45?"))
+                        .orElseThrow();
+
+        assertEquals(
+                List.of("material.quantidadePrevista"),
+                interpretation.plan().requestedAttributes()
+        );
+        assertEquals(
+                List.of("registros-rdo"),
+                interpretation.plan().requiredSources()
+        );
+        assertTrue(interpretation.plan().entities().stream()
+                .anyMatch(e ->
+                        "MATERIAL".equals(e.type())
+                                && "cap 30/45".equals(e.value())
+                ));
+    }
+
+    @Test
+    void shouldDiscardUnknownOntologyAttribute() {
+        String json = "{\"intent\":\"CONSULTAR_RDO\",\"entities\":[],"
+                + "\"attributes\":[\"material.inexistente\"],"
+                + "\"operation\":\"READ\",\"confidence\":0.9}";
+
+        assertTrue(
+                interpreterReturning(json)
+                        .interpret(q("qualquer"))
+                        .isEmpty()
+        );
+    }
 }
