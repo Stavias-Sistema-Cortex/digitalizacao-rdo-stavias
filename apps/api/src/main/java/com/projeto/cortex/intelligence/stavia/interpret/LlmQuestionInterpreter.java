@@ -1,5 +1,13 @@
 package com.projeto.cortex.intelligence.stavia.interpret;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaClassification;
@@ -12,13 +20,6 @@ import com.projeto.cortex.intelligence.stavia.planning.ResolvedEntity;
 import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlan;
 import com.projeto.cortex.intelligence.stavia.planning.TemporalFilter;
 import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 
 @Component
 public class LlmQuestionInterpreter implements StaviaQuestionInterpreter {

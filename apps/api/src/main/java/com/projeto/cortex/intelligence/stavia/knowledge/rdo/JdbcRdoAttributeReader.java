@@ -80,7 +80,8 @@ public class JdbcRdoAttributeReader implements RdoAttributeReader {
                   AND (? IS NULL OR r.data_rdo >= ?)
                   AND (? IS NULL OR r.data_rdo <= ?)
                   AND (
-                        r.condicao_manha IS NOT NULL
+                        r.data_rdo IS NOT NULL
+                     OR r.condicao_manha IS NOT NULL
                      OR r.condicao_tarde IS NOT NULL
                      OR r.condicao_noite IS NOT NULL
                      OR r.pluviometria_mm IS NOT NULL

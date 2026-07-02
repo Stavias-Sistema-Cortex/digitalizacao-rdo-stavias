@@ -114,6 +114,36 @@ class StaviaQueryPlannerTest {
     }
 
     @Test
+    void shouldPlanSelectedRdoDateFollowUpWithoutLlm() {
+        StaviaQueryPlan plan =
+                planner.plan(
+                        new StaviaQuestion(
+                                "Qual a data?\n"
+                                        + "Contexto ontológico selecionado: obraId=obra-1 rdoId=rdo-3",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        new StaviaClassification(
+                                StaviaIntent.CONSULTAR_OBRA,
+                                1.0
+                        )
+                );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.RDO);
+        assertThat(plan.operation())
+                .isEqualTo(QueryOperation.READ_ATTRIBUTE);
+        assertThat(plan.requestedAttributes())
+                .containsExactly("dataRdo");
+        assertThat(plan.requiredSources())
+                .contains("cadastro-rdos");
+        assertThat(plan.requiresLatestValue()).isTrue();
+        assertThat(planner.effectiveIntent(
+                StaviaIntent.CONSULTAR_OBRA,
+                plan
+        )).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+    }
+
+    @Test
     void shouldPlanAttachedContextQuestionWithoutLlm() {
         StaviaQueryPlan plan =
                 planner.plan(

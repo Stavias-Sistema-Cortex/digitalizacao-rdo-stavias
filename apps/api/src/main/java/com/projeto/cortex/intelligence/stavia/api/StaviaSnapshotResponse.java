@@ -86,7 +86,8 @@ public record StaviaSnapshotResponse(
             String trechoFinal,
             String localizacao,
             String turno,
-            String statusValidacao
+            String statusValidacao,
+            String observacoes
     ) {
     }
 

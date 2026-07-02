@@ -221,6 +221,23 @@ public class StaviaSemanticCatalog {
                 List.of(
                         attribute(
                                 "RDO",
+                                "dataRdo",
+                                List.of(
+                                        "data do rdo",
+                                        "data rdo",
+                                        "data operacional do rdo",
+                                        "dia do rdo",
+                                        "quando foi o rdo",
+                                        "quando esse rdo",
+                                        "quando este rdo"
+                                ),
+                                "DATE",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
                                 "turno",
                                 List.of(
                                         "turno",

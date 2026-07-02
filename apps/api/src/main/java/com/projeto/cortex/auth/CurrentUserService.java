@@ -2,7 +2,10 @@ package com.projeto.cortex.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.text.Normalizer;
+import java.util.Arrays;
 import java.util.Locale;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,9 +21,18 @@ public class CurrentUserService {
             "cortex.authenticatedUserId";
 
     private final JdbcTemplate jdbcTemplate;
+    private final Environment environment;
+    private final boolean devAdminEnabled;
 
-    public CurrentUserService(JdbcTemplate jdbcTemplate) {
+    public CurrentUserService(
+            JdbcTemplate jdbcTemplate,
+            Environment environment,
+            @Value("${cortex.auth.dev-admin.enabled:false}")
+            boolean devAdminEnabled
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.environment = environment;
+        this.devAdminEnabled = devAdminEnabled;
     }
 
     public String requireUserId() {
@@ -97,6 +109,10 @@ public class CurrentUserService {
             return false;
         }
 
+        if (isLocalDevAdminEnabled()) {
+            return true;
+        }
+
         return jdbcTemplate.query(
                 """
                 SELECT nome_perfil, nome_grupo
@@ -115,6 +131,12 @@ public class CurrentUserService {
                 },
                 colaboradorId.trim()
         );
+    }
+
+    private boolean isLocalDevAdminEnabled() {
+        return devAdminEnabled
+                && Arrays.stream(environment.getActiveProfiles())
+                        .anyMatch("local"::equals);
     }
 
     private boolean canAccessWorksite(String currentUserId, String obraId) {

@@ -122,6 +122,63 @@ class RdoAttributeKnowledgeSourceTest {
                 );
     }
 
+    @Test
+    void shouldExposeDateForSelectedRdoContext() {
+        RdoAttributeKnowledgeSource source =
+                new RdoAttributeKnowledgeSource(
+                        (worksiteId, startDate, endDate, limit) ->
+                                List.of(
+                                        record(
+                                                "rdo-2",
+                                                "RDO-TESTE-2",
+                                                LocalDate.of(2026, 6, 24)
+                                        ),
+                                        record()
+                                )
+                );
+
+        StaviaKnowledgeRequest request =
+                new StaviaKnowledgeRequest(
+                        new StaviaQuestion(
+                                "Qual a data?\n"
+                                        + "Contexto ontológico selecionado: obraId=obra-1 rdoId=rdo-3",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_RDO,
+                        "obra-1",
+                        Set.of(StaviaEngine.REQUIRED_PERMISSION),
+                        new StaviaQueryPlan(
+                                QueryDomain.RDO,
+                                QueryOperation.READ_ATTRIBUTE,
+                                List.of(ResolvedEntity.worksiteById("obra-1")),
+                                TemporalFilter.latest(
+                                        "RDO_STATUS_E_DATA_OPERACIONAL"
+                                ),
+                                List.of("dataRdo"),
+                                List.of(),
+                                List.of(),
+                                List.of("cadastro-rdos"),
+                                true,
+                                false,
+                                false
+                        )
+                );
+
+        List<StaviaEvidence> evidences =
+                source.retrieve(request);
+
+        assertThat(evidences)
+                .singleElement()
+                .satisfies(evidence ->
+                        assertThat(evidence.attributes())
+                                .containsEntry("rdoId", "rdo-3")
+                                .containsEntry("campo", "dataRdo")
+                                .containsEntry("rotulo", "Data do RDO")
+                                .containsEntry("valor", "2026-06-25")
+                );
+    }
+
     private StaviaQueryPlan weatherPlan() {
         return new StaviaQueryPlan(
                 QueryDomain.RDO,
@@ -144,12 +201,24 @@ class RdoAttributeKnowledgeSourceTest {
     }
 
     private RdoAttributeRecord record() {
-        return new RdoAttributeRecord(
+        return record(
                 "rdo-3",
+                "RDO-TESTE-3",
+                LocalDate.of(2026, 6, 25)
+        );
+    }
+
+    private RdoAttributeRecord record(
+            String id,
+            String numeroRdo,
+            LocalDate dataRdo
+    ) {
+        return new RdoAttributeRecord(
+                id,
                 "obra-1",
                 "CW38386",
-                "RDO-TESTE-3",
-                LocalDate.of(2026, 6, 25),
+                numeroRdo,
+                dataRdo,
                 "RASCUNHO",
                 "MANUAL",
                 null,

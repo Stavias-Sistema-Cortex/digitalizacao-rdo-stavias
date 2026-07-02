@@ -19,12 +19,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
 
     private static final List<String> SUPPORTED_ATTRIBUTES =
             List.of(
+                    "dataRdo",
                     "turno",
                     "cliente",
                     "cidade",
@@ -46,6 +49,8 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
                     "encarregadoObra",
                     "fiscalizacaoCampo"
             );
+    private static final Pattern SELECTED_RDO_CONTEXT =
+            Pattern.compile("(?iu)\\brdoId\\s*=\\s*([^\\s]+)");
 
     private final RdoAttributeReader reader;
 
@@ -106,7 +111,8 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
     @Override
     public List<StaviaEvidence> retrieve(StaviaKnowledgeRequest request) {
         StaviaQueryPlan plan = request.plan();
-        int limit = 50;
+        String selectedRdoId = selectedRdoId(request);
+        int limit = selectedRdoId == null ? 50 : 200;
 
         List<RdoAttributeRecord> records =
                 reader.findByWorksiteId(
@@ -115,6 +121,11 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
                         plan.temporalFilter().endDate(),
                         limit
                 );
+        if (selectedRdoId != null) {
+            records = records.stream()
+                    .filter(record -> selectedRdoId.equals(record.id()))
+                    .toList();
+        }
 
         List<StaviaEvidence> evidences = records.stream()
                 .flatMap(record ->
@@ -162,6 +173,7 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
     ) {
         Object value =
                 switch (attribute) {
+                    case "dataRdo" -> record.dataRdo();
                     case "turno" -> record.turno();
                     case "cliente" -> record.cliente();
                     case "cidade" -> record.cidade();
@@ -286,6 +298,7 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
             case "apontadorRdo" -> "Apontador do RDO";
             case "encarregadoObra" -> "Encarregado da obra";
             case "fiscalizacaoCampo" -> "Fiscalização de campo";
+            case "dataRdo" -> "Data do RDO";
             default -> attribute;
         };
     }
@@ -320,6 +333,25 @@ public class RdoAttributeKnowledgeSource implements StaviaKnowledgeSource {
         }
 
         return null;
+    }
+
+    private String selectedRdoId(StaviaKnowledgeRequest request) {
+        if (request == null
+                || request.question() == null
+                || request.question().text() == null) {
+            return null;
+        }
+
+        Matcher matcher =
+                SELECTED_RDO_CONTEXT.matcher(request.question().text());
+        if (!matcher.find()) {
+            return null;
+        }
+
+        String value = matcher.group(1);
+        return value == null || value.isBlank()
+                ? null
+                : value.trim();
     }
 
     private void putText(

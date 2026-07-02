@@ -171,6 +171,7 @@ function mapServicosExecutados(
       localizacao: asString(item.localizacao),
       turno: asString(item.turno),
       statusValidacao: asString(item.statusValidacao),
+      observacoes: asString(item.observacoes),
     };
   });
 }

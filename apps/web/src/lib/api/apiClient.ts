@@ -132,11 +132,12 @@ export async function apiFetch(
 
   let response = await rawFetch(path, options, authHeader);
 
-  // Token ausente/expirado: tenta uma renovação silenciosa e repete a chamada.
+  // Token ausente, expirado ou emitido para outro espelho local: tenta uma
+  // renovação silenciosa e repete a chamada.
   const online =
     typeof navigator === "undefined" || navigator.onLine;
   if (
-    response.status === 401 &&
+    (response.status === 401 || response.status === 403) &&
     !isAuthPath(path) &&
     session?.cpf &&
     online
@@ -144,7 +145,7 @@ export async function apiFetch(
     const novoToken = await reautenticarComCpf(session.cpf);
     if (novoToken) {
       response = await rawFetch(path, options, `Bearer ${novoToken}`);
-    } else {
+    } else if (response.status === 401) {
       clearSession();
     }
   }

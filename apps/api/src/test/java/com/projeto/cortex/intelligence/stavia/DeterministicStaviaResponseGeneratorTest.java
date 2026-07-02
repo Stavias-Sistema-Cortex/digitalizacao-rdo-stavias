@@ -293,6 +293,29 @@ class DeterministicStaviaResponseGeneratorTest {
     }
 
     @Test
+    void shouldAnswerDirectRdoDateFollowUp() {
+        StaviaGeneratedResponse response =
+                generator.generate(
+                        new StaviaQuestion(
+                                "Qual a data?\n"
+                                        + "Contexto ontológico selecionado: obraId=obra-1 rdoId=rdo-3",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        StaviaIntent.CONSULTAR_RDO,
+                        List.of(
+                                rdoAttribute(
+                                        "dataRdo",
+                                        "Data do RDO",
+                                        "2026-06-25"
+                                )
+                        )
+                );
+
+        assertEquals("Data do RDO: 25/06/2026.", response.text());
+    }
+
+    @Test
     void shouldComposeInsufficientPdocSnapshotAnswer() {
         StaviaGeneratedResponse response =
                 generator.generate(

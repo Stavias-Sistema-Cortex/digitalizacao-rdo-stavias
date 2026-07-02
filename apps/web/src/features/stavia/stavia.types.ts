@@ -143,6 +143,7 @@ export interface StaviaSnapshotServicoExecutado {
   localizacao: string | null;
   turno: string | null;
   statusValidacao: string | null;
+  observacoes: string | null;
 }
 
 export interface StaviaSnapshotRdo {

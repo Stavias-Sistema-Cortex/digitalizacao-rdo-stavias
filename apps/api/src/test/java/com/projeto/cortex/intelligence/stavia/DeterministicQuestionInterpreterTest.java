@@ -33,4 +33,21 @@ class DeterministicQuestionInterpreterTest {
         assertEquals(Origin.DETERMINISTICO, result.get().origin());
         assertTrue(result.get().classification().confidence() > 0.0);
     }
+
+    @Test
+    void shouldInterpretSelectedRdoDateFollowUpAsRdo() {
+        Optional<StaviaInterpretation> result =
+                interpreter.interpret(new StaviaQuestion(
+                        "Qual a data?\n"
+                                + "Contexto ontológico selecionado: obraId=obra-1 rdoId=rdo-3",
+                        "u1",
+                        "obra-1"));
+
+        assertTrue(result.isPresent());
+        assertEquals(StaviaIntent.CONSULTAR_RDO, result.get().intent());
+        assertEquals(
+                java.util.List.of("dataRdo"),
+                result.get().plan().requestedAttributes()
+        );
+    }
 }

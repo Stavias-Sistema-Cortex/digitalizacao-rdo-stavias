@@ -24,6 +24,8 @@ cortex:
   auth:
     jwt-secret: ${CORTEX_AUTH_JWT_SECRET}
     jwt-ttl-seconds: ${CORTEX_AUTH_JWT_TTL_SECONDS:43200}
+    dev-admin:
+      enabled: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:false}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}

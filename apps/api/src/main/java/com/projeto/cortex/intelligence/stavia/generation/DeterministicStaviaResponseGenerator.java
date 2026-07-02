@@ -902,10 +902,16 @@ public class DeterministicStaviaResponseGenerator
                     attributeText(evidenceAttributes, "valor");
             String unit =
                     attributeText(evidenceAttributes, "unidade");
+            String field =
+                    attributeText(evidenceAttributes, "campo");
+            String displayValue =
+                    "dataRdo".equals(field)
+                            ? formatDate(value)
+                            : value;
 
             return label
                     + ": "
-                    + value
+                    + displayValue
                     + (hasText(unit) ? " " + unit : "")
                     + ".";
         }

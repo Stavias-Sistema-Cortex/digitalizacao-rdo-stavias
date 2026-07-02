@@ -23,6 +23,7 @@ type LocalIntent =
   | "TURNO"
   | "EQUIPAMENTOS"
   | "MATERIAIS"
+  | "OBSERVACOES_SERVICO"
   | "LOCALIZACAO_OBRA"
   | "STATUS_SINCRONIZACAO"
   | "PDOC"
@@ -147,6 +148,23 @@ function formatDateTime(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
+  }).format(date);
+}
+
+function formatDateOnly(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
   }).format(date);
 }
 
@@ -333,6 +351,18 @@ function requestedCompositeTopics(
 
 function isRdoDetailQuestion(normalizedQuestion: string): boolean {
   return hasAny(normalizedQuestion, [
+    "qual a data",
+    "qual data",
+    "data do rdo",
+    "data deste rdo",
+    "data desse rdo",
+    "data operacional",
+    "qual o dia",
+    "qual dia",
+    "dia do rdo",
+    "quando foi o rdo",
+    "quando foi esse rdo",
+    "quando foi este rdo",
     "trecho programado",
     "programado inicial",
     "programado final",
@@ -371,6 +401,27 @@ function isRdoDetailQuestion(normalizedQuestion: string): boolean {
   ]);
 }
 
+function isServiceObservationQuestion(
+  normalizedQuestion: string,
+): boolean {
+  return (
+    hasAny(normalizedQuestion, [
+      "observacao",
+      "observacoes",
+      "obs",
+    ]) &&
+    hasAny(normalizedQuestion, [
+      "servico",
+      "servicos",
+      "atividade",
+      "atividades",
+      "execucao",
+      "executado",
+      "executada",
+    ])
+  );
+}
+
 function detectIntent(question: string): LocalIntent {
   const normalized = normalizeText(question);
 
@@ -405,6 +456,10 @@ function detectIntent(question: string): LocalIntent {
 
   if (isRdoDetailQuestion(normalized)) {
     return "DETALHE_RDO";
+  }
+
+  if (isServiceObservationQuestion(normalized)) {
+    return "OBSERVACOES_SERVICO";
   }
 
   if (requestedCompositeTopics(normalized).length > 1) {
@@ -1398,6 +1453,7 @@ function serviceEntries(
             localizacao: null,
             turno: null,
             statusValidacao: null,
+            observacoes: null,
           }));
 
     for (const service of services) {
@@ -1461,6 +1517,92 @@ function serviceEntries(
   return unique(filtered.map((entry) => entry.label));
 }
 
+function serviceObservationEntries(
+  snapshot: StaviaSnapshot,
+  resolved: ResolvedContext,
+): string[] {
+  const rdos = selectedRdos(resolved);
+  const serviceObservations = rdos.flatMap((rdo) =>
+    (rdo.servicosExecutados ?? [])
+      .map((service) => {
+        const observation = text(service.observacoes);
+        if (!observation) {
+          return "";
+        }
+
+        const serviceName =
+          text(service.servicoNome) || "Serviço sem nome";
+        const trecho =
+          service.trechoInicial || service.trechoFinal
+            ? [service.trechoInicial, service.trechoFinal]
+                .filter(Boolean)
+                .join(" a ")
+            : text(service.localizacao);
+        const rdoLabel = rdo.numeroRdo
+          ? `RDO ${rdo.numeroRdo}`
+          : "RDO sem número";
+
+        return [
+          rdoLabel,
+          serviceName,
+          trecho ? `trecho ${trecho}` : "",
+          observation,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
+      .filter(Boolean),
+  );
+
+  if (serviceObservations.length > 0) {
+    return unique(serviceObservations);
+  }
+
+  const activityObservations = rdos.flatMap((rdo) =>
+    (rdo.controlesGeometricos ?? [])
+      .map((control) => {
+        const observation = text(control.atividadeObservacoes);
+        if (!observation) {
+          return "";
+        }
+
+        const trecho =
+          control.kmInicial || control.kmFinal
+            ? [control.kmInicial, control.kmFinal]
+                .filter(Boolean)
+                .join(" a ")
+            : text(control.subtrecho);
+
+        return [
+          rdo.numeroRdo ? `RDO ${rdo.numeroRdo}` : "RDO sem número",
+          trecho ? `trecho ${trecho}` : "",
+          observation,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
+      .filter(Boolean),
+  );
+
+  if (activityObservations.length > 0) {
+    return unique(activityObservations);
+  }
+
+  const rdoObservations = rdos
+    .map((rdo) => text(rdo.observacoes))
+    .filter(Boolean);
+
+  if (rdoObservations.length > 0) {
+    return unique(rdoObservations);
+  }
+
+  return unique(
+    programacoesForResolved(snapshot, resolved)
+      .map((programacao) => text(programacao.observacoes))
+      .filter(Boolean),
+  );
+}
+
 function answerServices(
   resolved: ResolvedContext,
   question: string,
@@ -1481,6 +1623,34 @@ function answerServices(
   return answer(
     `Serviços encontrados:\n\n${limitedBulletList(values)}`,
     "SERVICOS_DA_OBRA",
+  );
+}
+
+function answerServiceObservations(
+  snapshot: StaviaSnapshot,
+  resolved: ResolvedContext,
+): StaviaConsultaResponse {
+  const values = serviceObservationEntries(snapshot, resolved);
+
+  if (values.length === 0) {
+    return answer(
+      "Não encontrei observações registradas para os serviços deste contexto.",
+      "OBSERVACOES_SERVICO",
+      {
+        confidence: "MEDIA",
+        insufficientData: true,
+        sources: selectedRdos(resolved).map(sourceForRdo),
+      },
+    );
+  }
+
+  return answer(
+    `Observações encontradas:\n\n${limitedBulletList(values)}`,
+    "OBSERVACOES_SERVICO",
+    {
+      confidence: "ALTA",
+      sources: selectedRdos(resolved).map(sourceForRdo),
+    },
   );
 }
 
@@ -1795,6 +1965,29 @@ function answerRdoDetail(
   const normalized = normalizeText(question);
   const programacoes = programacoesForResolved(snapshot, resolved);
   const rdos = selectedRdos(resolved);
+
+  if (
+    hasAny(normalized, [
+      "qual a data",
+      "qual data",
+      "data do rdo",
+      "data deste rdo",
+      "data desse rdo",
+      "data operacional",
+      "qual o dia",
+      "qual dia",
+      "dia do rdo",
+      "quando foi o rdo",
+      "quando foi esse rdo",
+      "quando foi este rdo",
+    ])
+  ) {
+    return answerSingleRdoValue(
+      "Data do RDO",
+      formatDateOnly(rdo.dataRdo),
+      resolved,
+    );
+  }
 
   if (
     hasAny(normalized, ["trecho programado"]) ||
@@ -2496,6 +2689,8 @@ export function responderComSnapshotStavia({
       );
     case "SERVICOS_DA_OBRA":
       return answerServices(resolved, pergunta);
+    case "OBSERVACOES_SERVICO":
+      return answerServiceObservations(snapshot, resolved);
     case "COLABORADORES_DA_OBRA":
       return answerCollaborators(snapshot, resolved);
     case "TURNO":

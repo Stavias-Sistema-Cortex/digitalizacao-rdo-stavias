@@ -420,7 +420,8 @@ public class StaviaSnapshotService {
                             trecho_final,
                             localizacao,
                             turno,
-                            status_validacao
+                            status_validacao,
+                            observacoes
                         FROM execucao_servico_rdo servico
                         JOIN (
                             SELECT id
@@ -443,7 +444,8 @@ public class StaviaSnapshotService {
                                         rs.getString("trecho_final"),
                                         rs.getString("localizacao"),
                                         rs.getString("turno"),
-                                        rs.getString("status_validacao")
+                                        rs.getString("status_validacao"),
+                                        rs.getString("observacoes")
                                 )
                         ),
                         MAX_RDOS,
