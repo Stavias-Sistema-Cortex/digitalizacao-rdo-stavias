@@ -62,6 +62,12 @@ public class StaviaEvidenceSelector {
                     Set.of(
                             StaviaEvidenceTypes.RDO,
                             StaviaEvidenceTypes.RDO_ATTRIBUTE,
+                            StaviaEvidenceTypes.RDO_MATERIAL,
+                            StaviaEvidenceTypes.RDO_MAO_OBRA,
+                            StaviaEvidenceTypes.RDO_EQUIPAMENTO,
+                            StaviaEvidenceTypes.RDO_CONTROLE_GEOMETRICO,
+                            StaviaEvidenceTypes.RDO_EXECUCAO_SERVICO,
+                            StaviaEvidenceTypes.RDO_AGREGACAO,
                             StaviaEvidenceTypes.TRECHO_OPERACIONAL,
                             StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
                             StaviaEvidenceTypes.CONTEXTO_OBRA

@@ -751,6 +751,13 @@ public class StaviaQueryPlanner {
         if (plan != null
                 && plan.planned()
                 && plan.domain() == QueryDomain.RDO
+                && plan.requiredSources().contains("registros-rdo")) {
+            return StaviaIntent.CONSULTAR_RDO;
+        }
+
+        if (plan != null
+                && plan.planned()
+                && plan.domain() == QueryDomain.RDO
                 && (
                         plan.operation() == QueryOperation.READ_ATTRIBUTE
                                 || plan.operation() == QueryOperation.LIST_OBJECTS

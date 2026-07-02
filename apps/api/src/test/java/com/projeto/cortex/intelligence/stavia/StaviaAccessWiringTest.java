@@ -112,7 +112,9 @@ class StaviaAccessWiringTest {
             StaviaQueryPlanner.class,
             StaviaSemanticCatalog.class,
             StaviaInterpretationPromptBuilder.class,
-            StaviaLlmProperties.class
+            StaviaLlmProperties.class,
+            com.projeto.cortex.intelligence.stavia.semantic.rdo
+                    .RdoOntologyConfiguration.class
     })
     static class StaviaQueryConfiguration {
     }

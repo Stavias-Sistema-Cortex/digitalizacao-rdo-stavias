@@ -58,7 +58,9 @@ public class RdoOntologyPlanner {
                     "comparar", "comparacao", "vs", "versus",
                     "diferenca", "entre", "tonelada", "toneladas",
                     "t", "kg", "quilos", "litro", "litros",
-                    "metro", "metros", "mm", "cm", "m2", "m3");
+                    "metro", "metros", "mm", "cm", "m2", "m3",
+                    "executado", "executada", "executados",
+                    "executadas");
 
     private final RdoOntology ontology;
     private final TemporalFilterParser temporalParser;
