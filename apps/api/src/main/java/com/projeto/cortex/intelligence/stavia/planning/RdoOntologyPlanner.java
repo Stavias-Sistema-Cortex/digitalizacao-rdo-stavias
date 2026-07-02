@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Plans RDO record questions directly from the declarative ontology: alias
@@ -61,6 +62,9 @@ public class RdoOntologyPlanner {
                     "metro", "metros", "mm", "cm", "m2", "m3",
                     "executado", "executada", "executados",
                     "executadas");
+
+    private static final Pattern SELECTED_RDO_CONTEXT =
+            Pattern.compile("(?iu)\\brdoId\\s*=");
 
     private final RdoOntology ontology;
     private final TemporalFilterParser temporalParser;
@@ -226,6 +230,110 @@ public class RdoOntologyPlanner {
                 temporal.startDate() != null,
                 operation == QueryOperation.COMPARE
         );
+    }
+
+    /**
+     * Same behaviour the hardcoded {@code rdoDatePlan} used to provide in
+     * the main planner: a date question about the (selected) RDO reads
+     * {@code dataRdo} from the existing header source. Called by the main
+     * planner at the original early position, before the document/segment
+     * plans that could otherwise capture the selected-RDO follow-up text.
+     */
+    public StaviaQueryPlan rdoDatePlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        boolean asksDate =
+                StaviaText.containsWord(normalized, "data")
+                        || StaviaText.containsWord(normalized, "dia")
+                        || StaviaText.containsWord(normalized, "quando");
+
+        if (!asksDate || asksForWorksiteDate(normalized)) {
+            return StaviaQueryPlan.empty();
+        }
+
+        boolean selectedRdoContext =
+                SELECTED_RDO_CONTEXT.matcher(question.text()).find();
+        boolean explicitRdoDate =
+                containsAnyPhrase(
+                        normalized,
+                        List.of(
+                                "data do rdo",
+                                "data rdo",
+                                "dia do rdo",
+                                "quando foi o rdo",
+                                "quando esse rdo",
+                                "quando este rdo",
+                                "quando foi esse relatorio diario",
+                                "quando foi este relatorio diario"
+                        )
+                )
+                        || (
+                                mentionsRdo(normalized)
+                                        && !StaviaText.containsWord(
+                                                normalized,
+                                                "obra"
+                                        )
+                        );
+
+        if (!selectedRdoContext && !explicitRdoDate) {
+            return StaviaQueryPlan.empty();
+        }
+
+        List<ResolvedEntity> entities = new ArrayList<>();
+
+        if (question.obraId() != null
+                && !question.obraId().isBlank()) {
+            entities.add(
+                    ResolvedEntity.worksiteById(question.obraId())
+            );
+        }
+
+        return new StaviaQueryPlan(
+                QueryDomain.RDO,
+                QueryOperation.READ_ATTRIBUTE,
+                entities,
+                TemporalFilter.latest("RDO_STATUS_E_DATA_OPERACIONAL"),
+                List.of("dataRdo"),
+                List.of(),
+                List.of(),
+                List.of(
+                        "cadastro-rdos",
+                        "historico-operacional"
+                ),
+                true,
+                false,
+                false
+        );
+    }
+
+    private boolean asksForWorksiteDate(String normalized) {
+        return containsAnyPhrase(
+                normalized,
+                List.of(
+                        "data da obra",
+                        "data desta obra",
+                        "data dessa obra",
+                        "quando esta obra",
+                        "quando essa obra",
+                        "obra comec",
+                        "obra iniciou",
+                        "inicio da obra",
+                        "fim da obra",
+                        "termino da obra"
+                )
+        );
+    }
+
+    private boolean mentionsRdo(String normalized) {
+        return StaviaText.containsWord(normalized, "rdo")
+                || containsAnyPhrase(
+                        normalized,
+                        List.of(
+                                "relatorio diario",
+                                "relatorios diarios"
+                        )
+                );
     }
 
     private List<AttributeMatch> attributeMatches(String normalized) {

@@ -25,8 +25,6 @@ public class StaviaQueryPlanner {
             ZoneId.of("America/Sao_Paulo");
     private static final Pattern KM_REFERENCE =
             Pattern.compile("(?iu)\\bkm\\s*\\d");
-    private static final Pattern SELECTED_RDO_CONTEXT =
-            Pattern.compile("(?iu)\\brdoId\\s*=");
 
     private final StaviaSemanticCatalog catalog;
     private final OperationalRoleLexicon roleLexicon;
@@ -125,7 +123,7 @@ public class StaviaQueryPlanner {
         }
 
         StaviaQueryPlan rdoDate =
-                rdoDatePlan(question, normalized);
+                ontologyPlanner.rdoDatePlan(question, normalized);
 
         if (rdoDate.planned()) {
             return rdoDate;
@@ -231,60 +229,6 @@ public class StaviaQueryPlanner {
         }
 
         return StaviaQueryPlan.empty();
-    }
-
-    private StaviaQueryPlan rdoDatePlan(
-            StaviaQuestion question,
-            String normalized
-    ) {
-        boolean asksDate =
-                StaviaText.containsWord(normalized, "data")
-                        || StaviaText.containsWord(normalized, "dia")
-                        || StaviaText.containsWord(normalized, "quando");
-
-        if (!asksDate || asksForWorksiteDate(normalized)) {
-            return StaviaQueryPlan.empty();
-        }
-
-        boolean selectedRdoContext =
-                SELECTED_RDO_CONTEXT.matcher(question.text()).find();
-        boolean explicitRdoDate =
-                containsAny(
-                        normalized,
-                        "data do rdo",
-                        "data rdo",
-                        "dia do rdo",
-                        "quando foi o rdo",
-                        "quando esse rdo",
-                        "quando este rdo",
-                        "quando foi esse relatorio diario",
-                        "quando foi este relatorio diario"
-                )
-                        || (
-                                mentionsRdo(normalized)
-                                        && !mentionsWorksite(normalized)
-                        );
-
-        if (!selectedRdoContext && !explicitRdoDate) {
-            return StaviaQueryPlan.empty();
-        }
-
-        return new StaviaQueryPlan(
-                QueryDomain.RDO,
-                QueryOperation.READ_ATTRIBUTE,
-                entities(question),
-                TemporalFilter.latest("RDO_STATUS_E_DATA_OPERACIONAL"),
-                List.of("dataRdo"),
-                List.of(),
-                List.of(),
-                List.of(
-                        "cadastro-rdos",
-                        "historico-operacional"
-                ),
-                true,
-                false,
-                false
-        );
     }
 
     private StaviaQueryPlan contextDocumentPlan(
@@ -909,35 +853,6 @@ public class StaviaQueryPlanner {
 
     private boolean requestsLatest(String normalized) {
         return temporalParser.requestsLatest(normalized);
-    }
-
-    private boolean asksForWorksiteDate(String normalized) {
-        return containsAny(
-                normalized,
-                "data da obra",
-                "data desta obra",
-                "data dessa obra",
-                "quando esta obra",
-                "quando essa obra",
-                "obra comec",
-                "obra iniciou",
-                "inicio da obra",
-                "fim da obra",
-                "termino da obra"
-        );
-    }
-
-    private boolean mentionsRdo(String normalized) {
-        return StaviaText.containsWord(normalized, "rdo")
-                || containsAny(
-                        normalized,
-                        "relatorio diario",
-                        "relatorios diarios"
-                );
-    }
-
-    private boolean mentionsWorksite(String normalized) {
-        return StaviaText.containsWord(normalized, "obra");
     }
 
     private boolean containsAny(
