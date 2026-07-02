@@ -1,0 +1,16 @@
+package com.projeto.cortex.intelligence.stavia.ontology.model;
+
+public enum StaviaOperationalIntent {
+    LIST_DELAYED_ACTIVITIES,
+    EXPLAIN_DELAY,
+    GENERATE_WEEKLY_REPROGRAMMING,
+    LIST_DEPENDENCIES,
+    EXPLAIN_CRITICAL_PATH,
+    SUMMARIZE_WEEK,
+    COMPARE_PLANNED_VS_ACTUAL,
+    TRACE_ENTITY_HISTORY,
+    LIST_OPERATIONAL_RISKS,
+    SEARCH_ENTITY,
+    EXPLAIN_ENTITY,
+    GENERAL_SYSTEM_QUERY
+}
