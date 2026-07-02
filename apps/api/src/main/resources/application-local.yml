@@ -4,5 +4,8 @@ spring:
       on-profile: local
 
 cortex:
+  auth:
+    jwt-secret: ${CORTEX_AUTH_JWT_SECRET:${random.uuid}}
+
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}
