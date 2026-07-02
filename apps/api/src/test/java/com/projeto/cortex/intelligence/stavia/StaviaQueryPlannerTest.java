@@ -463,4 +463,54 @@ class StaviaQueryPlannerTest {
                         org.assertj.core.groups.Tuple.tuple("SUM", "volumeM3")
                 );
     }
+
+    @Test
+    void shouldPlanMaterialQuestionThroughOntology() {
+        StaviaQueryPlan plan =
+                planner.plan(
+                        new StaviaQuestion(
+                                "Qual a quantidade prevista de CAP 30/45?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        new StaviaClassification(
+                                StaviaIntent.DESCONHECIDA,
+                                0.0
+                        )
+                );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.RDO);
+        assertThat(plan.requestedAttributes())
+                .containsExactly("material.quantidadePrevista");
+        assertThat(plan.requiredSources()).containsExactly("registros-rdo");
+        assertThat(
+                planner.effectiveIntent(StaviaIntent.DESCONHECIDA, plan)
+        ).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+        assertThat(
+                planner.effectiveConfidence(
+                        0.0, StaviaIntent.DESCONHECIDA, plan
+                )
+        ).isGreaterThanOrEqualTo(0.75);
+    }
+
+    @Test
+    void shouldPlanRdoRainRankingThroughOntology() {
+        StaviaQueryPlan plan =
+                planner.plan(
+                        new StaviaQuestion(
+                                "Qual RDO teve mais chuva?",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        new StaviaClassification(
+                                StaviaIntent.DESCONHECIDA,
+                                0.0
+                        )
+                );
+
+        assertThat(plan.operation()).isEqualTo(QueryOperation.COMPARE);
+        assertThat(
+                planner.effectiveIntent(StaviaIntent.DESCONHECIDA, plan)
+        ).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+    }
 }

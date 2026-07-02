@@ -32,6 +32,7 @@ public class StaviaQueryPlanner {
     private final OperationalRoleLexicon roleLexicon;
     private final Clock clock;
     private final TemporalFilterParser temporalParser;
+    private final RdoOntologyPlanner ontologyPlanner;
 
     public StaviaQueryPlanner() {
         this(
@@ -84,6 +85,11 @@ public class StaviaQueryPlanner {
                 ? Clock.system(BUSINESS_ZONE)
                 : clock;
         this.temporalParser = new TemporalFilterParser(this.clock);
+        this.ontologyPlanner = new RdoOntologyPlanner(
+                com.projeto.cortex.intelligence.stavia.semantic.rdo
+                        .RdoOntology.load(),
+                this.temporalParser
+        );
     }
 
     public StaviaQueryPlan plan(
@@ -159,6 +165,13 @@ public class StaviaQueryPlanner {
 
         if (team.planned()) {
             return team;
+        }
+
+        StaviaQueryPlan ontologyPlan =
+                ontologyPlanner.plan(question, normalized);
+
+        if (ontologyPlan.planned()) {
+            return ontologyPlan;
         }
 
         List<SemanticAttribute> worksiteAttributes =
@@ -738,7 +751,12 @@ public class StaviaQueryPlanner {
         if (plan != null
                 && plan.planned()
                 && plan.domain() == QueryDomain.RDO
-                && plan.operation() == QueryOperation.READ_ATTRIBUTE
+                && (
+                        plan.operation() == QueryOperation.READ_ATTRIBUTE
+                                || plan.operation() == QueryOperation.LIST_OBJECTS
+                                || plan.operation() == QueryOperation.AGGREGATE
+                                || plan.operation() == QueryOperation.COMPARE
+                )
                 && (
                         classifiedIntent == null
                                 || classifiedIntent == StaviaIntent.DESCONHECIDA
@@ -790,7 +808,15 @@ public class StaviaQueryPlanner {
             if (plan != null
                     && plan.planned()
                     && plan.domain() == QueryDomain.RDO
-                    && plan.operation() == QueryOperation.READ_ATTRIBUTE
+                    && (
+                            plan.operation() == QueryOperation.READ_ATTRIBUTE
+                                    || plan.operation()
+                                            == QueryOperation.LIST_OBJECTS
+                                    || plan.operation()
+                                            == QueryOperation.AGGREGATE
+                                    || plan.operation()
+                                            == QueryOperation.COMPARE
+                    )
                     && classifiedIntent == StaviaIntent.CONSULTAR_OBRA) {
                 return 0.9;
             }
