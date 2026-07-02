@@ -11,7 +11,8 @@ public record StaviaSnapshotResponse(
         List<ObraSnapshot> obras,
         List<RdoSnapshot> rdos,
         List<ProgramacaoSnapshot> programacoes,
-        List<PdocSnapshot> pdocs
+        List<PdocSnapshot> pdocs,
+        com.fasterxml.jackson.databind.JsonNode ontology
 ) {
 
     public record Metadata(

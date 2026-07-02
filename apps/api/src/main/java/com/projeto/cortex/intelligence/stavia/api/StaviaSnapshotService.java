@@ -26,9 +26,25 @@ public class StaviaSnapshotService {
             "STAVIA-PT-BR-0.1.0";
 
     private final JdbcTemplate jdbcTemplate;
+    private final com.projeto.cortex.intelligence.stavia.semantic.rdo
+            .RdoOntology rdoOntology;
 
     public StaviaSnapshotService(JdbcTemplate jdbcTemplate) {
+        this(
+                jdbcTemplate,
+                com.projeto.cortex.intelligence.stavia.semantic.rdo
+                        .RdoOntology.load()
+        );
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public StaviaSnapshotService(
+            JdbcTemplate jdbcTemplate,
+            com.projeto.cortex.intelligence.stavia.semantic.rdo
+                    .RdoOntology rdoOntology
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.rdoOntology = rdoOntology;
     }
 
     public StaviaSnapshotResponse buildSnapshot() {
@@ -104,7 +120,8 @@ public class StaviaSnapshotService {
                 obras,
                 rdos,
                 programacoes(),
-                pdocs()
+                pdocs(),
+                rdoOntology.raw()
         );
     }
 

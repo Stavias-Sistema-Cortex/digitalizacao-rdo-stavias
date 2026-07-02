@@ -242,4 +242,5 @@ export interface StaviaSnapshot {
   rdos: StaviaSnapshotRdo[];
   programacoes: StaviaSnapshotProgramacao[];
   pdocs: StaviaSnapshotPdoc[];
+  ontology?: unknown;
 }
