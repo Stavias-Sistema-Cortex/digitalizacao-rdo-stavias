@@ -17,6 +17,24 @@ public final class StaviaEvidenceTypes {
     public static final String RDO_ATTRIBUTE =
             "RDO_ATTRIBUTE";
 
+    public static final String RDO_MATERIAL =
+            "RDO_MATERIAL";
+
+    public static final String RDO_MAO_OBRA =
+            "RDO_MAO_OBRA";
+
+    public static final String RDO_EQUIPAMENTO =
+            "RDO_EQUIPAMENTO";
+
+    public static final String RDO_CONTROLE_GEOMETRICO =
+            "RDO_CONTROLE_GEOMETRICO";
+
+    public static final String RDO_EXECUCAO_SERVICO =
+            "RDO_EXECUCAO_SERVICO";
+
+    public static final String RDO_AGREGACAO =
+            "RDO_AGREGACAO";
+
     public static final String TRECHO_OPERACIONAL =
             "TRECHO_OPERACIONAL";
 
