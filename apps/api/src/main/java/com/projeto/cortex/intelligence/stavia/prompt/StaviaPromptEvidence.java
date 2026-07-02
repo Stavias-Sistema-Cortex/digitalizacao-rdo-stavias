@@ -1,6 +1,8 @@
 package com.projeto.cortex.intelligence.stavia.prompt;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record StaviaPromptEvidence(
@@ -30,7 +32,9 @@ public record StaviaPromptEvidence(
 
         attributes = attributes == null
                 ? Map.of()
-                : Map.copyOf(attributes);
+                : Collections.unmodifiableMap(
+                        new LinkedHashMap<>(attributes)
+                );
     }
 
     private static void requireText(
