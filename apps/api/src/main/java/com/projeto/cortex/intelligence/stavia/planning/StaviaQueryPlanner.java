@@ -12,14 +12,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
-import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
@@ -27,10 +23,6 @@ public class StaviaQueryPlanner {
 
     private static final ZoneId BUSINESS_ZONE =
             ZoneId.of("America/Sao_Paulo");
-    private static final DateTimeFormatter DATE_BR =
-            DateTimeFormatter.ofPattern("dd/MM/yyyy");
-    private static final Pattern DATE_PATTERN =
-            Pattern.compile("(\\d{2}/\\d{2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})");
     private static final Pattern KM_REFERENCE =
             Pattern.compile("(?iu)\\bkm\\s*\\d");
     private static final Pattern SELECTED_RDO_CONTEXT =
@@ -39,6 +31,7 @@ public class StaviaQueryPlanner {
     private final StaviaSemanticCatalog catalog;
     private final OperationalRoleLexicon roleLexicon;
     private final Clock clock;
+    private final TemporalFilterParser temporalParser;
 
     public StaviaQueryPlanner() {
         this(
@@ -90,6 +83,7 @@ public class StaviaQueryPlanner {
         this.clock = clock == null
                 ? Clock.system(BUSINESS_ZONE)
                 : clock;
+        this.temporalParser = new TemporalFilterParser(this.clock);
     }
 
     public StaviaQueryPlan plan(
@@ -877,100 +871,11 @@ public class StaviaQueryPlanner {
             String normalized,
             boolean latest
     ) {
-        LocalDate today =
-                LocalDate.now(clock.withZone(BUSINESS_ZONE));
-
-        if (containsAny(normalized, "hoje")) {
-            return new TemporalFilter(
-                    today,
-                    today,
-                    "HOJE",
-                    null,
-                    null
-            );
-        }
-
-        if (containsAny(normalized, "ontem")) {
-            LocalDate yesterday = today.minusDays(1);
-            return new TemporalFilter(
-                    yesterday,
-                    yesterday,
-                    "ONTEM",
-                    null,
-                    null
-            );
-        }
-
-        if (containsAny(normalized, "esta semana")) {
-            LocalDate start = today.minusDays(today.getDayOfWeek().getValue() - 1L);
-            return new TemporalFilter(
-                    start,
-                    today,
-                    "ESTA_SEMANA",
-                    null,
-                    null
-            );
-        }
-
-        if (containsAny(normalized, "semana passada")) {
-            LocalDate thisWeekStart = today.minusDays(today.getDayOfWeek().getValue() - 1L);
-            return new TemporalFilter(
-                    thisWeekStart.minusWeeks(1),
-                    thisWeekStart.minusDays(1),
-                    "SEMANA_PASSADA",
-                    null,
-                    null
-            );
-        }
-
-        LocalDate explicit = extractDate(normalized);
-        if (explicit != null) {
-            return new TemporalFilter(
-                    explicit,
-                    explicit,
-                    null,
-                    null,
-                    null
-            );
-        }
-
-        if (latest) {
-            return TemporalFilter.latest("RDO_STATUS_E_DATA_OPERACIONAL");
-        }
-
-        return TemporalFilter.none();
-    }
-
-    private LocalDate extractDate(String normalized) {
-        Matcher matcher = DATE_PATTERN.matcher(normalized);
-
-        if (!matcher.find()) {
-            return null;
-        }
-
-        String value = matcher.group(1);
-
-        try {
-            if (value.contains("/")) {
-                return LocalDate.parse(value, DATE_BR);
-            }
-
-            return LocalDate.parse(value);
-        } catch (DateTimeParseException ignored) {
-            return null;
-        }
+        return temporalParser.parse(normalized, latest);
     }
 
     private boolean requestsLatest(String normalized) {
-        return containsAny(
-                normalized,
-                "mais recente",
-                "ultimo",
-                "ultima",
-                "atual",
-                "atualmente",
-                "ultimo rdo"
-        );
+        return temporalParser.requestsLatest(normalized);
     }
 
     private boolean asksForWorksiteDate(String normalized) {
