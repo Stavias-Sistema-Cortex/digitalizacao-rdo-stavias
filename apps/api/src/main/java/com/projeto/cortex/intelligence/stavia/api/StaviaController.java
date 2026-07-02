@@ -86,21 +86,26 @@ public class StaviaController {
 
     private String questionWithContext(StaviaConsultaRequest request) {
         StringBuilder question = new StringBuilder(request.pergunta());
+        String selectedObraId = firstNonBlank(
+                request.obraId(),
+                request.ultimoObraId()
+        );
+        String selectedRdoId = firstNonBlank(
+                request.rdoId(),
+                request.ultimoRdoId()
+        );
 
-        if (
-                !isBlank(request.obraId())
-                        || !isBlank(request.rdoId())
-        ) {
+        if (!isBlank(selectedObraId) || !isBlank(selectedRdoId)) {
             question.append("\nContexto ontológico selecionado:");
 
-            if (!isBlank(request.obraId())) {
+            if (!isBlank(selectedObraId)) {
                 question.append(" obraId=")
-                        .append(request.obraId().trim());
+                        .append(selectedObraId.trim());
             }
 
-            if (!isBlank(request.rdoId())) {
+            if (!isBlank(selectedRdoId)) {
                 question.append(" rdoId=")
-                        .append(request.rdoId().trim());
+                        .append(selectedRdoId.trim());
             }
         }
 
