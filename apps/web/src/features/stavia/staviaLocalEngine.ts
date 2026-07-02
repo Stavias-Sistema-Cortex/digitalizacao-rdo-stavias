@@ -9,6 +9,11 @@ import type {
   StaviaSnapshotProgramacao,
   StaviaSnapshotRdo,
 } from "./stavia.types";
+import {
+  answerWithRdoOntology,
+  loadRdoOntology,
+  matchesOntologyAttribute,
+} from "./staviaRdoOntology";
 
 export interface StaviaLocalContext {
   activeObraId?: string | null;
@@ -2650,6 +2655,25 @@ export function responderComSnapshotStavia({
   const questionForResolution = [pergunta, contextoSelecionado]
     .filter((part): part is string => Boolean(part?.trim()))
     .join(" ");
+
+  const ontology = loadRdoOntology(snapshot);
+
+  if (matchesOntologyAttribute(ontology, pergunta)) {
+    const resolvedForOntology = resolveContext(
+      snapshot,
+      questionForResolution,
+      context,
+    );
+    const ontologyAnswer = answerWithRdoOntology({
+      ontology,
+      pergunta,
+      rdos: selectedRdos(resolvedForOntology),
+    });
+
+    if (ontologyAnswer) {
+      return ontologyAnswer;
+    }
+  }
 
   if (intent === "DESCONHECIDA") {
     return null;
