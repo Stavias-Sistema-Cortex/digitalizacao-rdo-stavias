@@ -78,6 +78,25 @@ public class DeterministicStaviaResponseGenerator
         if (intent == StaviaIntent.CONSULTAR_RDO) {
             if (hasEvidenceType(
                     focusedEvidence,
+                    StaviaEvidenceTypes.RDO_AGREGACAO
+            )) {
+                return buildResponse(
+                        buildRdoAggregationAnswer(focusedEvidence),
+                        StaviaAnswerType.FATO,
+                        focusedEvidence
+                );
+            }
+
+            if (hasRdoRecordEvidence(focusedEvidence)) {
+                return buildResponse(
+                        buildRdoRecordAnswer(focusedEvidence),
+                        StaviaAnswerType.FATO,
+                        focusedEvidence
+                );
+            }
+
+            if (hasEvidenceType(
+                    focusedEvidence,
                     StaviaEvidenceTypes.TRECHO_OPERACIONAL
             )) {
                 return buildResponse(
@@ -734,6 +753,388 @@ public class DeterministicStaviaResponseGenerator
     ) {
         BigDecimal value = decimalValue(attributes.get(key));
         return value == null ? "" : value.toPlainString() + " " + unit;
+    }
+
+    private boolean hasRdoRecordEvidence(List<StaviaEvidence> evidences) {
+        return evidences.stream()
+                .anyMatch(evidence -> isRdoRecordType(evidence.type()));
+    }
+
+    private boolean isRdoRecordType(String type) {
+        return List.of(
+                StaviaEvidenceTypes.RDO_MATERIAL,
+                StaviaEvidenceTypes.RDO_MAO_OBRA,
+                StaviaEvidenceTypes.RDO_EQUIPAMENTO,
+                StaviaEvidenceTypes.RDO_CONTROLE_GEOMETRICO,
+                StaviaEvidenceTypes.RDO_EXECUCAO_SERVICO
+        ).contains(type);
+    }
+
+    private String buildRdoRecordAnswer(List<StaviaEvidence> evidences) {
+        List<StaviaEvidence> records = evidences.stream()
+                .filter(evidence -> isRdoRecordType(evidence.type()))
+                .toList();
+
+        if (records.isEmpty()) {
+            return "Nenhum registro estruturado de RDO foi encontrado para esta obra.";
+        }
+
+        List<StaviaEvidence> available = records.stream()
+                .filter(evidence ->
+                        attributeText(evidence.attributes(), "campo")
+                                .endsWith(".disponiveis")
+                )
+                .toList();
+
+        if (!available.isEmpty()) {
+            String names = available.stream()
+                    .map(evidence ->
+                            attributeText(
+                                    evidence.attributes(),
+                                    "itemRotulo"
+                            )
+                    )
+                    .filter(this::hasText)
+                    .distinct()
+                    .collect(java.util.stream.Collectors.joining(", "));
+
+            return "Não encontrei a informação solicitada para o termo "
+                    + "pesquisado. Registrados: "
+                    + names
+                    + ".";
+        }
+
+        Map<String, List<StaviaEvidence>> groups =
+                new java.util.LinkedHashMap<>();
+
+        for (StaviaEvidence record : records) {
+            groups.computeIfAbsent(
+                    recordKey(record.id()),
+                    key -> new java.util.ArrayList<>()
+            ).add(record);
+        }
+
+        if (groups.size() == 1) {
+            return singleRecordAnswer(
+                    groups.values().iterator().next()
+            );
+        }
+
+        StringBuilder answer =
+                new StringBuilder("Registros encontrados:");
+
+        for (List<StaviaEvidence> group : groups.values()) {
+            answer.append("\n").append(recordLine(group));
+        }
+
+        return answer.toString();
+    }
+
+    private String singleRecordAnswer(List<StaviaEvidence> group) {
+        StaviaEvidence first = group.getFirst();
+        Map<String, Object> attributes = first.attributes();
+        String item = attributeText(attributes, "itemRotulo");
+        String context = rdoContext(attributes);
+
+        StringBuilder answer = new StringBuilder();
+
+        if (group.size() == 1) {
+            answer.append(attributeText(attributes, "rotulo"));
+
+            if (hasText(item)) {
+                answer.append(" de ").append(item);
+            }
+
+            answer.append(": ")
+                    .append(attributeText(attributes, "valor"));
+
+            String unit = attributeText(attributes, "unidade");
+
+            if (hasText(unit)) {
+                answer.append(" ").append(unit);
+            }
+        } else {
+            answer.append(hasText(item) ? item : "Registro")
+                    .append(" — ")
+                    .append(
+                            group.stream()
+                                    .map(this::recordPart)
+                                    .collect(
+                                            java.util.stream.Collectors
+                                                    .joining("; ")
+                                    )
+                    );
+        }
+
+        if (hasText(context)) {
+            answer.append(" (").append(context).append(")");
+        }
+
+        answer.append(".");
+
+        String status = attributeText(attributes, "statusRdo");
+
+        if (hasText(status) && !isValidatedRdoStatus(status)) {
+            answer.append(" Esse RDO ainda não consta como validado pela sala técnica; use a informação como operacional, não como validação final.");
+        }
+
+        return answer.toString();
+    }
+
+    private String recordLine(List<StaviaEvidence> group) {
+        StaviaEvidence first = group.getFirst();
+        String item = attributeText(first.attributes(), "itemRotulo");
+
+        List<String> parts = group.stream()
+                .filter(evidence ->
+                        hasText(
+                                attributeText(
+                                        evidence.attributes(),
+                                        "valor"
+                                )
+                        )
+                )
+                .filter(evidence ->
+                        !attributeText(evidence.attributes(), "valor")
+                                .equals(item)
+                )
+                .map(this::recordPart)
+                .toList();
+
+        StringBuilder line = new StringBuilder("- ");
+
+        line.append(
+                hasText(item)
+                        ? item
+                        : attributeText(first.attributes(), "rotulo")
+        );
+
+        if (!parts.isEmpty()) {
+            line.append(" — ").append(String.join("; ", parts));
+        }
+
+        String context = rdoContext(first.attributes());
+
+        if (hasText(context)) {
+            line.append(" (").append(context).append(")");
+        }
+
+        return line.toString();
+    }
+
+    private String recordPart(StaviaEvidence evidence) {
+        Map<String, Object> attributes = evidence.attributes();
+        StringBuilder part = new StringBuilder();
+
+        part.append(attributeText(attributes, "rotulo"))
+                .append(": ")
+                .append(attributeText(attributes, "valor"));
+
+        String unit = attributeText(attributes, "unidade");
+
+        if (hasText(unit)) {
+            part.append(" ").append(unit);
+        }
+
+        return part.toString();
+    }
+
+    private String rdoContext(Map<String, Object> attributes) {
+        String number = attributeText(attributes, "rdoNumero");
+
+        if (!hasText(number)) {
+            return "";
+        }
+
+        StringBuilder context = new StringBuilder("RDO ")
+                .append(number);
+
+        String date = formatDate(attributeText(attributes, "dataRdo"));
+
+        if (hasText(date)) {
+            context.append(" de ").append(date);
+        }
+
+        return context.toString();
+    }
+
+    private String recordKey(String id) {
+        return id.contains(":")
+                ? id.substring(0, id.lastIndexOf(':'))
+                : id;
+    }
+
+    private String buildRdoAggregationAnswer(
+            List<StaviaEvidence> evidences
+    ) {
+        List<StaviaEvidence> aggregations = evidences.stream()
+                .filter(evidence ->
+                        StaviaEvidenceTypes.RDO_AGREGACAO.equals(
+                                evidence.type()
+                        )
+                )
+                .toList();
+
+        if (aggregations.isEmpty()) {
+            return "Nenhuma agregação de RDO foi encontrada para esta obra.";
+        }
+
+        boolean ranking = aggregations.stream()
+                .anyMatch(evidence ->
+                        hasText(
+                                attributeText(
+                                        evidence.attributes(),
+                                        "posicao"
+                                )
+                        )
+                );
+
+        if (ranking) {
+            return rankingAnswer(aggregations);
+        }
+
+        return aggregations.stream()
+                .map(this::aggregationLine)
+                .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    private String aggregationLine(StaviaEvidence evidence) {
+        Map<String, Object> attributes = evidence.attributes();
+        String value = attributeText(attributes, "valor");
+        String label = attributeText(attributes, "rotulo");
+
+        if (!hasText(value)) {
+            return "Não encontrei registros para calcular "
+                    + label
+                    + " no período.";
+        }
+
+        String opening =
+                "AVG".equals(attributeText(attributes, "funcao"))
+                        ? "Média de"
+                        : "Total de";
+
+        StringBuilder line = new StringBuilder(opening)
+                .append(" ")
+                .append(label)
+                .append(": ")
+                .append(value);
+
+        String unit = attributeText(attributes, "unidade");
+
+        if (hasText(unit)) {
+            line.append(" ").append(unit);
+        }
+
+        String rows = attributeText(attributes, "linhas");
+
+        if (hasText(rows)) {
+            line.append(" (")
+                    .append(rows)
+                    .append(
+                            "1".equals(rows)
+                                    ? " registro"
+                                    : " registros"
+                    );
+
+            String start = attributeText(attributes, "periodoInicio");
+            String end = attributeText(attributes, "periodoFim");
+
+            if (hasText(start) && hasText(end)) {
+                line.append(", período ")
+                        .append(formatDate(start))
+                        .append(" a ")
+                        .append(formatDate(end));
+            }
+
+            line.append(")");
+        }
+
+        line.append(".");
+
+        return line.toString();
+    }
+
+    private String rankingAnswer(List<StaviaEvidence> aggregations) {
+        List<StaviaEvidence> sorted = aggregations.stream()
+                .sorted(
+                        java.util.Comparator.comparingInt(
+                                this::rankingPosition
+                        )
+                )
+                .toList();
+
+        StaviaEvidence top = sorted.getFirst();
+        Map<String, Object> attributes = top.attributes();
+        boolean minimum =
+                "MIN".equals(attributeText(attributes, "funcao"));
+
+        StringBuilder answer = new StringBuilder("O RDO ")
+                .append(attributeText(attributes, "rdoNumero"))
+                .append(" de ")
+                .append(
+                        formatDate(
+                                attributeText(attributes, "dataRdo")
+                        )
+                )
+                .append(" teve o ")
+                .append(minimum ? "menor" : "maior")
+                .append(" valor de ")
+                .append(attributeText(attributes, "rotulo"))
+                .append(": ")
+                .append(attributeText(attributes, "valor"));
+
+        String unit = attributeText(attributes, "unidade");
+
+        if (hasText(unit)) {
+            answer.append(" ").append(unit);
+        }
+
+        answer.append(".");
+
+        for (StaviaEvidence other
+                : sorted.subList(1, sorted.size())) {
+            Map<String, Object> otherAttributes = other.attributes();
+
+            answer.append("\n- ")
+                    .append(
+                            attributeText(otherAttributes, "posicao")
+                    )
+                    .append("º: RDO ")
+                    .append(
+                            attributeText(otherAttributes, "rdoNumero")
+                    )
+                    .append(" de ")
+                    .append(
+                            formatDate(
+                                    attributeText(
+                                            otherAttributes,
+                                            "dataRdo"
+                                    )
+                            )
+                    )
+                    .append(" — ")
+                    .append(attributeText(otherAttributes, "valor"));
+
+            String otherUnit =
+                    attributeText(otherAttributes, "unidade");
+
+            if (hasText(otherUnit)) {
+                answer.append(" ").append(otherUnit);
+            }
+        }
+
+        return answer.toString();
+    }
+
+    private int rankingPosition(StaviaEvidence evidence) {
+        try {
+            return Integer.parseInt(
+                    attributeText(evidence.attributes(), "posicao")
+            );
+        } catch (NumberFormatException ignored) {
+            return Integer.MAX_VALUE;
+        }
     }
 
     private String buildRdoAttributeAnswer(
@@ -2692,6 +3093,22 @@ public class DeterministicStaviaResponseGenerator
         }
 
         if (intent == StaviaIntent.CONSULTAR_RDO) {
+            List<StaviaEvidence> ontologyEvidence =
+                    evidences.stream()
+                            .filter(evidence ->
+                                    StaviaEvidenceTypes.RDO_AGREGACAO.equals(
+                                            evidence.type()
+                                    )
+                                            || isRdoRecordType(
+                                                    evidence.type()
+                                            )
+                            )
+                            .toList();
+
+            if (!ontologyEvidence.isEmpty()) {
+                return ontologyEvidence;
+            }
+
             List<StaviaEvidence> attributeEvidence =
                     preferType(
                             evidences,

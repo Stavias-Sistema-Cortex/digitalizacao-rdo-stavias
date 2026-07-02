@@ -545,6 +545,263 @@ class DeterministicStaviaResponseGeneratorTest {
         );
     }
 
+    @Test
+    void shouldAnswerMaterialFactWithUnitAndRdoContext() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Qual a quantidade prevista de CAP 30/45?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(recordEvidence(
+                        "m-1:quantidadePrevista",
+                        "material.quantidadePrevista",
+                        "Quantidade prevista",
+                        "12.5",
+                        "t",
+                        "CAP 30/45"
+                ))
+        );
+
+        assertEquals(
+                "Quantidade prevista de CAP 30/45: 12.5 t "
+                        + "(RDO 123 de 01/07/2026).",
+                response.text()
+        );
+    }
+
+    @Test
+    void shouldListMultipleRecordEvidences() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Quais materiais foram registrados?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        recordEvidence(
+                                "m-1:quantidadePrevista",
+                                "material.quantidadePrevista",
+                                "Quantidade prevista",
+                                "12.5",
+                                "t",
+                                "CAP 30/45"
+                        ),
+                        recordEvidence(
+                                "m-2:quantidadePrevista",
+                                "material.quantidadePrevista",
+                                "Quantidade prevista",
+                                "35",
+                                "t",
+                                "Massa asfáltica prevista"
+                        )
+                )
+        );
+
+        assertTrue(response.text().contains("Registros encontrados:"));
+        assertTrue(response.text().contains("CAP 30/45"));
+        assertTrue(response.text().contains("Massa asfáltica prevista"));
+    }
+
+    @Test
+    void shouldAnswerComparisonBetweenAttributesOfSameRecord() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Comparar previsto vs aplicado de CAP 30/45",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        recordEvidence(
+                                "m-1:quantidadePrevista",
+                                "material.quantidadePrevista",
+                                "Quantidade prevista",
+                                "12.5",
+                                "t",
+                                "CAP 30/45"
+                        ),
+                        recordEvidence(
+                                "m-1:quantidadeAplicada",
+                                "material.quantidadeAplicada",
+                                "Quantidade aplicada",
+                                "11.9",
+                                "t",
+                                "CAP 30/45"
+                        )
+                )
+        );
+
+        assertTrue(response.text().contains("CAP 30/45 —"));
+        assertTrue(response.text().contains("Quantidade prevista: 12.5 t"));
+        assertTrue(response.text().contains("Quantidade aplicada: 11.9 t"));
+    }
+
+    @Test
+    void shouldAnswerAggregation() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Quanto de massa asfaltica foi aplicada essa semana?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(new StaviaEvidence(
+                        StaviaEvidenceTypes.RDO_AGREGACAO,
+                        "material:SUM:material.quantidadeAplicada",
+                        "Agregação SUM de Quantidade aplicada: 35.4",
+                        Instant.parse("2026-07-02T12:00:00Z"),
+                        true,
+                        Map.of(
+                                "funcao", "SUM",
+                                "campo", "material.quantidadeAplicada",
+                                "rotulo", "Quantidade aplicada",
+                                "valor", "35.4",
+                                "linhas", "3",
+                                "periodoInicio", "2026-06-29",
+                                "periodoFim", "2026-07-02"
+                        )
+                ))
+        );
+
+        assertEquals(
+                "Total de Quantidade aplicada: 35.4 "
+                        + "(3 registros, período 29/06/2026 a 02/07/2026).",
+                response.text()
+        );
+    }
+
+    @Test
+    void shouldAnswerRanking() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Qual RDO teve mais chuva?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        new StaviaEvidence(
+                                StaviaEvidenceTypes.RDO_AGREGACAO,
+                                "rdo:MAX:rdo.pluviometriaMm:rdo-2",
+                                "Agregação MAX de Pluviometria: 18.2",
+                                Instant.parse("2026-07-02T12:00:00Z"),
+                                true,
+                                Map.of(
+                                        "funcao", "MAX",
+                                        "campo", "rdo.pluviometriaMm",
+                                        "rotulo", "Pluviometria",
+                                        "valor", "18.2",
+                                        "unidade", "mm",
+                                        "linhas", "1",
+                                        "rdoNumero", "124",
+                                        "dataRdo", "2026-07-02",
+                                        "posicao", "1"
+                                )
+                        ),
+                        new StaviaEvidence(
+                                StaviaEvidenceTypes.RDO_AGREGACAO,
+                                "rdo:MAX:rdo.pluviometriaMm:rdo-1",
+                                "Agregação MAX de Pluviometria: 4",
+                                Instant.parse("2026-07-02T12:00:00Z"),
+                                true,
+                                Map.of(
+                                        "funcao", "MAX",
+                                        "campo", "rdo.pluviometriaMm",
+                                        "rotulo", "Pluviometria",
+                                        "valor", "4",
+                                        "unidade", "mm",
+                                        "linhas", "1",
+                                        "rdoNumero", "123",
+                                        "dataRdo", "2026-07-01",
+                                        "posicao", "2"
+                                )
+                        )
+                )
+        );
+
+        assertTrue(response.text().contains(
+                "O RDO 124 de 02/07/2026 teve o maior valor de "
+                        + "Pluviometria: 18.2 mm."
+        ));
+        assertTrue(response.text().contains(
+                "- 2º: RDO 123 de 01/07/2026 — 4 mm"
+        ));
+    }
+
+    @Test
+    void shouldAnswerAvailableItemsFallback() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Qual a quantidade prevista de CAP 99/99?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        availableEvidence("m-1", "Massa asfáltica prevista"),
+                        availableEvidence("m-2", "CAP 50/70")
+                )
+        );
+
+        assertEquals(
+                "Não encontrei a informação solicitada para o termo "
+                        + "pesquisado. Registrados: "
+                        + "Massa asfáltica prevista, CAP 50/70.",
+                response.text()
+        );
+    }
+
+    private StaviaEvidence recordEvidence(
+            String id,
+            String field,
+            String label,
+            String value,
+            String unit,
+            String itemLabel
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.RDO_MATERIAL,
+                id,
+                label + " de " + itemLabel + ": " + value + " " + unit,
+                Instant.parse("2026-07-01T12:00:00Z"),
+                true,
+                Map.of(
+                        "campo", field,
+                        "rotulo", label,
+                        "valor", value,
+                        "unidade", unit,
+                        "itemRotulo", itemLabel,
+                        "rdoNumero", "123",
+                        "dataRdo", "2026-07-01",
+                        "statusRdo", "APROVADO"
+                )
+        );
+    }
+
+    private StaviaEvidence availableEvidence(
+            String id,
+            String itemLabel
+    ) {
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.RDO_MATERIAL,
+                id + ":disponivel",
+                "Registrado: " + itemLabel,
+                Instant.parse("2026-07-01T12:00:00Z"),
+                true,
+                Map.of(
+                        "campo", "material.disponiveis",
+                        "rotulo", "Material",
+                        "itemRotulo", itemLabel,
+                        "rdoNumero", "123",
+                        "dataRdo", "2026-07-01",
+                        "statusRdo", "APROVADO"
+                )
+        );
+    }
+
     private StaviaEvidence evidence(
             String id,
             String summary
