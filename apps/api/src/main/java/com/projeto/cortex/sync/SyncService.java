@@ -104,7 +104,8 @@ public class SyncService {
                     fonte,
                     payload_json,
                     ocorrido_em,
-                    criado_em
+                    criado_em,
+                    versao_entidade
                 FROM cortex_evento_operacional
                 WHERE commit_seq > ?
                 ORDER BY commit_seq
@@ -119,7 +120,8 @@ public class SyncService {
                         rs.getString("fonte"),
                         parseJson(rs.getString("payload_json")),
                         rs.getTimestamp("ocorrido_em").toLocalDateTime(),
-                        rs.getTimestamp("criado_em").toLocalDateTime()
+                        rs.getTimestamp("criado_em").toLocalDateTime(),
+                        rs.getObject("versao_entidade", Long.class)
                 ),
                 afterCommitSeq,
                 queryLimit

@@ -24,7 +24,8 @@ public record SyncPullResponse(
             String fonte,
             JsonNode payload,
             LocalDateTime ocorridoEmUtc,
-            LocalDateTime criadoEmUtc
+            LocalDateTime criadoEmUtc,
+            Long versaoEntidade
     ) {
     }
 }
