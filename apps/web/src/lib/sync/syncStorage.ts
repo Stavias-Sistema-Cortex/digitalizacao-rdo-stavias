@@ -189,6 +189,36 @@ export async function markMutationAsSyncing(
   await transaction.done;
 }
 
+/**
+ * Registro local após um conflito de versão: além de marcar CONFLICT, adota
+ * a versão atual informada pelo servidor no payload do conflito. Sem isso a
+ * versão local fica defasada e todo reenvio da mutação conflita de novo;
+ * com ela, a próxima edição do usuário coalesce a mutação com o baseVersao
+ * correto e a sincronização se recupera.
+ */
+export function rdoAfterConflict(
+  rdo: LocalRdoRecord,
+  result: SyncPushMutationResult,
+  timestamp: string,
+): LocalRdoRecord {
+  const conflito = result.conflito;
+  const serverVersion =
+    conflito && typeof conflito === "object"
+      ? (conflito as Record<string, unknown>).versaoAtual
+      : null;
+
+  return {
+    ...rdo,
+    syncStatus: "CONFLICT",
+    versaoEntidade:
+      typeof serverVersion === "number" &&
+      Number.isFinite(serverVersion)
+        ? serverVersion
+        : rdo.versaoEntidade,
+    updatedAt: timestamp,
+  };
+}
+
 export async function applyPushResultAtomically(
   result: SyncPushMutationResult,
 ): Promise<void> {
@@ -259,11 +289,9 @@ export async function applyPushResultAtomically(
     });
 
     if (rdo) {
-      await rdoStore.put({
-        ...rdo,
-        syncStatus: "CONFLICT",
-        updatedAt: timestamp,
-      });
+      await rdoStore.put(
+        rdoAfterConflict(rdo, result, timestamp),
+      );
 
       await updateRdoChildrenSyncStatus(
         transaction,
