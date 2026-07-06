@@ -14,3 +14,6 @@ tmp/
 .env.*
 !.env.example
 .env.local
+
+# Superpowers brainstorm sessions
+.superpowers/
