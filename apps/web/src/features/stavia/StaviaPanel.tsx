@@ -13,14 +13,13 @@ import {
 import {
   adicionarContextoStavia,
   baixarSnapshotStavia,
-  consultarStavia,
   StaviaApiError,
 } from "./staviaApi";
 import {
   getBestAvailableStaviaSnapshot,
   saveStaviaSnapshot,
 } from "./staviaSnapshotStorage";
-import { responderComSnapshotStavia } from "./staviaLocalEngine";
+import { answerStaviaPanelQuestion } from "./staviaPanelAnswer";
 import type {
   StaviaConfidence,
   StaviaConsultaResponse,
@@ -69,13 +68,9 @@ const LAUNCHER_DRAG_THRESHOLD = 6;
 
 const SUGGESTIONS = [
   "Quem está trabalhando nesta obra?",
-  "Qual obra está acontecendo na cidade X?",
-  "Quantos RDOs dessa obra eu tenho?",
   "Quais equipamentos foram usados neste RDO?",
-  "Qual foi o turno registrado?",
   "Quais materiais foram aplicados?",
-  "Essa obra tem risco de desvio de custo?",
-  "Quando esses dados foram atualizados?",
+  "Quantos RDOs dessa obra eu tenho?",
 ];
 
 function createLocalId(): string {
@@ -650,43 +645,14 @@ export function StaviaPanel({
   async function answerQuestion(
     questionText: string,
   ): Promise<StaviaConsultaResponse> {
-    const latestSnapshot =
-      snapshot ?? (await getBestAvailableStaviaSnapshot());
-    const selectedContextText = contextHint.trim() || null;
-
-    if (latestSnapshot) {
-      const localResponse = responderComSnapshotStavia({
-        snapshot: latestSnapshot,
-        pergunta: questionText,
-        contextoSelecionado: selectedContextText,
-        context: {
-          activeObraId: activeObraId.trim() || null,
-          activeRdoId: activeRdoId.trim() || null,
-          lastObraId: storedContext.obraId,
-          lastRdoId: storedContext.rdoId,
-        },
-        isOnline,
-      });
-
-      if (localResponse) {
-        return localResponse;
-      }
-    }
-
-    if (!isOnline) {
-      throw new Error(
-        "Estou offline e não encontrei essa resposta no snapshot salvo. Atualize a base quando a internet voltar.",
-      );
-    }
-
-    return consultarStavia({
-      pergunta: questionText,
-      usuarioId: "frontend-local",
-      obraId: activeObraId.trim() || null,
-      rdoId: activeRdoId.trim() || null,
-      contextoSelecionado: selectedContextText,
-      ultimoObraId: storedContext.obraId,
-      ultimoRdoId: storedContext.rdoId,
+    return answerStaviaPanelQuestion({
+      snapshot,
+      questionText,
+      contextHint,
+      activeObraId,
+      activeRdoId,
+      lastContext: storedContext,
+      isOnline,
     });
   }
 
@@ -771,9 +737,6 @@ export function StaviaPanel({
       obraId: option.obraId,
       rdoId: option.rdoId,
     });
-    setStatusMessage(
-      `Contexto operacional selecionado: ${option.title}.`,
-    );
     setIsContextSelectorOpen(false);
     setContextSelectorQuery("");
   }
@@ -782,6 +745,12 @@ export function StaviaPanel({
     persistChatMessages([]);
     setChatMessages([]);
     setResponse(null);
+  }
+
+  function handleClearContext() {
+    setActiveObraId("");
+    setActiveRdoId("");
+    setContextHint("");
   }
 
   function handleContextFileChange(
@@ -836,154 +805,27 @@ export function StaviaPanel({
     }
   }
 
+  const hasMessages = chatMessages.length > 0;
+  const showAnswerExtras =
+    response !== null &&
+    (response.answer.warnings.length > 0 ||
+      responseWantsDetails(response));
+  const refreshTitle = lastUpdatedAt
+    ? `Atualizar base — atualizada em ${formatUpdatedAt(lastUpdatedAt)}`
+    : "Atualizar base local";
+
   const panelContent = (
-    <>
-      <section className="stavia-hero-panel">
-        <header className="stavia-hero-header">
-          <button
-            type="button"
-            className="stavia-back-button"
-            onClick={handlePanelClose}
-            disabled={isLoading || isUploadingContext}
-            aria-label={isFloating ? "Fechar Stav.IA" : "Voltar"}
-          >
-            {isFloating ? (
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            ) : (
-              "Voltar"
-            )}
-          </button>
-        </header>
-
-        <div className="stavia-intro-row">
-          <div className="stavia-logo-card">
-            <img src="/stavia-logo.png" alt="STAV.IA" />
-          </div>
-
-          <div className="stavia-intro-wrap">
-            <span className="stavia-info-dot" aria-hidden="true">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 11v5M12 7.5v.01" />
-              </svg>
-            </span>
-
-            <p className="stavia-intro-copy">
-              A Stav.IA é a assistente operacional do Córtex para
-              consultar RDOs, obras, equipes, equipamentos, materiais,
-              programação, sincronização e PDOC com os dados salvos no
-              sistema.
-            </p>
-          </div>
-        </div>
-
-        {!isOnline && (
-          <div className="stavia-offline-banner">
-            Modo offline — respondendo com dados salvos neste
-            dispositivo.
-          </div>
-        )}
-
-        <p className="stavia-suggestions-title">
-          Dicas do que perguntar
-        </p>
-
-        <div
-          className="stavia-suggestion-crawl"
-          aria-label="Perguntas sugeridas"
-        >
-          <div className="stavia-suggestion-crawl-track">
-            {SUGGESTIONS.map((suggestion, index) => (
-              <button
-                key={suggestion}
-                type="button"
-                style={
-                  {
-                    "--stavia-tip-index": index,
-                  } as CSSProperties
-                }
-                onClick={() => handleSuggestionClick(suggestion)}
-                disabled={isLoading}
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="stavia-tip-box">
-          <strong>Você sabia?</strong>
-          <span>
-            O PDOC aparece como indicador heurístico quando o modelo
-            ainda não está calibrado.
-          </span>
-        </div>
-
-        <div className="stavia-selected-context">
-          <div>
-            <span>Contexto operacional</span>
-            <strong>
-              {activeContextOption
-                ? activeContextOption.title
-                : "Nenhuma obra/RDO selecionado"}
-            </strong>
-            <small>
-              {activeContextOption
-                ? `${activeContextOption.subtitle}. IDs ontológicos preservados na consulta.`
-                : `${contextWorksiteCount} obra(s) e ${contextOptions.length} RDO(s) disponíveis no snapshot local.`}
-            </small>
-          </div>
-
-          <button
-            type="button"
-            className="stavia-secondary-action"
-            onClick={handleOpenContextSelector}
-            disabled={isLoading || isUploadingContext}
-          >
-            Selecionar obra/RDO
-          </button>
-        </div>
-
-        <form
-          ref={formRef}
-          className="stavia-query-box"
-          onSubmit={handleSubmit}
-        >
-          <div className="stavia-prompt-meta">
-            <span
-              className={`stavia-network-pill ${
-                isOnline ? "is-online" : "is-offline"
-              }`}
-            >
-              {isOnline ? "Online" : "Offline"}
-            </span>
-
-            <span className="stavia-meta-time">
-              Última atualização em {formatUpdatedAt(lastUpdatedAt)}
-            </span>
-
+    <div className="stavia-shell">
+      <header className="stavia-topbar">
+        <div className="stavia-brand">
+          {!isFloating && onBack && (
             <button
               type="button"
-              className="stavia-refresh-button"
-              onClick={() => {
-                void refreshSnapshot();
-              }}
-              disabled={isSyncingSnapshot || isLoading}
+              className="stavia-icon-button"
+              onClick={handlePanelClose}
+              disabled={isLoading || isUploadingContext}
+              aria-label="Voltar"
+              title="Voltar"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -994,75 +836,85 @@ export function StaviaPanel({
                 strokeLinejoin="round"
                 aria-hidden="true"
               >
-                <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v4h-4" />
+                <path d="M19 12H5M11 18l-6-6 6-6" />
               </svg>
-              {isSyncingSnapshot ? "Atualizando..." : "Atualizar base"}
             </button>
-          </div>
-
-          {contextFile && (
-            <div className="stavia-attach-tray">
-              <span className="stavia-attach-chip">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M21 15V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l3-1.7" />
-                </svg>
-                <span>{contextFile.name}</span>
-              </span>
-
-              <input
-                type="text"
-                value={contextDescription}
-                onChange={(event) => {
-                  setContextDescription(event.target.value);
-                }}
-                placeholder="Descrição do anexo (opcional)"
-                disabled={isUploadingContext}
-              />
-
-              <button
-                type="button"
-                className="stavia-primary-action compact"
-                onClick={() => {
-                  void handleContextUpload();
-                }}
-                disabled={isUploadingContext || isLoading}
-              >
-                {isUploadingContext ? "Anexando..." : "Anexar"}
-              </button>
-
-              <button
-                type="button"
-                className="stavia-attach-remove"
-                onClick={() => {
-                  setContextFile(null);
-                  setContextDescription("");
-                }}
-                aria-label="Remover anexo"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2.2}
-                  strokeLinecap="round"
-                  aria-hidden="true"
-                >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
-            </div>
           )}
 
-          <div className="stavia-question-shell">
-            <label className="stavia-plus-button" title="Anexar arquivo">
+          <div className="stavia-logo-card">
+            <img
+              className="stavia-brand-logo"
+              src="/stavia-logo.png"
+              alt="Stav.IA"
+              draggable={false}
+            />
+          </div>
+
+          <span
+            className={`stavia-status-dot ${
+              isOnline ? "is-online" : "is-offline"
+            }`}
+            role="img"
+            aria-label={isOnline ? "Online" : "Offline"}
+            title={isOnline ? "Online" : "Offline"}
+          />
+        </div>
+
+        <div className="stavia-topbar-actions">
+          <button
+            type="button"
+            className={`stavia-icon-button ${
+              isSyncingSnapshot ? "is-busy" : ""
+            }`}
+            onClick={() => {
+              void refreshSnapshot();
+            }}
+            disabled={isSyncingSnapshot || isLoading}
+            aria-label={refreshTitle}
+            title={refreshTitle}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v4h-4" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            className="stavia-icon-button"
+            onClick={handleClearChat}
+            disabled={!hasMessages}
+            aria-label="Limpar conversa"
+            title="Limpar conversa"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
+            </svg>
+          </button>
+
+          {isFloating && (
+            <button
+              type="button"
+              className="stavia-icon-button"
+              onClick={handlePanelClose}
+              aria-label="Fechar Stav.IA"
+              title="Fechar"
+            >
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -1071,86 +923,332 @@ export function StaviaPanel({
                 strokeLinecap="round"
                 aria-hidden="true"
               >
-                <path d="M12 5v14M5 12h14" />
+                <path d="M6 6l12 12M18 6L6 18" />
               </svg>
-              <input
-                type="file"
-                aria-label="Anexar arquivo de contexto"
-                accept=".pdf,image/*,.txt,.md,.csv,.json"
-                onChange={handleContextFileChange}
-                disabled={isLoading || isUploadingContext}
-              />
-            </label>
+            </button>
+          )}
+        </div>
+      </header>
 
-            <textarea
-              value={pergunta}
+      {!isOnline && (
+        <div className="stavia-offline-note">
+          Offline — respondendo com os dados salvos neste dispositivo.
+        </div>
+      )}
+
+      <div
+        ref={chatThreadRef}
+        className="stavia-thread"
+        aria-live="polite"
+      >
+        {!hasMessages ? (
+          <div className="stavia-empty">
+            <h2>Como posso ajudar na obra hoje?</h2>
+            <p>
+              Pergunte sobre RDOs, obras, equipes, equipamentos,
+              materiais e programação.
+            </p>
+
+            <div className="stavia-chips">
+              {SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  disabled={isLoading}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+
+            <small>
+              {lastUpdatedAt
+                ? `Base local atualizada em ${formatUpdatedAt(lastUpdatedAt)}`
+                : "Base local ainda não sincronizada"}
+            </small>
+          </div>
+        ) : (
+          <div className="stavia-messages">
+            {chatMessages.map((message) => {
+              const isUser = message.role === "USUARIO";
+
+              return (
+                <article
+                  key={message.id}
+                  className={`stavia-bubble ${
+                    isUser
+                      ? "stavia-bubble--user"
+                      : "stavia-bubble--assistant"
+                  }`}
+                >
+                  <p>{message.text}</p>
+
+                  <footer>
+                    <span>
+                      {formatChatTimestamp(message.createdAt)}
+                    </span>
+                    {!isUser && message.confidence && (
+                      <span>
+                        Confiança{" "}
+                        {confidenceLabel(message.confidence)}
+                        {message.sourcesCount
+                          ? ` · ${message.sourcesCount} fonte(s)`
+                          : ""}
+                      </span>
+                    )}
+                  </footer>
+                </article>
+              );
+            })}
+
+            {showAnswerExtras && response && (
+              <div className="stavia-answer-extras">
+                {response.answer.warnings.map((warning) => (
+                  <p key={warning} className="stavia-warning">
+                    {warning}
+                  </p>
+                ))}
+
+                {responseWantsDetails(response) && (
+                  <div className="stavia-evidence">
+                    {response.answer.sources.length === 0 ? (
+                      <p className="stavia-evidence-empty">
+                        Nenhuma evidência detalhada disponível.
+                      </p>
+                    ) : (
+                      response.answer.sources.map((source) => (
+                        <details
+                          key={`${source.type}:${source.id}`}
+                          className="stavia-source"
+                        >
+                          <summary>
+                            <span>{source.summary}</span>
+                            <small>
+                              {formatUpdatedAt(source.updatedAt)}
+                            </small>
+                          </summary>
+
+                          <pre>
+                            {JSON.stringify(
+                              source.attributes,
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </details>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isLoading && (
+              <div
+                className="stavia-thinking"
+                role="status"
+                aria-label="Consultando a base"
+              >
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {(error || statusMessage) && (
+        <p
+          className={`stavia-note ${error ? "is-error" : "is-success"}`}
+          role={error ? "alert" : "status"}
+        >
+          {error || statusMessage}
+        </p>
+      )}
+
+      <footer className="stavia-composer-area">
+        {contextFile && (
+          <div className="stavia-attach-tray">
+            <span className="stavia-attach-chip">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21.4 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+              <span>{contextFile.name}</span>
+            </span>
+
+            <input
+              type="text"
+              value={contextDescription}
               onChange={(event) => {
-                setPergunta(event.target.value);
-                setError("");
-                setStatusMessage("");
+                setContextDescription(event.target.value);
               }}
-              onKeyDown={handleQuestionKeyDown}
-              rows={1}
-              disabled={isLoading || isUploadingContext}
-              placeholder="Pergunte para a inteligência artificial Stav.IA..."
+              placeholder="Descrição do anexo (opcional)"
+              disabled={isUploadingContext}
             />
 
             <button
-              type="submit"
-              className="stavia-send-button"
-              disabled={isLoading || !pergunta.trim()}
-              aria-label="Perguntar"
-              title="Perguntar"
+              type="button"
+              className="stavia-attach-send"
+              onClick={() => {
+                void handleContextUpload();
+              }}
+              disabled={isUploadingContext || isLoading}
             >
-              {isLoading ? (
-                <span className="stavia-spinner" aria-hidden="true" />
-              ) : (
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2.2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
-              )}
+              {isUploadingContext ? "Anexando..." : "Anexar"}
+            </button>
+
+            <button
+              type="button"
+              className="stavia-dismiss-button"
+              onClick={() => {
+                setContextFile(null);
+                setContextDescription("");
+              }}
+              aria-label="Remover anexo"
+              title="Remover anexo"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
             </button>
           </div>
+        )}
 
-          <div className="stavia-context-hint">
+        <div className="stavia-context-row">
+          <button
+            type="button"
+            className={`stavia-context-chip ${
+              activeContextOption ? "is-active" : ""
+            }`}
+            onClick={handleOpenContextSelector}
+            disabled={isLoading || isUploadingContext}
+            title={activeContextOption?.subtitle}
+          >
             <svg
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth={2}
               strokeLinecap="round"
+              strokeLinejoin="round"
               aria-hidden="true"
             >
-              <path d="M3 7h18M3 12h18M3 17h12" />
+              <path d="M20 10.5c0 5.5-8 10.5-8 10.5s-8-5-8-10.5a8 8 0 1 1 16 0z" />
+              <circle cx="12" cy="10.5" r="2.5" />
+            </svg>
+            <span>
+              {activeContextOption
+                ? activeContextOption.title
+                : "Selecionar obra/RDO"}
+            </span>
+          </button>
+
+          {activeContextOption && (
+            <button
+              type="button"
+              className="stavia-dismiss-button"
+              onClick={handleClearContext}
+              disabled={isLoading || isUploadingContext}
+              aria-label="Limpar contexto selecionado"
+              title="Limpar contexto"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <form
+          ref={formRef}
+          className="stavia-composer"
+          onSubmit={handleSubmit}
+        >
+          <label
+            className="stavia-plus-button"
+            title="Anexar arquivo de contexto"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
             </svg>
             <input
-              type="text"
-              value={contextHint}
-              onChange={(event) => setContextHint(event.target.value)}
+              type="file"
+              aria-label="Anexar arquivo de contexto"
+              accept=".pdf,image/*,.txt,.md,.csv,.json"
+              onChange={handleContextFileChange}
               disabled={isLoading || isUploadingContext}
-              placeholder="Contexto adicional: cidade, RDO, contrato, CW ou obra"
             />
-          </div>
-        </form>
+          </label>
 
-        {(error || statusMessage) && (
-          <div
-            className={`stavia-message ${
-              error ? "is-error" : "is-success"
-            }`}
-            role={error ? "alert" : "status"}
+          <textarea
+            value={pergunta}
+            onChange={(event) => {
+              setPergunta(event.target.value);
+              setError("");
+              setStatusMessage("");
+            }}
+            onKeyDown={handleQuestionKeyDown}
+            rows={1}
+            disabled={isLoading || isUploadingContext}
+            placeholder="Pergunte à Stav.IA..."
+          />
+
+          <button
+            type="submit"
+            className="stavia-send-button"
+            disabled={isLoading || !pergunta.trim()}
+            aria-label="Enviar pergunta"
+            title="Enviar"
           >
-            {error || statusMessage}
-          </div>
-        )}
+            {isLoading ? (
+              <span className="stavia-spinner" aria-hidden="true" />
+            ) : (
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
+            )}
+          </button>
+        </form>
+      </footer>
 
       {isContextSelectorOpen && (
         <div
@@ -1168,63 +1266,53 @@ export function StaviaPanel({
             aria-modal="true"
             aria-labelledby="stavia-context-modal-title"
           >
-            <header className="stavia-context-modal-header">
-              <div>
-                <p>Selecionar contexto</p>
-                <h2 id="stavia-context-modal-title">
-                  Obras e RDOs registrados
-                </h2>
-                <span>
-                  A seleção preserva `obraId` e `rdoId` rastreáveis
-                  na ontologia operacional.
-                </span>
-              </div>
+            <header>
+              <h2 id="stavia-context-modal-title">
+                Selecionar obra ou RDO
+              </h2>
 
               <button
                 type="button"
-                className="stavia-modal-close"
+                className="stavia-icon-button"
                 onClick={() => {
                   setIsContextSelectorOpen(false);
                 }}
                 aria-label="Fechar seletor"
+                title="Fechar"
               >
-                ×
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
               </button>
             </header>
 
-            <div className="stavia-context-modal-tools">
-              <input
-                type="search"
-                value={contextSelectorQuery}
-                onChange={(event) => {
-                  setContextSelectorQuery(event.target.value);
-                }}
-                placeholder="Buscar por obra, RDO, cidade, contrato, CW ou trecho"
-                autoFocus
-              />
+            <input
+              type="search"
+              value={contextSelectorQuery}
+              onChange={(event) => {
+                setContextSelectorQuery(event.target.value);
+              }}
+              placeholder="Buscar por obra, RDO, cidade, contrato ou trecho"
+              autoFocus
+            />
 
-              <button
-                type="button"
-                className="stavia-secondary-action compact"
-                onClick={() => {
-                  void refreshSnapshot();
-                }}
-                disabled={isSyncingSnapshot || !isOnline}
-              >
-                {isSyncingSnapshot ? "Atualizando..." : "Atualizar"}
-              </button>
-            </div>
-
-            <div className="stavia-context-modal-summary">
-              {contextWorksiteCount} obra(s) · {contextOptions.length} RDO(s)
-              no snapshot local
-            </div>
+            <p className="stavia-context-modal-summary">
+              {contextWorksiteCount} obra(s) · {contextOptions.length}{" "}
+              RDO(s) neste dispositivo
+            </p>
 
             <div className="stavia-context-option-list">
               {filteredContextOptions.length === 0 ? (
                 <div className="stavia-context-empty">
                   {contextOptions.length === 0
-                    ? "Nenhum RDO registrado no snapshot local. Atualize a base quando estiver online."
+                    ? "Nenhum RDO neste dispositivo. Atualize a base quando estiver online."
                     : "Nenhum RDO encontrado para essa busca."}
                 </div>
               ) : (
@@ -1242,17 +1330,9 @@ export function StaviaPanel({
                       }`}
                       onClick={() => handleContextOptionSelect(option)}
                     >
-                      <span>
-                        <strong>{option.title}</strong>
-                        <em>{option.subtitle}</em>
-                        {option.meta && <small>{option.meta}</small>}
-                      </span>
-
-                      <code>
-                        obraId={option.obraId}
-                        {"\n"}
-                        rdoId={option.rdoId}
-                      </code>
+                      <strong>{option.title}</strong>
+                      <em>{option.subtitle}</em>
+                      {option.meta && <small>{option.meta}</small>}
                     </button>
                   );
                 })
@@ -1261,110 +1341,7 @@ export function StaviaPanel({
           </section>
         </div>
       )}
-
-      <section className="stavia-workspace">
-        <div className="stavia-chat-panel">
-          <div className="stavia-chat-header">
-            <div>
-              <p>Conversa</p>
-              <h2>Histórico local</h2>
-            </div>
-
-            <button
-              type="button"
-              className="stavia-secondary-action compact"
-              onClick={handleClearChat}
-              disabled={chatMessages.length === 0}
-            >
-              Limpar
-            </button>
-          </div>
-
-          {chatMessages.length === 0 ? (
-            <p className="stavia-empty-chat">
-              Faça uma pergunta para iniciar.
-            </p>
-          ) : (
-            <div
-              ref={chatThreadRef}
-              className="stavia-chat-thread"
-              aria-live="polite"
-            >
-              {chatMessages.map((message) => (
-                <article
-                  key={message.id}
-                  className={`stavia-chat-message stavia-chat-message--${message.role.toLowerCase()}`}
-                >
-                  <div>
-                    <strong>
-                      {message.role === "USUARIO" ? "Você" : "Stav.IA"}
-                    </strong>
-                    <span>{formatChatTimestamp(message.createdAt)}</span>
-                  </div>
-
-                  <p>{message.text}</p>
-
-                  {message.role === "STAVIA" && message.confidence && (
-                    <small>
-                      Confiança {confidenceLabel(message.confidence)}
-                      {message.sourcesCount
-                        ? ` · ${message.sourcesCount} fonte(s)`
-                        : ""}
-                    </small>
-                  )}
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {response && (
-          <aside className="stavia-answer-panel" aria-live="polite">
-            <div className="stavia-answer-header">
-              <span>Resposta</span>
-              <strong>{confidenceLabel(response.answer.confidence)}</strong>
-            </div>
-
-            <p className="stavia-answer-text">{response.answer.answer}</p>
-
-            {response.answer.warnings.length > 0 && (
-              <div className="stavia-warning-box">
-                {response.answer.warnings.map((warning) => (
-                  <p key={warning}>{warning}</p>
-                ))}
-              </div>
-            )}
-
-            {responseWantsDetails(response) && (
-              <div className="stavia-sources">
-                <h3>Evidências</h3>
-
-                {response.answer.sources.length === 0 ? (
-                  <p>Nenhuma evidência detalhada disponível.</p>
-                ) : (
-                  response.answer.sources.map((source) => (
-                    <details
-                      key={`${source.type}:${source.id}`}
-                      className="stavia-source"
-                    >
-                      <summary>
-                        <span>{source.summary}</span>
-                        <small>{formatUpdatedAt(source.updatedAt)}</small>
-                      </summary>
-
-                      <pre>
-                        {JSON.stringify(source.attributes, null, 2)}
-                      </pre>
-                    </details>
-                  ))
-                )}
-              </div>
-            )}
-          </aside>
-        )}
-      </section>
-      </section>
-    </>
+    </div>
   );
 
   const launcherStyle = {
@@ -1410,17 +1387,11 @@ export function StaviaPanel({
           aria-modal="true"
           aria-label="Stav.IA"
         >
-          <div className="stavia-page stavia-page--floating">
-            {panelContent}
-          </div>
+          {panelContent}
         </aside>
       </div>
     );
   }
 
-  return (
-    <main className="stavia-page">
-      {panelContent}
-    </main>
-  );
+  return <main className="stavia-page">{panelContent}</main>;
 }

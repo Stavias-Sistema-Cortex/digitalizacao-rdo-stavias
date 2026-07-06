@@ -89,7 +89,7 @@ public class OccurrenceKnowledgeSource
 
     @Override
     public String sourceVersion() {
-        return "STAVIA-OCCURRENCE-SOURCE-0.1.0";
+        return "STAVIA-OCCURRENCE-SOURCE-0.2.0";
     }
 
     @Override
@@ -253,7 +253,7 @@ public class OccurrenceKnowledgeSource
 
         return new StaviaEvidence(
                 StaviaEvidenceTypes.OCORRENCIA,
-                record.rdoId(),
+                record.evidenceId(),
                 buildSummary(record),
                 record.updatedAt() == null
                         ? null

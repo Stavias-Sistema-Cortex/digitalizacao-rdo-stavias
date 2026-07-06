@@ -6,11 +6,13 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaContext;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class StaviaContextBuilderTest {
@@ -157,6 +159,37 @@ class StaviaContextBuilderTest {
                 builder.build(rawContext);
 
         assertEquals(0, context.evidences().size());
+    }
+
+    @Test
+    void shouldAcceptEvidenceAttributesWithNullValues() {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        attributes.put("status", "SYNCED");
+        attributes.put("observacoes", null);
+
+        StaviaRawContext rawContext =
+                new StaviaRawContext(
+                        "usuario-1",
+                        "obra-1",
+                        Set.of("RDO_VISUALIZAR"),
+                        List.of(
+                                new StaviaRawContext.RawEvidence(
+                                        "RDO",
+                                        "rdo-1",
+                                        "obra-1",
+                                        "RDO_VISUALIZAR",
+                                        "RDO com observação vazia.",
+                                        Instant.now(),
+                                        true,
+                                        attributes
+                                )
+                        )
+                );
+
+        StaviaContext context = builder.build(rawContext);
+
+        assertEquals(1, context.evidences().size());
+        assertNull(context.evidences().getFirst().attributes().get("observacoes"));
     }
 
     @Test

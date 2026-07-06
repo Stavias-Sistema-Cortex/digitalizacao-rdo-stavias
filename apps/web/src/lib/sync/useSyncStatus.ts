@@ -6,6 +6,7 @@ import {
 
 import { getSyncState } from "../db/syncStateRepository";
 import { listOutboxMutations } from "../db/outboxRepository";
+import type { OutboxMutationRecord } from "../db/db.types";
 
 export type SyncUiStatus =
   | "OFFLINE"
@@ -80,6 +81,26 @@ function determineStatus(input: {
   return "SYNCED";
 }
 
+function firstMutationSyncProblem(
+  mutations: OutboxMutationRecord[],
+): string | null {
+  const problem = mutations
+    .filter(
+      (mutation) =>
+        mutation.status === "ERROR" ||
+        mutation.status === "CONFLICT",
+    )
+    .sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt),
+    )[0];
+
+  if (!problem?.ultimoErro) {
+    return null;
+  }
+
+  return `Motivo: ${problem.ultimoErro}`;
+}
+
 export function useSyncStatus(): {
   snapshot: SyncStatusSnapshot;
   refresh: () => Promise<void>;
@@ -122,6 +143,11 @@ export function useSyncStatus(): {
         ).length;
 
       const isOnline = navigator.onLine;
+      const localSyncProblem =
+        firstMutationSyncProblem(mutations);
+      const lastSyncError =
+        syncState.lastSyncError ??
+        localSyncProblem;
 
       setSnapshot({
         status: determineStatus({
@@ -131,8 +157,7 @@ export function useSyncStatus(): {
           syncingCount,
           errorCount,
           conflictCount,
-          lastSyncError:
-            syncState.lastSyncError,
+          lastSyncError,
         }),
         isOnline,
         pendingCount,
@@ -141,8 +166,7 @@ export function useSyncStatus(): {
         conflictCount,
         lastSyncCompletedAt:
           syncState.lastSyncCompletedAt,
-        lastSyncError:
-          syncState.lastSyncError,
+        lastSyncError,
         isLoading: false,
       });
     } catch (error: unknown) {

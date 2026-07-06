@@ -572,6 +572,33 @@ class DeterministicStaviaResponseGeneratorTest {
     }
 
     @Test
+    void shouldAnswerGeometricControlCellByVisualOrdinalLabel() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Qual o comprimento do trecho 2?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(typedRecordEvidence(
+                        StaviaEvidenceTypes.RDO_CONTROLE_GEOMETRICO,
+                        "cg-2:comprimentoM",
+                        "controleGeometrico.comprimentoM",
+                        "Comprimento",
+                        "282",
+                        "m",
+                        "Trecho 2 (SP-215)"
+                ))
+        );
+
+        assertEquals(
+                "Comprimento de Trecho 2 (SP-215): 282 m "
+                        + "(RDO 123 de 01/07/2026).",
+                response.text()
+        );
+    }
+
+    @Test
     void shouldListMultipleRecordEvidences() {
         StaviaGeneratedResponse response = generator.generate(
                 new StaviaQuestion(
@@ -603,6 +630,208 @@ class DeterministicStaviaResponseGeneratorTest {
         assertTrue(response.text().contains("Registros encontrados:"));
         assertTrue(response.text().contains("CAP 30/45"));
         assertTrue(response.text().contains("Massa asfáltica prevista"));
+    }
+
+    @Test
+    void shouldComposeCompleteRdoHeaderRecordAnswer() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Mostre todos os dados do RDO 123",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        structuredRdoAttribute(
+                                "rdo-123:numeroRdo",
+                                "rdo.numeroRdo",
+                                "Número do RDO",
+                                "123",
+                                null
+                        ),
+                        structuredRdoAttribute(
+                                "rdo-123:dataRdo",
+                                "rdo.dataRdo",
+                                "Data do RDO",
+                                "2026-07-01",
+                                null
+                        ),
+                        structuredRdoAttribute(
+                                "rdo-123:cidade",
+                                "rdo.cidade",
+                                "Cidade",
+                                "São Paulo",
+                                null
+                        ),
+                        structuredRdoAttribute(
+                                "rdo-123:fiscalizacaoCampo",
+                                "rdo.fiscalizacaoCampo",
+                                "Fiscalização de campo",
+                                "Fiscal A",
+                                null
+                        )
+                )
+        );
+
+        assertTrue(response.text().contains("RDO 123 —"));
+        assertTrue(response.text().contains("Data do RDO: 2026-07-01"));
+        assertTrue(response.text().contains("Cidade: São Paulo"));
+        assertTrue(response.text().contains("Fiscalização de campo: Fiscal A"));
+    }
+
+    @Test
+    void shouldComposeAttachmentAllocationAndOperationalEventRecords() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Mostre todos os dados operacionais do RDO 123",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_ALOCACAO_COLABORADOR,
+                                "aloc-1:funcao",
+                                "alocacaoColaborador.funcao",
+                                "Função",
+                                "Apontador",
+                                null,
+                                "Alocação 1 (João Silva)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_ATTACHMENT,
+                                "foto-1:nome",
+                                "attachment.nome",
+                                "Nome da foto",
+                                "trecho-2.webp",
+                                null,
+                                "Foto 1 (trecho-2.webp)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_OPERATIONAL_EVENT,
+                                "event-1:origin",
+                                "operationalEvent.origin",
+                                "Origem",
+                                "OFFLINE",
+                                null,
+                                "Evento 1 (FOTO_ADICIONADA)"
+                        )
+                )
+        );
+
+        assertTrue(response.text().contains("Registros encontrados:"));
+        assertTrue(response.text().contains("Alocação 1 (João Silva)"));
+        assertTrue(response.text().contains("Função: Apontador"));
+        assertTrue(response.text().contains("Foto 1 (trecho-2.webp)"));
+        assertTrue(response.text().contains("Nome da foto: trecho-2.webp"));
+        assertTrue(response.text().contains("Evento 1 (FOTO_ADICIONADA)"));
+        assertTrue(response.text().contains("Origem: OFFLINE"));
+    }
+
+    @Test
+    void shouldComposeStructuredCellsFromEveryRepeatedRdoBlock() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Mostre todas as células dos blocos do RDO 123",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_RDO,
+                List.of(
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_MATERIAL,
+                                "mat-2:quantidadeAplicada",
+                                "material.quantidadeAplicada",
+                                "Quantidade aplicada",
+                                "33.5",
+                                "t",
+                                "Material 2 (Massa asfáltica prevista)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_MAO_OBRA,
+                                "mo-2:cargo",
+                                "maoObra.cargo",
+                                "Cargo",
+                                "Encarregada",
+                                null,
+                                "Mão de obra 2 (Maria Souza)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_EQUIPAMENTO,
+                                "eq-2:descricao",
+                                "equipamento.descricao",
+                                "Equipamento",
+                                "Rolo compactador",
+                                null,
+                                "Equipamento 2 (RC-02)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_CONTROLE_GEOMETRICO,
+                                "cg-2:pista",
+                                "controleGeometrico.pista",
+                                "Pista",
+                                "Leste",
+                                null,
+                                "Trecho 2 (SP-215)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_EXECUCAO_SERVICO,
+                                "srv-2:quantidadeExecutada",
+                                "execucaoServico.quantidadeExecutada",
+                                "Quantidade executada",
+                                "40",
+                                "m",
+                                "Serviço 2 (Recomposição manual)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_ALOCACAO_COLABORADOR,
+                                "aloc-2:funcao",
+                                "alocacaoColaborador.funcao",
+                                "Função",
+                                "Encarregada",
+                                null,
+                                "Alocação 2 (Maria Souza)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_ATTACHMENT,
+                                "foto-2:syncStatus",
+                                "attachment.syncStatus",
+                                "Status de sincronização",
+                                "SYNCED",
+                                null,
+                                "Foto 2 (foto-2.webp)"
+                        ),
+                        typedRecordEvidence(
+                                StaviaEvidenceTypes.RDO_OPERATIONAL_EVENT,
+                                "event-2:origin",
+                                "operationalEvent.origin",
+                                "Origem",
+                                "ONLINE",
+                                null,
+                                "Evento 2 (RDO_EDITADO)"
+                        )
+                )
+        );
+
+        assertTrue(response.text().contains("Registros encontrados:"));
+        assertTrue(response.text().contains(
+                "Material 2 (Massa asfáltica prevista)"
+        ));
+        assertTrue(response.text().contains("Quantidade aplicada: 33.5 t"));
+        assertTrue(response.text().contains("Mão de obra 2 (Maria Souza)"));
+        assertTrue(response.text().contains("Cargo: Encarregada"));
+        assertTrue(response.text().contains("Equipamento 2 (RC-02)"));
+        assertTrue(response.text().contains("Equipamento: Rolo compactador"));
+        assertTrue(response.text().contains("Trecho 2 (SP-215)"));
+        assertTrue(response.text().contains("Pista: Leste"));
+        assertTrue(response.text().contains(
+                "Serviço 2 (Recomposição manual)"
+        ));
+        assertTrue(response.text().contains("Quantidade executada: 40 m"));
+        assertTrue(response.text().contains("Alocação 2 (Maria Souza)"));
+        assertTrue(response.text().contains("Foto 2 (foto-2.webp)"));
+        assertTrue(response.text().contains("Evento 2 (RDO_EDITADO)"));
+        assertTrue(response.text().contains("Origem: ONLINE"));
     }
 
     @Test
@@ -778,6 +1007,71 @@ class DeterministicStaviaResponseGeneratorTest {
                         "dataRdo", "2026-07-01",
                         "statusRdo", "APROVADO"
                 )
+        );
+    }
+
+    private StaviaEvidence typedRecordEvidence(
+            String type,
+            String id,
+            String field,
+            String label,
+            String value,
+            String unit,
+            String itemLabel
+    ) {
+        Map<String, Object> attributes =
+                new java.util.LinkedHashMap<>();
+        attributes.put("campo", field);
+        attributes.put("rotulo", label);
+        attributes.put("valor", value);
+        attributes.put("itemRotulo", itemLabel);
+        attributes.put("rdoNumero", "123");
+        attributes.put("dataRdo", "2026-07-01");
+        attributes.put("statusRdo", "APROVADO");
+
+        if (unit != null) {
+            attributes.put("unidade", unit);
+        }
+
+        return new StaviaEvidence(
+                type,
+                id,
+                label + " de " + itemLabel + ": " + value,
+                Instant.parse("2026-07-01T12:00:00Z"),
+                true,
+                attributes
+        );
+    }
+
+    private StaviaEvidence structuredRdoAttribute(
+            String id,
+            String field,
+            String label,
+            String value,
+            String unit
+    ) {
+        Map<String, Object> attributes =
+                new java.util.LinkedHashMap<>();
+
+        attributes.put("campo", field);
+        attributes.put("rotulo", label);
+        attributes.put("valor", value);
+        attributes.put("itemRotulo", "RDO 123");
+        attributes.put("rdoNumero", "123");
+        attributes.put("dataRdo", "2026-07-01");
+        attributes.put("statusRdo", "APROVADO");
+
+        if (unit != null) {
+            attributes.put("unidade", unit);
+        }
+
+        return new StaviaEvidence(
+                StaviaEvidenceTypes.RDO_ATTRIBUTE,
+                id,
+                label + ": " + value,
+                Instant.parse("2026-07-01T12:00:00Z"),
+                true,
+                attributes
         );
     }
 

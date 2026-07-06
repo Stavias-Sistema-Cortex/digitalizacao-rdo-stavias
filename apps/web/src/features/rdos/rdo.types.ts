@@ -25,6 +25,9 @@ export interface MaoObraDraft {
   cargo: string;
   tipoVinculo: string;
   quantidade: NumericInput;
+  horaInicio: string;
+  horaFim: string;
+  observacoes: string;
 }
 
 export interface EquipamentoDraft {
@@ -35,6 +38,9 @@ export interface EquipamentoDraft {
   tipoEquipamento: string;
   tipoVinculo: string;
   quantidade: NumericInput;
+  horaInicio: string;
+  horaFim: string;
+  observacoes: string;
 }
 
 export interface MaterialDraft {
@@ -114,6 +120,29 @@ export interface AlocacaoColaboradorDraft {
   observacoes: string;
 }
 
+export interface RdoAttachmentDraft {
+  id: string;
+  rdoId: string;
+  obraId: string | null;
+  tipo: "FOTO";
+  nome: string;
+  nomeOriginal: string | null;
+  mimeType: string;
+  tamanhoOriginalBytes: number;
+  tamanhoComprimidoBytes: number;
+  tamanhoBytes: number;
+  syncStatus:
+    | "LOCAL_ONLY"
+    | "PENDING_SYNC"
+    | "SYNCING"
+    | "SYNCED"
+    | "SYNC_FAILED";
+  createdAt: string;
+  updatedAt: string;
+  removedAt: string | null;
+  metadata: Record<string, unknown>;
+}
+
 export interface RdoDraft {
   id: string;
   obraId: string;
@@ -147,5 +176,6 @@ export interface RdoDraft {
   equipamentos: EquipamentoDraft[];
   materiais: MaterialDraft[];
   controlesGeometricos: ControleGeometricoDraft[];
+  attachments: RdoAttachmentDraft[];
   syncStatus: RdoSyncStatus;
 }

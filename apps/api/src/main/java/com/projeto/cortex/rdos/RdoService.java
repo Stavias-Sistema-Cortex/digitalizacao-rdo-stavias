@@ -22,17 +22,23 @@ public class RdoService {
     private final JdbcTemplate jdbcTemplate;
     private final RdoMemoryPublisher memoryPublisher;
     private final RdoOperationalDetailService operationalDetailService;
+    private final RdoAttachmentService attachmentService;
+    private final RdoOperationalEventService operationalEventService;
     private final PrevisaoFinanceiraService previsaoFinanceiraService;
 
     public RdoService(
             JdbcTemplate jdbcTemplate,
             RdoMemoryPublisher memoryPublisher,
             RdoOperationalDetailService operationalDetailService,
+            RdoAttachmentService attachmentService,
+            RdoOperationalEventService operationalEventService,
             PrevisaoFinanceiraService previsaoFinanceiraService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryPublisher = memoryPublisher;
         this.operationalDetailService = operationalDetailService;
+        this.attachmentService = attachmentService;
+        this.operationalEventService = operationalEventService;
         this.previsaoFinanceiraService = previsaoFinanceiraService;
     }
 
@@ -154,14 +160,6 @@ public class RdoService {
                 request.controlesGeometricos()
         );
 
-        memoryPublisher.registrarRdoCriado(
-                rdoId,
-                request.obraId(),
-                programacao == null ? null : programacao.id(),
-                request.numeroRdo(),
-                status
-        );
-
         RdoOperationalDetailService.RdoOperationalDetails detalhes =
                 operationalDetailService.substituirDetalhes(
                         rdoId,
@@ -172,6 +170,26 @@ public class RdoService {
                         request.servicosExecutados(),
                         request.alocacoesColaboradores()
                 );
+
+        attachmentService.substituirAttachments(
+                rdoId,
+                request.obraId(),
+                request.attachments()
+        );
+
+        memoryPublisher.registrarRdoCriado(
+                rdoId,
+                request.obraId(),
+                programacao == null ? null : programacao.id(),
+                request.numeroRdo(),
+                status
+        );
+
+        operationalEventService.registrarEventosCliente(
+                rdoId,
+                request.obraId(),
+                request.operationalEvents()
+        );
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
                 request.obraId(),
@@ -198,6 +216,10 @@ public class RdoService {
                 request.turno(),
                 request.horaInicio(),
                 request.horaFim(),
+                request.condicaoManha(),
+                request.condicaoTarde(),
+                request.condicaoNoite(),
+                request.pluviometriaMm(),
                 status,
                 request.observacoes(),
                 nuloSeVazio(request.preenchidoPor()),
@@ -209,7 +231,8 @@ public class RdoService {
                 materiais,
                 controles,
                 detalhes.servicosExecutados(),
-                detalhes.alocacoesColaboradores()
+                detalhes.alocacoesColaboradores(),
+                attachmentService.listar(rdoId)
         );
     }
 
@@ -258,7 +281,10 @@ public class RdoService {
                     item.nomeColaborador(),
                     item.cargo(),
                     tipoVinculo,
-                    quantidade
+                    quantidade,
+                    item.horaInicio(),
+                    item.horaFim(),
+                    item.observacoes()
             ));
         }
 
@@ -313,7 +339,10 @@ public class RdoService {
                     item.descricao(),
                     item.tipoEquipamento(),
                     tipoVinculo,
-                    quantidade
+                    quantidade,
+                    item.horaInicio(),
+                    item.horaFim(),
+                    item.observacoes()
             ));
         }
 

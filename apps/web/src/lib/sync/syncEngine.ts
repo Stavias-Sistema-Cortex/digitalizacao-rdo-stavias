@@ -5,7 +5,11 @@ import { acknowledgeCurrentCursor } from "./ackCursor";
 import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
-import { recoverInterruptedMutations } from "./syncStorage";
+import {
+  queueErroredMutationsForRetry,
+  queueResolvableConflictsForRetry,
+  recoverInterruptedMutations,
+} from "./syncStorage";
 import type { SyncRunSummary } from "./sync.types";
 
 let activeSyncPromise: Promise<SyncRunSummary> | null =
@@ -33,6 +37,8 @@ async function executeSync(): Promise<SyncRunSummary> {
   try {
     await recoverInterruptedMutations();
     await repairRdoCreateMutationsForSync();
+    await queueErroredMutationsForRetry();
+    await queueResolvableConflictsForRetry();
 
     const deviceId = await ensureRegisteredDevice();
     const pushSummary = await pushOutbox(deviceId);

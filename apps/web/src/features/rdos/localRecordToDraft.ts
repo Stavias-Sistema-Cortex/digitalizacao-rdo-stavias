@@ -14,6 +14,7 @@ import type {
   MaoObraDraft,
   MaterialDraft,
   NumericInput,
+  RdoAttachmentDraft,
   RdoDraft,
   ServicoExecutadoDraft,
 } from "./rdo.types";
@@ -58,6 +59,9 @@ function mapMaoObra(value: unknown): MaoObraDraft[] {
         empty.tipoVinculo,
       ),
       quantidade: asNumericInput(item.quantidade),
+      horaInicio: asString(item.horaInicio),
+      horaFim: asString(item.horaFim),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -81,6 +85,9 @@ function mapEquipamentos(
         empty.tipoVinculo,
       ),
       quantidade: asNumericInput(item.quantidade),
+      horaInicio: asString(item.horaInicio),
+      horaFim: asString(item.horaFim),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -215,6 +222,41 @@ function mapAlocacoesColaboradores(
   });
 }
 
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : fallback;
+}
+
+function mapAttachments(value: unknown): RdoAttachmentDraft[] {
+  return asArray(value).map((rawItem) => {
+    const item = asObject(rawItem);
+
+    return {
+      id: asString(item.id),
+      rdoId: asString(item.rdoId),
+      obraId: asString(item.obraId) || null,
+      tipo: "FOTO",
+      nome: asString(item.nome),
+      nomeOriginal: asString(item.nomeOriginal) || null,
+      mimeType: asString(item.mimeType, "image/jpeg"),
+      tamanhoOriginalBytes: asNumber(item.tamanhoOriginalBytes),
+      tamanhoComprimidoBytes: asNumber(
+        item.tamanhoComprimidoBytes,
+      ),
+      tamanhoBytes: asNumber(item.tamanhoBytes),
+      syncStatus: asString(
+        item.syncStatus,
+        "PENDING_SYNC",
+      ) as RdoAttachmentDraft["syncStatus"],
+      createdAt: asString(item.createdAt),
+      updatedAt: asString(item.updatedAt),
+      removedAt: asString(item.removedAt) || null,
+      metadata: asObject(item.metadata),
+    };
+  });
+}
+
 export function localRecordToDraft(
   record: LocalRdoRecord,
 ): RdoDraft {
@@ -278,6 +320,7 @@ export function localRecordToDraft(
     controlesGeometricos: mapControles(
       payload.controlesGeometricos,
     ),
+    attachments: mapAttachments(payload.attachments),
     syncStatus: record.syncStatus,
   };
 }

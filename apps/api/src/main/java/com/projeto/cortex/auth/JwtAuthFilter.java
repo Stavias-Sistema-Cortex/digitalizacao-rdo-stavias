@@ -19,6 +19,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final Set<String> LIBERADAS = Set.of(
             "/api/auth/login",
+            "/api/auth/cpf-filter",
             "/api/health"
     );
 

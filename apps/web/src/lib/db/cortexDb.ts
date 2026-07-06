@@ -10,6 +10,7 @@ import type {
   LocalRdoMaoObraRecord,
   LocalRdoMaterialRecord,
   LocalRdoRecord,
+  OperationalEventRecord,
   OutboxMutationRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
@@ -18,7 +19,7 @@ import type {
 } from "./db.types";
 
 const DATABASE_NAME = "cortex-web";
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -95,11 +96,26 @@ interface CortexDbSchema extends DBSchema {
     };
   };
 
+  operational_events: {
+    key: string;
+    value: OperationalEventRecord;
+    indexes: {
+      "by-principal-entity": string;
+      "by-rdo-id": string;
+      "by-obra-id": string;
+      "by-colaborador-id": string;
+      "by-type": OperationalEventRecord["type"];
+      "by-sync-status": OperationalEventRecord["syncStatus"];
+      "by-occurred-at": string;
+    };
+  };
+
   rdo_attachments: {
     key: string;
     value: RdoAttachmentRecord;
     indexes: {
       "by-rdo-id": string;
+      "by-obra-id": string;
       "by-sync-status": RdoAttachmentRecord["syncStatus"];
       "by-created-at": string;
     };
@@ -129,7 +145,7 @@ export function getCortexDb(): Promise<
     DATABASE_NAME,
     DATABASE_VERSION,
     {
-      upgrade(database) {
+      upgrade(database, _oldVersion, _newVersion, transaction) {
         if (!database.objectStoreNames.contains("rdos")) {
           const rdoStore = database.createObjectStore("rdos", {
             keyPath: "id",
@@ -304,6 +320,46 @@ export function getCortexDb(): Promise<
 
         if (
           !database.objectStoreNames.contains(
+            "operational_events",
+          )
+        ) {
+          const eventStore =
+            database.createObjectStore(
+              "operational_events",
+              {
+                keyPath: "id",
+              },
+            );
+
+          eventStore.createIndex(
+            "by-principal-entity",
+            "principalEntityKey",
+          );
+          eventStore.createIndex(
+            "by-rdo-id",
+            "rdoId",
+          );
+          eventStore.createIndex(
+            "by-obra-id",
+            "obraId",
+          );
+          eventStore.createIndex(
+            "by-colaborador-id",
+            "colaboradorId",
+          );
+          eventStore.createIndex("by-type", "type");
+          eventStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          eventStore.createIndex(
+            "by-occurred-at",
+            "occurredAt",
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
             "rdo_attachments",
           )
         ) {
@@ -320,6 +376,10 @@ export function getCortexDb(): Promise<
             "rdoId",
           );
           attachmentStore.createIndex(
+            "by-obra-id",
+            "obraId",
+          );
+          attachmentStore.createIndex(
             "by-sync-status",
             "syncStatus",
           );
@@ -327,6 +387,20 @@ export function getCortexDb(): Promise<
             "by-created-at",
             "createdAt",
           );
+        } else {
+          const attachmentStore =
+            transaction.objectStore("rdo_attachments");
+
+          if (
+            !attachmentStore.indexNames.contains(
+              "by-obra-id",
+            )
+          ) {
+            attachmentStore.createIndex(
+              "by-obra-id",
+              "obraId",
+            );
+          }
         }
 
         if (

@@ -14,10 +14,13 @@ import com.projeto.cortex.intelligence.stavia.planning.ResolvedEntity;
 import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlan;
 import com.projeto.cortex.intelligence.stavia.planning.TemporalFilter;
 import com.projeto.cortex.intelligence.stavia.semantic.rdo.RdoOntology;
+import com.projeto.cortex.intelligence.stavia.semantic.rdo.RdoOntologyAttribute;
+import com.projeto.cortex.intelligence.stavia.semantic.rdo.RdoOntologyEntity;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,8 +33,9 @@ class RdoRecordKnowledgeSourceTest {
 
     private final RdoEntityRecordReader reader =
             Mockito.mock(RdoEntityRecordReader.class);
+    private final RdoOntology ontology = RdoOntology.load();
     private final RdoRecordKnowledgeSource source =
-            new RdoRecordKnowledgeSource(RdoOntology.load(), reader);
+            new RdoRecordKnowledgeSource(ontology, reader);
 
     @Test
     void shouldEmitMaterialFactEvidenceWithUnitAndItemLabel() {
@@ -197,6 +201,248 @@ class RdoRecordKnowledgeSourceTest {
     }
 
     @Test
+    void shouldReadVisualOrdinalRecordWithoutIdentityFilter() {
+        when(reader.findRecords(any(), any())).thenAnswer(invocation -> {
+            RdoRecordQuery query = invocation.getArgument(1);
+
+            assertThat(query.identityTerm()).isNull();
+
+            return List.of(
+                    Map.of(
+                            "registroId", "cg-1",
+                            "rdoId", "rdo-1",
+                            "numeroRdo", "123",
+                            "dataRdo", "2026-07-01",
+                            "statusRdo", "ENVIADO",
+                            "obraId", "obra-1",
+                            "subtrecho", "SP-215",
+                            "numero", "1",
+                            "comprimentoM", "120"
+                    ),
+                    Map.of(
+                            "registroId", "cg-2",
+                            "rdoId", "rdo-1",
+                            "numeroRdo", "123",
+                            "dataRdo", "2026-07-01",
+                            "statusRdo", "ENVIADO",
+                            "obraId", "obra-1",
+                            "subtrecho", "SP-215",
+                            "numero", "2",
+                            "comprimentoM", "282"
+                    )
+            );
+        });
+
+        StaviaQueryPlan plan = new StaviaQueryPlan(
+                QueryDomain.RDO,
+                QueryOperation.READ_ATTRIBUTE,
+                List.of(
+                        ResolvedEntity.worksiteById("obra-1"),
+                        new ResolvedEntity(
+                                "CONTROLEGEOMETRICO",
+                                null,
+                                "ORDINAL",
+                                "2",
+                                false,
+                                List.of()
+                        )
+                ),
+                TemporalFilter.none(),
+                List.of("controleGeometrico.comprimentoM"),
+                List.of(),
+                List.of(),
+                List.of("registros-rdo"),
+                false,
+                false,
+                false
+        );
+
+        List<StaviaEvidence> evidences = source.retrieve(request(plan));
+
+        assertThat(evidences).singleElement().satisfies(evidence ->
+                assertThat(evidence.attributes())
+                        .containsEntry(
+                                "campo",
+                                "controleGeometrico.comprimentoM"
+                        )
+                        .containsEntry("valor", "282")
+                        .containsEntry(
+                                "itemRotulo",
+                                "Trecho 2 (SP-215)"
+                        )
+        );
+    }
+
+    @Test
+    void shouldReadVisualOrdinalRecordForEveryRepeatedRdoBlock() {
+        List<OrdinalCase> cases = List.of(
+                new OrdinalCase(
+                        "material",
+                        "material.quantidadeAplicada",
+                        "MATERIAL",
+                        "materialNome",
+                        "CAP 50/70",
+                        "quantidadeAplicada",
+                        "33.5"
+                ),
+                new OrdinalCase(
+                        "maoObra",
+                        "maoObra.cargo",
+                        "MAOOBRA",
+                        "nomeColaborador",
+                        "Maria Souza",
+                        "cargo",
+                        "Encarregada"
+                ),
+                new OrdinalCase(
+                        "equipamento",
+                        "equipamento.descricao",
+                        "EQUIPAMENTO",
+                        "prefixo",
+                        "RC-02",
+                        "descricao",
+                        "Rolo compactador"
+                ),
+                new OrdinalCase(
+                        "controleGeometrico",
+                        "controleGeometrico.pista",
+                        "CONTROLEGEOMETRICO",
+                        "subtrecho",
+                        "SP-215",
+                        "pista",
+                        "Leste"
+                ),
+                new OrdinalCase(
+                        "execucaoServico",
+                        "execucaoServico.quantidadeExecutada",
+                        "EXECUCAOSERVICO",
+                        "servicoNome",
+                        "Recomposição manual",
+                        "quantidadeExecutada",
+                        "40"
+                ),
+                new OrdinalCase(
+                        "alocacaoColaborador",
+                        "alocacaoColaborador.funcao",
+                        "ALOCACAOCOLABORADOR",
+                        "nomeColaborador",
+                        "Maria Souza",
+                        "funcao",
+                        "Encarregada"
+                ),
+                new OrdinalCase(
+                        "attachment",
+                        "attachment.syncStatus",
+                        "ATTACHMENT",
+                        "nome",
+                        "foto-2.webp",
+                        "syncStatus",
+                        "SYNCED"
+                ),
+                new OrdinalCase(
+                        "operationalEvent",
+                        "operationalEvent.origin",
+                        "OPERATIONALEVENT",
+                        "type",
+                        "RDO_EDITADO",
+                        "origin",
+                        "ONLINE"
+                )
+        );
+
+        for (OrdinalCase testCase : cases) {
+            Mockito.reset(reader);
+            when(reader.findRecords(any(), any())).thenAnswer(invocation -> {
+                RdoOntologyEntity entity = invocation.getArgument(0);
+                RdoRecordQuery query = invocation.getArgument(1);
+
+                assertThat(entity.name()).isEqualTo(testCase.entityName());
+                assertThat(query.identityTerm()).isNull();
+
+                return List.of(
+                        ordinalRecord(entity, testCase, "primeiro", "1"),
+                        ordinalRecord(
+                                entity,
+                                testCase,
+                                testCase.identityValue(),
+                                testCase.expectedValue()
+                        )
+                );
+            });
+
+            StaviaQueryPlan plan = ordinalPlan(testCase);
+
+            List<StaviaEvidence> evidences =
+                    source.retrieve(request(plan));
+
+            assertThat(evidences)
+                    .as("evidência ordinal para %s",
+                            testCase.entityName())
+                    .singleElement()
+                    .satisfies(evidence ->
+                            assertThat(evidence.attributes())
+                                    .containsEntry(
+                                            "campo",
+                                            testCase.attribute()
+                                    )
+                                    .containsEntry(
+                                            "valor",
+                                            testCase.expectedValue()
+                                    )
+                    );
+        }
+    }
+
+    @Test
+    void shouldEmitEvidenceForEveryDeclaredOntologyAttribute() {
+        for (RdoOntologyEntity entity : ontology.entities()) {
+            when(reader.findRecords(any(), any())).thenReturn(
+                    List.of(recordWithAllAttributes(entity))
+            );
+
+            StaviaQueryPlan plan = listPlan(entity);
+
+            List<StaviaEvidence> evidences = source.retrieve(request(plan));
+
+            assertThat(evidences)
+                    .as("evidências para entidade %s", entity.name())
+                    .hasSize(entity.attributes().size());
+            assertThat(
+                    evidences.stream()
+                            .map(evidence ->
+                                    String.valueOf(
+                                            evidence.attributes()
+                                                    .get("campo")
+                                    )
+                            )
+                            .toList()
+            ).containsExactlyElementsOf(
+                    entity.attributes().stream()
+                            .map(attribute ->
+                                    entity.name() + "." + attribute.name()
+                            )
+                            .toList()
+            );
+
+            if (entity.header()) {
+                assertThat(evidences)
+                        .filteredOn(evidence ->
+                                "rdo.syncStatus".equals(
+                                        evidence.attributes().get("campo")
+                                )
+                        )
+                        .singleElement()
+                        .satisfies(evidence ->
+                                assertThat(evidence.attributes())
+                                        .containsEntry("valor", "SYNCED")
+                        );
+            }
+
+            Mockito.reset(reader);
+        }
+    }
+
+    @Test
     void shouldNotSupportPlansFromOtherDomains() {
         StaviaQueryPlan plan = new StaviaQueryPlan(
                 QueryDomain.OBRA,
@@ -240,6 +486,113 @@ class RdoRecordKnowledgeSourceTest {
         );
     }
 
+    private StaviaQueryPlan listPlan(RdoOntologyEntity entity) {
+        return new StaviaQueryPlan(
+                QueryDomain.RDO,
+                QueryOperation.LIST_OBJECTS,
+                List.of(ResolvedEntity.worksiteById("obra-1")),
+                TemporalFilter.none(),
+                entity.attributes().stream()
+                        .map(attribute ->
+                                entity.name() + "." + attribute.name()
+                        )
+                        .toList(),
+                List.of(),
+                List.of(),
+                List.of(entity.source()),
+                false,
+                false,
+                false
+        );
+    }
+
+    private StaviaQueryPlan ordinalPlan(OrdinalCase testCase) {
+        return new StaviaQueryPlan(
+                QueryDomain.RDO,
+                QueryOperation.READ_ATTRIBUTE,
+                List.of(
+                        ResolvedEntity.worksiteById("obra-1"),
+                        new ResolvedEntity(
+                                testCase.entityType(),
+                                null,
+                                "ORDINAL",
+                                "2",
+                                false,
+                                List.of()
+                        )
+                ),
+                TemporalFilter.none(),
+                List.of(testCase.attribute()),
+                List.of(),
+                List.of(),
+                List.of("registros-rdo"),
+                false,
+                false,
+                false
+        );
+    }
+
+    private Map<String, Object> ordinalRecord(
+            RdoOntologyEntity entity,
+            OrdinalCase testCase,
+            String identityValue,
+            String expectedValue
+    ) {
+        Map<String, Object> record = recordWithAllAttributes(entity);
+        record.put("registroId", entity.name() + "-" + identityValue);
+        record.put(testCase.identityAttribute(), identityValue);
+        record.put(testCase.valueAttribute(), expectedValue);
+        return record;
+    }
+
+    private Map<String, Object> recordWithAllAttributes(
+            RdoOntologyEntity entity
+    ) {
+        Map<String, Object> record = new LinkedHashMap<>();
+        record.put("registroId", entity.name() + "-1");
+        record.put("rdoId", "rdo-1");
+        record.put("numeroRdo", "123");
+        record.put("dataRdo", "2026-07-01");
+        record.put("statusRdo", "ENVIADO");
+        record.put("obraId", "obra-1");
+
+        for (RdoOntologyAttribute attribute : entity.attributes()) {
+            record.put(attribute.name(), valueFor(attribute));
+
+            if (attribute.unitColumn() != null) {
+                record.put(attribute.unitColumn(), "un");
+            }
+        }
+
+        return record;
+    }
+
+    private String valueFor(RdoOntologyAttribute attribute) {
+        if (attribute.identity()) {
+            return switch (attribute.name()) {
+                case "numeroRdo" -> "123";
+                case "materialNome" -> "CAP 30/45";
+                case "nomeColaborador" -> "João Silva";
+                case "prefixo" -> "VA-01";
+                case "nome" -> "foto-1.webp";
+                case "type" -> "RDO_EDITADO";
+                default -> "item-" + attribute.name();
+            };
+        }
+
+        if ("syncStatus".equals(attribute.name())) {
+            return "SYNCED";
+        }
+
+        return switch (attribute.dataType()) {
+            case "BOOLEAN" -> "false";
+            case "DATE" -> "2026-07-01";
+            case "DATETIME" -> "2026-07-01T12:00:00";
+            case "NUMBER" -> "12.5";
+            default -> "valor-" + attribute.name();
+        };
+    }
+
     private StaviaKnowledgeRequest request(StaviaQueryPlan plan) {
         return new StaviaKnowledgeRequest(
                 new StaviaQuestion(
@@ -252,5 +605,16 @@ class RdoRecordKnowledgeSourceTest {
                 Set.of(StaviaEngine.REQUIRED_PERMISSION),
                 plan
         );
+    }
+
+    private record OrdinalCase(
+            String entityName,
+            String attribute,
+            String entityType,
+            String identityAttribute,
+            String identityValue,
+            String valueAttribute,
+            String expectedValue
+    ) {
     }
 }

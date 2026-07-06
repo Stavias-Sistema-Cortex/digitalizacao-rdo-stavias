@@ -321,10 +321,6 @@ export function IntegracoesPage({
         <section className="form-card integracoes-report">
           <div className="section-heading">
             <div>
-              <span className="section-number">
-                {selected.nome.slice(0, 1)}
-              </span>
-
               <h2>{selected.nome}</h2>
             </div>
           </div>

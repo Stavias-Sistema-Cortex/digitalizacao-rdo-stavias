@@ -44,7 +44,7 @@ async function rawFetch(
     timeoutMs = 20_000,
     headers,
     connectionErrorMessage =
-      "Córtex local temporariamente indisponível. Os dados seguem salvos neste dispositivo e a sincronização será tentada novamente.",
+      "Não foi possível conectar ao Córtex local. Verifique se a API está ligada e se esta origem está liberada no CORS; os dados seguem salvos neste dispositivo.",
     timeoutErrorMessage =
       "Tempo limite excedido ao conectar ao Córtex local.",
     ...fetchOptions
@@ -192,12 +192,21 @@ export function responseErrorMessage(
   body: unknown,
   fallbackStatus: number,
 ): string {
-  return (
+  const message =
     responseField(body, "message") ??
     responseField(body, "detail") ??
     responseField(body, "error") ??
     (typeof body === "string"
       ? body
-      : `HTTP ${fallbackStatus}`)
-  );
+      : `HTTP ${fallbackStatus}`);
+
+  return normalizeResponseErrorMessage(message);
+}
+
+function normalizeResponseErrorMessage(message: string): string {
+  if (/invalid cors request/i.test(message)) {
+    return "A API recusou a origem desta tela (CORS). Abra o Córtex por localhost/127.0.0.1 ou configure CORTEX_CORS_ALLOWED_ORIGIN_PATTERNS no backend.";
+  }
+
+  return message;
 }

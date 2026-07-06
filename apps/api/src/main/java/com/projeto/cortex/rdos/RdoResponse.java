@@ -2,8 +2,10 @@ package com.projeto.cortex.rdos;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
 public record RdoResponse(
         String id,
@@ -28,6 +30,11 @@ public record RdoResponse(
         LocalTime horaInicio,
         LocalTime horaFim,
 
+        String condicaoManha,
+        String condicaoTarde,
+        String condicaoNoite,
+        BigDecimal pluviometriaMm,
+
         String status,
         String observacoes,
         String preenchidoPor,
@@ -40,7 +47,8 @@ public record RdoResponse(
         List<MaterialItem> materiais,
         List<ControleGeometricoItem> controlesGeometricos,
         List<ServicoExecutadoItem> servicosExecutados,
-        List<AlocacaoColaboradorItem> alocacoesColaboradores
+        List<AlocacaoColaboradorItem> alocacoesColaboradores,
+        List<AttachmentItem> attachments
 ) {
 
     public record MaoObraItem(
@@ -49,7 +57,10 @@ public record RdoResponse(
             String nomeColaborador,
             String cargo,
             String tipoVinculo,
-            BigDecimal quantidade
+            BigDecimal quantidade,
+            LocalTime horaInicio,
+            LocalTime horaFim,
+            String observacoes
     ) {
     }
 
@@ -60,7 +71,10 @@ public record RdoResponse(
             String descricao,
             String tipoEquipamento,
             String tipoVinculo,
-            BigDecimal quantidade
+            BigDecimal quantidade,
+            LocalTime horaInicio,
+            LocalTime horaFim,
+            String observacoes
     ) {
     }
 
@@ -119,7 +133,8 @@ public record RdoResponse(
             BigDecimal receitaOperacionalEstimativa,
             BigDecimal custoRealizado,
             boolean retrabalho,
-            boolean producaoRejeitada
+            boolean producaoRejeitada,
+            String observacoes
     ) {
     }
 
@@ -139,7 +154,27 @@ public record RdoResponse(
             String fonte,
             String status,
             BigDecimal custoHora,
-            BigDecimal custoTotal
+            BigDecimal custoTotal,
+            String observacoes
+    ) {
+    }
+
+    public record AttachmentItem(
+            String id,
+            String rdoId,
+            String obraId,
+            String tipo,
+            String nome,
+            String nomeOriginal,
+            String mimeType,
+            Long tamanhoOriginalBytes,
+            Long tamanhoComprimidoBytes,
+            Long tamanhoBytes,
+            String syncStatus,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            LocalDateTime removedAt,
+            Map<String, Object> metadata
     ) {
     }
 }

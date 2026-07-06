@@ -1,13 +1,21 @@
 import { getCortexDb } from "../../lib/db/cortexDb";
+import { listOperationalEvents } from "../../lib/db/operationalEventRepository";
+import { listAllRdoAttachments } from "../../lib/db/rdoAttachmentRepository";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
-import type { LocalRdoRecord } from "../../lib/db/db.types";
+import type {
+  LocalRdoRecord,
+  OperationalEventRecord,
+  RdoAttachmentRecord,
+} from "../../lib/db/db.types";
 import type {
   StaviaSnapshot,
   StaviaSnapshotAlocacao,
+  StaviaSnapshotAttachment,
   StaviaSnapshotControleGeometrico,
   StaviaSnapshotEquipamento,
   StaviaSnapshotMaoObra,
   StaviaSnapshotMaterial,
+  StaviaSnapshotOperationalEvent,
   StaviaSnapshotObra,
   StaviaSnapshotProgramacao,
   StaviaSnapshotRdo,
@@ -53,6 +61,47 @@ function asNumberOrString(
   return asString(value);
 }
 
+function asBooleanOrString(value: unknown): boolean | string | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return asString(value);
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
+function firstPresent<T>(values: Array<T | null>): T | null {
+  return values.find((value): value is T => value !== null) ?? null;
+}
+
+function average(values: Array<number | null>): number | null {
+  const present = values.filter((value): value is number => value !== null);
+
+  if (present.length === 0) {
+    return null;
+  }
+
+  return round3(
+    present.reduce((sum, value) => sum + value, 0) / present.length,
+  );
+}
+
 function mapMaoObra(
   value: unknown,
 ): StaviaSnapshotMaoObra[] {
@@ -60,10 +109,14 @@ function mapMaoObra(
     const item = asObject(raw);
 
     return {
+      colaboradorId: asString(item.colaboradorId),
       nomeColaborador: asString(item.nomeColaborador),
       cargo: asString(item.cargo),
       tipoVinculo: asString(item.tipoVinculo),
       quantidade: asNumberOrString(item.quantidade),
+      horaInicio: asString(item.horaInicio),
+      horaFim: asString(item.horaFim),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -75,11 +128,15 @@ function mapEquipamentos(
     const item = asObject(raw);
 
     return {
+      assetId: asString(item.assetId),
       prefixo: asString(item.prefixo),
       descricao: asString(item.descricao),
       tipoEquipamento: asString(item.tipoEquipamento),
       tipoVinculo: asString(item.tipoVinculo),
       quantidade: asNumberOrString(item.quantidade),
+      horaInicio: asString(item.horaInicio),
+      horaFim: asString(item.horaFim),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -105,6 +162,9 @@ function mapMateriais(
       quantidadeSobra: asNumberOrString(
         item.quantidadeSobra,
       ),
+      notaFiscal: asString(item.notaFiscal),
+      fornecedor: asString(item.fornecedor),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -114,10 +174,41 @@ function mapControles(
 ): StaviaSnapshotControleGeometrico[] {
   return asArray(value).map((raw) => {
     const item = asObject(raw);
+    const comprimentoM = asNumber(item.comprimentoM);
+    const larguraM = asNumber(item.larguraM);
+    const espessuraMediaCm = firstPresent([
+      asNumber(item.espessuraMediaCm),
+      average([
+        asNumber(item.espessura1Cm),
+        asNumber(item.espessura2Cm),
+        asNumber(item.espessura3Cm),
+      ]),
+    ]);
+    const areaM2 = firstPresent([
+      asNumber(item.areaM2),
+      comprimentoM === null || larguraM === null
+        ? null
+        : round3(comprimentoM * larguraM),
+    ]);
+    const volumeM3 = firstPresent([
+      asNumber(item.volumeM3),
+      areaM2 === null || espessuraMediaCm === null
+        ? null
+        : round3(areaM2 * (espessuraMediaCm / 100)),
+    ]);
+    const densidade = asNumber(item.densidade);
+    const massaTonelada = firstPresent([
+      asNumber(item.massaTonelada),
+      volumeM3 === null || densidade === null
+        ? null
+        : round3(volumeM3 * densidade),
+    ]);
 
     return {
       subtrecho: asString(item.subtrecho),
       numero: asString(item.numero),
+      estacaInicial: asString(item.estacaInicial),
+      estacaFinal: asString(item.estacaFinal),
       kmInicial: asString(item.kmInicial),
       kmFinal: asString(item.kmFinal),
       pista: asString(item.pista),
@@ -125,11 +216,20 @@ function mapControles(
       ordemServico: asString(item.ordemServico),
       comprimentoM: asNumberOrString(item.comprimentoM),
       larguraM: asNumberOrString(item.larguraM),
-      areaM2: asNumberOrString(item.areaM2),
-      volumeM3: asNumberOrString(item.volumeM3),
+      espessura1Cm: asNumberOrString(item.espessura1Cm),
+      espessura2Cm: asNumberOrString(item.espessura2Cm),
+      espessura3Cm: asNumberOrString(item.espessura3Cm),
+      espessuraMediaCm:
+        asNumberOrString(item.espessuraMediaCm) ?? espessuraMediaCm,
+      areaM2: asNumberOrString(item.areaM2) ?? areaM2,
+      volumeM3: asNumberOrString(item.volumeM3) ?? volumeM3,
+      densidade: asNumberOrString(item.densidade),
+      massaTonelada:
+        asNumberOrString(item.massaTonelada) ?? massaTonelada,
       atividadeObservacoes: asString(
         item.atividadeObservacoes,
       ),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -147,9 +247,17 @@ function mapAlocacoes(
       servicoNome: asString(item.servicoNome),
       horaInicio: asString(item.horaInicio),
       horaFim: asString(item.horaFim),
+      minutos: asNumberOrString(item.minutos),
+      percentualDia: asNumberOrString(item.percentualDia),
       turno: asString(item.turno),
       funcao: asString(item.funcao),
+      centroCusto: asString(item.centroCusto),
+      tipoAlocacao: asString(item.tipoAlocacao),
+      fonte: asString(item.fonte),
       status: asString(item.status),
+      custoHora: asNumberOrString(item.custoHora),
+      custoTotal: asNumberOrString(item.custoTotal),
+      observacoes: asString(item.observacoes),
     };
   });
 }
@@ -162,6 +270,7 @@ function mapServicosExecutados(
 
     return {
       servicoNome: asString(item.servicoNome),
+      itemContratualId: asString(item.itemContratualId),
       quantidadeExecutada: asNumberOrString(
         item.quantidadeExecutada,
       ),
@@ -169,11 +278,97 @@ function mapServicosExecutados(
       trechoInicial: asString(item.trechoInicial),
       trechoFinal: asString(item.trechoFinal),
       localizacao: asString(item.localizacao),
+      dataExecucao: asString(item.dataExecucao),
       turno: asString(item.turno),
       statusValidacao: asString(item.statusValidacao),
+      estadoReceita: asString(item.estadoReceita),
+      receitaOperacionalEstimativa: asNumberOrString(
+        item.receitaOperacionalEstimativa,
+      ),
+      custoRealizado: asNumberOrString(item.custoRealizado),
+      retrabalho: asBooleanOrString(item.retrabalho),
+      producaoRejeitada: asBooleanOrString(
+        item.producaoRejeitada,
+      ),
       observacoes: asString(item.observacoes),
     };
   });
+}
+
+function mapAttachments(
+  value: unknown,
+): StaviaSnapshotAttachment[] {
+  return asArray(value).map((raw) => {
+    const item = asObject(raw);
+
+    return {
+      id: asString(item.id) ?? "",
+      rdoId: asString(item.rdoId) ?? "",
+      obraId: asString(item.obraId),
+      tipo: asString(item.tipo),
+      nome: asString(item.nome),
+      nomeOriginal: asString(item.nomeOriginal),
+      mimeType: asString(item.mimeType),
+      tamanhoOriginalBytes: asNumberOrString(
+        item.tamanhoOriginalBytes,
+      ),
+      tamanhoComprimidoBytes: asNumberOrString(
+        item.tamanhoComprimidoBytes,
+      ),
+      tamanhoBytes: asNumberOrString(item.tamanhoBytes),
+      syncStatus: asString(item.syncStatus),
+      createdAt: asString(item.createdAt),
+      updatedAt: asString(item.updatedAt),
+      removedAt: asString(item.removedAt),
+      metadata: asObject(item.metadata),
+    };
+  });
+}
+
+function localAttachmentToSnapshot(
+  attachment: RdoAttachmentRecord,
+): StaviaSnapshotAttachment {
+  return {
+    id: attachment.id,
+    rdoId: attachment.rdoId,
+    obraId: attachment.obraId,
+    tipo: attachment.tipo,
+    nome: attachment.nome,
+    nomeOriginal: attachment.nomeOriginal,
+    mimeType: attachment.mimeType,
+    tamanhoOriginalBytes: attachment.tamanhoOriginalBytes,
+    tamanhoComprimidoBytes:
+      attachment.tamanhoComprimidoBytes,
+    tamanhoBytes: attachment.tamanhoBytes,
+    syncStatus: attachment.syncStatus,
+    createdAt: attachment.createdAt,
+    updatedAt: attachment.updatedAt,
+    removedAt: attachment.removedAt,
+    metadata: attachment.metadata,
+  };
+}
+
+function localEventToSnapshot(
+  event: OperationalEventRecord,
+): StaviaSnapshotOperationalEvent {
+  return {
+    id: event.id,
+    type: event.type,
+    principalEntityType: event.principalEntity.tipo,
+    principalEntityId: event.principalEntity.id,
+    obraId: event.obraId,
+    rdoId: event.rdoId,
+    colaboradorId: event.colaboradorId,
+    occurredAt: event.occurredAt,
+    syncedAt: event.syncedAt,
+    origin: event.origin,
+    syncStatus: event.syncStatus,
+    responsibleUserId: event.responsibleUserId,
+    responsibleUserName: event.responsibleUserName,
+    schemaVersion: event.schemaVersion,
+    relatedEntities: event.relatedEntities,
+    payload: event.payload,
+  };
 }
 
 function localRdoToSnapshot(
@@ -187,6 +382,8 @@ function localRdoToSnapshot(
     programacaoId: record.programacaoId,
     numeroRdo: record.numeroRdo,
     dataRdo: record.dataRdo,
+    diaSemana:
+      asString(payload.diaSemana) ?? diaSemanaPt(record.dataRdo),
     cliente: asString(payload.cliente),
     cidade: asString(payload.cidade),
     contrato: asString(payload.contrato),
@@ -204,6 +401,19 @@ function localRdoToSnapshot(
     condicaoNoite: asString(payload.condicaoNoite),
     pluviometriaMm: asNumberOrString(payload.pluviometriaMm),
     status: record.statusRdo,
+    fonteCriacao: asString(payload.fonteCriacao),
+    estadoReceita: asString(payload.estadoReceita),
+    fonteArquivo: asString(payload.fonteArquivo),
+    abaOrigem: asString(payload.abaOrigem),
+    linhaOrigem: asNumberOrString(payload.linhaOrigem),
+    dataOriginal: asString(payload.dataOriginal),
+    dataImportacao: asString(payload.dataImportacao),
+    usuarioImportacao: asString(payload.usuarioImportacao),
+    criadoEm: record.createdAt,
+    enviadoEm: asString(payload.enviadoEm),
+    aprovadoEm: asString(payload.aprovadoEm),
+    versaoLinha: asNumberOrString(payload.versaoLinha),
+    syncStatus: record.syncStatus,
     observacoes: asString(payload.observacoes),
     preenchidoPor: asString(payload.preenchidoPor),
     apontadorRdo: asString(payload.apontadorRdo),
@@ -222,7 +432,26 @@ function localRdoToSnapshot(
     alocacoesColaboradores: mapAlocacoes(
       payload.alocacoesColaboradores,
     ),
+    attachments: mapAttachments(payload.attachments),
   };
+}
+
+function diaSemanaPt(date: string | null): string | null {
+  if (!date) {
+    return null;
+  }
+
+  const weekday = new Date(`${date}T00:00:00`).getDay();
+
+  return [
+    "DOMINGO",
+    "SEGUNDA-FEIRA",
+    "TERÇA-FEIRA",
+    "QUARTA-FEIRA",
+    "QUINTA-FEIRA",
+    "SEXTA-FEIRA",
+    "SÁBADO",
+  ][weekday] ?? null;
 }
 
 function firstNonEmpty(values: Array<unknown>): string | null {
@@ -367,6 +596,7 @@ function localObrasFromRdos(
 function mergeSnapshots(
   stored: StaviaSnapshot | null,
   localRdos: StaviaSnapshotRdo[],
+  localEvents: StaviaSnapshotOperationalEvent[],
 ): StaviaSnapshot | null {
   if (!stored && localRdos.length === 0) {
     return null;
@@ -388,6 +618,7 @@ function mergeSnapshots(
       rdos: [],
       programacoes: [],
       pdocs: [],
+      operationalEvents: [],
     };
 
   const storedProgramacoes = base.programacoes ?? [];
@@ -421,6 +652,13 @@ function mergeSnapshots(
     });
   }
 
+  const eventsById = new Map(
+    [
+      ...(base.operationalEvents ?? []),
+      ...localEvents,
+    ].map((event) => [event.id, event]),
+  );
+
   return {
     metadata: {
       ...base.metadata,
@@ -445,6 +683,12 @@ function mergeSnapshots(
       ),
     ),
     pdocs: base.pdocs,
+    operationalEvents: Array.from(eventsById.values()).sort(
+      (left, right) =>
+        (right.occurredAt ?? "").localeCompare(
+          left.occurredAt ?? "",
+        ),
+    ),
   };
 }
 
@@ -456,6 +700,7 @@ export async function saveStaviaSnapshot(
   const normalized: StaviaSnapshot = {
     ...snapshot,
     programacoes: snapshot.programacoes ?? [],
+    operationalEvents: snapshot.operationalEvents ?? [],
     metadata: {
       ...snapshot.metadata,
       snapshotKey: SNAPSHOT_KEY,
@@ -487,13 +732,34 @@ export async function getStoredStaviaSnapshot(): Promise<StaviaSnapshot | null> 
 }
 
 export async function getBestAvailableStaviaSnapshot(): Promise<StaviaSnapshot | null> {
-  const [stored, localRecords] = await Promise.all([
+  const [stored, localRecords, attachments, events] = await Promise.all([
     getStoredStaviaSnapshot(),
     listLocalRdos(),
+    listAllRdoAttachments(),
+    listOperationalEvents(),
   ]);
+
+  const attachmentsByRdo = new Map<string, StaviaSnapshotAttachment[]>();
+  for (const attachment of attachments) {
+    attachmentsByRdo
+      .set(
+        attachment.rdoId,
+        [
+          ...(attachmentsByRdo.get(attachment.rdoId) ?? []),
+          localAttachmentToSnapshot(attachment),
+        ],
+      );
+  }
+
+  const localRdos = localRecords.map(localRdoToSnapshot).map((rdo) => ({
+    ...rdo,
+    attachments:
+      attachmentsByRdo.get(rdo.id) ?? rdo.attachments ?? [],
+  }));
 
   return mergeSnapshots(
     stored,
-    localRecords.map(localRdoToSnapshot),
+    localRdos,
+    events.map(localEventToSnapshot),
   );
 }

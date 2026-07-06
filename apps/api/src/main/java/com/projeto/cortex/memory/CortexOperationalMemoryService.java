@@ -1,12 +1,15 @@
 package com.projeto.cortex.memory;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.temporal.TemporalAccessor;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,10 +36,56 @@ public class CortexOperationalMemoryService {
             String fonte,
             Map<String, Object> payload
     ) {
+        return registrarEventoDetalhado(
+                null,
+                tipoEntidade,
+                entidadeId,
+                tipoEvento,
+                fonte,
+                null,
+                null,
+                null,
+                List.of(),
+                "ONLINE",
+                "SYNCED",
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                1,
+                payload
+        );
+    }
+
+    @Transactional
+    public long registrarEventoDetalhado(
+            String eventoIdInformado,
+            String tipoEntidade,
+            String entidadeId,
+            String tipoEvento,
+            String fonte,
+            String obraId,
+            String rdoId,
+            String colaboradorId,
+            List<Map<String, Object>> entidadesRelacionadas,
+            String origem,
+            String syncStatus,
+            LocalDateTime ocorridoEm,
+            LocalDateTime sincronizadoEm,
+            Integer schemaVersion,
+            Map<String, Object> payload
+    ) {
+        String eventoId = primeiroNaoVazio(eventoIdInformado, UUID.randomUUID().toString());
+
+        Long existingCommitSeq = commitSeqExistente(eventoId);
+        if (existingCommitSeq != null) {
+            return existingCommitSeq;
+        }
+
         long commitSeq = proximaCommitSeq();
 
-        String eventoId = UUID.randomUUID().toString();
         String payloadJson = toJson(payload);
+        String relatedJson = toJson(entidadesRelacionadas == null ? List.of() : entidadesRelacionadas);
+        String normalizedStatus = primeiroNaoVazio(syncStatus, "SYNCED");
+        String normalizedOrigin = primeiroNaoVazio(origem, "ONLINE");
 
         jdbcTemplate.update(
                 """
@@ -45,19 +94,47 @@ public class CortexOperationalMemoryService {
                     commit_seq,
                     tipo_entidade,
                     entidade_id,
+                    obra_id,
+                    rdo_id,
+                    colaborador_id,
                     tipo_evento,
                     fonte,
+                    origem,
+                    sync_status,
+                    sincronizado_em,
+                    entidades_relacionadas_json,
+                    schema_version,
                     payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 eventoId,
                 commitSeq,
                 tipoEntidade,
                 entidadeId,
+                nuloSeVazio(obraId),
+                nuloSeVazio(rdoId),
+                nuloSeVazio(colaboradorId),
                 tipoEvento,
                 fonte,
+                normalizedOrigin,
+                normalizedStatus,
+                sincronizadoEm,
+                relatedJson,
+                schemaVersion == null ? 1 : schemaVersion,
                 payloadJson
         );
+
+        if (ocorridoEm != null) {
+            jdbcTemplate.update(
+                    """
+                    UPDATE cortex_evento_operacional
+                    SET ocorrido_em = ?
+                    WHERE id = ?
+                    """,
+                    ocorridoEm,
+                    eventoId
+            );
+        }
 
         Long sequencia = jdbcTemplate.queryForObject(
                 """
@@ -91,6 +168,26 @@ public class CortexOperationalMemoryService {
         );
 
         return commitSeq;
+    }
+
+    private Long commitSeqExistente(String eventoId) {
+        if (eventoId == null || eventoId.isBlank()) {
+            return null;
+        }
+
+        try {
+            return jdbcTemplate.queryForObject(
+                    """
+                    SELECT commit_seq
+                    FROM cortex_evento_operacional
+                    WHERE id = ?
+                    """,
+                    Long.class,
+                    eventoId
+            );
+        } catch (EmptyResultDataAccessException ignored) {
+            return null;
+        }
     }
 
     @Transactional
@@ -440,7 +537,7 @@ public class CortexOperationalMemoryService {
         return commitSeq;
     }
 
-    private String toJson(Map<String, Object> payload) {
+    private String toJson(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload == null ? Map.of() : payload);
         } catch (JsonProcessingException exception) {
@@ -483,6 +580,7 @@ public class CortexOperationalMemoryService {
             case "COLABORADOR" -> "colaborador";
             case "ATIVO", "EQUIPAMENTO" -> "asset";
             case "SERVICO" -> "catalogo_tipo_servico";
+            case "RDO_FOTO" -> "rdo_attachment";
             case "EXECUCAO_SERVICO_RDO" -> "execucao_servico_rdo";
             case "ALOCACAO_COLABORADOR" -> "alocacao_colaborador";
             case "ITEM_CONTRATUAL" -> "item_contratual";

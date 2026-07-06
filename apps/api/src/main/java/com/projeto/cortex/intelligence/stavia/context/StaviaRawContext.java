@@ -1,6 +1,8 @@
 package com.projeto.cortex.intelligence.stavia.context;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,7 +38,24 @@ public record StaviaRawContext(
         public RawEvidence {
             attributes = attributes == null
                     ? Map.of()
-                    : Map.copyOf(attributes);
+                    : immutableAttributes(attributes);
+        }
+
+        private static Map<String, Object> immutableAttributes(
+                Map<String, Object> attributes
+        ) {
+            if (attributes.isEmpty()) {
+                return Map.of();
+            }
+
+            Map<String, Object> copy = new LinkedHashMap<>();
+            attributes.forEach((key, value) -> {
+                if (key != null) {
+                    copy.put(key, value);
+                }
+            });
+
+            return Collections.unmodifiableMap(copy);
         }
     }
 }

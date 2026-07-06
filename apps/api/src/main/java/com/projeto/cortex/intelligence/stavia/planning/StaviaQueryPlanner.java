@@ -25,6 +25,8 @@ public class StaviaQueryPlanner {
             ZoneId.of("America/Sao_Paulo");
     private static final Pattern KM_REFERENCE =
             Pattern.compile("(?iu)\\bkm\\s*\\d");
+    private static final Pattern SELECTED_RDO_CONTEXT =
+            Pattern.compile("(?iu)\\brdoId\\s*=");
 
     private final StaviaSemanticCatalog catalog;
     private final OperationalRoleLexicon roleLexicon;
@@ -105,6 +107,9 @@ public class StaviaQueryPlanner {
             return StaviaQueryPlan.empty();
         }
 
+        boolean selectedRdoContext =
+                hasSelectedRdoContext(question);
+
         StaviaQueryPlan combined =
                 combinedRainAllocationPlan(question, normalized);
 
@@ -129,11 +134,11 @@ public class StaviaQueryPlanner {
             return rdoDate;
         }
 
-        StaviaQueryPlan contextDocuments =
-                contextDocumentPlan(question, normalized);
+        StaviaQueryPlan ordinalOntologyPlan =
+                ontologyPlanner.plan(question, normalized);
 
-        if (contextDocuments.planned()) {
-            return contextDocuments;
+        if (hasOrdinalEntity(ordinalOntologyPlan)) {
+            return ordinalOntologyPlan;
         }
 
         StaviaQueryPlan segment = segmentPlan(question, normalized);
@@ -156,6 +161,14 @@ public class StaviaQueryPlanner {
             return assetCatalog;
         }
 
+        StaviaQueryPlan selectedRdoOntologyPlan =
+                ontologyPlanner.plan(question, normalized);
+
+        if (selectedRdoContext
+                && selectedRdoOntologyPlan.planned()) {
+            return selectedRdoOntologyPlan;
+        }
+
         StaviaQueryPlan team = teamPlan(
                 question,
                 classification
@@ -166,10 +179,19 @@ public class StaviaQueryPlanner {
         }
 
         StaviaQueryPlan ontologyPlan =
-                ontologyPlanner.plan(question, normalized);
+                selectedRdoOntologyPlan.planned()
+                        ? selectedRdoOntologyPlan
+                        : ontologyPlanner.plan(question, normalized);
 
         if (ontologyPlan.planned()) {
             return ontologyPlan;
+        }
+
+        StaviaQueryPlan contextDocuments =
+                contextDocumentPlan(question, normalized);
+
+        if (contextDocuments.planned()) {
+            return contextDocuments;
         }
 
         List<SemanticAttribute> worksiteAttributes =
@@ -803,6 +825,22 @@ public class StaviaQueryPlanner {
                 true,
                 false
         );
+    }
+
+    private boolean hasOrdinalEntity(StaviaQueryPlan plan) {
+        return plan != null
+                && plan.planned()
+                && plan.domain() == QueryDomain.RDO
+                && plan.requiredSources().contains("registros-rdo")
+                && plan.entities().stream()
+                        .anyMatch(entity ->
+                                "ORDINAL".equals(entity.resolvedBy()));
+    }
+
+    private boolean hasSelectedRdoContext(StaviaQuestion question) {
+        return question != null
+                && question.text() != null
+                && SELECTED_RDO_CONTEXT.matcher(question.text()).find();
     }
 
     private List<String> expandRdoAttributeNames(

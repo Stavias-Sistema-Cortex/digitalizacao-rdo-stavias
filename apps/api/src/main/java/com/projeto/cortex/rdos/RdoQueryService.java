@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.sql.Time;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -17,13 +18,16 @@ public class RdoQueryService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RdoOperationalDetailService operationalDetailService;
+    private final RdoAttachmentService attachmentService;
 
     public RdoQueryService(
             JdbcTemplate jdbcTemplate,
-            RdoOperationalDetailService operationalDetailService
+            RdoOperationalDetailService operationalDetailService,
+            RdoAttachmentService attachmentService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.operationalDetailService = operationalDetailService;
+        this.attachmentService = attachmentService;
     }
 
     public RdoResponse buscarPorId(String id) {
@@ -48,6 +52,10 @@ public class RdoQueryService {
                 cabecalho.turno(),
                 cabecalho.horaInicio(),
                 cabecalho.horaFim(),
+                cabecalho.condicaoManha(),
+                cabecalho.condicaoTarde(),
+                cabecalho.condicaoNoite(),
+                cabecalho.pluviometriaMm(),
                 cabecalho.status(),
                 cabecalho.observacoes(),
                 cabecalho.preenchidoPor(),
@@ -59,7 +67,8 @@ public class RdoQueryService {
                 listarMateriais(id),
                 listarControlesGeometricos(id),
                 operationalDetailService.listarServicos(id),
-                operationalDetailService.listarAlocacoes(id)
+                operationalDetailService.listarAlocacoes(id),
+                attachmentService.listar(id)
         );
     }
 
@@ -180,6 +189,10 @@ public class RdoQueryService {
                         turno,
                         hora_inicio,
                         hora_fim,
+                        condicao_manha,
+                        condicao_tarde,
+                        condicao_noite,
+                        pluviometria_mm,
                         status,
                         observacoes,
                         preenchido_por,
@@ -208,6 +221,10 @@ public class RdoQueryService {
                             rs.getString("turno"),
                             toLocalTime(rs.getTime("hora_inicio")),
                             toLocalTime(rs.getTime("hora_fim")),
+                            rs.getString("condicao_manha"),
+                            rs.getString("condicao_tarde"),
+                            rs.getString("condicao_noite"),
+                            rs.getBigDecimal("pluviometria_mm"),
                             rs.getString("status"),
                             rs.getString("observacoes"),
                             rs.getString("preenchido_por"),
@@ -231,7 +248,10 @@ public class RdoQueryService {
                     nome_colaborador,
                     cargo,
                     tipo_vinculo,
-                    quantidade
+                    quantidade,
+                    hora_inicio,
+                    hora_fim,
+                    observacoes
                 FROM rdo_mao_obra
                 WHERE rdo_id = ?
                 ORDER BY cargo, nome_colaborador, id
@@ -242,7 +262,14 @@ public class RdoQueryService {
                         rs.getString("nome_colaborador"),
                         rs.getString("cargo"),
                         rs.getString("tipo_vinculo"),
-                        rs.getBigDecimal("quantidade")
+                        rs.getBigDecimal("quantidade"),
+                        rs.getTime("hora_inicio") == null
+                                ? null
+                                : rs.getTime("hora_inicio").toLocalTime(),
+                        rs.getTime("hora_fim") == null
+                                ? null
+                                : rs.getTime("hora_fim").toLocalTime(),
+                        rs.getString("observacoes")
                 ),
                 rdoId
         );
@@ -258,7 +285,10 @@ public class RdoQueryService {
                     descricao,
                     tipo_equipamento,
                     tipo_vinculo,
-                    quantidade
+                    quantidade,
+                    hora_inicio,
+                    hora_fim,
+                    observacoes
                 FROM rdo_equipamento
                 WHERE rdo_id = ?
                 ORDER BY prefixo, descricao, id
@@ -270,7 +300,14 @@ public class RdoQueryService {
                         rs.getString("descricao"),
                         rs.getString("tipo_equipamento"),
                         rs.getString("tipo_vinculo"),
-                        rs.getBigDecimal("quantidade")
+                        rs.getBigDecimal("quantidade"),
+                        rs.getTime("hora_inicio") == null
+                                ? null
+                                : rs.getTime("hora_inicio").toLocalTime(),
+                        rs.getTime("hora_fim") == null
+                                ? null
+                                : rs.getTime("hora_fim").toLocalTime(),
+                        rs.getString("observacoes")
                 ),
                 rdoId
         );
@@ -403,6 +440,10 @@ public class RdoQueryService {
             String turno,
             LocalTime horaInicio,
             LocalTime horaFim,
+            String condicaoManha,
+            String condicaoTarde,
+            String condicaoNoite,
+            BigDecimal pluviometriaMm,
             String status,
             String observacoes,
             String preenchidoPor,

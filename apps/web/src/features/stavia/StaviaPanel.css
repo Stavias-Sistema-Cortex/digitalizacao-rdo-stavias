@@ -1,31 +1,916 @@
 /* ============================================================
-   Stav.IA — design tokens (scoped to the panel)
+   Stav.IA — chat surface tokens (scoped)
    ============================================================ */
-.stavia-page {
-  --stav-yellow: #fed203;
-  --stav-yellow-deep: #f4c400;
+.stavia-page,
+.stavia-floating-overlay,
+.stavia-launcher {
+  --stav-signal: #fed203;
+  --stav-signal-deep: #e7bd00;
   --stav-teal: #026965;
-  --stav-teal-700: #015551;
-  --stav-ink: #0b3b39;
-  --stav-cream: #fffdf5;
-  --stav-violet: #7b61ff;
-
-  min-height: 100vh;
-  padding: 24px;
-  background: #f8f8f4;
-  color: var(--stav-ink);
-  font-family:
+  --stav-teal-deep: #01524e;
+  --stav-ink: #123331;
+  --stav-ink-soft: rgb(18 51 49 / 58%);
+  --stav-paper: #f7f6f1;
+  --stav-surface: #ffffff;
+  --stav-mist: #e6e4da;
+  --stav-asphalt: #1d2a28;
+  --stav-font:
     "Poppins",
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
-    "Segoe UI",
+    "Poppins",
     sans-serif;
 }
 
-.stavia-page :focus-visible {
+/* ============================================================
+   Page variant (full page)
+   ============================================================ */
+.stavia-page {
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 20px;
+  background: var(--stav-paper);
+  color: var(--stav-ink);
+  font-family: var(--stav-font);
+}
+
+.stavia-page .stavia-shell {
+  width: min(860px, 100%);
+  height: calc(100dvh - 40px);
+}
+
+/* ============================================================
+   Shell (header / thread / composer)
+   ============================================================ */
+.stavia-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--stav-mist);
+  border-radius: 50px;
+  color: var(--stav-ink);
+  font-family: var(--stav-font);
+}
+
+.stavia-shell :focus-visible,
+.stavia-launcher:focus-visible {
   outline: 2px solid var(--stav-teal);
   outline-offset: 2px;
+}
+
+/* o campo de pergunta não ganha destaque de foco (pedido do usuário);
+   também neutraliza o input:focus global do index.css */
+.stavia-shell .stavia-composer textarea:focus,
+.stavia-shell .stavia-composer textarea:focus-visible {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+/* ============================================================
+   Topbar
+   ============================================================ */
+.stavia-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 12px 12px 10px 16px;
+  border-radius: 50px 50px 0 0;
+  background: var(--stav-signal);
+}
+
+.stavia-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* card branco do logo saltando pra fora do amarelo */
+.stavia-logo-card {
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin: -32px 0 -4px;
+  padding: 12px 5px;
+  border: 1px solid #efe7cf;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 26px -16px rgb(20 40 35 / 45%);
+}
+
+.stavia-brand-logo {
+  display: block;
+  width: 180px;
+  height: 38px;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.stavia-topbar .stavia-icon-button {
+  color: rgb(18 51 49 / 76%);
+}
+
+.stavia-topbar .stavia-icon-button:hover:not(:disabled) {
+  background: rgb(18 51 49 / 10%);
+  color: var(--stav-ink);
+}
+
+.stavia-status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.stavia-status-dot.is-online {
+  background: #2f9e63;
+  box-shadow: 0 0 0 3px rgb(47 158 99 / 16%);
+}
+
+.stavia-status-dot.is-offline {
+  background: #c9503d;
+  box-shadow: 0 0 0 3px rgb(201 80 61 / 16%);
+}
+
+.stavia-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.stavia-icon-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 30px;
+  background: transparent;
+  color: var(--stav-ink-soft);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.stavia-icon-button svg {
+  width: 30px;
+  height: 18px;
+}
+
+.stavia-icon-button:hover:not(:disabled) {
+  background: rgb(18 51 49 / 7%);
+  color: var(--stav-ink);
+}
+
+.stavia-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.stavia-icon-button.is-busy svg {
+  animation: stavia-spin 1s linear infinite;
+}
+
+/* ============================================================
+   Offline note
+   ============================================================ */
+.stavia-offline-note {
+  flex: none;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--stav-signal-deep);
+  background: rgb(255 255 255 / 74%);
+  color: #6d5310;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* ============================================================
+   Thread
+   ============================================================ */
+.stavia-thread {
+  flex: 1;
+  min-height: 0;
+  padding: 20px clamp(16px, 4vw, 28px);
+    background: radial-gradient(140% 52% at 50% 38%, rgba(254, 255, 231, 0.48) 0%, rgb(94 178 170 / 0%) 62%), linear-gradient(180deg, #FED203 10%, #fbdc4f 40%, #f4eac0 74%, #ecd986 100%);  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* --- empty state --- */
+.stavia-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 12px;
+  text-align: center;
+}
+
+.stavia-empty h2 {
+  margin: 6px 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* faixa central — eco discreto da assinatura */
+.stavia-empty h2::before {
+  content: "";
+  display: block;
+  width: 56px;
+  margin: 0 auto 14px;
+  border-top: 3px dashed rgb(255 255 255 / 88%);
+}
+
+.stavia-empty p {
+  margin: 0;
+  max-width: 400px;
+  color: var(--stav-ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.stavia-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 520px;
+  margin-top: 14px;
+}
+
+.stavia-chips button {
+  padding: 9px 14px;
+  border: 1px solid #efe7cf;
+  border-radius: 999px;
+  background: var(--stav-surface);
+  color: var(--stav-ink);
+  font: 500 0.82rem/1.25 var(--stav-font);
+  box-shadow: 0 8px 20px -16px rgb(20 40 35 / 45%);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.stavia-chips button:hover:not(:disabled) {
+  border-color: var(--stav-teal);
+  background: #f0f8f6;
+}
+
+.stavia-chips button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.stavia-empty small {
+  margin-top: 16px;
+  color: var(--stav-ink-soft);
+  font-size: 0.72rem;
+}
+
+/* --- messages --- */
+.stavia-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.stavia-bubble {
+  max-width: 85%;
+  padding: 11px 14px;
+  border-radius: 16px;
+  font-size: 0.93rem;
+  line-height: 1.55;
+}
+
+.stavia-bubble p {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.stavia-bubble footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 0.68rem;
+  font-weight: 300;
+}
+
+.stavia-bubble--user {
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: var(--stav-teal);
+  color: #fbfef9;
+}
+
+.stavia-bubble--user footer {
+  justify-content: flex-end;
+  color: rgb(255 255 255 / 62%);
+}
+
+.stavia-bubble--assistant {
+  align-self: flex-start;
+  border: 1px solid #efe7cf;
+  border-bottom-left-radius: 6px;
+  background: var(--stav-surface);
+}
+
+.stavia-bubble--assistant footer {
+  color: var(--stav-ink-soft);
+}
+
+/* --- thinking: tachas amarelas sobre asfalto (assinatura) --- */
+.stavia-thinking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border-bottom-left-radius: 6px;
+  background: var(--stav-asphalt);
+}
+
+.stavia-thinking span {
+  width: 15px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--stav-signal);
+  animation: stavia-lane 900ms linear infinite;
+}
+
+.stavia-thinking span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.stavia-thinking span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes stavia-lane {
+  0% {
+    opacity: 0.25;
+    transform: translateX(7px);
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.25;
+    transform: translateX(-7px);
+  }
+}
+
+/* --- warnings + evidence (inline na thread) --- */
+.stavia-answer-extras {
+  display: grid;
+  gap: 8px;
+  align-self: flex-start;
+  width: min(100%, 85%);
+}
+
+.stavia-warning {
+  margin: 0;
+  padding: 10px 13px;
+  border: 1px solid #ecd97a;
+  border-radius: 12px;
+  background: var(--stav-surface);
+  color: #6d5310;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.stavia-evidence {
+  display: grid;
+  gap: 6px;
+}
+
+.stavia-evidence-empty {
+  margin: 0;
+  color: var(--stav-ink-soft);
+  font-size: 0.8rem;
+}
+
+.stavia-source {
+  border: 1px solid #efe7cf;
+  border-radius: 12px;
+  background: var(--stav-surface);
+  font-size: 0.82rem;
+}
+
+.stavia-source summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.stavia-source summary small {
+  flex: none;
+  color: var(--stav-ink-soft);
+}
+
+.stavia-source pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 10px 13px;
+  border-top: 1px solid var(--stav-mist);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  overflow: auto;
+}
+
+/* ============================================================
+   Inline note (erro / status)
+   ============================================================ */
+.stavia-note {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.stavia-note.is-error {
+  background: #fdf0ed;
+  color: #8b2d21;
+}
+
+.stavia-note.is-success {
+  background: #eff8ef;
+  color: #2d5c3b;
+}
+
+/* ============================================================
+   Composer
+   ============================================================ */
+.stavia-composer-area {
+width: 430px;
+height: 150px;
+border-radius: 50px;
+background: rgba(255, 255, 255, 0.2);
+backdrop-filter: blur(4px) url(#lg-filter) blur(8px) saturate(1.5) brightness(1.1);
+-webkit-backdrop-filter: blur(32px) saturate(1.8) brightness(1.15) contrast(1.05);
+box-shadow:
+  inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+  inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5),
+  inset 0 0 12px rgba(255, 255, 255, 0.2),
+  0 8px 32px rgba(0, 0, 0, 0.2);
+  
+}
+
+.stavia-context-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stavia-context-chip {
+	position: relative;
+  right: -30px;  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px dashed var(--stav-mist);
+  border-radius: 999px;
+  background: transparent;
+  font: 500 0.76rem var(--stav-font);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.stavia-context-chip svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.stavia-context-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-context-chip:hover:not(:disabled) {
+  border-color: var(--stav-teal);
+}
+
+.stavia-context-chip.is-active {
+  border-style: solid;
+  background: #f0f8f6;
+  color: var(--stav-teal);
+}
+
+.stavia-context-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.stavia-dismiss-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--stav-ink-soft);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.stavia-dismiss-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.stavia-dismiss-button:hover:not(:disabled) {
+  background: rgb(18 51 49 / 7%);
+  color: var(--stav-ink);
+}
+
+.stavia-dismiss-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.stavia-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 18px;
+}
+
+.stavia-plus-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--stav-ink-soft);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.stavia-plus-button svg {
+  width: 19px;
+  height: 19px;
+}
+
+.stavia-plus-button:hover {
+  background: rgb(18 51 49 / 7%);
+  color: var(--stav-ink);
+}
+
+.stavia-plus-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.stavia-plus-button:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.stavia-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 140px;
+  padding: 8px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--stav-ink);
+  font: 400 0.95rem/1.5 var(--stav-font);
+  resize: none;
+  outline: none;
+}
+
+.stavia-composer textarea::placeholder {
+  color: var(--stav-ink-soft);
+}
+
+.stavia-send-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--stav-teal);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.stavia-send-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.stavia-send-button:hover:not(:disabled) {
+  background: var(--stav-teal-deep);
+}
+
+.stavia-send-button:disabled {
+  background: var(--stav-mist);
+  cursor: not-allowed;
+}
+
+.stavia-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(255 255 255 / 35%);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: stavia-spin 0.7s linear infinite;
+}
+
+@keyframes stavia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- attach tray --- */
+.stavia-attach-tray {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 14px;
+  background: var(--stav-paper);
+}
+
+.stavia-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--stav-teal);
+  font: 500 0.78rem var(--stav-font);
+}
+
+.stavia-attach-chip svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.stavia-attach-chip span {
+  overflow: hidden;
+  max-width: 150px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-attach-tray input[type="text"] {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 9px;
+  background: var(--stav-surface);
+  color: var(--stav-ink);
+  font: 400 0.82rem var(--stav-font);
+  outline: none;
+}
+
+.stavia-attach-tray input[type="text"]:focus {
+  border-color: var(--stav-teal);
+}
+
+.stavia-attach-send {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--stav-teal);
+  color: #fff;
+  font: 600 0.78rem var(--stav-font);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.stavia-attach-send:hover:not(:disabled) {
+  background: var(--stav-teal-deep);
+}
+
+.stavia-attach-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ============================================================
+   Context selector modal
+   ============================================================ */
+.stavia-context-modal-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(13 24 22 / 45%);
+}
+
+.stavia-context-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(640px, 100%);
+  max-height: min(680px, 90vh);
+  padding: 18px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 18px;
+  background: var(--stav-surface);
+  box-shadow: 0 24px 60px -30px rgb(0 0 0 / 45%);
+  color: var(--stav-ink);
+  font-family: var(--stav-font);
+}
+
+.stavia-context-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stavia-context-modal h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.stavia-context-modal input[type="search"] {
+  flex: none;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 12px;
+  background: var(--stav-paper);
+  color: var(--stav-ink);
+  font: 400 0.9rem var(--stav-font);
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.stavia-context-modal input[type="search"]:focus {
+  border-color: var(--stav-teal);
+  box-shadow: 0 0 0 3px rgb(2 105 101 / 12%);
+}
+
+.stavia-context-modal-summary {
+  margin: 0;
+  color: var(--stav-ink-soft);
+  font-size: 0.74rem;
+}
+
+.stavia-context-option-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding-right: 2px;
+  overflow: auto;
+}
+
+.stavia-context-empty {
+  padding: 16px;
+  border: 1px dashed var(--stav-mist);
+  border-radius: 12px;
+  color: var(--stav-ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.stavia-context-option {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 12px;
+  background: var(--stav-surface);
+  font-family: var(--stav-font);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.stavia-context-option:hover,
+.stavia-context-option.is-selected {
+  border-color: var(--stav-teal);
+  background: #f0f8f6;
+}
+
+.stavia-context-option strong {
+  overflow: hidden;
+  color: var(--stav-ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-context-option em {
+  overflow: hidden;
+  color: var(--stav-ink-soft);
+  font-size: 0.78rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-context-option small {
+  color: var(--stav-ink-soft);
+  font-size: 0.72rem;
+}
+
+/* ============================================================
+   Floating variant (janela dockada)
+   ============================================================ */
+.stavia-floating-overlay {
+  position: fixed;
+  z-index: 78;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 16px;
+  background: rgb(13 24 22 / 14%);
+}
+
+.stavia-floating-card {
+  width: min(430px, 100%);
+  height: min(700px, 100%);
+  border-radius: 50px;
+  animation: stavia-card-in 240ms cubic-bezier(0.2, 0.8, 0.25, 1);
+  box-shadow:
+    0 24px 64px -24px rgb(16 34 30 / 100%),
+    0 6px 18px -10px rgb(16 34 30 / 100%);
+}
+
+.stavia-floating-card .stavia-shell {
+  height: 100%;
+}
+
+@keyframes stavia-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ============================================================
@@ -157,1384 +1042,55 @@
 }
 
 /* ============================================================
-   Floating overlay + card frame (violet halo signature)
-   ============================================================ */
-.stavia-floating-overlay {
-  position: fixed;
-  z-index: 78;
-  inset: 0;
-  display: grid;
-  align-items: start;
-  justify-items: center;
-  padding: clamp(74px, 8vh, 112px) clamp(18px, 4vw, 56px)
-    clamp(22px, 5vh, 54px);
-  background: rgb(13 18 16 / 28%);
-  overflow-y: auto;
-  backdrop-filter: blur(6px) saturate(1.04);
-  -webkit-backdrop-filter: blur(6px) saturate(1.04);
-}
-
-.stavia-floating-card {
-  position: relative;
-  z-index: 1;
-  width: min(1040px, calc(100vw - 64px));
-  border-radius: 22px;
-  background: transparent;
-  animation: stavia-card-in 280ms cubic-bezier(0.18, 0.82, 0.28, 1);
-  box-shadow:
-    0 18px 48px -24px rgb(20 40 35 / 55%),
-    0 6px 16px -10px rgb(20 40 35 / 35%);
-  overflow: visible;
-}
-
-@keyframes stavia-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.985);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.stavia-page--floating {
-  min-height: 0;
-  padding: 0;
-  background: transparent;
-  overflow: visible;
-}
-
-/* ============================================================
-   Hero panel (yellow surface)
-   ============================================================ */
-.stavia-hero-panel {
-  position: relative;
-  display: grid;
-  gap: 20px;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 30px clamp(22px, 3vw, 40px);
-  border: 1px solid #e7bd00;
-  border-radius: 22px;
-  background: #fed203;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 35%);
-  overflow: visible;
-}
-
-.stavia-page--floating .stavia-hero-panel {
-  margin: 0;
-  padding: 32px clamp(24px, 4vw, 48px) 28px;
-  border-radius: 22px;
-  background: #fed203;
-}
-
-/* ============================================================
-   Header (close / back)
-   ============================================================ */
-.stavia-hero-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 16px;
-}
-
-.stavia-back-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 42px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--stav-teal);
-  color: #fff;
-  font:
-    600 0.92rem "Poppins",
-    sans-serif;
-  cursor: pointer;
-  transition:
-    filter 0.16s ease,
-    background 0.16s ease;
-}
-
-.stavia-back-button:hover {
-  background: var(--stav-teal-700);
-}
-
-.stavia-page--floating .stavia-hero-header {
-  position: absolute;
-  z-index: 5;
-  top: 20px;
-  right: 22px;
-  left: auto;
-  justify-content: flex-end;
-}
-
-.stavia-page--floating .stavia-back-button {
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 1px solid #e7bd00;
-  border-radius: 10px;
-  background: rgb(255 255 255 / 85%);
-  color: var(--stav-ink);
-}
-
-.stavia-page--floating .stavia-back-button:hover {
-  background: #fff;
-  filter: none;
-}
-
-.stavia-back-button svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* ============================================================
-   Intro row (logo pill + copy)
-   ============================================================ */
-.stavia-intro-row {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.85fr) minmax(260px, 1fr);
-  gap: 28px;
-  align-items: start;
-}
-
-.stavia-logo-card {
-  width: min(358px, 100%);
-  min-height: 94px;
-  display: grid;
-  place-items: center;
-  padding: 0 24px;
-  border: 1px solid #efe7cf;
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 8px 20px -16px rgb(20 40 35 / 45%);
-  overflow: hidden;
-}
-
-.stavia-logo-card img {
-  display: block;
-  width: 108%;
-  max-width: none;
-  height: 108px;
-  object-fit: cover;
-  object-position: center;
-}
-
-.stavia-intro-wrap {
-  display: flex;
-  gap: 12px;
-  padding-top: 2px;
-}
-
-.stavia-info-dot {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  margin-top: 2px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: #fff;
-  color: var(--stav-teal);
-}
-
-.stavia-info-dot svg {
-  width: 15px;
-  height: 15px;
-}
-
-.stavia-intro-copy {
-  margin: 0;
-  max-width: 560px;
-  color: var(--stav-ink);
-  font:
-    500 0.98rem / 1.5 "Poppins",
-    sans-serif;
-}
-
-.stavia-page--floating .stavia-intro-row {
-  grid-template-columns: minmax(280px, 0.78fr) minmax(280px, 1fr);
-  gap: clamp(20px, 3.6vw, 44px);
-  min-height: 108px;
-}
-
-.stavia-page--floating .stavia-logo-card {
-  position: relative;
-  z-index: 4;
-  transform: translateY(-62px);
-  margin-bottom: -66px;
-  box-shadow: 0 12px 26px -18px rgb(20 40 35 / 45%);
-}
-
-.stavia-page--floating .stavia-intro-wrap {
-  padding: 2px 52px 0 0;
-}
-
-.stavia-page--floating .stavia-intro-copy {
-  font-size: clamp(0.95rem, 1.2vw, 1.05rem);
-}
-
-/* ============================================================
-   Banners / inline messages
-   ============================================================ */
-.stavia-offline-banner,
-.stavia-message {
-  padding: 12px 14px;
-  border-radius: 10px;
-  background: #fff7cf;
-  border: 1px solid #ecd97a;
-  color: var(--stav-ink);
-  font:
-    500 0.9rem / 1.45 "Poppins",
-    sans-serif;
-}
-
-.stavia-message.is-error {
-  background: #fff0ed;
-  border-color: #f4cdc4;
-  color: #8b2d21;
-}
-
-.stavia-message.is-success {
-  background: #eef9df;
-  border-color: #d4e8b3;
-  color: #315115;
-}
-
-/* ============================================================
-   Suggestions (eyebrow + 3D wheel)
-   ============================================================ */
-.stavia-suggestions-title {
-  margin: 4px 0 -10px;
-  color: rgb(11 59 57 / 62%);
-  font:
-    500 0.92rem "Poppins",
-    sans-serif;
-  text-align: center;
-}
-
-.stavia-suggestion-crawl {
-  position: relative;
-  display: block;
-  height: clamp(150px, 19vh, 200px);
-  overflow: hidden;
-  perspective: 900px;
-  --stavia-wheel-duration: 24s;
-  --stavia-wheel-step: -3s;
-  --stavia-wheel-radius: clamp(94px, 11vw, 142px);
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 16%,
-    #000 76%,
-    transparent 100%
-  );
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 16%,
-    #000 76%,
-    transparent 100%
-  );
-}
-
-.stavia-suggestion-crawl-track {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-}
-
-.stavia-suggestion-crawl:hover button,
-.stavia-suggestion-crawl:focus-within button {
-  animation-play-state: paused;
-}
-
-.stavia-suggestion-crawl button {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(720px, 92%);
-  min-height: 0;
-  padding: 4px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: rgb(255 255 255 / 90%);
-  font:
-    italic 500 clamp(1.15rem, 2.2vw, 1.85rem) / 1.3 "Poppins",
-    sans-serif;
-  text-align: center;
-  text-shadow: 0 6px 18px rgb(84 68 0 / 22%);
-  cursor: pointer;
-  transform-style: preserve-3d;
-  animation: stavia-suggestion-wheel var(--stavia-wheel-duration) linear
-    infinite;
-  animation-delay: calc(var(--stavia-tip-index) * var(--stavia-wheel-step));
-  transition:
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.stavia-suggestion-crawl button:hover,
-.stavia-suggestion-crawl button:focus-visible {
-  color: #fff;
-  outline: none;
-}
-
-.stavia-suggestion-crawl button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-@keyframes stavia-suggestion-wheel {
-  0% {
-    opacity: 1;
-    filter: blur(0);
-    transform: translate(-50%, -50%) rotateX(0deg)
-      translateZ(var(--stavia-wheel-radius)) scale(1);
-  }
-
-  12.5% {
-    opacity: 0.74;
-    filter: blur(0.2px);
-    transform: translate(-50%, -50%) rotateX(-45deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.94);
-  }
-
-  25% {
-    opacity: 0.36;
-    filter: blur(0.7px);
-    transform: translate(-50%, -50%) rotateX(-90deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.84);
-  }
-
-  37.5% {
-    opacity: 0.12;
-    filter: blur(1.1px);
-    transform: translate(-50%, -50%) rotateX(-135deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.76);
-  }
-
-  50% {
-    opacity: 0.04;
-    filter: blur(1.3px);
-    transform: translate(-50%, -50%) rotateX(-180deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.72);
-  }
-
-  62.5% {
-    opacity: 0.12;
-    filter: blur(1.1px);
-    transform: translate(-50%, -50%) rotateX(-225deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.76);
-  }
-
-  75% {
-    opacity: 0.36;
-    filter: blur(0.7px);
-    transform: translate(-50%, -50%) rotateX(-270deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.84);
-  }
-
-  87.5% {
-    opacity: 0.74;
-    filter: blur(0.2px);
-    transform: translate(-50%, -50%) rotateX(-315deg)
-      translateZ(var(--stavia-wheel-radius)) scale(0.94);
-  }
-
-  100% {
-    opacity: 1;
-    filter: blur(0);
-    transform: translate(-50%, -50%) rotateX(-360deg)
-      translateZ(var(--stavia-wheel-radius)) scale(1);
-  }
-}
-
-/* ============================================================
-   Tip box + selected context (glassy chips)
-   ============================================================ */
-.stavia-tip-box,
-.stavia-selected-context {
-  border-radius: 12px;
-  background: rgb(255 255 255 / 88%);
-  border: 1px solid #f0e4b0;
-}
-
-.stavia-tip-box {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  padding: 14px 18px;
-}
-
-.stavia-tip-box strong {
-  color: var(--stav-teal);
-  font:
-    600 0.92rem "Poppins",
-    sans-serif;
-}
-
-.stavia-tip-box span {
-  color: var(--stav-ink);
-  font:
-    500 0.9rem / 1.45 "Poppins",
-    sans-serif;
-}
-
-.stavia-selected-context {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 14px 18px;
-}
-
-.stavia-selected-context div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.stavia-selected-context span {
-  color: rgb(11 59 57 / 60%);
-  font:
-    600 0.68rem "Poppins",
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.stavia-selected-context strong {
-  overflow: hidden;
-  color: var(--stav-ink);
-  font:
-    600 0.98rem "Poppins",
-    sans-serif;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stavia-selected-context small {
-  color: rgb(11 59 57 / 62%);
-  font:
-    500 0.8rem / 1.4 "Poppins",
-    sans-serif;
-}
-
-/* ============================================================
-   Button system
-   ============================================================ */
-.stavia-secondary-action,
-.stavia-primary-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 42px;
-  border-radius: 10px;
-  font:
-    600 0.9rem "Poppins",
-    sans-serif;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    border-color 0.16s ease;
-}
-
-.stavia-secondary-action {
-  padding: 0 18px;
-  border: 1px solid rgb(2 105 101 / 30%);
-  background: #fff;
-  color: var(--stav-teal);
-}
-
-.stavia-secondary-action:hover {
-  background: #f4faf8;
-  border-color: rgb(2 105 101 / 50%);
-}
-
-.stavia-secondary-action.compact {
-  height: 38px;
-  padding: 0 14px;
-  font-size: 0.84rem;
-}
-
-.stavia-primary-action {
-  padding: 0 20px;
-  border: 1px solid var(--stav-teal-700);
-  background: var(--stav-teal);
-  color: #fff;
-}
-
-.stavia-primary-action:hover {
-  background: var(--stav-teal-700);
-}
-
-.stavia-primary-action.compact {
-  height: 38px;
-  padding: 0 18px;
-  font-size: 0.84rem;
-}
-
-/* ============================================================
-   Prompt (hero pill)
-   ============================================================ */
-.stavia-query-box {
-  display: grid;
-  gap: 12px;
-}
-
-.stavia-prompt-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  color: var(--stav-ink);
-  font:
-    500 0.78rem "Poppins",
-    sans-serif;
-}
-
-.stavia-prompt-meta .stavia-network-pill {
-  margin-right: auto;
-}
-
-.stavia-meta-time {
-  opacity: 0.85;
-}
-
-.stavia-network-pill {
-  padding: 5px 10px;
-  border-radius: 7px;
-  font:
-    600 0.72rem "Poppins",
-    sans-serif;
-}
-
-.stavia-network-pill.is-online {
-  background: rgb(255 255 255 / 92%);
-  color: var(--stav-teal);
-}
-
-.stavia-network-pill.is-offline {
-  background: #fff3f0;
-  color: #8a2e20;
-}
-
-.stavia-refresh-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgb(2 105 101 / 28%);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--stav-teal);
-  font:
-    600 0.76rem "Poppins",
-    sans-serif;
-  cursor: pointer;
-  transition: background 0.16s ease;
-}
-
-.stavia-refresh-button svg {
-  width: 14px;
-  height: 14px;
-}
-
-.stavia-refresh-button:hover {
-  background: #f4faf8;
-}
-
-.stavia-question-shell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 8px 8px 10px;
-  border: 1px solid #d7cfa6;
-  border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 6px 16px -12px rgb(20 40 35 / 45%);
-  transition:
-    border-color 0.16s ease,
-    box-shadow 0.16s ease;
-}
-
-.stavia-question-shell:focus-within {
-  border-color: var(--stav-teal);
-  box-shadow: 0 0 0 3px rgb(2 105 101 / 14%);
-}
-
-.stavia-plus-button {
-  position: relative;
-  flex: none;
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: rgb(2 105 101 / 9%);
-  color: var(--stav-teal);
-  cursor: pointer;
-  transition: background 0.16s ease;
-}
-
-.stavia-plus-button svg {
-  width: 20px;
-  height: 20px;
-}
-
-.stavia-plus-button:hover {
-  background: rgb(2 105 101 / 16%);
-}
-
-.stavia-plus-button input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.stavia-question-shell textarea {
-  flex: 1;
-  min-width: 0;
-  min-height: 30px;
-  max-height: 140px;
-  padding: 8px 4px;
-  border: 0;
-  background: transparent;
-  color: #15302d;
-  font:
-    400 1.02rem / 1.45 "Poppins",
-    sans-serif;
-  resize: none;
-  outline: none;
-}
-
-.stavia-question-shell textarea::placeholder {
-  color: rgb(11 59 57 / 45%);
-}
-
-.stavia-send-button {
-  flex: none;
-  width: 42px;
-  height: 42px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 10px;
-  background: var(--stav-teal);
-  color: #fff;
-  cursor: pointer;
-  transition: background 0.16s ease;
-}
-
-.stavia-send-button svg {
-  width: 19px;
-  height: 19px;
-}
-
-.stavia-send-button:hover {
-  background: var(--stav-teal-700);
-}
-
-.stavia-spinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgb(255 255 255 / 35%);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: stavia-spin 0.7s linear infinite;
-}
-
-@keyframes stavia-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* attachment tray (shown when a file is selected) */
-.stavia-attach-tray {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 10px 10px 14px;
-  border: 1px solid #d7cfa6;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.stavia-attach-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  color: var(--stav-teal);
-  font:
-    600 0.82rem "Poppins",
-    sans-serif;
-}
-
-.stavia-attach-chip span {
-  overflow: hidden;
-  max-width: 160px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stavia-attach-chip svg {
-  flex: none;
-  width: 15px;
-  height: 15px;
-}
-
-.stavia-attach-tray input[type="text"] {
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid #d7cfa6;
-  border-radius: 8px;
-  background: #fff;
-  color: #15302d;
-  font:
-    400 0.86rem "Poppins",
-    sans-serif;
-  outline: none;
-}
-
-.stavia-attach-tray input[type="text"]:focus {
-  border-color: var(--stav-teal);
-}
-
-.stavia-attach-remove {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  background: rgb(2 105 101 / 9%);
-  color: var(--stav-teal);
-  cursor: pointer;
-  transition: background 0.16s ease;
-}
-
-.stavia-attach-remove svg {
-  width: 15px;
-  height: 15px;
-}
-
-.stavia-attach-remove:hover {
-  background: rgb(2 105 101 / 16%);
-}
-
-/* context hint (quiet) */
-.stavia-context-hint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 6px;
-}
-
-.stavia-context-hint svg {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  color: rgb(11 59 57 / 50%);
-}
-
-.stavia-context-hint input {
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  border: 0;
-  border-bottom: 1px solid rgb(11 59 57 / 18%);
-  background: transparent;
-  color: var(--stav-ink);
-  font:
-    400 0.84rem "Poppins",
-    sans-serif;
-  outline: none;
-}
-
-.stavia-context-hint input::placeholder {
-  color: rgb(11 59 57 / 42%);
-}
-
-.stavia-context-hint input:focus {
-  border-bottom-color: var(--stav-teal);
-}
-
-/* disabled states */
-.stavia-back-button:disabled,
-.stavia-secondary-action:disabled,
-.stavia-primary-action:disabled,
-.stavia-refresh-button:disabled,
-.stavia-send-button:disabled,
-.stavia-plus-button:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.56;
-  transform: none;
-  filter: none;
-}
-
-/* ============================================================
-   Context selector modal
-   ============================================================ */
-.stavia-context-modal-backdrop {
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 22px;
-  background: rgb(13 18 16 / 50%);
-}
-
-.stavia-context-modal {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: 14px;
-  width: min(920px, 100%);
-  max-height: min(780px, 92vh);
-  padding: 22px;
-  border: 1px solid #e7dfc6;
-  border-radius: 16px;
-  background: var(--stav-cream);
-  box-shadow: 0 24px 60px -30px rgb(0 0 0 / 45%);
-}
-
-.stavia-context-modal-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-  padding-bottom: 14px;
-  border-bottom: 1px solid #ece6cf;
-}
-
-.stavia-context-modal-header p {
-  margin: 0 0 4px;
-  color: rgb(11 59 57 / 60%);
-  font:
-    600 0.7rem "Poppins",
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.stavia-context-modal-header h2 {
-  margin: 0;
-  color: var(--stav-ink);
-  font:
-    700 1.3rem "Poppins",
-    sans-serif;
-}
-
-.stavia-context-modal-header span {
-  display: block;
-  margin-top: 6px;
-  color: #52615c;
-  font:
-    500 0.86rem / 1.4 "Poppins",
-    sans-serif;
-}
-
-.stavia-modal-close {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgb(2 105 101 / 28%);
-  border-radius: 10px;
-  background: #fff;
-  color: var(--stav-teal);
-  font:
-    600 1.4rem "Poppins",
-    sans-serif;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.16s ease;
-}
-
-.stavia-modal-close:hover {
-  background: #f3fbf3;
-}
-
-.stavia-context-modal-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
-.stavia-context-modal-tools input {
-  height: 42px;
-  padding: 0 14px;
-  border: 1px solid rgb(2 105 101 / 28%);
-  border-radius: 10px;
-  background: #fff;
-  color: #20251f;
-  font:
-    400 0.92rem "Poppins",
-    sans-serif;
-  outline: none;
-}
-
-.stavia-context-modal-tools input:focus {
-  border-color: var(--stav-teal);
-  box-shadow: 0 0 0 3px rgb(2 105 101 / 14%);
-}
-
-.stavia-context-modal-summary {
-  color: var(--stav-ink);
-  font:
-    600 0.84rem "Poppins",
-    sans-serif;
-}
-
-.stavia-context-option-list {
-  display: grid;
-  gap: 10px;
-  min-height: 0;
-  padding-right: 4px;
-  overflow: auto;
-}
-
-.stavia-context-empty {
-  padding: 18px;
-  border: 1px dashed #d9ca85;
-  border-radius: 10px;
-  background: #fff8df;
-  color: #6d5310;
-  font:
-    500 0.9rem / 1.45 "Poppins",
-    sans-serif;
-}
-
-.stavia-context-option {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.48fr);
-  gap: 14px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid #e6e1d2;
-  border-radius: 12px;
-  background: #fff;
-  color: #20251f;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color 0.16s ease,
-    background 0.16s ease;
-}
-
-.stavia-context-option:hover,
-.stavia-context-option.is-selected {
-  border-color: var(--stav-teal);
-  background: #f3fbf3;
-}
-
-.stavia-context-option span {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-
-.stavia-context-option strong,
-.stavia-context-option em,
-.stavia-context-option small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.stavia-context-option strong {
-  color: var(--stav-ink);
-  font:
-    600 0.98rem "Poppins",
-    sans-serif;
-  white-space: nowrap;
-}
-
-.stavia-context-option em {
-  color: #52615c;
-  font:
-    500 0.88rem "Poppins",
-    sans-serif;
-  font-style: normal;
-  white-space: nowrap;
-}
-
-.stavia-context-option small {
-  color: #746a55;
-  font:
-    500 0.8rem "Poppins",
-    sans-serif;
-  white-space: nowrap;
-}
-
-.stavia-context-option code {
-  display: block;
-  min-width: 0;
-  padding: 8px;
-  border-radius: 12px;
-  background: #f4f7f3;
-  color: #31514d;
-  font-size: 0.72rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-/* ============================================================
-   Workspace (chat + answer)
-   ============================================================ */
-.stavia-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
-  gap: 18px;
-  max-width: 1180px;
-  margin: 18px auto 0;
-}
-
-.stavia-page--floating .stavia-workspace {
-  grid-template-columns: 1fr;
-  width: 100%;
-  max-width: none;
-}
-
-.stavia-chat-panel,
-.stavia-answer-panel {
-  min-width: 0;
-  padding: 18px;
-  border: 1px solid #ece4c8;
-  border-radius: 14px;
-  background: #fffdf5;
-}
-
-.stavia-chat-panel {
-  display: flex;
-  flex-direction: column;
-}
-
-.stavia-page--floating .stavia-chat-panel {
-  max-height: 260px;
-  overflow: hidden;
-}
-
-.stavia-page--floating .stavia-answer-panel {
-  max-height: 340px;
-  overflow: auto;
-}
-
-.stavia-answer-panel {
-  align-self: start;
-}
-
-.stavia-chat-header,
-.stavia-answer-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  align-items: flex-start;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgb(2 105 101 / 14%);
-}
-
-.stavia-chat-header p,
-.stavia-answer-header span {
-  margin: 0 0 4px;
-  color: rgb(11 59 57 / 60%);
-  font:
-    600 0.7rem "Poppins",
-    sans-serif;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.stavia-chat-header h2 {
-  margin: 0;
-  color: var(--stav-ink);
-  font:
-    700 1.15rem "Poppins",
-    sans-serif;
-}
-
-.stavia-answer-header strong {
-  padding: 5px 10px;
-  border-radius: 7px;
-  background: #ecf7dc;
-  color: var(--stav-teal);
-  font:
-    600 0.78rem "Poppins",
-    sans-serif;
-}
-
-.stavia-empty-chat {
-  margin: 18px 0 0;
-  color: #706a58;
-  font:
-    500 0.92rem "Poppins",
-    sans-serif;
-}
-
-.stavia-chat-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 18px;
-  max-height: min(420px, 48vh);
-  padding-right: 6px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scroll-behavior: smooth;
-}
-
-.stavia-page--floating .stavia-chat-thread {
-  max-height: 174px;
-}
-
-.stavia-chat-message {
-  width: min(760px, 92%);
-  padding: 13px 15px;
-  border: 1px solid #ece4c8;
-  border-radius: 12px;
-  background: #fff;
-  color: #22251e;
-}
-
-.stavia-chat-message--usuario {
-  align-self: flex-end;
-  border-color: var(--stav-teal-700);
-  background: var(--stav-teal);
-  color: #fffef8;
-  border-bottom-right-radius: 4px;
-}
-
-.stavia-chat-message--stavia {
-  align-self: flex-start;
-  border-bottom-left-radius: 4px;
-}
-
-.stavia-chat-message > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.stavia-chat-message strong {
-  font:
-    600 0.84rem "Poppins",
-    sans-serif;
-}
-
-.stavia-chat-message span,
-.stavia-chat-message small {
-  color: #817864;
-  font-size: 0.74rem;
-}
-
-.stavia-chat-message--usuario span,
-.stavia-chat-message--usuario small {
-  color: #d8ead0;
-}
-
-.stavia-chat-message p,
-.stavia-answer-text {
-  margin: 0;
-  white-space: pre-line;
-  line-height: 1.65;
-}
-
-.stavia-chat-message small {
-  display: block;
-  margin-top: 10px;
-}
-
-.stavia-answer-text {
-  margin-top: 16px;
-  color: var(--stav-ink);
-  font-size: 1rem;
-}
-
-.stavia-warning-box {
-  display: grid;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 12px 14px;
-  border: 1px solid #e6d28c;
-  border-radius: 10px;
-  background: #fff8df;
-  color: #6d5310;
-}
-
-.stavia-warning-box p {
-  margin: 0;
-}
-
-.stavia-sources {
-  margin-top: 18px;
-}
-
-.stavia-sources h3 {
-  margin: 0 0 10px;
-  font:
-    700 1rem "Poppins",
-    sans-serif;
-}
-
-.stavia-source {
-  margin-top: 8px;
-  border: 1px solid rgb(2 105 101 / 14%);
-  border-radius: 10px;
-  background: #fbf8ed;
-}
-
-.stavia-source summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  cursor: pointer;
-}
-
-.stavia-source summary span {
-  font-weight: 600;
-}
-
-.stavia-source summary small {
-  color: #756b55;
-}
-
-.stavia-source pre {
-  max-height: 320px;
-  margin: 0;
-  padding: 12px 14px;
-  border-top: 1px solid rgb(2 105 101 / 14%);
-  color: #263026;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  overflow: auto;
-}
-
-/* ============================================================
    Responsive
    ============================================================ */
-@media (max-width: 920px) {
-  .stavia-launcher {
-    top: auto;
-    right: 16px;
-    bottom: 18px;
-    transform:
-      translate3d(
-        var(--stavia-launcher-x, 0),
-        var(--stavia-launcher-y, 0),
-        0
-      );
-  }
-
-  .stavia-launcher:hover,
-  .stavia-launcher:active,
-  .stavia-launcher.is-dragging {
-    transform:
-      translate3d(
-        var(--stavia-launcher-x, 0),
-        var(--stavia-launcher-y, 0),
-        0
-      )
-      scale(1.02);
-  }
-
+@media (max-width: 560px) {
   .stavia-floating-overlay {
-    padding: 70px 12px 14px;
+    padding: 26px 0 0;
+    background: rgb(13 24 22 / 25%);
   }
 
   .stavia-floating-card {
-    width: min(100%, calc(100vw - 24px));
-    border-radius: 18px;
+    width: 100%;
+    height: 100%;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .stavia-floating-card .stavia-shell,
+  .stavia-page .stavia-shell {
+    border: 0;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .stavia-floating-card .stavia-topbar,
+  .stavia-page .stavia-topbar {
+    border-radius: 18px 18px 0 0;
+  }
+
+  .stavia-composer-area {
+    border-radius: 0;
   }
 
   .stavia-page {
-    padding: 14px;
+    padding: 26px 0 0;
   }
 
-  .stavia-hero-panel {
-    padding: 22px 16px 20px;
-    border-radius: 18px;
-  }
-
-  .stavia-page--floating .stavia-hero-panel {
-    padding: 24px 16px 20px;
-    border-radius: 18px;
-  }
-
-  .stavia-page--floating .stavia-hero-header {
-    top: 12px;
-    right: 12px;
-  }
-
-  .stavia-intro-row,
-  .stavia-page--floating .stavia-intro-row {
-    grid-template-columns: 1fr;
-    gap: 14px;
-    min-height: 0;
-  }
-
-  .stavia-logo-card {
-    max-width: 320px;
-    min-height: 86px;
-  }
-
-  .stavia-logo-card img {
-    height: 94px;
-  }
-
-  .stavia-page--floating .stavia-logo-card {
-    transform: translateY(-54px);
-    margin-bottom: -50px;
-  }
-
-  .stavia-page--floating .stavia-intro-wrap {
-    padding: 0 50px 0 0;
-  }
-
-  .stavia-suggestion-crawl {
-    height: 168px;
-  }
-
-  .stavia-selected-context,
-  .stavia-attach-tray,
-  .stavia-context-modal-tools,
-  .stavia-context-option,
-  .stavia-workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .stavia-selected-context .stavia-secondary-action,
-  .stavia-attach-tray .stavia-primary-action {
+  .stavia-page .stavia-shell {
     width: 100%;
-    justify-content: center;
+    height: calc(100dvh - 26px);
   }
 
-  .stavia-context-option strong,
-  .stavia-context-option em,
-  .stavia-context-option small,
-  .stavia-selected-context strong {
-    white-space: normal;
+  .stavia-bubble {
+    max-width: 92%;
   }
-}
 
-@media (max-width: 560px) {
+  .stavia-attach-tray {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
   .stavia-launcher {
+    right: 16px;
+    bottom: 18px;
     width: 132px;
     height: 52px;
   }
@@ -1542,25 +1098,6 @@
   .stavia-launcher img {
     width: 102px;
     height: 36px;
-  }
-
-  .stavia-suggestion-crawl {
-    height: 150px;
-  }
-
-  .stavia-question-shell {
-    gap: 8px;
-    padding: 8px 10px;
-  }
-
-  .stavia-plus-button {
-    width: 42px;
-    height: 42px;
-  }
-
-  .stavia-send-button {
-    width: 44px;
-    height: 44px;
   }
 }
 
@@ -1572,41 +1109,20 @@
     animation: none;
   }
 
-  .stavia-suggestion-crawl {
-    height: auto;
-    overflow: visible;
-    perspective: none;
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
-
-  .stavia-suggestion-crawl-track {
-    position: static;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    transform: none;
+  .stavia-thinking span {
     animation: none;
   }
 
-  .stavia-suggestion-crawl-track button:nth-child(n + 7) {
-    display: none;
+  .stavia-icon-button.is-busy svg {
+    animation: none;
   }
 
-  .stavia-suggestion-crawl button {
-    position: static;
-    width: auto;
-    min-height: 52px;
-    padding: 12px 16px;
-    border: 1px solid rgb(255 255 255 / 55%);
-    border-radius: 10px;
-    background: rgb(255 255 255 / 22%);
-    color: #fff;
-    font:
-      italic 500 0.95rem / 1.3 "Poppins",
-      sans-serif;
-    text-align: left;
-    transform: none;
-    animation: none;
+  .stavia-thread {
+    scroll-behavior: auto;
+  }
+
+  .stavia-launcher,
+  .stavia-launcher::before {
+    transition: none;
   }
 }

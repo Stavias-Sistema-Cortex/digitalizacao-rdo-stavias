@@ -5,6 +5,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -40,11 +41,21 @@ public class RdoMemoryPublisher {
                 status
         );
 
-        memoryService.registrarEvento(
+        memoryService.registrarEventoDetalhado(
+                null,
                 "RDO",
                 rdoId,
                 "RDO_CRIADO",
                 FONTE,
+                obraId,
+                rdoId,
+                null,
+                relatedEntities(obraId, programacaoId),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(),
+                1,
                 payloadBase(
                         rdoId,
                         obraId,
@@ -73,11 +84,21 @@ public class RdoMemoryPublisher {
                 status
         );
 
-        memoryService.registrarEvento(
+        memoryService.registrarEventoDetalhado(
+                null,
                 "RDO",
                 rdoId,
                 "RDO_EDITADO",
                 FONTE,
+                obraId,
+                rdoId,
+                null,
+                relatedEntities(obraId, programacaoId),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(),
+                1,
                 payloadEdicao(
                         rdoId,
                         obraId,
@@ -105,11 +126,21 @@ public class RdoMemoryPublisher {
                 "ENVIADO"
         );
 
-        memoryService.registrarEvento(
+        memoryService.registrarEventoDetalhado(
+                null,
                 "RDO",
                 rdoId,
                 "RDO_ENVIADO",
                 FONTE,
+                obraId,
+                rdoId,
+                null,
+                relatedEntities(obraId, programacaoId),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(),
+                1,
                 payloadBase(
                         rdoId,
                         obraId,
@@ -153,11 +184,21 @@ public class RdoMemoryPublisher {
         payload.put("linha", linha);
         payload.put("fonteCriacao", "IMPORTACAO_HISTORICA");
 
-        memoryService.registrarEvento(
+        memoryService.registrarEventoDetalhado(
+                null,
                 "RDO",
                 rdoId,
                 "RDO_IMPORTADO",
                 "IMPORTACAO_HISTORICA",
+                obraId,
+                rdoId,
+                null,
+                relatedEntities(obraId, programacaoId),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(),
+                1,
                 payload
         );
     }
@@ -216,6 +257,7 @@ public class RdoMemoryPublisher {
         registrarEquipamentosRdo(rdoId);
         registrarMateriaisRdo(rdoId);
         registrarControlesGeometricosRdo(rdoId);
+        registrarFotosRdo(rdoId);
 
         memoryService.substituirRelacaoAtiva(
                 "RDO",
@@ -595,10 +637,110 @@ public class RdoMemoryPublisher {
         );
     }
 
+    private void registrarFotosRdo(String rdoId) {
+        jdbcTemplate.query(
+                """
+                SELECT
+                    id,
+                    nome,
+                    nome_original,
+                    mime_type,
+                    tamanho_original_bytes,
+                    tamanho_comprimido_bytes,
+                    sync_status,
+                    criado_em
+                FROM rdo_attachment
+                WHERE rdo_id = ?
+                  AND removido_em IS NULL
+                """,
+                resultSet -> {
+                    while (resultSet.next()) {
+                        String attachmentId = resultSet.getString("id");
+                        String nome = primeiroNaoVazio(
+                                resultSet.getString("nome"),
+                                resultSet.getString("nome_original"),
+                                attachmentId
+                        );
+
+                        memoryService.registrarObjeto(
+                                "RDO_FOTO",
+                                attachmentId,
+                                attachmentId,
+                                "Foto " + nome,
+                                resultSet.getString("sync_status"),
+                                FONTE,
+                                "rdo_attachment",
+                                metadataRdo(rdoId)
+                        );
+
+                        memoryService.registrarRelacaoAtiva(
+                                "RDO",
+                                rdoId,
+                                "RDO_FOTO",
+                                attachmentId,
+                                "POSSUI_FOTO",
+                                FONTE,
+                                "RDO possui foto registrada offline ou sincronizada."
+                        );
+
+                        Map<String, Object> fields = new LinkedHashMap<>();
+                        fields.put("nome", resultSet.getString("nome"));
+                        fields.put("nome_original", resultSet.getString("nome_original"));
+                        fields.put("mime_type", resultSet.getString("mime_type"));
+                        fields.put("tamanho_original_bytes", resultSet.getLong("tamanho_original_bytes"));
+                        fields.put("tamanho_comprimido_bytes", resultSet.getLong("tamanho_comprimido_bytes"));
+                        fields.put("sync_status", resultSet.getString("sync_status"));
+                        fields.put("criado_em", resultSet.getTimestamp("criado_em"));
+
+                        memoryService.registrarEvidencias(
+                                "RDO_FOTO",
+                                attachmentId,
+                                FONTE,
+                                fields
+                        );
+                    }
+
+                    return null;
+                },
+                rdoId
+        );
+    }
+
     private Map<String, Object> metadataRdo(String rdoId) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("rdoId", rdoId);
         return metadata;
+    }
+
+    private List<Map<String, Object>> relatedEntities(
+            String obraId,
+            String programacaoId
+    ) {
+        List<Map<String, Object>> related =
+                new java.util.ArrayList<>();
+
+        if (obraId != null && !obraId.isBlank()) {
+            Map<String, Object> obra = new LinkedHashMap<>();
+            obra.put("tipo", "OBRA");
+            obra.put("id", obraId);
+            related.add(obra);
+        }
+
+        if (
+                programacaoId != null
+                && !programacaoId.isBlank()
+        ) {
+            Map<String, Object> programacao =
+                    new LinkedHashMap<>();
+            programacao.put(
+                    "tipo",
+                    "PROGRAMACAO_OPERACIONAL"
+            );
+            programacao.put("id", programacaoId);
+            related.add(programacao);
+        }
+
+        return related;
     }
 
     private String primeiroNaoVazio(String... valores) {
@@ -732,6 +874,7 @@ public class RdoMemoryPublisher {
         payload.put("programacaoId", programacaoId);
         payload.put("numeroRdo", numeroRdo);
         payload.put("status", status);
+        payload.put("schemaVersion", 1);
 
         return payload;
     }

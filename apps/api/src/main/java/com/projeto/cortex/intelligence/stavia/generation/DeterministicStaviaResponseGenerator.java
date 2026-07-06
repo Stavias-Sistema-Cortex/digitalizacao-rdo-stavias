@@ -757,7 +757,18 @@ public class DeterministicStaviaResponseGenerator
 
     private boolean hasRdoRecordEvidence(List<StaviaEvidence> evidences) {
         return evidences.stream()
-                .anyMatch(evidence -> isRdoRecordType(evidence.type()));
+                .anyMatch(this::isStructuredRdoRecordEvidence);
+    }
+
+    private boolean isStructuredRdoRecordEvidence(
+            StaviaEvidence evidence
+    ) {
+        if (StaviaEvidenceTypes.RDO_ATTRIBUTE.equals(evidence.type())) {
+            return attributeText(evidence.attributes(), "campo")
+                    .contains(".");
+        }
+
+        return isRdoRecordType(evidence.type());
     }
 
     private boolean isRdoRecordType(String type) {
@@ -766,13 +777,16 @@ public class DeterministicStaviaResponseGenerator
                 StaviaEvidenceTypes.RDO_MAO_OBRA,
                 StaviaEvidenceTypes.RDO_EQUIPAMENTO,
                 StaviaEvidenceTypes.RDO_CONTROLE_GEOMETRICO,
-                StaviaEvidenceTypes.RDO_EXECUCAO_SERVICO
+                StaviaEvidenceTypes.RDO_EXECUCAO_SERVICO,
+                StaviaEvidenceTypes.RDO_ALOCACAO_COLABORADOR,
+                StaviaEvidenceTypes.RDO_ATTACHMENT,
+                StaviaEvidenceTypes.RDO_OPERATIONAL_EVENT
         ).contains(type);
     }
 
     private String buildRdoRecordAnswer(List<StaviaEvidence> evidences) {
         List<StaviaEvidence> records = evidences.stream()
-                .filter(evidence -> isRdoRecordType(evidence.type()))
+                .filter(this::isStructuredRdoRecordEvidence)
                 .toList();
 
         if (records.isEmpty()) {
@@ -3099,8 +3113,8 @@ public class DeterministicStaviaResponseGenerator
                                     StaviaEvidenceTypes.RDO_AGREGACAO.equals(
                                             evidence.type()
                                     )
-                                            || isRdoRecordType(
-                                                    evidence.type()
+                                            || isStructuredRdoRecordEvidence(
+                                                    evidence
                                             )
                             )
                             .toList();

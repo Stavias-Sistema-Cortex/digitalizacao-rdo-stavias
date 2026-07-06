@@ -2,8 +2,10 @@ package com.projeto.cortex.rdos;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
 public record RdoCreateRequest(
         String id,
@@ -44,7 +46,9 @@ public record RdoCreateRequest(
         List<MaterialItem> materiais,
         List<ControleGeometricoItem> controlesGeometricos,
         List<ServicoExecutadoItem> servicosExecutados,
-        List<AlocacaoColaboradorItem> alocacoesColaboradores
+        List<AlocacaoColaboradorItem> alocacoesColaboradores,
+        List<AttachmentItem> attachments,
+        List<OperationalEventItem> operationalEvents
 ) {
 
     public record MaoObraItem(
@@ -138,6 +142,51 @@ public record RdoCreateRequest(
             String status,
             BigDecimal custoHora,
             String observacoes
+    ) {
+    }
+
+    public record AttachmentItem(
+            String id,
+            String rdoId,
+            String obraId,
+            String tipo,
+            String nome,
+            String nomeOriginal,
+            String mimeType,
+            Long tamanhoOriginalBytes,
+            Long tamanhoComprimidoBytes,
+            Long tamanhoBytes,
+            String syncStatus,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            LocalDateTime removedAt,
+            Map<String, Object> metadata
+    ) {
+    }
+
+    public record OperationalEntityRef(
+            String tipo,
+            String id,
+            String nome
+    ) {
+    }
+
+    public record OperationalEventItem(
+            String id,
+            String type,
+            OperationalEntityRef principalEntity,
+            List<OperationalEntityRef> relatedEntities,
+            String obraId,
+            String rdoId,
+            String colaboradorId,
+            LocalDateTime occurredAt,
+            LocalDateTime syncedAt,
+            String origin,
+            String responsibleUserId,
+            String responsibleUserName,
+            Map<String, Object> payload,
+            String syncStatus,
+            Integer schemaVersion
     ) {
     }
 }

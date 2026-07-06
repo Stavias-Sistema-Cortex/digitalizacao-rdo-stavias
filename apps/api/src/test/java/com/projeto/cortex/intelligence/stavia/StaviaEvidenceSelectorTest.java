@@ -29,6 +29,18 @@ class StaviaEvidenceSelectorTest {
                         List.of(
                                 evidence(StaviaEvidenceTypes.RDO, "rdo-1"),
                                 evidence(
+                                        StaviaEvidenceTypes.RDO_ALOCACAO_COLABORADOR,
+                                        "alocacao-rdo-1"
+                                ),
+                                evidence(
+                                        StaviaEvidenceTypes.RDO_ATTACHMENT,
+                                        "foto-rdo-1"
+                                ),
+                                evidence(
+                                        StaviaEvidenceTypes.RDO_OPERATIONAL_EVENT,
+                                        "evento-rdo-1"
+                                ),
+                                evidence(
                                         StaviaEvidenceTypes.EVENTO_OPERACIONAL,
                                         "evento-1"
                                 ),
@@ -45,6 +57,9 @@ class StaviaEvidenceSelectorTest {
         ).extracting(StaviaEvidence::type)
                 .containsExactly(
                         StaviaEvidenceTypes.RDO,
+                        StaviaEvidenceTypes.RDO_ALOCACAO_COLABORADOR,
+                        StaviaEvidenceTypes.RDO_ATTACHMENT,
+                        StaviaEvidenceTypes.RDO_OPERATIONAL_EVENT,
                         StaviaEvidenceTypes.RELACAO_ONTOLOGICA
                 );
 

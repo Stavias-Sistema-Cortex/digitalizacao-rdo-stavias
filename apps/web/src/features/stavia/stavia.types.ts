@@ -84,18 +84,26 @@ export interface StaviaSnapshotObra {
 }
 
 export interface StaviaSnapshotMaoObra {
+  colaboradorId: string | null;
   nomeColaborador: string | null;
   cargo: string | null;
   tipoVinculo: string | null;
   quantidade: number | string | null;
+  horaInicio: string | null;
+  horaFim: string | null;
+  observacoes: string | null;
 }
 
 export interface StaviaSnapshotEquipamento {
+  assetId: string | null;
   prefixo: string | null;
   descricao: string | null;
   tipoEquipamento: string | null;
   tipoVinculo: string | null;
   quantidade: number | string | null;
+  horaInicio: string | null;
+  horaFim: string | null;
+  observacoes: string | null;
 }
 
 export interface StaviaSnapshotMaterial {
@@ -105,11 +113,16 @@ export interface StaviaSnapshotMaterial {
   quantidadeUsinada: number | string | null;
   quantidadeAplicada: number | string | null;
   quantidadeSobra: number | string | null;
+  notaFiscal: string | null;
+  fornecedor: string | null;
+  observacoes: string | null;
 }
 
 export interface StaviaSnapshotControleGeometrico {
   subtrecho: string | null;
   numero: string | null;
+  estacaInicial: string | null;
+  estacaFinal: string | null;
   kmInicial: string | null;
   kmFinal: string | null;
   pista: string | null;
@@ -117,9 +130,16 @@ export interface StaviaSnapshotControleGeometrico {
   ordemServico: string | null;
   comprimentoM: number | string | null;
   larguraM: number | string | null;
+  espessura1Cm: number | string | null;
+  espessura2Cm: number | string | null;
+  espessura3Cm: number | string | null;
+  espessuraMediaCm: number | string | null;
   areaM2: number | string | null;
   volumeM3: number | string | null;
+  densidade: number | string | null;
+  massaTonelada: number | string | null;
   atividadeObservacoes: string | null;
+  observacoes: string | null;
 }
 
 export interface StaviaSnapshotAlocacao {
@@ -129,21 +149,73 @@ export interface StaviaSnapshotAlocacao {
   servicoNome: string | null;
   horaInicio: string | null;
   horaFim: string | null;
+  minutos: number | string | null;
+  percentualDia: number | string | null;
   turno: string | null;
   funcao: string | null;
+  centroCusto: string | null;
+  tipoAlocacao: string | null;
+  fonte: string | null;
   status: string | null;
+  custoHora: number | string | null;
+  custoTotal: number | string | null;
+  observacoes: string | null;
 }
 
 export interface StaviaSnapshotServicoExecutado {
   servicoNome: string | null;
+  itemContratualId: string | null;
   quantidadeExecutada: number | string | null;
   unidade: string | null;
   trechoInicial: string | null;
   trechoFinal: string | null;
   localizacao: string | null;
+  dataExecucao: string | null;
   turno: string | null;
   statusValidacao: string | null;
+  estadoReceita: string | null;
+  receitaOperacionalEstimativa: number | string | null;
+  custoRealizado: number | string | null;
+  retrabalho: boolean | string | null;
+  producaoRejeitada: boolean | string | null;
   observacoes: string | null;
+}
+
+export interface StaviaSnapshotAttachment {
+  id: string;
+  rdoId: string;
+  obraId: string | null;
+  tipo: string | null;
+  nome: string | null;
+  nomeOriginal: string | null;
+  mimeType: string | null;
+  tamanhoOriginalBytes: number | string | null;
+  tamanhoComprimidoBytes: number | string | null;
+  tamanhoBytes: number | string | null;
+  syncStatus: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  removedAt: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface StaviaSnapshotOperationalEvent {
+  id: string;
+  type: string;
+  principalEntityType: string;
+  principalEntityId: string;
+  obraId: string | null;
+  rdoId: string | null;
+  colaboradorId: string | null;
+  occurredAt: string | null;
+  syncedAt: string | null;
+  origin: string | null;
+  syncStatus: string | null;
+  responsibleUserId: string | null;
+  responsibleUserName: string | null;
+  schemaVersion: number | string | null;
+  relatedEntities: unknown;
+  payload: Record<string, unknown> | null;
 }
 
 export interface StaviaSnapshotRdo {
@@ -152,6 +224,7 @@ export interface StaviaSnapshotRdo {
   programacaoId: string | null;
   numeroRdo: string | null;
   dataRdo: string | null;
+  diaSemana: string | null;
   cliente: string | null;
   cidade: string | null;
   contrato: string | null;
@@ -169,6 +242,19 @@ export interface StaviaSnapshotRdo {
   condicaoNoite: string | null;
   pluviometriaMm: number | string | null;
   status: string | null;
+  fonteCriacao: string | null;
+  estadoReceita: string | null;
+  fonteArquivo: string | null;
+  abaOrigem: string | null;
+  linhaOrigem: number | string | null;
+  dataOriginal: string | null;
+  dataImportacao: string | null;
+  usuarioImportacao: string | null;
+  criadoEm: string | null;
+  enviadoEm: string | null;
+  aprovadoEm: string | null;
+  versaoLinha: number | string | null;
+  syncStatus: string | null;
   observacoes: string | null;
   preenchidoPor: string | null;
   apontadorRdo: string | null;
@@ -181,6 +267,7 @@ export interface StaviaSnapshotRdo {
   materiais: StaviaSnapshotMaterial[];
   controlesGeometricos: StaviaSnapshotControleGeometrico[];
   alocacoesColaboradores: StaviaSnapshotAlocacao[];
+  attachments: StaviaSnapshotAttachment[];
 }
 
 export interface StaviaSnapshotProgramacao {
@@ -242,5 +329,6 @@ export interface StaviaSnapshot {
   rdos: StaviaSnapshotRdo[];
   programacoes: StaviaSnapshotProgramacao[];
   pdocs: StaviaSnapshotPdoc[];
+  operationalEvents: StaviaSnapshotOperationalEvent[];
   ontology?: unknown;
 }

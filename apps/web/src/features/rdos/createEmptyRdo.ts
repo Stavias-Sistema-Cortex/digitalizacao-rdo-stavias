@@ -29,6 +29,9 @@ export function createEmptyMaoObra(): MaoObraDraft {
     cargo: "",
     tipoVinculo: "CONTRATADO",
     quantidade: 1,
+    horaInicio: "",
+    horaFim: "",
+    observacoes: "",
   };
 }
 
@@ -41,6 +44,9 @@ export function createEmptyEquipamento(): EquipamentoDraft {
     tipoEquipamento: "",
     tipoVinculo: "PROPRIO",
     quantidade: 1,
+    horaInicio: "",
+    horaFim: "",
+    observacoes: "",
   };
 }
 
@@ -157,6 +163,7 @@ export function createEmptyRdo(): RdoDraft {
     equipamentos: [createEmptyEquipamento()],
     materiais: [createEmptyMaterial()],
     controlesGeometricos: [createEmptyControleGeometrico()],
+    attachments: [],
     syncStatus: "LOCAL_ONLY",
   };
 }

@@ -32,6 +32,15 @@ public final class StaviaEvidenceTypes {
     public static final String RDO_EXECUCAO_SERVICO =
             "RDO_EXECUCAO_SERVICO";
 
+    public static final String RDO_ALOCACAO_COLABORADOR =
+            "RDO_ALOCACAO_COLABORADOR";
+
+    public static final String RDO_ATTACHMENT =
+            "RDO_ATTACHMENT";
+
+    public static final String RDO_OPERATIONAL_EVENT =
+            "RDO_OPERATIONAL_EVENT";
+
     public static final String RDO_AGREGACAO =
             "RDO_AGREGACAO";
 

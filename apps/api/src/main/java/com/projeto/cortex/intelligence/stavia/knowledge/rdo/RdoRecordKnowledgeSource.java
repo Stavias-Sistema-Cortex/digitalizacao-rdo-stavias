@@ -161,7 +161,10 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
         for (Map.Entry<RdoOntologyEntity, List<RdoOntologyAttribute>> entry
                 : requested.entrySet()) {
             RdoOntologyEntity entity = entry.getKey();
-            String identity = identityTerm(plan, entity);
+            Integer ordinal = ordinal(plan, entity);
+            String identity = ordinal == null
+                    ? identityTerm(plan, entity)
+                    : null;
 
             RdoRecordQuery query = new RdoRecordQuery(
                     request.worksiteId(),
@@ -175,13 +178,23 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
             List<Map<String, Object>> records =
                     reader.findRecords(entity, query);
 
+            if (ordinal != null) {
+                records = recordAtOrdinal(records, ordinal);
+            }
+
             for (Map<String, Object> record : records) {
                 evidences.addAll(
-                        recordEvidences(entity, entry.getValue(), record)
+                        recordEvidences(
+                                entity,
+                                entry.getValue(),
+                                record,
+                                ordinal
+                        )
                 );
             }
 
-            if (evidences.isEmpty() && identity != null) {
+            if (evidences.isEmpty()
+                    && (identity != null || ordinal != null)) {
                 evidences.addAll(
                         availableItemsEvidences(request, entity, query)
                 );
@@ -243,10 +256,11 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
     private List<StaviaEvidence> recordEvidences(
             RdoOntologyEntity entity,
             List<RdoOntologyAttribute> attributes,
-            Map<String, Object> record
+            Map<String, Object> record,
+            Integer ordinal
     ) {
         List<StaviaEvidence> evidences = new ArrayList<>();
-        String itemLabel = itemLabel(entity, record);
+        String itemLabel = itemLabel(entity, record, ordinal);
 
         for (RdoOntologyAttribute attribute : attributes) {
             String value = text(record, attribute.name());
@@ -323,7 +337,7 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
 
         for (Map<String, Object> record
                 : reader.findRecords(entity, fallback)) {
-            String itemLabel = itemLabel(entity, record);
+            String itemLabel = itemLabel(entity, record, null);
 
             if (itemLabel == null) {
                 continue;
@@ -473,18 +487,47 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
 
     private String itemLabel(
             RdoOntologyEntity entity,
-            Map<String, Object> record
+            Map<String, Object> record,
+            Integer ordinal
     ) {
+        String ordinalLabel = ordinalLabel(entity, ordinal);
+
         for (RdoOntologyAttribute attribute
                 : entity.identityAttributes()) {
             String value = text(record, attribute.name());
 
             if (value != null) {
+                if ("rdo".equals(entity.name())
+                        && "numeroRdo".equals(attribute.name())) {
+                    return "RDO " + value;
+                }
+
+                if (ordinalLabel != null) {
+                    return ordinalLabel + " (" + value + ")";
+                }
+
                 return value;
             }
         }
 
-        return null;
+        return ordinalLabel;
+    }
+
+    private String ordinalLabel(
+            RdoOntologyEntity entity,
+            Integer ordinal
+    ) {
+        if (ordinal == null || ordinal < 1) {
+            return null;
+        }
+
+        return switch (entity.name()) {
+            case "controleGeometrico" -> "Trecho " + ordinal;
+            case "attachment" -> "Foto " + ordinal;
+            case "alocacaoColaborador" -> "Alocação " + ordinal;
+            case "operationalEvent" -> "Evento " + ordinal;
+            default -> null;
+        };
     }
 
     private String unit(
@@ -565,6 +608,45 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
                 .map(ResolvedEntity::value)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private Integer ordinal(
+            StaviaQueryPlan plan,
+            RdoOntologyEntity entity
+    ) {
+        String expectedType =
+                entity.name().toUpperCase(Locale.ROOT);
+
+        return plan.entities().stream()
+                .filter(resolved ->
+                        expectedType.equals(resolved.type())
+                                && "ORDINAL".equals(resolved.resolvedBy())
+                                && resolved.value() != null
+                )
+                .map(ResolvedEntity::value)
+                .map(this::parsePositiveInteger)
+                .filter(value -> value != null && value > 0)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Integer parsePositiveInteger(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private List<Map<String, Object>> recordAtOrdinal(
+            List<Map<String, Object>> records,
+            int ordinal
+    ) {
+        if (ordinal < 1 || ordinal > records.size()) {
+            return List.of();
+        }
+
+        return List.of(records.get(ordinal - 1));
     }
 
     private String selectedRdoId(StaviaKnowledgeRequest request) {

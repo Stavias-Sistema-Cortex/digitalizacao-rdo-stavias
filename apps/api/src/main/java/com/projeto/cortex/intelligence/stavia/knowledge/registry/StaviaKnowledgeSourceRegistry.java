@@ -15,6 +15,8 @@ public class StaviaKnowledgeSourceRegistry {
 
     private static final String FLEXIBLE_CONTEXT_SOURCE =
             "contexto-operacional-flexivel";
+    private static final String RDO_RECORD_SOURCE =
+            "registros-rdo";
 
     public List<StaviaKnowledgeSource> select(
             List<StaviaKnowledgeSource> sources,
@@ -68,6 +70,10 @@ public class StaviaKnowledgeSourceRegistry {
         }
 
         List<StaviaKnowledgeSource> selected = new ArrayList<>(matching);
+        if (requiredSources.contains(RDO_RECORD_SOURCE)) {
+            return List.copyOf(selected);
+        }
+
         supported.stream()
                 .filter(this::isFlexibleContextSource)
                 .filter(source -> !selected.contains(source))

@@ -19,6 +19,13 @@ import java.util.regex.Pattern;
  */
 public class RdoRecordSqlBuilder {
 
+    private static final String ALLOCATION_ENTITY =
+            "alocacaoColaborador";
+    private static final String ALLOCATION_COLLABORATOR_NAME =
+            "nome_colaborador";
+    private static final String OPERATIONAL_EVENT_ENTITY =
+            "operationalEvent";
+
     private static final Pattern SAFE_IDENTIFIER =
             Pattern.compile("[a-z0-9_]+");
 
@@ -34,17 +41,18 @@ public class RdoRecordSqlBuilder {
 
         for (RdoOntologyAttribute attribute : entity.attributes()) {
             sql.append(", ")
-                    .append(column(entity, attribute.column()));
+                    .append(selectColumn(entity, attribute.column()));
         }
 
         for (String unitColumn : unitColumns(entity)) {
             sql.append(", ")
-                    .append(column(entity, unitColumn));
+                    .append(selectColumn(entity, unitColumn));
         }
 
         sql.append(fromClause(entity));
         sql.append(whereClause(entity, query));
-        sql.append(" ORDER BY r.data_rdo DESC, r.id DESC LIMIT ?");
+        sql.append(orderByClause(entity));
+        sql.append(" LIMIT ?");
 
         return sql.toString();
     }
@@ -143,6 +151,14 @@ public class RdoRecordSqlBuilder {
     private String fromClause(RdoOntologyEntity entity) {
         if (entity.header()) {
             return " FROM rdo r";
+        }
+
+        if (isAllocationEntity(entity)) {
+            return " FROM "
+                    + safeIdentifier(entity.table())
+                    + " t JOIN rdo r ON r.id = t.rdo_id"
+                    + " LEFT JOIN colaborador c"
+                    + " ON c.id = t.colaborador_id";
         }
 
         return " FROM "
@@ -248,8 +264,80 @@ public class RdoRecordSqlBuilder {
     }
 
     private String column(RdoOntologyEntity entity, String name) {
+        if (isAllocationEntity(entity)
+                && ALLOCATION_COLLABORATOR_NAME.equals(name)) {
+            return "c.nome";
+        }
+
         String prefix = entity.header() ? "r." : "t.";
         return prefix + safeIdentifier(name);
+    }
+
+    private String selectColumn(RdoOntologyEntity entity, String name) {
+        if (entity.header() && "sync_status".equals(name)) {
+            return "'SYNCED' AS sync_status";
+        }
+
+        if (isAllocationEntity(entity)
+                && ALLOCATION_COLLABORATOR_NAME.equals(name)) {
+            return "c.nome AS nome_colaborador";
+        }
+
+        if (isOperationalEventEntity(entity)) {
+            if ("responsible_user_id".equals(name)) {
+                return "COALESCE("
+                        + "JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, "
+                        + "'$.responsibleUserId')), "
+                        + "CONVERT(t.usuario_id USING utf8mb4)"
+                        + ") AS responsible_user_id";
+            }
+
+            if ("responsible_user_name".equals(name)) {
+                return "JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, "
+                        + "'$.responsibleUserName')) "
+                        + "AS responsible_user_name";
+            }
+        }
+
+        return column(entity, name);
+    }
+
+    private boolean isAllocationEntity(RdoOntologyEntity entity) {
+        return ALLOCATION_ENTITY.equals(entity.name());
+    }
+
+    private boolean isOperationalEventEntity(RdoOntologyEntity entity) {
+        return OPERATIONAL_EVENT_ENTITY.equals(entity.name());
+    }
+
+    private String orderByClause(RdoOntologyEntity entity) {
+        return switch (entity.name()) {
+            case "material" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "maoObra" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "equipamento" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "controleGeometrico" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "execucaoServico" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "alocacaoColaborador" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "attachment" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.criado_em, t.id";
+            case "operationalEvent" ->
+                    " ORDER BY r.data_rdo DESC, r.id DESC, "
+                            + "t.ocorrido_em DESC, t.commit_seq DESC";
+            default -> " ORDER BY r.data_rdo DESC, r.id DESC";
+        };
     }
 
     private String safeIdentifier(String value) {

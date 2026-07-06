@@ -3,8 +3,10 @@ import type {
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
+  OperationalEventRecord,
   OutboxMutationRecord,
   ProcessedEventRecord,
+  RdoAttachmentRecord,
 } from "../db/db.types";
 import type {
   SyncPullEvent,
@@ -38,6 +40,40 @@ interface RdoChildSyncTransaction {
   ) => RdoChildStoreUpdater;
 }
 
+interface OperationalEventStoreUpdater {
+  index: (name: "by-rdo-id") => {
+    getAll: (
+      query: string,
+    ) => Promise<OperationalEventRecord[]>;
+  };
+  put: (
+    value: OperationalEventRecord,
+  ) => Promise<IDBValidKey>;
+}
+
+interface OperationalEventSyncTransaction {
+  objectStore: (
+    name: "operational_events",
+  ) => OperationalEventStoreUpdater;
+}
+
+interface RdoAttachmentStoreUpdater {
+  index: (name: "by-rdo-id") => {
+    getAll: (
+      query: string,
+    ) => Promise<RdoAttachmentRecord[]>;
+  };
+  put: (
+    value: RdoAttachmentRecord,
+  ) => Promise<IDBValidKey>;
+}
+
+interface RdoAttachmentSyncTransaction {
+  objectStore: (
+    name: "rdo_attachments",
+  ) => RdoAttachmentStoreUpdater;
+}
+
 const RDO_CHILD_STORE_NAMES = [
   "rdoMaoObra",
   "rdoEquipamentos",
@@ -48,6 +84,8 @@ const RDO_CHILD_STORE_NAMES = [
 const RDO_SYNC_TRANSACTION_STORES = [
   "outbox_mutations",
   "rdos",
+  "operational_events",
+  "rdo_attachments",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -74,6 +112,53 @@ async function updateRdoChildrenSyncStatus(
         ),
       );
     }),
+  );
+}
+
+async function updateRdoOperationalEventsSyncStatus(
+  transaction: OperationalEventSyncTransaction,
+  rdoId: string,
+  syncStatus: OperationalEventRecord["syncStatus"],
+  timestamp: string,
+): Promise<void> {
+  const store = transaction.objectStore("operational_events");
+
+  const records = await store.index("by-rdo-id").getAll(rdoId);
+
+  await Promise.all(
+    records
+      .filter((record) => record.syncStatus !== "SYNCED")
+      .map((record) =>
+        store.put({
+          ...record,
+          syncStatus,
+          syncedAt:
+            syncStatus === "SYNCED" ? timestamp : record.syncedAt,
+        }),
+      ),
+  );
+}
+
+async function updateRdoAttachmentsSyncStatus(
+  transaction: RdoAttachmentSyncTransaction,
+  rdoId: string,
+  syncStatus: RdoAttachmentRecord["syncStatus"],
+  timestamp: string,
+): Promise<void> {
+  const store = transaction.objectStore("rdo_attachments");
+
+  const records = await store.index("by-rdo-id").getAll(rdoId);
+
+  await Promise.all(
+    records
+      .filter((record) => record.syncStatus !== "SYNCED")
+      .map((record) =>
+        store.put({
+          ...record,
+          syncStatus,
+          updatedAt: timestamp,
+        }),
+      ),
   );
 }
 
@@ -118,10 +203,192 @@ export async function recoverInterruptedMutations(): Promise<void> {
         "PENDING_SYNC",
         nowUtc(),
       );
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        nowUtc(),
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        nowUtc(),
+      );
     }
   }
 
   await transaction.done;
+}
+
+export async function queueErroredMutationsForRetry(): Promise<number> {
+  const database = await getCortexDb();
+  const timestamp = nowUtc();
+
+  const transaction = database.transaction(
+    RDO_SYNC_TRANSACTION_STORES,
+    "readwrite",
+  );
+
+  const outboxStore =
+    transaction.objectStore("outbox_mutations");
+  const rdoStore = transaction.objectStore("rdos");
+
+  const erroredMutations =
+    await outboxStore.index("by-status").getAll("ERROR");
+
+  for (const mutation of erroredMutations) {
+    await outboxStore.put({
+      ...mutation,
+      status: "PENDING",
+      ultimoErro:
+        "Tentando novamente após correção da sincronização.",
+      updatedAt: timestamp,
+    });
+
+    const rdo = await rdoStore.get(mutation.entidadeId);
+
+    if (rdo) {
+      await rdoStore.put({
+        ...rdo,
+        syncStatus: "PENDING_SYNC",
+        updatedAt: timestamp,
+      });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+    }
+  }
+
+  await transaction.done;
+
+  return erroredMutations.length;
+}
+
+function conflictServerVersion(
+  mutation: OutboxMutationRecord,
+): number | null {
+  const version = mutation.conflito?.versaoAtual;
+
+  if (typeof version === "number" && Number.isFinite(version)) {
+    return version;
+  }
+
+  return null;
+}
+
+export function mutationAfterResolvableConflict(
+  mutation: OutboxMutationRecord,
+  timestamp: string,
+  clientMutationId = crypto.randomUUID(),
+): OutboxMutationRecord | null {
+  if (mutation.status !== "CONFLICT") {
+    return null;
+  }
+
+  const serverVersion = conflictServerVersion(mutation);
+  if (serverVersion === null) {
+    return null;
+  }
+
+  return {
+    ...mutation,
+    clientMutationId,
+    baseVersao: serverVersion,
+    status: "PENDING",
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    ultimoErro:
+      "Reenviando após atualizar a versão base do servidor.",
+    conflito: null,
+    criadaNoClienteEm: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+export async function queueResolvableConflictsForRetry(): Promise<number> {
+  const database = await getCortexDb();
+  const timestamp = nowUtc();
+
+  const transaction = database.transaction(
+    RDO_SYNC_TRANSACTION_STORES,
+    "readwrite",
+  );
+
+  const outboxStore =
+    transaction.objectStore("outbox_mutations");
+  const rdoStore = transaction.objectStore("rdos");
+
+  const conflictedMutations =
+    await outboxStore.index("by-status").getAll("CONFLICT");
+
+  let queued = 0;
+
+  for (const mutation of conflictedMutations) {
+    const retryMutation = mutationAfterResolvableConflict(
+      mutation,
+      timestamp,
+    );
+
+    if (!retryMutation) {
+      continue;
+    }
+
+    await outboxStore.delete(mutation.clientMutationId);
+    await outboxStore.add(retryMutation);
+
+    const rdo = await rdoStore.get(mutation.entidadeId);
+
+    if (rdo) {
+      await rdoStore.put({
+        ...rdo,
+        syncStatus: "PENDING_SYNC",
+        versaoEntidade: retryMutation.baseVersao,
+        updatedAt: timestamp,
+      });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+    }
+
+    queued += 1;
+  }
+
+  await transaction.done;
+
+  return queued;
 }
 
 export async function markMutationAsSyncing(
@@ -179,6 +446,18 @@ export async function markMutationAsSyncing(
     });
 
     await updateRdoChildrenSyncStatus(
+      transaction,
+      currentMutation.entidadeId,
+      "SYNCING",
+      timestamp,
+    );
+    await updateRdoOperationalEventsSyncStatus(
+      transaction,
+      currentMutation.entidadeId,
+      "SYNCING",
+      timestamp,
+    );
+    await updateRdoAttachmentsSyncStatus(
       transaction,
       currentMutation.entidadeId,
       "SYNCING",
@@ -277,6 +556,18 @@ export async function applyPushResultAtomically(
         "SYNCED",
         timestamp,
       );
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNCED",
+        timestamp,
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNCED",
+        timestamp,
+      );
     }
   } else if (result.status === "DESCARTADA") {
     await outboxStore.put({
@@ -297,6 +588,18 @@ export async function applyPushResultAtomically(
         transaction,
         mutation.entidadeId,
         "CONFLICT",
+        timestamp,
+      );
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNC_FAILED",
+        timestamp,
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNC_FAILED",
         timestamp,
       );
     }
@@ -321,6 +624,18 @@ export async function applyPushResultAtomically(
         transaction,
         mutation.entidadeId,
         "ERROR",
+        timestamp,
+      );
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNC_FAILED",
+        timestamp,
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNC_FAILED",
         timestamp,
       );
     }
@@ -370,6 +685,18 @@ export async function returnMutationToPending(
     });
 
     await updateRdoChildrenSyncStatus(
+      transaction,
+      mutation.entidadeId,
+      "PENDING_SYNC",
+      timestamp,
+    );
+    await updateRdoOperationalEventsSyncStatus(
+      transaction,
+      mutation.entidadeId,
+      "PENDING_SYNC",
+      timestamp,
+    );
+    await updateRdoAttachmentsSyncStatus(
       transaction,
       mutation.entidadeId,
       "PENDING_SYNC",

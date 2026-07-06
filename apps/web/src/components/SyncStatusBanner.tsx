@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -144,6 +145,8 @@ export function SyncStatusBanner() {
     useState("");
   const [isManualSyncing, setIsManualSyncing] =
     useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const displayedStatus: SyncUiStatus =
     manualSyncError ? "ERROR" : snapshot.status;
@@ -172,9 +175,14 @@ export function SyncStatusBanner() {
 
   const visibleSyncError =
     manualSyncError ||
-    (displayedStatus === "ERROR"
+    (displayedStatus === "ERROR" || displayedStatus === "CONFLICT"
       ? snapshot.lastSyncError
       : null);
+
+  const attentionCount =
+    snapshot.pendingCount +
+    snapshot.errorCount +
+    snapshot.conflictCount;
 
   useEffect(() => {
     if (
@@ -182,13 +190,50 @@ export function SyncStatusBanner() {
       !snapshot.lastSyncError &&
       snapshot.status !== "ERROR"
     ) {
-      setManualSyncError("");
+      const resetId = window.setTimeout(() => {
+        setManualSyncError("");
+      }, 0);
+
+      return () => window.clearTimeout(resetId);
     }
+
+    return undefined;
   }, [
     manualSyncError,
     snapshot.lastSyncError,
     snapshot.status,
   ]);
+
+  // Fecha o popover ao clicar fora ou pressionar Escape.
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (
+        rootRef.current &&
+        event.target instanceof Node &&
+        !rootRef.current.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
 
   async function handleSyncNow(): Promise<void> {
     setIsManualSyncing(true);
@@ -208,58 +253,94 @@ export function SyncStatusBanner() {
     }
   }
 
+  const chipTitle = snapshot.isLoading
+    ? "Verificando sincronização"
+    : content.title;
+
   return (
-    <aside
-      className={`sync-banner sync-banner--${displayedStatus.toLowerCase()}`}
-      role="status"
-      aria-live="polite"
+    <div
+      ref={rootRef}
+      className={`sync-chip sync-chip--${displayedStatus.toLowerCase()}`}
     >
-      <div className="sync-banner__indicator">
-        <span
-          className="sync-banner__dot"
+      <button
+        type="button"
+        className="sync-chip__button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        aria-label={`Sincronização: ${chipTitle}`}
+        title={chipTitle}
+      >
+        <svg
+          className="sync-chip__icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
           aria-hidden="true"
-        />
+        >
+          <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+          <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+          <path d="M3 21v-5h5" />
+          <path d="M21 3v5h-5" />
+        </svg>
+        <span className="sync-chip__dot" aria-hidden="true" />
+        {attentionCount > 0 ? (
+          <span className="sync-chip__count" aria-hidden="true">
+            {attentionCount > 9 ? "9+" : attentionCount}
+          </span>
+        ) : null}
+      </button>
 
-        <div>
-          <strong>
-            {snapshot.isLoading
-              ? "Verificando sincronização"
-              : content.title}
-          </strong>
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {chipTitle}
+      </span>
 
-          <p>
+      {isOpen ? (
+        <div
+          className="sync-chip__popover"
+          role="dialog"
+          aria-label="Estado da sincronização"
+        >
+          <div className="sync-chip__header">
+            <span className="sync-chip__header-dot" aria-hidden="true" />
+            <strong>{chipTitle}</strong>
+          </div>
+
+          <p className="sync-chip__description">
             {snapshot.isLoading
               ? "Consultando o estado local."
               : content.description}
           </p>
+
+          <p className="sync-chip__meta">
+            {lastSyncText
+              ? `Última sincronização: ${lastSyncText}`
+              : "Ainda não sincronizado"}
+          </p>
+
+          {visibleSyncError && (
+            <p className="sync-chip__error">
+              {visibleSyncError}
+            </p>
+          )}
+
+          <button
+            type="button"
+            className="sync-chip__action"
+            onClick={() => {
+              void handleSyncNow();
+            }}
+            disabled={isManualSyncing}
+          >
+            {isManualSyncing
+              ? "Sincronizando..."
+              : "Sincronizar agora"}
+          </button>
         </div>
-      </div>
-
-      <div className="sync-banner__metadata">
-        <span>
-          {lastSyncText
-            ? `Última sincronização: ${lastSyncText}`
-            : "Ainda não sincronizado"}
-        </span>
-
-        {visibleSyncError && (
-          <span className="sync-banner__error">
-            {visibleSyncError}
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={() => {
-            void handleSyncNow();
-          }}
-          disabled={isManualSyncing}
-        >
-          {isManualSyncing
-            ? "Sincronizando"
-            : "Sincronizar agora"}
-        </button>
-      </div>
-    </aside>
+      ) : null}
+    </div>
   );
 }

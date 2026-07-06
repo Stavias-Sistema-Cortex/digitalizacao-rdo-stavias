@@ -98,7 +98,8 @@ public class RdoOperationalDetailService {
                     receita_operacional_estimativa,
                     custo_realizado,
                     retrabalho,
-                    producao_rejeitada
+                    producao_rejeitada,
+                    observacoes
                 FROM execucao_servico_rdo
                 WHERE rdo_id = ?
                   AND cancelada = 0
@@ -119,7 +120,8 @@ public class RdoOperationalDetailService {
                         rs.getBigDecimal("receita_operacional_estimativa"),
                         rs.getBigDecimal("custo_realizado"),
                         rs.getBoolean("retrabalho"),
-                        rs.getBoolean("producao_rejeitada")
+                        rs.getBoolean("producao_rejeitada"),
+                        rs.getString("observacoes")
                 ),
                 rdoId
         );
@@ -146,7 +148,8 @@ public class RdoOperationalDetailService {
                     fonte,
                     status,
                     custo_hora,
-                    custo_total
+                    custo_total,
+                    observacoes
                 FROM alocacao_colaborador
                 WHERE rdo_id = ?
                   AND status <> 'CANCELADA'
@@ -168,7 +171,8 @@ public class RdoOperationalDetailService {
                         rs.getString("fonte"),
                         rs.getString("status"),
                         rs.getBigDecimal("custo_hora"),
-                        rs.getBigDecimal("custo_total")
+                        rs.getBigDecimal("custo_total"),
+                        rs.getString("observacoes")
                 ),
                 rdoId
         );
@@ -331,7 +335,8 @@ public class RdoOperationalDetailService {
                     receita,
                     custoRealizado,
                     retrabalho,
-                    producaoRejeitada
+                    producaoRejeitada,
+                    item.observacoes()
             ));
         }
 
@@ -486,7 +491,8 @@ public class RdoOperationalDetailService {
                     primeiroNaoVazio(item.fonte(), "RDO"),
                     status,
                     custoHora,
-                    custoTotal
+                    custoTotal,
+                    item.observacoes()
             ));
         }
 

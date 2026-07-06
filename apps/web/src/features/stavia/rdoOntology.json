@@ -12,13 +12,48 @@
       "filter": null,
       "aliases": ["rdo", "rdos", "relatorio diario", "relatorios diarios"],
       "attributes": [
+        {"name": "id", "column": "id", "label": "ID do RDO", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do rdo", "identificador do rdo", "id ontologico do rdo"], "aggregable": false, "identity": false},
+        {"name": "obraId", "column": "obra_id", "label": "ID da obra", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id da obra", "obra do rdo", "obra vinculada ao rdo"], "aggregable": false, "identity": false},
+        {"name": "programacaoId", "column": "programacao_id", "label": "ID da programação", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id da programacao", "id da programação", "programacao vinculada", "programação vinculada"], "aggregable": false, "identity": false},
+        {"name": "numeroRdo", "column": "numero_rdo", "label": "Número do RDO", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["numero do rdo", "número do rdo", "rdo numero", "rdo número"], "aggregable": false, "identity": true},
         {"name": "dataRdo", "column": "data_rdo", "label": "Data do RDO", "dataType": "DATE", "unit": null, "unitColumn": null, "aliases": ["data do rdo", "data rdo", "dia do rdo", "quando foi o rdo"], "aggregable": false, "identity": false},
+        {"name": "diaSemana", "column": "dia_semana", "label": "Dia da semana", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["dia da semana", "dia da semana do rdo", "qual dia da semana", "dia semanal"], "aggregable": false, "identity": false},
+        {"name": "cliente", "column": "cliente", "label": "Cliente", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["cliente", "cliente do rdo"], "aggregable": false, "identity": false},
+        {"name": "contrato", "column": "contrato", "label": "Contrato", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["contrato", "contrato do rdo"], "aggregable": false, "identity": false},
+        {"name": "rodovia", "column": "rodovia", "label": "Rodovia", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["rodovia", "rodovia do rdo"], "aggregable": false, "identity": false},
+        {"name": "cidade", "column": "cidade", "label": "Cidade", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["cidade", "cidade do rdo", "municipio do rdo"], "aggregable": false, "identity": false},
+        {"name": "uf", "column": "uf", "label": "UF", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["uf", "estado do rdo"], "aggregable": false, "identity": false},
+        {"name": "kmInicialProgramado", "column": "km_inicial_programado", "label": "Km inicial programado", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km inicial programado", "inicio programado", "início programado"], "aggregable": false, "identity": false},
+        {"name": "kmFinalProgramado", "column": "km_final_programado", "label": "Km final programado", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km final programado", "fim programado"], "aggregable": false, "identity": false},
+        {"name": "kmInicialInterditado", "column": "km_inicial_interditado", "label": "Km inicial interditado", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km inicial interditado", "inicio interditado", "início interditado"], "aggregable": false, "identity": false},
+        {"name": "kmFinalInterditado", "column": "km_final_interditado", "label": "Km final interditado", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km final interditado", "fim interditado"], "aggregable": false, "identity": false},
         {"name": "turno", "column": "turno", "label": "Turno", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["turno"], "aggregable": false, "identity": false},
+        {"name": "horaInicio", "column": "hora_inicio", "label": "Hora de início", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de inicio do rdo", "inicio do rdo", "início do rdo"], "aggregable": false, "identity": false},
+        {"name": "horaFim", "column": "hora_fim", "label": "Hora de fim", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de fim do rdo", "fim do rdo"], "aggregable": false, "identity": false},
         {"name": "pluviometriaMm", "column": "pluviometria_mm", "label": "Pluviometria", "dataType": "DECIMAL", "unit": "mm", "unitColumn": null, "aliases": ["chuva", "choveu", "pluviometria", "mm de chuva"], "aggregable": true, "identity": false},
         {"name": "condicaoManha", "column": "condicao_manha", "label": "Condição da manhã", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["clima da manha", "condicao da manha"], "aggregable": false, "identity": false},
         {"name": "condicaoTarde", "column": "condicao_tarde", "label": "Condição da tarde", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["clima da tarde", "condicao da tarde"], "aggregable": false, "identity": false},
         {"name": "condicaoNoite", "column": "condicao_noite", "label": "Condição da noite", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["clima da noite", "condicao da noite"], "aggregable": false, "identity": false},
-        {"name": "status", "column": "status", "label": "Status do RDO", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status do rdo"], "aggregable": false, "identity": false}
+        {"name": "status", "column": "status", "label": "Status do RDO", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status do rdo"], "aggregable": false, "identity": false},
+        {"name": "fonteCriacao", "column": "fonte_criacao", "label": "Fonte de criação", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["fonte de criacao", "fonte de criação", "origem do rdo", "como o rdo foi criado", "rdo importado"], "aggregable": false, "identity": false},
+        {"name": "estadoReceita", "column": "estado_receita", "label": "Estado da receita do RDO", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["estado da receita do rdo", "receita do rdo", "status da receita do rdo"], "aggregable": false, "identity": false},
+        {"name": "fonteArquivo", "column": "fonte_arquivo", "label": "Arquivo de origem", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["arquivo de origem", "arquivo importado", "fonte arquivo", "planilha de origem"], "aggregable": false, "identity": false},
+        {"name": "abaOrigem", "column": "aba_origem", "label": "Aba de origem", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["aba de origem", "aba importada", "guia de origem"], "aggregable": false, "identity": false},
+        {"name": "linhaOrigem", "column": "linha_origem", "label": "Linha de origem", "dataType": "INTEGER", "unit": null, "unitColumn": null, "aliases": ["linha de origem", "linha importada", "linha da planilha"], "aggregable": false, "identity": false},
+        {"name": "dataOriginal", "column": "data_original", "label": "Data original importada", "dataType": "DATE", "unit": null, "unitColumn": null, "aliases": ["data original", "data original importada", "data na planilha"], "aggregable": false, "identity": false},
+        {"name": "dataImportacao", "column": "data_importacao", "label": "Data de importação", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["data de importacao", "data de importação", "quando foi importado"], "aggregable": false, "identity": false},
+        {"name": "usuarioImportacao", "column": "usuario_importacao", "label": "Usuário da importação", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["usuario da importacao", "usuário da importação", "quem importou"], "aggregable": false, "identity": false},
+        {"name": "criadoEm", "column": "criado_em", "label": "Criado em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["criado em", "quando o rdo foi criado"], "aggregable": false, "identity": false},
+        {"name": "enviadoEm", "column": "enviado_em", "label": "Enviado em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["enviado em", "quando o rdo foi enviado"], "aggregable": false, "identity": false},
+        {"name": "aprovadoEm", "column": "aprovado_em", "label": "Aprovado em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["aprovado em", "quando o rdo foi aprovado"], "aggregable": false, "identity": false},
+        {"name": "versaoLinha", "column": "versao_linha", "label": "Versão da linha", "dataType": "INTEGER", "unit": null, "unitColumn": null, "aliases": ["versao da linha", "versão da linha", "versao do rdo"], "aggregable": false, "identity": false},
+        {"name": "syncStatus", "column": "sync_status", "label": "Status de sincronização do RDO", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status de sync do rdo", "status de sincronizacao do rdo", "status de sincronização do rdo", "status offline do rdo", "rdo sincronizado", "rdo pendente de sincronizacao", "rdo pendente de sincronização"], "aggregable": false, "identity": false},
+        {"name": "observacoes", "column": "observacoes", "label": "Observações do RDO", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacoes do rdo", "observacao do rdo", "obs do rdo"], "aggregable": false, "identity": false},
+        {"name": "preenchidoPor", "column": "preenchido_por", "label": "Preenchido por", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["preenchido por", "quem preencheu o rdo"], "aggregable": false, "identity": false},
+        {"name": "apontadorRdo", "column": "apontador_rdo", "label": "Apontador do RDO", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["apontador do rdo", "apontador"], "aggregable": false, "identity": false},
+        {"name": "encarregadoObra", "column": "encarregado_obra", "label": "Encarregado da obra", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["encarregado da obra", "encarregado do rdo"], "aggregable": false, "identity": false},
+        {"name": "fiscalizacaoCampo", "column": "fiscalizacao_campo", "label": "Fiscalização de campo", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["fiscalizacao de campo", "fiscalização de campo", "fiscal do campo"], "aggregable": false, "identity": false},
+        {"name": "updatedAt", "column": "atualizado_em", "label": "Atualizado em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["ultima atualizacao do rdo", "última atualização do rdo", "atualizado em", "quando o rdo foi atualizado"], "aggregable": false, "identity": false}
       ]
     },
     {
@@ -33,12 +68,14 @@
       "aliases": ["material", "materiais", "insumo", "insumos"],
       "attributes": [
         {"name": "materialNome", "column": "material_nome", "label": "Material", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["nome do material", "qual material"], "aggregable": false, "identity": true},
+        {"name": "unidade", "column": "unidade", "label": "Unidade", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["unidade do material", "medida do material"], "aggregable": false, "identity": false},
         {"name": "quantidadePrevista", "column": "quantidade_prevista", "label": "Quantidade prevista", "dataType": "DECIMAL", "unit": null, "unitColumn": "unidade", "aliases": ["quantidade prevista", "previsto", "previsao", "quantidade planejada", "planejado"], "aggregable": true, "identity": false},
         {"name": "quantidadeUsinada", "column": "quantidade_usinada", "label": "Quantidade usinada", "dataType": "DECIMAL", "unit": null, "unitColumn": "unidade", "aliases": ["usinada", "usinado", "quantidade usinada"], "aggregable": true, "identity": false},
         {"name": "quantidadeAplicada", "column": "quantidade_aplicada", "label": "Quantidade aplicada", "dataType": "DECIMAL", "unit": null, "unitColumn": "unidade", "aliases": ["aplicada", "aplicado", "quantidade aplicada", "usado", "utilizado", "consumido", "gasto"], "aggregable": true, "identity": false},
         {"name": "quantidadeSobra", "column": "quantidade_sobra", "label": "Sobra", "dataType": "DECIMAL", "unit": null, "unitColumn": "unidade", "aliases": ["sobra", "sobrou", "restante", "sobraram"], "aggregable": true, "identity": false},
         {"name": "notaFiscal", "column": "nota_fiscal", "label": "Nota fiscal", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["nota fiscal", "nf"], "aggregable": false, "identity": false},
-        {"name": "fornecedor", "column": "fornecedor", "label": "Fornecedor", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["fornecedor", "quem forneceu", "quem entregou", "forneceu", "entregou"], "aggregable": false, "identity": false}
+        {"name": "fornecedor", "column": "fornecedor", "label": "Fornecedor", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["fornecedor", "quem forneceu", "quem entregou", "forneceu", "entregou"], "aggregable": false, "identity": false},
+        {"name": "observacoes", "column": "observacoes", "label": "Observações do material", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacoes do material", "observacao do material", "obs do material"], "aggregable": false, "identity": false}
       ]
     },
     {
@@ -53,11 +90,13 @@
       "aliases": ["mao de obra", "colaborador do rdo", "colaboradores do rdo", "trabalhadores", "pessoal", "quem trabalhou"],
       "attributes": [
         {"name": "nomeColaborador", "column": "nome_colaborador", "label": "Colaborador", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["nome do colaborador"], "aggregable": false, "identity": true},
+        {"name": "colaboradorId", "column": "colaborador_id", "label": "ID do colaborador", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do colaborador da mao de obra", "id do colaborador da mão de obra", "id da mao de obra", "id da mão de obra"], "aggregable": false, "identity": true},
         {"name": "cargo", "column": "cargo", "label": "Cargo", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["cargo", "funcao de"], "aggregable": false, "identity": false},
         {"name": "tipoVinculo", "column": "tipo_vinculo", "label": "Vínculo", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["vinculo"], "aggregable": false, "identity": false},
         {"name": "quantidade", "column": "quantidade", "label": "Quantidade", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["quantos colaboradores", "quantas pessoas", "quantos trabalhadores"], "aggregable": true, "identity": false},
         {"name": "horaInicio", "column": "hora_inicio", "label": "Hora de início", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de inicio da mao de obra"], "aggregable": false, "identity": false},
-        {"name": "horaFim", "column": "hora_fim", "label": "Hora de fim", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de fim da mao de obra"], "aggregable": false, "identity": false}
+        {"name": "horaFim", "column": "hora_fim", "label": "Hora de fim", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de fim da mao de obra"], "aggregable": false, "identity": false},
+        {"name": "observacoes", "column": "observacoes", "label": "Observações da mão de obra", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacoes da mao de obra", "observacao da mao de obra", "obs da mao de obra"], "aggregable": false, "identity": false}
       ]
     },
     {
@@ -73,11 +112,13 @@
       "attributes": [
         {"name": "prefixo", "column": "prefixo", "label": "Prefixo", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["prefixo", "placa"], "aggregable": false, "identity": true},
         {"name": "descricao", "column": "descricao", "label": "Equipamento", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["descricao do equipamento"], "aggregable": false, "identity": true},
+        {"name": "assetId", "column": "asset_id", "label": "ID do ativo", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do ativo", "id do equipamento", "ativo vinculado"], "aggregable": false, "identity": true},
         {"name": "tipoEquipamento", "column": "tipo_equipamento", "label": "Tipo de equipamento", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["tipo de equipamento", "tipo de maquina"], "aggregable": false, "identity": false},
         {"name": "tipoVinculo", "column": "tipo_vinculo", "label": "Vínculo", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["proprio ou alugado"], "aggregable": false, "identity": false},
         {"name": "quantidade", "column": "quantidade", "label": "Quantidade", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["quantos equipamentos", "quantas maquinas"], "aggregable": true, "identity": false},
         {"name": "horaInicio", "column": "hora_inicio", "label": "Hora de início", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de inicio do equipamento"], "aggregable": false, "identity": false},
-        {"name": "horaFim", "column": "hora_fim", "label": "Hora de fim", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de fim do equipamento"], "aggregable": false, "identity": false}
+        {"name": "horaFim", "column": "hora_fim", "label": "Hora de fim", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de fim do equipamento"], "aggregable": false, "identity": false},
+        {"name": "observacoes", "column": "observacoes", "label": "Observações do equipamento", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacoes do equipamento", "observacao do equipamento", "obs do equipamento"], "aggregable": false, "identity": false}
       ]
     },
     {
@@ -89,20 +130,29 @@
       "snapshotCollection": "controlesGeometricos",
       "countAttribute": null,
       "filter": null,
-      "aliases": ["controle geometrico", "controles geometricos", "geometria", "estaca", "subtrecho"],
+      "aliases": ["controle geometrico", "controles geometricos", "geometria", "estaca", "subtrecho", "trecho", "medicao", "medicao geometrica"],
       "attributes": [
         {"name": "subtrecho", "column": "subtrecho", "label": "Subtrecho", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["qual subtrecho"], "aggregable": false, "identity": true},
-        {"name": "kmInicial", "column": "km_inicial", "label": "Km inicial", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km inicial do controle"], "aggregable": false, "identity": false},
-        {"name": "kmFinal", "column": "km_final", "label": "Km final", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km final do controle"], "aggregable": false, "identity": false},
+        {"name": "numero", "column": "numero", "label": "Número", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["numero do trecho", "numero do controle"], "aggregable": false, "identity": true},
+        {"name": "estacaInicial", "column": "estaca_inicial", "label": "Estaca inicial", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["estaca inicial", "estaca inicial do trecho"], "aggregable": false, "identity": false},
+        {"name": "estacaFinal", "column": "estaca_final", "label": "Estaca final", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["estaca final", "estaca final do trecho"], "aggregable": false, "identity": false},
+        {"name": "kmInicial", "column": "km_inicial", "label": "Km inicial", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km inicial", "km inicial do controle", "km inicial do trecho"], "aggregable": false, "identity": false},
+        {"name": "kmFinal", "column": "km_final", "label": "Km final", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["km final", "km final do controle", "km final do trecho"], "aggregable": false, "identity": false},
         {"name": "pista", "column": "pista", "label": "Pista", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["pista"], "aggregable": false, "identity": false},
         {"name": "faixa", "column": "faixa", "label": "Faixa", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["faixa"], "aggregable": false, "identity": false},
+        {"name": "ordemServico", "column": "ordem_servico", "label": "Ordem de serviço", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["ordem de servico", "os", "ordem do trecho"], "aggregable": false, "identity": false},
         {"name": "comprimentoM", "column": "comprimento_m", "label": "Comprimento", "dataType": "DECIMAL", "unit": "m", "unitColumn": null, "aliases": ["comprimento", "extensao executada"], "aggregable": true, "identity": false},
         {"name": "larguraM", "column": "largura_m", "label": "Largura", "dataType": "DECIMAL", "unit": "m", "unitColumn": null, "aliases": ["largura"], "aggregable": true, "identity": false},
+        {"name": "espessura1Cm", "column": "espessura_1_cm", "label": "Espessura 1", "dataType": "DECIMAL", "unit": "cm", "unitColumn": null, "aliases": ["espessura 1", "primeira espessura"], "aggregable": true, "identity": false},
+        {"name": "espessura2Cm", "column": "espessura_2_cm", "label": "Espessura 2", "dataType": "DECIMAL", "unit": "cm", "unitColumn": null, "aliases": ["espessura 2", "segunda espessura"], "aggregable": true, "identity": false},
+        {"name": "espessura3Cm", "column": "espessura_3_cm", "label": "Espessura 3", "dataType": "DECIMAL", "unit": "cm", "unitColumn": null, "aliases": ["espessura 3", "terceira espessura"], "aggregable": true, "identity": false},
         {"name": "espessuraMediaCm", "column": "espessura_media_cm", "label": "Espessura média", "dataType": "DECIMAL", "unit": "cm", "unitColumn": null, "aliases": ["espessura", "espessura media"], "aggregable": true, "identity": false},
         {"name": "areaM2", "column": "area_m2", "label": "Área", "dataType": "DECIMAL", "unit": "m²", "unitColumn": null, "aliases": ["area executada", "metros quadrados executados"], "aggregable": true, "identity": false},
         {"name": "volumeM3", "column": "volume_m3", "label": "Volume", "dataType": "DECIMAL", "unit": "m³", "unitColumn": null, "aliases": ["volume executado", "metros cubicos executados"], "aggregable": true, "identity": false},
         {"name": "densidade", "column": "densidade", "label": "Densidade", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["densidade"], "aggregable": true, "identity": false},
-        {"name": "massaTonelada", "column": "massa_tonelada", "label": "Massa", "dataType": "DECIMAL", "unit": "t", "unitColumn": null, "aliases": ["massa em tonelada", "tonelada de massa", "toneladas aplicadas"], "aggregable": true, "identity": false}
+        {"name": "massaTonelada", "column": "massa_tonelada", "label": "Massa", "dataType": "DECIMAL", "unit": "t", "unitColumn": null, "aliases": ["massa em tonelada", "tonelada de massa", "toneladas aplicadas"], "aggregable": true, "identity": false},
+        {"name": "atividadeObservacoes", "column": "atividade_observacoes", "label": "Atividades executadas", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["atividades executadas", "observacoes da atividade", "atividade do trecho"], "aggregable": false, "identity": false},
+        {"name": "observacoes", "column": "observacoes", "label": "Observações do controle", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacoes do controle", "observacao do controle", "observacoes do trecho"], "aggregable": false, "identity": false}
       ]
     },
     {
@@ -117,6 +167,8 @@
       "aliases": ["servico", "servicos", "servico executado", "servicos executados", "execucao de servico", "producao", "atividade", "atividades", "o que foi feito", "o que foi executado"],
       "attributes": [
         {"name": "servicoNome", "column": "servico_nome", "label": "Serviço", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["nome do servico", "qual servico"], "aggregable": false, "identity": true},
+        {"name": "itemContratualId", "column": "item_contratual_id", "label": "ID do item contratual", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do item contratual", "item contratual", "item contratual vinculado"], "aggregable": false, "identity": true},
+        {"name": "unidade", "column": "unidade_medida", "label": "Unidade", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["unidade do servico", "unidade do serviço", "medida do servico", "medida do serviço"], "aggregable": false, "identity": false},
         {"name": "quantidadeExecutada", "column": "quantidade_executada", "label": "Quantidade executada", "dataType": "DECIMAL", "unit": null, "unitColumn": "unidade_medida", "aliases": ["quantidade executada", "quanto foi executado", "producao realizada", "produzido"], "aggregable": true, "identity": false},
         {"name": "trechoInicial", "column": "trecho_inicial", "label": "Trecho inicial", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["trecho inicial do servico"], "aggregable": false, "identity": false},
         {"name": "trechoFinal", "column": "trecho_final", "label": "Trecho final", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["trecho final do servico"], "aggregable": false, "identity": false},
@@ -124,7 +176,99 @@
         {"name": "turno", "column": "turno", "label": "Turno do serviço", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["turno do servico"], "aggregable": false, "identity": false},
         {"name": "dataExecucao", "column": "data_execucao", "label": "Data de execução", "dataType": "DATE", "unit": null, "unitColumn": null, "aliases": ["data da execucao", "quando foi executado"], "aggregable": false, "identity": false},
         {"name": "statusValidacao", "column": "status_validacao", "label": "Status de validação", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status do servico", "validacao do servico"], "aggregable": false, "identity": false},
+        {"name": "estadoReceita", "column": "estado_receita", "label": "Estado da receita", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["estado da receita", "receita do servico", "status da receita"], "aggregable": false, "identity": false},
+        {"name": "receitaOperacionalEstimativa", "column": "receita_operacional_estimativa", "label": "Receita operacional estimada", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["receita operacional estimada", "receita estimada", "valor estimado do servico"], "aggregable": true, "identity": false},
+        {"name": "custoRealizado", "column": "custo_realizado", "label": "Custo realizado", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["custo realizado", "custo do servico", "valor realizado do servico"], "aggregable": true, "identity": false},
+        {"name": "retrabalho", "column": "retrabalho", "label": "Retrabalho", "dataType": "BOOLEAN", "unit": null, "unitColumn": null, "aliases": ["retrabalho", "teve retrabalho"], "aggregable": false, "identity": false},
+        {"name": "producaoRejeitada", "column": "producao_rejeitada", "label": "Produção rejeitada", "dataType": "BOOLEAN", "unit": null, "unitColumn": null, "aliases": ["producao rejeitada", "produção rejeitada", "houve rejeicao", "houve rejeição"], "aggregable": false, "identity": false},
         {"name": "observacoes", "column": "observacoes", "label": "Observações", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacao do servico", "observacoes do servico", "obs do servico"], "aggregable": false, "identity": false}
+      ]
+    },
+    {
+      "name": "alocacaoColaborador",
+      "table": "alocacao_colaborador",
+      "evidenceType": "RDO_ALOCACAO_COLABORADOR",
+      "source": "registros-rdo",
+      "header": false,
+      "snapshotCollection": "alocacoesColaboradores",
+      "countAttribute": "percentualDia",
+      "filter": null,
+      "aliases": ["alocacao", "alocacoes", "apontamento", "apontamentos", "alocacao de colaborador", "apontamento de equipe"],
+      "attributes": [
+        {"name": "nomeColaborador", "column": "nome_colaborador", "label": "Colaborador", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["colaborador da alocacao", "nome do colaborador alocado"], "aggregable": false, "identity": true},
+        {"name": "colaboradorId", "column": "colaborador_id", "label": "ID do colaborador", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do colaborador alocado"], "aggregable": false, "identity": false},
+        {"name": "equipe", "column": "equipe", "label": "Equipe", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["equipe da alocacao", "equipe do apontamento"], "aggregable": false, "identity": false},
+        {"name": "servicoNome", "column": "servico_nome", "label": "Serviço", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["servico da alocacao", "servico do apontamento"], "aggregable": false, "identity": false},
+        {"name": "horaInicio", "column": "hora_inicio", "label": "Hora de início", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de inicio da alocacao", "inicio da alocacao"], "aggregable": false, "identity": false},
+        {"name": "horaFim", "column": "hora_fim", "label": "Hora de fim", "dataType": "TIME", "unit": null, "unitColumn": null, "aliases": ["hora de fim da alocacao", "fim da alocacao"], "aggregable": false, "identity": false},
+        {"name": "minutos", "column": "minutos", "label": "Minutos", "dataType": "INTEGER", "unit": "min", "unitColumn": null, "aliases": ["minutos da alocacao", "duracao da alocacao", "duração da alocacao"], "aggregable": true, "identity": false},
+        {"name": "percentualDia", "column": "percentual_dia", "label": "Percentual do dia", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["percentual do dia", "percentual da alocacao"], "aggregable": true, "identity": false},
+        {"name": "turno", "column": "turno", "label": "Turno", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["turno da alocacao", "turno do apontamento"], "aggregable": false, "identity": false},
+        {"name": "funcao", "column": "funcao", "label": "Função", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["funcao da alocacao", "função da alocacao"], "aggregable": false, "identity": false},
+        {"name": "centroCusto", "column": "centro_custo", "label": "Centro de custo", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["centro de custo", "centro de custo da alocacao"], "aggregable": false, "identity": false},
+        {"name": "tipoAlocacao", "column": "tipo_alocacao", "label": "Tipo de alocação", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["tipo de alocacao", "tipo de apontamento"], "aggregable": false, "identity": false},
+        {"name": "fonte", "column": "fonte", "label": "Fonte", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["fonte da alocacao", "origem da alocacao"], "aggregable": false, "identity": false},
+        {"name": "status", "column": "status", "label": "Status", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status da alocacao", "status do apontamento"], "aggregable": false, "identity": false},
+        {"name": "custoHora", "column": "custo_hora", "label": "Custo hora", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["custo hora", "custo por hora"], "aggregable": true, "identity": false},
+        {"name": "custoTotal", "column": "custo_total", "label": "Custo total", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["custo total da alocacao", "custo total do apontamento"], "aggregable": true, "identity": false},
+        {"name": "observacoes", "column": "observacoes", "label": "Observações da alocação", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["observacoes da alocacao", "observacao da alocacao", "obs da alocacao"], "aggregable": false, "identity": false}
+      ]
+    },
+    {
+      "name": "attachment",
+      "table": "rdo_attachment",
+      "evidenceType": "RDO_ATTACHMENT",
+      "source": "registros-rdo",
+      "header": false,
+      "snapshotCollection": "attachments",
+      "countAttribute": "tamanhoBytes",
+      "filter": "t.removido_em IS NULL",
+      "aliases": ["foto", "fotos", "anexo", "anexos", "imagem", "imagens"],
+      "attributes": [
+        {"name": "id", "column": "id", "label": "ID da foto", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id da foto", "identificador da foto", "id do anexo"], "aggregable": false, "identity": false},
+        {"name": "rdoId", "column": "rdo_id", "label": "ID do RDO da foto", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["rdo da foto", "id do rdo da foto"], "aggregable": false, "identity": false},
+        {"name": "obraId", "column": "obra_id", "label": "ID da obra da foto", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["obra da foto", "id da obra da foto"], "aggregable": false, "identity": false},
+        {"name": "nome", "column": "nome", "label": "Nome da foto", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["nome da foto", "nome do anexo"], "aggregable": false, "identity": true},
+        {"name": "nomeOriginal", "column": "nome_original", "label": "Nome original", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["nome original", "nome original da foto"], "aggregable": false, "identity": false},
+        {"name": "tipo", "column": "tipo", "label": "Tipo", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["tipo da foto", "tipo do anexo"], "aggregable": false, "identity": false},
+        {"name": "mimeType", "column": "mime_type", "label": "MIME type", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["mime type", "tipo mime", "formato da foto"], "aggregable": false, "identity": false},
+        {"name": "tamanhoOriginalBytes", "column": "tamanho_original_bytes", "label": "Tamanho original", "dataType": "INTEGER", "unit": "bytes", "unitColumn": null, "aliases": ["tamanho original", "tamanho original da foto"], "aggregable": true, "identity": false},
+        {"name": "tamanhoComprimidoBytes", "column": "tamanho_comprimido_bytes", "label": "Tamanho comprimido", "dataType": "INTEGER", "unit": "bytes", "unitColumn": null, "aliases": ["tamanho comprimido", "tamanho comprimido da foto"], "aggregable": true, "identity": false},
+        {"name": "tamanhoBytes", "column": "tamanho_bytes", "label": "Tamanho", "dataType": "INTEGER", "unit": "bytes", "unitColumn": null, "aliases": ["tamanho da foto", "tamanho do anexo"], "aggregable": true, "identity": false},
+        {"name": "syncStatus", "column": "sync_status", "label": "Status de sincronização", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status da foto", "status de sincronizacao da foto", "foto pendente", "fotos pendentes"], "aggregable": false, "identity": false},
+        {"name": "createdAt", "column": "criado_em", "label": "Criada em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["quando a foto foi adicionada", "data da foto", "criada em"], "aggregable": false, "identity": false},
+        {"name": "updatedAt", "column": "atualizado_em", "label": "Atualizada em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["quando a foto foi atualizada", "atualizada em"], "aggregable": false, "identity": false},
+        {"name": "removedAt", "column": "removido_em", "label": "Removida em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["quando a foto foi removida", "removida em"], "aggregable": false, "identity": false},
+        {"name": "metadata", "column": "metadata_json", "label": "Metadados", "dataType": "JSON", "unit": null, "unitColumn": null, "aliases": ["metadados da foto", "metadata da foto", "dados da foto"], "aggregable": false, "identity": false}
+      ]
+    },
+    {
+      "name": "operationalEvent",
+      "table": "cortex_evento_operacional",
+      "evidenceType": "RDO_OPERATIONAL_EVENT",
+      "source": "timeline-ontologica",
+      "header": false,
+      "snapshotCollection": "operationalEvents",
+      "countAttribute": null,
+      "filter": null,
+      "aliases": ["evento", "eventos", "evento ontologico", "eventos ontologicos", "evento operacional", "timeline", "historico operacional", "alteracao offline", "alteracoes offline"],
+      "attributes": [
+        {"name": "id", "column": "id", "label": "ID do evento", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do evento", "identificador do evento"], "aggregable": false, "identity": false},
+        {"name": "type", "column": "tipo_evento", "label": "Tipo do evento", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["tipo do evento", "evento registrado", "qual evento"], "aggregable": false, "identity": true},
+        {"name": "principalEntityType", "column": "tipo_entidade", "label": "Tipo da entidade principal", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["tipo da entidade principal", "entidade principal tipo"], "aggregable": false, "identity": false},
+        {"name": "principalEntityId", "column": "entidade_id", "label": "ID da entidade principal", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id da entidade principal", "entidade principal id"], "aggregable": false, "identity": false},
+        {"name": "obraId", "column": "obra_id", "label": "ID da obra", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["obra do evento", "id da obra do evento"], "aggregable": false, "identity": false},
+        {"name": "rdoId", "column": "rdo_id", "label": "ID do RDO", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["rdo do evento", "id do rdo do evento"], "aggregable": false, "identity": false},
+        {"name": "colaboradorId", "column": "colaborador_id", "label": "ID do colaborador", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["colaborador do evento", "id do colaborador do evento"], "aggregable": false, "identity": false},
+        {"name": "occurredAt", "column": "ocorrido_em", "label": "Ocorrido em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["quando ocorreu o evento", "ocorrido em", "data do evento", "hora do evento"], "aggregable": false, "identity": false},
+        {"name": "syncedAt", "column": "sincronizado_em", "label": "Sincronizado em", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["quando o evento sincronizou", "sincronizado em", "sync do evento"], "aggregable": false, "identity": false},
+        {"name": "origin", "column": "origem", "label": "Origem", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["origem do evento", "fonte do evento", "evento online", "evento offline"], "aggregable": false, "identity": false},
+        {"name": "syncStatus", "column": "sync_status", "label": "Status de sincronização", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status do evento", "status de sync do evento", "status de sincronizacao do evento", "evento pendente de sincronizacao", "evento pendente de sincronização"], "aggregable": false, "identity": false},
+        {"name": "responsibleUserId", "column": "responsible_user_id", "label": "ID do usuário responsável", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do usuario responsavel", "id do usuário responsável", "usuario responsavel id", "usuário responsável id"], "aggregable": false, "identity": false},
+        {"name": "responsibleUserName", "column": "responsible_user_name", "label": "Usuário responsável", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["usuario responsavel", "usuário responsável", "quem registrou o evento", "quem gerou o evento", "responsavel pelo evento", "responsável pelo evento"], "aggregable": false, "identity": false},
+        {"name": "schemaVersion", "column": "schema_version", "label": "Versão do schema", "dataType": "INTEGER", "unit": null, "unitColumn": null, "aliases": ["versao do schema", "versão do schema", "schema version", "schemaVersion"], "aggregable": false, "identity": false},
+        {"name": "relatedEntities", "column": "entidades_relacionadas_json", "label": "Entidades relacionadas", "dataType": "JSON", "unit": null, "unitColumn": null, "aliases": ["entidades relacionadas", "relacoes do evento", "relações do evento"], "aggregable": false, "identity": false},
+        {"name": "payload", "column": "payload_json", "label": "Payload", "dataType": "JSON", "unit": null, "unitColumn": null, "aliases": ["payload do evento", "dados do evento", "resumo do evento"], "aggregable": false, "identity": false}
       ]
     }
   ]

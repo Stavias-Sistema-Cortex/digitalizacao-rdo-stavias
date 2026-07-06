@@ -936,9 +936,6 @@ export function ProgramacaoSemanalImport({
     <section className="form-card programacao-import">
       <div className="section-heading">
         <div>
-          <span className="section-number">
-            P
-          </span>
           <h2>Programação diária prevista</h2>
         </div>
       </div>

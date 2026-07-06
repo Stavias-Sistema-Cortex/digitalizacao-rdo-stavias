@@ -1,7 +1,20 @@
-import { useId, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import {
+  listRdoAttachments,
+  markRdoAttachmentRemoved,
+  putRdoAttachment,
+} from "../../lib/db/rdoAttachmentRepository";
+import { addOperationalEvent } from "../../lib/db/operationalEventRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
+import type { RdoAttachmentRecord } from "../../lib/db/db.types";
 import {
   createEmptyAlocacaoColaborador,
   createEmptyControleGeometrico,
@@ -18,9 +31,11 @@ import type {
   MaoObraDraft,
   MaterialDraft,
   NumericInput,
+  RdoAttachmentDraft,
   RdoDraft,
   ServicoExecutadoDraft,
 } from "./rdo.types";
+import { processRdoPhoto } from "./rdoPhotoService";
 import {
   buscarAssets,
   buscarColaboradores,
@@ -108,7 +123,62 @@ function buildPayload(draft: RdoDraft) {
     materiais: draft.materiais.map(removeLocalId),
     controlesGeometricos:
       draft.controlesGeometricos.map(removeLocalId),
+    attachments: draft.attachments,
   };
+}
+
+function attachmentToDraft(
+  attachment: RdoAttachmentRecord,
+): RdoAttachmentDraft {
+  return {
+    id: attachment.id,
+    rdoId: attachment.rdoId,
+    obraId: attachment.obraId,
+    tipo: "FOTO",
+    nome: attachment.nome,
+    nomeOriginal: attachment.nomeOriginal,
+    mimeType: attachment.mimeType,
+    tamanhoOriginalBytes: attachment.tamanhoOriginalBytes,
+    tamanhoComprimidoBytes:
+      attachment.tamanhoComprimidoBytes,
+    tamanhoBytes: attachment.tamanhoBytes,
+    syncStatus: attachment.syncStatus,
+    createdAt: attachment.createdAt,
+    updatedAt: attachment.updatedAt,
+    removedAt: attachment.removedAt,
+    metadata: attachment.metadata,
+  };
+}
+
+function fileSizeLabel(size: number): string {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function parseKm(value: string): number | null {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function extensionMeters(
+  start: string,
+  end: string,
+): number | null {
+  const startKm = parseKm(start);
+  const endKm = parseKm(end);
+
+  if (startKm === null || endKm === null || endKm < startKm) {
+    return null;
+  }
+
+  return Math.round((endKm - startKm) * 1000 * 1000) / 1000;
 }
 
 interface LookupFieldProps<TItem> {
@@ -347,6 +417,13 @@ export function RdoCreatePage({
 
   const [showJson, setShowJson] = useState(false);
   const [notice, setNotice] = useState(initialNotice ?? "");
+  const [photoError, setPhotoError] = useState("");
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
+  const [photoPreviews, setPhotoPreviews] = useState<
+    Record<string, string>
+  >({});
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
   const [
     alocacaoColaboradorLabels,
     setAlocacaoColaboradorLabels,
@@ -366,6 +443,63 @@ export function RdoCreatePage({
     [draft],
   );
 
+  const photoCount = draft.attachments.filter(
+    (attachment) => attachment.removedAt === null,
+  ).length;
+  const programmedExtensionM = extensionMeters(
+    draft.kmInicialProgramado,
+    draft.kmFinalProgramado,
+  );
+  const blockedExtensionM = extensionMeters(
+    draft.kmInicialInterditado,
+    draft.kmFinalInterditado,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void listRdoAttachments(initialDraft.id).then((attachments) => {
+      if (cancelled) {
+        return;
+      }
+
+      const previews: Record<string, string> = {};
+
+      for (const attachment of attachments) {
+        const url = URL.createObjectURL(attachment.arquivo);
+        previewUrlsRef.current.add(url);
+        previews[attachment.id] = url;
+      }
+
+      setPhotoPreviews((current) => ({
+        ...current,
+        ...previews,
+      }));
+
+      if (attachments.length > 0) {
+        setDraft((current) => ({
+          ...current,
+          attachments: attachments.map(attachmentToDraft),
+        }));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialDraft.id]);
+
+  useEffect(() => {
+    const previewUrls = previewUrlsRef.current;
+
+    return () => {
+      previewUrls.forEach((url) =>
+        URL.revokeObjectURL(url),
+      );
+      previewUrls.clear();
+    };
+  }, []);
+
   function updateField<K extends keyof RdoDraft>(
     field: K,
     value: RdoDraft[K],
@@ -373,6 +507,16 @@ export function RdoCreatePage({
     setDraft((current) => ({
       ...current,
       [field]: value,
+      attachments:
+        field === "obraId"
+          ? current.attachments.map((attachment) => ({
+              ...attachment,
+              obraId:
+                typeof value === "string" && value.trim()
+                  ? value
+                  : null,
+            }))
+          : current.attachments,
     }));
 
     setNotice("");
@@ -532,6 +676,201 @@ export function RdoCreatePage({
     }
   }
 
+  async function handleAddPhotos(files: FileList | null) {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    setPhotoError("");
+    setIsProcessingPhoto(true);
+
+    try {
+      const activeCount = draft.attachments.filter(
+        (attachment) => attachment.removedAt === null,
+      ).length;
+      const availableSlots = Math.max(0, 5 - activeCount);
+
+      if (availableSlots <= 0) {
+        throw new Error("O limite é de 5 fotos por RDO.");
+      }
+
+      const selectedFiles = Array.from(files).slice(
+        0,
+        availableSlots,
+      );
+
+      if (files.length > availableSlots) {
+        setNotice(
+          `Foram anexadas ${availableSlots} foto(s). O limite é de 5 fotos por RDO.`,
+        );
+      }
+
+      const added: RdoAttachmentDraft[] = [];
+      const previewUpdates: Record<string, string> = {};
+
+      for (const file of selectedFiles) {
+        const { attachment, wasCompressed } =
+          await processRdoPhoto({
+            file,
+            rdoId: draft.id,
+            obraId: draft.obraId || null,
+          });
+
+        await putRdoAttachment(attachment);
+
+        const previewUrl = URL.createObjectURL(
+          attachment.arquivo,
+        );
+        previewUrlsRef.current.add(previewUrl);
+        previewUpdates[attachment.id] = previewUrl;
+
+        added.push(attachmentToDraft(attachment));
+
+        await addOperationalEvent({
+          type: "FOTO_ADICIONADA",
+          principalEntity: {
+            tipo: "RDO_FOTO",
+            id: attachment.id,
+            nome: attachment.nome,
+          },
+          relatedEntities: [
+            {
+              tipo: "RDO",
+              id: draft.id,
+              nome: draft.numeroRdo
+                ? `RDO ${draft.numeroRdo}`
+                : "RDO local",
+            },
+            {
+              tipo: "OBRA",
+              id: draft.obraId,
+              nome: draft.contrato || draft.cliente || null,
+            },
+          ].filter((entity) => entity.id.trim()),
+          obraId: draft.obraId || null,
+          rdoId: draft.id,
+          payload: {
+            nomeOriginal: attachment.nomeOriginal,
+            mimeType: attachment.mimeType,
+            tamanhoOriginalBytes:
+              attachment.tamanhoOriginalBytes,
+            tamanhoComprimidoBytes:
+              attachment.tamanhoComprimidoBytes,
+            syncStatus: attachment.syncStatus,
+          },
+        });
+
+        if (wasCompressed) {
+          await addOperationalEvent({
+            type: "FOTO_COMPRIMIDA",
+            principalEntity: {
+              tipo: "RDO_FOTO",
+              id: attachment.id,
+              nome: attachment.nome,
+            },
+            relatedEntities: [
+              {
+                tipo: "RDO",
+                id: draft.id,
+                nome: draft.numeroRdo
+                  ? `RDO ${draft.numeroRdo}`
+                  : "RDO local",
+              },
+            ],
+            obraId: draft.obraId || null,
+            rdoId: draft.id,
+            payload: {
+              tamanhoOriginalBytes:
+                attachment.tamanhoOriginalBytes,
+              tamanhoComprimidoBytes:
+                attachment.tamanhoComprimidoBytes,
+              reducaoBytes:
+                attachment.tamanhoOriginalBytes -
+                attachment.tamanhoComprimidoBytes,
+            },
+          });
+        }
+      }
+
+      setPhotoPreviews((current) => ({
+        ...current,
+        ...previewUpdates,
+      }));
+      setDraft((current) => ({
+        ...current,
+        attachments: [...current.attachments, ...added],
+      }));
+    } catch (error: unknown) {
+      setPhotoError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao anexar foto ao RDO.",
+      );
+    } finally {
+      setIsProcessingPhoto(false);
+    }
+  }
+
+  async function handleRemovePhoto(attachmentId: string) {
+    setPhotoError("");
+
+    try {
+      const removed = await markRdoAttachmentRemoved(attachmentId);
+      const timestamp =
+        removed?.removedAt ?? new Date().toISOString();
+
+      setDraft((current) => ({
+        ...current,
+        attachments: current.attachments.map((attachment) =>
+          attachment.id === attachmentId
+            ? {
+                ...attachment,
+                removedAt: timestamp,
+                updatedAt: timestamp,
+                syncStatus:
+                  attachment.syncStatus === "SYNCED"
+                    ? "PENDING_SYNC"
+                    : attachment.syncStatus,
+              }
+            : attachment,
+        ),
+      }));
+
+      await addOperationalEvent({
+        type: "FOTO_REMOVIDA",
+        principalEntity: {
+          tipo: "RDO_FOTO",
+          id: attachmentId,
+          nome:
+            draft.attachments.find(
+              (attachment) => attachment.id === attachmentId,
+            )?.nome ?? null,
+        },
+        relatedEntities: [
+          {
+            tipo: "RDO",
+            id: draft.id,
+            nome: draft.numeroRdo
+              ? `RDO ${draft.numeroRdo}`
+              : "RDO local",
+          },
+        ],
+        obraId: draft.obraId || null,
+        rdoId: draft.id,
+        occurredAt: timestamp,
+        payload: {
+          attachmentId,
+        },
+      });
+    } catch (error: unknown) {
+      setPhotoError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao remover a foto.",
+      );
+    }
+  }
+
   function handleReset() {
     const confirmed = window.confirm(
       isExisting
@@ -573,6 +912,8 @@ export function RdoCreatePage({
               : "Novo Relatório Diário de Obra"}
           </h1>
 
+          <span className="brand-tick" aria-hidden="true" />
+
           <p className="subtitle">
             Registre e continue editando o relatório mesmo
             sem conexão com a internet.
@@ -594,7 +935,9 @@ export function RdoCreatePage({
               Status local
             </span>
 
-            <strong className="status-badge">
+            <strong
+              className={`status-badge status-badge--${draft.syncStatus.toLowerCase()}`}
+            >
               {formatLocalSyncStatus(
                 draft.syncStatus,
               )}
@@ -628,9 +971,6 @@ export function RdoCreatePage({
       <section className="form-card">
         <div className="section-heading">
           <div>
-            <span className="section-number">
-              01
-            </span>
             <h2>Identificação</h2>
           </div>
 
@@ -928,14 +1268,38 @@ export function RdoCreatePage({
             />
           </label>
         </div>
+
+        <div className="computed-grid rdo-extension-grid">
+          <CalculatedMetric
+            label="Extensão programada"
+            value={
+              programmedExtensionM === null
+                ? "Em branco"
+                : `${formatCalculatedNumber(programmedExtensionM)} m`
+            }
+          />
+          <CalculatedMetric
+            label="Extensão interditada"
+            value={
+              blockedExtensionM === null
+                ? "Em branco"
+                : `${formatCalculatedNumber(blockedExtensionM)} m`
+            }
+          />
+          <CalculatedMetric
+            label="Fotos no RDO"
+            value={`${photoCount}/5`}
+          />
+          <CalculatedMetric
+            label="Status offline"
+            value={formatLocalSyncStatus(draft.syncStatus)}
+          />
+        </div>
       </section>
 
       <section className="form-card">
         <div className="section-heading">
           <div>
-            <span className="section-number">
-              02
-            </span>
             <h2>Condições do dia</h2>
           </div>
 
@@ -1032,8 +1396,109 @@ export function RdoCreatePage({
       </section>
 
       <section className="form-card">
+        <div className="section-heading collection-heading">
+          <div>
+            <h2>Fotos do RDO</h2>
+          </div>
+
+          <div className="section-actions">
+            <p>
+              Até 5 fotos por RDO, salvas localmente e
+              comprimidas no navegador quando necessário.
+            </p>
+
+            <button
+              type="button"
+              className="add-button"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={isProcessingPhoto || photoCount >= 5}
+            >
+              {isProcessingPhoto
+                ? "Processando..."
+                : "Adicionar foto"}
+            </button>
+          </div>
+        </div>
+
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="visually-hidden"
+          onChange={(event) => {
+            void handleAddPhotos(event.target.files);
+            event.target.value = "";
+          }}
+        />
+
+        {photoError && (
+          <div className="notice notice-error">
+            {photoError}
+          </div>
+        )}
+
+        {photoCount === 0 ? (
+          <div className="empty-inline-state">
+            Nenhuma foto anexada a este RDO.
+          </div>
+        ) : (
+          <div className="rdo-photo-grid">
+            {draft.attachments
+              .filter((attachment) => attachment.removedAt === null)
+              .map((attachment) => (
+                <article
+                  className="rdo-photo-card"
+                  key={attachment.id}
+                >
+                  {photoPreviews[attachment.id] ? (
+                    <img
+                      src={photoPreviews[attachment.id]}
+                      alt={attachment.nome}
+                    />
+                  ) : (
+                    <div className="rdo-photo-fallback">
+                      Preview local indisponível
+                    </div>
+                  )}
+
+                  <div className="rdo-photo-meta">
+                    <strong>{attachment.nome}</strong>
+                    <span>
+                      {fileSizeLabel(
+                        attachment.tamanhoComprimidoBytes,
+                      )}
+                      {attachment.tamanhoComprimidoBytes <
+                      attachment.tamanhoOriginalBytes
+                        ? ` de ${fileSizeLabel(
+                            attachment.tamanhoOriginalBytes,
+                          )}`
+                        : ""}
+                    </span>
+                    <span>
+                      {attachment.syncStatus === "SYNCED"
+                        ? "Sincronizada"
+                        : "Local/offline"}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="danger-link"
+                    onClick={() => {
+                      void handleRemovePhoto(attachment.id);
+                    }}
+                  >
+                    Remover
+                  </button>
+                </article>
+              ))}
+          </div>
+        )}
+      </section>
+
+      <section className="form-card">
         <CollectionHeader
-          number="03"
           title="Serviços executados"
           description="Serviços, quantidades, item contratual e custo realizado."
           onAdd={() =>
@@ -1323,7 +1788,6 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="04"
           title="Rateio de colaboradores"
           description="Horas, percentual e origem da alocação operacional."
           onAdd={() =>
@@ -1669,7 +2133,6 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="05"
           title="Mão de obra"
           description="Colaboradores e equipes envolvidos no serviço."
           onAdd={() =>
@@ -1824,7 +2287,58 @@ export function RdoCreatePage({
                     }
                   />
                 </label>
+
+                <label>
+                  Início
+                  <input
+                    type="time"
+                    value={item.horaInicio}
+                    onChange={(event) =>
+                      updateMaoObra(
+                        item.localId,
+                        {
+                          horaInicio:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Fim
+                  <input
+                    type="time"
+                    value={item.horaFim}
+                    onChange={(event) =>
+                      updateMaoObra(
+                        item.localId,
+                        {
+                          horaFim:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
               </div>
+
+              <label className="full-width">
+                Observações da mão de obra
+                <textarea
+                  rows={3}
+                  value={item.observacoes}
+                  onChange={(event) =>
+                    updateMaoObra(
+                      item.localId,
+                      {
+                        observacoes:
+                          event.target.value,
+                      },
+                    )
+                  }
+                />
+              </label>
             </div>
           ))}
         </div>
@@ -1832,7 +2346,6 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="06"
           title="Equipamentos"
           description="Equipamentos utilizados durante a execução."
           onAdd={() =>
@@ -2007,7 +2520,58 @@ export function RdoCreatePage({
                       }
                     />
                   </label>
+
+                  <label>
+                    Início
+                    <input
+                      type="time"
+                      value={item.horaInicio}
+                      onChange={(event) =>
+                        updateEquipamento(
+                          item.localId,
+                          {
+                            horaInicio:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Fim
+                    <input
+                      type="time"
+                      value={item.horaFim}
+                      onChange={(event) =>
+                        updateEquipamento(
+                          item.localId,
+                          {
+                            horaFim:
+                              event.target.value,
+                          },
+                        )
+                      }
+                    />
+                  </label>
                 </div>
+
+                <label className="full-width">
+                  Observações do equipamento
+                  <textarea
+                    rows={3}
+                    value={item.observacoes}
+                    onChange={(event) =>
+                      updateEquipamento(
+                        item.localId,
+                        {
+                          observacoes:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
               </div>
             ),
           )}
@@ -2016,7 +2580,6 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="07"
           title="Materiais"
           description="Materiais previstos, usinados e aplicados."
           onAdd={() =>
@@ -2219,7 +2782,6 @@ export function RdoCreatePage({
 
       <section className="form-card">
         <CollectionHeader
-          number="08"
           title="Controle geométrico"
           description="Medições e dimensões dos trechos executados."
           onAdd={() =>
@@ -2564,9 +3126,6 @@ export function RdoCreatePage({
         <section className="form-card json-preview">
           <div className="section-heading">
             <div>
-              <span className="section-number">
-                JSON
-              </span>
               <h2>Payload gerado</h2>
             </div>
 
@@ -2640,14 +3199,12 @@ export function RdoCreatePage({
 }
 
 interface CollectionHeaderProps {
-  number: string;
   title: string;
   description: string;
   onAdd: () => void;
 }
 
 function CollectionHeader({
-  number,
   title,
   description,
   onAdd,
@@ -2655,9 +3212,6 @@ function CollectionHeader({
   return (
     <div className="section-heading collection-heading">
       <div>
-        <span className="section-number">
-          {number}
-        </span>
         <h2>{title}</h2>
       </div>
 

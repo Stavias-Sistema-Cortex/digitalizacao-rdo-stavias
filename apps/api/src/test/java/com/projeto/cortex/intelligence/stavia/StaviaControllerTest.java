@@ -70,4 +70,63 @@ class StaviaControllerTest {
         assertThat(questionCaptor.getValue().userId())
                 .isEqualTo("usuario-autenticado");
     }
+
+    @Test
+    void shouldSendSelectedRdoContextToQueryService() {
+        StaviaQueryService queryService =
+                mock(StaviaQueryService.class);
+        CurrentUserService currentUserService =
+                mock(CurrentUserService.class);
+        StaviaQueryResult expected =
+                new StaviaQueryResult(
+                        new StaviaAnswer(
+                                "01/07/2026",
+                                StaviaConfidence.ALTA,
+                                StaviaAnswerType.FATO,
+                                List.of(),
+                                false,
+                                List.of()
+                        ),
+                        StaviaIntent.CONSULTAR_RDO,
+                        1.0,
+                        Map.of(),
+                        List.of()
+                );
+
+        when(queryService.query(any())).thenReturn(expected);
+        when(currentUserService.requireUserId())
+                .thenReturn("usuario-autenticado");
+
+        StaviaController controller =
+                new StaviaController(queryService, currentUserService);
+
+        controller.consultar(
+                new StaviaConsultaRequest(
+                        "Qual a data?",
+                        "usuario-forjado",
+                        "obra-ativa",
+                        "rdo-ativo",
+                        "Obra X · RDO 123",
+                        "obra-antiga",
+                        "rdo-antigo"
+                )
+        );
+
+        var questionCaptor =
+                forClass(com.projeto.cortex.intelligence.stavia.model.StaviaQuestion.class);
+        verify(queryService).query(questionCaptor.capture());
+
+        assertThat(questionCaptor.getValue().text())
+                .contains(
+                        "Contexto ontológico selecionado: "
+                                + "obraId=obra-ativa rdoId=rdo-ativo"
+                )
+                .contains("Contexto informado: Obra X · RDO 123")
+                .doesNotContain("rdo-antigo")
+                .doesNotContain("obra-antiga");
+        assertThat(questionCaptor.getValue().obraId())
+                .isEqualTo("obra-ativa");
+        assertThat(questionCaptor.getValue().userId())
+                .isEqualTo("usuario-autenticado");
+    }
 }

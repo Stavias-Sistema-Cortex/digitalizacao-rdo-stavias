@@ -133,14 +133,41 @@ class StaviaQueryPlannerTest {
         assertThat(plan.operation())
                 .isEqualTo(QueryOperation.READ_ATTRIBUTE);
         assertThat(plan.requestedAttributes())
-                .containsExactly("dataRdo");
+                .containsExactly("rdo.dataRdo");
         assertThat(plan.requiredSources())
-                .contains("cadastro-rdos");
+                .containsExactly("registros-rdo");
         assertThat(plan.requiresLatestValue()).isTrue();
         assertThat(planner.effectiveIntent(
                 StaviaIntent.CONSULTAR_OBRA,
                 plan
         )).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+    }
+
+    @Test
+    void shouldPlanSelectedRdoWeekdayThroughOntologyRecords() {
+        StaviaQueryPlan plan =
+                planner.plan(
+                        new StaviaQuestion(
+                                "Qual o dia da semana do RDO "
+                                        + "RDO-20260515-INTERVIAS2-F42F0A94?\n"
+                                        + "Contexto ontológico selecionado: "
+                                        + "obraId=obra-1 rdoId=rdo-1",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        new StaviaClassification(
+                                StaviaIntent.CONSULTAR_RDO,
+                                1.0
+                        )
+                );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.RDO);
+        assertThat(plan.operation())
+                .isEqualTo(QueryOperation.READ_ATTRIBUTE);
+        assertThat(plan.requestedAttributes())
+                .containsExactly("rdo.diaSemana");
+        assertThat(plan.requiredSources())
+                .containsExactly("registros-rdo");
     }
 
     @Test
@@ -194,6 +221,35 @@ class StaviaQueryPlannerTest {
                 );
         assertThat(plan.requiredSources())
                 .containsExactly("mao-de-obra-dos-rdos");
+    }
+
+    @Test
+    void shouldPrioritizeRdoOntologyCellOverGenericTeamPlan() {
+        StaviaQueryPlan plan = planner.plan(
+                new StaviaQuestion(
+                        "Qual o cargo do colaborador 1?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_EQUIPE,
+                        1.0
+                )
+        );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.RDO);
+        assertThat(plan.operation())
+                .isEqualTo(QueryOperation.READ_ATTRIBUTE);
+        assertThat(plan.requestedAttributes())
+                .containsExactly("maoObra.cargo");
+        assertThat(plan.requiredSources())
+                .containsExactly("registros-rdo");
+        assertThat(plan.entities())
+                .filteredOn(entity ->
+                        "MAOOBRA".equals(entity.type())
+                                && "ORDINAL".equals(entity.resolvedBy()))
+                .extracting("value")
+                .containsExactly("1");
     }
 
     @Test
@@ -494,6 +550,55 @@ class StaviaQueryPlannerTest {
     }
 
     @Test
+    void shouldPlanRdoOperationalCellsThroughMainPlanner() {
+        assertRdoCellPlan(
+                "Qual status de sincronização da foto 1?",
+                "attachment.syncStatus",
+                "registros-rdo"
+        );
+        assertRdoCellPlan(
+                "Qual origem do evento 1?",
+                "operationalEvent.origin",
+                "registros-rdo"
+        );
+        assertRdoCellPlan(
+                "Qual funcao da alocacao 1?",
+                "alocacaoColaborador.funcao",
+                "registros-rdo"
+        );
+    }
+
+    @Test
+    void shouldPlanCompleteRdoHeaderListingThroughMainPlanner() {
+        StaviaQueryPlan plan =
+                planner.plan(
+                        new StaviaQuestion(
+                                "Mostre todos os dados do RDO 123",
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        new StaviaClassification(
+                                StaviaIntent.DESCONHECIDA,
+                                0.0
+                        )
+                );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.RDO);
+        assertThat(plan.operation()).isEqualTo(QueryOperation.LIST_OBJECTS);
+        assertThat(plan.requestedAttributes())
+                .contains(
+                        "rdo.numeroRdo",
+                        "rdo.dataRdo",
+                        "rdo.syncStatus",
+                        "rdo.fiscalizacaoCampo"
+                );
+        assertThat(plan.requiredSources()).containsExactly("registros-rdo");
+        assertThat(
+                planner.effectiveIntent(StaviaIntent.DESCONHECIDA, plan)
+        ).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+    }
+
+    @Test
     void shouldPlanRdoRainRankingThroughOntology() {
         StaviaQueryPlan plan =
                 planner.plan(
@@ -509,6 +614,34 @@ class StaviaQueryPlannerTest {
                 );
 
         assertThat(plan.operation()).isEqualTo(QueryOperation.COMPARE);
+        assertThat(
+                planner.effectiveIntent(StaviaIntent.DESCONHECIDA, plan)
+        ).isEqualTo(StaviaIntent.CONSULTAR_RDO);
+    }
+
+    private void assertRdoCellPlan(
+            String text,
+            String expectedAttribute,
+            String expectedSource
+    ) {
+        StaviaQueryPlan plan =
+                planner.plan(
+                        new StaviaQuestion(
+                                text,
+                                "usuario-1",
+                                "obra-1"
+                        ),
+                        new StaviaClassification(
+                                StaviaIntent.DESCONHECIDA,
+                                0.0
+                        )
+                );
+
+        assertThat(plan.domain()).isEqualTo(QueryDomain.RDO);
+        assertThat(plan.operation()).isEqualTo(QueryOperation.READ_ATTRIBUTE);
+        assertThat(plan.requestedAttributes())
+                .containsExactly(expectedAttribute);
+        assertThat(plan.requiredSources()).containsExactly(expectedSource);
         assertThat(
                 planner.effectiveIntent(StaviaIntent.DESCONHECIDA, plan)
         ).isEqualTo(StaviaIntent.CONSULTAR_RDO);

@@ -46,7 +46,7 @@ class DeterministicQuestionInterpreterTest {
         assertTrue(result.isPresent());
         assertEquals(StaviaIntent.CONSULTAR_RDO, result.get().intent());
         assertEquals(
-                java.util.List.of("dataRdo"),
+                java.util.List.of("rdo.dataRdo"),
                 result.get().plan().requestedAttributes()
         );
     }

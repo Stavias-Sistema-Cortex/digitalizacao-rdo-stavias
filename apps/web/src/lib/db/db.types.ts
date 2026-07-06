@@ -6,6 +6,41 @@ export type LocalSyncStatus =
   | "ERROR"
   | "CONFLICT";
 
+export type OperationalEventType =
+  | "RDO_CRIADO"
+  | "RDO_EDITADO"
+  | "RDO_SALVO_OFFLINE"
+  | "RDO_SINCRONIZADO"
+  | "RDO_FALHA_SYNC"
+  | "FOTO_ADICIONADA"
+  | "FOTO_COMPRIMIDA"
+  | "FOTO_REMOVIDA"
+  | "MEDICAO_TRECHO_ATUALIZADA"
+  | "COLABORADOR_ASSOCIADO_RDO"
+  | "EQUIPAMENTO_ASSOCIADO_RDO"
+  | "OCORRENCIA_REGISTRADA"
+  | "CALCULO_REPROCESSADO"
+  | "ENTIDADE_RELACIONADA"
+  | "ENTIDADE_DESRELACIONADA";
+
+export type OperationalEventOrigin =
+  | "ONLINE"
+  | "OFFLINE"
+  | "SYNC";
+
+export type OperationalEventSyncStatus =
+  | "LOCAL_ONLY"
+  | "PENDING_SYNC"
+  | "SYNCING"
+  | "SYNCED"
+  | "SYNC_FAILED";
+
+export interface OperationalEntityRef {
+  tipo: string;
+  id: string;
+  nome?: string | null;
+}
+
 export type OutboxMutationStatus =
   | "PENDING"
   | "SYNCING"
@@ -89,32 +124,58 @@ export interface ProcessedEventRecord {
   entidadeId: string;
   aplicadoEm: string;
 }
+
+export interface OperationalEventRecord {
+  id: string;
+  type: OperationalEventType;
+  principalEntity: OperationalEntityRef;
+  principalEntityKey: string;
+  relatedEntities: OperationalEntityRef[];
+  obraId: string | null;
+  rdoId: string | null;
+  colaboradorId: string | null;
+  occurredAt: string;
+  syncedAt: string | null;
+  origin: OperationalEventOrigin;
+  responsibleUserId: string | null;
+  responsibleUserName: string | null;
+  payload: Record<string, unknown>;
+  syncStatus: OperationalEventSyncStatus;
+  schemaVersion: number;
+}
+
 export type AttachmentType = "FOTO" | "VIDEO";
 
 export type AttachmentSyncStatus =
   | "LOCAL_ONLY"
-  | "PENDING_UPLOAD"
-  | "UPLOADING"
-  | "UPLOADED"
-  | "ERROR";
+  | "PENDING_SYNC"
+  | "SYNCING"
+  | "SYNCED"
+  | "SYNC_FAILED";
 
 export interface RdoAttachmentRecord {
   id: string;
   rdoId: string;
+  obraId: string | null;
 
   tipo: AttachmentType;
 
   nome: string;
+  nomeOriginal: string | null;
   mimeType: string;
   tamanhoBytes: number;
+  tamanhoOriginalBytes: number;
+  tamanhoComprimidoBytes: number;
 
   arquivo: Blob;
 
   syncStatus: AttachmentSyncStatus;
   ultimoErro: string | null;
+  metadata: Record<string, unknown>;
 
   createdAt: string;
   updatedAt: string;
+  removedAt: string | null;
 }
 
 export interface StaviaSnapshotRecord {

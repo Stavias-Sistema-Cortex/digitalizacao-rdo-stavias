@@ -22,6 +22,8 @@ public class RdoDraftUpdateService {
     private final RdoMemoryPublisher memoryPublisher;
     private final RdoChangeAuditService auditService;
     private final RdoOperationalDetailService operationalDetailService;
+    private final RdoAttachmentService attachmentService;
+    private final RdoOperationalEventService operationalEventService;
     private final PrevisaoFinanceiraService previsaoFinanceiraService;
 
     public RdoDraftUpdateService(
@@ -30,6 +32,8 @@ public class RdoDraftUpdateService {
             RdoMemoryPublisher memoryPublisher,
             RdoChangeAuditService auditService,
             RdoOperationalDetailService operationalDetailService,
+            RdoAttachmentService attachmentService,
+            RdoOperationalEventService operationalEventService,
             PrevisaoFinanceiraService previsaoFinanceiraService
     ) {
         this.jdbcTemplate = jdbcTemplate;
@@ -37,6 +41,8 @@ public class RdoDraftUpdateService {
         this.memoryPublisher = memoryPublisher;
         this.auditService = auditService;
         this.operationalDetailService = operationalDetailService;
+        this.attachmentService = attachmentService;
+        this.operationalEventService = operationalEventService;
         this.previsaoFinanceiraService = previsaoFinanceiraService;
     }
 
@@ -162,6 +168,12 @@ public class RdoDraftUpdateService {
                 request.alocacoesColaboradores()
         );
 
+        attachmentService.substituirAttachments(
+                rdoId,
+                request.obraId(),
+                request.attachments()
+        );
+
         RdoChangeAuditService.RdoAuditSnapshot estadoNovo =
                 auditService.carregar(rdoId);
 
@@ -177,6 +189,12 @@ public class RdoDraftUpdateService {
                         estadoAnterior,
                         estadoNovo
                         )
+        );
+
+        operationalEventService.registrarEventosCliente(
+                rdoId,
+                request.obraId(),
+                request.operationalEvents()
         );
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(

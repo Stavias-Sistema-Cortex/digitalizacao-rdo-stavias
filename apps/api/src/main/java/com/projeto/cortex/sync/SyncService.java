@@ -343,6 +343,11 @@ public class SyncService {
             );
 
             if (existente != null) {
+                if ("ERRO".equals(existente.status())) {
+                    return transactionTemplate.execute(
+                            status -> reprocessarMutacaoComErro(dispositivoId, mutacao)
+                    );
+                }
                 return existente;
             }
 
@@ -372,6 +377,21 @@ public class SyncService {
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         inserirMutacaoPendente(dispositivoId, mutacao);
+        return aplicarMutacaoRegistrada(dispositivoId, mutacao);
+    }
+
+    private SyncPushResponse.ResultadoMutacao reprocessarMutacaoComErro(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        reabrirMutacaoComErro(dispositivoId, mutacao);
+        return aplicarMutacaoRegistrada(dispositivoId, mutacao);
+    }
+
+    private SyncPushResponse.ResultadoMutacao aplicarMutacaoRegistrada(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
         validarBaseVersao(mutacao);
 
         RdoResponse response = aplicarOperacao(mutacao);
@@ -418,6 +438,44 @@ public class SyncService {
                 objectMapper.createObjectNode(),
                 null
         );
+    }
+
+    private void reabrirMutacaoComErro(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE sync_mutacao_cliente
+                SET
+                    entidade_tipo = ?,
+                    entidade_id = ?,
+                    operacao = ?,
+                    base_versao = ?,
+                    payload_json = ?,
+                    status = 'PENDENTE',
+                    erro = NULL,
+                    resultado_json = NULL,
+                    conflito_json = NULL,
+                    evento_servidor_commit_seq = NULL,
+                    recebida_em = CURRENT_TIMESTAMP(6),
+                    aplicada_em = NULL
+                WHERE dispositivo_id = ?
+                  AND client_mutation_id = ?
+                  AND status = 'ERRO'
+                """,
+                primeiroNaoVazio(mutacao.entidadeTipo(), "RDO"),
+                mutacao.entidadeId(),
+                operacaoSeguraParaBanco(mutacao.operacao()),
+                mutacao.baseVersao(),
+                toJson(mutacao.payload()),
+                dispositivoId,
+                mutacao.clientMutationId()
+        );
+
+        if (updated == 0) {
+            throw new DuplicateKeyException("Mutação já reprocessada por outra requisição.");
+        }
     }
 
     private SyncPushResponse.ResultadoMutacao registrarConflitoEmNovaTransacao(

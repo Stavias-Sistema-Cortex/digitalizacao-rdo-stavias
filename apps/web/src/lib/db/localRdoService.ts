@@ -4,6 +4,7 @@ import type {
   EquipamentoDraft,
   MaoObraDraft,
   MaterialDraft,
+  RdoAttachmentDraft,
   RdoDraft,
   ServicoExecutadoDraft,
 } from "../../features/rdos/rdo.types";
@@ -12,8 +13,14 @@ import type {
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
+  OperationalEntityRef,
+  OperationalEventRecord,
   OutboxMutationRecord,
 } from "./db.types";
+import {
+  buildOperationalEvent,
+  queryOperationalEvents,
+} from "./operationalEventRepository";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -60,12 +67,82 @@ function nullIfEmpty(value: string): string | null {
   return value.trim() === "" ? null : value;
 }
 
+function entityName(value: string | null | undefined): string | null {
+  if (!value || !value.trim()) {
+    return null;
+  }
+
+  return value.trim();
+}
+
+function numberFromText(value: string): number | null {
+  const normalized = value.trim().replace(",", ".");
+
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numberFromInput(value: string | number): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  return numberFromText(value);
+}
+
+function round3(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+function calculatedLengthFromKm(
+  kmInicial: string,
+  kmFinal: string,
+): number | null {
+  const start = numberFromText(kmInicial);
+  const end = numberFromText(kmFinal);
+
+  if (start === null || end === null || end < start) {
+    return null;
+  }
+
+  return round3((end - start) * 1000);
+}
+
+function attachmentPayload(
+  attachment: RdoAttachmentDraft,
+): Record<string, unknown> {
+  return {
+    id: attachment.id,
+    rdoId: attachment.rdoId,
+    obraId: attachment.obraId,
+    tipo: attachment.tipo,
+    nome: attachment.nome,
+    nomeOriginal: attachment.nomeOriginal,
+    mimeType: attachment.mimeType,
+    tamanhoOriginalBytes: attachment.tamanhoOriginalBytes,
+    tamanhoComprimidoBytes: attachment.tamanhoComprimidoBytes,
+    tamanhoBytes: attachment.tamanhoBytes,
+    syncStatus: attachment.syncStatus,
+    createdAt: attachment.createdAt,
+    updatedAt: attachment.updatedAt,
+    removedAt: attachment.removedAt,
+    metadata: attachment.metadata,
+  };
+}
+
 function buildMaoObraPayload(item: MaoObraDraft) {
   const base = removeLocalId(item);
 
   return {
     ...base,
     colaboradorId: nullIfEmpty(base.colaboradorId),
+    horaInicio: nullIfEmpty(base.horaInicio),
+    horaFim: nullIfEmpty(base.horaFim),
+    observacoes: nullIfEmpty(base.observacoes),
   };
 }
 
@@ -77,6 +154,9 @@ function buildEquipamentoPayload(
   return {
     ...base,
     assetId: nullIfEmpty(base.assetId),
+    horaInicio: nullIfEmpty(base.horaInicio),
+    horaFim: nullIfEmpty(base.horaFim),
+    observacoes: nullIfEmpty(base.observacoes),
   };
 }
 
@@ -169,7 +249,10 @@ function isMaoObraEmpty(item: MaoObraDraft): boolean {
     item.colaboradorId.trim() === "" &&
     item.nomeColaborador.trim() === "" &&
     item.cargo.trim() === "" &&
-    item.quantidade === ""
+    item.quantidade === "" &&
+    item.horaInicio.trim() === "" &&
+    item.horaFim.trim() === "" &&
+    item.observacoes.trim() === ""
   );
 }
 
@@ -181,7 +264,10 @@ function isEquipamentoEmpty(
     item.prefixo.trim() === "" &&
     item.descricao.trim() === "" &&
     item.tipoEquipamento.trim() === "" &&
-    item.quantidade === ""
+    item.quantidade === "" &&
+    item.horaInicio.trim() === "" &&
+    item.horaFim.trim() === "" &&
+    item.observacoes.trim() === ""
   );
 }
 
@@ -202,7 +288,10 @@ function isControleEmpty(
 
 function buildRdoSyncPayload(
   draft: RdoDraft,
+  operationalEvents: OperationalEventRecord[] = [],
 ): Record<string, unknown> {
+  const attachments = draft.attachments ?? [];
+
   return {
     id: draft.id,
     obraId: draft.obraId,
@@ -265,12 +354,34 @@ function buildRdoSyncPayload(
       draft.controlesGeometricos
         .filter((item) => !isControleEmpty(item))
         .map(removeLocalId),
+    attachments: attachments
+      .filter((item) => item.removedAt === null)
+      .map(attachmentPayload),
+    operationalEvents: operationalEvents.map((event) => ({
+      id: event.id,
+      type: event.type,
+      principalEntity: event.principalEntity,
+      relatedEntities: event.relatedEntities,
+      obraId: event.obraId,
+      rdoId: event.rdoId,
+      colaboradorId: event.colaboradorId,
+      occurredAt: event.occurredAt,
+      syncedAt: event.syncedAt,
+      origin: event.origin,
+      responsibleUserId: event.responsibleUserId,
+      responsibleUserName: event.responsibleUserName,
+      payload: event.payload,
+      syncStatus: event.syncStatus,
+      schemaVersion: event.schemaVersion,
+    })),
   };
 }
 
 function buildRdoLocalPayload(
   draft: RdoDraft,
 ): Record<string, unknown> {
+  const attachments = draft.attachments ?? [];
+
   return {
     id: draft.id,
     obraId: draft.obraId,
@@ -310,7 +421,315 @@ function buildRdoLocalPayload(
     materiais: draft.materiais,
     controlesGeometricos:
       draft.controlesGeometricos,
+    attachments: attachments.map(attachmentPayload),
   };
+}
+
+function rdoEntity(draft: RdoDraft): OperationalEntityRef {
+  return {
+    tipo: "RDO",
+    id: draft.id,
+    nome: draft.numeroRdo ? `RDO ${draft.numeroRdo}` : "RDO local",
+  };
+}
+
+function obraEntity(draft: RdoDraft): OperationalEntityRef {
+  return {
+    tipo: "OBRA",
+    id: draft.obraId,
+    nome: entityName(draft.contrato) ?? entityName(draft.cliente),
+  };
+}
+
+function nonEmptyRelated(
+  entities: OperationalEntityRef[],
+): OperationalEntityRef[] {
+  return entities.filter(
+    (entity) => entity.id && entity.id.trim(),
+  );
+}
+
+function buildRdoSaveOperationalEvents(
+  draft: RdoDraft,
+  isExisting: boolean,
+  timestamp: string,
+): OperationalEventRecord[] {
+  const rdo = rdoEntity(draft);
+  const obra = obraEntity(draft);
+  const base = {
+    obraId: draft.obraId,
+    rdoId: draft.id,
+    occurredAt: timestamp,
+    origin: "OFFLINE" as const,
+    syncStatus: "PENDING_SYNC" as const,
+    schemaVersion: 1,
+  };
+
+  const events: OperationalEventRecord[] = [
+    buildOperationalEvent({
+      ...base,
+      type: isExisting ? "RDO_EDITADO" : "RDO_CRIADO",
+      principalEntity: rdo,
+      relatedEntities: nonEmptyRelated([obra]),
+      payload: {
+        numeroRdo: draft.numeroRdo,
+        dataRdo: draft.dataRdo,
+        statusRdo: draft.syncStatus,
+      },
+    }),
+    buildOperationalEvent({
+      ...base,
+      type: "RDO_SALVO_OFFLINE",
+      principalEntity: rdo,
+      relatedEntities: nonEmptyRelated([obra]),
+      payload: {
+        numeroRdo: draft.numeroRdo,
+        dataRdo: draft.dataRdo,
+        totalFotos: (draft.attachments ?? []).filter(
+          (item) => item.removedAt === null,
+        ).length,
+      },
+    }),
+    buildOperationalEvent({
+      ...base,
+      type: "ENTIDADE_RELACIONADA",
+      principalEntity: rdo,
+      relatedEntities: nonEmptyRelated([obra]),
+      payload: {
+        relationType: "PERTENCE_A",
+        origemTipo: "RDO",
+        origemId: draft.id,
+        destinoTipo: "OBRA",
+        destinoId: draft.obraId,
+      },
+    }),
+  ];
+
+  if (draft.programacaoId.trim()) {
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "ENTIDADE_RELACIONADA",
+        principalEntity: rdo,
+        relatedEntities: [
+          {
+            tipo: "PROGRAMACAO_OPERACIONAL",
+            id: draft.programacaoId,
+            nome: null,
+          },
+        ],
+        payload: {
+          relationType: "GERADO_A_PARTIR_DE",
+          origemTipo: "RDO",
+          origemId: draft.id,
+          destinoTipo: "PROGRAMACAO_OPERACIONAL",
+          destinoId: draft.programacaoId,
+        },
+      }),
+    );
+  }
+
+  for (const item of draft.alocacoesColaboradores) {
+    if (!item.colaboradorId.trim()) {
+      continue;
+    }
+
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "COLABORADOR_ASSOCIADO_RDO",
+        principalEntity: {
+          tipo: "COLABORADOR",
+          id: item.colaboradorId,
+          nome: entityName(item.equipe) ?? entityName(item.funcao),
+        },
+        relatedEntities: nonEmptyRelated([rdo, obra]),
+        colaboradorId: item.colaboradorId,
+        payload: {
+          equipe: item.equipe,
+          funcao: item.funcao,
+          servicoNome: item.servicoNome,
+          horaInicio: item.horaInicio,
+          horaFim: item.horaFim,
+          percentualDia: item.percentualDia,
+          tipoAlocacao: item.tipoAlocacao,
+        },
+      }),
+    );
+  }
+
+  for (const item of draft.maoObra) {
+    const colaboradorId = item.colaboradorId.trim();
+    if (!colaboradorId && !item.nomeColaborador.trim()) {
+      continue;
+    }
+
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "COLABORADOR_ASSOCIADO_RDO",
+        principalEntity: {
+          tipo: colaboradorId ? "COLABORADOR" : "RDO_MAO_OBRA",
+          id: colaboradorId || item.localId,
+          nome:
+            entityName(item.nomeColaborador) ??
+            entityName(item.cargo),
+        },
+        relatedEntities: nonEmptyRelated([rdo, obra]),
+        colaboradorId: colaboradorId || null,
+        payload: {
+          nomeColaborador: item.nomeColaborador,
+          cargo: item.cargo,
+          tipoVinculo: item.tipoVinculo,
+          quantidade: item.quantidade,
+          localId: item.localId,
+          localEntityId: `${draft.id}:maoObra:${item.localId}`,
+        },
+      }),
+    );
+  }
+
+  for (const item of draft.equipamentos) {
+    const assetId = item.assetId.trim();
+
+    if (
+      !assetId &&
+      !item.prefixo.trim() &&
+      !item.descricao.trim()
+    ) {
+      continue;
+    }
+
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "EQUIPAMENTO_ASSOCIADO_RDO",
+        principalEntity: {
+          tipo: assetId ? "ATIVO" : "RDO_EQUIPAMENTO",
+          id: assetId || item.localId,
+          nome:
+            entityName(item.prefixo) ??
+            entityName(item.descricao) ??
+            entityName(item.tipoEquipamento),
+        },
+        relatedEntities: nonEmptyRelated([rdo, obra]),
+        payload: {
+          prefixo: item.prefixo,
+          descricao: item.descricao,
+          tipoEquipamento: item.tipoEquipamento,
+          tipoVinculo: item.tipoVinculo,
+          quantidade: item.quantidade,
+          localId: item.localId,
+          localEntityId: `${draft.id}:equipamento:${item.localId}`,
+        },
+      }),
+    );
+  }
+
+  for (const item of draft.controlesGeometricos) {
+    if (isControleEmpty(item)) {
+      continue;
+    }
+
+    const extensaoM =
+      calculatedLengthFromKm(item.kmInicial, item.kmFinal) ??
+      (typeof item.comprimentoM === "number"
+        ? item.comprimentoM
+        : null);
+
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "MEDICAO_TRECHO_ATUALIZADA",
+        principalEntity: rdo,
+        relatedEntities: [
+          {
+            tipo: "CONTROLE_GEOMETRICO",
+            id: item.localId,
+            nome:
+              entityName(item.subtrecho) ??
+              entityName(item.numero) ??
+              entityName(item.ordemServico),
+          },
+        ],
+        payload: {
+          subtrecho: item.subtrecho,
+          numero: item.numero,
+          kmInicial: item.kmInicial,
+          kmFinal: item.kmFinal,
+          extensaoM,
+          pista: item.pista,
+          faixa: item.faixa,
+          comprimentoM: item.comprimentoM,
+          larguraM: item.larguraM,
+          localId: item.localId,
+          localEntityId: `${draft.id}:controle:${item.localId}`,
+        },
+      }),
+    );
+  }
+
+  const hasCalculations =
+    draft.controlesGeometricos.some((item) => !isControleEmpty(item)) ||
+    draft.materiais.some((item) => !isMaterialEmpty(item));
+
+  if (hasCalculations) {
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "CALCULO_REPROCESSADO",
+        principalEntity: rdo,
+        relatedEntities: nonEmptyRelated([obra]),
+        payload: {
+          controlesGeometricos: draft.controlesGeometricos.length,
+          materiais: draft.materiais.length,
+          calculosOffline: [
+            "extensao_trecho",
+            "sobra_material",
+            "area_volume_massa",
+          ],
+        },
+      }),
+    );
+  }
+
+  const occurrenceText = [
+    draft.observacoes,
+    ...draft.servicosExecutados.map((item) => item.observacoes),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const hasOccurrence =
+    /ocorr|inciden|problema|paralis|chuva|interdi|rejeitad/.test(
+      occurrenceText,
+    ) ||
+    draft.servicosExecutados.some(
+      (item) => item.producaoRejeitada || item.retrabalho,
+    );
+
+  if (hasOccurrence) {
+    events.push(
+      buildOperationalEvent({
+        ...base,
+        type: "OCORRENCIA_REGISTRADA",
+        principalEntity: rdo,
+        relatedEntities: nonEmptyRelated([obra]),
+        payload: {
+          observacoes: draft.observacoes,
+          servicosComRetrabalho:
+            draft.servicosExecutados.filter(
+              (item) => item.retrabalho,
+            ).length,
+          servicosRejeitados:
+            draft.servicosExecutados.filter(
+              (item) => item.producaoRejeitada,
+            ).length,
+        },
+      }),
+    );
+  }
+
+  return events;
 }
 
 function childRecordId(
@@ -473,7 +892,7 @@ async function replaceChildRecords(
   ]);
 }
 
-function validateDraft(draft: RdoDraft): void {
+export function validateRdoDraftForSync(draft: RdoDraft): void {
   if (!draft.id.trim()) {
     throw new Error(
       "O RDO precisa ter um ID local.",
@@ -481,29 +900,118 @@ function validateDraft(draft: RdoDraft): void {
   }
 
   if (!draft.obraId.trim()) {
-    throw new Error("obraId é obrigatório.");
+    throw new Error("A obra é obrigatória.");
   }
 
   if (!draft.numeroRdo.trim()) {
     throw new Error(
-      "numeroRdo é obrigatório.",
+      "O número do RDO é obrigatório.",
     );
   }
 
   if (!draft.dataRdo.trim()) {
-    throw new Error("dataRdo é obrigatório.");
+    throw new Error("A data do RDO é obrigatória.");
+  }
+
+  if (
+    (draft.attachments ?? []).filter((item) => item.removedAt === null)
+      .length > 5
+  ) {
+    throw new Error("O limite é de 5 fotos por RDO.");
+  }
+
+  validateKmRange(
+    draft.kmInicialProgramado,
+    draft.kmFinalProgramado,
+    "trecho programado",
+  );
+  validateKmRange(
+    draft.kmInicialInterditado,
+    draft.kmFinalInterditado,
+    "trecho interditado",
+  );
+
+  draft.controlesGeometricos.forEach((item, index) => {
+    validateKmRange(
+      item.kmInicial,
+      item.kmFinal,
+      `controle geométrico ${index + 1}`,
+    );
+  });
+
+  draft.servicosExecutados.forEach((item, index) => {
+    const quantidadeExecutada = numberFromInput(
+      item.quantidadeExecutada,
+    );
+
+    if (
+      quantidadeExecutada !== null &&
+      quantidadeExecutada < 0
+    ) {
+      throw new Error(
+        `A quantidade executada do serviço ${index + 1} deve ser maior ou igual a zero.`,
+      );
+    }
+  });
+
+  const requiresCaixa = draft.servicosExecutados.some((item) =>
+    item.servicoNome.toLowerCase().includes("caixa"),
+  );
+
+  if (
+    requiresCaixa &&
+    !draft.controlesGeometricos.some(
+      (item) => item.numero.trim() || item.subtrecho.trim(),
+    )
+  ) {
+    throw new Error(
+      "Informe a caixa no controle geométrico para serviços que exigem caixa.",
+    );
+  }
+}
+
+function validateKmRange(
+  initialValue: string,
+  finalValue: string,
+  label: string,
+): void {
+  const initial = numberFromText(initialValue);
+  const final = numberFromText(finalValue);
+
+  if (initial === null || final === null) {
+    return;
+  }
+
+  if (final < initial) {
+    throw new Error(
+      `O KM final do ${label} não pode ser menor que o KM inicial.`,
+    );
   }
 }
 
 export async function saveNewRdoDraftAtomically(
   draft: RdoDraft,
 ): Promise<SaveRdoDraftResult> {
-  validateDraft(draft);
+  validateRdoDraftForSync(draft);
 
   const database = await getCortexDb();
   const timestamp = nowUtc();
+  const operationalEvents = buildRdoSaveOperationalEvents(
+    draft,
+    false,
+    timestamp,
+  );
+  const pendingOperationalEvents = (
+    await queryOperationalEvents({
+      rdoId: draft.id,
+      limit: 500,
+    })
+  ).filter((event) => event.syncStatus !== "SYNCED");
   const localPayload = buildRdoLocalPayload(draft);
-  const syncPayload = buildRdoSyncPayload(draft);
+  const syncPayload = buildRdoSyncPayload(draft, [
+    ...pendingOperationalEvents,
+    ...operationalEvents,
+  ]);
 
   const rdo: LocalRdoRecord = {
     id: draft.id,
@@ -544,6 +1052,7 @@ export async function saveNewRdoDraftAtomically(
       "rdoEquipamentos",
       "rdoMateriais",
       "rdoControlesGeometricos",
+      "operational_events",
     ],
     "readwrite",
   );
@@ -555,6 +1064,8 @@ export async function saveNewRdoDraftAtomically(
     transaction.objectStore(
       "outbox_mutations",
     );
+  const eventStore =
+    transaction.objectStore("operational_events");
 
   const existingRdo =
     await rdoStore.get(draft.id);
@@ -570,6 +1081,9 @@ export async function saveNewRdoDraftAtomically(
   await Promise.all([
     rdoStore.add(rdo),
     outboxStore.add(mutation),
+    ...operationalEvents.map((event) =>
+      eventStore.put(event),
+    ),
     replaceChildRecords(
       transaction,
       draft,
@@ -597,6 +1111,7 @@ export async function repairRdoCreateMutationsForSync(): Promise<number> {
       "rdoEquipamentos",
       "rdoMateriais",
       "rdoControlesGeometricos",
+      "operational_events",
     ],
     "readwrite",
   );
@@ -697,12 +1212,26 @@ export async function repairRdoCreateMutationsForSync(): Promise<number> {
 export async function saveExistingRdoDraftAtomically(
   draft: RdoDraft,
 ): Promise<SaveRdoDraftResult> {
-  validateDraft(draft);
+  validateRdoDraftForSync(draft);
 
   const database = await getCortexDb();
   const timestamp = nowUtc();
+  const operationalEvents = buildRdoSaveOperationalEvents(
+    draft,
+    true,
+    timestamp,
+  );
+  const pendingOperationalEvents = (
+    await queryOperationalEvents({
+      rdoId: draft.id,
+      limit: 500,
+    })
+  ).filter((event) => event.syncStatus !== "SYNCED");
   const localPayload = buildRdoLocalPayload(draft);
-  const syncPayload = buildRdoSyncPayload(draft);
+  const syncPayload = buildRdoSyncPayload(draft, [
+    ...pendingOperationalEvents,
+    ...operationalEvents,
+  ]);
 
   const transaction = database.transaction(
     [
@@ -712,6 +1241,7 @@ export async function saveExistingRdoDraftAtomically(
       "rdoEquipamentos",
       "rdoMateriais",
       "rdoControlesGeometricos",
+      "operational_events",
     ],
     "readwrite",
   );
@@ -723,6 +1253,8 @@ export async function saveExistingRdoDraftAtomically(
     transaction.objectStore(
       "outbox_mutations",
     );
+  const eventStore =
+    transaction.objectStore("operational_events");
 
   const existingRdo =
     await rdoStore.get(draft.id);
@@ -873,6 +1405,9 @@ export async function saveExistingRdoDraftAtomically(
   await Promise.all([
     rdoStore.put(updatedRdo),
     outboxStore.put(mutation),
+    ...operationalEvents.map((event) =>
+      eventStore.put(event),
+    ),
     replaceChildRecords(
       transaction,
       draft,

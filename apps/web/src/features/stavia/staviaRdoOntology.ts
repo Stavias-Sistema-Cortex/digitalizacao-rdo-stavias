@@ -2,6 +2,7 @@ import rdoOntologyFallback from "./rdoOntology.json";
 import type {
   StaviaConsultaResponse,
   StaviaSnapshot,
+  StaviaSnapshotOperationalEvent,
   StaviaSnapshotRdo,
 } from "./stavia.types";
 
@@ -45,6 +46,14 @@ export interface RdoOntologyJson {
 
 const LIST_WORDS = [
   "quais",
+  "dados",
+  "campos",
+  "detalhes",
+  "detalhe",
+  "informacoes",
+  "informações",
+  "mostre",
+  "mostrar",
   "lista",
   "listar",
   "liste",
@@ -53,6 +62,22 @@ const LIST_WORDS = [
   "utilizados",
   "trabalhou",
   "trabalharam",
+];
+
+const FULL_RECORD_WORDS = [
+  "dados",
+  "campos",
+  "detalhes",
+  "detalhe",
+  "informacoes",
+  "informações",
+  "tudo",
+  "todo",
+  "toda",
+  "todos",
+  "todas",
+  "completo",
+  "completa",
 ];
 
 const AGGREGATE_WORDS = [
@@ -77,6 +102,29 @@ const COMPARE_MARKERS = [
   "diferenca entre",
 ];
 
+const ORDINAL_WORDS: Record<string, number> = {
+  primeiro: 1,
+  primeira: 1,
+  segundo: 2,
+  segunda: 2,
+  terceiro: 3,
+  terceira: 3,
+  quarto: 4,
+  quarta: 4,
+  quinto: 5,
+  quinta: 5,
+  sexto: 6,
+  sexta: 6,
+  setimo: 7,
+  setima: 7,
+  oitavo: 8,
+  oitava: 8,
+  nono: 9,
+  nona: 9,
+  decimo: 10,
+  decima: 10,
+};
+
 const IDENTITY_STOPWORDS = new Set([
   "qual", "quais", "quanto", "quanta", "quantos", "quantas", "quando",
   "quem", "onde", "como", "foi", "foram", "e", "o", "a", "os", "as",
@@ -86,7 +134,10 @@ const IDENTITY_STOPWORDS = new Set([
   "ontem", "semana", "passada", "mais", "menos", "recente", "total",
   "soma", "media", "teve", "tem", "houve", "registrado",
   "registrados", "registrada", "registradas", "lista", "listar",
-  "liste", "usados", "utilizados", "trabalhou", "trabalharam",
+  "liste", "dados", "campos", "detalhes", "detalhe", "informacoes",
+  "informações", "mostre", "mostrar", "tudo", "todo", "toda",
+  "todos", "todas", "completo", "completa", "usados",
+  "utilizados", "trabalhou", "trabalharam",
   "comparar", "comparacao", "vs", "versus", "diferenca", "entre",
   "tonelada", "toneladas", "t", "kg", "quilos", "litro", "litros",
   "metro", "metros", "mm", "cm", "m2", "m3", "executado",
@@ -113,6 +164,7 @@ interface AttributeMatch {
 interface OntologyRow {
   rdo: StaviaSnapshotRdo;
   values: Record<string, unknown>;
+  index: number;
 }
 
 export function loadRdoOntology(snapshot: StaviaSnapshot): RdoOntologyJson {
@@ -135,10 +187,24 @@ export function matchesOntologyAttribute(
 ): boolean {
   const normalized = normalize(pergunta);
 
-  return ontology.entities.some((entity) =>
+  const attributeMatch = ontology.entities.some((entity) =>
     entity.attributes.some((attribute) =>
-      attribute.aliases.some((alias) => matchesAlias(normalized, alias)),
+      attributeAliases(attribute).some((alias) =>
+        matchesAlias(normalized, alias),
+      ),
     ),
+  );
+
+  if (attributeMatch) {
+    return true;
+  }
+
+  if (!LIST_WORDS.some((word) => containsWord(normalized, word))) {
+    return false;
+  }
+
+  return ontology.entities.some((entity) =>
+    entity.aliases.some((alias) => matchesAlias(normalized, alias)),
   );
 }
 
@@ -146,10 +212,12 @@ export function answerWithRdoOntology({
   ontology,
   pergunta,
   rdos,
+  operationalEvents = [],
 }: {
   ontology: RdoOntologyJson;
   pergunta: string;
   rdos: StaviaSnapshotRdo[];
+  operationalEvents?: StaviaSnapshotOperationalEvent[];
 }): StaviaConsultaResponse | null {
   const normalized = normalize(pergunta);
 
@@ -158,7 +226,8 @@ export function answerWithRdoOntology({
   }
 
   const matches = attributeMatches(ontology, normalized);
-  const entity = targetEntity(ontology, matches, normalized);
+  const listWord = LIST_WORDS.some((word) => containsWord(normalized, word));
+  const entity = targetEntity(ontology, matches, normalized, listWord);
 
   if (!entity) {
     return null;
@@ -181,16 +250,25 @@ export function answerWithRdoOntology({
   const aggregateWord = AGGREGATE_WORDS.some((word) =>
     containsWord(normalized, word),
   );
-  const listWord = LIST_WORDS.some((word) => containsWord(normalized, word));
-
   const aggregable = entityMatches.filter(
     (match) => match.attribute.aggregable,
   );
+  const fullRecord = wantsFullRecord(normalized);
+  const ordinal = rowOrdinal(normalized, entity);
+  const ordinalRecord = ordinal !== null;
 
   let operation: "READ" | "LIST" | "AGGREGATE" | "RANKING" | "COMPARE";
   let attributes: RdoOntologyAttributeJson[];
 
-  if (best && best.attribute.aggregable && (rankingMax || rankingMin)) {
+  if (listWord && fullRecord) {
+    operation = "LIST";
+    attributes = listingAttributes(entity, normalized);
+  } else if (
+    !ordinalRecord &&
+    best &&
+    best.attribute.aggregable &&
+    (rankingMax || rankingMin)
+  ) {
     operation = "RANKING";
     attributes = [best.attribute];
   } else if (
@@ -199,33 +277,36 @@ export function answerWithRdoOntology({
   ) {
     operation = "COMPARE";
     attributes = distinctAttributes(aggregable);
-  } else if (best && best.attribute.aggregable && aggregateWord) {
+  } else if (
+    !ordinalRecord &&
+    best &&
+    best.attribute.aggregable &&
+    aggregateWord
+  ) {
     operation = "AGGREGATE";
     attributes = [best.attribute];
   } else if (best) {
     operation = "READ";
-    attributes = distinctAttributes(entityMatches);
+    attributes = distinctAttributes(preferSpecificMatches(entityMatches));
   } else if (listWord) {
     operation = "LIST";
-    attributes = listingAttributes(entity);
+    attributes = listingAttributes(entity, normalized);
   } else {
-    return null;
-  }
-
-  if (entity.header && operation !== "AGGREGATE" && operation !== "RANKING") {
     return null;
   }
 
   const period = parsePeriod(normalized);
   const identity = identityTerm(normalized, entity, entityMatches);
 
-  let rows = entityRows(entity, rdos).filter((row) =>
+  let rows = entityRows(entity, rdos, operationalEvents).filter((row) =>
     matchesPeriod(row, period),
   );
 
   const allRowsInPeriod = rows;
 
-  if (identity) {
+  if (ordinal !== null) {
+    rows = rows.filter((row) => row.index === ordinal);
+  } else if (identity) {
     rows = rows.filter((row) => matchesIdentity(entity, row, identity));
   }
 
@@ -277,7 +358,7 @@ function recordsAnswer(
 
     if (entry.parts.length === 1) {
       const part = entry.parts[0];
-      textAnswer = `${part.attribute.label}${item ? ` de ${item}` : ""}: `
+      textAnswer = `${attributeScopeLabel(entity, part.attribute, item)}: `
         + `${part.value}${unitSuffix(part.attribute, entry.row)}`;
     } else {
       const joined = entry.parts
@@ -327,6 +408,30 @@ function recordsAnswer(
   });
 
   return ontologyResponse(`Registros encontrados:\n${lines.join("\n")}`);
+}
+
+function attributeScopeLabel(
+  entity: RdoOntologyEntityJson,
+  attribute: RdoOntologyAttributeJson,
+  item: string | null,
+): string {
+  if (!item) {
+    return attribute.label;
+  }
+
+  if (entity.name === "rdo") {
+    if (attribute.label.toLowerCase().endsWith("por")) {
+      return `${attribute.label} no ${item}`;
+    }
+
+    if (attribute.label.toLowerCase().endsWith(" do rdo")) {
+      return `${attribute.label.replace(/\s+do RDO$/i, "")} do ${item}`;
+    }
+
+    return `${attribute.label} do ${item}`;
+  }
+
+  return `${attribute.label} de ${item}`;
 }
 
 function aggregateAnswer(
@@ -496,11 +601,13 @@ function ontologyResponse(
 function entityRows(
   entity: RdoOntologyEntityJson,
   rdos: StaviaSnapshotRdo[],
+  operationalEvents: StaviaSnapshotOperationalEvent[],
 ): OntologyRow[] {
   if (entity.header) {
     return rdos.map((rdo) => ({
       rdo,
       values: rdo as unknown as Record<string, unknown>,
+      index: 1,
     }));
   }
 
@@ -510,6 +617,10 @@ function entityRows(
     return [];
   }
 
+  if (collection === "operationalEvents") {
+    return operationalEventRows(rdos, operationalEvents);
+  }
+
   return rdos.flatMap((rdo) => {
     const items = (rdo as unknown as Record<string, unknown>)[collection];
 
@@ -517,11 +628,55 @@ function entityRows(
       return [];
     }
 
-    return items.map((item) => ({
+    return items.map((item, index) => ({
       rdo,
       values: item as Record<string, unknown>,
+      index: index + 1,
     }));
   });
+}
+
+function operationalEventRows(
+  rdos: StaviaSnapshotRdo[],
+  events: StaviaSnapshotOperationalEvent[],
+): OntologyRow[] {
+  const rdoById = new Map(rdos.map((rdo) => [rdo.id, rdo]));
+  const fallbackRdoByObraId = new Map<string, StaviaSnapshotRdo>();
+
+  for (const rdo of rdos) {
+    if (!fallbackRdoByObraId.has(rdo.obraId)) {
+      fallbackRdoByObraId.set(rdo.obraId, rdo);
+    }
+  }
+
+  const indexesByScope = new Map<string, number>();
+
+  return events
+    .slice()
+    .sort((left, right) =>
+      (right.occurredAt ?? "").localeCompare(left.occurredAt ?? ""),
+    )
+    .flatMap((event) => {
+      const rdo = event.rdoId
+        ? rdoById.get(event.rdoId)
+        : event.obraId
+          ? fallbackRdoByObraId.get(event.obraId)
+          : undefined;
+
+      if (!rdo) {
+        return [];
+      }
+
+      const scope = event.rdoId ?? event.obraId ?? "global";
+      const index = (indexesByScope.get(scope) ?? 0) + 1;
+      indexesByScope.set(scope, index);
+
+      return [{
+        rdo,
+        values: event as unknown as Record<string, unknown>,
+        index,
+      }];
+    });
 }
 
 function attributeMatches(
@@ -532,7 +687,7 @@ function attributeMatches(
 
   for (const entity of ontology.entities) {
     for (const attribute of entity.attributes) {
-      for (const alias of attribute.aliases) {
+      for (const alias of attributeAliases(attribute)) {
         if (matchesAlias(normalized, alias)) {
           matches.push({ entity, attribute, alias: normalize(alias) });
         }
@@ -547,12 +702,29 @@ function targetEntity(
   ontology: RdoOntologyJson,
   matches: AttributeMatch[],
   normalized: string,
+  allowHeaderAlias = false,
 ): RdoOntologyEntityJson | null {
+  if (allowHeaderAlias && wantsFullRecord(normalized)) {
+    const explicitEntity = entityByAlias(
+      ontology,
+      normalized,
+      allowHeaderAlias,
+    );
+
+    if (explicitEntity) {
+      return explicitEntity;
+    }
+  }
+
   let best: AttributeMatch | null = null;
+  let bestScore = -1;
 
   for (const match of matches) {
-    if (!best || match.alias.length > best.alias.length) {
+    const score = match.alias.length + entityContextScore(match.entity, normalized);
+
+    if (score > bestScore) {
       best = match;
+      bestScore = score;
     }
   }
 
@@ -560,6 +732,14 @@ function targetEntity(
     return best.entity;
   }
 
+  return entityByAlias(ontology, normalized, allowHeaderAlias);
+}
+
+function entityByAlias(
+  ontology: RdoOntologyJson,
+  normalized: string,
+  allowHeaderAlias: boolean,
+): RdoOntologyEntityJson | null {
   let byAlias: RdoOntologyEntityJson | null = null;
   let bestLength = 0;
 
@@ -577,7 +757,123 @@ function targetEntity(
     }
   }
 
-  return byAlias && !byAlias.header ? byAlias : null;
+  return byAlias && (!byAlias.header || allowHeaderAlias) ? byAlias : null;
+}
+
+function entityContextScore(
+  entity: RdoOntologyEntityJson,
+  normalized: string,
+): number {
+  const entityAliasLength = matchingEntityAliasLength(entity, normalized);
+  const aliasScore =
+    entityAliasLength > 0 ? 1_000 + entityAliasLength : 0;
+  const ordinalScore = rowOrdinalContextScore(entity, normalized);
+
+  return Math.max(aliasScore, ordinalScore);
+}
+
+function matchingEntityAliasLength(
+  entity: RdoOntologyEntityJson,
+  normalized: string,
+): number {
+  let length = 0;
+
+  for (const alias of entity.aliases) {
+    const normalizedAlias = normalize(alias);
+
+    if (
+      matchesAlias(normalized, alias) &&
+      normalizedAlias.length > length
+    ) {
+      length = normalizedAlias.length;
+    }
+  }
+
+  return length;
+}
+
+function rowOrdinalContextScore(
+  entity: RdoOntologyEntityJson,
+  normalized: string,
+): number {
+  const termLength = matchingRowOrdinalTermLength(entity, normalized);
+
+  if (termLength === 0) {
+    return 0;
+  }
+
+  let score = 2_000 + termLength;
+
+  if (
+    entity.name === "maoObra" &&
+    mentionsLaborOrdinal(normalized) &&
+    !mentionsAllocationContext(normalized)
+  ) {
+    score += 500;
+  }
+
+  if (
+    entity.name === "alocacaoColaborador" &&
+    mentionsAllocationContext(normalized)
+  ) {
+    score += 500;
+  }
+
+  return score;
+}
+
+function matchingRowOrdinalTermLength(
+  entity: RdoOntologyEntityJson,
+  normalized: string,
+): number {
+  if (entity.header) {
+    return 0;
+  }
+
+  let length = 0;
+
+  for (const term of rowOrdinalTerms(entity)) {
+    if (matchesOrdinalTerm(normalized, term) && term.length > length) {
+      length = term.length;
+    }
+  }
+
+  return length;
+}
+
+function matchesOrdinalTerm(normalized: string, term: string): boolean {
+  const escaped = escapeRegExp(term);
+
+  if (
+    new RegExp(`\\b${escaped}\\s+(?:n(?:umero)?\\s*)?(\\d+)\\b`).test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  for (const word of Object.keys(ORDINAL_WORDS)) {
+    if (
+      new RegExp(`\\b${word}\\s+${escaped}\\b`).test(normalized) ||
+      new RegExp(`\\b${escaped}\\s+${word}\\b`).test(normalized)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function mentionsLaborOrdinal(normalized: string): boolean {
+  return ["colaborador", "funcionario", "trabalhador", "pessoa"].some((word) =>
+    containsWord(normalized, word),
+  );
+}
+
+function mentionsAllocationContext(normalized: string): boolean {
+  return ["alocacao", "alocacoes", "apontamento", "apontamentos"].some(
+    (word) => containsWord(normalized, word),
+  );
 }
 
 function identityTerm(
@@ -639,7 +935,12 @@ function identityTerm(
 
 function listingAttributes(
   entity: RdoOntologyEntityJson,
+  normalized: string,
 ): RdoOntologyAttributeJson[] {
+  if (wantsFullRecord(normalized)) {
+    return entity.attributes;
+  }
+
   const names = new Set<string>();
   const attributes: RdoOntologyAttributeJson[] = [];
 
@@ -654,6 +955,10 @@ function listingAttributes(
   }
 
   return attributes;
+}
+
+function wantsFullRecord(normalized: string): boolean {
+  return FULL_RECORD_WORDS.some((word) => containsWord(normalized, word));
 }
 
 function distinctAttributes(
@@ -672,12 +977,47 @@ function distinctAttributes(
   return attributes;
 }
 
+function preferSpecificMatches(
+  matches: AttributeMatch[],
+): AttributeMatch[] {
+  if (matches.length <= 1) {
+    return matches;
+  }
+
+  const entity = matches[0]?.entity;
+  const contextAliases = entity
+    ? new Set(rowOrdinalTerms(entity))
+    : new Set<string>();
+  const nonContextMatches = matches.filter(
+    (match) =>
+      !(match.attribute.identity && contextAliases.has(match.alias)),
+  );
+  const scopedMatches = nonContextMatches.length > 0
+    ? nonContextMatches
+    : matches;
+
+  return scopedMatches.filter(
+    (match) =>
+      !scopedMatches.some(
+        (other) =>
+          other.attribute.name !== match.attribute.name &&
+          other.alias.length > match.alias.length &&
+          other.alias.includes(match.alias),
+      ),
+  );
+}
+
 function matchesIdentity(
   entity: RdoOntologyEntityJson,
   row: OntologyRow,
   identity: string,
 ): boolean {
   const term = normalize(identity);
+  const ordinalLabel = normalize(rowOrdinalLabel(entity, row));
+
+  if (ordinalLabel.includes(term)) {
+    return true;
+  }
 
   return entity.attributes
     .filter((attribute) => attribute.identity)
@@ -691,6 +1031,16 @@ function itemLabel(
   entity: RdoOntologyEntityJson,
   row: OntologyRow,
 ): string | null {
+  if (entity.name === "rdo") {
+    const numeroRdo = text(row.values.numeroRdo);
+
+    if (numeroRdo !== null) {
+      return `RDO ${numeroRdo}`;
+    }
+  }
+
+  const ordinalLabel = rowOrdinalLabel(entity, row);
+
   for (const attribute of entity.attributes) {
     if (!attribute.identity) {
       continue;
@@ -699,8 +1049,123 @@ function itemLabel(
     const value = text(row.values[attribute.name]);
 
     if (value !== null) {
+      if (ordinalLabel) {
+        return `${ordinalLabel} (${value})`;
+      }
+
       return value;
     }
+  }
+
+  return ordinalLabel;
+}
+
+function rowOrdinal(
+  normalized: string,
+  entity: RdoOntologyEntityJson,
+): number | null {
+  if (entity.header) {
+    return null;
+  }
+
+  const candidates = rowOrdinalTerms(entity);
+
+  for (const term of candidates) {
+    const escaped = escapeRegExp(term);
+    const numeric = normalized.match(
+      new RegExp(`\\b${escaped}\\s+(?:n(?:umero)?\\s*)?(\\d+)\\b`),
+    );
+
+    if (numeric) {
+      return Number(numeric[1]);
+    }
+  }
+
+  for (const [word, index] of Object.entries(ORDINAL_WORDS)) {
+    for (const term of candidates) {
+      const escaped = escapeRegExp(term);
+
+      if (
+        new RegExp(`\\b${word}\\s+${escaped}\\b`).test(normalized) ||
+        new RegExp(`\\b${escaped}\\s+${word}\\b`).test(normalized)
+      ) {
+        return index;
+      }
+    }
+  }
+
+  return null;
+}
+
+function rowOrdinalTerms(entity: RdoOntologyEntityJson): string[] {
+  const terms = [
+    "linha",
+    "item",
+    "registro",
+    ...entity.aliases.map(normalize),
+  ];
+
+  if (entity.name === "controleGeometrico") {
+    terms.push("trecho", "controle", "medicao", "medicao geometrica");
+  }
+
+  if (entity.name === "material") {
+    terms.push("material", "insumo");
+  }
+
+  if (entity.name === "maoObra") {
+    terms.push(
+      "mao de obra",
+      "colaborador",
+      "trabalhador",
+      "funcionario",
+      "pessoa",
+    );
+  }
+
+  if (entity.name === "equipamento") {
+    terms.push("equipamento", "maquina", "ativo");
+  }
+
+  if (entity.name === "execucaoServico") {
+    terms.push("servico", "atividade", "execucao", "producao");
+  }
+
+  if (entity.name === "attachment") {
+    terms.push("foto", "anexo");
+  }
+
+  if (entity.name === "alocacaoColaborador") {
+    terms.push("alocacao", "apontamento", "colaborador");
+  }
+
+  if (entity.name === "operationalEvent") {
+    terms.push("evento", "evento operacional", "evento ontologico");
+  }
+
+  return Array.from(
+    new Set(terms.filter((term) => term && !term.includes("/"))),
+  ).sort((left, right) => right.length - left.length);
+}
+
+function rowOrdinalLabel(
+  entity: RdoOntologyEntityJson,
+  row: OntologyRow,
+): string | null {
+  if (entity.name === "controleGeometrico") {
+    return `Trecho ${row.index}`;
+  }
+
+  if (entity.name === "attachment") {
+    return `Foto ${row.index}`;
+  }
+
+  if (entity.name === "alocacaoColaborador") {
+    return `Alocação ${row.index}`;
+  }
+
+  if (entity.name === "operationalEvent") {
+    return `Evento ${row.index}`;
   }
 
   return null;
@@ -789,7 +1254,11 @@ function matchesPeriod(
   row: OntologyRow,
   period: { start: string | null; end: string | null },
 ): boolean {
-  const date = row.rdo.dataRdo;
+  const eventDate =
+    typeof row.values.occurredAt === "string"
+      ? row.values.occurredAt.slice(0, 10)
+      : null;
+  const date = eventDate || row.rdo.dataRdo;
 
   if (!date) {
     return true;
@@ -800,6 +1269,12 @@ function matchesPeriod(
   }
 
   return !period.end || date <= period.end;
+}
+
+function attributeAliases(
+  attribute: RdoOntologyAttributeJson,
+): string[] {
+  return Array.from(new Set([attribute.label, ...attribute.aliases]));
 }
 
 function localDate(value: Date): string {
@@ -873,6 +1348,10 @@ function text(value: unknown): string | null {
 
   if (typeof value === "number") {
     return String(round(value));
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
   }
 
   const trimmed = String(value).trim();

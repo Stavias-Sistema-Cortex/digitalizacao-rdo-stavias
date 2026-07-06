@@ -6,8 +6,8 @@ import {
   type SubmitEvent,
 } from "react";
 
-import constructionHero from "../../assets/login/construction-hero.jpg";
-import cortexLogo from "../../assets/login/cortex-logo.png";
+import canteiroBackdrop from "../../assets/login/stavias-canteiro.png";
+import staviasTile from "../../assets/stavias-s-tile.png";
 
 import {
   formatCpf,
@@ -92,33 +92,33 @@ export function LoginPage() {
 
   return (
     <main className="cortex-login">
-      <section className="cortex-login__media">
+      <img
+        className="login__backdrop"
+        src={canteiroBackdrop}
+        alt=""
+        aria-hidden="true"
+      />
+      <div className="login__tint" aria-hidden="true" />
+
+      <section className="login__stage">
+        <h1 className="visually-hidden">Entrar no Stavias Córtex</h1>
+
         <img
-          className="login__media-img"
-          src={constructionHero}
-          alt="Canteiro de obras ao entardecer com gruas e estruturas em construção."
+          className="login__mark"
+          src={staviasTile}
+          alt="Stavias"
+          draggable={false}
         />
-        <div className="login__media-scrim" aria-hidden="true" />
-        <figure className="login__media-caption">
-          <span className="login__media-tick" aria-hidden="true" />
-          <figcaption>
-            <p className="login__media-phrase">
-              Do canteiro ao relatório: o diário de obra digital da Stavias.
-            </p>
-          </figcaption>
-        </figure>
-      </section>
 
-      <section className="cortex-login__panel">
-        <div className="login__content">
-          <div className="login__brand" role="img" aria-label="Stavias Córtex">
-            <img className="login__brand-img" src={cortexLogo} alt="" />
-          </div>
+        <div className="login__card">
+          <p className="login__phrase">
+            Do minério ao asfalto
+            <br />
+            que <em>move</em> o país.
+          </p>
 
-          <h1 className="login__title">Entrar no Córtex</h1>
           <p className="login__subtitle">
-            Use o CPF cadastrado no Academy para acessar o ambiente
-            operacional.
+            Entre com o CPF cadastrado no Academy.
           </p>
 
           {!online ? (
@@ -202,9 +202,9 @@ export function LoginPage() {
             entrar? Procure o RH ou o apontador da sua obra.
           </p>
         </div>
-
-        <p className="login__footer">© 2026 Stavias — Sistema Córtex</p>
       </section>
+
+      <p className="login__footer">© 2026 Stavias — Sistema Córtex</p>
     </main>
   );
 }

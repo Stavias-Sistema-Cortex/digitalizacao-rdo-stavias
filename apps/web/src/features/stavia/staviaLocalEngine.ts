@@ -37,6 +37,8 @@ type LocalIntent =
   | "DETALHE_RDO"
   | "RESUMO_RDO"
   | "OCORRENCIAS"
+  | "TIMELINE_OPERACIONAL"
+  | "FOTOS_RDO"
   | "CONSULTA_COMPOSTA"
   | "EVIDENCIAS"
   | "DESCONHECIDA";
@@ -116,6 +118,20 @@ function hasAny(value: string, terms: string[]): boolean {
 
 function text(value: string | null | undefined): string {
   return value?.trim() ?? "";
+}
+
+function timeRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string {
+  const startText = text(start);
+  const endText = text(end);
+
+  if (startText && endText) {
+    return `${startText}-${endText}`;
+  }
+
+  return startText || endText;
 }
 
 function unique(values: Array<string | null | undefined>): string[] {
@@ -409,22 +425,51 @@ function isRdoDetailQuestion(normalizedQuestion: string): boolean {
 function isServiceObservationQuestion(
   normalizedQuestion: string,
 ): boolean {
-  return (
-    hasAny(normalizedQuestion, [
-      "observacao",
-      "observacoes",
-      "obs",
-    ]) &&
-    hasAny(normalizedQuestion, [
+  return hasAny(normalizedQuestion, [
+    "observacao",
+    "observacoes",
+    "obs",
+  ]);
+}
+
+function isObservationRollupQuestion(question: string): boolean {
+  const normalized = normalizeText(question);
+
+  if (
+    hasAny(normalized, [
+      "material",
+      "mao de obra",
+      "mão de obra",
+      "equipamento",
       "servico",
-      "servicos",
-      "atividade",
-      "atividades",
-      "execucao",
-      "executado",
-      "executada",
+      "serviço",
+      "trecho",
+      "controle",
+      "alocacao",
+      "alocação",
+      "foto",
+      "evento",
     ])
-  );
+  ) {
+    return false;
+  }
+
+  return hasAny(normalized, [
+    "quais observacoes",
+    "quais observações",
+    "todas observacoes",
+    "todas observações",
+    "observacoes existem",
+    "observações existem",
+    "observacoes ha",
+    "observações há",
+    "observacoes neste rdo",
+    "observações neste rdo",
+    "observacoes deste rdo",
+    "observações deste rdo",
+    "observacoes nesse rdo",
+    "observações nesse rdo",
+  ]);
 }
 
 function detectIntent(question: string): LocalIntent {
@@ -457,6 +502,39 @@ function detectIntent(question: string): LocalIntent {
     ])
   ) {
     return "STATUS_SINCRONIZACAO";
+  }
+
+  if (
+    hasAny(normalized, [
+      "timeline",
+      "historico operacional",
+      "histórico operacional",
+      "linha do tempo",
+      "ultimas atualizacoes operacionais",
+      "últimas atualizações operacionais",
+      "alteracoes offline",
+      "alterações offline",
+      "eventos ontologicos",
+      "eventos ontológicos",
+      "o que aconteceu",
+      "movimentou",
+    ])
+  ) {
+    return "TIMELINE_OPERACIONAL";
+  }
+
+  if (
+    hasAny(normalized, [
+      "foto",
+      "fotos",
+      "imagem",
+      "imagens",
+      "anexos pendentes",
+      "fotos pendentes",
+      "fotos sem sincronizar",
+    ])
+  ) {
+    return "FOTOS_RDO";
   }
 
   if (isRdoDetailQuestion(normalized)) {
@@ -1266,6 +1344,12 @@ function collaboratorEntries(
           text(item.cargo),
           text(item.tipoVinculo),
           item.quantidade ? `qtd. ${item.quantidade}` : "",
+          timeRange(item.horaInicio, item.horaFim)
+            ? `horário ${timeRange(item.horaInicio, item.horaFim)}`
+            : "",
+          text(item.observacoes)
+            ? `obs. ${text(item.observacoes)}`
+            : "",
         ]
           .filter(Boolean)
           .join(" · "),
@@ -1278,6 +1362,15 @@ function collaboratorEntries(
           text(item.servicoNome),
           text(item.turno)
             ? `turno ${readableStatus(item.turno)}`
+            : "",
+          timeRange(item.horaInicio, item.horaFim)
+            ? `horário ${timeRange(item.horaInicio, item.horaFim)}`
+            : "",
+          item.percentualDia
+            ? `dia ${item.percentualDia}`
+            : "",
+          text(item.observacoes)
+            ? `obs. ${text(item.observacoes)}`
             : "",
         ]
           .filter(Boolean)
@@ -1321,6 +1414,14 @@ function equipmentNames(
         [
           text(item.prefixo),
           text(item.descricao) || text(item.tipoEquipamento),
+          text(item.tipoVinculo),
+          item.quantidade ? `qtd. ${item.quantidade}` : "",
+          timeRange(item.horaInicio, item.horaFim)
+            ? `horário ${timeRange(item.horaInicio, item.horaFim)}`
+            : "",
+          text(item.observacoes)
+            ? `obs. ${text(item.observacoes)}`
+            : "",
         ]
           .filter(Boolean)
           .join(" · "),
@@ -1527,6 +1628,9 @@ function serviceObservationEntries(
   resolved: ResolvedContext,
 ): string[] {
   const rdos = selectedRdos(resolved);
+  const rdoLabel = (rdo: StaviaSnapshotRdo) =>
+    rdo.numeroRdo ? `RDO ${rdo.numeroRdo}` : "RDO sem número";
+
   const serviceObservations = rdos.flatMap((rdo) =>
     (rdo.servicosExecutados ?? [])
       .map((service) => {
@@ -1543,12 +1647,8 @@ function serviceObservationEntries(
                 .filter(Boolean)
                 .join(" a ")
             : text(service.localizacao);
-        const rdoLabel = rdo.numeroRdo
-          ? `RDO ${rdo.numeroRdo}`
-          : "RDO sem número";
-
         return [
-          rdoLabel,
+          rdoLabel(rdo),
           serviceName,
           trecho ? `trecho ${trecho}` : "",
           observation,
@@ -1558,10 +1658,6 @@ function serviceObservationEntries(
       })
       .filter(Boolean),
   );
-
-  if (serviceObservations.length > 0) {
-    return unique(serviceObservations);
-  }
 
   const activityObservations = rdos.flatMap((rdo) =>
     (rdo.controlesGeometricos ?? [])
@@ -1579,7 +1675,7 @@ function serviceObservationEntries(
             : text(control.subtrecho);
 
         return [
-          rdo.numeroRdo ? `RDO ${rdo.numeroRdo}` : "RDO sem número",
+          rdoLabel(rdo),
           trecho ? `trecho ${trecho}` : "",
           observation,
         ]
@@ -1589,23 +1685,132 @@ function serviceObservationEntries(
       .filter(Boolean),
   );
 
-  if (activityObservations.length > 0) {
-    return unique(activityObservations);
-  }
+  const materialObservations = rdos.flatMap((rdo) =>
+    (rdo.materiais ?? [])
+      .map((material) => {
+        const observation = text(material.observacoes);
+        if (!observation) {
+          return "";
+        }
 
-  const rdoObservations = rdos
-    .map((rdo) => text(rdo.observacoes))
-    .filter(Boolean);
-
-  if (rdoObservations.length > 0) {
-    return unique(rdoObservations);
-  }
-
-  return unique(
-    programacoesForResolved(snapshot, resolved)
-      .map((programacao) => text(programacao.observacoes))
+        return [
+          rdoLabel(rdo),
+          text(material.materialNome) || "Material sem nome",
+          observation,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
       .filter(Boolean),
   );
+
+  const collaboratorObservations = rdos.flatMap((rdo) =>
+    (rdo.maoObra ?? [])
+      .map((item) => {
+        const observation = text(item.observacoes);
+        if (!observation) {
+          return "";
+        }
+
+        return [
+          rdoLabel(rdo),
+          "Mão de obra",
+          text(item.nomeColaborador) || text(item.cargo),
+          timeRange(item.horaInicio, item.horaFim)
+            ? `horário ${timeRange(item.horaInicio, item.horaFim)}`
+            : "",
+          observation,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
+      .filter(Boolean),
+  );
+
+  const equipmentObservations = rdos.flatMap((rdo) =>
+    (rdo.equipamentos ?? [])
+      .map((item) => {
+        const observation = text(item.observacoes);
+        if (!observation) {
+          return "";
+        }
+
+        return [
+          rdoLabel(rdo),
+          "Equipamento",
+          text(item.prefixo) ||
+            text(item.descricao) ||
+            text(item.tipoEquipamento),
+          timeRange(item.horaInicio, item.horaFim)
+            ? `horário ${timeRange(item.horaInicio, item.horaFim)}`
+            : "",
+          observation,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
+      .filter(Boolean),
+  );
+
+  const allocationObservations = rdos.flatMap((rdo) =>
+    (rdo.alocacoesColaboradores ?? [])
+      .map((item) => {
+        const observation = text(item.observacoes);
+        if (!observation) {
+          return "";
+        }
+
+        return [
+          rdoLabel(rdo),
+          "Rateio de colaborador",
+          text(item.nomeColaborador) ||
+            text(item.equipe) ||
+            text(item.funcao),
+          timeRange(item.horaInicio, item.horaFim)
+            ? `horário ${timeRange(item.horaInicio, item.horaFim)}`
+            : "",
+          observation,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      })
+      .filter(Boolean),
+  );
+
+  const rdoObservations = rdos
+    .map((rdo) =>
+      [rdoLabel(rdo), text(rdo.observacoes)]
+        .filter(Boolean)
+        .join(" · "),
+    )
+    .filter(Boolean);
+
+  const programacaoObservations = programacoesForResolved(
+    snapshot,
+    resolved,
+  )
+    .map((programacao) =>
+      [
+        programacao.dataProgramacao
+          ? `Programação ${programacao.dataProgramacao}`
+          : "Programação",
+        text(programacao.observacoes),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    )
+    .filter(Boolean);
+
+  return unique([
+    ...serviceObservations,
+    ...activityObservations,
+    ...materialObservations,
+    ...collaboratorObservations,
+    ...equipmentObservations,
+    ...allocationObservations,
+    ...rdoObservations,
+    ...programacaoObservations,
+  ]);
 }
 
 function answerServices(
@@ -1639,7 +1844,7 @@ function answerServiceObservations(
 
   if (values.length === 0) {
     return answer(
-      "Não encontrei observações registradas para os serviços deste contexto.",
+      "Não encontrei observações registradas para este contexto.",
       "OBSERVACOES_SERVICO",
       {
         confidence: "MEDIA",
@@ -2566,11 +2771,10 @@ function answerSummary(
 }
 
 function answerOccurrences(
+  snapshot: StaviaSnapshot,
   resolved: ResolvedContext,
 ): StaviaConsultaResponse {
-  const occurrences = selectedRdos(resolved)
-    .map((rdo) => text(rdo.observacoes))
-    .filter(Boolean);
+  const occurrences = serviceObservationEntries(snapshot, resolved);
 
   if (occurrences.length === 0) {
     return answer(
@@ -2585,6 +2789,116 @@ function answerOccurrences(
   return answer(
     `Ocorrências/observações registradas:\n\n${bulletList(unique(occurrences))}`,
     "OCORRENCIAS",
+  );
+}
+
+function readableEventType(type: string | null | undefined): string {
+  return (type ?? "EVENTO")
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/^./, (first) => first.toUpperCase());
+}
+
+function answerOperationalTimeline(
+  snapshot: StaviaSnapshot,
+  resolved: ResolvedContext,
+): StaviaConsultaResponse {
+  const rdos = selectedRdos(resolved);
+  const rdoIds = new Set(rdos.map((rdo) => rdo.id));
+  const obraId = resolved.obra?.id ?? rdos[0]?.obraId ?? null;
+
+  const events = (snapshot.operationalEvents ?? [])
+    .filter((event) => {
+      if (rdoIds.size > 0 && event.rdoId && rdoIds.has(event.rdoId)) {
+        return true;
+      }
+
+      if (obraId && event.obraId === obraId) {
+        return true;
+      }
+
+      return false;
+    })
+    .sort((left, right) =>
+      (right.occurredAt ?? "").localeCompare(
+        left.occurredAt ?? "",
+      ),
+    )
+    .slice(0, 10);
+
+  if (events.length === 0) {
+    return answer(
+      "Não encontrei eventos ontológicos salvos para este contexto.",
+      "TIMELINE_OPERACIONAL",
+      {
+        confidence: "MEDIA",
+      },
+    );
+  }
+
+  return answer(
+    `Timeline operacional:\n\n${bulletList(
+      events.map((event) => {
+        const when = formatDateTime(event.occurredAt);
+        const status = event.syncStatus
+          ? ` · ${event.syncStatus}`
+          : "";
+        return `${when}: ${readableEventType(event.type)}${status}`;
+      }),
+    )}`,
+    "TIMELINE_OPERACIONAL",
+    {
+      metadata: {
+        origemResposta: "SNAPSHOT_LOCAL_STAVIA",
+        totalEventos: events.length,
+      },
+    },
+  );
+}
+
+function answerRdoPhotos(
+  resolved: ResolvedContext,
+): StaviaConsultaResponse {
+  const attachments = selectedRdos(resolved).flatMap(
+    (rdo) => rdo.attachments ?? [],
+  );
+  const active = attachments.filter(
+    (attachment) => !attachment.removedAt,
+  );
+  const pending = active.filter(
+    (attachment) =>
+      attachment.syncStatus !== "SYNCED" &&
+      attachment.syncStatus !== "UPLOADED",
+  );
+
+  if (active.length === 0) {
+    return answer(
+      "Não encontrei fotos anexadas para este contexto.",
+      "FOTOS_RDO",
+      {
+        confidence: "MEDIA",
+      },
+    );
+  }
+
+  return answer(
+    `Encontrei ${active.length} foto(s) no contexto selecionado; ${pending.length} ainda pendente(s) de sincronização.\n\n${bulletList(
+      active.slice(0, 8).map((attachment) => {
+        const size =
+          attachment.tamanhoComprimidoBytes ??
+          attachment.tamanhoOriginalBytes ??
+          "tamanho não informado";
+        return `${attachment.nome ?? attachment.id} · ${attachment.syncStatus ?? "sem status"} · ${size}`;
+      }),
+    )}`,
+    "FOTOS_RDO",
+    {
+      metadata: {
+        origemResposta: "SNAPSHOT_LOCAL_STAVIA",
+        totalFotos: active.length,
+        fotosPendentes: pending.length,
+      },
+    },
   );
 }
 
@@ -2658,7 +2972,13 @@ export function responderComSnapshotStavia({
 
   const ontology = loadRdoOntology(snapshot);
 
-  if (matchesOntologyAttribute(ontology, pergunta)) {
+  if (
+    matchesOntologyAttribute(ontology, pergunta) &&
+    (
+      intent !== "OBSERVACOES_SERVICO" ||
+      !isObservationRollupQuestion(pergunta)
+    )
+  ) {
     const resolvedForOntology = resolveContext(
       snapshot,
       questionForResolution,
@@ -2668,6 +2988,7 @@ export function responderComSnapshotStavia({
       ontology,
       pergunta,
       rdos: selectedRdos(resolvedForOntology),
+      operationalEvents: snapshot.operationalEvents ?? [],
     });
 
     if (ontologyAnswer) {
@@ -2734,7 +3055,11 @@ export function responderComSnapshotStavia({
     case "RESUMO_RDO":
       return answerSummary(resolved);
     case "OCORRENCIAS":
-      return answerOccurrences(resolved);
+      return answerOccurrences(snapshot, resolved);
+    case "TIMELINE_OPERACIONAL":
+      return answerOperationalTimeline(snapshot, resolved);
+    case "FOTOS_RDO":
+      return answerRdoPhotos(resolved);
     case "EVIDENCIAS":
       return answerEvidence(resolved);
     default:
