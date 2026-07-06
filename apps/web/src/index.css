@@ -588,10 +588,12 @@ textarea:focus {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px;
-  border: 1px solid rgba(203, 213, 207, 0.88);
+  border: 1px solid rgb(255 255 255 / 65%);
   border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--shadow-soft);
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow:
+    var(--glass-gloss),
+    var(--shadow-soft);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
 }
@@ -1576,11 +1578,13 @@ textarea:focus {
   padding: 0 16px;
   border: 1px solid #fed203;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.78);
   color: #243e30;
   font-size: 0.82rem;
   font-weight: 700;
-  box-shadow: 0 8px 24px rgba(25, 44, 34, 0.12);
+  box-shadow:
+    var(--glass-gloss),
+    0 8px 24px rgba(25, 44, 34, 0.12);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
