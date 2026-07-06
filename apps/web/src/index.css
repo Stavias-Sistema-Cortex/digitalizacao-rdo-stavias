@@ -68,6 +68,20 @@
   --radius-md: 14px;
   --radius-lg: 20px;
   --shadow-soft: 0 8px 24px -16px rgb(25 44 34 / 25%);
+
+  /* Receita liquid glass da marca (kit iOS 26, dose sutil). */
+  --glass-white: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 86%),
+    rgb(255 255 255 / 68%)
+  );
+  --glass-yellow: linear-gradient(
+    180deg,
+    rgb(255 226 74 / 95%),
+    rgb(254 210 3 / 88%)
+  );
+  --glass-gloss: inset 0 1px 0 rgb(255 255 255 / 50%);
+  --glass-blur: blur(14px) saturate(1.15);
 }
 
 * {
@@ -213,31 +227,49 @@ h1 {
 .primary-button,
 .secondary-button {
   min-height: 48px;
-  padding: 0 16px;
-  border-radius: var(--radius-md);
+  padding: 0 20px;
+  border-radius: 999px;
   font-weight: 750;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
 }
 
 /* Amarelo Stavias = ação principal, como no "Entrar" do login. */
 .primary-button {
   border: 1px solid #e4bc00;
-  background: #fed203;
+  background: var(--glass-yellow);
   color: #143c36;
-  box-shadow: 0 6px 14px -10px rgb(228 188 0 / 60%);
+  box-shadow:
+    var(--glass-gloss),
+    0 6px 14px -10px rgb(228 188 0 / 60%);
 }
 
 .secondary-button {
   border: 1px solid #e4bc00;
-  background: #ffffff;
+  background: var(--glass-white);
   color: #17504d;
+  box-shadow: var(--glass-gloss);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 
 .primary-button:hover {
-  background: #ffdc35;
+  background: linear-gradient(
+    180deg,
+    rgb(255 233 106 / 96%),
+    rgb(255 220 53 / 90%)
+  );
+  transform: translateY(-1px);
 }
 
 .secondary-button:hover {
-  background: #f4f7f5;
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 96%),
+    rgb(255 255 255 / 84%)
+  );
   border-color: #9fbdb2;
 }
 
@@ -567,30 +599,48 @@ textarea:focus {
 .button {
   min-height: 44px;
   padding: 0 18px;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   font-weight: 750;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
 }
 
 .button.secondary {
   border: 1px solid #cbd5cf;
-  background: white;
+  background: var(--glass-white);
   color: #17504d;
+  box-shadow: var(--glass-gloss);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
 
 .button.secondary:hover {
-  background: #f4f7f5;
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 96%),
+    rgb(255 255 255 / 84%)
+  );
   border-color: #9fbdb2;
 }
 
 .button.primary {
   border: 1px solid #e4bc00;
-  background: #fed203;
+  background: var(--glass-yellow);
   color: #143c36;
-  box-shadow: 0 6px 14px -10px rgb(228 188 0 / 60%);
+  box-shadow:
+    var(--glass-gloss),
+    0 6px 14px -10px rgb(228 188 0 / 60%);
 }
 
 .button.primary:hover {
-  background: #ffdc35;
+  background: linear-gradient(
+    180deg,
+    rgb(255 233 106 / 96%),
+    rgb(255 220 53 / 90%)
+  );
+  transform: translateY(-1px);
 }
 
 .cortex-shell {
