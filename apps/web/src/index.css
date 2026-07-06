@@ -1,60 +1,4 @@
 @font-face {
-  font-family: "Roboto";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/roboto-400.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Roboto";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/roboto-500.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Roboto";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/roboto-700.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Roboto";
-  font-style: normal;
-  font-weight: 900;
-  font-display: swap;
-  src: url("/fonts/roboto-900.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Roboto Slab";
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("/fonts/roboto-slab-500.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Roboto Slab";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/roboto-slab-700.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Roboto Slab";
-  font-style: normal;
-  font-weight: 900;
-  font-display: swap;
-  src: url("/fonts/roboto-slab-900.ttf") format("truetype");
-}
-
-@font-face {
   font-family: "Poppins";
   font-style: normal;
   font-weight: 400;
@@ -112,7 +56,7 @@
 
 :root {
   font-family:
-    "Roboto", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Poppins", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   color: #18211d;
   background: #f3f5f3;
@@ -177,8 +121,6 @@ button {
 h1 {
   margin: 0;
   max-width: 700px;
-  font-family:
-    "Poppins", "Roboto", ui-serif, Georgia, serif;
   font-size: clamp(1.9rem, 3.2vw, 2.75rem);
   line-height: 1.08;
   letter-spacing: 0;
@@ -328,8 +270,6 @@ h1 {
 
 .section-heading h2 {
   margin: 0;
-  font-family:
-    "Poppins", "Roboto", ui-serif, Georgia, serif;
   font-size: 1.25rem;
   letter-spacing: 0;
 }
@@ -597,9 +537,9 @@ textarea:focus {
   border-radius: 12px;
   background: #142019;
   color: #dce9e1;
-  font-family:
-    "Poppins", Consolas, "Liberation Mono", monospace;
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
   font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
   line-height: 1.65;
 }
 
@@ -1037,8 +977,6 @@ textarea:focus {
 .metric-card strong {
   margin-top: 6px;
   color: #ffffff;
-  font-family:
-    "Poppins", "Poppins", ui-serif, Georgia, serif;
   font-size: 1.5rem;
   font-weight: 850;
   line-height: 1.5;
@@ -1111,8 +1049,6 @@ textarea:focus {
 }
 
 .rdo-title-button {
-  font-family:
-    "Poppins", "Poppins", ui-serif, Georgia, serif;
   font-size: 1.3rem;
 }
 
@@ -1149,8 +1085,6 @@ textarea:focus {
 
 .rdo-fact strong {
   color: #164e4c;
-  font-family:
-    "Poppins", "Poppins", ui-serif, Georgia, serif;
   font-size: 1rem;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
@@ -1190,8 +1124,6 @@ textarea:focus {
 .profile-drawer h3 {
   margin: 0 0 12px;
   color: #203429;
-  font-family:
-    "Poppins", "Roboto", ui-serif, Georgia, serif;
   font-size: 1.05rem;
 }
 
@@ -1318,8 +1250,6 @@ textarea:focus {
 
 .profile-drawer-header h2 {
   margin: 4px 0 0;
-  font-family:
-    "Poppins", "Roboto", ui-serif, Georgia, serif;
   font-size: 1.5rem;
   overflow-wrap: anywhere;
 }
