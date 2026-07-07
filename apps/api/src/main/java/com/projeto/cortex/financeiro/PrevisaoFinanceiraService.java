@@ -462,16 +462,20 @@ public class PrevisaoFinanceiraService {
                         ? "PREVISAO_FINANCEIRA_CALCULADA"
                         : "PREVISAO_FINANCEIRA_INSUFICIENTE";
 
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("schemaVersion", 1);
-        payload.put("obraId", obra.getId());
-        payload.put("snapshotId", draft.id());
-        payload.put("dataReferencia", draft.dataReferencia());
-        payload.put("statusExecucao", draft.statusExecucao());
-        payload.put("receitaOperacionalEstimativa", draft.receitaEstimadaAcumulada());
-        payload.put("custoRealizado", draft.custoRealizado());
-        payload.put("margemAtual", draft.margemAtual());
-        payload.put("margemPercentual", draft.margemPercentual());
+        Map<String, Object> payload = payloadEventoFinanceiro(
+                obra.getId(),
+                draft.id(),
+                draft.dataReferencia(),
+                draft.statusExecucao(),
+                draft.receitaEstimadaAcumulada(),
+                draft.custoRealizado(),
+                draft.margemAtual(),
+                draft.margemPercentual(),
+                draft.producaoPlanejada(),
+                draft.producaoRealizada(),
+                draft.custoPrevistoFinal(),
+                draft.receitaPrevistaFinal()
+        );
 
         memoryService.registrarEvento(
                 "PREVISAO_FINANCEIRA",
@@ -1047,6 +1051,37 @@ public class PrevisaoFinanceiraService {
 
     private LocalDateTime toLocalDateTime(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toLocalDateTime();
+    }
+
+    static Map<String, Object> payloadEventoFinanceiro(
+            String obraId,
+            String snapshotId,
+            LocalDate dataReferencia,
+            String statusExecucao,
+            BigDecimal receitaEstimadaAcumulada,
+            BigDecimal custoRealizado,
+            BigDecimal margemAtual,
+            BigDecimal margemPercentual,
+            BigDecimal producaoPlanejada,
+            BigDecimal producaoRealizada,
+            BigDecimal custoPrevistoFinal,
+            BigDecimal receitaPrevistaFinal
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("schemaVersion", 2);
+        payload.put("obraId", obraId);
+        payload.put("snapshotId", snapshotId);
+        payload.put("dataReferencia", dataReferencia);
+        payload.put("statusExecucao", statusExecucao);
+        payload.put("receitaOperacionalEstimativa", receitaEstimadaAcumulada);
+        payload.put("custoRealizado", custoRealizado);
+        payload.put("margemAtual", margemAtual);
+        payload.put("margemPercentual", margemPercentual);
+        payload.put("producaoPlanejada", producaoPlanejada);
+        payload.put("producaoRealizada", producaoRealizada);
+        payload.put("custoPrevistoFinal", custoPrevistoFinal);
+        payload.put("receitaPrevistaFinal", receitaPrevistaFinal);
+        return payload;
     }
 
     private record ContractAggregate(
