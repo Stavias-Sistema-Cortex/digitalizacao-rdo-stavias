@@ -25,6 +25,10 @@ import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
 import { RdoLocalList } from "./RdoLocalList";
 import type { RdoDraft } from "./rdo.types";
+import {
+  colaboradorStorageKey,
+  setLastAccessedObraId,
+} from "../home/lastAccessedObra";
 
 type WorkspaceMode =
   | {
@@ -115,6 +119,11 @@ export function RdoWorkspacePage() {
   function handleOpen(
     record: LocalRdoRecord,
   ) {
+    setLastAccessedObraId(
+      colaboradorStorageKey(getSession()),
+      record.obraId,
+    );
+
     setMode({
       type: "FORM",
       draft:
@@ -176,6 +185,12 @@ export function RdoWorkspacePage() {
             void handleBackToList();
           }}
           onSaved={() => {
+            if (mode.draft.obraId) {
+              setLastAccessedObraId(
+                colaboradorStorageKey(getSession()),
+                mode.draft.obraId,
+              );
+            }
             void loadRecords();
           }}
         />
