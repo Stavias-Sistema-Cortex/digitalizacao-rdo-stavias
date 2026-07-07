@@ -114,7 +114,7 @@ describe("staviaLocalEngine", () => {
       obras: [],
       rdos: [activeRdo],
       programacoes: [],
-      pdocs: [],
+      pdors: [],
       operationalEvents: [],
     } satisfies StaviaSnapshot;
 
@@ -275,7 +275,7 @@ describe("staviaLocalEngine", () => {
       obras: [],
       rdos: [otherRdo, activeRdo],
       programacoes: [],
-      pdocs: [],
+      pdors: [],
       operationalEvents: [],
     } satisfies StaviaSnapshot;
 
@@ -378,7 +378,7 @@ describe("staviaLocalEngine", () => {
       obras: [],
       rdos: [activeRdo],
       programacoes: [],
-      pdocs: [],
+      pdors: [],
       operationalEvents: [
         {
           id: "evento-1",
@@ -533,7 +533,7 @@ function makeLocalCoverageSnapshot(): StaviaSnapshot {
     obras: [],
     rdos: [],
     programacoes: [],
-    pdocs: [],
+    pdors: [],
     operationalEvents: [],
   };
   const ontology = loadRdoOntology(snapshot);

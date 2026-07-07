@@ -172,7 +172,7 @@ function snapshotWithRdoConflict(): StaviaSnapshot {
     obras: [],
     rdos: [newerWrongRdo, activeRdo],
     programacoes: [],
-    pdocs: [],
+    pdors: [],
     operationalEvents: [],
   };
 }
@@ -447,7 +447,7 @@ function makePanelCoverageSnapshot(): StaviaSnapshot {
     ],
     rdos: [],
     programacoes: [],
-    pdocs: [],
+    pdors: [],
     operationalEvents: [],
   };
   const ontology = loadRdoOntology(snapshot);

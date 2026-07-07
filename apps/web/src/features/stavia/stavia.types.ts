@@ -308,7 +308,7 @@ export interface StaviaSnapshotProgramacao {
   updatedAt: string | null;
 }
 
-export interface StaviaSnapshotPdoc {
+export interface StaviaSnapshotPdor {
   obraId: string;
   snapshotId: string | null;
   dataReferencia: string | null;
@@ -316,9 +316,9 @@ export interface StaviaSnapshotPdoc {
   statusExecucao: string | null;
   calibracao: string | null;
   risco: string | null;
-  probabilidadeQualquerExcedente: number | string | null;
-  probabilidadeExceder5Pct: number | string | null;
-  probabilidadeExceder10Pct: number | string | null;
+  probabilidadeAbaixoContrato: number | string | null;
+  probabilidadeAbaixo95Pct: number | string | null;
+  probabilidadeAbaixo90Pct: number | string | null;
   scoreHeuristico: number | string | null;
   confianca: number | string | null;
 }
@@ -328,7 +328,7 @@ export interface StaviaSnapshot {
   obras: StaviaSnapshotObra[];
   rdos: StaviaSnapshotRdo[];
   programacoes: StaviaSnapshotProgramacao[];
-  pdocs: StaviaSnapshotPdoc[];
+  pdors: StaviaSnapshotPdor[];
   operationalEvents: StaviaSnapshotOperationalEvent[];
   ontology?: unknown;
 }

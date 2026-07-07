@@ -5,7 +5,7 @@ import type {
   StaviaEvidence,
   StaviaSnapshot,
   StaviaSnapshotObra,
-  StaviaSnapshotPdoc,
+  StaviaSnapshotPdor,
   StaviaSnapshotProgramacao,
   StaviaSnapshotRdo,
 } from "./stavia.types";
@@ -31,7 +31,7 @@ type LocalIntent =
   | "OBSERVACOES_SERVICO"
   | "LOCALIZACAO_OBRA"
   | "STATUS_SINCRONIZACAO"
-  | "PDOC"
+  | "PDOR"
   | "OBRAS_POR_CIDADE"
   | "CONTAGEM_RDOS_OBRA"
   | "DETALHE_RDO"
@@ -51,7 +51,7 @@ type CompositeTopic =
   | "EQUIPAMENTOS"
   | "MATERIAIS"
   | "CONTAGEM_RDOS_OBRA"
-  | "PDOC"
+  | "PDOR"
   | "OCORRENCIAS";
 
 interface ResolvedContext {
@@ -342,17 +342,18 @@ function requestedCompositeTopics(
 
   if (
     hasAny(normalizedQuestion, [
-      "pdoc",
-      "risco de desvio",
-      "risco de custo",
-      "risco de custos",
-      "estourar custo",
-      "estouro de custo",
-      "probabilidade de desvio",
-      "probabilidade de exceder",
+      "pdor",
+      "previsao de receita",
+      "receita prevista",
+      "receita final",
+      "captura de receita",
+      "shortfall",
+      "bater o contrato",
+      "atingir o contrato",
+      "probabilidade de nao atingir",
     ])
   ) {
-    topics.push("PDOC");
+    topics.push("PDOR");
   }
 
   if (
@@ -551,17 +552,18 @@ function detectIntent(question: string): LocalIntent {
 
   if (
     hasAny(normalized, [
-      "pdoc",
-      "risco de desvio",
-      "risco de custo",
-      "risco de custos",
-      "estourar custo",
-      "estouro de custo",
-      "probabilidade de desvio",
-      "probabilidade de exceder",
+      "pdor",
+      "previsao de receita",
+      "receita prevista",
+      "receita final",
+      "captura de receita",
+      "shortfall",
+      "bater o contrato",
+      "atingir o contrato",
+      "probabilidade de nao atingir",
     ])
   ) {
-    return "PDOC";
+    return "PDOR";
   }
 
   if (
@@ -1209,14 +1211,14 @@ function sourceForRdo(rdo: StaviaSnapshotRdo): StaviaEvidence {
   };
 }
 
-function sourceForPdoc(pdoc: StaviaSnapshotPdoc): StaviaEvidence {
+function sourceForPdor(pdor: StaviaSnapshotPdor): StaviaEvidence {
   return {
-    type: "PDOC_LOCAL",
-    id: pdoc.snapshotId ?? `PDOC:${pdoc.obraId}`,
-    summary: "Snapshot PDOC salvo no dispositivo",
-    updatedAt: pdoc.dataExecucao,
-    validated: pdoc.statusExecucao === "SUCCESS",
-    attributes: { ...pdoc },
+    type: "PDOR_LOCAL",
+    id: pdor.snapshotId ?? `PDOR:${pdor.obraId}`,
+    summary: "Snapshot PDOR salvo no dispositivo",
+    updatedAt: pdor.dataExecucao,
+    validated: pdor.statusExecucao === "SUCCESS",
+    attributes: { ...pdor },
   };
 }
 
@@ -2486,19 +2488,19 @@ function answerComposite(
     );
   }
 
-  if (topics.includes("PDOC")) {
+  if (topics.includes("PDOR")) {
     const obraId = resolved.obra?.id ?? resolved.rdo?.obraId;
-    const pdoc = snapshot.pdocs.find(
+    const pdor = snapshot.pdors.find(
       (candidate) => candidate.obraId === obraId,
     );
     sections.push(
-      pdoc
-        ? `PDOC: ${formatPercent(
-            pdoc.probabilidadeQualquerExcedente ??
-              pdoc.probabilidadeExceder5Pct ??
-              pdoc.scoreHeuristico,
+      pdor
+        ? `PDOR (risco de receita abaixo do contrato): ${formatPercent(
+            pdor.probabilidadeAbaixoContrato ??
+              pdor.probabilidadeAbaixo95Pct ??
+              pdor.scoreHeuristico,
           )}.`
-        : "PDOC: não encontrei resultado salvo para esta obra.",
+        : "PDOR: não encontrei previsão de receita salva para esta obra.",
     );
   }
 
@@ -2692,19 +2694,19 @@ function formatPercent(value: number | string | null): string {
   }).format(percent) + "%";
 }
 
-function answerPdoc(
+function answerPdor(
   snapshot: StaviaSnapshot,
   resolved: ResolvedContext,
 ): StaviaConsultaResponse {
   const obraId = resolved.obra?.id ?? resolved.rdo?.obraId;
-  const pdoc = snapshot.pdocs.find(
+  const pdor = snapshot.pdors.find(
     (candidate) => candidate.obraId === obraId,
   );
 
-  if (!pdoc) {
+  if (!pdor) {
     return answer(
-      "Não encontrei resultado PDOC salvo para esta obra.",
-      "PDOC",
+      "Não encontrei previsão de receita PDOR salva para esta obra.",
+      "PDOR",
       {
         confidence: "MEDIA",
         insufficientData: true,
@@ -2713,10 +2715,10 @@ function answerPdoc(
   }
 
   const score =
-    pdoc.probabilidadeQualquerExcedente ??
-    pdoc.probabilidadeExceder5Pct ??
-    pdoc.scoreHeuristico;
-  const calibration = normalizeText(pdoc.calibracao);
+    pdor.probabilidadeAbaixoContrato ??
+    pdor.probabilidadeAbaixo95Pct ??
+    pdor.scoreHeuristico;
+  const calibration = normalizeText(pdor.calibracao);
   const calibrationWarning =
     calibration === "not_calibrated" ||
     calibration === "nao calibrado"
@@ -2724,18 +2726,18 @@ function answerPdoc(
       : "";
 
   return answer(
-    `PDOC desta obra: ${formatPercent(score)}.${calibrationWarning}`,
-    "PDOC",
+    `PDOR desta obra — risco de receita abaixo do contrato: ${formatPercent(score)}.${calibrationWarning}`,
+    "PDOR",
     {
       confidence:
         calibrationWarning.length > 0 ? "MEDIA" : "ALTA",
       warnings:
         calibrationWarning.length > 0
           ? [
-              "PDOC não calibrado: indicador heurístico/simulatório.",
+              "PDOR não calibrado: indicador heurístico/simulatório.",
             ]
           : [],
-      sources: [sourceForPdoc(pdoc)],
+      sources: [sourceForPdor(pdor)],
     },
   );
 }
@@ -3050,8 +3052,8 @@ export function responderComSnapshotStavia({
       return answerLocation(resolved);
     case "CONTAGEM_RDOS_OBRA":
       return answerRdoCount(resolved);
-    case "PDOC":
-      return answerPdoc(snapshot, resolved);
+    case "PDOR":
+      return answerPdor(snapshot, resolved);
     case "RESUMO_RDO":
       return answerSummary(resolved);
     case "OCORRENCIAS":

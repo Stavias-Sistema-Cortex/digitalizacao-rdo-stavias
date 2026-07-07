@@ -617,7 +617,7 @@ function mergeSnapshots(
       obras: [],
       rdos: [],
       programacoes: [],
-      pdocs: [],
+      pdors: [],
       operationalEvents: [],
     };
 
@@ -682,7 +682,7 @@ function mergeSnapshots(
         left.dataProgramacao ?? "",
       ),
     ),
-    pdocs: base.pdocs,
+    pdors: base.pdors,
     operationalEvents: Array.from(eventsById.values()).sort(
       (left, right) =>
         (right.occurredAt ?? "").localeCompare(
