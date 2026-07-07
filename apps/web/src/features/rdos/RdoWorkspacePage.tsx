@@ -175,7 +175,7 @@ export function RdoWorkspacePage() {
 
   if (mode.type === "FORM") {
     return (
-      <>
+      <CortexShell active="rdos">
         <RdoCreatePage
           key={mode.draft.id}
           initialDraft={mode.draft}
@@ -202,7 +202,7 @@ export function RdoWorkspacePage() {
           initialObraId={mode.draft.obraId}
           initialRdoId={mode.draft.id}
         />
-      </>
+      </CortexShell>
     );
   }
 

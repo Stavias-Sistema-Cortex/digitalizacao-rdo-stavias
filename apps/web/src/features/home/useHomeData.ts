@@ -128,13 +128,7 @@ export function useHomeData(): HomeData {
 
     let cancelled = false;
 
-    async function loadObraDetails(obraId: string) {
-      try {
-        await hydrateHistoricoObra(obraId);
-      } catch {
-        // Offline: usa o que houver localmente.
-      }
-
+    async function loadLocalDetails(obraId: string) {
       const [obraSnapshots, obraEvents, rdos] =
         await Promise.all([
           listSnapshotsByObra(obraId),
@@ -159,6 +153,21 @@ export function useHomeData(): HomeData {
           a.dataRdo < b.dataRdo ? 1 : -1,
         );
       setLatestRdo(obraRdos[0] ?? null);
+    }
+
+    async function loadObraDetails(obraId: string) {
+      // Primeiro o que já existe localmente: a troca de obra é imediata,
+      // sem exibir dados da obra anterior enquanto a rede responde.
+      await loadLocalDetails(obraId);
+
+      try {
+        await hydrateHistoricoObra(obraId);
+      } catch {
+        // Offline: fica com o que havia localmente.
+        return;
+      }
+
+      await loadLocalDetails(obraId);
     }
 
     void loadObraDetails(focusedObraId);

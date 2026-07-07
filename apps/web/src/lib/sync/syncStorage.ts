@@ -817,7 +817,11 @@ export async function applyPulledEventsAtomically(
       }
     }
 
-    if (event.entidadeTipo === "OBRA" && event.payload) {
+    if (
+      event.entidadeTipo === "OBRA" &&
+      event.tipoEvento === "OBRA_ATUALIZADA" &&
+      event.payload
+    ) {
       const incoming = obraRecordFromPayload(
         event.payload,
         nowUtc(),
@@ -826,9 +830,14 @@ export async function applyPulledEventsAtomically(
       if (incoming) {
         const obraStore = transaction.objectStore("obras");
         const existing = await obraStore.get(incoming.id);
-        await obraStore.put(
-          mergeObraRecords(existing, incoming),
-        );
+
+        // Só atualiza obras já conhecidas localmente: a hidratação REST
+        // (escopada por vínculo) é quem decide o que entra no dispositivo.
+        if (existing) {
+          await obraStore.put(
+            mergeObraRecords(existing, incoming),
+          );
+        }
       }
     }
 
@@ -843,9 +852,15 @@ export async function applyPulledEventsAtomically(
       );
 
       if (snapshot) {
-        await transaction
-          .objectStore("previsao_snapshots")
-          .put(snapshot);
+        const knownObra = await transaction
+          .objectStore("obras")
+          .get(snapshot.obraId);
+
+        if (knownObra) {
+          await transaction
+            .objectStore("previsao_snapshots")
+            .put(snapshot);
+        }
       }
     }
 
