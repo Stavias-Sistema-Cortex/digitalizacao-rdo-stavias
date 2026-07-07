@@ -1,8 +1,10 @@
 package com.projeto.cortex.obras;
 
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
@@ -12,9 +14,11 @@ import java.util.Locale;
 public class ObraService {
 
     private final ObraRepository obraRepository;
+    private final CortexOperationalMemoryService memoryService;
 
-    public ObraService(ObraRepository obraRepository) {
+    public ObraService(ObraRepository obraRepository, CortexOperationalMemoryService memoryService) {
         this.obraRepository = obraRepository;
+        this.memoryService = memoryService;
     }
 
     public List<ObraResponse> listarObras(String query) {
@@ -31,6 +35,7 @@ public class ObraService {
                 .toList();
     }
 
+    @Transactional
     public ObraResponse criarObra(ObraRequest request) {
         String codigoContrato = normalizarObrigatorio(request.codigoContrato(), "codigoContrato");
         String nome = normalizarObrigatorio(request.nome(), "nome");
@@ -66,7 +71,17 @@ public class ObraService {
                 normalizarOpcional(request.observacoes())
         );
 
-        return ObraResponse.from(obraRepository.save(obra));
+        Obra salva = obraRepository.save(obra);
+
+        memoryService.registrarEvento(
+                ObraSyncEvento.TIPO_ENTIDADE,
+                salva.getId(),
+                ObraSyncEvento.TIPO_EVENTO,
+                "OBRAS",
+                ObraSyncEvento.payload(salva)
+        );
+
+        return ObraResponse.from(salva);
     }
 
     private String extrairCodigoCw(String codigoContrato) {

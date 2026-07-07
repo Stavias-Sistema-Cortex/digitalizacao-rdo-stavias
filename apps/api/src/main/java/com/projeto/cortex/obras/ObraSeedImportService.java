@@ -1,5 +1,6 @@
 package com.projeto.cortex.obras;
 
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -19,9 +20,11 @@ public class ObraSeedImportService {
     );
 
     private final ObraRepository obraRepository;
+    private final CortexOperationalMemoryService memoryService;
 
-    public ObraSeedImportService(ObraRepository obraRepository) {
+    public ObraSeedImportService(ObraRepository obraRepository, CortexOperationalMemoryService memoryService) {
         this.obraRepository = obraRepository;
+        this.memoryService = memoryService;
     }
 
     public ObraSeedImportResult importarSeedPadrao() {
@@ -91,7 +94,16 @@ public class ObraSeedImportService {
                             valorOpcional(header, valores, "observacoes")
                     );
 
-                    obraRepository.save(obra);
+                    Obra salva = obraRepository.save(obra);
+
+                    memoryService.registrarEvento(
+                            ObraSyncEvento.TIPO_ENTIDADE,
+                            salva.getId(),
+                            ObraSyncEvento.TIPO_EVENTO,
+                            "OBRAS",
+                            ObraSyncEvento.payload(salva)
+                    );
+
                     registrosInseridos++;
                 } catch (Exception exception) {
                     registrosComErro++;
