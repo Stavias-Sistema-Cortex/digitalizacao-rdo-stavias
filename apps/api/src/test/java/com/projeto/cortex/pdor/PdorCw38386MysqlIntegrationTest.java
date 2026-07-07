@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -205,6 +206,7 @@ class PdorCw38386MysqlIntegrationTest {
                 inputLoader,
                 snapshotRepository,
                 objectMapper,
+                mock(CortexOperationalMemoryService.class),
                 new PdorContextBuilder(),
                 engine
         );
@@ -226,6 +228,7 @@ class PdorCw38386MysqlIntegrationTest {
                 inputLoader,
                 raceRepository,
                 objectMapper,
+                mock(CortexOperationalMemoryService.class),
                 new PdorContextBuilder(),
                 new PdorEngine()
         );

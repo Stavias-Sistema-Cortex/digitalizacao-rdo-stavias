@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.projeto.cortex.intelligence.PdorEngine;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraRepository;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
@@ -23,7 +25,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PdorApplicationServiceTest {
@@ -33,6 +38,7 @@ class PdorApplicationServiceTest {
     private ObraRepository obraRepository;
     private MutableInputLoader inputLoader;
     private InMemorySnapshotRepository snapshotRepository;
+    private CortexOperationalMemoryService memoryService;
     private PdorApplicationService service;
 
     @BeforeEach
@@ -57,11 +63,13 @@ class PdorApplicationServiceTest {
         obraRepository = mock(ObraRepository.class);
         inputLoader = new MutableInputLoader(validBundle(obra, "350000.00"));
         snapshotRepository = new InMemorySnapshotRepository(objectMapper);
+        memoryService = mock(CortexOperationalMemoryService.class);
         service = new PdorApplicationService(
                 obraRepository,
                 inputLoader,
                 snapshotRepository,
-                objectMapper
+                objectMapper,
+                memoryService
         );
 
         when(obraRepository.findAtivasByIdentificador("CW38386"))
@@ -90,6 +98,53 @@ class PdorApplicationServiceTest {
         assertThat(response.warnings().isArray()).isTrue();
         assertThat(response.inputs().isObject()).isTrue();
         assertThat(snapshotRepository.size()).isEqualTo(1);
+    }
+
+    @Test
+    void snapshotCalculadoRegistraObraEPdorNoGrafoOntologico() {
+        service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+
+        verify(memoryService).registrarObjeto(
+                eq("OBRA"),
+                eq(obra.getId()),
+                any(),
+                eq(obra.getNome()),
+                eq("ATIVA"),
+                eq("PDOR")
+        );
+        verify(memoryService).registrarObjeto(
+                eq("PDOR"),
+                any(String.class),
+                any(),
+                any(),
+                eq("SUCCESS"),
+                eq("PDOR")
+        );
+        verify(memoryService).registrarRelacaoAtiva(
+                eq("PDOR"),
+                any(String.class),
+                eq("OBRA"),
+                eq(obra.getId()),
+                eq("ANALISA"),
+                eq("PDOR"),
+                any()
+        );
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> payload =
+                ArgumentCaptor.forClass(Map.class);
+        verify(memoryService).registrarEvento(
+                eq("PDOR"),
+                any(String.class),
+                eq("PDOR_CALCULADO"),
+                eq("PDOR"),
+                payload.capture()
+        );
+
+        assertThat(payload.getValue().get("obraId")).isEqualTo(obra.getId());
+        assertThat(payload.getValue().get("receitaEstimadaFinal")).isNotNull();
+        assertThat(payload.getValue().get("p50Receita")).isNotNull();
+        assertThat(payload.getValue().get("probabilidadeAbaixoContrato")).isNotNull();
     }
 
     @Test

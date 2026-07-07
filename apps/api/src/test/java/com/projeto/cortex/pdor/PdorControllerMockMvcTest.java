@@ -2,6 +2,7 @@ package com.projeto.cortex.pdor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraRepository;
@@ -74,6 +75,9 @@ class PdorControllerMockMvcTest {
 
     @MockBean
     private PdorSnapshotRepository snapshotRepository;
+
+    @MockBean
+    private CortexOperationalMemoryService memoryService;
 
     private Obra obra;
 

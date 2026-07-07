@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,25 +33,30 @@ import java.util.UUID;
 @Service
 public class PdorApplicationService {
 
+    private static final String FONTE = "PDOR";
+
     private final ObraRepository obraRepository;
     private final PdorInputLoader inputLoader;
     private final PdorSnapshotRepository snapshotRepository;
     private final ObjectMapper objectMapper;
     private final PdorContextBuilder contextBuilder;
     private final PdorEngine engine;
+    private final CortexOperationalMemoryService memoryService;
 
     @Autowired
     public PdorApplicationService(
             ObraRepository obraRepository,
             PdorInputLoader inputLoader,
             PdorSnapshotRepository snapshotRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService
     ) {
         this(
                 obraRepository,
                 inputLoader,
                 snapshotRepository,
                 objectMapper,
+                memoryService,
                 new PdorContextBuilder(),
                 new PdorEngine()
         );
@@ -61,6 +67,7 @@ public class PdorApplicationService {
             PdorInputLoader inputLoader,
             PdorSnapshotRepository snapshotRepository,
             ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService,
             PdorContextBuilder contextBuilder,
             PdorEngine engine
     ) {
@@ -69,6 +76,7 @@ public class PdorApplicationService {
         this.snapshotRepository = snapshotRepository;
         this.objectMapper = objectMapper.copy()
                 .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+        this.memoryService = memoryService;
         this.contextBuilder = contextBuilder;
         this.engine = engine;
     }
@@ -172,12 +180,72 @@ public class PdorApplicationService {
 
         try {
             snapshotRepository.insert(snapshot);
+            registrarNoGrafo(snapshot, obra);
             return toResponse(snapshot, obra, false);
         } catch (DuplicateKeyException exception) {
             return snapshotRepository.findByIdempotencyKey(idempotencyKey)
                     .map(existing -> toResponse(existing, obra, true))
                     .orElseThrow(() -> exception);
         }
+    }
+
+    /**
+     * Liga o snapshot ao grafo ontológico: obra e PDOR como objetos, relação
+     * ANALISA entre eles e evento operacional com os índices de receita.
+     */
+    private void registrarNoGrafo(PdorSnapshot snapshot, Obra obra) {
+        memoryService.registrarObjeto(
+                "OBRA",
+                obra.getId(),
+                snapshot.codigoObra(),
+                obra.getNome(),
+                obra.getStatus(),
+                FONTE
+        );
+        memoryService.registrarObjeto(
+                "PDOR",
+                snapshot.id(),
+                snapshot.codigoObra(),
+                "Previsão de receita " + snapshot.codigoObra(),
+                snapshot.executionStatus().name(),
+                FONTE
+        );
+        memoryService.registrarRelacaoAtiva(
+                "PDOR",
+                snapshot.id(),
+                "OBRA",
+                obra.getId(),
+                "ANALISA",
+                FONTE,
+                "Snapshot PDOR analisa a receita da obra."
+        );
+
+        String tipoEvento =
+                snapshot.executionStatus() == PdorExecutionStatus.SUCCESS
+                        ? "PDOR_CALCULADO"
+                        : "PDOR_INSUFICIENTE";
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("schemaVersion", 1);
+        payload.put("obraId", obra.getId());
+        payload.put("snapshotId", snapshot.id());
+        payload.put("dataReferencia", snapshot.referenceDate());
+        payload.put("statusExecucao", snapshot.executionStatus().name());
+        payload.put("receitaEstimadaFinal", snapshot.racWeighted());
+        payload.put("p50Receita", snapshot.revenueP50());
+        payload.put("p80Receita", snapshot.revenueP80());
+        payload.put(
+                "probabilidadeAbaixoContrato",
+                snapshot.probabilityBelowContract()
+        );
+
+        memoryService.registrarEvento(
+                "PDOR",
+                snapshot.id(),
+                tipoEvento,
+                FONTE,
+                payload
+        );
     }
 
     private PdorSnapshot buildCalculationSnapshot(

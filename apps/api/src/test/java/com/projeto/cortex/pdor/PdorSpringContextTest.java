@@ -2,6 +2,7 @@ package com.projeto.cortex.pdor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -20,7 +21,8 @@ class PdorSpringContextTest {
                     .withBean(ObraRepository.class, () -> mock(ObraRepository.class))
                     .withBean(PdorInputLoader.class, () -> mock(PdorInputLoader.class))
                     .withBean(PdorSnapshotRepository.class, () -> mock(PdorSnapshotRepository.class))
-                    .withBean(CurrentUserService.class, () -> mock(CurrentUserService.class));
+                    .withBean(CurrentUserService.class, () -> mock(CurrentUserService.class))
+                    .withBean(CortexOperationalMemoryService.class, () -> mock(CortexOperationalMemoryService.class));
 
     @Test
     void shouldStartPdorSpringSlice() {
