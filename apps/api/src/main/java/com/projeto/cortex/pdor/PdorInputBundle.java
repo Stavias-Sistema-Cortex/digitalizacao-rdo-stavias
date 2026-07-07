@@ -48,9 +48,9 @@ public record PdorInputBundle(
         return new PdorContextBuilder.PdorSourceSnapshot(
                 obraId,
                 referenceDate,
-                sourceValues.approvedBudget(),
-                sourceValues.actualCost(),
-                sourceValues.committedCost(),
+                sourceValues.contractValue(),
+                sourceValues.measuredRevenue(),
+                sourceValues.validatedRevenue(),
                 sourceValues.totalPlannedQuantity(),
                 sourceValues.plannedExecutedQuantity(),
                 sourceValues.actualExecutedQuantity(),
@@ -64,7 +64,7 @@ public record PdorInputBundle(
                 sourceValues.criticalOccurrences(),
                 sourceValues.pendingSyncEvents(),
                 sourceValues.hoursSinceLastSync(),
-                sourceValues.hasBudgetData(),
+                sourceValues.hasContractData(),
                 sourceValues.hasScheduleData(),
                 sourceValues.hasExecutionData(),
                 sourceValues.hasMaterialData(),
@@ -72,7 +72,7 @@ public record PdorInputBundle(
                 sourceValues.hasRdoData(),
                 sourceValues.hasOccurrenceData(),
                 sourceValues.hasSyncMetadata(),
-                sourceValues.budgetValidated(),
+                sourceValues.contractValidated(),
                 sourceValues.scheduleValidated(),
                 sourceValues.quantitiesValidated(),
                 sourceValues.simulationIterations()
@@ -80,9 +80,9 @@ public record PdorInputBundle(
     }
 
     public record SourceValues(
-            BigDecimal approvedBudget,
-            BigDecimal actualCost,
-            BigDecimal committedCost,
+            BigDecimal contractValue,
+            BigDecimal measuredRevenue,
+            BigDecimal validatedRevenue,
             double totalPlannedQuantity,
             double plannedExecutedQuantity,
             double actualExecutedQuantity,
@@ -96,7 +96,7 @@ public record PdorInputBundle(
             int criticalOccurrences,
             int pendingSyncEvents,
             int hoursSinceLastSync,
-            boolean hasBudgetData,
+            boolean hasContractData,
             boolean hasScheduleData,
             boolean hasExecutionData,
             boolean hasMaterialData,
@@ -104,7 +104,7 @@ public record PdorInputBundle(
             boolean hasRdoData,
             boolean hasOccurrenceData,
             boolean hasSyncMetadata,
-            boolean budgetValidated,
+            boolean contractValidated,
             boolean scheduleValidated,
             boolean quantitiesValidated,
             int simulationIterations

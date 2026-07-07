@@ -55,79 +55,75 @@ public class RealPdorInputLoader implements PdorInputLoader {
         List<String> warnings = new ArrayList<>();
         List<String> missing = new ArrayList<>();
 
-        PdorDataAvailability budgetAvailability =
-                finance.hasBudgetData()
+        PdorDataAvailability contractAvailability =
+                finance.hasContractData()
                         ? PdorDataAvailability.DIRECT
                         : PdorDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
-                "approvedBudget",
-                "Orçamento total aprovado",
-                budgetAvailability,
-                finance.hasBudgetData() ? finance.approvedBudget() : null,
+                "contractValue",
+                "Valor contratual da obra",
+                contractAvailability,
+                finance.hasContractData() ? finance.contractValue() : null,
                 "item_contratual.valor_total",
-                finance.hasBudgetData()
+                finance.hasContractData()
                         ? "Soma dos valores totais dos itens contratuais ativos da obra."
-                        : "Não há itens contratuais ativos com valor total para formar orçamento aprovado.",
+                        : "Não há itens contratuais ativos com valor total para formar o valor contratual.",
                 true
         );
-        if (!finance.hasBudgetData()) {
+        if (!finance.hasContractData()) {
             warnings.add(
-                    "Orçamento total aprovado ausente; o PDOR não será calculado sem itens contratuais ativos."
+                    "Valor contratual ausente; o PDOR não será calculado sem itens contratuais ativos."
             );
         }
 
-        PdorDataAvailability actualCostAvailability =
-                finance.hasActualCostData()
+        PdorDataAvailability measuredRevenueAvailability =
+                finance.hasRevenueData()
                         ? PdorDataAvailability.DIRECT
                         : PdorDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
-                "actualCost",
-                "Custo realizado",
-                actualCostAvailability,
-                finance.hasActualCostData() ? finance.actualCost() : null,
-                "execucao_servico_rdo.custo_realizado + alocacao_colaborador.custo_total",
-                finance.hasActualCostData()
-                        ? "Soma dos custos realizados lançados nas execuções de serviço e alocações de colaboradores."
-                        : "Não há custo realizado informado em execução de serviço ou alocação de colaborador.",
+                "measuredRevenue",
+                "Receita medida acumulada",
+                measuredRevenueAvailability,
+                finance.hasRevenueData() ? finance.measuredRevenue() : null,
+                "execucao_servico_rdo.receita_operacional_estimativa",
+                finance.hasRevenueData()
+                        ? "Soma da receita operacional das execuções registradas ou validadas, sem produção rejeitada."
+                        : "Não há receita operacional registrada em execuções de serviço válidas.",
                 true
         );
-        if (!finance.hasActualCostData()) {
+        if (!finance.hasRevenueData()) {
             warnings.add(
-                    "Custo realizado ausente; o PDOR não será calculado sem esse dado financeiro."
+                    "Receita medida ausente; o PDOR não será calculado sem esse dado financeiro."
             );
         }
 
-        PdorDataAvailability committedCostAvailability =
-                finance.hasActualCostData()
-                        ? PdorDataAvailability.AMBIGUOUS
+        PdorDataAvailability validatedRevenueAvailability =
+                finance.hasRevenueData()
+                        ? PdorDataAvailability.DIRECT
                         : PdorDataAvailability.ABSENT;
         put(
                 inputs,
                 origins,
                 missing,
-                "committedCost",
-                "Custo comprometido",
-                committedCostAvailability,
-                finance.hasActualCostData() ? finance.committedCost() : null,
-                "execucao_servico_rdo.custo_realizado + alocacao_colaborador.custo_total",
-                finance.hasActualCostData()
-                        ? "Proxy operacional: enquanto não há ledger de comprometido, usa o custo realizado estruturado."
-                        : "Não há custo comprometido nem proxy operacional calculável.",
+                "validatedRevenue",
+                "Receita validada acumulada",
+                validatedRevenueAvailability,
+                finance.hasRevenueData() ? finance.validatedRevenue() : null,
+                "execucao_servico_rdo.receita_operacional_estimativa",
+                finance.hasRevenueData()
+                        ? "Parcela da receita medida já validada pela fiscalização."
+                        : "Não há receita validada em execuções de serviço da obra.",
                 true
         );
-        if (finance.hasActualCostData()) {
+        if (!finance.hasRevenueData()) {
             warnings.add(
-                    "Custo comprometido ainda não tem ledger próprio; o PDOR usa custo realizado estruturado como proxy auditável."
-            );
-        } else {
-            warnings.add(
-                    "Custo comprometido ausente; o PDOR não usará estimativas financeiras substitutas."
+                    "Receita validada ausente; o PDOR não usará estimativas financeiras substitutas."
             );
         }
 
@@ -383,9 +379,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
 
         PdorInputBundle.SourceValues sourceValues =
                 new PdorInputBundle.SourceValues(
-                        finance.hasBudgetData() ? finance.approvedBudget() : null,
-                        finance.hasActualCostData() ? finance.actualCost() : null,
-                        finance.hasActualCostData() ? finance.committedCost() : null,
+                        finance.hasContractData() ? finance.contractValue() : null,
+                        finance.hasRevenueData() ? finance.measuredRevenue() : null,
+                        finance.hasRevenueData() ? finance.validatedRevenue() : null,
                         toDouble(totalPlanned),
                         toDouble(plannedUntilReference),
                         toDouble(actualExecuted),
@@ -399,7 +395,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         rdo.rdoCount() > 0 ? rdo.observationCount() : 0,
                         sync.pendingEvents(),
                         sync.hoursSinceLastSync() == null ? 168 : sync.hoursSinceLastSync(),
-                        finance.hasBudgetData(),
+                        finance.hasContractData(),
                         programacao.recordCount() > 0,
                         actualExecuted != null,
                         hasMaterial,
@@ -642,56 +638,45 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         FROM item_contratual
                         WHERE obra_id = ?
                           AND status = 'ATIVO'
-                    ) AS approved_budget,
+                    ) AS contract_value,
                     (
                         SELECT COUNT(*)
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
                           AND cancelada = 0
-                          AND custo_realizado IS NOT NULL
-                    ) AS execution_cost_rows,
+                          AND producao_rejeitada = 0
+                          AND status_validacao IN ('REGISTRADA', 'VALIDADA')
+                          AND receita_operacional_estimativa IS NOT NULL
+                    ) AS revenue_rows,
                     (
-                        SELECT SUM(custo_realizado)
+                        SELECT SUM(receita_operacional_estimativa)
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
                           AND cancelada = 0
-                    ) AS execution_cost,
+                          AND producao_rejeitada = 0
+                          AND status_validacao IN ('REGISTRADA', 'VALIDADA')
+                    ) AS measured_revenue,
                     (
-                        SELECT COUNT(*)
-                        FROM alocacao_colaborador
+                        SELECT SUM(receita_operacional_estimativa)
+                        FROM execucao_servico_rdo
                         WHERE obra_id = ?
-                          AND data_alocacao <= ?
-                          AND status <> 'CANCELADA'
-                          AND custo_total IS NOT NULL
-                    ) AS allocation_cost_rows,
-                    (
-                        SELECT SUM(custo_total)
-                        FROM alocacao_colaborador
-                        WHERE obra_id = ?
-                          AND data_alocacao <= ?
-                          AND status <> 'CANCELADA'
-                    ) AS allocation_cost
+                          AND data_execucao <= ?
+                          AND cancelada = 0
+                          AND producao_rejeitada = 0
+                          AND status_validacao = 'VALIDADA'
+                    ) AS validated_revenue
                 """,
-                (rs, rowNumber) -> {
-                    BigDecimal executionCost =
-                            valueOrZero(rs.getBigDecimal("execution_cost"));
-                    BigDecimal allocationCost =
-                            valueOrZero(rs.getBigDecimal("allocation_cost"));
-
-                    return new FinanceStats(
-                            rs.getInt("item_count"),
-                            rs.getBigDecimal("approved_budget"),
-                            rs.getInt("execution_cost_rows"),
-                            rs.getInt("allocation_cost_rows"),
-                            executionCost.add(allocationCost)
-                    );
-                },
+                (rs, rowNumber) -> new FinanceStats(
+                        rs.getInt("item_count"),
+                        rs.getBigDecimal("contract_value"),
+                        rs.getInt("revenue_rows"),
+                        valueOrZero(rs.getBigDecimal("measured_revenue")),
+                        valueOrZero(rs.getBigDecimal("validated_revenue"))
+                ),
                 obraId,
                 obraId,
-                obraId,
-                referenceDate,
                 obraId,
                 referenceDate,
                 obraId,
@@ -1004,23 +989,19 @@ public class RealPdorInputLoader implements PdorInputLoader {
 
     private record FinanceStats(
             int itemCount,
-            BigDecimal approvedBudget,
-            int executionCostRows,
-            int allocationCostRows,
-            BigDecimal actualCost
+            BigDecimal contractValue,
+            int revenueRows,
+            BigDecimal measuredRevenue,
+            BigDecimal validatedRevenue
     ) {
-        private boolean hasBudgetData() {
+        private boolean hasContractData() {
             return itemCount > 0
-                    && approvedBudget != null
-                    && approvedBudget.compareTo(BigDecimal.ZERO) > 0;
+                    && contractValue != null
+                    && contractValue.compareTo(BigDecimal.ZERO) > 0;
         }
 
-        private boolean hasActualCostData() {
-            return executionCostRows > 0 || allocationCostRows > 0;
-        }
-
-        private BigDecimal committedCost() {
-            return actualCost == null ? BigDecimal.ZERO : actualCost;
+        private boolean hasRevenueData() {
+            return revenueRows > 0;
         }
     }
 

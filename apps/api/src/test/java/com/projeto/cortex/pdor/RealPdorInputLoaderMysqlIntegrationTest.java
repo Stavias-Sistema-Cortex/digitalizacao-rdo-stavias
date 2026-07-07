@@ -109,19 +109,19 @@ class RealPdorInputLoaderMysqlIntegrationTest {
         assertThat(((Number) bundle.inputs().get("hoursSinceLastSync")).intValue())
                 .isBetween(2, 4);
 
-        assertThat(bundle.inputs().get("approvedBudget")).isNull();
-        assertThat(bundle.inputs().get("actualCost")).isNull();
-        assertThat(bundle.inputs().get("committedCost")).isNull();
+        assertThat(bundle.inputs().get("contractValue")).isNull();
+        assertThat(bundle.inputs().get("measuredRevenue")).isNull();
+        assertThat(bundle.inputs().get("validatedRevenue")).isNull();
         assertThat(bundle.inputs().get("equipmentDowntimeHours30d")).isNull();
         assertThat(bundle.missingRequiredFields())
-                .containsExactly("approvedBudget", "actualCost", "committedCost");
-        assertThat(bundle.origins().get("approvedBudget").availability())
+                .containsExactly("contractValue", "measuredRevenue", "validatedRevenue");
+        assertThat(bundle.origins().get("contractValue").availability())
                 .isEqualTo(PdorDataAvailability.ABSENT);
         assertThat(bundle.origins().get("plannedEquipmentHours30d").availability())
                 .isEqualTo(PdorDataAvailability.AMBIGUOUS);
 
         assertThat(bundle.warnings())
-                .anySatisfy(warning -> assertThat(warning).contains("Orçamento total aprovado ausente"))
+                .anySatisfy(warning -> assertThat(warning).contains("Valor contratual ausente"))
                 .anySatisfy(warning -> assertThat(warning).contains("Há 1 linhas de programação"))
                 .anySatisfy(warning -> assertThat(warning).contains("Horas de equipamento dos RDOs"))
                 .anySatisfy(warning -> assertThat(warning).contains("Observações de RDO"));
@@ -192,24 +192,22 @@ class RealPdorInputLoaderMysqlIntegrationTest {
         assertThat(bundle.inputs().get("quantityMetric"))
                 .isEqualTo("ITEM_CONTRATUAL");
 
-        assertDecimalInput(bundle, "approvedBudget", "25000.00");
-        assertDecimalInput(bundle, "actualCost", "1700.00");
-        assertDecimalInput(bundle, "committedCost", "1700.00");
+        assertDecimalInput(bundle, "contractValue", "25000.00");
+        assertDecimalInput(bundle, "measuredRevenue", "2500.00");
+        assertDecimalInput(bundle, "validatedRevenue", "0");
         assertDecimalInput(bundle, "totalPlannedQuantity", "1000.000");
         assertDecimalInput(bundle, "plannedExecutedQuantity", "1000.000");
         assertDecimalInput(bundle, "actualExecutedQuantity", "100.000");
 
-        assertThat(bundle.origins().get("approvedBudget").availability())
+        assertThat(bundle.origins().get("contractValue").availability())
                 .isEqualTo(PdorDataAvailability.DIRECT);
-        assertThat(bundle.origins().get("actualCost").availability())
+        assertThat(bundle.origins().get("measuredRevenue").availability())
                 .isEqualTo(PdorDataAvailability.DIRECT);
-        assertThat(bundle.origins().get("committedCost").availability())
-                .isEqualTo(PdorDataAvailability.AMBIGUOUS);
+        assertThat(bundle.origins().get("validatedRevenue").availability())
+                .isEqualTo(PdorDataAvailability.DIRECT);
         assertThat(bundle.warnings())
                 .anySatisfy(warning ->
-                        assertThat(warning).contains("itens contratuais e execuções de serviço"))
-                .anySatisfy(warning ->
-                        assertThat(warning).contains("custo realizado estruturado como proxy"));
+                        assertThat(warning).contains("itens contratuais e execuções de serviço"));
     }
 
     private void assertDecimalInput(
