@@ -1,5 +1,6 @@
 package com.projeto.cortex.obras;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record ObraResponse(
@@ -13,6 +14,8 @@ public record ObraResponse(
         String cidade,
         String uf,
         String rodovia,
+        BigDecimal latitude,
+        BigDecimal longitude,
         String status,
         String fonteCriacao,
         String fonteArquivo,
@@ -32,6 +35,8 @@ public record ObraResponse(
                 obra.getCidade(),
                 obra.getUf(),
                 obra.getRodovia(),
+                obra.getLatitude(),
+                obra.getLongitude(),
                 obra.getStatus(),
                 obra.getFonteCriacao(),
                 obra.getFonteArquivo(),
