@@ -11,13 +11,16 @@ public class ObraController {
 
     private final ObraService obraService;
     private final CurrentUserService currentUserService;
+    private final ObrasRelacionadasService obrasRelacionadasService;
 
     public ObraController(
             ObraService obraService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            ObrasRelacionadasService obrasRelacionadasService
     ) {
         this.obraService = obraService;
         this.currentUserService = currentUserService;
+        this.obrasRelacionadasService = obrasRelacionadasService;
     }
 
     @GetMapping("/api/obras")
@@ -31,5 +34,10 @@ public class ObraController {
     public ObraResponse criarObra(@RequestBody ObraRequest request) {
         currentUserService.requireAdmin();
         return obraService.criarObra(request);
+    }
+
+    @GetMapping("/api/obras/relacionadas")
+    public List<ObraRelacionadaResponse> listarObrasRelacionadas() {
+        return obrasRelacionadasService.listarParaColaborador();
     }
 }
