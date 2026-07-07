@@ -184,3 +184,32 @@ export interface StaviaSnapshotRecord {
   localSyncedAt: string;
   updatedAt: string;
 }
+
+export interface ObraLocalRecord {
+  id: string;
+  codigoContrato: string;
+  nome: string;
+  cliente: string | null;
+  cidade: string | null;
+  uf: string | null;
+  rodovia: string | null;
+  status: string;
+  observacoes: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  valorContratual: number | null;
+  updatedAt: string;
+}
+
+export interface PrevisaoSnapshotRecord {
+  id: string;
+  obraId: string;
+  dataReferencia: string;
+  statusExecucao: string;
+  producaoPlanejada: number | null;
+  producaoRealizada: number | null;
+  custoRealizado: number | null;
+  custoPrevistoFinal: number | null;
+  receitaPrevistaFinal: number | null;
+  updatedAt: string;
+}

@@ -10,8 +10,10 @@ import type {
   LocalRdoMaoObraRecord,
   LocalRdoMaterialRecord,
   LocalRdoRecord,
+  ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
+  PrevisaoSnapshotRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
   StaviaSnapshotRecord,
@@ -19,7 +21,7 @@ import type {
 } from "./db.types";
 
 const DATABASE_NAME = "cortex-web";
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 7;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -126,6 +128,24 @@ interface CortexDbSchema extends DBSchema {
     value: StaviaSnapshotRecord;
     indexes: {
       "by-updated-at": string;
+    };
+  };
+
+  obras: {
+    key: string;
+    value: ObraLocalRecord;
+    indexes: {
+      "by-updated-at": string;
+      "by-status": string;
+    };
+  };
+
+  previsao_snapshots: {
+    key: string;
+    value: PrevisaoSnapshotRecord;
+    indexes: {
+      "by-obra-id": string;
+      "by-data-referencia": string;
     };
   };
 }
@@ -419,6 +439,32 @@ export function getCortexDb(): Promise<
           staviaSnapshotStore.createIndex(
             "by-updated-at",
             "updatedAt",
+          );
+        }
+
+        if (!database.objectStoreNames.contains("obras")) {
+          const obraStore = database.createObjectStore("obras", {
+            keyPath: "id",
+          });
+
+          obraStore.createIndex("by-updated-at", "updatedAt");
+          obraStore.createIndex("by-status", "status");
+        }
+
+        if (
+          !database.objectStoreNames.contains("previsao_snapshots")
+        ) {
+          const snapshotStore = database.createObjectStore(
+            "previsao_snapshots",
+            {
+              keyPath: "id",
+            },
+          );
+
+          snapshotStore.createIndex("by-obra-id", "obraId");
+          snapshotStore.createIndex(
+            "by-data-referencia",
+            "dataReferencia",
           );
         }
       },
