@@ -1787,3 +1787,234 @@ textarea:focus {
   padding: 24px 0;
   text-align: center;
 }
+
+/* --- Home --- */
+.home-dashboard {
+  padding: 24px 28px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.home-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.home-topbar h1 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.home-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-size: 0.72rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid #d7dbde;
+  background: #fff;
+  cursor: pointer;
+}
+
+.chip--active {
+  background: #fed203;
+  border-color: #fed203;
+  font-weight: 700;
+}
+
+.home-uf-filter {
+  margin-left: auto;
+  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-uf-filter select {
+  border: 1.5px solid #fed203;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #fff;
+  font-size: 0.75rem;
+}
+
+.home-obra-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 8px rgba(10, 66, 61, 0.08);
+}
+
+.home-obra-card--empty {
+  color: #6b7280;
+  text-align: center;
+  padding: 48px 20px;
+}
+
+.home-obra-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.home-obra-header h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.home-obra-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #0e5e57;
+  border: 1.5px solid #fed203;
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.home-obra-status {
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: #e8f5f2;
+  color: #0e5e57;
+  padding: 3px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+}
+
+.home-obra-selector {
+  margin-left: auto;
+}
+
+.home-obra-selector select {
+  border: 1px solid #d7dbde;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #fafbfb;
+  font-size: 0.75rem;
+  max-width: 240px;
+}
+
+.home-obra-body {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.home-obra-infos {
+  flex: 1;
+  min-width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+.home-obra-infos .info-label {
+  display: block;
+  color: #8b9498;
+  font-size: 0.68rem;
+}
+
+.info-coords {
+  display: block;
+  color: #6b7280;
+  font-size: 0.72rem;
+}
+
+.home-obra-metrics {
+  display: flex;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e6e8;
+}
+
+.metric-value {
+  font-size: 1.05rem;
+}
+
+.metric-value--brand {
+  color: #0e857a;
+}
+
+.home-updated-at {
+  color: #99a3a6;
+  font-size: 0.66rem;
+}
+
+.home-obra-chart {
+  flex: 1.6;
+  min-width: 320px;
+}
+
+.home-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(220px, 1fr)
+  );
+  gap: 12px;
+}
+
+.home-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 1px 6px rgba(10, 66, 61, 0.06);
+  font-size: 0.76rem;
+}
+
+.home-card h3 {
+  font-size: 0.8rem;
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.home-card-muted {
+  color: #99a3a6;
+}
+
+.home-card--brand {
+  background: linear-gradient(
+    150deg,
+    #0e5e57,
+    #0a423d
+  );
+  color: #eef7f5;
+}
+
+.home-card--brand h3 {
+  color: #fed203;
+}
+
+.home-card--brand a {
+  color: #eef7f5;
+  text-decoration: none;
+}
+
+.home-card--brand a:hover {
+  text-decoration: underline;
+}
