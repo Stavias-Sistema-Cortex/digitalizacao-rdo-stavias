@@ -4,9 +4,8 @@ import {
   useState,
 } from "react";
 
-import { SyncStatusBanner } from "../../components/SyncStatusBanner";
-import { clearSession, getSession } from "../auth/authSession";
-import { IntegracoesPage } from "../integracoes/IntegracoesPage";
+import { CortexShell } from "../../components/shell/CortexShell";
+import { getSession } from "../auth/authSession";
 import { StaviaPanel } from "../stavia/StaviaPanel";
 import {
   listOperationalEvents,
@@ -30,9 +29,6 @@ import type { RdoDraft } from "./rdo.types";
 type WorkspaceMode =
   | {
       type: "LIST";
-    }
-  | {
-      type: "INTEGRACOES";
     }
   | {
       type: "FORM";
@@ -168,40 +164,41 @@ export function RdoWorkspacePage() {
     });
   }
 
-  function handleLogout() {
-    clearSession();
-    window.location.assign("/");
+  if (mode.type === "FORM") {
+    return (
+      <>
+        <RdoCreatePage
+          key={mode.draft.id}
+          initialDraft={mode.draft}
+          isExisting={mode.isExisting}
+          initialNotice={mode.initialNotice}
+          onBackToList={() => {
+            void handleBackToList();
+          }}
+          onSaved={() => {
+            void loadRecords();
+          }}
+        />
+        <StaviaPanel
+          key={`${mode.draft.obraId}:${mode.draft.id}`}
+          variant="floating"
+          isOpen={isStaviaOpen}
+          onOpenChange={setIsStaviaOpen}
+          initialObraId={mode.draft.obraId}
+          initialRdoId={mode.draft.id}
+        />
+      </>
+    );
   }
 
-  let pageContent;
-
-  if (mode.type === "INTEGRACOES") {
-    pageContent = (
-      <IntegracoesPage
-        onBack={() => {
-          setMode({
-            type: "LIST",
-          });
-        }}
-      />
-    );
-  } else if (mode.type === "FORM") {
-    pageContent = (
-      <RdoCreatePage
-        key={mode.draft.id}
-        initialDraft={mode.draft}
-        isExisting={mode.isExisting}
-        initialNotice={mode.initialNotice}
-        onBackToList={() => {
-          void handleBackToList();
-        }}
-        onSaved={() => {
-          void loadRecords();
-        }}
-      />
-    );
-  } else {
-    pageContent = (
+  return (
+    <CortexShell
+      active="rdos"
+      onRefresh={() => {
+        void loadRecords();
+      }}
+      isRefreshing={isLoading}
+    >
       <RdoLocalList
         records={records}
         events={events}
@@ -224,48 +221,15 @@ export function RdoWorkspacePage() {
           });
           setIsStaviaOpen(true);
         }}
-        onOpenIntegracoes={() => {
-          setMode({
-            type: "INTEGRACOES",
-          });
-        }}
       />
-    );
-  }
-
-  return (
-    <>
-      <div className="floating-controls">
-        <SyncStatusBanner />
-        <button
-          type="button"
-          className="logout-button"
-          onClick={handleLogout}
-        >
-          Sair
-        </button>
-      </div>
-      {pageContent}
-      {mode.type !== "INTEGRACOES" && (
-        <StaviaPanel
-          key={mode.type === "FORM"
-            ? `${mode.draft.obraId}:${mode.draft.id}`
-            : `stavia-floating-global:${staviaContext.obraId}:${staviaContext.rdoId}`}
-          variant="floating"
-          isOpen={isStaviaOpen}
-          onOpenChange={setIsStaviaOpen}
-          initialObraId={
-            mode.type === "FORM"
-              ? mode.draft.obraId
-              : staviaContext.obraId
-          }
-          initialRdoId={
-            mode.type === "FORM"
-              ? mode.draft.id
-              : staviaContext.rdoId
-          }
-        />
-      )}
-    </>
+      <StaviaPanel
+        key={`stavia-floating-global:${staviaContext.obraId}:${staviaContext.rdoId}`}
+        variant="floating"
+        isOpen={isStaviaOpen}
+        onOpenChange={setIsStaviaOpen}
+        initialObraId={staviaContext.obraId}
+        initialRdoId={staviaContext.rdoId}
+      />
+    </CortexShell>
   );
 }

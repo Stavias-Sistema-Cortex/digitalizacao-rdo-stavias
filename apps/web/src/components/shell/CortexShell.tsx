@@ -1,0 +1,417 @@
+import { useRef, useState } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
+import { useNavigate } from "react-router-dom";
+
+import staviasTile from "../../assets/stavias-s-tile.png";
+import { SyncStatusBanner } from "../SyncStatusBanner";
+import {
+  clearSession,
+  getSession,
+} from "../../features/auth/authSession";
+import {
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_KEY,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+  clampSidebarWidth,
+  readStoredSidebarWidth,
+} from "./sidebarWidth";
+
+const SIDEBAR_COLLAPSED_KEY = "cortex.ui.sidebarRecolhida";
+
+export type ShellActiveItem =
+  | "home"
+  | "rdos"
+  | "integracoes"
+  | null;
+
+interface CortexShellProps {
+  active: ShellActiveItem;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
+  children: ReactNode;
+}
+
+function sessionInitials(nome: string | null): string {
+  if (!nome?.trim()) {
+    return "US";
+  }
+
+  const parts = nome.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? "";
+  const last =
+    parts.length > 1 ? parts[parts.length - 1][0] : "";
+
+  return `${first}${last}`.toUpperCase() || "US";
+}
+
+export function CortexShell({
+  active,
+  onRefresh,
+  isRefreshing = false,
+  children,
+}: CortexShellProps) {
+  const navigate = useNavigate();
+  const session = getSession();
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] =
+    useState(
+      () =>
+        localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
+    );
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    readStoredSidebarWidth(
+      localStorage.getItem(SIDEBAR_WIDTH_KEY),
+    ),
+  );
+  const [isResizingSidebar, setIsResizingSidebar] =
+    useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] =
+    useState(false);
+  const resizeStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  function toggleSidebar() {
+    setIsSidebarCollapsed((collapsed) => {
+      localStorage.setItem(
+        SIDEBAR_COLLAPSED_KEY,
+        collapsed ? "0" : "1",
+      );
+      return !collapsed;
+    });
+  }
+
+  function persistSidebarWidth(width: number) {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+  }
+
+  function handleResizerPointerDown(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    if (isSidebarCollapsed) {
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeStartRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+    };
+    setIsResizingSidebar(true);
+  }
+
+  function handleResizerPointerMove(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    const start = resizeStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) {
+      return;
+    }
+    setSidebarWidth(
+      clampSidebarWidth(
+        start.startWidth + (event.clientX - start.startX),
+      ),
+    );
+  }
+
+  function handleResizerPointerUp(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    const start = resizeStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) {
+      return;
+    }
+    const width = clampSidebarWidth(
+      start.startWidth + (event.clientX - start.startX),
+    );
+    resizeStartRef.current = null;
+    setIsResizingSidebar(false);
+    setSidebarWidth(width);
+    persistSidebarWidth(width);
+  }
+
+  function handleResizerKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) {
+    let next: number | null = null;
+    if (event.key === "ArrowLeft") {
+      next = clampSidebarWidth(sidebarWidth - 16);
+    }
+    if (event.key === "ArrowRight") {
+      next = clampSidebarWidth(sidebarWidth + 16);
+    }
+    if (next === null) {
+      return;
+    }
+    event.preventDefault();
+    setSidebarWidth(next);
+    persistSidebarWidth(next);
+  }
+
+  function handleResizerDoubleClick() {
+    setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+    persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+  }
+
+  function handleLogout() {
+    clearSession();
+    window.location.assign("/");
+  }
+
+  return (
+    <div
+      className={[
+        "cortex-shell",
+        isSidebarCollapsed ? "cortex-shell--collapsed" : "",
+        isResizingSidebar ? "is-resizing" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={
+        {
+          "--sidebar-width": `${sidebarWidth}px`,
+        } as CSSProperties
+      }
+    >
+      <aside className="cortex-sidebar">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={toggleSidebar}
+          aria-expanded={!isSidebarCollapsed}
+          aria-label={
+            isSidebarCollapsed
+              ? "Expandir menu"
+              : "Recolher menu"
+          }
+          title={
+            isSidebarCollapsed
+              ? "Expandir menu"
+              : "Recolher menu"
+          }
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14.5 6 9 12l5.5 6" />
+          </svg>
+        </button>
+
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Ajustar largura do menu"
+          aria-valuemin={SIDEBAR_WIDTH_MIN}
+          aria-valuemax={SIDEBAR_WIDTH_MAX}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={handleResizerPointerDown}
+          onPointerMove={handleResizerPointerMove}
+          onPointerUp={handleResizerPointerUp}
+          onPointerCancel={handleResizerPointerUp}
+          onKeyDown={handleResizerKeyDown}
+          onDoubleClick={handleResizerDoubleClick}
+        />
+
+        <div className="sidebar-brand">
+          <img
+            className="sidebar-brand-lockup"
+            src="/stavias-cortex-logo.png"
+            alt="Stavias Córtex"
+            draggable={false}
+          />
+          <img
+            className="sidebar-brand-mark"
+            src={staviasTile}
+            alt="Stavias Córtex"
+            draggable={false}
+          />
+        </div>
+
+        <nav
+          className="sidebar-nav"
+          aria-label="Navegação principal"
+        >
+          <button
+            type="button"
+            className={
+              active === "home"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
+            title="Home"
+            onClick={() => navigate("/home")}
+          >
+            <img
+              src="/icons8/home.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Home</span>
+          </button>
+          <button
+            type="button"
+            className={
+              active === "rdos"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
+            title="RDO"
+            onClick={() => navigate("/rdos")}
+          >
+            <img
+              src="/icons8/edit-pencil.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">RDO</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-nav-item"
+            title="Obras"
+          >
+            <img
+              src="/icons8/location.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Obras</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-nav-item"
+            title="Equipes"
+          >
+            <img
+              src="/icons8/user.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Equipes</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-nav-item"
+            title="Mensagens (em breve)"
+          >
+            <img
+              src="/icons8/star.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Mensagens</span>
+            <span className="badge-soon">em breve</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-nav-item"
+            title="Tarefas (em breve)"
+          >
+            <img
+              src="/icons8/done.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Tarefas</span>
+            <span className="badge-soon">em breve</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-nav-item"
+            title="Relatórios"
+          >
+            <img
+              src="/icons8/file.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Relatórios</span>
+          </button>
+        </nav>
+
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            onClick={() => navigate("/integracoes")}
+            title="Integrações"
+          >
+            <img
+              src="/icons8/settings.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">Integrações</span>
+          </button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={!onRefresh || isRefreshing}
+            title="Atualizar dados"
+          >
+            <img
+              src="/icons8/restart.png"
+              alt=""
+              draggable={false}
+            />
+            <span className="sidebar-label">
+              Atualizar dados
+            </span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="floating-controls">
+        <SyncStatusBanner />
+        <div className="profile-menu-anchor">
+          <button
+            type="button"
+            className="avatar-button"
+            onClick={() =>
+              setIsProfileMenuOpen((open) => !open)
+            }
+            aria-expanded={isProfileMenuOpen}
+            aria-haspopup="menu"
+            title={session?.nome ?? "Perfil"}
+          >
+            {sessionInitials(session?.nome ?? null)}
+          </button>
+          {isProfileMenuOpen && (
+            <div className="profile-menu" role="menu">
+              <p className="profile-menu-name">
+                {session?.nome ?? "Colaborador"}
+              </p>
+              <p className="profile-menu-cpf">
+                {session?.cpfMascarado ?? ""}
+              </p>
+              <button
+                type="button"
+                className="profile-menu-logout"
+                onClick={handleLogout}
+              >
+                Sair
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {children}
+    </div>
+  );
+}

@@ -1,11 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type {
-  CSSProperties,
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-} from "react";
 
-import staviasTile from "../../assets/stavias-s-tile.png";
 import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
 import type {
   LocalRdoRecord,
@@ -13,14 +7,6 @@ import type {
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
-import {
-  SIDEBAR_WIDTH_DEFAULT,
-  SIDEBAR_WIDTH_KEY,
-  SIDEBAR_WIDTH_MAX,
-  SIDEBAR_WIDTH_MIN,
-  clampSidebarWidth,
-  readStoredSidebarWidth,
-} from "./sidebarWidth";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -37,12 +23,9 @@ interface RdoLocalListProps {
     obraId?: string;
     rdoId?: string;
   }) => void;
-  onOpenIntegracoes: () => void;
 }
 
 type PeriodFilter = "TODOS" | "HOJE" | "7_DIAS" | "30_DIAS";
-
-const SIDEBAR_COLLAPSED_KEY = "cortex.ui.sidebarRecolhida";
 
 type ProfileTarget =
   | { type: "OBRA"; id: string; label: string }
@@ -314,7 +297,6 @@ export function RdoLocalList({
   onOpen,
   onRefresh,
   onOpenStavia,
-  onOpenIntegracoes,
 }: RdoLocalListProps) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [obraFilter, setObraFilter] = useState("");
@@ -325,96 +307,6 @@ export function RdoLocalList({
   const [collaboratorFilter, setCollaboratorFilter] = useState("");
   const [trechoFilter, setTrechoFilter] = useState("");
   const [profile, setProfile] = useState<ProfileTarget | null>(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
-    () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1",
-  );
-
-  function toggleSidebar() {
-    setIsSidebarCollapsed((collapsed) => {
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "0" : "1");
-      return !collapsed;
-    });
-  }
-
-  const [sidebarWidth, setSidebarWidth] = useState(() =>
-    readStoredSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY)),
-  );
-  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-  const resizeStartRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
-
-  function persistSidebarWidth(width: number) {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
-  }
-
-  function handleResizerPointerDown(
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) {
-    if (isSidebarCollapsed) {
-      return;
-    }
-    event.currentTarget.setPointerCapture(event.pointerId);
-    resizeStartRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startWidth: sidebarWidth,
-    };
-    setIsResizingSidebar(true);
-  }
-
-  function handleResizerPointerMove(
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) {
-    const start = resizeStartRef.current;
-    if (!start || start.pointerId !== event.pointerId) {
-      return;
-    }
-    setSidebarWidth(
-      clampSidebarWidth(start.startWidth + (event.clientX - start.startX)),
-    );
-  }
-
-  function handleResizerPointerUp(
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) {
-    const start = resizeStartRef.current;
-    if (!start || start.pointerId !== event.pointerId) {
-      return;
-    }
-    const width = clampSidebarWidth(
-      start.startWidth + (event.clientX - start.startX),
-    );
-    resizeStartRef.current = null;
-    setIsResizingSidebar(false);
-    setSidebarWidth(width);
-    persistSidebarWidth(width);
-  }
-
-  function handleResizerKeyDown(
-    event: ReactKeyboardEvent<HTMLDivElement>,
-  ) {
-    let next: number | null = null;
-    if (event.key === "ArrowLeft") {
-      next = clampSidebarWidth(sidebarWidth - 16);
-    }
-    if (event.key === "ArrowRight") {
-      next = clampSidebarWidth(sidebarWidth + 16);
-    }
-    if (next === null) {
-      return;
-    }
-    event.preventDefault();
-    setSidebarWidth(next);
-    persistSidebarWidth(next);
-  }
-
-  function handleResizerDoubleClick() {
-    setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
-    persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
-  }
 
   const attachmentsByRdo = useMemo(() => {
     const grouped = new Map<string, RdoAttachmentRecord[]>();
@@ -527,444 +419,329 @@ export function RdoLocalList({
   };
 
   return (
-    <div
-      className={[
-        "cortex-shell",
-        isSidebarCollapsed ? "cortex-shell--collapsed" : "",
-        isResizingSidebar ? "is-resizing" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
-    >
-      <aside className="cortex-sidebar">
-        <button
-          type="button"
-          className="sidebar-toggle"
-          onClick={toggleSidebar}
-          aria-expanded={!isSidebarCollapsed}
-          aria-label={
-            isSidebarCollapsed ? "Expandir menu" : "Recolher menu"
-          }
-          title={isSidebarCollapsed ? "Expandir menu" : "Recolher menu"}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M14.5 6 9 12l5.5 6" />
-          </svg>
-        </button>
+    <main className="rdo-dashboard">
+      <section className="rdo-command-band">
+        <div>
+          <p className="eyebrow">Stavias · Sistema Córtex</p>
+          <h1>Relatórios Diários de Obra</h1>
+          <span className="brand-tick" aria-hidden="true" />
+          <p className="subtitle">
+            RDOs locais, eventos ontológicos, fotos e status de
+            sincronização em uma única visão operacional.
+          </p>
+        </div>
 
-        <div
-          className="sidebar-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Ajustar largura do menu"
-          aria-valuemin={SIDEBAR_WIDTH_MIN}
-          aria-valuemax={SIDEBAR_WIDTH_MAX}
-          aria-valuenow={sidebarWidth}
-          tabIndex={0}
-          onPointerDown={handleResizerPointerDown}
-          onPointerMove={handleResizerPointerMove}
-          onPointerUp={handleResizerPointerUp}
-          onPointerCancel={handleResizerPointerUp}
-          onKeyDown={handleResizerKeyDown}
-          onDoubleClick={handleResizerDoubleClick}
+        <div className="rdo-command-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => onOpenStavia()}
+          >
+            Abrir StavIA
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={onCreate}
+          >
+            Novo RDO
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={isImporting}
+          >
+            {isImporting ? "Importando..." : "Importar RDO"}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".pdf,.xlsx,.xls,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+            className="visually-hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) {
+                onImportRdoFile(file);
+              }
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="rdo-filter-grid">
+        <label>
+          Obra
+          <input
+            value={obraFilter}
+            onChange={(event) => setObraFilter(event.target.value)}
+            placeholder="ID, contrato, cidade ou cliente"
+          />
+        </label>
+
+        <label>
+          Período
+          <select
+            value={periodFilter}
+            onChange={(event) =>
+              setPeriodFilter(event.target.value as PeriodFilter)
+            }
+          >
+            <option value="TODOS">Todos</option>
+            <option value="HOJE">Hoje</option>
+            <option value="7_DIAS">Últimos 7 dias</option>
+            <option value="30_DIAS">Últimos 30 dias</option>
+          </select>
+        </label>
+
+        <label>
+          Status
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="">Todos</option>
+            <option value="RASCUNHO">Rascunho</option>
+            <option value="ENVIADO">Enviado</option>
+          </select>
+        </label>
+
+        <label>
+          Colaborador
+          <input
+            value={collaboratorFilter}
+            onChange={(event) =>
+              setCollaboratorFilter(event.target.value)
+            }
+            placeholder="Nome, equipe ou ID"
+          />
+        </label>
+
+        <label>
+          Trecho
+          <input
+            value={trechoFilter}
+            onChange={(event) => setTrechoFilter(event.target.value)}
+            placeholder="Subtrecho, caixa, KM, pista"
+          />
+        </label>
+
+        <label>
+          Sync
+          <select
+            value={syncFilter}
+            onChange={(event) => setSyncFilter(event.target.value)}
+          >
+            <option value="">Todos</option>
+            <option value="LOCAL_ONLY">Somente local</option>
+            <option value="PENDING_SYNC">Pendente</option>
+            <option value="SYNCING">Sincronizando</option>
+            <option value="SYNCED">Sincronizado</option>
+            <option value="ERROR">Erro</option>
+            <option value="CONFLICT">Conflito</option>
+          </select>
+        </label>
+      </section>
+
+      {error && <div className="notice notice-error">{error}</div>}
+      {isLoading && <div className="notice">Carregando RDOs locais...</div>}
+
+      <section className="rdo-metric-grid">
+        <MetricCard label="Trechos" value={metrics.trechos} />
+        <MetricCard
+          label="Metros concluídos"
+          value={`${Math.round(metrics.metros).toLocaleString("pt-BR")} m`}
         />
+        <MetricCard label="Em execução" value={metrics.emExecucao} />
+        <MetricCard
+          label="Equipe e equipamentos"
+          value={`${metrics.pessoas}/${metrics.equipamentos}`}
+        />
+        <MetricCard label="Pendentes de sync" value={metrics.pendentes} />
+        <MetricCard label="Com foto" value={metrics.comFoto} />
+        <MetricCard label="Com ocorrência" value={metrics.comOcorrencia} />
+      </section>
 
-        <div className="sidebar-brand">
-          <img
-            className="sidebar-brand-lockup"
-            src="/stavias-cortex-logo.png"
-            alt="Stavias Córtex"
-            draggable={false}
-          />
-          <img
-            className="sidebar-brand-mark"
-            src={staviasTile}
-            alt="Stavias Córtex"
-            draggable={false}
-          />
-        </div>
+      <ProgramacaoSemanalImport onRdoCreated={onRefresh} />
 
-        <nav className="sidebar-nav" aria-label="Navegação principal">
-          <button
-            type="button"
-            className="sidebar-nav-item active"
-            title="RDO"
-          >
-            <img src="/icons8/home.png" alt="" draggable={false} />
-            <span className="sidebar-label">RDO</span>
-          </button>
-          <button type="button" className="sidebar-nav-item" title="Obras">
-            <img src="/icons8/location.png" alt="" draggable={false} />
-            <span className="sidebar-label">Obras</span>
-          </button>
-          <button type="button" className="sidebar-nav-item" title="Equipes">
-            <img src="/icons8/user.png" alt="" draggable={false} />
-            <span className="sidebar-label">Equipes</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-nav-item"
-            title="Relatórios"
-          >
-            <img src="/icons8/file.png" alt="" draggable={false} />
-            <span className="sidebar-label">Relatórios</span>
-          </button>
-        </nav>
+      <section className="rdo-main-grid">
+        <div className="rdo-list-column">
+          {filteredRecords.length === 0 && !isLoading ? (
+            <section className="form-card">
+              <h2>Nenhum RDO encontrado</h2>
+              <p>
+                Ajuste os filtros ou crie um RDO para iniciar a
+                timeline operacional.
+              </p>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={onCreate}
+              >
+                Criar RDO
+              </button>
+            </section>
+          ) : null}
 
-        <div className="sidebar-footer">
-          <button
-            type="button"
-            onClick={onOpenIntegracoes}
-            title="Integrações"
-          >
-            <img src="/icons8/settings.png" alt="" draggable={false} />
-            <span className="sidebar-label">Integrações</span>
-          </button>
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isLoading}
-            title="Atualizar dados"
-          >
-            <img src="/icons8/restart.png" alt="" draggable={false} />
-            <span className="sidebar-label">Atualizar dados</span>
-          </button>
-        </div>
-      </aside>
+          {filteredRecords.map((record) => {
+            const data = payload(record);
+            const rdoAttachments = attachmentsByRdo.get(record.id) ?? [];
+            const people = collaborators(record);
+            const eventCount = events.filter(
+              (event) => event.rdoId === record.id,
+            ).length;
 
-      <main className="rdo-dashboard">
-        <section className="rdo-command-band">
-          <div>
-            <p className="eyebrow">Stavias · Sistema Córtex</p>
-            <h1>Relatórios Diários de Obra</h1>
-            <span className="brand-tick" aria-hidden="true" />
-            <p className="subtitle">
-              RDOs locais, eventos ontológicos, fotos e status de
-              sincronização em uma única visão operacional.
-            </p>
-          </div>
-
-          <div className="rdo-command-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => onOpenStavia()}
-            >
-              Abrir StavIA
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onCreate}
-            >
-              Novo RDO
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => importInputRef.current?.click()}
-              disabled={isImporting}
-            >
-              {isImporting ? "Importando..." : "Importar RDO"}
-            </button>
-            <input
-              ref={importInputRef}
-              type="file"
-              accept=".pdf,.xlsx,.xls,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
-              className="visually-hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (file) {
-                  onImportRdoFile(file);
-                }
-              }}
-            />
-          </div>
-        </section>
-
-        <section className="rdo-filter-grid">
-          <label>
-            Obra
-            <input
-              value={obraFilter}
-              onChange={(event) => setObraFilter(event.target.value)}
-              placeholder="ID, contrato, cidade ou cliente"
-            />
-          </label>
-
-          <label>
-            Período
-            <select
-              value={periodFilter}
-              onChange={(event) =>
-                setPeriodFilter(event.target.value as PeriodFilter)
-              }
-            >
-              <option value="TODOS">Todos</option>
-              <option value="HOJE">Hoje</option>
-              <option value="7_DIAS">Últimos 7 dias</option>
-              <option value="30_DIAS">Últimos 30 dias</option>
-            </select>
-          </label>
-
-          <label>
-            Status
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="RASCUNHO">Rascunho</option>
-              <option value="ENVIADO">Enviado</option>
-            </select>
-          </label>
-
-          <label>
-            Colaborador
-            <input
-              value={collaboratorFilter}
-              onChange={(event) =>
-                setCollaboratorFilter(event.target.value)
-              }
-              placeholder="Nome, equipe ou ID"
-            />
-          </label>
-
-          <label>
-            Trecho
-            <input
-              value={trechoFilter}
-              onChange={(event) => setTrechoFilter(event.target.value)}
-              placeholder="Subtrecho, caixa, KM, pista"
-            />
-          </label>
-
-          <label>
-            Sync
-            <select
-              value={syncFilter}
-              onChange={(event) => setSyncFilter(event.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="LOCAL_ONLY">Somente local</option>
-              <option value="PENDING_SYNC">Pendente</option>
-              <option value="SYNCING">Sincronizando</option>
-              <option value="SYNCED">Sincronizado</option>
-              <option value="ERROR">Erro</option>
-              <option value="CONFLICT">Conflito</option>
-            </select>
-          </label>
-        </section>
-
-        {error && <div className="notice notice-error">{error}</div>}
-        {isLoading && <div className="notice">Carregando RDOs locais...</div>}
-
-        <section className="rdo-metric-grid">
-          <MetricCard label="Trechos" value={metrics.trechos} />
-          <MetricCard
-            label="Metros concluídos"
-            value={`${Math.round(metrics.metros).toLocaleString("pt-BR")} m`}
-          />
-          <MetricCard label="Em execução" value={metrics.emExecucao} />
-          <MetricCard
-            label="Equipe e equipamentos"
-            value={`${metrics.pessoas}/${metrics.equipamentos}`}
-          />
-          <MetricCard label="Pendentes de sync" value={metrics.pendentes} />
-          <MetricCard label="Com foto" value={metrics.comFoto} />
-          <MetricCard label="Com ocorrência" value={metrics.comOcorrencia} />
-        </section>
-
-        <ProgramacaoSemanalImport onRdoCreated={onRefresh} />
-
-        <section className="rdo-main-grid">
-          <div className="rdo-list-column">
-            {filteredRecords.length === 0 && !isLoading ? (
-              <section className="form-card">
-                <h2>Nenhum RDO encontrado</h2>
-                <p>
-                  Ajuste os filtros ou crie um RDO para iniciar a
-                  timeline operacional.
-                </p>
-                <button
-                  type="button"
-                  className="primary-button"
-                  onClick={onCreate}
-                >
-                  Criar RDO
-                </button>
-              </section>
-            ) : null}
-
-            {filteredRecords.map((record) => {
-              const data = payload(record);
-              const rdoAttachments = attachmentsByRdo.get(record.id) ?? [];
-              const people = collaborators(record);
-              const eventCount = events.filter(
-                (event) => event.rdoId === record.id,
-              ).length;
-
-              return (
-                <article className="rdo-operational-card" key={record.id}>
-                  <div className="rdo-card-heading">
-                    <button
-                      type="button"
-                      className="link-button rdo-title-button"
-                      onClick={() =>
-                        setProfile({
-                          type: "RDO",
-                          id: record.id,
-                          label: record.numeroRdo || record.id,
-                        })
-                      }
-                    >
-                      {record.numeroRdo || "RDO sem número"}
-                    </button>
-                    <span
-                      className={`status-badge status-badge--${record.syncStatus.toLowerCase()}`}
-                    >
-                      {formatLocalSyncStatus(record.syncStatus)}
-                    </span>
-                  </div>
-
-                  <div className="rdo-card-subtitle">
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() =>
-                        setProfile({
-                          type: "OBRA",
-                          id: record.obraId,
-                          label: asText(data.contrato) || record.obraId,
-                        })
-                      }
-                    >
-                      {asText(data.contrato) || record.obraId}
-                    </button>
-                    <span>{formatDate(record.dataRdo)}</span>
-                    <span>{asText(data.cidade) || "Sem cidade"}</span>
-                  </div>
-
-                  <div className="rdo-card-facts">
-                    <div className="rdo-fact">
-                      <small>Trechos</small>
-                      <strong>{controls(record).length}</strong>
-                    </div>
-                    <div className="rdo-fact">
-                      <small>Extensão</small>
-                      <strong>
-                        {Math.round(lengthMeters(record)).toLocaleString(
-                          "pt-BR",
-                        )}{" "}
-                        m
-                      </strong>
-                    </div>
-                    <div className="rdo-fact">
-                      <small>Equipamentos</small>
-                      <strong>{equipmentLabels(record).length}</strong>
-                    </div>
-                    <div className="rdo-fact">
-                      <small>Fotos</small>
-                      <strong>{rdoAttachments.length}</strong>
-                    </div>
-                    <div className="rdo-fact">
-                      <small>Eventos</small>
-                      <strong>{eventCount}</strong>
-                    </div>
-                  </div>
-
-                  <div className="entity-chip-row">
-                    {people.slice(0, 5).map((person) => (
-                      <button
-                        type="button"
-                        className="entity-chip"
-                        key={`${record.id}:${person.id || person.label}`}
-                        onClick={() =>
-                          setProfile({
-                            type: "COLABORADOR",
-                            id: person.id || person.label,
-                            label: person.label,
-                          })
-                        }
-                      >
-                        {person.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="rdo-card-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => onOpen(record)}
-                      disabled={record.statusRdo === "ENVIADO"}
-                    >
-                      {record.statusRdo === "ENVIADO"
-                        ? "RDO enviado"
-                        : "Continuar RDO"}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() =>
-                        onOpenStavia({
-                          obraId: record.obraId,
-                          rdoId: record.id,
-                        })
-                      }
-                    >
-                      Perguntar à StavIA
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          <aside className="rdo-side-panel">
-            <section className="timeline-panel">
-              <h2>Últimas atualizações operacionais</h2>
-              <div className="timeline-list">
-                {visibleEvents.slice(0, 8).map((event) => (
+            return (
+              <article className="rdo-operational-card" key={record.id}>
+                <div className="rdo-card-heading">
                   <button
                     type="button"
-                    className={`timeline-item timeline-item--${event.syncStatus.toLowerCase()}`}
-                    key={event.id}
-                    onClick={() => {
-                      if (event.rdoId) {
-                        setProfile({
-                          type: "RDO",
-                          id: event.rdoId,
-                          label: event.rdoId,
-                        });
-                      }
-                    }}
+                    className="link-button rdo-title-button"
+                    onClick={() =>
+                      setProfile({
+                        type: "RDO",
+                        id: record.id,
+                        label: record.numeroRdo || record.id,
+                      })
+                    }
                   >
-                    <strong>{eventLabel(event)}</strong>
-                    <span>{formatDateTime(event.occurredAt)}</span>
-                    <small>{eventSyncLabel(event.syncStatus)}</small>
+                    {record.numeroRdo || "RDO sem número"}
                   </button>
-                ))}
-                {visibleEvents.length === 0 ? (
-                  <p className="muted-text">
-                    Nenhum evento ontológico local ainda.
-                  </p>
-                ) : null}
-              </div>
-            </section>
-          </aside>
-        </section>
-      </main>
+                  <span
+                    className={`status-badge status-badge--${record.syncStatus.toLowerCase()}`}
+                  >
+                    {formatLocalSyncStatus(record.syncStatus)}
+                  </span>
+                </div>
+
+                <div className="rdo-card-subtitle">
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() =>
+                      setProfile({
+                        type: "OBRA",
+                        id: record.obraId,
+                        label: asText(data.contrato) || record.obraId,
+                      })
+                    }
+                  >
+                    {asText(data.contrato) || record.obraId}
+                  </button>
+                  <span>{formatDate(record.dataRdo)}</span>
+                  <span>{asText(data.cidade) || "Sem cidade"}</span>
+                </div>
+
+                <div className="rdo-card-facts">
+                  <div className="rdo-fact">
+                    <small>Trechos</small>
+                    <strong>{controls(record).length}</strong>
+                  </div>
+                  <div className="rdo-fact">
+                    <small>Extensão</small>
+                    <strong>
+                      {Math.round(lengthMeters(record)).toLocaleString(
+                        "pt-BR",
+                      )}{" "}
+                      m
+                    </strong>
+                  </div>
+                  <div className="rdo-fact">
+                    <small>Equipamentos</small>
+                    <strong>{equipmentLabels(record).length}</strong>
+                  </div>
+                  <div className="rdo-fact">
+                    <small>Fotos</small>
+                    <strong>{rdoAttachments.length}</strong>
+                  </div>
+                  <div className="rdo-fact">
+                    <small>Eventos</small>
+                    <strong>{eventCount}</strong>
+                  </div>
+                </div>
+
+                <div className="entity-chip-row">
+                  {people.slice(0, 5).map((person) => (
+                    <button
+                      type="button"
+                      className="entity-chip"
+                      key={`${record.id}:${person.id || person.label}`}
+                      onClick={() =>
+                        setProfile({
+                          type: "COLABORADOR",
+                          id: person.id || person.label,
+                          label: person.label,
+                        })
+                      }
+                    >
+                      {person.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="rdo-card-actions">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => onOpen(record)}
+                    disabled={record.statusRdo === "ENVIADO"}
+                  >
+                    {record.statusRdo === "ENVIADO"
+                      ? "RDO enviado"
+                      : "Continuar RDO"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      onOpenStavia({
+                        obraId: record.obraId,
+                        rdoId: record.id,
+                      })
+                    }
+                  >
+                    Perguntar à StavIA
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        <aside className="rdo-side-panel">
+          <section className="timeline-panel">
+            <h2>Últimas atualizações operacionais</h2>
+            <div className="timeline-list">
+              {visibleEvents.slice(0, 8).map((event) => (
+                <button
+                  type="button"
+                  className={`timeline-item timeline-item--${event.syncStatus.toLowerCase()}`}
+                  key={event.id}
+                  onClick={() => {
+                    if (event.rdoId) {
+                      setProfile({
+                        type: "RDO",
+                        id: event.rdoId,
+                        label: event.rdoId,
+                      });
+                    }
+                  }}
+                >
+                  <strong>{eventLabel(event)}</strong>
+                  <span>{formatDateTime(event.occurredAt)}</span>
+                  <small>{eventSyncLabel(event.syncStatus)}</small>
+                </button>
+              ))}
+              {visibleEvents.length === 0 ? (
+                <p className="muted-text">
+                  Nenhum evento ontológico local ainda.
+                </p>
+              ) : null}
+            </div>
+          </section>
+        </aside>
+      </section>
 
       {profile ? (
         <ProfileDrawer
@@ -976,7 +753,7 @@ export function RdoLocalList({
           onOpenRdo={(record) => onOpen(record)}
         />
       ) : null}
-    </div>
+    </main>
   );
 }
 
