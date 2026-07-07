@@ -118,7 +118,7 @@ public class StaviaEvidenceQualityPolicy {
             );
         }
 
-        addPdocWarnings(
+        addPdorWarnings(
                 evidences,
                 warnings
         );
@@ -141,14 +141,14 @@ public class StaviaEvidenceQualityPolicy {
         );
     }
 
-    private void addPdocWarnings(
+    private void addPdorWarnings(
             List<StaviaEvidence> evidences,
             List<String> warnings
     ) {
-        boolean hasUncalibratedPdoc =
+        boolean hasUncalibratedPdor =
                 evidences.stream()
                         .filter(evidence ->
-                                "PDOC".equals(
+                                "PDOR".equals(
                                         evidence.type()
                                 )
                         )
@@ -163,10 +163,10 @@ public class StaviaEvidenceQualityPolicy {
                                 )
                         );
 
-        boolean hasLocalSimulatedPdoc =
+        boolean hasLocalSimulatedPdor =
                 evidences.stream()
                         .filter(evidence ->
-                                "PDOC".equals(
+                                "PDOR".equals(
                                         evidence.type()
                                 )
                         )
@@ -181,13 +181,13 @@ public class StaviaEvidenceQualityPolicy {
                                 )
                         );
 
-        if (hasUncalibratedPdoc) {
+        if (hasUncalibratedPdor) {
             warnings.add(
-                    "O PDOC ainda não foi calibrado com dados históricos reais."
+                    "O PDOR ainda não foi calibrado com dados históricos reais."
             );
         }
 
-        if (hasLocalSimulatedPdoc) {
+        if (hasLocalSimulatedPdor) {
             warnings.add(
                     "A análise utiliza um snapshot local simulado "
                             + "e não representa os custos reais da obra."

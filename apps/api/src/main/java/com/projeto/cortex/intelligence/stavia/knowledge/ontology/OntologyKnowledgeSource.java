@@ -37,7 +37,7 @@ public class OntologyKnowledgeSource
                     StaviaIntent.CONSULTAR_EQUIPE,
                     StaviaIntent.CONSULTAR_ATIVO,
                     StaviaIntent.CONSULTAR_OCORRENCIA,
-                    StaviaIntent.CONSULTAR_PDOC,
+                    StaviaIntent.CONSULTAR_PDOR,
                     StaviaIntent.CONSULTAR_RECEITA,
                     StaviaIntent.CONSULTAR_MARGEM,
                     StaviaIntent.CONSULTAR_PREVISAO_FINANCEIRA,

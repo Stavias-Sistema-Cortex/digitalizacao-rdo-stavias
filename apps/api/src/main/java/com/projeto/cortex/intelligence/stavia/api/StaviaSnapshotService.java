@@ -144,7 +144,7 @@ public class StaviaSnapshotService {
                 obras,
                 rdos,
                 programacoes(),
-                pdocs(),
+                pdors(),
                 operationalEvents(rdoIds),
                 rdoOntology.raw()
         );
@@ -770,7 +770,7 @@ public class StaviaSnapshotService {
         );
     }
 
-    private List<StaviaSnapshotResponse.PdocSnapshot> pdocs() {
+    private List<StaviaSnapshotResponse.PdorSnapshot> pdors() {
         return jdbcTemplate.query(
                 """
                 SELECT
@@ -781,15 +781,15 @@ public class StaviaSnapshotService {
                     p.status_execucao,
                     p.calibracao,
                     p.nivel_risco,
-                    p.prob_qualquer_excedente,
-                    p.prob_exceder_5_pct,
-                    p.prob_exceder_10_pct,
+                    p.prob_abaixo_contrato,
+                    p.prob_abaixo_95_pct,
+                    p.prob_abaixo_90_pct,
                     p.score_heuristico,
                     p.confianca
-                FROM pdoc_snapshot p
+                FROM pdor_snapshot p
                 JOIN (
                     SELECT obra_id, MAX(executado_em) AS max_executado_em
-                    FROM pdoc_snapshot
+                    FROM pdor_snapshot
                     GROUP BY obra_id
                 ) latest
                   ON latest.obra_id = p.obra_id
@@ -797,7 +797,7 @@ public class StaviaSnapshotService {
                 ORDER BY p.executado_em DESC, p.id
                 LIMIT ?
                 """,
-                (rs, rowNum) -> new StaviaSnapshotResponse.PdocSnapshot(
+                (rs, rowNum) -> new StaviaSnapshotResponse.PdorSnapshot(
                         rs.getString("obra_id"),
                         rs.getString("id"),
                         toLocalDate(rs, "data_referencia"),
@@ -805,9 +805,9 @@ public class StaviaSnapshotService {
                         rs.getString("status_execucao"),
                         rs.getString("calibracao"),
                         rs.getString("nivel_risco"),
-                        rs.getBigDecimal("prob_qualquer_excedente"),
-                        rs.getBigDecimal("prob_exceder_5_pct"),
-                        rs.getBigDecimal("prob_exceder_10_pct"),
+                        rs.getBigDecimal("prob_abaixo_contrato"),
+                        rs.getBigDecimal("prob_abaixo_95_pct"),
+                        rs.getBigDecimal("prob_abaixo_90_pct"),
                         rs.getBigDecimal("score_heuristico"),
                         rs.getBigDecimal("confianca")
                 ),
@@ -922,7 +922,7 @@ public class StaviaSnapshotService {
                     UNION ALL
                     SELECT MAX(atualizado_em) AS updated_at FROM programacao_operacional
                     UNION ALL
-                    SELECT MAX(executado_em) AS updated_at FROM pdoc_snapshot
+                    SELECT MAX(executado_em) AS updated_at FROM pdor_snapshot
                 ) updates
                 """,
                 (rs, rowNum) -> toLocalDateTime(

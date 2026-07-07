@@ -140,9 +140,9 @@ public class DeterministicStaviaResponseGenerator
             );
         }
 
-        if (intent == StaviaIntent.CONSULTAR_PDOC) {
+        if (intent == StaviaIntent.CONSULTAR_PDOR) {
             return buildResponse(
-                    buildPdocAnswer(focusedEvidence),
+                    buildPdorAnswer(focusedEvidence),
                     StaviaAnswerType.FATO,
                     focusedEvidence
             );
@@ -228,7 +228,7 @@ public class DeterministicStaviaResponseGenerator
             case CONSULTAR_OCORRENCIA ->
                     "Ocorrências identificadas";
 
-            case CONSULTAR_PDOC ->
+            case CONSULTAR_PDOR ->
                     "Análise preditiva de custos e riscos identificada";
 
             case CONSULTAR_RECEITA ->
@@ -1721,12 +1721,12 @@ public class DeterministicStaviaResponseGenerator
         return hasText(value) ? value + " " + unit : "";
     }
 
-    private String buildPdocAnswer(
+    private String buildPdorAnswer(
             List<StaviaEvidence> evidences
     ) {
-        StaviaEvidence pdoc = evidences.stream()
+        StaviaEvidence pdor = evidences.stream()
                 .filter(evidence ->
-                        StaviaEvidenceTypes.PDOC.equals(
+                        StaviaEvidenceTypes.PDOR.equals(
                                 evidence.type()
                         )
                 )
@@ -1734,7 +1734,7 @@ public class DeterministicStaviaResponseGenerator
                 .orElse(evidences.getFirst());
 
         Map<String, Object> attributes =
-                pdoc.attributes();
+                pdor.attributes();
 
         String status =
                 attributeText(attributes, "statusExecucao");
@@ -1751,31 +1751,31 @@ public class DeterministicStaviaResponseGenerator
                 );
 
         if ("NO_SNAPSHOT".equals(status)) {
-            return "Ainda não existe snapshot PDOC para a obra "
+            return "Ainda não existe snapshot PDOR para a obra "
                     + code
-                    + ". A Stav.IA não executou simulação artificial; consulte ou execute o cálculo PDOC real antes de interpretar risco de estouro.";
+                    + ". A Stav.IA não executou simulação artificial; consulte ou execute o cálculo PDOR real antes de interpretar risco de estouro.";
         }
 
         if ("OBRA_NAO_LOCALIZADA".equals(status)) {
-            return "O PDOC não localizou a obra informada no cadastro operacional.";
+            return "O PDOR não localizou a obra informada no cadastro operacional.";
         }
 
         if ("INSUFFICIENT_DATA".equals(status)) {
-            return insufficientPdocAnswer(code, attributes);
+            return insufficientPdorAnswer(code, attributes);
         }
 
         if ("FAILED".equals(status)) {
             String error =
                     attributeText(attributes, "erroExecucao");
 
-            return "O PDOC foi executado para a obra "
+            return "O PDOR foi executado para a obra "
                     + code
                     + ", mas terminou com erro"
                     + (hasText(error) ? ": " + error : ".")
                     + ".";
         }
 
-        return successfulPdocAnswer(code, attributes);
+        return successfulPdorAnswer(code, attributes);
     }
 
     private String buildFinancialAnswer(
@@ -2768,21 +2768,21 @@ public class DeterministicStaviaResponseGenerator
         return hours.toPlainString() + "h";
     }
 
-    private String insufficientPdocAnswer(
+    private String insufficientPdorAnswer(
             String code,
             Map<String, Object> attributes
     ) {
         StringBuilder answer =
                 new StringBuilder();
 
-        answer.append("O PDOC foi executado para a obra ")
+        answer.append("O PDOR foi executado para a obra ")
                 .append(code)
                 .append(", mas não conseguiu calcular o risco de estouro de custos porque ainda não há dados suficientes.");
 
-        appendPdocReference(answer, attributes);
+        appendPdorReference(answer, attributes);
 
         List<String> missing =
-                pdocMissingLabels(
+                pdorMissingLabels(
                         attributes.get("missingRequiredFields")
                 );
 
@@ -2807,18 +2807,18 @@ public class DeterministicStaviaResponseGenerator
         return answer.toString();
     }
 
-    private String successfulPdocAnswer(
+    private String successfulPdorAnswer(
             String code,
             Map<String, Object> attributes
     ) {
         StringBuilder answer =
                 new StringBuilder();
 
-        answer.append("O PDOC calculou o risco de estouro de custos da obra ")
+        answer.append("O PDOR calculou o risco de estouro de custos da obra ")
                 .append(code)
                 .append(".");
 
-        appendPdocReference(answer, attributes);
+        appendPdorReference(answer, attributes);
 
         appendMetric(
                 answer,
@@ -2866,7 +2866,7 @@ public class DeterministicStaviaResponseGenerator
         return answer.toString();
     }
 
-    private void appendPdocReference(
+    private void appendPdorReference(
             StringBuilder answer,
             Map<String, Object> attributes
     ) {
@@ -2904,19 +2904,19 @@ public class DeterministicStaviaResponseGenerator
                 .append(value);
     }
 
-    private List<String> pdocMissingLabels(Object value) {
+    private List<String> pdorMissingLabels(Object value) {
         if (!(value instanceof List<?> values)) {
             return List.of();
         }
 
         return values.stream()
                 .map(String::valueOf)
-                .map(this::pdocMissingLabel)
+                .map(this::pdorMissingLabel)
                 .distinct()
                 .toList();
     }
 
-    private String pdocMissingLabel(String field) {
+    private String pdorMissingLabel(String field) {
         return switch (field) {
             case "approvedBudget" ->
                     "orçamento aprovado";
@@ -3182,7 +3182,7 @@ public class DeterministicStaviaResponseGenerator
                     );
 
             return financial.equals(evidences)
-                    ? preferType(evidences, StaviaEvidenceTypes.PDOC)
+                    ? preferType(evidences, StaviaEvidenceTypes.PDOR)
                     : financial;
         }
 

@@ -119,8 +119,8 @@ public class StaviaIntentClassifier {
                             "atraso"
                     ),
                     rule(
-                            StaviaIntent.CONSULTAR_PDOC,
-                            "pdoc",
+                            StaviaIntent.CONSULTAR_PDOR,
+                            "pdor",
                             "previsao de custo",
                             "predicao de custo",
                             "risco de estouro",

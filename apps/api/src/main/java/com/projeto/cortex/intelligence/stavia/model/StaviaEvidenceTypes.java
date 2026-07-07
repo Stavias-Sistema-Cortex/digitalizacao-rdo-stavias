@@ -68,8 +68,8 @@ public final class StaviaEvidenceTypes {
     public static final String INCIDENTE =
             "INCIDENTE";
 
-    public static final String PDOC =
-            "PDOC";
+    public static final String PDOR =
+            "PDOR";
 
     public static final String PREVISAO_FINANCEIRA =
             "PREVISAO_FINANCEIRA";

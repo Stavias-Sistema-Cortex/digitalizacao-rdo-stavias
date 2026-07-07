@@ -48,7 +48,7 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.ESTADO,
                             StaviaEvidenceTypes.RDO,
                             StaviaEvidenceTypes.PROGRAMACAO_OPERACIONAL,
-                            StaviaEvidenceTypes.PDOC,
+                            StaviaEvidenceTypes.PDOR,
                             StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
                             StaviaEvidenceTypes.CONTEXTO_OBRA
                     );
@@ -101,9 +101,9 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.OCORRENCIA
                     );
 
-            case CONSULTAR_PDOC ->
+            case CONSULTAR_PDOR ->
                     Set.of(
-                            StaviaEvidenceTypes.PDOC
+                            StaviaEvidenceTypes.PDOR
                     );
 
             case CONSULTAR_RECEITA,
@@ -113,7 +113,7 @@ public class StaviaEvidenceSelector {
                  CONSULTAR_RECEITA_EM_RISCO ->
                     Set.of(
                             StaviaEvidenceTypes.PREVISAO_FINANCEIRA,
-                            StaviaEvidenceTypes.PDOC
+                            StaviaEvidenceTypes.PDOR
                     );
 
             case CONSULTAR_ALOCACAO_COLABORADOR ->
@@ -143,7 +143,7 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.COLABORADOR,
                             StaviaEvidenceTypes.ATIVO,
                             StaviaEvidenceTypes.EQUIPAMENTO,
-                            StaviaEvidenceTypes.PDOC,
+                            StaviaEvidenceTypes.PDOR,
                             StaviaEvidenceTypes.PREVISAO_FINANCEIRA,
                             StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
                             StaviaEvidenceTypes.FREQUENCIA,

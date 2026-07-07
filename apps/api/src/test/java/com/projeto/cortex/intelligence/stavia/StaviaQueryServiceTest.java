@@ -370,10 +370,10 @@ class StaviaQueryServiceTest {
                                 "De qual programação operacional cada RDO desta obra foi gerado?"
                         )
                 );
-        StaviaQueryResult pdoc =
+        StaviaQueryResult pdor =
                 service.query(
                         question(
-                                "Qual é o risco de estouro de custos desta obra segundo o PDOC?"
+                                "Qual é o risco de estouro de custos desta obra segundo o PDOR?"
                         )
                 );
 
@@ -386,7 +386,7 @@ class StaviaQueryServiceTest {
                 StaviaIntent.CONSULTAR_PROGRAMACAO,
                 programacao.intent()
         );
-        assertEquals(StaviaIntent.CONSULTAR_PDOC, pdoc.intent());
+        assertEquals(StaviaIntent.CONSULTAR_PDOR, pdor.intent());
 
         assertTrue(rdos.answer().answer().contains("possui 1 RDO"));
         assertTrue(
@@ -397,7 +397,7 @@ class StaviaQueryServiceTest {
                         .contains("não possui programação")
         );
         assertTrue(
-                pdoc.answer().answer().contains("dados suficientes")
+                pdor.answer().answer().contains("dados suficientes")
         );
     }
 
@@ -704,8 +704,8 @@ class StaviaQueryServiceTest {
                             List.of(rdoEvidence(request.worksiteId()));
                     case CONSULTAR_HISTORICO ->
                             List.of(historyEvidence(request.worksiteId()));
-                    case CONSULTAR_PDOC ->
-                            List.of(pdocEvidence(request.worksiteId()));
+                    case CONSULTAR_PDOR ->
+                            List.of(pdorEvidence(request.worksiteId()));
                     default ->
                             List.of();
                 };
@@ -773,11 +773,11 @@ class StaviaQueryServiceTest {
         );
     }
 
-    private StaviaEvidence pdocEvidence(String worksiteId) {
+    private StaviaEvidence pdorEvidence(String worksiteId) {
         return new StaviaEvidence(
-                StaviaEvidenceTypes.PDOC,
-                "pdoc-1",
-                "Snapshot PDOC com dados insuficientes.",
+                StaviaEvidenceTypes.PDOR,
+                "pdor-1",
+                "Snapshot PDOR com dados insuficientes.",
                 Instant.now(),
                 true,
                 Map.of(

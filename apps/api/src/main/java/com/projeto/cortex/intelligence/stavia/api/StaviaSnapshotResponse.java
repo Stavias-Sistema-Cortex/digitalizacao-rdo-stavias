@@ -11,7 +11,7 @@ public record StaviaSnapshotResponse(
         List<ObraSnapshot> obras,
         List<RdoSnapshot> rdos,
         List<ProgramacaoSnapshot> programacoes,
-        List<PdocSnapshot> pdocs,
+        List<PdorSnapshot> pdors,
         List<OperationalEventSnapshot> operationalEvents,
         com.fasterxml.jackson.databind.JsonNode ontology
 ) {
@@ -238,7 +238,7 @@ public record StaviaSnapshotResponse(
     ) {
     }
 
-    public record PdocSnapshot(
+    public record PdorSnapshot(
             String obraId,
             String snapshotId,
             LocalDate dataReferencia,
@@ -246,9 +246,9 @@ public record StaviaSnapshotResponse(
             String statusExecucao,
             String calibracao,
             String risco,
-            BigDecimal probabilidadeQualquerExcedente,
-            BigDecimal probabilidadeExceder5Pct,
-            BigDecimal probabilidadeExceder10Pct,
+            BigDecimal probabilidadeAbaixoContrato,
+            BigDecimal probabilidadeAbaixo95Pct,
+            BigDecimal probabilidadeAbaixo90Pct,
             BigDecimal scoreHeuristico,
             BigDecimal confianca
     ) {

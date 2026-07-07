@@ -121,7 +121,7 @@ public class OperationalHistoryKnowledgeSource
                     CONSULTAR_EQUIPE,
                     CONSULTAR_ATIVO,
                     CONSULTAR_OCORRENCIA,
-                    CONSULTAR_PDOC,
+                    CONSULTAR_PDOR,
                     CONSULTAR_RECEITA,
                     CONSULTAR_MARGEM,
                     CONSULTAR_PREVISAO_FINANCEIRA,

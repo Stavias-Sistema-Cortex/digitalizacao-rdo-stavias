@@ -208,7 +208,7 @@ public class DeterministicStaviaModelClient
             case "CONSULTAR_OCORRENCIA" ->
                     "Ocorrências identificadas";
 
-            case "CONSULTAR_PDOC" ->
+            case "CONSULTAR_PDOR" ->
                     "Análise preditiva de custos e riscos identificada";
 
             case "RESUMIR_OBRA" ->

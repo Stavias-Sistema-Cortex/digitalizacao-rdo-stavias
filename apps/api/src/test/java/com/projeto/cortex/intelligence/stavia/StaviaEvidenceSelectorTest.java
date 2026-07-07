@@ -48,7 +48,7 @@ class StaviaEvidenceSelectorTest {
                                         StaviaEvidenceTypes.RELACAO_ONTOLOGICA,
                                         "relacao-1"
                                 ),
-                                evidence(StaviaEvidenceTypes.PDOC, "pdoc-1")
+                                evidence(StaviaEvidenceTypes.PDOR, "pdor-1")
                         )
                 );
 
@@ -85,9 +85,9 @@ class StaviaEvidenceSelectorTest {
                 );
 
         assertThat(
-                selector.select(StaviaIntent.CONSULTAR_PDOC, context)
+                selector.select(StaviaIntent.CONSULTAR_PDOR, context)
         ).extracting(StaviaEvidence::type)
-                .containsExactly(StaviaEvidenceTypes.PDOC);
+                .containsExactly(StaviaEvidenceTypes.PDOR);
     }
 
     private StaviaEvidence evidence(String type, String id) {

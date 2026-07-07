@@ -316,20 +316,20 @@ class DeterministicStaviaResponseGeneratorTest {
     }
 
     @Test
-    void shouldComposeInsufficientPdocSnapshotAnswer() {
+    void shouldComposeInsufficientPdorSnapshotAnswer() {
         StaviaGeneratedResponse response =
                 generator.generate(
                         new StaviaQuestion(
-                                "Qual é o risco de estouro de custos segundo o PDOC?",
+                                "Qual é o risco de estouro de custos segundo o PDOR?",
                                 "usuario-1",
                                 "obra-1"
                         ),
-                        StaviaIntent.CONSULTAR_PDOC,
+                        StaviaIntent.CONSULTAR_PDOR,
                         List.of(
                                 new StaviaEvidence(
-                                        StaviaEvidenceTypes.PDOC,
-                                        "pdoc-1",
-                                        "Snapshot PDOC com dados insuficientes.",
+                                        StaviaEvidenceTypes.PDOR,
+                                        "pdor-1",
+                                        "Snapshot PDOR com dados insuficientes.",
                                         Instant.parse(
                                                 "2026-06-25T12:00:00Z"
                                         ),
@@ -353,7 +353,7 @@ class DeterministicStaviaResponseGeneratorTest {
                         )
                 );
 
-        assertTrue(response.text().contains("PDOC foi executado"));
+        assertTrue(response.text().contains("PDOR foi executado"));
         assertTrue(response.text().contains("orçamento aprovado"));
         assertTrue(response.text().contains("P50, P80, P95"));
     }

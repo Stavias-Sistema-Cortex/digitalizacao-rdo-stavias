@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StaviaKnowledgeOrchestratorTest {
 
     @Test
-    void shouldAggregateHistoryPdocAndOntologyEvidence() {
+    void shouldAggregateHistoryPdorAndOntologyEvidence() {
         StaviaKnowledgeOrchestrator orchestrator =
                 new StaviaKnowledgeOrchestrator(
                         List.of(
@@ -33,11 +33,11 @@ class StaviaKnowledgeOrchestratorTest {
                                         )
                                 ),
                                 source(
-                                        "pdoc",
+                                        "pdor",
                                         "0.2.0",
                                         evidence(
-                                                "PDOC",
-                                                "pdoc-1"
+                                                "PDOR",
+                                                "pdor-1"
                                         )
                                 ),
                                 source(
@@ -63,7 +63,7 @@ class StaviaKnowledgeOrchestratorTest {
 
         assertEquals(
                 "0.2.0",
-                bundle.consultedSources().get("pdoc")
+                bundle.consultedSources().get("pdor")
         );
 
         assertEquals(

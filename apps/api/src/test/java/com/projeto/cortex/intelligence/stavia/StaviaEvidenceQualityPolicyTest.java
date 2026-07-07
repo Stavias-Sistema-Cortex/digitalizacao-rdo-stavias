@@ -148,12 +148,12 @@ class StaviaEvidenceQualityPolicyTest {
     }
 
     @Test
-    void shouldDowngradeUncalibratedSimulatedPdocEvidence() {
-        StaviaEvidence pdocEvidence =
+    void shouldDowngradeUncalibratedSimulatedPdorEvidence() {
+        StaviaEvidence pdorEvidence =
                 new StaviaEvidence(
-                        "PDOC",
-                        "PDOC:obra-1:2026-06-22",
-                        "Análise PDOC simulada.",
+                        "PDOR",
+                        "PDOR:obra-1:2026-06-22",
+                        "Análise PDOR simulada.",
                         NOW.minus(
                                 Duration.ofHours(1)
                         ),
@@ -168,7 +168,7 @@ class StaviaEvidenceQualityPolicyTest {
 
         StaviaQualityAssessment assessment =
                 policy.assess(
-                        List.of(pdocEvidence)
+                        List.of(pdorEvidence)
                 );
 
         assertEquals(
@@ -179,7 +179,7 @@ class StaviaEvidenceQualityPolicyTest {
         assertTrue(
                 assessment.warnings()
                         .contains(
-                                "O PDOC ainda não foi calibrado "
+                                "O PDOR ainda não foi calibrado "
                                         + "com dados históricos reais."
                         )
         );
