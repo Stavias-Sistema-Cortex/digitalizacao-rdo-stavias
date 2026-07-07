@@ -60,7 +60,7 @@ interface RdoCreatePageProps {
   isExisting: boolean;
   initialNotice?: string;
   onBackToList: () => void;
-  onSaved: () => void;
+  onSaved: (savedObraId: string) => void;
 }
 
 function parseNumericInput(value: string): NumericInput {
@@ -652,7 +652,7 @@ export function RdoCreatePage({
         syncStatus: persistedRdo.syncStatus,
       }));
 
-      onSaved();
+      onSaved(draft.obraId ?? "");
     } catch {
       // O hook já registra e exibe o erro.
     }

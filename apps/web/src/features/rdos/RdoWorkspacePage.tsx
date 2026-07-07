@@ -184,11 +184,11 @@ export function RdoWorkspacePage() {
           onBackToList={() => {
             void handleBackToList();
           }}
-          onSaved={() => {
-            if (mode.draft.obraId) {
+          onSaved={(savedObraId) => {
+            if (savedObraId) {
               setLastAccessedObraId(
                 colaboradorStorageKey(getSession()),
-                mode.draft.obraId,
+                savedObraId,
               );
             }
             void loadRecords();
