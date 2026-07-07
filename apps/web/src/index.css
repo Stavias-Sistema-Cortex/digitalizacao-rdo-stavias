@@ -1689,3 +1689,101 @@ textarea:focus {
 .cortex-shell--collapsed .badge-soon {
   display: none;
 }
+
+/* --- Home: gráfico de progressão --- */
+.progress-chart-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.progress-chart-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  font-size: 0.72rem;
+  color: #374151;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.legend-item--off {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.progress-chart-periods {
+  display: flex;
+  gap: 4px;
+}
+
+.period-pill {
+  font-size: 0.68rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid #d7dbde;
+  background: #fff;
+  cursor: pointer;
+}
+
+.period-pill--active {
+  background: #fed203;
+  border-color: #fed203;
+  font-weight: 700;
+}
+
+.progress-chart-plot {
+  position: relative;
+}
+
+.progress-chart-plot svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.progress-chart-tooltip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e5e9ea;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.7rem;
+  pointer-events: none;
+}
+
+.progress-chart-tooltip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.progress-chart-empty {
+  color: #8b9498;
+  font-size: 0.85rem;
+  padding: 24px 0;
+  text-align: center;
+}
