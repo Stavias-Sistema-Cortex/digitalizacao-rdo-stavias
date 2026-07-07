@@ -22,10 +22,10 @@ class PdorEngineTest {
         assertEquals("CW-HEALTHY", result.obraId());
         assertEquals(PdorEngine.MODEL_VERSION, result.modelVersion());
         assertEquals(PdorEngine.CalibrationStatus.NOT_CALIBRATED, result.calibrationStatus());
-        assertNull(result.calibratedProbabilityOverFivePercent());
-        assertTrue(result.evm().cpi() > 1.0);
+        assertNull(result.calibratedProbabilityBelow95Pct());
+        assertTrue(result.evm().rci() > 1.0);
         assertTrue(result.evm().spi() > 1.0);
-        assertTrue(result.costP50().compareTo(BigDecimal.ZERO) > 0);
+        assertTrue(result.revenueP50().compareTo(BigDecimal.ZERO) > 0);
     }
 
     @Test
@@ -35,12 +35,12 @@ class PdorEngineTest {
 
         assertTrue(problematic.heuristicRiskScore() > healthy.heuristicRiskScore());
         assertTrue(
-            problematic.simulationProbabilityOverFivePercent()
-                > healthy.simulationProbabilityOverFivePercent()
+            problematic.simulationProbabilityBelow95Pct()
+                > healthy.simulationProbabilityBelow95Pct()
         );
-        assertTrue(problematic.costP50().compareTo(healthy.costP50()) > 0);
+        assertTrue(problematic.revenueP50().compareTo(healthy.revenueP50()) < 0);
         assertTrue(problematic.confidence() < healthy.confidence());
-        assertTrue(problematic.evm().cpi() < healthy.evm().cpi());
+        assertTrue(problematic.evm().rci() < healthy.evm().rci());
         assertTrue(problematic.evm().spi() < healthy.evm().spi());
     }
 
@@ -51,11 +51,11 @@ class PdorEngineTest {
         PdorEngine.PdorResult first = engine.calculate(context);
         PdorEngine.PdorResult second = engine.calculate(context);
 
-        assertEquals(first.costP50(), second.costP50());
-        assertEquals(first.costP80(), second.costP80());
+        assertEquals(first.revenueP50(), second.revenueP50());
+        assertEquals(first.revenueP80(), second.revenueP80());
         assertEquals(
-            first.simulationProbabilityOverFivePercent(),
-            second.simulationProbabilityOverFivePercent()
+            first.simulationProbabilityBelow95Pct(),
+            second.simulationProbabilityBelow95Pct()
         );
         assertEquals(first.simulationIterationsUsed(), second.simulationIterationsUsed());
     }
@@ -64,22 +64,22 @@ class PdorEngineTest {
     void shouldRespectQuantileAndProbabilityInvariants() {
         PdorEngine.PdorResult result = engine.calculate(problematicContext());
 
-        assertTrue(result.costP10().compareTo(result.costP50()) <= 0);
-        assertTrue(result.costP50().compareTo(result.costP80()) <= 0);
-        assertTrue(result.costP80().compareTo(result.costP95()) <= 0);
+        assertTrue(result.revenueP10().compareTo(result.revenueP50()) <= 0);
+        assertTrue(result.revenueP50().compareTo(result.revenueP80()) <= 0);
+        assertTrue(result.revenueP80().compareTo(result.revenueP95()) <= 0);
 
         assertTrue(
-            result.simulationProbabilityOverTenPercent()
-                <= result.simulationProbabilityOverFivePercent()
+            result.simulationProbabilityBelow90Pct()
+                <= result.simulationProbabilityBelow95Pct()
         );
         assertTrue(
-            result.simulationProbabilityOverFivePercent()
-                <= result.simulationProbabilityAnyOverrun()
+            result.simulationProbabilityBelow95Pct()
+                <= result.simulationProbabilityBelowContract()
         );
     }
 
     @Test
-    void moreDowntimeMustNotReduceRiskOrForecast() {
+    void moreDowntimeMustNotIncreaseRevenueForecast() {
         PdorEngine.PdorContext base = healthyContext();
         PdorEngine.PdorContext worse = copyWithDowntime(base, 80.0);
 
@@ -87,18 +87,18 @@ class PdorEngineTest {
         PdorEngine.PdorResult worseResult = engine.calculate(worse);
 
         assertTrue(worseResult.heuristicRiskScore() >= baseResult.heuristicRiskScore());
-        assertTrue(worseResult.costP50().compareTo(baseResult.costP50()) >= 0);
+        assertTrue(worseResult.revenueP50().compareTo(baseResult.revenueP50()) <= 0);
     }
 
     @Test
-    void moreMaterialOverconsumptionMustNotReduceForecast() {
+    void moreMaterialOverconsumptionMustNotIncreaseRevenueForecast() {
         PdorEngine.PdorContext base = healthyContext();
         PdorEngine.PdorContext worse = copyWithMaterialOverconsumption(base, 0.25);
 
         PdorEngine.PdorResult baseResult = engine.calculate(base);
         PdorEngine.PdorResult worseResult = engine.calculate(worse);
 
-        assertTrue(worseResult.costP50().compareTo(baseResult.costP50()) >= 0);
+        assertTrue(worseResult.revenueP50().compareTo(baseResult.revenueP50()) <= 0);
         assertTrue(worseResult.heuristicRiskScore() >= baseResult.heuristicRiskScore());
     }
 
@@ -114,7 +114,7 @@ class PdorEngineTest {
     }
 
     @Test
-    void forecastMustNeverBeBelowCommittedCost() {
+    void forecastMustNeverBeBelowValidatedRevenue() {
         PdorEngine.PdorContext context = new PdorEngine.PdorContext(
             "CW-COMMITTED",
             LocalDate.of(2026, 6, 19),
@@ -138,11 +138,11 @@ class PdorEngineTest {
         );
 
         PdorEngine.PdorResult result = engine.calculate(context);
-        assertTrue(result.costP10().compareTo(context.committedCost()) >= 0);
+        assertTrue(result.revenueP10().compareTo(context.validatedRevenue()) >= 0);
     }
 
     @Test
-    void shouldUsePhaseSensitiveEacWeights() {
+    void shouldUsePhaseSensitiveRacWeights() {
         PdorEngine.PdorResult initial = engine.calculate(copyWithProgress(healthyContext(), 0.10));
         PdorEngine.PdorResult advanced = engine.calculate(copyWithProgress(healthyContext(), 0.80));
 
@@ -152,15 +152,16 @@ class PdorEngineTest {
     }
 
     private PdorEngine.PdorContext healthyContext() {
+        // Obra saudável: medição acompanha a produção (RCI > 1).
         return new PdorEngine.PdorContext(
             "CW-HEALTHY",
             LocalDate.of(2026, 6, 19),
             new BigDecimal("1000000.00"),
-            new BigDecimal("300000.00"),
-            new BigDecimal("320000.00"),
+            new BigDecimal("430000.00"),
+            new BigDecimal("400000.00"),
             0.40,
             0.42,
-            0.30,
+            0.43,
             2.0,
             200.0,
             0.01,
@@ -176,15 +177,16 @@ class PdorEngineTest {
     }
 
     private PdorEngine.PdorContext problematicContext() {
+        // Obra problemática: produção sem medição (RCI < 1) e perdas operacionais.
         return new PdorEngine.PdorContext(
             "CW-RISK",
             LocalDate.of(2026, 6, 19),
             new BigDecimal("1000000.00"),
-            new BigDecimal("600000.00"),
-            new BigDecimal("680000.00"),
+            new BigDecimal("200000.00"),
+            new BigDecimal("180000.00"),
             0.55,
             0.35,
-            0.60,
+            0.20,
             80.0,
             200.0,
             0.20,
@@ -201,7 +203,7 @@ class PdorEngineTest {
 
     private PdorEngine.PdorContext copyWithDowntime(PdorEngine.PdorContext c, double downtime) {
         return new PdorEngine.PdorContext(
-            c.obraId(), c.referenceDate(), c.approvedBudget(), c.actualCost(), c.committedCost(),
+            c.obraId(), c.referenceDate(), c.contractValue(), c.measuredRevenue(), c.validatedRevenue(),
             c.plannedProgress(), c.physicalProgress(), c.financialProgress(),
             downtime, c.plannedEquipmentHours30d(), c.materialOverconsumptionPct(),
             c.productivityLossPct(), c.delayedRdos(), c.criticalOccurrences(),
@@ -212,7 +214,7 @@ class PdorEngineTest {
 
     private PdorEngine.PdorContext copyWithMaterialOverconsumption(PdorEngine.PdorContext c, double value) {
         return new PdorEngine.PdorContext(
-            c.obraId(), c.referenceDate(), c.approvedBudget(), c.actualCost(), c.committedCost(),
+            c.obraId(), c.referenceDate(), c.contractValue(), c.measuredRevenue(), c.validatedRevenue(),
             c.plannedProgress(), c.physicalProgress(), c.financialProgress(),
             c.equipmentDowntimeHours30d(), c.plannedEquipmentHours30d(), value,
             c.productivityLossPct(), c.delayedRdos(), c.criticalOccurrences(),
@@ -223,7 +225,7 @@ class PdorEngineTest {
 
     private PdorEngine.PdorContext copyWithCompleteness(PdorEngine.PdorContext c, double value) {
         return new PdorEngine.PdorContext(
-            c.obraId(), c.referenceDate(), c.approvedBudget(), c.actualCost(), c.committedCost(),
+            c.obraId(), c.referenceDate(), c.contractValue(), c.measuredRevenue(), c.validatedRevenue(),
             c.plannedProgress(), c.physicalProgress(), c.financialProgress(),
             c.equipmentDowntimeHours30d(), c.plannedEquipmentHours30d(), c.materialOverconsumptionPct(),
             c.productivityLossPct(), c.delayedRdos(), c.criticalOccurrences(),
@@ -234,7 +236,7 @@ class PdorEngineTest {
 
     private PdorEngine.PdorContext copyWithProgress(PdorEngine.PdorContext c, double physicalProgress) {
         return new PdorEngine.PdorContext(
-            c.obraId(), c.referenceDate(), c.approvedBudget(), c.actualCost(), c.committedCost(),
+            c.obraId(), c.referenceDate(), c.contractValue(), c.measuredRevenue(), c.validatedRevenue(),
             c.plannedProgress(), physicalProgress, c.financialProgress(),
             c.equipmentDowntimeHours30d(), c.plannedEquipmentHours30d(), c.materialOverconsumptionPct(),
             c.productivityLossPct(), c.delayedRdos(), c.criticalOccurrences(),

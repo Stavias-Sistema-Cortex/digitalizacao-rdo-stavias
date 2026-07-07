@@ -219,16 +219,16 @@ class PdorContextBuilderTest {
         );
 
         assertTrue(
-            result.costP50()
+            result.revenueP50()
                 .compareTo(BigDecimal.ZERO) > 0
         );
 
         assertTrue(
-            result.simulationProbabilityAnyOverrun() >= 0.0
+            result.simulationProbabilityBelowContract() >= 0.0
         );
 
         assertTrue(
-            result.simulationProbabilityAnyOverrun() <= 1.0
+            result.simulationProbabilityBelowContract() <= 1.0
         );
     }
 }

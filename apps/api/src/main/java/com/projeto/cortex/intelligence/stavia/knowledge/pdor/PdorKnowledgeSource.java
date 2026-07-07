@@ -172,24 +172,24 @@ public class PdorKnowledgeSource
         );
         putText(attributes, "faseObra", snapshot.projectPhase());
         putText(attributes, "nivelRisco", snapshot.riskLevel());
-        putDecimal(attributes, "costP10", snapshot.costP10());
-        putDecimal(attributes, "costP50", snapshot.costP50());
-        putDecimal(attributes, "costP80", snapshot.costP80());
-        putDecimal(attributes, "costP95", snapshot.costP95());
+        putDecimal(attributes, "revenueP10", snapshot.revenueP10());
+        putDecimal(attributes, "revenueP50", snapshot.revenueP50());
+        putDecimal(attributes, "revenueP80", snapshot.revenueP80());
+        putDecimal(attributes, "revenueP95", snapshot.revenueP95());
         putDecimal(
                 attributes,
-                "probabilityAnyOverrun",
-                snapshot.probabilityAnyOverrun()
+                "probabilityBelowContract",
+                snapshot.probabilityBelowContract()
         );
         putDecimal(
                 attributes,
-                "probabilityOverFivePercent",
-                snapshot.probabilityOverFivePercent()
+                "probabilityBelow95Pct",
+                snapshot.probabilityBelow95Pct()
         );
         putDecimal(
                 attributes,
-                "probabilityOverTenPercent",
-                snapshot.probabilityOverTenPercent()
+                "probabilityBelow90Pct",
+                snapshot.probabilityBelow90Pct()
         );
         putDecimal(
                 attributes,
@@ -306,9 +306,9 @@ public class PdorKnowledgeSource
                     .append(snapshot.riskLevel());
         }
 
-        if (snapshot.costP50() != null) {
+        if (snapshot.revenueP50() != null) {
             summary.append(", P50 ")
-                    .append(snapshot.costP50());
+                    .append(snapshot.revenueP50());
         }
 
         summary.append(".");

@@ -2840,21 +2840,21 @@ public class DeterministicStaviaResponseGenerator
                 "Confiança",
                 percentText(attributes.get("confidence"))
         );
-        appendMetric(answer, "P50", moneyText(attributes.get("costP50")));
-        appendMetric(answer, "P80", moneyText(attributes.get("costP80")));
-        appendMetric(answer, "P95", moneyText(attributes.get("costP95")));
+        appendMetric(answer, "P50", moneyText(attributes.get("revenueP50")));
+        appendMetric(answer, "P80", moneyText(attributes.get("revenueP80")));
+        appendMetric(answer, "P95", moneyText(attributes.get("revenueP95")));
         appendMetric(
                 answer,
                 "Probabilidade de exceder 5%",
                 percentText(
-                        attributes.get("probabilityOverFivePercent")
+                        attributes.get("probabilityBelow95Pct")
                 )
         );
         appendMetric(
                 answer,
                 "Probabilidade de exceder 10%",
                 percentText(
-                        attributes.get("probabilityOverTenPercent")
+                        attributes.get("probabilityBelow90Pct")
                 )
         );
         appendMetric(
@@ -2918,11 +2918,11 @@ public class DeterministicStaviaResponseGenerator
 
     private String pdorMissingLabel(String field) {
         return switch (field) {
-            case "approvedBudget" ->
+            case "contractValue" ->
                     "orçamento aprovado";
-            case "actualCost" ->
+            case "measuredRevenue" ->
                     "custo realizado";
-            case "committedCost" ->
+            case "validatedRevenue" ->
                     "custo comprometido";
             case "actualExecutedQuantity" ->
                     "produção real validada";

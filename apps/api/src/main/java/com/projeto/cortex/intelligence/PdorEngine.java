@@ -31,8 +31,8 @@ public final class PdorEngine {
     public static final String MODEL_VERSION = "PDOR-0.3.0";
     public static final String ASSUMPTIONS_VERSION = "PDOR-ASSUMPTIONS-0.3.0";
 
-    private static final double FIVE_PERCENT = 1.05;
-    private static final double TEN_PERCENT = 1.10;
+    private static final double CONTRACT_95_PCT = 0.95;
+    private static final double CONTRACT_90_PCT = 0.90;
 
     private static final int DEFAULT_SIMULATION_ITERATIONS = 20_000;
     private static final int MINIMUM_SIMULATION_ITERATIONS = 2_000;
@@ -48,7 +48,7 @@ public final class PdorEngine {
         validateContext(context);
 
         ProjectPhase phase = determineProjectPhase(context.physicalProgress());
-        EvmMetrics evm = calculateEvm(context, phase);
+        RevenueMetrics evm = calculateEvm(context, phase);
         RiskComponents components = calculateRiskComponents(context, evm);
         double heuristicRiskScore = calculateHeuristicRiskScore(components, phase);
 
@@ -74,7 +74,7 @@ public final class PdorEngine {
         );
 
         RiskLevel riskLevel = determineRiskLevel(
-            monteCarlo.probabilityOverFivePercent()
+            monteCarlo.probabilityBelow95Pct()
         );
 
         return new PdorResult(
@@ -85,9 +85,9 @@ public final class PdorEngine {
             CalculationMode.ISOLATED_ENGINE,
             CalibrationStatus.NOT_CALIBRATED,
             phase,
-            roundProbability(monteCarlo.probabilityAnyOverrun()),
-            roundProbability(monteCarlo.probabilityOverFivePercent()),
-            roundProbability(monteCarlo.probabilityOverTenPercent()),
+            roundProbability(monteCarlo.probabilityBelowContract()),
+            roundProbability(monteCarlo.probabilityBelow95Pct()),
+            roundProbability(monteCarlo.probabilityBelow90Pct()),
             null,
             money(monteCarlo.p10()),
             money(monteCarlo.p50()),
@@ -112,12 +112,12 @@ public final class PdorEngine {
             throw new IllegalArgumentException("referenceDate é obrigatória");
         }
 
-        requireNonNegative(context.approvedBudget(), "approvedBudget");
-        requireNonNegative(context.actualCost(), "actualCost");
-        requireNonNegative(context.committedCost(), "committedCost");
+        requireNonNegative(context.contractValue(), "contractValue");
+        requireNonNegative(context.measuredRevenue(), "measuredRevenue");
+        requireNonNegative(context.validatedRevenue(), "validatedRevenue");
 
-        if (context.approvedBudget().compareTo(BigDecimal.ZERO) == 0) {
-            throw new IllegalArgumentException("approvedBudget deve ser maior que zero");
+        if (context.contractValue().compareTo(BigDecimal.ZERO) == 0) {
+            throw new IllegalArgumentException("contractValue deve ser maior que zero");
         }
 
         validateRatio(context.plannedProgress(), "plannedProgress");
@@ -144,73 +144,82 @@ public final class PdorEngine {
         }
     }
 
-    private EvmMetrics calculateEvm(PdorContext context, ProjectPhase phase) {
-        BigDecimal budget = context.approvedBudget();
-        BigDecimal actualCost = context.actualCost();
+    private RevenueMetrics calculateEvm(PdorContext context, ProjectPhase phase) {
+        BigDecimal budget = context.contractValue();
+        BigDecimal measuredRevenue = context.measuredRevenue();
 
         BigDecimal plannedValue = budget.multiply(BigDecimal.valueOf(context.plannedProgress()));
         BigDecimal earnedValue = budget.multiply(BigDecimal.valueOf(context.physicalProgress()));
 
-        double cpi = safeDivide(earnedValue.doubleValue(), actualCost.doubleValue(), 1.0);
+        // RCI (índice de captura de receita) = receita medida / valor ganho pela
+        // produção física. RCI < 1 indica medição atrasada frente ao executado.
+        double rci = safeDivide(measuredRevenue.doubleValue(), earnedValue.doubleValue(), 1.0);
         double spi = safeDivide(earnedValue.doubleValue(), plannedValue.doubleValue(), 1.0);
 
-        BigDecimal costVariance = earnedValue.subtract(actualCost);
+        BigDecimal revenueVariance = measuredRevenue.subtract(earnedValue);
         BigDecimal scheduleVariance = earnedValue.subtract(plannedValue);
 
-        BigDecimal racRci = cpi > 0.0
-            ? budget.divide(BigDecimal.valueOf(cpi), 8, RoundingMode.HALF_UP)
+        // Projeção direta: se o ritmo de captura persistir, a receita final
+        // tende a contrato × RCI.
+        BigDecimal racRci = rci > 0.0
+            ? budget.multiply(BigDecimal.valueOf(rci)).setScale(8, RoundingMode.HALF_UP)
             : budget;
 
-        double cpiSpi = cpi * spi;
-        BigDecimal racRciSpi = cpiSpi > 0.0
-            ? actualCost.add(
-                budget.subtract(earnedValue)
-                    .divide(BigDecimal.valueOf(cpiSpi), 8, RoundingMode.HALF_UP)
-            )
-            : racRci;
+        double rciSpi = rci * spi;
+        BigDecimal racRciSpi = measuredRevenue.add(
+            budget.subtract(earnedValue)
+                .max(BigDecimal.ZERO)
+                .multiply(BigDecimal.valueOf(rciSpi))
+        ).setScale(8, RoundingMode.HALF_UP);
 
         BigDecimal remainingBaseline = budget.subtract(earnedValue).max(BigDecimal.ZERO);
-        double bottomUpMultiplier = 1.0
-            + context.productivityLossPct() * 0.45
-            + context.materialOverconsumptionPct() * 0.35
-            + downtimeRate(context) * 0.20;
+        // Perdas operacionais deflacionam a receita que ainda será capturada.
+        double bottomUpMultiplier = Math.max(
+            0.0,
+            1.0
+                - context.productivityLossPct() * 0.45
+                - context.materialOverconsumptionPct() * 0.35
+                - downtimeRate(context) * 0.20
+        );
 
-        BigDecimal racBottomUp = actualCost.add(
+        BigDecimal racBottomUp = measuredRevenue.add(
             remainingBaseline.multiply(BigDecimal.valueOf(bottomUpMultiplier))
         );
 
-        EacWeights weights = weightsFor(phase);
-        BigDecimal weightedEac = weightedAverage(
+        RacWeights weights = weightsFor(phase);
+        BigDecimal weightedRac = weightedAverage(
             racRci,
             racRciSpi,
             racBottomUp,
             weights
-        ).max(context.committedCost());
+        ).max(context.validatedRevenue());
 
-        BigDecimal varianceAtCompletion = budget.subtract(weightedEac);
+        BigDecimal varianceAtCompletion = budget.subtract(weightedRac);
 
-        return new EvmMetrics(
+        return new RevenueMetrics(
             money(plannedValue.doubleValue()),
             money(earnedValue.doubleValue()),
-            money(actualCost.doubleValue()),
-            roundMetric(cpi),
+            money(measuredRevenue.doubleValue()),
+            roundMetric(rci),
             roundMetric(spi),
-            money(costVariance.doubleValue()),
+            money(revenueVariance.doubleValue()),
             money(scheduleVariance.doubleValue()),
             money(racRci.doubleValue()),
             money(racRciSpi.doubleValue()),
             money(racBottomUp.doubleValue()),
-            money(weightedEac.doubleValue()),
+            money(weightedRac.doubleValue()),
             money(varianceAtCompletion.doubleValue()),
             weights
         );
     }
 
-    private RiskComponents calculateRiskComponents(PdorContext context, EvmMetrics evm) {
-        double costRisk = clamp01(Math.max(0.0, 1.0 - evm.cpi()));
+    private RiskComponents calculateRiskComponents(PdorContext context, RevenueMetrics evm) {
+        double captureRisk = clamp01(Math.max(0.0, 1.0 - evm.rci()));
         double scheduleRisk = clamp01(Math.max(0.0, 1.0 - evm.spi()));
+        // Para receita, o risco é produzir sem medir: avanço físico à frente
+        // do financeiro significa receita ganha ainda não capturada.
         double physicalFinancialGap = clamp01(
-            Math.max(0.0, context.financialProgress() - context.physicalProgress()) * 2.0
+            Math.max(0.0, context.physicalProgress() - context.financialProgress()) * 2.0
         );
         double equipmentRisk = clamp01(downtimeRate(context) * 2.2);
         double materialRisk = clamp01(context.materialOverconsumptionPct() * 1.8);
@@ -221,7 +230,7 @@ public final class PdorEngine {
         double dataQualityRisk = clamp01(1.0 - context.dataCompleteness());
 
         return new RiskComponents(
-            costRisk,
+            captureRisk,
             scheduleRisk,
             physicalFinancialGap,
             equipmentRisk,
@@ -246,7 +255,7 @@ public final class PdorEngine {
         };
 
         double weightedScore =
-            0.18 * components.costRisk()
+            0.18 * components.captureRisk()
                 + 0.15 * components.scheduleRisk()
                 + 0.12 * components.physicalFinancialGapRisk()
                 + 0.12 * components.equipmentRisk()
@@ -298,7 +307,7 @@ public final class PdorEngine {
 
     private MonteCarloResult runMonteCarlo(
         PdorContext context,
-        EvmMetrics evm,
+        RevenueMetrics evm,
         double heuristicRiskScore,
         PdorAssumptions assumptions
     ) {
@@ -330,7 +339,7 @@ public final class PdorEngine {
 
             double[] partial = Arrays.copyOf(outcomes, used);
             Arrays.sort(partial);
-            current = summarize(partial, context.approvedBudget().doubleValue());
+            current = summarize(partial, context.contractValue().doubleValue());
 
             if (previous != null && used >= MINIMUM_SIMULATION_ITERATIONS * 2) {
                 converged = hasConverged(previous, current);
@@ -350,9 +359,9 @@ public final class PdorEngine {
             current.p50(),
             current.p80(),
             current.p95(),
-            current.probabilityAnyOverrun(),
-            current.probabilityOverFivePercent(),
-            current.probabilityOverTenPercent(),
+            current.probabilityBelowContract(),
+            current.probabilityBelow95Pct(),
+            current.probabilityBelow90Pct(),
             converged,
             used
         );
@@ -363,15 +372,19 @@ public final class PdorEngine {
         int start,
         int end,
         PdorContext context,
-        EvmMetrics evm,
+        RevenueMetrics evm,
         double heuristicRiskScore,
         PdorAssumptions assumptions,
         SplittableRandom random
     ) {
-        double budget = context.approvedBudget().doubleValue();
-        double actualCost = context.actualCost().doubleValue();
-        double committedCost = context.committedCost().doubleValue();
-        double remainingBaseCost = Math.max(0.0, budget - evm.earnedValue().doubleValue());
+        double contract = context.contractValue().doubleValue();
+        double measuredRevenue = context.measuredRevenue().doubleValue();
+        double validatedRevenue = context.validatedRevenue().doubleValue();
+        // Receita ainda não ganha pela produção: é dela que os choques
+        // operacionais podem subtrair captura.
+        double remainingBaseRevenue = Math.max(0.0, contract - evm.earnedValue().doubleValue());
+        // Ritmo de captura observado até aqui modula quanto do ganho vira medição.
+        double captureIndex = Math.min(1.0, Math.max(0.0, evm.rci()));
 
         for (int i = start; i < end; i++) {
             double downtimeShock = triangular(random, assumptions.equipment()) - 1.0;
@@ -391,14 +404,18 @@ public final class PdorEngine {
             );
 
             double materialShock = triangular(random, assumptions.material()) - 1.0;
-            double indirectCostShock = scheduleShock * assumptions.scheduleToIndirectCostEffect();
+            double indirectLossShock = scheduleShock * assumptions.scheduleToIndirectCostEffect();
 
-            double remainingDirectCost = remainingBaseCost * 0.82;
-            double remainingIndirectCost = remainingBaseCost * 0.18;
+            double remainingDirectRevenue = remainingBaseRevenue * 0.82;
+            double remainingIndirectRevenue = remainingBaseRevenue * 0.18;
 
-            double simulatedRemainingCost =
-                remainingDirectCost * (1.0 + productivityShock + materialShock * 0.55)
-                    + remainingIndirectCost * (1.0 + indirectCostShock);
+            // Choques operacionais DEFLACIONAM a receita a capturar: obra que
+            // perde produtividade/material/equipamento entrega e mede menos.
+            double simulatedRemainingRevenue =
+                remainingDirectRevenue
+                    * Math.max(0.0, 1.0 - productivityShock - materialShock * 0.55)
+                    + remainingIndirectRevenue
+                        * Math.max(0.0, 1.0 - indirectLossShock);
 
             double occurrenceExposure = triangular(
                 random,
@@ -407,11 +424,11 @@ public final class PdorEngine {
                 context.criticalOccurrences() * 0.015
             );
 
-            double simulatedFinalCost = actualCost
-                + Math.max(0.0, simulatedRemainingCost)
-                + remainingBaseCost * occurrenceExposure;
+            double simulatedFinalRevenue = measuredRevenue
+                + Math.max(0.0, simulatedRemainingRevenue) * captureIndex
+                - remainingBaseRevenue * occurrenceExposure;
 
-            outcomes[i] = Math.max(simulatedFinalCost, committedCost);
+            outcomes[i] = Math.max(simulatedFinalRevenue, validatedRevenue);
         }
     }
 
@@ -421,9 +438,9 @@ public final class PdorEngine {
             percentile(sortedOutcomes, 0.50),
             percentile(sortedOutcomes, 0.80),
             percentile(sortedOutcomes, 0.95),
-            probabilityAbove(sortedOutcomes, budget),
-            probabilityAbove(sortedOutcomes, budget * FIVE_PERCENT),
-            probabilityAbove(sortedOutcomes, budget * TEN_PERCENT)
+            probabilityBelow(sortedOutcomes, budget),
+            probabilityBelow(sortedOutcomes, budget * CONTRACT_95_PCT),
+            probabilityBelow(sortedOutcomes, budget * CONTRACT_90_PCT)
         );
     }
 
@@ -431,8 +448,8 @@ public final class PdorEngine {
         return relativeDifference(previous.p50(), current.p50()) < P50_CONVERGENCE_TOLERANCE
             && relativeDifference(previous.p80(), current.p80()) < P80_CONVERGENCE_TOLERANCE
             && Math.abs(
-                previous.probabilityOverFivePercent()
-                    - current.probabilityOverFivePercent()
+                previous.probabilityBelow95Pct()
+                    - current.probabilityBelow95Pct()
             ) < PROBABILITY_CONVERGENCE_TOLERANCE;
     }
 
@@ -464,17 +481,17 @@ public final class PdorEngine {
 
     private List<PdorDriver> determineDrivers(
         PdorContext context,
-        EvmMetrics evm,
+        RevenueMetrics evm,
         RiskComponents components,
         PdorAssumptions assumptions
     ) {
         List<PdorDriver> drivers = new ArrayList<>();
 
-        addDriver(drivers, "LOW_COST_PERFORMANCE", "Desempenho de custo abaixo do esperado",
-            components.costRisk(), "CPI=" + evm.cpi());
+        addDriver(drivers, "LOW_REVENUE_CAPTURE", "Captura de receita abaixo da produção executada",
+            components.captureRisk(), "RCI=" + evm.rci());
         addDriver(drivers, "LOW_SCHEDULE_PERFORMANCE", "Desempenho de prazo abaixo do esperado",
             components.scheduleRisk(), "SPI=" + evm.spi());
-        addDriver(drivers, "PHYSICAL_FINANCIAL_MISMATCH", "Avanço financeiro superior ao avanço físico",
+        addDriver(drivers, "PHYSICAL_FINANCIAL_MISMATCH", "Produção executada ainda não medida em receita",
             components.physicalFinancialGapRisk(),
             "fisico=" + roundMetric(context.physicalProgress())
                 + ", financeiro=" + roundMetric(context.financialProgress()));
@@ -533,12 +550,12 @@ public final class PdorEngine {
         return ProjectPhase.CLOSING;
     }
 
-    private EacWeights weightsFor(ProjectPhase phase) {
+    private RacWeights weightsFor(ProjectPhase phase) {
         return switch (phase) {
-            case INITIAL -> new EacWeights(0.20, 0.25, 0.55);
-            case PRODUCTION -> new EacWeights(0.35, 0.40, 0.25);
-            case ADVANCED -> new EacWeights(0.50, 0.35, 0.15);
-            case CLOSING -> new EacWeights(0.60, 0.30, 0.10);
+            case INITIAL -> new RacWeights(0.20, 0.25, 0.55);
+            case PRODUCTION -> new RacWeights(0.35, 0.40, 0.25);
+            case ADVANCED -> new RacWeights(0.50, 0.35, 0.15);
+            case CLOSING -> new RacWeights(0.60, 0.30, 0.10);
         };
     }
 
@@ -546,21 +563,21 @@ public final class PdorEngine {
         BigDecimal racRci,
         BigDecimal racRciSpi,
         BigDecimal racBottomUp,
-        EacWeights weights
+        RacWeights weights
     ) {
-        return racRci.multiply(BigDecimal.valueOf(weights.cpiWeight()))
-            .add(racRciSpi.multiply(BigDecimal.valueOf(weights.cpiSpiWeight())))
+        return racRci.multiply(BigDecimal.valueOf(weights.rciWeight()))
+            .add(racRciSpi.multiply(BigDecimal.valueOf(weights.rciSpiWeight())))
             .add(racBottomUp.multiply(BigDecimal.valueOf(weights.bottomUpWeight())));
     }
 
-    private RiskLevel determineRiskLevel(double probabilityOverFivePercent) {
-        if (probabilityOverFivePercent >= 0.80) {
+    private RiskLevel determineRiskLevel(double probabilityBelow95Pct) {
+        if (probabilityBelow95Pct >= 0.80) {
             return RiskLevel.CRITICAL;
         }
-        if (probabilityOverFivePercent >= 0.60) {
+        if (probabilityBelow95Pct >= 0.60) {
             return RiskLevel.HIGH;
         }
-        if (probabilityOverFivePercent >= 0.35) {
+        if (probabilityBelow95Pct >= 0.35) {
             return RiskLevel.MODERATE;
         }
         return RiskLevel.LOW;
@@ -580,8 +597,8 @@ public final class PdorEngine {
             context.referenceDate(),
             MODEL_VERSION,
             ASSUMPTIONS_VERSION,
-            context.approvedBudget(),
-            context.actualCost(),
+            context.contractValue(),
+            context.measuredRevenue(),
             context.physicalProgress(),
             context.plannedProgress(),
             context.productivityLossPct(),
@@ -639,10 +656,10 @@ public final class PdorEngine {
         return sortedValues[lower] * (1.0 - weight) + sortedValues[upper] * weight;
     }
 
-    private double probabilityAbove(double[] outcomes, double threshold) {
+    private double probabilityBelow(double[] outcomes, double threshold) {
         int count = 0;
         for (double outcome : outcomes) {
-            if (outcome > threshold) {
+            if (outcome < threshold) {
                 count++;
             }
         }
@@ -699,9 +716,9 @@ public final class PdorEngine {
     public record PdorContext(
         String obraId,
         LocalDate referenceDate,
-        BigDecimal approvedBudget,
-        BigDecimal actualCost,
-        BigDecimal committedCost,
+        BigDecimal contractValue,
+        BigDecimal measuredRevenue,
+        BigDecimal validatedRevenue,
         double plannedProgress,
         double physicalProgress,
         double financialProgress,
@@ -726,43 +743,43 @@ public final class PdorEngine {
         CalculationMode calculationMode,
         CalibrationStatus calibrationStatus,
         ProjectPhase projectPhase,
-        double simulationProbabilityAnyOverrun,
-        double simulationProbabilityOverFivePercent,
-        double simulationProbabilityOverTenPercent,
-        Double calibratedProbabilityOverFivePercent,
-        BigDecimal costP10,
-        BigDecimal costP50,
-        BigDecimal costP80,
-        BigDecimal costP95,
+        double simulationProbabilityBelowContract,
+        double simulationProbabilityBelow95Pct,
+        double simulationProbabilityBelow90Pct,
+        Double calibratedProbabilityBelow95Pct,
+        BigDecimal revenueP10,
+        BigDecimal revenueP50,
+        BigDecimal revenueP80,
+        BigDecimal revenueP95,
         double heuristicRiskScore,
         double confidence,
         boolean simulationConverged,
         int simulationIterationsUsed,
         RiskLevel riskLevel,
-        EvmMetrics evm,
+        RevenueMetrics evm,
         PdorAssumptions assumptions,
         List<PdorDriver> drivers
     ) {}
 
-    public record EvmMetrics(
+    public record RevenueMetrics(
         BigDecimal plannedValue,
         BigDecimal earnedValue,
-        BigDecimal actualCost,
-        double cpi,
+        BigDecimal measuredRevenue,
+        double rci,
         double spi,
-        BigDecimal costVariance,
+        BigDecimal revenueVariance,
         BigDecimal scheduleVariance,
-        BigDecimal estimateAtCompletionCpi,
-        BigDecimal estimateAtCompletionCpiSpi,
-        BigDecimal estimateAtCompletionBottomUp,
-        BigDecimal weightedEstimateAtCompletion,
+        BigDecimal racRci,
+        BigDecimal racRciSpi,
+        BigDecimal racBottomUp,
+        BigDecimal weightedRac,
         BigDecimal varianceAtCompletion,
-        EacWeights weights
+        RacWeights weights
     ) {}
 
-    public record EacWeights(
-        double cpiWeight,
-        double cpiSpiWeight,
+    public record RacWeights(
+        double rciWeight,
+        double rciSpiWeight,
         double bottomUpWeight
     ) {}
 
@@ -809,7 +826,7 @@ public final class PdorEngine {
     ) {}
 
     private record RiskComponents(
-        double costRisk,
+        double captureRisk,
         double scheduleRisk,
         double physicalFinancialGapRisk,
         double equipmentRisk,
@@ -826,9 +843,9 @@ public final class PdorEngine {
         double p50,
         double p80,
         double p95,
-        double probabilityAnyOverrun,
-        double probabilityOverFivePercent,
-        double probabilityOverTenPercent
+        double probabilityBelowContract,
+        double probabilityBelow95Pct,
+        double probabilityBelow90Pct
     ) {}
 
     private record MonteCarloResult(
@@ -836,9 +853,9 @@ public final class PdorEngine {
         double p50,
         double p80,
         double p95,
-        double probabilityAnyOverrun,
-        double probabilityOverFivePercent,
-        double probabilityOverTenPercent,
+        double probabilityBelowContract,
+        double probabilityBelow95Pct,
+        double probabilityBelow90Pct,
         boolean converged,
         int iterationsUsed
     ) {}

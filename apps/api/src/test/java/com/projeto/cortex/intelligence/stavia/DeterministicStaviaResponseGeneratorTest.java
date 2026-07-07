@@ -343,9 +343,9 @@ class DeterministicStaviaResponseGeneratorTest {
                                                 "2026-06-08",
                                                 "missingRequiredFields",
                                                 List.of(
-                                                        "approvedBudget",
-                                                        "actualCost",
-                                                        "committedCost",
+                                                        "contractValue",
+                                                        "measuredRevenue",
+                                                        "validatedRevenue",
                                                         "actualExecutedQuantity"
                                                 )
                                         )

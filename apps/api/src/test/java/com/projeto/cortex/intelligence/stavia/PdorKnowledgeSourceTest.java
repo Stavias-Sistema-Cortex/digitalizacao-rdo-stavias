@@ -82,9 +82,9 @@ class PdorKnowledgeSourceTest {
                         .get("missingRequiredFields");
 
         assertThat(missing).contains(
-                "approvedBudget",
-                "actualCost",
-                "committedCost",
+                "contractValue",
+                "measuredRevenue",
+                "validatedRevenue",
                 "actualExecutedQuantity"
         );
     }
@@ -121,11 +121,11 @@ class PdorKnowledgeSourceTest {
         assertThat(evidence.attributes())
                 .containsEntry("statusExecucao", "SUCCESS")
                 .containsEntry(
-                        "costP50",
+                        "revenueP50",
                         new BigDecimal("110.00")
                 )
                 .containsEntry(
-                        "probabilityOverFivePercent",
+                        "probabilityBelow95Pct",
                         new BigDecimal("0.250000")
                 );
     }
@@ -250,9 +250,9 @@ class PdorKnowledgeSourceTest {
                 null,
                 "idem-1",
                 objectMapper.createObjectNode()
-                        .putNull("approvedBudget")
-                        .putNull("actualCost")
-                        .putNull("committedCost")
+                        .putNull("contractValue")
+                        .putNull("measuredRevenue")
+                        .putNull("validatedRevenue")
                         .putNull("actualExecutedQuantity"),
                 originsNode(),
                 objectMapper.createArrayNode()
@@ -286,9 +286,9 @@ class PdorKnowledgeSourceTest {
 
     private ObjectNode originsNode() {
         ObjectNode origins = objectMapper.createObjectNode();
-        origins.set("approvedBudget", missingOrigin());
-        origins.set("actualCost", missingOrigin());
-        origins.set("committedCost", missingOrigin());
+        origins.set("contractValue", missingOrigin());
+        origins.set("measuredRevenue", missingOrigin());
+        origins.set("validatedRevenue", missingOrigin());
         origins.set("actualExecutedQuantity", missingOrigin());
         return origins;
     }

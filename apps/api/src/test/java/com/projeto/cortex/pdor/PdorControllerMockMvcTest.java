@@ -133,12 +133,12 @@ class PdorControllerMockMvcTest {
                 .andExpect(jsonPath("$.warnings").isArray())
                 .andExpect(jsonPath("$.warnings[0]").value(containsString("Orçamento total aprovado ausente")))
                 .andExpect(jsonPath("$.erroExecucao").value(containsString("Dados insuficientes para calcular o PDOR")))
-                .andExpect(jsonPath("$.origemDados.approvedBudget.label").value("Orçamento total aprovado"))
-                .andExpect(jsonPath("$.origemDados.approvedBudget.availability").value("ABSENT"))
-                .andExpect(jsonPath("$.origemDados.approvedBudget.availabilityLabel").value("Ausente"))
-                .andExpect(jsonPath("$.inputs.approvedBudget").value(nullValue()))
-                .andExpect(jsonPath("$.inputs.actualCost").value(nullValue()))
-                .andExpect(jsonPath("$.inputs.committedCost").value(nullValue()))
+                .andExpect(jsonPath("$.origemDados.contractValue.label").value("Orçamento total aprovado"))
+                .andExpect(jsonPath("$.origemDados.contractValue.availability").value("ABSENT"))
+                .andExpect(jsonPath("$.origemDados.contractValue.availabilityLabel").value("Ausente"))
+                .andExpect(jsonPath("$.inputs.contractValue").value(nullValue()))
+                .andExpect(jsonPath("$.inputs.measuredRevenue").value(nullValue()))
+                .andExpect(jsonPath("$.inputs.validatedRevenue").value(nullValue()))
                 .andExpect(jsonPath("$.idempotencyKey").doesNotExist())
                 .andExpect(jsonPath("$.obraId").doesNotExist())
                 .andExpect(jsonPath("$.codigoObra").doesNotExist())
@@ -152,7 +152,7 @@ class PdorControllerMockMvcTest {
         verify(snapshotRepository).insert(snapshotCaptor.capture());
         assertThat(snapshotCaptor.getValue().executionStatus())
                 .isEqualTo(PdorExecutionStatus.INSUFFICIENT_DATA);
-        assertThat(snapshotCaptor.getValue().costP50()).isNull();
+        assertThat(snapshotCaptor.getValue().revenueP50()).isNull();
     }
 
     @Test
@@ -278,9 +278,9 @@ class PdorControllerMockMvcTest {
         Map<String, PdorInputOrigin> origins = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
 
-        put(inputs, origins, missing, "approvedBudget", "Orçamento total aprovado", null, true);
-        put(inputs, origins, missing, "actualCost", "Custo realizado", null, true);
-        put(inputs, origins, missing, "committedCost", "Custo comprometido", null, true);
+        put(inputs, origins, missing, "contractValue", "Orçamento total aprovado", null, true);
+        put(inputs, origins, missing, "measuredRevenue", "Custo realizado", null, true);
+        put(inputs, origins, missing, "validatedRevenue", "Custo comprometido", null, true);
         put(inputs, origins, missing, "totalPlannedQuantity", "Quantidade total planejada", new BigDecimal("1000.000"), true);
         put(inputs, origins, missing, "plannedExecutedQuantity", "Quantidade planejada até a data de referência", new BigDecimal("800.000"), true);
         put(inputs, origins, missing, "actualExecutedQuantity", "Quantidade executada real", null, true);

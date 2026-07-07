@@ -38,8 +38,8 @@ public final class PdorContextBuilder {
         );
 
         double financialProgress = ratio(
-            source.actualCost(),
-            source.approvedBudget()
+            source.measuredRevenue(),
+            source.contractValue()
         );
 
         double materialOverconsumptionPct =
@@ -57,9 +57,9 @@ public final class PdorContextBuilder {
         return new PdorEngine.PdorContext(
             source.obraId(),
             source.referenceDate(),
-            source.approvedBudget(),
-            source.actualCost(),
-            source.committedCost(),
+            source.contractValue(),
+            source.measuredRevenue(),
+            source.validatedRevenue(),
             clamp01(plannedProgress),
             clamp01(physicalProgress),
             clamp01(financialProgress),
@@ -199,18 +199,18 @@ public final class PdorContextBuilder {
         }
 
         requirePositive(
-            source.approvedBudget(),
-            "approvedBudget"
+            source.contractValue(),
+            "contractValue"
         );
 
         requireNonNegative(
-            source.actualCost(),
-            "actualCost"
+            source.measuredRevenue(),
+            "measuredRevenue"
         );
 
         requireNonNegative(
-            source.committedCost(),
-            "committedCost"
+            source.validatedRevenue(),
+            "validatedRevenue"
         );
 
         requireNonNegative(
@@ -385,9 +385,9 @@ public final class PdorContextBuilder {
         String obraId,
         LocalDate referenceDate,
 
-        BigDecimal approvedBudget,
-        BigDecimal actualCost,
-        BigDecimal committedCost,
+        BigDecimal contractValue,
+        BigDecimal measuredRevenue,
+        BigDecimal validatedRevenue,
 
         double totalPlannedQuantity,
         double plannedExecutedQuantity,

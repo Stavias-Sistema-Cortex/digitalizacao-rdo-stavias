@@ -128,16 +128,16 @@ class PdorCw38386MysqlIntegrationTest {
                 .andExpect(jsonPath("$.snapshotExistente").value(false))
                 .andExpect(jsonPath("$.inputs.programacaoRows").value(172))
                 .andExpect(jsonPath("$.inputs.rdoRows").value(0))
-                .andExpect(jsonPath("$.inputs.approvedBudget").isEmpty())
-                .andExpect(jsonPath("$.inputs.actualCost").isEmpty())
-                .andExpect(jsonPath("$.inputs.committedCost").isEmpty())
+                .andExpect(jsonPath("$.inputs.contractValue").isEmpty())
+                .andExpect(jsonPath("$.inputs.measuredRevenue").isEmpty())
+                .andExpect(jsonPath("$.inputs.validatedRevenue").isEmpty())
                 .andExpect(jsonPath("$.inputs.actualExecutedQuantity").isEmpty())
                 .andExpect(jsonPath("$.p10").isEmpty())
                 .andExpect(jsonPath("$.p50").isEmpty())
                 .andExpect(jsonPath("$.p80").isEmpty())
                 .andExpect(jsonPath("$.p95").isEmpty())
-                .andExpect(jsonPath("$.eacs.cpi").isEmpty())
-                .andExpect(jsonPath("$.eacs.cpiSpi").isEmpty())
+                .andExpect(jsonPath("$.eacs.rci").isEmpty())
+                .andExpect(jsonPath("$.eacs.rciSpi").isEmpty())
                 .andExpect(jsonPath("$.eacs.bottomUp").isEmpty())
                 .andExpect(jsonPath("$.eacs.ponderado").isEmpty())
                 .andExpect(jsonPath("$.probabilidadeAbaixoContrato").isEmpty())
@@ -157,11 +157,11 @@ class PdorCw38386MysqlIntegrationTest {
                 .isEqualByComparingTo("152481.093");
         assertThat(inputs.get("plannedExecutedQuantity").decimalValue())
                 .isEqualByComparingTo("152481.093");
-        assertThat(firstJson.at("/origemDados/approvedBudget/availability").asText())
+        assertThat(firstJson.at("/origemDados/contractValue/availability").asText())
                 .isEqualTo("ABSENT");
-        assertThat(firstJson.at("/origemDados/actualCost/availability").asText())
+        assertThat(firstJson.at("/origemDados/measuredRevenue/availability").asText())
                 .isEqualTo("ABSENT");
-        assertThat(firstJson.at("/origemDados/committedCost/availability").asText())
+        assertThat(firstJson.at("/origemDados/validatedRevenue/availability").asText())
                 .isEqualTo("ABSENT");
         assertThat(firstJson.get("warnings").toString())
                 .contains("Orçamento total aprovado ausente")

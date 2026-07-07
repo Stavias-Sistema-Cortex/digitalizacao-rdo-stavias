@@ -111,11 +111,11 @@ class PdorApplicationServiceTest {
         assertThat(response.probabilidadeAbaixo95Pct()).isNull();
         assertThat(response.probabilidadeAbaixo90Pct()).isNull();
         assertThat(response.racs()).allSatisfy((name, value) -> assertThat(value).isNull());
-        assertThat(response.inputs().get("approvedBudget").isNull()).isTrue();
-        assertThat(response.inputs().get("actualCost").isNull()).isTrue();
-        assertThat(response.inputs().get("committedCost").isNull()).isTrue();
+        assertThat(response.inputs().get("contractValue").isNull()).isTrue();
+        assertThat(response.inputs().get("measuredRevenue").isNull()).isTrue();
+        assertThat(response.inputs().get("validatedRevenue").isNull()).isTrue();
         assertThat(response.warnings().toString()).contains("Orçamento total aprovado ausente");
-        assertThat(response.origemDados().get("approvedBudget").get("availability").asText())
+        assertThat(response.origemDados().get("contractValue").get("availability").asText())
                 .isEqualTo("ABSENT");
     }
 
@@ -145,13 +145,13 @@ class PdorApplicationServiceTest {
         assertThat(snapshotRepository.findById(first.id())
                 .orElseThrow()
                 .inputs()
-                .get("actualCost")
+                .get("measuredRevenue")
                 .decimalValue())
                 .isEqualByComparingTo(new BigDecimal("350000.00"));
         assertThat(snapshotRepository.findById(second.id())
                 .orElseThrow()
                 .inputs()
-                .get("actualCost")
+                .get("measuredRevenue")
                 .decimalValue())
                 .isEqualByComparingTo(new BigDecimal("390000.00"));
     }
@@ -250,19 +250,19 @@ class PdorApplicationServiceTest {
     void shouldUseCanonicalIdempotencyPayload() {
         PdorInputBundle first = bundleWithInputOrder(
                 obra,
-                List.of("actualCost", "approvedBudget"),
+                List.of("measuredRevenue", "contractValue"),
                 "350000.00",
                 "1000000.0"
         );
         PdorInputBundle second = bundleWithInputOrder(
                 obra,
-                List.of("approvedBudget", "actualCost"),
+                List.of("contractValue", "measuredRevenue"),
                 "350000.0",
                 "1000000.00"
         );
         PdorInputBundle changed = bundleWithInputOrder(
                 obra,
-                List.of("approvedBudget", "actualCost"),
+                List.of("contractValue", "measuredRevenue"),
                 "360000.00",
                 "1000000.00"
         );
@@ -309,15 +309,15 @@ class PdorApplicationServiceTest {
                 .isEqualTo(PdorHistoricoResponse.class);
     }
 
-    private static PdorInputBundle validBundle(Obra obra, String actualCost) {
+    private static PdorInputBundle validBundle(Obra obra, String measuredRevenue) {
         LocalDate referenceDate = LocalDate.of(2026, 6, 8);
         Map<String, Object> inputs = new LinkedHashMap<>();
         Map<String, PdorInputOrigin> origins = new LinkedHashMap<>();
         List<String> missing = new ArrayList<>();
 
-        put(inputs, origins, missing, "approvedBudget", new BigDecimal("1000000.00"), true);
-        put(inputs, origins, missing, "actualCost", new BigDecimal(actualCost), true);
-        put(inputs, origins, missing, "committedCost", new BigDecimal("420000.00"), true);
+        put(inputs, origins, missing, "contractValue", new BigDecimal("1000000.00"), true);
+        put(inputs, origins, missing, "measuredRevenue", new BigDecimal(measuredRevenue), true);
+        put(inputs, origins, missing, "validatedRevenue", new BigDecimal("420000.00"), true);
         put(inputs, origins, missing, "totalPlannedQuantity", new BigDecimal("1000.000"), true);
         put(inputs, origins, missing, "plannedExecutedQuantity", new BigDecimal("500.000"), true);
         put(inputs, origins, missing, "actualExecutedQuantity", new BigDecimal("460.000"), true);
@@ -348,7 +348,7 @@ class PdorApplicationServiceTest {
                 missing,
                 new PdorInputBundle.SourceValues(
                         new BigDecimal("1000000.00"),
-                        new BigDecimal(actualCost),
+                        new BigDecimal(measuredRevenue),
                         new BigDecimal("420000.00"),
                         1000.0,
                         500.0,
@@ -385,9 +385,9 @@ class PdorApplicationServiceTest {
         Map<String, PdorInputOrigin> origins = new LinkedHashMap<>(valid.origins());
         List<String> missing = new ArrayList<>();
 
-        putAbsent(inputs, origins, missing, "approvedBudget", true);
-        putAbsent(inputs, origins, missing, "actualCost", true);
-        putAbsent(inputs, origins, missing, "committedCost", true);
+        putAbsent(inputs, origins, missing, "contractValue", true);
+        putAbsent(inputs, origins, missing, "measuredRevenue", true);
+        putAbsent(inputs, origins, missing, "validatedRevenue", true);
 
         return new PdorInputBundle(
                 obra.getId(),
@@ -437,17 +437,17 @@ class PdorApplicationServiceTest {
     private static PdorInputBundle bundleWithInputOrder(
             Obra obra,
             List<String> fieldOrder,
-            String actualCost,
-            String approvedBudget
+            String measuredRevenue,
+            String contractValue
     ) {
-        PdorInputBundle valid = validBundle(obra, actualCost);
+        PdorInputBundle valid = validBundle(obra, measuredRevenue);
         Map<String, Object> inputs = new LinkedHashMap<>();
         fieldOrder.forEach(field -> {
-            if ("actualCost".equals(field)) {
-                inputs.put(field, new BigDecimal(actualCost));
+            if ("measuredRevenue".equals(field)) {
+                inputs.put(field, new BigDecimal(measuredRevenue));
             }
-            if ("approvedBudget".equals(field)) {
-                inputs.put(field, new BigDecimal(approvedBudget));
+            if ("contractValue".equals(field)) {
+                inputs.put(field, new BigDecimal(contractValue));
             }
         });
         valid.inputs().forEach(inputs::putIfAbsent);
@@ -458,7 +458,7 @@ class PdorApplicationServiceTest {
                 inputs,
                 valid.origins(),
                 valid.warnings(),
-                List.of("committedCost", "actualCost", "approvedBudget"),
+                List.of("validatedRevenue", "measuredRevenue", "contractValue"),
                 valid.sourceValues()
         );
     }
@@ -629,19 +629,19 @@ class PdorApplicationServiceTest {
                     snapshot.calibrationStatus(),
                     snapshot.projectPhase(),
                     snapshot.riskLevel(),
-                    snapshot.costP10(),
-                    snapshot.costP50(),
-                    snapshot.costP80(),
-                    snapshot.costP95(),
+                    snapshot.revenueP10(),
+                    snapshot.revenueP50(),
+                    snapshot.revenueP80(),
+                    snapshot.revenueP95(),
                     snapshot.racRci(),
                     snapshot.racRciSpi(),
                     snapshot.racBottomUp(),
                     snapshot.racWeighted(),
                     snapshot.rci(),
                     snapshot.spi(),
-                    snapshot.probabilityAnyOverrun(),
-                    snapshot.probabilityOverFivePercent(),
-                    snapshot.probabilityOverTenPercent(),
+                    snapshot.probabilityBelowContract(),
+                    snapshot.probabilityBelow95Pct(),
+                    snapshot.probabilityBelow90Pct(),
                     snapshot.heuristicRiskScore(),
                     snapshot.confidence(),
                     snapshot.simulationConverged(),
