@@ -75,16 +75,28 @@ class StaviaIntentClassifierTest {
 
         assertThat(
                 classifier.classify(
-                        "Há risco de estouro do orçamento segundo o PDOR?"
+                        "Qual a previsao de receita segundo o PDOR?"
                 )
         ).isEqualTo(StaviaIntent.CONSULTAR_PDOR);
     }
 
     @Test
-    void shouldPrioritizePdorCostRiskOverGenericOccurrenceRisk() {
+    void shouldClassifyRevenueShortfallQuestionsAsPdor() {
         assertThat(
                 classifier.classify(
-                        "Qual é o risco de estouro de custos desta obra?"
+                        "Qual a chance de shortfall desta obra?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_PDOR);
+
+        assertThat(
+                classifier.classify(
+                        "Essa obra vai bater o contrato?"
+                )
+        ).isEqualTo(StaviaIntent.CONSULTAR_PDOR);
+
+        assertThat(
+                classifier.classify(
+                        "Qual a receita prevista da BR-262?"
                 )
         ).isEqualTo(StaviaIntent.CONSULTAR_PDOR);
     }

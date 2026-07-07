@@ -354,7 +354,7 @@ class DeterministicStaviaResponseGeneratorTest {
                 );
 
         assertTrue(response.text().contains("PDOR foi executado"));
-        assertTrue(response.text().contains("orçamento aprovado"));
+        assertTrue(response.text().contains("valor contratual"));
         assertTrue(response.text().contains("P50, P80, P95"));
     }
 

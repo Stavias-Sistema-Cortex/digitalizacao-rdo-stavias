@@ -229,7 +229,7 @@ public class DeterministicStaviaResponseGenerator
                     "Ocorrências identificadas";
 
             case CONSULTAR_PDOR ->
-                    "Análise preditiva de custos e riscos identificada";
+                    "Previsão de receita e risco de shortfall identificada";
 
             case CONSULTAR_RECEITA ->
                     "Receita operacional identificada";
@@ -2777,7 +2777,7 @@ public class DeterministicStaviaResponseGenerator
 
         answer.append("O PDOR foi executado para a obra ")
                 .append(code)
-                .append(", mas não conseguiu calcular o risco de estouro de custos porque ainda não há dados suficientes.");
+                .append(", mas não conseguiu calcular a previsão de receita final porque ainda não há dados suficientes.");
 
         appendPdorReference(answer, attributes);
 
@@ -2802,7 +2802,7 @@ public class DeterministicStaviaResponseGenerator
             }
         }
 
-        answer.append("\n\nPor isso, P50, P80, P95 e probabilidades de estouro não foram calculados.");
+        answer.append("\n\nPor isso, P50, P80, P95 e probabilidades de shortfall não foram calculados.");
 
         return answer.toString();
     }
@@ -2814,7 +2814,7 @@ public class DeterministicStaviaResponseGenerator
         StringBuilder answer =
                 new StringBuilder();
 
-        answer.append("O PDOR calculou o risco de estouro de custos da obra ")
+        answer.append("O PDOR calculou a previsão de receita final da obra ")
                 .append(code)
                 .append(".");
 
@@ -2845,14 +2845,21 @@ public class DeterministicStaviaResponseGenerator
         appendMetric(answer, "P95", moneyText(attributes.get("revenueP95")));
         appendMetric(
                 answer,
-                "Probabilidade de exceder 5%",
+                "Probabilidade de ficar abaixo do contrato",
+                percentText(
+                        attributes.get("probabilityBelowContract")
+                )
+        );
+        appendMetric(
+                answer,
+                "Probabilidade de ficar abaixo de 95% do contrato",
                 percentText(
                         attributes.get("probabilityBelow95Pct")
                 )
         );
         appendMetric(
                 answer,
-                "Probabilidade de exceder 10%",
+                "Probabilidade de ficar abaixo de 90% do contrato",
                 percentText(
                         attributes.get("probabilityBelow90Pct")
                 )
@@ -2919,11 +2926,11 @@ public class DeterministicStaviaResponseGenerator
     private String pdorMissingLabel(String field) {
         return switch (field) {
             case "contractValue" ->
-                    "orçamento aprovado";
+                    "valor contratual";
             case "measuredRevenue" ->
-                    "custo realizado";
+                    "receita medida";
             case "validatedRevenue" ->
-                    "custo comprometido";
+                    "receita validada";
             case "actualExecutedQuantity" ->
                     "produção real validada";
             case "totalPlannedQuantity" ->

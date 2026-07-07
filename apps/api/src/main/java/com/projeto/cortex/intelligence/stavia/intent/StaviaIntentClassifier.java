@@ -60,6 +60,20 @@ public class StaviaIntentClassifier {
                             "resultado operacional"
                     ),
                     rule(
+                            StaviaIntent.CONSULTAR_PDOR,
+                            "pdor",
+                            "previsao de receita",
+                            "predicao de receita",
+                            "receita prevista",
+                            "receita final",
+                            "captura de receita",
+                            "shortfall",
+                            "bater o contrato",
+                            "atingir o contrato",
+                            "vai bater a meta",
+                            "probabilidade de nao atingir"
+                    ),
+                    rule(
                             StaviaIntent.CONSULTAR_RECEITA,
                             "receita",
                             "receita operacional",
@@ -117,24 +131,6 @@ public class StaviaIntentClassifier {
                             "hora extra",
                             "saida antecipada",
                             "atraso"
-                    ),
-                    rule(
-                            StaviaIntent.CONSULTAR_PDOR,
-                            "pdor",
-                            "previsao de custo",
-                            "predicao de custo",
-                            "risco de estouro",
-                            "risco de custo",
-                            "risco de custos",
-                            "estouro de custo",
-                            "estouro de custos",
-                            "estourar custo",
-                            "estourar custos",
-                            "orcamento",
-                            "orcamentario",
-                            "custo final estimado",
-                            "probabilidade de ultrapassar",
-                            "probabilidade de exceder"
                     ),
                     rule(
                             StaviaIntent.CONSULTAR_PROGRAMACAO,
