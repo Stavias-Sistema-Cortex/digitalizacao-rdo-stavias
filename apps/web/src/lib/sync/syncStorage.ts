@@ -8,6 +8,11 @@ import type {
   ProcessedEventRecord,
   RdoAttachmentRecord,
 } from "../db/db.types";
+import {
+  mergeObraRecords,
+  obraRecordFromPayload,
+  snapshotRecordFromPayload,
+} from "../db/homeRecordMappers";
 import type {
   SyncPullEvent,
   SyncPushMutationResult,
@@ -738,7 +743,13 @@ export async function applyPulledEventsAtomically(
   const database = await getCortexDb();
 
   const transaction = database.transaction(
-    ["processed_events", "rdos", "sync_state"],
+    [
+      "processed_events",
+      "rdos",
+      "sync_state",
+      "obras",
+      "previsao_snapshots",
+    ],
     "readwrite",
   );
 
@@ -803,6 +814,38 @@ export async function applyPulledEventsAtomically(
         await rdoStore.put(
           applySafeRdoEvent(localRdo, event),
         );
+      }
+    }
+
+    if (event.entidadeTipo === "OBRA" && event.payload) {
+      const incoming = obraRecordFromPayload(
+        event.payload,
+        nowUtc(),
+      );
+
+      if (incoming) {
+        const obraStore = transaction.objectStore("obras");
+        const existing = await obraStore.get(incoming.id);
+        await obraStore.put(
+          mergeObraRecords(existing, incoming),
+        );
+      }
+    }
+
+    if (
+      event.entidadeTipo === "PREVISAO_FINANCEIRA" &&
+      event.tipoEvento === "PREVISAO_FINANCEIRA_CALCULADA" &&
+      event.payload
+    ) {
+      const snapshot = snapshotRecordFromPayload(
+        event.payload,
+        nowUtc(),
+      );
+
+      if (snapshot) {
+        await transaction
+          .objectStore("previsao_snapshots")
+          .put(snapshot);
       }
     }
 
