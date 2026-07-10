@@ -28,7 +28,7 @@ class PdorEventTriggerTest {
     void setUp() {
         service = mock(PdorApplicationService.class);
         scheduler = mock(ScheduledExecutorService.class);
-        trigger = new PdorEventTrigger(service, 5_000, scheduler);
+        trigger = new PdorEventTrigger(service, true, 5_000, scheduler);
     }
 
     @Test

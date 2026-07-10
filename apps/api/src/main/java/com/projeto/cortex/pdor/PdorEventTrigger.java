@@ -39,6 +39,7 @@ public class PdorEventTrigger {
     private static final String FONTE_PDOR = "PDOR";
 
     private final PdorApplicationService service;
+    private final boolean habilitado;
     private final long debounceMillis;
     private final ScheduledExecutorService scheduler;
     private final Map<String, String> obrasPendentes =
@@ -47,11 +48,14 @@ public class PdorEventTrigger {
     @Autowired
     public PdorEventTrigger(
             PdorApplicationService service,
+            @Value("${cortex.pdor.gatilho-evento.habilitado:true}")
+            boolean habilitado,
             @Value("${cortex.pdor.gatilho-debounce-segundos:5}")
             long debounceSegundos
     ) {
         this(
                 service,
+                habilitado,
                 debounceSegundos * 1_000L,
                 Executors.newSingleThreadScheduledExecutor(runnable -> {
                     Thread thread = new Thread(runnable, "pdor-event-trigger");
@@ -63,10 +67,12 @@ public class PdorEventTrigger {
 
     PdorEventTrigger(
             PdorApplicationService service,
+            boolean habilitado,
             long debounceMillis,
             ScheduledExecutorService scheduler
     ) {
         this.service = service;
+        this.habilitado = habilitado;
         this.debounceMillis = Math.max(0L, debounceMillis);
         this.scheduler = scheduler;
     }
@@ -76,7 +82,7 @@ public class PdorEventTrigger {
             fallbackExecution = true
     )
     public void aoRegistrarObservacao(CortexObservacaoRegistrada observacao) {
-        if (observacao == null || !deveDisparar(observacao)) {
+        if (!habilitado || observacao == null || !deveDisparar(observacao)) {
             return;
         }
 

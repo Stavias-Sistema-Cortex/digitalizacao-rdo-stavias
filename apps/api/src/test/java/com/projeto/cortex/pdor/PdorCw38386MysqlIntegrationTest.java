@@ -3,6 +3,7 @@ package com.projeto.cortex.pdor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
@@ -50,6 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = {
         "cortex.sync.enabled=false",
         "cortex.import.enabled=false",
+        "cortex.pdor.gatilho-evento.habilitado=false",
         "cortex.auth.jwt-secret=test-only-jwt-secret-0000000000000000",
         "spring.jpa.hibernate.ddl-auto=none",
         "debug=false",
@@ -59,6 +61,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @EnabledIfEnvironmentVariable(named = "CORTEX_MYSQL_ROOT_PASSWORD", matches = ".+")
 class PdorCw38386MysqlIntegrationTest {
+
+    private static final String ADMIN_USER_ID =
+            "00000000-0000-4000-8000-00000000ad01";
 
     private static PdorMysqlTestDatabase database;
 
@@ -91,11 +96,18 @@ class PdorCw38386MysqlIntegrationTest {
     @Autowired
     private RealPdorInputLoader inputLoader;
 
+    @Autowired
+    private JwtService jwtService;
+
+    private String adminAuthorization;
+
     @BeforeEach
     void setUp() {
         limparDadosDeSeed();
         obraSeedImportService.importarSeedPadrao();
         programacaoSeedImportService.importarSeedPadrao();
+        criarColaboradorAdmin();
+        adminAuthorization = "Bearer " + jwtService.gerarToken(ADMIN_USER_ID);
 
         assertThat(contarProgramacoesCw38386()).isEqualTo(172);
     }
@@ -121,6 +133,7 @@ class PdorCw38386MysqlIntegrationTest {
 
         MvcResult firstResult = mockMvc.perform(
                         post("/api/obras/{obraId}/pdor/calcular", "CW38386")
+                                .header("Authorization", adminAuthorization)
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statusExecucao").value("INSUFFICIENT_DATA"))
@@ -137,10 +150,10 @@ class PdorCw38386MysqlIntegrationTest {
                 .andExpect(jsonPath("$.p50").isEmpty())
                 .andExpect(jsonPath("$.p80").isEmpty())
                 .andExpect(jsonPath("$.p95").isEmpty())
-                .andExpect(jsonPath("$.eacs.rci").isEmpty())
-                .andExpect(jsonPath("$.eacs.rciSpi").isEmpty())
-                .andExpect(jsonPath("$.eacs.bottomUp").isEmpty())
-                .andExpect(jsonPath("$.eacs.ponderado").isEmpty())
+                .andExpect(jsonPath("$.racs.rci").isEmpty())
+                .andExpect(jsonPath("$.racs.rciSpi").isEmpty())
+                .andExpect(jsonPath("$.racs.bottomUp").isEmpty())
+                .andExpect(jsonPath("$.racs.ponderado").isEmpty())
                 .andExpect(jsonPath("$.probabilidadeAbaixoContrato").isEmpty())
                 .andExpect(jsonPath("$.probabilidadeAbaixo95Pct").isEmpty())
                 .andExpect(jsonPath("$.probabilidadeAbaixo90Pct").isEmpty())
@@ -165,23 +178,27 @@ class PdorCw38386MysqlIntegrationTest {
         assertThat(firstJson.at("/origemDados/validatedRevenue/availability").asText())
                 .isEqualTo("ABSENT");
         assertThat(firstJson.get("warnings").toString())
-                .contains("Orçamento total aprovado ausente")
-                .contains("Custo realizado ausente")
-                .contains("Custo comprometido ausente")
-                .contains("Nenhum RDO associado encontrado");
+                .contains("Valor contratual ausente")
+                .contains("Receita medida ausente")
+                .contains("Receita validada ausente")
+                .contains("Nenhum RDO associado encontrado")
+                .contains("Histórico semanal de produtividade insuficiente para calibração");
 
-        mockMvc.perform(get("/api/obras/{obraId}/pdor/atual", "CW38386"))
+        mockMvc.perform(get("/api/obras/{obraId}/pdor/atual", "CW38386")
+                        .header("Authorization", adminAuthorization))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(snapshotId))
                 .andExpect(jsonPath("$.statusExecucao").value("INSUFFICIENT_DATA"));
 
-        mockMvc.perform(get("/api/obras/{obraId}/pdor/historico", "CW38386"))
+        mockMvc.perform(get("/api/obras/{obraId}/pdor/historico", "CW38386")
+                        .header("Authorization", adminAuthorization))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value(snapshotId))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         MvcResult secondResult = mockMvc.perform(
                         post("/api/obras/{obraId}/pdor/calcular", "CW38386")
+                                .header("Authorization", adminAuthorization)
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(snapshotId))
@@ -299,6 +316,28 @@ class PdorCw38386MysqlIntegrationTest {
         jdbcTemplate.update("DELETE FROM pdor_snapshot");
         jdbcTemplate.update("DELETE FROM programacao_operacional");
         jdbcTemplate.update("DELETE FROM obra");
+        jdbcTemplate.update(
+                "DELETE FROM colaborador WHERE id = ?",
+                ADMIN_USER_ID
+        );
+    }
+
+    private void criarColaboradorAdmin() {
+        jdbcTemplate.update(
+                """
+                INSERT INTO colaborador (
+                    id,
+                    banco_origem,
+                    tabela_origem,
+                    pk_origem,
+                    nome,
+                    nome_perfil,
+                    ativo
+                ) VALUES (?, 'teste', 'teste', ?, 'Admin PDOR Teste', 'ADMINISTRADOR', 1)
+                """,
+                ADMIN_USER_ID,
+                ADMIN_USER_ID
+        );
     }
 
     private Obra localizarCw38386() {
