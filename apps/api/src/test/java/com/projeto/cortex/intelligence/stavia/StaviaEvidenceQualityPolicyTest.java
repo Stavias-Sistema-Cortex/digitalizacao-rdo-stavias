@@ -148,12 +148,12 @@ class StaviaEvidenceQualityPolicyTest {
     }
 
     @Test
-    void shouldDowngradeUncalibratedSimulatedPdorEvidence() {
+    void shouldDowngradeUncalibratedPdorEvidence() {
         StaviaEvidence pdorEvidence =
                 new StaviaEvidence(
                         "PDOR",
                         "PDOR:obra-1:2026-06-22",
-                        "Análise PDOR simulada.",
+                        "Análise PDOR não calibrada.",
                         NOW.minus(
                                 Duration.ofHours(1)
                         ),
@@ -162,7 +162,7 @@ class StaviaEvidenceQualityPolicyTest {
                                 "calibrationStatus",
                                 "NOT_CALIBRATED",
                                 "sourceMode",
-                                "LOCAL_SIMULATED"
+                                "OPERATIONAL"
                         )
                 );
 
@@ -181,15 +181,6 @@ class StaviaEvidenceQualityPolicyTest {
                         .contains(
                                 "O PDOR ainda não foi calibrado "
                                         + "com dados históricos reais."
-                        )
-        );
-
-        assertTrue(
-                assessment.warnings()
-                        .contains(
-                                "A análise utiliza um snapshot local "
-                                        + "simulado e não representa "
-                                        + "os custos reais da obra."
                         )
         );
     }

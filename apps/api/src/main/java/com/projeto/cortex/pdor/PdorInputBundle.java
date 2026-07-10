@@ -1,6 +1,7 @@
 package com.projeto.cortex.pdor;
 
 import com.projeto.cortex.intelligence.PdorContextBuilder;
+import com.projeto.cortex.intelligence.PdorEngine;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -17,13 +18,17 @@ public record PdorInputBundle(
         Map<String, PdorInputOrigin> origins,
         List<String> warnings,
         List<String> missingRequiredFields,
-        SourceValues sourceValues
+        SourceValues sourceValues,
+        PdorEngine.HistoricalSeries historicalSeries
 ) {
     public PdorInputBundle {
         inputs = Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
         origins = Collections.unmodifiableMap(new LinkedHashMap<>(origins));
         warnings = List.copyOf(warnings);
         missingRequiredFields = List.copyOf(missingRequiredFields);
+        historicalSeries = historicalSeries == null
+                ? PdorEngine.HistoricalSeries.EMPTY
+                : historicalSeries;
     }
 
     public boolean canCalculate() {

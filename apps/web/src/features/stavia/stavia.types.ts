@@ -316,6 +316,11 @@ export interface StaviaSnapshotPdor {
   statusExecucao: string | null;
   calibracao: string | null;
   risco: string | null;
+  receitaEstimadaFinal?: number | string | null;
+  p10Receita?: number | string | null;
+  p50Receita?: number | string | null;
+  p80Receita?: number | string | null;
+  p95Receita?: number | string | null;
   probabilidadeAbaixoContrato: number | string | null;
   probabilidadeAbaixo95Pct: number | string | null;
   probabilidadeAbaixo90Pct: number | string | null;

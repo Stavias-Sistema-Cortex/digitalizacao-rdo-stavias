@@ -336,7 +336,8 @@ class PdorControllerMockMvcTest {
                         true,
                         false,
                         10_000
-                )
+                ),
+                com.projeto.cortex.intelligence.PdorEngine.HistoricalSeries.EMPTY
         );
     }
 

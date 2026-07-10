@@ -477,7 +477,13 @@ describe("staviaLocalEngine", () => {
     };
     let checkedCells = 0;
 
-    for (const entity of ontology.entities) {
+    // O pdor (escopo "obra") é respondido pelo tópico dedicado do motor
+    // local, não pelo caminho genérico da ontologia coberto aqui.
+    const genericEntities = ontology.entities.filter(
+      (entity) => (entity.scope ?? "rdo") === "rdo",
+    );
+
+    for (const entity of genericEntities) {
       for (const attribute of entity.attributes) {
         checkedCells += 1;
         const pergunta = localCoverageQuestion(entity, attribute.label);

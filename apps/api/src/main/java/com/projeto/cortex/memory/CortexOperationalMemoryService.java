@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,10 +23,16 @@ public class CortexOperationalMemoryService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public CortexOperationalMemoryService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public CortexOperationalMemoryService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher eventPublisher
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -166,6 +173,15 @@ public class CortexOperationalMemoryService {
                 entidadeId,
                 sequencia
         );
+
+        eventPublisher.publishEvent(new CortexObservacaoRegistrada(
+                eventoId,
+                tipoEntidade,
+                entidadeId,
+                tipoEvento,
+                fonte,
+                nuloSeVazio(obraId)
+        ));
 
         return commitSeq;
     }

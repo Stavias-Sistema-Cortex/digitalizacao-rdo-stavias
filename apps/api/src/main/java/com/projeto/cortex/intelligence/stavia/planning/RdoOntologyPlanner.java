@@ -415,6 +415,9 @@ public class RdoOntologyPlanner {
         List<AttributeMatch> matches = new ArrayList<>();
 
         for (RdoOntologyEntity entity : ontology.entities()) {
+            if (!entity.rdoScoped()) {
+                continue;
+            }
             for (RdoOntologyAttribute attribute : entity.attributes()) {
                 List<String> aliases = new ArrayList<>();
                 aliases.add(attribute.label());
@@ -478,6 +481,9 @@ public class RdoOntologyPlanner {
         int bestLength = 0;
 
         for (RdoOntologyEntity entity : ontology.entities()) {
+            if (!entity.rdoScoped()) {
+                continue;
+            }
             for (String alias : entity.aliases()) {
                 String normalizedAlias = StaviaText.normalize(alias);
                 if (matchesAlias(normalized, alias)

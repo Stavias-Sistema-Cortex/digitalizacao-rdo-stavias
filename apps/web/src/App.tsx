@@ -15,6 +15,7 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { CortexShell } from "./components/shell/CortexShell";
 import { HomePage } from "./features/home/HomePage";
 import { IntegracoesPage } from "./features/integracoes/IntegracoesPage";
+import { ObrasPage } from "./features/obras/ObrasPage";
 import { RdoWorkspacePage } from "./features/rdos/RdoWorkspacePage";
 import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
 
@@ -73,6 +74,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/home" element={<HomePage />} />
+        <Route path="/obras" element={<ObrasPage />} />
         <Route path="/rdos" element={<RdoWorkspacePage />} />
         <Route
           path="/integracoes"

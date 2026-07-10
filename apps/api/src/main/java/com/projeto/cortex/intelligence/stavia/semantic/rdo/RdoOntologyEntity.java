@@ -12,6 +12,7 @@ public record RdoOntologyEntity(
         String snapshotCollection,
         String countAttribute,
         String filter,
+        String scope,
         List<String> aliases,
         List<RdoOntologyAttribute> attributes
 ) {
@@ -45,6 +46,16 @@ public record RdoOntologyEntity(
         attributes = attributes == null
                 ? List.of()
                 : List.copyOf(attributes);
+    }
+
+    /**
+     * Entidades com escopo "rdo" (padrão) participam do motor genérico de
+     * registros, que faz join por rdo_id. Entidades com outro escopo (ex.:
+     * "obra", como o pdor) ficam de fora desse caminho e são atendidas por
+     * fontes de conhecimento dedicadas.
+     */
+    public boolean rdoScoped() {
+        return scope == null || "rdo".equalsIgnoreCase(scope);
     }
 
     public Optional<RdoOntologyAttribute> attributeByName(String value) {

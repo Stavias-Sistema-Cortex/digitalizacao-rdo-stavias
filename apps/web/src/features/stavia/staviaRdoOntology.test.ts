@@ -931,7 +931,13 @@ describe("staviaRdoOntology", () => {
       }
     }
 
-    for (const entity of ontology.entities) {
+    // Entidades fora do escopo "rdo" (ex.: pdor) são atendidas pelos
+    // caminhos dedicados do motor, não pelo caminho genérico da ontologia.
+    const genericEntities = ontology.entities.filter(
+      (entity) => (entity.scope ?? "rdo") === "rdo",
+    );
+
+    for (const entity of genericEntities) {
       for (const attribute of entity.attributes) {
         const pergunta = questionFor(entity.name, attribute.label);
 

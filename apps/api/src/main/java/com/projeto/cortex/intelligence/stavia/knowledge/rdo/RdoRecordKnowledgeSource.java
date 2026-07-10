@@ -71,6 +71,9 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
         Set<String> attributes = new LinkedHashSet<>();
 
         for (RdoOntologyEntity entity : ontology.entities()) {
+            if (!entity.rdoScoped()) {
+                continue;
+            }
             for (RdoOntologyAttribute attribute : entity.attributes()) {
                 attributes.add(
                         entity.name() + "." + attribute.name()
@@ -581,6 +584,9 @@ public class RdoRecordKnowledgeSource implements StaviaKnowledgeSource {
                 qualified.substring(qualified.indexOf('.') + 1);
 
         return ontology.entityByName(entityName)
+                // Entidades fora do escopo "rdo" (ex.: pdor, chaveada por
+                // obra) não passam pelo SQL genérico com join em rdo_id.
+                .filter(RdoOntologyEntity::rdoScoped)
                 .flatMap(entity ->
                         entity.attributeByName(attributeName)
                                 .map(attribute ->

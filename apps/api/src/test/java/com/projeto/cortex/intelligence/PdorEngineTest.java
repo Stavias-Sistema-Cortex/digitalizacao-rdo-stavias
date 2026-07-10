@@ -151,6 +151,108 @@ class PdorEngineTest {
         assertTrue(initial.evm().weights().bottomUpWeight() > advanced.evm().weights().bottomUpWeight());
     }
 
+    @Test
+    void shouldCalibrateAssumptionsFromHistoricalSeries() {
+        PdorEngine.HistoricalSeries history = new PdorEngine.HistoricalSeries(
+            java.util.List.of(0.05, 0.10, 0.12, 0.08, 0.15, 0.09),
+            java.util.List.of(0.02, 0.04, 0.03, 0.06, 0.05)
+        );
+
+        PdorEngine.PdorResult result = engine.calculate(healthyContext(), history);
+
+        assertEquals(
+            PdorEngine.AssumptionSource.STAVIAS_HISTORY,
+            result.assumptions().productivity().source()
+        );
+        assertEquals(
+            PdorEngine.AssumptionSource.STAVIAS_HISTORY,
+            result.assumptions().material().source()
+        );
+        assertEquals(
+            PdorEngine.AssumptionSource.DEFAULT_PROTOTYPE,
+            result.assumptions().equipment().source()
+        );
+        assertEquals(
+            PdorEngine.CalibrationStatus.CALIBRATION_IN_PROGRESS,
+            result.calibrationStatus()
+        );
+
+        PdorEngine.DistributionRange productivity =
+            result.assumptions().productivity();
+        assertTrue(productivity.minimum() <= productivity.mostLikely());
+        assertTrue(productivity.mostLikely() < productivity.maximum());
+        // Moda calibrada = 1 + mediana das perdas semanais observadas.
+        assertTrue(productivity.mostLikely() > 1.05);
+        assertTrue(productivity.mostLikely() < 1.15);
+    }
+
+    @Test
+    void shortHistoryMustKeepPrototypeAssumptions() {
+        PdorEngine.HistoricalSeries history = new PdorEngine.HistoricalSeries(
+            java.util.List.of(0.05, 0.10),
+            java.util.List.of(0.02)
+        );
+
+        PdorEngine.PdorResult result = engine.calculate(healthyContext(), history);
+
+        assertEquals(
+            PdorEngine.AssumptionSource.DEFAULT_PROTOTYPE,
+            result.assumptions().productivity().source()
+        );
+        assertEquals(
+            PdorEngine.AssumptionSource.DEFAULT_PROTOTYPE,
+            result.assumptions().material().source()
+        );
+        assertEquals(
+            PdorEngine.CalibrationStatus.NOT_CALIBRATED,
+            result.calibrationStatus()
+        );
+    }
+
+    @Test
+    void newObservationsMustShiftCalibratedAssumptions() {
+        PdorEngine.HistoricalSeries stableHistory = new PdorEngine.HistoricalSeries(
+            java.util.List.of(0.02, 0.03, 0.02, 0.03, 0.02, 0.03),
+            java.util.List.of()
+        );
+        PdorEngine.HistoricalSeries degradedHistory = new PdorEngine.HistoricalSeries(
+            java.util.List.of(0.02, 0.03, 0.02, 0.03, 0.30, 0.35, 0.40, 0.38),
+            java.util.List.of()
+        );
+
+        PdorEngine.PdorResult stable =
+            engine.calculate(healthyContext(), stableHistory);
+        PdorEngine.PdorResult degraded =
+            engine.calculate(healthyContext(), degradedHistory);
+
+        assertTrue(
+            degraded.assumptions().productivity().mostLikely()
+                > stable.assumptions().productivity().mostLikely()
+        );
+        assertTrue(
+            degraded.revenueP50().compareTo(stable.revenueP50()) < 0
+        );
+    }
+
+    @Test
+    void historicalCalibrationMustNotBreakDeterminism() {
+        PdorEngine.HistoricalSeries history = new PdorEngine.HistoricalSeries(
+            java.util.List.of(0.05, 0.10, 0.12, 0.08, 0.15),
+            java.util.List.of(0.02, 0.04, 0.03, 0.06, 0.05)
+        );
+
+        PdorEngine.PdorResult first =
+            engine.calculate(problematicContext(), history);
+        PdorEngine.PdorResult second =
+            engine.calculate(problematicContext(), history);
+
+        assertEquals(first.revenueP50(), second.revenueP50());
+        assertEquals(
+            first.simulationProbabilityBelow95Pct(),
+            second.simulationProbabilityBelow95Pct()
+        );
+    }
+
     private PdorEngine.PdorContext healthyContext() {
         // Obra saudável: medição acompanha a produção (RCI > 1).
         return new PdorEngine.PdorContext(

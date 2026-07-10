@@ -35,6 +35,7 @@ export interface RdoOntologyEntityJson {
   snapshotCollection: string | null;
   countAttribute: string | null;
   filter: string | null;
+  scope?: string | null;
   aliases: string[];
   attributes: RdoOntologyAttributeJson[];
 }
@@ -181,13 +182,27 @@ export function loadRdoOntology(snapshot: StaviaSnapshot): RdoOntologyJson {
   return rdoOntologyFallback as RdoOntologyJson;
 }
 
+/**
+ * Entidades com escopo "rdo" (padrão) participam do caminho genérico da
+ * ontologia. Entidades com outro escopo (ex.: pdor, chaveada por obra) são
+ * atendidas pelos caminhos dedicados, espelhando o comportamento do backend.
+ */
+function rdoScopedEntities(
+  ontology: RdoOntologyJson,
+): RdoOntologyEntityJson[] {
+  return ontology.entities.filter(
+    (entity) => (entity.scope ?? "rdo") === "rdo",
+  );
+}
+
 export function matchesOntologyAttribute(
   ontology: RdoOntologyJson,
   pergunta: string,
 ): boolean {
   const normalized = normalize(pergunta);
+  const entities = rdoScopedEntities(ontology);
 
-  const attributeMatch = ontology.entities.some((entity) =>
+  const attributeMatch = entities.some((entity) =>
     entity.attributes.some((attribute) =>
       attributeAliases(attribute).some((alias) =>
         matchesAlias(normalized, alias),
@@ -203,7 +218,7 @@ export function matchesOntologyAttribute(
     return false;
   }
 
-  return ontology.entities.some((entity) =>
+  return entities.some((entity) =>
     entity.aliases.some((alias) => matchesAlias(normalized, alias)),
   );
 }
@@ -685,7 +700,7 @@ function attributeMatches(
 ): AttributeMatch[] {
   const matches: AttributeMatch[] = [];
 
-  for (const entity of ontology.entities) {
+  for (const entity of rdoScopedEntities(ontology)) {
     for (const attribute of entity.attributes) {
       for (const alias of attributeAliases(attribute)) {
         if (matchesAlias(normalized, alias)) {
@@ -743,7 +758,7 @@ function entityByAlias(
   let byAlias: RdoOntologyEntityJson | null = null;
   let bestLength = 0;
 
-  for (const entity of ontology.entities) {
+  for (const entity of rdoScopedEntities(ontology)) {
     for (const alias of entity.aliases) {
       const normalizedAlias = normalize(alias);
 

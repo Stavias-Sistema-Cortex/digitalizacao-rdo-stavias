@@ -270,7 +270,7 @@ class RdoOntologyPlannerTest {
     @Test
     void shouldRecognizeOfficialLabelsForEveryRdoBlockCell() {
         for (RdoOntologyEntity entity : ontology.entities()) {
-            if (entity.header()) {
+            if (entity.header() || !entity.rdoScoped()) {
                 continue;
             }
 

@@ -36,8 +36,17 @@ class StaviaSnapshotOntologyContractTest {
                     "attachment",
                     StaviaSnapshotResponse.AttachmentSnapshot.class,
                     "operationalEvent",
-                    StaviaSnapshotResponse.OperationalEventSnapshot.class
+                    StaviaSnapshotResponse.OperationalEventSnapshot.class,
+                    "pdor",
+                    StaviaSnapshotResponse.PdorSnapshot.class
             );
+
+    /**
+     * Coleções que vivem no envelope raiz do snapshot (por obra), e não
+     * dentro de cada RDO.
+     */
+    private static final Set<String> TOP_LEVEL_COLLECTIONS =
+            Set.of("operationalEvents", "pdors");
 
     @Test
     void shouldExposeEveryOntologyAttributeInBackendSnapshotContract() {
@@ -76,7 +85,7 @@ class StaviaSnapshotOntologyContractTest {
             }
 
             Class<?> ownerType =
-                    "operationalEvents".equals(collection)
+                    TOP_LEVEL_COLLECTIONS.contains(collection)
                             ? StaviaSnapshotResponse.class
                             : StaviaSnapshotResponse.RdoSnapshot.class;
 

@@ -8,31 +8,40 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.SplittableRandom;
 
 /**
- * PDOR v0.2 — Probabilidade de Desvio Ontológico de Custo.
+ * PDOR v0.4 — Previsão de Desvio Ontológico de Receita.
  *
- * Melhorias em relação à v0.1:
- * - distingue score heurístico de probabilidade calibrada;
- * - usa múltiplos estimadores EAC;
- * - pondera os estimadores conforme a fase da obra;
- * - registra status de calibração;
- * - executa Monte Carlo em lotes e testa convergência;
- * - introduz dependências causais simples entre paralisação,
- *   produtividade, prazo e custos indiretos;
- * - mantém seed determinística para auditabilidade;
- * - expõe premissas e versão do conjunto de premissas.
+ * Melhorias em relação à v0.3:
+ * - calibra as distribuições de produtividade e material com as séries
+ *   históricas semanais reais da obra (AssumptionSource.STAVIAS_HISTORY),
+ *   com fallback para premissas de protótipo quando o histórico é curto;
+ * - deriva o status de calibração da participação de protótipo nas
+ *   premissas em vez de fixá-lo em NOT_CALIBRATED.
+ *
+ * Mantém da v0.3: múltiplos estimadores de receita final ponderados por
+ * fase, Monte Carlo em lotes com teste de convergência, dependências
+ * causais simples entre paralisação, produtividade, prazo e receita
+ * indireta, e seed determinística para auditabilidade.
  *
  * Esta versão continua isolada de banco, Spring e frontend.
  */
 public final class PdorEngine {
 
-    public static final String MODEL_VERSION = "PDOR-0.3.0";
-    public static final String ASSUMPTIONS_VERSION = "PDOR-ASSUMPTIONS-0.3.0";
+    public static final String MODEL_VERSION = "PDOR-0.4.0";
+    public static final String ASSUMPTIONS_VERSION = "PDOR-ASSUMPTIONS-0.4.0";
 
     private static final double CONTRACT_95_PCT = 0.95;
     private static final double CONTRACT_90_PCT = 0.90;
+
+    /**
+     * Observações semanais mínimas para calibrar uma distribuição com o
+     * histórico real da obra em vez das premissas de protótipo.
+     */
+    private static final int MINIMUM_HISTORY_OBSERVATIONS = 4;
+    private static final double MINIMUM_HISTORY_SPREAD = 0.02;
 
     private static final int DEFAULT_SIMULATION_ITERATIONS = 20_000;
     private static final int MINIMUM_SIMULATION_ITERATIONS = 2_000;
@@ -44,7 +53,19 @@ public final class PdorEngine {
     private static final double PROBABILITY_CONVERGENCE_TOLERANCE = 0.0050;
 
     public PdorResult calculate(PdorContext context) {
+        return calculate(context, HistoricalSeries.EMPTY);
+    }
+
+    /**
+     * Calcula o PDOR calibrando as distribuições de produtividade e material
+     * com as séries históricas semanais observadas nos RDOs da obra, quando
+     * houver observações suficientes. Sem histórico, mantém as premissas de
+     * protótipo e o status NOT_CALIBRATED.
+     */
+    public PdorResult calculate(PdorContext context, HistoricalSeries history) {
         Objects.requireNonNull(context, "context não pode ser nulo");
+        HistoricalSeries normalizedHistory =
+            history == null ? HistoricalSeries.EMPTY : history;
         validateContext(context);
 
         ProjectPhase phase = determineProjectPhase(context.physicalProgress());
@@ -52,7 +73,8 @@ public final class PdorEngine {
         RiskComponents components = calculateRiskComponents(context, evm);
         double heuristicRiskScore = calculateHeuristicRiskScore(components, phase);
 
-        PdorAssumptions assumptions = assumptionsFor(context, phase);
+        PdorAssumptions assumptions =
+            assumptionsFor(context, phase, normalizedHistory);
         MonteCarloResult monteCarlo = runMonteCarlo(
             context,
             evm,
@@ -83,7 +105,7 @@ public final class PdorEngine {
             MODEL_VERSION,
             ASSUMPTIONS_VERSION,
             CalculationMode.ISOLATED_ENGINE,
-            CalibrationStatus.NOT_CALIBRATED,
+            calibrationStatusFor(assumptions),
             phase,
             roundProbability(monteCarlo.probabilityBelowContract()),
             roundProbability(monteCarlo.probabilityBelow95Pct()),
@@ -269,7 +291,11 @@ public final class PdorEngine {
         return clamp01(weightedScore * phaseMultiplier);
     }
 
-    private PdorAssumptions assumptionsFor(PdorContext context, ProjectPhase phase) {
+    private PdorAssumptions assumptionsFor(
+        PdorContext context,
+        ProjectPhase phase,
+        HistoricalSeries history
+    ) {
         double downtime = downtimeRate(context);
         double phaseUncertainty = switch (phase) {
             case INITIAL -> 1.20;
@@ -278,20 +304,30 @@ public final class PdorEngine {
             case CLOSING -> 0.70;
         };
 
+        DistributionRange productivity = historicalRange(
+            history.productivityLossWeekly(),
+            phaseUncertainty
+        ).orElseGet(() -> new DistributionRange(
+            0.98,
+            1.0 + context.productivityLossPct(),
+            1.0 + Math.max(0.05, context.productivityLossPct() * 1.60 * phaseUncertainty),
+            AssumptionSource.DEFAULT_PROTOTYPE
+        ));
+
+        DistributionRange material = historicalRange(
+            history.materialOverconsumptionWeekly(),
+            phaseUncertainty
+        ).orElseGet(() -> new DistributionRange(
+            0.99,
+            1.0 + context.materialOverconsumptionPct() * 0.80,
+            1.0 + Math.max(0.04, context.materialOverconsumptionPct() * 1.45),
+            AssumptionSource.DEFAULT_PROTOTYPE
+        ));
+
         return new PdorAssumptions(
             ASSUMPTIONS_VERSION,
-            new DistributionRange(
-                0.98,
-                1.0 + context.productivityLossPct(),
-                1.0 + Math.max(0.05, context.productivityLossPct() * 1.60 * phaseUncertainty),
-                AssumptionSource.DEFAULT_PROTOTYPE
-            ),
-            new DistributionRange(
-                0.99,
-                1.0 + context.materialOverconsumptionPct() * 0.80,
-                1.0 + Math.max(0.04, context.materialOverconsumptionPct() * 1.45),
-                AssumptionSource.DEFAULT_PROTOTYPE
-            ),
+            productivity,
+            material,
             new DistributionRange(
                 0.99,
                 1.0 + downtime * 0.35,
@@ -303,6 +339,52 @@ public final class PdorEngine {
             0.30,
             phaseUncertainty
         );
+    }
+
+    /**
+     * Constrói uma distribuição triangular a partir das observações semanais
+     * reais (p10/p50/p90). O espalhamento acima da moda é modulado pela
+     * incerteza da fase da obra e nunca fica abaixo de um piso mínimo.
+     */
+    private Optional<DistributionRange> historicalRange(
+        List<Double> weeklyObservations,
+        double phaseUncertainty
+    ) {
+        if (weeklyObservations.size() < MINIMUM_HISTORY_OBSERVATIONS) {
+            return Optional.empty();
+        }
+
+        double[] sorted = weeklyObservations.stream()
+            .mapToDouble(Double::doubleValue)
+            .sorted()
+            .toArray();
+
+        double p10 = percentile(sorted, 0.10);
+        double p50 = percentile(sorted, 0.50);
+        double p90 = percentile(sorted, 0.90);
+
+        double mostLikely = 1.0 + p50;
+        double spread = Math.max(p90 - p50, MINIMUM_HISTORY_SPREAD);
+        double maximum = mostLikely + spread * phaseUncertainty;
+        double minimum = Math.min(1.0 + p10, mostLikely);
+
+        return Optional.of(new DistributionRange(
+            minimum,
+            mostLikely,
+            maximum,
+            AssumptionSource.STAVIAS_HISTORY
+        ));
+    }
+
+    private CalibrationStatus calibrationStatusFor(PdorAssumptions assumptions) {
+        double prototypeShare = assumptions.prototypeShare();
+        if (prototypeShare >= 1.0) {
+            return CalibrationStatus.NOT_CALIBRATED;
+        }
+        if (prototypeShare <= 0.0) {
+            return CalibrationStatus.CALIBRATED;
+        }
+        return CalibrationStatus.CALIBRATION_IN_PROGRESS;
     }
 
     private MonteCarloResult runMonteCarlo(
@@ -734,6 +816,36 @@ public final class PdorEngine {
         double baselineReliability,
         int simulationIterations
     ) {}
+
+    /**
+     * Séries históricas semanais observadas nos RDOs e na programação da
+     * obra. Valores são frações (0.10 = 10% de perda/excesso). Cada nova
+     * observação registrada na ontologia alonga a série e desloca a
+     * distribuição calibrada no próximo cálculo.
+     */
+    public record HistoricalSeries(
+        List<Double> productivityLossWeekly,
+        List<Double> materialOverconsumptionWeekly
+    ) {
+        public static final HistoricalSeries EMPTY =
+            new HistoricalSeries(List.of(), List.of());
+
+        public HistoricalSeries {
+            productivityLossWeekly = sanitize(productivityLossWeekly);
+            materialOverconsumptionWeekly = sanitize(materialOverconsumptionWeekly);
+        }
+
+        private static List<Double> sanitize(List<Double> values) {
+            if (values == null) {
+                return List.of();
+            }
+            return values.stream()
+                .filter(Objects::nonNull)
+                .filter(value -> !value.isNaN() && !value.isInfinite())
+                .map(value -> Math.max(0.0, Math.min(10.0, value)))
+                .toList();
+        }
+    }
 
     public record PdorResult(
         String obraId,

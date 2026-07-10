@@ -8,6 +8,7 @@ import type {
   RdoDraft,
   ServicoExecutadoDraft,
 } from "../../features/rdos/rdo.types";
+import { localRecordToDraft } from "../../features/rdos/localRecordToDraft";
 import { getCortexDb } from "./cortexDb";
 import type {
   LocalRdoChildRecord,
@@ -61,6 +62,12 @@ function removeLocalId<T extends { localId: string }>(
   void localId;
 
   return payload;
+}
+
+export function rdoDraftFromLocalRecord(
+  rdo: LocalRdoRecord,
+): RdoDraft {
+  return localRecordToDraft(rdo);
 }
 
 function nullIfEmpty(value: string): string | null {
@@ -375,6 +382,16 @@ function buildRdoSyncPayload(
       schemaVersion: event.schemaVersion,
     })),
   };
+}
+
+export function buildRdoSyncPayloadFromLocalRecord(
+  rdo: LocalRdoRecord,
+  operationalEvents: OperationalEventRecord[] = [],
+): Record<string, unknown> {
+  return buildRdoSyncPayload(
+    rdoDraftFromLocalRecord(rdo),
+    operationalEvents,
+  );
 }
 
 function buildRdoLocalPayload(
@@ -1149,14 +1166,7 @@ export async function repairRdoCreateMutationsForSync(): Promise<number> {
       continue;
     }
 
-    const draft = {
-      ...(rdo.payload as Partial<RdoDraft>),
-      id: rdo.id,
-      obraId: rdo.obraId,
-      programacaoId: rdo.programacaoId ?? "",
-      numeroRdo: rdo.numeroRdo,
-      dataRdo: rdo.dataRdo,
-    } as RdoDraft;
+    const draft = rdoDraftFromLocalRecord(rdo);
 
     const repairedMutation: OutboxMutationRecord = {
       ...mutation,

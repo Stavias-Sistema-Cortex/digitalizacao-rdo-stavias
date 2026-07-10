@@ -1,6 +1,10 @@
 package com.projeto.cortex.obras;
 
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
+
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 final class ObraSyncEvento {
@@ -32,5 +36,65 @@ final class ObraSyncEvento {
                         : obra.getAtualizadoEm().toString()
         );
         return payload;
+    }
+
+    static void registrarAtualizacao(
+            CortexOperationalMemoryService memoryService,
+            Obra obra
+    ) {
+        memoryService.registrarObjeto(
+                TIPO_ENTIDADE,
+                obra.getId(),
+                obra.getCodigoContrato(),
+                obra.getNome(),
+                obra.getStatus(),
+                "OBRAS"
+        );
+        memoryService.registrarEvidencias(
+                TIPO_ENTIDADE,
+                obra.getId(),
+                "OBRAS",
+                camposEvidencia(obra)
+        );
+        memoryService.registrarEventoDetalhado(
+                null,
+                TIPO_ENTIDADE,
+                obra.getId(),
+                TIPO_EVENTO,
+                "OBRAS",
+                obra.getId(),
+                null,
+                null,
+                List.of(),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(),
+                1,
+                payload(obra)
+        );
+    }
+
+    /**
+     * Fatos de campo da obra para a cortex_evidencia_operacional, dando à obra a
+     * mesma paridade consultável na ontologia que RDO, colaborador e ativo já têm.
+     * Campos nulos são ignorados pelo CortexOperationalMemoryService.
+     */
+    static Map<String, Object> camposEvidencia(Obra obra) {
+        Map<String, Object> campos = new LinkedHashMap<>();
+        campos.put("codigo_contrato", obra.getCodigoContrato());
+        campos.put("codigo_cw", obra.getCodigoCw());
+        campos.put("codigo_interno", obra.getCodigoInterno());
+        campos.put("nome", obra.getNome());
+        campos.put("cliente", obra.getCliente());
+        campos.put("descricao", obra.getDescricao());
+        campos.put("cidade", obra.getCidade());
+        campos.put("uf", obra.getUf());
+        campos.put("rodovia", obra.getRodovia());
+        campos.put("status", obra.getStatus());
+        campos.put("latitude", obra.getLatitude());
+        campos.put("longitude", obra.getLongitude());
+        campos.put("observacoes", obra.getObservacoes());
+        return campos;
     }
 }

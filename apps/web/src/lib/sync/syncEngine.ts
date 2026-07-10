@@ -9,6 +9,8 @@ import {
   queueErroredMutationsForRetry,
   queueResolvableConflictsForRetry,
   recoverInterruptedMutations,
+  repairMissingMaoObraReferencesForSync,
+  repairMissingObraReferencesForSync,
 } from "./syncStorage";
 import type { SyncRunSummary } from "./sync.types";
 
@@ -36,6 +38,8 @@ async function executeSync(): Promise<SyncRunSummary> {
 
   try {
     await recoverInterruptedMutations();
+    await repairMissingObraReferencesForSync();
+    await repairMissingMaoObraReferencesForSync();
     await repairRdoCreateMutationsForSync();
     await queueErroredMutationsForRetry();
     await queueResolvableConflictsForRetry();

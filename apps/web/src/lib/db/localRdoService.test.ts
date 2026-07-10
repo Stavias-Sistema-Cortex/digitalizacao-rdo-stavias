@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { createEmptyRdo } from "../../features/rdos/createEmptyRdo";
-import { validateRdoDraftForSync } from "./localRdoService";
+import type { LocalRdoRecord } from "./db.types";
+import {
+  buildRdoSyncPayloadFromLocalRecord,
+  rdoDraftFromLocalRecord,
+  validateRdoDraftForSync,
+} from "./localRdoService";
 
 function validDraft() {
   const draft = createEmptyRdo();
@@ -32,6 +37,146 @@ describe("validateRdoDraftForSync", () => {
   it("aceita quantidade executada zero", () => {
     expect(() =>
       validateRdoDraftForSync(validDraft()),
+    ).not.toThrow();
+  });
+});
+
+describe("rdoDraftFromLocalRecord", () => {
+  it("normaliza payload local historico com campos nulos antes de reconstruir a mutacao", () => {
+    const rdo: LocalRdoRecord = {
+      id: "rdo-local-legacy",
+      obraId: "obra-atual",
+      programacaoId: null,
+      numeroRdo: "RDO-LEG-001",
+      dataRdo: "2026-07-08",
+      statusRdo: "RASCUNHO",
+      syncStatus: "ERROR",
+      versaoEntidade: null,
+      createdAt: "2026-07-08T12:00:00.000Z",
+      updatedAt: "2026-07-08T12:05:00.000Z",
+      payload: {
+        id: "id-antigo-no-payload",
+        obraId: "obra-antiga-no-payload",
+        programacaoId: null,
+        numeroRdo: "payload-velho",
+        dataRdo: "2026-01-01",
+        cliente: "Intervias",
+        contrato: "INTERVIAS-2-PCT",
+        rodovia: null,
+        cidade: null,
+        uf: null,
+        kmInicialProgramado: null,
+        kmFinalProgramado: null,
+        kmInicialInterditado: null,
+        kmFinalInterditado: null,
+        preenchidoPor: null,
+        apontadorRdo: null,
+        encarregadoObra: null,
+        fiscalizacaoCampo: null,
+        servicosExecutados: [
+          {
+            localId: "servico-1",
+            servicoNome: "Aplicacao de CBUQ",
+            quantidadeExecutada: 0,
+            itemContratualId: null,
+            unidade: null,
+            trechoInicial: null,
+            trechoFinal: null,
+            localizacao: null,
+            turno: null,
+            observacoes: null,
+          },
+        ],
+        alocacoesColaboradores: [
+          {
+            localId: "alocacao-1",
+            colaboradorId: null,
+            equipe: null,
+            servicoNome: null,
+            funcao: null,
+            centroCusto: null,
+            fonte: null,
+            observacoes: null,
+          },
+        ],
+        maoObra: [
+          {
+            localId: "mao-obra-1",
+            colaboradorId: null,
+            nomeColaborador: "Operador",
+            cargo: null,
+            horaInicio: null,
+            horaFim: null,
+            observacoes: null,
+          },
+        ],
+        equipamentos: [
+          {
+            localId: "equipamento-1",
+            assetId: null,
+            prefixo: null,
+            descricao: "Rolo compactador",
+            tipoEquipamento: null,
+            horaInicio: null,
+            horaFim: null,
+            observacoes: null,
+          },
+        ],
+        materiais: [
+          {
+            localId: "material-1",
+            materialNome: null,
+            unidade: null,
+            quantidadePrevista: null,
+            quantidadeUsinada: null,
+            quantidadeAplicada: null,
+            quantidadeSobra: null,
+            notaFiscal: null,
+            fornecedor: null,
+            observacoes: null,
+          },
+        ],
+        controlesGeometricos: [
+          {
+            localId: "controle-1",
+            subtrecho: null,
+            numero: null,
+            kmInicial: null,
+            kmFinal: null,
+            observacoes: null,
+          },
+        ],
+        attachments: [],
+      },
+    };
+
+    const draft = rdoDraftFromLocalRecord(rdo);
+
+    expect(draft).toMatchObject({
+      id: "rdo-local-legacy",
+      obraId: "obra-atual",
+      programacaoId: "",
+      numeroRdo: "RDO-LEG-001",
+      dataRdo: "2026-07-08",
+      rodovia: "",
+      cidade: "",
+      uf: "",
+      syncStatus: "ERROR",
+    });
+    expect(draft.maoObra[0]).toMatchObject({
+      localId: "mao-obra-1",
+      colaboradorId: "",
+      nomeColaborador: "Operador",
+      cargo: "",
+    });
+    expect(draft.equipamentos[0]).toMatchObject({
+      localId: "equipamento-1",
+      assetId: "",
+      descricao: "Rolo compactador",
+    });
+
+    expect(() =>
+      buildRdoSyncPayloadFromLocalRecord(rdo),
     ).not.toThrow();
   });
 });

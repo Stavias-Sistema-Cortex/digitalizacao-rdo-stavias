@@ -191,7 +191,8 @@ public class PdorApplicationService {
 
     /**
      * Liga o snapshot ao grafo ontológico: obra e PDOR como objetos, relação
-     * ANALISA entre eles e evento operacional com os índices de receita.
+     * ANALISA entre eles, evento operacional visível na timeline da obra e
+     * evidências numéricas de receita consultáveis pela ontologia.
      */
     private void registrarNoGrafo(PdorSnapshot snapshot, Obra obra) {
         memoryService.registrarObjeto(
@@ -239,13 +240,54 @@ public class PdorApplicationService {
                 snapshot.probabilityBelowContract()
         );
 
-        memoryService.registrarEvento(
+        Map<String, Object> obraRelacionada = new LinkedHashMap<>();
+        obraRelacionada.put("tipo", "OBRA");
+        obraRelacionada.put("id", obra.getId());
+
+        memoryService.registrarEventoDetalhado(
+                snapshot.id(),
                 "PDOR",
                 snapshot.id(),
                 tipoEvento,
                 FONTE,
+                obra.getId(),
+                null,
+                null,
+                List.of(obraRelacionada),
+                "ONLINE",
+                "SYNCED",
+                snapshot.executedAt(),
+                LocalDateTime.now(),
+                1,
                 payload
         );
+
+        if (snapshot.executionStatus() == PdorExecutionStatus.SUCCESS) {
+            Map<String, Object> evidencias = new LinkedHashMap<>();
+            evidencias.put("receitaPrevistaFinal", snapshot.racWeighted());
+            evidencias.put("receitaP50", snapshot.revenueP50());
+            evidencias.put("receitaP80", snapshot.revenueP80());
+            evidencias.put(
+                    "probabilidadeAbaixoContrato",
+                    snapshot.probabilityBelowContract()
+            );
+            evidencias.put("nivelRiscoReceita", snapshot.riskLevel());
+            evidencias.put("confiancaPdor", snapshot.confidence());
+            evidencias.put("dataReferenciaPdor", snapshot.referenceDate());
+
+            memoryService.registrarEvidencias(
+                    "PDOR",
+                    snapshot.id(),
+                    FONTE,
+                    evidencias
+            );
+            memoryService.registrarEvidencias(
+                    "OBRA",
+                    obra.getId(),
+                    FONTE,
+                    evidencias
+            );
+        }
     }
 
     private PdorSnapshot buildCalculationSnapshot(
@@ -257,7 +299,8 @@ public class PdorApplicationService {
         try {
             PdorEngine.PdorContext context =
                     contextBuilder.build(inputs.toSourceSnapshot());
-            PdorEngine.PdorResult result = engine.calculate(context);
+            PdorEngine.PdorResult result =
+                    engine.calculate(context, inputs.historicalSeries());
 
             return successSnapshot(
                     inputs,

@@ -1,5 +1,6 @@
 package com.projeto.cortex.pdor;
 
+import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -18,6 +19,12 @@ import java.util.Map;
 public class RealPdorInputLoader implements PdorInputLoader {
 
     private static final int DEFAULT_SIMULATION_ITERATIONS = 10_000;
+
+    /**
+     * Espelho do mínimo exigido pelo PdorEngine para calibrar uma
+     * distribuição com histórico real; usado apenas para avisos.
+     */
+    private static final int MINIMUM_CALIBRATION_WEEKS = 4;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -370,6 +377,62 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 false
         );
 
+        List<Double> productivityLossWeekly = buscarSerieSemanalPerdaProdutividade(
+                obra.getId(),
+                referenceDate,
+                quantity == null ? null : quantity.metric()
+        );
+        List<Double> materialOverconsumptionWeekly =
+                buscarSerieSemanalExcessoMaterial(obra.getId(), referenceDate);
+
+        if (productivityLossWeekly.size() < MINIMUM_CALIBRATION_WEEKS) {
+            warnings.add(
+                    "Histórico semanal de produtividade insuficiente para calibração ("
+                            + productivityLossWeekly.size()
+                            + " de " + MINIMUM_CALIBRATION_WEEKS
+                            + " semanas); premissas de protótipo serão usadas."
+            );
+        }
+        if (materialOverconsumptionWeekly.size() < MINIMUM_CALIBRATION_WEEKS) {
+            warnings.add(
+                    "Histórico semanal de material insuficiente para calibração ("
+                            + materialOverconsumptionWeekly.size()
+                            + " de " + MINIMUM_CALIBRATION_WEEKS
+                            + " semanas); premissas de protótipo serão usadas."
+            );
+        }
+
+        put(
+                inputs,
+                origins,
+                missing,
+                "productivityLossWeeklySeries",
+                "Série semanal de perda de produtividade",
+                productivityLossWeekly.isEmpty()
+                        ? PdorDataAvailability.ABSENT
+                        : PdorDataAvailability.DERIVED,
+                productivityLossWeekly.isEmpty() ? null : productivityLossWeekly,
+                "programacao_operacional + rdo_controle_geometrico",
+                "Perda semanal = 1 - executado/planejado nas semanas com programação e RDO.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "materialOverconsumptionWeeklySeries",
+                "Série semanal de excesso de consumo de material",
+                materialOverconsumptionWeekly.isEmpty()
+                        ? PdorDataAvailability.ABSENT
+                        : PdorDataAvailability.DERIVED,
+                materialOverconsumptionWeekly.isEmpty()
+                        ? null
+                        : materialOverconsumptionWeekly,
+                "rdo_material",
+                "Excesso semanal = aplicado/previsto - 1 nas semanas com material informado nos RDOs.",
+                false
+        );
+
         inputs.put("referenceDate", referenceDate);
         inputs.put("quantityMetric", quantity == null ? null : quantity.metric());
         inputs.put("programacaoRows", programacao.recordCount());
@@ -403,7 +466,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         rdo.rdoCount() > 0,
                         rdo.rdoCount() > 0,
                         sync.hoursSinceLastSync() != null,
-                        false,
+                        // Itens contratuais ativos são o baseline formal do
+                        // contrato: quando existem, o orçamento é validado.
+                        finance.hasContractData(),
                         programacao.recordCount() > 0,
                         totalPlanned != null && actualExecuted != null,
                         DEFAULT_SIMULATION_ITERATIONS
@@ -417,7 +482,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 origins,
                 warnings,
                 missing,
-                sourceValues
+                sourceValues,
+                new PdorEngine.HistoricalSeries(
+                        productivityLossWeekly,
+                        materialOverconsumptionWeekly
+                )
         );
     }
 
@@ -561,6 +630,147 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 referenceDate,
                 referenceDate
         );
+    }
+
+    /**
+     * Perda de produtividade observada por semana ISO: 1 - executado/planejado,
+     * considerando apenas semanas com programação positiva e pelo menos um RDO.
+     * A série cresce a cada novo RDO e recalibra o Monte Carlo.
+     */
+    private List<Double> buscarSerieSemanalPerdaProdutividade(
+            String obraId,
+            LocalDate referenceDate,
+            String quantityMetric
+    ) {
+        String quantityColumn = switch (quantityMetric == null ? "" : quantityMetric) {
+            case "AREA_M2" -> "area_m2";
+            case "VOLUME_M3" -> "volume_m3";
+            default -> null;
+        };
+
+        if (quantityColumn == null) {
+            return List.of();
+        }
+
+        String sql = """
+                SELECT
+                    planejado.semana AS semana,
+                    planejado.quantidade AS quantidade_planejada,
+                    COALESCE(executado.quantidade, 0) AS quantidade_executada
+                FROM (
+                    SELECT
+                        YEARWEEK(data_programacao, 3) AS semana,
+                        SUM(%1$s) AS quantidade
+                    FROM programacao_operacional
+                    WHERE obra_id = ?
+                      AND cancelado_em IS NULL
+                      AND data_programacao <= ?
+                    GROUP BY YEARWEEK(data_programacao, 3)
+                    HAVING SUM(%1$s) > 0
+                ) planejado
+                JOIN (
+                    SELECT DISTINCT YEARWEEK(data_rdo, 3) AS semana
+                    FROM rdo
+                    WHERE obra_id = ?
+                      AND cancelado_em IS NULL
+                      AND data_rdo <= ?
+                ) semanas_com_rdo
+                  ON semanas_com_rdo.semana = planejado.semana
+                LEFT JOIN (
+                    SELECT
+                        YEARWEEK(r.data_rdo, 3) AS semana,
+                        SUM(cg.%1$s) AS quantidade
+                    FROM rdo r
+                    JOIN rdo_controle_geometrico cg
+                      ON cg.rdo_id = r.id
+                    WHERE r.obra_id = ?
+                      AND r.cancelado_em IS NULL
+                      AND r.data_rdo <= ?
+                    GROUP BY YEARWEEK(r.data_rdo, 3)
+                ) executado
+                  ON executado.semana = planejado.semana
+                ORDER BY planejado.semana
+                """.formatted(quantityColumn);
+
+        return jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> {
+                    BigDecimal planned = rs.getBigDecimal("quantidade_planejada");
+                    BigDecimal executed = rs.getBigDecimal("quantidade_executada");
+                    return weeklyLoss(planned, executed);
+                },
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate,
+                obraId,
+                referenceDate
+        );
+    }
+
+    /**
+     * Excesso de consumo de material por semana ISO: aplicado/previsto - 1,
+     * considerando apenas semanas com previsto e aplicado positivos nos RDOs.
+     */
+    private List<Double> buscarSerieSemanalExcessoMaterial(
+            String obraId,
+            LocalDate referenceDate
+    ) {
+        return jdbcTemplate.query(
+                """
+                SELECT
+                    YEARWEEK(r.data_rdo, 3) AS semana,
+                    SUM(mat.quantidade_prevista) AS prevista,
+                    SUM(mat.quantidade_aplicada) AS aplicada
+                FROM rdo r
+                JOIN rdo_material mat
+                  ON mat.rdo_id = r.id
+                WHERE r.obra_id = ?
+                  AND r.cancelado_em IS NULL
+                  AND r.data_rdo <= ?
+                GROUP BY YEARWEEK(r.data_rdo, 3)
+                HAVING SUM(mat.quantidade_prevista) > 0
+                   AND SUM(mat.quantidade_aplicada) > 0
+                ORDER BY semana
+                """,
+                (rs, rowNum) -> {
+                    BigDecimal expected = rs.getBigDecimal("prevista");
+                    BigDecimal applied = rs.getBigDecimal("aplicada");
+                    return weeklyOverconsumption(expected, applied);
+                },
+                obraId,
+                referenceDate
+        );
+    }
+
+    private Double weeklyLoss(BigDecimal planned, BigDecimal executed) {
+        if (!positive(planned)) {
+            return 0.0;
+        }
+
+        double ratio = valueOrZero(executed)
+                .divide(planned, 6, RoundingMode.HALF_UP)
+                .doubleValue();
+        double loss = Math.max(0.0, Math.min(1.0, 1.0 - ratio));
+        return roundSeriesValue(loss);
+    }
+
+    private Double weeklyOverconsumption(BigDecimal expected, BigDecimal applied) {
+        if (!positive(expected)) {
+            return 0.0;
+        }
+
+        double ratio = valueOrZero(applied)
+                .divide(expected, 6, RoundingMode.HALF_UP)
+                .doubleValue();
+        double overconsumption = Math.max(0.0, ratio - 1.0);
+        return roundSeriesValue(overconsumption);
+    }
+
+    private double roundSeriesValue(double value) {
+        return BigDecimal.valueOf(value)
+                .setScale(4, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     private int buscarRdosAtrasados(String obraId, LocalDate referenceDate) {

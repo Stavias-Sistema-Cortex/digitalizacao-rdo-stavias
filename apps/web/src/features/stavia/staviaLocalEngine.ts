@@ -2499,7 +2499,7 @@ function answerComposite(
             pdor.probabilidadeAbaixoContrato ??
               pdor.probabilidadeAbaixo95Pct ??
               pdor.scoreHeuristico,
-          )}.`
+          )}.${pdorRevenueSentence(pdor)}`
         : "PDOR: não encontrei previsão de receita salva para esta obra.",
     );
   }
@@ -2694,6 +2694,46 @@ function formatPercent(value: number | string | null): string {
   }).format(percent) + "%";
 }
 
+function formatRevenue(
+  value: number | string | null | undefined,
+): string | null {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const numberValue =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(",", "."));
+
+  if (Number.isNaN(numberValue)) {
+    return null;
+  }
+
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(numberValue);
+}
+
+function pdorRevenueSentence(pdor: StaviaSnapshotPdor): string {
+  const finalRevenue = formatRevenue(
+    pdor.receitaEstimadaFinal ?? pdor.p50Receita,
+  );
+
+  if (!finalRevenue) {
+    return "";
+  }
+
+  const p10 = formatRevenue(pdor.p10Receita);
+  const p95 = formatRevenue(pdor.p95Receita);
+  const range =
+    p10 && p95 ? ` (faixa ${p10} a ${p95})` : "";
+
+  return ` Receita prevista final: ${finalRevenue}${range}.`;
+}
+
 function answerPdor(
   snapshot: StaviaSnapshot,
   resolved: ResolvedContext,
@@ -2726,7 +2766,7 @@ function answerPdor(
       : "";
 
   return answer(
-    `PDOR desta obra — risco de receita abaixo do contrato: ${formatPercent(score)}.${calibrationWarning}`,
+    `PDOR desta obra — risco de receita abaixo do contrato: ${formatPercent(score)}.${pdorRevenueSentence(pdor)}${calibrationWarning}`,
     "PDOR",
     {
       confidence:

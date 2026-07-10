@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entities": [
     {
       "name": "rdo",
@@ -269,6 +269,37 @@
         {"name": "schemaVersion", "column": "schema_version", "label": "Versão do schema", "dataType": "INTEGER", "unit": null, "unitColumn": null, "aliases": ["versao do schema", "versão do schema", "schema version", "schemaVersion"], "aggregable": false, "identity": false},
         {"name": "relatedEntities", "column": "entidades_relacionadas_json", "label": "Entidades relacionadas", "dataType": "JSON", "unit": null, "unitColumn": null, "aliases": ["entidades relacionadas", "relacoes do evento", "relações do evento"], "aggregable": false, "identity": false},
         {"name": "payload", "column": "payload_json", "label": "Payload", "dataType": "JSON", "unit": null, "unitColumn": null, "aliases": ["payload do evento", "dados do evento", "resumo do evento"], "aggregable": false, "identity": false}
+      ]
+    },
+    {
+      "name": "pdor",
+      "table": "pdor_snapshot",
+      "evidenceType": "PDOR",
+      "source": "pdor-engine",
+      "header": false,
+      "snapshotCollection": "pdors",
+      "countAttribute": null,
+      "filter": null,
+      "scope": "obra",
+      "aliases": ["pdor", "previsao de receita", "predicao de receita", "receita prevista", "receita final prevista", "risco de receita", "shortfall de receita", "probabilidade de shortfall"],
+      "attributes": [
+        {"name": "obraId", "column": "obra_id", "label": "ID da obra", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["obra do pdor", "obra analisada pelo pdor"], "aggregable": false, "identity": false},
+        {"name": "snapshotId", "column": "id", "label": "ID do snapshot PDOR", "dataType": "TEXT", "unit": null, "unitColumn": null, "aliases": ["id do snapshot pdor", "identificador do pdor"], "aggregable": false, "identity": false},
+        {"name": "dataReferencia", "column": "data_referencia", "label": "Data de referência do PDOR", "dataType": "DATE", "unit": null, "unitColumn": null, "aliases": ["data de referencia do pdor", "referencia do pdor"], "aggregable": false, "identity": false},
+        {"name": "dataExecucao", "column": "executado_em", "label": "Data de execução do PDOR", "dataType": "DATETIME", "unit": null, "unitColumn": null, "aliases": ["quando o pdor foi calculado", "data do calculo do pdor"], "aggregable": false, "identity": false},
+        {"name": "statusExecucao", "column": "status_execucao", "label": "Status de execução do PDOR", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["status do pdor", "situacao do pdor"], "aggregable": false, "identity": false},
+        {"name": "calibracao", "column": "calibracao", "label": "Status de calibração do PDOR", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["calibracao do pdor", "pdor calibrado"], "aggregable": false, "identity": false},
+        {"name": "risco", "column": "nivel_risco", "label": "Nível de risco de receita", "dataType": "ENUM", "unit": null, "unitColumn": null, "aliases": ["nivel de risco do pdor", "risco do pdor", "risco de receita da obra"], "aggregable": false, "identity": false},
+        {"name": "receitaEstimadaFinal", "column": "rac_ponderado", "label": "Receita prevista final", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["receita prevista final", "receita estimada final", "receita final projetada", "rac ponderado"], "aggregable": false, "identity": false},
+        {"name": "p10Receita", "column": "p10_receita", "label": "Receita P10", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["receita p10", "p10 de receita", "cenario pessimista de receita"], "aggregable": false, "identity": false},
+        {"name": "p50Receita", "column": "p50_receita", "label": "Receita P50", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["receita p50", "p50 de receita", "mediana da receita prevista"], "aggregable": false, "identity": false},
+        {"name": "p80Receita", "column": "p80_receita", "label": "Receita P80", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["receita p80", "p80 de receita"], "aggregable": false, "identity": false},
+        {"name": "p95Receita", "column": "p95_receita", "label": "Receita P95", "dataType": "DECIMAL", "unit": "R$", "unitColumn": null, "aliases": ["receita p95", "p95 de receita", "cenario otimista de receita"], "aggregable": false, "identity": false},
+        {"name": "probabilidadeAbaixoContrato", "column": "prob_abaixo_contrato", "label": "Probabilidade de receita abaixo do contrato", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["probabilidade abaixo do contrato", "probabilidade de shortfall", "chance de nao bater o contrato"], "aggregable": false, "identity": false},
+        {"name": "probabilidadeAbaixo95Pct", "column": "prob_abaixo_95_pct", "label": "Probabilidade de receita abaixo de 95% do contrato", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["probabilidade abaixo de 95", "prob abaixo de 95 por cento"], "aggregable": false, "identity": false},
+        {"name": "probabilidadeAbaixo90Pct", "column": "prob_abaixo_90_pct", "label": "Probabilidade de receita abaixo de 90% do contrato", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["probabilidade abaixo de 90", "prob abaixo de 90 por cento"], "aggregable": false, "identity": false},
+        {"name": "scoreHeuristico", "column": "score_heuristico", "label": "Score heurístico de risco", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["score heuristico do pdor", "score de risco do pdor"], "aggregable": false, "identity": false},
+        {"name": "confianca", "column": "confianca", "label": "Confiança do PDOR", "dataType": "DECIMAL", "unit": null, "unitColumn": null, "aliases": ["confianca do pdor", "confiabilidade do pdor"], "aggregable": false, "identity": false}
       ]
     }
   ]

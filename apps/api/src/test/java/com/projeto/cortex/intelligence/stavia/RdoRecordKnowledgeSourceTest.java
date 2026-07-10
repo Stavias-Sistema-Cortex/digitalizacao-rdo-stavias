@@ -396,6 +396,9 @@ class RdoRecordKnowledgeSourceTest {
     @Test
     void shouldEmitEvidenceForEveryDeclaredOntologyAttribute() {
         for (RdoOntologyEntity entity : ontology.entities()) {
+            if (!entity.rdoScoped()) {
+                continue;
+            }
             when(reader.findRecords(any(), any())).thenReturn(
                     List.of(recordWithAllAttributes(entity))
             );

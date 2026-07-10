@@ -27,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -133,18 +134,49 @@ class PdorApplicationServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload =
                 ArgumentCaptor.forClass(Map.class);
-        verify(memoryService).registrarEvento(
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Map<String, Object>>> related =
+                ArgumentCaptor.forClass(List.class);
+        verify(memoryService).registrarEventoDetalhado(
+                any(String.class),
                 eq("PDOR"),
                 any(String.class),
                 eq("PDOR_CALCULADO"),
                 eq("PDOR"),
+                eq(obra.getId()),
+                isNull(),
+                isNull(),
+                related.capture(),
+                eq("ONLINE"),
+                eq("SYNCED"),
+                any(),
+                any(),
+                eq(1),
                 payload.capture()
         );
 
+        assertThat(related.getValue())
+                .anySatisfy(entidade -> {
+                    assertThat(entidade.get("tipo")).isEqualTo("OBRA");
+                    assertThat(entidade.get("id")).isEqualTo(obra.getId());
+                });
         assertThat(payload.getValue().get("obraId")).isEqualTo(obra.getId());
         assertThat(payload.getValue().get("receitaEstimadaFinal")).isNotNull();
         assertThat(payload.getValue().get("p50Receita")).isNotNull();
         assertThat(payload.getValue().get("probabilidadeAbaixoContrato")).isNotNull();
+
+        verify(memoryService).registrarEvidencias(
+                eq("PDOR"),
+                any(String.class),
+                eq("PDOR"),
+                any()
+        );
+        verify(memoryService).registrarEvidencias(
+                eq("OBRA"),
+                eq(obra.getId()),
+                eq("PDOR"),
+                any()
+        );
     }
 
     @Test
@@ -430,7 +462,8 @@ class PdorApplicationServiceTest {
                         true,
                         true,
                         2_000
-                )
+                ),
+                PdorEngine.HistoricalSeries.EMPTY
         );
     }
 
@@ -485,7 +518,8 @@ class PdorApplicationServiceTest {
                         true,
                         true,
                         2_000
-                )
+                ),
+                PdorEngine.HistoricalSeries.EMPTY
         );
     }
 
@@ -514,7 +548,8 @@ class PdorApplicationServiceTest {
                 valid.origins(),
                 valid.warnings(),
                 List.of("validatedRevenue", "measuredRevenue", "contractValue"),
-                valid.sourceValues()
+                valid.sourceValues(),
+                valid.historicalSeries()
         );
     }
 

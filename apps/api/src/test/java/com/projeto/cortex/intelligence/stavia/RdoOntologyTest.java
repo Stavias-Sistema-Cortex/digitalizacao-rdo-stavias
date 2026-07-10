@@ -53,7 +53,8 @@ class RdoOntologyTest {
                         "execucaoServico",
                         "alocacaoColaborador",
                         "attachment",
-                        "operationalEvent"
+                        "operationalEvent",
+                        "pdor"
                 );
         assertThat(ontology.raw()).isNotNull();
     }

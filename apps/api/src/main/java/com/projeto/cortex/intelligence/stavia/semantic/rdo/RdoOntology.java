@@ -117,6 +117,7 @@ public final class RdoOntology {
                 textOrNull(node, "snapshotCollection"),
                 textOrNull(node, "countAttribute"),
                 textOrNull(node, "filter"),
+                textOrNull(node, "scope"),
                 textList(node, "aliases"),
                 attributes
         );

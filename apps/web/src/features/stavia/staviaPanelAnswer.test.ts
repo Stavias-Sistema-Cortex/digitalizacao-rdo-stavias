@@ -369,7 +369,13 @@ describe("staviaPanelAnswer", () => {
     let checkedCells = 0;
     let apiCalls = 0;
 
-    for (const entity of ontology.entities) {
+    // O pdor (escopo "obra") é coberto pelo tópico dedicado do painel,
+    // não pelo caminho genérico da ontologia exercitado aqui.
+    const genericEntities = ontology.entities.filter(
+      (entity) => (entity.scope ?? "rdo") === "rdo",
+    );
+
+    for (const entity of genericEntities) {
       for (const attribute of entity.attributes) {
         checkedCells += 1;
         const pergunta = panelCoverageQuestion(entity, attribute.label);

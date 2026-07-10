@@ -73,13 +73,7 @@ public class ObraService {
 
         Obra salva = obraRepository.save(obra);
 
-        memoryService.registrarEvento(
-                ObraSyncEvento.TIPO_ENTIDADE,
-                salva.getId(),
-                ObraSyncEvento.TIPO_EVENTO,
-                "OBRAS",
-                ObraSyncEvento.payload(salva)
-        );
+        ObraSyncEvento.registrarAtualizacao(memoryService, salva);
 
         return ObraResponse.from(salva);
     }

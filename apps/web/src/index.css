@@ -2018,3 +2018,384 @@ textarea:focus {
 .home-card--brand a:hover {
   text-decoration: underline;
 }
+
+.obras-page {
+  width: min(1240px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 56px 0 120px;
+}
+
+.obras-topbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.obras-topbar h1 {
+  font-size: 1.35rem;
+}
+
+.obras-workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.obras-list,
+.obras-detail {
+  background: #fff;
+  border: 1px solid #e3e8e5;
+  border-radius: 16px;
+  box-shadow: 0 1px 8px rgba(10, 66, 61, 0.06);
+}
+
+.obras-list {
+  min-height: 520px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obras-list-item {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  padding: 12px;
+  color: #25342d;
+  text-align: left;
+}
+
+.obras-list-item:hover,
+.obras-list-item:focus-visible {
+  border-color: #dce3df;
+  background: #f7faf8;
+  outline: none;
+}
+
+.obras-list-item.active {
+  border-color: #fed203;
+  background: #fff9dc;
+}
+
+.obras-list-title,
+.obras-list-meta {
+  display: block;
+}
+
+.obras-list-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.obras-list-meta {
+  margin-top: 4px;
+  color: #6f7d75;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.obras-detail {
+  min-height: 520px;
+  padding: 20px;
+}
+
+.obras-detail-header,
+.obras-trace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.obras-detail-header h2 {
+  margin: 10px 0 4px;
+  font-size: 1.15rem;
+}
+
+.obras-detail-header p {
+  margin: 0;
+  color: #6f7d75;
+  font-size: 0.78rem;
+}
+
+.obras-stavia-button {
+  border: 1px solid #0e5e57;
+  border-radius: 999px;
+  background: #0e5e57;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.obras-facts {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(170px, 1fr)
+  );
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.obras-facts div {
+  min-height: 74px;
+  border: 1px solid #e7ece8;
+  border-radius: 12px;
+  background: #fbfcfb;
+  padding: 12px;
+}
+
+.obras-facts dt {
+  margin: 0 0 6px;
+  color: #839089;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.obras-facts dd {
+  margin: 0;
+  color: #25342d;
+  font-size: 0.86rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.obras-trace {
+  border-top: 1px dashed #dfe6e2;
+  padding-top: 18px;
+}
+
+.obras-trace-header h3 {
+  margin: 0 0 3px;
+  font-size: 0.92rem;
+}
+
+.obras-trace-header span {
+  color: #718078;
+  font-size: 0.7rem;
+}
+
+.obras-trace-status {
+  border-radius: 999px;
+  background: #eef5f2;
+  color: #0e5e57;
+  padding: 4px 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.obras-trace-note {
+  margin: 12px 0 0;
+  color: #8a6210;
+  font-size: 0.72rem;
+}
+
+.obras-trace-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.obras-trace-list li {
+  border: 1px solid #e3e8e5;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.obras-trace-list li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #25342d;
+  font-size: 0.78rem;
+}
+
+.obras-trace-list p {
+  margin: 8px 0;
+  color: #46534c;
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.obras-trace-list small {
+  color: #84908a;
+  font-size: 0.66rem;
+}
+
+.obras-empty {
+  margin: auto;
+  color: #8a958f;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .obras-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .obras-list {
+    min-height: auto;
+  }
+}
+
+/* Previsão de receita (PDOR) na página de obras */
+.obras-pdor {
+  border-top: 1px dashed #dfe6e2;
+  padding-top: 18px;
+  margin-bottom: 18px;
+}
+
+.obras-pdor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.obras-pdor-header h3 {
+  margin: 0 0 3px;
+  font-size: 0.92rem;
+}
+
+.obras-pdor-header span {
+  color: #718078;
+  font-size: 0.7rem;
+}
+
+.obras-pdor-risk {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: #eef5f2;
+  color: #0e5e57;
+}
+
+.obras-pdor-risk--baixo {
+  background: #e6f4ea;
+  color: #1e6b3a;
+}
+
+.obras-pdor-risk--medio {
+  background: #fdf3c8;
+  color: #8a6210;
+}
+
+.obras-pdor-risk--alto {
+  background: #fde4e1;
+  color: #a3322a;
+}
+
+.obras-pdor-note {
+  margin: 12px 0 0;
+  color: #718078;
+  font-size: 0.74rem;
+}
+
+.obras-pdor-insufficient {
+  margin-top: 12px;
+  border: 1px solid #f0e2b6;
+  border-left: 4px solid #fed203;
+  border-radius: 12px;
+  background: #fffbeb;
+  padding: 12px;
+}
+
+.obras-pdor-insufficient strong {
+  display: block;
+  color: #8a6210;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.obras-pdor-insufficient p {
+  margin: 6px 0 0;
+  color: #6b5a22;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.obras-pdor-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(170px, 1fr)
+  );
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.obras-pdor-grid div {
+  min-height: 74px;
+  border: 1px solid #e7ece8;
+  border-radius: 12px;
+  background: #fbfcfb;
+  padding: 12px;
+}
+
+.obras-pdor-grid .obras-pdor-main {
+  border-left: 4px solid #fed203;
+}
+
+.obras-pdor-grid dt {
+  margin: 0 0 6px;
+  color: #839089;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.obras-pdor-grid dd {
+  margin: 0;
+  color: #25342d;
+  font-size: 0.86rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.obras-pdor-main dd:first-of-type {
+  font-size: 1.1rem;
+}
+
+.obras-pdor-grid dd.obras-pdor-range {
+  margin-top: 4px;
+  color: #718078;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.obras-pdor-drivers {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obras-pdor-drivers li {
+  border: 1px solid #e3e8e5;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.obras-pdor-drivers strong {
+  display: block;
+  color: #25342d;
+  font-size: 0.76rem;
+}
+
+.obras-pdor-drivers span {
+  color: #718078;
+  font-size: 0.7rem;
+}

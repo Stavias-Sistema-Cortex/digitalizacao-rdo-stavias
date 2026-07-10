@@ -43,7 +43,7 @@ public class ObraSeedImportService {
         );
     }
 
-    private ObraSeedImportResult importar(Path path) {
+    ObraSeedImportResult importar(Path path) {
         int registrosLidos = 0;
         int registrosInseridos = 0;
         int registrosIgnorados = 0;
@@ -96,12 +96,9 @@ public class ObraSeedImportService {
 
                     Obra salva = obraRepository.save(obra);
 
-                    memoryService.registrarEvento(
-                            ObraSyncEvento.TIPO_ENTIDADE,
-                            salva.getId(),
-                            ObraSyncEvento.TIPO_EVENTO,
-                            "OBRAS",
-                            ObraSyncEvento.payload(salva)
+                    ObraSyncEvento.registrarAtualizacao(
+                            memoryService,
+                            salva
                     );
 
                     registrosInseridos++;

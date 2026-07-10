@@ -27,6 +27,7 @@ const SIDEBAR_COLLAPSED_KEY = "cortex.ui.sidebarRecolhida";
 export type ShellActiveItem =
   | "home"
   | "rdos"
+  | "obras"
   | "integracoes"
   | null;
 
@@ -283,8 +284,13 @@ export function CortexShell({
           </button>
           <button
             type="button"
-            className="sidebar-nav-item"
+            className={
+              active === "obras"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
             title="Obras"
+            onClick={() => navigate("/obras")}
           >
             <img
               src="/icons8/location.png"
@@ -308,7 +314,6 @@ export function CortexShell({
           <button
             type="button"
             className="sidebar-nav-item"
-            title="Mensagens (em breve)"
           >
             <img
               src="/icons8/star.png"
@@ -316,12 +321,10 @@ export function CortexShell({
               draggable={false}
             />
             <span className="sidebar-label">Mensagens</span>
-            <span className="badge-soon">em breve</span>
           </button>
           <button
             type="button"
             className="sidebar-nav-item"
-            title="Tarefas (em breve)"
           >
             <img
               src="/icons8/done.png"
@@ -329,7 +332,6 @@ export function CortexShell({
               draggable={false}
             />
             <span className="sidebar-label">Tarefas</span>
-            <span className="badge-soon">em breve</span>
           </button>
           <button
             type="button"

@@ -596,6 +596,9 @@ class StaviaQueryServiceTest {
         );
 
         for (RdoOntologyEntity entity : RdoOntology.load().entities()) {
+            if (!entity.rdoScoped()) {
+                continue;
+            }
             for (RdoOntologyAttribute attribute : entity.attributes()) {
                 String pergunta = coverageQuestion(entity, attribute);
                 String expectedValue =

@@ -163,34 +163,9 @@ public class StaviaEvidenceQualityPolicy {
                                 )
                         );
 
-        boolean hasLocalSimulatedPdor =
-                evidences.stream()
-                        .filter(evidence ->
-                                "PDOR".equals(
-                                        evidence.type()
-                                )
-                        )
-                        .anyMatch(evidence ->
-                                "LOCAL_SIMULATED".equals(
-                                        String.valueOf(
-                                                evidence.attributes()
-                                                        .get(
-                                                                "sourceMode"
-                                                        )
-                                        )
-                                )
-                        );
-
         if (hasUncalibratedPdor) {
             warnings.add(
                     "O PDOR ainda não foi calibrado com dados históricos reais."
-            );
-        }
-
-        if (hasLocalSimulatedPdor) {
-            warnings.add(
-                    "A análise utiliza um snapshot local simulado "
-                            + "e não representa os custos reais da obra."
             );
         }
     }
