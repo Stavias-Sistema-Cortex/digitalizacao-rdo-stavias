@@ -11,6 +11,7 @@ export type LoginProfile = {
   cpfMascarado: string | null;
   perfil: string | null;
   grupo: string | null;
+  papelAcesso: string | null;
   token: string | null;
 };
 
@@ -40,6 +41,7 @@ export async function loginOnline(
         cpfMascarado: asString(data.cpfMascarado),
         perfil: asString(data.perfil),
         grupo: asString(data.grupo),
+        papelAcesso: asString(data.papelAcesso),
         token: asString(data.token),
       },
     };

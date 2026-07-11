@@ -1,9 +1,10 @@
 package com.projeto.cortex.auth;
 
 import jakarta.servlet.http.HttpServletRequest;
-import java.text.Normalizer;
 import java.util.Arrays;
-import java.util.Locale;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,21 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * Ponto central de autorização do Córtex. Resolve o papel de acesso
+ * ({@link PapelAcesso}) do usuário autenticado e o vínculo explícito com cada
+ * obra, servindo controllers, serviços e a política de acesso da Stav.IA.
+ *
+ * <p>Regras de acesso:
+ * <ul>
+ *   <li><b>ALFA</b>: escopo global — enxerga e administra todas as obras.</li>
+ *   <li><b>BETA</b>: escopo restrito — acessa apenas as obras com
+ *       {@code vinculo_colaborador_obra} ativo.</li>
+ * </ul>
+ *
+ * <p>O acesso à obra é derivado exclusivamente do vínculo explícito. Não há mais
+ * concessão por inferência (alocação operacional ou presença em RDO anterior).
+ */
 @Service
 public class CurrentUserService {
 
@@ -47,18 +63,24 @@ public class CurrentUserService {
         );
     }
 
+    /** Exige papel ALFA (acesso administrativo global). */
     public void requireAdmin() {
-        if (!isAdmin(requireUserId())) {
+        if (!isAlfa(requireUserId())) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    "A operação exige perfil administrativo."
+                    "A operação exige perfil administrativo (Alfa)."
             );
         }
     }
 
+    /** Alias explícito de {@link #requireAdmin()} usando o vocabulário Alfa/Beta. */
+    public void requireAlfa() {
+        requireAdmin();
+    }
+
     public void requireSelfOrAdmin(String colaboradorId) {
         String currentUserId = requireUserId();
-        if (sameId(currentUserId, colaboradorId) || isAdmin(currentUserId)) {
+        if (sameId(currentUserId, colaboradorId) || isAlfa(currentUserId)) {
             return;
         }
 
@@ -71,7 +93,7 @@ public class CurrentUserService {
     public void requireWorksiteAccess(String obraId) {
         String normalizedObraId = requireId(obraId, "obraId");
         String currentUserId = requireUserId();
-        if (isAdmin(currentUserId) || canAccessWorksite(currentUserId, normalizedObraId)) {
+        if (podeAcessarObra(currentUserId, normalizedObraId)) {
             return;
         }
 
@@ -104,18 +126,24 @@ public class CurrentUserService {
         requireWorksiteAccess(obraId);
     }
 
-    public boolean isAdmin(String colaboradorId) {
+    /**
+     * Papel de acesso do colaborador. Retorna {@code null} para usuário em
+     * branco, inexistente, inativo ou removido — nesses casos o chamador deve
+     * negar o acesso. No perfil {@code local} com dev-admin habilitado, todo
+     * usuário identificado é tratado como ALFA.
+     */
+    public PapelAcesso papelAcesso(String colaboradorId) {
         if (colaboradorId == null || colaboradorId.isBlank()) {
-            return false;
+            return null;
         }
 
         if (isLocalDevAdminEnabled()) {
-            return true;
+            return PapelAcesso.ALFA;
         }
 
         return jdbcTemplate.query(
                 """
-                SELECT nome_perfil, nome_grupo
+                SELECT papel_acesso, nome_perfil, nome_grupo
                 FROM colaborador
                 WHERE id = ?
                   AND ativo = 1
@@ -124,52 +152,111 @@ public class CurrentUserService {
                 """,
                 rs -> {
                     if (!rs.next()) {
-                        return false;
+                        return null;
                     }
-                    return isAdminText(rs.getString("nome_perfil"))
-                            || isAdminText(rs.getString("nome_grupo"));
+                    PapelAcesso explicito =
+                            PapelAcesso.fromNullable(rs.getString("papel_acesso"));
+                    if (explicito != null) {
+                        return explicito;
+                    }
+                    return PapelAcesso.fromPerfilGrupo(
+                            rs.getString("nome_perfil"),
+                            rs.getString("nome_grupo")
+                    );
                 },
                 colaboradorId.trim()
         );
+    }
+
+    public boolean isAlfa(String colaboradorId) {
+        return papelAcesso(colaboradorId) == PapelAcesso.ALFA;
+    }
+
+    /**
+     * Compatibilidade histórica: "admin" equivale a ALFA. Mantido para não
+     * quebrar chamadas existentes; novo código deve preferir {@link #isAlfa}.
+     */
+    public boolean isAdmin(String colaboradorId) {
+        return isAlfa(colaboradorId);
+    }
+
+    /**
+     * Decisão booleana e não lançadora de acesso à obra. ALFA acessa qualquer
+     * obra; BETA acessa apenas obras com vínculo ativo. Base de authz para a
+     * Stav.IA, o PDOR e demais consultas por obra.
+     */
+    public boolean podeAcessarObra(String colaboradorId, String obraId) {
+        if (colaboradorId == null || colaboradorId.isBlank()
+                || obraId == null || obraId.isBlank()) {
+            return false;
+        }
+
+        PapelAcesso papel = papelAcesso(colaboradorId);
+        if (papel == null) {
+            return false;
+        }
+        if (papel == PapelAcesso.ALFA) {
+            return true;
+        }
+
+        return temVinculoAtivo(colaboradorId.trim(), obraId.trim());
+    }
+
+    /**
+     * Obras às quais o usuário tem acesso.
+     * <ul>
+     *   <li>{@code Optional.empty()} — escopo global (ALFA), sem restrição.</li>
+     *   <li>{@code Optional.of(conjunto)} — BETA, restrito às obras vinculadas
+     *       (conjunto possivelmente vazio).</li>
+     * </ul>
+     * Usuário inválido recebe {@code Optional.of(Set.of())} (nega tudo).
+     */
+    public Optional<Set<String>> allowedObraIds(String colaboradorId) {
+        PapelAcesso papel = papelAcesso(colaboradorId);
+        if (papel == null) {
+            return Optional.of(Set.of());
+        }
+        if (papel == PapelAcesso.ALFA) {
+            return Optional.empty();
+        }
+
+        List<String> ids = jdbcTemplate.queryForList(
+                """
+                SELECT obra_id
+                FROM vinculo_colaborador_obra
+                WHERE colaborador_id = ?
+                  AND status = 'ATIVO'
+                """,
+                String.class,
+                colaboradorId.trim()
+        );
+
+        return Optional.of(Set.copyOf(ids));
+    }
+
+    private boolean temVinculoAtivo(String colaboradorId, String obraId) {
+        Integer allowed = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM vinculo_colaborador_obra
+                    WHERE colaborador_id = ?
+                      AND obra_id = ?
+                      AND status = 'ATIVO'
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                colaboradorId,
+                obraId
+        );
+
+        return allowed != null && allowed == 1;
     }
 
     private boolean isLocalDevAdminEnabled() {
         return devAdminEnabled
                 && Arrays.stream(environment.getActiveProfiles())
                         .anyMatch("local"::equals);
-    }
-
-    private boolean canAccessWorksite(String currentUserId, String obraId) {
-        Integer allowed = jdbcTemplate.queryForObject(
-                """
-                SELECT CASE
-                    WHEN EXISTS (
-                        SELECT 1
-                        FROM alocacao_colaborador
-                        WHERE colaborador_id = ?
-                          AND obra_id = ?
-                          AND status <> 'CANCELADA'
-                    )
-                    OR EXISTS (
-                        SELECT 1
-                        FROM rdo_mao_obra mo
-                        JOIN rdo r
-                          ON r.id = mo.rdo_id
-                        WHERE mo.colaborador_id = ?
-                          AND r.obra_id = ?
-                    )
-                    THEN 1
-                    ELSE 0
-                END
-                """,
-                Integer.class,
-                currentUserId,
-                obraId,
-                currentUserId,
-                obraId
-        );
-
-        return allowed != null && allowed == 1;
     }
 
     private HttpServletRequest currentRequest() {
@@ -198,21 +285,5 @@ public class CurrentUserService {
         return left != null
                 && right != null
                 && left.trim().equals(right.trim());
-    }
-
-    private boolean isAdminText(String value) {
-        String normalized = normalize(value);
-        return normalized.contains("admin")
-                || normalized.contains("administrador")
-                || normalized.contains("administradora");
-    }
-
-    private String normalize(String value) {
-        if (value == null) {
-            return "";
-        }
-        String noAccent = Normalizer.normalize(value, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");
-        return noAccent.toLowerCase(Locale.ROOT);
     }
 }

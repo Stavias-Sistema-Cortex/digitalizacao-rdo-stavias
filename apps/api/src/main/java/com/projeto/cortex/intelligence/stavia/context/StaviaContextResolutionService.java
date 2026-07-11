@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia.context;
 
+import com.projeto.cortex.intelligence.stavia.access.StaviaAccessPolicy;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -52,9 +53,14 @@ public class StaviaContextResolutionService {
     );
 
     private final JdbcTemplate jdbcTemplate;
+    private final StaviaAccessPolicy accessPolicy;
 
-    public StaviaContextResolutionService(JdbcTemplate jdbcTemplate) {
+    public StaviaContextResolutionService(
+            JdbcTemplate jdbcTemplate,
+            StaviaAccessPolicy accessPolicy
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.accessPolicy = accessPolicy;
     }
 
     public StaviaContextResolution resolve(StaviaQuestion question) {
@@ -62,10 +68,11 @@ public class StaviaContextResolutionService {
             return StaviaContextResolution.notFound();
         }
 
+        String userId = question.userId();
         String rawQuestion = question.text();
         String normalizedQuestion = normalize(rawQuestion);
 
-        StaviaContextResolution direct = resolveDirect(rawQuestion);
+        StaviaContextResolution direct = resolveDirect(userId, rawQuestion);
         if (direct.found() || direct.ambiguous()) {
             return direct;
         }
@@ -75,9 +82,13 @@ public class StaviaContextResolutionService {
             return StaviaContextResolution.notFound();
         }
 
-        List<Candidate> candidates = new ArrayList<>();
-        candidates.addAll(scoreObras(normalizedQuestion, tokens));
-        candidates.addAll(scoreRdos(normalizedQuestion, tokens));
+        List<Candidate> candidates = filtrarAcessiveis(
+                userId,
+                mesclar(
+                        scoreObras(normalizedQuestion, tokens),
+                        scoreRdos(normalizedQuestion, tokens)
+                )
+        );
 
         if (candidates.isEmpty()) {
             return StaviaContextResolution.notFound();
@@ -116,28 +127,70 @@ public class StaviaContextResolutionService {
         );
     }
 
-    private StaviaContextResolution resolveDirect(String question) {
+    private StaviaContextResolution resolveDirect(String userId, String question) {
         Matcher uuidMatcher = UUID_PATTERN.matcher(question);
         while (uuidMatcher.find()) {
             String id = uuidMatcher.group();
 
             StaviaContextResolution byObra = obraById(id);
             if (byObra.found()) {
-                return byObra;
+                // Não confirma nem nega a existência da obra a quem não a acessa.
+                return acessivel(userId, byObra.obraId())
+                        ? byObra
+                        : StaviaContextResolution.notFound();
             }
 
             StaviaContextResolution byRdo = rdoById(id);
             if (byRdo.found()) {
-                return byRdo;
+                return acessivel(userId, byRdo.obraId())
+                        ? byRdo
+                        : StaviaContextResolution.notFound();
             }
         }
 
         Matcher rdoMatcher = RDO_NUMBER_PATTERN.matcher(question);
         if (rdoMatcher.find()) {
-            return rdoByNumber(rdoMatcher.group(1));
+            return rdoByNumber(userId, rdoMatcher.group(1));
         }
 
         return StaviaContextResolution.notFound();
+    }
+
+    /** Restringe candidatos às obras que o usuário tem permissão de acessar. */
+    private List<Candidate> filtrarAcessiveis(String userId, List<Candidate> candidates) {
+        Set<String> acessiveis = new LinkedHashSet<>();
+        Set<String> negados = new LinkedHashSet<>();
+        List<Candidate> resultado = new ArrayList<>();
+
+        for (Candidate candidate : candidates) {
+            String obraId = candidate.obraId();
+            if (negados.contains(obraId)) {
+                continue;
+            }
+            if (!acessiveis.contains(obraId)) {
+                if (acessivel(userId, obraId)) {
+                    acessiveis.add(obraId);
+                } else {
+                    negados.add(obraId);
+                    continue;
+                }
+            }
+            resultado.add(candidate);
+        }
+
+        return resultado;
+    }
+
+    private List<Candidate> mesclar(List<Candidate> obras, List<Candidate> rdos) {
+        List<Candidate> candidates = new ArrayList<>(obras);
+        candidates.addAll(rdos);
+        return candidates;
+    }
+
+    private boolean acessivel(String userId, String obraId) {
+        return obraId != null
+                && !obraId.isBlank()
+                && accessPolicy.canAccessWorksite(userId, obraId);
     }
 
     private StaviaContextResolution obraById(String id) {
@@ -182,7 +235,7 @@ public class StaviaContextResolutionService {
                 .orElseGet(StaviaContextResolution::notFound);
     }
 
-    private StaviaContextResolution rdoByNumber(String value) {
+    private StaviaContextResolution rdoByNumber(String userId, String value) {
         if (value == null || value.isBlank()) {
             return StaviaContextResolution.notFound();
         }
@@ -220,7 +273,7 @@ public class StaviaContextResolutionService {
                 value.trim()
         );
 
-        return singleOrAmbiguous(matches);
+        return singleOrAmbiguous(filtrarAcessiveis(userId, matches));
     }
 
     private StaviaContextResolution singleOrAmbiguous(

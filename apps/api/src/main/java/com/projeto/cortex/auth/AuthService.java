@@ -44,6 +44,19 @@ public class AuthService {
                 colaborador.getNome(),
                 colaborador.getCpfMascarado(),
                 colaborador.getNomePerfil(),
+                colaborador.getNomeGrupo(),
+                papelEfetivo(colaborador).name()
+        );
+    }
+
+    private static PapelAcesso papelEfetivo(Colaborador colaborador) {
+        PapelAcesso explicito =
+                PapelAcesso.fromNullable(colaborador.getPapelAcesso());
+        if (explicito != null) {
+            return explicito;
+        }
+        return PapelAcesso.fromPerfilGrupo(
+                colaborador.getNomePerfil(),
                 colaborador.getNomeGrupo()
         );
     }

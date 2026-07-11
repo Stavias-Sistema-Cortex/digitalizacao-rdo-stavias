@@ -12,6 +12,7 @@ import { SyncStatusBanner } from "../SyncStatusBanner";
 import {
   clearSession,
   getSession,
+  isAlfa,
 } from "../../features/auth/authSession";
 import {
   SIDEBAR_WIDTH_DEFAULT,
@@ -59,6 +60,7 @@ export function CortexShell({
 }: CortexShellProps) {
   const navigate = useNavigate();
   const session = getSession();
+  const alfa = isAlfa(session);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] =
     useState(
@@ -348,18 +350,20 @@ export function CortexShell({
         </nav>
 
         <div className="sidebar-footer">
-          <button
-            type="button"
-            onClick={() => navigate("/integracoes")}
-            title="Integrações"
-          >
-            <img
-              src="/icons8/settings.png"
-              alt=""
-              draggable={false}
-            />
-            <span className="sidebar-label">Integrações</span>
-          </button>
+          {alfa && (
+            <button
+              type="button"
+              onClick={() => navigate("/integracoes")}
+              title="Integrações"
+            >
+              <img
+                src="/icons8/settings.png"
+                alt=""
+                draggable={false}
+              />
+              <span className="sidebar-label">Integrações</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={onRefresh}
@@ -400,6 +404,11 @@ export function CortexShell({
               </p>
               <p className="profile-menu-cpf">
                 {session?.cpfMascarado ?? ""}
+              </p>
+              <p className="profile-menu-scope">
+                {alfa
+                  ? "Escopo global (Alfa)"
+                  : "Escopo das obras vinculadas (Beta)"}
               </p>
               <button
                 type="button"

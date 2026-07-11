@@ -34,7 +34,7 @@ class ObrasRelacionadasServiceTest {
         verify(jdbc).query(
                 anyString(),
                 any(RowMapper.class),
-                eq(0), eq("colab-1"), eq("colab-1")
+                eq(0), eq("colab-1")
         );
     }
 
@@ -52,7 +52,7 @@ class ObrasRelacionadasServiceTest {
         verify(jdbc).query(
                 anyString(),
                 any(RowMapper.class),
-                eq(1), eq("admin-1"), eq("admin-1")
+                eq(1), eq("admin-1")
         );
     }
 }

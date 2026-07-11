@@ -1,7 +1,6 @@
 package com.projeto.cortex.intelligence.stavia;
 
-import com.projeto.cortex.intelligence.stavia.access.DenyAllStaviaAccessPolicy;
-import com.projeto.cortex.intelligence.stavia.access.LocalStaviaAccessPolicy;
+import com.projeto.cortex.intelligence.stavia.access.CortexStaviaAccessPolicy;
 import com.projeto.cortex.intelligence.stavia.access.StaviaAccessPolicy;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.intelligence.stavia.api.StaviaController;
@@ -29,11 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 /**
- * Verifies that the full Stav.IA query graph wires correctly once
- * {@code StaviaQueryService} depends on a {@code StaviaAccessPolicy}: the local
- * profile gets the permissive policy and the controller, while every other
- * profile gets the fail-closed policy and no controller. This catches a startup
- * break that the unit tests (which construct collaborators by hand) cannot.
+ * Verifies that the Stav.IA query graph wires correctly with the real,
+ * permission-aware {@code CortexStaviaAccessPolicy} present in every profile —
+ * including the controller, which is no longer restricted to {@code local}.
+ * Authorization is enforced by the policy (Alfa/Beta), not by profile gating.
  */
 class StaviaAccessWiringTest {
 
@@ -48,7 +46,7 @@ class StaviaAccessWiringTest {
                     );
 
     @Test
-    void shouldWireLocalPolicyAndControllerInLocalProfile() {
+    void shouldWireRealPolicyAndControllerInLocalProfile() {
         contextRunner
                 .withPropertyValues("spring.profiles.active=local")
                 .run(context -> {
@@ -59,7 +57,7 @@ class StaviaAccessWiringTest {
 
                     assertThat(
                             context.getBean(StaviaAccessPolicy.class)
-                    ).isInstanceOf(LocalStaviaAccessPolicy.class);
+                    ).isInstanceOf(CortexStaviaAccessPolicy.class);
 
                     assertThat(context)
                             .hasSingleBean(StaviaQueryService.class);
@@ -70,25 +68,25 @@ class StaviaAccessWiringTest {
     }
 
     @Test
-    void shouldWireFailClosedPolicyAndNoControllerOutsideLocalProfile() {
+    void shouldWireRealPolicyAndControllerOutsideLocalProfile() {
         contextRunner
                 .withPropertyValues("spring.profiles.active=not-local")
                 .run(context -> {
-            assertThat(context).hasNotFailed();
+                    assertThat(context).hasNotFailed();
 
-            assertThat(context)
-                    .hasSingleBean(StaviaAccessPolicy.class);
+                    assertThat(context)
+                            .hasSingleBean(StaviaAccessPolicy.class);
 
-            assertThat(
-                    context.getBean(StaviaAccessPolicy.class)
-            ).isInstanceOf(DenyAllStaviaAccessPolicy.class);
+                    assertThat(
+                            context.getBean(StaviaAccessPolicy.class)
+                    ).isInstanceOf(CortexStaviaAccessPolicy.class);
 
-            assertThat(context)
-                    .hasSingleBean(StaviaQueryService.class);
+                    assertThat(context)
+                            .hasSingleBean(StaviaQueryService.class);
 
-            assertThat(context)
-                    .doesNotHaveBean(StaviaController.class);
-        });
+                    assertThat(context)
+                            .hasSingleBean(StaviaController.class);
+                });
     }
 
     @Configuration(proxyBeanMethods = false)
@@ -104,8 +102,7 @@ class StaviaAccessWiringTest {
             StaviaEvidenceQualityPolicy.class,
             StaviaContradictionPolicy.class,
             DeterministicStaviaResponseGenerator.class,
-            LocalStaviaAccessPolicy.class,
-            DenyAllStaviaAccessPolicy.class,
+            CortexStaviaAccessPolicy.class,
             StaviaInterpretationConfiguration.class,
             DeterministicQuestionInterpreter.class,
             LlmQuestionInterpreter.class,

@@ -526,6 +526,46 @@ public class CortexOperationalMemoryService {
         }
     }
 
+    /**
+     * Encerra uma relação específica que esteja ativa. Complementa
+     * {@link #registrarRelacaoAtiva} para casos em que o vínculo é desfeito
+     * (ex.: revogação de vínculo com a obra), mantendo o grafo ontológico
+     * coerente sem apagar o histórico.
+     */
+    @Transactional
+    public void encerrarRelacaoAtiva(
+            String origemTipo,
+            String origemId,
+            String destinoTipo,
+            String destinoId,
+            String tipoRelacao
+    ) {
+        if (destinoId == null || destinoId.isBlank()) {
+            return;
+        }
+
+        jdbcTemplate.update(
+                """
+                UPDATE cortex_relacao
+                SET
+                    ativa = 0,
+                    encerrado_em = CURRENT_TIMESTAMP(6),
+                    versao_linha = versao_linha + 1
+                WHERE origem_tipo = ?
+                  AND origem_id = ?
+                  AND destino_tipo = ?
+                  AND destino_id = ?
+                  AND tipo_relacao = ?
+                  AND ativa = 1
+                """,
+                origemTipo,
+                origemId,
+                destinoTipo,
+                destinoId,
+                tipoRelacao
+        );
+    }
+
     private long proximaCommitSeq() {
         int linhasAtualizadas = jdbcTemplate.update(
                 """

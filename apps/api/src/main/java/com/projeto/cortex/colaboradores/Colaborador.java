@@ -50,6 +50,9 @@ public class Colaborador {
     @Column(name = "nome_perfil")
     private String nomePerfil;
 
+    @Column(name = "papel_acesso")
+    private String papelAcesso;
+
     @Column(name = "ativo", nullable = false)
     private boolean ativo;
 
@@ -127,6 +130,10 @@ public class Colaborador {
 
     public String getNomePerfil() {
         return nomePerfil;
+    }
+
+    public String getPapelAcesso() {
+        return papelAcesso;
     }
 
     public boolean isAtivo() {

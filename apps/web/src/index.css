@@ -1660,9 +1660,20 @@ textarea:focus {
 }
 
 .profile-menu-cpf {
-  margin: 2px 0 10px;
+  margin: 2px 0 6px;
   font-size: 0.75rem;
   color: #6b7280;
+}
+
+.profile-menu-scope {
+  margin: 0 0 10px;
+  padding: 2px 8px;
+  align-self: flex-start;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .profile-menu-logout {

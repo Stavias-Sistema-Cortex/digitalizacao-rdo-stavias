@@ -8,14 +8,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+/**
+ * API REST da Stav.IA. Disponível em todos os perfis: a autorização é aplicada
+ * pela {@code StaviaAccessPolicy} real (Alfa/Beta), não mais pela restrição de
+ * perfil {@code local}. As consultas herdam exatamente o escopo do usuário
+ * autenticado; o snapshot administrativo permanece exclusivo do papel Alfa.
+ */
 @RestController
-@Profile("local")
 public class StaviaController {
 
     private final StaviaQueryService queryService;

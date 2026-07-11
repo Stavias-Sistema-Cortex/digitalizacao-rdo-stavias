@@ -9,11 +9,21 @@ export type AuthSession = {
   /** CPF (somente dígitos) do próprio usuário, para renovar o token. */
   cpf: string | null;
   perfil: string | null;
+  /** Papel de acesso: "ALFA" (global) ou "BETA" (operacional). */
+  papelAcesso: string | null;
   /** JWT emitido pelo servidor; ausente em sessão criada offline. */
   token: string | null;
   origem: "online" | "offline";
   autenticadoEm: string;
 };
+
+/**
+ * Papel Alfa = acesso administrativo global. A decisão de segurança real é
+ * sempre do backend; isto apenas ajusta o que a interface mostra.
+ */
+export function isAlfa(session: AuthSession | null): boolean {
+  return (session?.papelAcesso ?? "").toUpperCase() === "ALFA";
+}
 
 export function getSession(): AuthSession | null {
   try {

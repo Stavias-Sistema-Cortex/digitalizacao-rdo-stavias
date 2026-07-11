@@ -51,17 +51,10 @@ public class ObrasRelacionadasService {
                         ? = 1
                      OR EXISTS (
                             SELECT 1
-                            FROM alocacao_colaborador ac
-                            WHERE ac.colaborador_id = ?
-                              AND ac.obra_id = o.id
-                              AND ac.status <> 'CANCELADA'
-                        )
-                     OR EXISTS (
-                            SELECT 1
-                            FROM rdo_mao_obra mo
-                            JOIN rdo r ON r.id = mo.rdo_id
-                            WHERE mo.colaborador_id = ?
-                              AND r.obra_id = o.id
+                            FROM vinculo_colaborador_obra v
+                            WHERE v.colaborador_id = ?
+                              AND v.obra_id = o.id
+                              AND v.status = 'ATIVO'
                         )
                   )
                 ORDER BY o.atualizado_em DESC, o.id DESC
@@ -84,7 +77,7 @@ public class ObrasRelacionadasService {
                                 ? null
                                 : rs.getTimestamp("atualizado_em").toLocalDateTime()
                 ),
-                isAdmin, userId, userId
+                isAdmin, userId
         );
     }
 }

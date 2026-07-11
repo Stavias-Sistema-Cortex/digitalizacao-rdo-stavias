@@ -6,11 +6,12 @@ public record LoginResponse(
         String nome,
         String cpfMascarado,
         String perfil,
-        String grupo
+        String grupo,
+        String papelAcesso
 ) {
     public LoginResponse withToken(String novoToken) {
         return new LoginResponse(
-                novoToken, colaboradorId, nome, cpfMascarado, perfil, grupo
+                novoToken, colaboradorId, nome, cpfMascarado, perfil, grupo, papelAcesso
         );
     }
 }
