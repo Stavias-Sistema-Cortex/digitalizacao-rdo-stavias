@@ -353,6 +353,20 @@ export function CortexShell({
           {alfa && (
             <button
               type="button"
+              onClick={() => navigate("/obras/gestao")}
+              title="Gerir obras e vínculos"
+            >
+              <img
+                src="/icons8/location.png"
+                alt=""
+                draggable={false}
+              />
+              <span className="sidebar-label">Gerir obras</span>
+            </button>
+          )}
+          {alfa && (
+            <button
+              type="button"
               onClick={() => navigate("/integracoes")}
               title="Integrações"
             >

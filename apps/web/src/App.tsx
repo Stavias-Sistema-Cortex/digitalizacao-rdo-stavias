@@ -10,12 +10,14 @@ import {
 import {
   AUTH_SESSION_CHANGED_EVENT,
   getSession,
+  isAlfa,
 } from "./features/auth/authSession";
 import { LoginPage } from "./features/auth/LoginPage";
 import { CortexShell } from "./components/shell/CortexShell";
 import { HomePage } from "./features/home/HomePage";
 import { IntegracoesPage } from "./features/integracoes/IntegracoesPage";
 import { ObrasPage } from "./features/obras/ObrasPage";
+import { GestaoObrasPage } from "./features/obras/gestao/GestaoObrasPage";
 import { RdoWorkspacePage } from "./features/rdos/RdoWorkspacePage";
 import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
 
@@ -29,6 +31,20 @@ function IntegracoesRoute() {
           navigate("/home");
         }}
       />
+    </CortexShell>
+  );
+}
+
+// Gestão de obras/vínculos é exclusiva do papel Alfa. O guard aqui apenas evita
+// exibir a tela; a autorização real é imposta pelo backend em cada endpoint.
+function GestaoObrasRoute() {
+  if (!isAlfa(getSession())) {
+    return <Navigate to="/obras" replace />;
+  }
+
+  return (
+    <CortexShell active="obras">
+      <GestaoObrasPage />
     </CortexShell>
   );
 }
@@ -75,6 +91,7 @@ function App() {
       <Routes>
         <Route path="/home" element={<HomePage />} />
         <Route path="/obras" element={<ObrasPage />} />
+        <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
         <Route path="/rdos" element={<RdoWorkspacePage />} />
         <Route
           path="/integracoes"
