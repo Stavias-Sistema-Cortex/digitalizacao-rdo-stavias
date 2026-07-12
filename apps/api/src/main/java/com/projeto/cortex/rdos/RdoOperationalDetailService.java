@@ -984,6 +984,7 @@ public class RdoOperationalDetailService {
                 execucaoId,
                 "EXECUCAO_SERVICO_REGISTRADA",
                 FONTE,
+                obraId,
                 payload
         );
     }
@@ -1118,6 +1119,7 @@ public class RdoOperationalDetailService {
                 alocacaoId,
                 "ALOCACAO_COLABORADOR_CRIADA",
                 FONTE,
+                obraId,
                 payload
         );
     }

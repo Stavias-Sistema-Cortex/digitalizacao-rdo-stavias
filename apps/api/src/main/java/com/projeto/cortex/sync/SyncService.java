@@ -2,7 +2,9 @@ package com.projeto.cortex.sync;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -93,24 +95,25 @@ public class SyncService {
         int limit = normalizarLimit(requestedLimit);
         int queryLimit = limit + 1;
 
+        // Escopo por obra: o carregamento offline só traz eventos das obras
+        // autorizadas (§13). Alfa recebe tudo; Beta recebe suas obras + catálogos
+        // globais de referência, nunca eventos confidenciais de outras obras.
+        FiltroPull filtro = filtroPorEscopo(
+                currentUserService.allowedObraIds(currentUserId)
+        );
+
+        List<Object> parametros = new ArrayList<>();
+        parametros.add(afterCommitSeq);
+        parametros.addAll(filtro.parametros());
+        parametros.add(queryLimit);
+
         List<SyncPullResponse.EventoSync> eventosComExtra = jdbcTemplate.query(
-                """
-                SELECT
-                    commit_seq,
-                    id,
-                    tipo_entidade,
-                    entidade_id,
-                    tipo_evento,
-                    fonte,
-                    payload_json,
-                    ocorrido_em,
-                    criado_em,
-                    versao_entidade
-                FROM cortex_evento_operacional
-                WHERE commit_seq > ?
-                ORDER BY commit_seq
-                LIMIT ?
-                """,
+                "SELECT commit_seq, id, tipo_entidade, entidade_id, tipo_evento, "
+                        + "fonte, payload_json, ocorrido_em, criado_em, versao_entidade "
+                        + "FROM cortex_evento_operacional "
+                        + "WHERE commit_seq > ?" + filtro.condicaoSql() + " "
+                        + "ORDER BY commit_seq "
+                        + "LIMIT ?",
                 (rs, rowNum) -> new SyncPullResponse.EventoSync(
                         rs.getLong("commit_seq"),
                         rs.getString("id"),
@@ -123,8 +126,7 @@ public class SyncService {
                         rs.getTimestamp("criado_em").toLocalDateTime(),
                         rs.getObject("versao_entidade", Long.class)
                 ),
-                afterCommitSeq,
-                queryLimit
+                parametros.toArray()
         );
 
         boolean hasMore = eventosComExtra.size() > limit;
@@ -156,6 +158,53 @@ public class SyncService {
                 Instant.now(),
                 eventos
         );
+    }
+
+    // Catálogos globais não-pessoais que o cliente offline precisa e que podem
+    // ser entregues a qualquer usuário. Dados pessoais/confidenciais (colaborador,
+    // frequência) NÃO entram nesta lista — só chegam via obra vinculada.
+    private static final List<String> EVENTOS_REFERENCIA_GLOBAL =
+            List.of("ATIVO", "EQUIPAMENTO", "SERVICO");
+
+    /** Filtro de escopo do pull: condição SQL adicional e seus parâmetros. */
+    record FiltroPull(String condicaoSql, List<Object> parametros) {
+    }
+
+    /**
+     * Monta o filtro de obra do pull. Alfa (escopo global) não recebe filtro.
+     * Beta recebe apenas eventos das obras vinculadas e catálogos globais de
+     * referência — nunca eventos confidenciais de outras obras nem dados
+     * pessoais. Visível no pacote para teste.
+     */
+    FiltroPull filtroPorEscopo(Optional<Set<String>> obrasAutorizadas) {
+        if (obrasAutorizadas.isEmpty()) {
+            return new FiltroPull("", List.of());
+        }
+
+        Set<String> obras = obrasAutorizadas.get();
+        List<Object> parametros = new ArrayList<>();
+        StringBuilder escopo = new StringBuilder();
+
+        if (!obras.isEmpty()) {
+            escopo.append("obra_id IN (")
+                    .append(placeholders(obras.size()))
+                    .append(")");
+            parametros.addAll(obras);
+        }
+
+        if (escopo.length() > 0) {
+            escopo.append(" OR ");
+        }
+        escopo.append("(obra_id IS NULL AND tipo_entidade IN (")
+                .append(placeholders(EVENTOS_REFERENCIA_GLOBAL.size()))
+                .append("))");
+        parametros.addAll(EVENTOS_REFERENCIA_GLOBAL);
+
+        return new FiltroPull(" AND (" + escopo + ")", parametros);
+    }
+
+    private static String placeholders(int count) {
+        return String.join(",", Collections.nCopies(count, "?"));
     }
 
     public SyncDeviceResponse registrarDispositivo(SyncDeviceRequest request) {

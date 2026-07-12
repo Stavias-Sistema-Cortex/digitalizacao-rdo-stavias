@@ -482,6 +482,7 @@ public class PrevisaoFinanceiraService {
                 draft.id(),
                 tipoEvento,
                 FONTE,
+                obra.getId(),
                 payload
         );
     }

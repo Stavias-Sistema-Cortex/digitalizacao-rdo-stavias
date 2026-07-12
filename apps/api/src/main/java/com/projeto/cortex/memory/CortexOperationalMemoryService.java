@@ -43,13 +43,39 @@ public class CortexOperationalMemoryService {
             String fonte,
             Map<String, Object> payload
     ) {
+        return registrarEvento(
+                tipoEntidade,
+                entidadeId,
+                tipoEvento,
+                fonte,
+                null,
+                payload
+        );
+    }
+
+    /**
+     * Registra um evento associado a uma obra. Preencher {@code obraId} é
+     * essencial para o escopo de sincronização: eventos confidenciais de obra
+     * (RDO, financeiro, etc.) devem carregar sua obra para não vazarem no
+     * carregamento offline de usuários não vinculados. Eventos globais de
+     * referência (catálogos) mantêm {@code obraId} nulo.
+     */
+    @Transactional
+    public long registrarEvento(
+            String tipoEntidade,
+            String entidadeId,
+            String tipoEvento,
+            String fonte,
+            String obraId,
+            Map<String, Object> payload
+    ) {
         return registrarEventoDetalhado(
                 null,
                 tipoEntidade,
                 entidadeId,
                 tipoEvento,
                 fonte,
-                null,
+                obraId,
                 null,
                 null,
                 List.of(),
