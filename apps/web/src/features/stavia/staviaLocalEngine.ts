@@ -8,6 +8,7 @@ import type {
   StaviaSnapshotPdor,
   StaviaSnapshotProgramacao,
   StaviaSnapshotRdo,
+  StaviaSnapshotTarefa,
 } from "./stavia.types";
 import {
   answerWithRdoOntology,
@@ -39,6 +40,7 @@ type LocalIntent =
   | "OCORRENCIAS"
   | "TIMELINE_OPERACIONAL"
   | "FOTOS_RDO"
+  | "TAREFAS"
   | "CONSULTA_COMPOSTA"
   | "EVIDENCIAS"
   | "DESCONHECIDA";
@@ -536,6 +538,17 @@ function detectIntent(question: string): LocalIntent {
     ])
   ) {
     return "FOTOS_RDO";
+  }
+
+  if (
+    hasAny(normalized, [
+      "tarefa",
+      "tarefas",
+      "checklist da equipe",
+      "pendencias da equipe",
+    ])
+  ) {
+    return "TAREFAS";
   }
 
   if (isRdoDetailQuestion(normalized)) {
@@ -2841,6 +2854,373 @@ function readableEventType(type: string | null | undefined): string {
     .replace(/^./, (first) => first.toUpperCase());
 }
 
+// Palavras da própria pergunta sobre tarefas que nunca são
+// nome de pessoa ou de equipe.
+const TAREFA_QUESTION_WORDS = new Set([
+  "tarefa",
+  "tarefas",
+  "checklist",
+  "pendencia",
+  "pendencias",
+  "pendente",
+  "pendentes",
+  "criou",
+  "criada",
+  "criadas",
+  "criado",
+  "criados",
+  "cria",
+  "abriu",
+  "aberta",
+  "abertas",
+  "aberto",
+  "registrou",
+  "registrada",
+  "registradas",
+  "concluiu",
+  "concluida",
+  "concluidas",
+  "concluido",
+  "concluidos",
+  "finalizou",
+  "finalizada",
+  "finalizadas",
+  "feita",
+  "feitas",
+  "alguma",
+  "algum",
+  "algumas",
+  "alguns",
+  "lista",
+  "listar",
+  "liste",
+  "mostra",
+  "mostre",
+  "existe",
+  "existem",
+  "ha",
+  "equipe",
+  "equipes",
+  "prioridade",
+  "responsavel",
+  "responsaveis",
+  "quando",
+  "quantas",
+  "quantos",
+  "todas",
+  "todos",
+  "me",
+  "por",
+  "para",
+  "pelo",
+  "pela",
+  "com",
+  "sem",
+  "que",
+  "ja",
+  "desta",
+  "deste",
+  "destas",
+  "destes",
+  "minha",
+  "minhas",
+  "meu",
+  "meus",
+  "nossa",
+  "nossas",
+  "nosso",
+  "nossos",
+  "hoje",
+  "ontem",
+  "agora",
+  "semana",
+  "mes",
+  "abertos",
+  "registrados",
+  "finalizados",
+  "feito",
+  "feitos",
+]);
+
+function tarefaCandidateTokens(question: string): string[] {
+  return normalizeText(question)
+    .split(" ")
+    .filter(
+      (token) =>
+        token.length >= 2 &&
+        !STOPWORDS.has(token) &&
+        !TAREFA_QUESTION_WORDS.has(token),
+    );
+}
+
+function nameMatchCount(
+  nome: string | null | undefined,
+  candidates: string[],
+): number {
+  const nomeTokens = normalizeText(nome).split(" ").filter(Boolean);
+
+  if (nomeTokens.length === 0 || candidates.length === 0) {
+    return 0;
+  }
+
+  return candidates.filter((candidate) =>
+    nomeTokens.some(
+      (token) =>
+        token === candidate ||
+        (candidate.length >= 3 &&
+          token.startsWith(candidate)),
+    ),
+  ).length;
+}
+
+function tarefaPrioridadeLabel(
+  prioridade: number | null,
+): string {
+  if (prioridade === 1) {
+    return "P1 (Alta)";
+  }
+  if (prioridade === 2) {
+    return "P2 (Média)";
+  }
+  if (prioridade === 3) {
+    return "P3 (Baixa)";
+  }
+  return "sem prioridade";
+}
+
+function tarefaBullet(tarefa: StaviaSnapshotTarefa): string {
+  const parts = [
+    `equipe ${text(tarefa.equipe) || "não informada"}`,
+    `prioridade ${tarefaPrioridadeLabel(tarefa.prioridade)}`,
+    `criada em ${formatDateTime(tarefa.createdAt)}${
+      tarefa.criadaPor ? ` por ${tarefa.criadaPor}` : ""
+    }`,
+    tarefa.concluida
+      ? `concluída em ${formatDateTime(tarefa.concluidaEm)}`
+      : "pendente",
+  ];
+
+  if (tarefa.responsavelEquipe) {
+    parts.push(`responsável: ${tarefa.responsavelEquipe}`);
+  }
+
+  return `"${text(tarefa.titulo) || "Tarefa sem título"}" — ${parts.join(" · ")}`;
+}
+
+function sourceForTarefa(
+  tarefa: StaviaSnapshotTarefa,
+): StaviaEvidence {
+  return {
+    type: "TAREFA_LOCAL",
+    id: tarefa.id,
+    summary: `${text(tarefa.titulo) || "Tarefa"} · equipe ${
+      text(tarefa.equipe) || "não informada"
+    }`,
+    updatedAt: tarefa.updatedAt,
+    validated: true,
+    attributes: {
+      obraId: tarefa.obraId,
+      equipe: tarefa.equipe,
+      prioridade: tarefa.prioridade,
+      criadaPor: tarefa.criadaPor,
+      criadaEm: tarefa.createdAt,
+      concluida: tarefa.concluida,
+      concluidaEm: tarefa.concluidaEm,
+      responsavelEquipe: tarefa.responsavelEquipe,
+    },
+  };
+}
+
+function answerTarefas(
+  snapshot: StaviaSnapshot,
+  pergunta: string,
+): StaviaConsultaResponse {
+  const tarefas = snapshot.tarefas ?? [];
+  const normalized = normalizeText(pergunta);
+
+  if (tarefas.length === 0) {
+    return answer(
+      "Ainda não há tarefas registradas neste dispositivo. Elas aparecem aqui assim que forem criadas na aba Tarefas.",
+      "TAREFAS",
+      {
+        confidence: "MEDIA",
+        insufficientData: true,
+      },
+    );
+  }
+
+  const soCriador = hasAny(normalized, [
+    "criou",
+    "criada",
+    "criadas",
+    "criado",
+    "abriu",
+    "registrou",
+  ]);
+  const soResponsavel =
+    !soCriador &&
+    hasAny(normalized, ["responsavel", "responsaveis"]);
+
+  const candidates = tarefaCandidateTokens(pergunta);
+
+  let selecionadas = tarefas;
+  let recorte = "";
+
+  if (candidates.length > 0) {
+    const scored = tarefas
+      .map((tarefa) => {
+        const criadorScore = soResponsavel
+          ? 0
+          : nameMatchCount(tarefa.criadaPor, candidates);
+        const responsavelScore = soCriador
+          ? 0
+          : nameMatchCount(
+              tarefa.responsavelEquipe,
+              candidates,
+            );
+
+        return {
+          tarefa,
+          score: Math.max(criadorScore, responsavelScore),
+        };
+      })
+      .filter((entry) => entry.score > 0);
+
+    if (scored.length > 0) {
+      const maxScore = Math.max(
+        ...scored.map((entry) => entry.score),
+      );
+      selecionadas = scored
+        .filter((entry) => entry.score === maxScore)
+        .map((entry) => entry.tarefa);
+
+      const pessoas = unique(
+        selecionadas.map((tarefa) =>
+          soResponsavel
+            ? tarefa.responsavelEquipe
+            : (tarefa.criadaPor ??
+              tarefa.responsavelEquipe),
+        ),
+      );
+      recorte = soCriador
+        ? `criada(s) por ${pessoas.join(", ")}`
+        : soResponsavel
+          ? `sob responsabilidade de ${pessoas.join(", ")}`
+          : `relacionada(s) a ${pessoas.join(", ")}`;
+    } else {
+      const porEquipe = tarefas.filter(
+        (tarefa) =>
+          nameMatchCount(tarefa.equipe, candidates) > 0,
+      );
+
+      const obrasCasadas = porEquipe.length
+        ? []
+        : snapshot.obras.filter(
+            (obra) =>
+              nameMatchCount(
+                [
+                  obra.nome,
+                  obra.codigoContrato,
+                  obra.codigoCw,
+                  obra.codigoInterno,
+                  obra.cidade,
+                  obra.rodovia,
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+                candidates,
+              ) > 0,
+          );
+      const obraIds = new Set(
+        obrasCasadas.map((obra) => obra.id),
+      );
+      const porObra = tarefas.filter((tarefa) =>
+        obraIds.has(tarefa.obraId),
+      );
+
+      if (porEquipe.length > 0) {
+        selecionadas = porEquipe;
+        recorte = `da equipe ${text(porEquipe[0].equipe)}`;
+      } else if (porObra.length > 0) {
+        selecionadas = porObra;
+        recorte = `da obra ${
+          text(obrasCasadas[0].nome) ||
+          text(obrasCasadas[0].codigoContrato)
+        }`;
+      } else {
+        return answer(
+          `Não encontrei tarefas relacionadas a "${candidates.join(" ")}" nos registros deste dispositivo.`,
+          "TAREFAS",
+          {
+            confidence: "ALTA",
+            metadata: {
+              origemResposta: "SNAPSHOT_LOCAL_STAVIA",
+              totalTarefas: tarefas.length,
+            },
+          },
+        );
+      }
+    }
+  }
+
+  if (hasAny(normalized, ["concluida", "concluidas", "concluido", "concluidos", "finalizada", "finalizadas", "feitas"])) {
+    selecionadas = selecionadas.filter(
+      (tarefa) => tarefa.concluida,
+    );
+  } else if (
+    hasAny(normalized, ["pendente", "pendentes", "aberta", "abertas", "em aberto"])
+  ) {
+    selecionadas = selecionadas.filter(
+      (tarefa) => !tarefa.concluida,
+    );
+  }
+
+  if (selecionadas.length === 0) {
+    return answer(
+      `Não encontrei tarefas ${recorte || "nesse recorte"} nos registros deste dispositivo.`,
+      "TAREFAS",
+      {
+        confidence: "ALTA",
+        metadata: {
+          origemResposta: "SNAPSHOT_LOCAL_STAVIA",
+          totalTarefas: tarefas.length,
+        },
+      },
+    );
+  }
+
+  const ordenadas = [...selecionadas].sort(
+    (left, right) =>
+      (right.createdAt ?? "").localeCompare(
+        left.createdAt ?? "",
+      ),
+  );
+  const visiveis = ordenadas.slice(0, 12);
+  const restantes = ordenadas.length - visiveis.length;
+
+  const cabecalho = recorte
+    ? `Sim — encontrei ${ordenadas.length} tarefa(s) ${recorte}:`
+    : `Encontrei ${ordenadas.length} tarefa(s) registrada(s):`;
+
+  const corpo = bulletList(visiveis.map(tarefaBullet));
+  const rodape =
+    restantes > 0
+      ? `\n\n…e mais ${restantes} tarefa(s).`
+      : "";
+
+  return answer(
+    `${cabecalho}\n\n${corpo}${rodape}`,
+    "TAREFAS",
+    {
+      sources: visiveis.map(sourceForTarefa),
+      metadata: {
+        origemResposta: "SNAPSHOT_LOCAL_STAVIA",
+        totalTarefas: ordenadas.length,
+      },
+    },
+  );
+}
+
 function answerOperationalTimeline(
   snapshot: StaviaSnapshot,
   resolved: ResolvedContext,
@@ -3048,6 +3428,12 @@ export function responderComSnapshotStavia({
 
   if (intent === "OBRAS_POR_CIDADE") {
     return answerWorksByCity(snapshot, questionForResolution);
+  }
+
+  // Tarefas valem para qualquer colaborador e qualquer obra:
+  // não exigem contexto de obra/RDO resolvido.
+  if (intent === "TAREFAS") {
+    return answerTarefas(snapshot, pergunta);
   }
 
   const resolved =

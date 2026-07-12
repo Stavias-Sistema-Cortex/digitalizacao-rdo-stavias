@@ -2,10 +2,12 @@ import { getCortexDb } from "../../lib/db/cortexDb";
 import { listOperationalEvents } from "../../lib/db/operationalEventRepository";
 import { listAllRdoAttachments } from "../../lib/db/rdoAttachmentRepository";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
+import { listAllTarefas } from "../../lib/db/tarefaRepository";
 import type {
   LocalRdoRecord,
   OperationalEventRecord,
   RdoAttachmentRecord,
+  TarefaRecord,
 } from "../../lib/db/db.types";
 import type {
   StaviaSnapshot,
@@ -20,6 +22,7 @@ import type {
   StaviaSnapshotProgramacao,
   StaviaSnapshotRdo,
   StaviaSnapshotServicoExecutado,
+  StaviaSnapshotTarefa,
 } from "./stavia.types";
 
 const SNAPSHOT_KEY = "default" as const;
@@ -371,6 +374,29 @@ function localEventToSnapshot(
   };
 }
 
+function localTarefaToSnapshot(
+  tarefa: TarefaRecord,
+): StaviaSnapshotTarefa {
+  return {
+    id: tarefa.id,
+    obraId: tarefa.obraId,
+    equipe: asString(tarefa.equipe),
+    titulo: asString(tarefa.titulo),
+    observacoes: asString(tarefa.observacoes),
+    criadaPor: asString(tarefa.criadaPor),
+    criadaPorColaboradorId:
+      tarefa.criadaPorColaboradorId ?? null,
+    responsavelEquipe: asString(tarefa.responsavelEquipe),
+    responsavelColaboradorId:
+      tarefa.responsavelColaboradorId ?? null,
+    prioridade: tarefa.prioridade,
+    concluida: tarefa.concluida,
+    concluidaEm: tarefa.concluidaEm,
+    createdAt: tarefa.createdAt,
+    updatedAt: tarefa.updatedAt,
+  };
+}
+
 function localRdoToSnapshot(
   record: LocalRdoRecord,
 ): StaviaSnapshotRdo {
@@ -597,8 +623,13 @@ function mergeSnapshots(
   stored: StaviaSnapshot | null,
   localRdos: StaviaSnapshotRdo[],
   localEvents: StaviaSnapshotOperationalEvent[],
+  localTarefas: StaviaSnapshotTarefa[],
 ): StaviaSnapshot | null {
-  if (!stored && localRdos.length === 0) {
+  if (
+    !stored &&
+    localRdos.length === 0 &&
+    localTarefas.length === 0
+  ) {
     return null;
   }
 
@@ -619,6 +650,7 @@ function mergeSnapshots(
       programacoes: [],
       pdors: [],
       operationalEvents: [],
+      tarefas: [],
     };
 
   const storedProgramacoes = base.programacoes ?? [];
@@ -659,6 +691,12 @@ function mergeSnapshots(
     ].map((event) => [event.id, event]),
   );
 
+  const tarefasById = new Map(
+    [...(base.tarefas ?? []), ...localTarefas].map(
+      (tarefa) => [tarefa.id, tarefa],
+    ),
+  );
+
   return {
     metadata: {
       ...base.metadata,
@@ -689,6 +727,12 @@ function mergeSnapshots(
           left.occurredAt ?? "",
         ),
     ),
+    tarefas: Array.from(tarefasById.values()).sort(
+      (left, right) =>
+        (right.createdAt ?? "").localeCompare(
+          left.createdAt ?? "",
+        ),
+    ),
   };
 }
 
@@ -701,6 +745,7 @@ export async function saveStaviaSnapshot(
     ...snapshot,
     programacoes: snapshot.programacoes ?? [],
     operationalEvents: snapshot.operationalEvents ?? [],
+    tarefas: snapshot.tarefas ?? [],
     metadata: {
       ...snapshot.metadata,
       snapshotKey: SNAPSHOT_KEY,
@@ -732,12 +777,14 @@ export async function getStoredStaviaSnapshot(): Promise<StaviaSnapshot | null> 
 }
 
 export async function getBestAvailableStaviaSnapshot(): Promise<StaviaSnapshot | null> {
-  const [stored, localRecords, attachments, events] = await Promise.all([
-    getStoredStaviaSnapshot(),
-    listLocalRdos(),
-    listAllRdoAttachments(),
-    listOperationalEvents(),
-  ]);
+  const [stored, localRecords, attachments, events, tarefas] =
+    await Promise.all([
+      getStoredStaviaSnapshot(),
+      listLocalRdos(),
+      listAllRdoAttachments(),
+      listOperationalEvents(),
+      listAllTarefas(),
+    ]);
 
   const attachmentsByRdo = new Map<string, StaviaSnapshotAttachment[]>();
   for (const attachment of attachments) {
@@ -761,5 +808,6 @@ export async function getBestAvailableStaviaSnapshot(): Promise<StaviaSnapshot |
     stored,
     localRdos,
     events.map(localEventToSnapshot),
+    tarefas.map(localTarefaToSnapshot),
   );
 }

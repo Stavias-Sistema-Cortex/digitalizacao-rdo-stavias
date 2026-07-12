@@ -25,6 +25,18 @@ export async function listLocalRdos(): Promise<
   return records.reverse();
 }
 
+export async function listLocalRdosByObra(
+  obraId: string,
+): Promise<LocalRdoRecord[]> {
+  const database = await getCortexDb();
+
+  return database.getAllFromIndex(
+    "rdos",
+    "by-obra-id",
+    obraId,
+  );
+}
+
 export async function listLocalRdosBySyncStatus(
   status: LocalSyncStatus,
 ): Promise<LocalRdoRecord[]> {

@@ -1,14 +1,5 @@
 package com.projeto.cortex.intelligence.stavia;
 
-import com.projeto.cortex.intelligence.stavia.generation.DeterministicStaviaResponseGenerator;
-import com.projeto.cortex.intelligence.stavia.generation.StaviaGeneratedResponse;
-import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
-import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
-import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
-import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
-import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
-import org.junit.jupiter.api.Test;
-
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +7,15 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+
+import com.projeto.cortex.intelligence.stavia.generation.DeterministicStaviaResponseGenerator;
+import com.projeto.cortex.intelligence.stavia.generation.StaviaGeneratedResponse;
+import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
+import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
+import com.projeto.cortex.intelligence.stavia.model.StaviaEvidenceTypes;
+import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 
 class DeterministicStaviaResponseGeneratorTest {
 
@@ -24,6 +24,7 @@ class DeterministicStaviaResponseGeneratorTest {
 
     @Test
     void shouldGenerateGroundedRdoResponseWithSourceReference() {
+        
         StaviaGeneratedResponse response =
                 generator.generate(
                         new StaviaQuestion(

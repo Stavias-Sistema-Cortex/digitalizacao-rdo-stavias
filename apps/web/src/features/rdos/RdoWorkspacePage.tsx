@@ -6,7 +6,7 @@ import {
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { getSession } from "../auth/authSession";
-import { StaviaPanel } from "../stavia/StaviaPanel";
+import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   listOperationalEvents,
 } from "../../lib/db/operationalEventRepository";
@@ -61,12 +61,17 @@ export function RdoWorkspacePage() {
 
   const [loadError, setLoadError] =
     useState("");
-  const [isStaviaOpen, setIsStaviaOpen] =
-    useState(false);
-  const [staviaContext, setStaviaContext] = useState({
-    obraId: "",
-    rdoId: "",
-  });
+  const { openStavia, setStaviaContext } =
+    useStaviaLauncher();
+
+  useEffect(() => {
+    if (mode.type === "FORM") {
+      setStaviaContext({
+        obraId: mode.draft.obraId,
+        rdoId: mode.draft.id,
+      });
+    }
+  }, [mode, setStaviaContext]);
 
   const loadRecords =
     useCallback(async () => {
@@ -194,14 +199,6 @@ export function RdoWorkspacePage() {
             void loadRecords();
           }}
         />
-        <StaviaPanel
-          key={`${mode.draft.obraId}:${mode.draft.id}`}
-          variant="floating"
-          isOpen={isStaviaOpen}
-          onOpenChange={setIsStaviaOpen}
-          initialObraId={mode.draft.obraId}
-          initialRdoId={mode.draft.id}
-        />
       </CortexShell>
     );
   }
@@ -230,20 +227,11 @@ export function RdoWorkspacePage() {
           void loadRecords();
         }}
         onOpenStavia={(context) => {
-          setStaviaContext({
+          openStavia({
             obraId: context?.obraId ?? "",
             rdoId: context?.rdoId ?? "",
           });
-          setIsStaviaOpen(true);
         }}
-      />
-      <StaviaPanel
-        key={`stavia-floating-global:${staviaContext.obraId}:${staviaContext.rdoId}`}
-        variant="floating"
-        isOpen={isStaviaOpen}
-        onOpenChange={setIsStaviaOpen}
-        initialObraId={staviaContext.obraId}
-        initialRdoId={staviaContext.rdoId}
       />
     </CortexShell>
   );

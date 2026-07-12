@@ -5,6 +5,7 @@ import {
 } from "idb";
 
 import type {
+  ColaboradorLocalRecord,
   LocalRdoControleGeometricoRecord,
   LocalRdoEquipamentoRecord,
   LocalRdoMaoObraRecord,
@@ -18,10 +19,11 @@ import type {
   RdoAttachmentRecord,
   StaviaSnapshotRecord,
   SyncStateRecord,
+  TarefaRecord,
 } from "./db.types";
 
 const DATABASE_NAME = "cortex-web";
-const DATABASE_VERSION = 7;
+const DATABASE_VERSION = 9;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -146,6 +148,23 @@ interface CortexDbSchema extends DBSchema {
     indexes: {
       "by-obra-id": string;
       "by-data-referencia": string;
+    };
+  };
+
+  tarefas: {
+    key: string;
+    value: TarefaRecord;
+    indexes: {
+      "by-obra-id": string;
+      "by-updated-at": string;
+    };
+  };
+
+  colaboradores: {
+    key: string;
+    value: ColaboradorLocalRecord;
+    indexes: {
+      "by-nome": string;
     };
   };
 }
@@ -466,6 +485,36 @@ export function getCortexDb(): Promise<
             "by-data-referencia",
             "dataReferencia",
           );
+        }
+
+        if (
+          !database.objectStoreNames.contains("tarefas")
+        ) {
+          const tarefaStore = database.createObjectStore(
+            "tarefas",
+            {
+              keyPath: "id",
+            },
+          );
+
+          tarefaStore.createIndex("by-obra-id", "obraId");
+          tarefaStore.createIndex(
+            "by-updated-at",
+            "updatedAt",
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "colaboradores",
+          )
+        ) {
+          const colaboradorStore =
+            database.createObjectStore("colaboradores", {
+              keyPath: "id",
+            });
+
+          colaboradorStore.createIndex("by-nome", "nome");
         }
       },
 

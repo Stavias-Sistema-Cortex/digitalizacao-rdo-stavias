@@ -21,7 +21,11 @@ export type OperationalEventType =
   | "OCORRENCIA_REGISTRADA"
   | "CALCULO_REPROCESSADO"
   | "ENTIDADE_RELACIONADA"
-  | "ENTIDADE_DESRELACIONADA";
+  | "ENTIDADE_DESRELACIONADA"
+  | "TAREFA_CRIADA"
+  | "TAREFA_CONCLUIDA"
+  | "TAREFA_REABERTA"
+  | "TAREFA_EXCLUIDA";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -199,6 +203,35 @@ export interface ObraLocalRecord {
   longitude: number | null;
   valorContratual: number | null;
   updatedAt: string;
+}
+
+export type TarefaPrioridade = 1 | 2 | 3;
+
+export interface TarefaRecord {
+  id: string;
+  obraId: string;
+  equipe: string;
+  titulo: string;
+  observacoes: string;
+  criadaPor: string;
+  criadaPorColaboradorId: string | null;
+  responsavelEquipe: string;
+  responsavelColaboradorId: string | null;
+  prioridade: TarefaPrioridade;
+  concluida: boolean;
+  concluidaEm: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ColaboradorLocalRecord {
+  id: string;
+  nome: string;
+  cpfMascarado: string | null;
+  nomePerfil: string | null;
+  ativo: boolean;
+  updatedAt: string | null;
+  cachedAt: string;
 }
 
 export interface PrevisaoSnapshotRecord {
