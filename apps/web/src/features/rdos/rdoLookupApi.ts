@@ -54,6 +54,28 @@ export async function buscarColaboradores(
   return readJson<ColaboradorLookup[]>(response);
 }
 
+export interface ColaboradorDaObra {
+  id: string;
+  nome: string | null;
+  cpfMascarado: string | null;
+  nomePerfil: string | null;
+  nomeGrupo: string | null;
+}
+
+/**
+ * Colaboradores da obra (escopados por vínculo). Diferente de
+ * {@link buscarColaboradores}, que é o catálogo global administrativo, este
+ * endpoint funciona para o usuário Beta na obra a que tem acesso.
+ */
+export async function buscarColaboradoresDaObra(
+  obraId: string,
+): Promise<ColaboradorDaObra[]> {
+  const response = await apiFetch(
+    `/obras/${encodeURIComponent(obraId)}/colaboradores`,
+  );
+  return readJson<ColaboradorDaObra[]>(response);
+}
+
 export async function buscarAssets(
   query: string,
 ): Promise<AssetLookup[]> {

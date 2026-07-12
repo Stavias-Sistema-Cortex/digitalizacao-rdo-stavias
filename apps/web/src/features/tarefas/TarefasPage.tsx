@@ -203,8 +203,15 @@ export function TarefasPage() {
         setColaboradores(locais);
       }
 
+      // Escopa por obra: o Beta carrega os colaboradores da obra a que tem
+      // acesso (o catálogo global é administrativo). Sem obra selecionada,
+      // usa apenas o cache local já existente.
+      if (!focusedObraId) {
+        return;
+      }
+
       try {
-        await hidratarColaboradoresAcademy();
+        await hidratarColaboradoresAcademy("", focusedObraId);
       } catch {
         return;
       }
@@ -221,7 +228,7 @@ export function TarefasPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [focusedObraId]);
 
   const buscarNoAcademy = useCallback(
     (consulta: string) => {
@@ -237,7 +244,10 @@ export function TarefasPage() {
         () => {
           void (async () => {
             try {
-              await hidratarColaboradoresAcademy(consulta);
+              await hidratarColaboradoresAcademy(
+                consulta,
+                focusedObraId ?? undefined,
+              );
             } catch {
               return;
             }
@@ -250,7 +260,7 @@ export function TarefasPage() {
         300,
       );
     },
-    [],
+    [focusedObraId],
   );
 
   useEffect(
