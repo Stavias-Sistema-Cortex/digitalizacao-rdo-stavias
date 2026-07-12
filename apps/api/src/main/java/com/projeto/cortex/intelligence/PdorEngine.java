@@ -758,8 +758,9 @@ public final class PdorEngine {
     }
 
     private void validateRatio(double value, String fieldName) {
-        if (value < 0.0 || value > 1.0) {
-            throw new IllegalArgumentException(fieldName + " deve estar entre 0 e 1");
+        if (!Double.isFinite(value) || value < 0.0 || value > 1.0) {
+            throw new IllegalArgumentException(
+                fieldName + " deve ser um número finito entre 0 e 1");
         }
     }
 
@@ -770,8 +771,9 @@ public final class PdorEngine {
     }
 
     private void requireNonNegative(double value, String fieldName) {
-        if (value < 0.0) {
-            throw new IllegalArgumentException(fieldName + " não pode ser negativo");
+        if (!Double.isFinite(value) || value < 0.0) {
+            throw new IllegalArgumentException(
+                fieldName + " deve ser um número finito não negativo");
         }
     }
 
