@@ -1,9 +1,13 @@
 package com.projeto.cortex.intelligence.stavia.api;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.intelligence.stavia.StaviaAudit;
 import com.projeto.cortex.intelligence.stavia.StaviaQueryResult;
 import com.projeto.cortex.intelligence.stavia.StaviaQueryService;
 import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
+import com.projeto.cortex.intelligence.stavia.version.StaviaVersions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
@@ -21,6 +25,9 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 public class StaviaController {
+
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(StaviaController.class);
 
     private final StaviaQueryService queryService;
     private final ObjectProvider<StaviaSnapshotService> snapshotService;
@@ -68,7 +75,47 @@ public class StaviaController {
                         )
                 );
 
-        return queryService.query(question);
+        long startNanos = System.nanoTime();
+        StaviaQueryResult result = queryService.query(question);
+        registrarAuditoria(authenticatedUserId, question, result, startNanos);
+        return result;
+    }
+
+    /**
+     * Observabilidade da consulta (§16): registra, de forma segura, usuário,
+     * escopo de obra, decisão de autorização, intenção, resultado, contagens,
+     * duração e versões — sem texto de pergunta/resposta, sem segredos.
+     */
+    private void registrarAuditoria(
+            String userId,
+            StaviaQuestion question,
+            StaviaQueryResult result,
+            long startNanos
+    ) {
+        try {
+            long durationMs = (System.nanoTime() - startNanos) / 1_000_000L;
+            boolean authorized = !result.knowledgeWarnings()
+                    .contains(StaviaQueryService.AVISO_SEM_ACESSO);
+
+            StaviaAudit audit = new StaviaAudit(
+                    userId,
+                    question.obraId(),
+                    authorized,
+                    result.intent().name(),
+                    result.answer().answerType().name(),
+                    result.answer().sources().size(),
+                    result.consultedKnowledgeSources().size(),
+                    result.knowledgeWarnings().size(),
+                    durationMs,
+                    StaviaVersions.ENGINE,
+                    StaviaVersions.PROMPT
+            );
+
+            LOGGER.info(audit.toLogLine());
+        } catch (RuntimeException exception) {
+            // Auditoria nunca pode quebrar a resposta ao usuário.
+            LOGGER.warn("Falha ao registrar auditoria da Stav.IA.", exception);
+        }
     }
 
     @GetMapping("/api/stavia/snapshot")

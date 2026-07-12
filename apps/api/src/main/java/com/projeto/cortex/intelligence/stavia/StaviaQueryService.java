@@ -40,6 +40,10 @@ public class StaviaQueryService {
     private static final Logger LOGGER =
             LoggerFactory.getLogger(StaviaQueryService.class);
 
+    /** Aviso emitido quando o acesso à obra é negado; usado também na auditoria. */
+    public static final String AVISO_SEM_ACESSO =
+            "O usuário não tem acesso a esta obra.";
+
     private final StaviaIntentClassifier intentClassifier;
     private final StaviaKnowledgeOrchestrator knowledgeOrchestrator;
     private final StaviaContextBuilder contextBuilder;
@@ -257,9 +261,7 @@ public class StaviaQueryService {
                     StaviaIntent.DESCONHECIDA,
                     0.0,
                     java.util.Map.of(),
-                    List.of(
-                            "O usuário não tem acesso a esta obra."
-                    )
+                    List.of(AVISO_SEM_ACESSO)
             );
         }
 
