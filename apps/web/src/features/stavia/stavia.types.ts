@@ -328,6 +328,23 @@ export interface StaviaSnapshotPdor {
   confianca: number | string | null;
 }
 
+export interface StaviaSnapshotTarefa {
+  id: string;
+  obraId: string;
+  equipe: string | null;
+  titulo: string | null;
+  observacoes: string | null;
+  criadaPor: string | null;
+  criadaPorColaboradorId: string | null;
+  responsavelEquipe: string | null;
+  responsavelColaboradorId: string | null;
+  prioridade: number | null;
+  concluida: boolean;
+  concluidaEm: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface StaviaSnapshot {
   metadata: StaviaSnapshotMetadata;
   obras: StaviaSnapshotObra[];
@@ -335,5 +352,6 @@ export interface StaviaSnapshot {
   programacoes: StaviaSnapshotProgramacao[];
   pdors: StaviaSnapshotPdor[];
   operationalEvents: StaviaSnapshotOperationalEvent[];
+  tarefas?: StaviaSnapshotTarefa[];
   ontology?: unknown;
 }

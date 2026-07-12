@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import { StaviaPanel } from "../stavia/StaviaPanel";
+import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   filterObrasByChip,
   filterObrasByRodovia,
@@ -32,7 +32,11 @@ export function HomePage() {
     useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
   const [rodoviaFilter, setRodoviaFilter] = useState("");
-  const [isStaviaOpen, setIsStaviaOpen] = useState(false);
+  const { setStaviaContext } = useStaviaLauncher();
+
+  useEffect(() => {
+    setStaviaContext({ obraId: focusedObra?.id ?? "" });
+  }, [focusedObra?.id, setStaviaContext]);
 
   const ufs = useMemo(
     () =>
@@ -169,14 +173,6 @@ export function HomePage() {
           <MaisStaviasCard />
         </div>
       </main>
-
-      <StaviaPanel
-        key={`stavia-home:${focusedObra?.id ?? ""}`}
-        variant="floating"
-        isOpen={isStaviaOpen}
-        onOpenChange={setIsStaviaOpen}
-        initialObraId={focusedObra?.id ?? ""}
-      />
     </CortexShell>
   );
 }

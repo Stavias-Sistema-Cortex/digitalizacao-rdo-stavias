@@ -71,6 +71,7 @@ const SUGGESTIONS = [
   "Quais equipamentos foram usados neste RDO?",
   "Quais materiais foram aplicados?",
   "Quantos RDOs dessa obra eu tenho?",
+  "Quais tarefas foram criadas?",
 ];
 
 function createLocalId(): string {

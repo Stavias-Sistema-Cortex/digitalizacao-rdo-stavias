@@ -12,6 +12,10 @@ const EVENT_LABELS: Record<string, string> = {
   EQUIPAMENTO_ASSOCIADO_RDO: "Equipamento associado ao RDO",
   OCORRENCIA_REGISTRADA: "Ocorrência registrada",
   CALCULO_REPROCESSADO: "Cálculo reprocessado",
+  TAREFA_CRIADA: "Tarefa criada",
+  TAREFA_CONCLUIDA: "Tarefa concluída",
+  TAREFA_REABERTA: "Tarefa reaberta",
+  TAREFA_EXCLUIDA: "Tarefa excluída",
 };
 
 export function operationalEventLabel(

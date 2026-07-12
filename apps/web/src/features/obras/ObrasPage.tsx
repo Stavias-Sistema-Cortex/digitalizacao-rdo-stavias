@@ -13,7 +13,7 @@ import {
   type ObraStatusChip,
 } from "../home/homeFilters";
 import { useHomeData } from "../home/useHomeData";
-import { StaviaPanel } from "../stavia/StaviaPanel";
+import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   buscarPdorAtual,
   buscarTimelineObra,
@@ -182,7 +182,12 @@ export function ObrasPage() {
     useState<string | null>(null);
   const [isPdorLoading, setIsPdorLoading] =
     useState(false);
-  const [isStaviaOpen, setIsStaviaOpen] = useState(false);
+  const { openStavia, setStaviaContext } =
+    useStaviaLauncher();
+
+  useEffect(() => {
+    setStaviaContext({ obraId: focusedObra?.id ?? "" });
+  }, [focusedObra?.id, setStaviaContext]);
 
   const ufs = useMemo(
     () =>
@@ -416,7 +421,11 @@ export function ObrasPage() {
                   <button
                     type="button"
                     className="obras-stavia-button"
-                    onClick={() => setIsStaviaOpen(true)}
+                    onClick={() =>
+                      openStavia({
+                        obraId: focusedObra?.id ?? "",
+                      })
+                    }
                   >
                     StavIA
                   </button>
@@ -637,16 +646,6 @@ export function ObrasPage() {
           </section>
         </section>
       </main>
-
-      {isStaviaOpen ? (
-        <StaviaPanel
-          key={`stavia-obras:${focusedObra?.id ?? ""}`}
-          variant="floating"
-          isOpen={isStaviaOpen}
-          onOpenChange={setIsStaviaOpen}
-          initialObraId={focusedObra?.id ?? ""}
-        />
-      ) : null}
     </CortexShell>
   );
 }

@@ -17,6 +17,8 @@ import { HomePage } from "./features/home/HomePage";
 import { IntegracoesPage } from "./features/integracoes/IntegracoesPage";
 import { ObrasPage } from "./features/obras/ObrasPage";
 import { RdoWorkspacePage } from "./features/rdos/RdoWorkspacePage";
+import { StaviaLauncherProvider } from "./features/stavia/StaviaLauncherProvider";
+import { TarefasPage } from "./features/tarefas/TarefasPage";
 import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
 
 function IntegracoesRoute() {
@@ -72,19 +74,22 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/home" element={<HomePage />} />
-        <Route path="/obras" element={<ObrasPage />} />
-        <Route path="/rdos" element={<RdoWorkspacePage />} />
-        <Route
-          path="/integracoes"
-          element={<IntegracoesRoute />}
-        />
-        <Route
-          path="*"
-          element={<Navigate to="/home" replace />}
-        />
-      </Routes>
+      <StaviaLauncherProvider>
+        <Routes>
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/obras" element={<ObrasPage />} />
+          <Route path="/rdos" element={<RdoWorkspacePage />} />
+          <Route path="/tarefas" element={<TarefasPage />} />
+          <Route
+            path="/integracoes"
+            element={<IntegracoesRoute />}
+          />
+          <Route
+            path="*"
+            element={<Navigate to="/home" replace />}
+          />
+        </Routes>
+      </StaviaLauncherProvider>
     </BrowserRouter>
   );
 }

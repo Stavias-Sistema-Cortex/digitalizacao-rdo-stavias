@@ -28,6 +28,7 @@ export type ShellActiveItem =
   | "home"
   | "rdos"
   | "obras"
+  | "tarefas"
   | "integracoes"
   | null;
 
@@ -324,7 +325,13 @@ export function CortexShell({
           </button>
           <button
             type="button"
-            className="sidebar-nav-item"
+            className={
+              active === "tarefas"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
+            title="Tarefas"
+            onClick={() => navigate("/tarefas")}
           >
             <img
               src="/icons8/done.png"
