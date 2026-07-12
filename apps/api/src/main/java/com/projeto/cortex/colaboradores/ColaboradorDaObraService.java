@@ -1,0 +1,64 @@
+package com.projeto.cortex.colaboradores;
+
+import java.util.List;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+/**
+ * Lista os colaboradores operacionalmente ligados a uma obra (alocados ou
+ * lançados em RDO dela). Serve o carregamento offline do usuário Beta com o
+ * conjunto de colaboradores da obra autorizada, em vez do catálogo global —
+ * a autorização de acesso à obra é feita pelo chamador.
+ */
+@Service
+public class ColaboradorDaObraService {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public ColaboradorDaObraService(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public List<ColaboradorDaObraResponse> listarPorObra(String obraId) {
+        return jdbcTemplate.query(
+                """
+                SELECT DISTINCT
+                    c.id,
+                    c.nome,
+                    c.cpf_mascarado,
+                    c.nome_perfil,
+                    c.nome_grupo
+                FROM colaborador c
+                WHERE c.ativo = 1
+                  AND c.deletado_em IS NULL
+                  AND (
+                        EXISTS (
+                            SELECT 1
+                            FROM alocacao_colaborador ac
+                            WHERE ac.colaborador_id = c.id
+                              AND ac.obra_id = ?
+                              AND ac.status <> 'CANCELADA'
+                        )
+                     OR EXISTS (
+                            SELECT 1
+                            FROM rdo_mao_obra mo
+                            JOIN rdo r ON r.id = mo.rdo_id
+                            WHERE mo.colaborador_id = c.id
+                              AND r.obra_id = ?
+                        )
+                  )
+                ORDER BY c.nome, c.id
+                LIMIT 500
+                """,
+                (rs, rowNum) -> new ColaboradorDaObraResponse(
+                        rs.getString("id"),
+                        rs.getString("nome"),
+                        rs.getString("cpf_mascarado"),
+                        rs.getString("nome_perfil"),
+                        rs.getString("nome_grupo")
+                ),
+                obraId,
+                obraId
+        );
+    }
+}
