@@ -640,7 +640,8 @@ public class SyncService {
         );
     }
 
-    private RdoResponse aplicarOperacao(SyncPushRequest.MutacaoCliente mutacao) {
+    // Visível no pacote para teste de autorização do sync (§14.20).
+    RdoResponse aplicarOperacao(SyncPushRequest.MutacaoCliente mutacao) {
         return switch (mutacao.operacao()) {
             case "CRIAR_RDO" -> {
                 RdoCreateRequest request = toValue(mutacao.payload(), RdoCreateRequest.class);

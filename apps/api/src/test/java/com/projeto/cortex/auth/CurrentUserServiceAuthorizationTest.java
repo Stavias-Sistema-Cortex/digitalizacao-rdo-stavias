@@ -55,6 +55,14 @@ class CurrentUserServiceAuthorizationTest {
         )).thenReturn(ativo ? 1 : 0);
     }
 
+    private void rdoNaObra(String rdoId, String obraId) {
+        when(jdbc.query(
+                contains("FROM rdo"),
+                any(ResultSetExtractor.class),
+                eq(rdoId)
+        )).thenReturn(obraId);
+    }
+
     @Test
     void alfaAcessaQualquerObraSemVinculo() {
         papel("alfa", PapelAcesso.ALFA);
@@ -133,6 +141,37 @@ class CurrentUserServiceAuthorizationTest {
         assertThatThrownBy(service::requireAdmin)
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Alfa");
+    }
+
+    @Test
+    void requireRdoAccessBloqueiaBetaEmRdoDeOutraObra() {
+        papel("beta", PapelAcesso.BETA);
+        rdoNaObra("rdo-1", "obra-de-outrem");
+        vinculoAtivo("beta", "obra-de-outrem", false);
+        autenticarComo("beta");
+
+        assertThatThrownBy(() -> service.requireRdoAccess("rdo-1"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("permissão para acessar esta obra");
+    }
+
+    @Test
+    void requireRdoAccessLiberaBetaNoRdoDaObraVinculada() {
+        papel("beta", PapelAcesso.BETA);
+        rdoNaObra("rdo-2", "obra-vinculada");
+        vinculoAtivo("beta", "obra-vinculada", true);
+        autenticarComo("beta");
+
+        service.requireRdoAccess("rdo-2");
+    }
+
+    @Test
+    void requireRdoAccessRetorna404QuandoRdoNaoExiste() {
+        rdoNaObra("rdo-inexistente", null);
+
+        assertThatThrownBy(() -> service.requireRdoAccess("rdo-inexistente"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("RDO não encontrado");
     }
 
     private void autenticarComo(String userId) {
