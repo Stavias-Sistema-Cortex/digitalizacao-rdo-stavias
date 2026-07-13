@@ -21,6 +21,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 public class AuthIdentityRepository {
 
+    public static final String MANUAL_PENDING_SOURCE = "MANUAL_PENDENTE";
+
     private static final String AMBIGUOUS_IDENTITY_MESSAGE =
             "Identidade de autenticação ambígua.";
     private static final String IDENTITY_CONFLICT_MESSAGE =
@@ -100,6 +102,57 @@ public class AuthIdentityRepository {
                 colaboradorId,
                 digest,
                 academyEmail
+        );
+    }
+
+    /**
+     * Locates an existing active collaborator through the protected CPF lookup
+     * boundary and assigns an e-mail that still requires OTP verification.
+     */
+    @Transactional
+    public void upsertProvisionedIdentity(
+            String cpfRaw,
+            String email,
+            String source
+    ) {
+        if (!MANUAL_PENDING_SOURCE.equals(source)
+                || email == null
+                || email.isBlank()
+                || email.length() > 320
+                || email.contains("\r")
+                || email.contains("\n")) {
+            throw unavailableForProvisioning();
+        }
+
+        String cpf = CpfNormalizer.requireValid(cpfRaw);
+        AuthIdentity identity = findActiveByCpf(cpf)
+                .orElseThrow(this::unavailableForProvisioning);
+        CpfLookupDigest digest = digestService.current(cpf);
+        executeProtectedWrite(
+                identity.colaboradorId(),
+                digest,
+                exists -> {
+                    if (!exists) {
+                        throw unavailableForProvisioning();
+                    }
+                    jdbcTemplate.update("""
+                            UPDATE auth_identity
+                            SET cpf_lookup_hmac = ?,
+                                cpf_lookup_key_id = ?,
+                                email_autenticacao = TRIM(?),
+                                email_verificado_em = NULL,
+                                email_fonte = ?,
+                                status = 'PENDENTE',
+                                versao_linha = versao_linha + 1
+                            WHERE colaborador_id = ?
+                            """,
+                            digest.value(),
+                            digest.keyId(),
+                            email,
+                            source,
+                            identity.colaboradorId()
+                    );
+                }
         );
     }
 
@@ -244,7 +297,10 @@ public class AuthIdentityRepository {
                         cpf_lookup_key_id = ?,
                         email_autenticacao = CASE
                             WHEN email_verificado_em IS NOT NULL
-                              OR email_fonte = 'MANUAL_VERIFICADO'
+                              OR email_fonte IN (
+                                  'MANUAL_VERIFICADO',
+                                  'MANUAL_PENDENTE'
+                              )
                                 THEN email_autenticacao
                             ELSE COALESCE(
                                 NULLIF(TRIM(?), ''),
@@ -253,7 +309,10 @@ public class AuthIdentityRepository {
                         END,
                         email_fonte = CASE
                             WHEN email_verificado_em IS NOT NULL
-                              OR email_fonte = 'MANUAL_VERIFICADO'
+                              OR email_fonte IN (
+                                  'MANUAL_VERIFICADO',
+                                  'MANUAL_PENDENTE'
+                              )
                                 THEN email_fonte
                             WHEN NULLIF(TRIM(?), '') IS NOT NULL
                                 THEN 'ACADEMY'
@@ -312,6 +371,12 @@ public class AuthIdentityRepository {
 
     private IllegalStateException identityConflict() {
         return new IllegalStateException(IDENTITY_CONFLICT_MESSAGE);
+    }
+
+    private IllegalStateException unavailableForProvisioning() {
+        return new IllegalStateException(
+                "Identidade indisponível para provisionamento."
+        );
     }
 
     @FunctionalInterface

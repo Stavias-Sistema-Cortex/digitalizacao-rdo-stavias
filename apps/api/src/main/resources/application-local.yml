@@ -9,3 +9,6 @@ cortex:
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}
+
+  email:
+    provider: ${CORTEX_EMAIL_PROVIDER:fake}

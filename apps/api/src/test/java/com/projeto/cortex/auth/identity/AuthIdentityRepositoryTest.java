@@ -286,7 +286,8 @@ class AuthIdentityRepositoryTest {
         assertThat(sql.getValue())
                 .startsWith("UPDATE auth_identity")
                 .contains("email_verificado_em IS NOT NULL")
-                .contains("email_fonte = 'MANUAL_VERIFICADO'")
+                .contains("'MANUAL_VERIFICADO'")
+                .contains("'MANUAL_PENDENTE'")
                 .contains("WHERE colaborador_id = ?")
                 .doesNotContain("ON DUPLICATE KEY UPDATE")
                 .doesNotContain("cpf_hash");
@@ -330,6 +331,70 @@ class AuthIdentityRepositoryTest {
                 .hasMessage("Conflito de identidade de autenticação.")
                 .hasMessageNotContaining("Duplicate entry")
                 .hasNoCause();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void provisioningLocatesExistingActiveOwnerAndLeavesEmailPending() {
+        when(digests.candidates(SYNTHETIC_CPF)).thenReturn(List.of(CURRENT));
+        when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        stubLegacyOwners(List.of(activeIdentity()));
+        stubEligible("alfa-sintetico", activeIdentity());
+        stubDigestOwnerForUpdate(CURRENT, List.of("alfa-sintetico"));
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", true);
+
+        repository.upsertProvisionedIdentity(
+                SYNTHETIC_CPF,
+                "alfa@example.invalid",
+                AuthIdentityRepository.MANUAL_PENDING_SOURCE
+        );
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(
+                sql.capture(),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq("alfa@example.invalid"),
+                eq(AuthIdentityRepository.MANUAL_PENDING_SOURCE),
+                eq("alfa-sintetico")
+        );
+        assertThat(sql.getValue())
+                .startsWith("UPDATE auth_identity")
+                .contains("email_verificado_em = NULL")
+                .contains("status = 'PENDENTE'")
+                .doesNotContain("papel_acesso")
+                .doesNotContain("UPDATE colaborador")
+                .doesNotContain("MANUAL_VERIFICADO");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void provisioningRefusesUnknownIdentityWithoutWriting() {
+        when(digests.candidates(SYNTHETIC_CPF)).thenReturn(List.of(CURRENT));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of());
+        stubLegacyOwners(List.of());
+
+        assertThatThrownBy(() -> repository.upsertProvisionedIdentity(
+                SYNTHETIC_CPF,
+                "alfa@example.invalid",
+                AuthIdentityRepository.MANUAL_PENDING_SOURCE
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade indisponível para provisionamento.")
+                .hasMessageNotContaining(SYNTHETIC_CPF)
+                .hasMessageNotContaining("alfa@example.invalid");
+
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 
     @SuppressWarnings("unchecked")
