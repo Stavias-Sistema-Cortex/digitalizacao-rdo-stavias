@@ -254,6 +254,13 @@ describe("polimento visual da plataforma autenticada", () => {
       "box-shadow: inset 3px 0 0 var(--color-brand-yellow);",
     );
     expect(active).toContain("outline: none;");
+
+    const activeFocus = rule(
+      gestaoObrasCss,
+      ".gestao-obras-item.ativo:focus-visible",
+    );
+    expect(activeFocus).toContain("outline: 3px solid var(--color-focus);");
+    expect(activeFocus).toContain("outline-offset: 2px;");
     expect(gestaoObrasCss).not.toContain("prefers-color-scheme: dark");
 
     expect(rule(gestaoObrasCss, ".gestao-obras-aviso")).toContain(

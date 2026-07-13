@@ -120,6 +120,11 @@
   outline: none;
 }
 
+.gestao-obras-item.ativo:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .gestao-obras-item-nome {
   font-weight: 600;
   font-size: 0.9rem;
