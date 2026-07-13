@@ -19,6 +19,7 @@
 - Do not change APIs, authentication, synchronization, routing, offline behavior, domain terminology, PDOR semantics, or permissions.
 - Preserve visible keyboard focus, accessible names, semantic status colors, reduced motion, and responsive behavior.
 - Keep the login page and established StavIA panel treatment outside the main change set.
+- Latest user feedback overrides the shared radius rule for RDO metrics only: metric cards must be square with a complete yellow frame.
 
 ---
 
@@ -585,36 +586,70 @@ git commit -m "style: align authenticated feature surfaces"
 ### Task 5: Browser verification and final restraint pass
 
 **Files:**
-- Modify if required by evidence: authenticated CSS files from Tasks 2–4
+- Modify: `apps/web/src/index.css`
+- Modify: `apps/web/src/uiPolish.test.ts`
+- Modify if required by evidence: other authenticated CSS files from Tasks 2–4
 - Verify: rendered local app at `http://127.0.0.1:5173`
 
 **Interfaces:**
 - Consumes: the complete authenticated UI polish.
 - Produces: fresh visual evidence and any evidence-driven CSS corrections.
 
-- [ ] **Step 1: Capture desktop screenshots**
+- [ ] **Step 1: Write the failing square-frame metric contract**
+
+Replace the earlier top-accent expectation in `uiPolish.test.ts` with the user's latest visual requirement:
+
+```ts
+it("enquadra métricas RDO com moldura amarela e cantos quadrados", () => {
+  const metricCard = rule(globalCss, ".metric-card");
+  expect(metricCard).toContain(
+    "border: 2px solid var(--color-brand-yellow);",
+  );
+  expect(metricCard).toContain("border-radius: 0;");
+  expect(metricCard).not.toContain("border-top:");
+});
+```
+
+Run: `cd apps/web && npx vitest run src/uiPolish.test.ts`
+
+Expected: FAIL because the current card still has a rounded top-only accent.
+
+- [ ] **Step 2: Implement the requested metric frame and verify GREEN**
+
+```css
+.metric-card {
+  border: 2px solid var(--color-brand-yellow);
+  border-radius: 0;
+}
+```
+
+Run: `cd apps/web && npx vitest run src/uiPolish.test.ts`
+
+Expected: PASS.
+
+- [ ] **Step 3: Capture desktop screenshots**
 
 Use Playwright with `/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`, a 1440×1000 viewport, and a local `cortex.auth.sessao` preview session. Capture Home and RDO after waiting for network idle.
 
-- [ ] **Step 2: Exercise shell interactions**
+- [ ] **Step 4: Exercise shell interactions**
 
 Verify expanded and collapsed sidebar states, profile menu, sync popover, top-level navigation, Home filters, RDO filters, and the StavIA launcher. Confirm accessible names and visible focus on icon-only controls.
 
-- [ ] **Step 3: Capture mobile screenshots**
+- [ ] **Step 5: Capture mobile screenshots**
 
 Use a 390×844 viewport. Capture Home, RDO, Obras, and Tarefas and assert `document.documentElement.scrollWidth <= document.documentElement.clientWidth` on each route.
 
-- [ ] **Step 4: Apply the final restraint pass**
+- [ ] **Step 6: Apply the final restraint pass**
 
 Remove any remaining non-functional glow, oversized radius, decorative gradient, or inconsistent static shadow revealed by the screenshots. Do not change the login composition or StavIA panel structure.
 
-- [ ] **Step 5: Run final verification**
+- [ ] **Step 7: Run final verification**
 
 Run: `cd apps/web && npm run test && npm run lint && npm run build`
 
 Expected: all three commands complete successfully.
 
-- [ ] **Step 6: Commit evidence-driven corrections**
+- [ ] **Step 8: Commit evidence-driven corrections**
 
 ```bash
 git add apps/web/src
