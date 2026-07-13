@@ -373,7 +373,7 @@
 
 .tarefa-form-enviar {
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   padding: 10px 20px;
   font-weight: 700;
   font-size: 0.9rem;

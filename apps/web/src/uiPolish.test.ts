@@ -19,13 +19,15 @@ function rule(css: string, selector: string): string {
 }
 
 const globalCss = readCss("./index.css");
+const syncCss = readCss("./components/SyncStatusBanner.css");
+const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
 const authenticatedCss = [
   globalCss,
-  readCss("./components/SyncStatusBanner.css"),
+  syncCss,
   readCss("./features/integracoes/IntegracoesPage.css"),
   readCss("./features/obras/gestao/gestaoObras.css"),
   readCss("./features/programacoes/ProgramacaoSemanalImport.css"),
-  readCss("./features/tarefas/TarefasPage.css"),
+  tarefasCss,
 ].join("\n");
 
 describe("polimento visual da plataforma autenticada", () => {
@@ -59,5 +61,32 @@ describe("polimento visual da plataforma autenticada", () => {
   it("mantém foco visível para os controles principais", () => {
     expect(globalCss).toContain("button:focus-visible");
     expect(globalCss).toContain("outline: 3px solid var(--color-focus);");
+  });
+
+  it("usa foco amarelo de alto contraste nos controles da sidebar", () => {
+    const sidebarFocus = rule(
+      globalCss,
+      [
+        ".cortex-sidebar button:focus-visible,",
+        ".cortex-sidebar a:focus-visible,",
+        '.cortex-sidebar [role="separator"]:focus-visible',
+      ].join("\n"),
+    );
+
+    expect(sidebarFocus).toContain(
+      "outline: 3px solid var(--color-brand-yellow);",
+    );
+  });
+
+  it("consome a escala aprovada nos raios do escopo compartilhado", () => {
+    expect(rule(syncCss, ".sync-chip__action")).toContain(
+      "border-radius: var(--radius-sm);",
+    );
+    expect(rule(globalCss, ".home-card")).toContain(
+      "border-radius: var(--radius-lg);",
+    );
+    expect(rule(tarefasCss, ".tarefa-form-enviar")).toContain(
+      "border-radius: var(--radius-sm);",
+    );
   });
 });

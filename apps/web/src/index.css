@@ -108,6 +108,13 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
+.cortex-sidebar button:focus-visible,
+.cortex-sidebar a:focus-visible,
+.cortex-sidebar [role="separator"]:focus-visible {
+  outline: 3px solid var(--color-brand-yellow);
+  outline-offset: 2px;
+}
+
 .page-shell {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
@@ -1919,7 +1926,7 @@ textarea:focus {
 
 .home-card {
   background: #fff;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   padding: 14px;
   box-shadow: none;
   font-size: 0.76rem;
