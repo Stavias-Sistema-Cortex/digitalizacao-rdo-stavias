@@ -167,6 +167,10 @@ class EmailConfigurationTest {
         String configuration = Files.readString(
                 Path.of("src/main/resources/application.yml")
         );
+        String deploymentPlan = Files.readString(Path.of(
+                "../../docs/superpowers/plans/"
+                        + "2026-07-13-auth-security-and-finance-permissions.md"
+        ));
 
         assertThat(configuration)
                 .contains("${CORTEX_SMTP_FROM:}")
@@ -175,9 +179,17 @@ class EmailConfigurationTest {
                 .contains("${CORTEX_SMTP_USERNAME:}")
                 .contains("${CORTEX_SMTP_PASSWORD_FILE:}")
                 .contains("${CORTEX_SMTP_PASSWORD:}")
-                .contains("${CORTEX_SMTP_START_TLS:true}")
+                .contains("${CORTEX_SMTP_STARTTLS:true}")
                 .doesNotContain("CORTEX_EMAIL_SMTP_")
                 .doesNotContain("CORTEX_EMAIL_FROM");
+        assertThat(deploymentPlan)
+                .contains("CORTEX_SMTP_FROM=")
+                .contains("CORTEX_SMTP_HOST=")
+                .contains("CORTEX_SMTP_PORT=587")
+                .contains("CORTEX_SMTP_USERNAME=")
+                .contains("CORTEX_SMTP_PASSWORD_FILE=")
+                .contains("CORTEX_SMTP_STARTTLS=true")
+                .doesNotContain("CORTEX_SMTP_START_TLS=");
     }
 
     private Path smtpPasswordFile() throws Exception {
