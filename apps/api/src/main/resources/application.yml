@@ -24,6 +24,13 @@ cortex:
   auth:
     jwt-secret: ${CORTEX_AUTH_JWT_SECRET}
     jwt-ttl-seconds: ${CORTEX_AUTH_JWT_TTL_SECONDS:43200}
+    cpf-hmac:
+      current-key-id: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:}
+      current-key-file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:}
+      current-key-inline: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:}
+      previous-key-id: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_ID:}
+      previous-key-file: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_FILE:}
+      previous-key-inline: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY:}
     dev-admin:
       enabled: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:false}
 

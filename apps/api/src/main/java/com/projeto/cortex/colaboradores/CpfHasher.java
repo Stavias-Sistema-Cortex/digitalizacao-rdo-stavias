@@ -6,9 +6,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * Hashing e normalização de CPF compartilhados pela importação da Academy e
- * pela autenticação. O hash é SHA-256 sobre os 11 dígitos (igual ao gravado
- * em {@code colaborador.cpf_hash}), o que permite validar o login por CPF.
+ * Compatibilidade temporária com o lookup SHA-256 persistido em
+ * {@code colaborador.cpf_hash}. Novos lookups de autenticação devem usar
+ * {@code CpfLookupDigestService}; este hash legado nunca deve ser projetado em
+ * evidências, snapshots ou eventos operacionais.
  */
 public final class CpfHasher {
 

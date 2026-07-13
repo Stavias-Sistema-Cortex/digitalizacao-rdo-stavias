@@ -6,9 +6,11 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.projeto.cortex.auth.identity.AuthIdentityRepository;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.LocalDateTime;
@@ -27,11 +29,13 @@ class ColaboradorImportServiceTest {
         AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
         CortexOperationalMemoryService memory =
                 mock(CortexOperationalMemoryService.class);
+        AuthIdentityRepository authIdentities =
+                mock(AuthIdentityRepository.class);
 
         when(academy.fetchUsers(anyInt())).thenReturn(List.of(
                 new AcademySourceAdapter.UsuarioAcademyRecord(
                         900_000_001,
-                        "000.000.000-00",
+                        "111.444.777-35",
                         "Colaborador Sintético",
                         "colaborador@example.invalid",
                         true,
@@ -46,7 +50,12 @@ class ColaboradorImportServiceTest {
                 .thenReturn(List.of());
 
         ColaboradorImportService service =
-                new ColaboradorImportService(jdbc, academy, memory);
+                new ColaboradorImportService(
+                        jdbc,
+                        academy,
+                        memory,
+                        authIdentities
+                );
 
         ColaboradorImportResult result = service.importarUsuariosDaAcademy();
 
@@ -78,9 +87,63 @@ class ColaboradorImportServiceTest {
 
         assertThat(evidenceFields.getValue())
                 .containsKey("cpf_mascarado")
-                .doesNotContainKey("cpf_hash");
+                .doesNotContainKeys("cpf_hash", "cpf_lookup_hmac");
         assertThat(legacySnapshot.getValue())
                 .containsKey("cpf_mascarado")
-                .doesNotContainKey("cpf_hash");
+                .doesNotContainKeys("cpf_hash", "cpf_lookup_hmac");
+        verify(authIdentities).upsertAcademyIdentity(
+                anyString(),
+                eq("11144477735"),
+                eq("colaborador@example.invalid")
+        );
+    }
+
+    @Test
+    void refusesInvalidAcademyCpfBeforeIdentityOrOperationalProjection() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        AuthIdentityRepository authIdentities =
+                mock(AuthIdentityRepository.class);
+
+        when(academy.fetchUsers(anyInt())).thenReturn(List.of(
+                new AcademySourceAdapter.UsuarioAcademyRecord(
+                        900_000_002,
+                        "000.000.000-00",
+                        "Colaborador Inválido Sintético",
+                        "invalido@example.invalid",
+                        true,
+                        "grupo-teste",
+                        "Operacional",
+                        "perfil-teste",
+                        "Operacional",
+                        LocalDateTime.of(2026, 1, 1, 0, 0)
+                )
+        ));
+
+        ColaboradorImportService service = new ColaboradorImportService(
+                jdbc,
+                academy,
+                memory,
+                authIdentities
+        );
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                service::importarUsuariosDaAcademy
+        )).isInstanceOf(RuntimeException.class)
+                .hasMessage("Falha ao importar colaboradores da Academy.");
+
+        verify(authIdentities, never()).upsertAcademyIdentity(
+                anyString(),
+                anyString(),
+                anyString()
+        );
+        verify(memory, never()).registrarEvidencias(
+                eq("COLABORADOR"),
+                anyString(),
+                anyString(),
+                any(Map.class)
+        );
     }
 }

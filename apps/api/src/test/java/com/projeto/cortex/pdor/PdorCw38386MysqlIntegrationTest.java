@@ -53,6 +53,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "cortex.import.enabled=false",
         "cortex.pdor.gatilho-evento.habilitado=false",
         "cortex.auth.jwt-secret=test-only-jwt-secret-0000000000000000",
+        "cortex.auth.cpf-hmac.current-key-id=test-current",
+        "cortex.auth.cpf-hmac.current-key-inline=test-only-hmac-secret-0000000000000000",
         "spring.jpa.hibernate.ddl-auto=none",
         "debug=false",
         "logging.level.root=INFO",
