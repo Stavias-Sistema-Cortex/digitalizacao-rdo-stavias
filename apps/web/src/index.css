@@ -55,33 +55,26 @@
 }
 
 :root {
-  font-family:
-    "Poppins", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  color: #18211d;
-  background: #f3f5f3;
+  font-family: "Poppins", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--color-text);
+  background: var(--color-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  /* Escala minimalista: três raios e uma sombra para toda a plataforma. */
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --shadow-soft: 0 8px 24px -16px rgb(25 44 34 / 25%);
-
-  /* Receita liquid glass da marca (kit iOS 26, dose sutil). */
-  --glass-white: linear-gradient(
-    180deg,
-    rgb(255 255 255 / 86%),
-    rgb(255 255 255 / 68%)
-  );
-  --glass-yellow: linear-gradient(
-    180deg,
-    rgb(255 226 74 / 95%),
-    rgb(254 210 3 / 88%)
-  );
-  --glass-gloss: inset 0 1px 0 rgb(255 255 255 / 50%);
-  --glass-blur: blur(14px) saturate(1.15);
+  --color-text: #18231f;
+  --color-brand-teal: #124e4a;
+  --color-brand-teal-strong: #0d3f3c;
+  --color-brand-yellow: #f2c800;
+  --color-canvas: #f4f6f4;
+  --color-surface: #ffffff;
+  --color-border: #d8dfda;
+  --color-muted: #68756e;
+  --color-focus: #2f6f68;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-overlay: 0 18px 44px rgb(24 35 31 / 16%);
 }
 
 * {
@@ -103,6 +96,16 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="separator"]:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .page-shell {
@@ -237,39 +240,33 @@ h1 {
 }
 
 /* Amarelo Stavias = ação principal, como no "Entrar" do login. */
-.primary-button {
-  border: 1px solid #e4bc00;
-  background: var(--glass-yellow);
-  color: #143c36;
-  box-shadow:
-    var(--glass-gloss),
-    0 6px 14px -10px rgb(228 188 0 / 60%);
+.primary-button,
+.button.primary {
+  border: 1px solid #d6b000;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand-yellow);
+  color: #123b37;
+  box-shadow: none;
 }
 
-.secondary-button {
-  border: 1px solid #e4bc00;
-  background: var(--glass-white);
-  color: #17504d;
-  box-shadow: var(--glass-gloss);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
+.secondary-button,
+.button.secondary {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-brand-teal);
+  box-shadow: none;
 }
 
-.primary-button:hover {
-  background: linear-gradient(
-    180deg,
-    rgb(255 233 106 / 96%),
-    rgb(255 220 53 / 90%)
-  );
+.primary-button:hover,
+.button.primary:hover {
+  background: #ffdc35;
   transform: translateY(-1px);
 }
 
-.secondary-button:hover {
-  background: linear-gradient(
-    180deg,
-    rgb(255 255 255 / 96%),
-    rgb(255 255 255 / 84%)
-  );
+.secondary-button:hover,
+.button.secondary:hover {
+  background: #f7f9f7;
   border-color: #9fbdb2;
 }
 
@@ -288,7 +285,7 @@ h1 {
   border: 1px solid #dfe4e1;
   border-radius: var(--radius-lg);
   background: #ffffff;
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .section-heading {
@@ -451,7 +448,7 @@ textarea:focus {
   border: 1px solid #cfd7d2;
   border-radius: var(--radius-sm);
   background: white;
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--shadow-overlay);
 }
 
 .lookup-option {
@@ -588,14 +585,10 @@ textarea:focus {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px;
-  border: 1px solid rgb(255 255 255 / 65%);
-  border-radius: var(--radius-lg);
-  background: rgba(255, 255, 255, 0.75);
-  box-shadow:
-    var(--glass-gloss),
-    var(--shadow-soft);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgb(24 35 31 / 10%);
 }
 
 .button {
@@ -607,42 +600,6 @@ textarea:focus {
     background 140ms ease,
     border-color 140ms ease,
     transform 140ms ease;
-}
-
-.button.secondary {
-  border: 1px solid #cbd5cf;
-  background: var(--glass-white);
-  color: #17504d;
-  box-shadow: var(--glass-gloss);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-}
-
-.button.secondary:hover {
-  background: linear-gradient(
-    180deg,
-    rgb(255 255 255 / 96%),
-    rgb(255 255 255 / 84%)
-  );
-  border-color: #9fbdb2;
-}
-
-.button.primary {
-  border: 1px solid #e4bc00;
-  background: var(--glass-yellow);
-  color: #143c36;
-  box-shadow:
-    var(--glass-gloss),
-    0 6px 14px -10px rgb(228 188 0 / 60%);
-}
-
-.button.primary:hover {
-  background: linear-gradient(
-    180deg,
-    rgb(255 233 106 / 96%),
-    rgb(255 220 53 / 90%)
-  );
-  transform: translateY(-1px);
 }
 
 .cortex-shell {
@@ -677,20 +634,7 @@ textarea:focus {
   padding: 25px 40px 10px;
   border: 0;
   border-radius: 0;
-  /* degradê teal da marca: brilho difuso ao centro, escuro no topo e rodapé */
-  background:
-    radial-gradient(
-      140% 52% at 50% 38%,
-      rgb(94 178 170 / 48%) 0%,
-      rgb(94 178 170 / 0%) 62%
-    ),
-    linear-gradient(
-      180deg,
-      #12403e 10%,
-      #36827e 40%,
-      #174e4c 74%,
-      #164e4c 100%
-    );
+  background: var(--color-brand-teal);
   color: #eef7ef;
 }
 
@@ -745,7 +689,6 @@ textarea:focus {
 .sidebar-resizer:focus-visible,
 .cortex-shell.is-resizing .sidebar-resizer {
   background: rgb(254 210 3 / 55%);
-  outline: none;
 }
 
 .cortex-shell--collapsed .sidebar-resizer {
@@ -854,12 +797,17 @@ textarea:focus {
     color 0.16s ease;
 }
 
-.sidebar-nav-item img {
+.sidebar-nav-item img,
+.sidebar-footer button img {
   flex: none;
   width: 19px;
   height: 19px;
+  filter: grayscale(1) brightness(0) invert(1);
+  opacity: 0.72;
+}
+
+.sidebar-nav-item img {
   position: relative;
-  filter: drop-shadow(0 1px 2px rgb(10 40 38 / 35%));
 }
 
 .sidebar-nav-item:hover {
@@ -867,7 +815,7 @@ textarea:focus {
 }
 
 .sidebar-nav-item.active {
-  background: rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 10%);
   font-weight: 600;
 }
 
@@ -898,13 +846,6 @@ textarea:focus {
   text-align: left;
   border-radius: 8px;
   transition: background 0.16s ease;
-}
-
-.sidebar-footer button img {
-  flex: none;
-  width: 19px;
-  height: 19px;
-  filter: drop-shadow(0 1px 2px rgb(10 40 38 / 35%));
 }
 
 .sidebar-footer button:hover {
@@ -990,9 +931,10 @@ textarea:focus {
 .metric-card {
   min-height: 78px;
   padding: 14px;
-  border: 1px solid #e4bc00;
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-brand-yellow);
   border-radius: var(--radius-lg);
-  background: #fed203;
+  background: var(--color-surface);
 }
 
 .metric-card span,
@@ -1055,7 +997,7 @@ textarea:focus {
 
 .rdo-operational-card:hover {
   border-color: #b9cec7;
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 .rdo-card-heading,
@@ -1262,7 +1204,7 @@ textarea:focus {
   padding: 24px;
   border-left: 1px solid #dbe3de;
   background: #ffffff;
-  box-shadow: -16px 0 40px rgba(25, 44, 34, 0.18);
+  box-shadow: var(--shadow-overlay);
 }
 
 .profile-drawer-header {
@@ -1576,17 +1518,13 @@ textarea:focus {
 .logout-button {
   min-height: 36px;
   padding: 0 16px;
-  border: 1px solid #fed203;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--color-surface);
   color: #243e30;
   font-size: 0.82rem;
   font-weight: 700;
-  box-shadow:
-    var(--glass-gloss),
-    0 8px 24px rgba(25, 44, 34, 0.12);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  box-shadow: none;
 }
 
 .logout-button:hover {
@@ -1646,9 +1584,10 @@ textarea:focus {
   right: 0;
   top: calc(100% + 8px);
   min-width: 200px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(10, 66, 61, 0.18);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
   padding: 12px;
   z-index: 40;
 }
@@ -1861,7 +1800,7 @@ textarea:focus {
   background: #fff;
   border-radius: 16px;
   padding: 18px 20px;
-  box-shadow: 0 1px 8px rgba(10, 66, 61, 0.08);
+  box-shadow: none;
 }
 
 .home-obra-card--empty {
@@ -1982,7 +1921,7 @@ textarea:focus {
   background: #fff;
   border-radius: 14px;
   padding: 14px;
-  box-shadow: 0 1px 6px rgba(10, 66, 61, 0.06);
+  box-shadow: none;
   font-size: 0.76rem;
 }
 
@@ -2009,11 +1948,7 @@ textarea:focus {
 }
 
 .home-card--brand {
-  background: linear-gradient(
-    150deg,
-    #0e5e57,
-    #0a423d
-  );
+  background: var(--color-brand-teal-strong);
   color: #eef7f5;
 }
 
@@ -2060,7 +1995,7 @@ textarea:focus {
   background: #fff;
   border: 1px solid #e3e8e5;
   border-radius: 16px;
-  box-shadow: 0 1px 8px rgba(10, 66, 61, 0.06);
+  box-shadow: none;
 }
 
 .obras-list {
@@ -2085,7 +2020,6 @@ textarea:focus {
 .obras-list-item:focus-visible {
   border-color: #dce3df;
   background: #f7faf8;
-  outline: none;
 }
 
 .obras-list-item.active {
