@@ -1,54 +1,41 @@
 package com.projeto.cortex.auth;
 
-import com.projeto.cortex.colaboradores.Colaborador;
-import com.projeto.cortex.colaboradores.ColaboradorRepository;
-import java.util.Optional;
-import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import com.projeto.cortex.colaboradores.ColaboradorRepository;
+import org.junit.jupiter.api.Test;
 
 class AuthServiceTest {
 
     @Test
-    void shouldRejectLoginWhenPasswordDoesNotMatchCpf() {
+    void cpfEqualToPasswordNeverAuthenticatesThroughLegacySha() {
         ColaboradorRepository repository =
                 mock(ColaboradorRepository.class);
-        AuthService service = new AuthService(repository);
+        AuthService service = new AuthService();
 
-        assertThat(service.autenticarPorCpf("111.444.777-35", null))
-                .isEmpty();
-        assertThat(service.autenticarPorCpf("111.444.777-35", "00000000000"))
-                .isEmpty();
+        assertThat(service.autenticarPorCpf(
+                "111.444.777-35",
+                "11144477735"
+        )).isEmpty();
 
-        verify(repository, never())
-                .findFirstByCpfHashAndAtivoTrueAndDeletadoEmIsNull(
-                        org.mockito.ArgumentMatchers.anyString()
-                );
+        verifyNoInteractions(repository);
     }
 
     @Test
-    void invalidExplicitRoleNeverBecomesAlfaFromLegacyProfileText() {
+    void mismatchedOrAbsentPasswordAlsoFailsClosed() {
         ColaboradorRepository repository =
                 mock(ColaboradorRepository.class);
-        Colaborador colaborador = mock(Colaborador.class);
-        when(colaborador.getId()).thenReturn("colaborador-sintetico");
-        when(colaborador.getNome()).thenReturn("Colaborador Sintético");
-        when(colaborador.getPapelAcesso()).thenReturn("GAMA");
-        when(colaborador.getNomePerfil()).thenReturn("ADMINISTRADOR");
-        when(colaborador.getNomeGrupo()).thenReturn("ADMIN");
-        when(repository.findFirstByCpfHashAndAtivoTrueAndDeletadoEmIsNull(anyString()))
-                .thenReturn(Optional.of(colaborador));
-        AuthService service = new AuthService(repository);
+        AuthService service = new AuthService();
 
-        LoginResponse response = service
-                .autenticarPorCpf("000.000.000-00", "00000000000")
-                .orElseThrow();
+        assertThat(service.autenticarPorCpf("111.444.777-35", null))
+                .isEmpty();
+        assertThat(service.autenticarPorCpf(
+                "111.444.777-35",
+                "00000000000"
+        )).isEmpty();
 
-        assertThat(response.papelAcesso()).isEqualTo("BETA");
+        verifyNoInteractions(repository);
     }
 }

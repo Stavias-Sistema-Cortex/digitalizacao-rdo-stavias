@@ -51,6 +51,13 @@ export async function autenticar(cpf: string): Promise<AuthOutcome> {
       return { ok: true, session };
     }
 
+    if (online.status === 410) {
+      return {
+        ok: false,
+        message: online.message,
+      };
+    }
+
     if (online.status === 400 || online.status === 401) {
       cpfInvalidoNoServidor = true;
     } else {

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -16,6 +17,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -48,6 +50,7 @@ class AuthIdentityRepositoryTest {
                 eq(CURRENT.keyId()),
                 eq(CURRENT.value())
         )).thenReturn(List.of(activeIdentity()));
+        stubEligible("alfa-sintetico", activeIdentity());
 
         AuthIdentity identity = repository
                 .findActiveByCpf(SYNTHETIC_CPF)
@@ -74,6 +77,9 @@ class AuthIdentityRepositoryTest {
                 eq(PREVIOUS.keyId()),
                 eq(PREVIOUS.value())
         )).thenReturn(List.of(activeIdentity()));
+        stubEligible("alfa-sintetico", activeIdentity());
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", true);
 
         AuthIdentity identity = repository
                 .findActiveByCpf(SYNTHETIC_CPF)
@@ -82,10 +88,10 @@ class AuthIdentityRepositoryTest {
         assertThat(identity.emailAutenticacao())
                 .isEqualTo("alfa@example.invalid");
         verify(jdbc).update(
-                contains("INSERT INTO auth_identity"),
-                eq("alfa-sintetico"),
+                contains("UPDATE auth_identity"),
                 eq(CURRENT.value()),
-                eq(CURRENT.keyId())
+                eq(CURRENT.keyId()),
+                eq("alfa-sintetico")
         );
     }
 
@@ -104,6 +110,9 @@ class AuthIdentityRepositoryTest {
                 any(RowMapper.class),
                 eq(CpfHasher.hashDeDigitos(SYNTHETIC_CPF))
         )).thenReturn(List.of(activeIdentity()));
+        stubEligible("alfa-sintetico", activeIdentity());
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", true);
 
         AuthIdentity identity = repository
                 .findActiveByCpf(SYNTHETIC_CPF)
@@ -111,11 +120,85 @@ class AuthIdentityRepositoryTest {
 
         assertThat(identity.colaboradorId()).isEqualTo("alfa-sintetico");
         verify(jdbc).update(
-                contains("INSERT INTO auth_identity"),
-                eq("alfa-sintetico"),
+                contains("UPDATE auth_identity"),
                 eq(CURRENT.value()),
-                eq(CURRENT.keyId())
+                eq(CURRENT.keyId()),
+                eq("alfa-sintetico")
         );
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void checksEveryConfiguredDigestAndFailsForDifferentOwners() {
+        AuthIdentity previousOwner = new AuthIdentity(
+                "beta-sintetico",
+                "Colaborador BETA Sintético",
+                "beta@example.invalid",
+                "BETA"
+        );
+        when(digests.candidates(SYNTHETIC_CPF))
+                .thenReturn(List.of(CURRENT, PREVIOUS));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(PREVIOUS.keyId()),
+                eq(PREVIOUS.value())
+        )).thenReturn(List.of(previousOwner));
+
+        assertThatThrownBy(() -> repository.findActiveByCpf(SYNTHETIC_CPF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade de autenticação ambígua.");
+        verify(jdbc).query(
+                anyString(),
+                any(RowMapper.class),
+                eq(PREVIOUS.keyId()),
+                eq(PREVIOUS.value())
+        );
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void legacyAmbiguityIsDetectedBeforeEligibilityFiltering() {
+        AuthIdentity conflictingOwner = new AuthIdentity(
+                "bloqueado-sintetico",
+                "Colaborador Bloqueado Sintético",
+                "bloqueado@example.invalid",
+                "BETA"
+        );
+        when(digests.candidates(SYNTHETIC_CPF)).thenReturn(List.of(CURRENT));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of());
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CpfHasher.hashDeDigitos(SYNTHETIC_CPF))
+        )).thenReturn(List.of(activeIdentity(), conflictingOwner));
+
+        assertThatThrownBy(() -> repository.findActiveByCpf(SYNTHETIC_CPF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade de autenticação ambígua.");
+
+        ArgumentCaptor<String> legacySql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(
+                legacySql.capture(),
+                any(RowMapper.class),
+                eq(CpfHasher.hashDeDigitos(SYNTHETIC_CPF))
+        );
+        assertThat(legacySql.getValue())
+                .doesNotContain("colaborador.ativo = 1")
+                .doesNotContain("colaborador.deletado_em IS NULL")
+                .doesNotContain("BLOQUEADA");
     }
 
     @Test
@@ -151,6 +234,8 @@ class AuthIdentityRepositoryTest {
     @Test
     void academyUpsertProtectsAnyVerifiedAuthenticationEmail() {
         when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", true);
 
         repository.upsertAcademyIdentity(
                 "alfa-sintetico",
@@ -161,15 +246,98 @@ class AuthIdentityRepositoryTest {
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).update(
                 sql.capture(),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq("academy@example.invalid"),
+                eq("academy@example.invalid"),
+                eq("alfa-sintetico")
+        );
+        assertThat(sql.getValue())
+                .startsWith("UPDATE auth_identity")
+                .contains("email_verificado_em IS NOT NULL")
+                .contains("email_fonte = 'MANUAL_VERIFICADO'")
+                .contains("WHERE colaborador_id = ?")
+                .doesNotContain("ON DUPLICATE KEY UPDATE")
+                .doesNotContain("cpf_hash");
+    }
+
+    @Test
+    void academyUpsertRefusesDigestOwnedByAnotherCollaborator() {
+        when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
+        stubDigestOwnerForUpdate(CURRENT, List.of("outro-sintetico"));
+
+        assertThatThrownBy(() -> repository.upsertAcademyIdentity(
+                "alfa-sintetico",
+                SYNTHETIC_CPF,
+                "academy@example.invalid"
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Conflito de identidade de autenticação.");
+
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    void academyInsertSanitizesConcurrentDigestConflict() {
+        when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", false);
+        when(jdbc.update(
+                contains("INSERT INTO auth_identity"),
                 eq("alfa-sintetico"),
                 eq(CURRENT.value()),
                 eq(CURRENT.keyId()),
                 eq("academy@example.invalid")
-        );
-        assertThat(sql.getValue())
-                .contains("email_verificado_em IS NOT NULL")
-                .contains("email_fonte = 'MANUAL_VERIFICADO'")
-                .doesNotContain("cpf_hash");
+        )).thenThrow(new DuplicateKeyException(
+                "Duplicate entry with database details"
+        ));
+
+        assertThatThrownBy(() -> repository.upsertAcademyIdentity(
+                "alfa-sintetico",
+                SYNTHETIC_CPF,
+                "academy@example.invalid"
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Conflito de identidade de autenticação.")
+                .hasMessageNotContaining("Duplicate entry")
+                .hasNoCause();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubEligible(String colaboradorId, AuthIdentity identity) {
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("WHERE colaborador.id = ?")),
+                any(RowMapper.class),
+                eq(colaboradorId)
+        )).thenReturn(List.of(identity));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubDigestOwnerForUpdate(
+            CpfLookupDigest digest,
+            List<String> owners
+    ) {
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("cpf_lookup_key_id = ?")
+                        && sql.contains("FOR UPDATE")),
+                any(RowMapper.class),
+                eq(digest.keyId()),
+                eq(digest.value())
+        )).thenReturn(owners);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubCollaboratorIdentityForUpdate(
+            String colaboradorId,
+            boolean exists
+    ) {
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("WHERE colaborador_id = ?")
+                        && sql.contains("FOR UPDATE")),
+                any(RowMapper.class),
+                eq(colaboradorId)
+        )).thenReturn(exists ? List.of(colaboradorId) : List.of());
     }
 
     private AuthIdentity activeIdentity() {

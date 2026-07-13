@@ -187,7 +187,6 @@ public class ColaboradorImportService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON DUPLICATE KEY UPDATE
                     codigo_colaborador = VALUES(codigo_colaborador),
-                    cpf_hash = VALUES(cpf_hash),
                     cpf_mascarado = VALUES(cpf_mascarado),
                     nome = VALUES(nome),
                     email = VALUES(email),
@@ -198,8 +197,19 @@ public class ColaboradorImportService {
                     ativo = VALUES(ativo),
                     criado_em_origem = VALUES(criado_em_origem),
                     atualizado_em_origem = VALUES(atualizado_em_origem),
-                    atualizado_em = IF(hash_origem <> VALUES(hash_origem), CURRENT_TIMESTAMP(6), atualizado_em),
-                    versao_linha = IF(hash_origem <> VALUES(hash_origem), versao_linha + 1, versao_linha),
+                    atualizado_em = IF(
+                        NOT (hash_origem <=> VALUES(hash_origem))
+                            OR NOT (cpf_hash <=> VALUES(cpf_hash)),
+                        CURRENT_TIMESTAMP(6),
+                        atualizado_em
+                    ),
+                    versao_linha = IF(
+                        NOT (hash_origem <=> VALUES(hash_origem))
+                            OR NOT (cpf_hash <=> VALUES(cpf_hash)),
+                        versao_linha + 1,
+                        versao_linha
+                    ),
+                    cpf_hash = VALUES(cpf_hash),
                     hash_origem = VALUES(hash_origem),
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     deletado_em = NULL
@@ -420,7 +430,6 @@ public class ColaboradorImportService {
         String valor = String.join("|",
                 nullToEmpty(usuario.pkOrigem()),
                 nullToEmpty(usuario.codigoColaborador()),
-                nullToEmpty(usuario.cpfHash()),
                 nullToEmpty(usuario.cpfMascarado()),
                 nullToEmpty(usuario.nome()),
                 nullToEmpty(usuario.email()),
