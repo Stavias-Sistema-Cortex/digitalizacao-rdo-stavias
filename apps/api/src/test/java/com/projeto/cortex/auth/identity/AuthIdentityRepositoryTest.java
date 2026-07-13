@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.colaboradores.CpfHasher;
@@ -17,6 +18,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -348,6 +350,7 @@ class AuthIdentityRepositoryTest {
         stubEligible("alfa-sintetico", activeIdentity());
         stubDigestOwnerForUpdate(CURRENT, List.of("alfa-sintetico"));
         stubCollaboratorIdentityForUpdate("alfa-sintetico", true);
+        stubProvisioningEligible("alfa-sintetico", true);
 
         repository.upsertProvisionedIdentity(
                 SYNTHETIC_CPF,
@@ -371,6 +374,47 @@ class AuthIdentityRepositoryTest {
                 .doesNotContain("papel_acesso")
                 .doesNotContain("UPDATE colaborador")
                 .doesNotContain("MANUAL_VERIFICADO");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void provisioningRevalidatesEligibilityUnderLockBeforeUpdate() {
+        when(digests.candidates(SYNTHETIC_CPF)).thenReturn(List.of(CURRENT));
+        when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        stubLegacyOwners(List.of(activeIdentity()));
+        stubEligible("alfa-sintetico", activeIdentity());
+        stubDigestOwnerForUpdate(CURRENT, List.of("alfa-sintetico"));
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", true);
+        stubProvisioningEligible("alfa-sintetico", false);
+
+        assertThatThrownBy(() -> repository.upsertProvisionedIdentity(
+                SYNTHETIC_CPF,
+                "alfa@example.invalid",
+                AuthIdentityRepository.MANUAL_PENDING_SOURCE
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade indisponível para provisionamento.");
+
+        InOrder order = inOrder(jdbc);
+        order.verify(jdbc).query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.ativo = 1")
+                        && sql.contains("colaborador.deletado_em IS NULL")
+                        && sql.contains("identity.status <> 'BLOQUEADA'")
+                        && sql.contains("FOR UPDATE")),
+                any(RowMapper.class),
+                eq("alfa-sintetico")
+        );
+        verify(jdbc, never()).update(
+                argThat(sql -> sql != null
+                        && sql.startsWith("UPDATE auth_identity")),
+                any(Object[].class)
+        );
     }
 
     @Test
@@ -443,6 +487,20 @@ class AuthIdentityRepositoryTest {
                 any(RowMapper.class),
                 eq(colaboradorId)
         )).thenReturn(exists ? List.of(colaboradorId) : List.of());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubProvisioningEligible(
+            String colaboradorId,
+            boolean eligible
+    ) {
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.ativo = 1")
+                        && sql.contains("FOR UPDATE")),
+                any(RowMapper.class),
+                eq(colaboradorId)
+        )).thenReturn(eligible ? List.of(colaboradorId) : List.of());
     }
 
     private AuthIdentity activeIdentity() {

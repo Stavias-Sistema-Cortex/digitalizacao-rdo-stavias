@@ -14,6 +14,8 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
 /** Authenticated SMTP adapter with bounded network operations. */
 public final class SmtpEmailGateway implements EmailGateway {
 
+    private static final int MAX_TIMEOUT_MS = 60_000;
+
     private final JavaMailSender mailSender;
     private final String from;
 
@@ -35,8 +37,11 @@ public final class SmtpEmailGateway implements EmailGateway {
         if (port < 1
                 || port > 65_535
                 || connectTimeoutMs < 1
+                || connectTimeoutMs > MAX_TIMEOUT_MS
                 || readTimeoutMs < 1
-                || writeTimeoutMs < 1) {
+                || readTimeoutMs > MAX_TIMEOUT_MS
+                || writeTimeoutMs < 1
+                || writeTimeoutMs > MAX_TIMEOUT_MS) {
             throw incompleteConfiguration();
         }
 
@@ -58,6 +63,7 @@ public final class SmtpEmailGateway implements EmailGateway {
                     Boolean.toString(startTls));
             properties.put("mail.smtp.starttls.required",
                     Boolean.toString(startTls));
+            properties.put("mail.smtp.ssl.checkserveridentity", "true");
             properties.put("mail.smtp.connectiontimeout",
                     Integer.toString(connectTimeoutMs));
             properties.put("mail.smtp.timeout",

@@ -39,17 +39,17 @@ cortex:
 
   email:
     provider: ${CORTEX_EMAIL_PROVIDER:}
-    from: ${CORTEX_EMAIL_FROM:}
+    from: ${CORTEX_SMTP_FROM:}
     smtp:
-      host: ${CORTEX_EMAIL_SMTP_HOST:}
-      port: ${CORTEX_EMAIL_SMTP_PORT:587}
-      username: ${CORTEX_EMAIL_SMTP_USERNAME:}
-      password-file: ${CORTEX_EMAIL_SMTP_PASSWORD_FILE:}
-      password-inline: ${CORTEX_EMAIL_SMTP_PASSWORD:}
-      start-tls: ${CORTEX_EMAIL_SMTP_START_TLS:true}
-      connect-timeout-ms: ${CORTEX_EMAIL_SMTP_CONNECT_TIMEOUT_MS:5000}
-      read-timeout-ms: ${CORTEX_EMAIL_SMTP_READ_TIMEOUT_MS:5000}
-      write-timeout-ms: ${CORTEX_EMAIL_SMTP_WRITE_TIMEOUT_MS:5000}
+      host: ${CORTEX_SMTP_HOST:}
+      port: ${CORTEX_SMTP_PORT:587}
+      username: ${CORTEX_SMTP_USERNAME:}
+      password-file: ${CORTEX_SMTP_PASSWORD_FILE:}
+      password-inline: ${CORTEX_SMTP_PASSWORD:}
+      start-tls: ${CORTEX_SMTP_START_TLS:true}
+      connect-timeout-ms: ${CORTEX_SMTP_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${CORTEX_SMTP_READ_TIMEOUT_MS:5000}
+      write-timeout-ms: ${CORTEX_SMTP_WRITE_TIMEOUT_MS:5000}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}

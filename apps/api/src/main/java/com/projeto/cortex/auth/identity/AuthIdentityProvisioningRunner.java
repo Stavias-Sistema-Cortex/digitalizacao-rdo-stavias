@@ -6,10 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermission;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -40,17 +38,16 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
 
     private static final String INVALID_MANIFEST =
             "Manifesto de provisionamento inválido.";
-    private static final long MAX_MANIFEST_BYTES = 1_048_576;
-    private static final Set<PosixFilePermission> ALLOWED_PERMISSIONS = Set.of(
-            PosixFilePermission.OWNER_READ,
-            PosixFilePermission.OWNER_WRITE
-    );
+    private static final byte[] RECEIPT_DOMAIN =
+            "cortex:auth-provisioning-receipt:v1"
+                    .getBytes(StandardCharsets.US_ASCII);
 
     private final Path provisioningFile;
     private final ObjectMapper objectMapper;
     private final AuthIdentityRepository identityRepository;
     private final ProvisioningReceiptRepository receiptRepository;
     private final boolean nonWeb;
+    private final SecureProvisioningManifestReader manifestReader;
 
     @Autowired
     public AuthIdentityProvisioningRunner(
@@ -85,6 +82,7 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
         this.identityRepository = identityRepository;
         this.receiptRepository = receiptRepository;
         this.nonWeb = nonWeb;
+        this.manifestReader = new SecureProvisioningManifestReader();
     }
 
     @Override
@@ -103,12 +101,15 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
 
         byte[] bytes = readManifestBytes();
         try {
-            String receipt = sha256(bytes);
-            List<ValidatedIdentity> identities = parseAndValidate(bytes);
-            if (!receiptRepository.claim(receipt, identities.size())) {
+            ValidatedManifest manifest = parseAndValidate(bytes);
+            String receipt = receiptDigest(manifest.nonce());
+            if (!receiptRepository.claim(
+                    receipt,
+                    manifest.identities().size()
+            )) {
                 return;
             }
-            for (ValidatedIdentity identity : identities) {
+            for (ValidatedIdentity identity : manifest.identities()) {
                 identityRepository.upsertProvisionedIdentity(
                         identity.cpf(),
                         identity.email(),
@@ -121,55 +122,10 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
     }
 
     private byte[] readManifestBytes() {
-        validateMountedFile();
-        try {
-            long size = Files.size(provisioningFile);
-            if (size < 1 || size > MAX_MANIFEST_BYTES) {
-                throw invalidManifest();
-            }
-            return Files.readAllBytes(provisioningFile);
-        } catch (IOException exception) {
-            throw new IllegalStateException(
-                    "Não foi possível ler o arquivo secreto de provisionamento."
-            );
-        }
+        return manifestReader.read(provisioningFile);
     }
 
-    private void validateMountedFile() {
-        if (provisioningFile == null
-                || Files.isSymbolicLink(provisioningFile)
-                || !Files.isRegularFile(
-                        provisioningFile,
-                        LinkOption.NOFOLLOW_LINKS
-                )) {
-            throw new IllegalStateException(
-                    "Arquivo secreto de provisionamento inválido."
-            );
-        }
-        try {
-            Set<PosixFilePermission> permissions =
-                    Files.getPosixFilePermissions(
-                            provisioningFile,
-                            LinkOption.NOFOLLOW_LINKS
-                    );
-            if (!permissions.contains(PosixFilePermission.OWNER_READ)
-                    || !ALLOWED_PERMISSIONS.containsAll(permissions)) {
-                throw new IllegalStateException(
-                        "O arquivo secreto de provisionamento deve usar 0600 ou permissões mais restritas."
-                );
-            }
-        } catch (UnsupportedOperationException exception) {
-            throw new IllegalStateException(
-                    "O arquivo secreto de provisionamento exige permissões POSIX."
-            );
-        } catch (IOException exception) {
-            throw new IllegalStateException(
-                    "Não foi possível validar o arquivo secreto de provisionamento."
-            );
-        }
-    }
-
-    private List<ValidatedIdentity> parseAndValidate(byte[] bytes) {
+    private ValidatedManifest parseAndValidate(byte[] bytes) {
         ProvisioningManifest manifest;
         try {
             manifest = objectMapper.readValue(
@@ -182,6 +138,8 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
             throw invalidManifest();
         }
         if (manifest.version() != 1
+                || manifest.nonce() == null
+                || !manifest.nonce().matches("[0-9a-f]{64}")
                 || manifest.identities() == null
                 || manifest.identities().isEmpty()) {
             throw invalidManifest();
@@ -207,7 +165,10 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
         } catch (IllegalArgumentException exception) {
             throw invalidManifest();
         }
-        return List.copyOf(identities);
+        return new ValidatedManifest(
+                manifest.nonce(),
+                List.copyOf(identities)
+        );
     }
 
     private String requireEmail(String raw) {
@@ -230,15 +191,19 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
         }
     }
 
-    private String sha256(byte[] bytes) {
+    private String receiptDigest(String nonce) {
+        byte[] nonceBytes = HexFormat.of().parseHex(nonce);
         try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(bytes)
-            );
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(RECEIPT_DOMAIN);
+            digest.update((byte) 0);
+            return HexFormat.of().formatHex(digest.digest(nonceBytes));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(
                     "SHA-256 indisponível para provisionamento."
             );
+        } finally {
+            Arrays.fill(nonceBytes, (byte) 0);
         }
     }
 
@@ -264,5 +229,11 @@ public class AuthIdentityProvisioningRunner implements ApplicationRunner {
     }
 
     private record ValidatedIdentity(String cpf, String email) {
+    }
+
+    private record ValidatedManifest(
+            String nonce,
+            List<ValidatedIdentity> identities
+    ) {
     }
 }

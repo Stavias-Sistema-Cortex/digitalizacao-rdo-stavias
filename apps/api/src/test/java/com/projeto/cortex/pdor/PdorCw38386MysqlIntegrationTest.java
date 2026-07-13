@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -55,11 +56,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "cortex.auth.jwt-secret=test-only-jwt-secret-0000000000000000",
         "cortex.auth.cpf-hmac.current-key-id=test-current",
         "cortex.auth.cpf-hmac.current-key-inline=test-only-hmac-secret-0000000000000000",
+        "cortex.email.provider=fake",
         "spring.jpa.hibernate.ddl-auto=none",
         "debug=false",
         "logging.level.root=INFO",
         "logging.level.org.springframework=INFO"
 })
+@ActiveProfiles("test")
 @AutoConfigureMockMvc
 @EnabledIfEnvironmentVariable(named = "CORTEX_MYSQL_ROOT_PASSWORD", matches = ".+")
 class PdorCw38386MysqlIntegrationTest {

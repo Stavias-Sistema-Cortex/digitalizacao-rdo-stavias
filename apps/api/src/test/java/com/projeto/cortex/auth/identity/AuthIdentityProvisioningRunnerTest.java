@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth.identity;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.mockito.ArgumentCaptor;
 
 @EnabledOnOs({OS.LINUX, OS.MAC})
 class AuthIdentityProvisioningRunnerTest {
@@ -28,6 +30,8 @@ class AuthIdentityProvisioningRunnerTest {
     private static final String SYNTHETIC_CPF = "11144477735";
     private static final String SYNTHETIC_EMAIL =
             "alfa@example.invalid";
+    private static final String TEST_NONCE =
+            "0123456789abcdef".repeat(4);
 
     @TempDir
     Path tempDir;
@@ -53,7 +57,7 @@ class AuthIdentityProvisioningRunnerTest {
     @Test
     void processesOwnerOnlyMountedManifestOnceAsPending() throws Exception {
         Path manifest = mountedManifest("""
-                {"version":1,"identities":[
+                {"version":1,"nonce":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","identities":[
                   {"cpf":"111.444.777-35","email":"alfa@example.invalid"}
                 ]}
                 """);
@@ -62,6 +66,13 @@ class AuthIdentityProvisioningRunnerTest {
         AuthIdentityProvisioningRunner runner = runner(manifest);
 
         runner.run();
+        Files.writeString(manifest, """
+                {"version":1,"nonce":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","identities":[{"cpf":"11144477735","email":"alfa@example.invalid"}]}
+                """);
+        Files.setPosixFilePermissions(manifest, Set.of(
+                PosixFilePermission.OWNER_READ,
+                PosixFilePermission.OWNER_WRITE
+        ));
         runner.run();
 
         verify(identityRepository, times(1)).upsertProvisionedIdentity(
@@ -71,12 +82,21 @@ class AuthIdentityProvisioningRunnerTest {
         );
         verify(receiptRepository, times(2)).claim(anyString(),
                 org.mockito.ArgumentMatchers.eq(1));
+        ArgumentCaptor<String> receipts = ArgumentCaptor.forClass(String.class);
+        verify(receiptRepository, times(2)).claim(
+                receipts.capture(),
+                org.mockito.ArgumentMatchers.eq(1)
+        );
+        assertThat(receipts.getAllValues()).hasSize(2).containsOnly(
+                receipts.getAllValues().getFirst()
+        );
+        assertThat(receipts.getAllValues().getFirst()).isNotEqualTo(TEST_NONCE);
     }
 
     @Test
     void refusesManifestReadableByGroupBeforeParsing() throws Exception {
         Path manifest = mountedManifest("""
-                {"version":1,"identities":[
+                {"version":1,"nonce":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","identities":[
                   {"cpf":"11144477735","email":"alfa@example.invalid"}
                 ]}
                 """);
@@ -117,7 +137,7 @@ class AuthIdentityProvisioningRunnerTest {
     @Test
     void validatesEveryIdentityBeforeClaimingReceipt() throws Exception {
         Path manifest = mountedManifest("""
-                {"version":1,"identities":[
+                {"version":1,"nonce":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","identities":[
                   {"cpf":"11144477735","email":"alfa@example.invalid"},
                   {"cpf":"invalid","email":"alfa@example.invalid"}
                 ]}
@@ -135,7 +155,7 @@ class AuthIdentityProvisioningRunnerTest {
     @Test
     void sanitizesUnknownOrInactiveIdentityFailureAfterClaim() throws Exception {
         Path manifest = mountedManifest("""
-                {"version":1,"identities":[
+                {"version":1,"nonce":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","identities":[
                   {"cpf":"11144477735","email":"alfa@example.invalid"}
                 ]}
                 """);
@@ -167,6 +187,22 @@ class AuthIdentityProvisioningRunnerTest {
         verify(identityRepository, never()).upsertAcademyIdentity(
                 anyString(), anyString(), anyString()
         );
+    }
+
+    @Test
+    void refusesManifestWithoutHighEntropyNonceBeforeClaiming() throws Exception {
+        Path manifest = mountedManifest("""
+                {"version":1,"identities":[
+                  {"cpf":"11144477735","email":"alfa@example.invalid"}
+                ]}
+                """);
+
+        assertThatThrownBy(() -> runner(manifest).run())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Manifesto de provisionamento inválido.")
+                .hasMessageNotContaining(SYNTHETIC_CPF)
+                .hasMessageNotContaining(SYNTHETIC_EMAIL);
+        verifyNoInteractions(identityRepository, receiptRepository);
     }
 
     private AuthIdentityProvisioningRunner runner(Path manifest) {

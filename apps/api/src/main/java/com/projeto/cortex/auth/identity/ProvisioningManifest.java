@@ -5,6 +5,7 @@ import java.util.List;
 /** Versioned shape read only from the mounted provisioning secret file. */
 public record ProvisioningManifest(
         int version,
+        String nonce,
         List<Identity> identities
 ) {
 

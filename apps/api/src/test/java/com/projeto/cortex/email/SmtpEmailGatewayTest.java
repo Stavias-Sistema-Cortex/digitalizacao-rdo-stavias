@@ -64,9 +64,36 @@ class SmtpEmailGatewayTest {
                 .containsEntry("mail.smtp.auth", "true")
                 .containsEntry("mail.smtp.starttls.enable", "true")
                 .containsEntry("mail.smtp.starttls.required", "true")
+                .containsEntry(
+                        "mail.smtp.ssl.checkserveridentity",
+                        "true"
+                )
                 .containsEntry("mail.smtp.connectiontimeout", "1100")
                 .containsEntry("mail.smtp.timeout", "1200")
                 .containsEntry("mail.smtp.writetimeout", "1300");
+    }
+
+    @Test
+    void rejectsTimeoutsAboveSixtySeconds() throws Exception {
+        Path passwordFile = tempDir.resolve("smtp-password-max-timeout");
+        Files.writeString(
+                passwordFile,
+                "test-only-smtp-secret-material-0001"
+        );
+
+        assertThatThrownBy(() -> new SmtpEmailGateway(
+                "smtp.example.invalid",
+                2525,
+                "smtp-user@example.invalid",
+                CONFIGURED_FROM,
+                true,
+                60_001,
+                1200,
+                1300,
+                passwordFile,
+                null
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("SMTP");
     }
 
     @Test

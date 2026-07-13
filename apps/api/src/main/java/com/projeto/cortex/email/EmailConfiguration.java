@@ -1,6 +1,7 @@
 package com.projeto.cortex.email;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -8,7 +9,6 @@ import org.springframework.context.EnvironmentAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 
 @Configuration(proxyBeanMethods = false)
 public class EmailConfiguration implements EnvironmentAware {
@@ -26,7 +26,7 @@ public class EmailConfiguration implements EnvironmentAware {
     ) {
         return () -> validateProvider(
                 provider,
-                environment.acceptsProfiles(Profiles.of("local", "test"))
+                hasOnlyLocalOrTestProfiles()
         );
     }
 
@@ -53,6 +53,12 @@ public class EmailConfiguration implements EnvironmentAware {
             @Value("${cortex.email.smtp.password-inline:}")
             String passwordInline
     ) {
+        validateSmtpSecurity(
+                hasOnlyLocalOrTestProfiles(),
+                startTls,
+                passwordFile,
+                passwordInline
+        );
         return new SmtpEmailGateway(
                 host,
                 port,
@@ -65,6 +71,37 @@ public class EmailConfiguration implements EnvironmentAware {
                 optionalPath(passwordFile),
                 optionalValue(passwordInline)
         );
+    }
+
+    private void validateSmtpSecurity(
+            boolean localOrTestOnly,
+            boolean startTls,
+            String passwordFile,
+            String passwordInline
+    ) {
+        if (localOrTestOnly) {
+            return;
+        }
+        if (!startTls) {
+            throw new IllegalStateException(
+                    "SMTP em produção exige STARTTLS."
+            );
+        }
+        if (optionalValue(passwordFile) == null
+                || optionalValue(passwordInline) != null) {
+            throw new IllegalStateException(
+                    "SMTP em produção exige senha em arquivo secreto."
+            );
+        }
+    }
+
+    private boolean hasOnlyLocalOrTestProfiles() {
+        String[] activeProfiles = environment.getActiveProfiles();
+        return activeProfiles.length > 0
+                && Arrays.stream(activeProfiles).allMatch(
+                        profile -> "local".equals(profile)
+                                || "test".equals(profile)
+                );
     }
 
     public static void validateProvider(

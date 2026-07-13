@@ -135,6 +135,11 @@ public class AuthIdentityRepository {
                     if (!exists) {
                         throw unavailableForProvisioning();
                     }
+                    if (!lockProvisioningEligible(
+                            identity.colaboradorId()
+                    )) {
+                        throw unavailableForProvisioning();
+                    }
                     jdbcTemplate.update("""
                             UPDATE auth_identity
                             SET cpf_lookup_hmac = ?,
@@ -154,6 +159,24 @@ public class AuthIdentityRepository {
                     );
                 }
         );
+    }
+
+    private boolean lockProvisioningEligible(String colaboradorId) {
+        List<String> eligible = jdbcTemplate.query("""
+                SELECT identity.colaborador_id
+                FROM auth_identity identity
+                INNER JOIN colaborador
+                    ON colaborador.id = identity.colaborador_id
+                WHERE identity.colaborador_id = ?
+                  AND colaborador.ativo = 1
+                  AND colaborador.deletado_em IS NULL
+                  AND identity.status <> 'BLOQUEADA'
+                FOR UPDATE
+                """,
+                (resultSet, rowNumber) -> resultSet.getString(1),
+                colaboradorId
+        );
+        return eligible.size() == 1;
     }
 
     private List<AuthIdentity> findOwnersByDigest(CpfLookupDigest digest) {
