@@ -89,4 +89,110 @@ describe("polimento visual da plataforma autenticada", () => {
       "border-radius: var(--radius-sm);",
     );
   });
+
+  it("tokeniza os filtros e delimita os cartões estáticos da Home", () => {
+    expect(rule(globalCss, ".home-topbar")).toContain(
+      "border-bottom: 1px solid var(--color-border);",
+    );
+
+    const chip = rule(globalCss, ".chip");
+    expect(chip).toContain("border: 1px solid var(--color-border);");
+    expect(chip).toContain("border-radius: var(--radius-sm);");
+    expect(chip).toContain("background: var(--color-surface);");
+
+    const ufSelect = rule(globalCss, ".home-uf-filter select");
+    expect(ufSelect).toContain("border: 1px solid var(--color-border);");
+    expect(ufSelect).toContain("border-radius: var(--radius-sm);");
+    expect(ufSelect).toContain("background: var(--color-surface);");
+
+    expect(rule(globalCss, ".chip--active")).toContain(
+      "background: var(--color-brand-yellow);",
+    );
+    expect(rule(globalCss, ".home-obra-card")).toContain(
+      "border: 1px solid var(--color-border);",
+    );
+    expect(rule(globalCss, ".home-card")).toContain(
+      "border: 1px solid var(--color-border);",
+    );
+  });
+
+  it("alinha à esquerda e contém a hierarquia operacional dos RDOs", () => {
+    const filterLabel = rule(globalCss, ".rdo-filter-grid label");
+    expect(filterLabel).toContain("letter-spacing: 0;");
+    expect(filterLabel).toContain("text-transform: none;");
+
+    const metric = rule(globalCss, ".metric-card");
+    expect(metric).toContain("min-height: 82px;");
+    expect(metric).toContain("padding: 14px 16px;");
+    expect(metric).toContain("border-radius: var(--radius-md);");
+    expect(rule(globalCss, ".metric-card span")).toContain(
+      "text-align: left;",
+    );
+    expect(rule(globalCss, ".metric-card strong")).toContain(
+      "text-align: left;",
+    );
+
+    const fact = rule(globalCss, ".rdo-fact");
+    expect(fact).toContain("border: 1px solid #e7ebe8;");
+    expect(fact).toContain("background: #f7f9f7;");
+  });
+
+  it("marca a obra selecionada sem alterar as cores semânticas do PDOR", () => {
+    const surfaces = rule(globalCss, ".obras-list,\n.obras-detail");
+    expect(surfaces).toContain("border: 1px solid var(--color-border);");
+    expect(surfaces).toContain("border-radius: var(--radius-lg);");
+    expect(surfaces).toContain("background: var(--color-surface);");
+
+    const active = rule(globalCss, ".obras-list-item.active");
+    expect(active).toContain("border-color: var(--color-border);");
+    expect(active).toContain("background: #f7f9f7;");
+
+    const marker = rule(globalCss, ".obras-list-item.active::before");
+    expect(marker).toContain('content: "";');
+    expect(marker).toContain("width: 3px;");
+    expect(marker).toContain("background: var(--color-brand-yellow);");
+
+    expect(rule(globalCss, ".obras-pdor-risk--alto")).toContain(
+      "color: #a3322a;",
+    );
+  });
+
+  it("evita overflow dos fluxos operacionais em telas estreitas", () => {
+    const narrowCss = globalCss.slice(
+      globalCss.lastIndexOf("@media (max-width: 620px)"),
+    );
+
+    expect(rule(narrowCss, ".home-dashboard")).toContain(
+      "padding: 24px 14px 96px;",
+    );
+    expect(
+      rule(
+        narrowCss,
+        [
+          ".home-uf-filter,",
+          "  .home-uf-filter select,",
+          "  .home-obra-selector,",
+          "  .home-obra-selector select",
+        ].join("\n"),
+      ),
+    ).toContain("max-width: none;");
+    expect(rule(narrowCss, ".home-obra-chart")).toContain("min-width: 0;");
+    expect(
+      rule(
+        narrowCss,
+        [
+          ".rdo-command-actions,",
+          "  .rdo-command-actions button,",
+          "  .action-bar .button",
+        ].join("\n"),
+      ),
+    ).toContain("width: 100%;");
+
+    const obrasResponsive = globalCss.slice(
+      globalCss.lastIndexOf("@media (max-width: 900px)"),
+    );
+    expect(rule(obrasResponsive, ".obras-workspace")).toContain(
+      "grid-template-columns: 1fr;",
+    );
+  });
 });
