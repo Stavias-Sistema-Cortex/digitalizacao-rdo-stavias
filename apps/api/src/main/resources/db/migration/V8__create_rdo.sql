@@ -45,10 +45,7 @@ CREATE TABLE rdo (
 
     CONSTRAINT fk_rdo_programacao
         FOREIGN KEY (programacao_id) REFERENCES programacao_operacional(id)
-)
-ENGINE = InnoDB
-DEFAULT CHARACTER SET = utf8mb4
-COLLATE = utf8mb4_unicode_ci;
+);
 
 CREATE INDEX idx_rdo_obra_data
     ON rdo (obra_id, data_rdo);
@@ -87,10 +84,7 @@ CREATE TABLE rdo_mao_obra (
 
     CONSTRAINT fk_rdo_mao_obra_colaborador
         FOREIGN KEY (colaborador_id) REFERENCES colaborador(id)
-)
-ENGINE = InnoDB
-DEFAULT CHARACTER SET = utf8mb4
-COLLATE = utf8mb4_unicode_ci;
+);
 
 CREATE INDEX idx_rdo_mao_obra_rdo
     ON rdo_mao_obra (rdo_id);
@@ -124,10 +118,7 @@ CREATE TABLE rdo_equipamento (
 
     CONSTRAINT fk_rdo_equipamento_asset
         FOREIGN KEY (asset_id) REFERENCES asset(id)
-)
-ENGINE = InnoDB
-DEFAULT CHARACTER SET = utf8mb4
-COLLATE = utf8mb4_unicode_ci;
+);
 
 CREATE INDEX idx_rdo_equipamento_rdo
     ON rdo_equipamento (rdo_id);
@@ -159,10 +150,7 @@ CREATE TABLE rdo_material (
 
     CONSTRAINT fk_rdo_material_rdo
         FOREIGN KEY (rdo_id) REFERENCES rdo(id)
-)
-ENGINE = InnoDB
-DEFAULT CHARACTER SET = utf8mb4
-COLLATE = utf8mb4_unicode_ci;
+);
 
 CREATE INDEX idx_rdo_material_rdo
     ON rdo_material (rdo_id);
@@ -204,10 +192,7 @@ CREATE TABLE rdo_controle_geometrico (
 
     CONSTRAINT fk_rdo_controle_geometrico_rdo
         FOREIGN KEY (rdo_id) REFERENCES rdo(id)
-)
-ENGINE = InnoDB
-DEFAULT CHARACTER SET = utf8mb4
-COLLATE = utf8mb4_unicode_ci;
+);
 
 CREATE INDEX idx_rdo_controle_geometrico_rdo
     ON rdo_controle_geometrico (rdo_id);
