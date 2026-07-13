@@ -843,7 +843,7 @@ textarea:focus {
   align-items: center;
   justify-content: left;
   gap: 10px;
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 6px;
   border: 0;
   background: transparent;
@@ -884,6 +884,10 @@ textarea:focus {
   background: var(--color-surface);
 }
 
+.rdo-command-band h1 {
+  font-size: clamp(1.9rem, 3vw, 2.4rem);
+}
+
 .rdo-command-actions {
   display: flex;
   flex-wrap: wrap;
@@ -917,7 +921,7 @@ textarea:focus {
 
 .rdo-filter-grid input,
 .rdo-filter-grid select {
-  min-height: 38px;
+  min-height: 40px;
   width: 100%;
   border: 1px solid #d5ddd8;
   border-radius: 8px;
@@ -1333,6 +1337,7 @@ textarea:focus {
   .cortex-shell,
   .cortex-shell--collapsed {
     grid-template-columns: 1fr;
+    align-content: start;
   }
 
   .sidebar-toggle,
@@ -1358,16 +1363,16 @@ textarea:focus {
 
   .cortex-shell--collapsed .sidebar-nav-item {
     width: auto;
-    min-height: 46px;
-    padding: 0 18px;
+    min-height: 40px;
+    padding: 0 4px;
   }
 
   .cortex-shell--collapsed .sidebar-footer button {
     width: auto;
-    min-height: 36px;
-    justify-content: flex-start;
+    min-height: 40px;
+    justify-content: center;
     margin-inline: 0;
-    padding: 0 6px;
+    padding: 0 4px;
   }
 
   .cortex-sidebar,
@@ -1379,7 +1384,9 @@ textarea:focus {
   .cortex-sidebar {
     display: grid;
     grid-template-columns: 1fr;
-    padding: 10px;
+    grid-template-rows: auto auto auto;
+    gap: 8px;
+    padding: 8px 10px;
   }
 
   .rdo-dashboard {
@@ -1388,24 +1395,56 @@ textarea:focus {
 
   .sidebar-nav,
   .sidebar-footer {
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: grid;
   }
 
   .sidebar-nav {
     margin-block: 0;
-    gap: 10px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .sidebar-footer {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
   }
 
   .sidebar-nav-item {
-    flex: 1 1 auto;
-    width: auto;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    min-height: 40px;
     margin-inline: 0;
+    padding: 0 4px;
+    font-size: 0.72rem;
+    line-height: 1.1;
+  }
+
+  .sidebar-footer button {
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 4px;
+    font-size: 0.68rem;
+    line-height: 1.1;
   }
 
   .sidebar-brand {
-    padding-bottom: 12px;
+    min-height: 68px;
+    align-items: flex-start;
+    padding: 0 100px 8px 8px;
     border-bottom-width: 2px;
+  }
+
+  .sidebar-brand-lockup {
+    max-width: 180px;
+  }
+
+  .sidebar-nav-item img,
+  .sidebar-footer button img {
+    width: 16px;
+    height: 16px;
   }
 
   .rdo-command-band,
@@ -1576,8 +1615,8 @@ textarea:focus {
 }
 
 .avatar-button {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: none;
   background: #0e5e57;
@@ -1911,7 +1950,7 @@ textarea:focus {
 }
 
 .home-updated-at {
-  color: #99a3a6;
+  color: var(--color-muted);
   font-size: 0.66rem;
 }
 
@@ -1957,7 +1996,7 @@ textarea:focus {
 }
 
 .home-card-muted {
-  color: #99a3a6;
+  color: var(--color-muted);
 }
 
 .home-card--brand {
@@ -2398,5 +2437,17 @@ textarea:focus {
   .rdo-command-actions button,
   .action-bar .button {
     width: 100%;
+  }
+
+  .floating-controls {
+    top: 12px;
+    right: 12px;
+  }
+
+  .home-dashboard,
+  .rdo-dashboard,
+  .obras-page {
+    padding-top: 84px;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 }

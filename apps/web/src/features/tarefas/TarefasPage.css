@@ -413,3 +413,10 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 620px) {
+  .tarefas-page {
+    padding-top: 84px;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+}

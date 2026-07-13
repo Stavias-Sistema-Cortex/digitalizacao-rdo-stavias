@@ -1089,15 +1089,17 @@ box-shadow:
   }
 
   .stavia-launcher {
-    right: 16px;
-    bottom: 18px;
-    width: 132px;
-    height: 52px;
+    position: absolute;
+    top: 238px;
+    right: 12px;
+    bottom: auto;
+    width: 112px;
+    height: 48px;
   }
 
   .stavia-launcher img {
-    width: 102px;
-    height: 36px;
+    width: 86px;
+    height: 32px;
   }
 }
 

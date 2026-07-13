@@ -26,6 +26,7 @@ const gestaoObrasCss = readCss("./features/obras/gestao/gestaoObras.css");
 const programacaoCss = readCss(
   "./features/programacoes/ProgramacaoSemanalImport.css",
 );
+const staviaCss = readCss("./features/stavia/StaviaPanel.css");
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -127,6 +128,15 @@ describe("polimento visual da plataforma autenticada", () => {
     );
   });
 
+  it("mantém contraste legível nas notas pequenas da Home", () => {
+    expect(rule(globalCss, ".home-card-muted")).toContain(
+      "color: var(--color-muted);",
+    );
+    expect(rule(globalCss, ".home-updated-at")).toContain(
+      "color: var(--color-muted);",
+    );
+  });
+
   it("alinha à esquerda e contém a hierarquia operacional dos RDOs", () => {
     const filterLabel = rule(globalCss, ".rdo-filter-grid label");
     expect(filterLabel).toContain("letter-spacing: 0;");
@@ -146,6 +156,91 @@ describe("polimento visual da plataforma autenticada", () => {
     const fact = rule(globalCss, ".rdo-fact");
     expect(fact).toContain("border: 1px solid #e7ebe8;");
     expect(fact).toContain("background: #f7f9f7;");
+  });
+
+  it("dá escala própria ao comando RDO e alvos práticos aos controles", () => {
+    expect(rule(globalCss, ".rdo-command-band h1")).toContain(
+      "font-size: clamp(1.9rem, 3vw, 2.4rem);",
+    );
+    expect(rule(syncCss, ".sync-chip__button")).toContain("width: 40px;");
+    expect(rule(syncCss, ".sync-chip__button")).toContain("height: 40px;");
+    expect(rule(globalCss, ".avatar-button")).toContain("width: 40px;");
+    expect(rule(globalCss, ".avatar-button")).toContain("height: 40px;");
+    expect(rule(globalCss, "\n.sidebar-footer button")).toContain(
+      "min-height: 40px;",
+    );
+    expect(
+      rule(globalCss, ".rdo-filter-grid input,\n.rdo-filter-grid select"),
+    ).toContain("min-height: 40px;");
+  });
+
+  it("compacta o shell móvel em grades com rótulos e alvos de 40px", () => {
+    const mobileShellCss = globalCss.slice(
+      globalCss.indexOf("@media (max-width: 900px)"),
+      globalCss.indexOf("@media (max-width: 620px)"),
+    );
+
+    expect(
+      rule(
+        mobileShellCss,
+        "  .cortex-shell,\n  .cortex-shell--collapsed",
+      ),
+    ).toContain("align-content: start;");
+    expect(rule(mobileShellCss, "  .cortex-sidebar")).toContain("gap: 8px;");
+    expect(rule(mobileShellCss, "  .sidebar-brand")).toContain(
+      "padding: 0 100px 8px 8px;",
+    );
+    expect(rule(mobileShellCss, "  .sidebar-brand-lockup")).toContain(
+      "max-width: 180px;",
+    );
+    expect(rule(mobileShellCss, "  .sidebar-nav")).toContain(
+      "grid-template-columns: repeat(4, minmax(0, 1fr));",
+    );
+    expect(rule(mobileShellCss, "  .sidebar-footer")).toContain(
+      "grid-template-columns: repeat(3, minmax(0, 1fr));",
+    );
+    expect(rule(mobileShellCss, "  .sidebar-nav-item")).toContain(
+      "min-height: 40px;",
+    );
+    expect(rule(mobileShellCss, "  .sidebar-footer button")).toContain(
+      "min-height: 40px;",
+    );
+  });
+
+  it("reserva zonas móveis para o cluster e o launcher sem colisões", () => {
+    const narrowCss = globalCss.slice(
+      globalCss.lastIndexOf("@media (max-width: 620px)"),
+    );
+    const floatingControls = rule(narrowCss, ".floating-controls");
+    expect(floatingControls).toContain("top: 12px;");
+    expect(floatingControls).toContain("right: 12px;");
+    expect(
+      rule(
+        narrowCss,
+        ".home-dashboard,\n  .rdo-dashboard,\n  .obras-page",
+      ),
+    ).toContain("padding-top: 84px;");
+
+    const tarefasNarrowCss = tarefasCss.slice(
+      tarefasCss.lastIndexOf("@media (max-width: 620px)"),
+    );
+    expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
+      "padding-top: 84px;",
+    );
+    expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
+      "padding-bottom: calc(120px + env(safe-area-inset-bottom));",
+    );
+
+    const staviaNarrowCss = staviaCss.slice(
+      staviaCss.lastIndexOf("@media (max-width: 560px)"),
+    );
+    const launcher = rule(staviaNarrowCss, ".stavia-launcher");
+    expect(launcher).toContain("position: absolute;");
+    expect(launcher).toContain("right: 12px;");
+    expect(launcher).toContain("top: 238px;");
+    expect(launcher).toContain("bottom: auto;");
+    expect(launcher).toContain("width: 112px;");
+    expect(launcher).toContain("height: 48px;");
   });
 
   it("marca a obra selecionada sem alterar as cores semânticas do PDOR", () => {
