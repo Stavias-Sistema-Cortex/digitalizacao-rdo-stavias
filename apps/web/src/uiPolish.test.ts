@@ -207,6 +207,17 @@ describe("polimento visual da plataforma autenticada", () => {
     );
   });
 
+  it("limita o lockup abaixo de 340px para não invadir o cluster fixo", () => {
+    const extraNarrowCss = globalCss.slice(
+      globalCss.indexOf("@media (max-width: 340px)"),
+      globalCss.indexOf("@media (max-width: 620px)"),
+    );
+
+    expect(rule(extraNarrowCss, "  .sidebar-brand-lockup")).toContain(
+      "max-width: 160px;",
+    );
+  });
+
   it("reserva zonas móveis para o cluster e o launcher sem colisões", () => {
     const narrowCss = globalCss.slice(
       globalCss.lastIndexOf("@media (max-width: 620px)"),

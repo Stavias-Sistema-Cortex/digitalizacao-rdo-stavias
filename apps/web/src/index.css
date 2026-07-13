@@ -1489,6 +1489,12 @@ textarea:focus {
   }
 }
 
+@media (max-width: 340px) {
+  .sidebar-brand-lockup {
+    max-width: 160px;
+  }
+}
+
 @media (max-width: 620px) {
   .page-shell {
     width: min(100% - 20px, 1180px);
