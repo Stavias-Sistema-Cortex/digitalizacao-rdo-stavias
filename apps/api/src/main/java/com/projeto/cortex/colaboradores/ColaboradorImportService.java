@@ -455,7 +455,6 @@ public class ColaboradorImportService {
         fields.put("nome", usuario.nome());
         fields.put("email", usuario.email());
         fields.put("cpf_mascarado", usuario.cpfMascarado());
-        fields.put("cpf_hash", usuario.cpfHash());
         fields.put("grupo", usuario.nomeGrupo());
         fields.put("perfil", usuario.nomePerfil());
         fields.put("ativo", usuario.ativo());

@@ -22,6 +22,8 @@ class AuthSecurityMigrationTest {
         assertThat(sql).contains("CREATE TABLE auth_webauthn_credential");
         assertThat(sql).contains("WHERE papel_acesso IS NULL");
         assertThat(sql).doesNotContain("SET papel_acesso = 'ALFA'");
+        assertThat(sql).contains("CONSTRAINT chk_colaborador_papel_acesso");
+        assertThat(sql).contains("CHECK (papel_acesso IN ('ALFA', 'BETA'))");
         assertThat(sql).contains("DELETE FROM cortex_evidencia_operacional");
         assertThat(sql).contains("JSON_REMOVE(snapshot_origem_json, '$.cpf_hash')");
         assertThat(sql).doesNotContain("DROP COLUMN cpf_hash");

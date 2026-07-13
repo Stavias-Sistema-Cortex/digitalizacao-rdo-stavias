@@ -143,7 +143,7 @@ public class CurrentUserService {
 
         return jdbcTemplate.query(
                 """
-                SELECT papel_acesso, nome_perfil, nome_grupo
+                SELECT papel_acesso
                 FROM colaborador
                 WHERE id = ?
                   AND ativo = 1
@@ -154,14 +154,8 @@ public class CurrentUserService {
                     if (!rs.next()) {
                         return null;
                     }
-                    PapelAcesso explicito =
-                            PapelAcesso.fromNullable(rs.getString("papel_acesso"));
-                    if (explicito != null) {
-                        return explicito;
-                    }
-                    return PapelAcesso.fromPerfilGrupo(
-                            rs.getString("nome_perfil"),
-                            rs.getString("nome_grupo")
+                    return PapelAcesso.fromNullable(
+                            rs.getString("papel_acesso")
                     );
                 },
                 colaboradorId.trim()

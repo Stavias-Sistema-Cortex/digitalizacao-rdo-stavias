@@ -129,7 +129,9 @@ WHERE papel_acesso IS NULL
    OR papel_acesso NOT IN ('ALFA', 'BETA');
 
 ALTER TABLE colaborador
-    MODIFY papel_acesso VARCHAR(20) NOT NULL DEFAULT 'BETA';
+    MODIFY papel_acesso VARCHAR(20) NOT NULL DEFAULT 'BETA',
+    ADD CONSTRAINT chk_colaborador_papel_acesso
+        CHECK (papel_acesso IN ('ALFA', 'BETA'));
 
 -- Remove brute-forceable CPF digests duplicated into operational memory.
 DELETE FROM cortex_evidencia_operacional

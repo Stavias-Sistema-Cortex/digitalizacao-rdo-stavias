@@ -14,27 +14,9 @@ class PapelAcessoTest {
     }
 
     @Test
-    void fromNullableRetornaNuloParaAusenteOuDesconhecido() {
-        assertThat(PapelAcesso.fromNullable(null)).isNull();
-        assertThat(PapelAcesso.fromNullable("")).isNull();
-        assertThat(PapelAcesso.fromNullable("GAMA")).isNull();
-    }
-
-    @Test
-    void fromPerfilGrupoDerivaAlfaDeTextoAdministrativo() {
-        assertThat(PapelAcesso.fromPerfilGrupo("Administrador", null))
-                .isEqualTo(PapelAcesso.ALFA);
-        assertThat(PapelAcesso.fromPerfilGrupo(null, "ADMIN"))
-                .isEqualTo(PapelAcesso.ALFA);
-        assertThat(PapelAcesso.fromPerfilGrupo("Administradora Geral", null))
-                .isEqualTo(PapelAcesso.ALFA);
-    }
-
-    @Test
-    void fromPerfilGrupoDerivaBetaParaDemais() {
-        assertThat(PapelAcesso.fromPerfilGrupo("Encarregado", "Operacional"))
-                .isEqualTo(PapelAcesso.BETA);
-        assertThat(PapelAcesso.fromPerfilGrupo(null, null))
-                .isEqualTo(PapelAcesso.BETA);
+    void fromNullableResolveAusenteOuDesconhecidoComoBeta() {
+        assertThat(PapelAcesso.fromNullable(null)).isEqualTo(PapelAcesso.BETA);
+        assertThat(PapelAcesso.fromNullable("")).isEqualTo(PapelAcesso.BETA);
+        assertThat(PapelAcesso.fromNullable("GAMA")).isEqualTo(PapelAcesso.BETA);
     }
 }
