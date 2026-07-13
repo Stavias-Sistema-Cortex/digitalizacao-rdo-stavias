@@ -33,12 +33,14 @@ class AuthSecurityMigrationMysqlIntegrationTest {
         String alfaId = UUID.randomUUID().toString();
         String nullRoleId = UUID.randomUUID().toString();
         String invalidRoleId = UUID.randomUUID().toString();
+        String mixedCaseRoleId = UUID.randomUUID().toString();
         String objectId = UUID.randomUUID().toString();
         String legacyCpfHash = "ab".repeat(32);
 
         insertColaborador(jdbc, alfaId, "alfa-sintetico", legacyCpfHash, "ALFA");
         insertColaborador(jdbc, nullRoleId, "sem-papel-sintetico", null, null);
         insertColaborador(jdbc, invalidRoleId, "papel-invalido-sintetico", null, "GAMA");
+        insertColaborador(jdbc, mixedCaseRoleId, "papel-misto-sintetico", null, "aLfA");
         insertOperationalProjections(jdbc, objectId, alfaId, legacyCpfHash);
 
         database.migrate();
@@ -46,6 +48,7 @@ class AuthSecurityMigrationMysqlIntegrationTest {
         assertThat(role(jdbc, alfaId)).isEqualTo("ALFA");
         assertThat(role(jdbc, nullRoleId)).isEqualTo("BETA");
         assertThat(role(jdbc, invalidRoleId)).isEqualTo("BETA");
+        assertThat(role(jdbc, mixedCaseRoleId)).isEqualTo("BETA");
         assertThat(jdbc.queryForObject(
                 "SELECT cpf_hash FROM colaborador WHERE id = ?",
                 String.class,
@@ -73,11 +76,20 @@ class AuthSecurityMigrationMysqlIntegrationTest {
                 alfaId
         )).isEqualTo("Colaborador Sintético");
 
-        assertThatThrownBy(() -> jdbc.update(
-                "UPDATE colaborador SET papel_acesso = 'GAMA' WHERE id = ?",
+        assertThat(jdbc.update(
+                "UPDATE colaborador SET papel_acesso = 'ALFA' WHERE id = ?",
                 nullRoleId
-        )).isInstanceOf(DataAccessException.class)
-                .hasMessageContaining("chk_colaborador_papel_acesso");
+        )).isEqualTo(1);
+        assertThat(role(jdbc, nullRoleId)).isEqualTo("ALFA");
+        assertThat(jdbc.update(
+                "UPDATE colaborador SET papel_acesso = 'BETA' WHERE id = ?",
+                nullRoleId
+        )).isEqualTo(1);
+        assertThat(role(jdbc, nullRoleId)).isEqualTo("BETA");
+
+        assertRoleUpdateRejected(jdbc, nullRoleId, "GAMA");
+        assertRoleUpdateRejected(jdbc, nullRoleId, "alfa");
+        assertRoleUpdateRejected(jdbc, nullRoleId, "aLfA");
     }
 
     private void migrateToV26() {
@@ -184,6 +196,19 @@ class AuthSecurityMigrationMysqlIntegrationTest {
                 String.class,
                 colaboradorId
         );
+    }
+
+    private void assertRoleUpdateRejected(
+            JdbcTemplate jdbc,
+            String colaboradorId,
+            String papelAcesso
+    ) {
+        assertThatThrownBy(() -> jdbc.update(
+                "UPDATE colaborador SET papel_acesso = ? WHERE id = ?",
+                papelAcesso,
+                colaboradorId
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("chk_colaborador_papel_acesso");
     }
 
     private int countEvidence(JdbcTemplate jdbc, String fieldName) {

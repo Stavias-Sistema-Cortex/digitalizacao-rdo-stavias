@@ -126,10 +126,11 @@ CREATE TABLE auth_provisioning_receipt (
 UPDATE colaborador
 SET papel_acesso = 'BETA'
 WHERE papel_acesso IS NULL
-   OR papel_acesso NOT IN ('ALFA', 'BETA');
+   OR papel_acesso COLLATE utf8mb4_bin NOT IN ('ALFA', 'BETA');
 
 ALTER TABLE colaborador
-    MODIFY papel_acesso VARCHAR(20) NOT NULL DEFAULT 'BETA',
+    MODIFY papel_acesso VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin
+        NOT NULL DEFAULT 'BETA',
     ADD CONSTRAINT chk_colaborador_papel_acesso
         CHECK (papel_acesso IN ('ALFA', 'BETA'));
 

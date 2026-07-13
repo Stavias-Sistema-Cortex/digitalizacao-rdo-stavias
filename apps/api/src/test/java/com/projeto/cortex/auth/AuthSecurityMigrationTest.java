@@ -22,6 +22,12 @@ class AuthSecurityMigrationTest {
         assertThat(sql).contains("CREATE TABLE auth_webauthn_credential");
         assertThat(sql).contains("WHERE papel_acesso IS NULL");
         assertThat(sql).doesNotContain("SET papel_acesso = 'ALFA'");
+        assertThat(sql).contains(
+                "papel_acesso COLLATE utf8mb4_bin NOT IN ('ALFA', 'BETA')"
+        );
+        assertThat(sql).contains(
+                "MODIFY papel_acesso VARCHAR(20) CHARACTER SET ascii COLLATE ascii_bin"
+        );
         assertThat(sql).contains("CONSTRAINT chk_colaborador_papel_acesso");
         assertThat(sql).contains("CHECK (papel_acesso IN ('ALFA', 'BETA'))");
         assertThat(sql).contains("DELETE FROM cortex_evidencia_operacional");
