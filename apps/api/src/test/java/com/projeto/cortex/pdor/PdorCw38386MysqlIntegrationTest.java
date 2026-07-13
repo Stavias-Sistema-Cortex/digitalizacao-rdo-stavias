@@ -332,8 +332,9 @@ class PdorCw38386MysqlIntegrationTest {
                     pk_origem,
                     nome,
                     nome_perfil,
+                    papel_acesso,
                     ativo
-                ) VALUES (?, 'teste', 'teste', ?, 'Admin PDOR Teste', 'ADMINISTRADOR', 1)
+                ) VALUES (?, 'teste', 'teste', ?, 'Admin PDOR Teste', 'ADMINISTRADOR', 'ALFA', 1)
                 """,
                 ADMIN_USER_ID,
                 ADMIN_USER_ID
