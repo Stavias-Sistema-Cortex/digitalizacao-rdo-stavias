@@ -8,11 +8,24 @@ import com.projeto.cortex.auth.identity.AuthIdentityRepository;
 import com.projeto.cortex.auth.identity.CpfLookupDigest;
 import com.projeto.cortex.auth.identity.HmacCpfLookupDigestService;
 import com.projeto.cortex.colaboradores.CpfHasher;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @EnabledIfEnvironmentVariable(named = "CORTEX_MYSQL_ROOT_PASSWORD", matches = ".+")
 class AuthIdentityRepositoryMysqlIntegrationTest {
@@ -178,6 +191,105 @@ class AuthIdentityRepositoryMysqlIntegrationTest {
     }
 
     @Test
+    void competingFirstInsertsKeepOneOwnerAndSanitizeTheLosingFailure()
+            throws Exception {
+        database = PdorMysqlTestDatabase.create("auth_race");
+        database.migrate();
+
+        DataSource dataSource = database.dataSource();
+        JdbcTemplate setupJdbc = new JdbcTemplate(dataSource);
+        String firstId = insertColaborador(
+                setupJdbc,
+                "race-first",
+                "Primeiro Contendor Sintético",
+                null,
+                true
+        );
+        String secondId = insertColaborador(
+                setupJdbc,
+                "race-second",
+                "Segundo Contendor Sintético",
+                null,
+                true
+        );
+        HmacCpfLookupDigestService digestService = digestService();
+        CpfLookupDigest digest = digestService.current(SYNTHETIC_CPF);
+        CyclicBarrier transactionBarrier = new CyclicBarrier(2);
+        CyclicBarrier digestLookupBarrier = new CyclicBarrier(2);
+        DataSourceTransactionManager transactionManager =
+                new DataSourceTransactionManager(dataSource);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        Throwable firstFailure;
+        Throwable secondFailure;
+        try {
+            Future<Throwable> first = executor.submit(() -> competingUpsert(
+                    dataSource,
+                    transactionManager,
+                    digestService,
+                    transactionBarrier,
+                    digestLookupBarrier,
+                    firstId,
+                    "first@example.invalid"
+            ));
+            Future<Throwable> second = executor.submit(() -> competingUpsert(
+                    dataSource,
+                    transactionManager,
+                    digestService,
+                    transactionBarrier,
+                    digestLookupBarrier,
+                    secondId,
+                    "second@example.invalid"
+            ));
+            firstFailure = first.get(20, TimeUnit.SECONDS);
+            secondFailure = second.get(20, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        List<Throwable> failures = Stream.of(firstFailure, secondFailure)
+                .filter(failure -> failure != null)
+                .toList();
+        assertThat(failures).hasSize(1);
+        assertThat(failures.get(0))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Conflito de identidade de autenticação.")
+                .hasNoCause();
+
+        List<IdentityOwner> owners = setupJdbc.query("""
+                SELECT colaborador_id, email_autenticacao
+                FROM auth_identity
+                WHERE cpf_lookup_key_id = ?
+                  AND cpf_lookup_hmac = ?
+                """,
+                (resultSet, rowNumber) -> new IdentityOwner(
+                        resultSet.getString("colaborador_id"),
+                        resultSet.getString("email_autenticacao")
+                ),
+                digest.keyId(),
+                digest.value()
+        );
+        assertThat(owners).hasSize(1);
+
+        IdentityOwner winner = owners.get(0);
+        assertThat(winner.colaboradorId()).isIn(firstId, secondId);
+        assertThat(winner.email()).isEqualTo(
+                winner.colaboradorId().equals(firstId)
+                        ? "first@example.invalid"
+                        : "second@example.invalid"
+        );
+        String loserId = winner.colaboradorId().equals(firstId)
+                ? secondId
+                : firstId;
+        assertThat(setupJdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth_identity WHERE colaborador_id = ?",
+                Integer.class,
+                loserId
+        )).isZero();
+    }
+
+    @Test
     void currentAndPreviousOwnersAreAmbiguousBeforeEligibilityFiltering() {
         database = PdorMysqlTestDatabase.create("auth_identity_rotation");
         database.migrate();
@@ -232,6 +344,57 @@ class AuthIdentityRepositoryMysqlIntegrationTest {
     }
 
     @Test
+    void currentHmacAndInactiveLegacyOwnersAreGloballyAmbiguous() {
+        database = PdorMysqlTestDatabase.create("auth_mixed");
+        database.migrate();
+
+        JdbcTemplate jdbc = new JdbcTemplate(database.dataSource());
+        String currentOwner = insertColaborador(
+                jdbc,
+                "mixed-current",
+                "Atual Ativo Sintético",
+                null,
+                true
+        );
+        String legacyOwner = insertColaborador(
+                jdbc,
+                "mixed-legacy-inactive",
+                "Legado Inativo Sintético",
+                CpfHasher.hashDeDigitos(SYNTHETIC_CPF),
+                false
+        );
+        HmacCpfLookupDigestService digestService = digestService();
+        CpfLookupDigest current = digestService.current(SYNTHETIC_CPF);
+        insertIdentity(
+                jdbc,
+                currentOwner,
+                current,
+                "current@example.invalid",
+                "ATIVA"
+        );
+        AuthIdentityRepository repository = new AuthIdentityRepository(
+                jdbc,
+                digestService
+        );
+
+        assertThatThrownBy(() -> repository.findActiveByCpf(SYNTHETIC_CPF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade de autenticação ambígua.");
+
+        assertThat(ownerOf(jdbc, current)).isEqualTo(currentOwner);
+        assertThat(jdbc.queryForObject(
+                "SELECT cpf_hash FROM colaborador WHERE id = ?",
+                String.class,
+                legacyOwner
+        )).isEqualTo(CpfHasher.hashDeDigitos(SYNTHETIC_CPF));
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth_identity WHERE colaborador_id = ?",
+                Integer.class,
+                legacyOwner
+        )).isZero();
+    }
+
+    @Test
     void duplicateLegacyOwnersAreAmbiguousBeforeEligibilityFiltering() {
         database = PdorMysqlTestDatabase.create("auth_identity_legacy");
         database.migrate();
@@ -282,6 +445,58 @@ class AuthIdentityRepositoryMysqlIntegrationTest {
                 TEST_SECRET,
                 null
         );
+    }
+
+    private Throwable competingUpsert(
+            DataSource dataSource,
+            DataSourceTransactionManager transactionManager,
+            HmacCpfLookupDigestService digestService,
+            CyclicBarrier transactionBarrier,
+            CyclicBarrier digestLookupBarrier,
+            String colaboradorId,
+            String academyEmail
+    ) {
+        JdbcTemplate jdbc = new DigestLookupBarrierJdbcTemplate(
+                dataSource,
+                digestLookupBarrier
+        );
+        AuthIdentityRepository repository = new AuthIdentityRepository(
+                jdbc,
+                digestService
+        );
+        TransactionTemplate transaction = new TransactionTemplate(
+                transactionManager
+        );
+        try {
+            transaction.executeWithoutResult(status -> {
+                await(transactionBarrier);
+                repository.upsertAcademyIdentity(
+                        colaboradorId,
+                        SYNTHETIC_CPF,
+                        academyEmail
+                );
+            });
+            return null;
+        } catch (Throwable failure) {
+            return failure;
+        }
+    }
+
+    private static void await(CyclicBarrier barrier) {
+        try {
+            barrier.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Teste concorrente interrompido.",
+                    exception
+            );
+        } catch (BrokenBarrierException | TimeoutException exception) {
+            throw new IllegalStateException(
+                    "Barreira do teste concorrente não foi satisfeita.",
+                    exception
+            );
+        }
     }
 
     private HmacCpfLookupDigestService rotatingDigestService() {
@@ -370,5 +585,37 @@ class AuthIdentityRepositoryMysqlIntegrationTest {
                 String.class,
                 colaboradorId
         );
+    }
+
+    private record IdentityOwner(String colaboradorId, String email) {
+    }
+
+    private static final class DigestLookupBarrierJdbcTemplate
+            extends JdbcTemplate {
+
+        private final CyclicBarrier barrier;
+
+        private DigestLookupBarrierJdbcTemplate(
+                DataSource dataSource,
+                CyclicBarrier barrier
+        ) {
+            super(dataSource);
+            this.barrier = barrier;
+        }
+
+        @Override
+        public <T> List<T> query(
+                String sql,
+                RowMapper<T> rowMapper,
+                Object... arguments
+        ) {
+            List<T> rows = super.query(sql, rowMapper, arguments);
+            if (sql.contains("cpf_lookup_key_id = ?")
+                    && sql.contains("cpf_lookup_hmac = ?")
+                    && sql.contains("FOR UPDATE")) {
+                await(barrier);
+            }
+            return rows;
+        }
     }
 }

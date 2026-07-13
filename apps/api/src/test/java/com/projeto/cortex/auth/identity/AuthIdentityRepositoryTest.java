@@ -50,6 +50,7 @@ class AuthIdentityRepositoryTest {
                 eq(CURRENT.keyId()),
                 eq(CURRENT.value())
         )).thenReturn(List.of(activeIdentity()));
+        stubLegacyOwners(List.of(activeIdentity()));
         stubEligible("alfa-sintetico", activeIdentity());
 
         AuthIdentity identity = repository
@@ -159,6 +160,36 @@ class AuthIdentityRepositoryTest {
                 any(RowMapper.class),
                 eq(PREVIOUS.keyId()),
                 eq(PREVIOUS.value())
+        );
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void currentHmacAndLegacyDifferentOwnersAreGloballyAmbiguous() {
+        AuthIdentity legacyOwner = new AuthIdentity(
+                "bloqueado-sintetico",
+                "Colaborador Bloqueado Sintético",
+                "bloqueado@example.invalid",
+                "BETA"
+        );
+        when(digests.candidates(SYNTHETIC_CPF)).thenReturn(List.of(CURRENT));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        stubLegacyOwners(List.of(legacyOwner));
+
+        assertThatThrownBy(() -> repository.findActiveByCpf(SYNTHETIC_CPF))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade de autenticação ambígua.");
+
+        verify(jdbc).query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CpfHasher.hashDeDigitos(SYNTHETIC_CPF))
         );
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
@@ -309,6 +340,15 @@ class AuthIdentityRepositoryTest {
                 any(RowMapper.class),
                 eq(colaboradorId)
         )).thenReturn(List.of(identity));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubLegacyOwners(List<AuthIdentity> owners) {
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CpfHasher.hashDeDigitos(SYNTHETIC_CPF))
+        )).thenReturn(owners);
     }
 
     @SuppressWarnings("unchecked")

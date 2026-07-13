@@ -14,8 +14,7 @@ import {
   validateLoginForm,
   type LoginFieldErrors,
 } from "./loginValidation";
-import { autenticar, sincronizarFiltroOffline } from "./authService";
-import { getCachedFilter } from "./cpfFilter";
+import { autenticar } from "./authService";
 
 import "./LoginPage.css";
 
@@ -30,18 +29,10 @@ export function LoginPage() {
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [authError, setAuthError] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
-  const [filtroOfflinePronto, setFiltroOfflinePronto] = useState(
-    () => getCachedFilter() !== null,
-  );
 
   const loading = status === "loading";
 
   useEffect(() => {
-    // Pré-carrega o filtro de Bloom para habilitar o login offline.
-    void sincronizarFiltroOffline().then(() => {
-      setFiltroOfflinePronto(getCachedFilter() !== null);
-    });
-
     function handleOnline() {
       setOnline(true);
     }
@@ -123,9 +114,7 @@ export function LoginPage() {
 
           {!online ? (
             <p className="login__offline" role="status">
-              {filtroOfflinePronto
-                ? "Sem conexão — o login offline está habilitado neste dispositivo."
-                : "Sem conexão — conecte-se uma vez para habilitar o login offline."}
+              Sem conexão — O login exige conexão com o Córtex.
             </p>
           ) : null}
 

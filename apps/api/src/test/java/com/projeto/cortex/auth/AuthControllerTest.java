@@ -3,6 +3,7 @@ package com.projeto.cortex.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,7 +24,7 @@ class AuthControllerTest {
         CpfBloomFilterService bloomFilterService =
                 mock(CpfBloomFilterService.class);
         JwtService jwtService = mock(JwtService.class);
-        AuthController controller = new AuthController(bloomFilterService);
+        AuthController controller = new AuthController();
 
         ResponseEntity<Map<String, String>> response = controller.login(
                 new LoginRequest(
@@ -45,7 +46,7 @@ class AuthControllerTest {
         CpfBloomFilterService bloomFilterService =
                 mock(CpfBloomFilterService.class);
         MockMvc mockMvc = MockMvcBuilders
-                .standaloneSetup(new AuthController(bloomFilterService))
+                .standaloneSetup(new AuthController())
                 .build();
 
         mockMvc.perform(post("/api/auth/login")
@@ -60,5 +61,21 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.message").value(
                         AuthController.LOGIN_DISABLED_MESSAGE
                 ));
+    }
+
+    @Test
+    void publicCpfFilterEndpointIsGoneWithoutReadingBloomData() throws Exception {
+        CpfBloomFilterService bloomFilterService =
+                mock(CpfBloomFilterService.class);
+        MockMvc mockMvc = MockMvcBuilders
+                .standaloneSetup(new AuthController())
+                .build();
+
+        mockMvc.perform(get("/api/auth/cpf-filter"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.message").value(
+                        AuthController.CPF_FILTER_DISABLED_MESSAGE
+                ));
+        verifyNoInteractions(bloomFilterService);
     }
 }

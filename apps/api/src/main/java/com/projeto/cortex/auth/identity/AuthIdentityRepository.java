@@ -6,7 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -54,47 +55,37 @@ public class AuthIdentityRepository {
         }
 
         CpfLookupDigest current = candidates.get(0);
-        List<AuthIdentity> digestOwners = new ArrayList<>();
+        List<AuthIdentity> owners = new ArrayList<>();
         boolean currentDigestMatched = false;
         for (int index = 0; index < candidates.size(); index++) {
             List<AuthIdentity> matches = findOwnersByDigest(
                     candidates.get(index)
             );
-            digestOwners.addAll(matches);
+            owners.addAll(matches);
             if (index == 0 && !matches.isEmpty()) {
                 currentDigestMatched = true;
             }
         }
 
-        Optional<AuthIdentity> digestOwner = uniqueOwner(digestOwners);
-        if (digestOwner.isPresent()) {
-            Optional<AuthIdentity> eligible = findEligibleById(
-                    digestOwner.orElseThrow().colaboradorId()
-            );
-            if (eligible.isPresent() && !currentDigestMatched) {
-                upgradeToCurrent(
-                        eligible.orElseThrow().colaboradorId(),
-                        current
-                );
-            }
-            return eligible;
-        }
-
         String digits = CpfNormalizer.requireValid(cpfRaw);
-        Optional<AuthIdentity> legacyOwner = uniqueOwner(findOwnersByLegacySha(
+        owners.addAll(findOwnersByLegacySha(
                 CpfHasher.hashDeDigitos(digits)
         ));
-        if (legacyOwner.isEmpty()) {
+
+        Optional<AuthIdentity> owner = uniqueOwner(owners);
+        if (owner.isEmpty()) {
             return Optional.empty();
         }
 
         Optional<AuthIdentity> eligible = findEligibleById(
-                legacyOwner.orElseThrow().colaboradorId()
+                owner.orElseThrow().colaboradorId()
         );
-        eligible.ifPresent(identity -> upgradeToCurrent(
-                identity.colaboradorId(),
-                current
-        ));
+        if (eligible.isPresent() && !currentDigestMatched) {
+            upgradeToCurrent(
+                    eligible.orElseThrow().colaboradorId(),
+                    current
+            );
+        }
         return eligible;
     }
 
@@ -313,7 +304,8 @@ public class AuthIdentityRepository {
                     colaboradorId
             );
             write.execute(!collaboratorRows.isEmpty());
-        } catch (DuplicateKeyException exception) {
+        } catch (DataIntegrityViolationException
+                 | PessimisticLockingFailureException exception) {
             throw identityConflict();
         }
     }
