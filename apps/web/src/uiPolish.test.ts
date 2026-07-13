@@ -56,11 +56,17 @@ describe("polimento visual da plataforma autenticada", () => {
     );
     expect(rule(globalCss, ".cortex-sidebar")).not.toContain("radial-gradient");
     expect(rule(globalCss, ".metric-card")).toContain(
-      "border-top: 3px solid var(--color-brand-yellow);",
-    );
-    expect(rule(globalCss, ".metric-card")).toContain(
       "background: var(--color-surface);",
     );
+  });
+
+  it("enquadra métricas RDO com moldura amarela e cantos quadrados", () => {
+    const metricCard = rule(globalCss, ".metric-card");
+    expect(metricCard).toContain(
+      "border: 2px solid var(--color-brand-yellow);",
+    );
+    expect(metricCard).toContain("border-radius: 0;");
+    expect(metricCard).not.toContain("border-top:");
   });
 
   it("mantém foco visível para os controles principais", () => {
@@ -129,7 +135,7 @@ describe("polimento visual da plataforma autenticada", () => {
     const metric = rule(globalCss, ".metric-card");
     expect(metric).toContain("min-height: 82px;");
     expect(metric).toContain("padding: 14px 16px;");
-    expect(metric).toContain("border-radius: var(--radius-md);");
+    expect(metric).toContain("border-radius: 0;");
     expect(rule(globalCss, ".metric-card span")).toContain(
       "text-align: left;",
     );

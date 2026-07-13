@@ -939,9 +939,8 @@ textarea:focus {
 .metric-card {
   min-height: 82px;
   padding: 14px 16px;
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-brand-yellow);
-  border-radius: var(--radius-md);
+  border: 2px solid var(--color-brand-yellow);
+  border-radius: 0;
   background: var(--color-surface);
 }
 
