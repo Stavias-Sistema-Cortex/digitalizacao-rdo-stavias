@@ -17,3 +17,6 @@ tmp/
 
 # Superpowers brainstorm sessions
 .superpowers/
+
+# Local Git worktrees
+.worktrees/
