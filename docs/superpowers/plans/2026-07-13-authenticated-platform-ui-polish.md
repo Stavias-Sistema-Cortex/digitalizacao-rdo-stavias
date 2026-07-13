@@ -120,6 +120,7 @@ git commit -m "test: define authenticated UI polish contracts"
 **Files:**
 - Modify: `apps/web/src/index.css:43-917`
 - Modify: `apps/web/src/components/SyncStatusBanner.css:1-226`
+- Modify: `apps/web/src/features/tarefas/TarefasPage.css:1-416`
 - Test: `apps/web/src/uiPolish.test.ts`
 
 **Interfaces:**
@@ -226,7 +227,25 @@ In `SyncStatusBanner.css`, use the following white surfaces and reserve `var(--s
 }
 ```
 
-- [ ] **Step 5: Add a shared focus-visible rule**
+- [ ] **Step 5: Remove the remaining Tarefas glass primitives**
+
+Remove the `--glass-*`, `backdrop-filter`, and translucent glass declarations from `TarefasPage.css` in the same task so the authenticated CSS contract can become green. Keep Tarefas layout, priority colors, and interaction states unchanged; Task 4 performs the remaining hierarchy alignment.
+
+```css
+.tarefas-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: none;
+}
+
+.tarefas-equipe-tab--active,
+.tarefas-nova-equipe button {
+  background: var(--color-brand-yellow);
+  box-shadow: none;
+}
+```
+
+- [ ] **Step 6: Add a shared focus-visible rule**
 
 ```css
 button:focus-visible,
@@ -240,7 +259,7 @@ textarea:focus-visible,
 }
 ```
 
-- [ ] **Step 6: Run the focused contract and full tests**
+- [ ] **Step 7: Run the focused contract and full tests**
 
 Run: `cd apps/web && npx vitest run src/uiPolish.test.ts`
 
@@ -250,10 +269,11 @@ Run: `cd apps/web && npm run test`
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit the shared system**
+- [ ] **Step 8: Commit the shared system**
 
 ```bash
-git add apps/web/src/index.css apps/web/src/components/SyncStatusBanner.css
+git add apps/web/src/index.css apps/web/src/components/SyncStatusBanner.css \
+  apps/web/src/features/tarefas/TarefasPage.css
 git commit -m "style: refine authenticated app shell"
 ```
 
@@ -460,7 +480,7 @@ git commit -m "style: clarify operational page hierarchy"
 
 - [ ] **Step 1: Flatten Tarefas cards and controls**
 
-Replace `--glass-*`, backdrop filters, translucent backgrounds, and yellow gradients with these shared solid surfaces. Preserve priority colors, completion states, team tabs, charts, forms, and responsive layout.
+Continue the flat Tarefas treatment established in Task 2 by normalizing item, form, priority, chart, and empty-state surfaces. Preserve priority colors, completion states, team tabs, charts, forms, and responsive layout.
 
 ```css
 .tarefas-card {
