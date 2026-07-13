@@ -55,10 +55,10 @@
 }
 
 .gestao-obras-coluna {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 16px;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .gestao-obras-busca,
@@ -115,8 +115,9 @@
 }
 
 .gestao-obras-item.ativo {
-  background: #fff7cc;
-  outline: 2px solid #fed203;
+  background: #f7f9f7;
+  box-shadow: inset 3px 0 0 var(--color-brand-yellow);
+  outline: none;
 }
 
 .gestao-obras-item-nome {
@@ -208,21 +209,4 @@
   color: #991b1b;
   font-size: 0.78rem;
   padding: 4px 10px !important;
-}
-
-@media (prefers-color-scheme: dark) {
-  .gestao-obras-coluna {
-    background: #111827;
-    border-color: #1f2937;
-  }
-
-  .gestao-obras-item,
-  .gestao-obras-vinculos li {
-    background: #1f2937;
-    color: #e5e7eb;
-  }
-
-  .gestao-obras-item.ativo {
-    background: #3f3410;
-  }
 }
