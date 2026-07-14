@@ -20,6 +20,7 @@ import com.projeto.cortex.intelligence.stavia.policy.StaviaEvidenceQualityPolicy
 import com.projeto.cortex.intelligence.stavia.policy.StaviaGroundingValidator;
 import com.projeto.cortex.intelligence.stavia.retrieval.StaviaEvidenceSelector;
 import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
+import com.projeto.cortex.mensagens.domain.MessageWorksiteAccessService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
@@ -45,6 +46,10 @@ class StaviaAccessWiringTest {
                     .withBean(
                             FinancialAccessService.class,
                             () -> mock(FinancialAccessService.class)
+                    )
+                    .withBean(
+                            MessageWorksiteAccessService.class,
+                            () -> mock(MessageWorksiteAccessService.class)
                     )
                     .withUserConfiguration(
                             StaviaQueryConfiguration.class

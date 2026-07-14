@@ -22,6 +22,7 @@ import com.projeto.cortex.intelligence.stavia.policy.StaviaContradictionPolicy;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaEvidenceQualityPolicy;
 import com.projeto.cortex.intelligence.stavia.policy.StaviaGroundingValidator;
 import com.projeto.cortex.intelligence.stavia.retrieval.StaviaEvidenceSelector;
+import com.projeto.cortex.intelligence.stavia.semantic.StaviaBusinessSemanticCatalog;
 import com.projeto.cortex.intelligence.stavia.semantic.rdo.RdoOntology;
 import com.projeto.cortex.intelligence.stavia.semantic.rdo.RdoOntologyAttribute;
 import com.projeto.cortex.intelligence.stavia.semantic.rdo.RdoOntologyEntity;
@@ -406,6 +407,87 @@ class StaviaQueryServiceTest {
         );
         assertFalse(retrieved.get());
         assertTrue(result.consultedKnowledgeSources().isEmpty());
+    }
+
+    @Test
+    void shouldDenyMessageIntentBeforeRetrievingKnowledge() {
+        AtomicBoolean retrieved = new AtomicBoolean(false);
+        StaviaKnowledgeSource messageSource = trackingMessageSource(retrieved, null);
+        StaviaAccessPolicy deniedMessages = new StaviaAccessPolicy() {
+            @Override
+            public Set<String> permissionsFor(String userId) {
+                return Set.of(StaviaEngine.REQUIRED_PERMISSION);
+            }
+
+            @Override
+            public boolean canAccessWorksite(String userId, String worksiteId) {
+                return true;
+            }
+        };
+
+        StaviaQueryService service = new StaviaQueryService(
+                new StaviaIntentClassifier(),
+                new StaviaKnowledgeOrchestrator(List.of(messageSource)),
+                new StaviaContextBuilder(),
+                engine(),
+                deniedMessages
+        );
+
+        StaviaQueryResult result = service.query(new StaviaQuestion(
+                "Há documentos de mensagens pendentes de sincronização?",
+                "usuario-1",
+                "obra-1"
+        ));
+
+        assertEquals(
+                StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES,
+                result.intent()
+        );
+        assertFalse(retrieved.get());
+        assertTrue(result.consultedKnowledgeSources().isEmpty());
+    }
+
+    @Test
+    void shouldDeriveMessageCapabilityBeforeRetrievingKnowledge() {
+        AtomicBoolean retrieved = new AtomicBoolean(false);
+        AtomicBoolean capabilityPresent = new AtomicBoolean(false);
+        StaviaKnowledgeSource messageSource = trackingMessageSource(
+                retrieved,
+                capabilityPresent
+        );
+        StaviaAccessPolicy allowedMessages = new StaviaAccessPolicy() {
+            @Override
+            public Set<String> permissionsFor(String userId) {
+                return Set.of(StaviaEngine.REQUIRED_PERMISSION);
+            }
+
+            @Override
+            public boolean canAccessWorksite(String userId, String worksiteId) {
+                return true;
+            }
+
+            @Override
+            public boolean canAccessMessages(String userId, String worksiteId) {
+                return true;
+            }
+        };
+
+        StaviaQueryService service = new StaviaQueryService(
+                new StaviaIntentClassifier(),
+                new StaviaKnowledgeOrchestrator(List.of(messageSource)),
+                new StaviaContextBuilder(),
+                engine(),
+                allowedMessages
+        );
+
+        service.query(new StaviaQuestion(
+                "Há documentos de mensagens pendentes de sincronização?",
+                "usuario-1",
+                "obra-1"
+        ));
+
+        assertTrue(retrieved.get());
+        assertTrue(capabilityPresent.get());
     }
 
     @Test
@@ -804,6 +886,40 @@ class StaviaQueryServiceTest {
                 new StaviaContradictionPolicy(),
                 new DeterministicStaviaResponseGenerator()
         );
+    }
+
+    private StaviaKnowledgeSource trackingMessageSource(
+            AtomicBoolean retrieved,
+            AtomicBoolean capabilityPresent
+    ) {
+        return new StaviaKnowledgeSource() {
+            @Override
+            public String sourceName() {
+                return StaviaBusinessSemanticCatalog.MESSAGE_SYNC_SOURCE;
+            }
+
+            @Override
+            public String sourceVersion() {
+                return "test";
+            }
+
+            @Override
+            public boolean supports(StaviaKnowledgeRequest request) {
+                return request.intent()
+                        == StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES;
+            }
+
+            @Override
+            public List<StaviaEvidence> retrieve(StaviaKnowledgeRequest request) {
+                retrieved.set(true);
+                if (capabilityPresent != null) {
+                    capabilityPresent.set(request.permissions().contains(
+                            StaviaBusinessSemanticCatalog.MESSAGE_VIEW_PERMISSION
+                    ));
+                }
+                return List.of();
+            }
+        };
     }
 
     private StaviaQuestion question(String text) {

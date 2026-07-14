@@ -32,4 +32,12 @@ public interface StaviaAccessPolicy {
     default boolean canAccessFinancial(String userId, String worksiteId) {
         return false;
     }
+
+    /**
+     * Whether the user may retrieve message evidence for this exact worksite.
+     * The default denies so adapters must derive the capability explicitly.
+     */
+    default boolean canAccessMessages(String userId, String worksiteId) {
+        return false;
+    }
 }

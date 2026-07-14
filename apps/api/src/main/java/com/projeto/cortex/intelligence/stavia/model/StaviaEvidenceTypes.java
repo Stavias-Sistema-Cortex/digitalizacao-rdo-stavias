@@ -74,6 +74,21 @@ public final class StaviaEvidenceTypes {
     public static final String PREVISAO_FINANCEIRA =
             "PREVISAO_FINANCEIRA";
 
+    public static final String NOTA_FISCAL_VENCIDA =
+            "NOTA_FISCAL_VENCIDA";
+
+    public static final String COMPRA_HISTORICO =
+            "COMPRA_HISTORICO";
+
+    public static final String COMPRA_AGREGADO =
+            "COMPRA_AGREGADO";
+
+    public static final String FORNECEDOR_COBRANCA_PENDENTE =
+            "FORNECEDOR_COBRANCA_PENDENTE";
+
+    public static final String MENSAGEM_DOCUMENTO_SYNC =
+            "MENSAGEM_DOCUMENTO_SYNC";
+
     public static final String ALOCACAO_COLABORADOR =
             "ALOCACAO_COLABORADOR";
 

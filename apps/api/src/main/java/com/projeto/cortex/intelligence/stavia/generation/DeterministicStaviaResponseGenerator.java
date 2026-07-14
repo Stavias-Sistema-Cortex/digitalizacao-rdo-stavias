@@ -75,6 +75,24 @@ public class DeterministicStaviaResponseGenerator
                         evidences
                 );
 
+        if (isBusinessOperationalIntent(intent)) {
+            String summaries = focusedEvidence.stream()
+                    .map(StaviaEvidence::summary)
+                    .distinct()
+                    .collect(Collectors.joining(" "));
+            boolean unavailable = focusedEvidence.stream()
+                    .allMatch(evidence -> Boolean.FALSE.equals(
+                            evidence.attributes().get("available")
+                    ));
+            return buildResponse(
+                    summaries,
+                    unavailable
+                            ? StaviaAnswerType.INFORMACAO_INSUFICIENTE
+                            : StaviaAnswerType.FATO,
+                    focusedEvidence
+            );
+        }
+
         if (intent == StaviaIntent.CONSULTAR_RDO) {
             if (hasEvidenceType(
                     focusedEvidence,
@@ -246,6 +264,21 @@ public class DeterministicStaviaResponseGenerator
             case CONSULTAR_RECEITA_EM_RISCO ->
                     "Receita em risco identificada";
 
+            case CONSULTAR_NOTAS_FISCAIS_VENCIDAS ->
+                    "Notas fiscais vencidas identificadas";
+
+            case CONSULTAR_HISTORICO_COMPRA ->
+                    "Histórico de compra identificado";
+
+            case CONSULTAR_TOTAL_COMPRADO ->
+                    "Total comprado identificado";
+
+            case CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE ->
+                    "Fornecedores com cobranças pendentes identificados";
+
+            case CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES ->
+                    "Documentos de mensagens pendentes identificados";
+
             case CONSULTAR_ALOCACAO_COLABORADOR ->
                     "Alocação de colaboradores identificada";
 
@@ -287,6 +320,16 @@ public class DeterministicStaviaResponseGenerator
                 StaviaAnswerType.FATO,
                 focusedEvidence
         );
+    }
+
+    private boolean isBusinessOperationalIntent(StaviaIntent intent) {
+        return intent == StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS
+                || intent == StaviaIntent.CONSULTAR_HISTORICO_COMPRA
+                || intent == StaviaIntent.CONSULTAR_TOTAL_COMPRADO
+                || intent
+                == StaviaIntent.CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE
+                || intent
+                == StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES;
     }
 
     private StaviaGeneratedResponse buildResponse(

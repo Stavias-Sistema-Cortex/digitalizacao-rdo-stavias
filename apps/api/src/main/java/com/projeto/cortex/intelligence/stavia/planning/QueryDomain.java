@@ -9,6 +9,7 @@ public enum QueryDomain {
     EQUIPE,
     EQUIPAMENTO,
     FINANCEIRO,
+    MENSAGENS,
     FREQUENCIA,
     BANCO_HORAS,
     ONTOLOGIA,

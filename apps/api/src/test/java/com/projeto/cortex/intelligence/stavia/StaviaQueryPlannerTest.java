@@ -20,6 +20,45 @@ class StaviaQueryPlannerTest {
             );
 
     @Test
+    void shouldPlanTypedOperationalFinanceAndMessageSources() {
+        StaviaQueryPlan overdue = planner.plan(
+                new StaviaQuestion(
+                        "Quais notas fiscais estão vencidas nesta obra?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                        1.0
+                )
+        );
+        assertThat(overdue.domain()).isEqualTo(QueryDomain.FINANCEIRO);
+        assertThat(overdue.operation()).isEqualTo(QueryOperation.LIST_OBJECTS);
+        assertThat(overdue.requiredSources())
+                .containsExactly("financeiro-operacional");
+        assertThat(overdue.requestedAttributes())
+                .contains("notaFiscalId", "valorAberto", "vencimentoEm");
+
+        StaviaQueryPlan messages = planner.plan(
+                new StaviaQuestion(
+                        "Há documentos de mensagens pendentes de sincronização?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES,
+                        1.0
+                )
+        );
+        assertThat(messages.domain()).isEqualTo(QueryDomain.MENSAGENS);
+        assertThat(messages.operation()).isEqualTo(QueryOperation.LIST_OBJECTS);
+        assertThat(messages.requiredSources())
+                .containsExactly("mensagens-sincronizacao");
+        assertThat(messages.requestedAttributes())
+                .contains("anexoId", "storageStatus", "syncStatus");
+    }
+
+    @Test
     void shouldPlanLatestWeatherAsGenericRdoAttributeQuery() {
         StaviaQueryPlan plan =
                 planner.plan(

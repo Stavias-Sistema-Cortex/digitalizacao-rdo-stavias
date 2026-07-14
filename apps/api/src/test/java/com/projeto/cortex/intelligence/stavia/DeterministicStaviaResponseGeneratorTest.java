@@ -23,6 +23,67 @@ class DeterministicStaviaResponseGeneratorTest {
             new DeterministicStaviaResponseGenerator();
 
     @Test
+    void shouldKeepTypedBusinessAnswersGroundedInTheirSourceIds() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Quais notas fiscais estão vencidas?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                List.of(new StaviaEvidence(
+                        StaviaEvidenceTypes.NOTA_FISCAL_VENCIDA,
+                        "NOTA_FISCAL:nf-1",
+                        "A nota fiscal NF-88 possui BRL 750.00 em aberto.",
+                        Instant.parse("2026-07-14T12:00:00Z"),
+                        true,
+                        Map.of(
+                                "obraId", "obra-1",
+                                "notaFiscalId", "nf-1",
+                                "valorAberto", "750.00"
+                        )
+                ))
+        );
+
+        assertEquals(StaviaAnswerType.FATO, response.answerType());
+        assertTrue(response.text().contains("NF-88"));
+        assertEquals(
+                List.of("NOTA_FISCAL_VENCIDA:NOTA_FISCAL:nf-1"),
+                response.sourceKeys()
+        );
+    }
+
+    @Test
+    void shouldNotTurnMissingServerMessageEvidenceIntoAFact() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Há documentos de mensagens pendentes?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES,
+                List.of(new StaviaEvidence(
+                        StaviaEvidenceTypes.MENSAGEM_DOCUMENTO_SYNC,
+                        "MENSAGEM_DOCUMENTO_SYNC:SEM_EVIDENCIA:obra-1",
+                        "Estados somente locais não estão disponíveis.",
+                        null,
+                        false,
+                        Map.of(
+                                "obraId", "obra-1",
+                                "available", false,
+                                "reason", "SEM_EVIDENCIA_NO_SERVIDOR"
+                        )
+                ))
+        );
+
+        assertEquals(
+                StaviaAnswerType.INFORMACAO_INSUFICIENTE,
+                response.answerType()
+        );
+        assertTrue(response.text().contains("somente locais"));
+    }
+
+    @Test
     void shouldGenerateGroundedRdoResponseWithSourceReference() {
         
         StaviaGeneratedResponse response =

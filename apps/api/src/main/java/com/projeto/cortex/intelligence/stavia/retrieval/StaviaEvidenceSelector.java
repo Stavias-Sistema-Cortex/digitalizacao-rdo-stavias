@@ -116,6 +116,21 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.PDOR
                     );
 
+            case CONSULTAR_NOTAS_FISCAIS_VENCIDAS ->
+                    Set.of(StaviaEvidenceTypes.NOTA_FISCAL_VENCIDA);
+
+            case CONSULTAR_HISTORICO_COMPRA ->
+                    Set.of(StaviaEvidenceTypes.COMPRA_HISTORICO);
+
+            case CONSULTAR_TOTAL_COMPRADO ->
+                    Set.of(StaviaEvidenceTypes.COMPRA_AGREGADO);
+
+            case CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE ->
+                    Set.of(StaviaEvidenceTypes.FORNECEDOR_COBRANCA_PENDENTE);
+
+            case CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES ->
+                    Set.of(StaviaEvidenceTypes.MENSAGEM_DOCUMENTO_SYNC);
+
             case CONSULTAR_ALOCACAO_COLABORADOR ->
                     Set.of(
                             StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
@@ -145,6 +160,11 @@ public class StaviaEvidenceSelector {
                             StaviaEvidenceTypes.EQUIPAMENTO,
                             StaviaEvidenceTypes.PDOR,
                             StaviaEvidenceTypes.PREVISAO_FINANCEIRA,
+                            StaviaEvidenceTypes.NOTA_FISCAL_VENCIDA,
+                            StaviaEvidenceTypes.COMPRA_HISTORICO,
+                            StaviaEvidenceTypes.COMPRA_AGREGADO,
+                            StaviaEvidenceTypes.FORNECEDOR_COBRANCA_PENDENTE,
+                            StaviaEvidenceTypes.MENSAGEM_DOCUMENTO_SYNC,
                             StaviaEvidenceTypes.ALOCACAO_COLABORADOR,
                             StaviaEvidenceTypes.FREQUENCIA,
                             StaviaEvidenceTypes.RELACAO_ONTOLOGICA,

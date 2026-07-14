@@ -271,8 +271,13 @@ public class LlmQuestionInterpreter implements StaviaQuestionInterpreter {
                     QueryDomain.COLABORADOR;
             case CONSULTAR_ATIVO -> QueryDomain.EQUIPAMENTO;
             case CONSULTAR_RECEITA, CONSULTAR_MARGEM, CONSULTAR_PREVISAO_FINANCEIRA,
-                    CONSULTAR_PRODUCAO, CONSULTAR_RECEITA_EM_RISCO, CONSULTAR_PDOR ->
+                    CONSULTAR_PRODUCAO, CONSULTAR_RECEITA_EM_RISCO, CONSULTAR_PDOR,
+                    CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                    CONSULTAR_HISTORICO_COMPRA,
+                    CONSULTAR_TOTAL_COMPRADO,
+                    CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE ->
                     QueryDomain.FINANCEIRO;
+            case CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES -> QueryDomain.MENSAGENS;
             case CONSULTAR_OBRA, CONSULTAR_ESTADO_ATUAL -> QueryDomain.OBRA;
             default -> QueryDomain.DESCONHECIDO;
         };

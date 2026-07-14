@@ -6,6 +6,7 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import com.projeto.cortex.intelligence.stavia.semantic.OperationalRoleLexicon;
 import com.projeto.cortex.intelligence.stavia.semantic.SemanticAttribute;
 import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
+import com.projeto.cortex.intelligence.stavia.semantic.StaviaBusinessSemanticCatalog;
 import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,6 +110,13 @@ public class StaviaQueryPlanner {
 
         boolean selectedRdoContext =
                 hasSelectedRdoContext(question);
+
+        StaviaQueryPlan businessOperational =
+                businessOperationalPlan(question, classification.intent());
+
+        if (businessOperational.planned()) {
+            return businessOperational;
+        }
 
         if (isFinancialIntent(classification.intent())
                 && isUnambiguousFinancialQuestion(normalized)) {
@@ -757,6 +765,7 @@ public class StaviaQueryPlanner {
             case COLABORADOR, EQUIPE -> StaviaIntent.CONSULTAR_ALOCACAO_COLABORADOR;
             case EQUIPAMENTO -> StaviaIntent.CONSULTAR_ATIVO;
             case FINANCEIRO -> StaviaIntent.CONSULTAR_PREVISAO_FINANCEIRA;
+            case MENSAGENS -> StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES;
             case FREQUENCIA -> StaviaIntent.CONSULTAR_FREQUENCIA;
             case BANCO_HORAS -> StaviaIntent.CONSULTAR_BANCO_HORAS;
             case OBRA -> StaviaIntent.CONSULTAR_OBRA;
@@ -772,9 +781,102 @@ public class StaviaQueryPlanner {
                     CONSULTAR_MARGEM,
                     CONSULTAR_PREVISAO_FINANCEIRA,
                     CONSULTAR_PRODUCAO,
-                    CONSULTAR_RECEITA_EM_RISCO -> true;
+                    CONSULTAR_RECEITA_EM_RISCO,
+                    CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                    CONSULTAR_HISTORICO_COMPRA,
+                    CONSULTAR_TOTAL_COMPRADO,
+                    CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE -> true;
             default -> false;
         };
+    }
+
+    private StaviaQueryPlan businessOperationalPlan(
+            StaviaQuestion question,
+            StaviaIntent intent
+    ) {
+        if (intent == null) {
+            return StaviaQueryPlan.empty();
+        }
+
+        return switch (intent) {
+            case CONSULTAR_NOTAS_FISCAIS_VENCIDAS -> businessPlan(
+                    question,
+                    QueryDomain.FINANCEIRO,
+                    QueryOperation.LIST_OBJECTS,
+                    List.of(
+                            "notaFiscalId", "fornecedorId", "fornecedorNome",
+                            "numero", "serie", "moeda", "valorAberto",
+                            "vencimentoEm", "freshnessAt"
+                    ),
+                    StaviaBusinessSemanticCatalog.FINANCE_SOURCE
+            );
+            case CONSULTAR_HISTORICO_COMPRA -> businessPlan(
+                    question,
+                    QueryDomain.FINANCEIRO,
+                    QueryOperation.LIST_OBJECTS,
+                    List.of(
+                            "compraId", "numeroPedido", "criadoPorId",
+                            "criadoPorNome", "statusAnterior", "statusNovo",
+                            "atorId", "atorNome", "ocorridoEm", "resultado"
+                    ),
+                    StaviaBusinessSemanticCatalog.FINANCE_SOURCE
+            );
+            case CONSULTAR_TOTAL_COMPRADO -> businessPlan(
+                    question,
+                    QueryDomain.FINANCEIRO,
+                    QueryOperation.AGGREGATE,
+                    List.of(
+                            "moeda", "totalComprado", "quantidadeCompras",
+                            "periodoInicio", "periodoFim", "freshnessAt"
+                    ),
+                    StaviaBusinessSemanticCatalog.FINANCE_SOURCE
+            );
+            case CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE -> businessPlan(
+                    question,
+                    QueryDomain.FINANCEIRO,
+                    QueryOperation.LIST_OBJECTS,
+                    List.of(
+                            "fornecedorId", "fornecedorNome",
+                            "quantidadeCobrancasPendentes",
+                            "primeiraOcorrenciaPrevistaEm", "freshnessAt"
+                    ),
+                    StaviaBusinessSemanticCatalog.FINANCE_SOURCE
+            );
+            case CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES -> businessPlan(
+                    question,
+                    QueryDomain.MENSAGENS,
+                    QueryOperation.LIST_OBJECTS,
+                    List.of(
+                            "anexoId", "mensagemId", "conversaId",
+                            "storedObjectId", "storageStatus", "syncReceiptId",
+                            "syncStatus", "erroCategoria", "freshnessAt"
+                    ),
+                    StaviaBusinessSemanticCatalog.MESSAGE_SYNC_SOURCE
+            );
+            default -> StaviaQueryPlan.empty();
+        };
+    }
+
+    private StaviaQueryPlan businessPlan(
+            StaviaQuestion question,
+            QueryDomain domain,
+            QueryOperation operation,
+            List<String> attributes,
+            String source
+    ) {
+        return new StaviaQueryPlan(
+                domain,
+                operation,
+                entities(question),
+                TemporalFilter.none(),
+                attributes,
+                List.of(),
+                List.of(),
+                List.of(source),
+                false,
+                operation == QueryOperation.LIST_OBJECTS,
+                false
+        );
     }
 
     private boolean isUnambiguousFinancialQuestion(String normalized) {

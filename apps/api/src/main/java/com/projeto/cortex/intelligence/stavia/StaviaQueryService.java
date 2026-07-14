@@ -23,6 +23,7 @@ import com.projeto.cortex.intelligence.stavia.model.StaviaQuestion;
 import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlan;
 import com.projeto.cortex.intelligence.stavia.planning.StaviaQueryPlanner;
 import com.projeto.cortex.intelligence.stavia.semantic.StaviaSemanticCatalog;
+import com.projeto.cortex.intelligence.stavia.semantic.StaviaBusinessSemanticCatalog;
 import com.projeto.cortex.intelligence.stavia.text.StaviaText;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -286,6 +287,11 @@ public class StaviaQueryService {
                 || plan.domain()
                 == com.projeto.cortex.intelligence.stavia.planning
                         .QueryDomain.FINANCEIRO;
+        boolean messageIntent = isMessageIntent(intent)
+                || isMessageIntent(directlyClassifiedIntent)
+                || plan.domain()
+                == com.projeto.cortex.intelligence.stavia.planning
+                        .QueryDomain.MENSAGENS;
 
         Set<String> queryPermissions = normalizedPermissions;
         if (financialIntent) {
@@ -316,6 +322,35 @@ public class StaviaQueryService {
             granted.add(
                     FinancialPermission.FINANCEIRO_VISUALIZAR.name()
             );
+            queryPermissions = Set.copyOf(granted);
+        }
+
+        if (messageIntent) {
+            if (!accessPolicy.canAccessMessages(
+                    effectiveQuestion.userId(),
+                    effectiveQuestion.obraId()
+            )) {
+                LOGGER.warn(
+                        "Consulta Stav.IA de mensagens negada. worksiteIdPresent={} userIdPresent={}",
+                        effectiveQuestion.obraId() != null,
+                        effectiveQuestion.userId() != null
+                );
+                StaviaAnswer answer = engine.answer(
+                        effectiveQuestion,
+                        new StaviaContext(Set.of(), List.of())
+                );
+                return new StaviaQueryResult(
+                        answer,
+                        intent,
+                        interpretation.classification().confidence(),
+                        java.util.Map.of(),
+                        List.of(AVISO_SEM_ACESSO)
+                );
+            }
+            LinkedHashSet<String> granted = new LinkedHashSet<>(
+                    queryPermissions
+            );
+            granted.add(StaviaBusinessSemanticCatalog.MESSAGE_VIEW_PERMISSION);
             queryPermissions = Set.copyOf(granted);
         }
 
@@ -386,9 +421,17 @@ public class StaviaQueryService {
                     CONSULTAR_RECEITA,
                     CONSULTAR_MARGEM,
                     CONSULTAR_PREVISAO_FINANCEIRA,
-                    CONSULTAR_RECEITA_EM_RISCO -> true;
+                    CONSULTAR_RECEITA_EM_RISCO,
+                    CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                    CONSULTAR_HISTORICO_COMPRA,
+                    CONSULTAR_TOTAL_COMPRADO,
+                    CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE -> true;
             default -> false;
         };
+    }
+
+    private boolean isMessageIntent(StaviaIntent intent) {
+        return intent == StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES;
     }
 
     private boolean isExplicitFinancialProductionQuestion(
