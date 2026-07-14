@@ -1545,6 +1545,16 @@ textarea:focus {
   }
 }
 
+.auth-bootstrap-status {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f3f5f1;
+  color: #526159;
+  text-align: center;
+}
+
 .notice-error {
   border-color: #e2bebe;
   background: #fff1f1;
@@ -1668,14 +1678,24 @@ textarea:focus {
   font-weight: 600;
 }
 
-.profile-menu-logout {
+.profile-menu-logout,
+.profile-menu-security {
   width: 100%;
   border: none;
   border-radius: 8px;
   padding: 8px;
-  background: #fed203;
   font-weight: 700;
   cursor: pointer;
+}
+
+.profile-menu-security {
+  margin-bottom: 7px;
+  background: #edf3f1;
+  color: #174b43;
+}
+
+.profile-menu-logout {
+  background: #fed203;
 }
 
 .profile-menu-error {

@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.session.ResolvedAuthSession;
 import java.time.Instant;
+import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class AuthSessionResponseTest {
@@ -24,13 +26,20 @@ class AuthSessionResponseTest {
                         "Colaborador Sintético",
                         PapelAcesso.BETA
                 ),
-                EXPIRY
+                EXPIRY,
+                Optional.of(Set.of(
+                        "30000000-0000-0000-0000-000000000003"
+                ))
         );
 
         assertThat(response).isEqualTo(new AuthSessionResponse(
                 COLLABORATOR_ID,
                 "Colaborador Sintético",
                 "BETA",
+                false,
+                java.util.List.of(
+                        "30000000-0000-0000-0000-000000000003"
+                ),
                 EXPIRY
         ));
         assertThat(AuthSessionResponse.class.getRecordComponents())
@@ -48,11 +57,14 @@ class AuthSessionResponseTest {
                         PapelAcesso.ALFA,
                         EXPIRY,
                         "a".repeat(64)
-                )
+                ),
+                Optional.empty()
         );
 
         assertThat(response.papelAcesso()).isEqualTo("ALFA");
         assertThat(response.expiraEm()).isEqualTo(EXPIRY);
+        assertThat(response.escopoGlobal()).isTrue();
+        assertThat(response.obraIds()).isEmpty();
         assertThat(response.toString()).doesNotContain("a".repeat(64));
     }
 }

@@ -37,17 +37,20 @@ public class AuthController {
     private final ClientAddressResolver clientAddresses;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
+    private final CurrentUserService currentUsers;
 
     public AuthController(
             EmailOtpChallengeService otpChallenges,
             ClientAddressResolver clientAddresses,
             AuthSessionService sessions,
-            AuthCookieService cookies
+            AuthCookieService cookies,
+            CurrentUserService currentUsers
     ) {
         this.otpChallenges = otpChallenges;
         this.clientAddresses = clientAddresses;
         this.sessions = sessions;
         this.cookies = cookies;
+        this.currentUsers = currentUsers;
     }
 
     @PostMapping("/api/auth/email/challenges")
@@ -80,7 +83,11 @@ public class AuthController {
         IssuedAuthSession issued = sessions.issue(identity);
         cookies.write(response, issued);
         response.setHeader("Cache-Control", "no-store");
-        return AuthSessionResponse.from(identity, issued.expiresAt());
+        return AuthSessionResponse.from(
+                identity,
+                issued.expiresAt(),
+                currentUsers.allowedObraIds(identity.colaboradorId())
+        );
     }
 
     @GetMapping("/api/auth/session")
@@ -93,7 +100,10 @@ public class AuthController {
                 AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION
         );
         if (value instanceof ResolvedAuthSession session) {
-            return AuthSessionResponse.from(session);
+            return AuthSessionResponse.from(
+                    session,
+                    currentUsers.allowedObraIds(session.collaboratorId())
+            );
         }
         throw new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED,

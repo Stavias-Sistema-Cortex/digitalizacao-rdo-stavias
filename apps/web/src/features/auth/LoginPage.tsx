@@ -15,11 +15,17 @@ import {
   type LoginFieldErrors,
 } from "./loginValidation";
 import { solicitarCodigo, verificarCodigo } from "./authService";
+import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
 
 type LoginStep = "identify" | "verify";
-type SubmitStatus = "idle" | "requesting" | "verifying" | "resending";
+type SubmitStatus =
+  | "idle"
+  | "requesting"
+  | "verifying"
+  | "resending"
+  | "passkey";
 
 export function LoginPage() {
   const cpfId = useId();
@@ -153,6 +159,21 @@ export function LoginPage() {
     window.setTimeout(() => cpfRef.current?.focus(), 0);
   }
 
+  async function handlePasskeyLogin(): Promise<void> {
+    if (loading || !online) {
+      return;
+    }
+    setStatus("passkey");
+    setAuthError("");
+    try {
+      await authenticateWithPasskey();
+      window.location.assign("/");
+    } catch (error: unknown) {
+      setAuthError(errorMessage(error));
+      setStatus("idle");
+    }
+  }
+
   return (
     <main className="cortex-login">
       <img className="login__backdrop" src={canteiroBackdrop} alt="" aria-hidden="true" />
@@ -268,6 +289,24 @@ export function LoginPage() {
                 "Verificar código"
               )}
             </button>
+
+            {step === "identify" ? (
+              <>
+                <div className="login__divider" aria-hidden="true">
+                  <span>ou</span>
+                </div>
+                <button
+                  type="button"
+                  className="login__passkey"
+                  onClick={() => {
+                    void handlePasskeyLogin();
+                  }}
+                  disabled={loading || !online}
+                >
+                  {status === "passkey" ? "Confirmando passkey..." : "Entrar com passkey"}
+                </button>
+              </>
+            ) : null}
 
             {step === "verify" ? (
               <div className="login__secondary-actions">

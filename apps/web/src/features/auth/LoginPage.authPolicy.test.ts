@@ -18,5 +18,8 @@ describe("LoginPage auth policy", () => {
     expect(source).toContain('autoComplete="one-time-code"');
     expect(source).toContain("Reenviar código");
     expect(source).toContain("challenge.expiresInSeconds");
+    expect(source).toContain("Entrar com passkey");
+    expect(source).toContain("authenticateWithPasskey");
+    expect(source).not.toContain("PIN");
   });
 });

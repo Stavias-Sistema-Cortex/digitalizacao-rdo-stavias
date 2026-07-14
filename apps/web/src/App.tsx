@@ -10,9 +10,14 @@ import {
 import {
   AUTH_SESSION_CHANGED_EVENT,
   getSession,
+  hasOnlineSession,
   isAlfa,
 } from "./features/auth/authSession";
 import { LoginPage } from "./features/auth/LoginPage";
+import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
+import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
+import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
+import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
 import { HomePage } from "./features/home/HomePage";
 import { IntegracoesPage } from "./features/integracoes/IntegracoesPage";
@@ -51,11 +56,19 @@ function GestaoObrasRoute() {
   );
 }
 
-function App() {
+type AppProps = {
+  initialAuthUnavailable?: boolean;
+};
+
+function App({ initialAuthUnavailable = false }: AppProps) {
   const [session, setSession] =
     useState(() => getSession());
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [offlineVault, setOfflineVault] =
+    useState<OfflineVaultMetadata | null>(null);
+  const [vaultChecked, setVaultChecked] = useState(false);
 
-  useAutomaticSync(session !== null);
+  useAutomaticSync(hasOnlineSession());
 
   useEffect(() => {
     function refreshSession() {
@@ -74,8 +87,58 @@ function App() {
     };
   }, []);
 
-  // Sem sessão online em memória, o acesso exige novo OTP.
+  useEffect(() => {
+    let cancelled = false;
+    loadOfflineVaultMetadata()
+      .then((metadata) => {
+        if (!cancelled) {
+          setOfflineVault(metadata);
+          setVaultChecked(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOfflineVault(null);
+          setVaultChecked(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleOnline() {
+      setOnline(true);
+    }
+    function handleOffline() {
+      setOnline(false);
+    }
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Sem sessão online, somente um grant assinado aberto por PRF libera o cache.
   if (!session) {
+    if (!vaultChecked) {
+      return (
+        <main className="auth-bootstrap-status" role="status">
+          Verificando o acesso protegido deste dispositivo…
+        </main>
+      );
+    }
+    if (offlineVault && (!online || initialAuthUnavailable)) {
+      return (
+        <OfflineUnlockPage
+          metadata={offlineVault}
+          canRetryOnline={online}
+        />
+      );
+    }
     return <LoginPage />;
   }
 
@@ -88,6 +151,14 @@ function App() {
           <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
           <Route path="/rdos" element={<RdoWorkspacePage />} />
           <Route path="/tarefas" element={<TarefasPage />} />
+          <Route
+            path="/seguranca"
+            element={
+              <CortexShell active={null}>
+                <DeviceSecurityPage />
+              </CortexShell>
+            }
+          />
           <Route
             path="/integracoes"
             element={<IntegracoesRoute />}

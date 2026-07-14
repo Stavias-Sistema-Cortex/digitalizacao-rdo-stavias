@@ -441,7 +441,19 @@ export function CortexShell({
               </p>
               <button
                 type="button"
+                className="profile-menu-security"
+                role="menuitem"
+                onClick={() => {
+                  setIsProfileMenuOpen(false);
+                  navigate("/seguranca");
+                }}
+              >
+                Segurança do dispositivo
+              </button>
+              <button
+                type="button"
                 className="profile-menu-logout"
+                role="menuitem"
                 onClick={() => {
                   void handleLogout();
                 }}

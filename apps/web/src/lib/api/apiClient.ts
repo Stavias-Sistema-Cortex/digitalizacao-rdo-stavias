@@ -135,10 +135,23 @@ export async function apiFetch(
   options: ApiRequestOptions = {},
 ): Promise<Response> {
   const response = await rawFetch(path, options);
-  if (response.status === 401 && !path.startsWith("/auth/")) {
+  if (
+    response.status === 401 &&
+    !isPublicAuthenticationPath(path)
+  ) {
     clearSession();
   }
   return response;
+}
+
+function isPublicAuthenticationPath(path: string): boolean {
+  const pathname = path.split(/[?#]/, 1)[0];
+  return pathname === "/auth/email/challenges" ||
+    pathname === "/auth/passkeys/authentication/options" ||
+    pathname === "/auth/passkeys/authentication/verify" ||
+    /^\/auth\/email\/challenges\/[^/]{1,64}\/verify$/.test(
+      pathname,
+    );
 }
 
 function csrfCookie(): string | null {

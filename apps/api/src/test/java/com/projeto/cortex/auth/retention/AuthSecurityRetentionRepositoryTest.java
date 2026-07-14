@@ -18,7 +18,7 @@ class AuthSecurityRetentionRepositoryTest {
     void deletesAtMostOneConfiguredBatchUsingDatabaseTime() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.update(anyString(), any(Object[].class)))
-                .thenReturn(7, 3);
+                .thenReturn(7, 3, 5, 2);
         AuthSecurityRetentionPolicy policy =
                 new AuthSecurityRetentionPolicy(
                         86_400,
@@ -34,12 +34,15 @@ class AuthSecurityRetentionRepositoryTest {
                 .isEqualTo(7);
         assertThat(repository.deleteStaleRateLimitBuckets(policy))
                 .isEqualTo(3);
+        assertThat(repository.deleteExpiredWebAuthnChallenges(policy))
+                .isEqualTo(5);
+        assertThat(repository.deleteExpiredSessions(policy)).isEqualTo(2);
 
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Object[]> arguments = ArgumentCaptor.forClass(
                 Object[].class
         );
-        verify(jdbc, org.mockito.Mockito.times(2)).update(
+        verify(jdbc, org.mockito.Mockito.times(4)).update(
                 sql.capture(),
                 arguments.capture()
         );
@@ -60,9 +63,19 @@ class AuthSecurityRetentionRepositoryTest {
         assertThat(sql.getAllValues().get(1))
                 .contains("DELETE FROM auth_rate_limit_bucket")
                 .contains("atualizado_em");
+        assertThat(sql.getAllValues().get(2))
+                .contains("DELETE FROM auth_webauthn_challenge")
+                .contains("expira_em");
+        assertThat(sql.getAllValues().get(3))
+                .contains("DELETE FROM auth_session")
+                .contains("revogado_em");
         assertThat(Arrays.asList(arguments.getAllValues().get(0)))
                 .containsExactly(86_400, 250);
         assertThat(Arrays.asList(arguments.getAllValues().get(1)))
                 .containsExactly(7_200, 250);
+        assertThat(Arrays.asList(arguments.getAllValues().get(2)))
+                .containsExactly(86_400, 250);
+        assertThat(Arrays.asList(arguments.getAllValues().get(3)))
+                .containsExactly(86_400, 86_400, 250);
     }
 }

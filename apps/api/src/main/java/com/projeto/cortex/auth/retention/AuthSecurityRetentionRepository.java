@@ -58,4 +58,48 @@ public class AuthSecurityRetentionRepository {
                 policy.batchSize()
         );
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int deleteExpiredWebAuthnChallenges(
+            AuthSecurityRetentionPolicy policy
+    ) {
+        return jdbcTemplate.update("""
+                DELETE FROM auth_webauthn_challenge
+                WHERE expira_em < TIMESTAMPADD(
+                    SECOND,
+                    -?,
+                    CURRENT_TIMESTAMP(6)
+                )
+                ORDER BY expira_em, id
+                LIMIT ?
+                """,
+                policy.challengeRetentionSeconds(),
+                policy.batchSize()
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int deleteExpiredSessions(
+            AuthSecurityRetentionPolicy policy
+    ) {
+        return jdbcTemplate.update("""
+                DELETE FROM auth_session
+                WHERE expira_em < TIMESTAMPADD(
+                    SECOND,
+                    -?,
+                    CURRENT_TIMESTAMP(6)
+                )
+                   OR revogado_em < TIMESTAMPADD(
+                    SECOND,
+                    -?,
+                    CURRENT_TIMESTAMP(6)
+                )
+                ORDER BY expira_em, id
+                LIMIT ?
+                """,
+                policy.challengeRetentionSeconds(),
+                policy.challengeRetentionSeconds(),
+                policy.batchSize()
+        );
+    }
 }

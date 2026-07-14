@@ -313,6 +313,46 @@
   margin-top: 14px;
 }
 
+.login__divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.login__divider::before,
+.login__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.cortex-login .login__passkey {
+  min-height: 50px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 5px;
+  background: rgb(255 255 255 / 7%);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cortex-login .login__passkey:hover:not(:disabled) {
+  border-color: var(--yellow);
+  background: rgb(255 255 255 / 11%);
+}
+
+.cortex-login .login__passkey:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .cortex-login .login__text-action {
   padding: 4px 0;
   border: 0;

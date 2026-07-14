@@ -27,7 +27,9 @@ const profile = {
   colaboradorId: "00000000-0000-4000-8000-000000000001",
   nome: "Colaborador Sintético",
   papelAcesso: "BETA",
-  expiraEm: "2026-07-14T12:00:00Z",
+  escopoGlobal: false,
+  obraIds: ["00000000-0000-4000-8000-000000000002"],
+  expiraEm: "2099-07-14T12:00:00Z",
 };
 
 describe("authApi", () => {

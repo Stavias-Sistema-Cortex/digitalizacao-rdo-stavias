@@ -19,10 +19,14 @@ registerSW({
 });
 
 async function bootstrap(): Promise<void> {
-  await initializeCortexDb();
+  let authUnavailable = false;
   try {
-    await initializeAuthSession();
+    const session = await initializeAuthSession();
+    if (session) {
+      await initializeCortexDb();
+    }
   } catch {
+    authUnavailable = true;
     // Sem sessão online válida, o App apresenta o login. Dados locais ficam
     // intactos e o desbloqueio offline será tratado pelo cofre PRF dedicado.
   }
@@ -37,7 +41,7 @@ async function bootstrap(): Promise<void> {
 
   createRoot(rootElement).render(
     <StrictMode>
-      <App />
+      <App initialAuthUnavailable={authUnavailable} />
     </StrictMode>,
   );
 }
@@ -52,6 +56,6 @@ bootstrap().catch((error: unknown) => {
 
   if (rootElement) {
     rootElement.textContent =
-      "Não foi possível inicializar o armazenamento local.";
+      "Não foi possível inicializar a aplicação com segurança.";
   }
 });

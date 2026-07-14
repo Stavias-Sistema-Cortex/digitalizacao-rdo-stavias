@@ -30,10 +30,15 @@ public class AuthSecurityRetentionScheduler {
     public void runRetention() {
         int challengesDeleted = repository.deleteExpiredChallenges(policy);
         int bucketsDeleted = repository.deleteStaleRateLimitBuckets(policy);
-        if (challengesDeleted > 0 || bucketsDeleted > 0) {
+        int webAuthnDeleted = repository.deleteExpiredWebAuthnChallenges(policy);
+        int sessionsDeleted = repository.deleteExpiredSessions(policy);
+        if (challengesDeleted > 0 || bucketsDeleted > 0
+                || webAuthnDeleted > 0 || sessionsDeleted > 0) {
             LOGGER.info(
-                    "Authentication retention removed {} challenge rows and {} rate-limit rows.",
+                    "Authentication retention removed {} OTP challenges, {} WebAuthn challenges, {} sessions and {} rate-limit rows.",
                     challengesDeleted,
+                    webAuthnDeleted,
+                    sessionsDeleted,
                     bucketsDeleted
             );
         }

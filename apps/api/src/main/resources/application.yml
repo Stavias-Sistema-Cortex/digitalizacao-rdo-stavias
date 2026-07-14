@@ -27,6 +27,22 @@ cortex:
       ttl-seconds: ${CORTEX_AUTH_SESSION_TTL_SECONDS:43200}
       cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:true}
       same-site: ${CORTEX_AUTH_COOKIE_SAME_SITE:Lax}
+    webauthn:
+      rp-id: ${CORTEX_AUTH_WEBAUTHN_RP_ID:}
+      rp-name: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:}
+      allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:}
+      challenge-ttl-seconds: ${CORTEX_AUTH_WEBAUTHN_CHALLENGE_TTL_SECONDS:300}
+      rate-limit:
+        max-requests: ${CORTEX_AUTH_WEBAUTHN_RATE_LIMIT_MAX_REQUESTS:20}
+        global-max-requests: ${CORTEX_AUTH_WEBAUTHN_GLOBAL_RATE_LIMIT_MAX_REQUESTS:2000}
+        window-seconds: ${CORTEX_AUTH_WEBAUTHN_RATE_LIMIT_WINDOW_SECONDS:900}
+      max-request-body-bytes: ${CORTEX_AUTH_WEBAUTHN_MAX_REQUEST_BODY_BYTES:65536}
+    offline-grant:
+      key-id: ${CORTEX_AUTH_OFFLINE_GRANT_KEY_ID:}
+      private-key-file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE:}
+      public-key-file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:}
+      ttl-seconds: ${CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS:86400}
+      max-worksites: ${CORTEX_AUTH_OFFLINE_GRANT_MAX_WORKSITES:500}
     cpf-hmac:
       current-key-id: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:}
       current-key-file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:}

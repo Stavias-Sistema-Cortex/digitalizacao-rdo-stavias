@@ -148,4 +148,19 @@ describe("apiFetch cookie session", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mocks.clearSession).toHaveBeenCalledTimes(1);
   });
+
+  it("limpa 401 de registro de passkey, mas preserva rotas públicas exatas", async () => {
+    fetchMock.mockResolvedValue({ status: 401 } as Response);
+
+    await apiFetch("/auth/passkeys/registration/options", {
+      method: "POST",
+    });
+    expect(mocks.clearSession).toHaveBeenCalledTimes(1);
+
+    mocks.clearSession.mockClear();
+    await apiFetch("/auth/passkeys/authentication/options", {
+      method: "POST",
+    });
+    expect(mocks.clearSession).not.toHaveBeenCalled();
+  });
 });

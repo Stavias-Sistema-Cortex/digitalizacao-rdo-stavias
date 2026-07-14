@@ -36,7 +36,9 @@ const profile = {
   colaboradorId: "00000000-0000-4000-8000-000000000001",
   nome: "Colaborador Sintético",
   papelAcesso: "BETA" as const,
-  expiraEm: "2026-07-14T12:00:00Z",
+  escopoGlobal: false,
+  obraIds: ["00000000-0000-4000-8000-000000000002"],
+  expiraEm: "2099-07-14T12:00:00Z",
 };
 
 describe("authSession", () => {
@@ -111,5 +113,54 @@ describe("authSession", () => {
         papelAcesso: "alfa" as "ALFA",
       }),
     ).toBe(false);
+  });
+
+  it("expõe perfil offline sem habilitar sincronização online", async () => {
+    const session = await import("./authSession");
+    session.setOfflineSession(profile);
+
+    expect(session.getSession()).toEqual(profile);
+    expect(session.hasOfflineSession()).toBe(true);
+    expect(session.hasOnlineSession()).toBe(false);
+
+    session.setSession({ ...profile, nome: "Sessão online" });
+    expect(session.getSession()?.nome).toBe("Sessão online");
+    expect(session.hasOnlineSession()).toBe(true);
+    expect(session.hasOfflineSession()).toBe(false);
+  });
+
+  it("encerra uma sessão offline assim que o grant expira", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-14T12:00:00Z"));
+    const session = await import("./authSession");
+    session.setOfflineSession({
+      ...profile,
+      expiraEm: "2026-07-14T12:00:01Z",
+    });
+
+    await vi.advanceTimersByTimeAsync(1_001);
+
+    expect(session.getSession()).toBeNull();
+    expect(session.hasOfflineSession()).toBe(false);
+    expect(dispatchEvent).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("usa proprietário e escopo canônicos para particionar o cache", async () => {
+    const session = await import("./authSession");
+    session.setSession(profile);
+
+    expect(session.requireDataScope()).toEqual({
+      ownerId: profile.colaboradorId,
+      scopeMaterial: `BETA:${profile.obraIds[0]}`,
+    });
+
+    session.setSession({
+      ...profile,
+      papelAcesso: "ALFA",
+      escopoGlobal: true,
+      obraIds: [],
+    });
+    expect(session.requireDataScope().scopeMaterial).toBe("ALFA:GLOBAL");
   });
 });

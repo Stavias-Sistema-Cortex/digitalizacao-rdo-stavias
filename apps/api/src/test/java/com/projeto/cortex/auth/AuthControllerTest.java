@@ -50,6 +50,7 @@ class AuthControllerTest {
             mock(ClientAddressResolver.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
     private final AuthCookieService cookies = mock(AuthCookieService.class);
+    private final CurrentUserService currentUsers = mock(CurrentUserService.class);
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -58,8 +59,14 @@ class AuthControllerTest {
                 otp,
                 addresses,
                 sessions,
-                cookies
+                cookies,
+                currentUsers
         )).build();
+        when(currentUsers.allowedObraIds(any())).thenReturn(Optional.of(
+                java.util.Set.of(
+                        "40000000-0000-0000-0000-000000000004"
+                )
+        ));
     }
 
     @Test
@@ -123,6 +130,10 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.colaboradorId").value(COLLABORATOR_ID))
                 .andExpect(jsonPath("$.nome").value("Pessoa Sintética"))
                 .andExpect(jsonPath("$.papelAcesso").value("BETA"))
+                .andExpect(jsonPath("$.escopoGlobal").value(false))
+                .andExpect(jsonPath("$.obraIds[0]").value(
+                        "40000000-0000-0000-0000-000000000004"
+                ))
                 .andExpect(jsonPath("$.token").doesNotExist())
                 .andExpect(jsonPath("$.cpf").doesNotExist())
                 .andExpect(jsonPath("$.email").doesNotExist());
@@ -140,6 +151,8 @@ class AuthControllerTest {
                 EXPIRY,
                 "a".repeat(64)
         );
+        when(currentUsers.allowedObraIds(COLLABORATOR_ID))
+                .thenReturn(Optional.empty());
 
         mockMvc.perform(get("/api/auth/session").requestAttr(
                         AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
@@ -147,6 +160,8 @@ class AuthControllerTest {
                 ))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.papelAcesso").value("ALFA"))
+                .andExpect(jsonPath("$.escopoGlobal").value(true))
+                .andExpect(jsonPath("$.obraIds").isEmpty())
                 .andExpect(jsonPath("$.token").doesNotExist());
     }
 

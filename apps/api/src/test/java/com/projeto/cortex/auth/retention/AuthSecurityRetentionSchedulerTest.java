@@ -27,5 +27,7 @@ class AuthSecurityRetentionSchedulerTest {
 
         verify(repository).deleteExpiredChallenges(policy);
         verify(repository).deleteStaleRateLimitBuckets(policy);
+        verify(repository).deleteExpiredWebAuthnChallenges(policy);
+        verify(repository).deleteExpiredSessions(policy);
     }
 }

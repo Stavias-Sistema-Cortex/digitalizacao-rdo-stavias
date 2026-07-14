@@ -21,9 +21,10 @@ import type {
   SyncStateRecord,
   TarefaRecord,
 } from "./db.types";
+import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
+import { currentDataDatabaseName } from "./localDataNamespace";
 
-const DATABASE_NAME = "cortex-web";
-const DATABASE_VERSION = 9;
+const DATABASE_VERSION = 10;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -169,19 +170,22 @@ interface CortexDbSchema extends DBSchema {
   };
 }
 
-let databasePromise:
-  | Promise<IDBPDatabase<CortexDbSchema>>
-  | null = null;
+const databasePromises = new Map<
+  string,
+  Promise<IDBPDatabase<CortexDbSchema>>
+>();
 
-export function getCortexDb(): Promise<
+export async function getCortexDb(): Promise<
   IDBPDatabase<CortexDbSchema>
 > {
-  if (databasePromise) {
-    return databasePromise;
+  const databaseName = await currentDataDatabaseName();
+  const existing = databasePromises.get(databaseName);
+  if (existing) {
+    return existing;
   }
 
-  databasePromise = openDB<CortexDbSchema>(
-    DATABASE_NAME,
+  const promise = openDB<CortexDbSchema>(
+    databaseName,
     DATABASE_VERSION,
     {
       upgrade(database, _oldVersion, _newVersion, transaction) {
@@ -516,6 +520,7 @@ export function getCortexDb(): Promise<
 
           colaboradorStore.createIndex("by-nome", "nome");
         }
+
       },
 
       blocked() {
@@ -531,7 +536,7 @@ export function getCortexDb(): Promise<
       },
 
       terminated() {
-        databasePromise = null;
+        databasePromises.delete(databaseName);
 
         console.error(
           "A conexão com o IndexedDB foi encerrada inesperadamente.",
@@ -539,8 +544,13 @@ export function getCortexDb(): Promise<
       },
     },
   );
-
-  return databasePromise;
+  databasePromises.set(databaseName, promise);
+  try {
+    return await promise;
+  } catch (error: unknown) {
+    databasePromises.delete(databaseName);
+    throw error;
+  }
 }
 
 export async function initializeCortexDb(): Promise<void> {
@@ -564,4 +574,21 @@ export async function initializeCortexDb(): Promise<void> {
 
     await database.put("sync_state", initialSyncState);
   }
+}
+
+function closeDataConnections(): void {
+  for (const promise of databasePromises.values()) {
+    void promise.then((database) => database.close()).catch(() => undefined);
+  }
+  databasePromises.clear();
+}
+
+if (
+  typeof window !== "undefined" &&
+  typeof window.addEventListener === "function"
+) {
+  window.addEventListener(
+    AUTH_SESSION_CHANGED_EVENT,
+    closeDataConnections,
+  );
 }
