@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth;
 
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.otp.AuthRateLimiter;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeRequest;
@@ -11,6 +12,7 @@ import com.projeto.cortex.auth.session.AuthSessionFilter;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.auth.session.ResolvedAuthSession;
+import com.projeto.cortex.auth.identity.CpfNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
@@ -28,12 +30,15 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 public class AuthController {
 
-    static final String LOGIN_DISABLED_MESSAGE =
-            "Login por CPF desativado. Use a verificação por e-mail.";
+    static final String LOGIN_REJECTED_MESSAGE = "CPF ou acesso inválido.";
+    static final String LOGIN_RATE_LIMIT_MESSAGE =
+            "Muitas tentativas. Aguarde antes de tentar novamente.";
     static final String CPF_FILTER_DISABLED_MESSAGE =
             "Filtro de CPF desativado.";
 
     private final EmailOtpChallengeService otpChallenges;
+    private final AuthService authService;
+    private final AuthRateLimiter rateLimiter;
     private final ClientAddressResolver clientAddresses;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
@@ -41,12 +46,16 @@ public class AuthController {
 
     public AuthController(
             EmailOtpChallengeService otpChallenges,
+            AuthService authService,
+            AuthRateLimiter rateLimiter,
             ClientAddressResolver clientAddresses,
             AuthSessionService sessions,
             AuthCookieService cookies,
             CurrentUserService currentUsers
     ) {
         this.otpChallenges = otpChallenges;
+        this.authService = authService;
+        this.rateLimiter = rateLimiter;
         this.clientAddresses = clientAddresses;
         this.sessions = sessions;
         this.cookies = cookies;
@@ -124,12 +133,33 @@ public class AuthController {
         response.setHeader("Cache-Control", "no-store");
     }
 
-    /** Tombstone for clients that still attempt CPF-as-password login. */
     @PostMapping("/api/auth/login")
-    public ResponseEntity<Map<String, String>> legacyLogin(
-            @RequestBody(required = false) LoginRequest request
+    public AuthSessionResponse login(
+            @RequestBody(required = false) LoginRequest request,
+            HttpServletRequest servletRequest,
+            HttpServletResponse response
     ) {
-        return gone(LOGIN_DISABLED_MESSAGE);
+        response.setHeader("Cache-Control", "no-store");
+        String cpf = canonicalCpf(request);
+        String clientIp = clientAddresses.resolve(servletRequest);
+        if (!rateLimiter.allowCpfLogin(cpf, clientIp)) {
+            throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    LOGIN_RATE_LIMIT_MESSAGE
+            );
+        }
+        AuthenticatedIdentity identity = authService.autenticarPorCpf(cpf)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.UNAUTHORIZED,
+                        LOGIN_REJECTED_MESSAGE
+                ));
+        IssuedAuthSession issued = sessions.issue(identity);
+        cookies.write(response, issued);
+        return AuthSessionResponse.from(
+                identity,
+                issued.expiresAt(),
+                currentUsers.allowedObraIds(identity.colaboradorId())
+        );
     }
 
     /** Tombstone for clients that still attempt to download the Bloom filter. */
@@ -142,5 +172,18 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.GONE).body(
                 Map.of("message", message)
         );
+    }
+
+    private String canonicalCpf(LoginRequest request) {
+        try {
+            return CpfNormalizer.requireValid(
+                    request == null ? null : request.cpf()
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "CPF inválido."
+            );
+        }
     }
 }

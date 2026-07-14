@@ -17,6 +17,7 @@ import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
+import com.projeto.cortex.auth.otp.AuthRateLimiter;
 import com.projeto.cortex.auth.session.AuthCookieService;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
 import com.projeto.cortex.auth.session.AuthSessionService;
@@ -46,6 +47,9 @@ class AuthControllerTest {
 
     private final EmailOtpChallengeService otp =
             mock(EmailOtpChallengeService.class);
+    private final AuthService authService = mock(AuthService.class);
+    private final AuthRateLimiter rateLimiter =
+            mock(AuthRateLimiter.class);
     private final ClientAddressResolver addresses =
             mock(ClientAddressResolver.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
@@ -57,6 +61,8 @@ class AuthControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
                 otp,
+                authService,
+                rateLimiter,
                 addresses,
                 sessions,
                 cookies,
@@ -67,6 +73,90 @@ class AuthControllerTest {
                         "40000000-0000-0000-0000-000000000004"
                 )
         ));
+    }
+
+    @Test
+    void directCpfStartsOpaqueSessionAndReturnsOnlyTheSafeProfile()
+            throws Exception {
+        AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
+        IssuedAuthSession issued = issuedSession();
+        when(addresses.resolve(any())).thenReturn("203.0.113.10");
+        when(rateLimiter.allowCpfLogin(
+                "11144477735",
+                "203.0.113.10"
+        )).thenReturn(true);
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.of(identity));
+        when(sessions.issue(identity)).thenReturn(issued);
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.colaboradorId").value(
+                        COLLABORATOR_ID
+                ))
+                .andExpect(jsonPath("$.nome").value("Pessoa Sintética"))
+                .andExpect(jsonPath("$.papelAcesso").value("BETA"))
+                .andExpect(jsonPath("$.escopoGlobal").value(false))
+                .andExpect(jsonPath("$.obraIds[0]").value(
+                        "40000000-0000-0000-0000-000000000004"
+                ))
+                .andExpect(jsonPath("$.token").doesNotExist())
+                .andExpect(jsonPath("$.cpf").doesNotExist())
+                .andExpect(jsonPath("$.email").doesNotExist());
+
+        verify(cookies).write(any(HttpServletResponse.class), eq(issued));
+    }
+
+    @Test
+    void malformedCpfStopsBeforeRateLimitOrIdentityLookup()
+            throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"123\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(rateLimiter, never()).allowCpfLogin(any(), any());
+        verify(authService, never()).autenticarPorCpf(any());
+        verify(sessions, never()).issue(any());
+    }
+
+    @Test
+    void ineligibleCpfNeverIssuesSessionOrCookies() throws Exception {
+        when(addresses.resolve(any())).thenReturn("203.0.113.10");
+        when(rateLimiter.allowCpfLogin(
+                "11144477735",
+                "203.0.113.10"
+        )).thenReturn(true);
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"11144477735\"}"))
+                .andExpect(status().isUnauthorized());
+
+        verify(sessions, never()).issue(any());
+        verify(cookies, never()).write(any(), any());
+    }
+
+    @Test
+    void exhaustedCpfLimitStopsBeforeIdentityLookup() throws Exception {
+        when(addresses.resolve(any())).thenReturn("203.0.113.10");
+        when(rateLimiter.allowCpfLogin(
+                "11144477735",
+                "203.0.113.10"
+        )).thenReturn(false);
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"11144477735\"}"))
+                .andExpect(status().isTooManyRequests());
+
+        verify(authService, never()).autenticarPorCpf(any());
+        verify(sessions, never()).issue(any());
     }
 
     @Test
@@ -182,20 +272,23 @@ class AuthControllerTest {
     }
 
     @Test
-    void legacyEndpointsStayGoneWithoutIssuingCredentials() throws Exception {
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isGone())
-                .andExpect(jsonPath("$.message").value(
-                        AuthController.LOGIN_DISABLED_MESSAGE
-                ));
+    void legacyCpfFilterStaysGoneWithoutIssuingCredentials()
+            throws Exception {
         mockMvc.perform(get("/api/auth/cpf-filter"))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.message").value(
                         AuthController.CPF_FILTER_DISABLED_MESSAGE
                 ));
         verify(sessions, never()).issue(any());
+    }
+
+    private IssuedAuthSession issuedSession() {
+        return new IssuedAuthSession(
+                SESSION_ID,
+                token('s'),
+                token('c'),
+                EXPIRY
+        );
     }
 
     private AuthenticatedIdentity identity(PapelAcesso role) {

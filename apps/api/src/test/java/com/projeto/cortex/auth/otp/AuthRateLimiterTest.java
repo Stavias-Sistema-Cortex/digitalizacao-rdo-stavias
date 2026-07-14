@@ -170,4 +170,44 @@ class AuthRateLimiterTest {
         verify(buckets, never()).consume(anyList(), eq(5), eq(900));
         verify(buckets, never()).consume(anyList(), eq(100), eq(900));
     }
+
+    @Test
+    void cpfLoginUsesAGlobalBucketDistinctFromEmailChallenges() {
+        RateLimitBucketRepository buckets = mock(
+                RateLimitBucketRepository.class
+        );
+        OtpPolicy policy = new OtpPolicy(600, 5, 5, 100, 900);
+        OtpCryptography cryptography = new OtpCryptography(
+                "test-only-otp-hmac-key-material-00000001".getBytes(),
+                new SecureRandom()
+        );
+        when(buckets.consume(anyList(), eq(5), eq(900))).thenReturn(true);
+        when(buckets.consume(anyList(), eq(100), eq(900)))
+                .thenReturn(true);
+        when(buckets.hasCapacity(anyString(), eq(100), eq(900)))
+                .thenReturn(true);
+        AuthRateLimiter limiter = new AuthRateLimiter(
+                buckets,
+                cryptography,
+                policy
+        );
+
+        assertThat(limiter.allow("11144477735", "203.0.113.7"))
+                .isTrue();
+        assertThat(limiter.allowCpfLogin(
+                "11144477735",
+                "203.0.113.7"
+        )).isTrue();
+
+        ArgumentCaptor<String> globalKeys =
+                ArgumentCaptor.forClass(String.class);
+        verify(buckets, times(2)).hasCapacity(
+                globalKeys.capture(),
+                eq(100),
+                eq(900)
+        );
+        assertThat(globalKeys.getAllValues())
+                .hasSize(2)
+                .doesNotHaveDuplicates();
+    }
 }

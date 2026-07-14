@@ -22,9 +22,21 @@ public class AuthRateLimiter {
     }
 
     public boolean allow(String identifier, String clientIp) {
+        return allowScoped("email-challenge", identifier, clientIp);
+    }
+
+    public boolean allowCpfLogin(String identifier, String clientIp) {
+        return allowScoped("cpf-login", identifier, clientIp);
+    }
+
+    private boolean allowScoped(
+            String scope,
+            String identifier,
+            String clientIp
+    ) {
         String globalBucket = cryptography.bucketDigest(
                 "global",
-                "email-challenge"
+                scope
         );
         if (!buckets.hasCapacity(
                 globalBucket,
@@ -36,7 +48,7 @@ public class AuthRateLimiter {
 
         String ipBucket = cryptography.bucketDigest(
                 "ip",
-                AuthRequestNormalizer.clientIp(clientIp)
+                scope + ":" + AuthRequestNormalizer.clientIp(clientIp)
         );
         boolean sourceAllowed = buckets.consume(
                 List.of(ipBucket),
@@ -58,7 +70,7 @@ public class AuthRateLimiter {
 
         String identifierBucket = cryptography.bucketDigest(
                 "identifier",
-                AuthRequestNormalizer.identifier(identifier)
+                scope + ":" + AuthRequestNormalizer.identifier(identifier)
         );
         return buckets.consume(
                 List.of(identifierBucket),
