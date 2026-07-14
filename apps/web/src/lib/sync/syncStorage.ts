@@ -300,6 +300,8 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "rdos",
   "operational_events",
   "rdo_attachments",
+  "mensagens",
+  "mensagem_anexos",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -594,6 +596,19 @@ export async function recoverInterruptedMutations(): Promise<void> {
         nowUtc(),
       );
     }
+
+    if (mutation.entidadeTipo === "MENSAGEM") {
+      const messageStore = transaction.objectStore("mensagens");
+      const message = await messageStore.get(mutation.entidadeId);
+      if (message) {
+        await messageStore.put({
+          ...message,
+          syncStatus: "NA_FILA",
+          ultimoErro: updatedMutation.ultimoErro,
+          updatedAt: nowUtc(),
+        });
+      }
+    }
   }
 
   await transaction.done;
@@ -810,6 +825,19 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
         "PENDING_SYNC",
         timestamp,
       );
+    }
+
+    if (mutation.entidadeTipo === "MENSAGEM") {
+      const messageStore = transaction.objectStore("mensagens");
+      const message = await messageStore.get(mutation.entidadeId);
+      if (message) {
+        await messageStore.put({
+          ...message,
+          syncStatus: "NA_FILA",
+          ultimoErro: retryMutation.ultimoErro,
+          updatedAt: timestamp,
+        });
+      }
     }
   }
 
@@ -1175,6 +1203,19 @@ export async function markMutationAsSyncing(
     );
   }
 
+  if (currentMutation.entidadeTipo === "MENSAGEM") {
+    const messageStore = transaction.objectStore("mensagens");
+    const message = await messageStore.get(currentMutation.entidadeId);
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "SINCRONIZANDO",
+        ultimoErro: null,
+        updatedAt: nowUtc(),
+      });
+    }
+  }
+
   await transaction.done;
 }
 
@@ -1221,6 +1262,7 @@ export async function applyPushResultAtomically(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const messageStore = transaction.objectStore("mensagens");
 
   const mutation = await outboxStore.get(
     result.clientMutationId,
@@ -1235,6 +1277,10 @@ export async function applyPushResultAtomically(
   }
 
   const rdo = await rdoStore.get(mutation.entidadeId);
+  const message =
+    mutation.entidadeTipo === "MENSAGEM"
+      ? await messageStore.get(mutation.entidadeId)
+      : undefined;
   const timestamp = nowUtc();
 
   if (result.status === "APLICADA") {
@@ -1279,6 +1325,28 @@ export async function applyPushResultAtomically(
         timestamp,
       );
     }
+
+    if (message) {
+      const resultRecord = result.resultado ?? {};
+      await messageStore.put({
+        ...message,
+        id:
+          typeof resultRecord.id === "string"
+            ? resultRecord.id
+            : message.id,
+        criadaEm:
+          typeof resultRecord.criadaEm === "string"
+            ? resultRecord.criadaEm
+            : message.criadaEm,
+        versaoEntidade:
+          typeof resultRecord.versao === "number"
+            ? resultRecord.versao
+            : message.versaoEntidade,
+        syncStatus: "SINCRONIZADO",
+        ultimoErro: null,
+        updatedAt: timestamp,
+      });
+    }
   } else if (result.status === "DESCARTADA") {
     await outboxStore.put({
       ...mutation,
@@ -1312,6 +1380,15 @@ export async function applyPushResultAtomically(
         "SYNC_FAILED",
         timestamp,
       );
+    }
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "FALHOU",
+        ultimoErro:
+          result.erro ?? "Conflito informado pelo servidor.",
+        updatedAt: timestamp,
+      });
     }
   } else {
     await outboxStore.put({
@@ -1349,6 +1426,15 @@ export async function applyPushResultAtomically(
         timestamp,
       );
     }
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "FALHOU",
+        ultimoErro:
+          result.erro ?? "Erro informado pelo servidor.",
+        updatedAt: timestamp,
+      });
+    }
   }
 
   await transaction.done;
@@ -1368,6 +1454,7 @@ export async function returnMutationToPending(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const messageStore = transaction.objectStore("mensagens");
 
   const mutation = await outboxStore.get(clientMutationId);
 
@@ -1412,6 +1499,18 @@ export async function returnMutationToPending(
       "PENDING_SYNC",
       timestamp,
     );
+  }
+
+  if (mutation.entidadeTipo === "MENSAGEM") {
+    const message = await messageStore.get(mutation.entidadeId);
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "NA_FILA",
+        ultimoErro: errorMessage,
+        updatedAt: timestamp,
+      });
+    }
   }
 
   await transaction.done;

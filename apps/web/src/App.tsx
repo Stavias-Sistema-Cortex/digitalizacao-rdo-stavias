@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -27,6 +27,12 @@ import { RdoWorkspacePage } from "./features/rdos/RdoWorkspacePage";
 import { StaviaLauncherProvider } from "./features/stavia/StaviaLauncherProvider";
 import { TarefasPage } from "./features/tarefas/TarefasPage";
 import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
+
+const MensagensPage = lazy(() =>
+  import("./features/mensagens/MensagensPage").then((module) => ({
+    default: module.MensagensPage,
+  })),
+);
 
 function IntegracoesRoute() {
   const navigate = useNavigate();
@@ -151,6 +157,20 @@ function App({ initialAuthUnavailable = false }: AppProps) {
           <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
           <Route path="/rdos" element={<RdoWorkspacePage />} />
           <Route path="/tarefas" element={<TarefasPage />} />
+          <Route
+            path="/mensagens"
+            element={
+              <Suspense
+                fallback={
+                  <main className="auth-bootstrap-status" role="status">
+                    Abrindo mensagens locais…
+                  </main>
+                }
+              >
+                <MensagensPage />
+              </Suspense>
+            }
+          />
           <Route
             path="/seguranca"
             element={

@@ -1,4 +1,6 @@
 import { hasOnlineSession } from "../../features/auth/authSession";
+import { processObjectUploads } from "../../features/mensagens/objectUploadSync";
+import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
 import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
 import { acknowledgeCurrentCursor } from "./ackCursor";
@@ -45,8 +47,12 @@ async function executeSync(): Promise<SyncRunSummary> {
     await queueResolvableConflictsForRetry();
 
     const deviceId = await ensureRegisteredDevice();
+    const uploadSummary = await processObjectUploads();
     const pushSummary = await pushOutbox(deviceId);
     const pullSummary = await pullEvents(deviceId);
+    await refreshMessagingAfterPull(
+      pullSummary.messagingConversationIds,
+    );
 
     const acknowledgedCommitSeq =
       await acknowledgeCurrentCursor(deviceId);
@@ -59,9 +65,9 @@ async function executeSync(): Promise<SyncRunSummary> {
 
     return {
       deviceId,
-      pushed: pushSummary.pushed,
-      applied: pushSummary.applied,
-      errors: pushSummary.errors,
+      pushed: uploadSummary.pushed + pushSummary.pushed,
+      applied: uploadSummary.applied + pushSummary.applied,
+      errors: uploadSummary.errors + pushSummary.errors,
       conflicts: pushSummary.conflicts,
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,

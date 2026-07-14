@@ -52,15 +52,23 @@ export type OutboxMutationStatus =
   | "ERROR"
   | "CONFLICT";
 
-export type SyncEntityType = "RDO" | "MENSAGEM";
+export type SyncEntityType =
+  | "RDO"
+  | "CONVERSA"
+  | "MENSAGEM"
+  | "MENSAGEM_ANEXO";
 
 export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
   | "ENVIAR_RDO"
+  | "CRIAR_CONVERSA"
+  | "ADICIONAR_PARTICIPANTE_CONVERSA"
+  | "REMOVER_PARTICIPANTE_CONVERSA"
   | "CRIAR_MENSAGEM"
   | "EDITAR_MENSAGEM"
-  | "EXCLUIR_MENSAGEM";
+  | "EXCLUIR_MENSAGEM"
+  | "ADICIONAR_MENSAGEM_ANEXO";
 
 export type OutboxTransport =
   | "SYNC_PUSH"
@@ -116,6 +124,76 @@ export interface OutboxMutationRecord {
   transport?: OutboxTransport;
   dependsOnMutationIds?: string[];
   correlationId?: string;
+}
+
+export type MensagemSyncStatus =
+  | "LOCAL"
+  | "NA_FILA"
+  | "SINCRONIZANDO"
+  | "SINCRONIZADO"
+  | "FALHOU";
+
+export type ConversaTipo =
+  | "DIRETA"
+  | "GRUPO"
+  | "EQUIPE"
+  | "OBRA";
+
+export interface ConversaParticipanteLocal {
+  colaboradorId: string;
+  nome: string;
+  papel: "ADMIN" | "MEMBRO";
+  status: "ATIVO" | "REMOVIDO";
+  adicionadoEm: string;
+}
+
+export interface ConversaLocalRecord {
+  id: string;
+  tipo: ConversaTipo;
+  titulo: string | null;
+  obraId: string | null;
+  equipeId: string | null;
+  status: string;
+  participantes: ConversaParticipanteLocal[];
+  criadaEm: string;
+  atualizadaEm: string;
+  versaoEntidade: number | null;
+}
+
+export interface MensagemLocalRecord {
+  id: string;
+  conversaId: string;
+  autorId: string;
+  autorNome: string;
+  corpo: string | null;
+  status: "ATIVA" | "EDITADA" | "EXCLUIDA";
+  clientMutationId: string;
+  criadaNoClienteEm: string;
+  criadaEm: string | null;
+  editadaEm: string | null;
+  deletadaEm: string | null;
+  versaoEntidade: number | null;
+  syncStatus: MensagemSyncStatus;
+  ultimoErro: string | null;
+  updatedAt: string;
+}
+
+export interface MensagemAnexoLocalRecord {
+  id: string;
+  mensagemId: string;
+  conversaId: string;
+  objetoId: string | null;
+  uploadMutationId: string | null;
+  nome: string;
+  mediaType: string;
+  tamanhoBytes: number;
+  sha256: string | null;
+  ordem: number;
+  arquivo: Blob | null;
+  syncStatus: MensagemSyncStatus;
+  ultimoErro: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SyncStateRecord {

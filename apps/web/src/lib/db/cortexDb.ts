@@ -6,11 +6,14 @@ import {
 
 import type {
   ColaboradorLocalRecord,
+  ConversaLocalRecord,
   LocalRdoControleGeometricoRecord,
   LocalRdoEquipamentoRecord,
   LocalRdoMaoObraRecord,
   LocalRdoMaterialRecord,
   LocalRdoRecord,
+  MensagemAnexoLocalRecord,
+  MensagemLocalRecord,
   ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
@@ -24,7 +27,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-const DATABASE_VERSION = 10;
+const DATABASE_VERSION = 11;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -166,6 +169,38 @@ interface CortexDbSchema extends DBSchema {
     value: ColaboradorLocalRecord;
     indexes: {
       "by-nome": string;
+    };
+  };
+
+  mensagem_conversas: {
+    key: string;
+    value: ConversaLocalRecord;
+    indexes: {
+      "by-updated-at": string;
+      "by-type": ConversaLocalRecord["tipo"];
+      "by-obra-id": string;
+    };
+  };
+
+  mensagens: {
+    key: string;
+    value: MensagemLocalRecord;
+    indexes: {
+      "by-conversation-id": string;
+      "by-created-at": string;
+      "by-sync-status": MensagemLocalRecord["syncStatus"];
+      "by-client-mutation-id": string;
+    };
+  };
+
+  mensagem_anexos: {
+    key: string;
+    value: MensagemAnexoLocalRecord;
+    indexes: {
+      "by-message-id": string;
+      "by-conversation-id": string;
+      "by-sync-status": MensagemAnexoLocalRecord["syncStatus"];
+      "by-upload-mutation-id": string;
     };
   };
 }
@@ -519,6 +554,75 @@ export async function getCortexDb(): Promise<
             });
 
           colaboradorStore.createIndex("by-nome", "nome");
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "mensagem_conversas",
+          )
+        ) {
+          const conversationStore = database.createObjectStore(
+            "mensagem_conversas",
+            { keyPath: "id" },
+          );
+          conversationStore.createIndex(
+            "by-updated-at",
+            "atualizadaEm",
+          );
+          conversationStore.createIndex("by-type", "tipo");
+          conversationStore.createIndex("by-obra-id", "obraId");
+        }
+
+        if (!database.objectStoreNames.contains("mensagens")) {
+          const messageStore = database.createObjectStore(
+            "mensagens",
+            { keyPath: "id" },
+          );
+          messageStore.createIndex(
+            "by-conversation-id",
+            "conversaId",
+          );
+          messageStore.createIndex(
+            "by-created-at",
+            "criadaNoClienteEm",
+          );
+          messageStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          messageStore.createIndex(
+            "by-client-mutation-id",
+            "clientMutationId",
+            { unique: true },
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "mensagem_anexos",
+          )
+        ) {
+          const messageAttachmentStore = database.createObjectStore(
+            "mensagem_anexos",
+            { keyPath: "id" },
+          );
+          messageAttachmentStore.createIndex(
+            "by-message-id",
+            "mensagemId",
+          );
+          messageAttachmentStore.createIndex(
+            "by-conversation-id",
+            "conversaId",
+          );
+          messageAttachmentStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          messageAttachmentStore.createIndex(
+            "by-upload-mutation-id",
+            "uploadMutationId",
+            { unique: true },
+          );
         }
 
       },
