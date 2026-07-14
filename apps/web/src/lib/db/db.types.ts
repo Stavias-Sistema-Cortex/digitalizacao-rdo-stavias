@@ -52,12 +52,19 @@ export type OutboxMutationStatus =
   | "ERROR"
   | "CONFLICT";
 
-export type SyncEntityType = "RDO";
+export type SyncEntityType = "RDO" | "MENSAGEM";
 
 export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
-  | "ENVIAR_RDO";
+  | "ENVIAR_RDO"
+  | "CRIAR_MENSAGEM"
+  | "EDITAR_MENSAGEM"
+  | "EXCLUIR_MENSAGEM";
+
+export type OutboxTransport =
+  | "SYNC_PUSH"
+  | "OBJECT_UPLOAD";
 
 export interface LocalRdoRecord {
   id: string;
@@ -106,6 +113,9 @@ export interface OutboxMutationRecord {
   conflito: Record<string, unknown> | null;
   criadaNoClienteEm: string;
   updatedAt: string;
+  transport?: OutboxTransport;
+  dependsOnMutationIds?: string[];
+  correlationId?: string;
 }
 
 export interface SyncStateRecord {

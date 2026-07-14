@@ -27,10 +27,7 @@ class SyncPullScopeTest {
             mock(JdbcTemplate.class),
             new ObjectMapper(),
             mock(TransactionTemplate.class),
-            mock(RdoService.class),
-            mock(RdoDraftUpdateService.class),
-            mock(RdoWorkflowService.class),
-            mock(RdoQueryService.class),
+            new SyncOperationRegistry(java.util.List.of()),
             mock(CurrentUserService.class),
             mock(FinancialAccessService.class)
     );

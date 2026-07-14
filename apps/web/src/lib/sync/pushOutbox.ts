@@ -1,6 +1,4 @@
-import {
-  listPendingOutboxMutations,
-} from "../db/outboxRepository";
+import { listReadyPendingOutboxMutations } from "../db/outboxRepository";
 import {
   applyPushResultAtomically,
   markMutationAsSyncing,
@@ -23,7 +21,7 @@ export async function pushOutbox(
   deviceId: string,
 ): Promise<PushOutboxSummary> {
   const pendingMutations =
-    await listPendingOutboxMutations(100);
+    await listReadyPendingOutboxMutations(100);
 
   if (pendingMutations.length === 0) {
     return {
