@@ -114,12 +114,9 @@ class CsrfRequestFilterTest {
 
         for (MockHttpServletRequest request : new MockHttpServletRequest[] {
             request("GET", "/api/auth/session"),
-            request("POST", "/api/auth/email/challenges"),
-            request(
-                    "POST",
-                    "/api/auth/email/challenges/"
-                            + "30000000-0000-0000-0000-000000000003/verify"
-            ),
+            request("POST", "/api/auth/login"),
+            request("POST", "/api/auth/passkeys/authentication/options"),
+            request("POST", "/api/auth/passkeys/authentication/verify"),
             request("OPTIONS", "/api/sync/push")
         }) {
             filter.doFilter(
@@ -133,6 +130,25 @@ class CsrfRequestFilterTest {
             );
             org.mockito.Mockito.reset(chain);
         }
+        verifyNoInteractions(sessions, cookies);
+    }
+
+    @Test
+    void emailChallengeIsNotAPreAuthCsrfExemption() throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        FilterChain chain = mock(FilterChain.class);
+        MockHttpServletRequest request = request(
+                "POST",
+                "/api/auth/email/challenges"
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new CsrfRequestFilter(sessions, cookies)
+                .doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        verify(chain, never()).doFilter(request, response);
         verifyNoInteractions(sessions, cookies);
     }
 

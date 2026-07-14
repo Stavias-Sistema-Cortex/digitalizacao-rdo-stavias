@@ -82,7 +82,30 @@ class AuthSessionFilterTest {
     }
 
     @Test
-    void challengeVerifyHealthAndOptionsRemainPublic() throws Exception {
+    void cpfPasskeyHealthAndOptionsRemainPublic() throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        AuthSessionFilter filter = new AuthSessionFilter(sessions, cookies);
+        FilterChain chain = mock(FilterChain.class);
+
+        for (MockHttpServletRequest request : new MockHttpServletRequest[] {
+            request("POST", "/api/auth/login"),
+            request("POST", "/api/auth/passkeys/authentication/options"),
+            request("POST", "/api/auth/passkeys/authentication/verify"),
+            request("GET", "/api/health"),
+            request("GET", "/api/readiness"),
+            request("OPTIONS", "/api/obras")
+        }) {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(request, response, chain);
+            verify(chain).doFilter(request, response);
+            org.mockito.Mockito.reset(chain);
+        }
+        verifyNoInteractions(sessions, cookies);
+    }
+
+    @Test
+    void emailChallengesRequireAnAuthenticatedSession() throws Exception {
         AuthSessionService sessions = mock(AuthSessionService.class);
         AuthCookieService cookies = mock(AuthCookieService.class);
         AuthSessionFilter filter = new AuthSessionFilter(sessions, cookies);
@@ -94,17 +117,18 @@ class AuthSessionFilterTest {
                     "POST",
                     "/api/auth/email/challenges/"
                             + "30000000-0000-0000-0000-000000000003/verify"
-            ),
-            request("GET", "/api/health"),
-            request("GET", "/api/readiness"),
-            request("OPTIONS", "/api/obras")
+            )
         }) {
             MockHttpServletResponse response = new MockHttpServletResponse();
+            when(cookies.readSessionToken(request))
+                    .thenReturn(Optional.empty());
+
             filter.doFilter(request, response, chain);
-            verify(chain).doFilter(request, response);
-            org.mockito.Mockito.reset(chain);
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            verify(chain, never()).doFilter(request, response);
         }
-        verifyNoInteractions(sessions, cookies);
+        verifyNoInteractions(sessions);
     }
 
     private MockHttpServletRequest request(String method, String path) {

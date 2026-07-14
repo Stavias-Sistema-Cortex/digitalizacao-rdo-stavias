@@ -32,23 +32,18 @@ final class AuthPublicEndpointPolicy {
         }
         if ("GET".equalsIgnoreCase(method)
                 && ("/api/health".equals(path)
-                    || "/api/readiness".equals(path)
-                    || "/api/auth/cpf-filter".equals(path))) {
+                    || "/api/readiness".equals(path))) {
             return true;
         }
         if (!"POST".equalsIgnoreCase(method)) {
             return false;
         }
-        if ("/api/auth/email/challenges".equals(path)
-                || "/api/auth/login".equals(path)
+        if ("/api/auth/login".equals(path)
                 || "/api/auth/passkeys/authentication/options".equals(path)
                 || "/api/auth/passkeys/authentication/verify".equals(path)) {
             return true;
         }
-        return path != null
-                && path.matches(
-                        "^/api/auth/email/challenges/[^/]{1,64}/verify$"
-                );
+        return false;
     }
 
     static boolean isSafeMethod(HttpServletRequest request) {
