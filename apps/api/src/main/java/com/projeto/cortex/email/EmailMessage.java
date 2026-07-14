@@ -11,6 +11,15 @@ public record EmailMessage(
         String idempotencyKey
 ) {
 
+    public static boolean isValidRecipient(String raw) {
+        try {
+            requireAddress(raw);
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
     public EmailMessage {
         recipient = requireAddress(recipient);
         if (subject == null
@@ -54,5 +63,10 @@ public record EmailMessage(
 
     private static IllegalArgumentException invalidMessage() {
         return new IllegalArgumentException("Mensagem de e-mail inválida.");
+    }
+
+    @Override
+    public String toString() {
+        return "EmailMessage[redacted]";
     }
 }

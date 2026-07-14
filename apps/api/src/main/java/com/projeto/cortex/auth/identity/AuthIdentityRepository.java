@@ -247,7 +247,9 @@ public class AuthIdentityRepository {
             owners.putIfAbsent(identity.colaboradorId(), identity);
         }
         if (owners.size() > 1) {
-            throw new IllegalStateException(AMBIGUOUS_IDENTITY_MESSAGE);
+            throw new AmbiguousAuthIdentityException(
+                    AMBIGUOUS_IDENTITY_MESSAGE
+            );
         }
         return owners.values().stream().findFirst();
     }

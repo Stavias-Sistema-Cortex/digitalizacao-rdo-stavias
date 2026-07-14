@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth.identity;
 
 import com.projeto.cortex.config.SecretMaterialLoader;
+import com.projeto.cortex.colaboradores.CpfHasher;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
@@ -14,6 +15,7 @@ public final class HmacCpfLookupDigestService
         implements CpfLookupDigestService {
 
     private static final String ALGORITHM = "HmacSHA256";
+    private static final String DECOY_INPUT = "invalid-id!";
 
     private final String currentKeyId;
     private final byte[] currentKey;
@@ -73,6 +75,43 @@ public final class HmacCpfLookupDigestService
         return previousKey == null
                 ? List.of(active)
                 : List.of(active, digest(previousKeyId, previousKey, cpf));
+    }
+
+    @Override
+    public AuthChallengeLookupMaterial challengeLookup(
+            String identifier
+    ) {
+        String protectedInput;
+        try {
+            if (identifier == null
+                    || identifier.length() > 512
+                    || identifier.contains("\r")
+                    || identifier.contains("\n")) {
+                throw new IllegalArgumentException();
+            }
+            protectedInput = CpfNormalizer.requireValid(identifier);
+        } catch (IllegalArgumentException exception) {
+            protectedInput = DECOY_INPUT;
+        }
+        CpfLookupDigest active = digest(
+                currentKeyId,
+                currentKey,
+                protectedInput
+        );
+        List<CpfLookupDigest> protectedCandidates = previousKey == null
+                ? List.of(active)
+                : List.of(
+                        active,
+                        digest(
+                                previousKeyId,
+                                previousKey,
+                                protectedInput
+                        )
+                );
+        return new AuthChallengeLookupMaterial(
+                protectedCandidates,
+                CpfHasher.hashDeDigitos(protectedInput)
+        );
     }
 
     private CpfLookupDigest digest(String keyId, byte[] key, String cpf) {

@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth;
 
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Papel de acesso do colaborador no Córtex.
@@ -37,5 +38,18 @@ public enum PapelAcesso {
         }
 
         return BETA;
+    }
+
+    /** Parses only canonical persisted values; unknown data denies access. */
+    public static Optional<PapelAcesso> fromPersistedExact(String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        for (PapelAcesso papel : values()) {
+            if (papel.name().equals(value)) {
+                return Optional.of(papel);
+            }
+        }
+        return Optional.empty();
     }
 }

@@ -8,4 +8,7 @@ public interface CpfLookupDigestService {
 
     /** Returns the current digest first, followed by an optional previous key. */
     List<CpfLookupDigest> candidates(String cpfRaw);
+
+    /** Returns the same protected shape for valid and invalid identifiers. */
+    AuthChallengeLookupMaterial challengeLookup(String identifier);
 }

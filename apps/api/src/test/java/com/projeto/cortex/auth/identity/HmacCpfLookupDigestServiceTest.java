@@ -71,6 +71,44 @@ class HmacCpfLookupDigestServiceTest {
     }
 
     @Test
+    void challengeLookupHasTheSameProtectedShapeForValidAndInvalidInput() {
+        HmacCpfLookupDigestService service = new HmacCpfLookupDigestService(
+                "k2026-07",
+                null,
+                CURRENT_SECRET,
+                new HmacCpfLookupDigestService.PreviousKey(
+                        "k2026-06",
+                        null,
+                        PREVIOUS_SECRET
+                )
+        );
+
+        AuthChallengeLookupMaterial valid = service.challengeLookup(
+                SYNTHETIC_CPF
+        );
+        AuthChallengeLookupMaterial invalid = service.challengeLookup(
+                "unsupported-identifier"
+        );
+        AuthChallengeLookupMaterial oversized = service.challengeLookup(
+                "x".repeat(10_000)
+        );
+
+        assertThat(valid.candidates()).hasSameSizeAs(invalid.candidates());
+        assertThat(valid.candidates()).hasSize(2)
+                .allSatisfy(candidate -> assertThat(candidate.value())
+                        .matches("[0-9a-f]{64}")
+                        .doesNotContain("11144477735"));
+        assertThat(invalid.candidates())
+                .allSatisfy(candidate -> assertThat(candidate.value())
+                        .matches("[0-9a-f]{64}")
+                        .doesNotContain("unsupported-identifier"));
+        assertThat(valid.legacyDigest()).matches("[0-9a-f]{64}");
+        assertThat(invalid.legacyDigest()).matches("[0-9a-f]{64}")
+                .isNotEqualTo(valid.legacyDigest());
+        assertThat(oversized).isEqualTo(invalid);
+    }
+
+    @Test
     void rejectsInvalidCpfWithoutEchoingIt() {
         HmacCpfLookupDigestService service = new HmacCpfLookupDigestService(
                 "k2026-07",

@@ -19,4 +19,15 @@ class PapelAcessoTest {
         assertThat(PapelAcesso.fromNullable("")).isEqualTo(PapelAcesso.BETA);
         assertThat(PapelAcesso.fromNullable("GAMA")).isEqualTo(PapelAcesso.BETA);
     }
+
+    @Test
+    void authenticationParserAcceptsOnlyCanonicalPersistedRoles() {
+        assertThat(PapelAcesso.fromPersistedExact("ALFA"))
+                .contains(PapelAcesso.ALFA);
+        assertThat(PapelAcesso.fromPersistedExact("BETA"))
+                .contains(PapelAcesso.BETA);
+        assertThat(PapelAcesso.fromPersistedExact("alfa")).isEmpty();
+        assertThat(PapelAcesso.fromPersistedExact(" GAMA ")).isEmpty();
+        assertThat(PapelAcesso.fromPersistedExact(null)).isEmpty();
+    }
 }

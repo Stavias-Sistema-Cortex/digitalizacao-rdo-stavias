@@ -1,0 +1,6 @@
+cortex:
+  auth:
+    otp:
+      hmac-key-inline: test-only-otp-hmac-key-material-00000001
+  email:
+    provider: fake
