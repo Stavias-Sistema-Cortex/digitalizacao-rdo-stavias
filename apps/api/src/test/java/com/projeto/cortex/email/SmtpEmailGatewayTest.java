@@ -107,7 +107,8 @@ class SmtpEmailGatewayTest {
                 RECIPIENT,
                 "Assunto sintético",
                 BODY,
-                "financeiro:synthetic-1"
+                "financeiro:synthetic-1",
+                "respostas@example.invalid"
         );
 
         EmailGateway.DeliveryReceipt receipt = gateway.send(message);
@@ -120,6 +121,8 @@ class SmtpEmailGatewayTest {
         assertThat(outbound.getValue().getSubject())
                 .isEqualTo("Assunto sintético");
         assertThat(outbound.getValue().getText()).isEqualTo(BODY);
+        assertThat(outbound.getValue().getReplyTo())
+                .isEqualTo("respostas@example.invalid");
         assertThat(receipt.provider()).isEqualTo("smtp");
         assertThat(receipt.messageId()).isNotBlank();
     }

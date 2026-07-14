@@ -96,12 +96,17 @@ public final class SmtpEmailGateway implements EmailGateway {
         outbound.setTo(message.recipient());
         outbound.setSubject(message.subject());
         outbound.setText(message.textBody());
+        if (message.replyTo() != null) {
+            outbound.setReplyTo(message.replyTo());
+        }
         try {
             mailSender.send(outbound);
             return new DeliveryReceipt("smtp", UUID.randomUUID().toString());
         } catch (MailException exception) {
-            throw new IllegalStateException(
-                    "Falha no envio de e-mail pelo provider SMTP."
+            throw new EmailGateway.DeliveryException(
+                    "SMTP_RESULTADO_AMBIGUO",
+                    "Falha no envio de e-mail pelo provider SMTP.",
+                    false
             );
         }
     }

@@ -163,6 +163,29 @@ class EmailConfigurationTest {
     }
 
     @Test
+    void fakeProviderIsIdempotentForTheSameProviderKey() {
+        FakeEmailGateway gateway = new FakeEmailGateway();
+        EmailMessage first = new EmailMessage(
+                "destinatario@example.invalid",
+                "Assunto sintético",
+                "Corpo sintético",
+                "financeiro:charge-42:attempt-1"
+        );
+        EmailMessage reconnectReplay = new EmailMessage(
+                "destinatario@example.invalid",
+                "Assunto sintético",
+                "Corpo sintético",
+                "financeiro:charge-42:attempt-1"
+        );
+
+        EmailGateway.DeliveryReceipt initial = gateway.send(first);
+        EmailGateway.DeliveryReceipt replay = gateway.send(reconnectReplay);
+
+        assertThat(replay).isEqualTo(initial);
+        assertThat(gateway.capturedMessages()).containsExactly(first);
+    }
+
+    @Test
     void applicationUsesAuthoritativeSmtpEnvironmentNames() throws Exception {
         String configuration = Files.readString(
                 Path.of("src/main/resources/application.yml")

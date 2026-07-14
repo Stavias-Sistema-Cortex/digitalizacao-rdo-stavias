@@ -8,8 +8,18 @@ public record EmailMessage(
         String recipient,
         String subject,
         String textBody,
-        String idempotencyKey
+        String idempotencyKey,
+        String replyTo
 ) {
+
+    public EmailMessage(
+            String recipient,
+            String subject,
+            String textBody,
+            String idempotencyKey
+    ) {
+        this(recipient, subject, textBody, idempotencyKey, null);
+    }
 
     public static boolean isValidRecipient(String raw) {
         try {
@@ -38,6 +48,8 @@ public record EmailMessage(
                 || idempotencyKey.contains("\n")) {
             throw invalidMessage();
         }
+        replyTo = replyTo == null || replyTo.isBlank()
+                ? null : requireAddress(replyTo);
     }
 
     static String requireAddress(String raw) {

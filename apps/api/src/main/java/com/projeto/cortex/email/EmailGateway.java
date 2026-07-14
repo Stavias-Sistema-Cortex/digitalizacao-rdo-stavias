@@ -18,4 +18,35 @@ public interface EmailGateway {
             }
         }
     }
+
+    /** Sanitized provider failure with an explicit retry-safety decision. */
+    final class DeliveryException extends IllegalStateException {
+
+        private final String category;
+        private final boolean knownSafeToRetry;
+
+        public DeliveryException(
+                String category,
+                String sanitizedMessage,
+                boolean knownSafeToRetry
+        ) {
+            super(sanitizedMessage);
+            if (category == null || category.isBlank()
+                    || sanitizedMessage == null || sanitizedMessage.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Falha de entrega de e-mail inválida."
+                );
+            }
+            this.category = category;
+            this.knownSafeToRetry = knownSafeToRetry;
+        }
+
+        public String category() {
+            return category;
+        }
+
+        public boolean knownSafeToRetry() {
+            return knownSafeToRetry;
+        }
+    }
 }

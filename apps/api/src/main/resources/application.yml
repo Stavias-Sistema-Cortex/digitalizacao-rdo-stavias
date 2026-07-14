@@ -79,6 +79,7 @@ cortex:
   email:
     provider: ${CORTEX_EMAIL_PROVIDER:}
     from: ${CORTEX_SMTP_FROM:}
+    sender-profile-key: ${CORTEX_EMAIL_SENDER_PROFILE_KEY:}
     smtp:
       host: ${CORTEX_SMTP_HOST:}
       port: ${CORTEX_SMTP_PORT:587}
@@ -89,6 +90,20 @@ cortex:
       connect-timeout-ms: ${CORTEX_SMTP_CONNECT_TIMEOUT_MS:5000}
       read-timeout-ms: ${CORTEX_SMTP_READ_TIMEOUT_MS:5000}
       write-timeout-ms: ${CORTEX_SMTP_WRITE_TIMEOUT_MS:5000}
+
+  finance:
+    email:
+      retry:
+        max-attempts: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_ATTEMPTS:4}
+        initial-delay-seconds: ${CORTEX_FINANCE_EMAIL_RETRY_INITIAL_DELAY_SECONDS:120}
+        max-delay-seconds: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_DELAY_SECONDS:3600}
+      dispatch:
+        lease-seconds: ${CORTEX_FINANCE_EMAIL_DISPATCH_LEASE_SECONDS:120}
+      scheduler:
+        enabled: ${CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:false}
+        batch-size: ${CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE:25}
+        initial-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_INITIAL_DELAY_MS:30000}
+        fixed-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_FIXED_DELAY_MS:60000}
 
   storage:
     provider: ${CORTEX_STORAGE_PROVIDER:}
