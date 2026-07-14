@@ -3,18 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   clearSession: vi.fn(),
   fetchSession: vi.fn(),
+  loginWithCpf: vi.fn(),
   logoutOnline: vi.fn(),
   purgeLegacyAuthStorage: vi.fn(),
-  requestEmailCode: vi.fn(),
   setSession: vi.fn(),
-  verifyEmailCode: vi.fn(),
 }));
 
 vi.mock("./authApi", () => ({
   fetchSession: mocks.fetchSession,
+  loginWithCpf: mocks.loginWithCpf,
   logoutOnline: mocks.logoutOnline,
-  requestEmailCode: mocks.requestEmailCode,
-  verifyEmailCode: mocks.verifyEmailCode,
 }));
 
 vi.mock("./authSession", () => ({
@@ -24,10 +22,9 @@ vi.mock("./authSession", () => ({
 }));
 
 import {
+  autenticarPorCpf,
   encerrarSessao,
   initializeAuthSession,
-  solicitarCodigo,
-  verificarCodigo,
 } from "./authService";
 
 const profile = {
@@ -57,30 +54,12 @@ describe("authService", () => {
     expect(mocks.setSession).toHaveBeenCalledWith(profile);
   });
 
-  it("solicitar código não cria uma sessão local", async () => {
-    const challenge = {
-      challengeId: "00000000-0000-4000-8000-000000000002",
-      expiresInSeconds: 600,
-      message: "Mensagem genérica.",
-    };
-    mocks.requestEmailCode.mockResolvedValue(challenge);
+  it("normaliza o CPF e grava somente o perfil validado", async () => {
+    mocks.loginWithCpf.mockResolvedValue(profile);
 
-    await expect(solicitarCodigo("111.444.777-35")).resolves.toEqual(
-      challenge,
-    );
-    expect(mocks.setSession).not.toHaveBeenCalled();
-  });
-
-  it("grava somente o perfil validado depois do código correto", async () => {
-    mocks.verifyEmailCode.mockResolvedValue(profile);
-
-    await expect(
-      verificarCodigo("challenge-sintético", "123 456"),
-    ).resolves.toEqual(profile);
-    expect(mocks.verifyEmailCode).toHaveBeenCalledWith(
-      "challenge-sintético",
-      "123456",
-    );
+    await expect(autenticarPorCpf("111.444.777-35"))
+      .resolves.toEqual(profile);
+    expect(mocks.loginWithCpf).toHaveBeenCalledWith("11144477735");
     expect(mocks.setSession).toHaveBeenCalledWith(profile);
   });
 

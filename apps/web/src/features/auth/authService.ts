@@ -1,9 +1,7 @@
 import {
   fetchSession,
+  loginWithCpf,
   logoutOnline,
-  requestEmailCode,
-  verifyEmailCode,
-  type OtpChallenge,
 } from "./authApi";
 import { onlyDigits } from "./loginValidation";
 import {
@@ -24,15 +22,8 @@ export async function initializeAuthSession(): Promise<AuthProfile | null> {
   return profile;
 }
 
-export function solicitarCodigo(identifier: string): Promise<OtpChallenge> {
-  return requestEmailCode(onlyDigits(identifier));
-}
-
-export async function verificarCodigo(
-  challengeId: string,
-  code: string,
-): Promise<AuthProfile> {
-  const profile = await verifyEmailCode(challengeId, onlyDigits(code));
+export async function autenticarPorCpf(cpf: string): Promise<AuthProfile> {
+  const profile = await loginWithCpf(onlyDigits(cpf));
   setSession(profile);
   return profile;
 }

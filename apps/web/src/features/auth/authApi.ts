@@ -5,39 +5,12 @@ import {
 } from "../../lib/api/apiClient";
 import type { AuthProfile } from "./authSession";
 
-export type OtpChallenge = {
-  challengeId: string;
-  expiresInSeconds: number;
-  message: string;
-};
-
-export async function requestEmailCode(
-  identifier: string,
-): Promise<OtpChallenge> {
-  const response = await apiFetch("/auth/email/challenges", {
+export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
+  const response = await apiFetch("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier }),
+    body: JSON.stringify({ cpf }),
   });
-  const body = await readResponseBody(response);
-  if (!response.ok) {
-    throw responseError(body, response.status);
-  }
-  return parseChallenge(body);
-}
-
-export async function verifyEmailCode(
-  challengeId: string,
-  code: string,
-): Promise<AuthProfile> {
-  const response = await apiFetch(
-    `/auth/email/challenges/${encodeURIComponent(challengeId)}/verify`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    },
-  );
   const body = await readResponseBody(response);
   if (!response.ok) {
     throw responseError(body, response.status);
@@ -69,29 +42,6 @@ export async function logoutOnline(): Promise<
     return "already-expired";
   }
   throw responseError(body, response.status);
-}
-
-function parseChallenge(body: unknown): OtpChallenge {
-  const data = record(body, "Desafio de autenticação inválido.");
-  const challengeId = requiredString(data.challengeId);
-  const message = requiredString(data.message);
-  const expiresInSeconds = data.expiresInSeconds;
-  if (
-    !challengeId ||
-    challengeId.length > 64 ||
-    !message ||
-    message.length > 500 ||
-    !Number.isInteger(expiresInSeconds) ||
-    (expiresInSeconds as number) < 1 ||
-    (expiresInSeconds as number) > 86_400
-  ) {
-    throw new Error("Desafio de autenticação inválido.");
-  }
-  return {
-    challengeId,
-    expiresInSeconds: expiresInSeconds as number,
-    message,
-  };
 }
 
 function parseProfile(body: unknown): AuthProfile {

@@ -14,9 +14,8 @@ vi.mock("../../lib/api/apiClient", () => ({
 
 import {
   fetchSession,
+  loginWithCpf,
   logoutOnline,
-  requestEmailCode,
-  verifyEmailCode,
 } from "./authApi";
 
 function response(status: number): Response {
@@ -38,45 +37,24 @@ describe("authApi", () => {
     mocks.responseErrorMessage.mockReturnValue("Falha controlada.");
   });
 
-  it("solicita o código usando o identificador genérico do contrato real", async () => {
-    mocks.apiFetch.mockResolvedValue(response(202));
-    mocks.readResponseBody.mockResolvedValue({
-      challengeId: "00000000-0000-4000-8000-000000000002",
-      expiresInSeconds: 600,
-      message: "Se os dados estiverem aptos, enviaremos um código.",
-    });
-
-    await expect(requestEmailCode("11144477735")).resolves.toMatchObject({
-      expiresInSeconds: 600,
-    });
-
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/auth/email/challenges",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ identifier: "11144477735" }),
-      }),
-    );
-  });
-
-  it("verifica o código em um caminho codificado e retorna apenas o perfil seguro", async () => {
+  it("entra com CPF e retorna somente o perfil seguro", async () => {
     mocks.apiFetch.mockResolvedValue(response(200));
     mocks.readResponseBody.mockResolvedValue({
       ...profile,
       token: "não deve atravessar o parser",
       cpfMascarado: "não deve atravessar o parser",
+      email: "não deve atravessar o parser",
     });
 
-    await expect(
-      verifyEmailCode("challenge/with/slash", "123456"),
-    ).resolves.toEqual(profile);
+    await expect(loginWithCpf("11144477735")).resolves.toEqual(profile);
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/auth/email/challenges/challenge%2Fwith%2Fslash/verify",
-      expect.objectContaining({
+      "/auth/login",
+      {
         method: "POST",
-        body: JSON.stringify({ code: "123456" }),
-      }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpf: "11144477735" }),
+      },
     );
   });
 
