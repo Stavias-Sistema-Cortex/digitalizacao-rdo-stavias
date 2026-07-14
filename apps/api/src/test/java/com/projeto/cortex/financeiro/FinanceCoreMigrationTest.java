@@ -19,6 +19,8 @@ class FinanceCoreMigrationTest {
 
         assertThat(sql)
                 .contains("CREATE TABLE finance_fornecedor")
+                .contains("CREATE TABLE finance_fornecedor_obra")
+                .contains("fk_fin_compra_fornecedor_obra")
                 .contains("CREATE TABLE finance_centro_custo")
                 .contains("CREATE TABLE finance_categoria")
                 .contains("CREATE TABLE finance_status_definicao")

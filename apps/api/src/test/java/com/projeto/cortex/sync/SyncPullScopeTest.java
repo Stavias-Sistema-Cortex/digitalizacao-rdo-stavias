@@ -59,6 +59,7 @@ class SyncPullScopeTest {
         assertThat(filtro.parametros())
                 .contains("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO")
                 .contains("ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR")
+                .contains("SOLICITACAO_COMPRA", "COMPRA")
                 .contains("PERMISSAO_FINANCEIRA");
     }
 

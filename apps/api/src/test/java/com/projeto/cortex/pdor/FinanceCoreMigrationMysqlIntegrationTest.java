@@ -54,6 +54,17 @@ class FinanceCoreMigrationMysqlIntegrationTest {
         );
         jdbc.update(
                 """
+                INSERT INTO finance_fornecedor_obra (
+                    id, fornecedor_id, obra_id, criado_por
+                ) VALUES (?, ?, ?, ?)
+                """,
+                UUID.randomUUID().toString(),
+                supplierId,
+                obraId,
+                alphaId
+        );
+        jdbc.update(
+                """
                 INSERT INTO finance_centro_custo (
                     id, obra_id, codigo, nome, criado_por
                 ) VALUES (?, ?, 'CC-01', 'Pavimentação', ?)

@@ -40,6 +40,37 @@ CREATE INDEX idx_fin_fornecedor_nome
 CREATE INDEX idx_fin_fornecedor_status
     ON finance_fornecedor (status, atualizado_em);
 
+CREATE TABLE finance_fornecedor_obra (
+    id CHAR(36) NOT NULL,
+    fornecedor_id CHAR(36) NOT NULL,
+    obra_id CHAR(36) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ATIVO',
+    criado_por CHAR(36) NOT NULL,
+    criado_em DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    arquivado_por CHAR(36) NULL,
+    arquivado_em DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uq_fin_fornecedor_obra UNIQUE (fornecedor_id, obra_id),
+    CONSTRAINT fk_fin_fornecedor_obra_fornecedor
+        FOREIGN KEY (fornecedor_id) REFERENCES finance_fornecedor(id),
+    CONSTRAINT fk_fin_fornecedor_obra_obra
+        FOREIGN KEY (obra_id) REFERENCES obra(id),
+    CONSTRAINT fk_fin_fornecedor_obra_criado_por
+        FOREIGN KEY (criado_por) REFERENCES colaborador(id),
+    CONSTRAINT fk_fin_fornecedor_obra_arquivado_por
+        FOREIGN KEY (arquivado_por) REFERENCES colaborador(id),
+    CONSTRAINT chk_fin_fornecedor_obra_status
+        CHECK (status IN ('ATIVO', 'ARQUIVADO')),
+    CONSTRAINT chk_fin_fornecedor_obra_arquivo
+        CHECK (
+            (status = 'ATIVO' AND arquivado_em IS NULL)
+            OR (status = 'ARQUIVADO' AND arquivado_em IS NOT NULL)
+        )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE INDEX idx_fin_fornecedor_obra_scope
+    ON finance_fornecedor_obra (obra_id, status, fornecedor_id);
+
 CREATE TABLE finance_centro_custo (
     id CHAR(36) NOT NULL,
     obra_id CHAR(36) NOT NULL,
@@ -234,8 +265,9 @@ CREATE TABLE finance_solicitacao_compra (
     CONSTRAINT fk_fin_solicitacao_status_obra
         FOREIGN KEY (status_id, obra_id, agregado_tipo)
         REFERENCES finance_status_definicao (id, obra_id, agregado_tipo),
-    CONSTRAINT fk_fin_solicitacao_fornecedor
-        FOREIGN KEY (fornecedor_id) REFERENCES finance_fornecedor(id),
+    CONSTRAINT fk_fin_solicitacao_fornecedor_obra
+        FOREIGN KEY (fornecedor_id, obra_id)
+        REFERENCES finance_fornecedor_obra (fornecedor_id, obra_id),
     CONSTRAINT fk_fin_solicitacao_solicitante
         FOREIGN KEY (solicitante_id) REFERENCES colaborador(id),
     CONSTRAINT fk_fin_solicitacao_responsavel
@@ -359,8 +391,9 @@ CREATE TABLE finance_compra (
     CONSTRAINT fk_fin_compra_status_obra
         FOREIGN KEY (status_id, obra_id, agregado_tipo)
         REFERENCES finance_status_definicao (id, obra_id, agregado_tipo),
-    CONSTRAINT fk_fin_compra_fornecedor
-        FOREIGN KEY (fornecedor_id) REFERENCES finance_fornecedor(id),
+    CONSTRAINT fk_fin_compra_fornecedor_obra
+        FOREIGN KEY (fornecedor_id, obra_id)
+        REFERENCES finance_fornecedor_obra (fornecedor_id, obra_id),
     CONSTRAINT fk_fin_compra_responsavel
         FOREIGN KEY (responsavel_compra_id) REFERENCES colaborador(id),
     CONSTRAINT fk_fin_compra_criado_por
@@ -527,6 +560,8 @@ CREATE TABLE finance_aprovacao (
     compra_id CHAR(36) NULL,
     obra_id CHAR(36) NOT NULL,
     regra_id CHAR(36) NOT NULL,
+    status_origem_id CHAR(36) NOT NULL,
+    status_destino_id CHAR(36) NOT NULL,
     moeda CHAR(3) NOT NULL,
     valor_submetido DECIMAL(19,4) NOT NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'PENDENTE',
@@ -542,6 +577,12 @@ CREATE TABLE finance_aprovacao (
     CONSTRAINT fk_fin_aprovacao_regra_obra
         FOREIGN KEY (regra_id, obra_id)
         REFERENCES finance_regra_aprovacao(id, obra_id),
+    CONSTRAINT fk_fin_aprovacao_status_origem_obra
+        FOREIGN KEY (status_origem_id, obra_id, agregado_tipo)
+        REFERENCES finance_status_definicao(id, obra_id, agregado_tipo),
+    CONSTRAINT fk_fin_aprovacao_status_destino_obra
+        FOREIGN KEY (status_destino_id, obra_id, agregado_tipo)
+        REFERENCES finance_status_definicao(id, obra_id, agregado_tipo),
     CONSTRAINT fk_fin_aprovacao_solicitacao_obra
         FOREIGN KEY (solicitacao_id, obra_id)
         REFERENCES finance_solicitacao_compra(id, obra_id),
@@ -643,11 +684,11 @@ CREATE TABLE finance_status_historico (
     CONSTRAINT fk_fin_historico_obra
         FOREIGN KEY (obra_id) REFERENCES obra(id),
     CONSTRAINT fk_fin_historico_status_anterior
-        FOREIGN KEY (status_anterior_id, obra_id)
-        REFERENCES finance_status_definicao(id, obra_id),
+        FOREIGN KEY (status_anterior_id, obra_id, entidade_tipo)
+        REFERENCES finance_status_definicao(id, obra_id, agregado_tipo),
     CONSTRAINT fk_fin_historico_status_novo
-        FOREIGN KEY (status_novo_id, obra_id)
-        REFERENCES finance_status_definicao(id, obra_id),
+        FOREIGN KEY (status_novo_id, obra_id, entidade_tipo)
+        REFERENCES finance_status_definicao(id, obra_id, agregado_tipo),
     CONSTRAINT fk_fin_historico_ator
         FOREIGN KEY (ator_id) REFERENCES colaborador(id),
     CONSTRAINT chk_fin_historico_entidade

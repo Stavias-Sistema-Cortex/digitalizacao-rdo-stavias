@@ -156,6 +156,7 @@ public class SyncService {
             "CENTRO_CUSTO",
             "FORNECEDOR",
             "SOLICITACAO_COMPRA",
+            "COMPRA",
             "PEDIDO_COMPRA",
             "REGRA_APROVACAO",
             "DECISAO_APROVACAO",
