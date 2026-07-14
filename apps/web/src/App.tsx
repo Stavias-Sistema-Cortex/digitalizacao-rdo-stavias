@@ -55,7 +55,7 @@ function App() {
   const [session, setSession] =
     useState(() => getSession());
 
-  useAutomaticSync();
+  useAutomaticSync(session !== null);
 
   useEffect(() => {
     function refreshSession() {
@@ -66,24 +66,15 @@ function App() {
       AUTH_SESSION_CHANGED_EVENT,
       refreshSession,
     );
-    window.addEventListener(
-      "storage",
-      refreshSession,
-    );
-
     return () => {
       window.removeEventListener(
         AUTH_SESSION_CHANGED_EVENT,
         refreshSession,
       );
-      window.removeEventListener(
-        "storage",
-        refreshSession,
-      );
     };
   }, []);
 
-  // Sem sessão local o acesso é bloqueado: exibe o login.
+  // Sem sessão online em memória, o acesso exige novo OTP.
   if (!session) {
     return <LoginPage />;
   }

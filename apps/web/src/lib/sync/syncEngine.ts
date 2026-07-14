@@ -1,4 +1,4 @@
-import { getSession } from "../../features/auth/authSession";
+import { hasOnlineSession } from "../../features/auth/authSession";
 import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
 import { acknowledgeCurrentCursor } from "./ackCursor";
@@ -24,7 +24,7 @@ async function executeSync(): Promise<SyncRunSummary> {
     );
   }
 
-  if (!getSession()?.token) {
+  if (!hasOnlineSession()) {
     throw new Error(
       "Faça login novamente para sincronizar com o servidor.",
     );

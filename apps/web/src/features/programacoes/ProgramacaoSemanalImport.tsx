@@ -617,9 +617,7 @@ function buildRdoDraftFromProgramacao(
       lines,
     ),
     preenchidoPor:
-      session?.nome?.trim() ||
-      session?.cpfMascarado ||
-      "",
+      session?.nome?.trim() || "",
     encarregadoObra:
       clean(encarregado?.nome) ||
       imported.encarregadoExtraido,

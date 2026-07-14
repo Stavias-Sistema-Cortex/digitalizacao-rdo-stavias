@@ -468,10 +468,7 @@ export function TarefasPage() {
 
   const ator: TarefaAtor = {
     colaboradorId: session?.colaboradorId ?? null,
-    nome:
-      session?.nome ??
-      session?.cpfMascarado ??
-      "Colaborador",
+    nome: session?.nome ?? "Colaborador",
   };
 
   // Reconhece a pessoa digitada mesmo com capslock ou sem

@@ -1678,6 +1678,14 @@ textarea:focus {
   cursor: pointer;
 }
 
+.profile-menu-error {
+  max-width: 240px;
+  margin: 8px 0 0;
+  color: #9f2d23;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .badge-soon {
   margin-left: auto;
   font-size: 0.55rem;

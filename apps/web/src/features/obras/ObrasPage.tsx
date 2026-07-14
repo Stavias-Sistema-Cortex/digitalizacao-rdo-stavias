@@ -220,15 +220,26 @@ export function ObrasPage() {
   );
 
   useEffect(() => {
+    let cancelled = false;
     if (!focusedObraId) {
-      setTimeline([]);
-      setTimelineError(null);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setTimeline([]);
+          setTimelineError(null);
+          setIsTimelineLoading(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
-    setIsTimelineLoading(true);
-    setTimelineError(null);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setIsTimelineLoading(true);
+        setTimelineError(null);
+      }
+    });
 
     buscarTimelineObra(focusedObraId)
       .then((items) => {
@@ -258,15 +269,26 @@ export function ObrasPage() {
   }, [focusedObraId]);
 
   useEffect(() => {
+    let cancelled = false;
     if (!focusedObraId) {
-      setPdor(null);
-      setPdorError(null);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setPdor(null);
+          setPdorError(null);
+          setIsPdorLoading(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
-    setIsPdorLoading(true);
-    setPdorError(null);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setIsPdorLoading(true);
+        setPdorError(null);
+      }
+    });
 
     buscarPdorAtual(focusedObraId)
       .then((result) => {

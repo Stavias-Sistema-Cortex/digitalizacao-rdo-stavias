@@ -144,6 +144,17 @@
   background: var(--yellow);
 }
 
+.login__challenge-message {
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 6%);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 /* ---------- Formulário ---------- */
 
 .login__form {
@@ -203,6 +214,19 @@
 
 .cortex-login .login-field__input:disabled {
   opacity: 0.75;
+}
+
+.cortex-login .login-field__input--code {
+  text-align: center;
+  letter-spacing: 0.28em;
+  font-size: 1.2rem;
+}
+
+.login__code-expiry {
+  margin: 9px 2px 0;
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 /* Estado de erro do campo */
@@ -280,6 +304,31 @@
   border: 2.5px solid rgb(20 60 54 / 30%);
   border-top-color: var(--ink-on-yellow);
   animation: login-spin 0.7s linear infinite;
+}
+
+.login__secondary-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.cortex-login .login__text-action {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.cortex-login .login__text-action:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* Mensagem de erro de autenticação (nível do formulário) */

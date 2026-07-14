@@ -6,6 +6,7 @@ import App from "./App.tsx";
 import "./index.css";
 
 import { initializeCortexDb } from "./lib/db/cortexDb";
+import { initializeAuthSession } from "./features/auth/authService";
 
 registerSW({
   immediate: true,
@@ -19,6 +20,12 @@ registerSW({
 
 async function bootstrap(): Promise<void> {
   await initializeCortexDb();
+  try {
+    await initializeAuthSession();
+  } catch {
+    // Sem sessão online válida, o App apresenta o login. Dados locais ficam
+    // intactos e o desbloqueio offline será tratado pelo cofre PRF dedicado.
+  }
 
   const rootElement = document.getElementById("root");
 

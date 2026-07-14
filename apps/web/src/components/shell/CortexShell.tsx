@@ -9,11 +9,8 @@ import { useNavigate } from "react-router-dom";
 
 import staviasTile from "../../assets/stavias-s-tile.png";
 import { SyncStatusBanner } from "../SyncStatusBanner";
-import {
-  clearSession,
-  getSession,
-  isAlfa,
-} from "../../features/auth/authSession";
+import { getSession, isAlfa } from "../../features/auth/authSession";
+import { encerrarSessao } from "../../features/auth/authService";
 import {
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_KEY,
@@ -77,6 +74,8 @@ export function CortexShell({
     useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] =
     useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const resizeStartRef = useRef<{
     pointerId: number;
     startX: number;
@@ -165,9 +164,21 @@ export function CortexShell({
     persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
   }
 
-  function handleLogout() {
-    clearSession();
-    window.location.assign("/");
+  async function handleLogout() {
+    if (isLoggingOut) {
+      return;
+    }
+    setIsLoggingOut(true);
+    setLogoutError("");
+    try {
+      await encerrarSessao();
+      window.location.assign("/");
+    } catch {
+      setLogoutError(
+        "Não foi possível encerrar a sessão no servidor. Verifique a conexão e tente novamente.",
+      );
+      setIsLoggingOut(false);
+    }
   }
 
   return (
@@ -423,9 +434,6 @@ export function CortexShell({
               <p className="profile-menu-name">
                 {session?.nome ?? "Colaborador"}
               </p>
-              <p className="profile-menu-cpf">
-                {session?.cpfMascarado ?? ""}
-              </p>
               <p className="profile-menu-scope">
                 {alfa
                   ? "Escopo global (Alfa)"
@@ -434,10 +442,18 @@ export function CortexShell({
               <button
                 type="button"
                 className="profile-menu-logout"
-                onClick={handleLogout}
+                onClick={() => {
+                  void handleLogout();
+                }}
+                disabled={isLoggingOut}
               >
-                Sair
+                {isLoggingOut ? "Saindo..." : "Sair"}
               </button>
+              {logoutError ? (
+                <p className="profile-menu-error" role="alert">
+                  {logoutError}
+                </p>
+              ) : null}
             </div>
           )}
         </div>

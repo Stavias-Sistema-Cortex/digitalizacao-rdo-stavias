@@ -1,57 +1,44 @@
-import { loginOnline } from "./authApi";
+import {
+  fetchSession,
+  logoutOnline,
+  requestEmailCode,
+  verifyEmailCode,
+  type OtpChallenge,
+} from "./authApi";
 import { onlyDigits } from "./loginValidation";
-import { setSession, type AuthSession } from "./authSession";
+import {
+  clearSession,
+  purgeLegacyAuthStorage,
+  setSession,
+  type AuthProfile,
+} from "./authSession";
 
-export type AuthOutcome =
-  | { ok: true; session: AuthSession }
-  | { ok: false; message: string };
-
-function mascararCpf(cpfDigits: string): string {
-  return cpfDigits.length === 11
-    ? `***.***.***-${cpfDigits.slice(9)}`
-    : cpfDigits;
-}
-
-/**
- * Mantém o contrato da tela enquanto o login verificável é implementado.
- * Nenhuma falha ou resposta não-sucesso cria uma sessão local.
- */
-export async function autenticar(cpf: string): Promise<AuthOutcome> {
-  const cpfDigits = onlyDigits(cpf);
-
-  try {
-    const online = await loginOnline(cpfDigits);
-
-    if (!online.ok) {
-      return {
-        ok: false,
-        message: online.message,
-      };
-    }
-
-    const session: AuthSession = {
-      colaboradorId: online.profile.colaboradorId,
-      nome: online.profile.nome,
-      cpfMascarado: online.profile.cpfMascarado ?? mascararCpf(cpfDigits),
-      cpf: cpfDigits,
-      perfil: online.profile.perfil,
-      papelAcesso: online.profile.papelAcesso,
-      token: online.profile.token,
-      origem: "online",
-      autenticadoEm: new Date().toISOString(),
-    };
-    setSession(session);
-    return { ok: true, session };
-  } catch {
-    return {
-      ok: false,
-      message:
-        "Não foi possível autenticar agora. Verifique a conexão e tente novamente.",
-    };
+export async function initializeAuthSession(): Promise<AuthProfile | null> {
+  purgeLegacyAuthStorage();
+  const profile = await fetchSession();
+  if (profile) {
+    setSession(profile);
+  } else {
+    clearSession();
   }
+  return profile;
 }
 
-/** Compatibilidade temporária: filtros Bloom não são mais distribuídos. */
-export async function sincronizarFiltroOffline(): Promise<void> {
-  return Promise.resolve();
+export function solicitarCodigo(identifier: string): Promise<OtpChallenge> {
+  return requestEmailCode(onlyDigits(identifier));
+}
+
+export async function verificarCodigo(
+  challengeId: string,
+  code: string,
+): Promise<AuthProfile> {
+  const profile = await verifyEmailCode(challengeId, onlyDigits(code));
+  setSession(profile);
+  return profile;
+}
+
+/** Só limpa a memória depois que o servidor revoga ou confirma expiração. */
+export async function encerrarSessao(): Promise<void> {
+  await logoutOnline();
+  clearSession();
 }

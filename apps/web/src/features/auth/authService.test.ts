@@ -1,102 +1,100 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  cpfPodeEstarNoFiltro: vi.fn(),
-  fetchCpfFilter: vi.fn(),
-  getCachedFilter: vi.fn(),
-  loginOnline: vi.fn(),
-  setCachedFilter: vi.fn(),
+  clearSession: vi.fn(),
+  fetchSession: vi.fn(),
+  logoutOnline: vi.fn(),
+  purgeLegacyAuthStorage: vi.fn(),
+  requestEmailCode: vi.fn(),
   setSession: vi.fn(),
+  verifyEmailCode: vi.fn(),
 }));
 
 vi.mock("./authApi", () => ({
-  fetchCpfFilter: mocks.fetchCpfFilter,
-  loginOnline: mocks.loginOnline,
-}));
-
-vi.mock("./cpfFilter", () => ({
-  cpfPodeEstarNoFiltro: mocks.cpfPodeEstarNoFiltro,
-  getCachedFilter: mocks.getCachedFilter,
-  setCachedFilter: mocks.setCachedFilter,
+  fetchSession: mocks.fetchSession,
+  logoutOnline: mocks.logoutOnline,
+  requestEmailCode: mocks.requestEmailCode,
+  verifyEmailCode: mocks.verifyEmailCode,
 }));
 
 vi.mock("./authSession", () => ({
+  clearSession: mocks.clearSession,
+  purgeLegacyAuthStorage: mocks.purgeLegacyAuthStorage,
   setSession: mocks.setSession,
 }));
 
-import { autenticar, sincronizarFiltroOffline } from "./authService";
+import {
+  encerrarSessao,
+  initializeAuthSession,
+  solicitarCodigo,
+  verificarCodigo,
+} from "./authService";
 
-const positiveCachedFilter = {
-  algoritmo: "sha256-double/v1",
-  m: 8,
-  k: 1,
-  tamanho: 1,
-  bits: "/w==",
-  geradoEm: "2026-07-13T00:00:00Z",
+const profile = {
+  colaboradorId: "00000000-0000-4000-8000-000000000001",
+  nome: "Colaborador Sintético",
+  papelAcesso: "BETA" as const,
+  expiraEm: "2026-07-14T12:00:00Z",
 };
 
-describe("autenticar", () => {
+describe("authService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("exibe o encerramento do login legado sem cair no Bloom cache", async () => {
-    mocks.loginOnline.mockResolvedValue({
-      ok: false,
-      status: 410,
-      message:
-        "Login por CPF desativado. Use a verificação por e-mail.",
+  it("purga credenciais legadas antes de consultar a sessão online", async () => {
+    const order: string[] = [];
+    mocks.purgeLegacyAuthStorage.mockImplementation(() => order.push("purge"));
+    mocks.fetchSession.mockImplementation(async () => {
+      order.push("fetch");
+      return profile;
     });
-    mocks.getCachedFilter.mockReturnValue(positiveCachedFilter);
-    mocks.cpfPodeEstarNoFiltro.mockResolvedValue(true);
 
-    await expect(autenticar("111.444.777-35")).resolves.toEqual({
-      ok: false,
-      message:
-        "Login por CPF desativado. Use a verificação por e-mail.",
-    });
-    expect(mocks.getCachedFilter).not.toHaveBeenCalled();
-    expect(mocks.cpfPodeEstarNoFiltro).not.toHaveBeenCalled();
+    await expect(initializeAuthSession()).resolves.toEqual(profile);
+    expect(order).toEqual(["purge", "fetch"]);
+    expect(mocks.setSession).toHaveBeenCalledWith(profile);
+  });
+
+  it("solicitar código não cria uma sessão local", async () => {
+    const challenge = {
+      challengeId: "00000000-0000-4000-8000-000000000002",
+      expiresInSeconds: 600,
+      message: "Mensagem genérica.",
+    };
+    mocks.requestEmailCode.mockResolvedValue(challenge);
+
+    await expect(solicitarCodigo("111.444.777-35")).resolves.toEqual(
+      challenge,
+    );
     expect(mocks.setSession).not.toHaveBeenCalled();
   });
 
-  it("falha sem criar sessão quando a rede está indisponível", async () => {
-    mocks.loginOnline.mockRejectedValue(new TypeError("network down"));
-    mocks.getCachedFilter.mockReturnValue(positiveCachedFilter);
-    mocks.cpfPodeEstarNoFiltro.mockResolvedValue(true);
+  it("grava somente o perfil validado depois do código correto", async () => {
+    mocks.verifyEmailCode.mockResolvedValue(profile);
 
-    await expect(autenticar("111.444.777-35")).resolves.toEqual({
-      ok: false,
-      message:
-        "Não foi possível autenticar agora. Verifique a conexão e tente novamente.",
-    });
-    expect(mocks.getCachedFilter).not.toHaveBeenCalled();
-    expect(mocks.cpfPodeEstarNoFiltro).not.toHaveBeenCalled();
-    expect(mocks.setSession).not.toHaveBeenCalled();
+    await expect(
+      verificarCodigo("challenge-sintético", "123 456"),
+    ).resolves.toEqual(profile);
+    expect(mocks.verifyEmailCode).toHaveBeenCalledWith(
+      "challenge-sintético",
+      "123456",
+    );
+    expect(mocks.setSession).toHaveBeenCalledWith(profile);
   });
 
-  it("falha em 5xx mesmo com um Bloom cache positivo", async () => {
-    mocks.loginOnline.mockResolvedValue({
-      ok: false,
-      status: 503,
-      message: "Serviço temporariamente indisponível.",
-    });
-    mocks.getCachedFilter.mockReturnValue(positiveCachedFilter);
-    mocks.cpfPodeEstarNoFiltro.mockResolvedValue(true);
+  it("não limpa a memória quando a rede impede revogar a sessão", async () => {
+    mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
-    await expect(autenticar("111.444.777-35")).resolves.toEqual({
-      ok: false,
-      message: "Serviço temporariamente indisponível.",
-    });
-    expect(mocks.getCachedFilter).not.toHaveBeenCalled();
-    expect(mocks.cpfPodeEstarNoFiltro).not.toHaveBeenCalled();
-    expect(mocks.setSession).not.toHaveBeenCalled();
+    await expect(encerrarSessao()).rejects.toThrow("offline");
+    expect(mocks.clearSession).not.toHaveBeenCalled();
   });
 
-  it("mantém o sincronizador legado como no-op seguro", async () => {
-    await sincronizarFiltroOffline();
+  it("limpa a memória após revogação ou sessão já expirada", async () => {
+    mocks.logoutOnline.mockResolvedValueOnce("revoked");
+    await encerrarSessao();
+    mocks.logoutOnline.mockResolvedValueOnce("already-expired");
+    await encerrarSessao();
 
-    expect(mocks.fetchCpfFilter).not.toHaveBeenCalled();
-    expect(mocks.setCachedFilter).not.toHaveBeenCalled();
+    expect(mocks.clearSession).toHaveBeenCalledTimes(2);
   });
 });

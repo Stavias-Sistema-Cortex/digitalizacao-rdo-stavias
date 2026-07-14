@@ -145,9 +145,7 @@ export function RdoWorkspacePage() {
       const session = getSession();
       const imported = await importarRdoArquivo(
         file,
-        session?.nome ??
-          session?.cpfMascarado ??
-          "",
+        session?.nome ?? "",
       );
 
       setMode({
