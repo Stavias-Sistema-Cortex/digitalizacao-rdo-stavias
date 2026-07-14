@@ -81,7 +81,8 @@ public class SyncService {
                 financialAccessService.allowedObraIds(
                         currentUserId,
                         FinancialPermission.FINANCEIRO_VISUALIZAR
-                )
+                ),
+                currentUserId
         );
 
         List<Object> parametros = new ArrayList<>();
@@ -167,6 +168,12 @@ public class SyncService {
     private static final List<String> EVENTOS_FINANCEIROS_ALFA =
             List.of("PERMISSAO_FINANCEIRA");
 
+    private static final List<String> EVENTOS_MENSAGENS = List.of(
+            "CONVERSA",
+            "MENSAGEM",
+            "MENSAGEM_ANEXO"
+    );
+
     /** Filtro de escopo do pull: condição SQL adicional e seus parâmetros. */
     record FiltroPull(String condicaoSql, List<Object> parametros) {
     }
@@ -180,6 +187,18 @@ public class SyncService {
     FiltroPull filtroPorEscopo(
             Optional<Set<String>> obrasAutorizadas,
             Set<String> obrasFinanceirasAutorizadas
+    ) {
+        return filtroPorEscopo(
+                obrasAutorizadas,
+                obrasFinanceirasAutorizadas,
+                null
+        );
+    }
+
+    FiltroPull filtroPorEscopo(
+            Optional<Set<String>> obrasAutorizadas,
+            Set<String> obrasFinanceirasAutorizadas,
+            String currentUserId
     ) {
         if (obrasAutorizadas.isEmpty()) {
             return new FiltroPull("", List.of());
@@ -206,10 +225,13 @@ public class SyncService {
 
         List<Object> scopedParameters = new ArrayList<>();
         String tiposRestritos = placeholders(
-                EVENTOS_FINANCEIROS.size() + EVENTOS_FINANCEIROS_ALFA.size()
+                EVENTOS_FINANCEIROS.size()
+                        + EVENTOS_FINANCEIROS_ALFA.size()
+                        + EVENTOS_MENSAGENS.size()
         );
         scopedParameters.addAll(EVENTOS_FINANCEIROS);
         scopedParameters.addAll(EVENTOS_FINANCEIROS_ALFA);
+        scopedParameters.addAll(EVENTOS_MENSAGENS);
         scopedParameters.addAll(parametros);
 
         StringBuilder condition = new StringBuilder(
@@ -228,6 +250,44 @@ public class SyncService {
                     .append("))");
             scopedParameters.addAll(EVENTOS_FINANCEIROS);
             scopedParameters.addAll(financialScope);
+        }
+        if (currentUserId != null && !currentUserId.isBlank()) {
+            condition.append(" OR (tipo_entidade IN (")
+                    .append(placeholders(EVENTOS_MENSAGENS.size()))
+                    .append(") AND EXISTS (")
+                    .append("SELECT 1 ")
+                    .append("FROM cortex_evento_visibilidade cev ")
+                    .append("JOIN conversa cv ON cv.id = cev.escopo_id ")
+                    .append("JOIN conversa_participante cp ")
+                    .append("ON cp.conversa_id = cv.id ")
+                    .append("AND cp.colaborador_id = ? ")
+                    .append("AND cp.status = 'ATIVO' ")
+                    .append("AND cp.removido_em IS NULL ")
+                    .append("AND cp.deletado_em IS NULL ")
+                    .append("WHERE cev.evento_id = cortex_evento_operacional.id ")
+                    .append("AND cev.escopo_tipo = 'CONVERSATION_PARTICIPANT' ")
+                    .append("AND cv.status = 'ATIVA' ")
+                    .append("AND cv.deletado_em IS NULL ")
+                    .append("AND (cv.tipo IN ('DIRETA', 'GRUPO') ")
+                    .append("OR (cv.tipo = 'OBRA' AND EXISTS (")
+                    .append("SELECT 1 FROM vinculo_colaborador_obra v ")
+                    .append("WHERE v.obra_id = cv.obra_id ")
+                    .append("AND v.colaborador_id = ? AND v.status = 'ATIVO')) ")
+                    .append("OR (cv.tipo = 'EQUIPE' AND EXISTS (")
+                    .append("SELECT 1 FROM equipe e ")
+                    .append("JOIN equipe_membro em ON em.equipe_id = e.id ")
+                    .append("JOIN vinculo_colaborador_obra v ON v.obra_id = e.obra_id ")
+                    .append("WHERE e.id = cv.equipe_id AND e.obra_id = cv.obra_id ")
+                    .append("AND e.status = 'ATIVA' AND e.deletado_em IS NULL ")
+                    .append("AND em.colaborador_id = ? AND em.status = 'ATIVO' ")
+                    .append("AND em.removido_em IS NULL AND em.deletado_em IS NULL ")
+                    .append("AND v.colaborador_id = ? AND v.status = 'ATIVO')))" )
+                    .append("))");
+            scopedParameters.addAll(EVENTOS_MENSAGENS);
+            scopedParameters.add(currentUserId);
+            scopedParameters.add(currentUserId);
+            scopedParameters.add(currentUserId);
+            scopedParameters.add(currentUserId);
         }
         condition.append(")");
 
@@ -490,7 +550,13 @@ public class SyncService {
         );
         validarBaseVersao(mutacao, handler);
 
-        AppliedSyncMutation applied = handler.apply(mutacao);
+        AppliedSyncMutation applied = handler.apply(
+                mutacao,
+                new SyncMutationContext(
+                        currentUserService.requireUserId(),
+                        dispositivoId
+                )
+        );
         requireAppliedContract(handler, applied);
         long commitSeq = commitSeqEntidade(
                 applied.entityType(),

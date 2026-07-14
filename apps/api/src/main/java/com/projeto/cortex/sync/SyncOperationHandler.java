@@ -10,5 +10,8 @@ public interface SyncOperationHandler {
 
     boolean requiresBaseVersion(String operation);
 
-    AppliedSyncMutation apply(SyncPushRequest.MutacaoCliente mutation);
+    AppliedSyncMutation apply(
+            SyncPushRequest.MutacaoCliente mutation,
+            SyncMutationContext context
+    );
 }

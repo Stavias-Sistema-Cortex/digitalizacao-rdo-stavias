@@ -63,7 +63,10 @@ class SyncServiceAuthorizationTest {
                 "Você não possui permissão para acessar esta obra."
         )).when(currentUserService).requireWorksiteAccess("obra-proibida");
 
-        assertThatThrownBy(() -> handler.apply(criarRdo("obra-proibida")))
+        assertThatThrownBy(() -> handler.apply(
+                criarRdo("obra-proibida"),
+                new SyncMutationContext("usuario", "device")
+        ))
                 .isInstanceOf(ResponseStatusException.class);
 
         verify(rdoService, never()).criarRascunho(any(RdoCreateRequest.class));
@@ -77,7 +80,10 @@ class SyncServiceAuthorizationTest {
         when(rdoService.criarRascunho(any(RdoCreateRequest.class)))
                 .thenReturn(response);
 
-        handler.apply(criarRdo("obra-vinculada"));
+        handler.apply(
+                criarRdo("obra-vinculada"),
+                new SyncMutationContext("usuario", "device")
+        );
 
         verify(currentUserService).requireWorksiteAccess("obra-vinculada");
         verify(rdoService).criarRascunho(any(RdoCreateRequest.class));

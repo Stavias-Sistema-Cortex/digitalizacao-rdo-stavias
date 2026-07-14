@@ -73,7 +73,8 @@ class SyncOperationRegistryTest {
 
             @Override
             public AppliedSyncMutation apply(
-                    SyncPushRequest.MutacaoCliente mutation
+                    SyncPushRequest.MutacaoCliente mutation,
+                    SyncMutationContext context
             ) {
                 return new AppliedSyncMutation(
                         entityType,

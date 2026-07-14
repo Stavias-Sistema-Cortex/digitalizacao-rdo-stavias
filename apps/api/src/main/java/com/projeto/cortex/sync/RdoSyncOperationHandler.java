@@ -68,7 +68,8 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
 
     @Override
     public AppliedSyncMutation apply(
-            SyncPushRequest.MutacaoCliente mutation
+            SyncPushRequest.MutacaoCliente mutation,
+            SyncMutationContext context
     ) {
         RdoResponse response = switch (mutation.operacao()) {
             case "CRIAR_RDO" -> create(mutation);

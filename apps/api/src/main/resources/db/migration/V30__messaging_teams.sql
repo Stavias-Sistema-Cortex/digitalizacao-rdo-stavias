@@ -111,6 +111,7 @@ CREATE TABLE conversa (
                 AND equipe_id IS NULL)
             OR (tipo = 'GRUPO'
                 AND chave_participantes_direta IS NULL
+                AND obra_id IS NULL
                 AND equipe_id IS NULL)
             OR (tipo = 'EQUIPE'
                 AND chave_participantes_direta IS NULL
@@ -205,9 +206,7 @@ CREATE TABLE mensagem (
     CONSTRAINT fk_mensagem_deleted_by
         FOREIGN KEY (deletado_por) REFERENCES colaborador(id),
     CONSTRAINT chk_mensagem_status
-        CHECK (status IN ('ATIVA', 'EDITADA', 'EXCLUIDA')),
-    CONSTRAINT chk_mensagem_conteudo
-        CHECK (status = 'EXCLUIDA' OR corpo IS NOT NULL)
+        CHECK (status IN ('ATIVA', 'EDITADA', 'EXCLUIDA'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_mensagem_conversa_criado

@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -105,21 +106,39 @@ public class StoredObjectService {
     }
 
     public StoredObjectDownload download(String objectId) {
-        String id = requireId(objectId);
         String currentUserId = currentUserService.requireUserId();
+        return downloadAuthorized(objectId, object -> {
+            if (!currentUserId.equals(object.ownerId())) {
+                if (object.obraId() == null) {
+                    currentUserService.requireSelfOrAdmin(object.ownerId());
+                } else {
+                    currentUserService.requireWorksiteAccess(object.obraId());
+                }
+            }
+        });
+    }
+
+    /**
+     * Abre um objeto depois que o domínio chamador comprova sua própria
+     * fronteira de autorização. Usado, por exemplo, por anexos de conversa
+     * direta, onde ser participante ativo é mais preciso que ser o uploader.
+     */
+    public StoredObjectDownload downloadAuthorized(
+            String objectId,
+            Consumer<StoredObjectRecord> authorization
+    ) {
+        String id = requireId(objectId);
         StoredObjectRecord object = repository.findAvailableById(id)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND,
                         "Objeto não encontrado."
                 ));
-
-        if (!currentUserId.equals(object.ownerId())) {
-            if (object.obraId() == null) {
-                currentUserService.requireSelfOrAdmin(object.ownerId());
-            } else {
-                currentUserService.requireWorksiteAccess(object.obraId());
-            }
+        if (authorization == null) {
+            throw new IllegalArgumentException(
+                    "Autorização do domínio é obrigatória."
+            );
         }
+        authorization.accept(object);
 
         ObjectStorageContent content;
         try {

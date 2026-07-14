@@ -75,4 +75,27 @@ class SyncPullScopeTest {
                 .contains("ATIVO", "EQUIPAMENTO", "SERVICO")
                 .contains("PERMISSAO_FINANCEIRA");
     }
+
+    @Test
+    void betaRecebeMensagemSomenteComParticipacaoEVinculoAtuais() {
+        SyncService.FiltroPull filtro = service.filtroPorEscopo(
+                Optional.of(Set.of("obra-1")),
+                Set.of(),
+                "colaborador-1"
+        );
+
+        assertThat(filtro.condicaoSql())
+                .contains("cortex_evento_visibilidade")
+                .contains("CONVERSATION_PARTICIPANT")
+                .contains("conversa_participante")
+                .contains("vinculo_colaborador_obra")
+                .contains("equipe_membro");
+        assertThat(filtro.parametros())
+                .contains(
+                        "CONVERSA",
+                        "MENSAGEM",
+                        "MENSAGEM_ANEXO",
+                        "colaborador-1"
+                );
+    }
 }

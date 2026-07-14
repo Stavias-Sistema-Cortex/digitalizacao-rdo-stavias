@@ -106,6 +106,59 @@ public class CortexOperationalMemoryService {
             Integer schemaVersion,
             Map<String, Object> payload
     ) {
+        return registrarEventoAuditado(
+                eventoIdInformado,
+                tipoEntidade,
+                entidadeId,
+                tipoEvento,
+                fonte,
+                obraId,
+                rdoId,
+                colaboradorId,
+                entidadesRelacionadas,
+                origem,
+                syncStatus,
+                ocorridoEm,
+                sincronizadoEm,
+                schemaVersion,
+                payload,
+                null,
+                null,
+                null,
+                null,
+                Map.of(),
+                Map.of(),
+                "SUCESSO",
+                null
+        );
+    }
+
+    @Transactional
+    public long registrarEventoAuditado(
+            String eventoIdInformado,
+            String tipoEntidade,
+            String entidadeId,
+            String tipoEvento,
+            String fonte,
+            String obraId,
+            String rdoId,
+            String colaboradorId,
+            List<Map<String, Object>> entidadesRelacionadas,
+            String origem,
+            String syncStatus,
+            LocalDateTime ocorridoEm,
+            LocalDateTime sincronizadoEm,
+            Integer schemaVersion,
+            Map<String, Object> payload,
+            String actorId,
+            String deviceId,
+            String correlationId,
+            String causationId,
+            Map<String, Object> previousState,
+            Map<String, Object> newState,
+            String result,
+            String errorCategory
+    ) {
         String eventoId = primeiroNaoVazio(eventoIdInformado, UUID.randomUUID().toString());
 
         Long existingCommitSeq = commitSeqExistente(eventoId);
@@ -132,13 +185,24 @@ public class CortexOperationalMemoryService {
                     colaborador_id,
                     tipo_evento,
                     fonte,
+                    usuario_id,
+                    dispositivo_id,
+                    correlacao_id,
+                    causacao_id,
                     origem,
                     sync_status,
                     sincronizado_em,
                     entidades_relacionadas_json,
+                    estado_anterior_json,
+                    estado_novo_json,
+                    resultado,
+                    erro_categoria,
                     schema_version,
                     payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?
+                )
                 """,
                 eventoId,
                 commitSeq,
@@ -149,10 +213,18 @@ public class CortexOperationalMemoryService {
                 nuloSeVazio(colaboradorId),
                 tipoEvento,
                 fonte,
+                nuloSeVazio(actorId),
+                nuloSeVazio(deviceId),
+                nuloSeVazio(correlationId),
+                nuloSeVazio(causationId),
                 normalizedOrigin,
                 normalizedStatus,
                 sincronizadoEm,
                 relatedJson,
+                toNullableJson(previousState),
+                toNullableJson(newState),
+                primeiroNaoVazio(result, "SUCESSO"),
+                nuloSeVazio(errorCategory),
                 schemaVersion == null ? 1 : schemaVersion,
                 payloadJson
         );

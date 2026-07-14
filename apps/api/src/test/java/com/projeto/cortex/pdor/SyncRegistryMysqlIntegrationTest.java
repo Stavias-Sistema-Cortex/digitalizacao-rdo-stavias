@@ -11,6 +11,7 @@ import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.sync.AppliedSyncMutation;
 import com.projeto.cortex.sync.SyncOperationHandler;
 import com.projeto.cortex.sync.SyncOperationRegistry;
+import com.projeto.cortex.sync.SyncMutationContext;
 import com.projeto.cortex.sync.SyncPushRequest;
 import com.projeto.cortex.sync.SyncPushResponse;
 import com.projeto.cortex.sync.SyncService;
@@ -164,7 +165,8 @@ class SyncRegistryMysqlIntegrationTest {
 
             @Override
             public AppliedSyncMutation apply(
-                    SyncPushRequest.MutacaoCliente mutation
+                    SyncPushRequest.MutacaoCliente mutation,
+                    SyncMutationContext context
             ) {
                 applications.incrementAndGet();
                 String eventId = UUID.randomUUID().toString();
