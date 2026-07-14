@@ -19,3 +19,9 @@ cortex:
 
   email:
     provider: ${CORTEX_EMAIL_PROVIDER:fake}
+
+  storage:
+    provider: ${CORTEX_STORAGE_PROVIDER:local}
+    local:
+      root: ${CORTEX_STORAGE_LOCAL_ROOT:${java.io.tmpdir}/cortex-storage-local}
+      persistent: ${CORTEX_STORAGE_LOCAL_PERSISTENT:false}

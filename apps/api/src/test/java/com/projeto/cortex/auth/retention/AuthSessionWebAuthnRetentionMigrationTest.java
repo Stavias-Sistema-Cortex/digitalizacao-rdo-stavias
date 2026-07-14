@@ -12,14 +12,14 @@ class AuthSessionWebAuthnRetentionMigrationTest {
     void addsOnlyTimestampLedRetentionIndexes() throws Exception {
         String sql = Files.readString(Path.of(
                 "src/main/resources/db/migration/"
-                        + "V29__auth_session_and_webauthn_retention.sql"
+                        + "V29__shared_storage_audit_and_auth_retention.sql"
         ));
 
         assertThat(sql)
                 .contains("auth_session (expira_em, id)")
                 .contains("auth_session (revogado_em, id)")
                 .contains("auth_webauthn_challenge (expira_em, id)")
-                .doesNotContain("DELETE FROM")
-                .doesNotContain("UPDATE ");
+                .doesNotContain("DELETE FROM auth_session")
+                .doesNotContain("DELETE FROM auth_webauthn_challenge");
     }
 }
