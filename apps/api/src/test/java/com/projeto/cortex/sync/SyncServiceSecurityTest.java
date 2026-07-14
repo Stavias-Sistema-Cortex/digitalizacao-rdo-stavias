@@ -2,6 +2,7 @@ package com.projeto.cortex.sync;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoService;
@@ -65,7 +66,8 @@ class SyncServiceSecurityTest {
                 mock(RdoDraftUpdateService.class),
                 mock(RdoWorkflowService.class),
                 mock(RdoQueryService.class),
-                currentUserService
+                currentUserService,
+                mock(FinancialAccessService.class)
         );
 
         SyncDeviceResponse response =

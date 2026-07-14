@@ -3,6 +3,7 @@ package com.projeto.cortex.sync;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
@@ -42,7 +43,8 @@ class SyncServiceAuthorizationTest {
             mock(RdoDraftUpdateService.class),
             mock(RdoWorkflowService.class),
             mock(RdoQueryService.class),
-            currentUserService
+            currentUserService,
+            mock(FinancialAccessService.class)
     );
 
     private SyncPushRequest.MutacaoCliente criarRdo(String obraId) {

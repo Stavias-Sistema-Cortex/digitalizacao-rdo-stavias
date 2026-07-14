@@ -110,6 +110,11 @@ public class StaviaQueryPlanner {
         boolean selectedRdoContext =
                 hasSelectedRdoContext(question);
 
+        if (isFinancialIntent(classification.intent())
+                && isUnambiguousFinancialQuestion(normalized)) {
+            return StaviaQueryPlan.empty();
+        }
+
         StaviaQueryPlan combined =
                 combinedRainAllocationPlan(question, normalized);
 
@@ -758,6 +763,43 @@ public class StaviaQueryPlanner {
             case PROGRAMACAO -> StaviaIntent.CONSULTAR_PROGRAMACAO;
             default -> StaviaIntent.DESCONHECIDA;
         };
+    }
+
+    private boolean isFinancialIntent(StaviaIntent intent) {
+        return intent != null && switch (intent) {
+            case CONSULTAR_PDOR,
+                    CONSULTAR_RECEITA,
+                    CONSULTAR_MARGEM,
+                    CONSULTAR_PREVISAO_FINANCEIRA,
+                    CONSULTAR_PRODUCAO,
+                    CONSULTAR_RECEITA_EM_RISCO -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isUnambiguousFinancialQuestion(String normalized) {
+        return StaviaText.containsWord(normalized, "previsao financeira")
+                || StaviaText.containsWord(normalized, "financeiro da obra")
+                || StaviaText.containsWord(normalized, "pdor")
+                || StaviaText.containsWord(normalized, "margem")
+                || StaviaText.containsWord(normalized, "receita em risco")
+                || StaviaText.containsWord(normalized, "risco de receita")
+                || StaviaText.containsWord(normalized, "previsao de receita")
+                || StaviaText.containsWord(normalized, "receita prevista")
+                || (
+                    StaviaText.containsWord(normalized, "obra")
+                            && (
+                                StaviaText.containsWord(
+                                        normalized,
+                                        "custo previsto"
+                                )
+                                        || StaviaText.containsWord(
+                                                normalized,
+                                                "custo realizado"
+                                        )
+                            )
+                )
+                || StaviaText.containsWord(normalized, "resultado operacional");
     }
 
     public double effectiveConfidence(

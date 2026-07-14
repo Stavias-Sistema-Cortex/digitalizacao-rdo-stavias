@@ -1,6 +1,7 @@
 package com.projeto.cortex.financeiro;
 
-import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,14 +16,14 @@ import java.util.List;
 public class ItemContratualController {
 
     private final ItemContratualService service;
-    private final CurrentUserService currentUserService;
+    private final FinancialAccessService financialAccessService;
 
     public ItemContratualController(
             ItemContratualService service,
-            CurrentUserService currentUserService
+            FinancialAccessService financialAccessService
     ) {
         this.service = service;
-        this.currentUserService = currentUserService;
+        this.financialAccessService = financialAccessService;
     }
 
     @PostMapping("/api/obras/{obraId}/itens-contratuais")
@@ -31,13 +32,19 @@ public class ItemContratualController {
             @PathVariable String obraId,
             @RequestBody ItemContratualRequest request
     ) {
-        currentUserService.requireAdmin();
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_OPERAR
+        );
         return service.criar(obraId, request);
     }
 
     @GetMapping("/api/obras/{obraId}/itens-contratuais")
     public List<ItemContratualResponse> listar(@PathVariable String obraId) {
-        currentUserService.requireWorksiteAccess(obraId);
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
         return service.listar(obraId);
     }
 }

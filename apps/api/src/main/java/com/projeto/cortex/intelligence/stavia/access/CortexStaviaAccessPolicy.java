@@ -2,6 +2,8 @@ package com.projeto.cortex.intelligence.stavia.access;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.intelligence.stavia.StaviaEngine;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
@@ -26,9 +28,14 @@ import java.util.Set;
 public class CortexStaviaAccessPolicy implements StaviaAccessPolicy {
 
     private final CurrentUserService currentUserService;
+    private final FinancialAccessService financialAccessService;
 
-    public CortexStaviaAccessPolicy(CurrentUserService currentUserService) {
+    public CortexStaviaAccessPolicy(
+            CurrentUserService currentUserService,
+            FinancialAccessService financialAccessService
+    ) {
         this.currentUserService = currentUserService;
+        this.financialAccessService = financialAccessService;
     }
 
     @Override
@@ -46,5 +53,14 @@ public class CortexStaviaAccessPolicy implements StaviaAccessPolicy {
     @Override
     public boolean canAccessWorksite(String userId, String worksiteId) {
         return currentUserService.podeAcessarObra(userId, worksiteId);
+    }
+
+    @Override
+    public boolean canAccessFinancial(String userId, String worksiteId) {
+        return financialAccessService.hasPermission(
+                userId,
+                worksiteId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
     }
 }

@@ -273,7 +273,7 @@ class PdorCw38386MysqlIntegrationTest {
         MockMvc raceMvc = MockMvcBuilders
                 .standaloneSetup(new PdorController(
                         raceService,
-                        mock(CurrentUserService.class)
+                        mock(com.projeto.cortex.financeiro.access.FinancialAccessService.class)
                 ))
                 .setControllerAdvice(new PdorExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))

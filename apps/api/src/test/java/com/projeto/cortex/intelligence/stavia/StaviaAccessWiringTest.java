@@ -3,6 +3,7 @@ package com.projeto.cortex.intelligence.stavia;
 import com.projeto.cortex.intelligence.stavia.access.CortexStaviaAccessPolicy;
 import com.projeto.cortex.intelligence.stavia.access.StaviaAccessPolicy;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.intelligence.stavia.api.StaviaController;
 import com.projeto.cortex.intelligence.stavia.context.StaviaContextBuilder;
 import com.projeto.cortex.intelligence.stavia.generation.DeterministicStaviaResponseGenerator;
@@ -41,6 +42,10 @@ class StaviaAccessWiringTest {
                             "cortex.stavia.generator-mode=deterministic"
                     )
                     .withBean(CurrentUserService.class, () -> mock(CurrentUserService.class))
+                    .withBean(
+                            FinancialAccessService.class,
+                            () -> mock(FinancialAccessService.class)
+                    )
                     .withUserConfiguration(
                             StaviaQueryConfiguration.class
                     );

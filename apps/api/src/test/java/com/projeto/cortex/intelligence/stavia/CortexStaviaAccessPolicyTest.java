@@ -3,6 +3,8 @@ package com.projeto.cortex.intelligence.stavia;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.intelligence.stavia.access.CortexStaviaAccessPolicy;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,8 +20,13 @@ class CortexStaviaAccessPolicyTest {
 
     private final CurrentUserService currentUserService =
             mock(CurrentUserService.class);
+    private final FinancialAccessService financialAccessService =
+            mock(FinancialAccessService.class);
     private final CortexStaviaAccessPolicy policy =
-            new CortexStaviaAccessPolicy(currentUserService);
+            new CortexStaviaAccessPolicy(
+                    currentUserService,
+                    financialAccessService
+            );
 
     @Test
     void alfaEBetaPodemConsultar() {
@@ -48,5 +55,22 @@ class CortexStaviaAccessPolicyTest {
 
         assertThat(policy.canAccessWorksite("beta", "obra-1")).isTrue();
         assertThat(policy.canAccessWorksite("beta", "obra-2")).isFalse();
+    }
+
+    @Test
+    void acessoFinanceiroExigeConcessaoNaObraExata() {
+        when(financialAccessService.hasPermission(
+                "beta",
+                "obra-1",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(true);
+        when(financialAccessService.hasPermission(
+                "beta",
+                "obra-2",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(false);
+
+        assertThat(policy.canAccessFinancial("beta", "obra-1")).isTrue();
+        assertThat(policy.canAccessFinancial("beta", "obra-2")).isFalse();
     }
 }

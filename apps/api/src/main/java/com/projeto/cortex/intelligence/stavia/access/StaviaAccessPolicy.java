@@ -24,4 +24,12 @@ public interface StaviaAccessPolicy {
      * Used to prevent a user from reading another worksite's data (IDOR).
      */
     boolean canAccessWorksite(String userId, String worksiteId);
+
+    /**
+     * Whether the user may retrieve financial evidence for this exact worksite.
+     * Adapters must opt in explicitly. The default denies financial retrieval.
+     */
+    default boolean canAccessFinancial(String userId, String worksiteId) {
+        return false;
+    }
 }

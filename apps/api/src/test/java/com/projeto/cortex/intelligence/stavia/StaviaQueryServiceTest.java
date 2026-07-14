@@ -35,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -332,6 +333,134 @@ class StaviaQueryServiceTest {
                 result.consultedKnowledgeSources()
                         .isEmpty()
         );
+    }
+
+    @Test
+    void shouldDenyFinancialIntentBeforeRetrievingKnowledge() {
+        AtomicBoolean retrieved = new AtomicBoolean(false);
+        StaviaKnowledgeSource financialSource = new StaviaKnowledgeSource() {
+            @Override
+            public String sourceName() {
+                return "fonte-financeira";
+            }
+
+            @Override
+            public String sourceVersion() {
+                return "1.0.0";
+            }
+
+            @Override
+            public boolean supports(StaviaKnowledgeRequest request) {
+                return true;
+            }
+
+            @Override
+            public List<StaviaEvidence> retrieve(
+                    StaviaKnowledgeRequest request
+            ) {
+                retrieved.set(true);
+                return List.of();
+            }
+        };
+
+        StaviaAccessPolicy deniedFinance = new StaviaAccessPolicy() {
+            @Override
+            public Set<String> permissionsFor(String userId) {
+                return Set.of(StaviaEngine.REQUIRED_PERMISSION);
+            }
+
+            @Override
+            public boolean canAccessWorksite(
+                    String userId,
+                    String worksiteId
+            ) {
+                return true;
+            }
+
+            @Override
+            public boolean canAccessFinancial(
+                    String userId,
+                    String worksiteId
+            ) {
+                return false;
+            }
+        };
+
+        StaviaQueryService service = new StaviaQueryService(
+                new StaviaIntentClassifier(),
+                new StaviaKnowledgeOrchestrator(List.of(financialSource)),
+                new StaviaContextBuilder(),
+                engine(),
+                deniedFinance
+        );
+
+        StaviaQueryResult result = service.query(new StaviaQuestion(
+                "Qual é a previsão financeira desta obra?",
+                "usuario-1",
+                "obra-1"
+        ));
+
+        assertEquals(
+                StaviaIntent.CONSULTAR_PREVISAO_FINANCEIRA,
+                result.intent()
+        );
+        assertFalse(retrieved.get());
+        assertTrue(result.consultedKnowledgeSources().isEmpty());
+    }
+
+    @Test
+    void shouldNotTreatOperationalProductionAsFinancialData() {
+        AtomicBoolean retrieved = new AtomicBoolean(false);
+        StaviaKnowledgeSource operationalSource = new StaviaKnowledgeSource() {
+            @Override
+            public String sourceName() {
+                return "fonte-producao-operacional";
+            }
+
+            @Override
+            public String sourceVersion() {
+                return "1.0.0";
+            }
+
+            @Override
+            public boolean supports(StaviaKnowledgeRequest request) {
+                return request.intent() == StaviaIntent.CONSULTAR_PRODUCAO;
+            }
+
+            @Override
+            public List<StaviaEvidence> retrieve(
+                    StaviaKnowledgeRequest request
+            ) {
+                retrieved.set(true);
+                return List.of();
+            }
+        };
+        StaviaAccessPolicy operationalOnly = new StaviaAccessPolicy() {
+            @Override
+            public Set<String> permissionsFor(String userId) {
+                return Set.of(StaviaEngine.REQUIRED_PERMISSION);
+            }
+
+            @Override
+            public boolean canAccessWorksite(String userId, String worksiteId) {
+                return true;
+            }
+        };
+        StaviaQueryService service = new StaviaQueryService(
+                new StaviaIntentClassifier(),
+                new StaviaKnowledgeOrchestrator(List.of(operationalSource)),
+                new StaviaContextBuilder(),
+                engine(),
+                operationalOnly
+        );
+
+        service.query(new StaviaQuestion(
+                "Qual é a produção?",
+                "usuario-1",
+                "obra-1"
+        ));
+
+        assertTrue(retrieved.get());
     }
 
     @Test
@@ -650,6 +779,14 @@ class StaviaQueryServiceTest {
 
             @Override
             public boolean canAccessWorksite(
+                    String userId,
+                    String worksiteId
+            ) {
+                return canAccessWorksite;
+            }
+
+            @Override
+            public boolean canAccessFinancial(
                     String userId,
                     String worksiteId
             ) {

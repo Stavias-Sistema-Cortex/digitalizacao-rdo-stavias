@@ -21,6 +21,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
@@ -59,6 +61,7 @@ public class SyncService {
     private final RdoWorkflowService rdoWorkflowService;
     private final RdoQueryService rdoQueryService;
     private final CurrentUserService currentUserService;
+    private final FinancialAccessService financialAccessService;
 
     public SyncService(
             JdbcTemplate jdbcTemplate,
@@ -68,7 +71,8 @@ public class SyncService {
             RdoDraftUpdateService rdoDraftUpdateService,
             RdoWorkflowService rdoWorkflowService,
             RdoQueryService rdoQueryService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            FinancialAccessService financialAccessService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -78,6 +82,7 @@ public class SyncService {
         this.rdoWorkflowService = rdoWorkflowService;
         this.rdoQueryService = rdoQueryService;
         this.currentUserService = currentUserService;
+        this.financialAccessService = financialAccessService;
     }
 
     public SyncPullResponse pull(
@@ -99,7 +104,11 @@ public class SyncService {
         // autorizadas (§13). Alfa recebe tudo; Beta recebe suas obras + catálogos
         // globais de referência, nunca eventos confidenciais de outras obras.
         FiltroPull filtro = filtroPorEscopo(
-                currentUserService.allowedObraIds(currentUserId)
+                currentUserService.allowedObraIds(currentUserId),
+                financialAccessService.allowedObraIds(
+                        currentUserId,
+                        FinancialPermission.FINANCEIRO_VISUALIZAR
+                )
         );
 
         List<Object> parametros = new ArrayList<>();
@@ -166,6 +175,25 @@ public class SyncService {
     private static final List<String> EVENTOS_REFERENCIA_GLOBAL =
             List.of("ATIVO", "EQUIPAMENTO", "SERVICO");
 
+    private static final List<String> EVENTOS_FINANCEIROS = List.of(
+            "ITEM_CONTRATUAL",
+            "PREVISAO_FINANCEIRA",
+            "PDOR",
+            "CENTRO_CUSTO",
+            "FORNECEDOR",
+            "SOLICITACAO_COMPRA",
+            "PEDIDO_COMPRA",
+            "REGRA_APROVACAO",
+            "DECISAO_APROVACAO",
+            "NOTA_FISCAL",
+            "LANCAMENTO_FINANCEIRO",
+            "PAGAMENTO",
+            "COBRANCA_EMAIL"
+    );
+
+    private static final List<String> EVENTOS_FINANCEIROS_ALFA =
+            List.of("PERMISSAO_FINANCEIRA");
+
     /** Filtro de escopo do pull: condição SQL adicional e seus parâmetros. */
     record FiltroPull(String condicaoSql, List<Object> parametros) {
     }
@@ -176,7 +204,10 @@ public class SyncService {
      * referência — nunca eventos confidenciais de outras obras nem dados
      * pessoais. Visível no pacote para teste.
      */
-    FiltroPull filtroPorEscopo(Optional<Set<String>> obrasAutorizadas) {
+    FiltroPull filtroPorEscopo(
+            Optional<Set<String>> obrasAutorizadas,
+            Set<String> obrasFinanceirasAutorizadas
+    ) {
         if (obrasAutorizadas.isEmpty()) {
             return new FiltroPull("", List.of());
         }
@@ -200,7 +231,34 @@ public class SyncService {
                 .append("))");
         parametros.addAll(EVENTOS_REFERENCIA_GLOBAL);
 
-        return new FiltroPull(" AND (" + escopo + ")", parametros);
+        List<Object> scopedParameters = new ArrayList<>();
+        String tiposRestritos = placeholders(
+                EVENTOS_FINANCEIROS.size() + EVENTOS_FINANCEIROS_ALFA.size()
+        );
+        scopedParameters.addAll(EVENTOS_FINANCEIROS);
+        scopedParameters.addAll(EVENTOS_FINANCEIROS_ALFA);
+        scopedParameters.addAll(parametros);
+
+        StringBuilder condition = new StringBuilder(
+                " AND ((tipo_entidade NOT IN (" + tiposRestritos + ") AND ("
+                        + escopo + "))"
+        );
+
+        Set<String> financialScope = obrasFinanceirasAutorizadas == null
+                ? Set.of()
+                : obrasFinanceirasAutorizadas;
+        if (!financialScope.isEmpty()) {
+            condition.append(" OR (tipo_entidade IN (")
+                    .append(placeholders(EVENTOS_FINANCEIROS.size()))
+                    .append(") AND obra_id IN (")
+                    .append(placeholders(financialScope.size()))
+                    .append("))");
+            scopedParameters.addAll(EVENTOS_FINANCEIROS);
+            scopedParameters.addAll(financialScope);
+        }
+        condition.append(")");
+
+        return new FiltroPull(condition.toString(), scopedParameters);
     }
 
     private static String placeholders(int count) {

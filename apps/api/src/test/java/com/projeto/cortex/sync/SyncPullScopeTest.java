@@ -2,6 +2,7 @@ package com.projeto.cortex.sync;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoService;
@@ -30,12 +31,16 @@ class SyncPullScopeTest {
             mock(RdoDraftUpdateService.class),
             mock(RdoWorkflowService.class),
             mock(RdoQueryService.class),
-            mock(CurrentUserService.class)
+            mock(CurrentUserService.class),
+            mock(FinancialAccessService.class)
     );
 
     @Test
     void alfaRecebeTudoSemFiltro() {
-        SyncService.FiltroPull filtro = service.filtroPorEscopo(Optional.empty());
+        SyncService.FiltroPull filtro = service.filtroPorEscopo(
+                Optional.empty(),
+                Set.of()
+        );
 
         assertThat(filtro.condicaoSql()).isEmpty();
         assertThat(filtro.parametros()).isEmpty();
@@ -44,24 +49,33 @@ class SyncPullScopeTest {
     @Test
     void betaFiltraPorObrasVinculadasMaisReferencia() {
         SyncService.FiltroPull filtro =
-                service.filtroPorEscopo(Optional.of(Set.of("obra-1")));
+                service.filtroPorEscopo(
+                        Optional.of(Set.of("obra-1")),
+                        Set.of("obra-1")
+                );
 
         assertThat(filtro.condicaoSql())
+                .contains("tipo_entidade NOT IN")
                 .contains("obra_id IN (?)")
+                .contains("tipo_entidade IN")
                 .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
         assertThat(filtro.parametros())
-                .containsExactly("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO");
+                .contains("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO")
+                .contains("ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR")
+                .contains("PERMISSAO_FINANCEIRA");
     }
 
     @Test
     void betaSemVinculoRecebeSomenteReferenciaGlobal() {
         SyncService.FiltroPull filtro =
-                service.filtroPorEscopo(Optional.of(Set.of()));
+                service.filtroPorEscopo(Optional.of(Set.of()), Set.of());
 
         assertThat(filtro.condicaoSql())
                 .doesNotContain("obra_id IN (")
+                .doesNotContain(" OR (tipo_entidade IN")
                 .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
         assertThat(filtro.parametros())
-                .containsExactly("ATIVO", "EQUIPAMENTO", "SERVICO");
+                .contains("ATIVO", "EQUIPAMENTO", "SERVICO")
+                .contains("PERMISSAO_FINANCEIRA");
     }
 }
