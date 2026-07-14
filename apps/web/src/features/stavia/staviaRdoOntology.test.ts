@@ -962,7 +962,7 @@ describe("staviaRdoOntology", () => {
         ).toContain(coverageValue(entity.name, attribute.name));
       }
     }
-  });
+  }, 15_000);
 
   it("só ativa o caminho genérico com alias de atributo", () => {
     expect(

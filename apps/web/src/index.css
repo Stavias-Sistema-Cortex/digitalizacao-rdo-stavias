@@ -2033,6 +2033,62 @@ textarea:focus {
   color: var(--color-muted);
 }
 
+.home-card > a,
+.home-finance-error button {
+  color: var(--color-brand-teal-strong);
+  font: inherit;
+  font-weight: 700;
+}
+
+.home-finance-card h3 > span {
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  font-weight: 500;
+}
+
+.home-finance-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.home-finance-totals div {
+  min-width: 0;
+}
+
+.home-finance-totals dt {
+  color: var(--color-muted);
+  font-size: 0.65rem;
+}
+
+.home-finance-totals dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-finance-totals dd.is-alert {
+  color: #b42318;
+}
+
+.home-finance-error p {
+  margin: 0 0 6px;
+  color: #b42318;
+}
+
+.home-finance-error button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .home-card--brand {
   background: var(--color-brand-teal-strong);
   color: #eef7f5;

@@ -19,18 +19,54 @@ import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
 import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
-import { HomePage } from "./features/home/HomePage";
-import { IntegracoesPage } from "./features/integracoes/IntegracoesPage";
-import { ObrasPage } from "./features/obras/ObrasPage";
-import { GestaoObrasPage } from "./features/obras/gestao/GestaoObrasPage";
-import { RdoWorkspacePage } from "./features/rdos/RdoWorkspacePage";
 import { StaviaLauncherProvider } from "./features/stavia/StaviaLauncherProvider";
-import { TarefasPage } from "./features/tarefas/TarefasPage";
 import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
+
+const HomePage = lazy(() =>
+  import("./features/home/HomePage").then((module) => ({
+    default: module.HomePage,
+  })),
+);
+
+const ObrasPage = lazy(() =>
+  import("./features/obras/ObrasPage").then((module) => ({
+    default: module.ObrasPage,
+  })),
+);
+
+const GestaoObrasPage = lazy(() =>
+  import("./features/obras/gestao/GestaoObrasPage").then((module) => ({
+    default: module.GestaoObrasPage,
+  })),
+);
+
+const RdoWorkspacePage = lazy(() =>
+  import("./features/rdos/RdoWorkspacePage").then((module) => ({
+    default: module.RdoWorkspacePage,
+  })),
+);
+
+const TarefasPage = lazy(() =>
+  import("./features/tarefas/TarefasPage").then((module) => ({
+    default: module.TarefasPage,
+  })),
+);
+
+const IntegracoesPage = lazy(() =>
+  import("./features/integracoes/IntegracoesPage").then((module) => ({
+    default: module.IntegracoesPage,
+  })),
+);
 
 const MensagensPage = lazy(() =>
   import("./features/mensagens/MensagensPage").then((module) => ({
     default: module.MensagensPage,
+  })),
+);
+
+const FinanceiroPage = lazy(() =>
+  import("./features/financeiro/FinanceiroPage").then((module) => ({
+    default: module.FinanceiroPage,
   })),
 );
 
@@ -151,43 +187,39 @@ function App({ initialAuthUnavailable = false }: AppProps) {
   return (
     <BrowserRouter>
       <StaviaLauncherProvider>
-        <Routes>
-          <Route path="/home" element={<HomePage />} />
-          <Route path="/obras" element={<ObrasPage />} />
-          <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
-          <Route path="/rdos" element={<RdoWorkspacePage />} />
-          <Route path="/tarefas" element={<TarefasPage />} />
-          <Route
-            path="/mensagens"
-            element={
-              <Suspense
-                fallback={
-                  <main className="auth-bootstrap-status" role="status">
-                    Abrindo mensagens locais…
-                  </main>
-                }
-              >
-                <MensagensPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/seguranca"
-            element={
-              <CortexShell active={null}>
-                <DeviceSecurityPage />
-              </CortexShell>
-            }
-          />
-          <Route
-            path="/integracoes"
-            element={<IntegracoesRoute />}
-          />
-          <Route
-            path="*"
-            element={<Navigate to="/home" replace />}
-          />
-        </Routes>
+        <Suspense
+          fallback={
+            <main className="auth-bootstrap-status" role="status">
+              Abrindo módulo…
+            </main>
+          }
+        >
+          <Routes>
+            <Route path="/home" element={<HomePage />} />
+            <Route path="/obras" element={<ObrasPage />} />
+            <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
+            <Route path="/rdos" element={<RdoWorkspacePage />} />
+            <Route path="/tarefas" element={<TarefasPage />} />
+            <Route path="/financeiro" element={<FinanceiroPage />} />
+            <Route path="/mensagens" element={<MensagensPage />} />
+            <Route
+              path="/seguranca"
+              element={
+                <CortexShell active={null}>
+                  <DeviceSecurityPage />
+                </CortexShell>
+              }
+            />
+            <Route
+              path="/integracoes"
+              element={<IntegracoesRoute />}
+            />
+            <Route
+              path="*"
+              element={<Navigate to="/home" replace />}
+            />
+          </Routes>
+        </Suspense>
       </StaviaLauncherProvider>
     </BrowserRouter>
   );

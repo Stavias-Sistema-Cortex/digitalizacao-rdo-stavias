@@ -726,7 +726,9 @@ public class FinanceCatalogService {
         String normalized = FinanceValidation.requiredText(
                 value, "agregadoTipo", 30
         ).toUpperCase(Locale.ROOT);
-        if (!normalized.equals("SOLICITACAO") && !normalized.equals("COMPRA")) {
+        if (!List.of(
+                "SOLICITACAO", "COMPRA", "NOTA_FISCAL", "LANCAMENTO"
+        ).contains(normalized)) {
             throw FinanceValidation.badRequest("Tipo de agregado inválido.");
         }
         return normalized;

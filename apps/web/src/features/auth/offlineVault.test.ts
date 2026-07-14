@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toBase64Url } from "./webauthnCodec";
 import {
@@ -29,10 +29,16 @@ vi.stubGlobal("localStorage", {
 
 describe("offlineVault PRF-only", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
     vi.clearAllMocks();
     localValues.clear();
     clearOfflineGrant();
     localStorage.removeItem("cortex.auth.cpfFilter");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("retorna PRF_UNAVAILABLE sem chamar CPF, Bloom ou rede", async () => {

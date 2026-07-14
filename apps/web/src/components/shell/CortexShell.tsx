@@ -28,6 +28,7 @@ export type ShellActiveItem =
   | "obras"
   | "mensagens"
   | "tarefas"
+  | "financeiro"
   | "integracoes"
   | null;
 
@@ -362,15 +363,20 @@ export function CortexShell({
           </button>
           <button
             type="button"
-            className="sidebar-nav-item"
-            title="Relatórios"
+            className={
+              active === "financeiro"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
+            title="Financeiro"
+            onClick={() => navigate("/financeiro")}
           >
             <img
               src="/icons8/file.png"
               alt=""
               draggable={false}
             />
-            <span className="sidebar-label">Relatórios</span>
+            <span className="sidebar-label">Financeiro</span>
           </button>
         </nav>
 
