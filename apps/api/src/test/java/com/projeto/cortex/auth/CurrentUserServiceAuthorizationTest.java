@@ -109,7 +109,7 @@ class CurrentUserServiceAuthorizationTest {
     }
 
     @Test
-    void papelAusenteNuncaEhElevadoPorPerfilLegado() throws Exception {
+    void papelAusenteNegaAcessoMesmoComPerfilLegado() throws Exception {
         when(jdbc.query(
                 contains("FROM colaborador"),
                 any(ResultSetExtractor.class),
@@ -124,8 +124,28 @@ class CurrentUserServiceAuthorizationTest {
             return extractor.extractData(resultSet);
         });
 
-        assertThat(service.papelAcesso("admin-legado"))
-                .isEqualTo(PapelAcesso.BETA);
+        assertThat(service.papelAcesso("admin-legado")).isNull();
+    }
+
+    @Test
+    void papelPersistidoForaDoContratoCanonicoNegaAcesso() throws Exception {
+        when(jdbc.query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("papel-corrompido")
+        )).thenAnswer(invocation -> {
+            ResultSetExtractor<PapelAcesso> extractor = invocation.getArgument(1);
+            ResultSet resultSet = mock(ResultSet.class);
+            when(resultSet.next()).thenReturn(true);
+            when(resultSet.getString("papel_acesso")).thenReturn("alfa");
+            return extractor.extractData(resultSet);
+        });
+
+        assertThat(service.papelAcesso("papel-corrompido")).isNull();
+        assertThat(service.podeAcessarObra(
+                "papel-corrompido",
+                "obra-1"
+        )).isFalse();
     }
 
     @Test

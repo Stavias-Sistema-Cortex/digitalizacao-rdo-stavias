@@ -1,5 +1,6 @@
 package com.projeto.cortex.auth.otp;
 
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import com.projeto.cortex.config.SecretMaterialLoader;
 import java.nio.file.Path;
 import java.security.SecureRandom;
@@ -67,12 +68,7 @@ public class OtpSecurityConfiguration implements EnvironmentAware {
     }
 
     private boolean hasOnlyLocalOrTestProfiles() {
-        String[] active = environment.getActiveProfiles();
-        return active.length > 0
-                && Arrays.stream(active).allMatch(
-                        profile -> "local".equals(profile)
-                                || "test".equals(profile)
-                );
+        return SecurityRuntimeMode.isLocalOrTestOnly(environment);
     }
 
     private String optionalValue(String value) {

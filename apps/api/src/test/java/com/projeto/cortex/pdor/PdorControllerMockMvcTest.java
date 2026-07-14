@@ -3,7 +3,6 @@ package com.projeto.cortex.pdor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
-import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,9 +62,6 @@ class PdorControllerMockMvcTest {
 
     @MockBean
     private ObraRepository obraRepository;
-
-    @MockBean
-    private JwtService jwtService;
 
     @MockBean
     private CurrentUserService currentUserService;

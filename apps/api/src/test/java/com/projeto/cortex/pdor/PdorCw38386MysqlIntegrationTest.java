@@ -3,7 +3,11 @@ package com.projeto.cortex.pdor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
+import com.projeto.cortex.auth.PapelAcesso;
+import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
@@ -27,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -53,7 +58,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "cortex.sync.enabled=false",
         "cortex.import.enabled=false",
         "cortex.pdor.gatilho-evento.habilitado=false",
-        "cortex.auth.jwt-secret=test-only-jwt-secret-0000000000000000",
         "cortex.auth.cpf-hmac.current-key-id=test-current",
         "cortex.auth.cpf-hmac.current-key-inline=test-only-hmac-secret-0000000000000000",
         "cortex.email.provider=fake",
@@ -102,9 +106,9 @@ class PdorCw38386MysqlIntegrationTest {
     private RealPdorInputLoader inputLoader;
 
     @Autowired
-    private JwtService jwtService;
+    private AuthSessionService authSessionService;
 
-    private String adminAuthorization;
+    private IssuedAuthSession adminSession;
 
     @BeforeEach
     void setUp() {
@@ -112,7 +116,11 @@ class PdorCw38386MysqlIntegrationTest {
         obraSeedImportService.importarSeedPadrao();
         programacaoSeedImportService.importarSeedPadrao();
         criarColaboradorAdmin();
-        adminAuthorization = "Bearer " + jwtService.gerarToken(ADMIN_USER_ID);
+        adminSession = authSessionService.issue(new AuthenticatedIdentity(
+                ADMIN_USER_ID,
+                "Admin PDOR Teste",
+                PapelAcesso.ALFA
+        ));
 
         assertThat(contarProgramacoesCw38386()).isEqualTo(172);
     }
@@ -138,7 +146,11 @@ class PdorCw38386MysqlIntegrationTest {
 
         MvcResult firstResult = mockMvc.perform(
                         post("/api/obras/{obraId}/pdor/calcular", "CW38386")
-                                .header("Authorization", adminAuthorization)
+                                .cookie(sessionCookie(), csrfCookie())
+                                .header(
+                                        "X-CSRF-Token",
+                                        adminSession.csrfToken()
+                                )
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statusExecucao").value("INSUFFICIENT_DATA"))
@@ -190,20 +202,24 @@ class PdorCw38386MysqlIntegrationTest {
                 .contains("Histórico semanal de produtividade insuficiente para calibração");
 
         mockMvc.perform(get("/api/obras/{obraId}/pdor/atual", "CW38386")
-                        .header("Authorization", adminAuthorization))
+                        .cookie(sessionCookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(snapshotId))
                 .andExpect(jsonPath("$.statusExecucao").value("INSUFFICIENT_DATA"));
 
         mockMvc.perform(get("/api/obras/{obraId}/pdor/historico", "CW38386")
-                        .header("Authorization", adminAuthorization))
+                        .cookie(sessionCookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value(snapshotId))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         MvcResult secondResult = mockMvc.perform(
                         post("/api/obras/{obraId}/pdor/calcular", "CW38386")
-                                .header("Authorization", adminAuthorization)
+                                .cookie(sessionCookie(), csrfCookie())
+                                .header(
+                                        "X-CSRF-Token",
+                                        adminSession.csrfToken()
+                                )
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(snapshotId))
@@ -318,6 +334,7 @@ class PdorCw38386MysqlIntegrationTest {
     }
 
     private void limparDadosDeSeed() {
+        jdbcTemplate.update("DELETE FROM auth_session");
         jdbcTemplate.update("DELETE FROM pdor_snapshot");
         jdbcTemplate.update("DELETE FROM programacao_operacional");
         jdbcTemplate.update("DELETE FROM obra");
@@ -343,6 +360,20 @@ class PdorCw38386MysqlIntegrationTest {
                 """,
                 ADMIN_USER_ID,
                 ADMIN_USER_ID
+        );
+    }
+
+    private Cookie sessionCookie() {
+        return new Cookie(
+                AuthCookieService.SESSION_COOKIE,
+                adminSession.sessionToken()
+        );
+    }
+
+    private Cookie csrfCookie() {
+        return new Cookie(
+                AuthCookieService.CSRF_COOKIE,
+                adminSession.csrfToken()
         );
     }
 

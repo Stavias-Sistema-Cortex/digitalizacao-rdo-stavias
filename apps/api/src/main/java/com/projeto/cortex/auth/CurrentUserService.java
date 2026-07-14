@@ -154,9 +154,9 @@ public class CurrentUserService {
                     if (!rs.next()) {
                         return null;
                     }
-                    return PapelAcesso.fromNullable(
+                    return PapelAcesso.fromPersistedExact(
                             rs.getString("papel_acesso")
-                    );
+                    ).orElse(null);
                 },
                 colaboradorId.trim()
         );

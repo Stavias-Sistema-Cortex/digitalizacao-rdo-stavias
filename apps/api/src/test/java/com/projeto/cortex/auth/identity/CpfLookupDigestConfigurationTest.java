@@ -54,4 +54,19 @@ class CpfLookupDigestConfigurationTest {
                     );
         });
     }
+
+    @Test
+    void productionRejectsInlineCpfHmacMaterial() {
+        contextRunner.withPropertyValues(
+                "spring.profiles.active=production",
+                "cortex.auth.cpf-hmac.current-key-id=prod-current",
+                "cortex.auth.cpf-hmac.current-key-inline=" + TEST_SECRET
+        ).run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(context.getStartupFailure())
+                    .hasRootCauseMessage(
+                            "CPF HMAC em produção exige chave atual em arquivo secreto."
+                    );
+        });
+    }
 }

@@ -1,12 +1,26 @@
 package com.projeto.cortex.common;
 
+import java.net.URI;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.env.Environment;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
-
+/** Credentialed CORS restricted to an explicit list of complete origins. */
 @Configuration
 public class LocalCorsConfiguration implements WebMvcConfigurer {
 
@@ -40,92 +54,148 @@ public class LocalCorsConfiguration implements WebMvcConfigurer {
                     + "http://localhost:4178,"
                     + "http://localhost:4179";
 
-    static final String DEFAULT_ALLOWED_ORIGIN_PATTERNS =
-            "http://127.0.0.1:*,"
-                    + "https://127.0.0.1:*,"
-                    + "http://localhost:*,"
-                    + "https://localhost:*,"
-                    + "http://[::1]:*,"
-                    + "https://[::1]:*,"
-                    + "http://0.0.0.0:*,"
-                    + "http://10.*.*.*:*,"
-                    + "https://10.*.*.*:*,"
-                    + "http://192.168.*.*:*,"
-                    + "https://192.168.*.*:*,"
-                    + "http://172.16.*.*:*,"
-                    + "http://172.17.*.*:*,"
-                    + "http://172.18.*.*:*,"
-                    + "http://172.19.*.*:*,"
-                    + "http://172.20.*.*:*,"
-                    + "http://172.21.*.*:*,"
-                    + "http://172.22.*.*:*,"
-                    + "http://172.23.*.*:*,"
-                    + "http://172.24.*.*:*,"
-                    + "http://172.25.*.*:*,"
-                    + "http://172.26.*.*:*,"
-                    + "http://172.27.*.*:*,"
-                    + "http://172.28.*.*:*,"
-                    + "http://172.29.*.*:*,"
-                    + "http://172.30.*.*:*,"
-                    + "http://172.31.*.*:*,"
-                    + "https://172.16.*.*:*,"
-                    + "https://172.17.*.*:*,"
-                    + "https://172.18.*.*:*,"
-                    + "https://172.19.*.*:*,"
-                    + "https://172.20.*.*:*,"
-                    + "https://172.21.*.*:*,"
-                    + "https://172.22.*.*:*,"
-                    + "https://172.23.*.*:*,"
-                    + "https://172.24.*.*:*,"
-                    + "https://172.25.*.*:*,"
-                    + "https://172.26.*.*:*,"
-                    + "https://172.27.*.*:*,"
-                    + "https://172.28.*.*:*,"
-                    + "https://172.29.*.*:*,"
-                    + "https://172.30.*.*:*,"
-                    + "https://172.31.*.*:*";
-
     private final String[] allowedOrigins;
-    private final String[] allowedOriginPatterns;
 
+    @Autowired
     public LocalCorsConfiguration(
-            @Value("${cortex.cors.allowed-origins:${cortex.local-cors.allowed-origins:"
+            @Value("${cortex.cors.allowed-origins:"
                     + DEFAULT_ALLOWED_ORIGINS
-                    + "}}")
-            String allowedOrigins,
-            @Value("${cortex.cors.allowed-origin-patterns:${cortex.local-cors.allowed-origin-patterns:"
-                    + DEFAULT_ALLOWED_ORIGIN_PATTERNS
-                    + "}}")
-            String allowedOriginPatterns
+                    + "}")
+            String configuredOrigins,
+            Environment environment
     ) {
-        this.allowedOrigins =
-                splitCsv(allowedOrigins);
-        this.allowedOriginPatterns =
-                splitCsv(allowedOriginPatterns);
+        this(
+                configuredOrigins,
+                SecurityRuntimeMode.isProduction(environment)
+        );
+    }
+
+    LocalCorsConfiguration(String configuredOrigins, boolean production) {
+        this.allowedOrigins = validateOrigins(configuredOrigins, production);
     }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
                 .allowedOrigins(allowedOrigins)
-                .allowedOriginPatterns(allowedOriginPatterns)
                 .allowedMethods(
                         "GET",
+                        "HEAD",
                         "POST",
                         "PUT",
                         "PATCH",
                         "DELETE",
                         "OPTIONS"
                 )
-                .allowedHeaders("*")
-                .allowPrivateNetwork(true)
+                .allowedHeaders(
+                        "Accept",
+                        "Content-Type",
+                        "X-CSRF-Token"
+                )
+                .allowCredentials(true)
+                .allowPrivateNetwork(false)
                 .maxAge(3600);
     }
 
-    private static String[] splitCsv(String value) {
-        return Arrays.stream(value.split(","))
-                .map(String::trim)
-                .filter(candidate -> !candidate.isBlank())
-                .toArray(String[]::new);
+    /** Ensures auth/CSRF filter failures still carry the exact CORS headers. */
+    @Bean
+    FilterRegistrationBean<CorsFilter> cortexCorsFilterRegistration() {
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", servletCorsConfiguration());
+        FilterRegistrationBean<CorsFilter> registration =
+                new FilterRegistrationBean<>(new CorsFilter(source));
+        registration.setName("cortexCorsFilter");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        registration.addUrlPatterns("/*");
+        return registration;
+    }
+
+    private CorsConfiguration servletCorsConfiguration() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins));
+        configuration.setAllowedMethods(Arrays.asList(
+                HttpMethod.GET.name(),
+                HttpMethod.HEAD.name(),
+                HttpMethod.POST.name(),
+                HttpMethod.PUT.name(),
+                HttpMethod.PATCH.name(),
+                HttpMethod.DELETE.name(),
+                HttpMethod.OPTIONS.name()
+        ));
+        configuration.setAllowedHeaders(Arrays.asList(
+                HttpHeaders.ACCEPT,
+                HttpHeaders.CONTENT_TYPE,
+                "X-CSRF-Token"
+        ));
+        configuration.setAllowCredentials(true);
+        configuration.setAllowPrivateNetwork(false);
+        configuration.setMaxAge(3600L);
+        return configuration;
+    }
+
+    private static String[] validateOrigins(
+            String configuredOrigins,
+            boolean production
+    ) {
+        Set<String> origins = new LinkedHashSet<>();
+        if (configuredOrigins != null) {
+            Arrays.stream(configuredOrigins.split(","))
+                    .map(String::strip)
+                    .filter(candidate -> !candidate.isBlank())
+                    .forEach(origins::add);
+        }
+        if (origins.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Ao menos uma origem CORS exata deve ser configurada."
+            );
+        }
+
+        for (String origin : origins) {
+            validateOrigin(origin, production);
+        }
+        return origins.toArray(String[]::new);
+    }
+
+    private static void validateOrigin(String origin, boolean production) {
+        if (origin.indexOf('*') >= 0) {
+            throw new IllegalStateException(
+                    "CORS não aceita origens com curinga."
+            );
+        }
+
+        URI uri;
+        try {
+            uri = URI.create(origin);
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(
+                    "Origem CORS inválida.",
+                    exception
+            );
+        }
+
+        String scheme = uri.getScheme() == null
+                ? ""
+                : uri.getScheme().toLowerCase(Locale.ROOT);
+        boolean validScheme = "http".equals(scheme) || "https".equals(scheme);
+        boolean validPort = uri.getPort() == -1
+                || (uri.getPort() >= 1 && uri.getPort() <= 65535);
+        if (!validScheme
+                || uri.getHost() == null
+                || uri.getHost().isBlank()
+                || uri.getRawUserInfo() != null
+                || (uri.getRawPath() != null && !uri.getRawPath().isEmpty())
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || !validPort) {
+            throw new IllegalArgumentException(
+                    "Origem CORS deve conter somente esquema, host e porta."
+            );
+        }
+        if (production && !"https".equals(scheme)) {
+            throw new IllegalStateException(
+                    "CORS de produção exige origens HTTPS explícitas."
+            );
+        }
     }
 }

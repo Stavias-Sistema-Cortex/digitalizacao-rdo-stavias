@@ -11,6 +11,9 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
+# A container without an explicit override must start in the fail-closed mode.
+ENV SPRING_PROFILES_ACTIVE=production
+
 COPY --from=build /app/target/*.jar app.jar
 
 EXPOSE 8080

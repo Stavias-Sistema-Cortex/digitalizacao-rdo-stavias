@@ -21,8 +21,13 @@ if [ -z "${CORTEX_MYSQL_ROOT_PASSWORD:-}" ]; then
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_JWT_SECRET:-}" ]; then
-  echo "Missing CORTEX_AUTH_JWT_SECRET."
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
+  exit 1
+fi
+
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY for the local compose stack."
   exit 1
 fi
 

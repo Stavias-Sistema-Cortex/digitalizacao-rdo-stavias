@@ -1,7 +1,6 @@
 package com.projeto.cortex.ontology;
 
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.auth.PapelAcesso;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,9 +40,6 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
 
     @MockBean
     private OperationalTimelineService service;
-
-    @MockBean
-    private JwtService jwtService;
 
     @SuppressWarnings("unchecked")
     private void papel(String userId, PapelAcesso papel) {

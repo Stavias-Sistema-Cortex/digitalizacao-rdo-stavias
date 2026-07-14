@@ -1,7 +1,6 @@
 package com.projeto.cortex.intelligence.stavia.ontology.api;
 
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.intelligence.stavia.ontology.service.StaviaReasoningService;
 import org.junit.jupiter.api.Test;
@@ -44,9 +43,6 @@ class StaviaQueryControllerAuthorizationMockMvcTest {
 
     @MockBean
     private StaviaReasoningService reasoningService;
-
-    @MockBean
-    private JwtService jwtService;
 
     @SuppressWarnings("unchecked")
     private void papel(String userId, PapelAcesso papel) {

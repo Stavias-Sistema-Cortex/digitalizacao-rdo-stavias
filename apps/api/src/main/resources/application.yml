@@ -23,8 +23,10 @@ server:
 
 cortex:
   auth:
-    jwt-secret: ${CORTEX_AUTH_JWT_SECRET}
-    jwt-ttl-seconds: ${CORTEX_AUTH_JWT_TTL_SECONDS:43200}
+    session:
+      ttl-seconds: ${CORTEX_AUTH_SESSION_TTL_SECONDS:43200}
+      cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:true}
+      same-site: ${CORTEX_AUTH_COOKIE_SAME_SITE:Lax}
     cpf-hmac:
       current-key-id: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:}
       current-key-file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:}

@@ -5,7 +5,8 @@ spring:
 
 cortex:
   auth:
-    jwt-secret: ${CORTEX_AUTH_JWT_SECRET:${random.uuid}}
+    session:
+      cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:false}
     otp:
       hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:${random.uuid}${random.uuid}}
 

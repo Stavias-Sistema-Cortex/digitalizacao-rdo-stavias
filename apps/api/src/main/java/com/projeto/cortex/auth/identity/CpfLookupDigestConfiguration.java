@@ -1,12 +1,20 @@
 package com.projeto.cortex.auth.identity;
 
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import java.nio.file.Path;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 @Configuration(proxyBeanMethods = false)
 public class CpfLookupDigestConfiguration {
+
+    private final Environment environment;
+
+    public CpfLookupDigestConfiguration(Environment environment) {
+        this.environment = environment;
+    }
 
     @Bean
     CpfLookupDigestService cpfLookupDigestService(
@@ -23,6 +31,13 @@ public class CpfLookupDigestConfiguration {
             @Value("${cortex.auth.cpf-hmac.previous-key-inline:}")
             String previousKeyInline
     ) {
+        validateProductionSecretSources(
+                currentKeyFile,
+                currentKeyInline,
+                previousKeyId,
+                previousKeyFile,
+                previousKeyInline
+        );
         return new HmacCpfLookupDigestService(
                 currentKeyId,
                 optionalPath(currentKeyFile),
@@ -33,6 +48,32 @@ public class CpfLookupDigestConfiguration {
                         previousKeyInline
                 )
         );
+    }
+
+    private void validateProductionSecretSources(
+            String currentFile,
+            String currentInline,
+            String previousId,
+            String previousFile,
+            String previousInline
+    ) {
+        if (SecurityRuntimeMode.isLocalOrTestOnly(environment)) {
+            return;
+        }
+        if (isBlank(currentFile) || !isBlank(currentInline)) {
+            throw new IllegalStateException(
+                    "CPF HMAC em produção exige chave atual em arquivo secreto."
+            );
+        }
+        boolean previousConfigured = !isBlank(previousId)
+                || !isBlank(previousFile)
+                || !isBlank(previousInline);
+        if (previousConfigured
+                && (isBlank(previousFile) || !isBlank(previousInline))) {
+            throw new IllegalStateException(
+                    "CPF HMAC anterior em produção exige arquivo secreto."
+            );
+        }
     }
 
     private HmacCpfLookupDigestService.PreviousKey previousKey(

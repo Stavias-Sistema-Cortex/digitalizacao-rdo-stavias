@@ -14,9 +14,13 @@ if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_JWT_SECRET:-}" ]; then
-  echo "Missing CORTEX_AUTH_JWT_SECRET."
-  echo "Set it with a long random value in your shell or local .env."
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
+  exit 1
+fi
+
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY for the local container."
   exit 1
 fi
 
@@ -26,7 +30,9 @@ docker run --rm -p 8081:8080 \
   -e CORTEX_DB_URL="${CORTEX_DB_URL:-jdbc:mysql://host.docker.internal:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}" \
   -e CORTEX_DB_USER="${CORTEX_DB_USER:-cortex_app}" \
   -e CORTEX_DB_PASSWORD="$CORTEX_DB_PASSWORD" \
-  -e CORTEX_AUTH_JWT_SECRET="$CORTEX_AUTH_JWT_SECRET" \
+  -e SPRING_PROFILES_ACTIVE=local \
+  -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID="$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID" \
+  -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY="$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY" \
   -e CORTEX_IMPORT_ENABLED="${CORTEX_IMPORT_ENABLED:-true}" \
   -e CORTEX_SYNC_ENABLED="${CORTEX_SYNC_ENABLED:-true}" \
   -e CORTEX_SYNC_INITIAL_DELAY_MS="${CORTEX_SYNC_INITIAL_DELAY_MS:-10000}" \

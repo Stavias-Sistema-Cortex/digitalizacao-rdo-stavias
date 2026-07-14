@@ -1,7 +1,7 @@
 package com.projeto.cortex.email;
 
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import java.nio.file.Path;
-import java.util.Arrays;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -96,12 +96,7 @@ public class EmailConfiguration implements EnvironmentAware {
     }
 
     private boolean hasOnlyLocalOrTestProfiles() {
-        String[] activeProfiles = environment.getActiveProfiles();
-        return activeProfiles.length > 0
-                && Arrays.stream(activeProfiles).allMatch(
-                        profile -> "local".equals(profile)
-                                || "test".equals(profile)
-                );
+        return SecurityRuntimeMode.isLocalOrTestOnly(environment);
     }
 
     public static void validateProvider(

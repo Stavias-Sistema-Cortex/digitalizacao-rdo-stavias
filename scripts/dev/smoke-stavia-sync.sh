@@ -11,7 +11,6 @@ DB_NAME="cortex_smoke"
 DB_USER="cortex_app"
 DB_PASSWORD="cortex-smoke-pass"
 DB_ROOT_PASSWORD="cortex-smoke-root-pass"
-JWT_SECRET="stavia-smoke-jwt-secret-0000000000000000"
 
 ADMIN_ID="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 COLAB_1_ID="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
@@ -62,19 +61,19 @@ server.listen(0, "127.0.0.1", () => {
 NODE
 }
 
-generate_jwt() {
-  node - "$JWT_SECRET" "$ADMIN_ID" <<'NODE'
+generate_session_material() {
+  node - <<'NODE'
 const crypto = require("node:crypto");
-const [secret, subject] = process.argv.slice(2);
-function b64url(input) {
-  return Buffer.from(input).toString("base64url");
-}
-const now = Math.floor(Date.now() / 1000);
-const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-const payload = b64url(JSON.stringify({ sub: subject, iat: now, exp: now + 3600 }));
-const signingInput = `${header}.${payload}`;
-const signature = crypto.createHmac("sha256", secret).update(signingInput).digest("base64url");
-console.log(`${signingInput}.${signature}`);
+const sessionToken = crypto.randomBytes(32).toString("base64url");
+const csrfToken = crypto.randomBytes(32).toString("base64url");
+const sha256 = (value) => crypto.createHash("sha256").update(value, "ascii").digest("hex");
+console.log([
+  crypto.randomUUID(),
+  sessionToken,
+  csrfToken,
+  sha256(sessionToken),
+  sha256(csrfToken),
+].join("\t"));
 NODE
 }
 
@@ -88,7 +87,8 @@ api_json() {
   status="$(
     curl -sS \
       -X "$method" \
-      -H "Authorization: Bearer $TOKEN" \
+      -b "cortex_session=$SESSION_TOKEN; cortex_csrf=$CSRF_TOKEN" \
+      -H "X-CSRF-Token: $CSRF_TOKEN" \
       -H "Content-Type: application/json" \
       -H "Origin: http://127.0.0.1:5173" \
       -o "$output_file" \
@@ -111,7 +111,7 @@ api_get() {
 
   status="$(
     curl -sS \
-      -H "Authorization: Bearer $TOKEN" \
+      -b "cortex_session=$SESSION_TOKEN; cortex_csrf=$CSRF_TOKEN" \
       -H "Origin: http://127.0.0.1:5173" \
       -o "$output_file" \
       -w "%{http_code}" \
@@ -157,6 +157,7 @@ fi
 
 API_PORT="$(free_port)"
 BASE_URL="http://127.0.0.1:$API_PORT/api"
+CPF_HMAC_KEY="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 
 log "iniciando MySQL descartavel em container $MYSQL_CONTAINER"
 docker run --rm -d \
@@ -168,7 +169,7 @@ docker run --rm -d \
   -p 127.0.0.1::3306 \
   mysql:8.4 \
   --character-set-server=utf8mb4 \
-  --collation-server=utf8mb4_0900_ai_ci >/dev/null
+  --collation-server=utf8mb4_unicode_ci >/dev/null
 
 for _ in {1..90}; do
   if ! docker inspect -f '{{.State.Running}}' "$MYSQL_CONTAINER" 2>/dev/null | grep -q true; then
@@ -197,7 +198,9 @@ log "subindo API local em $BASE_URL"
     CORTEX_DB_URL="$DB_URL" \
     CORTEX_DB_USER="$DB_USER" \
     CORTEX_DB_PASSWORD="$DB_PASSWORD" \
-    CORTEX_AUTH_JWT_SECRET="$JWT_SECRET" \
+    CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID=smoke-v1 \
+    CORTEX_AUTH_CPF_HMAC_CURRENT_KEY="$CPF_HMAC_KEY" \
+    CORTEX_CORS_ALLOWED_ORIGINS=http://127.0.0.1:5173 \
     CORTEX_AUTH_DEV_ADMIN_ENABLED=true \
     CORTEX_IMPORT_ENABLED=false \
     CORTEX_SYNC_ENABLED=false \
@@ -221,6 +224,8 @@ curl -fsS "$BASE_URL/health" >/dev/null 2>&1 \
   || fail "API nao respondeu ao healthcheck"
 
 log "semeando obra e colaboradores para payload real de sync"
+IFS=$'\t' read -r SESSION_ID SESSION_TOKEN CSRF_TOKEN SESSION_TOKEN_HASH CSRF_TOKEN_HASH \
+  < <(generate_session_material)
 docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$DB_ROOT_PASSWORD" "$DB_NAME" <<SQL
 INSERT INTO obra (
   id,
@@ -256,33 +261,67 @@ INSERT INTO colaborador (
   email,
   nome_grupo,
   nome_perfil,
+  papel_acesso,
   ativo
 ) VALUES
-  ('$ADMIN_ID', 'SMOKE', 'colaborador', 'admin', 'ADM', 'Admin Smoke', 'admin.smoke@example.local', 'Administradores', 'Administrador', 1),
-  ('$COLAB_1_ID', 'SMOKE', 'colaborador', 'joao', 'C001', 'Joao Silva', 'joao.silva@example.local', 'Operacao', 'Operador', 1),
-  ('$COLAB_2_ID', 'SMOKE', 'colaborador', 'maria', 'C002', 'Maria Souza', 'maria.souza@example.local', 'Operacao', 'Encarregada', 1);
+  ('$ADMIN_ID', 'SMOKE', 'colaborador', 'admin', 'ADM', 'Admin Smoke', 'admin.smoke@example.invalid', 'Administradores', 'Administrador', 'ALFA', 1),
+  ('$COLAB_1_ID', 'SMOKE', 'colaborador', 'joao', 'C001', 'Joao Silva', 'joao.silva@example.invalid', 'Operacao', 'Operador', 'BETA', 1),
+  ('$COLAB_2_ID', 'SMOKE', 'colaborador', 'maria', 'C002', 'Maria Souza', 'maria.souza@example.invalid', 'Operacao', 'Encarregada', 'BETA', 1);
+
+INSERT INTO auth_session (
+  id,
+  colaborador_id,
+  token_hash,
+  csrf_hash,
+  expira_em
+) VALUES (
+  '$SESSION_ID',
+  '$ADMIN_ID',
+  '$SESSION_TOKEN_HASH',
+  '$CSRF_TOKEN_HASH',
+  TIMESTAMPADD(HOUR, 1, CURRENT_TIMESTAMP(6))
+);
 SQL
 
-TOKEN="$(generate_jwt)"
+log "validando preflight CORS somente para a origem exata configurada"
+ALLOWED_ORIGIN="http://127.0.0.1:5173"
+ALLOWED_HEADERS="$TMP_DIR/cors-allowed.headers"
+status="$(
+  curl -sS \
+    -X OPTIONS \
+    -H "Origin: $ALLOWED_ORIGIN" \
+    -H "Access-Control-Request-Method: POST" \
+    -H "Access-Control-Request-Headers: content-type,x-csrf-token" \
+    -o /dev/null \
+    -D "$ALLOWED_HEADERS" \
+    -w "%{http_code}" \
+    "$BASE_URL/sync/push"
+)"
+[[ "$status" == "200" || "$status" == "204" ]] \
+  || fail "preflight CORS retornou HTTP $status para a origem permitida"
+grep -qi "^Access-Control-Allow-Origin: $ALLOWED_ORIGIN" "$ALLOWED_HEADERS" \
+  || fail "preflight CORS nao liberou a origem exata"
+grep -qi "^Access-Control-Allow-Credentials: true" "$ALLOWED_HEADERS" \
+  || fail "preflight CORS nao habilitou cookies credenciados"
 
-log "validando preflight CORS loopback e rede privada"
-for origin in "http://127.0.0.1:5173" "http://192.168.0.50:5173"; do
-  headers="$TMP_DIR/cors-$(echo "$origin" | tr '/:.' '____').headers"
-  status="$(
-    curl -sS \
-      -X OPTIONS \
-      -H "Origin: $origin" \
-      -H "Access-Control-Request-Method: POST" \
-      -H "Access-Control-Request-Headers: authorization,content-type" \
-      -o /dev/null \
-      -D "$headers" \
-      -w "%{http_code}" \
-      "$BASE_URL/sync/push"
-  )"
-  [[ "$status" == "200" || "$status" == "204" ]] || fail "preflight CORS retornou HTTP $status para $origin"
-  grep -qi "^Access-Control-Allow-Origin: $origin" "$headers" \
-    || fail "preflight CORS nao liberou origem $origin"
-done
+DENIED_ORIGIN="http://192.168.0.50:5173"
+DENIED_HEADERS="$TMP_DIR/cors-denied.headers"
+status="$(
+  curl -sS \
+    -X OPTIONS \
+    -H "Origin: $DENIED_ORIGIN" \
+    -H "Access-Control-Request-Method: POST" \
+    -H "Access-Control-Request-Headers: content-type,x-csrf-token" \
+    -o /dev/null \
+    -D "$DENIED_HEADERS" \
+    -w "%{http_code}" \
+    "$BASE_URL/sync/push"
+)"
+[[ "$status" -ge 400 ]] \
+  || fail "preflight CORS aceitou uma origem privada nao configurada"
+if grep -qi "^Access-Control-Allow-Origin:" "$DENIED_HEADERS"; then
+  fail "preflight CORS respondeu allow-origin para origem negada"
+fi
 
 log "registrando dispositivo de sync autenticado"
 DEVICE_REQUEST="$TMP_DIR/device.json"
