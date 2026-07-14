@@ -1,303 +1,116 @@
-# Córtex API — Runbook de Desenvolvimento
+# Córtex — runbook de desenvolvimento
 
-Este documento explica como rodar e testar o backend do Córtex localmente.
+## Pré-requisitos
 
-## 1. Escopo atual do backend
+- JDK 21 (Java 25 não é o runtime suportado para o gate Maven);
+- Node 22 e npm;
+- Docker Desktop para MySQL/compose;
+- `.env` local ignorado pelo Git, criado a partir de `.env.example`.
 
-A API atualmente suporta:
+No mínimo, preencha senhas do MySQL e uma chave CPF HMAC local aleatória. Não
+use CPF, e-mail, senha ou token real em fixture, log ou commit.
 
-- Health check
-- Cadastro de ativos
-- Importação de ativos a partir de dbstavias_zld.ativos
-- Busca de ativos por código, nome e categoria
-- Cadastro de colaboradores
-- Importação de colaboradores a partir de dbstavias_acad.usuarios
-- Busca de colaboradores por código, nome, email, grupo e perfil
-- Histórico de execuções de sincronização
-- Scripts de terminal para visualização em desenvolvimento
-- Docker
-- Docker Compose local
-- CI básico no GitHub Actions
+## Stack Docker local
 
-## 2. Portas usadas em desenvolvimento
+```bash
+cp .env.example .env
+# edite os valores locais
+./scripts/dev/run-compose.sh
+```
 
-API local com banco MySQL local:
+Serviços:
 
-- API: http://localhost:8080
-- Banco: cortex_dev no MySQL local
+- PWA: `http://127.0.0.1:5173`
+- API: `http://127.0.0.1:8081`
+- MySQL: `127.0.0.1:3307`
+- readiness: `http://127.0.0.1:8081/api/readiness`
 
-API via Docker Compose:
+O compose usa e-mail fake somente no perfil `local` e um volume persistente
+para anexos. Não há endpoint para ler OTPs fake: testes capturam o gateway por
+injeção; códigos nunca são expostos por uma rota de produção.
 
-- API: http://localhost:8081
-- Banco: MySQL Docker na porta 3307
+```bash
+docker compose -f compose.local.yml logs -f cortex-api cortex-web
+./scripts/dev/stop-compose.sh
+```
 
-Importante:
+## Processos locais separados
 
-Os dados importados manualmente da Stavias normalmente estão no banco local cortex_dev usado pela API em 8080.
-
-O Docker Compose usa outro banco, dentro do Docker. Esse banco começa vazio.
-
-Então:
-
-- Use 8080 para testar dados reais já importados localmente.
-- Use 8081 para testar se a stack Docker sobe corretamente.
-
-## 3. Variáveis de ambiente
-
-Para rodar a API local:
-
-export CORTEX_DB_PASSWORD='sua-senha-local-do-cortex'
-export CORTEX_AUTH_JWT_SECRET='gere-um-segredo-longo-local'
-
-Para ativar importações:
-
-export CORTEX_IMPORT_ENABLED=true
-
-Para importar ativos da ZLD:
-
-export ZLD_DB_URL='jdbc:mysql://<host-zld>:3306/<database-zld>?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
-export ZLD_DB_USER='usuario-zld'
-export ZLD_DB_PASSWORD='senha-zld'
-
-Para importar colaboradores da Academy:
-
-export ACAD_DB_URL='jdbc:mysql://<host-academy>:3306/<database-academy>?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
-export ACAD_DB_USER='usuario-acad'
-export ACAD_DB_PASSWORD='senha-acad'
-
-Nunca commitar senhas reais.
-
-## 4. Rodar API local
-
-Da raiz do repo:
-
+```bash
 ./scripts/dev/run-api.sh
 
-A API sobe em:
-
-http://localhost:8080
-
-Testar health check:
-
-curl -s http://localhost:8080/api/health | jq
-
-Resultado esperado:
-
-status: UP
-
-## 5. Rodar API com Docker Compose
-
-Da raiz do repo:
-
-./scripts/dev/run-compose.sh
-
-A API sobe em:
-
-http://localhost:8081
-
-O MySQL Docker sobe em:
-
-localhost:3307
-
-Testar:
-
-curl -s http://localhost:8081/api/health | jq
-
-Parar:
-
-./scripts/dev/stop-compose.sh
-
-Observação:
-
-O banco Docker é separado do banco local. Por isso, buscas podem retornar vazias no Compose mesmo quando funcionam na API local.
-
-## 6. Endpoints de ativos
-
-Listar ativos:
-
-GET /api/assets
-
-Buscar ativos:
-
-GET /api/assets?query=CBA
-GET /api/assets?query=VOLVO
-GET /api/assets?query=CAM BASCULANTE
-
-Importar ativos da ZLD:
-
-POST /api/assets/import/zld
-
-Em modo seguro, esse endpoint deve retornar:
-
-403 Forbidden
-
-Isso é correto quando:
-
-CORTEX_IMPORT_ENABLED=false
-
-## 7. Scripts de ativos
-
-Buscar ativos:
-
-./scripts/dev/assets.sh CBA
-./scripts/dev/assets.sh VOLVO
-./scripts/dev/assets.sh "CAM BASCULANTE"
-
-Importar ativos:
-
-./scripts/dev/import-assets.sh
-
-Ver histórico de sync:
-
-./scripts/dev/sync-runs.sh
-
-Para usar com Docker Compose na porta 8081:
-
-CORTEX_API_BASE_URL=http://localhost:8081 ./scripts/dev/assets.sh CBA
-
-## 8. Endpoints de colaboradores
-
-Listar colaboradores:
-
-GET /api/colaboradores
-
-Buscar colaboradores:
-
-GET /api/colaboradores?query=paulo
-GET /api/colaboradores?query=liderança
-GET /api/colaboradores?query=admin
-
-Importar colaboradores da Academy:
-
-POST /api/colaboradores/import/acad
-
-Em modo seguro, esse endpoint deve retornar:
-
-403 Forbidden
-
-Isso é correto quando:
-
-CORTEX_IMPORT_ENABLED=false
-
-## 9. Scripts de colaboradores
-
-Buscar colaboradores:
-
-./scripts/dev/colaboradores.sh paulo
-./scripts/dev/colaboradores.sh liderança
-./scripts/dev/colaboradores.sh admin
-
-Importar colaboradores:
-
-./scripts/dev/import-colaboradores.sh
-
-Para usar com Docker Compose na porta 8081:
-
-CORTEX_API_BASE_URL=http://localhost:8081 ./scripts/dev/colaboradores.sh paulo
-
-Observação:
-
-Se o Compose estiver usando banco vazio, o resultado pode ser vazio. Para ver dados reais importados da Academy, use a API local em 8080.
-
-## 10. Fluxo de dados dos ativos
-
-dbstavias_zld.ativos
-  -> AssetImportService
-  -> cortex_dev.asset
-  -> GET /api/assets
-  -> scripts/dev/assets.sh
-  -> frontend futuramente
-
-Campos principais:
-
-ativos.id       -> source_pk
-ativos.prefixo  -> external_code
-ativos.tipo     -> category
-ativos.modelo   -> name
-
-## 11. Fluxo de dados dos colaboradores
-
-dbstavias_acad.usuarios
-  -> ColaboradorImportService
-  -> cortex_dev.colaborador
-  -> GET /api/colaboradores
-  -> scripts/dev/colaboradores.sh
-  -> frontend futuramente
-
-Campos principais:
-
-usuarios.id_usuario  -> pk_origem
-usuarios.nome        -> nome
-usuarios.email       -> email
-usuarios.ativo       -> ativo
-usuarios.id_grupo    -> id_grupo_origem
-grupos.nome          -> nome_grupo
-usuarios.id_perfil   -> id_perfil_origem
-perfil.nome_perfil   -> nome_perfil
-usuarios.criado_em   -> criado_em_origem
-
-CPF não é exposto pela API do Córtex nesta versão.
-
-## 12. Histórico de sincronização
-
-Todas as importações registram execução em:
-
-source_sync_run
-
-E checkpoint em:
-
-source_sync_checkpoint
-
-Ver histórico pelo terminal:
-
-./scripts/dev/sync-runs.sh
-
-## 13. Build local
-
-Compilar API:
-
-mvn -f apps/api/pom.xml clean compile
-
-Resultado esperado:
-
-BUILD SUCCESS
-
-## 14. Git safety
-
-Não commitar:
-
-- .env
-- .env.*
-- apps/api/target/
-- .DS_Store
-- .neurotrace/
-- senhas reais
-- credenciais da Stavias
-
-Antes de commitar:
-
-git status
-
-## 15. Estado atual do backend
-
-O backend já possui:
-
-- cadastro de ativos
-- importação real da ZLD
-- cadastro de colaboradores
-- importação real da Academy
-- proteção de importação por variável de ambiente
-- scripts de terminal
-- Dockerfile
-- Docker Compose local
-- CI no GitHub Actions
-
-Ainda não possui:
-
-- frontend web
-- autenticação
-- permissões
-- RDO digital
-- modo offline/PWA
-- Mapbox
-- deploy real
+cd apps/web
+npm ci
+npm run dev:local
+```
+
+A API local usa porta 8080 e a PWA 5173. `run-api.sh` valida banco e CPF HMAC,
+ativa o perfil `local` e não cria JWT. Autenticação online usa desafio OTP,
+cookie de sessão opaco e CSRF; passkeys usam WebAuthn.
+
+## Dados externos e importação
+
+Importação é opt-in. Configure `CORTEX_IMPORT_ENABLED=true` e as variáveis
+`CORTEX_ZELADORIA_DB_*` / `CORTEX_ACADEMY_DB_*` apenas quando o acesso às fontes
+for intencional. Com importação desativada, rotas administrativas respondem
+403. Nunca copie credenciais externas para compose ou documentação.
+
+Scripts úteis em `scripts/dev/` incluem busca de ativos/colaboradores,
+importações explícitas, histórico de sync e `smoke-stavia-sync.sh`. O smoke cria
+MySQL e dados `example.invalid` descartáveis, valida CORS/sessão/sync/StavIA e
+remove tudo ao encerrar.
+
+## Testes
+
+```bash
+cd apps/api
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
+
+cd ../web
+npm test -- --run
+npm run lint
+npm run build
+```
+
+Para habilitar os testes MySQL locais já anotados, exporte somente durante a
+execução:
+
+```bash
+export CORTEX_MYSQL_ROOT_PASSWORD='senha-local-do-container'
+cd apps/api
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
+```
+
+Cada teste cria e apaga seu próprio schema. Flyway deve aplicar V1–V33 sem
+`repair`.
+
+## Offline e sync
+
+- Mensagens, anexos e compras usam IDs/clientMutationId estáveis no IndexedDB.
+- Recarregar offline não autoriza chamadas à API; o grant offline serve apenas
+  ao cofre local verificado.
+- Na reconexão, acompanhe o estado no indicador de sync. Falhas permanecem
+  visíveis e podem ser repetidas; não são descartadas silenciosamente.
+- Para diagnosticar erro de sync, confirme nesta ordem: `/api/health`,
+  `/api/readiness`, sessão, scope/capability, rota e recibo idempotente.
+
+## Financeiro e autorização
+
+ALFA possui acesso global. BETA exige vínculo ativo com a obra e capability
+financeira exata. O frontend só reflete o resultado de
+`/api/financeiro/capacidades`; a autoridade permanece no backend.
+
+Não semeie fornecedores, notas, totais ou gráficos para “preencher” a tela.
+Estados vazios e “sem vínculo orçamentário” são comportamento correto quando a
+consulta real não oferece dados.
+
+## Antes de commitar
+
+```bash
+git status --short
+git diff --check
+```
+
+Não versionar `.env*`, `target/`, `dist/`, `node_modules/`, `.DS_Store`,
+`.neurotrace/`, secrets, dumps ou dados pessoais. Para publicação, siga
+`docs/deploy-checklist.md` e `docs/production-runbook.md`.

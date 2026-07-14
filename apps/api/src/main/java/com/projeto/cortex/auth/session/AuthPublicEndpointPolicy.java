@@ -32,6 +32,7 @@ final class AuthPublicEndpointPolicy {
         }
         if ("GET".equalsIgnoreCase(method)
                 && ("/api/health".equals(path)
+                    || "/api/readiness".equals(path)
                     || "/api/auth/cpf-filter".equals(path))) {
             return true;
         }

@@ -31,6 +31,10 @@ services:
       CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:?Set the local CPF HMAC key id}
       CORTEX_AUTH_CPF_HMAC_CURRENT_KEY: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:?Set the local CPF HMAC key material}
       CORTEX_AUTH_DEV_ADMIN_ENABLED: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:-true}
+      CORTEX_EMAIL_PROVIDER: fake
+      CORTEX_STORAGE_PROVIDER: local
+      CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
+      CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
       CORTEX_IMPORT_ENABLED: ${CORTEX_IMPORT_ENABLED:-true}
       CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-true}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
@@ -46,6 +50,28 @@ services:
       CORTEX_ZELADORIA_DB_PASSWORD: ${CORTEX_ZELADORIA_DB_PASSWORD:-${ZLD_DB_PASSWORD:-}}
     ports:
       - "8081:8080"
+    volumes:
+      - cortex_object_data:/var/lib/cortex/objects
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/readiness | grep -q '\"status\":\"READY\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  cortex-web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_CORTEX_API_BASE_URL: /api
+        VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: ${CORTEX_STORAGE_MAX_SIZE_BYTES:-26214400}
+    container_name: cortex-web-local
+    depends_on:
+      cortex-api:
+        condition: service_healthy
+    ports:
+      - "5173:8080"
 
 volumes:
   cortex_mysql_data:
+  cortex_object_data:

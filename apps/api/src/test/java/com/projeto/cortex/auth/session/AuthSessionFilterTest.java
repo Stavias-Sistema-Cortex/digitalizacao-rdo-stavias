@@ -96,6 +96,7 @@ class AuthSessionFilterTest {
                             + "30000000-0000-0000-0000-000000000003/verify"
             ),
             request("GET", "/api/health"),
+            request("GET", "/api/readiness"),
             request("OPTIONS", "/api/obras")
         }) {
             MockHttpServletResponse response = new MockHttpServletResponse();

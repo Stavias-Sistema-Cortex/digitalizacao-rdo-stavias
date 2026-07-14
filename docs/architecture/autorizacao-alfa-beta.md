@@ -18,10 +18,11 @@ alocação operacional, nem por presença em RDO anterior).
 
 ## 2. Persistência
 
-### `colaborador.papel_acesso` (`VARCHAR(20)`, nullable)
-Papel explícito do colaborador. Quando ausente, o sistema deriva o papel do
-texto de perfil/grupo importado da Academy (compatibilidade), tratando
-"administrador" como Alfa e o restante como Beta.
+### `colaborador.papel_acesso` (`VARCHAR(20)`, obrigatório)
+Papel explícito do colaborador. A V27 preserva todo `ALFA` já explícito e
+normaliza somente valores ausentes/desconhecidos para `BETA`. Em runtime não há
+inferência por perfil, grupo ou texto importado da Academy; papel inválido
+nega acesso.
 
 ### `vinculo_colaborador_obra`
 Vínculo explícito colaborador ↔ obra.
@@ -65,6 +66,21 @@ em tempo de execução.
 Controllers, serviços e consultas por obra passam por esse ponto **no backend** —
 o frontend apenas oculta ações proibidas; a segurança real não depende dele.
 
+### Capabilities financeiras
+
+ALFA tem todas as capabilities de forma implícita. BETA precisa, ao mesmo
+tempo, de vínculo ativo com a obra e de uma concessão `ATIVA` exata em
+`permissao_financeira_colaborador` (V28):
+
+- `FINANCEIRO_VISUALIZAR`: listas, detalhes, Home, relatórios e StavIA;
+- `FINANCEIRO_OPERAR`: solicitações, compras, notas e lançamentos;
+- `FINANCEIRO_APROVAR`: decisões das etapas persistidas de aprovação;
+- `FINANCEIRO_ADMINISTRAR`: catálogos, regras, perfis e cobranças.
+
+Não existe backfill de grants BETA. A mesma política é aplicada antes da query
+em controllers, exportações, sync, hidratação da Home e fontes StavIA, evitando
+vazamento por totais, options ou evidências.
+
 Gestão de vínculos (exclusiva Alfa): `VinculoColaboradorObraController`
 (`GET/POST /api/obras/{obraId}/vinculos`, `DELETE .../{colaboradorId}`).
 Cada atribuição/revogação gera evento ontológico e mantém a relação
@@ -101,6 +117,9 @@ Reutiliza `CortexOperationalMemoryService` (idempotente por `id` de evento):
   (`/api/obras/relacionadas` usa o vínculo ativo).
 - A sincronização já valida `obraId` autorizado antes de aceitar mutações
   (ver `SyncService`), e continua válida com o modelo de vínculo.
+- Eventos financeiros são filtrados também pela capability exigida. Mensagens
+  são filtradas por obra/conversa e participação; estar na mesma obra não dá
+  acesso automático a uma conversa privada.
 - Revogação: o backend bloqueia o acesso online imediatamente; no próximo
   contato o cliente deixa de listar a obra. Operações offline pendentes não são
   apagadas silenciosamente — permanecem para tratamento explícito.
@@ -138,3 +157,14 @@ A decisão de acesso é **da aplicação**, testável sem banco:
 | PDOR — consultar (obra vinculada) | ✅ | ✅ |
 | Stav.IA | ✅ global | ✅ só obras vinculadas |
 | Dashboards/relatórios consolidados globais | ✅ | ❌ |
+| Financeiro — visualizar | ✅ | ✅ com vínculo + capability |
+| Financeiro — operar/aprovar/administrar | ✅ | ✅ com capability exata |
+| Mensagem privada fora da conversa | ✅ administrativo | ❌ |
+
+## 9. Gate de produção
+
+O perfil `production` exige ao menos um ALFA ativo com identidade de
+autenticação ATIVA e e-mail verificado. A API recusa a inicialização sem esse
+estado, além de recusar cookies inseguros, origens não HTTPS, secrets inline,
+SMTP fake/incompleto e storage efêmero. `/api/readiness` revalida banco e ALFA
+durante a operação.

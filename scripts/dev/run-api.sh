@@ -59,4 +59,4 @@ if command -v lsof >/dev/null 2>&1 &&
   exit 1
 fi
 
-mvn spring-boot:run
+./mvnw spring-boot:run

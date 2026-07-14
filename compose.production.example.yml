@@ -1,0 +1,100 @@
+services:
+  cortex-api:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: production
+      CORTEX_DB_URL: ${CORTEX_DB_URL:?Set the production MySQL JDBC URL}
+      CORTEX_DB_USER: ${CORTEX_DB_USER:?Set the least-privilege database user}
+      CORTEX_DB_PASSWORD: ${CORTEX_DB_PASSWORD:?Inject the database password from the platform secret manager}
+
+      CORTEX_CORS_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN:?Set the exact HTTPS public origin}
+      CORTEX_AUTH_COOKIE_SECURE: "true"
+      CORTEX_AUTH_COOKIE_SAME_SITE: ${CORTEX_AUTH_COOKIE_SAME_SITE:-Lax}
+      CORTEX_AUTH_WEBAUTHN_RP_ID: ${CORTEX_AUTH_WEBAUTHN_RP_ID:?Set the public hostname}
+      CORTEX_AUTH_WEBAUTHN_RP_NAME: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:-Stavias Córtex}
+      CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN}
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:?Set the deployed key id}
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac
+      CORTEX_AUTH_OTP_HMAC_KEY_FILE: /run/secrets/cortex_otp_hmac
+      CORTEX_AUTH_OFFLINE_GRANT_KEY_ID: ${CORTEX_AUTH_OFFLINE_GRANT_KEY_ID:?Set the offline signing key id}
+      CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE: /run/secrets/cortex_offline_private
+      CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE: /run/secrets/cortex_offline_public
+      CORTEX_AUTH_DEV_ADMIN_ENABLED: "false"
+      CORTEX_AUTH_PROVISIONING_ENABLED: "false"
+
+      CORTEX_EMAIL_PROVIDER: smtp
+      CORTEX_EMAIL_SENDER_PROFILE_KEY: ${CORTEX_EMAIL_SENDER_PROFILE_KEY:?Set the authenticated sender profile key}
+      CORTEX_SMTP_FROM: ${CORTEX_SMTP_FROM:?Set the authenticated Stavias From mailbox}
+      CORTEX_SMTP_HOST: ${CORTEX_SMTP_HOST:?Set the SMTP hostname}
+      CORTEX_SMTP_PORT: ${CORTEX_SMTP_PORT:-587}
+      CORTEX_SMTP_USERNAME: ${CORTEX_SMTP_USERNAME:?Set the SMTP username}
+      CORTEX_SMTP_PASSWORD_FILE: /run/secrets/cortex_smtp_password
+      CORTEX_SMTP_STARTTLS: "true"
+
+      CORTEX_STORAGE_PROVIDER: ${CORTEX_STORAGE_PROVIDER:-local}
+      CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
+      CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
+      CORTEX_STORAGE_S3_BUCKET: ${CORTEX_STORAGE_S3_BUCKET:-}
+      CORTEX_STORAGE_S3_REGION: ${CORTEX_STORAGE_S3_REGION:-}
+      CORTEX_STORAGE_S3_ENDPOINT: ${CORTEX_STORAGE_S3_ENDPOINT:-}
+      CORTEX_STORAGE_S3_PREFIX: ${CORTEX_STORAGE_S3_PREFIX:-production}
+      CORTEX_STORAGE_S3_PATH_STYLE: ${CORTEX_STORAGE_S3_PATH_STYLE:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+
+      CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED: ${CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:-true}
+      CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE: ${CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE:-25}
+      CORTEX_FINANCE_EMAIL_RETRY_MAX_ATTEMPTS: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_ATTEMPTS:-4}
+      CORTEX_FINANCE_EMAIL_RETRY_INITIAL_DELAY_SECONDS: ${CORTEX_FINANCE_EMAIL_RETRY_INITIAL_DELAY_SECONDS:-120}
+      CORTEX_FINANCE_EMAIL_RETRY_MAX_DELAY_SECONDS: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_DELAY_SECONDS:-3600}
+      CORTEX_FINANCE_EMAIL_DISPATCH_LEASE_SECONDS: ${CORTEX_FINANCE_EMAIL_DISPATCH_LEASE_SECONDS:-120}
+
+      CORTEX_IMPORT_ENABLED: "false"
+      CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-false}
+      CORTEX_STAVIA_GENERATOR_MODE: ${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}
+      CORTEX_STAVIA_INTERPRETER_MODE: ${CORTEX_STAVIA_INTERPRETER_MODE:-deterministic}
+    secrets:
+      - cortex_cpf_hmac
+      - cortex_otp_hmac
+      - cortex_offline_private
+      - cortex_offline_public
+      - cortex_smtp_password
+    volumes:
+      - cortex_object_data:/var/lib/cortex/objects
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/readiness | grep -q '\"status\":\"READY\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  cortex-web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_CORTEX_API_BASE_URL: /api
+        VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:?Set the deployed public key fingerprint}
+        VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: ${CORTEX_STORAGE_MAX_SIZE_BYTES:-26214400}
+    restart: unless-stopped
+    depends_on:
+      cortex-api:
+        condition: service_healthy
+    ports:
+      - "${CORTEX_WEB_PORT:-8080}:8080"
+
+secrets:
+  cortex_cpf_hmac:
+    file: ${CORTEX_AUTH_CPF_HMAC_SECRET_FILE:?Point to the CPF HMAC secret file}
+  cortex_otp_hmac:
+    file: ${CORTEX_AUTH_OTP_HMAC_SECRET_FILE:?Point to the OTP HMAC secret file}
+  cortex_offline_private:
+    file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_SECRET_FILE:?Point to the PKCS8 private PEM}
+  cortex_offline_public:
+    file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_SECRET_FILE:?Point to the public PEM}
+  cortex_smtp_password:
+    file: ${CORTEX_SMTP_PASSWORD_SECRET_FILE:?Point to the SMTP password file}
+
+volumes:
+  cortex_object_data:
