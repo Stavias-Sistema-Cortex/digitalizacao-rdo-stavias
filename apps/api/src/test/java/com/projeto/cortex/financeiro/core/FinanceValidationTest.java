@@ -20,6 +20,10 @@ class FinanceValidationTest {
                 new BigDecimal("1000.5000"),
                 "valor"
         )).isEqualByComparingTo("1000.5000");
+        assertThat(FinanceValidation.percentage(
+                new BigDecimal("100.000000"),
+                "percentual"
+        )).isEqualByComparingTo("100.000000");
         assertThat(FinanceValidation.currency(" brl ")).isEqualTo("BRL");
     }
 
@@ -36,6 +40,14 @@ class FinanceValidationTest {
         assertThatThrownBy(() -> FinanceValidation.money(
                 new BigDecimal("-0.01"),
                 "valor"
+        )).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> FinanceValidation.percentage(
+                new BigDecimal("100.000001"),
+                "percentual"
+        )).isInstanceOf(ResponseStatusException.class);
+        assertThatThrownBy(() -> FinanceValidation.percentage(
+                new BigDecimal("1.0000001"),
+                "percentual"
         )).isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> FinanceValidation.currency("REAL"))
                 .isInstanceOf(ResponseStatusException.class);

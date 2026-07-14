@@ -161,6 +161,8 @@ public class SyncService {
             "REGRA_APROVACAO",
             "DECISAO_APROVACAO",
             "NOTA_FISCAL",
+            "LANCAMENTO",
+            "LIQUIDACAO",
             "LANCAMENTO_FINANCEIRO",
             "PAGAMENTO",
             "COBRANCA_EMAIL"

@@ -14,6 +14,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,8 @@ class StoredObjectServiceTest {
     private final ObjectStorage storage = mock(ObjectStorage.class);
     private final CurrentUserService currentUser =
             mock(CurrentUserService.class);
+    private final StoredObjectDomainAccessGuard domainGuard =
+            mock(StoredObjectDomainAccessGuard.class);
     private StoredObjectService service;
 
     @BeforeEach
@@ -41,7 +44,8 @@ class StoredObjectServiceTest {
                         1_024,
                         Set.of("text/plain")
                 ),
-                currentUser
+                currentUser,
+                List.of(domainGuard)
         );
     }
 
@@ -152,6 +156,29 @@ class StoredObjectServiceTest {
         }
 
         verify(currentUser).requireSelfOrAdmin("owner-2");
+    }
+
+    @Test
+    void domainProtectedObjectCannotFallBackToOwnerOrWorksiteAccess() {
+        StoredObjectRecord record = availableRecord(
+                "object-finance",
+                "user-1",
+                "obra-1",
+                3
+        );
+        when(repository.findAvailableById("object-finance"))
+                .thenReturn(Optional.of(record));
+        when(domainGuard.protects(record)).thenReturn(true);
+        org.mockito.Mockito.doThrow(new ResponseStatusException(
+                HttpStatus.FORBIDDEN
+        )).when(domainGuard).authorize(record);
+
+        assertThatThrownBy(() -> service.download("object-finance"))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(domainGuard).authorize(record);
+        verify(storage, never()).get(any());
+        verify(currentUser, never()).requireWorksiteAccess(any());
     }
 
     private StoredObjectRecord availableRecord(

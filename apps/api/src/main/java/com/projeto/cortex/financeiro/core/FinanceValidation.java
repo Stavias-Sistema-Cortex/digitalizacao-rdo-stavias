@@ -59,6 +59,20 @@ public final class FinanceValidation {
         return value == null ? null : money(value, field);
     }
 
+    public static BigDecimal percentage(BigDecimal value, String field) {
+        if (value == null) {
+            throw badRequest(field + " é obrigatório.");
+        }
+        if (value.scale() > 6 || value.signum() <= 0
+                || value.compareTo(new BigDecimal("100")) > 0) {
+            throw badRequest(
+                    field + " deve ser maior que zero, menor ou igual a 100 "
+                            + "e ter no máximo seis casas decimais."
+            );
+        }
+        return value;
+    }
+
     public static String currency(String value) {
         String normalized = requiredText(value, "moeda", 3)
                 .toUpperCase(Locale.ROOT);

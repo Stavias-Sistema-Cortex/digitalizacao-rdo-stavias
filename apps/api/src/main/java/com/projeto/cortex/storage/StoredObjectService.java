@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -24,17 +25,22 @@ public class StoredObjectService {
     private final ObjectStorage storage;
     private final StoredObjectContentInspector inspector;
     private final CurrentUserService currentUserService;
+    private final List<StoredObjectDomainAccessGuard> domainAccessGuards;
 
     public StoredObjectService(
             StoredObjectRepository repository,
             ObjectStorage storage,
             StoredObjectContentInspector inspector,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            List<StoredObjectDomainAccessGuard> domainAccessGuards
     ) {
         this.repository = repository;
         this.storage = storage;
         this.inspector = inspector;
         this.currentUserService = currentUserService;
+        this.domainAccessGuards = domainAccessGuards == null
+                ? List.of()
+                : List.copyOf(domainAccessGuards);
     }
 
     public StoredObjectUploadResult upload(
@@ -108,6 +114,16 @@ public class StoredObjectService {
     public StoredObjectDownload download(String objectId) {
         String currentUserId = currentUserService.requireUserId();
         return downloadAuthorized(objectId, object -> {
+            boolean domainProtected = false;
+            for (StoredObjectDomainAccessGuard guard : domainAccessGuards) {
+                if (guard.protects(object)) {
+                    domainProtected = true;
+                    guard.authorize(object);
+                }
+            }
+            if (domainProtected) {
+                return;
+            }
             if (!currentUserId.equals(object.ownerId())) {
                 if (object.obraId() == null) {
                     currentUserService.requireSelfOrAdmin(object.ownerId());
