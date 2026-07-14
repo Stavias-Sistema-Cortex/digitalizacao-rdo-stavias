@@ -144,17 +144,6 @@
   background: var(--yellow);
 }
 
-.login__challenge-message {
-  margin: 14px 0 0;
-  padding: 11px 13px;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 9px;
-  background: rgb(255 255 255 / 6%);
-  color: var(--text-soft);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
 /* ---------- Formulário ---------- */
 
 .login__form {
@@ -214,19 +203,6 @@
 
 .cortex-login .login-field__input:disabled {
   opacity: 0.75;
-}
-
-.cortex-login .login-field__input--code {
-  text-align: center;
-  letter-spacing: 0.28em;
-  font-size: 1.2rem;
-}
-
-.login__code-expiry {
-  margin: 9px 2px 0;
-  color: var(--text-faint);
-  font-size: 0.78rem;
-  line-height: 1.45;
 }
 
 /* Estado de erro do campo */
@@ -306,67 +282,25 @@
   animation: login-spin 0.7s linear infinite;
 }
 
-.login__secondary-actions {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  margin-top: 14px;
-}
-
-.login__divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 18px 0;
-  color: var(--text-faint);
-  font-size: 0.74rem;
-  text-transform: uppercase;
-}
-
-.login__divider::before,
-.login__divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--hairline);
-}
-
 .cortex-login .login__passkey {
-  min-height: 50px;
-  border: 1px solid rgb(255 255 255 / 28%);
-  border-radius: 5px;
-  background: rgb(255 255 255 / 7%);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: 0.92rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cortex-login .login__passkey:hover:not(:disabled) {
-  border-color: var(--yellow);
-  background: rgb(255 255 255 / 11%);
-}
-
-.cortex-login .login__passkey:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.cortex-login .login__text-action {
-  padding: 4px 0;
+  align-self: center;
+  margin-top: 10px;
+  padding: 7px 10px;
   border: 0;
   background: transparent;
   color: var(--text-soft);
   font: inherit;
   font-size: 0.8rem;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  font-weight: 500;
   cursor: pointer;
+  transition: color 150ms ease;
 }
 
-.cortex-login .login__text-action:disabled {
+.cortex-login .login__passkey:hover:not(:disabled) {
+  color: var(--yellow);
+}
+
+.cortex-login .login__passkey:disabled {
   cursor: default;
   opacity: 0.55;
 }

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("LoginPage auth policy", () => {
-  it("não anuncia nem consulta autenticação offline por Bloom", () => {
+  it("usa CPF direto e mantém a passkey como ação minimalista", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
       "utf8",
@@ -13,13 +13,24 @@ describe("LoginPage auth policy", () => {
     expect(source).not.toContain("filtroOfflinePronto");
     expect(source).not.toContain("login offline está habilitado");
     expect(source).not.toContain("cpfMascarado");
-    expect(source).not.toContain("/auth/login");
+    expect(source).toContain("autenticarPorCpf");
     expect(source).toContain("O login exige conexão com o Córtex.");
-    expect(source).toContain('autoComplete="one-time-code"');
-    expect(source).toContain("Reenviar código");
-    expect(source).toContain("challenge.expiresInSeconds");
-    expect(source).toContain("Entrar com passkey");
+    expect(source).toContain('"Entrar"');
+    expect(source).toContain("Usar passkey");
     expect(source).toContain("authenticateWithPasskey");
+    const forbiddenPublicLoginTerms = [
+      "Enviar c\u00f3digo",
+      "C\u00f3digo de acesso",
+      "Reenviar c\u00f3digo",
+      'autoComplete="one-time-' + 'code"',
+      "chall" + "enge",
+      "e-" + "mail",
+      "em" + "ail",
+      "login__" + "divider",
+    ];
+    for (const term of forbiddenPublicLoginTerms) {
+      expect(source).not.toContain(term);
+    }
     expect(source).not.toContain("PIN");
   });
 });
