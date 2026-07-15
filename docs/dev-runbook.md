@@ -4,7 +4,7 @@ Este documento explica como rodar e testar o backend do Córtex localmente.
 
 ## 1. Escopo atual do backend
 
-A API atualmente suporta:
+A plataforma atualmente suporta:
 
 - Health check
 - Cadastro de ativos
@@ -18,12 +18,16 @@ A API atualmente suporta:
 - Docker
 - Docker Compose local
 - CI básico no GitHub Actions
+- autenticação por CPF com JWT e autorização Alfa/Beta por obra
+- Equipes, Mensagens offline-first, anexos protegidos e sincronização por outbox
+- mapas operacionais configuráveis (MapTiler/Mapbox), PDOR e Stav.IA com evidências
 
 ## 2. Portas usadas em desenvolvimento
 
 API local com banco MySQL local:
 
 - API: http://localhost:8080
+- Web: http://127.0.0.1:5173
 - Banco: cortex_dev no MySQL local
 
 API via Docker Compose:
@@ -49,6 +53,9 @@ Para rodar a API local:
 export CORTEX_DB_PASSWORD='sua-senha-local-do-cortex'
 export CORTEX_AUTH_JWT_SECRET='gere-um-segredo-longo-local'
 
+# Produção: mantenha o limite ativo; o perfil local já o desliga por padrão.
+export CORTEX_AUTH_LOGIN_RATE_LIMIT_ENABLED=true
+
 Para ativar importações:
 
 export CORTEX_IMPORT_ENABLED=true
@@ -67,6 +74,16 @@ export ACAD_DB_PASSWORD='senha-acad'
 
 Nunca commitar senhas reais.
 
+Para mapas, configure no ambiente que inicia o Vite somente uma chave pública:
+
+export VITE_MAP_PROVIDER=maptiler
+export VITE_MAPTILER_API_KEY='sua-chave-publica'
+
+Ou, para o adapter Mapbox:
+
+export VITE_MAP_PROVIDER=mapbox
+export VITE_MAPBOX_ACCESS_TOKEN='seu-token-publico'
+
 ## 4. Rodar API local
 
 Da raiz do repo:
@@ -84,6 +101,32 @@ curl -s http://localhost:8080/api/health | jq
 Resultado esperado:
 
 status: UP
+
+## 4.1 Rodar o frontend local
+
+Em outro terminal:
+
+cd apps/web
+npm install
+npm run dev:local
+
+Abra http://127.0.0.1:5173. O frontend aponta para a API local em 8080; não
+coloque CPF, token JWT, senha de banco ou credenciais Academy em variáveis
+`VITE_*`, pois elas são incorporadas ao bundle do navegador.
+
+## 4.2 Verificações essenciais
+
+Backend (JDK 21):
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) PATH="$JAVA_HOME/bin:$PATH" \
+  ./apps/api/mvnw clean test
+
+Frontend:
+
+cd apps/web
+npm test
+npm run lint
+npm run build
 
 ## 5. Rodar API com Docker Compose
 

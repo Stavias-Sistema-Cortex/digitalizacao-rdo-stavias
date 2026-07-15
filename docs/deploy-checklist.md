@@ -4,7 +4,7 @@ Este checklist define o que precisa estar verdadeiro antes de fazer deploy da AP
 
 ## 1. Escopo atual que pode ser deployado
 
-O backend atual inclui:
+O produto atual inclui:
 
 - API Spring Boot
 - Conexão com MySQL por variáveis de ambiente
@@ -14,18 +14,16 @@ O backend atual inclui:
 - Endpoint de saúde da API
 - Histórico de sincronização
 - Build de imagem Docker
-- Endpoint de importação desativado por padrão
+- autenticação por CPF/JWT e escopo Alfa/Beta por obra
+- PWA offline-first com outbox, Equipes, Mensagens e anexos protegidos
+- mapas operacionais configuráveis, PDOR e Stav.IA rastreável
+- endpoint de importação desativado por padrão
 
-O backend atual ainda não inclui:
+Ainda é necessário provisionar no ambiente de destino:
 
-- Frontend web
-- Autenticação
-- Permissões de usuário
-- Módulo de RDO digital
-- Modo offline/PWA
-- Visualização com Mapbox
-- Sincronização agendada em produção
-- Pipeline de CI/CD
+- provedor de mapas (MapTiler ou Mapbox), se o mapa de satélite for desejado
+- banco Academy/ZLD, somente se as importações externas forem ativadas
+- observabilidade, backup/restauração testada e pipeline de CI/CD de produção
 
 ## 2. Variáveis de ambiente necessárias
 
@@ -35,6 +33,9 @@ Obrigatórias para a API iniciar:
 - CORTEX_DB_USER
 - CORTEX_DB_PASSWORD
 - CORTEX_AUTH_JWT_SECRET
+- CORTEX_AUTH_LOGIN_RATE_LIMIT_ENABLED=true
+- CORTEX_AUTH_LOGIN_RATE_LIMIT_ATTEMPTS_PER_MINUTE
+- CORTEX_AUTH_LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS_PER_MINUTE
 
 Opcionais para importação da fonte ZLD:
 
@@ -107,6 +108,8 @@ Antes de qualquer deploy público:
 - O endpoint de saúde precisa funcionar
 - A URL do banco precisa vir por variável de ambiente
 - As credenciais externas da Stavias não devem ser necessárias a menos que a importação seja ativada de propósito
+- O limite público do login por CPF deve permanecer ativo fora do perfil local
+- Tokens MapTiler/Mapbox usados no frontend devem ser públicos/restritos por origem; nunca use segredo de servidor em `VITE_*`
 
 ## 6. Decisão do primeiro ambiente de deploy
 
@@ -124,16 +127,13 @@ Ambiente interno ou privado, não internet pública.
 
 Motivo:
 
-O backend se conecta a dados operacionais da empresa e ainda não possui autenticação.
+O backend se conecta a dados operacionais da empresa; exponha-o somente atrás
+de HTTPS, com CORS restrito e monitoramento de autenticação/sincronização.
 
 ## 7. Não expor publicamente até existir
 
 Não expor a API publicamente até que existam:
 
-- Autenticação
-- Autorização por papéis
-- Endpoint de importação protegido
-- Política de CORS
 - Usuário de banco de produção com privilégios limitados
 - Gerenciador de segredos ou variáveis privadas de ambiente
 - HTTPS
