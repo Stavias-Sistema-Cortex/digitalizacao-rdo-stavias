@@ -72,4 +72,32 @@ class FinanceOntologyProjectorTest {
                 isNull()
         );
     }
+
+    @Test
+    void preservesFailedDomainOutcomeInOperationalEvent() {
+        CortexOperationalMemoryService memory = mock(
+                CortexOperationalMemoryService.class
+        );
+        FinanceOntologyProjector projector = new FinanceOntologyProjector(memory);
+        FinanceAuditContext audit = FinanceAuditContext.online(
+                "actor-real", "correlation-real"
+        );
+
+        projector.failureWithRelations(
+                "DOCUMENTO_FISCAL", "documento-1", "nota.xml",
+                "DOCUMENTO_FISCAL_EXTRACAO_FALHOU", "obra-1", audit,
+                Map.of(), Map.of("status", "FALHA"), List.of(),
+                "HASH_CLIENTE_DIVERGENTE"
+        );
+
+        verify(memory).registrarEventoAuditado(
+                anyString(), eq("DOCUMENTO_FISCAL"), eq("documento-1"),
+                eq("DOCUMENTO_FISCAL_EXTRACAO_FALHOU"),
+                eq("CORTEX_FINANCEIRO"), eq("obra-1"), isNull(),
+                eq("actor-real"), anyList(), eq("ONLINE"), eq("ONLINE"),
+                any(), any(), eq(2), anyMap(), eq("actor-real"), isNull(),
+                eq("correlation-real"), isNull(), anyMap(), anyMap(),
+                eq("FALHA"), eq("HASH_CLIENTE_DIVERGENTE")
+        );
+    }
 }

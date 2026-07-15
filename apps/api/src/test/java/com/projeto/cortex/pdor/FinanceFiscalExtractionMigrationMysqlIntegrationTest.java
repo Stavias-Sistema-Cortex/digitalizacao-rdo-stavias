@@ -3,7 +3,13 @@ package com.projeto.cortex.pdor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.TextNode;
+import com.projeto.cortex.financeiro.invoice.extraction.FiscalExtractionDtos;
+import com.projeto.cortex.financeiro.invoice.extraction.FiscalExtractionRepository;
+import java.math.BigDecimal;
 import java.util.UUID;
+import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.AfterEach;
@@ -130,6 +136,58 @@ class FinanceFiscalExtractionMigrationMysqlIntegrationTest {
                 worksiteId,
                 actorId
         )).isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    void repositoryPersistsAndRehydratesCanonicalCandidates() {
+        database = PdorMysqlTestDatabase.create("finance_extract_repo");
+        database.migrate();
+        JdbcTemplate jdbc = new JdbcTemplate(database.dataSource());
+        String actorId = collaborator(jdbc);
+        String worksiteId = worksite(jdbc, "Obra de extração");
+        String objectId = storedObject(jdbc, actorId, worksiteId, SHA);
+        FiscalExtractionRepository repository = new FiscalExtractionRepository(
+                jdbc,
+                new ObjectMapper().findAndRegisterModules()
+        );
+        String jobId = UUID.randomUUID().toString();
+        FiscalExtractionDtos.FiscalCandidate candidate =
+                new FiscalExtractionDtos.FiscalCandidate(
+                        "numero", TextNode.valueOf("125"), "125",
+                        "NFE_XML", "1", "/NFe/infNFe/ide/nNF",
+                        new BigDecimal("1.000000"),
+                        FiscalExtractionDtos.CandidateValidation.VALIDO,
+                        null
+                );
+        FiscalExtractionDtos.FiscalExtractionResult result =
+                new FiscalExtractionDtos.FiscalExtractionResult(
+                        "XML",
+                        FiscalExtractionDtos.ExtractionStatus.EXTRAIDO,
+                        "NFE_XML",
+                        "1",
+                        List.of(candidate),
+                        List.of(),
+                        "NAO_VERIFICADA"
+                );
+
+        repository.insert(
+                new FiscalExtractionRepository.JobWrite(
+                        jobId, objectId, worksiteId, "repo-mutation-1",
+                        "XML", SHA, SHA, actorId, "device-1",
+                        "correlation-1"
+                ),
+                result
+        );
+
+        var response = repository.response(jobId, false);
+        assertThat(response.status())
+                .isEqualTo(FiscalExtractionDtos.ExtractionStatus.EXTRAIDO);
+        assertThat(response.candidates()).hasSize(1);
+        assertThat(response.candidates().getFirst().normalizedValue().asText())
+                .isEqualTo("125");
+        assertThat(repository.findByMutation(actorId, "repo-mutation-1"))
+                .get().extracting(FiscalExtractionRepository.JobRecord::id)
+                .isEqualTo(jobId);
     }
 
     private void migrateToV36() {

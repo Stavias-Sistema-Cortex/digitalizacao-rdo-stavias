@@ -65,9 +65,9 @@ final class FiscalTextCandidateParser {
             retention = retention == null ? BigDecimal.ZERO : retention;
         }
         putDecimal(values, "valorBruto", gross);
-        putDecimal(values, "valorDesconto", discount);
-        putDecimal(values, "valorAcrescimo", addition);
-        putDecimal(values, "valorRetencao", retention);
+        putDecimal(values, "desconto", discount);
+        putDecimal(values, "acrescimo", addition);
+        putDecimal(values, "retencoes", retention);
         putDecimal(values, "valorLiquido", net);
 
         List<String> warnings = new ArrayList<>();

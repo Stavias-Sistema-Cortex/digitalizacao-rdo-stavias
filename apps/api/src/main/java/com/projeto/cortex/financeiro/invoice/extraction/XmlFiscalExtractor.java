@@ -16,6 +16,7 @@ import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathFactory;
 import org.springframework.stereotype.Component;
+import org.xml.sax.helpers.DefaultHandler;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
@@ -46,6 +47,10 @@ public class XmlFiscalExtractor implements FiscalDocumentExtractor {
             List<FiscalCandidate> candidates = new ArrayList<>();
             List<String> warnings = new ArrayList<>();
 
+            addText(candidates, "tipoDocumento", "NFE", "/NFe",
+                    CandidateValidation.VALIDO, null);
+            addText(candidates, "moeda", "BRL", "/NFe/infNFe/total",
+                    CandidateValidation.VALIDO, null);
             addText(candidates, "numero", text(xpath, document,
                     "(//*[local-name()='ide']/*[local-name()='nNF'])[1]"),
                     "/NFe/infNFe/ide/nNF", CandidateValidation.VALIDO, null);
@@ -91,13 +96,13 @@ public class XmlFiscalExtractor implements FiscalDocumentExtractor {
             addDecimal(candidates, "valorBruto", gross,
                     "/NFe/infNFe/total/ICMSTot/vProd",
                     CandidateValidation.VALIDO, null);
-            addDecimal(candidates, "valorDesconto", discount,
+            addDecimal(candidates, "desconto", discount,
                     "/NFe/infNFe/total/ICMSTot/vDesc",
                     CandidateValidation.VALIDO, null);
-            addDecimal(candidates, "valorAcrescimo", additions,
+            addDecimal(candidates, "acrescimo", additions,
                     "/NFe/infNFe/total/ICMSTot/(vFrete+vSeg+vOutro+vII+vIPI+vST)",
                     CandidateValidation.VALIDO, null);
-            addDecimal(candidates, "valorRetencao", retention,
+            addDecimal(candidates, "retencoes", retention,
                     "/NFe/infNFe/total/ICMSTot", CandidateValidation.VALIDO, null);
 
             CandidateValidation totalValidation = CandidateValidation.VALIDO;
@@ -144,7 +149,9 @@ public class XmlFiscalExtractor implements FiscalDocumentExtractor {
                 false);
         factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
         factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-        return factory.newDocumentBuilder().parse(new ByteArrayInputStream(content));
+        var builder = factory.newDocumentBuilder();
+        builder.setErrorHandler(new DefaultHandler());
+        return builder.parse(new ByteArrayInputStream(content));
     }
 
     private String text(XPath xpath, Document document, String expression)

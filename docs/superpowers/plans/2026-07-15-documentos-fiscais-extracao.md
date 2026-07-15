@@ -92,16 +92,18 @@ React 19, TypeScript, Vitest.
   `apps/api/src/main/java/com/projeto/cortex/financeiro/invoice/extraction`.
 - Modify: `FinanceInvoiceDtos.java`, `FinanceInvoiceService.java`,
   `FinanceInvoiceController.java`.
+- Create: `V38__finance_fiscal_document_confirmation_trace.sql` para separar
+  a mutação/dispositivo de envio da mutação/dispositivo de confirmação.
 - Create/modify MockMvc, service and MySQL tests.
 
-- [ ] Upload multipart exige `FINANCEIRO_OPERAR` no escopo.
-- [ ] Persistir job/candidatos com ator do contexto, não do payload.
-- [ ] Repetir `clientMutationId` retorna o mesmo resultado canônico.
-- [ ] Vínculo exige objeto/job/obra/hash compatíveis.
-- [ ] Persistir `enviado_por`, `confirmado_por`, dispositivo e correlação.
-- [ ] Projetar `DOCUMENTO_FISCAL EXTRAIDO_DE STORED_OBJECT` e
+- [x] Upload multipart exige `FINANCEIRO_OPERAR` no escopo.
+- [x] Persistir job/candidatos com ator do contexto, não do payload.
+- [x] Repetir `clientMutationId` retorna o mesmo resultado canônico.
+- [x] Vínculo exige objeto/job/obra/hash compatíveis.
+- [x] Persistir `enviado_por`, `confirmado_por`, dispositivo e correlação.
+- [x] Projetar `DOCUMENTO_FISCAL EXTRAIDO_DE STORED_OBJECT` e
   `NOTA_FISCAL DOCUMENTADA_POR DOCUMENTO_FISCAL`.
-- [ ] Commit: `feat(finance): upload and link fiscal documents`.
+- [x] Commit: `feat(finance): upload and link fiscal documents`.
 
 ### Task 5: Preencher o formulário a partir do arquivo
 

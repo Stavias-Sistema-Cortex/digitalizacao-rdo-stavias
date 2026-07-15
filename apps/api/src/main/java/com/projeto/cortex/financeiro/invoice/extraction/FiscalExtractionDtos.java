@@ -2,6 +2,7 @@ package com.projeto.cortex.financeiro.invoice.extraction;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,6 +74,36 @@ public final class FiscalExtractionDtos {
             return candidates.stream()
                     .filter(candidate -> candidate.field().equals(field))
                     .findFirst();
+        }
+    }
+
+    public record FiscalExtractionJobResponse(
+            String id,
+            String storedObjectId,
+            String obraId,
+            String fileName,
+            String mediaType,
+            long size,
+            String clientMutationId,
+            String format,
+            ExtractionStatus status,
+            String extractor,
+            String extractorVersion,
+            String clientSha256,
+            String serverSha256,
+            List<FiscalCandidate> candidates,
+            List<String> warnings,
+            String autorizacaoFiscal,
+            String createdBy,
+            String deviceId,
+            String correlationId,
+            LocalDateTime createdAt,
+            LocalDateTime completedAt,
+            boolean replayed
+    ) {
+        public FiscalExtractionJobResponse {
+            candidates = candidates == null ? List.of() : List.copyOf(candidates);
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
         }
     }
 }

@@ -93,7 +93,11 @@ public final class FinanceInvoiceDtos {
             String id,
             String storedObjectId,
             String tipoDocumento,
-            boolean principal
+            boolean principal,
+            String clientMutationId,
+            String extracaoJobId,
+            String sha256Cliente,
+            String dispositivoId
     ) {
     }
 
@@ -106,6 +110,20 @@ public final class FinanceInvoiceDtos {
             String nomeOriginal,
             String mediaType,
             long tamanhoBytes,
+            String enviadoPor,
+            LocalDateTime enviadoEm,
+            String dispositivoId,
+            String clientMutationId,
+            String sha256Cliente,
+            String sha256Servidor,
+            String inspecaoStatus,
+            String extracaoJobId,
+            String extratorVersao,
+            String confirmadoPor,
+            LocalDateTime confirmadoEm,
+            String confirmacaoClientMutationId,
+            String confirmacaoDispositivoId,
+            String confirmacaoCorrelacaoId,
             LocalDateTime criadoEm
     ) {
     }

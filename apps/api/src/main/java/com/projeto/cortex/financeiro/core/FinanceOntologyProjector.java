@@ -111,6 +111,44 @@ public class FinanceOntologyProjector {
             Map<String, Object> newState,
             List<FinanceOntologyRelation> relations
     ) {
+        return projectWithRelations(
+                entityType, entityId, entityName, eventType, obraId, audit,
+                previousState, newState, relations, "SUCESSO", null
+        );
+    }
+
+    @Transactional
+    public long failureWithRelations(
+            String entityType,
+            String entityId,
+            String entityName,
+            String eventType,
+            String obraId,
+            FinanceAuditContext audit,
+            Map<String, Object> previousState,
+            Map<String, Object> newState,
+            List<FinanceOntologyRelation> relations,
+            String sanitizedError
+    ) {
+        return projectWithRelations(
+                entityType, entityId, entityName, eventType, obraId, audit,
+                previousState, newState, relations, "FALHA", sanitizedError
+        );
+    }
+
+    private long projectWithRelations(
+            String entityType,
+            String entityId,
+            String entityName,
+            String eventType,
+            String obraId,
+            FinanceAuditContext audit,
+            Map<String, Object> previousState,
+            Map<String, Object> newState,
+            List<FinanceOntologyRelation> relations,
+            String result,
+            String sanitizedError
+    ) {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         memory.registrarObjeto(
                 entityType,
@@ -182,8 +220,8 @@ public class FinanceOntologyProjector {
                 null,
                 previousState == null ? Map.of() : previousState,
                 newState == null ? Map.of() : newState,
-                "SUCESSO",
-                null
+                result,
+                sanitizedError
         );
     }
 

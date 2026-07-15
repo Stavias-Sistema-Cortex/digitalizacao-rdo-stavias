@@ -7,11 +7,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
+import com.projeto.cortex.financeiro.core.FinanceOntologyRelation;
 import com.projeto.cortex.financeiro.core.FinanceValidation;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -21,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,6 +33,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class FinanceInvoiceService {
+
+    private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
 
     private static final Set<String> INVOICE_TYPES = Set.of(
             "NFE", "NFSE", "CTE", "RECIBO", "OUTRO"
@@ -250,21 +255,68 @@ public class FinanceInvoiceService {
         if (request == null) {
             throw FinanceValidation.badRequest("Documento é obrigatório.");
         }
+        String confirmationMutation = FinanceValidation.mutationId(
+                request.clientMutationId()
+        );
+        FinanceAuditContext context = new FinanceAuditContext(
+                audit.actorId(),
+                optionalTrace(request.dispositivoId(), "dispositivoId"),
+                audit.correlationId(),
+                audit.origin()
+        );
         String objectId = FinanceValidation.uuid(
                 request.storedObjectId(), "storedObjectId"
         );
+        String extractionJobId = FinanceValidation.uuid(
+                request.extracaoJobId(), "extracaoJobId"
+        );
+        String clientHash = optionalHash(request.sha256Cliente());
         String documentType = FinanceInvoiceValidation.enumValue(
                 request.tipoDocumento(), "tipoDocumento", DOCUMENT_TYPES
         );
+
+        InvoiceDocumentResponse replay = documentByConfirmationMutation(
+                context.actorId(), confirmationMutation
+        );
+        if (replay != null) {
+            if (!replay.notaFiscalId().equals(invoice.id())
+                    || !replay.storedObjectId().equals(objectId)
+                    || !Objects.equals(replay.extracaoJobId(), extractionJobId)
+                    || !replay.tipoDocumento().equals(documentType)
+                    || replay.principal() != request.principal()
+                    || (clientHash != null
+                    && !clientHash.equals(replay.sha256Cliente()))) {
+                throw conflict(
+                        "clientMutationId já foi usado para outro vínculo fiscal."
+                );
+            }
+            return replay;
+        }
+
+        FiscalDocumentTrace trace = fiscalDocumentTrace(
+                extractionJobId, objectId, invoice.obraId()
+        );
+        if (clientHash != null && !clientHash.equals(trace.serverSha256())) {
+            throw conflict(
+                    "O hash informado não corresponde ao documento inspecionado."
+            );
+        }
+        if (!List.of("EXTRAIDO", "REVISAO_NECESSARIA")
+                .contains(trace.status())) {
+            throw FinanceValidation.badRequest(
+                    "Somente extração concluída ou revisável pode ser vinculada."
+            );
+        }
         Integer available = jdbc.queryForObject(
                 """
                 SELECT COUNT(*) FROM stored_object
                 WHERE id = ? AND obra_id = ? AND status = 'DISPONIVEL'
-                  AND arquivado_em IS NULL
+                  AND arquivado_em IS NULL AND sha256 = ?
                 """,
                 Integer.class,
                 objectId,
-                invoice.obraId()
+                invoice.obraId(),
+                trace.serverSha256()
         );
         if (available == null || available != 1) {
             throw FinanceValidation.badRequest(
@@ -300,22 +352,49 @@ public class FinanceInvoiceService {
                     """
                     INSERT INTO finance_nota_fiscal_documento (
                         id, nota_fiscal_id, obra_id, stored_object_id,
-                        tipo_documento, principal, criado_por
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        tipo_documento, principal, criado_por,
+                        enviado_por, enviado_em, dispositivo_id,
+                        client_mutation_id, sha256_cliente, sha256_servidor,
+                        inspecao_status, extracao_job_id, extrator_versao,
+                        confirmado_por, confirmado_em,
+                        confirmacao_client_mutation_id,
+                        confirmacao_dispositivo_id,
+                        confirmacao_correlacao_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              'APROVADO', ?, ?, ?, CURRENT_TIMESTAMP(6),
+                              ?, ?, ?)
                     """,
                     id, invoice.id(), invoice.obraId(), objectId,
-                    documentType, request.principal(), audit.actorId()
+                    documentType, request.principal(), context.actorId(),
+                    trace.uploadedBy(), trace.uploadedAt(), trace.deviceId(),
+                    trace.clientMutationId(), trace.clientSha256(),
+                    trace.serverSha256(), trace.id(), trace.extractorVersion(),
+                    context.actorId(), confirmationMutation,
+                    context.deviceId(), context.correlationId()
             );
         } else {
             jdbc.update(
                     """
                     UPDATE finance_nota_fiscal_documento
                     SET tipo_documento = ?, principal = ?,
+                        enviado_por = ?, enviado_em = ?, dispositivo_id = ?,
+                        client_mutation_id = ?, sha256_cliente = ?,
+                        sha256_servidor = ?, inspecao_status = 'APROVADO',
+                        extracao_job_id = ?, extrator_versao = ?,
+                        confirmado_por = ?, confirmado_em = CURRENT_TIMESTAMP(6),
+                        confirmacao_client_mutation_id = ?,
+                        confirmacao_dispositivo_id = ?,
+                        confirmacao_correlacao_id = ?,
                         arquivado_por = NULL, arquivado_em = NULL,
                         versao_linha = versao_linha + 1
                     WHERE id = ?
                     """,
-                    documentType, request.principal(), id
+                    documentType, request.principal(), trace.uploadedBy(),
+                    trace.uploadedAt(), trace.deviceId(),
+                    trace.clientMutationId(), trace.clientSha256(),
+                    trace.serverSha256(), trace.id(), trace.extractorVersion(),
+                    context.actorId(), confirmationMutation,
+                    context.deviceId(), context.correlationId(), id
             );
         }
         jdbc.update(
@@ -324,29 +403,41 @@ public class FinanceInvoiceService {
                 SET atualizado_por = ?, versao_linha = versao_linha + 1
                 WHERE id = ? AND arquivado_em IS NULL
                 """,
-                audit.actorId(), invoice.id()
+                context.actorId(), invoice.id()
         );
         InvoiceResponse updated = get(invoice.id());
+        InvoiceDocumentResponse linked = document(id);
+        Map<String, Object> updatedState = new LinkedHashMap<>(state(updated));
+        updatedState.put("documentoFiscalId", linked.extracaoJobId());
+        updatedState.put("storedObjectId", linked.storedObjectId());
+        updatedState.put("enviadoPor", linked.enviadoPor());
+        updatedState.put("confirmadoPor", linked.confirmadoPor());
+        updatedState.put("sha256Servidor", linked.sha256Servidor());
         recordHistory(
                 updated,
                 "DOCUMENTO_VINCULADO",
-                audit,
-                null,
+                context,
+                confirmationMutation,
                 state(invoice),
-                state(updated)
+                updatedState
         );
-        ontology.success(
+        ontology.successWithRelations(
                 "NOTA_FISCAL",
                 updated.id(),
                 updated.numero(),
                 "DOCUMENTO_FISCAL_VINCULADO",
                 updated.obraId(),
-                audit,
+                context,
                 state(invoice),
-                state(updated),
-                Map.of("STORED_OBJECT", objectId)
+                updatedState,
+                List.of(new FinanceOntologyRelation(
+                        "DOCUMENTO_FISCAL",
+                        extractionJobId,
+                        "DOCUMENTADA_POR",
+                        "Vínculo confirmado com hashes e autoria persistidos."
+                ))
         );
-        return document(id);
+        return linked;
     }
 
     public List<InvoiceDocumentResponse> documents(
@@ -368,6 +459,78 @@ public class FinanceInvoiceService {
                 this::mapDocument,
                 invoice.id()
         );
+    }
+
+    private InvoiceDocumentResponse documentByConfirmationMutation(
+            String actorId,
+            String clientMutationId
+    ) {
+        List<InvoiceDocumentResponse> values = jdbc.query(
+                """
+                SELECT d.*, o.nome_original, o.media_type_detectado,
+                       o.tamanho_bytes
+                FROM finance_nota_fiscal_documento d
+                JOIN stored_object o ON o.id = d.stored_object_id
+                WHERE d.confirmado_por = ?
+                  AND d.confirmacao_client_mutation_id = ?
+                  AND d.arquivado_em IS NULL
+                LIMIT 1
+                """,
+                this::mapDocument,
+                actorId,
+                clientMutationId
+        );
+        return values.isEmpty() ? null : values.getFirst();
+    }
+
+    private FiscalDocumentTrace fiscalDocumentTrace(
+            String jobId,
+            String objectId,
+            String worksiteId
+    ) {
+        List<FiscalDocumentTrace> values = jdbc.query(
+                """
+                SELECT j.id, j.stored_object_id, j.obra_id,
+                       j.client_mutation_id, j.status, j.extrator_versao,
+                       j.sha256_cliente, j.sha256_servidor, j.criado_por,
+                       j.dispositivo_id, o.proprietario_id, o.criado_em
+                FROM finance_documento_extracao_job j
+                JOIN stored_object o
+                  ON o.id = j.stored_object_id AND o.obra_id = j.obra_id
+                WHERE j.id = ? AND j.stored_object_id = ? AND j.obra_id = ?
+                  AND o.status = 'DISPONIVEL' AND o.arquivado_em IS NULL
+                """,
+                (rs, row) -> new FiscalDocumentTrace(
+                        rs.getString("id"),
+                        rs.getString("stored_object_id"),
+                        rs.getString("obra_id"),
+                        rs.getString("client_mutation_id"),
+                        rs.getString("status"),
+                        rs.getString("extrator_versao"),
+                        rs.getString("sha256_cliente"),
+                        rs.getString("sha256_servidor"),
+                        rs.getString("criado_por"),
+                        rs.getString("dispositivo_id"),
+                        rs.getTimestamp("criado_em").toLocalDateTime(),
+                        rs.getString("proprietario_id")
+                ),
+                jobId,
+                objectId,
+                worksiteId
+        );
+        if (values.isEmpty()) {
+            throw FinanceValidation.badRequest(
+                    "A extração, o objeto e a obra não são compatíveis."
+            );
+        }
+        FiscalDocumentTrace trace = values.getFirst();
+        if (!trace.serverSha256().matches("[0-9a-f]{64}")
+                || !trace.uploadedBy().equals(trace.objectOwner())) {
+            throw conflict(
+                    "A autoria ou a integridade do documento não foi confirmada."
+            );
+        }
+        return trace;
     }
 
     public String documentObjectId(
@@ -730,8 +893,44 @@ public class FinanceInvoiceService {
                 rs.getString("nome_original"),
                 rs.getString("media_type_detectado"),
                 rs.getLong("tamanho_bytes"),
+                rs.getString("enviado_por"),
+                rs.getTimestamp("enviado_em").toLocalDateTime(),
+                rs.getString("dispositivo_id"),
+                rs.getString("client_mutation_id"),
+                rs.getString("sha256_cliente"),
+                rs.getString("sha256_servidor"),
+                rs.getString("inspecao_status"),
+                rs.getString("extracao_job_id"),
+                rs.getString("extrator_versao"),
+                rs.getString("confirmado_por"),
+                rs.getTimestamp("confirmado_em").toLocalDateTime(),
+                rs.getString("confirmacao_client_mutation_id"),
+                rs.getString("confirmacao_dispositivo_id"),
+                rs.getString("confirmacao_correlacao_id"),
                 rs.getTimestamp("criado_em").toLocalDateTime()
         );
+    }
+
+    private String optionalHash(String value) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.strip().toLowerCase(Locale.ROOT);
+        if (!SHA256.matcher(normalized).matches()) {
+            throw FinanceValidation.badRequest(
+                    "sha256Cliente deve conter 64 caracteres hexadecimais."
+            );
+        }
+        return normalized;
+    }
+
+    private String optionalTrace(String value, String field) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.strip();
+        if (normalized.length() > 120) {
+            throw FinanceValidation.badRequest(
+                    field + " deve ter até 120 caracteres."
+            );
+        }
+        return normalized;
     }
 
     private void requireStatus(String worksiteId, String statusId) {
@@ -1026,6 +1225,22 @@ public class FinanceInvoiceService {
             String id,
             String purchaseId,
             BigDecimal value
+    ) {
+    }
+
+    private record FiscalDocumentTrace(
+            String id,
+            String storedObjectId,
+            String obraId,
+            String clientMutationId,
+            String status,
+            String extractorVersion,
+            String clientSha256,
+            String serverSha256,
+            String uploadedBy,
+            String deviceId,
+            LocalDateTime uploadedAt,
+            String objectOwner
     ) {
     }
 

@@ -33,6 +33,8 @@ class XmlFiscalExtractorTest {
                 .isEqualTo("NAO_VERIFICADA");
         assertThat(result.candidate("numero").orElseThrow().normalizedValue().asText())
                 .isEqualTo("125");
+        assertThat(result.candidate("tipoDocumento").orElseThrow()
+                .normalizedValue().asText()).isEqualTo("NFE");
         assertThat(result.candidate("chaveAcesso").orElseThrow()
                 .normalizedValue().asText()).isEqualTo(key);
         assertThat(result.candidate("fornecedorCnpj").orElseThrow()

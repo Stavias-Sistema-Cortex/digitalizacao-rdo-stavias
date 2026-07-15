@@ -116,14 +116,33 @@ class FinanceInvoiceServiceMysqlIntegrationTest {
                 .containsExactly(invoiceId);
 
         String objectId = storedObject(jdbc, actorId, obraId);
+        String extractionJobId = extractionJob(
+                jdbc, actorId, obraId, objectId, "invoice-upload-1"
+        );
+        String objectHash = hex(objectId + "sha");
+        FinanceInvoiceDtos.DocumentLinkRequest linkRequest =
+                new FinanceInvoiceDtos.DocumentLinkRequest(
+                        null, objectId, "DANFE", true,
+                        "invoice-link-1", extractionJobId, objectHash,
+                        "device-integration"
+                );
         FinanceInvoiceDtos.InvoiceDocumentResponse document =
                 transactions.execute(status -> service.linkDocument(
                         invoiceId,
-                        new FinanceInvoiceDtos.DocumentLinkRequest(
-                                null, objectId, "DANFE", true
-                        ),
+                        linkRequest,
                         audit
                 ));
+        FinanceInvoiceDtos.InvoiceDocumentResponse documentReplay =
+                transactions.execute(status -> service.linkDocument(
+                        invoiceId, linkRequest, audit
+                ));
+        assertThat(documentReplay.id()).isEqualTo(document.id());
+        assertThat(document.enviadoPor()).isEqualTo(actorId);
+        assertThat(document.confirmadoPor()).isEqualTo(actorId);
+        assertThat(document.sha256Servidor()).isEqualTo(objectHash);
+        assertThat(document.extracaoJobId()).isEqualTo(extractionJobId);
+        assertThat(document.confirmacaoClientMutationId())
+                .isEqualTo("invoice-link-1");
         assertThat(service.documents(invoiceId, obraId))
                 .extracting(FinanceInvoiceDtos.InvoiceDocumentResponse::id)
                 .containsExactly(document.id());
@@ -164,6 +183,17 @@ class FinanceInvoiceServiceMysqlIntegrationTest {
                 actorId,
                 "invoice-integration"
         )).isGreaterThan(0);
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM cortex_relacao
+                WHERE origem_tipo = 'NOTA_FISCAL' AND origem_id = ?
+                  AND destino_tipo = 'DOCUMENTO_FISCAL' AND destino_id = ?
+                  AND tipo_relacao = 'DOCUMENTADA_POR' AND ativa = TRUE
+                """,
+                Integer.class,
+                invoiceId,
+                extractionJobId
+        )).isEqualTo(1);
 
         transactions.executeWithoutResult(status -> service.archive(
                 invoiceId,
@@ -216,11 +246,16 @@ class FinanceInvoiceServiceMysqlIntegrationTest {
                 .hasMessageContaining("transição");
 
         String objectFromB = storedObject(jdbc, actorId, obraB);
+        String jobFromB = extractionJob(
+                jdbc, actorId, obraB, objectFromB, "invoice-upload-b"
+        );
         assertThatThrownBy(() -> transactions.execute(status ->
                 service.linkDocument(
                         invoiceId,
                         new FinanceInvoiceDtos.DocumentLinkRequest(
-                                null, objectFromB, "DANFE", true
+                                null, objectFromB, "DANFE", true,
+                                "invoice-link-b", jobFromB,
+                                hex(objectFromB + "sha"), "device-b"
                         ),
                         audit
                 )
@@ -383,6 +418,34 @@ class FinanceInvoiceServiceMysqlIntegrationTest {
                 hex(id + "sha"),
                 "objects/finance/" + id,
                 actor
+        );
+        return id;
+    }
+
+    private String extractionJob(
+            JdbcTemplate jdbc,
+            String actor,
+            String obra,
+            String objectId,
+            String mutation
+    ) {
+        String id = UUID.randomUUID().toString();
+        String hash = hex(objectId + "sha");
+        jdbc.update(
+                """
+                INSERT INTO finance_documento_extracao_job (
+                    id, stored_object_id, obra_id, client_mutation_id,
+                    formato, status, extrator, extrator_versao,
+                    sha256_cliente, sha256_servidor, avisos_json,
+                    autorizacao_fiscal_status, criado_por, dispositivo_id,
+                    correlacao_id, iniciado_em, concluido_em
+                ) VALUES (?, ?, ?, ?, 'PDF', 'REVISAO_NECESSARIA',
+                          'PDF_TEXT', '1', ?, ?, JSON_ARRAY(),
+                          'NAO_VERIFICADA', ?, 'device-upload',
+                          'correlation-upload', CURRENT_TIMESTAMP(6),
+                          CURRENT_TIMESTAMP(6))
+                """,
+                id, objectId, obra, mutation, hash, hash, actor
         );
         return id;
     }
