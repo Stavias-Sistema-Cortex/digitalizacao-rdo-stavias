@@ -52,12 +52,113 @@ export type OutboxMutationStatus =
   | "ERROR"
   | "CONFLICT";
 
-export type SyncEntityType = "RDO";
+export type SyncEntityType = "RDO" | "MENSAGEM";
 
 export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
-  | "ENVIAR_RDO";
+  | "ENVIAR_RDO"
+  | "CRIAR_MENSAGEM";
+
+export type ConversationType =
+  | "OBRA"
+  | "EQUIPE"
+  | "DIRETA"
+  | "GRUPO";
+
+export interface LocalConversationRecord {
+  id: string;
+  tipo: ConversationType;
+  titulo: string | null;
+  obraId: string | null;
+  equipeId: string | null;
+  criadoPor: string | null;
+  status: "ATIVA" | "ARQUIVADA";
+  ultimaAtividadeEm: string;
+  criadoEm: string | null;
+  atualizadoEm: string;
+  versaoEntidade: number | null;
+}
+
+export interface LocalConversationParticipantRecord {
+  id: string;
+  conversaId: string;
+  colaboradorId: string;
+  colaboradorNome: string | null;
+  papel: "ADMINISTRADOR" | "MEMBRO";
+  status: "ATIVO" | "SAIU" | "REMOVIDO";
+  entrouEm: string;
+  saiuEm: string | null;
+  ultimaLeituraEm: string | null;
+  versaoEntidade: number | null;
+  atualizadoEm: string;
+}
+
+export type LocalMessageSyncStatus =
+  | "PENDING"
+  | "SYNCING"
+  | "SENT"
+  | "ERROR";
+
+export interface LocalMessageReceipt {
+  id: string;
+  mensagemId: string;
+  colaboradorId: string;
+  entregueEm: string | null;
+  lidaEm: string | null;
+}
+
+export interface LocalMessageRecord {
+  id: string;
+  conversaId: string;
+  remetenteId: string | null;
+  remetenteNome: string | null;
+  clientMessageId: string;
+  texto: string | null;
+  estado: string;
+  enviadaClienteEm: string;
+  criadaServidorEm: string | null;
+  atualizadoEm: string;
+  versaoEntidade: number | null;
+  recibos: LocalMessageReceipt[];
+  syncStatus: LocalMessageSyncStatus;
+  ultimoErro: string | null;
+}
+
+export interface LocalMessageReferenceRecord {
+  id: string;
+  mensagemId: string;
+  tipoObjeto: string;
+  objetoId: string;
+  obraId: string | null;
+  criadoEm: string | null;
+}
+
+export type LocalMessageAttachmentSyncStatus =
+  | "WAITING_MESSAGE"
+  | "PENDING_UPLOAD"
+  | "UPLOADING"
+  | "UPLOADED"
+  | "ERROR";
+
+export interface LocalMessageAttachmentRecord {
+  id: string;
+  mensagemId: string;
+  clientAttachmentId: string;
+  nomeOriginal: string;
+  nomeSeguro: string;
+  mimeType: string;
+  tamanhoBytes: number;
+  hashSha256: string;
+  status: "PENDENTE" | "DISPONIVEL" | "FALHOU";
+  ultimoErro: string | null;
+  criadoEm: string | null;
+  atualizadoEm: string;
+  disponivelEm: string | null;
+  versaoEntidade: number | null;
+  arquivo: Blob | null;
+  syncStatus: LocalMessageAttachmentSyncStatus;
+}
 
 export interface LocalRdoRecord {
   id: string;

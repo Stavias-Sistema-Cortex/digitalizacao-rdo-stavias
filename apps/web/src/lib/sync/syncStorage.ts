@@ -2,6 +2,10 @@ import { getCortexDb } from "../db/cortexDb";
 import type {
   LocalRdoChildRecord,
   LocalRdoRecord,
+  LocalMessageAttachmentRecord,
+  LocalMessageRecord,
+  LocalMessageReceipt,
+  LocalMessageReferenceRecord,
   LocalSyncStatus,
   ObraLocalRecord,
   OperationalEventRecord,
@@ -300,6 +304,10 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "rdos",
   "operational_events",
   "rdo_attachments",
+  "conversations",
+  "messages",
+  "message_references",
+  "message_attachments",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -551,6 +559,7 @@ export async function recoverInterruptedMutations(): Promise<void> {
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const messageStore = transaction.objectStore("messages");
 
   const syncingMutations =
     await outboxStore.index("by-status").getAll("SYNCING");
@@ -593,6 +602,19 @@ export async function recoverInterruptedMutations(): Promise<void> {
         "PENDING_SYNC",
         nowUtc(),
       );
+    }
+
+    if (mutation.entidadeTipo === "MENSAGEM") {
+      const message = await messageStore.get(mutation.entidadeId);
+      if (message) {
+        await messageStore.put({
+          ...message,
+          syncStatus: "PENDING",
+          ultimoErro:
+            "Sincronização anterior foi interrompida antes da confirmação.",
+          atualizadoEm: nowUtc(),
+        });
+      }
     }
   }
 
@@ -771,6 +793,7 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const messageStore = transaction.objectStore("messages");
 
   const erroredMutations =
     await outboxStore.index("by-status").getAll("ERROR");
@@ -810,6 +833,18 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
         "PENDING_SYNC",
         timestamp,
       );
+    }
+
+    if (mutation.entidadeTipo === "MENSAGEM") {
+      const message = await messageStore.get(mutation.entidadeId);
+      if (message) {
+        await messageStore.put({
+          ...message,
+          syncStatus: "PENDING",
+          ultimoErro: null,
+          atualizadoEm: timestamp,
+        });
+      }
     }
   }
 
@@ -1114,6 +1149,7 @@ export async function markMutationAsSyncing(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const messageStore = transaction.objectStore("messages");
 
   const currentMutation = await outboxStore.get(
     mutation.clientMutationId,
@@ -1175,7 +1211,145 @@ export async function markMutationAsSyncing(
     );
   }
 
+  if (currentMutation.entidadeTipo === "MENSAGEM") {
+    const message = await messageStore.get(currentMutation.entidadeId);
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "SYNCING",
+        ultimoErro: null,
+        atualizadoEm: nowUtc(),
+      });
+    }
+  }
+
   await transaction.done;
+}
+
+interface CanonicalMessageProjection {
+  message: LocalMessageRecord;
+  references: LocalMessageReferenceRecord[];
+  attachments: LocalMessageAttachmentRecord[];
+}
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.map(objectValue).filter((item) => Object.keys(item).length > 0)
+    : [];
+}
+
+function nullableTextValue(value: unknown): string | null {
+  const text = textValue(value);
+  return text || null;
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function requireCanonicalText(
+  record: Record<string, unknown>,
+  field: string,
+): string {
+  const value = textValue(record[field]);
+  if (!value) {
+    throw new Error(`Resposta canônica de mensagem sem ${field}.`);
+  }
+  return value;
+}
+
+function canonicalMessageProjection(
+  local: LocalMessageRecord,
+  result: SyncPushMutationResult,
+): CanonicalMessageProjection {
+  const canonical = objectValue(result.resultado);
+  const id = requireCanonicalText(canonical, "id");
+  if (id !== local.id || result.entidadeId !== local.id) {
+    throw new Error("Resposta canônica pertence a outra mensagem.");
+  }
+
+  const version = finiteNumber(canonical.versaoEntidade);
+  if (version === null) {
+    throw new Error("Resposta canônica de mensagem sem versaoEntidade.");
+  }
+
+  const receipts: LocalMessageReceipt[] = recordArray(canonical.recibos).map(
+    (receipt) => ({
+      id: requireCanonicalText(receipt, "id"),
+      mensagemId: requireCanonicalText(receipt, "mensagemId"),
+      colaboradorId: requireCanonicalText(receipt, "colaboradorId"),
+      entregueEm: nullableTextValue(receipt.entregueEm),
+      lidaEm: nullableTextValue(receipt.lidaEm),
+    }),
+  );
+  const references: LocalMessageReferenceRecord[] = recordArray(
+    canonical.referencias,
+  ).map((reference) => ({
+    id: requireCanonicalText(reference, "id"),
+    mensagemId: requireCanonicalText(reference, "mensagemId"),
+    tipoObjeto: requireCanonicalText(reference, "tipoObjeto"),
+    objetoId: requireCanonicalText(reference, "objetoId"),
+    obraId: nullableTextValue(reference.obraId),
+    criadoEm: nullableTextValue(reference.criadoEm),
+  }));
+  const attachments: LocalMessageAttachmentRecord[] = recordArray(
+    canonical.anexos,
+  ).map((attachment) => {
+    const status = requireCanonicalText(attachment, "status");
+    if (!["PENDENTE", "DISPONIVEL", "FALHOU"].includes(status)) {
+      throw new Error("Resposta canônica de anexo com status inválido.");
+    }
+    return {
+      id: requireCanonicalText(attachment, "id"),
+      mensagemId: requireCanonicalText(attachment, "mensagemId"),
+      clientAttachmentId: requireCanonicalText(
+        attachment,
+        "clientAttachmentId",
+      ),
+      nomeOriginal: requireCanonicalText(attachment, "nomeOriginal"),
+      nomeSeguro: requireCanonicalText(attachment, "nomeSeguro"),
+      mimeType: requireCanonicalText(attachment, "mimeType"),
+      tamanhoBytes: finiteNumber(attachment.tamanhoBytes) ?? 0,
+      hashSha256: requireCanonicalText(attachment, "hashSha256"),
+      status: status as LocalMessageAttachmentRecord["status"],
+      ultimoErro: nullableTextValue(attachment.ultimoErro),
+      criadoEm: nullableTextValue(attachment.criadoEm),
+      atualizadoEm:
+        nullableTextValue(attachment.atualizadoEm) ?? local.atualizadoEm,
+      disponivelEm: nullableTextValue(attachment.disponivelEm),
+      versaoEntidade: finiteNumber(attachment.versaoEntidade),
+      arquivo: null,
+      syncStatus:
+        status === "DISPONIVEL" ? "UPLOADED" : "PENDING_UPLOAD",
+    };
+  });
+
+  return {
+    message: {
+      ...local,
+      conversaId: requireCanonicalText(canonical, "conversaId"),
+      remetenteId: requireCanonicalText(canonical, "remetenteId"),
+      remetenteNome: requireCanonicalText(canonical, "remetenteNome"),
+      clientMessageId: requireCanonicalText(canonical, "clientMessageId"),
+      texto: nullableTextValue(canonical["texto"]),
+      estado: requireCanonicalText(canonical, "estado"),
+      enviadaClienteEm: requireCanonicalText(
+        canonical,
+        "enviadaClienteEm",
+      ),
+      criadaServidorEm: requireCanonicalText(
+        canonical,
+        "criadaServidorEm",
+      ),
+      atualizadoEm: requireCanonicalText(canonical, "atualizadaEm"),
+      versaoEntidade: version,
+      recibos: receipts,
+      syncStatus: "SENT",
+      ultimoErro: null,
+    },
+    references,
+    attachments,
+  };
 }
 
 /**
@@ -1221,6 +1395,12 @@ export async function applyPushResultAtomically(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const conversationStore = transaction.objectStore("conversations");
+  const messageStore = transaction.objectStore("messages");
+  const referenceStore = transaction.objectStore("message_references");
+  const messageAttachmentStore = transaction.objectStore(
+    "message_attachments",
+  );
 
   const mutation = await outboxStore.get(
     result.clientMutationId,
@@ -1235,9 +1415,17 @@ export async function applyPushResultAtomically(
   }
 
   const rdo = await rdoStore.get(mutation.entidadeId);
+  const message =
+    mutation.entidadeTipo === "MENSAGEM"
+      ? await messageStore.get(mutation.entidadeId)
+      : undefined;
   const timestamp = nowUtc();
 
   if (result.status === "APLICADA") {
+    const messageProjection = message
+      ? canonicalMessageProjection(message, result)
+      : null;
+
     await outboxStore.put({
       ...mutation,
       status: "SYNCED",
@@ -1279,6 +1467,41 @@ export async function applyPushResultAtomically(
         timestamp,
       );
     }
+
+    if (messageProjection) {
+      await messageStore.put(messageProjection.message);
+
+      const referenceKeys = await referenceStore
+        .index("by-message-id")
+        .getAllKeys(messageProjection.message.id);
+      await Promise.all(referenceKeys.map((key) => referenceStore.delete(key)));
+      await Promise.all(
+        messageProjection.references.map((reference) =>
+          referenceStore.put(reference),
+        ),
+      );
+
+      for (const attachment of messageProjection.attachments) {
+        const existing = await messageAttachmentStore.get(attachment.id);
+        await messageAttachmentStore.put({
+          ...attachment,
+          arquivo: existing?.arquivo ?? null,
+        });
+      }
+
+      const conversation = await conversationStore.get(
+        messageProjection.message.conversaId,
+      );
+      if (conversation) {
+        await conversationStore.put({
+          ...conversation,
+          ultimaAtividadeEm:
+            messageProjection.message.criadaServidorEm ??
+            messageProjection.message.enviadaClienteEm,
+          atualizadoEm: messageProjection.message.atualizadoEm,
+        });
+      }
+    }
   } else if (result.status === "DESCARTADA") {
     await outboxStore.put({
       ...mutation,
@@ -1312,6 +1535,16 @@ export async function applyPushResultAtomically(
         "SYNC_FAILED",
         timestamp,
       );
+    }
+
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "ERROR",
+        ultimoErro:
+          result.erro ?? "Conflito informado pelo servidor.",
+        atualizadoEm: timestamp,
+      });
     }
   } else {
     await outboxStore.put({
@@ -1349,6 +1582,15 @@ export async function applyPushResultAtomically(
         timestamp,
       );
     }
+
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "ERROR",
+        ultimoErro: result.erro ?? "Erro informado pelo servidor.",
+        atualizadoEm: timestamp,
+      });
+    }
   }
 
   await transaction.done;
@@ -1368,6 +1610,7 @@ export async function returnMutationToPending(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const messageStore = transaction.objectStore("messages");
 
   const mutation = await outboxStore.get(clientMutationId);
 
@@ -1414,6 +1657,18 @@ export async function returnMutationToPending(
     );
   }
 
+  if (mutation.entidadeTipo === "MENSAGEM") {
+    const message = await messageStore.get(mutation.entidadeId);
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "PENDING",
+        ultimoErro: errorMessage,
+        atualizadoEm: timestamp,
+      });
+    }
+  }
+
   await transaction.done;
 }
 
@@ -1441,6 +1696,77 @@ function applySafeRdoEvent(
   return updated;
 }
 
+function messageProjectionFromPullEvent(
+  event: SyncPullEvent,
+  existing: LocalMessageRecord | undefined,
+): CanonicalMessageProjection | null {
+  if (
+    event.entidadeTipo !== "MENSAGEM" ||
+    event.tipoEvento !== "MENSAGEM_ENVIADA" ||
+    typeof event.versaoEntidade !== "number"
+  ) {
+    return null;
+  }
+
+  const afterState = objectValue(objectValue(event.payload).afterState);
+  if (Object.keys(afterState).length === 0) {
+    return null;
+  }
+
+  try {
+    const id = requireCanonicalText(afterState, "id");
+    if (id !== event.entidadeId) {
+      return null;
+    }
+    if (
+      existing?.versaoEntidade !== null &&
+      existing?.versaoEntidade !== undefined &&
+      existing.versaoEntidade > event.versaoEntidade
+    ) {
+      return null;
+    }
+
+    const canonical: Record<string, unknown> = {
+      ...afterState,
+      versaoEntidade: event.versaoEntidade,
+    };
+    const base: LocalMessageRecord = existing ?? {
+      id,
+      conversaId: requireCanonicalText(canonical, "conversaId"),
+      remetenteId: requireCanonicalText(canonical, "remetenteId"),
+      remetenteNome: requireCanonicalText(canonical, "remetenteNome"),
+      clientMessageId: requireCanonicalText(canonical, "clientMessageId"),
+      texto: nullableTextValue(canonical.texto),
+      estado: requireCanonicalText(canonical, "estado"),
+      enviadaClienteEm: requireCanonicalText(
+        canonical,
+        "enviadaClienteEm",
+      ),
+      criadaServidorEm: requireCanonicalText(
+        canonical,
+        "criadaServidorEm",
+      ),
+      atualizadoEm: requireCanonicalText(canonical, "atualizadaEm"),
+      versaoEntidade: event.versaoEntidade,
+      recibos: [],
+      syncStatus: "SENT",
+      ultimoErro: null,
+    };
+
+    return canonicalMessageProjection(base, {
+      clientMutationId: "pull-event",
+      status: "APLICADA",
+      entidadeTipo: "MENSAGEM",
+      entidadeId: id,
+      resultado: canonical,
+    });
+  } catch {
+    // Eventos históricos anteriores ao schema completo são ignorados aqui;
+    // a hidratação REST continua sendo a fonte autoritativa do histórico.
+    return null;
+  }
+}
+
 export async function applyPulledEventsAtomically(
   events: SyncPullEvent[],
   nextCommitSeq: number,
@@ -1454,6 +1780,10 @@ export async function applyPulledEventsAtomically(
       "sync_state",
       "obras",
       "previsao_snapshots",
+      "conversations",
+      "messages",
+      "message_references",
+      "message_attachments",
     ],
     "readwrite",
   );
@@ -1519,6 +1849,57 @@ export async function applyPulledEventsAtomically(
         await rdoStore.put(
           applySafeRdoEvent(localRdo, event),
         );
+      }
+    }
+
+    if (
+      event.entidadeTipo === "MENSAGEM" &&
+      event.tipoEvento === "MENSAGEM_ENVIADA"
+    ) {
+      const messageStore = transaction.objectStore("messages");
+      const existing = await messageStore.get(event.entidadeId);
+      const projection = messageProjectionFromPullEvent(event, existing);
+
+      if (projection) {
+        await messageStore.put(projection.message);
+
+        const referenceStore = transaction.objectStore("message_references");
+        const referenceKeys = await referenceStore
+          .index("by-message-id")
+          .getAllKeys(projection.message.id);
+        await Promise.all(
+          referenceKeys.map((key) => referenceStore.delete(key)),
+        );
+        await Promise.all(
+          projection.references.map((reference) =>
+            referenceStore.put(reference),
+          ),
+        );
+
+        const attachmentStore = transaction.objectStore(
+          "message_attachments",
+        );
+        for (const attachment of projection.attachments) {
+          const localAttachment = await attachmentStore.get(attachment.id);
+          await attachmentStore.put({
+            ...attachment,
+            arquivo: localAttachment?.arquivo ?? null,
+          });
+        }
+
+        const conversationStore = transaction.objectStore("conversations");
+        const conversation = await conversationStore.get(
+          projection.message.conversaId,
+        );
+        if (conversation) {
+          await conversationStore.put({
+            ...conversation,
+            ultimaAtividadeEm:
+              projection.message.criadaServidorEm ??
+              projection.message.enviadaClienteEm,
+            atualizadoEm: projection.message.atualizadoEm,
+          });
+        }
       }
     }
 

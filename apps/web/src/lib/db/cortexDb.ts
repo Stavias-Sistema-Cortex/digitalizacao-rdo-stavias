@@ -6,6 +6,11 @@ import {
 
 import type {
   ColaboradorLocalRecord,
+  LocalConversationParticipantRecord,
+  LocalConversationRecord,
+  LocalMessageAttachmentRecord,
+  LocalMessageRecord,
+  LocalMessageReferenceRecord,
   LocalRdoControleGeometricoRecord,
   LocalRdoEquipamentoRecord,
   LocalRdoMaoObraRecord,
@@ -22,10 +27,60 @@ import type {
   TarefaRecord,
 } from "./db.types";
 
-const DATABASE_NAME = "cortex-web";
-const DATABASE_VERSION = 9;
+export const CORTEX_DATABASE_NAME = "cortex-web";
+export const CORTEX_DATABASE_VERSION = 10;
 
 interface CortexDbSchema extends DBSchema {
+  conversations: {
+    key: string;
+    value: LocalConversationRecord;
+    indexes: {
+      "by-activity": string;
+      "by-obra-id": string;
+      "by-equipe-id": string;
+      "by-status": LocalConversationRecord["status"];
+    };
+  };
+
+  conversation_participants: {
+    key: string;
+    value: LocalConversationParticipantRecord;
+    indexes: {
+      "by-conversation-id": string;
+      "by-collaborator-id": string;
+      "by-status": LocalConversationParticipantRecord["status"];
+    };
+  };
+
+  messages: {
+    key: string;
+    value: LocalMessageRecord;
+    indexes: {
+      "by-conversation-order": [string, string, string];
+      "by-client-message-id": string;
+      "by-sync-status": LocalMessageRecord["syncStatus"];
+    };
+  };
+
+  message_references: {
+    key: string;
+    value: LocalMessageReferenceRecord;
+    indexes: {
+      "by-message-id": string;
+      "by-object": [string, string];
+    };
+  };
+
+  message_attachments: {
+    key: string;
+    value: LocalMessageAttachmentRecord;
+    indexes: {
+      "by-message-id": string;
+      "by-client-attachment-id": string;
+      "by-sync-status": LocalMessageAttachmentRecord["syncStatus"];
+    };
+  };
+
   rdos: {
     key: string;
     value: LocalRdoRecord;
@@ -181,10 +236,90 @@ export function getCortexDb(): Promise<
   }
 
   databasePromise = openDB<CortexDbSchema>(
-    DATABASE_NAME,
-    DATABASE_VERSION,
+    CORTEX_DATABASE_NAME,
+    CORTEX_DATABASE_VERSION,
     {
       upgrade(database, _oldVersion, _newVersion, transaction) {
+        if (!database.objectStoreNames.contains("conversations")) {
+          const conversationStore = database.createObjectStore(
+            "conversations",
+            { keyPath: "id" },
+          );
+          conversationStore.createIndex(
+            "by-activity",
+            "ultimaAtividadeEm",
+          );
+          conversationStore.createIndex("by-obra-id", "obraId");
+          conversationStore.createIndex("by-equipe-id", "equipeId");
+          conversationStore.createIndex("by-status", "status");
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "conversation_participants",
+          )
+        ) {
+          const participantStore = database.createObjectStore(
+            "conversation_participants",
+            { keyPath: "id" },
+          );
+          participantStore.createIndex(
+            "by-conversation-id",
+            "conversaId",
+          );
+          participantStore.createIndex(
+            "by-collaborator-id",
+            "colaboradorId",
+          );
+          participantStore.createIndex("by-status", "status");
+        }
+
+        if (!database.objectStoreNames.contains("messages")) {
+          const messageStore = database.createObjectStore("messages", {
+            keyPath: "id",
+          });
+          messageStore.createIndex(
+            "by-conversation-order",
+            ["conversaId", "enviadaClienteEm", "id"],
+          );
+          messageStore.createIndex(
+            "by-client-message-id",
+            "clientMessageId",
+            { unique: true },
+          );
+          messageStore.createIndex("by-sync-status", "syncStatus");
+        }
+
+        if (
+          !database.objectStoreNames.contains("message_references")
+        ) {
+          const referenceStore = database.createObjectStore(
+            "message_references",
+            { keyPath: "id" },
+          );
+          referenceStore.createIndex("by-message-id", "mensagemId");
+          referenceStore.createIndex(
+            "by-object",
+            ["tipoObjeto", "objetoId"],
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains("message_attachments")
+        ) {
+          const attachmentStore = database.createObjectStore(
+            "message_attachments",
+            { keyPath: "id" },
+          );
+          attachmentStore.createIndex("by-message-id", "mensagemId");
+          attachmentStore.createIndex(
+            "by-client-attachment-id",
+            "clientAttachmentId",
+            { unique: true },
+          );
+          attachmentStore.createIndex("by-sync-status", "syncStatus");
+        }
+
         if (!database.objectStoreNames.contains("rdos")) {
           const rdoStore = database.createObjectStore("rdos", {
             keyPath: "id",
@@ -564,4 +699,14 @@ export async function initializeCortexDb(): Promise<void> {
 
     await database.put("sync_state", initialSyncState);
   }
+}
+
+export async function closeCortexDb(): Promise<void> {
+  if (!databasePromise) {
+    return;
+  }
+
+  const database = await databasePromise;
+  database.close();
+  databasePromise = null;
 }
