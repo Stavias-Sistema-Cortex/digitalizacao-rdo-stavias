@@ -594,8 +594,8 @@ A entrega só é concluída quando houver:
 
 ### Evidência executada em 2026-07-15
 
-- `mvnw clean test` com JDK 21: 859 testes, 0 falhas, 0 erros; os 54 skips
-  são gates ambientais, complementados por execução MySQL real específica;
+- `mvnw clean test` com JDK 21: 859 testes, 0 falhas, 0 erros. Após a
+  complementação MySQL real, o agregado final ficou em 45 skips ambientais;
 - MySQL 8.4 real: V1-V39 e integrações de rateio, nota/documento, governança
   Alfa/Beta, carga PDOR e fluxo CW38386 sem skips;
 - frontend após o conserto encontrado no QA: 41 arquivos e 208 testes
