@@ -523,6 +523,7 @@ public class EquipeMemoryPublisher {
         state.put("id", member.id());
         state.put("equipeId", member.equipeId());
         state.put("colaboradorId", member.colaboradorId());
+        state.put("papelAcesso", member.papelAcesso());
         state.put("funcaoOperacionalId", member.funcaoOperacionalId());
         state.put("responsavel", member.responsavel());
         state.put("status", member.status());

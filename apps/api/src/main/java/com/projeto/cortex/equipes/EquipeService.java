@@ -707,6 +707,7 @@ public class EquipeService {
                     member.equipeId(),
                     member.colaboradorId(),
                     member.colaboradorNome(),
+                    member.papelAcesso(),
                     member.funcaoOperacionalId(),
                     member.funcaoCodigo(),
                     member.funcaoNome(),
@@ -1047,6 +1048,7 @@ public class EquipeService {
                 SELECT
                     em.id, em.equipe_id, em.colaborador_id,
                     c.nome AS colaborador_nome,
+                    c.papel_acesso AS colaborador_papel_acesso,
                     em.funcao_operacional_id,
                     f.codigo AS funcao_codigo,
                     f.nome AS funcao_nome,
@@ -1065,6 +1067,7 @@ public class EquipeService {
                 rs.getString("equipe_id"),
                 rs.getString("colaborador_id"),
                 rs.getString("colaborador_nome"),
+                rs.getString("colaborador_papel_acesso"),
                 rs.getString("funcao_operacional_id"),
                 rs.getString("funcao_codigo"),
                 rs.getString("funcao_nome"),
