@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ public class AuthLoginRateLimiter {
     private final ConcurrentHashMap<String, Window> windows =
             new ConcurrentHashMap<>();
 
+    @Autowired
     public AuthLoginRateLimiter(
             @Value("${cortex.auth.login-rate-limit.enabled:true}")
             boolean enabled,
