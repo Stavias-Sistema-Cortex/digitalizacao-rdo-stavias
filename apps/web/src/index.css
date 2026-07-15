@@ -2133,6 +2133,23 @@ textarea:focus {
   font-size: 1.35rem;
 }
 
+.obras-create-action {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #0d3f3c;
+  border-radius: 7px;
+  background: #0d3f3c;
+  color: #fff;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.obras-create-action:hover,
+.obras-create-action:focus-visible {
+  background: #124e4a;
+}
+
 .obras-workspace {
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);

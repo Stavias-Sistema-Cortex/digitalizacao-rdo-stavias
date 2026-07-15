@@ -14,12 +14,14 @@ import {
 } from "../home/homeFilters";
 import { useHomeData } from "../home/useHomeData";
 import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
+import { getSession, isAlfa } from "../auth/authSession";
 import {
   buscarPdorAtual,
   buscarTimelineObra,
   type ObraPdor,
   type ObraTimelineEvent,
 } from "./obrasApi";
+import { NovaObraForm } from "./gestao/NovaObraForm";
 
 const TRACE_KEYS = [
   "codigoContrato",
@@ -182,8 +184,11 @@ export function ObrasPage() {
     useState<string | null>(null);
   const [isPdorLoading, setIsPdorLoading] =
     useState(false);
+  const [showCreateWorksite, setShowCreateWorksite] =
+    useState(false);
   const { openStavia, setStaviaContext } =
     useStaviaLauncher();
+  const canCreateWorksite = isAlfa(getSession());
 
   useEffect(() => {
     setStaviaContext({ obraId: focusedObra?.id ?? "" });
@@ -342,6 +347,15 @@ export function ObrasPage() {
             <p className="eyebrow">Ontologia operacional</p>
             <h1>Obras</h1>
           </div>
+          {canCreateWorksite ? (
+            <button
+              type="button"
+              className="obras-create-action"
+              onClick={() => setShowCreateWorksite(true)}
+            >
+              Criar obra
+            </button>
+          ) : null}
           <div
             className="home-chips"
             role="group"
@@ -667,6 +681,50 @@ export function ObrasPage() {
             )}
           </section>
         </section>
+
+        {showCreateWorksite ? (
+          <div
+            className="nova-obra-dialog-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) {
+                setShowCreateWorksite(false);
+              }
+            }}
+          >
+            <section
+              className="nova-obra-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="nova-obra-dialog-title"
+            >
+              <header>
+                <div>
+                  <h2 id="nova-obra-dialog-title">Criar obra</h2>
+                  <p>
+                    A obra entra no escopo global e na rastreabilidade
+                    operacional assim que for criada.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Fechar cadastro de obra"
+                  onClick={() => setShowCreateWorksite(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <NovaObraForm
+                onCancel={() => setShowCreateWorksite(false)}
+                onCreated={(created) => {
+                  setShowCreateWorksite(false);
+                  setFocusedObraId(created.id);
+                  reload();
+                }}
+              />
+            </section>
+          </div>
+        ) : null}
       </main>
     </CortexShell>
   );

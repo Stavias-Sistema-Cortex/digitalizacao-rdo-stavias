@@ -2,28 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
-  criarObra,
   listarColaboradores,
   listarObrasAdmin,
   listarVinculos,
   revogarVinculo,
-  validarNovaObra,
   vincularColaborador,
   type ColaboradorApi,
-  type NovaObraInput,
   type ObraAdminApi,
   type VinculoApi,
 } from "./gestaoObrasApi";
+import { NovaObraForm } from "./NovaObraForm";
 import "./gestaoObras.css";
-
-const OBRA_VAZIA: NovaObraInput = {
-  codigoContrato: "",
-  nome: "",
-  cliente: "",
-  cidade: "",
-  uf: "",
-  rodovia: "",
-};
 
 function mensagemErro(erro: unknown): string {
   return erro instanceof Error
@@ -41,10 +30,6 @@ export function GestaoObrasPage() {
 
   const [obraSelecionadaId, setObraSelecionadaId] =
     useState<string | null>(null);
-
-  const [novaObra, setNovaObra] = useState<NovaObraInput>(OBRA_VAZIA);
-  const [errosObra, setErrosObra] = useState<string[]>([]);
-  const [criandoObra, setCriandoObra] = useState(false);
 
   const [vinculos, setVinculos] = useState<VinculoApi[]>([]);
   const [vinculosReloadKey, setVinculosReloadKey] = useState(0);
@@ -133,31 +118,6 @@ export function GestaoObrasPage() {
     setCarregandoObras(true);
     setObraQueryAtiva(obraQuery);
     setObrasReloadKey((chave) => chave + 1);
-  }
-
-  async function submeterNovaObra(event: FormEvent) {
-    event.preventDefault();
-    const erros = validarNovaObra(novaObra);
-    setErrosObra(erros);
-    if (erros.length > 0) {
-      return;
-    }
-
-    setCriandoObra(true);
-    setAviso(null);
-    try {
-      const criada = await criarObra(novaObra);
-      setNovaObra(OBRA_VAZIA);
-      setAviso(`Obra "${criada.nome ?? criada.codigoContrato}" criada.`);
-      setCarregandoObras(true);
-      setObraQueryAtiva("");
-      setObrasReloadKey((chave) => chave + 1);
-      selecionarObra(criada.id);
-    } catch (erro) {
-      setErrosObra([mensagemErro(erro)]);
-    } finally {
-      setCriandoObra(false);
-    }
   }
 
   async function buscarColaboradores(event: FormEvent) {
@@ -262,69 +222,13 @@ export function GestaoObrasPage() {
 
           <details className="gestao-obras-nova">
             <summary>Nova obra</summary>
-            <form onSubmit={submeterNovaObra}>
-              <label>
-                Código do contrato*
-                <input
-                  value={novaObra.codigoContrato}
-                  onChange={(event) =>
-                    setNovaObra({
-                      ...novaObra,
-                      codigoContrato: event.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Nome*
-                <input
-                  value={novaObra.nome}
-                  onChange={(event) =>
-                    setNovaObra({ ...novaObra, nome: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Cliente
-                <input
-                  value={novaObra.cliente ?? ""}
-                  onChange={(event) =>
-                    setNovaObra({ ...novaObra, cliente: event.target.value })
-                  }
-                />
-              </label>
-              <div className="gestao-obras-linha">
-                <label>
-                  Cidade
-                  <input
-                    value={novaObra.cidade ?? ""}
-                    onChange={(event) =>
-                      setNovaObra({ ...novaObra, cidade: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  UF
-                  <input
-                    maxLength={2}
-                    value={novaObra.uf ?? ""}
-                    onChange={(event) =>
-                      setNovaObra({ ...novaObra, uf: event.target.value })
-                    }
-                  />
-                </label>
-              </div>
-              {errosObra.length > 0 && (
-                <ul className="gestao-obras-erro">
-                  {errosObra.map((erro) => (
-                    <li key={erro}>{erro}</li>
-                  ))}
-                </ul>
-              )}
-              <button type="submit" disabled={criandoObra}>
-                {criandoObra ? "Criando…" : "Criar obra"}
-              </button>
-            </form>
+            <NovaObraForm onCreated={(criada) => {
+              setAviso(`Obra "${criada.nome ?? criada.codigoContrato}" criada.`);
+              setCarregandoObras(true);
+              setObraQueryAtiva("");
+              setObrasReloadKey((chave) => chave + 1);
+              selecionarObra(criada.id);
+            }} />
           </details>
         </section>
 
