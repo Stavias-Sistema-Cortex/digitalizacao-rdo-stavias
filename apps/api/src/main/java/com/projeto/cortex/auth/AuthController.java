@@ -1,7 +1,6 @@
 package com.projeto.cortex.auth;
 
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
-import com.projeto.cortex.auth.otp.AuthRateLimiter;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeRequest;
@@ -31,14 +30,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthController {
 
     static final String LOGIN_REJECTED_MESSAGE = "CPF ou acesso inválido.";
-    static final String LOGIN_RATE_LIMIT_MESSAGE =
-            "Muitas tentativas. Aguarde antes de tentar novamente.";
     static final String CPF_FILTER_DISABLED_MESSAGE =
             "Filtro de CPF desativado.";
 
     private final EmailOtpChallengeService otpChallenges;
     private final AuthService authService;
-    private final AuthRateLimiter rateLimiter;
     private final ClientAddressResolver clientAddresses;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
@@ -47,7 +43,6 @@ public class AuthController {
     public AuthController(
             EmailOtpChallengeService otpChallenges,
             AuthService authService,
-            AuthRateLimiter rateLimiter,
             ClientAddressResolver clientAddresses,
             AuthSessionService sessions,
             AuthCookieService cookies,
@@ -55,7 +50,6 @@ public class AuthController {
     ) {
         this.otpChallenges = otpChallenges;
         this.authService = authService;
-        this.rateLimiter = rateLimiter;
         this.clientAddresses = clientAddresses;
         this.sessions = sessions;
         this.cookies = cookies;
@@ -136,18 +130,10 @@ public class AuthController {
     @PostMapping("/api/auth/login")
     public AuthSessionResponse login(
             @RequestBody(required = false) LoginRequest request,
-            HttpServletRequest servletRequest,
             HttpServletResponse response
     ) {
         response.setHeader("Cache-Control", "no-store");
         String cpf = canonicalCpf(request);
-        String clientIp = clientAddresses.resolve(servletRequest);
-        if (!rateLimiter.allowCpfLogin(cpf, clientIp)) {
-            throw new ResponseStatusException(
-                    HttpStatus.TOO_MANY_REQUESTS,
-                    LOGIN_RATE_LIMIT_MESSAGE
-            );
-        }
         AuthenticatedIdentity identity = authService.autenticarPorCpf(cpf)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNAUTHORIZED,

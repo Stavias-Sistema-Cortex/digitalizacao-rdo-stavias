@@ -1,37 +1,28 @@
 package com.projeto.cortex.auth.otp;
 
 import java.util.List;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-/** Shared source/identifier pre-gate plus global circuit breaker. */
+/** Shared e-mail challenge pre-gate plus global circuit breaker. */
 @Service
 public class AuthRateLimiter {
 
     private final RateLimitBucketRepository buckets;
     private final OtpCryptography cryptography;
     private final OtpPolicy policy;
-    private final boolean enabled;
 
     public AuthRateLimiter(
             RateLimitBucketRepository buckets,
             OtpCryptography cryptography,
-            OtpPolicy policy,
-            @Value("${cortex.auth.otp.rate-limit-enabled:true}")
-            boolean enabled
+            OtpPolicy policy
     ) {
         this.buckets = buckets;
         this.cryptography = cryptography;
         this.policy = policy;
-        this.enabled = enabled;
     }
 
     public boolean allow(String identifier, String clientIp) {
         return allowScoped("email-challenge", identifier, clientIp);
-    }
-
-    public boolean allowCpfLogin(String identifier, String clientIp) {
-        return allowScoped("cpf-login", identifier, clientIp);
     }
 
     private boolean allowScoped(
@@ -39,9 +30,6 @@ public class AuthRateLimiter {
             String identifier,
             String clientIp
     ) {
-        if (!enabled) {
-            return true;
-        }
         String globalBucket = cryptography.bucketDigest(
                 "global",
                 scope

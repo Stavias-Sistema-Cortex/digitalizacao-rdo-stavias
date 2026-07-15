@@ -14,7 +14,12 @@ Simplificar o acesso no canteiro para uma etapa direta por CPF, sem depender de 
 - Recursos de e-mail continuarão disponíveis somente dentro da aplicação autenticada.
 - O acesso offline continuará protegido pela passkey registrada no dispositivo. CPF isolado não liberará o cofre offline.
 
-O CPF isolado é uma prova de identidade mais fraca que OTP ou passkey. Esse risco é uma decisão operacional explícita para reduzir atrito no canteiro. A implementação deve limitar tentativas, evitar respostas que enumerem colaboradores e manter a passkey como alternativa mais forte.
+O CPF isolado é uma prova de identidade mais fraca que OTP ou passkey. Esse
+risco é uma decisão operacional explícita para reduzir atrito no canteiro. Por
+decisão de produto de 2026-07-15, o login direto por CPF não aplica rate limit
+na aplicação nem retorna `429`. As respostas continuam genéricas para evitar
+enumeração, e a passkey permanece como alternativa mais forte. Os limites dos
+fluxos separados de OTP por e-mail e WebAuthn continuam ativos.
 
 ## Experiência da tela
 
@@ -43,7 +48,7 @@ Não haverá segunda etapa, contagem regressiva, reenvio, campo de código ou te
 - O backend normaliza e valida o CPF, localiza uma identidade ativa pela fronteira HMAC/legado já existente e rejeita identidades ambíguas, bloqueadas, inativas, removidas ou com papel não canônico.
 - Uma identidade válida é convertida em `AuthenticatedIdentity` e entregue ao `AuthSessionService` atual.
 - O servidor cria a mesma sessão opaca revogável usada por OTP/passkey, grava apenas o cookie HttpOnly e retorna `AuthSessionResponse` com o escopo Alfa/Beta.
-- O endpoint aplica limite por IP, identificador e volume global com chaves protegidas por HMAC.
+- O endpoint de CPF não depende de IP nem de buckets de rate limit.
 - As rotas de desafio por e-mail deixam de ser públicas. Uma requisição sem sessão para essas rotas recebe `401` antes de alcançar o controller.
 
 ### Passkey e offline
@@ -60,7 +65,8 @@ Esta mudança remove e-mail somente da autenticação pública. Os fluxos intern
 
 - CPF malformado: `400`, sem consulta de identidade.
 - CPF não elegível: `401` com mensagem genérica.
-- Limite excedido: `429` com mensagem genérica e sem indicar se o CPF existe.
+- Repetições do login por CPF seguem o mesmo contrato `200`, `400` ou `401` e
+  não produzem `429` na aplicação.
 - Conflito de identidade: falha fechada; nenhuma sessão ou cookie é criado.
 - Falha ao emitir sessão: nenhuma sessão parcial é preservada no cliente.
 - Todas as respostas de autenticação usam `Cache-Control: no-store`.
@@ -72,7 +78,7 @@ Esta mudança remove e-mail somente da autenticação pública. Os fluxos intern
 
 - CPF de colaborador ativo cria uma sessão opaca e retorna somente o perfil autorizado.
 - CPF inválido, inexistente, inativo, bloqueado, ambíguo ou com papel inválido não cria sessão nem cookie.
-- Limite de tentativas impede nova autenticação sem consultar ou revelar a identidade.
+- O controller de CPF não injeta nem consulta `AuthRateLimiter`.
 - As rotas de e-mail não são públicas.
 - Login, sessão atual, logout, passkey e escopo de obras continuam cobertos.
 

@@ -13,7 +13,6 @@ cortex:
       allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://127.0.0.1:5173}
     otp:
       hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:${random.uuid}${random.uuid}}
-      rate-limit-enabled: ${CORTEX_AUTH_OTP_RATE_LIMIT_ENABLED:false}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}

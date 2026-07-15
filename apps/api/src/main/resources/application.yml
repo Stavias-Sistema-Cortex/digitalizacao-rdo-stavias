@@ -67,7 +67,6 @@ cortex:
       hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:}
       ttl-seconds: ${CORTEX_AUTH_OTP_TTL_SECONDS:600}
       max-attempts: ${CORTEX_AUTH_OTP_MAX_ATTEMPTS:5}
-      rate-limit-enabled: ${CORTEX_AUTH_OTP_RATE_LIMIT_ENABLED:true}
       rate-limit-max-requests: ${CORTEX_AUTH_OTP_RATE_LIMIT_MAX_REQUESTS:5}
       rate-limit-global-max-requests: ${CORTEX_AUTH_OTP_RATE_LIMIT_GLOBAL_MAX_REQUESTS:100}
       rate-limit-window-seconds: ${CORTEX_AUTH_OTP_RATE_LIMIT_WINDOW_SECONDS:900}

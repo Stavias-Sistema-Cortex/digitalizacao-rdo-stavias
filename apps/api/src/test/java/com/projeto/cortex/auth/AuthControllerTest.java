@@ -17,7 +17,6 @@ import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
-import com.projeto.cortex.auth.otp.AuthRateLimiter;
 import com.projeto.cortex.auth.session.AuthCookieService;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
 import com.projeto.cortex.auth.session.AuthSessionService;
@@ -48,8 +47,6 @@ class AuthControllerTest {
     private final EmailOtpChallengeService otp =
             mock(EmailOtpChallengeService.class);
     private final AuthService authService = mock(AuthService.class);
-    private final AuthRateLimiter rateLimiter =
-            mock(AuthRateLimiter.class);
     private final ClientAddressResolver addresses =
             mock(ClientAddressResolver.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
@@ -62,7 +59,6 @@ class AuthControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
                 otp,
                 authService,
-                rateLimiter,
                 addresses,
                 sessions,
                 cookies,
@@ -80,11 +76,6 @@ class AuthControllerTest {
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
         IssuedAuthSession issued = issuedSession();
-        when(addresses.resolve(any())).thenReturn("203.0.113.10");
-        when(rateLimiter.allowCpfLogin(
-                "11144477735",
-                "203.0.113.10"
-        )).thenReturn(true);
         when(authService.autenticarPorCpf("11144477735"))
                 .thenReturn(Optional.of(identity));
         when(sessions.issue(identity)).thenReturn(issued);
@@ -108,28 +99,23 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.email").doesNotExist());
 
         verify(cookies).write(any(HttpServletResponse.class), eq(issued));
+        verify(addresses, never()).resolve(any());
     }
 
     @Test
-    void malformedCpfStopsBeforeRateLimitOrIdentityLookup()
+    void malformedCpfStopsBeforeIdentityLookup()
             throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cpf\":\"123\"}"))
                 .andExpect(status().isBadRequest());
 
-        verify(rateLimiter, never()).allowCpfLogin(any(), any());
         verify(authService, never()).autenticarPorCpf(any());
         verify(sessions, never()).issue(any());
     }
 
     @Test
     void ineligibleCpfNeverIssuesSessionOrCookies() throws Exception {
-        when(addresses.resolve(any())).thenReturn("203.0.113.10");
-        when(rateLimiter.allowCpfLogin(
-                "11144477735",
-                "203.0.113.10"
-        )).thenReturn(true);
         when(authService.autenticarPorCpf("11144477735"))
                 .thenReturn(Optional.empty());
 
@@ -140,23 +126,6 @@ class AuthControllerTest {
 
         verify(sessions, never()).issue(any());
         verify(cookies, never()).write(any(), any());
-    }
-
-    @Test
-    void exhaustedCpfLimitStopsBeforeIdentityLookup() throws Exception {
-        when(addresses.resolve(any())).thenReturn("203.0.113.10");
-        when(rateLimiter.allowCpfLogin(
-                "11144477735",
-                "203.0.113.10"
-        )).thenReturn(false);
-
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"11144477735\"}"))
-                .andExpect(status().isTooManyRequests());
-
-        verify(authService, never()).autenticarPorCpf(any());
-        verify(sessions, never()).issue(any());
     }
 
     @Test

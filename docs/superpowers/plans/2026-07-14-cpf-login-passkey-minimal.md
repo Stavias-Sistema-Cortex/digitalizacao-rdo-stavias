@@ -1,10 +1,17 @@
 # CPF Login With Minimal Passkey Implementation Plan
 
+> **Decision update (2026-07-15):** the CPF-specific rate-limit portion of
+> Task 2 is superseded. `POST /api/auth/login` no longer injects or calls
+> `AuthRateLimiter` and does not return application-level `429`. The limiter is
+> retained only for the separate e-mail challenge flow; WebAuthn keeps its own
+> limiter. The historical Task 2 steps below document the earlier implementation
+> and must not be re-applied.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace pre-access e-mail OTP with direct Academy-linked CPF login while preserving opaque HttpOnly sessions, scoped authorization, passkey/offline security, and a minimal login UI.
 
-**Architecture:** Reuse `AuthIdentityRepository` to locate an eligible collaborator through the existing HMAC/legacy boundary, map the exact Alfa/Beta role, rate-limit the public CPF request, and issue the existing opaque session cookie. The web client sends only CPF, stores only `AuthProfile` in memory, and keeps WebAuthn unchanged behind a secondary `Usar passkey` action.
+**Architecture:** Reuse `AuthIdentityRepository` to locate an eligible collaborator through the existing HMAC/legacy boundary, map the exact Alfa/Beta role, and issue the existing opaque session cookie. The web client sends only CPF, stores only `AuthProfile` in memory, and keeps WebAuthn unchanged behind a secondary `Usar passkey` action.
 
 **Tech Stack:** Java 21, Spring Boot 3.3, Spring MockMvc, JUnit 5, Mockito, React 19, TypeScript, Vitest, Vite, MySQL 8.4.
 
@@ -16,7 +23,7 @@
 - Server sessions remain opaque, revocable, HttpOnly, `SameSite=Lax`, and scoped by Alfa/Beta worksite permissions.
 - E-mail challenge routes are not public; unauthenticated requests receive `401` in the auth filter.
 - CPF does not unlock offline data. Offline access remains passkey-only.
-- CPF failures remain generic and rate-limited to reduce collaborator enumeration.
+- CPF failures remain generic; the direct CPF endpoint has no application-level rate limit.
 - Run backend commands with Java 21.
 
 ---
@@ -25,12 +32,12 @@
 
 - `apps/api/src/main/java/com/projeto/cortex/auth/AuthService.java`: convert eligible CPF lookup into an `AuthenticatedIdentity` without returning CPF or e-mail.
 - `apps/api/src/main/java/com/projeto/cortex/auth/LoginRequest.java`: reduce the public contract to `cpf` only.
-- `apps/api/src/main/java/com/projeto/cortex/auth/otp/AuthRateLimiter.java`: add a distinct HMAC bucket scope for direct CPF login.
+- `apps/api/src/main/java/com/projeto/cortex/auth/otp/AuthRateLimiter.java`: remains scoped to e-mail challenges; it is not part of direct CPF login.
 - `apps/api/src/main/java/com/projeto/cortex/auth/AuthController.java`: issue opaque sessions and cookies for valid CPF requests.
 - `apps/api/src/main/java/com/projeto/cortex/auth/session/AuthPublicEndpointPolicy.java`: keep CPF/passkey public and remove e-mail challenges from the allowlist.
 - `apps/api/src/test/java/com/projeto/cortex/auth/AuthServiceTest.java`: service red/green coverage.
-- `apps/api/src/test/java/com/projeto/cortex/auth/AuthControllerTest.java`: controller, cookie, response, and rate-limit coverage.
-- `apps/api/src/test/java/com/projeto/cortex/auth/otp/AuthRateLimiterTest.java`: distinct CPF bucket coverage.
+- `apps/api/src/test/java/com/projeto/cortex/auth/AuthControllerTest.java`: controller, cookie, response, and absence of an IP/rate-limit dependency.
+- `apps/api/src/test/java/com/projeto/cortex/auth/otp/AuthRateLimiterTest.java`: e-mail challenge bucket coverage only.
 - `apps/api/src/test/java/com/projeto/cortex/auth/session/AuthSessionFilterTest.java`: e-mail endpoints require a session.
 - `apps/api/src/test/java/com/projeto/cortex/auth/session/CsrfRequestFilterTest.java`: e-mail endpoints are no longer pre-auth CSRF exemptions.
 - `apps/web/src/features/auth/authApi.ts`: add `loginWithCpf(cpf): Promise<AuthProfile>` and remove OTP client operations.
@@ -128,7 +135,7 @@ git add apps/api/src/main/java/com/projeto/cortex/auth/AuthService.java \
 git commit -m "feat(auth): resolve direct cpf identity"
 ```
 
-### Task 2: Rate-limit CPF login and issue the current opaque session
+### Task 2: Issue the current opaque session (rate-limit steps superseded)
 
 **Files:**
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/otp/AuthRateLimiterTest.java`
