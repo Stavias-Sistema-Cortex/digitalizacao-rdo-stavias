@@ -35,6 +35,7 @@ import {
 } from "./mensagensHydration";
 import {
   localAttachmentBlob,
+  listLocalConversationPreviews,
   listLocalConversations,
   listLocalMessages,
   MESSAGES_CHANGED_EVENT,
@@ -46,6 +47,10 @@ import {
   type MensagemComAnexos,
 } from "./mensagensRepository";
 import { mensagemStatusLabel } from "./mensagensQueue";
+import {
+  buildMessageTimeline,
+  type ConversationPreview,
+} from "./mensagensView";
 import "./MensagensPage.css";
 
 type DirectoryPerson = {
@@ -65,10 +70,12 @@ export function MensagensPage() {
   const [conversations, setConversations] = useState<ConversaLocalRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MensagemComAnexos[]>([]);
+  const [previews, setPreviews] = useState<Record<string, ConversationPreview>>({});
+  const [worksites, setWorksites] = useState<ObraLocalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [body, setBody] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
@@ -76,11 +83,18 @@ export function MensagensPage() {
     null,
   );
   const [showCreate, setShowCreate] = useState(false);
+  const [mobilePane, setMobilePane] = useState<"list" | "thread" | "context">("list");
   const fileInput = useRef<HTMLInputElement>(null);
 
   const loadLocal = useCallback(async () => {
-    const localConversations = await listLocalConversations();
+    const [localConversations, localPreviews, localWorksites] = await Promise.all([
+      listLocalConversations(),
+      listLocalConversationPreviews(),
+      listObrasLocais(),
+    ]);
     setConversations(localConversations);
+    setPreviews(localPreviews);
+    setWorksites(localWorksites);
     setSelectedId((current) => {
       if (current && localConversations.some((item) => item.id === current)) {
         return current;
@@ -154,6 +168,8 @@ export function MensagensPage() {
     () => conversations.find((item) => item.id === selectedId) ?? null,
     [conversations, selectedId],
   );
+  const body = selectedId ? drafts[selectedId] ?? "" : "";
+  const timeline = useMemo(() => buildMessageTimeline(messages), [messages]);
 
   async function handleRefresh() {
     if (refreshing) return;
@@ -188,7 +204,7 @@ export function MensagensPage() {
     setError("");
     try {
       await queueMessage({ conversaId: selectedId, corpo: body, files });
-      setBody("");
+      setDrafts((current) => ({ ...current, [selectedId]: "" }));
       setFiles([]);
       if (fileInput.current) fileInput.current.value = "";
       await loadMessages(selectedId);
@@ -260,6 +276,12 @@ export function MensagensPage() {
   function chooseSearchResult(result: MensagemComAnexos) {
     setSelectedId(result.conversaId);
     setSearchResults(null);
+    setMobilePane("thread");
+  }
+
+  function chooseConversation(id: string) {
+    setSelectedId(id);
+    setMobilePane("thread");
   }
 
   return (
@@ -270,14 +292,7 @@ export function MensagensPage() {
     >
       <main className="mensagens-page">
         <header className="mensagens-header">
-          <div>
-            <p className="eyebrow">Comunicação operacional</p>
-            <h1>Mensagens</h1>
-            <p>
-              Conversas de obra disponíveis mesmo sem conexão. O servidor
-              revalida participantes e vínculos em cada acesso.
-            </p>
-          </div>
+          <div><h1>Mensagens</h1><p>{conversations.length} conversas autorizadas</p></div>
           <button
             type="button"
             className="mensagens-primary"
@@ -297,8 +312,15 @@ export function MensagensPage() {
           </div>
         ) : null}
 
-        <section className="mensagens-workspace" aria-label="Mensagens">
+        <section
+          className={`mensagens-workspace mensagens-workspace--${mobilePane}`}
+          aria-label="Mensagens"
+        >
           <aside className="mensagens-conversations">
+            <header className="mensagens-pane-heading">
+              <strong>Conversas</strong>
+              <span>{navigator.onLine ? "Online" : "Offline"}</span>
+            </header>
             <form className="mensagens-search" onSubmit={handleSearch}>
               <label htmlFor="mensagens-search">Buscar no histórico</label>
               <div>
@@ -327,7 +349,8 @@ export function MensagensPage() {
                 conversations={conversations}
                 selectedId={selectedId}
                 currentUserId={session?.colaboradorId ?? ""}
-                onSelect={setSelectedId}
+                previews={previews}
+                onSelect={chooseConversation}
               />
             )}
           </aside>
@@ -336,11 +359,24 @@ export function MensagensPage() {
             {selected ? (
               <>
                 <header className="mensagens-thread-header">
+                  <button
+                    type="button"
+                    className="mensagens-mobile-back"
+                    onClick={() => setMobilePane("list")}
+                  >
+                    Conversas
+                  </button>
                   <div>
                     <h2>{conversationName(selected, session?.colaboradorId)}</h2>
                     <p>{conversationScope(selected)}</p>
                   </div>
-                  <span>{selected.participantes.filter(activeParticipant).length} participantes</span>
+                  <button
+                    type="button"
+                    className="mensagens-context-toggle"
+                    onClick={() => setMobilePane("context")}
+                  >
+                    {selected.participantes.filter(activeParticipant).length} participantes
+                  </button>
                 </header>
 
                 <ol className="mensagens-list">
@@ -349,63 +385,19 @@ export function MensagensPage() {
                       Nenhuma mensagem nesta conversa.
                     </li>
                   ) : (
-                    messages.map((message) => (
-                      <li
-                        key={message.id}
-                        className={
-                          message.autorId === session?.colaboradorId
-                            ? "mensagem-item mensagem-item--mine"
-                            : "mensagem-item"
-                        }
-                      >
-                        <article>
-                          <header>
-                            <strong>{message.autorNome}</strong>
-                            <time dateTime={message.criadaNoClienteEm}>
-                              {formatMessageTime(message.criadaNoClienteEm)}
-                            </time>
-                          </header>
-                          {message.status === "EXCLUIDA" ? (
-                            <p className="mensagem-deleted">Mensagem excluída</p>
-                          ) : message.corpo ? (
-                            <p>{message.corpo}</p>
-                          ) : null}
-                          {message.anexos.length > 0 ? (
-                            <ul className="mensagem-attachments">
-                              {message.anexos.map((attachment) => (
-                                <li key={attachment.id}>
-                                  <button
-                                    type="button"
-                                    onClick={() => void openAttachment(attachment)}
-                                  >
-                                    <span>{attachment.nome}</span>
-                                    <small>{formatFileSize(attachment.tamanhoBytes)}</small>
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : null}
-                          <footer>
-                            <span className={`mensagem-sync mensagem-sync--${message.syncStatus.toLowerCase()}`}>
-                              {mensagemStatusLabel(message.syncStatus)}
-                            </span>
-                            {message.syncStatus === "FALHOU" ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleRetry(message.id)}
-                              >
-                                Tentar novamente
-                              </button>
-                            ) : null}
-                          </footer>
-                          {message.ultimoErro ? (
-                            <details>
-                              <summary>Detalhes da sincronização</summary>
-                              <p>{message.ultimoErro}</p>
-                            </details>
-                          ) : null}
-                        </article>
+                    timeline.map((entry) => entry.kind === "date" ? (
+                      <li className="mensagens-date-separator" key={entry.key}>
+                        <span>{entry.label}</span>
                       </li>
+                    ) : (
+                      <MessageItem
+                        key={entry.key}
+                        message={entry.message}
+                        showAuthor={entry.showAuthor}
+                        mine={entry.message.autorId === session?.colaboradorId}
+                        onOpenAttachment={openAttachment}
+                        onRetry={handleRetry}
+                      />
                     ))
                   )}
                 </ol>
@@ -434,9 +426,18 @@ export function MensagensPage() {
                   <textarea
                     id="mensagem-body"
                     value={body}
-                    onChange={(event) => setBody(event.target.value)}
-                    placeholder="Escreva uma atualização para a equipe…"
-                    rows={3}
+                    onChange={(event) => selectedId && setDrafts((current) => ({
+                      ...current,
+                      [selectedId]: event.target.value,
+                    }))}
+                    onKeyDown={(event) => {
+                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder="Mensagem"
+                    rows={1}
                   />
                   <div>
                     <label className="mensagens-attach">
@@ -468,6 +469,14 @@ export function MensagensPage() {
               </div>
             )}
           </section>
+
+          <ConversationContext
+            conversation={selected}
+            messages={messages}
+            worksites={worksites}
+            onBack={() => setMobilePane("thread")}
+            onOpenAttachment={openAttachment}
+          />
         </section>
 
         {showCreate ? (
@@ -488,11 +497,155 @@ export function MensagensPage() {
   );
 }
 
+function MessageItem({
+  message,
+  showAuthor,
+  mine,
+  onOpenAttachment,
+  onRetry,
+}: {
+  message: MensagemComAnexos;
+  showAuthor: boolean;
+  mine: boolean;
+  onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
+  onRetry: (messageId: string) => Promise<void>;
+}) {
+  const showSync = message.syncStatus !== "SINCRONIZADO";
+  return (
+    <li className={mine ? "mensagem-item mensagem-item--mine" : "mensagem-item"}>
+      <article>
+        <header className={showAuthor ? "" : "is-continuation"}>
+          {showAuthor ? <strong>{message.autorNome}</strong> : <span />}
+          <time dateTime={message.criadaNoClienteEm}>
+            {formatMessageTimeOnly(message.criadaNoClienteEm)}
+          </time>
+        </header>
+        {message.status === "EXCLUIDA" ? (
+          <p className="mensagem-deleted">Mensagem excluída</p>
+        ) : message.corpo ? (
+          <p>{message.corpo}</p>
+        ) : null}
+        {message.anexos.length > 0 ? (
+          <ul className="mensagem-attachments">
+            {message.anexos.map((attachment) => (
+              <li key={attachment.id}>
+                <button
+                  type="button"
+                  onClick={() => void onOpenAttachment(attachment)}
+                >
+                  <b aria-hidden="true">DOC</b>
+                  <span>{attachment.nome}</span>
+                  <small>{formatFileSize(attachment.tamanhoBytes)}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {showSync ? (
+          <footer>
+            <span className={`mensagem-sync mensagem-sync--${message.syncStatus.toLowerCase()}`}>
+              {mensagemStatusLabel(message.syncStatus)}
+            </span>
+            {message.syncStatus === "FALHOU" ? (
+              <button type="button" onClick={() => void onRetry(message.id)}>
+                Tentar novamente
+              </button>
+            ) : null}
+          </footer>
+        ) : null}
+        {message.ultimoErro ? (
+          <details>
+            <summary>Detalhes da sincronização</summary>
+            <p>{message.ultimoErro}</p>
+          </details>
+        ) : null}
+      </article>
+    </li>
+  );
+}
+
+function ConversationContext({
+  conversation,
+  messages,
+  worksites,
+  onBack,
+  onOpenAttachment,
+}: {
+  conversation: ConversaLocalRecord | null;
+  messages: MensagemComAnexos[];
+  worksites: ObraLocalRecord[];
+  onBack: () => void;
+  onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
+}) {
+  if (!conversation) {
+    return (
+      <aside className="mensagens-context">
+        <p className="mensagens-list-status">O contexto aparece ao abrir uma conversa.</p>
+      </aside>
+    );
+  }
+  const worksite = worksites.find((item) => item.id === conversation.obraId);
+  const participants = conversation.participantes.filter(activeParticipant);
+  const attachments = messages.flatMap((message) => message.anexos);
+  return (
+    <aside className="mensagens-context" aria-label="Contexto da conversa">
+      <header>
+        <button type="button" className="mensagens-mobile-back" onClick={onBack}>
+          Conversa
+        </button>
+        <div><strong>Contexto</strong><span>{conversationScope(conversation)}</span></div>
+      </header>
+
+      {conversation.obraId ? (
+        <section>
+          <h3>Obra</h3>
+          <strong>{worksite?.nome ?? "Obra vinculada"}</strong>
+          <p>{worksite?.codigoContrato ?? shortIdentifier(conversation.obraId)}</p>
+        </section>
+      ) : null}
+
+      <section>
+        <h3>Pessoas</h3>
+        <ul className="mensagens-context-people">
+          {participants.map((participant) => (
+            <li key={participant.colaboradorId}>
+              <span aria-hidden="true">{participant.nome.slice(0, 1).toUpperCase()}</span>
+              <div>
+                <strong>{participant.nome}</strong>
+                <small>{participant.papel === "ADMIN" ? "Administrador" : "Membro"}</small>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h3>Documentos</h3>
+        {attachments.length === 0 ? (
+          <p>Nenhum documento nesta conversa.</p>
+        ) : (
+          <ul className="mensagens-context-documents">
+            {attachments.map((attachment) => (
+              <li key={attachment.id}>
+                <button type="button" onClick={() => void onOpenAttachment(attachment)}>
+                  <strong>{attachment.nome}</strong>
+                  <small>{formatFileSize(attachment.tamanhoBytes)}</small>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </aside>
+  );
+}
+
 function ConversationList(props: {
   loading: boolean;
   conversations: ConversaLocalRecord[];
   selectedId: string | null;
   currentUserId: string;
+  previews: Record<string, ConversationPreview>;
   onSelect: (id: string) => void;
 }) {
   if (props.loading) return <p className="mensagens-list-status">Carregando conversas…</p>;
@@ -517,9 +670,13 @@ function ConversationList(props: {
             </span>
             <span>
               <strong>{conversationName(conversation, props.currentUserId)}</strong>
-              <small>{conversationScope(conversation)}</small>
+              <small>
+                {props.previews[conversation.id]?.text ?? conversationScope(conversation)}
+              </small>
             </span>
-            <time>{formatListDate(conversation.atualizadaEm)}</time>
+            <time>{formatListDate(
+              props.previews[conversation.id]?.at ?? conversation.atualizadaEm,
+            )}</time>
           </button>
         </li>
       ))}
@@ -756,6 +913,16 @@ function formatMessageTime(value: string) {
       }).format(date);
 }
 
+function formatMessageTimeOnly(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+}
+
 function formatListDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -767,6 +934,10 @@ function formatFileSize(bytes: number) {
   return bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function shortIdentifier(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }
 
 function mapWorksitePeople(values: ColaboradorDaObra[]): DirectoryPerson[] {

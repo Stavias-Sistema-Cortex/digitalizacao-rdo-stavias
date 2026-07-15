@@ -13,6 +13,10 @@ import {
   buildQueuedMessage,
   type QueuedMessagePlan,
 } from "./mensagensQueue";
+import {
+  buildConversationPreviews,
+  type ConversationPreview,
+} from "./mensagensView";
 
 export const MESSAGES_CHANGED_EVENT =
   "cortex-messages-changed";
@@ -109,6 +113,20 @@ export async function listLocalConversations(): Promise<
   const database = await getCortexDb();
   return (await database.getAll("mensagem_conversas")).sort(
     (left, right) => right.atualizadaEm.localeCompare(left.atualizadaEm),
+  );
+}
+
+export async function listLocalConversationPreviews(): Promise<
+  Record<string, ConversationPreview>
+> {
+  const database = await getCortexDb();
+  const [messages, attachments] = await Promise.all([
+    database.getAll("mensagens"),
+    database.getAll("mensagem_anexos"),
+  ]);
+  return buildConversationPreviews(
+    messages,
+    new Set(attachments.map((attachment) => attachment.mensagemId)),
   );
 }
 
