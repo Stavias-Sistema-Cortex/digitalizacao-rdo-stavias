@@ -42,9 +42,15 @@ class SyncPullScopeTest {
 
         assertThat(filtro.condicaoSql())
                 .contains("obra_id IN (?)")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
+                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)");
         assertThat(filtro.parametros())
-                .containsExactly("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO");
+                .containsExactly(
+                        "obra-1",
+                        "ATIVO",
+                        "EQUIPAMENTO",
+                        "SERVICO",
+                        "FUNCAO_OPERACIONAL"
+                );
     }
 
     @Test
@@ -54,8 +60,13 @@ class SyncPullScopeTest {
 
         assertThat(filtro.condicaoSql())
                 .doesNotContain("obra_id IN (")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
+                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)");
         assertThat(filtro.parametros())
-                .containsExactly("ATIVO", "EQUIPAMENTO", "SERVICO");
+                .containsExactly(
+                        "ATIVO",
+                        "EQUIPAMENTO",
+                        "SERVICO",
+                        "FUNCAO_OPERACIONAL"
+                );
     }
 }

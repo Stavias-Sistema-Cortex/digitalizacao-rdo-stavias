@@ -148,7 +148,7 @@ public class SyncService {
     // ser entregues a qualquer usuário. Dados pessoais/confidenciais (colaborador,
     // frequência) NÃO entram nesta lista — só chegam via obra vinculada.
     private static final List<String> EVENTOS_REFERENCIA_GLOBAL =
-            List.of("ATIVO", "EQUIPAMENTO", "SERVICO");
+            List.of("ATIVO", "EQUIPAMENTO", "SERVICO", "FUNCAO_OPERACIONAL");
 
     /** Filtro de escopo do pull: condição SQL adicional e seus parâmetros. */
     record FiltroPull(String condicaoSql, List<Object> parametros) {
