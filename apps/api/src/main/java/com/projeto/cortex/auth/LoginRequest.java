@@ -1,9 +1,9 @@
 package com.projeto.cortex.auth;
 
-public record LoginRequest(String cpf, String senha) {
+public record LoginRequest(String cpf) {
 
     @Override
     public String toString() {
-        return "LoginRequest[credentials=REDACTED]";
+        return "LoginRequest[authentication=REDACTED]";
     }
 }

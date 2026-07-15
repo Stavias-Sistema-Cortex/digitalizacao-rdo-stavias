@@ -282,6 +282,29 @@
   animation: login-spin 0.7s linear infinite;
 }
 
+.cortex-login .login__passkey {
+  align-self: center;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.cortex-login .login__passkey:hover:not(:disabled) {
+  color: var(--yellow);
+}
+
+.cortex-login .login__passkey:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /* Mensagem de erro de autenticação (nível do formulário) */
 .login__alert {
   display: flex;

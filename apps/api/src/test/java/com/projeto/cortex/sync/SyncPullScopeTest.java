@@ -2,7 +2,11 @@ package com.projeto.cortex.sync;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
-import java.util.List;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoQueryService;
+import com.projeto.cortex.rdos.RdoService;
+import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -23,15 +27,16 @@ class SyncPullScopeTest {
             mock(JdbcTemplate.class),
             new ObjectMapper(),
             mock(TransactionTemplate.class),
+            new SyncOperationRegistry(java.util.List.of()),
             mock(CurrentUserService.class),
-            List.of()
+            mock(FinancialAccessService.class)
     );
 
     @Test
     void alfaRecebeTudoSemFiltro() {
         SyncService.FiltroPull filtro = service.filtroPorEscopo(
                 Optional.empty(),
-                "alfa-1"
+                Set.of()
         );
 
         assertThat(filtro.condicaoSql()).isEmpty();
@@ -43,62 +48,80 @@ class SyncPullScopeTest {
         SyncService.FiltroPull filtro =
                 service.filtroPorEscopo(
                         Optional.of(Set.of("obra-1")),
-                        "beta-1"
+                        Set.of("obra-1")
                 );
 
         assertThat(filtro.condicaoSql())
+                .contains("tipo_entidade NOT IN")
                 .contains("obra_id IN (?)")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)")
-                .contains("JOIN conversa_participante scope_cp")
-                .contains("JOIN conversa scope_c")
-                .contains("FROM equipe_obra scope_ew")
-                .contains("scope_cp.colaborador_id = ?")
-                .contains("FROM mensagem scope_m")
-                .contains("FROM mensagem_anexo scope_a")
-                .contains("FROM mensagem_recibo scope_r");
+                .contains("tipo_entidade IN")
+                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
         assertThat(filtro.parametros())
-                .containsExactly(
-                        "obra-1",
-                        "ATIVO",
-                        "EQUIPAMENTO",
-                        "SERVICO",
-                        "FUNCAO_OPERACIONAL",
-                        "beta-1",
-                        "obra-1",
-                        "obra-1",
-                        "beta-1",
-                        "obra-1",
-                        "obra-1",
-                        "beta-1",
-                        "obra-1",
-                        "obra-1",
-                        "beta-1",
-                        "obra-1",
-                        "obra-1",
-                        "beta-1",
-                        "obra-1",
-                        "obra-1"
-                );
+                .contains("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO")
+                .contains("ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR")
+                .contains("SOLICITACAO_COMPRA", "COMPRA")
+                .contains(
+                        "UNIDADE_FINANCEIRA",
+                        "RATEIO_FINANCEIRO",
+                        "COMPRA_ITEM",
+                        "DOCUMENTO_FISCAL"
+                )
+                .contains("PERMISSAO_FINANCEIRA");
+    }
+
+    @Test
+    void betaRecebeEventosRelacionadosAUnidadeDeAtivoConcedida() {
+        SyncService.FiltroPull filtro = service.filtroPorEscopo(
+                Optional.of(Set.of()),
+                Set.of(),
+                Set.of("unidade-ativo-1"),
+                "colaborador-1"
+        );
+
+        assertThat(filtro.condicaoSql())
+                .contains("cortex_relacao")
+                .contains("destino_tipo = 'UNIDADE_FINANCEIRA'")
+                .contains("tipo_entidade = 'UNIDADE_FINANCEIRA'")
+                .contains("entidade_id IN (?)");
+        assertThat(filtro.parametros()).contains("unidade-ativo-1");
+        assertThat(filtro.condicaoSql().chars().filter(value -> value == '?').count())
+                .isEqualTo(filtro.parametros().size());
     }
 
     @Test
     void betaSemVinculoRecebeSomenteReferenciaGlobal() {
         SyncService.FiltroPull filtro =
-                service.filtroPorEscopo(
-                        Optional.of(Set.of()),
-                        "beta-1"
-                );
+                service.filtroPorEscopo(Optional.of(Set.of()), Set.of());
 
         assertThat(filtro.condicaoSql())
                 .doesNotContain("obra_id IN (")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)")
-                .doesNotContain("tipo_entidade = 'CONVERSA'");
+                .doesNotContain(" OR (tipo_entidade IN")
+                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?)");
         assertThat(filtro.parametros())
-                .containsExactly(
-                        "ATIVO",
-                        "EQUIPAMENTO",
-                        "SERVICO",
-                        "FUNCAO_OPERACIONAL"
+                .contains("ATIVO", "EQUIPAMENTO", "SERVICO")
+                .contains("PERMISSAO_FINANCEIRA");
+    }
+
+    @Test
+    void betaRecebeMensagemSomenteComParticipacaoEVinculoAtuais() {
+        SyncService.FiltroPull filtro = service.filtroPorEscopo(
+                Optional.of(Set.of("obra-1")),
+                Set.of(),
+                "colaborador-1"
+        );
+
+        assertThat(filtro.condicaoSql())
+                .contains("cortex_evento_visibilidade")
+                .contains("CONVERSATION_PARTICIPANT")
+                .contains("conversa_participante")
+                .contains("vinculo_colaborador_obra")
+                .contains("equipe_membro");
+        assertThat(filtro.parametros())
+                .contains(
+                        "CONVERSA",
+                        "MENSAGEM",
+                        "MENSAGEM_ANEXO",
+                        "colaborador-1"
                 );
     }
 }

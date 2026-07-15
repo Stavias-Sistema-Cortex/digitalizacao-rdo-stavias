@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 final class ObraSyncEvento {
 
@@ -42,20 +43,7 @@ final class ObraSyncEvento {
             CortexOperationalMemoryService memoryService,
             Obra obra
     ) {
-        memoryService.registrarObjeto(
-                TIPO_ENTIDADE,
-                obra.getId(),
-                obra.getCodigoContrato(),
-                obra.getNome(),
-                obra.getStatus(),
-                "OBRAS"
-        );
-        memoryService.registrarEvidencias(
-                TIPO_ENTIDADE,
-                obra.getId(),
-                "OBRAS",
-                camposEvidencia(obra)
-        );
+        registrarObjetoEvidencias(memoryService, obra);
         memoryService.registrarEventoDetalhado(
                 null,
                 TIPO_ENTIDADE,
@@ -72,6 +60,74 @@ final class ObraSyncEvento {
                 LocalDateTime.now(),
                 1,
                 payload(obra)
+        );
+    }
+
+    static void registrarCriacao(
+            CortexOperationalMemoryService memoryService,
+            Obra obra,
+            String actorId
+    ) {
+        registrarObjetoEvidencias(memoryService, obra);
+        memoryService.registrarRelacaoAtiva(
+                "PESSOA",
+                actorId,
+                "OBRA",
+                obra.getId(),
+                "CRIOU",
+                "OBRAS",
+                "Criação manual de obra autenticada."
+        );
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> state = payload(obra);
+        memoryService.registrarEventoAuditado(
+                null,
+                TIPO_ENTIDADE,
+                obra.getId(),
+                TIPO_EVENTO,
+                "OBRAS",
+                obra.getId(),
+                null,
+                actorId,
+                List.of(Map.of(
+                        "tipo", "PESSOA",
+                        "id", actorId,
+                        "relacao", "CRIOU"
+                )),
+                "ONLINE",
+                "SYNCED",
+                now,
+                now,
+                1,
+                state,
+                actorId,
+                null,
+                UUID.randomUUID().toString(),
+                null,
+                Map.of(),
+                state,
+                "SUCESSO",
+                null
+        );
+    }
+
+    private static void registrarObjetoEvidencias(
+            CortexOperationalMemoryService memoryService,
+            Obra obra
+    ) {
+        memoryService.registrarObjeto(
+                TIPO_ENTIDADE,
+                obra.getId(),
+                obra.getCodigoContrato(),
+                obra.getNome(),
+                obra.getStatus(),
+                "OBRAS"
+        );
+        memoryService.registrarEvidencias(
+                TIPO_ENTIDADE,
+                obra.getId(),
+                "OBRAS",
+                camposEvidencia(obra)
         );
     }
 

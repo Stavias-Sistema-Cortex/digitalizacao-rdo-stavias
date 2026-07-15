@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   closeCortexDb,
-  CORTEX_DATABASE_NAME,
   CORTEX_DATABASE_VERSION,
   getCortexDb,
 } from "../../lib/db/cortexDb";
+import { databaseNameForScope } from "../../lib/db/localDataNamespace";
+import { clearSession, setSession } from "../auth/authSession";
 import type { TeamDto } from "./teamApi";
 import {
   getLocalTeam,
@@ -17,13 +18,32 @@ import {
   replaceLocalTeams,
 } from "./teamLocalRepository";
 
+let ownerId = "";
+
 async function resetDatabase(): Promise<void> {
   await closeCortexDb();
-  await deleteDB(CORTEX_DATABASE_NAME);
+  if (ownerId) {
+    await deleteDB(
+      await databaseNameForScope(ownerId, "BETA:00000000-0000-4000-8000-000000000001"),
+    );
+  }
 }
 
-beforeEach(resetDatabase);
-afterEach(resetDatabase);
+beforeEach(() => {
+  ownerId = crypto.randomUUID();
+  setSession({
+    colaboradorId: ownerId,
+    nome: "Operador de campo",
+    papelAcesso: "BETA",
+    escopoGlobal: false,
+    obraIds: ["00000000-0000-4000-8000-000000000001"],
+    expiraEm: new Date(Date.now() + 60_000).toISOString(),
+  });
+});
+afterEach(async () => {
+  await resetDatabase();
+  clearSession();
+});
 
 function team(id: string): TeamDto {
   return {
@@ -51,7 +71,7 @@ describe("cache local de Equipes", () => {
       "operational_roles",
       "team_history",
       "team_worksites",
-      "messages",
+      "mensagens",
       "rdos",
     ]));
   });

@@ -1,5 +1,7 @@
 package com.projeto.cortex.colaboradores;
 
+import com.projeto.cortex.auth.identity.AuthIdentityRepository;
+import com.projeto.cortex.auth.identity.CpfNormalizer;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.nio.charset.StandardCharsets;
@@ -24,15 +26,18 @@ public class ColaboradorImportService {
     private final JdbcTemplate jdbcTemplate;
     private final AcademySourceAdapter academySourceAdapter;
     private final CortexOperationalMemoryService memoryService;
+    private final AuthIdentityRepository authIdentityRepository;
 
     public ColaboradorImportService(
             JdbcTemplate jdbcTemplate,
             AcademySourceAdapter academySourceAdapter,
-            CortexOperationalMemoryService memoryService
+            CortexOperationalMemoryService memoryService,
+            AuthIdentityRepository authIdentityRepository
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.academySourceAdapter = academySourceAdapter;
         this.memoryService = memoryService;
+        this.authIdentityRepository = authIdentityRepository;
     }
 
     public ColaboradorImportResult importarUsuariosDaAcademy() {
@@ -62,6 +67,11 @@ public class ColaboradorImportService {
                 }
 
                 salvarOuAtualizar(usuario, hashOrigem);
+                authIdentityRepository.upsertAcademyIdentity(
+                        usuario.id(),
+                        usuario.cpfNormalizado(),
+                        usuario.email()
+                );
 
                 registrarColaboradorNaMemoria(
                         syncRunId,
@@ -130,15 +140,16 @@ public class ColaboradorImportService {
         int idUsuario = sourceUser.idUsuario();
         String pkOrigem = String.valueOf(idUsuario);
 
-        String cpfNormalizado = normalizarCpf(sourceUser.cpf());
+        String cpfNormalizado = CpfNormalizer.requireValid(sourceUser.cpf());
         LocalDateTime criadoEmOrigem = sourceUser.criadoEm();
 
         return new UsuarioAcademy(
                 stableColaboradorId(pkOrigem),
                 pkOrigem,
                 pkOrigem,
-                gerarCpfHash(cpfNormalizado),
-                mascararCpf(cpfNormalizado),
+                cpfNormalizado,
+                CpfHasher.hashDeDigitos(cpfNormalizado),
+                CpfHasher.mascarar(cpfNormalizado),
                 sourceUser.nome(),
                 sourceUser.email(),
                 sourceUser.idGrupo(),
@@ -177,7 +188,6 @@ public class ColaboradorImportService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON DUPLICATE KEY UPDATE
                     codigo_colaborador = VALUES(codigo_colaborador),
-                    cpf_hash = VALUES(cpf_hash),
                     cpf_mascarado = VALUES(cpf_mascarado),
                     nome = VALUES(nome),
                     email = VALUES(email),
@@ -189,8 +199,19 @@ public class ColaboradorImportService {
                     ativo = VALUES(ativo),
                     criado_em_origem = VALUES(criado_em_origem),
                     atualizado_em_origem = VALUES(atualizado_em_origem),
-                    atualizado_em = IF(hash_origem <> VALUES(hash_origem), CURRENT_TIMESTAMP(6), atualizado_em),
-                    versao_linha = IF(hash_origem <> VALUES(hash_origem), versao_linha + 1, versao_linha),
+                    atualizado_em = IF(
+                        NOT (hash_origem <=> VALUES(hash_origem))
+                            OR NOT (cpf_hash <=> VALUES(cpf_hash)),
+                        CURRENT_TIMESTAMP(6),
+                        atualizado_em
+                    ),
+                    versao_linha = IF(
+                        NOT (hash_origem <=> VALUES(hash_origem))
+                            OR NOT (cpf_hash <=> VALUES(cpf_hash)),
+                        versao_linha + 1,
+                        versao_linha
+                    ),
+                    cpf_hash = VALUES(cpf_hash),
                     hash_origem = VALUES(hash_origem),
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     deletado_em = NULL
@@ -411,7 +432,6 @@ public class ColaboradorImportService {
         String valor = String.join("|",
                 nullToEmpty(usuario.pkOrigem()),
                 nullToEmpty(usuario.codigoColaborador()),
-                nullToEmpty(usuario.cpfHash()),
                 nullToEmpty(usuario.cpfMascarado()),
                 nullToEmpty(usuario.nome()),
                 nullToEmpty(usuario.email()),
@@ -457,7 +477,6 @@ public class ColaboradorImportService {
         fields.put("nome", usuario.nome());
         fields.put("email", usuario.email());
         fields.put("cpf_mascarado", usuario.cpfMascarado());
-        fields.put("cpf_hash", usuario.cpfHash());
         fields.put("grupo", usuario.nomeGrupo());
         fields.put("perfil", usuario.nomePerfil());
         fields.put("ativo", usuario.ativo());
@@ -602,38 +621,6 @@ public class ColaboradorImportService {
         return metadata;
     }
 
-    private String normalizarCpf(String cpf) {
-        if (cpf == null) {
-            return null;
-        }
-
-        String apenasNumeros = cpf.replaceAll("\\D", "");
-
-        if (apenasNumeros.isBlank()) {
-            return null;
-        }
-
-        return apenasNumeros;
-    }
-
-    private String gerarCpfHash(String cpfNormalizado) throws Exception {
-        if (cpfNormalizado == null) {
-            return null;
-        }
-
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(cpfNormalizado.getBytes(StandardCharsets.UTF_8));
-        return HexFormat.of().formatHex(hash);
-    }
-
-    private String mascararCpf(String cpfNormalizado) {
-        if (cpfNormalizado == null || cpfNormalizado.length() != 11) {
-            return null;
-        }
-
-        return "***.***.***-" + cpfNormalizado.substring(9);
-    }
-
     private String stableColaboradorId(String pkOrigem) {
         return UUID.nameUUIDFromBytes(
                 (BANCO_ORIGEM + ":" + TABELA_ORIGEM + ":" + pkOrigem)
@@ -674,6 +661,7 @@ public class ColaboradorImportService {
             String id,
             String pkOrigem,
             String codigoColaborador,
+            String cpfNormalizado,
             String cpfHash,
             String cpfMascarado,
             String nome,

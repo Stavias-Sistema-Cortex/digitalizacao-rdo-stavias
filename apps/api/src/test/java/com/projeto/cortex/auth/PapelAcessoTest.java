@@ -14,27 +14,20 @@ class PapelAcessoTest {
     }
 
     @Test
-    void fromNullableRetornaNuloParaAusenteOuDesconhecido() {
-        assertThat(PapelAcesso.fromNullable(null)).isNull();
-        assertThat(PapelAcesso.fromNullable("")).isNull();
-        assertThat(PapelAcesso.fromNullable("GAMA")).isNull();
+    void fromNullableResolveAusenteOuDesconhecidoComoBeta() {
+        assertThat(PapelAcesso.fromNullable(null)).isEqualTo(PapelAcesso.BETA);
+        assertThat(PapelAcesso.fromNullable("")).isEqualTo(PapelAcesso.BETA);
+        assertThat(PapelAcesso.fromNullable("GAMA")).isEqualTo(PapelAcesso.BETA);
     }
 
     @Test
-    void fromPerfilGrupoDerivaAlfaDeTextoAdministrativo() {
-        assertThat(PapelAcesso.fromPerfilGrupo("Administrador", null))
-                .isEqualTo(PapelAcesso.ALFA);
-        assertThat(PapelAcesso.fromPerfilGrupo(null, "ADMIN"))
-                .isEqualTo(PapelAcesso.ALFA);
-        assertThat(PapelAcesso.fromPerfilGrupo("Administradora Geral", null))
-                .isEqualTo(PapelAcesso.ALFA);
-    }
-
-    @Test
-    void fromPerfilGrupoDerivaBetaParaDemais() {
-        assertThat(PapelAcesso.fromPerfilGrupo("Encarregado", "Operacional"))
-                .isEqualTo(PapelAcesso.BETA);
-        assertThat(PapelAcesso.fromPerfilGrupo(null, null))
-                .isEqualTo(PapelAcesso.BETA);
+    void authenticationParserAcceptsOnlyCanonicalPersistedRoles() {
+        assertThat(PapelAcesso.fromPersistedExact("ALFA"))
+                .contains(PapelAcesso.ALFA);
+        assertThat(PapelAcesso.fromPersistedExact("BETA"))
+                .contains(PapelAcesso.BETA);
+        assertThat(PapelAcesso.fromPersistedExact("alfa")).isEmpty();
+        assertThat(PapelAcesso.fromPersistedExact(" GAMA ")).isEmpty();
+        assertThat(PapelAcesso.fromPersistedExact(null)).isEmpty();
     }
 }

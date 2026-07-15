@@ -3,7 +3,11 @@ package com.projeto.cortex.pdor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
+import com.projeto.cortex.auth.PapelAcesso;
+import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
@@ -20,12 +24,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import jakarta.servlet.http.Cookie;
 import java.time.LocalDate;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -52,12 +58,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "cortex.sync.enabled=false",
         "cortex.import.enabled=false",
         "cortex.pdor.gatilho-evento.habilitado=false",
-        "cortex.auth.jwt-secret=test-only-jwt-secret-0000000000000000",
+        "cortex.auth.cpf-hmac.current-key-id=test-current",
+        "cortex.auth.cpf-hmac.current-key-inline=test-only-hmac-secret-0000000000000000",
+        "cortex.email.provider=fake",
         "spring.jpa.hibernate.ddl-auto=none",
         "debug=false",
         "logging.level.root=INFO",
         "logging.level.org.springframework=INFO"
 })
+@ActiveProfiles("test")
 @AutoConfigureMockMvc
 @EnabledIfEnvironmentVariable(named = "CORTEX_MYSQL_ROOT_PASSWORD", matches = ".+")
 class PdorCw38386MysqlIntegrationTest {
@@ -97,9 +106,9 @@ class PdorCw38386MysqlIntegrationTest {
     private RealPdorInputLoader inputLoader;
 
     @Autowired
-    private JwtService jwtService;
+    private AuthSessionService authSessionService;
 
-    private String adminAuthorization;
+    private IssuedAuthSession adminSession;
 
     @BeforeEach
     void setUp() {
@@ -107,7 +116,11 @@ class PdorCw38386MysqlIntegrationTest {
         obraSeedImportService.importarSeedPadrao();
         programacaoSeedImportService.importarSeedPadrao();
         criarColaboradorAdmin();
-        adminAuthorization = "Bearer " + jwtService.gerarToken(ADMIN_USER_ID);
+        adminSession = authSessionService.issue(new AuthenticatedIdentity(
+                ADMIN_USER_ID,
+                "Admin PDOR Teste",
+                PapelAcesso.ALFA
+        ));
 
         assertThat(contarProgramacoesCw38386()).isEqualTo(172);
     }
@@ -133,7 +146,11 @@ class PdorCw38386MysqlIntegrationTest {
 
         MvcResult firstResult = mockMvc.perform(
                         post("/api/obras/{obraId}/pdor/calcular", "CW38386")
-                                .header("Authorization", adminAuthorization)
+                                .cookie(sessionCookie(), csrfCookie())
+                                .header(
+                                        "X-CSRF-Token",
+                                        adminSession.csrfToken()
+                                )
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.statusExecucao").value("INSUFFICIENT_DATA"))
@@ -182,23 +199,27 @@ class PdorCw38386MysqlIntegrationTest {
                 .contains("Receita medida ausente")
                 .contains("Receita validada ausente")
                 .contains("Nenhum RDO associado encontrado")
-                .contains("Histórico semanal de produtividade insuficiente para calibração");
+                .contains("Histórico semanal de produtividade insuficiente para apoio histórico");
 
         mockMvc.perform(get("/api/obras/{obraId}/pdor/atual", "CW38386")
-                        .header("Authorization", adminAuthorization))
+                        .cookie(sessionCookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(snapshotId))
                 .andExpect(jsonPath("$.statusExecucao").value("INSUFFICIENT_DATA"));
 
         mockMvc.perform(get("/api/obras/{obraId}/pdor/historico", "CW38386")
-                        .header("Authorization", adminAuthorization))
+                        .cookie(sessionCookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].id").value(snapshotId))
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         MvcResult secondResult = mockMvc.perform(
                         post("/api/obras/{obraId}/pdor/calcular", "CW38386")
-                                .header("Authorization", adminAuthorization)
+                                .cookie(sessionCookie(), csrfCookie())
+                                .header(
+                                        "X-CSRF-Token",
+                                        adminSession.csrfToken()
+                                )
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(snapshotId))
@@ -252,7 +273,7 @@ class PdorCw38386MysqlIntegrationTest {
         MockMvc raceMvc = MockMvcBuilders
                 .standaloneSetup(new PdorController(
                         raceService,
-                        mock(CurrentUserService.class)
+                        mock(com.projeto.cortex.financeiro.access.FinancialAccessService.class)
                 ))
                 .setControllerAdvice(new PdorExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
@@ -313,6 +334,7 @@ class PdorCw38386MysqlIntegrationTest {
     }
 
     private void limparDadosDeSeed() {
+        jdbcTemplate.update("DELETE FROM auth_session");
         jdbcTemplate.update("DELETE FROM pdor_snapshot");
         jdbcTemplate.update("DELETE FROM programacao_operacional");
         jdbcTemplate.update("DELETE FROM obra");
@@ -332,11 +354,26 @@ class PdorCw38386MysqlIntegrationTest {
                     pk_origem,
                     nome,
                     nome_perfil,
+                    papel_acesso,
                     ativo
-                ) VALUES (?, 'teste', 'teste', ?, 'Admin PDOR Teste', 'ADMINISTRADOR', 1)
+                ) VALUES (?, 'teste', 'teste', ?, 'Admin PDOR Teste', 'ADMINISTRADOR', 'ALFA', 1)
                 """,
                 ADMIN_USER_ID,
                 ADMIN_USER_ID
+        );
+    }
+
+    private Cookie sessionCookie() {
+        return new Cookie(
+                AuthCookieService.SESSION_COOKIE,
+                adminSession.sessionToken()
+        );
+    }
+
+    private Cookie csrfCookie() {
+        return new Cookie(
+                AuthCookieService.CSRF_COOKIE,
+                adminSession.csrfToken()
         );
     }
 

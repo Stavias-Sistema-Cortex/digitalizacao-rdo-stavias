@@ -13,6 +13,29 @@ class StaviaIntentClassifierTest {
             new StaviaIntentClassifier();
 
     @Test
+    void shouldClassifyTypedFinanceAndMessageQuestions() {
+        assertThat(classifier.classify(
+                "Quais notas fiscais estão vencidas nesta obra?"
+        )).isEqualTo(StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS);
+
+        assertThat(classifier.classify(
+                "Quem criou a compra PED-42 e qual é o histórico dela?"
+        )).isEqualTo(StaviaIntent.CONSULTAR_HISTORICO_COMPRA);
+
+        assertThat(classifier.classify(
+                "Qual foi o total comprado este mês?"
+        )).isEqualTo(StaviaIntent.CONSULTAR_TOTAL_COMPRADO);
+
+        assertThat(classifier.classify(
+                "Quais fornecedores têm cobranças pendentes?"
+        )).isEqualTo(StaviaIntent.CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE);
+
+        assertThat(classifier.classify(
+                "Há documentos de mensagens pendentes de sincronização?"
+        )).isEqualTo(StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES);
+    }
+
+    @Test
     void shouldPrioritizeProgrammingWhenQuestionAlsoMentionsRdo() {
         StaviaIntent intent =
                 classifier.classify(

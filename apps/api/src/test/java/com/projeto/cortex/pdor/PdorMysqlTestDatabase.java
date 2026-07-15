@@ -16,7 +16,7 @@ final class PdorMysqlTestDatabase {
             "jdbc:mysql://127.0.0.1:3307/";
     private static final String URL_OPTIONS =
             "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-                    + "&connectTimeout=2000&socketTimeout=10000";
+                    + "&connectTimeout=2000&socketTimeout=60000";
     private static final String ROOT_PASSWORD_ENV = "CORTEX_MYSQL_ROOT_PASSWORD";
     private static final String ROOT_USER = "root";
 

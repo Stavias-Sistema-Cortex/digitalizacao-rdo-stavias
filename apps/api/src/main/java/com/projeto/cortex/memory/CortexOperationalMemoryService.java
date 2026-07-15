@@ -106,7 +106,92 @@ public class CortexOperationalMemoryService {
             Integer schemaVersion,
             Map<String, Object> payload
     ) {
+        return registrarEventoAuditado(
+                eventoIdInformado,
+                tipoEntidade,
+                entidadeId,
+                tipoEvento,
+                fonte,
+                obraId,
+                rdoId,
+                colaboradorId,
+                entidadesRelacionadas,
+                origem,
+                syncStatus,
+                ocorridoEm,
+                sincronizadoEm,
+                schemaVersion,
+                payload,
+                null,
+                null,
+                null,
+                null,
+                Map.of(),
+                Map.of(),
+                "SUCESSO",
+                null
+        );
+    }
+
+    @Transactional
+    public long registrarEventoAuditado(
+            String eventoIdInformado,
+            String tipoEntidade,
+            String entidadeId,
+            String tipoEvento,
+            String fonte,
+            String obraId,
+            String rdoId,
+            String colaboradorId,
+            List<Map<String, Object>> entidadesRelacionadas,
+            String origem,
+            String syncStatus,
+            LocalDateTime ocorridoEm,
+            LocalDateTime sincronizadoEm,
+            Integer schemaVersion,
+            Map<String, Object> payload,
+            String actorId,
+            String deviceId,
+            String correlationId,
+            String causationId,
+            Map<String, Object> previousState,
+            Map<String, Object> newState,
+            String result,
+            String errorCategory
+    ) {
         String eventoId = primeiroNaoVazio(eventoIdInformado, UUID.randomUUID().toString());
+        OperationalEventTraceContext.Trace trace = OperationalEventTraceContext.current()
+                .orElse(null);
+        String effectiveOrigin = trace == null
+                ? primeiroNaoVazio(origem, "ONLINE")
+                : primeiroNaoVazio(trace.origin(), origem, "ONLINE");
+        String effectiveSyncStatus = trace == null
+                ? primeiroNaoVazio(syncStatus, "SYNCED")
+                : primeiroNaoVazio(trace.syncStatus(), syncStatus, "SYNCED");
+        String effectiveActorId = primeiroNaoVazio(
+                actorId,
+                trace == null ? null : trace.actorId()
+        );
+        String effectiveDeviceId = primeiroNaoVazio(
+                deviceId,
+                trace == null ? null : trace.deviceId()
+        );
+        String effectiveCorrelationId = primeiroNaoVazio(
+                correlationId,
+                trace == null ? null : trace.correlationId()
+        );
+        String effectiveCausationId = primeiroNaoVazio(
+                causationId,
+                trace == null ? null : trace.causationId()
+        );
+        Map<String, Object> enrichedPayload = new LinkedHashMap<>();
+        if (payload != null) {
+            enrichedPayload.putAll(payload);
+        }
+        putTraceValue(enrichedPayload, "actorId", effectiveActorId);
+        putTraceValue(enrichedPayload, "deviceId", effectiveDeviceId);
+        putTraceValue(enrichedPayload, "correlationId", effectiveCorrelationId);
+        putTraceValue(enrichedPayload, "causationId", effectiveCausationId);
 
         Long existingCommitSeq = commitSeqExistente(eventoId);
         if (existingCommitSeq != null) {
@@ -115,23 +200,8 @@ public class CortexOperationalMemoryService {
 
         long commitSeq = proximaCommitSeq();
 
-        OperationalEventTraceContext.Trace trace =
-                OperationalEventTraceContext.current().orElse(null);
-        Map<String, Object> tracedPayload = enrichTrace(payload, trace);
-        String payloadJson = toJson(tracedPayload);
+        String payloadJson = toJson(enrichedPayload);
         String relatedJson = toJson(entidadesRelacionadas == null ? List.of() : entidadesRelacionadas);
-        String normalizedStatus = trace == null
-                ? primeiroNaoVazio(syncStatus, "SYNCED")
-                : primeiroNaoVazio(trace.syncStatus(), "SYNCED");
-        String normalizedOrigin = trace == null
-                ? primeiroNaoVazio(origem, "ONLINE")
-                : primeiroNaoVazio(trace.origin(), "OFFLINE");
-        String actorId = trace == null
-                ? stringValue(tracedPayload.get("actorId"))
-                : trace.actorId();
-        String deviceId = trace == null
-                ? stringValue(tracedPayload.get("deviceId"))
-                : trace.deviceId();
 
         jdbcTemplate.update(
                 """
@@ -145,15 +215,24 @@ public class CortexOperationalMemoryService {
                     colaborador_id,
                     tipo_evento,
                     fonte,
+                    usuario_id,
+                    dispositivo_id,
+                    correlacao_id,
+                    causacao_id,
                     origem,
                     sync_status,
                     sincronizado_em,
-                    usuario_id,
-                    dispositivo_id,
                     entidades_relacionadas_json,
+                    estado_anterior_json,
+                    estado_novo_json,
+                    resultado,
+                    erro_categoria,
                     schema_version,
                     payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?
+                )
                 """,
                 eventoId,
                 commitSeq,
@@ -164,12 +243,18 @@ public class CortexOperationalMemoryService {
                 nuloSeVazio(colaboradorId),
                 tipoEvento,
                 fonte,
-                normalizedOrigin,
-                normalizedStatus,
+                nuloSeVazio(effectiveActorId),
+                nuloSeVazio(effectiveDeviceId),
+                nuloSeVazio(effectiveCorrelationId),
+                nuloSeVazio(effectiveCausationId),
+                effectiveOrigin,
+                effectiveSyncStatus,
                 sincronizadoEm,
-                nuloSeVazio(actorId),
-                nuloSeVazio(deviceId),
                 relatedJson,
+                toNullableJson(previousState),
+                toNullableJson(newState),
+                primeiroNaoVazio(result, "SUCESSO"),
+                nuloSeVazio(errorCategory),
                 schemaVersion == null ? 1 : schemaVersion,
                 payloadJson
         );
@@ -217,32 +302,6 @@ public class CortexOperationalMemoryService {
                 sequencia
         );
 
-        Long entityVersion = jdbcTemplate.queryForObject(
-                """
-                SELECT versao_entidade
-                FROM cortex_estado_entidade
-                WHERE tipo_entidade = ?
-                  AND entidade_id = ?
-                """,
-                Long.class,
-                tipoEntidade,
-                entidadeId
-        );
-        if (entityVersion == null) {
-            throw new IllegalStateException(
-                    "Evento operacional foi criado sem versão autoritativa da entidade."
-            );
-        }
-        jdbcTemplate.update(
-                """
-                UPDATE cortex_evento_operacional
-                SET versao_entidade = ?
-                WHERE id = ?
-                """,
-                entityVersion,
-                eventoId
-        );
-
         eventPublisher.publishEvent(new CortexObservacaoRegistrada(
                 eventoId,
                 tipoEntidade,
@@ -253,37 +312,6 @@ public class CortexOperationalMemoryService {
         ));
 
         return commitSeq;
-    }
-
-    private Map<String, Object> enrichTrace(
-            Map<String, Object> payload,
-            OperationalEventTraceContext.Trace trace
-    ) {
-        Map<String, Object> enriched = new LinkedHashMap<>();
-        if (payload != null) {
-            enriched.putAll(payload);
-        }
-        if (trace == null) {
-            return enriched;
-        }
-
-        putIfPresent(enriched, "actorId", trace.actorId());
-        putIfPresent(enriched, "deviceId", trace.deviceId());
-        putIfPresent(enriched, "correlationId", trace.correlationId());
-        putIfPresent(enriched, "causationId", trace.causationId());
-        putIfPresent(enriched, "origin", trace.origin());
-        putIfPresent(enriched, "syncStatus", trace.syncStatus());
-        return enriched;
-    }
-
-    private void putIfPresent(Map<String, Object> target, String key, String value) {
-        if (value != null && !value.isBlank()) {
-            target.put(key, value);
-        }
-    }
-
-    private String stringValue(Object value) {
-        return value instanceof String text && !text.isBlank() ? text.trim() : null;
     }
 
     private Long commitSeqExistente(String eventoId) {
@@ -698,6 +726,16 @@ public class CortexOperationalMemoryService {
             return objectMapper.writeValueAsString(payload == null ? Map.of() : payload);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Payload inválido para evento operacional.", exception);
+        }
+    }
+
+    private void putTraceValue(
+            Map<String, Object> payload,
+            String key,
+            String value
+    ) {
+        if (value != null && !value.isBlank()) {
+            payload.putIfAbsent(key, value);
         }
     }
 

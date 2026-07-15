@@ -9,11 +9,8 @@ import { useNavigate } from "react-router-dom";
 
 import staviasTile from "../../assets/stavias-s-tile.png";
 import { SyncStatusBanner } from "../SyncStatusBanner";
-import {
-  clearSession,
-  getSession,
-  isAlfa,
-} from "../../features/auth/authSession";
+import { getSession, isAlfa } from "../../features/auth/authSession";
+import { encerrarSessao } from "../../features/auth/authService";
 import {
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_KEY,
@@ -32,6 +29,7 @@ export type ShellActiveItem =
   | "equipes"
   | "mensagens"
   | "tarefas"
+  | "financeiro"
   | "integracoes"
   | null;
 
@@ -79,6 +77,8 @@ export function CortexShell({
     useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] =
     useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const resizeStartRef = useRef<{
     pointerId: number;
     startX: number;
@@ -167,9 +167,21 @@ export function CortexShell({
     persistSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
   }
 
-  function handleLogout() {
-    clearSession();
-    window.location.assign("/");
+  async function handleLogout() {
+    if (isLoggingOut) {
+      return;
+    }
+    setIsLoggingOut(true);
+    setLogoutError("");
+    try {
+      await encerrarSessao();
+      window.location.assign("/");
+    } catch {
+      setLogoutError(
+        "Não foi possível encerrar a sessão no servidor. Verifique a conexão e tente novamente.",
+      );
+      setIsLoggingOut(false);
+    }
   }
 
   return (
@@ -357,15 +369,20 @@ export function CortexShell({
           </button>
           <button
             type="button"
-            className="sidebar-nav-item"
-            title="Relatórios"
+            className={
+              active === "financeiro"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
+            title="Financeiro"
+            onClick={() => navigate("/financeiro")}
           >
             <img
               src="/icons8/file.png"
               alt=""
               draggable={false}
             />
-            <span className="sidebar-label">Relatórios</span>
+            <span className="sidebar-label">Financeiro</span>
           </button>
         </nav>
 
@@ -436,9 +453,6 @@ export function CortexShell({
               <p className="profile-menu-name">
                 {session?.nome ?? "Colaborador"}
               </p>
-              <p className="profile-menu-cpf">
-                {session?.cpfMascarado ?? ""}
-              </p>
               <p className="profile-menu-scope">
                 {alfa
                   ? "Escopo global (Alfa)"
@@ -446,11 +460,31 @@ export function CortexShell({
               </p>
               <button
                 type="button"
-                className="profile-menu-logout"
-                onClick={handleLogout}
+                className="profile-menu-security"
+                role="menuitem"
+                onClick={() => {
+                  setIsProfileMenuOpen(false);
+                  navigate("/seguranca");
+                }}
               >
-                Sair
+                Segurança do dispositivo
               </button>
+              <button
+                type="button"
+                className="profile-menu-logout"
+                role="menuitem"
+                onClick={() => {
+                  void handleLogout();
+                }}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? "Saindo..." : "Sair"}
+              </button>
+              {logoutError ? (
+                <p className="profile-menu-error" role="alert">
+                  {logoutError}
+                </p>
+              ) : null}
             </div>
           )}
         </div>

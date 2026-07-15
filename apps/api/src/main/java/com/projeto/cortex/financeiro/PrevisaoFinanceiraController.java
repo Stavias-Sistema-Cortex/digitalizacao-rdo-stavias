@@ -1,6 +1,7 @@
 package com.projeto.cortex.financeiro;
 
-import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,14 +16,14 @@ import java.util.List;
 public class PrevisaoFinanceiraController {
 
     private final PrevisaoFinanceiraService service;
-    private final CurrentUserService currentUserService;
+    private final FinancialAccessService financialAccessService;
 
     public PrevisaoFinanceiraController(
             PrevisaoFinanceiraService service,
-            CurrentUserService currentUserService
+            FinancialAccessService financialAccessService
     ) {
         this.service = service;
-        this.currentUserService = currentUserService;
+        this.financialAccessService = financialAccessService;
     }
 
     @PostMapping("/api/obras/{obraId}/previsao-financeira/calcular")
@@ -34,7 +35,10 @@ public class PrevisaoFinanceiraController {
             @RequestParam(required = false) String tipoDisparo,
             @RequestParam(required = false) String eventoOrigemId
     ) {
-        currentUserService.requireAdmin();
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_ADMINISTRAR
+        );
         return service.calcular(
                 obraId,
                 dataReferencia,
@@ -45,7 +49,10 @@ public class PrevisaoFinanceiraController {
 
     @GetMapping("/api/obras/{obraId}/previsao-financeira/atual")
     public PrevisaoFinanceiraResponse atual(@PathVariable String obraId) {
-        currentUserService.requireWorksiteAccess(obraId);
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
         return service.buscarAtual(obraId);
     }
 
@@ -55,7 +62,10 @@ public class PrevisaoFinanceiraController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        currentUserService.requireWorksiteAccess(obraId);
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
         return service.buscarHistorico(obraId, page, size);
     }
 }

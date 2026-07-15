@@ -14,9 +14,21 @@ if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_JWT_SECRET:-}" ]; then
-  echo "Missing CORTEX_AUTH_JWT_SECRET."
-  echo "Set it with a long random value in your shell or local .env."
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
+  exit 1
+fi
+
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:-}" ] &&
+  [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
+  echo "Missing CPF lookup HMAC key."
+  echo "Set CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE or CORTEX_AUTH_CPF_HMAC_CURRENT_KEY in your local .env."
+  exit 1
+fi
+
+if [ -n "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:-}" ] &&
+  [ -n "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
+  echo "Configure only one CPF lookup HMAC key source."
   exit 1
 fi
 
@@ -47,4 +59,4 @@ if command -v lsof >/dev/null 2>&1 &&
   exit 1
 fi
 
-mvn spring-boot:run
+./mvnw spring-boot:run

@@ -25,15 +25,18 @@ public class ObraController {
 
     @GetMapping("/api/obras")
     public List<ObraResponse> listarObras(@RequestParam(required = false) String query) {
-        currentUserService.requireAdmin();
+        currentUserService.requireAlfa();
         return obraService.listarObras(query);
     }
 
     @PostMapping("/api/obras")
     @ResponseStatus(HttpStatus.CREATED)
     public ObraResponse criarObra(@RequestBody ObraRequest request) {
-        currentUserService.requireAdmin();
-        return obraService.criarObra(request);
+        currentUserService.requireAlfa();
+        return obraService.criarObra(
+                request,
+                currentUserService.requireUserId()
+        );
     }
 
     @GetMapping("/api/obras/relacionadas")

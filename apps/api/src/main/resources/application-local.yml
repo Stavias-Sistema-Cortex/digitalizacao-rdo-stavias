@@ -5,9 +5,23 @@ spring:
 
 cortex:
   auth:
-    jwt-secret: ${CORTEX_AUTH_JWT_SECRET:${random.uuid}}
-    login-rate-limit:
-      enabled: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_ENABLED:false}
+    session:
+      cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:false}
+    webauthn:
+      rp-id: ${CORTEX_AUTH_WEBAUTHN_RP_ID:127.0.0.1}
+      rp-name: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:Córtex Local}
+      allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://127.0.0.1:5173}
+    otp:
+      hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:${random.uuid}${random.uuid}}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}
+
+  email:
+    provider: ${CORTEX_EMAIL_PROVIDER:fake}
+
+  storage:
+    provider: ${CORTEX_STORAGE_PROVIDER:local}
+    local:
+      root: ${CORTEX_STORAGE_LOCAL_ROOT:${java.io.tmpdir}/cortex-storage-local}
+      persistent: ${CORTEX_STORAGE_LOCAL_PERSISTENT:false}

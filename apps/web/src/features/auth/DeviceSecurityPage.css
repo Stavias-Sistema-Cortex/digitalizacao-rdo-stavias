@@ -1,0 +1,106 @@
+.device-security-page {
+  min-height: 100vh;
+}
+
+.device-security-card {
+  width: min(720px, 100%);
+  padding: clamp(22px, 4vw, 34px);
+}
+
+.device-security-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.device-security-card__header h2 {
+  margin: 2px 0 0;
+}
+
+.device-security-card__kicker {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.device-security-status {
+  flex: none;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #f1f5f3;
+  color: #52645b;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.device-security-status.is-ready {
+  background: #e4f3ec;
+  color: #12604d;
+}
+
+.device-security-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.device-security-details div {
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.device-security-details dt {
+  color: var(--color-muted);
+  font-size: 0.74rem;
+}
+
+.device-security-details dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+}
+
+.device-security-register {
+  margin-top: 18px;
+}
+
+.device-security-notice,
+.device-security-success,
+.device-security-error {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.device-security-notice {
+  background: #fff8d8;
+  color: #66520a;
+}
+
+.device-security-success {
+  background: #e4f3ec;
+  color: #125944;
+}
+
+.device-security-error {
+  background: #fff0ed;
+  color: #9f2d23;
+}
+
+@media (max-width: 620px) {
+  .device-security-card__header {
+    flex-direction: column;
+  }
+
+  .device-security-details {
+    grid-template-columns: 1fr;
+  }
+}

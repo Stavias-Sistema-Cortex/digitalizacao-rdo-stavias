@@ -1,6 +1,7 @@
 package com.projeto.cortex.pdor;
 
-import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,14 +15,14 @@ import java.time.LocalDate;
 public class PdorController {
 
     private final PdorApplicationService service;
-    private final CurrentUserService currentUserService;
+    private final FinancialAccessService financialAccessService;
 
     public PdorController(
             PdorApplicationService service,
-            CurrentUserService currentUserService
+            FinancialAccessService financialAccessService
     ) {
         this.service = service;
-        this.currentUserService = currentUserService;
+        this.financialAccessService = financialAccessService;
     }
 
     @PostMapping("/api/obras/{obraId}/pdor/calcular")
@@ -33,7 +34,10 @@ public class PdorController {
             @RequestParam(required = false) String tipoDisparo,
             @RequestParam(required = false) String eventoOrigemId
     ) {
-        currentUserService.requireAdmin();
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_ADMINISTRAR
+        );
         return service.calcular(
                 obraId,
                 dataReferencia,
@@ -44,7 +48,10 @@ public class PdorController {
 
     @GetMapping("/api/obras/{obraId}/pdor/atual")
     public PdorResultadoResponse atual(@PathVariable String obraId) {
-        currentUserService.requireWorksiteAccess(obraId);
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
         return service.buscarAtual(obraId);
     }
 
@@ -54,7 +61,10 @@ public class PdorController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        currentUserService.requireWorksiteAccess(obraId);
+        financialAccessService.requirePermission(
+                obraId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
         return service.buscarHistorico(obraId, page, size);
     }
 }

@@ -14,14 +14,14 @@ import {
 } from "../home/homeFilters";
 import { useHomeData } from "../home/useHomeData";
 import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
+import { getSession, isAlfa } from "../auth/authSession";
 import {
   buscarPdorAtual,
   buscarTimelineObra,
   type ObraPdor,
   type ObraTimelineEvent,
 } from "./obrasApi";
-import { OperationalMap } from "./map/OperationalMap";
-import { PdorPanel } from "./PdorPanel";
+import { NovaObraForm } from "./gestao/NovaObraForm";
 
 const TRACE_KEYS = [
   "codigoContrato",
@@ -60,6 +60,53 @@ function formatCurrency(value: number | null): string {
     currency: "BRL",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatDateOnly(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(
+    value.includes("T") ? value : `${value}T00:00:00`,
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(date);
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("pt-BR", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function riskClass(risco: string | null): string {
+  const normalized = (risco ?? "").toUpperCase();
+
+  if (normalized === "CRITICAL" || normalized === "HIGH") {
+    return "obras-pdor-risk obras-pdor-risk--alto";
+  }
+
+  if (normalized === "MODERATE") {
+    return "obras-pdor-risk obras-pdor-risk--medio";
+  }
+
+  if (normalized === "LOW") {
+    return "obras-pdor-risk obras-pdor-risk--baixo";
+  }
+
+  return "obras-pdor-risk";
 }
 
 function payloadSummary(
@@ -125,18 +172,23 @@ export function ObrasPage() {
     useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
   const [rodoviaFilter, setRodoviaFilter] = useState("");
-  const [timelineResult, setTimelineResult] = useState<{
-    obraId: string;
-    items: ObraTimelineEvent[];
-    error: string | null;
-  } | null>(null);
-  const [pdorResult, setPdorResult] = useState<{
-    obraId: string;
-    value: ObraPdor | null;
-    error: string | null;
-  } | null>(null);
+  const [timeline, setTimeline] = useState<
+    ObraTimelineEvent[]
+  >([]);
+  const [timelineError, setTimelineError] =
+    useState<string | null>(null);
+  const [isTimelineLoading, setIsTimelineLoading] =
+    useState(false);
+  const [pdor, setPdor] = useState<ObraPdor | null>(null);
+  const [pdorError, setPdorError] =
+    useState<string | null>(null);
+  const [isPdorLoading, setIsPdorLoading] =
+    useState(false);
+  const [showCreateWorksite, setShowCreateWorksite] =
+    useState(false);
   const { openStavia, setStaviaContext } =
     useStaviaLauncher();
+  const canCreateWorksite = isAlfa(getSession());
 
   useEffect(() => {
     setStaviaContext({ obraId: focusedObra?.id ?? "" });
@@ -173,32 +225,46 @@ export function ObrasPage() {
   );
 
   useEffect(() => {
+    let cancelled = false;
     if (!focusedObraId) {
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setTimeline([]);
+          setTimelineError(null);
+          setIsTimelineLoading(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setIsTimelineLoading(true);
+        setTimelineError(null);
+      }
+    });
 
     buscarTimelineObra(focusedObraId)
       .then((items) => {
         if (!cancelled) {
-          setTimelineResult({
-            obraId: focusedObraId,
-            items,
-            error: null,
-          });
+          setTimeline(items);
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setTimelineResult({
-            obraId: focusedObraId,
-            items: [],
-            error:
-              error instanceof Error
-                ? error.message
-                : "Timeline indisponivel.",
-          });
+          setTimeline([]);
+          setTimelineError(
+            error instanceof Error
+              ? error.message
+              : "Timeline indisponivel.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsTimelineLoading(false);
         }
       });
 
@@ -208,32 +274,46 @@ export function ObrasPage() {
   }, [focusedObraId]);
 
   useEffect(() => {
+    let cancelled = false;
     if (!focusedObraId) {
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setPdor(null);
+          setPdorError(null);
+          setIsPdorLoading(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setIsPdorLoading(true);
+        setPdorError(null);
+      }
+    });
 
     buscarPdorAtual(focusedObraId)
       .then((result) => {
         if (!cancelled) {
-          setPdorResult({
-            obraId: focusedObraId,
-            value: result,
-            error: null,
-          });
+          setPdor(result);
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setPdorResult({
-            obraId: focusedObraId,
-            value: null,
-            error:
-              error instanceof Error
-                ? error.message
-                : "Previsão de receita indisponível.",
-          });
+          setPdor(null);
+          setPdorError(
+            error instanceof Error
+              ? error.message
+              : "Previsão de receita indisponível.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsPdorLoading(false);
         }
       });
 
@@ -246,28 +326,6 @@ export function ObrasPage() {
     () => events.map(localEventToTrace),
     [events],
   );
-  const timeline =
-    timelineResult?.obraId === focusedObraId
-      ? timelineResult.items
-      : [];
-  const timelineError =
-    timelineResult?.obraId === focusedObraId
-      ? timelineResult.error
-      : null;
-  const isTimelineLoading =
-    Boolean(focusedObraId) &&
-    timelineResult?.obraId !== focusedObraId;
-  const pdor =
-    pdorResult?.obraId === focusedObraId
-      ? pdorResult.value
-      : null;
-  const pdorError =
-    pdorResult?.obraId === focusedObraId
-      ? pdorResult.error
-      : null;
-  const isPdorLoading =
-    Boolean(focusedObraId) &&
-    pdorResult?.obraId !== focusedObraId;
   const traceEvents =
     timeline.length > 0 ? timeline : localTrace;
   const traceSource =
@@ -289,6 +347,15 @@ export function ObrasPage() {
             <p className="eyebrow">Ontologia operacional</p>
             <h1>Obras</h1>
           </div>
+          {canCreateWorksite ? (
+            <button
+              type="button"
+              className="obras-create-action"
+              onClick={() => setShowCreateWorksite(true)}
+            >
+              Criar obra
+            </button>
+          ) : null}
           <div
             className="home-chips"
             role="group"
@@ -445,21 +512,109 @@ export function ObrasPage() {
                   </div>
                 </dl>
 
-                <OperationalMap
-                  key={focusedObra.id}
-                  obra={{
-                    id: focusedObra.id,
-                    nome: focusedObra.nome,
-                    latitude: focusedObra.latitude,
-                    longitude: focusedObra.longitude,
-                  }}
-                />
+                <section
+                  className="obras-pdor"
+                  aria-label="Previsão de receita PDOR"
+                >
+                  <div className="obras-pdor-header">
+                    <div>
+                      <h3>Previsão de receita · PDOR</h3>
+                      <span>
+                        {pdor?.dataReferencia
+                          ? `Referência ${formatDateOnly(pdor.dataReferencia)}`
+                          : "Calculado a partir dos RDOs da obra"}
+                      </span>
+                    </div>
+                    {pdor?.riscoLabel ? (
+                      <span className={riskClass(pdor.risco)}>
+                        {pdor.riscoLabel}
+                      </span>
+                    ) : null}
+                  </div>
 
-                <PdorPanel
-                  pdor={pdor}
-                  loading={isPdorLoading}
-                  error={pdorError}
-                />
+                  {isPdorLoading ? (
+                    <p className="obras-pdor-note">
+                      Consultando previsão de receita...
+                    </p>
+                  ) : pdorError ? (
+                    <p className="obras-pdor-note">
+                      {pdorError}
+                    </p>
+                  ) : !pdor ? (
+                    <p className="obras-pdor-note">
+                      Nenhum cálculo PDOR registrado ainda. O
+                      próximo RDO sincronizado dispara o cálculo
+                      automaticamente.
+                    </p>
+                  ) : pdor.statusExecucao !== "SUCCESS" ? (
+                    <div className="obras-pdor-insufficient">
+                      <strong>
+                        {pdor.statusExecucaoLabel ??
+                          pdor.statusExecucao}
+                      </strong>
+                      <p>
+                        {pdor.erroExecucao ??
+                          "O PDOR não pôde ser calculado com os dados atuais."}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <dl className="obras-pdor-grid">
+                        <div className="obras-pdor-main">
+                          <dt>Receita prevista final</dt>
+                          <dd>
+                            {formatCurrency(
+                              pdor.receitaPrevistaFinal ??
+                                pdor.p50,
+                            )}
+                          </dd>
+                          <dd className="obras-pdor-range">
+                            Faixa {formatCurrency(pdor.p10)} a{" "}
+                            {formatCurrency(pdor.p95)} · P50{" "}
+                            {formatCurrency(pdor.p50)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Risco de ficar abaixo do contrato</dt>
+                          <dd>
+                            {formatPercent(
+                              pdor.probabilidadeAbaixoContrato,
+                            )}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Confiança do cálculo</dt>
+                          <dd>{formatPercent(pdor.confianca)}</dd>
+                        </div>
+                        <div>
+                          <dt>Calibração</dt>
+                          <dd>
+                            {pdor.calibracaoLabel ??
+                              pdor.calibracao ??
+                              "-"}
+                          </dd>
+                        </div>
+                      </dl>
+
+                      {pdor.drivers.length > 0 ? (
+                        <ul className="obras-pdor-drivers">
+                          {pdor.drivers
+                            .slice(0, 3)
+                            .map((driver) => (
+                              <li key={driver.code || driver.description}>
+                                <strong>
+                                  {driver.description}
+                                </strong>
+                                {driver.evidence ? (
+                                  <span>{driver.evidence}</span>
+                                ) : null}
+                              </li>
+                            ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  )}
+                </section>
 
                 <section className="obras-trace">
                   <div className="obras-trace-header">
@@ -526,6 +681,50 @@ export function ObrasPage() {
             )}
           </section>
         </section>
+
+        {showCreateWorksite ? (
+          <div
+            className="nova-obra-dialog-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) {
+                setShowCreateWorksite(false);
+              }
+            }}
+          >
+            <section
+              className="nova-obra-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="nova-obra-dialog-title"
+            >
+              <header>
+                <div>
+                  <h2 id="nova-obra-dialog-title">Criar obra</h2>
+                  <p>
+                    A obra entra no escopo global e na rastreabilidade
+                    operacional assim que for criada.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Fechar cadastro de obra"
+                  onClick={() => setShowCreateWorksite(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <NovaObraForm
+                onCancel={() => setShowCreateWorksite(false)}
+                onCreated={(created) => {
+                  setShowCreateWorksite(false);
+                  setFocusedObraId(created.id);
+                  reload();
+                }}
+              />
+            </section>
+          </div>
+        ) : null}
       </main>
     </CortexShell>
   );

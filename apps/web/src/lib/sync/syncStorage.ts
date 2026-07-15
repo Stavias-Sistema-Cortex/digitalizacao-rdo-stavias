@@ -2,10 +2,6 @@ import { getCortexDb } from "../db/cortexDb";
 import type {
   LocalRdoChildRecord,
   LocalRdoRecord,
-  LocalMessageAttachmentRecord,
-  LocalMessageRecord,
-  LocalMessageReceipt,
-  LocalMessageReferenceRecord,
   LocalSyncStatus,
   ObraLocalRecord,
   OperationalEventRecord,
@@ -304,10 +300,8 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "rdos",
   "operational_events",
   "rdo_attachments",
-  "conversations",
-  "messages",
-  "message_references",
-  "message_attachments",
+  "mensagens",
+  "mensagem_anexos",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -559,7 +553,6 @@ export async function recoverInterruptedMutations(): Promise<void> {
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
-  const messageStore = transaction.objectStore("messages");
 
   const syncingMutations =
     await outboxStore.index("by-status").getAll("SYNCING");
@@ -605,14 +598,14 @@ export async function recoverInterruptedMutations(): Promise<void> {
     }
 
     if (mutation.entidadeTipo === "MENSAGEM") {
+      const messageStore = transaction.objectStore("mensagens");
       const message = await messageStore.get(mutation.entidadeId);
       if (message) {
         await messageStore.put({
           ...message,
-          syncStatus: "PENDING",
-          ultimoErro:
-            "Sincronização anterior foi interrompida antes da confirmação.",
-          atualizadoEm: nowUtc(),
+          syncStatus: "NA_FILA",
+          ultimoErro: updatedMutation.ultimoErro,
+          updatedAt: nowUtc(),
         });
       }
     }
@@ -793,7 +786,6 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
-  const messageStore = transaction.objectStore("messages");
 
   const erroredMutations =
     await outboxStore.index("by-status").getAll("ERROR");
@@ -836,13 +828,14 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
     }
 
     if (mutation.entidadeTipo === "MENSAGEM") {
+      const messageStore = transaction.objectStore("mensagens");
       const message = await messageStore.get(mutation.entidadeId);
       if (message) {
         await messageStore.put({
           ...message,
-          syncStatus: "PENDING",
-          ultimoErro: null,
-          atualizadoEm: timestamp,
+          syncStatus: "NA_FILA",
+          ultimoErro: retryMutation.ultimoErro,
+          updatedAt: timestamp,
         });
       }
     }
@@ -1047,15 +1040,10 @@ export function mutationAfterResolvableConflict(
     return null;
   }
 
-  // Uma atualização de RDO substitui o rascunho inteiro. Reaproveitar seu
-  // payload antigo com uma versão nova do servidor apagaria alterações feitas
-  // por outra pessoa. Esse conflito precisa de revisão explícita na tela de
-  // RDO; somente mutações que não têm esse semântico de substituição podem ser
-  // reenfileiradas automaticamente.
-  if (
-    mutation.entidadeTipo === "RDO" &&
-    mutation.operacao === "ATUALIZAR_RDO_RASCUNHO"
-  ) {
+  // Um RDO representa um registro operacional completo. Atualizar somente a
+  // versão-base e reenviá-lo pode sobrescrever alterações feitas por outra
+  // pessoa; esses conflitos precisam de reconciliação explícita na interface.
+  if (mutation.entidadeTipo === "RDO") {
     return null;
   }
 
@@ -1161,7 +1149,6 @@ export async function markMutationAsSyncing(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
-  const messageStore = transaction.objectStore("messages");
 
   const currentMutation = await outboxStore.get(
     mutation.clientMutationId,
@@ -1224,147 +1211,19 @@ export async function markMutationAsSyncing(
   }
 
   if (currentMutation.entidadeTipo === "MENSAGEM") {
+    const messageStore = transaction.objectStore("mensagens");
     const message = await messageStore.get(currentMutation.entidadeId);
     if (message) {
       await messageStore.put({
         ...message,
-        syncStatus: "SYNCING",
+        syncStatus: "SINCRONIZANDO",
         ultimoErro: null,
-        atualizadoEm: nowUtc(),
+        updatedAt: nowUtc(),
       });
     }
   }
 
   await transaction.done;
-}
-
-interface CanonicalMessageProjection {
-  message: LocalMessageRecord;
-  references: LocalMessageReferenceRecord[];
-  attachments: LocalMessageAttachmentRecord[];
-}
-
-function recordArray(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.map(objectValue).filter((item) => Object.keys(item).length > 0)
-    : [];
-}
-
-function nullableTextValue(value: unknown): string | null {
-  const text = textValue(value);
-  return text || null;
-}
-
-function finiteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function requireCanonicalText(
-  record: Record<string, unknown>,
-  field: string,
-): string {
-  const value = textValue(record[field]);
-  if (!value) {
-    throw new Error(`Resposta canônica de mensagem sem ${field}.`);
-  }
-  return value;
-}
-
-function canonicalMessageProjection(
-  local: LocalMessageRecord,
-  result: SyncPushMutationResult,
-): CanonicalMessageProjection {
-  const canonical = objectValue(result.resultado);
-  const id = requireCanonicalText(canonical, "id");
-  if (id !== local.id || result.entidadeId !== local.id) {
-    throw new Error("Resposta canônica pertence a outra mensagem.");
-  }
-
-  const version = finiteNumber(canonical.versaoEntidade);
-  if (version === null) {
-    throw new Error("Resposta canônica de mensagem sem versaoEntidade.");
-  }
-
-  const receipts: LocalMessageReceipt[] = recordArray(canonical.recibos).map(
-    (receipt) => ({
-      id: requireCanonicalText(receipt, "id"),
-      mensagemId: requireCanonicalText(receipt, "mensagemId"),
-      colaboradorId: requireCanonicalText(receipt, "colaboradorId"),
-      entregueEm: nullableTextValue(receipt.entregueEm),
-      lidaEm: nullableTextValue(receipt.lidaEm),
-    }),
-  );
-  const references: LocalMessageReferenceRecord[] = recordArray(
-    canonical.referencias,
-  ).map((reference) => ({
-    id: requireCanonicalText(reference, "id"),
-    mensagemId: requireCanonicalText(reference, "mensagemId"),
-    tipoObjeto: requireCanonicalText(reference, "tipoObjeto"),
-    objetoId: requireCanonicalText(reference, "objetoId"),
-    obraId: nullableTextValue(reference.obraId),
-    criadoEm: nullableTextValue(reference.criadoEm),
-  }));
-  const attachments: LocalMessageAttachmentRecord[] = recordArray(
-    canonical.anexos,
-  ).map((attachment) => {
-    const status = requireCanonicalText(attachment, "status");
-    if (!["PENDENTE", "DISPONIVEL", "FALHOU"].includes(status)) {
-      throw new Error("Resposta canônica de anexo com status inválido.");
-    }
-    return {
-      id: requireCanonicalText(attachment, "id"),
-      mensagemId: requireCanonicalText(attachment, "mensagemId"),
-      clientAttachmentId: requireCanonicalText(
-        attachment,
-        "clientAttachmentId",
-      ),
-      nomeOriginal: requireCanonicalText(attachment, "nomeOriginal"),
-      nomeSeguro: requireCanonicalText(attachment, "nomeSeguro"),
-      mimeType: requireCanonicalText(attachment, "mimeType"),
-      tamanhoBytes: finiteNumber(attachment.tamanhoBytes) ?? 0,
-      hashSha256: requireCanonicalText(attachment, "hashSha256"),
-      status: status as LocalMessageAttachmentRecord["status"],
-      ultimoErro: nullableTextValue(attachment.ultimoErro),
-      criadoEm: nullableTextValue(attachment.criadoEm),
-      atualizadoEm:
-        nullableTextValue(attachment.atualizadoEm) ?? local.atualizadoEm,
-      disponivelEm: nullableTextValue(attachment.disponivelEm),
-      versaoEntidade: finiteNumber(attachment.versaoEntidade),
-      arquivo: null,
-      syncStatus:
-        status === "DISPONIVEL" ? "UPLOADED" : "PENDING_UPLOAD",
-      tentativas: 0,
-      ultimaTentativaEm: null,
-      proximaTentativaEm: null,
-    };
-  });
-
-  return {
-    message: {
-      ...local,
-      conversaId: requireCanonicalText(canonical, "conversaId"),
-      remetenteId: requireCanonicalText(canonical, "remetenteId"),
-      remetenteNome: requireCanonicalText(canonical, "remetenteNome"),
-      clientMessageId: requireCanonicalText(canonical, "clientMessageId"),
-      texto: nullableTextValue(canonical["texto"]),
-      estado: requireCanonicalText(canonical, "estado"),
-      enviadaClienteEm: requireCanonicalText(
-        canonical,
-        "enviadaClienteEm",
-      ),
-      criadaServidorEm: requireCanonicalText(
-        canonical,
-        "criadaServidorEm",
-      ),
-      atualizadoEm: requireCanonicalText(canonical, "atualizadaEm"),
-      versaoEntidade: version,
-      recibos: receipts,
-      syncStatus: "SENT",
-      ultimoErro: null,
-    },
-    references,
-    attachments,
-  };
 }
 
 /**
@@ -1410,12 +1269,7 @@ export async function applyPushResultAtomically(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
-  const conversationStore = transaction.objectStore("conversations");
-  const messageStore = transaction.objectStore("messages");
-  const referenceStore = transaction.objectStore("message_references");
-  const messageAttachmentStore = transaction.objectStore(
-    "message_attachments",
-  );
+  const messageStore = transaction.objectStore("mensagens");
 
   const mutation = await outboxStore.get(
     result.clientMutationId,
@@ -1437,10 +1291,6 @@ export async function applyPushResultAtomically(
   const timestamp = nowUtc();
 
   if (result.status === "APLICADA") {
-    const messageProjection = message
-      ? canonicalMessageProjection(message, result)
-      : null;
-
     await outboxStore.put({
       ...mutation,
       status: "SYNCED",
@@ -1483,39 +1333,26 @@ export async function applyPushResultAtomically(
       );
     }
 
-    if (messageProjection) {
-      await messageStore.put(messageProjection.message);
-
-      const referenceKeys = await referenceStore
-        .index("by-message-id")
-        .getAllKeys(messageProjection.message.id);
-      await Promise.all(referenceKeys.map((key) => referenceStore.delete(key)));
-      await Promise.all(
-        messageProjection.references.map((reference) =>
-          referenceStore.put(reference),
-        ),
-      );
-
-      for (const attachment of messageProjection.attachments) {
-        const existing = await messageAttachmentStore.get(attachment.id);
-        await messageAttachmentStore.put({
-          ...attachment,
-          arquivo: existing?.arquivo ?? null,
-        });
-      }
-
-      const conversation = await conversationStore.get(
-        messageProjection.message.conversaId,
-      );
-      if (conversation) {
-        await conversationStore.put({
-          ...conversation,
-          ultimaAtividadeEm:
-            messageProjection.message.criadaServidorEm ??
-            messageProjection.message.enviadaClienteEm,
-          atualizadoEm: messageProjection.message.atualizadoEm,
-        });
-      }
+    if (message) {
+      const resultRecord = result.resultado ?? {};
+      await messageStore.put({
+        ...message,
+        id:
+          typeof resultRecord.id === "string"
+            ? resultRecord.id
+            : message.id,
+        criadaEm:
+          typeof resultRecord.criadaEm === "string"
+            ? resultRecord.criadaEm
+            : message.criadaEm,
+        versaoEntidade:
+          typeof resultRecord.versao === "number"
+            ? resultRecord.versao
+            : message.versaoEntidade,
+        syncStatus: "SINCRONIZADO",
+        ultimoErro: null,
+        updatedAt: timestamp,
+      });
     }
   } else if (result.status === "DESCARTADA") {
     await outboxStore.put({
@@ -1551,14 +1388,13 @@ export async function applyPushResultAtomically(
         timestamp,
       );
     }
-
     if (message) {
       await messageStore.put({
         ...message,
-        syncStatus: "ERROR",
+        syncStatus: "FALHOU",
         ultimoErro:
           result.erro ?? "Conflito informado pelo servidor.",
-        atualizadoEm: timestamp,
+        updatedAt: timestamp,
       });
     }
   } else {
@@ -1597,13 +1433,13 @@ export async function applyPushResultAtomically(
         timestamp,
       );
     }
-
     if (message) {
       await messageStore.put({
         ...message,
-        syncStatus: "ERROR",
-        ultimoErro: result.erro ?? "Erro informado pelo servidor.",
-        atualizadoEm: timestamp,
+        syncStatus: "FALHOU",
+        ultimoErro:
+          result.erro ?? "Erro informado pelo servidor.",
+        updatedAt: timestamp,
       });
     }
   }
@@ -1625,7 +1461,7 @@ export async function returnMutationToPending(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
-  const messageStore = transaction.objectStore("messages");
+  const messageStore = transaction.objectStore("mensagens");
 
   const mutation = await outboxStore.get(clientMutationId);
 
@@ -1677,9 +1513,9 @@ export async function returnMutationToPending(
     if (message) {
       await messageStore.put({
         ...message,
-        syncStatus: "PENDING",
+        syncStatus: "NA_FILA",
         ultimoErro: errorMessage,
-        atualizadoEm: timestamp,
+        updatedAt: timestamp,
       });
     }
   }
@@ -1711,77 +1547,6 @@ function applySafeRdoEvent(
   return updated;
 }
 
-function messageProjectionFromPullEvent(
-  event: SyncPullEvent,
-  existing: LocalMessageRecord | undefined,
-): CanonicalMessageProjection | null {
-  if (
-    event.entidadeTipo !== "MENSAGEM" ||
-    event.tipoEvento !== "MENSAGEM_ENVIADA" ||
-    typeof event.versaoEntidade !== "number"
-  ) {
-    return null;
-  }
-
-  const afterState = objectValue(objectValue(event.payload).afterState);
-  if (Object.keys(afterState).length === 0) {
-    return null;
-  }
-
-  try {
-    const id = requireCanonicalText(afterState, "id");
-    if (id !== event.entidadeId) {
-      return null;
-    }
-    if (
-      existing?.versaoEntidade !== null &&
-      existing?.versaoEntidade !== undefined &&
-      existing.versaoEntidade > event.versaoEntidade
-    ) {
-      return null;
-    }
-
-    const canonical: Record<string, unknown> = {
-      ...afterState,
-      versaoEntidade: event.versaoEntidade,
-    };
-    const base: LocalMessageRecord = existing ?? {
-      id,
-      conversaId: requireCanonicalText(canonical, "conversaId"),
-      remetenteId: requireCanonicalText(canonical, "remetenteId"),
-      remetenteNome: requireCanonicalText(canonical, "remetenteNome"),
-      clientMessageId: requireCanonicalText(canonical, "clientMessageId"),
-      texto: nullableTextValue(canonical.texto),
-      estado: requireCanonicalText(canonical, "estado"),
-      enviadaClienteEm: requireCanonicalText(
-        canonical,
-        "enviadaClienteEm",
-      ),
-      criadaServidorEm: requireCanonicalText(
-        canonical,
-        "criadaServidorEm",
-      ),
-      atualizadoEm: requireCanonicalText(canonical, "atualizadaEm"),
-      versaoEntidade: event.versaoEntidade,
-      recibos: [],
-      syncStatus: "SENT",
-      ultimoErro: null,
-    };
-
-    return canonicalMessageProjection(base, {
-      clientMutationId: "pull-event",
-      status: "APLICADA",
-      entidadeTipo: "MENSAGEM",
-      entidadeId: id,
-      resultado: canonical,
-    });
-  } catch {
-    // Eventos históricos anteriores ao schema completo são ignorados aqui;
-    // a hidratação REST continua sendo a fonte autoritativa do histórico.
-    return null;
-  }
-}
-
 export async function applyPulledEventsAtomically(
   events: SyncPullEvent[],
   nextCommitSeq: number,
@@ -1795,10 +1560,6 @@ export async function applyPulledEventsAtomically(
       "sync_state",
       "obras",
       "previsao_snapshots",
-      "conversations",
-      "messages",
-      "message_references",
-      "message_attachments",
     ],
     "readwrite",
   );
@@ -1864,57 +1625,6 @@ export async function applyPulledEventsAtomically(
         await rdoStore.put(
           applySafeRdoEvent(localRdo, event),
         );
-      }
-    }
-
-    if (
-      event.entidadeTipo === "MENSAGEM" &&
-      event.tipoEvento === "MENSAGEM_ENVIADA"
-    ) {
-      const messageStore = transaction.objectStore("messages");
-      const existing = await messageStore.get(event.entidadeId);
-      const projection = messageProjectionFromPullEvent(event, existing);
-
-      if (projection) {
-        await messageStore.put(projection.message);
-
-        const referenceStore = transaction.objectStore("message_references");
-        const referenceKeys = await referenceStore
-          .index("by-message-id")
-          .getAllKeys(projection.message.id);
-        await Promise.all(
-          referenceKeys.map((key) => referenceStore.delete(key)),
-        );
-        await Promise.all(
-          projection.references.map((reference) =>
-            referenceStore.put(reference),
-          ),
-        );
-
-        const attachmentStore = transaction.objectStore(
-          "message_attachments",
-        );
-        for (const attachment of projection.attachments) {
-          const localAttachment = await attachmentStore.get(attachment.id);
-          await attachmentStore.put({
-            ...attachment,
-            arquivo: localAttachment?.arquivo ?? null,
-          });
-        }
-
-        const conversationStore = transaction.objectStore("conversations");
-        const conversation = await conversationStore.get(
-          projection.message.conversaId,
-        );
-        if (conversation) {
-          await conversationStore.put({
-            ...conversation,
-            ultimaAtividadeEm:
-              projection.message.criadaServidorEm ??
-              projection.message.enviadaClienteEm,
-            atualizadoEm: projection.message.atualizadoEm,
-          });
-        }
       }
     }
 

@@ -3,6 +3,9 @@ package com.projeto.cortex.intelligence.stavia;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.intelligence.stavia.access.CortexStaviaAccessPolicy;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
+import com.projeto.cortex.mensagens.domain.MessageWorksiteAccessService;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,8 +21,16 @@ class CortexStaviaAccessPolicyTest {
 
     private final CurrentUserService currentUserService =
             mock(CurrentUserService.class);
+    private final FinancialAccessService financialAccessService =
+            mock(FinancialAccessService.class);
+    private final MessageWorksiteAccessService messageWorksiteAccessService =
+            mock(MessageWorksiteAccessService.class);
     private final CortexStaviaAccessPolicy policy =
-            new CortexStaviaAccessPolicy(currentUserService);
+            new CortexStaviaAccessPolicy(
+                    currentUserService,
+                    financialAccessService,
+                    messageWorksiteAccessService
+            );
 
     @Test
     void alfaEBetaPodemConsultar() {
@@ -48,5 +59,33 @@ class CortexStaviaAccessPolicyTest {
 
         assertThat(policy.canAccessWorksite("beta", "obra-1")).isTrue();
         assertThat(policy.canAccessWorksite("beta", "obra-2")).isFalse();
+    }
+
+    @Test
+    void acessoFinanceiroExigeConcessaoNaObraExata() {
+        when(financialAccessService.hasPermission(
+                "beta",
+                "obra-1",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(true);
+        when(financialAccessService.hasPermission(
+                "beta",
+                "obra-2",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(false);
+
+        assertThat(policy.canAccessFinancial("beta", "obra-1")).isTrue();
+        assertThat(policy.canAccessFinancial("beta", "obra-2")).isFalse();
+    }
+
+    @Test
+    void acessoAMensagensExigeParticipacaoNaObraExata() {
+        when(messageWorksiteAccessService.canRead("beta", "obra-1"))
+                .thenReturn(true);
+        when(messageWorksiteAccessService.canRead("beta", "obra-2"))
+                .thenReturn(false);
+
+        assertThat(policy.canAccessMessages("beta", "obra-1")).isTrue();
+        assertThat(policy.canAccessMessages("beta", "obra-2")).isFalse();
     }
 }

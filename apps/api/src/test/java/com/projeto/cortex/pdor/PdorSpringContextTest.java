@@ -2,6 +2,7 @@ package com.projeto.cortex.pdor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.Test;
@@ -22,8 +23,14 @@ class PdorSpringContextTest {
                     .withBean(PdorInputLoader.class, () -> mock(PdorInputLoader.class))
                     .withBean(PdorSnapshotRepository.class, () -> mock(PdorSnapshotRepository.class))
                     .withBean(CurrentUserService.class, () -> mock(CurrentUserService.class))
-                    .withBean(PdorExecutionInitiatorResolver.class,
-                            () -> mock(PdorExecutionInitiatorResolver.class))
+                    .withBean(
+                            FinancialAccessService.class,
+                            () -> mock(FinancialAccessService.class)
+                    )
+                    .withBean(
+                            PdorExecutionInitiatorResolver.class,
+                            () -> mock(PdorExecutionInitiatorResolver.class)
+                    )
                     .withBean(CortexOperationalMemoryService.class, () -> mock(CortexOperationalMemoryService.class));
 
     @Test

@@ -1,18 +1,14 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 export function MensagensCard() {
-  const navigate = useNavigate();
-
   return (
-    <section className="home-card home-card--messages">
+    <section className="home-card">
       <h3>Mensagens</h3>
       <p className="home-card-muted">
-        Decisões, arquivos e atualizações vinculados às suas obras,
-        disponíveis também offline.
+        Converse com a equipe neste dispositivo. O histórico local não é
+        apresentado como mensagem confirmada pelo servidor.
       </p>
-      <button type="button" onClick={() => navigate("/mensagens")}>
-        Abrir conversas
-      </button>
+      <Link to="/mensagens">Abrir mensagens locais</Link>
     </section>
   );
 }

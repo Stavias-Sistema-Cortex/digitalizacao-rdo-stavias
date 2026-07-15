@@ -2,6 +2,7 @@ package com.projeto.cortex.intelligence.stavia.knowledge.finance;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import com.projeto.cortex.intelligence.stavia.StaviaEngine;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.knowledge.StaviaKnowledgeRequest;
@@ -25,6 +26,9 @@ import java.util.Set;
 
 @Component
 public class FinancialForecastKnowledgeSource implements StaviaKnowledgeSource {
+
+    private static final String REQUIRED_FINANCIAL_PERMISSION =
+            FinancialPermission.FINANCEIRO_VISUALIZAR.name();
 
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -69,11 +73,17 @@ public class FinancialForecastKnowledgeSource implements StaviaKnowledgeSource {
         if (!request.permissions().contains(StaviaEngine.REQUIRED_PERMISSION)) {
             return false;
         }
+        if (!request.permissions().contains(REQUIRED_FINANCIAL_PERMISSION)) {
+            return false;
+        }
         return SUPPORTED.contains(request.intent());
     }
 
     @Override
     public List<StaviaEvidence> retrieve(StaviaKnowledgeRequest request) {
+        if (!supports(request)) {
+            return List.of();
+        }
         List<Obra> obras =
                 obraRepository.findAtivasByIdentificador(request.worksiteId());
 

@@ -1,170 +1,120 @@
-# Córtex API — Checklist de Deploy
+# Córtex — checklist de deploy
 
-Este checklist define o que precisa estar verdadeiro antes de fazer deploy da API do Córtex.
+Esta é a trava operacional do artefato atual: API Java 21, PWA, autenticação
+OTP/passkey, Mensagens, armazenamento compartilhado, Financeiro, cobranças por
+e-mail e StavIA. Marque um item somente com evidência da mesma revisão que será
+publicada.
 
-## 1. Escopo atual que pode ser deployado
+## 1. Banco e migrações
 
-O produto atual inclui:
+- [ ] Backup restaurável do banco atual foi criado e testado.
+- [ ] Um MySQL vazio aplicou Flyway V1–V33 sem `repair` ou edição de migration.
+- [ ] Uma cópia representativa do banco atual atualizou até V33.
+- [ ] O usuário da API tem somente os privilégios necessários no schema.
+- [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
+  `email_verificado_em` preenchido.
+- [ ] Os registros ALFA explícitos anteriores permanecem ALFA após a migração.
 
-- API Spring Boot
-- Conexão com MySQL por variáveis de ambiente
-- Migrações de banco com Flyway
-- Asset Registry
-- Busca de ativos
-- Endpoint de saúde da API
-- Histórico de sincronização
-- Build de imagem Docker
-- autenticação por CPF/JWT e escopo Alfa/Beta por obra
-- PWA offline-first com outbox, Equipes, Mensagens e anexos protegidos
-- mapas operacionais configuráveis, PDOR e Stav.IA rastreável
-- endpoint de importação desativado por padrão
+A API em perfil `production` falha na inicialização quando o último requisito
+de ALFA não é atendido. `/api/readiness` também consulta o banco e revalida esse
+estado; `/api/health` mede somente o processo.
 
-Ainda é necessário provisionar no ambiente de destino:
+## 2. HTTPS, cookies e passkeys
 
-- provedor de mapas (MapTiler ou Mapbox), se o mapa de satélite for desejado
-- banco Academy/ZLD, somente se as importações externas forem ativadas
-- observabilidade, backup/restauração testada e pipeline de CI/CD de produção
+- [ ] O proxy termina HTTPS e publica PWA e `/api` na mesma origem.
+- [ ] `CORTEX_PUBLIC_ORIGIN`, CORS e WebAuthn contêm somente a origem HTTPS
+  exata, sem curinga, path, query ou credenciais.
+- [ ] `CORTEX_AUTH_WEBAUTHN_RP_ID` é o hostname público sem esquema/porta.
+- [ ] Cookies estão `Secure`; `SameSite` foi escolhido para a topologia real.
+- [ ] O par PEM do offline grant está montado e o fingerprint público usado no
+  build da PWA corresponde exatamente a esse par.
+- [ ] Login OTP, logout, registro de passkey, login por passkey e acesso offline
+  foram exercitados no hostname final.
 
-## 2. Variáveis de ambiente necessárias
+## 3. Secrets e providers
 
-Obrigatórias para a API iniciar:
+- [ ] CPF HMAC, OTP HMAC, chave privada offline e senha SMTP vêm de arquivos
+  secretos montados; os equivalentes inline estão vazios.
+- [ ] `CORTEX_AUTH_DEV_ADMIN_ENABLED=false` e
+  `CORTEX_AUTH_PROVISIONING_ENABLED=false` no processo web.
+- [ ] `CORTEX_EMAIL_PROVIDER=smtp`; provider `fake` não existe no runtime de
+  produção.
+- [ ] From, usuário, host, STARTTLS e `CORTEX_EMAIL_SENDER_PROFILE_KEY`
+  correspondem à caixa Stavias autenticada.
+- [ ] Nenhuma senha, OTP, CPF, token de sessão ou conteúdo de mensagem aparece
+  em logs, imagem, compose ou repositório.
 
-- CORTEX_DB_URL
-- CORTEX_DB_USER
-- CORTEX_DB_PASSWORD
-- CORTEX_AUTH_JWT_SECRET
-- CORTEX_AUTH_LOGIN_RATE_LIMIT_ENABLED=true
-- CORTEX_AUTH_LOGIN_RATE_LIMIT_ATTEMPTS_PER_MINUTE
-- CORTEX_AUTH_LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS_PER_MINUTE
+## 4. Arquivos e persistência
 
-Opcionais para importação da fonte ZLD:
+- [ ] O storage é S3 privado ou volume local explicitamente persistente e
+  absoluto; diretórios temporários são rejeitados.
+- [ ] Upload, download autorizado, reinício do container e novo download
+  preservam o mesmo objeto e SHA-256.
+- [ ] Limite do proxy, API e `VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES` estão
+  alinhados.
+- [ ] Backup/restore inclui banco e objetos; retenção e exclusão foram definidas.
 
-- CORTEX_IMPORT_ENABLED
-- ZLD_DB_URL
-- ZLD_DB_USER
-- ZLD_DB_PASSWORD
+## 5. Financeiro, Mensagens e autorização
 
-Valor seguro padrão para produção:
+- [ ] ALFA acessa todas as obras sem grants artificiais.
+- [ ] BETA sem vínculo recebe 403; BETA vinculado, mas sem a capability financeira
+  exata, também recebe 403 e não recebe valores em Home, sync, export ou StavIA.
+- [ ] Compra offline reconecta uma única vez pelo mesmo `clientMutationId`.
+- [ ] Nota, anexo, pagamento/recebimento, relatório e CSV usam dados persistidos
+  e o mesmo escopo da consulta.
+- [ ] Cobrança manual/agendada/automática exige preview aprovado, remetente
+  configurado e produz no máximo um envio por chave idempotente.
+- [ ] Uma falha SMTP fica registrada com motivo sanitizado e retry limitado.
+- [ ] StavIA retorna IDs/frescor de evidência e declara indisponibilidade quando
+  o fato existe somente no dispositivo local.
 
-- CORTEX_IMPORT_ENABLED=false
+## 6. Build e testes da revisão
 
-Nunca commitar senhas reais.
+```bash
+cd apps/api
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
 
-## 3. Requisitos de banco de dados
+cd ../web
+npm test -- --run
+npm run lint
+npm run build
 
-A API deployada precisa se conectar a um banco MySQL contendo o schema do Córtex.
+cd ../..
+docker build -t cortex-api:release apps/api
+docker build -t cortex-web:release apps/web
+docker compose -f compose.production.example.yml config
+git diff --check
+```
 
-Tabelas necessárias:
+- [ ] Maven completo passou em JDK 21.
+- [ ] MySQL de integração passou com migrations V1–V33.
+- [ ] Vitest, lint e build PWA passaram.
+- [ ] As duas imagens Docker buildaram e executam como configuradas.
+- [ ] Desktop, tablet e mobile foram verificados sem overflow ou console error.
+- [ ] Não há novos dados de negócio hardcoded, fixtures de produção ou totals
+  fabricados.
 
-- asset
-- asset_alias
-- source_sync_run
-- source_sync_checkpoint
-- flyway_schema_history
+## 7. Publicação e smoke
 
-O Flyway precisa executar com sucesso na inicialização da aplicação.
+1. Publique primeiro a API; aguarde `/api/readiness` responder `READY`.
+2. Publique a PWA com `/api` na mesma origem e o fingerprint correto.
+3. Execute `CORTEX_BASE_URL=https://host ./scripts/smoke-deploy.sh`.
+4. Com uma sessão QA real, repita passando `CORTEX_SMOKE_COOKIE_JAR` e
+   `CORTEX_SMOKE_OBRA_ID` para validar o escopo financeiro.
+5. Monitore login, 401/403, sync, fila de cobrança, SMTP, latência e storage.
 
-Antes do deploy, confirmar localmente:
+## 8. Rollback
 
-mvn -f apps/api/pom.xml clean compile
+- Preserve a imagem anterior e o backup pré-migração.
+- Não altere nem apague migrations aplicadas. Rollback de aplicação só é seguro
+  se a versão anterior tolerar as tabelas aditivas V31–V33.
+- Pause o scheduler de cobrança antes de rollback operacional para evitar dois
+  consumidores de versões diferentes.
+- Nunca use `flyway repair` para mascarar checksum divergente.
 
-## 4. Requisitos de Docker
+## Limite de evidência externa
 
-A imagem da API precisa buildar com sucesso:
-
-docker build -t cortex-api:local apps/api
-
-O container precisa rodar em modo seguro:
-
-docker run --rm -p 8081:8080 \
-  -e CORTEX_DB_URL='jdbc:mysql://host.docker.internal:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC' \
-  -e CORTEX_DB_USER='cortex_app' \
-  -e CORTEX_DB_PASSWORD="$CORTEX_DB_PASSWORD" \
-  -e CORTEX_AUTH_JWT_SECRET="$CORTEX_AUTH_JWT_SECRET" \
-  -e CORTEX_IMPORT_ENABLED='false' \
-  cortex-api:local
-
-Testes esperados:
-
-curl -s http://localhost:8081/api/health
-curl -s "http://localhost:8081/api/assets?query=CBA"
-curl -i -X POST http://localhost:8081/api/assets/import/zld
-
-Resultado esperado:
-
-- /api/health retorna UP
-- /api/assets retorna dados de ativos
-- /api/assets/import/zld retorna 403 Forbidden
-
-## 5. Requisitos mínimos de segurança em produção
-
-Antes de qualquer deploy público:
-
-- O endpoint de importação precisa estar desativado por padrão
-- Nenhuma senha real pode estar commitada
-- Arquivos .env precisam estar ignorados
-- Arquivos target precisam estar ignorados
-- A imagem Docker precisa buildar corretamente
-- O endpoint de saúde precisa funcionar
-- A URL do banco precisa vir por variável de ambiente
-- As credenciais externas da Stavias não devem ser necessárias a menos que a importação seja ativada de propósito
-- O limite público do login por CPF deve permanecer ativo fora do perfil local
-- Tokens MapTiler/Mapbox usados no frontend devem ser públicos/restritos por origem; nunca use segredo de servidor em `VITE_*`
-
-## 6. Decisão do primeiro ambiente de deploy
-
-Antes de deployar, escolher um alvo:
-
-- Docker local
-- Servidor interno da empresa
-- Máquina virtual em cloud
-- Render, Fly.io ou Railway
-- AWS, GCP ou Azure
-
-Para este projeto, o primeiro alvo mais seguro é:
-
-Ambiente interno ou privado, não internet pública.
-
-Motivo:
-
-O backend se conecta a dados operacionais da empresa; exponha-o somente atrás
-de HTTPS, com CORS restrito e monitoramento de autenticação/sincronização.
-
-## 7. Não expor publicamente até existir
-
-Não expor a API publicamente até que existam:
-
-- Usuário de banco de produção com privilégios limitados
-- Gerenciador de segredos ou variáveis privadas de ambiente
-- HTTPS
-- Política básica de logs
-- Estratégia de backup
-
-## 8. Modo recomendado de deploy agora
-
-Por enquanto, deployar apenas em modo seguro:
-
-CORTEX_IMPORT_ENABLED=false
-
-Isso permite:
-
-- health check
-- listagem de ativos
-- busca de ativos
-- visualização do histórico de sync
-
-Isso bloqueia:
-
-- importação manual a partir de dbstavias_zld
-
-## 9. Melhorias futuras para deploy
-
-Próximas melhorias:
-
-- Docker Compose para API + MySQL
-- profile de produção
-- autenticação da API
-- usuário read-only para a fonte externa de importação
-- job de sincronização agendado
-- validação automática no GitHub
-- integração com frontend
+Build e fake SMTP comprovam contrato, segurança e idempotência; não comprovam
+entrega pela caixa Stavias real. S3/SMTP/Graph só podem ser declarados validados
+depois de um smoke no ambiente com credenciais próprias. Sem essas credenciais,
+o handoff deve registrar essa dependência como não verificada.

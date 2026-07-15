@@ -26,6 +26,50 @@ public class StaviaIntentClassifier {
     private static final List<IntentRule> RULES =
             List.of(
                     rule(
+                            StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES,
+                            "documentos de mensagens pendentes",
+                            "documentos de mensagem pendentes",
+                            "anexos de mensagens pendentes",
+                            "anexos de mensagem pendentes",
+                            "mensagens pendentes de sincronizacao",
+                            "documentos pendentes de sincronizacao"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE,
+                            "fornecedores com cobrancas pendentes",
+                            "fornecedores tem cobrancas pendentes",
+                            "cobrancas pendentes de fornecedores",
+                            "cobranca pendente por fornecedor"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                            "notas fiscais vencidas",
+                            "notas fiscais estao vencidas",
+                            "nota fiscal vencida",
+                            "nota fiscal esta vencida",
+                            "faturas vencidas",
+                            "faturas estao vencidas",
+                            "fatura vencida",
+                            "fatura esta vencida"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_HISTORICO_COMPRA,
+                            "historico da compra",
+                            "historico de compra",
+                            "quem criou a compra",
+                            "quem criou o pedido",
+                            "alteracoes da compra",
+                            "mudancas da compra"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_TOTAL_COMPRADO,
+                            "total comprado",
+                            "quanto foi comprado",
+                            "valor comprado",
+                            "comprado este mes",
+                            "comprado no mes"
+                    ),
+                    rule(
                             StaviaIntent.CONSULTAR_HISTORICO,
                             "historico",
                             "alteracao",

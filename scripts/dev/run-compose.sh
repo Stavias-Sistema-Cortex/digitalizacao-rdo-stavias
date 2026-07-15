@@ -21,8 +21,13 @@ if [ -z "${CORTEX_MYSQL_ROOT_PASSWORD:-}" ]; then
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_JWT_SECRET:-}" ]; then
-  echo "Missing CORTEX_AUTH_JWT_SECRET."
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
+  exit 1
+fi
+
+if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
+  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY for the local compose stack."
   exit 1
 fi
 
@@ -35,9 +40,14 @@ docker compose -f "$COMPOSE_FILE" ps
 echo ""
 echo "API:"
 echo "  http://localhost:8081/api/health"
+echo "  http://localhost:8081/api/readiness"
+echo ""
+echo "PWA:"
+echo "  http://localhost:5173"
 echo ""
 echo "Useful commands:"
 echo "  curl -s http://localhost:8081/api/health | jq"
+echo "  curl -s http://localhost:8081/api/readiness | jq"
 echo "  curl -s \"http://localhost:8081/api/assets?query=CBA\" | jq"
 echo "  curl -i -X POST http://localhost:8081/api/assets/import/zld"
 echo ""

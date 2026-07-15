@@ -2,9 +2,13 @@ package com.projeto.cortex.sync;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoQueryService;
+import com.projeto.cortex.rdos.RdoService;
+import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.sql.ResultSet;
 import java.time.Instant;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
@@ -58,8 +62,9 @@ class SyncServiceSecurityTest {
                 jdbcTemplate,
                 new ObjectMapper(),
                 mock(TransactionTemplate.class),
+                new SyncOperationRegistry(java.util.List.of()),
                 currentUserService,
-                List.of()
+                mock(FinancialAccessService.class)
         );
 
         SyncDeviceResponse response =

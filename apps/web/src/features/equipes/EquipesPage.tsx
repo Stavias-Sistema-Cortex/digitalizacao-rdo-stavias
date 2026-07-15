@@ -12,17 +12,17 @@ import type {
   ObraLocalRecord,
 } from "../../lib/db/db.types";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
-import { getSession, isAlfa } from "../auth/authSession";
+import {
+  getSession,
+  hasOnlineSession,
+  isAlfa,
+} from "../auth/authSession";
 import { hydrateObrasRelacionadas } from "../home/homeHydration";
 import {
-  createConversation,
-  fetchConversations,
-} from "../mensagens/messageApi";
-import {
-  hydrateConversation,
-  hydrateConversationPage,
-} from "../mensagens/messageHydration";
-import { participantInitials } from "../mensagens/messageViewModel";
+  createConversationApi,
+  listConversationsApi,
+} from "../mensagens/mensagensApi";
+import { storeServerConversations } from "../mensagens/mensagensRepository";
 import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   hidratarColaboradoresAcademy,
@@ -94,6 +94,11 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function participantInitials(value: string): string {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
+}
+
 function localDateTime(date: string): string {
   return `${date}T00:00:00`;
 }
@@ -139,6 +144,7 @@ async function fetchAllScopedTeams(): Promise<TeamDto[]> {
 
 export function EquipesPage() {
   const session = getSession();
+  const hasAuthenticatedConnection = hasOnlineSession();
   const alfa = isAlfa(session);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -193,7 +199,7 @@ export function EquipesPage() {
         setObras(localObras);
         setIsLoading(false);
       }
-      if (!navigator.onLine || !session?.token) return;
+      if (!navigator.onLine || !hasAuthenticatedConnection) return;
       try {
         try {
           await hydrateObrasRelacionadas();
@@ -225,7 +231,7 @@ export function EquipesPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadTick, session?.token]);
+  }, [hasAuthenticatedConnection, reloadTick]);
 
   useEffect(() => {
     if (!selectedTeamId) return;
@@ -247,7 +253,7 @@ export function EquipesPage() {
       setDetailLoading(true);
       setActionError(null);
       await applyLocal();
-      if (!navigator.onLine || !session?.token) {
+      if (!navigator.onLine || !hasAuthenticatedConnection) {
         if (!cancelled) setDetailLoading(false);
         return;
       }
@@ -273,7 +279,7 @@ export function EquipesPage() {
     return () => {
       cancelled = true;
     };
-  }, [alfa, reloadTick, selectedTeamId, session?.token]);
+  }, [alfa, hasAuthenticatedConnection, reloadTick, selectedTeamId]);
 
   useEffect(() => {
     setStaviaContext({ obraId: selectedTeam?.obraPrincipalId ?? "" });
@@ -286,7 +292,7 @@ export function EquipesPage() {
   async function loadCollaborators() {
     if (!selectedTeam) return;
     try {
-      if (navigator.onLine && session?.token) {
+      if (navigator.onLine && hasAuthenticatedConnection) {
         await hidratarColaboradoresAcademy("", selectedTeam.obraPrincipalId);
       }
     } catch {
@@ -318,7 +324,7 @@ export function EquipesPage() {
 
   async function submitTeam(event: FormEvent) {
     event.preventDefault();
-    if (!navigator.onLine || !session?.token) {
+    if (!navigator.onLine || !hasAuthenticatedConnection) {
       setActionError("Alterações administrativas exigem conexão para validação de permissão e concorrência.");
       return;
     }
@@ -472,30 +478,29 @@ export function EquipesPage() {
   }
 
   async function openTeamConversation() {
-    if (!selectedTeam || !navigator.onLine || !session?.token) {
+    if (!selectedTeam || !navigator.onLine || !hasAuthenticatedConnection) {
       setActionError("Conecte-se para abrir ou criar a conversa da equipe.");
       return;
     }
     setActionError(null);
     try {
-      const existing = await fetchConversations({
-        equipeId: selectedTeam.id,
-        page: 0,
-        size: 20,
-      });
-      await hydrateConversationPage(existing);
-      let conversationId = existing.items[0]?.id;
+      const conversations = await listConversationsApi();
+      const existing = conversations.find(
+        (conversation) => conversation.equipeId === selectedTeam.id,
+      );
+      let conversationId = existing?.id;
       if (!conversationId) {
-        const created = await createConversation({
-          id: crypto.randomUUID(),
+        const created = await createConversationApi({
           tipo: "EQUIPE",
           titulo: selectedTeam.nome,
           obraId: selectedTeam.obraPrincipalId,
           equipeId: selectedTeam.id,
           participanteIds: [],
         });
-        await hydrateConversation(created);
+        await storeServerConversations([created]);
         conversationId = created.id;
+      } else if (existing) {
+        await storeServerConversations([existing]);
       }
       navigate(`/mensagens?conversa=${encodeURIComponent(conversationId)}`);
     } catch (conversationError: unknown) {

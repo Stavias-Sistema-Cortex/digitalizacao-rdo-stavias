@@ -14,6 +14,7 @@ import { AtualizacoesCard } from "./AtualizacoesCard";
 import { MaisStaviasCard } from "./MaisStaviasCard";
 import { MensagensCard } from "./MensagensCard";
 import { TimeCard } from "./TimeCard";
+import { FinanceHomeCard } from "./FinanceHomeCard";
 import { useHomeData } from "./useHomeData";
 
 export function HomePage() {
@@ -167,6 +168,7 @@ export function HomePage() {
         )}
 
         <div className="home-cards-grid">
+          {focusedObra ? <FinanceHomeCard obraId={focusedObra.id} /> : null}
           <MensagensCard />
           <AtualizacoesCard events={events} />
           <TimeCard latestRdo={latestRdo} />

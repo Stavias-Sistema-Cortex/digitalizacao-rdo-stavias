@@ -1,6 +1,5 @@
 package com.projeto.cortex.intelligence.stavia.generation;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
@@ -76,22 +75,20 @@ public class DeterministicStaviaResponseGenerator
                         evidences
                 );
 
-        if (hasEvidenceType(focusedEvidence, StaviaEvidenceTypes.GEOMETRIA)) {
+        if (isBusinessOperationalIntent(intent)) {
+            String summaries = focusedEvidence.stream()
+                    .map(StaviaEvidence::summary)
+                    .distinct()
+                    .collect(Collectors.joining(" "));
+            boolean unavailable = focusedEvidence.stream()
+                    .allMatch(evidence -> Boolean.FALSE.equals(
+                            evidence.attributes().get("available")
+                    ));
             return buildResponse(
-                    buildGeospatialAnswer(focusedEvidence),
-                    hasValidatedEvidence(focusedEvidence, StaviaEvidenceTypes.GEOMETRIA)
-                            ? StaviaAnswerType.FATO
-                            : StaviaAnswerType.INFORMACAO_INSUFICIENTE,
-                    focusedEvidence
-            );
-        }
-
-        if (hasEvidenceType(focusedEvidence, StaviaEvidenceTypes.MENSAGEM)) {
-            return buildResponse(
-                    buildMessagingAnswer(focusedEvidence),
-                    hasValidatedEvidence(focusedEvidence, StaviaEvidenceTypes.MENSAGEM)
-                            ? StaviaAnswerType.FATO
-                            : StaviaAnswerType.INFORMACAO_INSUFICIENTE,
+                    summaries,
+                    unavailable
+                            ? StaviaAnswerType.INFORMACAO_INSUFICIENTE
+                            : StaviaAnswerType.FATO,
                     focusedEvidence
             );
         }
@@ -147,7 +144,12 @@ public class DeterministicStaviaResponseGenerator
 
         if (intent == StaviaIntent.CONSULTAR_HISTORICO) {
             return buildResponse(
-                    buildHistoryAnswer(focusedEvidence),
+                    hasEvidenceType(
+                            focusedEvidence,
+                            StaviaEvidenceTypes.MENSAGEM
+                    )
+                            ? buildMessageHistoryAnswer(focusedEvidence)
+                            : buildHistoryAnswer(focusedEvidence),
                     StaviaAnswerType.FATO,
                     focusedEvidence
             );
@@ -214,6 +216,18 @@ public class DeterministicStaviaResponseGenerator
         if (intent == StaviaIntent.CONSULTAR_OBRA
                 && hasEvidenceType(
                         focusedEvidence,
+                        StaviaEvidenceTypes.GEOMETRIA
+                )) {
+            return buildResponse(
+                    buildGeometryAnswer(focusedEvidence),
+                    StaviaAnswerType.FATO,
+                    focusedEvidence
+            );
+        }
+
+        if (intent == StaviaIntent.CONSULTAR_OBRA
+                && hasEvidenceType(
+                        focusedEvidence,
                         StaviaEvidenceTypes.OBRA
                 )
                 && asksForAtomicWorksiteAttribute(question.text())) {
@@ -267,6 +281,21 @@ public class DeterministicStaviaResponseGenerator
             case CONSULTAR_RECEITA_EM_RISCO ->
                     "Receita em risco identificada";
 
+            case CONSULTAR_NOTAS_FISCAIS_VENCIDAS ->
+                    "Notas fiscais vencidas identificadas";
+
+            case CONSULTAR_HISTORICO_COMPRA ->
+                    "Histórico de compra identificado";
+
+            case CONSULTAR_TOTAL_COMPRADO ->
+                    "Total comprado identificado";
+
+            case CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE ->
+                    "Fornecedores com cobranças pendentes identificados";
+
+            case CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES ->
+                    "Documentos de mensagens pendentes identificados";
+
             case CONSULTAR_ALOCACAO_COLABORADOR ->
                     "Alocação de colaboradores identificada";
 
@@ -308,6 +337,16 @@ public class DeterministicStaviaResponseGenerator
                 StaviaAnswerType.FATO,
                 focusedEvidence
         );
+    }
+
+    private boolean isBusinessOperationalIntent(StaviaIntent intent) {
+        return intent == StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS
+                || intent == StaviaIntent.CONSULTAR_HISTORICO_COMPRA
+                || intent == StaviaIntent.CONSULTAR_TOTAL_COMPRADO
+                || intent
+                == StaviaIntent.CONSULTAR_FORNECEDORES_COBRANCA_PENDENTE
+                || intent
+                == StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES;
     }
 
     private StaviaGeneratedResponse buildResponse(
@@ -1799,78 +1838,6 @@ public class DeterministicStaviaResponseGenerator
         return successfulPdorAnswer(code, attributes);
     }
 
-    private String buildGeospatialAnswer(List<StaviaEvidence> evidences) {
-        List<StaviaEvidence> geometries = evidences.stream()
-                .filter(item -> StaviaEvidenceTypes.GEOMETRIA.equals(item.type()))
-                .filter(StaviaEvidence::validated)
-                .toList();
-        if (geometries.isEmpty()) {
-            return "Não encontrei geometria operacional vigente para esta obra. "
-                    + "A Stav.IA não inferiu coordenadas, perímetros ou frentes de trabalho.";
-        }
-        StringBuilder answer = new StringBuilder()
-                .append("Encontrei ")
-                .append(geometries.size())
-                .append(geometries.size() == 1
-                        ? " geometria operacional vigente no mapa:"
-                        : " geometrias operacionais vigentes no mapa:");
-        geometries.stream().limit(20).forEach(item -> answer
-                .append("\n- ")
-                .append(attributeText(item.attributes(), "categoria"))
-                .append(" · ")
-                .append(attributeText(item.attributes(), "tipoGeometria"))
-                .append(" · ID ")
-                .append(attributeText(item.attributes(), "geometriaId"))
-                .append(" · fonte ")
-                .append(attributeText(item.attributes(), "fonte")));
-        answer.append("\n\nA consulta foi limitada à obra autorizada e às geometrias vigentes persistidas.");
-        return answer.toString();
-    }
-
-    private String buildMessagingAnswer(List<StaviaEvidence> evidences) {
-        List<StaviaEvidence> messages = evidences.stream()
-                .filter(item -> StaviaEvidenceTypes.MENSAGEM.equals(item.type()))
-                .filter(StaviaEvidence::validated)
-                .toList();
-        if (messages.isEmpty()) {
-            return "Não encontrei mensagens autorizadas relacionadas a esta obra. "
-                    + "A Stav.IA não inferiu decisões, arquivos ou pendências ausentes.";
-        }
-        StringBuilder answer = new StringBuilder()
-                .append("Encontrei ")
-                .append(messages.size())
-                .append(messages.size() == 1
-                        ? " mensagem autorizada relacionada à obra:"
-                        : " mensagens autorizadas relacionadas à obra:");
-        messages.stream().limit(20).forEach(item -> {
-            Map<String, Object> attributes = item.attributes();
-            answer.append("\n- ")
-                    .append(attributeText(attributes, "remetenteNome"))
-                    .append(" · ID ")
-                    .append(attributeText(attributes, "mensagemId"));
-            String sentAt = attributeText(attributes, "enviadaEm");
-            if (hasText(sentAt)) answer.append(" · ").append(sentAt);
-            String text = attributeText(attributes, "texto");
-            if (hasText(text)) answer.append(": ").append(text);
-            int referenceCount = structuredCount(attributes.get("referencias"));
-            int attachmentCount = structuredCount(attributes.get("anexos"));
-            if (referenceCount > 0) answer.append(" · referências ").append(referenceCount);
-            if (attachmentCount > 0) answer.append(" · anexos ").append(attachmentCount);
-        });
-        answer.append("\n\nSomente conversas em que o usuário é participante ativo foram consultadas.");
-        return answer.toString();
-    }
-
-    private boolean hasValidatedEvidence(List<StaviaEvidence> evidences, String type) {
-        return evidences.stream().anyMatch(item -> type.equals(item.type()) && item.validated());
-    }
-
-    private int structuredCount(Object value) {
-        if (value instanceof JsonNode node && node.isArray()) return node.size();
-        if (value instanceof List<?> list) return list.size();
-        return 0;
-    }
-
     private String buildFinancialAnswer(
             List<StaviaEvidence> evidences,
             StaviaIntent intent
@@ -2936,14 +2903,7 @@ public class DeterministicStaviaResponseGenerator
         appendMetric(
                 answer,
                 "Calibração",
-                pdorCalibrationLabel(
-                        attributeText(attributes, "calibrationStatus")
-                )
-        );
-        appendMetric(
-                answer,
-                "Nível de risco",
-                attributeText(attributes, "nivelRisco")
+                calibrationLabel(attributeText(attributes, "calibrationStatus"))
         );
         appendMetric(
                 answer,
@@ -2979,162 +2939,140 @@ public class DeterministicStaviaResponseGenerator
                 "Score heurístico",
                 percentText(attributes.get("heuristicRiskScore"))
         );
-
-        appendPdorComparison(answer, attributes.get("comparacaoAnterior"));
-        appendStructuredSection(
+        appendMetric(
                 answer,
-                "Principais fatores",
-                attributes.get("drivers"),
-                4,
-                "description",
-                "descricao",
-                "code"
+                "Comparação com a referência anterior",
+                riskComparisonLabel(attributes.get("comparacaoAnterior"))
         );
-        appendStructuredSection(
+        appendMetric(
                 answer,
-                "Dados ausentes ou ambíguos",
-                attributes.get("dadosAusentes"),
-                5,
-                "rotulo",
-                "campo"
+                "Fatores observados",
+                listMapValues(attributes.get("drivers"), "description")
         );
-        appendStructuredSection(
+        appendMetric(
                 answer,
-                "Limitações",
-                attributes.get("limitacoes"),
-                4,
-                "descricao",
-                "codigo"
+                "Dados ausentes",
+                listMapValues(attributes.get("dadosAusentes"), "rotulo")
         );
-        appendStructuredSection(
+        appendMetric(
                 answer,
-                "Alertas derivados",
-                attributes.get("alertasDerivados"),
-                4,
-                "titulo",
-                "descricao",
-                "codigo"
+                "Recomendações",
+                listMapValues(attributes.get("recomendacoes"), "titulo")
         );
-        appendStructuredSection(
-                answer,
-                "Recomendações rastreáveis",
-                attributes.get("recomendacoes"),
-                4,
-                "titulo",
-                "detalhe",
-                "codigo"
-        );
-        appendPdorEvidenceCount(answer, attributes.get("evidencias"));
+        int evidenceCount = listSize(attributes.get("evidencias"));
+        if (evidenceCount > 0) {
+            appendMetric(
+                    answer,
+                    "Evidências consultadas",
+                    evidenceCount + (evidenceCount == 1
+                            ? " objeto consultado"
+                            : " objetos consultados")
+            );
+        }
 
         return answer.toString();
     }
 
-    private String pdorCalibrationLabel(String value) {
+    private String buildGeometryAnswer(List<StaviaEvidence> evidences) {
+        List<StaviaEvidence> geometries = evidences.stream()
+                .filter(evidence -> StaviaEvidenceTypes.GEOMETRIA.equals(evidence.type()))
+                .toList();
+        String opening = geometries.size() + (geometries.size() == 1
+                ? " geometria operacional vigente"
+                : " geometrias operacionais vigentes");
+        String details = geometries.stream()
+                .map(evidence -> {
+                    Map<String, Object> attributes = evidence.attributes();
+                    String category = attributeText(attributes, "categoria");
+                    String id = firstNonBlank(
+                            attributeText(attributes, "geometriaId"),
+                            evidence.id()
+                    );
+                    String source = attributeText(attributes, "fonte");
+                    return String.join(" · ", List.of(
+                            firstNonBlank(category, "Sem categoria"),
+                            firstNonBlank(id, "Sem identificador"),
+                            firstNonBlank(source, "Fonte não informada")
+                    ));
+                })
+                .collect(Collectors.joining("; "));
+        return opening + ": " + details + ".";
+    }
+
+    private String buildMessageHistoryAnswer(List<StaviaEvidence> evidences) {
+        List<StaviaEvidence> messages = evidences.stream()
+                .filter(evidence -> StaviaEvidenceTypes.MENSAGEM.equals(evidence.type()))
+                .toList();
+        String opening = messages.size() + (messages.size() == 1
+                ? " mensagem autorizada"
+                : " mensagens autorizadas");
+        String details = messages.stream()
+                .map(evidence -> {
+                    Map<String, Object> attributes = evidence.attributes();
+                    String id = firstNonBlank(
+                            attributeText(attributes, "mensagemId"),
+                            evidence.id()
+                    );
+                    String text = attributeText(attributes, "texto");
+                    return id + ": " + firstNonBlank(text, evidence.summary())
+                            + " (referências " + listSize(attributes.get("referencias"))
+                            + ", anexos " + listSize(attributes.get("anexos"))
+                            + ", participante ativo)";
+                })
+                .collect(Collectors.joining("; "));
+        return opening + ": " + details + ".";
+    }
+
+    private String calibrationLabel(String value) {
         return switch (value) {
-            case "CALIBRATED" -> "Calibrado";
             case "NOT_CALIBRATED" -> "Não calibrado";
-            case "PARTIALLY_CALIBRATED" -> "Parcialmente calibrado";
+            case "CALIBRATED" -> "Calibrado";
             default -> value;
         };
     }
 
-    private void appendPdorComparison(StringBuilder answer, Object value) {
-        if (!structuredBoolean(value, "disponivel")) {
-            return;
+    private String riskComparisonLabel(Object comparison) {
+        if (!(comparison instanceof Map<?, ?> values)) {
+            return "";
         }
-        String direction = structuredText(value, "direcaoRisco");
-        String explanation = switch (direction) {
-            case "SUBIU" -> "O risco subiu em relação à execução anterior.";
-            case "CAIU" -> "O risco caiu em relação à execução anterior.";
-            case "ESTAVEL" -> "O risco permaneceu estável em relação à execução anterior.";
-            default -> "A execução anterior existe, mas a direção do risco não é comparável.";
+        Object available = values.get("disponivel");
+        if (!Boolean.TRUE.equals(available)) {
+            return "";
+        }
+        return switch (String.valueOf(values.get("direcaoRisco"))) {
+            case "SUBIU" -> "O risco subiu";
+            case "CAIU" -> "O risco caiu";
+            case "ESTAVEL" -> "O risco permaneceu estável";
+            default -> "";
         };
-        answer.append("\n\nComparação: ").append(explanation);
     }
 
-    private void appendStructuredSection(
-            StringBuilder answer,
-            String title,
-            Object value,
-            int limit,
-            String... fields
-    ) {
-        List<String> items = structuredItems(value, fields).stream()
+    private String listMapValues(Object value, String key) {
+        if (!(value instanceof List<?> values)) {
+            return "";
+        }
+        return values.stream()
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .map(item -> item.get(key))
+                .filter(Objects::nonNull)
+                .map(String::valueOf)
+                .filter(this::hasText)
                 .distinct()
-                .limit(limit)
-                .toList();
-        if (items.isEmpty()) {
-            return;
-        }
-        answer.append("\n\n").append(title).append(":");
-        items.forEach(item -> answer.append("\n- ").append(item));
+                .collect(Collectors.joining("; "));
     }
 
-    private List<String> structuredItems(Object value, String... fields) {
-        List<String> items = new ArrayList<>();
-        if (value instanceof JsonNode node && node.isArray()) {
-            node.forEach(item -> addStructuredItem(items, item, fields));
-        } else if (value instanceof List<?> list) {
-            list.forEach(item -> addStructuredItem(items, item, fields));
-        }
-        return items;
+    private int listSize(Object value) {
+        return value instanceof List<?> values ? values.size() : 0;
     }
 
-    private void addStructuredItem(
-            List<String> target,
-            Object item,
-            String... fields
-    ) {
-        for (String field : fields) {
-            String text = structuredText(item, field);
-            if (hasText(text)) {
-                target.add(text);
-                return;
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (hasText(value)) {
+                return value;
             }
-        }
-        if (item != null && !(item instanceof Map<?, ?>) && !(item instanceof JsonNode)) {
-            String text = String.valueOf(item);
-            if (hasText(text)) {
-                target.add(text);
-            }
-        }
-    }
-
-    private String structuredText(Object value, String field) {
-        if (value instanceof JsonNode node) {
-            JsonNode fieldValue = node.get(field);
-            return fieldValue == null || fieldValue.isNull() ? "" : fieldValue.asText("");
-        }
-        if (value instanceof Map<?, ?> map) {
-            Object fieldValue = map.get(field);
-            return fieldValue == null ? "" : String.valueOf(fieldValue);
         }
         return "";
-    }
-
-    private boolean structuredBoolean(Object value, String field) {
-        if (value instanceof JsonNode node) {
-            return node.path(field).asBoolean(false);
-        }
-        if (value instanceof Map<?, ?> map) {
-            Object fieldValue = map.get(field);
-            return fieldValue instanceof Boolean booleanValue && booleanValue;
-        }
-        return false;
-    }
-
-    private void appendPdorEvidenceCount(StringBuilder answer, Object value) {
-        int count = 0;
-        if (value instanceof JsonNode node && node.isArray()) {
-            count = node.size();
-        } else if (value instanceof List<?> list) {
-            count = list.size();
-        }
-        if (count > 0) {
-            answer.append("\n\nEvidências: ")
-                    .append(count)
-                    .append(count == 1 ? " objeto consultado." : " objetos consultados.");
-        }
     }
 
     private void appendPdorReference(
@@ -3433,6 +3371,13 @@ public class DeterministicStaviaResponseGenerator
         }
 
         if (intent == StaviaIntent.CONSULTAR_HISTORICO) {
+            List<StaviaEvidence> messages = preferType(
+                    evidences,
+                    StaviaEvidenceTypes.MENSAGEM
+            );
+            if (!messages.equals(evidences)) {
+                return messages;
+            }
             return preferType(
                     evidences,
                     StaviaEvidenceTypes.EVENTO_OPERACIONAL

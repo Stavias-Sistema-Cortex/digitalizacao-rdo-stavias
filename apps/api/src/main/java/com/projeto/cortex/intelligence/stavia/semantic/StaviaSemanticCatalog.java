@@ -510,7 +510,20 @@ public class StaviaSemanticCatalog {
                 List.of(
                         attribute("SNAPSHOT_FINANCEIRO", "receita", List.of("receita"), "DECIMAL", "BRL", "previsao-financeira", false),
                         attribute("SNAPSHOT_FINANCEIRO", "margem", List.of("margem"), "DECIMAL", "BRL", "previsao-financeira", false),
-                        attribute("EXECUCAO_SERVICO", "producao", List.of("producao", "servico", "execucao"), "DECIMAL", null, "previsao-financeira", false)
+                        attribute("EXECUCAO_SERVICO", "producao", List.of("producao", "servico", "execucao"), "DECIMAL", null, "previsao-financeira", false),
+                        attribute("NOTA_FISCAL", "valorAberto", List.of("valor aberto", "saldo da nota", "nota vencida"), "DECIMAL", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("NOTA_FISCAL", "vencimentoEm", List.of("vencimento", "vencida", "atrasada"), "DATE", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("COMPRA", "totalComprado", List.of("total comprado", "quanto foi comprado", "valor comprado"), "DECIMAL", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("COMPRA", "criadoPorId", List.of("quem criou a compra", "criador da compra"), "REFERENCE", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("FORNECEDOR", "quantidadeCobrancasPendentes", List.of("cobrancas pendentes", "fornecedor pendente"), "INTEGER", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false)
+                )
+        );
+
+        catalog.put(
+                QueryDomain.MENSAGENS,
+                List.of(
+                        attribute("MENSAGEM_ANEXO", "storageStatus", List.of("armazenamento pendente", "documento pendente"), "ENUM", null, StaviaBusinessSemanticCatalog.MESSAGE_SYNC_SOURCE, false),
+                        attribute("MENSAGEM_ANEXO", "syncStatus", List.of("sincronizacao pendente", "sync pendente", "mensagem pendente"), "ENUM", null, StaviaBusinessSemanticCatalog.MESSAGE_SYNC_SOURCE, false)
                 )
         );
 

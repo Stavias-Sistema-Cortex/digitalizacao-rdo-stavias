@@ -10,6 +10,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.ResultSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -105,6 +106,46 @@ class CurrentUserServiceAuthorizationTest {
         assertThat(service.podeAcessarObra("fantasma", "obra-1")).isFalse();
         assertThat(service.allowedObraIds("fantasma"))
                 .isEqualTo(Optional.of(Set.of()));
+    }
+
+    @Test
+    void papelAusenteNegaAcessoMesmoComPerfilLegado() throws Exception {
+        when(jdbc.query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("admin-legado")
+        )).thenAnswer(invocation -> {
+            ResultSetExtractor<PapelAcesso> extractor = invocation.getArgument(1);
+            ResultSet resultSet = mock(ResultSet.class);
+            when(resultSet.next()).thenReturn(true);
+            when(resultSet.getString("papel_acesso")).thenReturn(null);
+            when(resultSet.getString("nome_perfil")).thenReturn("ADMINISTRADOR");
+            when(resultSet.getString("nome_grupo")).thenReturn("ADMIN");
+            return extractor.extractData(resultSet);
+        });
+
+        assertThat(service.papelAcesso("admin-legado")).isNull();
+    }
+
+    @Test
+    void papelPersistidoForaDoContratoCanonicoNegaAcesso() throws Exception {
+        when(jdbc.query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("papel-corrompido")
+        )).thenAnswer(invocation -> {
+            ResultSetExtractor<PapelAcesso> extractor = invocation.getArgument(1);
+            ResultSet resultSet = mock(ResultSet.class);
+            when(resultSet.next()).thenReturn(true);
+            when(resultSet.getString("papel_acesso")).thenReturn("alfa");
+            return extractor.extractData(resultSet);
+        });
+
+        assertThat(service.papelAcesso("papel-corrompido")).isNull();
+        assertThat(service.podeAcessarObra(
+                "papel-corrompido",
+                "obra-1"
+        )).isFalse();
     }
 
     @Test

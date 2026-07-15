@@ -3,10 +3,10 @@ package com.projeto.cortex.sync;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
-import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
 import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.time.LocalDateTime;
@@ -34,11 +34,11 @@ class SyncServiceAuthorizationTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RdoService rdoService = mock(RdoService.class);
-    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final CurrentUserService currentUserService =
             mock(CurrentUserService.class);
-    private final RdoSyncMutationHandler handler = new RdoSyncMutationHandler(
-            jdbcTemplate,
+    private final RdoSyncOperationHandler handler =
+            new RdoSyncOperationHandler(
+            mock(JdbcTemplate.class),
             objectMapper,
             rdoService,
             mock(RdoDraftUpdateService.class),
@@ -52,7 +52,7 @@ class SyncServiceAuthorizationTest {
         payload.put("obraId", obraId);
         return new SyncPushRequest.MutacaoCliente(
                 "cli-mut-1", "RDO", null, "CRIAR_RDO", null,
-                payload, LocalDateTime.now()
+                payload, LocalDateTime.now(), "corr-1"
         );
     }
 
@@ -63,7 +63,10 @@ class SyncServiceAuthorizationTest {
                 "Você não possui permissão para acessar esta obra."
         )).when(currentUserService).requireWorksiteAccess("obra-proibida");
 
-        assertThatThrownBy(() -> handler.apply(criarRdo("obra-proibida")))
+        assertThatThrownBy(() -> handler.apply(
+                criarRdo("obra-proibida"),
+                new SyncMutationContext("usuario", "device")
+        ))
                 .isInstanceOf(ResponseStatusException.class);
 
         verify(rdoService, never()).criarRascunho(any(RdoCreateRequest.class));
@@ -71,23 +74,16 @@ class SyncServiceAuthorizationTest {
 
     @Test
     void aplicaMutacaoNaObraAutorizada() {
-        RdoResponse response = mock(RdoResponse.class);
+        com.projeto.cortex.rdos.RdoResponse response =
+                mock(com.projeto.cortex.rdos.RdoResponse.class);
         when(response.id()).thenReturn("rdo-1");
-        when(rdoService.criarRascunho(any(RdoCreateRequest.class))).thenReturn(response);
-        when(jdbcTemplate.queryForObject(
-                org.mockito.ArgumentMatchers.contains("SELECT versao_entidade"),
-                org.mockito.ArgumentMatchers.eq(Long.class),
-                org.mockito.ArgumentMatchers.eq("RDO"),
-                org.mockito.ArgumentMatchers.eq("rdo-1")
-        )).thenReturn(1L);
-        when(jdbcTemplate.queryForObject(
-                org.mockito.ArgumentMatchers.contains("SELECT ev.commit_seq"),
-                org.mockito.ArgumentMatchers.eq(Long.class),
-                org.mockito.ArgumentMatchers.eq("RDO"),
-                org.mockito.ArgumentMatchers.eq("rdo-1")
-        )).thenReturn(1L);
+        when(rdoService.criarRascunho(any(RdoCreateRequest.class)))
+                .thenReturn(response);
 
-        handler.apply(criarRdo("obra-vinculada"));
+        handler.apply(
+                criarRdo("obra-vinculada"),
+                new SyncMutationContext("usuario", "device")
+        );
 
         verify(currentUserService).requireWorksiteAccess("obra-vinculada");
         verify(rdoService).criarRascunho(any(RdoCreateRequest.class));

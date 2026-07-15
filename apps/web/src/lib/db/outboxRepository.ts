@@ -3,6 +3,7 @@ import type {
   OutboxMutationRecord,
   OutboxMutationStatus,
 } from "./db.types";
+import { selectReadyOutboxMutations } from "../sync/outboxDependencies";
 
 export async function getOutboxMutation(
   clientMutationId: string,
@@ -56,6 +57,15 @@ export async function listPendingOutboxMutations(
       ),
     )
     .slice(0, limit);
+}
+
+export async function listReadyPendingOutboxMutations(
+  limit = 100,
+): Promise<OutboxMutationRecord[]> {
+  return selectReadyOutboxMutations(
+    await listOutboxMutations(),
+    limit,
+  );
 }
 
 export async function putOutboxMutation(

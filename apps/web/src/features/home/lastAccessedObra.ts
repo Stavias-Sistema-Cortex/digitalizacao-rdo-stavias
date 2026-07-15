@@ -3,16 +3,13 @@ const LAST_OBRA_KEY_PREFIX = "cortex.home.ultimaObra:";
 export function colaboradorStorageKey(
   session: {
     colaboradorId: string | null;
-    cpfMascarado: string;
   } | null,
 ): string | null {
   if (!session) {
     return null;
   }
 
-  const identity =
-    session.colaboradorId?.trim() ||
-    session.cpfMascarado.trim();
+  const identity = session.colaboradorId?.trim() ?? "";
 
   return identity
     ? `${LAST_OBRA_KEY_PREFIX}${identity}`

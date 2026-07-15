@@ -6,16 +6,15 @@ import {
 
 import type {
   ColaboradorLocalRecord,
-  LocalConversationParticipantRecord,
-  LocalConversationRecord,
-  LocalMessageAttachmentRecord,
-  LocalMessageRecord,
-  LocalMessageReferenceRecord,
+  ConversaLocalRecord,
   LocalRdoControleGeometricoRecord,
   LocalRdoEquipamentoRecord,
   LocalRdoMaoObraRecord,
   LocalRdoMaterialRecord,
   LocalRdoRecord,
+  MensagemAnexoLocalRecord,
+  MensagemLocalRecord,
+  LocalOperationalRoleRecord,
   ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
@@ -25,103 +24,16 @@ import type {
   StaviaSnapshotRecord,
   SyncStateRecord,
   TarefaRecord,
+  LocalTeamHistoryRecord,
+  LocalTeamRecord,
+  LocalTeamWorksiteRecord,
 } from "./db.types";
-import type {
-  OperationalRoleDto,
-  TeamDto,
-  TeamHistoryEventDto,
-  TeamWorksiteDto,
-} from "../../features/equipes/teamApi";
+import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
+import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_NAME = "cortex-web";
-export const CORTEX_DATABASE_VERSION = 11;
+export const CORTEX_DATABASE_VERSION = 12;
 
 interface CortexDbSchema extends DBSchema {
-  teams: {
-    key: string;
-    value: TeamDto;
-    indexes: {
-      "by-worksite-id": string;
-      "by-status": TeamDto["status"];
-      "by-updated-at": string;
-    };
-  };
-
-  operational_roles: {
-    key: string;
-    value: OperationalRoleDto;
-    indexes: {
-      "by-display-order": number;
-    };
-  };
-
-  team_history: {
-    key: string;
-    value: TeamHistoryEventDto;
-    indexes: {
-      "by-team-commit": [string, number];
-    };
-  };
-
-  team_worksites: {
-    key: string;
-    value: TeamWorksiteDto;
-    indexes: {
-      "by-team-id": string;
-      "by-worksite-id": string;
-    };
-  };
-
-  conversations: {
-    key: string;
-    value: LocalConversationRecord;
-    indexes: {
-      "by-activity": string;
-      "by-obra-id": string;
-      "by-equipe-id": string;
-      "by-status": LocalConversationRecord["status"];
-    };
-  };
-
-  conversation_participants: {
-    key: string;
-    value: LocalConversationParticipantRecord;
-    indexes: {
-      "by-conversation-id": string;
-      "by-collaborator-id": string;
-      "by-status": LocalConversationParticipantRecord["status"];
-    };
-  };
-
-  messages: {
-    key: string;
-    value: LocalMessageRecord;
-    indexes: {
-      "by-conversation-order": [string, string, string];
-      "by-client-message-id": string;
-      "by-sync-status": LocalMessageRecord["syncStatus"];
-    };
-  };
-
-  message_references: {
-    key: string;
-    value: LocalMessageReferenceRecord;
-    indexes: {
-      "by-message-id": string;
-      "by-object": [string, string];
-    };
-  };
-
-  message_attachments: {
-    key: string;
-    value: LocalMessageAttachmentRecord;
-    indexes: {
-      "by-message-id": string;
-      "by-client-attachment-id": string;
-      "by-sync-status": LocalMessageAttachmentRecord["syncStatus"];
-    };
-  };
-
   rdos: {
     key: string;
     value: LocalRdoRecord;
@@ -263,141 +175,88 @@ interface CortexDbSchema extends DBSchema {
       "by-nome": string;
     };
   };
+
+  mensagem_conversas: {
+    key: string;
+    value: ConversaLocalRecord;
+    indexes: {
+      "by-updated-at": string;
+      "by-type": ConversaLocalRecord["tipo"];
+      "by-obra-id": string;
+    };
+  };
+
+  mensagens: {
+    key: string;
+    value: MensagemLocalRecord;
+    indexes: {
+      "by-conversation-id": string;
+      "by-created-at": string;
+      "by-sync-status": MensagemLocalRecord["syncStatus"];
+      "by-client-mutation-id": string;
+    };
+  };
+
+  mensagem_anexos: {
+    key: string;
+    value: MensagemAnexoLocalRecord;
+    indexes: {
+      "by-message-id": string;
+      "by-conversation-id": string;
+      "by-sync-status": MensagemAnexoLocalRecord["syncStatus"];
+      "by-upload-mutation-id": string;
+    };
+  };
+
+  teams: {
+    key: string;
+    value: LocalTeamRecord;
+    indexes: {
+      "by-updated-at": string;
+    };
+  };
+
+  operational_roles: {
+    key: string;
+    value: LocalOperationalRoleRecord;
+  };
+
+  team_history: {
+    key: [string, number];
+    value: LocalTeamHistoryRecord;
+    indexes: {
+      "by-team-commit": [string, number];
+    };
+  };
+
+  team_worksites: {
+    key: string;
+    value: LocalTeamWorksiteRecord;
+    indexes: {
+      "by-team-id": string;
+    };
+  };
 }
 
-let databasePromise:
-  | Promise<IDBPDatabase<CortexDbSchema>>
-  | null = null;
+const databasePromises = new Map<
+  string,
+  Promise<IDBPDatabase<CortexDbSchema>>
+>();
 
-export function getCortexDb(): Promise<
+export async function getCortexDb(): Promise<
   IDBPDatabase<CortexDbSchema>
 > {
-  if (databasePromise) {
-    return databasePromise;
+  const databaseName = await currentDataDatabaseName();
+  const existing = databasePromises.get(databaseName);
+  if (existing) {
+    return existing;
   }
 
-  databasePromise = openDB<CortexDbSchema>(
-    CORTEX_DATABASE_NAME,
+  const promise = openDB<CortexDbSchema>(
+    databaseName,
     CORTEX_DATABASE_VERSION,
     {
       upgrade(database, _oldVersion, _newVersion, transaction) {
-        if (!database.objectStoreNames.contains("teams")) {
-          const teamStore = database.createObjectStore("teams", {
-            keyPath: "id",
-          });
-          teamStore.createIndex("by-worksite-id", "obraPrincipalId");
-          teamStore.createIndex("by-status", "status");
-          teamStore.createIndex("by-updated-at", "atualizadoEm");
-        }
-
-        if (!database.objectStoreNames.contains("operational_roles")) {
-          const roleStore = database.createObjectStore("operational_roles", {
-            keyPath: "id",
-          });
-          roleStore.createIndex(
-            "by-display-order",
-            "ordemExibicao",
-          );
-        }
-
-        if (!database.objectStoreNames.contains("team_history")) {
-          const historyStore = database.createObjectStore("team_history", {
-            keyPath: "eventId",
-          });
-          historyStore.createIndex(
-            "by-team-commit",
-            ["entityId", "commitSeq"],
-          );
-        }
-
-        if (!database.objectStoreNames.contains("team_worksites")) {
-          const worksiteStore = database.createObjectStore("team_worksites", {
-            keyPath: "id",
-          });
-          worksiteStore.createIndex("by-team-id", "equipeId");
-          worksiteStore.createIndex("by-worksite-id", "obraId");
-        }
-
-        if (!database.objectStoreNames.contains("conversations")) {
-          const conversationStore = database.createObjectStore(
-            "conversations",
-            { keyPath: "id" },
-          );
-          conversationStore.createIndex(
-            "by-activity",
-            "ultimaAtividadeEm",
-          );
-          conversationStore.createIndex("by-obra-id", "obraId");
-          conversationStore.createIndex("by-equipe-id", "equipeId");
-          conversationStore.createIndex("by-status", "status");
-        }
-
-        if (
-          !database.objectStoreNames.contains(
-            "conversation_participants",
-          )
-        ) {
-          const participantStore = database.createObjectStore(
-            "conversation_participants",
-            { keyPath: "id" },
-          );
-          participantStore.createIndex(
-            "by-conversation-id",
-            "conversaId",
-          );
-          participantStore.createIndex(
-            "by-collaborator-id",
-            "colaboradorId",
-          );
-          participantStore.createIndex("by-status", "status");
-        }
-
-        if (!database.objectStoreNames.contains("messages")) {
-          const messageStore = database.createObjectStore("messages", {
-            keyPath: "id",
-          });
-          messageStore.createIndex(
-            "by-conversation-order",
-            ["conversaId", "enviadaClienteEm", "id"],
-          );
-          messageStore.createIndex(
-            "by-client-message-id",
-            "clientMessageId",
-            { unique: true },
-          );
-          messageStore.createIndex("by-sync-status", "syncStatus");
-        }
-
-        if (
-          !database.objectStoreNames.contains("message_references")
-        ) {
-          const referenceStore = database.createObjectStore(
-            "message_references",
-            { keyPath: "id" },
-          );
-          referenceStore.createIndex("by-message-id", "mensagemId");
-          referenceStore.createIndex(
-            "by-object",
-            ["tipoObjeto", "objetoId"],
-          );
-        }
-
-        if (
-          !database.objectStoreNames.contains("message_attachments")
-        ) {
-          const attachmentStore = database.createObjectStore(
-            "message_attachments",
-            { keyPath: "id" },
-          );
-          attachmentStore.createIndex("by-message-id", "mensagemId");
-          attachmentStore.createIndex(
-            "by-client-attachment-id",
-            "clientAttachmentId",
-            { unique: true },
-          );
-          attachmentStore.createIndex("by-sync-status", "syncStatus");
-        }
-
         if (!database.objectStoreNames.contains("rdos")) {
           const rdoStore = database.createObjectStore("rdos", {
             keyPath: "id",
@@ -729,6 +588,107 @@ export function getCortexDb(): Promise<
 
           colaboradorStore.createIndex("by-nome", "nome");
         }
+
+        if (
+          !database.objectStoreNames.contains(
+            "mensagem_conversas",
+          )
+        ) {
+          const conversationStore = database.createObjectStore(
+            "mensagem_conversas",
+            { keyPath: "id" },
+          );
+          conversationStore.createIndex(
+            "by-updated-at",
+            "atualizadaEm",
+          );
+          conversationStore.createIndex("by-type", "tipo");
+          conversationStore.createIndex("by-obra-id", "obraId");
+        }
+
+        if (!database.objectStoreNames.contains("mensagens")) {
+          const messageStore = database.createObjectStore(
+            "mensagens",
+            { keyPath: "id" },
+          );
+          messageStore.createIndex(
+            "by-conversation-id",
+            "conversaId",
+          );
+          messageStore.createIndex(
+            "by-created-at",
+            "criadaNoClienteEm",
+          );
+          messageStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          messageStore.createIndex(
+            "by-client-mutation-id",
+            "clientMutationId",
+            { unique: true },
+          );
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "mensagem_anexos",
+          )
+        ) {
+          const messageAttachmentStore = database.createObjectStore(
+            "mensagem_anexos",
+            { keyPath: "id" },
+          );
+          messageAttachmentStore.createIndex(
+            "by-message-id",
+            "mensagemId",
+          );
+          messageAttachmentStore.createIndex(
+            "by-conversation-id",
+            "conversaId",
+          );
+          messageAttachmentStore.createIndex(
+            "by-sync-status",
+            "syncStatus",
+          );
+          messageAttachmentStore.createIndex(
+            "by-upload-mutation-id",
+            "uploadMutationId",
+            { unique: true },
+          );
+        }
+
+        if (!database.objectStoreNames.contains("teams")) {
+          const teamsStore = database.createObjectStore("teams", {
+            keyPath: "id",
+          });
+          teamsStore.createIndex("by-updated-at", "atualizadoEm");
+        }
+
+        if (!database.objectStoreNames.contains("operational_roles")) {
+          database.createObjectStore("operational_roles", {
+            keyPath: "id",
+          });
+        }
+
+        if (!database.objectStoreNames.contains("team_history")) {
+          const historyStore = database.createObjectStore("team_history", {
+            keyPath: ["entityId", "commitSeq"],
+          });
+          historyStore.createIndex(
+            "by-team-commit",
+            ["entityId", "commitSeq"],
+          );
+        }
+
+        if (!database.objectStoreNames.contains("team_worksites")) {
+          const worksitesStore = database.createObjectStore(
+            "team_worksites",
+            { keyPath: "id" },
+          );
+          worksitesStore.createIndex("by-team-id", "equipeId");
+        }
+
       },
 
       blocked() {
@@ -744,7 +704,7 @@ export function getCortexDb(): Promise<
       },
 
       terminated() {
-        databasePromise = null;
+        databasePromises.delete(databaseName);
 
         console.error(
           "A conexão com o IndexedDB foi encerrada inesperadamente.",
@@ -752,8 +712,13 @@ export function getCortexDb(): Promise<
       },
     },
   );
-
-  return databasePromise;
+  databasePromises.set(databaseName, promise);
+  try {
+    return await promise;
+  } catch (error: unknown) {
+    databasePromises.delete(databaseName);
+    throw error;
+  }
 }
 
 export async function initializeCortexDb(): Promise<void> {
@@ -779,12 +744,29 @@ export async function initializeCortexDb(): Promise<void> {
   }
 }
 
-export async function closeCortexDb(): Promise<void> {
-  if (!databasePromise) {
-    return;
+function closeDataConnections(): void {
+  for (const promise of databasePromises.values()) {
+    void promise.then((database) => database.close()).catch(() => undefined);
   }
+  databasePromises.clear();
+}
 
-  const database = await databasePromise;
-  database.close();
-  databasePromise = null;
+export async function closeCortexDb(): Promise<void> {
+  const connections = await Promise.all(
+    [...databasePromises.values()].map(async (promise) => await promise),
+  );
+  for (const database of connections) {
+    database.close();
+  }
+  databasePromises.clear();
+}
+
+if (
+  typeof window !== "undefined" &&
+  typeof window.addEventListener === "function"
+) {
+  window.addEventListener(
+    AUTH_SESSION_CHANGED_EVENT,
+    closeDataConnections,
+  );
 }

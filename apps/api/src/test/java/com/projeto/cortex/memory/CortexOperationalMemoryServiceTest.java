@@ -2,6 +2,7 @@ package com.projeto.cortex.memory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,13 +48,6 @@ class CortexOperationalMemoryServiceTest {
                 eq(Long.class),
                 eq("evento-1")
         )).thenReturn(42L);
-        when(jdbcTemplate.queryForObject(
-                contains("SELECT versao_entidade"),
-                eq(Long.class),
-                eq("EQUIPE"),
-                eq("equipe-1")
-        )).thenReturn(3L);
-
         long commitSeq = service.registrarEventoDetalhado(
                 "evento-1",
                 "EQUIPE",
@@ -74,9 +68,10 @@ class CortexOperationalMemoryServiceTest {
 
         assertThat(commitSeq).isEqualTo(7);
         verify(jdbcTemplate).update(
-                contains("SET versao_entidade = ?"),
-                eq(3L),
-                eq("evento-1")
+                contains("INSERT INTO cortex_estado_entidade"),
+                eq("EQUIPE"),
+                eq("equipe-1"),
+                eq(42L)
         );
     }
 
@@ -107,13 +102,6 @@ class CortexOperationalMemoryServiceTest {
                 eq(Long.class),
                 eq("evento-offline")
         )).thenReturn(43L);
-        when(jdbcTemplate.queryForObject(
-                contains("SELECT versao_entidade"),
-                eq(Long.class),
-                eq("EQUIPE"),
-                eq("equipe-1")
-        )).thenReturn(4L);
-
         try (OperationalEventTraceContext.Scope ignored =
                      OperationalEventTraceContext.openOffline(
                              "device-1",
@@ -139,27 +127,23 @@ class CortexOperationalMemoryServiceTest {
             );
         }
 
+        ArgumentCaptor<Object[]> insertParameters =
+                ArgumentCaptor.forClass(Object[].class);
         verify(jdbcTemplate).update(
                 contains("INSERT INTO cortex_evento_operacional"),
-                eq("evento-offline"),
-                eq(8L),
-                eq("EQUIPE"),
-                eq("equipe-1"),
-                eq("obra-1"),
-                eq(null),
-                eq(null),
-                eq("EQUIPE_ATUALIZADA"),
-                eq("GESTAO_EQUIPE"),
-                eq("OFFLINE"),
-                eq("SYNCED"),
-                eq(now),
-                eq("alfa-1"),
-                eq("device-1"),
-                eq("[]"),
-                eq(1),
-                argThat((String json) -> json.contains("\"correlationId\":\"mutation-1\"")
-                        && json.contains("\"deviceId\":\"device-1\""))
+                insertParameters.capture()
         );
+        assertThat(insertParameters.getValue()).containsSubsequence(
+                "alfa-1",
+                "device-1",
+                "mutation-1",
+                "mutation-1",
+                "OFFLINE",
+                "SYNCED"
+        );
+        assertThat(String.valueOf(insertParameters.getValue()[22]))
+                .contains("\"correlationId\":\"mutation-1\"")
+                .contains("\"deviceId\":\"device-1\"");
         assertThat(OperationalEventTraceContext.current()).isEmpty();
     }
 }

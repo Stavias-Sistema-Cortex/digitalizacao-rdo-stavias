@@ -26,6 +26,7 @@ export interface SyncPushMutationRequest {
   baseVersao: number | null;
   payload: Record<string, unknown>;
   criadaNoClienteEm: string;
+  correlacaoId: string;
 }
 
 export interface SyncPushRequest {
@@ -93,8 +94,6 @@ export interface SyncRunSummary {
   applied: number;
   errors: number;
   conflicts: number;
-  attachmentsUploaded: number;
-  attachmentErrors: number;
   pulled: number;
   acknowledgedCommitSeq: number;
 }
@@ -110,5 +109,7 @@ export function toPushMutationRequest(
     baseVersao: mutation.baseVersao,
     payload: mutation.payload,
     criadaNoClienteEm: mutation.criadaNoClienteEm,
+    correlacaoId:
+      mutation.correlationId ?? mutation.clientMutationId,
   };
 }

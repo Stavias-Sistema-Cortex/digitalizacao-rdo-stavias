@@ -8,10 +8,7 @@ class AuthLogRedactionTest {
 
     @Test
     void loginRecordsNeverExposeCredentialsOrJwtThroughToString() {
-        LoginRequest request = new LoginRequest(
-                "11144477735",
-                "11144477735"
-        );
+        LoginRequest request = new LoginRequest("11144477735");
         LoginResponse response = new LoginResponse(
                 "header.payload.signature",
                 "user-1",

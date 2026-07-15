@@ -17,7 +17,8 @@ public record SyncPushRequest(
             String operacao,
             Long baseVersao,
             JsonNode payload,
-            LocalDateTime criadaNoClienteEm
+            LocalDateTime criadaNoClienteEm,
+            String correlacaoId
     ) {
     }
 }

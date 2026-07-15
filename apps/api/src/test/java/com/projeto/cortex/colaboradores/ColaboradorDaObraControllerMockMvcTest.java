@@ -1,7 +1,6 @@
 package com.projeto.cortex.colaboradores;
 
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.auth.PapelAcesso;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -42,9 +41,6 @@ class ColaboradorDaObraControllerMockMvcTest {
 
     @MockBean
     private ColaboradorDaObraService service;
-
-    @MockBean
-    private JwtService jwtService;
 
     @SuppressWarnings("unchecked")
     private void papel(String userId, PapelAcesso papel) {

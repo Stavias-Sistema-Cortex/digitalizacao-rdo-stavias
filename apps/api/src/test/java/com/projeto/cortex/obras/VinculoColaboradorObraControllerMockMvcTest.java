@@ -1,7 +1,6 @@
 package com.projeto.cortex.obras;
 
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -40,9 +39,6 @@ class VinculoColaboradorObraControllerMockMvcTest {
 
     @MockBean
     private CurrentUserService currentUserService;
-
-    @MockBean
-    private JwtService jwtService;
 
     @Test
     void alfaVinculaComSucesso() throws Exception {

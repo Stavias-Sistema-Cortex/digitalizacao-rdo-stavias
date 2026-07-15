@@ -20,20 +20,42 @@ class StaviaQueryPlannerTest {
             );
 
     @Test
-    void shouldPlanAuthorizedMessagesAndGeospatialSourcesExplicitly() {
-        StaviaQueryPlan messages = planner.plan(
-                new StaviaQuestion("Resuma as mensagens desta obra.", "u1", "obra-1"),
-                new StaviaClassification(StaviaIntent.CONSULTAR_HISTORICO, 1.0)
+    void shouldPlanTypedOperationalFinanceAndMessageSources() {
+        StaviaQueryPlan overdue = planner.plan(
+                new StaviaQuestion(
+                        "Quais notas fiscais estão vencidas nesta obra?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_NOTAS_FISCAIS_VENCIDAS,
+                        1.0
+                )
         );
-        StaviaQueryPlan map = planner.plan(
-                new StaviaQuestion("Explique os eventos no mapa.", "u1", "obra-1"),
-                new StaviaClassification(StaviaIntent.CONSULTAR_OBRA, 1.0)
-        );
+        assertThat(overdue.domain()).isEqualTo(QueryDomain.FINANCEIRO);
+        assertThat(overdue.operation()).isEqualTo(QueryOperation.LIST_OBJECTS);
+        assertThat(overdue.requiredSources())
+                .containsExactly("financeiro-operacional");
+        assertThat(overdue.requestedAttributes())
+                .contains("notaFiscalId", "valorAberto", "vencimentoEm");
 
-        assertThat(messages.requiredSources()).containsExactly("mensagens-autorizadas");
-        assertThat(messages.requiresHistory()).isTrue();
-        assertThat(map.requiredSources()).containsExactly("geometrias-operacionais");
-        assertThat(map.domain()).isEqualTo(QueryDomain.OBRA);
+        StaviaQueryPlan messages = planner.plan(
+                new StaviaQuestion(
+                        "Há documentos de mensagens pendentes de sincronização?",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                new StaviaClassification(
+                        StaviaIntent.CONSULTAR_DOCUMENTOS_MENSAGEM_PENDENTES,
+                        1.0
+                )
+        );
+        assertThat(messages.domain()).isEqualTo(QueryDomain.MENSAGENS);
+        assertThat(messages.operation()).isEqualTo(QueryOperation.LIST_OBJECTS);
+        assertThat(messages.requiredSources())
+                .containsExactly("mensagens-sincronizacao");
+        assertThat(messages.requestedAttributes())
+                .contains("anexoId", "storageStatus", "syncStatus");
     }
 
     @Test
@@ -237,7 +259,10 @@ class StaviaQueryPlannerTest {
                         org.assertj.core.groups.Tuple.tuple("ROLE", "operador")
                 );
         assertThat(plan.requiredSources())
-                .containsExactly("equipes-configuradas", "mao-de-obra-dos-rdos");
+                .containsExactly(
+                        "equipes-configuradas",
+                        "mao-de-obra-dos-rdos"
+                );
     }
 
     @Test

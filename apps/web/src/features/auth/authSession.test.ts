@@ -1,94 +1,185 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, getSession, setSession } from "./authSession";
+const legacyValues = new Map<string, string>();
+const dispatchEvent = vi.fn();
+const broadcastChannels: FakeBroadcastChannel[] = [];
 
-const SESSION_KEY = "cortex.auth.sessao";
+class FakeBroadcastChannel {
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  readonly messages: unknown[] = [];
 
-function memoryStorage(): Storage {
-  const values = new Map<string, string>();
-  return {
-    get length() {
-      return values.size;
-    },
-    clear() {
-      values.clear();
-    },
-    getItem(key) {
-      return values.get(key) ?? null;
-    },
-    key(index) {
-      return [...values.keys()][index] ?? null;
-    },
-    removeItem(key) {
-      values.delete(key);
-    },
-    setItem(key, value) {
-      values.set(key, value);
-    },
-  };
+  constructor(readonly name: string) {
+    broadcastChannels.push(this);
+  }
+
+  postMessage(message: unknown): void {
+    this.messages.push(message);
+    for (const channel of broadcastChannels) {
+      if (channel !== this && channel.name === this.name) {
+        channel.onmessage?.({ data: message } as MessageEvent);
+      }
+    }
+  }
+
+  close(): void {}
 }
 
-beforeEach(() => {
-  const storage = memoryStorage();
-  vi.stubGlobal("localStorage", storage);
-  vi.stubGlobal("window", {
-    dispatchEvent: vi.fn(),
-    localStorage: storage,
-  });
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => legacyValues.get(key) ?? null,
+  setItem: (key: string, value: string) => legacyValues.set(key, value),
+  removeItem: (key: string) => legacyValues.delete(key),
 });
+vi.stubGlobal("window", {
+  dispatchEvent,
+  localStorage: {
+    getItem: (key: string) => legacyValues.get(key) ?? null,
+    setItem: (key: string, value: string) => legacyValues.set(key, value),
+    removeItem: (key: string) => legacyValues.delete(key),
+  },
+});
+vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+const profile = {
+  colaboradorId: "00000000-0000-4000-8000-000000000001",
+  nome: "Colaborador Sintético",
+  papelAcesso: "BETA" as const,
+  escopoGlobal: false,
+  obraIds: ["00000000-0000-4000-8000-000000000002"],
+  expiraEm: "2099-07-14T12:00:00Z",
+};
 
 describe("authSession", () => {
-  it("persiste somente a identidade mascarada e o token, nunca o CPF bruto", () => {
-    setSession({
-      colaboradorId: "colaborador-1",
-      nome: "Ana",
-      cpfMascarado: "***.***.***-35",
-      cpf: "11144477735",
-      perfil: "Operacional",
-      papelAcesso: "BETA",
-      token: "jwt",
-      origem: "online",
-      autenticadoEm: "2026-07-15T12:00:00Z",
-    } as never);
-
-    expect(localStorage.getItem(SESSION_KEY)).not.toContain("11144477735");
-    expect(localStorage.getItem(SESSION_KEY)).not.toContain('"cpf"');
-    expect(getSession()?.colaboradorId).toBe("colaborador-1");
+  beforeEach(() => {
+    vi.resetModules();
+    legacyValues.clear();
+    broadcastChannels.length = 0;
+    dispatchEvent.mockClear();
   });
 
-  it("higieniza uma sessão legada que ainda contenha CPF bruto", () => {
-    localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({
-        colaboradorId: "colaborador-1",
-        nome: "Ana",
-        cpfMascarado: "***.***.***-35",
-        cpf: "11144477735",
-        perfil: "Operacional",
-        papelAcesso: "BETA",
-        token: "jwt",
-        origem: "online",
-        autenticadoEm: "2026-07-15T12:00:00Z",
+  it("mantém o perfil somente na memória do módulo", async () => {
+    const first = await import("./authSession");
+    first.setSession(profile);
+
+    expect(first.getSession()).toEqual(profile);
+    expect(first.hasOnlineSession()).toBe(true);
+    expect(legacyValues.size).toBe(0);
+
+    vi.resetModules();
+    const reloaded = await import("./authSession");
+    expect(reloaded.getSession()).toBeNull();
+  });
+
+  it("purga JWT, CPF e Bloom legados sem tentar interpretá-los", async () => {
+    legacyValues.set("cortex.auth.sessao", "{malformado");
+    legacyValues.set("cortex.auth.cpfFilter", "material-legado");
+
+    const session = await import("./authSession");
+    session.purgeLegacyAuthStorage();
+
+    expect(legacyValues.has("cortex.auth.sessao")).toBe(false);
+    expect(legacyValues.has("cortex.auth.cpfFilter")).toBe(false);
+  });
+
+  it("dispara o evento existente ao criar e limpar a sessão", async () => {
+    const session = await import("./authSession");
+    session.setSession(profile);
+    session.clearSession();
+
+    expect(dispatchEvent).toHaveBeenCalledTimes(2);
+    expect(session.getSession()).toBeNull();
+    expect(session.hasOnlineSession()).toBe(false);
+  });
+
+  it("remove o contexto operacional local ao encerrar a sessão", async () => {
+    legacyValues.set("cortex:stavia:chat:operacional", "conteúdo privado");
+    legacyValues.set("cortex:stavia:last-context", "obra privada");
+    const session = await import("./authSession");
+    session.setSession(profile);
+
+    session.clearSession();
+
+    expect(legacyValues.has("cortex:stavia:chat:operacional")).toBe(false);
+    expect(legacyValues.has("cortex:stavia:last-context")).toBe(false);
+  });
+
+  it("propaga somente LOGOUT entre abas sem perfil ou segredo", async () => {
+    const firstTab = await import("./authSession");
+    firstTab.setSession(profile);
+
+    vi.resetModules();
+    const secondTab = await import("./authSession");
+    secondTab.setSession(profile);
+
+    firstTab.clearSession();
+
+    expect(secondTab.getSession()).toBeNull();
+    expect(
+      broadcastChannels.flatMap((channel) => channel.messages),
+    ).toEqual(["LOGOUT"]);
+    expect(
+      JSON.stringify(
+        broadcastChannels.flatMap((channel) => channel.messages),
+      ),
+    ).not.toContain(profile.colaboradorId);
+  });
+
+  it("reconhece ALFA somente com valor canônico exato", async () => {
+    const session = await import("./authSession");
+    expect(session.isAlfa({ ...profile, papelAcesso: "ALFA" })).toBe(true);
+    expect(
+      session.isAlfa({
+        ...profile,
+        papelAcesso: "alfa" as "ALFA",
       }),
-    );
-
-    expect(getSession()?.colaboradorId).toBe("colaborador-1");
-    expect(localStorage.getItem(SESSION_KEY)).not.toContain("11144477735");
+    ).toBe(false);
   });
 
-  it("remove o contexto operacional da StavIA ao encerrar a sessão", () => {
-    localStorage.setItem(SESSION_KEY, "session");
-    localStorage.setItem("cortex:stavia:chat:operacional", "conteúdo privado");
-    localStorage.setItem("cortex:stavia:last-context", "obra-1");
+  it("expõe perfil offline sem habilitar sincronização online", async () => {
+    const session = await import("./authSession");
+    session.setOfflineSession(profile);
 
-    clearSession();
+    expect(session.getSession()).toEqual(profile);
+    expect(session.hasOfflineSession()).toBe(true);
+    expect(session.hasOnlineSession()).toBe(false);
 
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
-    expect(localStorage.getItem("cortex:stavia:chat:operacional")).toBeNull();
-    expect(localStorage.getItem("cortex:stavia:last-context")).toBeNull();
+    session.setSession({ ...profile, nome: "Sessão online" });
+    expect(session.getSession()?.nome).toBe("Sessão online");
+    expect(session.hasOnlineSession()).toBe(true);
+    expect(session.hasOfflineSession()).toBe(false);
+  });
+
+  it("encerra uma sessão offline assim que o grant expira", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-14T12:00:00Z"));
+    const session = await import("./authSession");
+    session.setOfflineSession({
+      ...profile,
+      expiraEm: "2026-07-14T12:00:01Z",
+    });
+
+    await vi.advanceTimersByTimeAsync(1_001);
+
+    expect(session.getSession()).toBeNull();
+    expect(session.hasOfflineSession()).toBe(false);
+    expect(dispatchEvent).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("usa proprietário e escopo canônicos para particionar o cache", async () => {
+    const session = await import("./authSession");
+    session.setSession(profile);
+
+    expect(session.requireDataScope()).toEqual({
+      ownerId: profile.colaboradorId,
+      scopeMaterial: `BETA:${profile.obraIds[0]}`,
+    });
+
+    session.setSession({
+      ...profile,
+      papelAcesso: "ALFA",
+      escopoGlobal: true,
+      obraIds: [],
+    });
+    expect(session.requireDataScope().scopeMaterial).toBe("ALFA:GLOBAL");
   });
 });

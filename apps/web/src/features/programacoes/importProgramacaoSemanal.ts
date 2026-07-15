@@ -1,6 +1,3 @@
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
-
 import {
   readSpreadsheetWorkbook,
   type SpreadsheetSheet,
@@ -10,9 +7,6 @@ import type {
   ProgramacaoSemanalImportada,
   ProgramacaoSemanalLinha,
 } from "./programacaoSemanal.types";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  pdfWorkerUrl;
 
 type SheetData = SpreadsheetSheet["data"];
 
@@ -90,6 +84,12 @@ export async function importarProgramacaoSemanal(
 async function importarPdf(
   file: File,
 ): Promise<ProgramacaoSemanalImportada> {
+  const [pdfjsLib, pdfWorker] = await Promise.all([
+    import("pdfjs-dist/legacy/build/pdf.mjs"),
+    import("pdfjs-dist/legacy/build/pdf.worker.mjs?url"),
+  ]);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+
   const data = new Uint8Array(
     await file.arrayBuffer(),
   );

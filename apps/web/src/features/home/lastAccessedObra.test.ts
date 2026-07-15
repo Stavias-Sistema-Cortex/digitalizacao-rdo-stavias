@@ -7,18 +7,16 @@ describe("colaboradorStorageKey", () => {
     expect(
       colaboradorStorageKey({
         colaboradorId: "colab-1",
-        cpfMascarado: "***.456.789-**",
       }),
     ).toBe("cortex.home.ultimaObra:colab-1");
   });
 
-  it("cai para o cpf mascarado em sessão offline", () => {
+  it("não cria chave por dado pessoal quando o id está ausente", () => {
     expect(
       colaboradorStorageKey({
         colaboradorId: null,
-        cpfMascarado: "***.456.789-**",
       }),
-    ).toBe("cortex.home.ultimaObra:***.456.789-**");
+    ).toBeNull();
   });
 
   it("retorna null sem sessão", () => {

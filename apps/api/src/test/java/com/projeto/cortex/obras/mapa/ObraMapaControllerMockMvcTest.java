@@ -1,7 +1,6 @@
 package com.projeto.cortex.obras.mapa;
 
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -37,9 +36,6 @@ class ObraMapaControllerMockMvcTest {
 
     @MockBean
     private CurrentUserService currentUserService;
-
-    @MockBean
-    private JwtService jwtService;
 
     @Test
     void betaCanReadMapThroughScopedService() throws Exception {

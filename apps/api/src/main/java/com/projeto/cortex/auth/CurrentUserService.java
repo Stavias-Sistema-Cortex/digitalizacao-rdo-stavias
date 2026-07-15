@@ -154,15 +154,9 @@ public class CurrentUserService {
                     if (!rs.next()) {
                         return null;
                     }
-                    PapelAcesso explicito =
-                            PapelAcesso.fromNullable(rs.getString("papel_acesso"));
-                    if (explicito != null) {
-                        return explicito;
-                    }
-                    // O papel explícito é a fronteira de autorização. Uma
-                    // linha legada sem atribuição não pode ganhar escopo Alfa
-                    // apenas porque texto importado contém "admin".
-                    return PapelAcesso.BETA;
+                    return PapelAcesso.fromPersistedExact(
+                            rs.getString("papel_acesso")
+                    ).orElse(null);
                 },
                 colaboradorId.trim()
         );

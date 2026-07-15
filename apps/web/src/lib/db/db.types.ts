@@ -52,122 +52,37 @@ export type OutboxMutationStatus =
   | "ERROR"
   | "CONFLICT";
 
-export type SyncEntityType = "RDO" | "MENSAGEM";
+export type SyncEntityType =
+  | "RDO"
+  | "CONVERSA"
+  | "MENSAGEM"
+  | "MENSAGEM_ANEXO"
+  | "SOLICITACAO_COMPRA"
+  | "COMPRA";
 
 export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
   | "ENVIAR_RDO"
-  | "CRIAR_MENSAGEM";
+  | "CRIAR_CONVERSA"
+  | "ADICIONAR_PARTICIPANTE_CONVERSA"
+  | "REMOVER_PARTICIPANTE_CONVERSA"
+  | "CRIAR_MENSAGEM"
+  | "EDITAR_MENSAGEM"
+  | "EXCLUIR_MENSAGEM"
+  | "ADICIONAR_MENSAGEM_ANEXO"
+  | "CRIAR_SOLICITACAO_COMPRA"
+  | "ATUALIZAR_SOLICITACAO_COMPRA"
+  | "ARQUIVAR_SOLICITACAO_COMPRA"
+  | "CRIAR_COMPRA"
+  | "ATUALIZAR_COMPRA"
+  | "ALTERAR_STATUS_COMPRA"
+  | "DECIDIR_APROVACAO_COMPRA"
+  | "ARQUIVAR_COMPRA";
 
-export type ConversationType =
-  | "OBRA"
-  | "EQUIPE"
-  | "DIRETA"
-  | "GRUPO";
-
-export interface LocalConversationRecord {
-  id: string;
-  tipo: ConversationType;
-  titulo: string | null;
-  obraId: string | null;
-  obraNome: string | null;
-  equipeId: string | null;
-  equipeNome: string | null;
-  criadoPor: string | null;
-  status: "ATIVA" | "ARQUIVADA";
-  ultimaAtividadeEm: string;
-  ultimaMensagemId: string | null;
-  ultimaMensagemPrevia: string | null;
-  ultimaMensagemEm: string | null;
-  naoLidas: number;
-  criadoEm: string | null;
-  atualizadoEm: string;
-  versaoEntidade: number | null;
-}
-
-export interface LocalConversationParticipantRecord {
-  id: string;
-  conversaId: string;
-  colaboradorId: string;
-  colaboradorNome: string | null;
-  papel: "ADMINISTRADOR" | "MEMBRO";
-  status: "ATIVO" | "SAIU" | "REMOVIDO";
-  entrouEm: string;
-  saiuEm: string | null;
-  ultimaLeituraEm: string | null;
-  versaoEntidade: number | null;
-  atualizadoEm: string;
-}
-
-export type LocalMessageSyncStatus =
-  | "PENDING"
-  | "SYNCING"
-  | "SENT"
-  | "ERROR";
-
-export interface LocalMessageReceipt {
-  id: string;
-  mensagemId: string;
-  colaboradorId: string;
-  entregueEm: string | null;
-  lidaEm: string | null;
-}
-
-export interface LocalMessageRecord {
-  id: string;
-  conversaId: string;
-  remetenteId: string | null;
-  remetenteNome: string | null;
-  clientMessageId: string;
-  texto: string | null;
-  estado: string;
-  enviadaClienteEm: string;
-  criadaServidorEm: string | null;
-  atualizadoEm: string;
-  versaoEntidade: number | null;
-  recibos: LocalMessageReceipt[];
-  syncStatus: LocalMessageSyncStatus;
-  ultimoErro: string | null;
-}
-
-export interface LocalMessageReferenceRecord {
-  id: string;
-  mensagemId: string;
-  tipoObjeto: string;
-  objetoId: string;
-  obraId: string | null;
-  criadoEm: string | null;
-}
-
-export type LocalMessageAttachmentSyncStatus =
-  | "WAITING_MESSAGE"
-  | "PENDING_UPLOAD"
-  | "UPLOADING"
-  | "UPLOADED"
-  | "ERROR";
-
-export interface LocalMessageAttachmentRecord {
-  id: string;
-  mensagemId: string;
-  clientAttachmentId: string;
-  nomeOriginal: string;
-  nomeSeguro: string;
-  mimeType: string;
-  tamanhoBytes: number;
-  hashSha256: string;
-  status: "PENDENTE" | "DISPONIVEL" | "FALHOU";
-  ultimoErro: string | null;
-  criadoEm: string | null;
-  atualizadoEm: string;
-  disponivelEm: string | null;
-  versaoEntidade: number | null;
-  arquivo: Blob | null;
-  syncStatus: LocalMessageAttachmentSyncStatus;
-  tentativas: number;
-  ultimaTentativaEm: string | null;
-  proximaTentativaEm: string | null;
-}
+export type OutboxTransport =
+  | "SYNC_PUSH"
+  | "OBJECT_UPLOAD";
 
 export interface LocalRdoRecord {
   id: string;
@@ -215,6 +130,79 @@ export interface OutboxMutationRecord {
   ultimoErro: string | null;
   conflito: Record<string, unknown> | null;
   criadaNoClienteEm: string;
+  updatedAt: string;
+  transport?: OutboxTransport;
+  dependsOnMutationIds?: string[];
+  correlationId?: string;
+}
+
+export type MensagemSyncStatus =
+  | "LOCAL"
+  | "NA_FILA"
+  | "SINCRONIZANDO"
+  | "SINCRONIZADO"
+  | "FALHOU";
+
+export type ConversaTipo =
+  | "DIRETA"
+  | "GRUPO"
+  | "EQUIPE"
+  | "OBRA";
+
+export interface ConversaParticipanteLocal {
+  colaboradorId: string;
+  nome: string;
+  papel: "ADMIN" | "MEMBRO";
+  status: "ATIVO" | "REMOVIDO";
+  adicionadoEm: string;
+}
+
+export interface ConversaLocalRecord {
+  id: string;
+  tipo: ConversaTipo;
+  titulo: string | null;
+  obraId: string | null;
+  equipeId: string | null;
+  status: string;
+  participantes: ConversaParticipanteLocal[];
+  criadaEm: string;
+  atualizadaEm: string;
+  versaoEntidade: number | null;
+}
+
+export interface MensagemLocalRecord {
+  id: string;
+  conversaId: string;
+  autorId: string;
+  autorNome: string;
+  corpo: string | null;
+  status: "ATIVA" | "EDITADA" | "EXCLUIDA";
+  clientMutationId: string;
+  criadaNoClienteEm: string;
+  criadaEm: string | null;
+  editadaEm: string | null;
+  deletadaEm: string | null;
+  versaoEntidade: number | null;
+  syncStatus: MensagemSyncStatus;
+  ultimoErro: string | null;
+  updatedAt: string;
+}
+
+export interface MensagemAnexoLocalRecord {
+  id: string;
+  mensagemId: string;
+  conversaId: string;
+  objetoId: string | null;
+  uploadMutationId: string | null;
+  nome: string;
+  mediaType: string;
+  tamanhoBytes: number;
+  sha256: string | null;
+  ordem: number;
+  arquivo: Blob | null;
+  syncStatus: MensagemSyncStatus;
+  ultimoErro: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -342,6 +330,81 @@ export interface ColaboradorLocalRecord {
   ativo: boolean;
   updatedAt: string | null;
   cachedAt: string;
+}
+
+export interface LocalTeamMemberRecord {
+  id: string;
+  equipeId: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  papelAcesso: "ALFA" | "BETA" | null;
+  funcaoOperacionalId: string;
+  funcaoCodigo: string;
+  funcaoNome: string;
+  responsavel: boolean;
+  status: "ATIVO" | "ENCERRADO";
+  inicioEm: string;
+  fimEm: string | null;
+  motivoEncerramento: string | null;
+  versaoEntidade: number;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface LocalTeamRecord {
+  id: string;
+  obraPrincipalId: string;
+  obraNome: string;
+  nome: string;
+  descricao: string | null;
+  status: "ATIVA" | "ARQUIVADA";
+  inicioValidadeEm: string;
+  fimValidadeEm: string | null;
+  versaoEntidade: number;
+  criadoEm: string;
+  atualizadoEm: string;
+  membros: LocalTeamMemberRecord[];
+}
+
+export interface LocalOperationalRoleRecord {
+  id: string;
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  ativo: boolean;
+  ordemExibicao: number;
+  versaoEntidade: number;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface LocalTeamHistoryRecord {
+  commitSeq: number;
+  eventId: string;
+  entityType: string;
+  entityId: string;
+  eventType: string;
+  source: string;
+  worksiteId: string | null;
+  collaboratorId: string | null;
+  occurredAt: string;
+  recordedAt: string;
+  entityVersion: number;
+  payload: Record<string, unknown>;
+}
+
+export interface LocalTeamWorksiteRecord {
+  id: string;
+  equipeId: string;
+  obraId: string;
+  obraNome: string;
+  status: "ATIVO" | "ENCERRADO";
+  inicioEm: string;
+  fimEm: string | null;
+  motivoEncerramento: string | null;
+  versaoEntidade: number;
+  criadoEm: string;
+  atualizadoEm: string;
 }
 
 export interface PrevisaoSnapshotRecord {

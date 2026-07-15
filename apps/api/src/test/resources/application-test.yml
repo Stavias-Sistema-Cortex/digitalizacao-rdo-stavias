@@ -1,0 +1,15 @@
+cortex:
+  auth:
+    webauthn:
+      rp-id: 127.0.0.1
+      rp-name: Córtex Teste
+      allowed-origins: http://127.0.0.1:5173
+    otp:
+      hmac-key-inline: test-only-otp-hmac-key-material-00000001
+  email:
+    provider: fake
+  storage:
+    provider: local
+    local:
+      root: ${java.io.tmpdir}/cortex-storage-test
+      persistent: false

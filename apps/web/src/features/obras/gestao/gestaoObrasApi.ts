@@ -24,7 +24,18 @@ export interface ColaboradorApi {
   cpfMascarado: string | null;
   nomeGrupo: string | null;
   nomePerfil: string | null;
+  papelAcesso: "ALFA" | "BETA";
   ativo: boolean;
+}
+
+export interface AdminRoleChangeApi {
+  colaboradorId: string;
+  nome: string | null;
+  papelAnterior: "ALFA" | "BETA";
+  papelAcesso: "ALFA" | "BETA";
+  sessoesRevogadas: number;
+  commitSeq: number;
+  alteradoEm: string;
 }
 
 export interface VinculoApi {
@@ -112,6 +123,26 @@ export async function listarColaboradores(
     : "";
   return readJson<ColaboradorApi[]>(
     await apiFetch(`/colaboradores${sufixo}`),
+  );
+}
+
+export async function alterarPapelColaborador(
+  colaboradorId: string,
+  papelAcesso: "ALFA" | "BETA",
+  justificativa: string,
+): Promise<AdminRoleChangeApi> {
+  return readJson<AdminRoleChangeApi>(
+    await apiFetch(
+      `/admin/colaboradores/${encodeURIComponent(colaboradorId)}/papel`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          papelAcesso,
+          justificativa: justificativa.trim(),
+        }),
+      },
+    ),
   );
 }
 

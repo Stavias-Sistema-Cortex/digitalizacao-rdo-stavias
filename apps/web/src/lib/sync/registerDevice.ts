@@ -2,7 +2,10 @@ import {
   getSyncState,
   updateSyncState,
 } from "../db/syncStateRepository";
-import { getSession } from "../../features/auth/authSession";
+import {
+  getSession,
+  hasOnlineSession,
+} from "../../features/auth/authSession";
 import { registerDeviceApi } from "./syncApiClient";
 
 function createDeviceName(): string {
@@ -20,7 +23,7 @@ export async function ensureRegisteredDevice(): Promise<string> {
   const usuarioId =
     session?.colaboradorId?.trim() || null;
 
-  if (!session?.token || !usuarioId) {
+  if (!hasOnlineSession() || !usuarioId) {
     throw new Error(
       "Faça login novamente para sincronizar com o servidor.",
     );

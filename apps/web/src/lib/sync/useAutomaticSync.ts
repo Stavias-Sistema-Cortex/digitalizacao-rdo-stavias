@@ -3,7 +3,7 @@ import {
   useRef,
 } from "react";
 
-import { getSession } from "../../features/auth/authSession";
+import { hasOnlineSession } from "../../features/auth/authSession";
 import { syncNow } from "./syncEngine";
 
 const SYNC_INTERVAL_MS = 30_000;
@@ -14,11 +14,14 @@ type AutomaticSyncTrigger =
   | "INTERVAL"
   | "VISIBILITY";
 
-export function useAutomaticSync(): void {
+export function useAutomaticSync(enabled = true): void {
   const lastReportedErrorRef =
     useRef<string | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     let disposed = false;
 
     async function tryAutomaticSync(
@@ -28,7 +31,7 @@ export function useAutomaticSync(): void {
         return;
       }
 
-      if (!getSession()?.token) {
+      if (!hasOnlineSession()) {
         return;
       }
 
@@ -111,5 +114,5 @@ export function useAutomaticSync(): void {
 
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [enabled]);
 }

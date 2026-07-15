@@ -8,18 +8,17 @@ import {
 
 import canteiroBackdrop from "../../assets/login/stavias-canteiro.png";
 import staviasTile from "../../assets/stavias-s-tile.png";
-
 import {
   formatCpf,
   validateLoginForm,
   type LoginFieldErrors,
 } from "./loginValidation";
-import { autenticar, sincronizarFiltroOffline } from "./authService";
-import { getCachedFilter } from "./cpfFilter";
+import { autenticarPorCpf } from "./authService";
+import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
 
-type SubmitStatus = "idle" | "loading";
+type SubmitStatus = "idle" | "cpf" | "passkey";
 
 export function LoginPage() {
   const cpfId = useId();
@@ -30,28 +29,18 @@ export function LoginPage() {
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [authError, setAuthError] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
-  const [filtroOfflinePronto, setFiltroOfflinePronto] = useState(
-    () => getCachedFilter() !== null,
-  );
 
-  const loading = status === "loading";
+  const loading = status !== "idle";
 
   useEffect(() => {
-    // Pré-carrega o filtro de Bloom para habilitar o login offline.
-    void sincronizarFiltroOffline().then(() => {
-      setFiltroOfflinePronto(getCachedFilter() !== null);
-    });
-
     function handleOnline() {
       setOnline(true);
     }
     function handleOffline() {
       setOnline(false);
     }
-
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -62,32 +51,42 @@ export function LoginPage() {
     event: SubmitEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
-
-    if (loading) {
+    if (loading || !online) {
       return;
     }
 
     setAuthError("");
     const nextErrors = validateLoginForm(cpf);
     setErrors(nextErrors);
-
     if (nextErrors.cpf) {
       cpfRef.current?.focus();
       return;
     }
 
-    setStatus("loading");
-    const outcome = await autenticar(cpf);
-
-    if (outcome.ok) {
-      // Sessão criada: recarrega na raiz, onde o App exibe o workspace.
+    setStatus("cpf");
+    try {
+      await autenticarPorCpf(cpf);
       window.location.assign("/");
+    } catch (error: unknown) {
+      setStatus("idle");
+      setAuthError(errorMessage(error));
+      cpfRef.current?.focus();
+    }
+  }
+
+  async function handlePasskeyLogin(): Promise<void> {
+    if (loading || !online) {
       return;
     }
-
-    setStatus("idle");
-    setAuthError(outcome.message);
-    cpfRef.current?.focus();
+    setStatus("passkey");
+    setAuthError("");
+    try {
+      await authenticateWithPasskey();
+      window.location.assign("/");
+    } catch (error: unknown) {
+      setAuthError(errorMessage(error));
+      setStatus("idle");
+    }
   }
 
   return (
@@ -102,7 +101,6 @@ export function LoginPage() {
 
       <section className="login__stage">
         <h1 className="visually-hidden">Entrar no Stavias Córtex</h1>
-
         <img
           className="login__mark"
           src={staviasTile}
@@ -118,14 +116,12 @@ export function LoginPage() {
           </p>
 
           <p className="login__subtitle">
-            Entre com o CPF cadastrado no Academy.
+            Informe seu CPF cadastrado no Academy.
           </p>
 
           {!online ? (
             <p className="login__offline" role="status">
-              {filtroOfflinePronto
-                ? "Sem conexão — o login offline está habilitado neste dispositivo."
-                : "Sem conexão — conecte-se uma vez para habilitar o login offline."}
+              Sem conexão — O login exige conexão com o Córtex.
             </p>
           ) : null}
 
@@ -178,9 +174,9 @@ export function LoginPage() {
             <button
               type="submit"
               className="login__submit"
-              disabled={loading}
+              disabled={loading || !online}
             >
-              {loading ? (
+              {status === "cpf" ? (
                 <span className="login__submit-loading">
                   <span className="login__spinner" aria-hidden="true" />
                   Entrando...
@@ -188,6 +184,17 @@ export function LoginPage() {
               ) : (
                 "Entrar"
               )}
+            </button>
+
+            <button
+              type="button"
+              className="login__passkey"
+              onClick={() => {
+                void handlePasskeyLogin();
+              }}
+              disabled={loading || !online}
+            >
+              {status === "passkey" ? "Confirmando..." : "Usar passkey"}
             </button>
 
             {authError ? (
@@ -198,8 +205,8 @@ export function LoginPage() {
           </form>
 
           <p className="login__hint">
-            Acesso restrito a colaboradores ativos. Problemas para
-            entrar? Procure o RH ou o apontador da sua obra.
+            Acesso restrito a colaboradores ativos. Problemas para entrar?
+            Procure o RH ou o apontador da sua obra.
           </p>
         </div>
       </section>
@@ -207,4 +214,10 @@ export function LoginPage() {
       <p className="login__footer">© 2026 Stavias — Sistema Córtex</p>
     </main>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Não foi possível autenticar agora. Verifique a conexão e tente novamente.";
 }

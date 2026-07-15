@@ -8,6 +8,7 @@ const MAX_PAGES_PER_RUN = 50;
 export interface PullEventsSummary {
   pulled: number;
   lastAppliedCommitSeq: number;
+  messagingConversationIds: string[];
 }
 
 export async function pullEvents(
@@ -18,6 +19,7 @@ export async function pullEvents(
   let cursor = initialState.lastPulledCommitSeq;
   let pulled = 0;
   let page = 0;
+  const messagingConversationIds = new Set<string>();
 
   while (page < MAX_PAGES_PER_RUN) {
     const response = await pullEventsApi(
@@ -33,6 +35,16 @@ export async function pullEvents(
       );
 
     pulled += response.eventos.length;
+    for (const event of response.eventos) {
+      if (
+        (event.entidadeTipo === "CONVERSA" ||
+          event.entidadeTipo === "MENSAGEM" ||
+          event.entidadeTipo === "MENSAGEM_ANEXO") &&
+        typeof event.payload?.conversaId === "string"
+      ) {
+        messagingConversationIds.add(event.payload.conversaId);
+      }
+    }
 
     if (newCursor < cursor) {
       throw new Error(
@@ -56,6 +68,7 @@ export async function pullEvents(
       return {
         pulled,
         lastAppliedCommitSeq: cursor,
+        messagingConversationIds: [...messagingConversationIds],
       };
     }
   }

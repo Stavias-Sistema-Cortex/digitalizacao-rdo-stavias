@@ -1,6 +1,3 @@
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
-import pdfWorkerUrl from "pdfjs-dist/legacy/build/pdf.worker.mjs?url";
-
 import {
   readSpreadsheetWorkbook,
   type SpreadsheetSheet,
@@ -21,9 +18,6 @@ import type {
   RdoDraft,
 } from "./rdo.types";
 import { normalizarUnidade } from "./unidades";
-
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  pdfWorkerUrl;
 
 type WorkSheet = SpreadsheetSheet;
 
@@ -301,6 +295,12 @@ type PdfTextLineItem = {
 async function extractPdfLines(
   file: File,
 ): Promise<string[]> {
+  const [pdfjsLib, pdfWorker] = await Promise.all([
+    import("pdfjs-dist/legacy/build/pdf.mjs"),
+    import("pdfjs-dist/legacy/build/pdf.worker.mjs?url"),
+  ]);
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+
   const data = new Uint8Array(
     await file.arrayBuffer(),
   );

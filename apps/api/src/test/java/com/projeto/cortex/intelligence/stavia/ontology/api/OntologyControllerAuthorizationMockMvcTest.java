@@ -1,7 +1,6 @@
 package com.projeto.cortex.intelligence.stavia.ontology.api;
 
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.auth.JwtService;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.intelligence.stavia.ontology.service.StaviaOntologyService;
 import java.util.List;
@@ -42,9 +41,6 @@ class OntologyControllerAuthorizationMockMvcTest {
 
     @MockBean
     private StaviaOntologyService ontologyService;
-
-    @MockBean
-    private JwtService jwtService;
 
     @SuppressWarnings("unchecked")
     private void papel(String userId, PapelAcesso papel) {
