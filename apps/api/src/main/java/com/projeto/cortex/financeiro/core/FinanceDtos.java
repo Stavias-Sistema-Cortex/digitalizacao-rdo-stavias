@@ -157,7 +157,8 @@ public final class FinanceDtos {
             BigDecimal quantidade,
             String unidade,
             BigDecimal valorUnitario,
-            BigDecimal valorTotal
+            BigDecimal valorTotal,
+            String natureza
     ) {
     }
 

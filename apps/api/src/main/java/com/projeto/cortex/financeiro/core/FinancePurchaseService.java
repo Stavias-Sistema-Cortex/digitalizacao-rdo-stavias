@@ -952,10 +952,24 @@ public class FinancePurchaseService {
             BigDecimal totalValue = FinanceValidation.optionalMoney(
                     item.valorTotal(), "item.valorTotal"
             );
+            String nature = forecast
+                    ? null
+                    : purchaseItemNature(item.natureza());
             if (!forecast && (unitValue == null || totalValue == null)) {
                 throw FinanceValidation.badRequest(
                         "Itens de compra exigem valores unitário e total."
                 );
+            }
+            if (!forecast && "CAPITALIZAVEL".equals(nature)) {
+                try {
+                    if (item.quantidade().stripTrailingZeros().intValueExact() <= 0) {
+                        throw new ArithmeticException("non-positive");
+                    }
+                } catch (ArithmeticException exception) {
+                    throw FinanceValidation.badRequest(
+                            "Item capitalizável exige quantidade inteira e positiva."
+                    );
+                }
             }
             String existingId = jdbc.query(
                     "SELECT id FROM " + table + " WHERE " + parentColumn
@@ -964,33 +978,67 @@ public class FinancePurchaseService {
                     parentId, order
             );
             if (existingId == null) {
-                jdbc.update(
-                        "INSERT INTO " + table + " (id, " + parentColumn
-                                + ", ordem, descricao, quantidade, unidade, "
-                                + (forecast
-                                ? "valor_unitario_previsto, valor_total_previsto"
-                                : "valor_unitario, valor_total")
-                                + ", criado_por) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        item.id() == null || item.id().isBlank()
-                                ? UUID.randomUUID().toString()
-                                : FinanceValidation.uuid(item.id(), "item.id"),
-                        parentId, order, description, item.quantidade(), unit,
-                        unitValue, totalValue, actorId
-                );
+                String itemId = item.id() == null || item.id().isBlank()
+                        ? UUID.randomUUID().toString()
+                        : FinanceValidation.uuid(item.id(), "item.id");
+                if (forecast) {
+                    jdbc.update(
+                            "INSERT INTO " + table + " (id, " + parentColumn
+                                    + ", ordem, descricao, quantidade, unidade, "
+                                    + "valor_unitario_previsto, "
+                                    + "valor_total_previsto, criado_por) "
+                                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            itemId, parentId, order, description,
+                            item.quantidade(), unit, unitValue,
+                            totalValue, actorId
+                    );
+                } else {
+                    jdbc.update(
+                            "INSERT INTO " + table + " (id, " + parentColumn
+                                    + ", ordem, descricao, quantidade, unidade, "
+                                    + "valor_unitario, valor_total, natureza, "
+                                    + "criado_por) "
+                                    + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            itemId, parentId, order, description,
+                            item.quantidade(), unit, unitValue,
+                            totalValue, nature, actorId
+                    );
+                }
             } else {
+                if (!forecast) {
+                    requireLinkedAssetConsistency(
+                            existingId,
+                            item.quantidade(),
+                            nature
+                    );
+                }
                 jdbc.update(
                         "UPDATE " + table + " SET descricao = ?, quantidade = ?, "
                                 + "unidade = ?, "
                                 + (forecast
                                 ? "valor_unitario_previsto = ?, valor_total_previsto = ?"
-                                : "valor_unitario = ?, valor_total = ?")
+                                : "valor_unitario = ?, valor_total = ?, natureza = ?")
                                 + ", arquivado_em = NULL, atualizado_por = ?, "
                                 + "versao_linha = versao_linha + 1 WHERE id = ?",
-                        description, item.quantidade(), unit, unitValue,
-                        totalValue, actorId, existingId
+                        forecast
+                                ? new Object[]{
+                                    description, item.quantidade(), unit,
+                                    unitValue, totalValue, actorId, existingId
+                                }
+                                : new Object[]{
+                                    description, item.quantidade(), unit,
+                                    unitValue, totalValue, nature,
+                                    actorId, existingId
+                                }
                 );
             }
             order++;
+        }
+        if (!forecast && hasLinkedAssetsAtOrAfter(parentId, order)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Itens com ativos confirmados não podem ser removidos da compra."
+            );
         }
         jdbc.update(
                 "UPDATE " + table + " SET arquivado_em = CURRENT_TIMESTAMP(6), "
@@ -999,6 +1047,69 @@ public class FinancePurchaseService {
                         + "AND arquivado_em IS NULL",
                 actorId, parentId, order
         );
+    }
+
+    private String purchaseItemNature(String value) {
+        if (value == null || value.isBlank()) {
+            return "CONSUMO";
+        }
+        String normalized = value.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!"CONSUMO".equals(normalized)
+                && !"CAPITALIZAVEL".equals(normalized)) {
+            throw FinanceValidation.badRequest(
+                    "item.natureza deve ser CONSUMO ou CAPITALIZAVEL."
+            );
+        }
+        return normalized;
+    }
+
+    private void requireLinkedAssetConsistency(
+            String itemId,
+            BigDecimal quantity,
+            String nature
+    ) {
+        Integer linked = jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM finance_compra_item_ativo
+                WHERE compra_item_id = ?
+                """,
+                Integer.class,
+                itemId
+        );
+        int count = linked == null ? 0 : linked;
+        if (count == 0) {
+            return;
+        }
+        int exactQuantity;
+        try {
+            exactQuantity = quantity.stripTrailingZeros().intValueExact();
+        } catch (ArithmeticException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A quantidade de item com ativos confirmados deve permanecer inteira."
+            );
+        }
+        if (!"CAPITALIZAVEL".equals(nature) || exactQuantity != count) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Natureza e quantidade não podem divergir dos ativos já confirmados."
+            );
+        }
+    }
+
+    private boolean hasLinkedAssetsAtOrAfter(String purchaseId, int order) {
+        Integer count = jdbc.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM finance_compra_item i
+                JOIN finance_compra_item_ativo a ON a.compra_item_id = i.id
+                WHERE i.compra_id = ? AND i.ordem >= ?
+                """,
+                Integer.class,
+                purchaseId,
+                order
+        );
+        return count != null && count > 0;
     }
 
     private ValidatedSolicitation validate(SolicitationRequest request) {
@@ -1167,7 +1278,8 @@ public class FinancePurchaseService {
                         rs.getString("id"), rs.getString("descricao"),
                         rs.getBigDecimal("quantidade"), rs.getString("unidade"),
                         rs.getBigDecimal("valor_unitario_previsto"),
-                        rs.getBigDecimal("valor_total_previsto")
+                        rs.getBigDecimal("valor_total_previsto"),
+                        null
                 ),
                 id
         );
@@ -1184,7 +1296,8 @@ public class FinancePurchaseService {
                         rs.getString("id"), rs.getString("descricao"),
                         rs.getBigDecimal("quantidade"), rs.getString("unidade"),
                         rs.getBigDecimal("valor_unitario"),
-                        rs.getBigDecimal("valor_total")
+                        rs.getBigDecimal("valor_total"),
+                        rs.getString("natureza")
                 ),
                 id
         );

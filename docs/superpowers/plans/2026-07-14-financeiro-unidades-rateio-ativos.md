@@ -498,6 +498,8 @@ git commit -m "feat(finance): add exact auditable allocations"
 
 **Files:**
 
+- Create: `apps/api/src/main/resources/db/migration/V36__finance_purchased_asset_mutation_integrity.sql`
+- Create: `apps/api/src/test/java/com/projeto/cortex/financeiro/FinancePurchasedAssetsMigrationTest.java`
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/asset/FinancePurchasedAssetDtos.java`
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/asset/FinancePurchasedAssetRepository.java`
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/asset/FinancePurchasedAssetService.java`
@@ -512,6 +514,7 @@ git commit -m "feat(finance): add exact auditable allocations"
 
 ```java
 public record ConfirmPurchasedAssetsRequest(
+        String clientMutationId,
         long baseVersion,
         List<PurchasedAssetTarget> ativos,
         String correlacaoId,
@@ -533,17 +536,17 @@ public PurchasedAssetResponse confirm(String purchaseId, String itemId,
 
 Exactly one of `ativoExistenteId` and `novoAtivo` is required per target.
 
-- [ ] **Step 1: Write failing behavior tests**
+- [x] **Step 1: Write failing behavior tests**
 
 Cover: non-capitalizable item rejected; capitalizable quantity must be a positive integer; target count equals item quantity; existing asset must exist and be active; new asset requires explicit data; no text inference; duplicate asset rejected; stale item version rejected; each asset gets an `ATIVO` control unit and link; every actor/change is historized.
 
-- [ ] **Step 2: Run tests and confirm missing domain**
+- [x] **Step 2: Run tests and confirm missing domain**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinancePurchasedAssetServiceTest,FinancePurchasedAssetControllerMockMvcTest test`
 
 Expected: compilation FAIL for purchased-asset types.
 
-- [ ] **Step 3: Implement purchase item nature and explicit confirmation**
+- [x] **Step 3: Implement purchase item nature and explicit confirmation**
 
 Add `natureza` to purchase item request/response while defaulting omitted legacy input to `CONSUMO`. Expose:
 
@@ -555,13 +558,13 @@ GET /api/financeiro/compras/{compraId}/itens/{itemId}/ativos/historico
 
 The service locks purchase item, validates `FINANCEIRO_OPERAR` on its worksite unit, validates explicit targets, inserts new `asset` only when requested, ensures its control unit, persists every individual link and history, and projects `COMPRA_ITEM ORIGINOU_ATIVO ATIVO`. It never maps description/category to an asset automatically.
 
-- [ ] **Step 4: Add integration test and run regression**
+- [x] **Step 4: Add integration test and run regression**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinancePurchasedAssetServiceTest,FinancePurchasedAssetControllerMockMvcTest,FinancePurchasedAssetServiceMysqlIntegrationTest,FinancePurchaseServiceMysqlIntegrationTest test`
 
 Expected: PASS and legacy purchase payloads still persist `CONSUMO`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/main/java/com/projeto/cortex/financeiro/asset apps/api/src/main/java/com/projeto/cortex/financeiro/core/FinanceDtos.java apps/api/src/main/java/com/projeto/cortex/financeiro/core/FinancePurchaseService.java apps/api/src/test/java/com/projeto/cortex/financeiro/asset apps/api/src/test/java/com/projeto/cortex/pdor/FinancePurchasedAssetServiceMysqlIntegrationTest.java

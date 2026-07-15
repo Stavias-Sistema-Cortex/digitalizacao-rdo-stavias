@@ -205,13 +205,22 @@ class FinancePurchaseServiceMysqlIntegrationTest {
                         new BigDecimal("10.0000"),
                         "m³",
                         new BigDecimal("175.0000"),
-                        new BigDecimal("1750.0000")
+                        new BigDecimal("1750.0000"),
+                        null
                 )),
                 null
         );
         FinanceDtos.PurchaseResponse created = transactions.execute(status ->
                 purchases.savePurchase(request, audit)
         );
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT natureza FROM finance_compra_item
+                WHERE compra_id = ? AND ordem = 0
+                """,
+                String.class,
+                purchaseId
+        )).isEqualTo("CONSUMO");
         FinanceDtos.PurchaseResponse replay = transactions.execute(status ->
                 purchases.savePurchase(request, audit)
         );
