@@ -29,6 +29,14 @@ public class FinancialGrantController {
         return service.list(obraId);
     }
 
+    @GetMapping("/api/financeiro/unidades/{unidadeId}/permissoes")
+    public List<FinancialGrantResponse> listByUnit(
+            @PathVariable String unidadeId
+    ) {
+        currentUserService.requireAlfa();
+        return service.listByUnit(unidadeId);
+    }
+
     @PostMapping("/api/obras/{obraId}/permissoes-financeiras")
     public FinancialGrantResponse grant(
             @PathVariable String obraId,
@@ -38,6 +46,22 @@ public class FinancialGrantController {
         String actorId = currentUserService.requireUserId();
         return service.grant(
                 obraId,
+                request == null ? null : request.colaboradorId(),
+                request == null ? null : request.permissao(),
+                request == null ? null : request.justificativa(),
+                actorId
+        );
+    }
+
+    @PostMapping("/api/financeiro/unidades/{unidadeId}/permissoes")
+    public FinancialGrantResponse grantUnit(
+            @PathVariable String unidadeId,
+            @RequestBody FinancialGrantRequest request
+    ) {
+        currentUserService.requireAlfa();
+        String actorId = currentUserService.requireUserId();
+        return service.grantUnit(
+                unidadeId,
                 request == null ? null : request.colaboradorId(),
                 request == null ? null : request.permissao(),
                 request == null ? null : request.justificativa(),
@@ -59,6 +83,27 @@ public class FinancialGrantController {
         String actorId = currentUserService.requireUserId();
         return service.revoke(
                 obraId,
+                colaboradorId,
+                permissao,
+                request == null ? null : request.justificativa(),
+                actorId
+        );
+    }
+
+    @DeleteMapping(
+            "/api/financeiro/unidades/{unidadeId}/permissoes/"
+                    + "{colaboradorId}/{permissao}"
+    )
+    public FinancialGrantResponse revokeUnit(
+            @PathVariable String unidadeId,
+            @PathVariable String colaboradorId,
+            @PathVariable FinancialPermission permissao,
+            @RequestBody(required = false) FinancialGrantRevokeRequest request
+    ) {
+        currentUserService.requireAlfa();
+        String actorId = currentUserService.requireUserId();
+        return service.revokeUnit(
+                unidadeId,
                 colaboradorId,
                 permissao,
                 request == null ? null : request.justificativa(),

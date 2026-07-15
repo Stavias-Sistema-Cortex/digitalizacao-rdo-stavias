@@ -1,5 +1,6 @@
 package com.projeto.cortex.financeiro.access;
 
+import com.projeto.cortex.financeiro.unit.FinancialUnitType;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
@@ -16,30 +17,6 @@ public class FinancialGrantRepository {
 
     public FinancialGrantRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-    }
-
-    public boolean existsActive(
-            String colaboradorId,
-            String obraId,
-            FinancialPermission permission
-    ) {
-        Integer result = jdbcTemplate.queryForObject(
-                """
-                SELECT CASE WHEN EXISTS (
-                    SELECT 1
-                    FROM permissao_financeira_colaborador
-                    WHERE colaborador_id = ?
-                      AND obra_id = ?
-                      AND permissao = ?
-                      AND status = 'ATIVA'
-                ) THEN 1 ELSE 0 END
-                """,
-                Integer.class,
-                colaboradorId,
-                obraId,
-                permission.name()
-        );
-        return result != null && result == 1;
     }
 
     public boolean existsActiveForUnit(
@@ -141,47 +118,57 @@ public class FinancialGrantRepository {
         );
     }
 
-    public boolean worksiteExists(String obraId) {
+    public boolean activeWorksiteLinkExists(
+            String colaboradorId,
+            String obraId
+    ) {
         return exists(
-                "SELECT 1 FROM obra WHERE id = ? AND arquivado_em IS NULL",
+                """
+                SELECT 1 FROM vinculo_colaborador_obra
+                WHERE colaborador_id = ?
+                  AND obra_id = ?
+                  AND status = 'ATIVO'
+                """,
+                colaboradorId,
                 obraId
         );
     }
 
-    public Optional<FinancialGrantRecord> find(
+    public Optional<FinancialGrantRecord> findByUnit(
             String colaboradorId,
-            String obraId,
+            String unitId,
             FinancialPermission permission
     ) {
         List<FinancialGrantRecord> rows = jdbcTemplate.query(
                 selectSql() + """
                 WHERE p.colaborador_id = ?
-                  AND p.obra_id = ?
+                  AND p.unidade_controle_id = ?
                   AND p.permissao = ?
                 LIMIT 1
                 """,
                 (rs, rowNum) -> map(rs),
                 colaboradorId,
-                obraId,
+                unitId,
                 permission.name()
         );
         return rows.stream().findFirst();
     }
 
-    public List<FinancialGrantRecord> findByWorksite(String obraId) {
+    public List<FinancialGrantRecord> findByUnit(String unitId) {
         return jdbcTemplate.query(
                 selectSql() + """
-                WHERE p.obra_id = ?
+                WHERE p.unidade_controle_id = ?
                 ORDER BY (p.status = 'ATIVA') DESC, c.nome, p.permissao
                 """,
                 (rs, rowNum) -> map(rs),
-                obraId
+                unitId
         );
     }
 
-    public void insert(
+    public void insertUnit(
             String id,
             String colaboradorId,
+            String unitId,
             String obraId,
             FinancialPermission permission,
             String justification,
@@ -191,13 +178,15 @@ public class FinancialGrantRepository {
         jdbcTemplate.update(
                 """
                 INSERT INTO permissao_financeira_colaborador (
-                    id, colaborador_id, obra_id, permissao, status,
-                    concedido_em, concedido_por, justificativa
-                ) VALUES (?, ?, ?, ?, 'ATIVA', ?, ?, ?)
+                    id, colaborador_id, obra_id, unidade_controle_id,
+                    permissao, status, concedido_em, concedido_por,
+                    justificativa
+                ) VALUES (?, ?, ?, ?, ?, 'ATIVA', ?, ?, ?)
                 """,
                 id,
                 colaboradorId,
                 obraId,
+                unitId,
                 permission.name(),
                 now,
                 actorId,
@@ -255,18 +244,18 @@ public class FinancialGrantRepository {
         ) == 1;
     }
 
-    public long countActive(String colaboradorId, String obraId) {
+    public long countActiveForUnit(String colaboradorId, String unitId) {
         Long count = jdbcTemplate.queryForObject(
                 """
                 SELECT COUNT(*)
                 FROM permissao_financeira_colaborador
                 WHERE colaborador_id = ?
-                  AND obra_id = ?
+                  AND unidade_controle_id = ?
                   AND status = 'ATIVA'
                 """,
                 Long.class,
                 colaboradorId,
-                obraId
+                unitId
         );
         return count == null ? 0 : count;
     }
@@ -282,11 +271,11 @@ public class FinancialGrantRepository {
         return timestamp.toLocalDateTime();
     }
 
-    private boolean exists(String sql, String id) {
+    private boolean exists(String sql, Object... args) {
         List<Integer> rows = jdbcTemplate.query(
                 sql + " LIMIT 1",
                 (rs, rowNum) -> 1,
-                id
+                args
         );
         return !rows.isEmpty();
     }
@@ -295,6 +284,8 @@ public class FinancialGrantRepository {
         return """
                 SELECT
                     p.id,
+                    p.unidade_controle_id,
+                    u.tipo AS unidade_tipo,
                     p.obra_id,
                     p.colaborador_id,
                     c.nome AS colaborador_nome,
@@ -307,6 +298,8 @@ public class FinancialGrantRepository {
                     p.revogado_por
                 FROM permissao_financeira_colaborador p
                 JOIN colaborador c ON c.id = p.colaborador_id
+                JOIN finance_unidade_controle u
+                  ON u.id = p.unidade_controle_id
                 """;
     }
 
@@ -315,6 +308,8 @@ public class FinancialGrantRepository {
         Timestamp revokedAt = rs.getTimestamp("revogado_em");
         return new FinancialGrantRecord(
                 rs.getString("id"),
+                rs.getString("unidade_controle_id"),
+                FinancialUnitType.valueOf(rs.getString("unidade_tipo")),
                 rs.getString("obra_id"),
                 rs.getString("colaborador_id"),
                 rs.getString("colaborador_nome"),

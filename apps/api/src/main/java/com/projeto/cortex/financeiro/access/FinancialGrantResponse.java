@@ -1,9 +1,12 @@
 package com.projeto.cortex.financeiro.access;
 
+import com.projeto.cortex.financeiro.unit.FinancialUnitType;
 import java.time.LocalDateTime;
 
 public record FinancialGrantResponse(
         String id,
+        String unidadeControleId,
+        FinancialUnitType unidadeTipo,
         String obraId,
         String colaboradorId,
         String colaboradorNome,
@@ -18,6 +21,8 @@ public record FinancialGrantResponse(
     static FinancialGrantResponse from(FinancialGrantRecord record) {
         return new FinancialGrantResponse(
                 record.id(),
+                record.unitId(),
+                record.unitType(),
                 record.obraId(),
                 record.colaboradorId(),
                 record.colaboradorNome(),

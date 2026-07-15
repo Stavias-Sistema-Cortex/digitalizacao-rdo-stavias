@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.unit.FinancialUnitType;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,7 +45,7 @@ class FinancialGrantControllerMockMvcTest {
                 FinancialPermission.FINANCEIRO_VISUALIZAR,
                 "Necessário para conciliação da obra.",
                 "alfa-1"
-        )).thenReturn(response("ATIVA"));
+        )).thenReturn(response("ATIVA", "obra-1"));
 
         mockMvc.perform(post("/api/obras/obra-1/permissoes-financeiras")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -58,6 +59,33 @@ class FinancialGrantControllerMockMvcTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ATIVA"))
                 .andExpect(jsonPath("$.permissao").value("FINANCEIRO_VISUALIZAR"));
+    }
+
+    @Test
+    void alfaCreatesExplicitAssetUnitGrant() throws Exception {
+        when(currentUserService.requireUserId()).thenReturn("alfa-1");
+        when(service.grantUnit(
+                "unit-asset",
+                "beta-1",
+                FinancialPermission.FINANCEIRO_VISUALIZAR,
+                "Responsável pelo equipamento adquirido.",
+                "alfa-1"
+        )).thenReturn(response("ATIVA", null));
+
+        mockMvc.perform(post(
+                        "/api/financeiro/unidades/unit-asset/permissoes"
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "colaboradorId":"beta-1",
+                                  "permissao":"FINANCEIRO_VISUALIZAR",
+                                  "justificativa":"Responsável pelo equipamento adquirido."
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unidadeControleId")
+                        .value("unit-asset"))
+                .andExpect(jsonPath("$.obraId").isEmpty());
     }
 
     @Test
@@ -88,7 +116,7 @@ class FinancialGrantControllerMockMvcTest {
                 FinancialPermission.FINANCEIRO_VISUALIZAR,
                 "Mudança de responsabilidade.",
                 "alfa-1"
-        )).thenReturn(response("REVOGADA"));
+        )).thenReturn(response("REVOGADA", "obra-1"));
 
         mockMvc.perform(delete(
                         "/api/obras/obra-1/permissoes-financeiras/beta-1/FINANCEIRO_VISUALIZAR"
@@ -98,10 +126,17 @@ class FinancialGrantControllerMockMvcTest {
                 .andExpect(jsonPath("$.status").value("REVOGADA"));
     }
 
-    private static FinancialGrantResponse response(String status) {
+    private static FinancialGrantResponse response(
+            String status,
+            String worksiteId
+    ) {
         return new FinancialGrantResponse(
                 "grant-1",
-                "obra-1",
+                worksiteId == null ? "unit-asset" : "unit-worksite",
+                worksiteId == null
+                        ? FinancialUnitType.ATIVO
+                        : FinancialUnitType.OBRA,
+                worksiteId,
                 "beta-1",
                 "Colaborador",
                 FinancialPermission.FINANCEIRO_VISUALIZAR,

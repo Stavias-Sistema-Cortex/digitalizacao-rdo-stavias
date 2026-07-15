@@ -1,7 +1,11 @@
 package com.projeto.cortex.financeiro.access;
 
+import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
+import com.projeto.cortex.financeiro.unit.FinancialUnitRepository.FinancialUnitScope;
+import com.projeto.cortex.financeiro.unit.FinancialUnitType;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,22 +24,31 @@ public class FinancialGrantService {
     private static final String RELATION = "AUTORIZADO_FINANCEIRO_EM";
 
     private final FinancialGrantRepository repository;
+    private final FinancialUnitRepository unitRepository;
     private final CortexOperationalMemoryService memoryService;
 
     public FinancialGrantService(
             FinancialGrantRepository repository,
+            FinancialUnitRepository unitRepository,
             CortexOperationalMemoryService memoryService
     ) {
         this.repository = repository;
+        this.unitRepository = unitRepository;
         this.memoryService = memoryService;
     }
 
     public List<FinancialGrantResponse> list(String obraId) {
-        String normalizedObraId = requireId(obraId, "obraId");
-        if (!repository.worksiteExists(normalizedObraId)) {
-            throw notFound("Obra não encontrada.");
-        }
-        return repository.findByWorksite(normalizedObraId)
+        return listByScope(requireWorksiteScope(obraId));
+    }
+
+    public List<FinancialGrantResponse> listByUnit(String unitId) {
+        return listByScope(requireUnitScope(unitId));
+    }
+
+    private List<FinancialGrantResponse> listByScope(
+            FinancialUnitScope scope
+    ) {
+        return repository.findByUnit(scope.id())
                 .stream()
                 .map(FinancialGrantResponse::from)
                 .toList();
@@ -49,19 +62,60 @@ public class FinancialGrantService {
             String justification,
             String actorId
     ) {
-        String normalizedObraId = requireId(obraId, "obraId");
-        String normalizedCollaboratorId = requireId(
+        return grant(
+                requireWorksiteScope(obraId),
                 colaboradorId,
-                "colaboradorId"
+                permission,
+                justification,
+                actorId
         );
-        String normalizedActorId = requireId(actorId, "ator");
-        FinancialPermission requiredPermission = requirePermission(permission);
-        String normalizedJustification = requireJustification(justification);
-        requireExistingSubjects(normalizedObraId, normalizedCollaboratorId);
+    }
 
-        FinancialGrantRecord existing = repository.find(
-                normalizedCollaboratorId,
-                normalizedObraId,
+    @Transactional
+    public FinancialGrantResponse grantUnit(
+            String unitId,
+            String collaboratorId,
+            FinancialPermission permission,
+            String justification,
+            String actorId
+    ) {
+        return grant(
+                requireUnitScope(unitId),
+                collaboratorId,
+                permission,
+                justification,
+                actorId
+        );
+    }
+
+    private FinancialGrantResponse grant(
+            FinancialUnitScope scope,
+            String collaboratorId,
+            FinancialPermission permission,
+            String justification,
+            String actorId
+    ) {
+        requireAssignable(scope);
+        String collaborator = requireId(collaboratorId, "colaboradorId");
+        String actor = requireId(actorId, "ator");
+        FinancialPermission requiredPermission = requirePermission(permission);
+        String reason = requireJustification(justification);
+        if (!repository.activeBetaCollaboratorExists(collaborator)) {
+            throw notFound("Colaborador Beta ativo não encontrado.");
+        }
+        if (scope.type() == FinancialUnitType.OBRA
+                && !repository.activeWorksiteLinkExists(
+                        collaborator,
+                        scope.worksiteId()
+                )) {
+            throw notFound(
+                    "Colaborador Beta sem vínculo ativo com esta obra."
+            );
+        }
+
+        FinancialGrantRecord existing = repository.findByUnit(
+                collaborator,
+                scope.id(),
                 requiredPermission
         ).orElse(null);
         if (existing != null && "ATIVA".equals(existing.status())) {
@@ -75,19 +129,20 @@ public class FinancialGrantService {
             grantId = UUID.randomUUID().toString();
             before = "INEXISTENTE";
             try {
-                repository.insert(
+                repository.insertUnit(
                         grantId,
-                        normalizedCollaboratorId,
-                        normalizedObraId,
+                        collaborator,
+                        scope.id(),
+                        scope.worksiteId(),
                         requiredPermission,
-                        normalizedJustification,
-                        normalizedActorId,
+                        reason,
+                        actor,
                         now
                 );
             } catch (DuplicateKeyException duplicate) {
-                existing = repository.find(
-                        normalizedCollaboratorId,
-                        normalizedObraId,
+                existing = repository.findByUnit(
+                        collaborator,
+                        scope.id(),
                         requiredPermission
                 ).orElseThrow(() -> duplicate);
                 if ("ATIVA".equals(existing.status())) {
@@ -95,15 +150,10 @@ public class FinancialGrantService {
                 }
                 grantId = existing.id();
                 before = existing.status();
-                if (!repository.reactivate(
-                        grantId,
-                        normalizedJustification,
-                        normalizedActorId,
-                        now
-                )) {
+                if (!repository.reactivate(grantId, reason, actor, now)) {
                     return currentGrant(
-                            normalizedCollaboratorId,
-                            normalizedObraId,
+                            collaborator,
+                            scope.id(),
                             requiredPermission
                     );
                 }
@@ -111,15 +161,10 @@ public class FinancialGrantService {
         } else {
             grantId = existing.id();
             before = existing.status();
-            if (!repository.reactivate(
-                    grantId,
-                    normalizedJustification,
-                    normalizedActorId,
-                    now
-            )) {
+            if (!repository.reactivate(grantId, reason, actor, now)) {
                 return currentGrant(
-                        normalizedCollaboratorId,
-                        normalizedObraId,
+                        collaborator,
+                        scope.id(),
                         requiredPermission
                 );
             }
@@ -127,31 +172,27 @@ public class FinancialGrantService {
 
         registerEvent(
                 grantId,
-                normalizedObraId,
-                normalizedCollaboratorId,
+                scope,
+                collaborator,
                 requiredPermission,
                 "PERMISSAO_FINANCEIRA_CONCEDIDA",
                 "CONCEDER",
                 before,
                 "ATIVA",
-                normalizedJustification,
-                normalizedActorId,
+                reason,
+                actor,
                 now
         );
         memoryService.registrarRelacaoAtiva(
                 "COLABORADOR",
-                normalizedCollaboratorId,
-                "OBRA",
-                normalizedObraId,
+                collaborator,
+                "UNIDADE_FINANCEIRA",
+                scope.id(),
                 RELATION,
                 SOURCE,
-                "Concessão financeira explícita por obra."
+                "Concessão financeira explícita por unidade."
         );
-        return currentGrant(
-                normalizedCollaboratorId,
-                normalizedObraId,
-                requiredPermission
-        );
+        return currentGrant(collaborator, scope.id(), requiredPermission);
     }
 
     @Transactional
@@ -162,17 +203,46 @@ public class FinancialGrantService {
             String justification,
             String actorId
     ) {
-        String normalizedObraId = requireId(obraId, "obraId");
-        String normalizedCollaboratorId = requireId(
+        return revoke(
+                requireWorksiteScope(obraId),
                 colaboradorId,
-                "colaboradorId"
+                permission,
+                justification,
+                actorId
         );
-        String normalizedActorId = requireId(actorId, "ator");
+    }
+
+    @Transactional
+    public FinancialGrantResponse revokeUnit(
+            String unitId,
+            String collaboratorId,
+            FinancialPermission permission,
+            String justification,
+            String actorId
+    ) {
+        return revoke(
+                requireUnitScope(unitId),
+                collaboratorId,
+                permission,
+                justification,
+                actorId
+        );
+    }
+
+    private FinancialGrantResponse revoke(
+            FinancialUnitScope scope,
+            String collaboratorId,
+            FinancialPermission permission,
+            String justification,
+            String actorId
+    ) {
+        String collaborator = requireId(collaboratorId, "colaboradorId");
+        String actor = requireId(actorId, "ator");
         FinancialPermission requiredPermission = requirePermission(permission);
-        String normalizedJustification = requireJustification(justification);
-        FinancialGrantRecord existing = repository.find(
-                normalizedCollaboratorId,
-                normalizedObraId,
+        String reason = requireJustification(justification);
+        FinancialGrantRecord existing = repository.findByUnit(
+                collaborator,
+                scope.id(),
                 requiredPermission
         ).orElseThrow(() -> notFound(
                 "Permissão financeira não encontrada para este colaborador."
@@ -182,76 +252,83 @@ public class FinancialGrantService {
         }
 
         LocalDateTime now = repository.databaseNow();
-        if (!repository.revoke(
-                existing.id(),
-                normalizedJustification,
-                normalizedActorId,
-                now
-        )) {
+        if (!repository.revoke(existing.id(), reason, actor, now)) {
             return currentGrant(
-                    normalizedCollaboratorId,
-                    normalizedObraId,
+                    collaborator,
+                    scope.id(),
                     requiredPermission
             );
         }
         registerEvent(
                 existing.id(),
-                normalizedObraId,
-                normalizedCollaboratorId,
+                scope,
+                collaborator,
                 requiredPermission,
                 "PERMISSAO_FINANCEIRA_REVOGADA",
                 "REVOGAR",
                 existing.status(),
                 "REVOGADA",
-                normalizedJustification,
-                normalizedActorId,
+                reason,
+                actor,
                 now
         );
-        if (repository.countActive(
-                normalizedCollaboratorId,
-                normalizedObraId
-        ) == 0) {
+        if (repository.countActiveForUnit(collaborator, scope.id()) == 0) {
             memoryService.encerrarRelacaoAtiva(
                     "COLABORADOR",
-                    normalizedCollaboratorId,
-                    "OBRA",
-                    normalizedObraId,
+                    collaborator,
+                    "UNIDADE_FINANCEIRA",
+                    scope.id(),
                     RELATION
             );
         }
-        return currentGrant(
-                normalizedCollaboratorId,
-                normalizedObraId,
-                requiredPermission
-        );
+        return currentGrant(collaborator, scope.id(), requiredPermission);
     }
 
     private FinancialGrantResponse currentGrant(
             String collaboratorId,
-            String worksiteId,
+            String unitId,
             FinancialPermission permission
     ) {
-        return FinancialGrantResponse.from(repository.find(
+        return FinancialGrantResponse.from(repository.findByUnit(
                 collaboratorId,
-                worksiteId,
+                unitId,
                 permission
         ).orElseThrow(() -> new IllegalStateException(
                 "A alteração da permissão financeira não foi confirmada."
         )));
     }
 
-    private void requireExistingSubjects(String obraId, String colaboradorId) {
-        if (!repository.worksiteExists(obraId)) {
-            throw notFound("Obra não encontrada.");
+    private FinancialUnitScope requireUnitScope(String unitId) {
+        String normalized = requireId(unitId, "unidadeId");
+        return unitRepository.findScopeById(normalized)
+                .orElseThrow(() -> notFound(
+                        "Unidade financeira não encontrada."
+                ));
+    }
+
+    private FinancialUnitScope requireWorksiteScope(String obraId) {
+        String normalized = requireId(obraId, "obraId");
+        return unitRepository.findScopeByWorksite(normalized)
+                .orElseThrow(() -> notFound(
+                        "Unidade financeira da obra não encontrada."
+                ));
+    }
+
+    private void requireAssignable(FinancialUnitScope scope) {
+        if (!"ATIVA".equals(scope.status())) {
+            throw notFound("Unidade financeira ativa não encontrada.");
         }
-        if (!repository.activeBetaCollaboratorExists(colaboradorId)) {
-            throw notFound("Colaborador Beta ativo não encontrado.");
+        if (scope.type() == FinancialUnitType.ADMINISTRATIVO
+                || scope.type() == FinancialUnitType.CORPORATIVO) {
+            throw badRequest(
+                    "Unidades administrativas e corporativas são Alfa-only."
+            );
         }
     }
 
     private void registerEvent(
             String grantId,
-            String obraId,
+            FinancialUnitScope scope,
             String collaboratorId,
             FinancialPermission permission,
             String eventType,
@@ -263,8 +340,10 @@ public class FinancialGrantService {
             LocalDateTime occurredAt
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("schemaVersion", 1);
-        payload.put("obraId", obraId);
+        payload.put("schemaVersion", 2);
+        payload.put("unidadeControleId", scope.id());
+        payload.put("unidadeTipo", scope.type().name());
+        payload.put("obraId", scope.worksiteId());
         payload.put("colaboradorId", collaboratorId);
         payload.put("grantId", grantId);
         payload.put("permissao", permission.name());
@@ -275,24 +354,28 @@ public class FinancialGrantService {
         payload.put("actorId", actorId);
         payload.put("result", "SUCESSO");
 
+        List<Map<String, Object>> related = new ArrayList<>();
+        related.add(Map.of("tipo", "UNIDADE_FINANCEIRA", "id", scope.id()));
+        related.add(Map.of("tipo", "COLABORADOR", "id", collaboratorId));
+        if (scope.worksiteId() != null) {
+            related.add(Map.of("tipo", "OBRA", "id", scope.worksiteId()));
+        }
+
         memoryService.registrarEventoDetalhado(
                 null,
                 ENTITY_TYPE,
                 grantId,
                 eventType,
                 SOURCE,
-                obraId,
+                scope.worksiteId(),
                 null,
                 actorId,
-                List.of(
-                        Map.of("tipo", "OBRA", "id", obraId),
-                        Map.of("tipo", "COLABORADOR", "id", collaboratorId)
-                ),
+                related,
                 "ONLINE",
                 "SYNCED",
                 occurredAt,
                 occurredAt,
-                1,
+                2,
                 payload
         );
     }

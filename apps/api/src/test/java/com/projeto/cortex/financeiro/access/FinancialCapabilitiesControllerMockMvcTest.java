@@ -59,4 +59,23 @@ class FinancialCapabilitiesControllerMockMvcTest {
                 .andExpect(jsonPath("$.obraId").value("obra-2"))
                 .andExpect(jsonPath("$.permissoes").isEmpty());
     }
+
+    @Test
+    void returnsCapabilitiesForAssetUnitWithoutWorksiteId() throws Exception {
+        when(currentUser.requireUserId()).thenReturn("beta-1");
+        when(access.hasPermissionForUnit(
+                "beta-1",
+                "unit-asset",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(true);
+
+        mockMvc.perform(get("/api/financeiro/capacidades")
+                        .param("unidadeId", "unit-asset"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unidadeControleId")
+                        .value("unit-asset"))
+                .andExpect(jsonPath("$.obraId").isEmpty())
+                .andExpect(jsonPath("$.permissoes[0]")
+                        .value("FINANCEIRO_VISUALIZAR"));
+    }
 }

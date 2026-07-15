@@ -317,6 +317,7 @@ git commit -m "feat(finance): add financial unit catalog and access policy"
 - Modify: `apps/api/src/test/java/com/projeto/cortex/financeiro/access/FinancialGrantServiceTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/financeiro/access/FinancialGrantControllerMockMvcTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/financeiro/access/FinancialCapabilitiesControllerMockMvcTest.java`
+- Create: `apps/api/src/test/java/com/projeto/cortex/pdor/FinancialGrantServiceMysqlIntegrationTest.java`
 
 **Interfaces:**
 
@@ -330,7 +331,7 @@ public FinancialGrantResponse revokeUnit(String unitId, String collaboratorId,
 
 `FinancialGrantResponse` adds `unidadeControleId`, `unidadeTipo` and keeps nullable `obraId`.
 
-- [ ] **Step 1: Write failing controller and domain tests**
+- [x] **Step 1: Write failing controller and domain tests**
 
 Add exact route expectations:
 
@@ -349,13 +350,13 @@ mockMvc.perform(post("/api/financeiro/unidades/unit-asset/permissoes")
 
 Also assert: only active Beta can receive a grant; Alfa target is rejected; administrative/corporate unit target is rejected for Beta; active grant is idempotent; revocation records actor and ends ontology relation only after the last active permission.
 
-- [ ] **Step 2: Run tests and confirm failures**
+- [x] **Step 2: Run tests and confirm failures**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinancialGrantServiceTest,FinancialGrantControllerMockMvcTest,FinancialCapabilitiesControllerMockMvcTest test`
 
 Expected: FAIL because unit routes and fields do not exist.
 
-- [ ] **Step 3: Implement generalized grants**
+- [x] **Step 3: Implement generalized grants**
 
 Expose:
 
@@ -368,13 +369,13 @@ GET    /api/financeiro/capacidades?unidadeId={id}
 
 Keep all `/api/obras/{obraId}/permissoes-financeiras` routes as adapters that resolve the worksite unit. `FinancialGrantService.registerEvent` must use schema version 2 and include unit id/type, optional worksite id, collaborator, grant, permission, actor and before/after states. Ontology target is `UNIDADE_FINANCEIRA`, not a fake worksite.
 
-- [ ] **Step 4: Run focused and legacy tests**
+- [x] **Step 4: Run focused and legacy tests**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest='com.projeto.cortex.financeiro.access.*Test' test`
 
 Expected: PASS, including legacy worksite routes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/main/java/com/projeto/cortex/financeiro/access apps/api/src/test/java/com/projeto/cortex/financeiro/access
