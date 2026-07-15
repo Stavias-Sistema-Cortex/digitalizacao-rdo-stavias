@@ -67,4 +67,21 @@ class AuthSessionResponseTest {
         assertThat(response.obraIds()).isEmpty();
         assertThat(response.toString()).doesNotContain("a".repeat(64));
     }
+
+    @Test
+    void mapsLocalDevAdminOverrideToAnEffectiveAlfaProfile() {
+        AuthSessionResponse response = AuthSessionResponse.from(
+                new AuthenticatedIdentity(
+                        COLLABORATOR_ID,
+                        "Colaborador Sintético",
+                        PapelAcesso.BETA
+                ),
+                EXPIRY,
+                Optional.empty()
+        );
+
+        assertThat(response.papelAcesso()).isEqualTo("ALFA");
+        assertThat(response.escopoGlobal()).isTrue();
+        assertThat(response.obraIds()).isEmpty();
+    }
 }

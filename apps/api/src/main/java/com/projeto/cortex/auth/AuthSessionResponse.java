@@ -56,7 +56,7 @@ public record AuthSessionResponse(
         return new AuthSessionResponse(
                 identity.colaboradorId(),
                 identity.nome(),
-                identity.papelAcesso().name(),
+                effectiveRole(identity.papelAcesso(), allowedObraIds).name(),
                 allowedObraIds.isEmpty(),
                 allowedObraIds.map(Set::stream)
                         .orElseGet(java.util.stream.Stream::empty)
@@ -75,7 +75,7 @@ public record AuthSessionResponse(
         return new AuthSessionResponse(
                 session.collaboratorId(),
                 session.collaboratorName(),
-                session.role().name(),
+                effectiveRole(session.role(), allowedObraIds).name(),
                 allowedObraIds.isEmpty(),
                 allowedObraIds.map(Set::stream)
                         .orElseGet(java.util.stream.Stream::empty)
@@ -83,6 +83,17 @@ public record AuthSessionResponse(
                         .toList(),
                 session.expiresAt()
         );
+    }
+
+    private static PapelAcesso effectiveRole(
+            PapelAcesso persistedRole,
+            Optional<Set<String>> allowedObraIds
+    ) {
+        Objects.requireNonNull(persistedRole, "Papel de acesso obrigatório.");
+        // The local dev-admin override deliberately grants global scope to an
+        // otherwise BETA identity. The public profile must describe that
+        // effective authorization instead of contradicting its global scope.
+        return allowedObraIds.isEmpty() ? PapelAcesso.ALFA : persistedRole;
     }
 
     private static List<String> canonicalObraIds(List<String> values) {
