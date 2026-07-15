@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -43,15 +44,21 @@ public class StaviaRetrievalService {
             entities.addAll(ontologyService.delayedActivities(obraId, 25));
         }
 
-        ontologyService.resolveEntity(query).ifPresent(entities::add);
+        resolveEntityWithinScope(query, obraId).ifPresent(entities::add);
 
         if (entities.isEmpty()) {
-            entities.addAll(ontologyService.listEntities(null, query, 10));
+            entities.addAll(listEntitiesWithinScope(obraId, query));
         }
 
         List<String> entityIds = distinctEntityIds(entities);
-        List<OntologyRelation> relations = ontologyService.relationsForEntities(entityIds, 120);
-        List<OntologyEvent> events = ontologyService.eventsForEntities(entityIds, 120);
+        List<OntologyRelation> relations = relationsInsideEntitySet(
+                ontologyService.relationsForEntities(entityIds, 120),
+                entityIds
+        );
+        List<OntologyEvent> events = eventsInsideEntitySet(
+                ontologyService.eventsForEntities(entityIds, 120),
+                entityIds
+        );
         List<OperationalState> states = ontologyService.statesForEntities(entityIds, 120);
         List<OperationalEvidence> evidences = ontologyService.evidencesForEntities(entityIds, 120);
 
@@ -84,6 +91,49 @@ public class StaviaRetrievalService {
 
         return ontologyService.resolveWorksiteId(query)
                 .orElse(null);
+    }
+
+    private Optional<OntologyEntity> resolveEntityWithinScope(
+            String query,
+            String obraId
+    ) {
+        if (obraId == null || obraId.isBlank()) {
+            return ontologyService.resolveEntity(query);
+        }
+        return ontologyService.resolveEntityInWorksite(query, obraId);
+    }
+
+    private List<OntologyEntity> listEntitiesWithinScope(
+            String obraId,
+            String query
+    ) {
+        if (obraId == null || obraId.isBlank()) {
+            return ontologyService.listEntities(null, query, 10);
+        }
+        return ontologyService.listEntitiesForWorksite(obraId, null, query, 10);
+    }
+
+    private List<OntologyRelation> relationsInsideEntitySet(
+            List<OntologyRelation> relations,
+            List<String> entityIds
+    ) {
+        Set<String> permitted = Set.copyOf(entityIds);
+        return relations.stream()
+                .filter(relation -> permitted.contains(relation.sourceEntityId()))
+                .filter(relation -> permitted.contains(relation.targetEntityId()))
+                .toList();
+    }
+
+    private List<OntologyEvent> eventsInsideEntitySet(
+            List<OntologyEvent> events,
+            List<String> entityIds
+    ) {
+        Set<String> permitted = Set.copyOf(entityIds);
+        return events.stream()
+                .filter(event -> permitted.contains(event.entityId()))
+                .filter(event -> event.relatedEntityId() == null
+                        || permitted.contains(event.relatedEntityId()))
+                .toList();
     }
 
     private List<DelayAnalysis> buildDelayAnalyses(

@@ -2,6 +2,7 @@ package com.projeto.cortex.auth;
 
 import com.projeto.cortex.colaboradores.Colaborador;
 import com.projeto.cortex.colaboradores.ColaboradorRepository;
+import java.util.List;
 import com.projeto.cortex.colaboradores.CpfHasher;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -32,9 +33,18 @@ public class AuthService {
 
         String cpfHash = CpfHasher.hashDeDigitos(normalizado);
 
-        return colaboradorRepository
-                .findFirstByCpfHashAndAtivoTrueAndDeletadoEmIsNull(cpfHash)
-                .map(AuthService::toResponse);
+        List<Colaborador> matches = colaboradorRepository
+                .findByCpfHashAndAtivoTrueAndDeletadoEmIsNull(cpfHash);
+
+        // A base ainda não tem uma restrição UNIQUE histórica para hashes de
+        // CPF. Até a higienização dos dados, qualquer ambiguidade falha
+        // fechada: escolher o "primeiro" colaborador poderia autenticar a
+        // identidade errada.
+        if (matches == null || matches.size() != 1) {
+            return Optional.empty();
+        }
+
+        return Optional.of(toResponse(matches.getFirst()));
     }
 
     private static LoginResponse toResponse(Colaborador colaborador) {
@@ -55,9 +65,6 @@ public class AuthService {
         if (explicito != null) {
             return explicito;
         }
-        return PapelAcesso.fromPerfilGrupo(
-                colaborador.getNomePerfil(),
-                colaborador.getNomeGrupo()
-        );
+        return PapelAcesso.BETA;
     }
 }

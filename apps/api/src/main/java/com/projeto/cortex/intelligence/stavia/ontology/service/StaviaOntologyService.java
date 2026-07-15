@@ -101,6 +101,68 @@ public class StaviaOntologyService {
         );
     }
 
+    /**
+     * Busca entidades exclusivamente dentro de uma obra. O filtro no banco é
+     * deliberadamente aplicado antes do limite e da projeção: o chamador não
+     * pode resolver uma entidade de outra obra e filtrá-la apenas depois de já
+     * tê-la usado no contexto da Stav.IA.
+     */
+    public List<OntologyEntity> listEntitiesForWorksite(
+            String obraId,
+            String type,
+            String query,
+            Integer limit
+    ) {
+        String normalizedObraId = blankToNull(obraId);
+        if (normalizedObraId == null) {
+            return listEntities(type, query, limit);
+        }
+
+        StringBuilder sql = new StringBuilder("""
+                SELECT *
+                FROM ontology_entities
+                WHERE (
+                    (entity_type = 'OBRA'
+                        AND external_ref_type = 'obra'
+                        AND external_ref_id = ?)
+                    OR JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.obraId')) = ?
+                )
+                """);
+        List<Object> params = new ArrayList<>();
+        params.add(normalizedObraId);
+        params.add(normalizedObraId);
+
+        if (!isBlank(type)) {
+            sql.append(" AND entity_type = ?");
+            params.add(type.trim().toUpperCase());
+        }
+
+        if (!isBlank(query)) {
+            sql.append("""
+                     AND (
+                        LOWER(canonical_name) LIKE ?
+                        OR LOWER(COALESCE(description, '')) LIKE ?
+                        OR LOWER(COALESCE(external_ref_id, '')) LIKE ?
+                        OR LOWER(id) LIKE ?
+                     )
+                    """);
+            String pattern = "%" + query.trim().toLowerCase() + "%";
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
+        }
+
+        sql.append(" ORDER BY updated_at DESC, canonical_name ASC LIMIT ?");
+        params.add(limit(limit));
+
+        return jdbcTemplate.query(
+                sql.toString(),
+                this::mapEntity,
+                params.toArray()
+        );
+    }
+
     public Optional<OntologyEntity> findEntity(String id) {
         if (isBlank(id)) {
             return Optional.empty();
@@ -134,6 +196,61 @@ public class StaviaOntologyService {
         }
 
         return listEntities(null, query, 1).stream().findFirst();
+    }
+
+    /** Resolve uma entidade sem ultrapassar o escopo de obra já autorizado. */
+    public Optional<OntologyEntity> resolveEntityInWorksite(
+            String query,
+            String obraId
+    ) {
+        String normalizedObraId = blankToNull(obraId);
+        if (normalizedObraId == null || isBlank(query)) {
+            return Optional.empty();
+        }
+
+        Optional<OntologyEntity> byId = findEntityInWorksite(
+                query,
+                normalizedObraId
+        );
+        if (byId.isPresent()) {
+            return byId;
+        }
+
+        return listEntitiesForWorksite(
+                normalizedObraId,
+                null,
+                query,
+                1
+        ).stream().findFirst();
+    }
+
+    private Optional<OntologyEntity> findEntityInWorksite(
+            String entityId,
+            String obraId
+    ) {
+        try {
+            return Optional.ofNullable(
+                    jdbcTemplate.queryForObject(
+                            """
+                            SELECT *
+                            FROM ontology_entities
+                            WHERE id = ?
+                              AND (
+                                  (entity_type = 'OBRA'
+                                      AND external_ref_type = 'obra'
+                                      AND external_ref_id = ?)
+                                  OR JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.obraId')) = ?
+                              )
+                            """,
+                            this::mapEntity,
+                            entityId.trim(),
+                            obraId,
+                            obraId
+                    )
+            );
+        } catch (EmptyResultDataAccessException ignored) {
+            return Optional.empty();
+        }
     }
 
     public Optional<String> resolveWorksiteId(String query) {

@@ -166,6 +166,7 @@ public class ColaboradorImportService {
                     nome_grupo,
                     id_perfil_origem,
                     nome_perfil,
+                    papel_acesso,
                     ativo,
                     criado_em_origem,
                     atualizado_em_origem,
@@ -173,7 +174,7 @@ public class ColaboradorImportService {
                     visto_por_ultimo_em,
                     deletado_em
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON DUPLICATE KEY UPDATE
                     codigo_colaborador = VALUES(codigo_colaborador),
                     cpf_hash = VALUES(cpf_hash),
@@ -184,6 +185,7 @@ public class ColaboradorImportService {
                     nome_grupo = VALUES(nome_grupo),
                     id_perfil_origem = VALUES(id_perfil_origem),
                     nome_perfil = VALUES(nome_perfil),
+                    papel_acesso = COALESCE(papel_acesso, 'BETA'),
                     ativo = VALUES(ativo),
                     criado_em_origem = VALUES(criado_em_origem),
                     atualizado_em_origem = VALUES(atualizado_em_origem),

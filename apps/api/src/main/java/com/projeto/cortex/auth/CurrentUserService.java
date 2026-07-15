@@ -143,7 +143,7 @@ public class CurrentUserService {
 
         return jdbcTemplate.query(
                 """
-                SELECT papel_acesso, nome_perfil, nome_grupo
+                SELECT papel_acesso
                 FROM colaborador
                 WHERE id = ?
                   AND ativo = 1
@@ -159,10 +159,10 @@ public class CurrentUserService {
                     if (explicito != null) {
                         return explicito;
                     }
-                    return PapelAcesso.fromPerfilGrupo(
-                            rs.getString("nome_perfil"),
-                            rs.getString("nome_grupo")
-                    );
+                    // O papel explícito é a fronteira de autorização. Uma
+                    // linha legada sem atribuição não pode ganhar escopo Alfa
+                    // apenas porque texto importado contém "admin".
+                    return PapelAcesso.BETA;
                 },
                 colaboradorId.trim()
         );

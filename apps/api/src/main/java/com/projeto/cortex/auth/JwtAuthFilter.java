@@ -24,9 +24,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     );
 
     private final JwtService jwtService;
+    private final CurrentUserService currentUserService;
 
-    public JwtAuthFilter(JwtService jwtService) {
+    public JwtAuthFilter(
+            JwtService jwtService,
+            CurrentUserService currentUserService
+    ) {
         this.jwtService = jwtService;
+        this.currentUserService = currentUserService;
     }
 
     @Override
@@ -54,11 +59,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         Optional<String> subject = jwtService.subject(token);
         if (subject.isEmpty()) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write(
-                    "{\"message\":\"Autenticação necessária ou sessão expirada.\"}"
-            );
+            reject(response);
+            return;
+        }
+
+        // JWTs são válidos por até 12 horas. Consultar a identidade ativa em
+        // cada requisição impede que um token emitido antes de uma desativação
+        // continue a autorizar conversas, sincronização ou dados de obra.
+        if (currentUserService.papelAcesso(subject.get()) == null) {
+            reject(response);
             return;
         }
 
@@ -67,5 +76,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 subject.get()
         );
         filterChain.doFilter(request, response);
+    }
+
+    private void reject(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write(
+                "{\"message\":\"Autenticação necessária ou sessão expirada.\"}"
+        );
     }
 }

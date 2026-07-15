@@ -5,13 +5,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface ColaboradorRepository extends JpaRepository<Colaborador, String> {
 
     List<Colaborador> findByDeletadoEmIsNullOrderByNomeAsc();
 
-    Optional<Colaborador> findFirstByCpfHashAndAtivoTrueAndDeletadoEmIsNull(
+    List<Colaborador> findByCpfHashAndAtivoTrueAndDeletadoEmIsNull(
             String cpfHash
     );
 
