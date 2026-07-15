@@ -1,3 +1,5 @@
+import { clearUserScopedLocalStorage } from "../../lib/db/localDataScope";
+
 const SESSION_KEY = "cortex.auth.sessao";
 export const AUTH_SESSION_CHANGED_EVENT =
   "cortex-auth-session-changed";
@@ -60,6 +62,7 @@ export function setSession(session: AuthSession): void {
 
 export function clearSession(): void {
   localStorage.removeItem(SESSION_KEY);
+  clearUserScopedLocalStorage();
   window.dispatchEvent(
     new Event(AUTH_SESSION_CHANGED_EVENT),
   );

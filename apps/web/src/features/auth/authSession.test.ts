@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getSession, setSession } from "./authSession";
+import { clearSession, getSession, setSession } from "./authSession";
 
 const SESSION_KEY = "cortex.auth.sessao";
 
@@ -29,9 +29,11 @@ function memoryStorage(): Storage {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("localStorage", memoryStorage());
+  const storage = memoryStorage();
+  vi.stubGlobal("localStorage", storage);
   vi.stubGlobal("window", {
     dispatchEvent: vi.fn(),
+    localStorage: storage,
   });
 });
 
@@ -76,5 +78,17 @@ describe("authSession", () => {
 
     expect(getSession()?.colaboradorId).toBe("colaborador-1");
     expect(localStorage.getItem(SESSION_KEY)).not.toContain("11144477735");
+  });
+
+  it("remove o contexto operacional da StavIA ao encerrar a sessão", () => {
+    localStorage.setItem(SESSION_KEY, "session");
+    localStorage.setItem("cortex:stavia:chat:operacional", "conteúdo privado");
+    localStorage.setItem("cortex:stavia:last-context", "obra-1");
+
+    clearSession();
+
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(localStorage.getItem("cortex:stavia:chat:operacional")).toBeNull();
+    expect(localStorage.getItem("cortex:stavia:last-context")).toBeNull();
   });
 });
