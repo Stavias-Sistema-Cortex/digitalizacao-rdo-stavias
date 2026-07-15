@@ -168,7 +168,7 @@ class PdorApplicationServiceTest {
                 eq("SYNCED"),
                 any(),
                 any(),
-                eq(1),
+                eq(2),
                 payload.capture()
         );
 

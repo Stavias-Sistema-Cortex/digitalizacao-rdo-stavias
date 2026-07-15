@@ -22,6 +22,8 @@ class PdorSpringContextTest {
                     .withBean(PdorInputLoader.class, () -> mock(PdorInputLoader.class))
                     .withBean(PdorSnapshotRepository.class, () -> mock(PdorSnapshotRepository.class))
                     .withBean(CurrentUserService.class, () -> mock(CurrentUserService.class))
+                    .withBean(PdorExecutionInitiatorResolver.class,
+                            () -> mock(PdorExecutionInitiatorResolver.class))
                     .withBean(CortexOperationalMemoryService.class, () -> mock(CortexOperationalMemoryService.class));
 
     @Test
