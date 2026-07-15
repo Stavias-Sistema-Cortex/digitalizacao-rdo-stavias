@@ -388,6 +388,8 @@ git commit -m "feat(finance): scope financial grants by control unit"
 
 **Files:**
 
+- Create: `apps/api/src/main/resources/db/migration/V35__finance_allocation_mutation_integrity.sql`
+- Create: `apps/api/src/test/java/com/projeto/cortex/financeiro/FinanceAllocationMigrationTest.java`
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/allocation/FinanceAllocationDtos.java`
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/allocation/FinanceAllocationRepository.java`
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/allocation/FinanceAllocationService.java`
@@ -423,7 +425,13 @@ public AllocationResponse findBySource(AllocationSourceType type, String sourceI
 public AllocationHistoryResponse history(String allocationId);
 ```
 
-- [ ] **Step 1: Write failing domain tests**
+- [x] **Step 0: Refine mutation integrity additively**
+
+Create V35 to add `client_mutation_id` to every allocation history revision,
+unique by actor, and remove the overly restrictive unique index that prevented
+multiple categorized rows for the same unit. Do not edit V34.
+
+- [x] **Step 1: Write failing domain tests**
 
 Required tests:
 
@@ -441,13 +449,13 @@ Required tests:
 
 Percentage derivation uses `valor.divide(total, 6, RoundingMode.HALF_UP)`; values, not percentages, are authoritative. The final response may display derived percentages but equality is checked only on exact `DECIMAL(19,4)` values.
 
-- [ ] **Step 2: Run tests and confirm missing domain**
+- [x] **Step 2: Run tests and confirm missing domain**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinanceAllocationServiceTest,FinanceAllocationControllerMockMvcTest test`
 
 Expected: compilation FAIL for allocation types.
 
-- [ ] **Step 3: Implement the transaction and validation boundary**
+- [x] **Step 3: Implement the transaction and validation boundary**
 
 Expose:
 
@@ -467,17 +475,17 @@ NOTA_FISCAL  -> valor_liquido, moeda
 LANCAMENTO   -> valor_original, moeda
 ```
 
-- [ ] **Step 4: Add MySQL integration coverage**
+- [x] **Step 4: Add MySQL integration coverage**
 
 Prove row locking/version conflict, unique source, exact values, rejected corporate target, actor history and rollback when any item fails. Reuse existing finance seed helpers where possible.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinanceAllocationServiceTest,FinanceAllocationControllerMockMvcTest,FinanceAllocationServiceMysqlIntegrationTest test`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/src/main/java/com/projeto/cortex/financeiro/allocation apps/api/src/test/java/com/projeto/cortex/financeiro/allocation apps/api/src/test/java/com/projeto/cortex/pdor/FinanceAllocationServiceMysqlIntegrationTest.java
