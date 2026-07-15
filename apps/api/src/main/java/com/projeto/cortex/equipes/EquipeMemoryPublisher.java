@@ -97,6 +97,116 @@ public class EquipeMemoryPublisher {
         );
     }
 
+    public void obraAssociada(
+            EquipeResponse equipe,
+            EquipeWorksiteResponse link,
+            String actorId
+    ) {
+        memoryService.registrarObjeto(
+                "ALOCACAO_EQUIPE_OBRA",
+                link.id(),
+                link.id(),
+                equipe.nome() + " em " + link.obraNome(),
+                link.status(),
+                SOURCE,
+                "equipe_obra",
+                Map.of("equipeId", equipe.id(), "obraId", link.obraId())
+        );
+        memoryService.registrarRelacaoAtiva(
+                "ALOCACAO_EQUIPE_OBRA", link.id(),
+                "EQUIPE", equipe.id(),
+                "ALOCA_EQUIPE", SOURCE,
+                "Associação temporal da equipe com a obra."
+        );
+        memoryService.registrarRelacaoAtiva(
+                "ALOCACAO_EQUIPE_OBRA", link.id(),
+                "OBRA", link.obraId(),
+                "OCORRE_EM", SOURCE,
+                "Obra da associação temporal."
+        );
+        memoryService.registrarRelacaoAtiva(
+                "EQUIPE", equipe.id(),
+                "OBRA", link.obraId(),
+                "ATUA_EM", SOURCE,
+                "Equipe vinculada temporalmente à obra."
+        );
+
+        Map<String, Object> after = worksiteState(link);
+        publishEvent(
+                "ALOCACAO_EQUIPE_OBRA",
+                link.id(),
+                "EQUIPE_VINCULADA_OBRA",
+                link.obraId(),
+                null,
+                actorId,
+                "ASSOCIAR_OBRA",
+                Map.of(),
+                after,
+                List.copyOf(after.keySet()),
+                null,
+                link.versaoEntidade(),
+                null,
+                List.of(
+                        Map.of("tipo", "EQUIPE", "id", equipe.id()),
+                        Map.of("tipo", "OBRA", "id", link.obraId())
+                )
+        );
+    }
+
+    public void obraDesassociada(
+            EquipeResponse equipe,
+            EquipeWorksiteResponse before,
+            EquipeWorksiteResponse after,
+            String actorId,
+            long baseVersion,
+            String reason
+    ) {
+        memoryService.registrarObjeto(
+                "ALOCACAO_EQUIPE_OBRA",
+                after.id(),
+                after.id(),
+                equipe.nome() + " em " + after.obraNome(),
+                after.status(),
+                SOURCE,
+                "equipe_obra",
+                Map.of("equipeId", equipe.id(), "obraId", after.obraId())
+        );
+        memoryService.encerrarRelacaoAtiva(
+                "ALOCACAO_EQUIPE_OBRA", after.id(),
+                "EQUIPE", equipe.id(), "ALOCA_EQUIPE"
+        );
+        memoryService.encerrarRelacaoAtiva(
+                "ALOCACAO_EQUIPE_OBRA", after.id(),
+                "OBRA", after.obraId(), "OCORRE_EM"
+        );
+        memoryService.encerrarRelacaoAtiva(
+                "EQUIPE", equipe.id(),
+                "OBRA", after.obraId(), "ATUA_EM"
+        );
+
+        Map<String, Object> beforeState = worksiteState(before);
+        Map<String, Object> afterState = worksiteState(after);
+        publishEvent(
+                "ALOCACAO_EQUIPE_OBRA",
+                after.id(),
+                "EQUIPE_DESVINCULADA_OBRA",
+                after.obraId(),
+                null,
+                actorId,
+                "ENCERRAR_ASSOCIACAO_OBRA",
+                beforeState,
+                afterState,
+                changedFields(beforeState, afterState),
+                baseVersion,
+                after.versaoEntidade(),
+                reason,
+                List.of(
+                        Map.of("tipo", "EQUIPE", "id", equipe.id()),
+                        Map.of("tipo", "OBRA", "id", after.obraId())
+                )
+        );
+    }
+
     public void membroAdicionado(
             EquipeResponse equipe,
             EquipeMemberResponse member,
@@ -419,6 +529,18 @@ public class EquipeMemoryPublisher {
         state.put("inicioEm", member.inicioEm());
         state.put("fimEm", member.fimEm());
         state.put("motivoEncerramento", member.motivoEncerramento());
+        return state;
+    }
+
+    private Map<String, Object> worksiteState(EquipeWorksiteResponse link) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("id", link.id());
+        state.put("equipeId", link.equipeId());
+        state.put("obraId", link.obraId());
+        state.put("status", link.status());
+        state.put("inicioEm", link.inicioEm());
+        state.put("fimEm", link.fimEm());
+        state.put("motivoEncerramento", link.motivoEncerramento());
         return state;
     }
 

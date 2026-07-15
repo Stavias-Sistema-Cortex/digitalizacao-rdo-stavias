@@ -2,6 +2,7 @@ package com.projeto.cortex.equipes;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.obras.VinculoColaboradorObraService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,6 +40,12 @@ class EquipeServiceTest {
             vinculoService
     );
 
+    @BeforeEach
+    void allowAlfaGlobalScopeByDefault() {
+        when(currentUserService.requireUserId()).thenReturn("alfa-1");
+        when(currentUserService.allowedObraIds("alfa-1")).thenReturn(Optional.empty());
+    }
+
     @Test
     void betaWithoutAuthorizedWorksitesReturnsEmptyPageWithoutGlobalQuery() {
         when(currentUserService.requireUserId()).thenReturn("beta-1");
@@ -51,7 +58,7 @@ class EquipeServiceTest {
                 null,
                 null,
                 null,
-                0,
+                1,
                 25
         ));
 
@@ -113,7 +120,7 @@ class EquipeServiceTest {
         verify(currentUserService).requireAlfa();
         verify(currentUserService, atLeastOnce()).requireWorksiteAccess("obra-1");
         verify(jdbcTemplate).update(
-                contains("INSERT INTO equipe ("),
+                contains("versao_linha"),
                 eq("equipe-1"),
                 eq("obra-1"),
                 eq("Equipe Norte"),
@@ -190,7 +197,7 @@ class EquipeServiceTest {
                 startedAt,
                 null,
                 null,
-                0,
+                1,
                 startedAt,
                 startedAt
         );
@@ -242,7 +249,7 @@ class EquipeServiceTest {
 
         assertThat(created).isEqualTo(member);
         verify(jdbcTemplate).update(
-                contains("INSERT INTO equipe_membro"),
+                contains("versao_linha"),
                 eq("participacao-1"),
                 eq("equipe-1"),
                 eq("colab-1"),
@@ -460,7 +467,7 @@ class EquipeServiceTest {
                 "Opera a vibroacabadora da frente",
                 true,
                 10,
-                0,
+                1,
                 createdAt,
                 createdAt
         );
@@ -482,7 +489,7 @@ class EquipeServiceTest {
 
         assertThat(created).isEqualTo(expected);
         verify(jdbcTemplate).update(
-                contains("INSERT INTO funcao_operacional"),
+                contains("versao_linha"),
                 eq("funcao-1"),
                 eq("OPERADOR_PAVIMENTADORA"),
                 eq("Operador de pavimentadora"),
@@ -493,5 +500,123 @@ class EquipeServiceTest {
                 eq("alfa-1")
         );
         verify(memoryPublisher).funcaoCriada(expected, "alfa-1");
+    }
+
+    @Test
+    void betaCanReadTeamThroughAnyActiveAuthorizedWorksite() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 1, 8, 0);
+        EquipeResponse team = new EquipeResponse(
+                "equipe-1", "obra-principal", "Obra principal", "Equipe itinerante",
+                null, "ATIVA", startedAt, null, 2,
+                startedAt, startedAt, List.of()
+        );
+
+        when(currentUserService.requireUserId()).thenReturn("beta-1");
+        when(currentUserService.allowedObraIds("beta-1"))
+                .thenReturn(Optional.of(Set.of("obra-secundaria")));
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of(team));
+        when(jdbcTemplate.queryForObject(
+                contains("FROM equipe_obra"),
+                eq(Integer.class),
+                eq("equipe-1"),
+                eq("obra-secundaria")
+        )).thenReturn(1);
+        when(jdbcTemplate.query(
+                contains("WHERE em.equipe_id = ?"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of());
+
+        EquipeResponse response = service.buscarPorId("equipe-1");
+
+        assertThat(response).isEqualTo(team);
+        verify(currentUserService, never()).requireWorksiteAccess("obra-principal");
+    }
+
+    @Test
+    void betaCannotReadTeamWithoutAnActiveAuthorizedWorksiteIntersection() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 1, 8, 0);
+        EquipeResponse team = new EquipeResponse(
+                "equipe-1", "obra-principal", "Obra principal", "Equipe restrita",
+                null, "ATIVA", startedAt, null, 2,
+                startedAt, startedAt, List.of()
+        );
+
+        when(currentUserService.requireUserId()).thenReturn("beta-1");
+        when(currentUserService.allowedObraIds("beta-1"))
+                .thenReturn(Optional.of(Set.of("obra-beta")));
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of(team));
+        when(jdbcTemplate.queryForObject(
+                contains("FROM equipe_obra"),
+                eq(Integer.class),
+                eq("equipe-1"),
+                eq("obra-beta")
+        )).thenReturn(0);
+
+        assertThatThrownBy(() -> service.buscarPorId("equipe-1"))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+                    assertThat(exception.getReason()).isEqualTo("Acesso negado à equipe.");
+                });
+
+        verify(jdbcTemplate, never()).query(
+                contains("FROM equipe_membro em"),
+                any(RowMapper.class),
+                any(Object[].class)
+        );
+    }
+
+    @Test
+    void alfaAssociatesTeamWithAnotherWorksiteAsTemporalVersionedLink() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 15, 12, 0);
+        EquipeResponse team = new EquipeResponse(
+                "equipe-1", "obra-principal", "Obra principal", "Equipe móvel",
+                null, "ATIVA", startedAt, null, 2,
+                startedAt, startedAt, List.of()
+        );
+        EquipeWorksiteResponse link = new EquipeWorksiteResponse(
+                "alocacao-2", "equipe-1", "obra-secundaria", "Obra secundária",
+                "ATIVO", startedAt, null, null, 1,
+                startedAt, startedAt
+        );
+        EquipeWorksiteRequest request = new EquipeWorksiteRequest(
+                "alocacao-2", "obra-secundaria", startedAt
+        );
+
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of(team));
+        when(jdbcTemplate.query(
+                contains("WHERE em.equipe_id = ?"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(
+                contains("FROM obra"), eq(Integer.class), eq("obra-secundaria")
+        )).thenReturn(1);
+        when(jdbcTemplate.query(
+                contains("eo.obra_id = ?"),
+                any(RowMapper.class),
+                eq("equipe-1"),
+                eq("obra-secundaria")
+        )).thenReturn(List.of());
+        when(jdbcTemplate.query(
+                contains("WHERE eo.id = ?"),
+                any(RowMapper.class),
+                eq("alocacao-2")
+        )).thenReturn(List.of(link));
+
+        EquipeWorksiteResponse created = service.adicionarObra("equipe-1", request);
+
+        assertThat(created).isEqualTo(link);
+        verify(jdbcTemplate).update(
+                contains("versao_linha"),
+                eq("alocacao-2"),
+                eq("equipe-1"),
+                eq("obra-secundaria"),
+                eq(startedAt),
+                eq("alfa-1")
+        );
+        verify(memoryPublisher).obraAssociada(team, link, "alfa-1");
     }
 }

@@ -10,8 +10,10 @@ public record ColaboradorResponse(
         String email,
         String nomeGrupo,
         String nomePerfil,
+        String papelAcesso,
         boolean ativo,
-        LocalDateTime atualizadoEm
+        LocalDateTime atualizadoEm,
+        long versaoLinha
 ) {
     public static ColaboradorResponse from(Colaborador colaborador) {
         return new ColaboradorResponse(
@@ -22,8 +24,10 @@ public record ColaboradorResponse(
                 colaborador.getEmail(),
                 colaborador.getNomeGrupo(),
                 colaborador.getNomePerfil(),
+                colaborador.getPapelAcesso(),
                 colaborador.isAtivo(),
-                colaborador.getAtualizadoEm()
+                colaborador.getAtualizadoEm(),
+                colaborador.getVersaoLinha()
         );
     }
 }

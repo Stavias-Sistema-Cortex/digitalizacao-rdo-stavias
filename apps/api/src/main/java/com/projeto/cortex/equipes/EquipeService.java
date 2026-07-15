@@ -137,8 +137,168 @@ public class EquipeService {
         }
 
         EquipeResponse team = teams.getFirst();
-        currentUserService.requireWorksiteAccess(team.obraPrincipalId());
+        requireTeamReadAccess(normalizedId);
         return team.withMembros(listMembers(normalizedId));
+    }
+
+    public List<EquipeWorksiteResponse> listarObras(String equipeId) {
+        String normalizedId = buscarPorId(equipeId).id();
+        String currentUserId = currentUserService.requireUserId();
+        Optional<Set<String>> allowed = currentUserService.allowedObraIds(currentUserId);
+        if (allowed.isPresent() && allowed.get().isEmpty()) {
+            return List.of();
+        }
+
+        StringBuilder sql = new StringBuilder(worksiteSelect())
+                .append(" WHERE eo.equipe_id = ?");
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(normalizedId);
+        if (allowed.isPresent()) {
+            sql.append(" AND eo.obra_id IN (")
+                    .append(placeholders(allowed.get().size()))
+                    .append(")");
+            parameters.addAll(allowed.get());
+        }
+        sql.append(" ORDER BY (eo.status = 'ATIVO') DESC, eo.inicio_em, o.nome, eo.id");
+        return jdbcTemplate.query(sql.toString(), worksiteMapper(), parameters.toArray());
+    }
+
+    @Transactional
+    public EquipeWorksiteResponse adicionarObra(
+            String equipeId,
+            EquipeWorksiteRequest request
+    ) {
+        currentUserService.requireAlfa();
+        String actorId = currentUserService.requireUserId();
+        if (request == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Dados da associação com a obra são obrigatórios."
+            );
+        }
+
+        EquipeResponse team = buscarPorId(equipeId);
+        if (EquipeStatus.ARQUIVADA.name().equals(team.status())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Não é possível associar obra a uma equipe arquivada."
+            );
+        }
+        String worksiteId = requireId(request.obraId(), "obraId");
+        currentUserService.requireWorksiteAccess(worksiteId);
+        requireExistingWorksite(worksiteId);
+
+        List<EquipeWorksiteResponse> existing = jdbcTemplate.query(
+                worksiteSelect()
+                        + " WHERE eo.equipe_id = ?"
+                        + " AND eo.obra_id = ?"
+                        + " AND eo.status = 'ATIVO'",
+                worksiteMapper(),
+                team.id(),
+                worksiteId
+        );
+        if (!existing.isEmpty()) {
+            return existing.getFirst();
+        }
+
+        String linkId = request.id() == null || request.id().isBlank()
+                ? UUID.randomUUID().toString()
+                : request.id().trim();
+        LocalDateTime start = request.inicioEm() == null
+                ? LocalDateTime.now()
+                : request.inicioEm();
+        jdbcTemplate.update(
+                """
+                INSERT INTO equipe_obra (
+                    id, equipe_id, obra_id, status, inicio_em, atribuido_por,
+                    versao_linha
+                ) VALUES (?, ?, ?, 'ATIVO', ?, ?, 1)
+                """,
+                linkId,
+                team.id(),
+                worksiteId,
+                start,
+                actorId
+        );
+
+        EquipeWorksiteResponse created = requireWorksiteLink(linkId);
+        memoryPublisher.obraAssociada(team, created, actorId);
+        return created;
+    }
+
+    @Transactional
+    public EquipeWorksiteResponse encerrarObra(
+            String equipeId,
+            String linkId,
+            Long baseVersao,
+            String motivo,
+            LocalDateTime encerradoEm
+    ) {
+        currentUserService.requireAlfa();
+        String actorId = currentUserService.requireUserId();
+        EquipeResponse team = buscarPorId(equipeId);
+        EquipeWorksiteResponse before = requireWorksiteLink(requireId(linkId, "associacaoId"));
+        if (!team.id().equals(before.equipeId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Associação não pertence à equipe informada."
+            );
+        }
+        if ("ENCERRADO".equals(before.status())) {
+            return before;
+        }
+        if (team.obraPrincipalId().equals(before.obraId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A obra principal só pode ser encerrada ao arquivar a equipe."
+            );
+        }
+
+        long baseVersion = requireBaseVersion(baseVersao);
+        if (before.versaoEntidade() != baseVersion) {
+            throw worksiteLinkVersionConflict();
+        }
+        String reason = requireText(motivo, "motivo", 500);
+        LocalDateTime end = encerradoEm == null ? LocalDateTime.now() : encerradoEm;
+        if (end.isBefore(before.inicioEm())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O encerramento não pode ser anterior ao início da associação."
+            );
+        }
+
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE equipe_obra
+                SET status = 'ENCERRADO',
+                    fim_em = ?,
+                    motivo_encerramento = ?,
+                    encerrado_por = ?,
+                    versao_linha = versao_linha + 1
+                WHERE id = ?
+                  AND versao_linha = ?
+                  AND status = 'ATIVO'
+                """,
+                end,
+                reason,
+                actorId,
+                before.id(),
+                baseVersion
+        );
+        if (updated != 1) {
+            throw worksiteLinkVersionConflict();
+        }
+
+        EquipeWorksiteResponse after = requireWorksiteLink(before.id());
+        memoryPublisher.obraDesassociada(
+                team,
+                before,
+                after,
+                actorId,
+                baseVersion,
+                reason
+        );
+        return after;
     }
 
     @Transactional
@@ -262,8 +422,9 @@ public class EquipeService {
                 """
                 INSERT INTO equipe_membro (
                     id, equipe_id, colaborador_id, funcao_operacional_id,
-                    responsavel, status, inicio_em, atribuido_por, atualizado_por
-                ) VALUES (?, ?, ?, ?, ?, 'ATIVO', ?, ?, ?)
+                    responsavel, status, inicio_em, atribuido_por, atualizado_por,
+                    versao_linha
+                ) VALUES (?, ?, ?, ?, ?, 'ATIVO', ?, ?, ?, 1)
                 """,
                 participationId,
                 team.id(),
@@ -454,6 +615,7 @@ public class EquipeService {
         if (EquipeStatus.ARQUIVADA.name().equals(before.status())) {
             return before;
         }
+        List<EquipeWorksiteResponse> activeWorksiteLinks = listActiveWorksiteLinks(before.id());
 
         long baseVersion = requireBaseVersion(baseVersao);
         if (before.versaoEntidade() != baseVersion) {
@@ -525,6 +687,17 @@ public class EquipeService {
         );
 
         EquipeResponse after = buscarPorId(before.id());
+        for (EquipeWorksiteResponse link : activeWorksiteLinks) {
+            EquipeWorksiteResponse endedLink = requireWorksiteLink(link.id());
+            memoryPublisher.obraDesassociada(
+                    before,
+                    link,
+                    endedLink,
+                    actorId,
+                    link.versaoEntidade(),
+                    reason
+            );
+        }
         for (EquipeMemberResponse member : before.membros()) {
             if (!"ATIVO".equals(member.status())) {
                 continue;
@@ -621,8 +794,8 @@ public class EquipeService {
                 """
                 INSERT INTO funcao_operacional (
                     id, codigo, nome, descricao, ativo, ordem_exibicao,
-                    criado_por, atualizado_por
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    criado_por, atualizado_por, versao_linha
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
                 """,
                 id,
                 code,
@@ -736,8 +909,8 @@ public class EquipeService {
                 """
                 INSERT INTO equipe (
                     id, obra_principal_id, nome, descricao, status,
-                    inicio_validade_em, criado_por, atualizado_por
-                ) VALUES (?, ?, ?, ?, 'ATIVA', ?, ?, ?)
+                    inicio_validade_em, criado_por, atualizado_por, versao_linha
+                ) VALUES (?, ?, ?, ?, 'ATIVA', ?, ?, ?, 1)
                 """,
                 id,
                 worksiteId,
@@ -750,8 +923,9 @@ public class EquipeService {
         jdbcTemplate.update(
                 """
                 INSERT INTO equipe_obra (
-                    id, equipe_id, obra_id, status, inicio_em, atribuido_por
-                ) VALUES (?, ?, ?, 'ATIVO', ?, ?)
+                    id, equipe_id, obra_id, status, inicio_em, atribuido_por,
+                    versao_linha
+                ) VALUES (?, ?, ?, 'ATIVO', ?, ?, 1)
                 """,
                 UUID.randomUUID().toString(),
                 id,
@@ -813,6 +987,59 @@ public class EquipeService {
             throw new IllegalStateException("Participação criada não pôde ser recarregada.");
         }
         return rows.getFirst();
+    }
+
+    private EquipeWorksiteResponse requireWorksiteLink(String linkId) {
+        List<EquipeWorksiteResponse> rows = jdbcTemplate.query(
+                worksiteSelect() + " WHERE eo.id = ?",
+                worksiteMapper(),
+                linkId
+        );
+        if (rows.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Associação entre equipe e obra não encontrada."
+            );
+        }
+        return rows.getFirst();
+    }
+
+    private List<EquipeWorksiteResponse> listActiveWorksiteLinks(String teamId) {
+        return jdbcTemplate.query(
+                worksiteSelect()
+                        + " WHERE eo.equipe_id = ?"
+                        + " AND eo.status = 'ATIVO'"
+                        + " ORDER BY eo.inicio_em, eo.id",
+                worksiteMapper(),
+                teamId
+        );
+    }
+
+    private String worksiteSelect() {
+        return """
+                SELECT
+                    eo.id, eo.equipe_id, eo.obra_id, o.nome AS obra_nome,
+                    eo.status, eo.inicio_em, eo.fim_em, eo.motivo_encerramento,
+                    eo.versao_linha, eo.criado_em, eo.atualizado_em
+                FROM equipe_obra eo
+                JOIN obra o ON o.id = eo.obra_id
+                """;
+    }
+
+    private RowMapper<EquipeWorksiteResponse> worksiteMapper() {
+        return (rs, rowNum) -> new EquipeWorksiteResponse(
+                rs.getString("id"),
+                rs.getString("equipe_id"),
+                rs.getString("obra_id"),
+                rs.getString("obra_nome"),
+                rs.getString("status"),
+                toLocalDateTime(rs.getTimestamp("inicio_em")),
+                toLocalDateTime(rs.getTimestamp("fim_em")),
+                rs.getString("motivo_encerramento"),
+                rs.getLong("versao_linha"),
+                toLocalDateTime(rs.getTimestamp("criado_em")),
+                toLocalDateTime(rs.getTimestamp("atualizado_em"))
+        );
     }
 
     private String memberSelect() {
@@ -929,6 +1156,39 @@ public class EquipeService {
         }
     }
 
+    private void requireTeamReadAccess(String teamId) {
+        String currentUserId = currentUserService.requireUserId();
+        Optional<Set<String>> allowed = currentUserService.allowedObraIds(currentUserId);
+        if (allowed.isEmpty()) {
+            return;
+        }
+        if (allowed.get().isEmpty()) {
+            throw teamAccessDenied();
+        }
+
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(teamId);
+        parameters.addAll(allowed.get());
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM equipe_obra
+                WHERE equipe_id = ?
+                  AND status = 'ATIVO'
+                  AND obra_id IN (%s)
+                """.formatted(placeholders(allowed.get().size())),
+                Integer.class,
+                parameters.toArray()
+        );
+        if (count == null || count == 0) {
+            throw teamAccessDenied();
+        }
+    }
+
+    private ResponseStatusException teamAccessDenied() {
+        return new ResponseStatusException(HttpStatus.FORBIDDEN, "Acesso negado à equipe.");
+    }
+
     private TeamIdentity requireIdentity(String teamId) {
         TeamIdentity identity = findIdentity(teamId);
         if (identity == null) {
@@ -990,6 +1250,13 @@ public class EquipeService {
         return new ResponseStatusException(
                 HttpStatus.CONFLICT,
                 "Conflito de versão da participação na equipe."
+        );
+    }
+
+    private ResponseStatusException worksiteLinkVersionConflict() {
+        return new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Conflito de versão da associação entre equipe e obra."
         );
     }
 
