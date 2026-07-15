@@ -66,7 +66,7 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody RegistroPresencaRequest request
     ) {
-        currentUserService.requireSelfOrAdmin(colaboradorId);
+        currentUserService.requireAlfa();
         return frequenciaService.registrarPresenca(
                 colaboradorId,
                 request
@@ -79,9 +79,10 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody OcorrenciaFrequenciaRequest request
     ) {
-        currentUserService.requireSelfOrAdmin(colaboradorId);
+        currentUserService.requireAlfa();
         return frequenciaService.registrarOcorrencia(
                 colaboradorId,
+                currentUserService.requireUserId(),
                 request
         );
     }
@@ -110,7 +111,7 @@ public class FrequenciaController {
             @PathVariable String colaboradorId,
             @RequestBody AjusteBancoHorasRequest request
     ) {
-        currentUserService.requireSelfOrAdmin(colaboradorId);
+        currentUserService.requireAlfa();
         return frequenciaService.ajustarBancoHoras(
                 colaboradorId,
                 currentUserService.requireUserId(),

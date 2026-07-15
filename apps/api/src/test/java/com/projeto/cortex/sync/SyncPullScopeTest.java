@@ -49,7 +49,9 @@ class SyncPullScopeTest {
         assertThat(filtro.condicaoSql())
                 .contains("obra_id IN (?)")
                 .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)")
-                .contains("FROM conversa_participante scope_cp")
+                .contains("JOIN conversa_participante scope_cp")
+                .contains("JOIN conversa scope_c")
+                .contains("FROM equipe_obra scope_ew")
                 .contains("scope_cp.colaborador_id = ?")
                 .contains("FROM mensagem scope_m")
                 .contains("FROM mensagem_anexo scope_a")
@@ -62,10 +64,20 @@ class SyncPullScopeTest {
                         "SERVICO",
                         "FUNCAO_OPERACIONAL",
                         "beta-1",
+                        "obra-1",
+                        "obra-1",
                         "beta-1",
+                        "obra-1",
+                        "obra-1",
                         "beta-1",
+                        "obra-1",
+                        "obra-1",
                         "beta-1",
-                        "beta-1"
+                        "obra-1",
+                        "obra-1",
+                        "beta-1",
+                        "obra-1",
+                        "obra-1"
                 );
     }
 
@@ -79,18 +91,14 @@ class SyncPullScopeTest {
 
         assertThat(filtro.condicaoSql())
                 .doesNotContain("obra_id IN (")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)");
+                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)")
+                .doesNotContain("tipo_entidade = 'CONVERSA'");
         assertThat(filtro.parametros())
                 .containsExactly(
                         "ATIVO",
                         "EQUIPAMENTO",
                         "SERVICO",
-                        "FUNCAO_OPERACIONAL",
-                        "beta-1",
-                        "beta-1",
-                        "beta-1",
-                        "beta-1",
-                        "beta-1"
+                        "FUNCAO_OPERACIONAL"
                 );
     }
 }

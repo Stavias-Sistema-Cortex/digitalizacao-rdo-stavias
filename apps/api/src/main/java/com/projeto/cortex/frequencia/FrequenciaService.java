@@ -240,6 +240,7 @@ public class FrequenciaService {
     @Transactional
     public FrequenciaResumoResponse.OcorrenciaResponse registrarOcorrencia(
             String colaboradorId,
+            String usuarioAutenticadoId,
             OcorrenciaFrequenciaRequest request
     ) {
         if (request == null) {
@@ -277,6 +278,16 @@ public class FrequenciaService {
         String origem =
                 primeiroNaoVazio(request.origem(), "OPERACIONAL");
         String id = UUID.randomUUID().toString();
+        String criador = usuarioAutenticadoId == null || usuarioAutenticadoId.isBlank()
+                ? null
+                : usuarioAutenticadoId.trim();
+        if (criador == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Usuário autenticado é obrigatório para registrar ocorrência."
+            );
+        }
+        String validador = "VALIDADA".equals(status) ? criador : null;
 
         validarRdoOpcional(request.rdoId());
 
@@ -306,9 +317,9 @@ public class FrequenciaService {
                 origem,
                 nuloSeVazio(request.rdoId()),
                 nuloSeVazio(request.justificativa()),
-                nuloSeVazio(request.criadoPor()),
-                nuloSeVazio(request.validadoPor()),
-                nuloSeVazio(request.validadoPor())
+                criador,
+                validador,
+                validador
         );
 
         registrarEventoFrequencia(
@@ -659,7 +670,7 @@ public class FrequenciaService {
                         FROM ajuste_banco_horas
                         WHERE colaborador_id = ?
                           AND data_ajuste BETWEEN ? AND ?
-                          AND status IN ('PENDENTE', 'APROVADO')
+                          AND status = 'APROVADO'
                         """,
                         colaboradorId,
                         inicio,

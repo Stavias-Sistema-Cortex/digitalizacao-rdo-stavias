@@ -1,6 +1,7 @@
 package com.projeto.cortex.rdos;
 
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.memory.OperationalEventTraceContext;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,8 +66,13 @@ public class RdoOperationalEventService {
                 payload.put("originalPrincipalEntity", originalPrincipal);
             }
             payload.put("clientEventId", event.id());
-            payload.put("responsibleUserId", event.responsibleUserId());
-            payload.put("responsibleUserName", event.responsibleUserName());
+            // Identidade e escopo são definidos pelo RDO já autorizado e pelo
+            // contexto do servidor. Nunca persista os campos homônimos que
+            // vieram do cliente offline.
+            OperationalEventTraceContext.current()
+                    .map(OperationalEventTraceContext.Trace::actorId)
+                    .filter(actorId -> !isBlank(actorId))
+                    .ifPresent(actorId -> payload.put("responsibleUserId", actorId));
 
             memoryService.registrarEventoDetalhado(
                     event.id().trim(),
@@ -74,8 +80,8 @@ public class RdoOperationalEventService {
                     principalEntity.id(),
                     event.type().trim(),
                     FONTE_SYNC,
-                    firstNonBlank(event.obraId(), obraId),
-                    firstNonBlank(event.rdoId(), rdoId),
+                    obraId,
+                    rdoId,
                     uuidColumnOrNull(event.colaboradorId()),
                     relatedEntities(event.relatedEntities()),
                     firstNonBlank(event.origin(), "OFFLINE"),

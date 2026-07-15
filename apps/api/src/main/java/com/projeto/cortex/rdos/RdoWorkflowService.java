@@ -43,7 +43,7 @@ public class RdoWorkflowService {
             );
         }
 
-        jdbcTemplate.update(
+        int updated = jdbcTemplate.update(
                 """
                 UPDATE rdo
                 SET
@@ -55,6 +55,19 @@ public class RdoWorkflowService {
                 """,
                 rdoId
         );
+
+        // Outra requisição pode ter enviado o mesmo RDO após a leitura de
+        // status acima. Só quem alterou a linha publica evento e recalcula a
+        // previsão; quem perdeu a corrida retorna a projeção já canônica.
+        if (updated == 0) {
+            if ("ENVIADO".equals(buscarStatus(rdoId))) {
+                return queryService.buscarPorId(rdoId);
+            }
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "O RDO mudou antes do envio ser concluído."
+            );
+        }
 
         RdoResponse response = queryService.buscarPorId(rdoId);
 

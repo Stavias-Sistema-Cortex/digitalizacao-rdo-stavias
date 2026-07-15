@@ -140,4 +140,50 @@ class RdoOperationalEventServiceTest {
                 any()
         );
     }
+
+    @Test
+    void shouldNeverPersistClientProvidedWorksiteOrRdoScope() {
+        CortexOperationalMemoryService memoryService =
+                mock(CortexOperationalMemoryService.class);
+        RdoOperationalEventService service =
+                new RdoOperationalEventService(memoryService);
+        RdoCreateRequest.OperationalEventItem event =
+                new RdoCreateRequest.OperationalEventItem(
+                        "b2f2e604-8b13-48ad-98d0-dc345384d4a8",
+                        "RDO_EDITADO",
+                        null,
+                        List.of(),
+                        "obra-forjada",
+                        "rdo-forjado",
+                        null,
+                        null,
+                        null,
+                        "OFFLINE",
+                        "responsavel-forjado",
+                        "Nome forjado",
+                        Map.of(),
+                        "PENDING_SYNC",
+                        1
+                );
+
+        service.registrarEventosCliente(RDO_ID, OBRA_ID, List.of(event));
+
+        verify(memoryService).registrarEventoDetalhado(
+                eq("b2f2e604-8b13-48ad-98d0-dc345384d4a8"),
+                eq("RDO"),
+                eq(RDO_ID),
+                eq("RDO_EDITADO"),
+                eq("RDO_SYNC_CLIENTE"),
+                eq(OBRA_ID),
+                eq(RDO_ID),
+                isNull(),
+                anyList(),
+                eq("OFFLINE"),
+                eq("SYNCED"),
+                isNull(),
+                any(LocalDateTime.class),
+                eq(1),
+                any()
+        );
+    }
 }

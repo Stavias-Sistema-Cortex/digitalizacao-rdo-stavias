@@ -11,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,6 +49,20 @@ public class RdoDraftUpdateService {
 
     @Transactional
     public RdoResponse atualizarRascunho(String rdoId, RdoCreateRequest request) {
+        return atualizarRascunho(rdoId, request, null);
+    }
+
+    /**
+     * Atualiza um rascunho e, quando vem do outbox, confere a versão no mesmo
+     * UPDATE que grava o RDO. Assim nenhuma alteração de outro dispositivo pode
+     * passar entre a pré-validação do sync e a substituição das coleções-filhas.
+     */
+    @Transactional
+    public RdoResponse atualizarRascunho(
+            String rdoId,
+            RdoCreateRequest request,
+            Long expectedEntityVersion
+    ) {
         RdoChangeAuditService.RdoAuditSnapshot estadoAnterior =
                 auditService.carregar(rdoId);
 
@@ -89,8 +104,7 @@ public class RdoDraftUpdateService {
                 programacao == null ? null : programacao.kmFinal()
         );
 
-        jdbcTemplate.update(
-                """
+        String updateSql = """
                 UPDATE rdo
                 SET
                     obra_id = ?,
@@ -122,7 +136,20 @@ public class RdoDraftUpdateService {
                     versao_linha = versao_linha + 1
                 WHERE id = ?
                   AND status = 'RASCUNHO'
-                """,
+                """;
+        if (expectedEntityVersion != null) {
+            updateSql += """
+                    AND EXISTS (
+                        SELECT 1
+                        FROM cortex_estado_entidade sync_state
+                        WHERE sync_state.tipo_entidade = 'RDO'
+                          AND sync_state.entidade_id = rdo.id
+                          AND sync_state.versao_entidade = ?
+                    )
+                    """;
+        }
+
+        Object[] updateParameters = {
                 request.obraId(),
                 programacao == null ? null : programacao.id(),
                 request.numeroRdo(),
@@ -150,7 +177,28 @@ public class RdoDraftUpdateService {
                 nuloSeVazio(request.encarregadoObra()),
                 nuloSeVazio(request.fiscalizacaoCampo()),
                 rdoId
-        );
+        };
+        if (expectedEntityVersion != null) {
+            updateParameters = Arrays.copyOf(
+                    updateParameters,
+                    updateParameters.length + 1
+            );
+            updateParameters[updateParameters.length - 1] = expectedEntityVersion;
+        }
+
+        int updated = jdbcTemplate.update(updateSql, updateParameters);
+        if (updated != 1) {
+            if (expectedEntityVersion != null) {
+                throw new RdoDraftVersionConflictException(
+                        expectedEntityVersion,
+                        versaoEntidadeAtual(rdoId)
+                );
+            }
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "O RDO não está mais disponível para edição."
+            );
+        }
 
         apagarItens(rdoId);
 
@@ -215,6 +263,20 @@ public class RdoDraftUpdateService {
                     "Apenas RDO em RASCUNHO pode ser editado."
             );
         }
+    }
+
+    private long versaoEntidadeAtual(String rdoId) {
+        Long version = jdbcTemplate.queryForObject(
+                """
+                SELECT versao_entidade
+                FROM cortex_estado_entidade
+                WHERE tipo_entidade = 'RDO'
+                  AND entidade_id = ?
+                """,
+                Long.class,
+                rdoId
+        );
+        return version == null ? 0 : version;
     }
 
     private void apagarItens(String rdoId) {

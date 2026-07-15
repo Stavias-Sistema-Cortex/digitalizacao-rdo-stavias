@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoDraftVersionConflictException;
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
@@ -106,7 +107,20 @@ public final class RdoSyncMutationHandler implements SyncMutationHandler {
         currentUserService.requireRdoAccess(entityId);
         RdoCreateRequest request = toValue(mutation.payload(), RdoCreateRequest.class);
         currentUserService.requireWorksiteAccess(request.obraId());
-        return rdoDraftUpdateService.atualizarRascunho(entityId, request);
+        try {
+            return rdoDraftUpdateService.atualizarRascunho(
+                    entityId,
+                    request,
+                    mutation.baseVersao()
+            );
+        } catch (RdoDraftVersionConflictException exception) {
+            throw new SyncVersionConflictException(
+                    "RDO",
+                    entityId,
+                    exception.expectedVersion(),
+                    exception.currentVersion()
+            );
+        }
     }
 
     private RdoResponse send(SyncPushRequest.MutacaoCliente mutation) {

@@ -191,52 +191,23 @@ public class SyncService {
                 .append("))");
         parametros.addAll(EVENTOS_REFERENCIA_GLOBAL);
 
-        escopo.append(" OR (")
-                .append("(tipo_entidade = 'CONVERSA' AND EXISTS (")
-                .append("SELECT 1 FROM conversa_participante scope_cp ")
-                .append("WHERE scope_cp.conversa_id = entidade_id ")
-                .append("AND scope_cp.colaborador_id = ? ")
-                .append("AND scope_cp.status = 'ATIVO' ")
-                .append("AND scope_cp.saiu_em IS NULL)) OR ")
-                .append("(tipo_entidade = 'PARTICIPACAO_CONVERSA' AND EXISTS (")
-                .append("SELECT 1 FROM conversa_participante scope_target ")
-                .append("JOIN conversa_participante scope_cp ")
-                .append("ON scope_cp.conversa_id = scope_target.conversa_id ")
-                .append("WHERE scope_target.id = entidade_id ")
-                .append("AND scope_cp.colaborador_id = ? ")
-                .append("AND scope_cp.status = 'ATIVO' ")
-                .append("AND scope_cp.saiu_em IS NULL)) OR ")
-                .append("(tipo_entidade = 'MENSAGEM' AND EXISTS (")
-                .append("SELECT 1 FROM mensagem scope_m ")
-                .append("JOIN conversa_participante scope_cp ")
-                .append("ON scope_cp.conversa_id = scope_m.conversa_id ")
-                .append("WHERE scope_m.id = entidade_id ")
-                .append("AND scope_cp.colaborador_id = ? ")
-                .append("AND scope_cp.status = 'ATIVO' ")
-                .append("AND scope_cp.saiu_em IS NULL)) OR ")
-                .append("(tipo_entidade = 'MENSAGEM_ANEXO' AND EXISTS (")
-                .append("SELECT 1 FROM mensagem_anexo scope_a ")
-                .append("JOIN mensagem scope_m ON scope_m.id = scope_a.mensagem_id ")
-                .append("JOIN conversa_participante scope_cp ")
-                .append("ON scope_cp.conversa_id = scope_m.conversa_id ")
-                .append("WHERE scope_a.id = entidade_id ")
-                .append("AND scope_cp.colaborador_id = ? ")
-                .append("AND scope_cp.status = 'ATIVO' ")
-                .append("AND scope_cp.saiu_em IS NULL)) OR ")
-                .append("(tipo_entidade = 'RECIBO_MENSAGEM' AND EXISTS (")
-                .append("SELECT 1 FROM mensagem_recibo scope_r ")
-                .append("JOIN mensagem scope_m ON scope_m.id = scope_r.mensagem_id ")
-                .append("JOIN conversa_participante scope_cp ")
-                .append("ON scope_cp.conversa_id = scope_m.conversa_id ")
-                .append("WHERE scope_r.id = entidade_id ")
-                .append("AND scope_cp.colaborador_id = ? ")
-                .append("AND scope_cp.status = 'ATIVO' ")
-                .append("AND scope_cp.saiu_em IS NULL)))");
-        String normalizedUserId = currentUserId == null
-                ? ""
-                : currentUserId.trim();
-        for (int index = 0; index < 5; index++) {
-            parametros.add(normalizedUserId);
+        // Participar de uma conversa não basta: para Beta, a conversa também
+        // precisa estar ligada a uma obra autorizada ou a uma equipe que tenha
+        // vínculo ativo com ela. Isso espelha ConversationAccessPolicy no pull
+        // offline, que não pode vazar conteúdo antes da tela aplicar a política.
+        if (!obras.isEmpty()) {
+            escopo.append(" OR (");
+            appendConversationPullScope(escopo, obras.size());
+            escopo.append(")");
+
+            String normalizedUserId = currentUserId == null
+                    ? ""
+                    : currentUserId.trim();
+            for (int index = 0; index < 5; index++) {
+                parametros.add(normalizedUserId);
+                parametros.addAll(obras);
+                parametros.addAll(obras);
+            }
         }
 
         return new FiltroPull(" AND (" + escopo + ")", parametros);
@@ -244,6 +215,68 @@ public class SyncService {
 
     private static String placeholders(int count) {
         return String.join(",", Collections.nCopies(count, "?"));
+    }
+
+    private static void appendConversationPullScope(
+            StringBuilder sql,
+            int worksiteCount
+    ) {
+        String worksiteScope = conversationWorksiteScope(worksiteCount);
+
+        sql.append("(tipo_entidade = 'CONVERSA' AND EXISTS (")
+                .append("SELECT 1 FROM conversa scope_c ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_c.id ")
+                .append("WHERE scope_c.id = entidade_id AND ")
+                .append(worksiteScope)
+                .append(")) OR ")
+                .append("(tipo_entidade = 'PARTICIPACAO_CONVERSA' AND EXISTS (")
+                .append("SELECT 1 FROM conversa_participante scope_target ")
+                .append("JOIN conversa scope_c ON scope_c.id = scope_target.conversa_id ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_c.id ")
+                .append("WHERE scope_target.id = entidade_id AND ")
+                .append(worksiteScope)
+                .append(")) OR ")
+                .append("(tipo_entidade = 'MENSAGEM' AND EXISTS (")
+                .append("SELECT 1 FROM mensagem scope_m ")
+                .append("JOIN conversa scope_c ON scope_c.id = scope_m.conversa_id ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_c.id ")
+                .append("WHERE scope_m.id = entidade_id AND ")
+                .append(worksiteScope)
+                .append(")) OR ")
+                .append("(tipo_entidade = 'MENSAGEM_ANEXO' AND EXISTS (")
+                .append("SELECT 1 FROM mensagem_anexo scope_a ")
+                .append("JOIN mensagem scope_m ON scope_m.id = scope_a.mensagem_id ")
+                .append("JOIN conversa scope_c ON scope_c.id = scope_m.conversa_id ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_c.id ")
+                .append("WHERE scope_a.id = entidade_id AND ")
+                .append(worksiteScope)
+                .append(")) OR ")
+                .append("(tipo_entidade = 'RECIBO_MENSAGEM' AND EXISTS (")
+                .append("SELECT 1 FROM mensagem_recibo scope_r ")
+                .append("JOIN mensagem scope_m ON scope_m.id = scope_r.mensagem_id ")
+                .append("JOIN conversa scope_c ON scope_c.id = scope_m.conversa_id ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_c.id ")
+                .append("WHERE scope_r.id = entidade_id AND ")
+                .append(worksiteScope)
+                .append(")");
+    }
+
+    private static String conversationWorksiteScope(int worksiteCount) {
+        String placeholders = placeholders(worksiteCount);
+        return "scope_cp.colaborador_id = ? "
+                + "AND scope_cp.status = 'ATIVO' "
+                + "AND scope_cp.saiu_em IS NULL "
+                + "AND (scope_c.obra_id IN (" + placeholders + ") "
+                + "OR EXISTS (SELECT 1 FROM equipe_obra scope_ew "
+                + "WHERE scope_ew.equipe_id = scope_c.equipe_id "
+                + "AND scope_ew.status = 'ATIVO' "
+                + "AND scope_ew.fim_em IS NULL "
+                + "AND scope_ew.obra_id IN (" + placeholders + ")))";
     }
 
     public SyncDeviceResponse registrarDispositivo(SyncDeviceRequest request) {

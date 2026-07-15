@@ -109,6 +109,39 @@ class RdoSyncMutationHandlerTest {
         verify(currentUserService).requireWorksiteAccess("obra-1");
     }
 
+    @Test
+    void passesTheClientBaseVersionToTheDraftUpdateBoundary() {
+        RdoResponse response = mock(RdoResponse.class);
+        when(response.id()).thenReturn("rdo-1");
+        when(response.obraId()).thenReturn("obra-1");
+        when(draftUpdateService.atualizarRascunho(
+                eq("rdo-1"), any(RdoCreateRequest.class), eq(4L)
+        )).thenReturn(response);
+        when(jdbcTemplate.queryForObject(
+                contains("SELECT versao_entidade"),
+                eq(Long.class),
+                eq("RDO"),
+                eq("rdo-1")
+        )).thenReturn(5L);
+        when(jdbcTemplate.queryForObject(
+                contains("SELECT ev.commit_seq"),
+                eq(Long.class),
+                eq("RDO"),
+                eq("rdo-1")
+        )).thenReturn(23L);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("obraId", "obra-1");
+        handler.apply(new SyncPushRequest.MutacaoCliente(
+                "mutation-update", "RDO", "rdo-1",
+                "ATUALIZAR_RDO_RASCUNHO", 4L, payload, LocalDateTime.now()
+        ));
+
+        verify(draftUpdateService).atualizarRascunho(
+                eq("rdo-1"), any(RdoCreateRequest.class), eq(4L)
+        );
+    }
+
     private SyncPushRequest.MutacaoCliente createMutation(String rdoId, String obraId) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("id", rdoId);
