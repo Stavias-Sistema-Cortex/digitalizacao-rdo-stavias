@@ -96,6 +96,9 @@ export interface ObraPdorApi {
   id: string;
   dataReferencia: string | null;
   dataExecucao: string | null;
+  versaoModelo?: string | null;
+  versaoPremissas?: string | null;
+  versaoDados?: string | null;
   statusExecucao: string;
   statusExecucaoLabel: string | null;
   calibracao: string | null;
@@ -114,6 +117,17 @@ export interface ObraPdorApi {
   confianca: number | string | null;
   drivers: unknown;
   warnings: unknown;
+  escopoAnalisado?: unknown;
+  janelaTemporal?: unknown;
+  featuresUtilizadas?: unknown;
+  dadosAusentes?: unknown;
+  limitacoes?: unknown;
+  alertasDerivados?: unknown;
+  recomendacoes?: unknown;
+  comparacaoAnterior?: unknown;
+  evidencias?: unknown;
+  iniciadoPor?: string | null;
+  tipoIniciador?: string | null;
   erroExecucao: string | null;
 }
 
@@ -124,10 +138,36 @@ export interface ObraPdorDriver {
   evidence: string | null;
 }
 
+export interface ObraPdorExplanationItem {
+  code: string;
+  label: string;
+  detail: string | null;
+  field: string | null;
+  availability: string | null;
+}
+
+export interface ObraPdorEvidence {
+  entityType: string;
+  entityId: string;
+  source: string | null;
+  role: string | null;
+  observedAt: string | null;
+}
+
+export interface ObraPdorComparison {
+  available: boolean;
+  riskDirection: string | null;
+  previousSnapshotId: string | null;
+  changedInputCount: number;
+}
+
 export interface ObraPdor {
   id: string;
   dataReferencia: string | null;
   dataExecucao: string | null;
+  versaoModelo: string | null;
+  versaoPremissas: string | null;
+  versaoDados: string | null;
   statusExecucao: string;
   statusExecucaoLabel: string | null;
   calibracao: string | null;
@@ -144,6 +184,15 @@ export interface ObraPdor {
   confianca: number | null;
   drivers: ObraPdorDriver[];
   warnings: string[];
+  featuresUtilizadas: ObraPdorExplanationItem[];
+  dadosAusentes: ObraPdorExplanationItem[];
+  limitacoes: ObraPdorExplanationItem[];
+  alertas: ObraPdorExplanationItem[];
+  recomendacoes: ObraPdorExplanationItem[];
+  comparacaoAnterior: ObraPdorComparison | null;
+  evidencias: ObraPdorEvidence[];
+  iniciadoPor: string | null;
+  tipoIniciador: string | null;
   erroExecucao: string | null;
 }
 
@@ -197,11 +246,100 @@ function warningsFromApi(value: unknown): string[] {
   );
 }
 
+function stringField(
+  value: Record<string, unknown>,
+  field: string,
+): string | null {
+  const candidate = value[field];
+  return typeof candidate === "string" && candidate.trim()
+    ? candidate.trim()
+    : null;
+}
+
+function explanationItemsFromApi(
+  value: unknown,
+): ObraPdorExplanationItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((raw) => {
+    if (typeof raw !== "object" || raw === null) {
+      return [];
+    }
+    const item = raw as Record<string, unknown>;
+    const description = stringField(item, "descricao");
+    const label =
+      stringField(item, "titulo") ??
+      stringField(item, "rotulo") ??
+      description ??
+      stringField(item, "campo") ??
+      stringField(item, "codigo");
+
+    if (!label) {
+      return [];
+    }
+
+    return [{
+      code: stringField(item, "codigo") ?? "",
+      label,
+      detail:
+        stringField(item, "detalhe") ??
+        (description !== label ? description : null),
+      field: stringField(item, "campo"),
+      availability: stringField(item, "disponibilidade"),
+    }];
+  });
+}
+
+function comparisonFromApi(value: unknown): ObraPdorComparison | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const comparison = value as Record<string, unknown>;
+  const changedInputs = comparison.inputsAlterados;
+  return {
+    available: comparison.disponivel === true,
+    riskDirection: stringField(comparison, "direcaoRisco"),
+    previousSnapshotId: stringField(comparison, "snapshotAnteriorId"),
+    changedInputCount: Array.isArray(changedInputs)
+      ? changedInputs.length
+      : 0,
+  };
+}
+
+function evidencesFromApi(value: unknown): ObraPdorEvidence[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((raw) => {
+    if (typeof raw !== "object" || raw === null) {
+      return [];
+    }
+    const evidence = raw as Record<string, unknown>;
+    const entityType = stringField(evidence, "tipoEntidade");
+    const entityId = stringField(evidence, "entidadeId");
+    if (!entityType || !entityId) {
+      return [];
+    }
+    return [{
+      entityType,
+      entityId,
+      source: stringField(evidence, "fonte"),
+      role: stringField(evidence, "papel"),
+      observedAt: stringField(evidence, "observadoEm"),
+    }];
+  });
+}
+
 export function obraPdorFromApi(api: ObraPdorApi): ObraPdor {
   return {
     id: api.id,
     dataReferencia: api.dataReferencia,
     dataExecucao: api.dataExecucao,
+    versaoModelo: api.versaoModelo ?? null,
+    versaoPremissas: api.versaoPremissas ?? null,
+    versaoDados: api.versaoDados ?? null,
     statusExecucao: api.statusExecucao,
     statusExecucaoLabel: api.statusExecucaoLabel,
     calibracao: api.calibracao,
@@ -219,6 +357,15 @@ export function obraPdorFromApi(api: ObraPdorApi): ObraPdor {
     confianca: toNumber(api.confianca),
     drivers: driversFromApi(api.drivers),
     warnings: warningsFromApi(api.warnings),
+    featuresUtilizadas: explanationItemsFromApi(api.featuresUtilizadas),
+    dadosAusentes: explanationItemsFromApi(api.dadosAusentes),
+    limitacoes: explanationItemsFromApi(api.limitacoes),
+    alertas: explanationItemsFromApi(api.alertasDerivados),
+    recomendacoes: explanationItemsFromApi(api.recomendacoes),
+    comparacaoAnterior: comparisonFromApi(api.comparacaoAnterior),
+    evidencias: evidencesFromApi(api.evidencias),
+    iniciadoPor: api.iniciadoPor ?? null,
+    tipoIniciador: api.tipoIniciador ?? null,
     erroExecucao: api.erroExecucao,
   };
 }

@@ -21,6 +21,7 @@ import {
   type ObraTimelineEvent,
 } from "./obrasApi";
 import { OperationalMap } from "./map/OperationalMap";
+import { PdorPanel } from "./PdorPanel";
 
 const TRACE_KEYS = [
   "codigoContrato",
@@ -59,53 +60,6 @@ function formatCurrency(value: number | null): string {
     currency: "BRL",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function formatDateOnly(value: string | null): string {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(
-    value.includes("T") ? value : `${value}T00:00:00`,
-  );
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-  }).format(date);
-}
-
-function formatPercent(value: number | null): string {
-  if (value === null) {
-    return "-";
-  }
-
-  return new Intl.NumberFormat("pt-BR", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-function riskClass(risco: string | null): string {
-  const normalized = (risco ?? "").toUpperCase();
-
-  if (normalized === "CRITICAL" || normalized === "HIGH") {
-    return "obras-pdor-risk obras-pdor-risk--alto";
-  }
-
-  if (normalized === "MODERATE") {
-    return "obras-pdor-risk obras-pdor-risk--medio";
-  }
-
-  if (normalized === "LOW") {
-    return "obras-pdor-risk obras-pdor-risk--baixo";
-  }
-
-  return "obras-pdor-risk";
 }
 
 function payloadSummary(
@@ -501,109 +455,11 @@ export function ObrasPage() {
                   }}
                 />
 
-                <section
-                  className="obras-pdor"
-                  aria-label="Previsão de receita PDOR"
-                >
-                  <div className="obras-pdor-header">
-                    <div>
-                      <h3>Previsão de receita · PDOR</h3>
-                      <span>
-                        {pdor?.dataReferencia
-                          ? `Referência ${formatDateOnly(pdor.dataReferencia)}`
-                          : "Calculado a partir dos RDOs da obra"}
-                      </span>
-                    </div>
-                    {pdor?.riscoLabel ? (
-                      <span className={riskClass(pdor.risco)}>
-                        {pdor.riscoLabel}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {isPdorLoading ? (
-                    <p className="obras-pdor-note">
-                      Consultando previsão de receita...
-                    </p>
-                  ) : pdorError ? (
-                    <p className="obras-pdor-note">
-                      {pdorError}
-                    </p>
-                  ) : !pdor ? (
-                    <p className="obras-pdor-note">
-                      Nenhum cálculo PDOR registrado ainda. O
-                      próximo RDO sincronizado dispara o cálculo
-                      automaticamente.
-                    </p>
-                  ) : pdor.statusExecucao !== "SUCCESS" ? (
-                    <div className="obras-pdor-insufficient">
-                      <strong>
-                        {pdor.statusExecucaoLabel ??
-                          pdor.statusExecucao}
-                      </strong>
-                      <p>
-                        {pdor.erroExecucao ??
-                          "O PDOR não pôde ser calculado com os dados atuais."}
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <dl className="obras-pdor-grid">
-                        <div className="obras-pdor-main">
-                          <dt>Receita prevista final</dt>
-                          <dd>
-                            {formatCurrency(
-                              pdor.receitaPrevistaFinal ??
-                                pdor.p50,
-                            )}
-                          </dd>
-                          <dd className="obras-pdor-range">
-                            Faixa {formatCurrency(pdor.p10)} a{" "}
-                            {formatCurrency(pdor.p95)} · P50{" "}
-                            {formatCurrency(pdor.p50)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Risco de ficar abaixo do contrato</dt>
-                          <dd>
-                            {formatPercent(
-                              pdor.probabilidadeAbaixoContrato,
-                            )}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Confiança do cálculo</dt>
-                          <dd>{formatPercent(pdor.confianca)}</dd>
-                        </div>
-                        <div>
-                          <dt>Calibração</dt>
-                          <dd>
-                            {pdor.calibracaoLabel ??
-                              pdor.calibracao ??
-                              "-"}
-                          </dd>
-                        </div>
-                      </dl>
-
-                      {pdor.drivers.length > 0 ? (
-                        <ul className="obras-pdor-drivers">
-                          {pdor.drivers
-                            .slice(0, 3)
-                            .map((driver) => (
-                              <li key={driver.code || driver.description}>
-                                <strong>
-                                  {driver.description}
-                                </strong>
-                                {driver.evidence ? (
-                                  <span>{driver.evidence}</span>
-                                ) : null}
-                              </li>
-                            ))}
-                        </ul>
-                      ) : null}
-                    </>
-                  )}
-                </section>
+                <PdorPanel
+                  pdor={pdor}
+                  loading={isPdorLoading}
+                  error={pdorError}
+                />
 
                 <section className="obras-trace">
                   <div className="obras-trace-header">

@@ -2375,6 +2375,27 @@ textarea:focus {
   line-height: 1.5;
 }
 
+.obras-pdor-calibration,
+.obras-pdor-comparison {
+  margin: 12px 0 0;
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.obras-pdor-calibration {
+  border: 1px solid #f0e2b6;
+  background: #fffbeb;
+  color: #6b5a22;
+}
+
+.obras-pdor-comparison {
+  border-left: 3px solid #6a8076;
+  background: #f5f8f6;
+  color: #42534a;
+}
+
 .obras-pdor-grid {
   display: grid;
   grid-template-columns: repeat(
@@ -2449,7 +2470,115 @@ textarea:focus {
   font-size: 0.7rem;
 }
 
+.obras-pdor-factors h4,
+.obras-pdor-explanation-section h4 {
+  margin: 14px 0 8px;
+  color: #53635b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.obras-pdor-explanation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px 22px;
+  margin-top: 4px;
+}
+
+.obras-pdor-explanation-section ul,
+.obras-pdor-evidence-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.obras-pdor-explanation-section li {
+  border-top: 1px solid #e7ece8;
+  padding: 8px 0;
+}
+
+.obras-pdor-explanation-section strong,
+.obras-pdor-explanation-section span {
+  display: block;
+}
+
+.obras-pdor-explanation-section strong {
+  color: #25342d;
+  font-size: 0.74rem;
+}
+
+.obras-pdor-explanation-section span {
+  margin-top: 2px;
+  color: #718078;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.obras-pdor-provenance {
+  margin-top: 14px;
+  border-top: 1px solid #e3e8e5;
+  padding-top: 10px;
+}
+
+.obras-pdor-provenance summary {
+  color: #53635b;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.obras-pdor-provenance dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+
+.obras-pdor-provenance dt {
+  color: #839089;
+  font-size: 0.65rem;
+}
+
+.obras-pdor-provenance dd {
+  margin: 2px 0 0;
+  color: #34463d;
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.obras-pdor-evidence-list li {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(140px, 1fr) minmax(100px, 0.7fr);
+  gap: 8px;
+  border-top: 1px solid #edf0ee;
+  padding: 6px 0;
+  color: #64736b;
+  font-size: 0.66rem;
+}
+
+.obras-pdor-evidence-list code {
+  color: #34463d;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 620px) {
+  .obras-pdor-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .obras-pdor-explanation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .obras-pdor-evidence-list li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
   .home-dashboard {
     padding: 24px 14px 96px;
   }

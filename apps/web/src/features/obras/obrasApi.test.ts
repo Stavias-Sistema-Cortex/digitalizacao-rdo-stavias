@@ -54,6 +54,9 @@ describe("obraPdorFromApi", () => {
       id: "snap-1",
       dataReferencia: "2026-07-01",
       dataExecucao: "2026-07-08T09:00:00",
+      versaoModelo: "PDOR-0.2.0",
+      versaoPremissas: "PDOR-ASSUMPTIONS-0.2.0",
+      versaoDados: "dados-1",
       statusExecucao: "SUCCESS",
       statusExecucaoLabel: "Concluído",
       calibracao: "CALIBRATION_IN_PROGRESS",
@@ -80,6 +83,32 @@ describe("obraPdorFromApi", () => {
         { invalido: true },
       ],
       warnings: ["Há 3 linhas de programação sem quantidade completa.", 7],
+      featuresUtilizadas: [
+        { campo: "contractValue", rotulo: "Valor contratual", disponibilidade: "DIRECT" },
+      ],
+      dadosAusentes: [
+        { campo: "laborCapacityHours", rotulo: "Capacidade de mão de obra em horas" },
+      ],
+      limitacoes: [
+        { codigo: "LIMITACAO_1", descricao: "O modelo não está calibrado." },
+      ],
+      alertasDerivados: [
+        { codigo: "RISCO_RECEITA_ELEVADO", titulo: "Risco de receita elevado" },
+      ],
+      recomendacoes: [
+        { codigo: "REVISAR_DRIVERS", titulo: "Revisar fatores de risco", detalhe: "Priorizar os drivers." },
+      ],
+      comparacaoAnterior: {
+        disponivel: true,
+        snapshotAnteriorId: "snap-0",
+        direcaoRisco: "SUBIU",
+        inputsAlterados: [{ campo: "delayedRdos" }],
+      },
+      evidencias: [
+        { tipoEntidade: "RDO", entidadeId: "rdo-1", fonte: "rdo", papel: "EXECUCAO_REAL" },
+      ],
+      iniciadoPor: "usuario-1",
+      tipoIniciador: "USER",
       erroExecucao: null,
     });
 
@@ -100,6 +129,31 @@ describe("obraPdorFromApi", () => {
     expect(pdor.warnings).toEqual([
       "Há 3 linhas de programação sem quantidade completa.",
     ]);
+    expect(pdor.versaoDados).toBe("dados-1");
+    expect(pdor.dadosAusentes[0]?.label).toBe(
+      "Capacidade de mão de obra em horas",
+    );
+    expect(pdor.limitacoes[0]?.label).toBe(
+      "O modelo não está calibrado.",
+    );
+    expect(pdor.recomendacoes[0]).toMatchObject({
+      code: "REVISAR_DRIVERS",
+      label: "Revisar fatores de risco",
+      detail: "Priorizar os drivers.",
+    });
+    expect(pdor.comparacaoAnterior).toEqual({
+      available: true,
+      riskDirection: "SUBIU",
+      previousSnapshotId: "snap-0",
+      changedInputCount: 1,
+    });
+    expect(pdor.evidencias).toEqual([{
+      entityType: "RDO",
+      entityId: "rdo-1",
+      source: "rdo",
+      role: "EXECUCAO_REAL",
+      observedAt: null,
+    }]);
   });
 
   it("usa receitaEstimadaFinal quando o rac ponderado não vem na resposta", () => {
