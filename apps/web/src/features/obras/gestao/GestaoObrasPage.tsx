@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
 import {
+  alterarPapelColaborador,
   listarColaboradores,
   listarObrasAdmin,
   listarVinculos,
@@ -41,6 +42,19 @@ export function GestaoObrasPage() {
   const [colabSelecionado, setColabSelecionado] = useState("");
   const [salvandoVinculo, setSalvandoVinculo] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [papelQuery, setPapelQuery] = useState("");
+  const [papelColaboradores, setPapelColaboradores] = useState<
+    ColaboradorApi[]
+  >([]);
+  const [papelDestinos, setPapelDestinos] = useState<
+    Record<string, "ALFA" | "BETA">
+  >({});
+  const [papelJustificativas, setPapelJustificativas] = useState<
+    Record<string, string>
+  >({});
+  const [papelSalvandoId, setPapelSalvandoId] = useState<
+    string | null
+  >(null);
 
   const obraSelecionada = useMemo(
     () => obras.find((obra) => obra.id === obraSelecionadaId) ?? null,
@@ -126,6 +140,61 @@ export function GestaoObrasPage() {
       setColaboradores(await listarColaboradores(colabQuery));
     } catch (erro) {
       setAviso(mensagemErro(erro));
+    }
+  }
+
+  async function buscarPapeis(event: FormEvent) {
+    event.preventDefault();
+    setAviso(null);
+    try {
+      const encontrados = await listarColaboradores(papelQuery);
+      setPapelColaboradores(encontrados);
+      setPapelDestinos(Object.fromEntries(
+        encontrados.map((colaborador) => [
+          colaborador.id,
+          colaborador.papelAcesso,
+        ]),
+      ));
+    } catch (erro) {
+      setAviso(mensagemErro(erro));
+    }
+  }
+
+  async function alterarPapel(colaborador: ColaboradorApi) {
+    const destino = papelDestinos[colaborador.id];
+    const justificativa = papelJustificativas[colaborador.id] ?? "";
+    if (!destino || destino === colaborador.papelAcesso) {
+      return;
+    }
+    if (justificativa.trim().length < 8) {
+      setAviso("Informe uma justificativa com pelo menos 8 caracteres.");
+      return;
+    }
+    setPapelSalvandoId(colaborador.id);
+    setAviso(null);
+    try {
+      const alteracao = await alterarPapelColaborador(
+        colaborador.id,
+        destino,
+        justificativa,
+      );
+      setPapelColaboradores((atuais) => atuais.map((item) =>
+        item.id === colaborador.id
+          ? { ...item, papelAcesso: alteracao.papelAcesso }
+          : item
+      ));
+      setPapelJustificativas((atuais) => ({
+        ...atuais,
+        [colaborador.id]: "",
+      }));
+      setAviso(
+        `${colaborador.nome ?? "Colaborador"} agora é ${alteracao.papelAcesso}. `
+          + `Registro Cortex ${alteracao.commitSeq}.`,
+      );
+    } catch (erro) {
+      setAviso(mensagemErro(erro));
+    } finally {
+      setPapelSalvandoId(null);
     }
   }
 
@@ -329,6 +398,95 @@ export function GestaoObrasPage() {
           )}
         </section>
       </div>
+
+      <section
+        className="gestao-papeis"
+        aria-labelledby="gestao-papeis-title"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">Governança de acesso</p>
+            <h2 id="gestao-papeis-title">Papéis Alfa e Beta</h2>
+          </div>
+          <p>
+            Toda mudança exige justificativa, preserva os vínculos existentes
+            e entra no histórico do Cortex.
+          </p>
+        </header>
+
+        <form className="gestao-papeis-busca" onSubmit={buscarPapeis}>
+          <input
+            type="search"
+            value={papelQuery}
+            onChange={(event) => setPapelQuery(event.target.value)}
+            placeholder="Buscar colaborador por nome ou e-mail"
+            aria-label="Buscar colaborador para alterar papel"
+          />
+          <button type="submit">Buscar</button>
+        </form>
+
+        {papelColaboradores.length === 0 ? (
+          <p className="gestao-obras-vazio">
+            Busque um colaborador para administrar seu papel de acesso.
+          </p>
+        ) : (
+          <ul className="gestao-papeis-lista">
+            {papelColaboradores.map((colaborador) => {
+              const destino = papelDestinos[colaborador.id]
+                ?? colaborador.papelAcesso;
+              const mudando = destino !== colaborador.papelAcesso;
+              return (
+                <li key={colaborador.id}>
+                  <div className="gestao-papeis-identidade">
+                    <strong>{colaborador.nome ?? colaborador.id}</strong>
+                    <span>{colaborador.nomePerfil ?? "Sem perfil de origem"}</span>
+                  </div>
+                  <span
+                    className={`gestao-papeis-atual is-${colaborador.papelAcesso.toLowerCase()}`}
+                  >
+                    atual: {colaborador.papelAcesso}
+                  </span>
+                  <label>
+                    Novo papel
+                    <select
+                      value={destino}
+                      onChange={(event) => setPapelDestinos((atuais) => ({
+                        ...atuais,
+                        [colaborador.id]: event.target.value as "ALFA" | "BETA",
+                      }))}
+                    >
+                      <option value="ALFA">Alfa</option>
+                      <option value="BETA">Beta</option>
+                    </select>
+                  </label>
+                  <label className="gestao-papeis-justificativa">
+                    Justificativa
+                    <input
+                      value={papelJustificativas[colaborador.id] ?? ""}
+                      onChange={(event) => setPapelJustificativas((atuais) => ({
+                        ...atuais,
+                        [colaborador.id]: event.target.value,
+                      }))}
+                      placeholder="Motivo da promoção ou do rebaixamento"
+                      maxLength={500}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="gestao-papeis-salvar"
+                    disabled={!mudando || papelSalvandoId === colaborador.id}
+                    onClick={() => alterarPapel(colaborador)}
+                  >
+                    {papelSalvandoId === colaborador.id
+                      ? "Salvando…"
+                      : "Confirmar mudança"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

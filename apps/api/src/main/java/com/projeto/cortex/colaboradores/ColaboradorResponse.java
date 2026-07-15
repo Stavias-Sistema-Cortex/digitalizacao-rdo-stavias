@@ -10,6 +10,7 @@ public record ColaboradorResponse(
         String email,
         String nomeGrupo,
         String nomePerfil,
+        String papelAcesso,
         boolean ativo,
         LocalDateTime atualizadoEm
 ) {
@@ -22,6 +23,7 @@ public record ColaboradorResponse(
                 colaborador.getEmail(),
                 colaborador.getNomeGrupo(),
                 colaborador.getNomePerfil(),
+                colaborador.getPapelAcesso(),
                 colaborador.isAtivo(),
                 colaborador.getAtualizadoEm()
         );
