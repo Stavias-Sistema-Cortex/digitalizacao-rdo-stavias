@@ -20,6 +20,7 @@ import {
   type ObraPdor,
   type ObraTimelineEvent,
 } from "./obrasApi";
+import { OperationalMap } from "./map/OperationalMap";
 
 const TRACE_KEYS = [
   "codigoContrato",
@@ -170,18 +171,16 @@ export function ObrasPage() {
     useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
   const [rodoviaFilter, setRodoviaFilter] = useState("");
-  const [timeline, setTimeline] = useState<
-    ObraTimelineEvent[]
-  >([]);
-  const [timelineError, setTimelineError] =
-    useState<string | null>(null);
-  const [isTimelineLoading, setIsTimelineLoading] =
-    useState(false);
-  const [pdor, setPdor] = useState<ObraPdor | null>(null);
-  const [pdorError, setPdorError] =
-    useState<string | null>(null);
-  const [isPdorLoading, setIsPdorLoading] =
-    useState(false);
+  const [timelineResult, setTimelineResult] = useState<{
+    obraId: string;
+    items: ObraTimelineEvent[];
+    error: string | null;
+  } | null>(null);
+  const [pdorResult, setPdorResult] = useState<{
+    obraId: string;
+    value: ObraPdor | null;
+    error: string | null;
+  } | null>(null);
   const { openStavia, setStaviaContext } =
     useStaviaLauncher();
 
@@ -221,34 +220,31 @@ export function ObrasPage() {
 
   useEffect(() => {
     if (!focusedObraId) {
-      setTimeline([]);
-      setTimelineError(null);
       return;
     }
 
     let cancelled = false;
-    setIsTimelineLoading(true);
-    setTimelineError(null);
 
     buscarTimelineObra(focusedObraId)
       .then((items) => {
         if (!cancelled) {
-          setTimeline(items);
+          setTimelineResult({
+            obraId: focusedObraId,
+            items,
+            error: null,
+          });
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setTimeline([]);
-          setTimelineError(
-            error instanceof Error
-              ? error.message
-              : "Timeline indisponivel.",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsTimelineLoading(false);
+          setTimelineResult({
+            obraId: focusedObraId,
+            items: [],
+            error:
+              error instanceof Error
+                ? error.message
+                : "Timeline indisponivel.",
+          });
         }
       });
 
@@ -259,34 +255,31 @@ export function ObrasPage() {
 
   useEffect(() => {
     if (!focusedObraId) {
-      setPdor(null);
-      setPdorError(null);
       return;
     }
 
     let cancelled = false;
-    setIsPdorLoading(true);
-    setPdorError(null);
 
     buscarPdorAtual(focusedObraId)
       .then((result) => {
         if (!cancelled) {
-          setPdor(result);
+          setPdorResult({
+            obraId: focusedObraId,
+            value: result,
+            error: null,
+          });
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setPdor(null);
-          setPdorError(
-            error instanceof Error
-              ? error.message
-              : "Previsão de receita indisponível.",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsPdorLoading(false);
+          setPdorResult({
+            obraId: focusedObraId,
+            value: null,
+            error:
+              error instanceof Error
+                ? error.message
+                : "Previsão de receita indisponível.",
+          });
         }
       });
 
@@ -299,6 +292,28 @@ export function ObrasPage() {
     () => events.map(localEventToTrace),
     [events],
   );
+  const timeline =
+    timelineResult?.obraId === focusedObraId
+      ? timelineResult.items
+      : [];
+  const timelineError =
+    timelineResult?.obraId === focusedObraId
+      ? timelineResult.error
+      : null;
+  const isTimelineLoading =
+    Boolean(focusedObraId) &&
+    timelineResult?.obraId !== focusedObraId;
+  const pdor =
+    pdorResult?.obraId === focusedObraId
+      ? pdorResult.value
+      : null;
+  const pdorError =
+    pdorResult?.obraId === focusedObraId
+      ? pdorResult.error
+      : null;
+  const isPdorLoading =
+    Boolean(focusedObraId) &&
+    pdorResult?.obraId !== focusedObraId;
   const traceEvents =
     timeline.length > 0 ? timeline : localTrace;
   const traceSource =
@@ -475,6 +490,16 @@ export function ObrasPage() {
                     </dd>
                   </div>
                 </dl>
+
+                <OperationalMap
+                  key={focusedObra.id}
+                  obra={{
+                    id: focusedObra.id,
+                    nome: focusedObra.nome,
+                    latitude: focusedObra.latitude,
+                    longitude: focusedObra.longitude,
+                  }}
+                />
 
                 <section
                   className="obras-pdor"
