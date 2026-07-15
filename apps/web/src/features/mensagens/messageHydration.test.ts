@@ -16,8 +16,13 @@ import {
   getLocalMessage,
   listLocalMessageAttachments,
 } from "../../lib/db/messageLocalRepository";
-import type { ConversationDto, MessageDto } from "./messageApi";
+import type {
+  ConversationDto,
+  ConversationSummaryDto,
+  MessageDto,
+} from "./messageApi";
 import {
+  hydrateConversation,
   hydrateConversationPage,
   hydrateMessage,
 } from "./messageHydration";
@@ -53,6 +58,25 @@ function messageDto(overrides: Partial<MessageDto> = {}): MessageDto {
   };
 }
 
+function conversationSummaryDto(): ConversationSummaryDto {
+  return {
+    id: "conversation-1",
+    tipo: "OBRA",
+    titulo: "Execução da ponte",
+    obraId: "obra-1",
+    obraNome: "Ponte Norte",
+    equipeId: "team-1",
+    equipeNome: "Terraplenagem",
+    status: "ATIVA",
+    ultimaAtividadeEm: NOW,
+    ultimaMensagemId: "message-1",
+    ultimaMensagemPrevia: "Frente liberada",
+    ultimaMensagemEm: NOW,
+    versaoEntidade: 3,
+    naoLidas: 2,
+  };
+}
+
 function conversationDto(): ConversationDto {
   return {
     id: "conversation-1",
@@ -82,20 +106,19 @@ function conversationDto(): ConversationDto {
         versaoEntidade: 1,
       },
     ],
-    ultimaMensagem: messageDto(),
-    naoLidas: 2,
   };
 }
 
 describe("hidratação local de Mensagens", () => {
   it("persiste a projeção real de conversa, participantes e última mensagem", async () => {
     await hydrateConversationPage({
-      items: [conversationDto()],
+      items: [conversationSummaryDto()],
       page: 0,
       size: 20,
-      total: 1,
-      hasMore: false,
+      totalElements: 1,
     });
+    await hydrateConversation(conversationDto());
+    await hydrateMessage(messageDto());
 
     expect(await getLocalConversation("conversation-1")).toEqual({
       id: "conversation-1",
@@ -108,6 +131,9 @@ describe("hidratação local de Mensagens", () => {
       criadoPor: "user-1",
       status: "ATIVA",
       ultimaAtividadeEm: NOW,
+      ultimaMensagemId: "message-1",
+      ultimaMensagemPrevia: "Frente liberada",
+      ultimaMensagemEm: NOW,
       naoLidas: 2,
       criadoEm: "2026-07-15T14:00:00Z",
       atualizadoEm: NOW,

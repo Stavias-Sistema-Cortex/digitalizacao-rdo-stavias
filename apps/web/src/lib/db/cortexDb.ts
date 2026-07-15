@@ -26,11 +26,52 @@ import type {
   SyncStateRecord,
   TarefaRecord,
 } from "./db.types";
+import type {
+  OperationalRoleDto,
+  TeamDto,
+  TeamHistoryEventDto,
+  TeamWorksiteDto,
+} from "../../features/equipes/teamApi";
 
 export const CORTEX_DATABASE_NAME = "cortex-web";
-export const CORTEX_DATABASE_VERSION = 10;
+export const CORTEX_DATABASE_VERSION = 11;
 
 interface CortexDbSchema extends DBSchema {
+  teams: {
+    key: string;
+    value: TeamDto;
+    indexes: {
+      "by-worksite-id": string;
+      "by-status": TeamDto["status"];
+      "by-updated-at": string;
+    };
+  };
+
+  operational_roles: {
+    key: string;
+    value: OperationalRoleDto;
+    indexes: {
+      "by-display-order": number;
+    };
+  };
+
+  team_history: {
+    key: string;
+    value: TeamHistoryEventDto;
+    indexes: {
+      "by-team-commit": [string, number];
+    };
+  };
+
+  team_worksites: {
+    key: string;
+    value: TeamWorksiteDto;
+    indexes: {
+      "by-team-id": string;
+      "by-worksite-id": string;
+    };
+  };
+
   conversations: {
     key: string;
     value: LocalConversationRecord;
@@ -240,6 +281,43 @@ export function getCortexDb(): Promise<
     CORTEX_DATABASE_VERSION,
     {
       upgrade(database, _oldVersion, _newVersion, transaction) {
+        if (!database.objectStoreNames.contains("teams")) {
+          const teamStore = database.createObjectStore("teams", {
+            keyPath: "id",
+          });
+          teamStore.createIndex("by-worksite-id", "obraPrincipalId");
+          teamStore.createIndex("by-status", "status");
+          teamStore.createIndex("by-updated-at", "atualizadoEm");
+        }
+
+        if (!database.objectStoreNames.contains("operational_roles")) {
+          const roleStore = database.createObjectStore("operational_roles", {
+            keyPath: "id",
+          });
+          roleStore.createIndex(
+            "by-display-order",
+            "ordemExibicao",
+          );
+        }
+
+        if (!database.objectStoreNames.contains("team_history")) {
+          const historyStore = database.createObjectStore("team_history", {
+            keyPath: "eventId",
+          });
+          historyStore.createIndex(
+            "by-team-commit",
+            ["entityId", "commitSeq"],
+          );
+        }
+
+        if (!database.objectStoreNames.contains("team_worksites")) {
+          const worksiteStore = database.createObjectStore("team_worksites", {
+            keyPath: "id",
+          });
+          worksiteStore.createIndex("by-team-id", "equipeId");
+          worksiteStore.createIndex("by-worksite-id", "obraId");
+        }
+
         if (!database.objectStoreNames.contains("conversations")) {
           const conversationStore = database.createObjectStore(
             "conversations",

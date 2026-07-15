@@ -17,7 +17,9 @@ vi.mock("../../lib/api/apiClient", () => ({
 }));
 
 import {
+  downloadMessageAttachment,
   fetchConversations,
+  fetchMessages,
   MessageApiError,
   uploadMessageAttachment,
 } from "./messageApi";
@@ -87,8 +89,7 @@ describe("messageApi", () => {
           items: [],
           page: 0,
           size: 20,
-          total: 0,
-          hasMore: false,
+          totalElements: 0,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -99,5 +100,44 @@ describe("messageApi", () => {
     expect(apiFetch.mock.calls[0][0]).toBe(
       "/conversas?texto=frente+norte&obraId=obra%2F1",
     );
+  });
+
+  it("envia o cursor real ao carregar mensagens mais antigas", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ items: [], proximoCursor: null, hasMore: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await fetchMessages("conversation-1", {
+      limit: 30,
+      antesDeClienteEm: "2026-07-15T12:00:00Z",
+      antesDeServidorEm: "2026-07-15T12:00:01Z",
+      antesDeId: "message/1",
+    });
+
+    expect(apiFetch.mock.calls[0][0]).toBe(
+      "/conversas/conversation-1/mensagens?limit=30&antesDeClienteEm=2026-07-15T12%3A00%3A00Z&antesDeServidorEm=2026-07-15T12%3A00%3A01Z&antesDeId=message%2F1",
+    );
+  });
+
+  it("baixa anexo pelo endpoint autenticado", async () => {
+    apiFetch.mockResolvedValue(
+      new Response(new Blob(["conteúdo"], { type: "text/plain" }), {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    const downloaded = await downloadMessageAttachment(
+      "message-1",
+      "attachment-1",
+    );
+
+    expect(apiFetch.mock.calls[0][0]).toBe(
+      "/mensagens/message-1/anexos/attachment-1/conteudo",
+    );
+    expect(await downloaded.text()).toBe("conteúdo");
   });
 });

@@ -1,4 +1,5 @@
 import {
+  getLocalConversation,
   putLocalConversation,
 } from "../../lib/db/conversationLocalRepository";
 import type {
@@ -12,6 +13,7 @@ import { putLocalMessageProjection } from "../../lib/db/messageLocalRepository";
 import type {
   ConversationDto,
   ConversationPageDto,
+  ConversationSummaryDto,
   MessageDto,
   MessagePageDto,
 } from "./messageApi";
@@ -61,6 +63,7 @@ function toLocalAttachments(
 
 function toLocalConversation(
   conversation: ConversationDto,
+  existing?: LocalConversationRecord,
 ): LocalConversationRecord {
   return {
     id: conversation.id,
@@ -73,9 +76,37 @@ function toLocalConversation(
     criadoPor: conversation.criadoPor,
     status: conversation.status,
     ultimaAtividadeEm: conversation.ultimaAtividadeEm,
-    naoLidas: conversation.naoLidas,
+    ultimaMensagemId: existing?.ultimaMensagemId ?? null,
+    ultimaMensagemPrevia: existing?.ultimaMensagemPrevia ?? null,
+    ultimaMensagemEm: existing?.ultimaMensagemEm ?? null,
+    naoLidas: existing?.naoLidas ?? 0,
     criadoEm: conversation.criadoEm,
     atualizadoEm: conversation.atualizadoEm,
+    versaoEntidade: conversation.versaoEntidade,
+  };
+}
+
+function toLocalConversationSummary(
+  conversation: ConversationSummaryDto,
+  existing?: LocalConversationRecord,
+): LocalConversationRecord {
+  return {
+    id: conversation.id,
+    tipo: conversation.tipo,
+    titulo: conversation.titulo,
+    obraId: conversation.obraId,
+    obraNome: conversation.obraNome,
+    equipeId: conversation.equipeId,
+    equipeNome: conversation.equipeNome,
+    criadoPor: existing?.criadoPor ?? null,
+    status: conversation.status,
+    ultimaAtividadeEm: conversation.ultimaAtividadeEm,
+    ultimaMensagemId: conversation.ultimaMensagemId,
+    ultimaMensagemPrevia: conversation.ultimaMensagemPrevia,
+    ultimaMensagemEm: conversation.ultimaMensagemEm,
+    naoLidas: conversation.naoLidas,
+    criadoEm: existing?.criadoEm ?? null,
+    atualizadoEm: conversation.ultimaAtividadeEm,
     versaoEntidade: conversation.versaoEntidade,
   };
 }
@@ -100,20 +131,21 @@ export async function hydrateMessage(message: MessageDto): Promise<void> {
 export async function hydrateConversation(
   conversation: ConversationDto,
 ): Promise<void> {
+  const existing = await getLocalConversation(conversation.id);
   await putLocalConversation(
-    toLocalConversation(conversation),
+    toLocalConversation(conversation, existing),
     toLocalParticipants(conversation),
   );
-  if (conversation.ultimaMensagem) {
-    await hydrateMessage(conversation.ultimaMensagem);
-  }
 }
 
 export async function hydrateConversationPage(
   page: ConversationPageDto,
 ): Promise<void> {
   for (const conversation of page.items) {
-    await hydrateConversation(conversation);
+    const existing = await getLocalConversation(conversation.id);
+    await putLocalConversation(
+      toLocalConversationSummary(conversation, existing),
+    );
   }
 }
 

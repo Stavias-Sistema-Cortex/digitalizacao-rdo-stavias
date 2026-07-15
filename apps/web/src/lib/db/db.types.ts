@@ -77,6 +77,9 @@ export interface LocalConversationRecord {
   criadoPor: string | null;
   status: "ATIVA" | "ARQUIVADA";
   ultimaAtividadeEm: string;
+  ultimaMensagemId: string | null;
+  ultimaMensagemPrevia: string | null;
+  ultimaMensagemEm: string | null;
   naoLidas: number;
   criadoEm: string | null;
   atualizadoEm: string;

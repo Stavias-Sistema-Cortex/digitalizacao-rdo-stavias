@@ -60,3 +60,17 @@ export async function listLocalConversationParticipants(
     conversationId,
   );
 }
+
+export async function markLocalConversationRead(
+  conversationId: string,
+): Promise<void> {
+  const database = await getCortexDb();
+  const conversation = await database.get("conversations", conversationId);
+  if (!conversation || conversation.naoLidas === 0) {
+    return;
+  }
+  await database.put("conversations", {
+    ...conversation,
+    naoLidas: 0,
+  });
+}

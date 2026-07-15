@@ -32,8 +32,23 @@ export interface ConversationDto {
   atualizadoEm: string;
   versaoEntidade: number;
   participantes: ConversationParticipantDto[];
-  ultimaMensagem: MessageDto | null;
+}
+
+export interface ConversationSummaryDto {
+  id: string;
+  tipo: "OBRA" | "EQUIPE" | "DIRETA" | "GRUPO";
+  titulo: string | null;
+  obraId: string | null;
+  obraNome: string | null;
+  equipeId: string | null;
+  equipeNome: string | null;
+  status: "ATIVA" | "ARQUIVADA";
+  ultimaAtividadeEm: string;
+  ultimaMensagemId: string | null;
+  ultimaMensagemPrevia: string | null;
+  ultimaMensagemEm: string | null;
   naoLidas: number;
+  versaoEntidade: number;
 }
 
 export interface MessageReferenceDto {
@@ -88,16 +103,15 @@ export interface MessageDto {
 }
 
 export interface ConversationPageDto {
-  items: ConversationDto[];
+  items: ConversationSummaryDto[];
   page: number;
   size: number;
-  total: number;
-  hasMore: boolean;
+  totalElements: number;
 }
 
 export interface MessagePageDto {
   items: MessageDto[];
-  nextCursor: {
+  proximoCursor: {
     enviadaClienteEm: string;
     criadaServidorEm: string;
     id: string;
@@ -159,12 +173,43 @@ export async function fetchConversation(
 
 export async function fetchMessages(
   conversationId: string,
-  limit = 50,
+  query: {
+    limit?: number;
+    antesDeClienteEm?: string;
+    antesDeServidorEm?: string;
+    antesDeId?: string;
+  } = {},
 ): Promise<MessagePageDto> {
-  const params = new URLSearchParams({ limit: String(limit) });
+  const params = new URLSearchParams({
+    limit: String(query.limit ?? 50),
+  });
+  if (query.antesDeClienteEm) {
+    params.set("antesDeClienteEm", query.antesDeClienteEm);
+  }
+  if (query.antesDeServidorEm) {
+    params.set("antesDeServidorEm", query.antesDeServidorEm);
+  }
+  if (query.antesDeId) {
+    params.set("antesDeId", query.antesDeId);
+  }
   return requireOkJson<MessagePageDto>(
     `/conversas/${encodeURIComponent(conversationId)}/mensagens?${params}`,
   );
+}
+
+export async function createConversation(input: {
+  id: string;
+  tipo: ConversationDto["tipo"];
+  titulo: string | null;
+  obraId: string | null;
+  equipeId: string | null;
+  participanteIds: string[];
+}): Promise<ConversationDto> {
+  return requireOkJson<ConversationDto>("/conversas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export async function uploadMessageAttachment(
@@ -194,4 +239,23 @@ export async function markMessageRead(
     `/mensagens/${encodeURIComponent(messageId)}/recibos/leitura`,
     { method: "POST" },
   );
+}
+
+export async function downloadMessageAttachment(
+  messageId: string,
+  attachmentId: string,
+): Promise<Blob> {
+  const response = await apiFetch(
+    `/mensagens/${encodeURIComponent(messageId)}/anexos/${encodeURIComponent(
+      attachmentId,
+    )}/conteudo`,
+  );
+  if (!response.ok) {
+    const body = await readResponseBody(response);
+    throw new MessageApiError(
+      response.status,
+      responseErrorMessage(body, response.status),
+    );
+  }
+  return response.blob();
 }

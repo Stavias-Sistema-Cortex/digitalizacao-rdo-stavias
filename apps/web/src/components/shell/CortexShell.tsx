@@ -29,6 +29,8 @@ export type ShellActiveItem =
   | "home"
   | "rdos"
   | "obras"
+  | "equipes"
+  | "mensagens"
   | "tarefas"
   | "integracoes"
   | null;
@@ -304,8 +306,13 @@ export function CortexShell({
           </button>
           <button
             type="button"
-            className="sidebar-nav-item"
+            className={
+              active === "equipes"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
             title="Equipes"
+            onClick={() => navigate("/equipes")}
           >
             <img
               src="/icons8/user.png"
@@ -316,7 +323,13 @@ export function CortexShell({
           </button>
           <button
             type="button"
-            className="sidebar-nav-item"
+            className={
+              active === "mensagens"
+                ? "sidebar-nav-item active"
+                : "sidebar-nav-item"
+            }
+            title="Mensagens"
+            onClick={() => navigate("/mensagens")}
           >
             <img
               src="/icons8/star.png"

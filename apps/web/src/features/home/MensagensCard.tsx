@@ -1,14 +1,18 @@
+import { useNavigate } from "react-router-dom";
+
 export function MensagensCard() {
+  const navigate = useNavigate();
+
   return (
-    <section className="home-card">
-      <h3>
-        Últimas Mensagens
-        <span className="badge-soon">em breve</span>
-      </h3>
+    <section className="home-card home-card--messages">
+      <h3>Mensagens</h3>
       <p className="home-card-muted">
-        O módulo de mensagens chega no próximo ciclo — o
-        espaço já fica reservado aqui.
+        Decisões, arquivos e atualizações vinculados às suas obras,
+        disponíveis também offline.
       </p>
+      <button type="button" onClick={() => navigate("/mensagens")}>
+        Abrir conversas
+      </button>
     </section>
   );
 }

@@ -87,6 +87,15 @@ body {
   min-height: 100vh;
 }
 
+.app-scope-loading {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: var(--color-canvas);
+  color: var(--color-brand-teal);
+  font-weight: 650;
+}
+
 button,
 input,
 select,
@@ -2003,6 +2012,25 @@ textarea:focus {
 
 .home-card-muted {
   color: var(--color-muted);
+}
+
+.home-card--messages {
+  border-top: 3px solid var(--color-brand-yellow);
+}
+
+.home-card--messages button {
+  padding: 7px 10px;
+  border: 1px solid #c7d5ce;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--color-brand-teal);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.home-card--messages button:hover {
+  border-color: #89aa9f;
+  background: #f5f8f6;
 }
 
 .home-card--brand {
