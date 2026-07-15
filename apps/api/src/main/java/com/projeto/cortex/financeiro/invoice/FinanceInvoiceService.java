@@ -437,6 +437,20 @@ public class FinanceInvoiceService {
                         "Vínculo confirmado com hashes e autoria persistidos."
                 ))
         );
+        ontology.relateActor(
+                trace.uploadedBy(),
+                "DOCUMENTO_FISCAL",
+                extractionJobId,
+                "ENVIOU",
+                "Autoria do upload fiscal persistida no vínculo."
+        );
+        ontology.relateActor(
+                context.actorId(),
+                "DOCUMENTO_FISCAL",
+                extractionJobId,
+                "CONFIRMOU",
+                "Revisão e vínculo fiscal confirmados pelo ator autenticado."
+        );
         return linked;
     }
 

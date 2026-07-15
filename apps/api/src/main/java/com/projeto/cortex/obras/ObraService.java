@@ -80,7 +80,7 @@ public class ObraService {
 
         Obra salva = obraRepository.saveAndFlush(obra);
 
-        ObraSyncEvento.registrarAtualizacao(memoryService, salva);
+        ObraSyncEvento.registrarCriacao(memoryService, salva, actorId);
         financialUnitService.ensureWorksiteUnit(salva.getId(), actorId);
 
         return ObraResponse.from(salva);

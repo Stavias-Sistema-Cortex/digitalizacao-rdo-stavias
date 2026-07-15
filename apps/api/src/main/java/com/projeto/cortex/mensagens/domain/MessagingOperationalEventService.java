@@ -76,6 +76,15 @@ public class MessagingOperationalEventService {
                     "Escopo operacional da conversa."
             );
         }
+        memoryService.registrarRelacaoAtiva(
+                "PESSOA",
+                audit.actorId(),
+                entityType,
+                entityId,
+                actorRelation(entityType, eventType),
+                SOURCE,
+                "Autoria autenticada da mutação de mensagens."
+        );
 
         long commitSeq = memoryService.registrarEventoAuditado(
                 eventId,
@@ -114,6 +123,23 @@ public class MessagingOperationalEventService {
                 scope.id()
         );
         return commitSeq;
+    }
+
+    private String actorRelation(String entityType, String eventType) {
+        if ("MENSAGEM".equals(entityType)
+                && eventType != null
+                && eventType.contains("ENVIAD")) {
+            return "ENVIOU";
+        }
+        if ("MENSAGEM_ANEXO".equals(entityType)) {
+            return "ANEXOU";
+        }
+        if ("CONVERSA".equals(entityType)
+                && eventType != null
+                && eventType.contains("CRIAD")) {
+            return "CRIOU";
+        }
+        return "ALTEROU";
     }
 
     private List<Map<String, Object>> relatedEntities(

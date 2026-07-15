@@ -194,6 +194,17 @@ class FinanceInvoiceServiceMysqlIntegrationTest {
                 invoiceId,
                 extractionJobId
         )).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*) FROM cortex_relacao
+                WHERE origem_tipo = 'PESSOA' AND origem_id = ?
+                  AND destino_tipo = 'DOCUMENTO_FISCAL' AND destino_id = ?
+                  AND tipo_relacao IN ('ENVIOU', 'CONFIRMOU') AND ativa = TRUE
+                """,
+                Integer.class,
+                actorId,
+                extractionJobId
+        )).isEqualTo(2);
 
         transactions.executeWithoutResult(status -> service.archive(
                 invoiceId,

@@ -241,4 +241,29 @@ public class FinanceOntologyProjector {
                 relationType
         );
     }
+
+    @Transactional
+    public void relateActor(
+            String actorId,
+            String targetType,
+            String targetId,
+            String relationType,
+            String evidence
+    ) {
+        if (actorId == null || actorId.isBlank()
+                || targetType == null || targetType.isBlank()
+                || targetId == null || targetId.isBlank()
+                || relationType == null || relationType.isBlank()) {
+            return;
+        }
+        memory.registrarRelacaoAtiva(
+                "PESSOA",
+                actorId,
+                targetType,
+                targetId,
+                relationType,
+                SOURCE,
+                evidence
+        );
+    }
 }

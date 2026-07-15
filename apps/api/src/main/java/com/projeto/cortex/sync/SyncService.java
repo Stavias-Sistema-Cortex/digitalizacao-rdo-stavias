@@ -82,6 +82,10 @@ public class SyncService {
                         currentUserId,
                         FinancialPermission.FINANCEIRO_VISUALIZAR
                 ),
+                financialAccessService.allowedUnitIds(
+                        currentUserId,
+                        FinancialPermission.FINANCEIRO_VISUALIZAR
+                ).orElse(Set.of()),
                 currentUserId
         );
 
@@ -165,7 +169,11 @@ public class SyncService {
             "LIQUIDACAO",
             "LANCAMENTO_FINANCEIRO",
             "PAGAMENTO",
-            "COBRANCA_EMAIL"
+            "COBRANCA_EMAIL",
+            "UNIDADE_FINANCEIRA",
+            "RATEIO_FINANCEIRO",
+            "COMPRA_ITEM",
+            "DOCUMENTO_FISCAL"
     );
 
     private static final List<String> EVENTOS_FINANCEIROS_ALFA =
@@ -194,6 +202,7 @@ public class SyncService {
         return filtroPorEscopo(
                 obrasAutorizadas,
                 obrasFinanceirasAutorizadas,
+                Set.of(),
                 null
         );
     }
@@ -201,6 +210,20 @@ public class SyncService {
     FiltroPull filtroPorEscopo(
             Optional<Set<String>> obrasAutorizadas,
             Set<String> obrasFinanceirasAutorizadas,
+            String currentUserId
+    ) {
+        return filtroPorEscopo(
+                obrasAutorizadas,
+                obrasFinanceirasAutorizadas,
+                Set.of(),
+                currentUserId
+        );
+    }
+
+    FiltroPull filtroPorEscopo(
+            Optional<Set<String>> obrasAutorizadas,
+            Set<String> obrasFinanceirasAutorizadas,
+            Set<String> unidadesFinanceirasAutorizadas,
             String currentUserId
     ) {
         if (obrasAutorizadas.isEmpty()) {
@@ -253,6 +276,27 @@ public class SyncService {
                     .append("))");
             scopedParameters.addAll(EVENTOS_FINANCEIROS);
             scopedParameters.addAll(financialScope);
+        }
+        Set<String> unitScope = unidadesFinanceirasAutorizadas == null
+                ? Set.of()
+                : unidadesFinanceirasAutorizadas;
+        if (!unitScope.isEmpty()) {
+            condition.append(" OR (tipo_entidade IN (")
+                    .append(placeholders(EVENTOS_FINANCEIROS.size()))
+                    .append(") AND ((tipo_entidade = 'UNIDADE_FINANCEIRA' ")
+                    .append("AND entidade_id IN (")
+                    .append(placeholders(unitScope.size()))
+                    .append(")) OR EXISTS (")
+                    .append("SELECT 1 FROM cortex_relacao relacao ")
+                    .append("WHERE relacao.origem_tipo = tipo_entidade ")
+                    .append("AND relacao.origem_id = entidade_id ")
+                    .append("AND relacao.destino_tipo = 'UNIDADE_FINANCEIRA' ")
+                    .append("AND relacao.destino_id IN (")
+                    .append(placeholders(unitScope.size()))
+                    .append(") AND relacao.ativa = 1)))");
+            scopedParameters.addAll(EVENTOS_FINANCEIROS);
+            scopedParameters.addAll(unitScope);
+            scopedParameters.addAll(unitScope);
         }
         if (currentUserId != null && !currentUserId.isBlank()) {
             condition.append(" OR (tipo_entidade IN (")

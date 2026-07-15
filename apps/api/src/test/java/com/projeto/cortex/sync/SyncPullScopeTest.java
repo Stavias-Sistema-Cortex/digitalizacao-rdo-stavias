@@ -60,7 +60,32 @@ class SyncPullScopeTest {
                 .contains("obra-1", "ATIVO", "EQUIPAMENTO", "SERVICO")
                 .contains("ITEM_CONTRATUAL", "PREVISAO_FINANCEIRA", "PDOR")
                 .contains("SOLICITACAO_COMPRA", "COMPRA")
+                .contains(
+                        "UNIDADE_FINANCEIRA",
+                        "RATEIO_FINANCEIRO",
+                        "COMPRA_ITEM",
+                        "DOCUMENTO_FISCAL"
+                )
                 .contains("PERMISSAO_FINANCEIRA");
+    }
+
+    @Test
+    void betaRecebeEventosRelacionadosAUnidadeDeAtivoConcedida() {
+        SyncService.FiltroPull filtro = service.filtroPorEscopo(
+                Optional.of(Set.of()),
+                Set.of(),
+                Set.of("unidade-ativo-1"),
+                "colaborador-1"
+        );
+
+        assertThat(filtro.condicaoSql())
+                .contains("cortex_relacao")
+                .contains("destino_tipo = 'UNIDADE_FINANCEIRA'")
+                .contains("tipo_entidade = 'UNIDADE_FINANCEIRA'")
+                .contains("entidade_id IN (?)");
+        assertThat(filtro.parametros()).contains("unidade-ativo-1");
+        assertThat(filtro.condicaoSql().chars().filter(value -> value == '?').count())
+                .isEqualTo(filtro.parametros().size());
     }
 
     @Test

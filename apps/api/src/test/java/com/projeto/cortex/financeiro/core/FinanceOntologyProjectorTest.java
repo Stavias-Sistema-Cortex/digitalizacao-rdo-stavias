@@ -17,6 +17,40 @@ import org.junit.jupiter.api.Test;
 class FinanceOntologyProjectorTest {
 
     @Test
+    void registersUploaderAndConfirmerAsExplicitActorRelations() {
+        CortexOperationalMemoryService memory = mock(
+                CortexOperationalMemoryService.class
+        );
+        FinanceOntologyProjector projector = new FinanceOntologyProjector(memory);
+
+        projector.relateActor(
+                "uploader-1",
+                "DOCUMENTO_FISCAL",
+                "documento-1",
+                "ENVIOU",
+                "Autoria do upload fiscal persistida."
+        );
+        projector.relateActor(
+                "confirmer-1",
+                "DOCUMENTO_FISCAL",
+                "documento-1",
+                "CONFIRMOU",
+                "Revisão fiscal confirmada."
+        );
+
+        verify(memory).registrarRelacaoAtiva(
+                "PESSOA", "uploader-1", "DOCUMENTO_FISCAL", "documento-1",
+                "ENVIOU", "CORTEX_FINANCEIRO",
+                "Autoria do upload fiscal persistida."
+        );
+        verify(memory).registrarRelacaoAtiva(
+                "PESSOA", "confirmer-1", "DOCUMENTO_FISCAL", "documento-1",
+                "CONFIRMOU", "CORTEX_FINANCEIRO",
+                "Revisão fiscal confirmada."
+        );
+    }
+
+    @Test
     void marksOfflineProjectionAsSyncedWithAuthenticatedTrace() {
         CortexOperationalMemoryService memory = mock(
                 CortexOperationalMemoryService.class

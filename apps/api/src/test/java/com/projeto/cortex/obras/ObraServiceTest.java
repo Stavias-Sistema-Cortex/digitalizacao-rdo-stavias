@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -39,6 +41,15 @@ class ObraServiceTest {
         ), "alfa-1");
 
         verify(financialUnits).ensureWorksiteUnit(created.id(), "alfa-1");
+        verify(memory).registrarRelacaoAtiva(
+                "PESSOA",
+                "alfa-1",
+                "OBRA",
+                created.id(),
+                "CRIOU",
+                "OBRAS",
+                "Criação manual de obra autenticada."
+        );
 
         ArgumentCaptor<String> entidadeId =
                 ArgumentCaptor.forClass(String.class);
@@ -47,7 +58,7 @@ class ObraServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload =
                 ArgumentCaptor.forClass(Map.class);
-        verify(memory).registrarEventoDetalhado(
+        verify(memory).registrarEventoAuditado(
                 isNull(),
                 eq("OBRA"),
                 entidadeId.capture(),
@@ -55,14 +66,22 @@ class ObraServiceTest {
                 eq("OBRAS"),
                 obraId.capture(),
                 isNull(),
-                isNull(),
+                eq("alfa-1"),
                 anyList(),
                 eq("ONLINE"),
                 eq("SYNCED"),
-                isNull(),
+                any(LocalDateTime.class),
                 any(LocalDateTime.class),
                 eq(1),
-                payload.capture()
+                payload.capture(),
+                eq("alfa-1"),
+                isNull(),
+                anyString(),
+                isNull(),
+                anyMap(),
+                anyMap(),
+                eq("SUCESSO"),
+                isNull()
         );
 
         assertEquals(entidadeId.getValue(), obraId.getValue());
