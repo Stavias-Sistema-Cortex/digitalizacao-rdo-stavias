@@ -1,7 +1,7 @@
 # Córtex: Financeiro Geral, Documentos Fiscais e Operação Rastreável
 
 **Data:** 2026-07-14
-**Status:** aprovado em conversa; implementação em andamento
+**Status:** implementado e verificado; validação probabilística externa do PDOR permanece pendente
 **Worktree:** `feat/cortex-mensagens-financeiro`
 **Escopo:** banco, API, PWA/offline, UI, autorização, documentos fiscais, ontologia, StavIA, PDOR e verificação
 
@@ -591,6 +591,27 @@ A entrega só é concluída quando houver:
 9. relatório de validação PDOR com limitações e métricas reais;
 10. nenhuma alegação de OCR externo, autorização fiscal ou validação
     probabilística sem a evidência correspondente.
+
+### Evidência executada em 2026-07-15
+
+- `mvnw clean test` com JDK 21: 859 testes, 0 falhas, 0 erros; os 54 skips
+  são gates ambientais, complementados por execução MySQL real específica;
+- MySQL 8.4 real: V1-V39 e integrações de rateio, nota/documento, governança
+  Alfa/Beta, carga PDOR e fluxo CW38386 sem skips;
+- frontend após o conserto encontrado no QA: 41 arquivos e 208 testes
+  aprovados, lint e build de produção aprovados;
+- navegador real em 1280 px e 390 px: Financeiro, Mensagens, Obras e Gerir
+  obras sem overlay, erro de página ou overflow horizontal;
+- upload XML exercitado pelo navegador com hash, extrator, confiança, alerta de
+  revisão e preenchimento de número, série, emissão, chave e valores. PDF e
+  imagens permanecem cobertos pelos testes dos extratores/providers; não se
+  declara OCR externo nem autorização SEFAZ;
+- a captura de screenshot do navegador headless não ficou disponível no
+  ambiente. A evidência visual automatizada desta execução é estrutural
+  (árvore acessível, estilos computados, dimensões e navegação), não uma imagem;
+- o relatório `docs/checkpoints/pdor-monte-carlo-potential-validation-2026-07-15.md`
+  confirma estabilidade numérica controlada e registra, sem ocultar, os gates
+  de backtest e validação externa ainda ausentes.
 
 ## 16. Fora de escopo
 

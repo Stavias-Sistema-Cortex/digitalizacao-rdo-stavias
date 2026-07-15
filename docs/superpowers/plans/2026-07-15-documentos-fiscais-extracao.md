@@ -126,8 +126,8 @@ React 19, TypeScript, Vitest.
 
 ### Task 6: Verificação integral
 
-- [ ] Testes de migration e extração.
-- [ ] MySQL real sem skips para V37 e vínculo.
-- [ ] `mvnw clean test` com JDK 21.
-- [ ] `npm test`, `npm run lint`, `npm run build`.
-- [ ] `git diff --check` e revisão de dados falsos/status indevidos.
+- [x] Testes de migration e extração.
+- [x] MySQL real sem skips para V37 e vínculo.
+- [x] `mvnw clean test` com JDK 21.
+- [x] `npm test`, `npm run lint`, `npm run build`.
+- [x] `git diff --check` e revisão de dados falsos/status indevidos.
