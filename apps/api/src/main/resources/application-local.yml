@@ -6,6 +6,8 @@ spring:
 cortex:
   auth:
     jwt-secret: ${CORTEX_AUTH_JWT_SECRET:${random.uuid}}
+    login-rate-limit:
+      enabled: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_ENABLED:false}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}

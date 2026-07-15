@@ -19,6 +19,7 @@ spring:
 
   servlet:
     multipart:
+      resolve-lazily: true
       max-file-size: ${CORTEX_ATTACHMENT_MULTIPART_MAX_FILE_SIZE:11MB}
       max-request-size: ${CORTEX_ATTACHMENT_MULTIPART_MAX_REQUEST_SIZE:12MB}
 
@@ -29,6 +30,10 @@ cortex:
   auth:
     jwt-secret: ${CORTEX_AUTH_JWT_SECRET}
     jwt-ttl-seconds: ${CORTEX_AUTH_JWT_TTL_SECONDS:43200}
+    login-rate-limit:
+      enabled: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_ENABLED:true}
+      attempts-per-minute: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_ATTEMPTS_PER_MINUTE:20}
+      global-attempts-per-minute: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_GLOBAL_ATTEMPTS_PER_MINUTE:1000}
     dev-admin:
       enabled: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:false}
 

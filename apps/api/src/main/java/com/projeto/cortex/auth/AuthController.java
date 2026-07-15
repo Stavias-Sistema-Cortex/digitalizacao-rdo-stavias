@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 public class AuthController {
@@ -13,20 +14,27 @@ public class AuthController {
     private final AuthService authService;
     private final CpfBloomFilterService cpfBloomFilterService;
     private final JwtService jwtService;
+    private final AuthLoginRateLimiter loginRateLimiter;
 
     public AuthController(
             AuthService authService,
             CpfBloomFilterService cpfBloomFilterService,
-            JwtService jwtService
+            JwtService jwtService,
+            AuthLoginRateLimiter loginRateLimiter
     ) {
         this.authService = authService;
         this.cpfBloomFilterService = cpfBloomFilterService;
         this.jwtService = jwtService;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     /** Validação exata do CPF contra os colaboradores ativos da Academy. */
     @PostMapping("/api/auth/login")
-    public LoginResponse login(@RequestBody LoginRequest request) {
+    public LoginResponse login(
+            @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        loginRateLimiter.check(servletRequest.getRemoteAddr());
         String cpf = request == null ? null : request.cpf();
         String senha = request == null ? null : request.senha();
 
