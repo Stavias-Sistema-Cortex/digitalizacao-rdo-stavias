@@ -1321,6 +1321,9 @@ function canonicalMessageProjection(
       arquivo: null,
       syncStatus:
         status === "DISPONIVEL" ? "UPLOADED" : "PENDING_UPLOAD",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      proximaTentativaEm: null,
     };
   });
 

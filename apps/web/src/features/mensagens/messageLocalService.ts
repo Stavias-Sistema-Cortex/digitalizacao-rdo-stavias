@@ -112,6 +112,9 @@ export async function saveMessageOffline(
         versaoEntidade: 1,
         arquivo: attachment.arquivo,
         syncStatus: "WAITING_MESSAGE" as const,
+        tentativas: 0,
+        ultimaTentativaEm: null,
+        proximaTentativaEm: null,
       };
     }),
   );

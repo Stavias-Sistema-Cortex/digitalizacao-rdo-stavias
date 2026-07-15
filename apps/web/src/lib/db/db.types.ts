@@ -71,10 +71,13 @@ export interface LocalConversationRecord {
   tipo: ConversationType;
   titulo: string | null;
   obraId: string | null;
+  obraNome: string | null;
   equipeId: string | null;
+  equipeNome: string | null;
   criadoPor: string | null;
   status: "ATIVA" | "ARQUIVADA";
   ultimaAtividadeEm: string;
+  naoLidas: number;
   criadoEm: string | null;
   atualizadoEm: string;
   versaoEntidade: number | null;
@@ -158,6 +161,9 @@ export interface LocalMessageAttachmentRecord {
   versaoEntidade: number | null;
   arquivo: Blob | null;
   syncStatus: LocalMessageAttachmentSyncStatus;
+  tentativas: number;
+  ultimaTentativaEm: string | null;
+  proximaTentativaEm: string | null;
 }
 
 export interface LocalRdoRecord {

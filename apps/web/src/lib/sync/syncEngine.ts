@@ -1,4 +1,5 @@
 import { getSession } from "../../features/auth/authSession";
+import { syncPendingMessageAttachments } from "../../features/mensagens/messageAttachmentSync";
 import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
 import { acknowledgeCurrentCursor } from "./ackCursor";
@@ -46,6 +47,8 @@ async function executeSync(): Promise<SyncRunSummary> {
 
     const deviceId = await ensureRegisteredDevice();
     const pushSummary = await pushOutbox(deviceId);
+    const attachmentSummary =
+      await syncPendingMessageAttachments();
     const pullSummary = await pullEvents(deviceId);
 
     const acknowledgedCommitSeq =
@@ -63,6 +66,8 @@ async function executeSync(): Promise<SyncRunSummary> {
       applied: pushSummary.applied,
       errors: pushSummary.errors,
       conflicts: pushSummary.conflicts,
+      attachmentsUploaded: attachmentSummary.uploaded,
+      attachmentErrors: attachmentSummary.errors,
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,
     };

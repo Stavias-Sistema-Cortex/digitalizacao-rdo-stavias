@@ -93,6 +93,8 @@ export interface SyncRunSummary {
   applied: number;
   errors: number;
   conflicts: number;
+  attachmentsUploaded: number;
+  attachmentErrors: number;
   pulled: number;
   acknowledgedCommitSeq: number;
 }

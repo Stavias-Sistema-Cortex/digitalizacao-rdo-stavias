@@ -78,12 +78,31 @@ export async function putLocalMessageProjection(
     existingAttachments.map((item) => [item.id, item]),
   );
   await Promise.all(
-    attachments.map((item) =>
-      attachmentStore.put({
+    attachments.map((item) => {
+      const existing = existingById.get(item.id);
+      const arquivo = item.arquivo ?? existing?.arquivo ?? null;
+      const syncStatus =
+        item.status === "DISPONIVEL"
+          ? "UPLOADED"
+          : item.status === "FALHOU"
+            ? "ERROR"
+            : arquivo
+              ? "PENDING_UPLOAD"
+              : "WAITING_MESSAGE";
+
+      return attachmentStore.put({
         ...item,
-        arquivo: item.arquivo ?? existingById.get(item.id)?.arquivo ?? null,
-      }),
-    ),
+        arquivo,
+        syncStatus,
+        tentativas: existing?.tentativas ?? item.tentativas,
+        ultimaTentativaEm:
+          existing?.ultimaTentativaEm ?? item.ultimaTentativaEm,
+        proximaTentativaEm:
+          syncStatus === "PENDING_UPLOAD"
+            ? existing?.proximaTentativaEm ?? item.proximaTentativaEm
+            : null,
+      });
+    }),
   );
 
   await transaction.done;
