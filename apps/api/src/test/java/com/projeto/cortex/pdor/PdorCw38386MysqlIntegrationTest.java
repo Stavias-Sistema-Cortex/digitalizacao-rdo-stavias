@@ -199,7 +199,7 @@ class PdorCw38386MysqlIntegrationTest {
                 .contains("Receita medida ausente")
                 .contains("Receita validada ausente")
                 .contains("Nenhum RDO associado encontrado")
-                .contains("Histórico semanal de produtividade insuficiente para calibração");
+                .contains("Histórico semanal de produtividade insuficiente para apoio histórico");
 
         mockMvc.perform(get("/api/obras/{obraId}/pdor/atual", "CW38386")
                         .cookie(sessionCookie()))

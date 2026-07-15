@@ -21,10 +21,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private static final int DEFAULT_SIMULATION_ITERATIONS = 10_000;
 
     /**
-     * Espelho do mínimo exigido pelo PdorEngine para calibrar uma
+     * Espelho do mínimo exigido pelo PdorEngine para parametrizar uma
      * distribuição com histórico real; usado apenas para avisos.
      */
-    private static final int MINIMUM_CALIBRATION_WEEKS = 4;
+    private static final int MINIMUM_CALIBRATION_WEEKS =
+            PdorEngine.MINIMUM_HISTORY_OBSERVATIONS;
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -387,7 +388,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
 
         if (productivityLossWeekly.size() < MINIMUM_CALIBRATION_WEEKS) {
             warnings.add(
-                    "Histórico semanal de produtividade insuficiente para calibração ("
+                    "Histórico semanal de produtividade insuficiente para apoio histórico ("
                             + productivityLossWeekly.size()
                             + " de " + MINIMUM_CALIBRATION_WEEKS
                             + " semanas); premissas de protótipo serão usadas."
@@ -395,7 +396,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
         }
         if (materialOverconsumptionWeekly.size() < MINIMUM_CALIBRATION_WEEKS) {
             warnings.add(
-                    "Histórico semanal de material insuficiente para calibração ("
+                    "Histórico semanal de material insuficiente para apoio histórico ("
                             + materialOverconsumptionWeekly.size()
                             + " de " + MINIMUM_CALIBRATION_WEEKS
                             + " semanas); premissas de protótipo serão usadas."

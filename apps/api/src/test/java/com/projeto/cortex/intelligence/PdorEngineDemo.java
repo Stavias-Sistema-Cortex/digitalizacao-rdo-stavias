@@ -34,7 +34,7 @@ public final class PdorEngineDemo {
 
         PdorEngine.PdorResult result = engine.calculate(context);
 
-        System.out.println("\n=== PDOR v0.2 ===");
+        System.out.println("\n=== " + PdorEngine.MODEL_VERSION + " ===");
         System.out.println("Obra: " + result.obraId());
         System.out.println("Fase: " + result.projectPhase());
         System.out.println("Modelo: " + result.modelVersion());

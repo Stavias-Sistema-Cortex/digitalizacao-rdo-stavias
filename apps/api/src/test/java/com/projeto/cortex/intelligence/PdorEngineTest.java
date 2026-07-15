@@ -154,8 +154,14 @@ class PdorEngineTest {
     @Test
     void shouldCalibrateAssumptionsFromHistoricalSeries() {
         PdorEngine.HistoricalSeries history = new PdorEngine.HistoricalSeries(
-            java.util.List.of(0.05, 0.10, 0.12, 0.08, 0.15, 0.09),
-            java.util.List.of(0.02, 0.04, 0.03, 0.06, 0.05)
+            java.util.List.of(
+                0.05, 0.10, 0.12, 0.08, 0.15, 0.09,
+                0.06, 0.11, 0.13, 0.07, 0.14, 0.09
+            ),
+            java.util.List.of(
+                0.02, 0.04, 0.03, 0.06, 0.05, 0.03,
+                0.04, 0.02, 0.05, 0.06, 0.03, 0.04
+            )
         );
 
         PdorEngine.PdorResult result = engine.calculate(healthyContext(), history);
@@ -212,11 +218,17 @@ class PdorEngineTest {
     @Test
     void newObservationsMustShiftCalibratedAssumptions() {
         PdorEngine.HistoricalSeries stableHistory = new PdorEngine.HistoricalSeries(
-            java.util.List.of(0.02, 0.03, 0.02, 0.03, 0.02, 0.03),
+            java.util.List.of(
+                0.02, 0.03, 0.02, 0.03, 0.02, 0.03,
+                0.02, 0.03, 0.02, 0.03, 0.02, 0.03
+            ),
             java.util.List.of()
         );
         PdorEngine.HistoricalSeries degradedHistory = new PdorEngine.HistoricalSeries(
-            java.util.List.of(0.02, 0.03, 0.02, 0.03, 0.30, 0.35, 0.40, 0.38),
+            java.util.List.of(
+                0.02, 0.03, 0.02, 0.03, 0.02,
+                0.30, 0.35, 0.40, 0.38, 0.34, 0.36, 0.39
+            ),
             java.util.List.of()
         );
 
@@ -237,8 +249,14 @@ class PdorEngineTest {
     @Test
     void historicalCalibrationMustNotBreakDeterminism() {
         PdorEngine.HistoricalSeries history = new PdorEngine.HistoricalSeries(
-            java.util.List.of(0.05, 0.10, 0.12, 0.08, 0.15),
-            java.util.List.of(0.02, 0.04, 0.03, 0.06, 0.05)
+            java.util.List.of(
+                0.05, 0.10, 0.12, 0.08, 0.15, 0.09,
+                0.06, 0.11, 0.13, 0.07, 0.14, 0.09
+            ),
+            java.util.List.of(
+                0.02, 0.04, 0.03, 0.06, 0.05, 0.03,
+                0.04, 0.02, 0.05, 0.06, 0.03, 0.04
+            )
         );
 
         PdorEngine.PdorResult first =

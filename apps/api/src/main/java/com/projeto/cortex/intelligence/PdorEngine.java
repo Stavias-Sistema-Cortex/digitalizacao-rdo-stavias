@@ -12,10 +12,10 @@ import java.util.Optional;
 import java.util.SplittableRandom;
 
 /**
- * PDOR v0.4 — Previsão de Desvio Ontológico de Receita.
+ * PDOR v0.5 — Previsão de Desvio Ontológico de Receita.
  *
  * Melhorias em relação à v0.3:
- * - calibra as distribuições de produtividade e material com as séries
+ * - parametriza as distribuições de produtividade e material com as séries
  *   históricas semanais reais da obra (AssumptionSource.STAVIAS_HISTORY),
  *   com fallback para premissas de protótipo quando o histórico é curto;
  * - deriva o status de calibração da participação de protótipo nas
@@ -30,17 +30,17 @@ import java.util.SplittableRandom;
  */
 public final class PdorEngine {
 
-    public static final String MODEL_VERSION = "PDOR-0.4.0";
-    public static final String ASSUMPTIONS_VERSION = "PDOR-ASSUMPTIONS-0.4.0";
+    public static final String MODEL_VERSION = "PDOR-0.5.0";
+    public static final String ASSUMPTIONS_VERSION = "PDOR-ASSUMPTIONS-0.5.0";
 
     private static final double CONTRACT_95_PCT = 0.95;
     private static final double CONTRACT_90_PCT = 0.90;
 
     /**
-     * Observações semanais mínimas para calibrar uma distribuição com o
+     * Observações semanais mínimas para parametrizar uma distribuição com o
      * histórico real da obra em vez das premissas de protótipo.
      */
-    private static final int MINIMUM_HISTORY_OBSERVATIONS = 4;
+    public static final int MINIMUM_HISTORY_OBSERVATIONS = 12;
     private static final double MINIMUM_HISTORY_SPREAD = 0.02;
 
     private static final int DEFAULT_SIMULATION_ITERATIONS = 20_000;
@@ -57,7 +57,7 @@ public final class PdorEngine {
     }
 
     /**
-     * Calcula o PDOR calibrando as distribuições de produtividade e material
+     * Calcula o PDOR parametrizando as distribuições de produtividade e material
      * com as séries históricas semanais observadas nos RDOs da obra, quando
      * houver observações suficientes. Sem histórico, mantém as premissas de
      * protótipo e o status NOT_CALIBRATED.
@@ -400,10 +400,11 @@ public final class PdorEngine {
         double[] outcomes = new double[requestedIterations];
         SplittableRandom random = new SplittableRandom(deterministicSeed(context));
 
-        SimulationSummary previous = null;
+        SimulationSummary previousIndependentBatch = null;
         SimulationSummary current = null;
         int used = 0;
         boolean converged = false;
+        int consecutiveStableComparisons = 0;
 
         while (used < requestedIterations) {
             int nextLimit = Math.min(requestedIterations, used + batchSize);
@@ -417,19 +418,38 @@ public final class PdorEngine {
                 assumptions,
                 random
             );
+            double[] independentBatch = Arrays.copyOfRange(
+                outcomes,
+                used,
+                nextLimit
+            );
+            Arrays.sort(independentBatch);
+            SimulationSummary independentSummary = summarize(
+                independentBatch,
+                context.contractValue().doubleValue()
+            );
             used = nextLimit;
 
             double[] partial = Arrays.copyOf(outcomes, used);
             Arrays.sort(partial);
             current = summarize(partial, context.contractValue().doubleValue());
 
-            if (previous != null && used >= MINIMUM_SIMULATION_ITERATIONS * 2) {
-                converged = hasConverged(previous, current);
+            if (previousIndependentBatch != null
+                && used >= MINIMUM_SIMULATION_ITERATIONS * 2) {
+                if (hasConverged(previousIndependentBatch, independentSummary)) {
+                    consecutiveStableComparisons++;
+                } else {
+                    consecutiveStableComparisons = 0;
+                }
+                // Duas comparações consecutivas exigem três lotes independentes
+                // estáveis. Isso evita declarar convergência comparando uma
+                // amostra cumulativa com ela própria acrescida de poucos pontos.
+                converged = consecutiveStableComparisons >= 2;
                 if (converged) {
                     break;
                 }
             }
-            previous = current;
+            previousIndependentBatch = independentSummary;
         }
 
         if (current == null) {

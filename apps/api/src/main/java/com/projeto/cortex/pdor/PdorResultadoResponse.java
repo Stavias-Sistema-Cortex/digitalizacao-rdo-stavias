@@ -100,9 +100,9 @@ public record PdorResultadoResponse(
             return null;
         }
         return switch (value) {
-            case "NOT_CALIBRATED" -> "Não calibrado";
-            case "CALIBRATION_IN_PROGRESS" -> "Calibração em andamento";
-            case "CALIBRATED" -> "Calibrado";
+            case "NOT_CALIBRATED" -> "Protótipo";
+            case "CALIBRATION_IN_PROGRESS" -> "Histórico assistido";
+            case "CALIBRATED" -> "Calibrado, sem validação externa";
             default -> value;
         };
     }
