@@ -62,10 +62,12 @@ import {
 } from "./messageLocalService";
 import {
   conversationDisplayName,
+  conversationStaviaTarget,
   groupMessagesByDay,
   messageDeliveryLabel,
   participantInitials,
 } from "./messageViewModel";
+import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import "./MensagensPage.css";
 
 const ACCEPTED_ATTACHMENT_TYPES = [
@@ -179,6 +181,7 @@ function Icon({ name }: { name: "search" | "plus" | "back" | "file" | "send" | "
 
 export function MensagensPage() {
   const session = getSession();
+  const { setStaviaContext } = useStaviaLauncher();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedConversationId = searchParams.get("conversa");
   const [search, setSearch] = useState("");
@@ -207,6 +210,10 @@ export function MensagensPage() {
   const messageListRef = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(() => setReloadTick((value) => value + 1), []);
+
+  useEffect(() => {
+    setStaviaContext(conversationStaviaTarget(conversation));
+  }, [conversation, setStaviaContext]);
 
   useEffect(() => {
     let cancelled = false;

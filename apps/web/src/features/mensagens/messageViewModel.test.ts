@@ -6,6 +6,7 @@ import type {
 } from "../../lib/db/db.types";
 import {
   conversationDisplayName,
+  conversationStaviaTarget,
   groupMessagesByDay,
   messageDeliveryLabel,
   participantInitials,
@@ -61,6 +62,12 @@ function message(
 }
 
 describe("messageViewModel", () => {
+  it("entrega à StavIA apenas a obra real da conversa selecionada", () => {
+    expect(conversationStaviaTarget(conversation())).toEqual({ obraId: "obra-1" });
+    expect(conversationStaviaTarget(conversation({ obraId: null }))).toEqual({ obraId: "" });
+    expect(conversationStaviaTarget(null)).toEqual({ obraId: "" });
+  });
+
   it("usa contexto real para nomear conversas sem título", () => {
     expect(conversationDisplayName(conversation())).toBe("Contorno Norte");
     expect(

@@ -9,6 +9,12 @@ export interface MessageDayGroup {
   messages: LocalMessageRecord[];
 }
 
+export function conversationStaviaTarget(
+  conversation: LocalConversationRecord | null,
+): { obraId: string } {
+  return { obraId: conversation?.obraId ?? "" };
+}
+
 export function conversationDisplayName(
   conversation: LocalConversationRecord,
 ): string {
