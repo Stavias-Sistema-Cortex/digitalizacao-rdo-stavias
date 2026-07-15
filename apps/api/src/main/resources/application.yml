@@ -17,6 +17,11 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  servlet:
+    multipart:
+      max-file-size: ${CORTEX_ATTACHMENT_MULTIPART_MAX_FILE_SIZE:11MB}
+      max-request-size: ${CORTEX_ATTACHMENT_MULTIPART_MAX_REQUEST_SIZE:12MB}
+
 server:
   port: ${PORT:${SERVER_PORT:8080}}
 
@@ -39,6 +44,7 @@ cortex:
     storage-path: ${CORTEX_ATTACHMENT_STORAGE_PATH:./var/cortex-attachments}
     max-file-size-bytes: ${CORTEX_ATTACHMENT_MAX_FILE_SIZE_BYTES:10485760}
     max-message-size-bytes: ${CORTEX_ATTACHMENT_MAX_MESSAGE_SIZE_BYTES:26214400}
+    rate-limit-uploads-per-minute: ${CORTEX_ATTACHMENT_RATE_LIMIT_UPLOADS_PER_MINUTE:20}
     allowed-mime-types: ${CORTEX_ATTACHMENT_ALLOWED_MIME_TYPES:image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet}
 
   sources:

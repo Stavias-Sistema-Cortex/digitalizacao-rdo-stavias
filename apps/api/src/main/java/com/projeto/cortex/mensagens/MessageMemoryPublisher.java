@@ -199,6 +199,63 @@ public class MessageMemoryPublisher {
         );
     }
 
+    public void anexoDisponivel(
+            ConversationScope conversation,
+            MensagemAnexoResponse attachment,
+            String actorId
+    ) {
+        memoryService.registrarObjeto(
+                "MENSAGEM_ANEXO",
+                attachment.id(),
+                attachment.clientAttachmentId(),
+                attachment.nomeSeguro(),
+                attachment.status(),
+                SOURCE,
+                "mensagem_anexo",
+                Map.of(
+                        "mensagemId", attachment.mensagemId(),
+                        "mimeType", attachment.mimeType(),
+                        "tamanhoBytes", attachment.tamanhoBytes(),
+                        "hashSha256", attachment.hashSha256()
+                )
+        );
+        memoryService.registrarRelacaoAtiva(
+                "MENSAGEM", attachment.mensagemId(),
+                "MENSAGEM_ANEXO", attachment.id(),
+                "ANEXA", SOURCE,
+                "Conteúdo protegido do anexo disponível."
+        );
+
+        Map<String, Object> afterState = new LinkedHashMap<>();
+        afterState.put("id", attachment.id());
+        afterState.put("mensagemId", attachment.mensagemId());
+        afterState.put("status", attachment.status());
+        afterState.put("mimeType", attachment.mimeType());
+        afterState.put("tamanhoBytes", attachment.tamanhoBytes());
+        afterState.put("hashSha256", attachment.hashSha256());
+        afterState.put("disponivelEm", attachment.disponivelEm());
+        publishEvent(
+                "MENSAGEM_ANEXO",
+                attachment.id(),
+                "ANEXO_MENSAGEM_DISPONIVEL",
+                conversation.worksiteId(),
+                actorId,
+                actorId,
+                "DISPONIBILIZAR_ANEXO_MENSAGEM",
+                Map.of("status", "PENDENTE"),
+                afterState,
+                List.copyOf(afterState.keySet()),
+                attachment.versaoEntidade(),
+                List.of(
+                        Map.of(
+                                "tipo", "MENSAGEM",
+                                "id", attachment.mensagemId()
+                        ),
+                        Map.of("tipo", "CONVERSA", "id", conversation.id())
+                )
+        );
+    }
+
     private Map<String, Object> messageState(MensagemResponse message) {
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("id", message.id());

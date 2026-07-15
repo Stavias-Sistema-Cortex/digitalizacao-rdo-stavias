@@ -20,7 +20,6 @@ public class MessageService {
 
     private static final int MAX_TEXT_LENGTH = 10_000;
     private static final int MAX_ATTACHMENTS = 10;
-    private static final long MAX_MESSAGE_ATTACHMENT_BYTES = 25L * 1024L * 1024L;
     private static final Pattern SHA_256 = Pattern.compile("[a-fA-F0-9]{64}");
 
     private final MessageRepository repository;
@@ -28,19 +27,22 @@ public class MessageService {
     private final ConversationAccessPolicy accessPolicy;
     private final CurrentUserService currentUserService;
     private final MessageMemoryPublisher memoryPublisher;
+    private final MessageAttachmentProperties attachmentProperties;
 
     public MessageService(
             MessageRepository repository,
             MessageReferenceResolver referenceResolver,
             ConversationAccessPolicy accessPolicy,
             CurrentUserService currentUserService,
-            MessageMemoryPublisher memoryPublisher
+            MessageMemoryPublisher memoryPublisher,
+            MessageAttachmentProperties attachmentProperties
     ) {
         this.repository = repository;
         this.referenceResolver = referenceResolver;
         this.accessPolicy = accessPolicy;
         this.currentUserService = currentUserService;
         this.memoryPublisher = memoryPublisher;
+        this.attachmentProperties = attachmentProperties;
     }
 
     @Transactional
@@ -298,21 +300,35 @@ public class MessageService {
             if (size <= 0) {
                 throw badRequest("O tamanho do anexo deve ser maior que zero.");
             }
+            if (size > attachmentProperties.getMaxFileSizeBytes()) {
+                throw badRequest("O anexo excede o limite por arquivo.");
+            }
             total[0] += size;
-            if (total[0] > MAX_MESSAGE_ATTACHMENT_BYTES) {
-                throw badRequest("Os anexos da mensagem excedem 25 MB.");
+            if (total[0] > attachmentProperties.getMaxMessageSizeBytes()) {
+                throw badRequest("Os anexos excedem o limite total da mensagem.");
             }
             String hash = requireText(attachment.hashSha256(), "hashSha256", 64)
                     .toLowerCase(Locale.ROOT);
             if (!SHA_256.matcher(hash).matches()) {
                 throw badRequest("hashSha256 inválido.");
             }
+            String mimeType = requireText(
+                    attachment.mimeType(),
+                    "mimeType",
+                    160
+            ).toLowerCase(Locale.ROOT);
+            boolean allowedMime = attachmentProperties.getAllowedMimeTypes()
+                    .stream()
+                    .map(value -> value.toLowerCase(Locale.ROOT))
+                    .anyMatch(mimeType::equals);
+            if (!allowedMime) {
+                throw badRequest("O tipo MIME do anexo não é permitido.");
+            }
             return new MensagemAnexoPreparacaoRequest(
                     id,
                     clientId,
                     requireText(attachment.nomeOriginal(), "nomeOriginal", 255),
-                    requireText(attachment.mimeType(), "mimeType", 160)
-                            .toLowerCase(Locale.ROOT),
+                    mimeType,
                     size,
                     hash
             );

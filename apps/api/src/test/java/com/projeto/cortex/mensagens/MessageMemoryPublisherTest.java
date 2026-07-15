@@ -129,4 +129,38 @@ class MessageMemoryPublisherTest {
                 any(LocalDateTime.class), anyInt(), anyMap()
         );
     }
+
+    @Test
+    void availableAttachmentTraceNeverPublishesOpaqueStorageKey() {
+        CortexOperationalMemoryService memoryService =
+                mock(CortexOperationalMemoryService.class);
+        MessageMemoryPublisher publisher = new MessageMemoryPublisher(memoryService);
+        ConversationScope conversation = new ConversationScope(
+                "conversation-1", "OBRA", "Obra Norte",
+                "obra-1", null, "ATIVA"
+        );
+        LocalDateTime now = LocalDateTime.of(2026, 7, 15, 11, 0);
+        MensagemAnexoResponse attachment = new MensagemAnexoResponse(
+                "attachment-1", "message-1", "client-attachment-1",
+                "foto.jpg", "foto.jpg", "image/jpeg", 128,
+                "a".repeat(64), "DISPONIVEL", null,
+                now.minusMinutes(1), now, now, 2
+        );
+
+        publisher.anexoDisponivel(conversation, attachment, "beta-1");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> payloadCaptor =
+                ArgumentCaptor.forClass(Map.class);
+        verify(memoryService).registrarEventoDetalhado(
+                anyString(), eq("MENSAGEM_ANEXO"), eq("attachment-1"),
+                eq("ANEXO_MENSAGEM_DISPONIVEL"), eq("MENSAGENS_CORTEX"),
+                eq("obra-1"), isNull(), eq("beta-1"), anyList(),
+                eq("ONLINE"), eq("SYNCED"), any(LocalDateTime.class),
+                any(LocalDateTime.class), anyInt(), payloadCaptor.capture()
+        );
+        assertThat(payloadCaptor.getValue().toString())
+                .contains("DISPONIVEL", "image/jpeg")
+                .doesNotContain("storageKey", "aaaaaaaa-aaaa-aaaa");
+    }
 }

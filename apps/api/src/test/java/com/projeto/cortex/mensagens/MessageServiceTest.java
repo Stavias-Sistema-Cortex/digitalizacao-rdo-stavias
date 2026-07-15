@@ -26,6 +26,7 @@ class MessageServiceTest {
     private ConversationAccessPolicy accessPolicy;
     private CurrentUserService currentUserService;
     private MessageMemoryPublisher memoryPublisher;
+    private MessageAttachmentProperties attachmentProperties;
     private MessageService service;
 
     @BeforeEach
@@ -35,12 +36,14 @@ class MessageServiceTest {
         accessPolicy = mock(ConversationAccessPolicy.class);
         currentUserService = mock(CurrentUserService.class);
         memoryPublisher = mock(MessageMemoryPublisher.class);
+        attachmentProperties = new MessageAttachmentProperties();
         service = new MessageService(
                 repository,
                 referenceResolver,
                 accessPolicy,
                 currentUserService,
-                memoryPublisher
+                memoryPublisher,
+                attachmentProperties
         );
         when(currentUserService.requireUserId()).thenReturn("user-1");
     }
@@ -128,6 +131,45 @@ class MessageServiceTest {
         assertThatThrownBy(() -> service.enviar(
                 request("message-1", "client-message-1", "   ")
         )).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST)
+        );
+
+        verify(repository, never()).insertMessage(any(), any(), any());
+    }
+
+    @Test
+    void attachmentMetadataCannotExceedConfiguredPerFileLimit() {
+        when(accessPolicy.requireSend("conversation-1")).thenReturn(scope());
+        attachmentProperties.setMaxFileSizeBytes(5);
+        MensagemAnexoPreparacaoRequest attachment = new MensagemAnexoPreparacaoRequest(
+                "attachment-1", "client-attachment-1", "foto.jpg",
+                "image/jpeg", 6L, "a".repeat(64)
+        );
+
+        assertThatThrownBy(() -> service.enviar(new MensagemCreateRequest(
+                "message-1", "conversation-1", "client-message-1",
+                null, LocalDateTime.of(2026, 7, 15, 10, 30),
+                List.of(), List.of(attachment)
+        ))).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
+                assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST)
+        );
+
+        verify(repository, never()).insertMessage(any(), any(), any());
+    }
+
+    @Test
+    void attachmentMetadataRejectsMimeOutsideConfiguredAllowlist() {
+        when(accessPolicy.requireSend("conversation-1")).thenReturn(scope());
+        MensagemAnexoPreparacaoRequest attachment = new MensagemAnexoPreparacaoRequest(
+                "attachment-1", "client-attachment-1", "script.svg",
+                "image/svg+xml", 4L, "a".repeat(64)
+        );
+
+        assertThatThrownBy(() -> service.enviar(new MensagemCreateRequest(
+                "message-1", "conversation-1", "client-message-1",
+                null, LocalDateTime.of(2026, 7, 15, 10, 30),
+                List.of(), List.of(attachment)
+        ))).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
                 assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST)
         );
 
