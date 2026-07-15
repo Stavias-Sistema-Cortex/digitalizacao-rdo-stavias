@@ -200,6 +200,32 @@ public class CortexOperationalMemoryService {
                 sequencia
         );
 
+        Long entityVersion = jdbcTemplate.queryForObject(
+                """
+                SELECT versao_entidade
+                FROM cortex_estado_entidade
+                WHERE tipo_entidade = ?
+                  AND entidade_id = ?
+                """,
+                Long.class,
+                tipoEntidade,
+                entidadeId
+        );
+        if (entityVersion == null) {
+            throw new IllegalStateException(
+                    "Evento operacional foi criado sem versão autoritativa da entidade."
+            );
+        }
+        jdbcTemplate.update(
+                """
+                UPDATE cortex_evento_operacional
+                SET versao_entidade = ?
+                WHERE id = ?
+                """,
+                entityVersion,
+                eventoId
+        );
+
         eventPublisher.publishEvent(new CortexObservacaoRegistrada(
                 eventoId,
                 tipoEntidade,
