@@ -194,6 +194,16 @@ class FinanceAllocationServiceMysqlIntegrationTest {
                 .isEqualByComparingTo("80.0000");
         assertThat(ledgerAllocation.origemTipo())
                 .isEqualTo(AllocationSourceType.LANCAMENTO);
+        assertThat(service.list(seed.worksiteUnitId(), seed.actorId()))
+                .extracting(AllocationResponse::origemTipo)
+                .containsExactlyInAnyOrder(
+                        AllocationSourceType.COMPRA,
+                        AllocationSourceType.NOTA_FISCAL,
+                        AllocationSourceType.LANCAMENTO
+                );
+        assertThat(service.list(seed.adminUnitId(), seed.actorId()))
+                .extracting(AllocationResponse::id)
+                .containsExactly(created.id());
 
         assertThatThrownBy(() -> transactions.execute(status -> service.save(
                 request(

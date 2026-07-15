@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyManualFilters,
   financeQueryParams,
   filtersFromSearchParams,
   filtersToSearchParams,
@@ -26,6 +27,8 @@ describe("financeiroFilters", () => {
       tipo: "PAGAR",
       moeda: "BRL",
       query: "brita",
+      manualMode: "ALL",
+      manualRules: [],
     });
 
     expect(filtersToSearchParams(filters).toString()).toContain(
@@ -46,6 +49,8 @@ describe("financeiroFilters", () => {
       tipo: "RECEBER",
       moeda: "BRL",
       query: "  concreto  ",
+      manualMode: "ALL",
+      manualRules: [],
     });
 
     expect(params.get("obraId")).toBe("obra-9");
@@ -55,5 +60,82 @@ describe("financeiroFilters", () => {
     expect(params.get("query")).toBe("concreto");
     expect(params.has("de")).toBe(false);
     expect(params.has("fornecedorId")).toBe(false);
+  });
+
+  it("serializa regras manuais canônicas, tipadas e limitadas", () => {
+    const filters = filtersFromSearchParams(new URLSearchParams(
+      "obra=obra-1&fm=ANY" +
+      "&f=descricao%7CCONTAINS%7Cponte%7C" +
+      "&f=valor%7CBETWEEN%7C1000.00%7C2500.00" +
+      "&f=campo_sql%7CEQUALS%7Cx%7C",
+    ));
+
+    expect(filters.manualMode).toBe("ANY");
+    expect(filters.manualRules).toEqual([
+      {
+        id: "manual-0",
+        field: "descricao",
+        operator: "CONTAINS",
+        value: "ponte",
+        secondValue: "",
+      },
+      {
+        id: "manual-1",
+        field: "valor",
+        operator: "BETWEEN",
+        value: "1000.00",
+        secondValue: "2500.00",
+      },
+    ]);
+
+    const serialized = filtersToSearchParams(filters);
+    expect(serialized.get("fm")).toBe("ANY");
+    expect(serialized.getAll("f")).toEqual([
+      "descricao|CONTAINS|ponte|",
+      "valor|BETWEEN|1000.00|2500.00",
+    ]);
+    expect(financeQueryParams(filters).has("f")).toBe(false);
+  });
+
+  it("aplica todos ou qualquer filtro somente por campos allowlisted", () => {
+    const rows = [
+      {
+        descricao: "Concreto da ponte",
+        numero: "NF-101",
+        fornecedor: "Pedreira Horizonte",
+        status: "APROVADA",
+        tipo: "PAGAR",
+        valor: 2500,
+        data: "2026-07-14",
+      },
+      {
+        descricao: "Locação de escavadeira",
+        numero: "NF-202",
+        fornecedor: "Máquinas Sul",
+        status: "PENDENTE",
+        tipo: "PAGAR",
+        valor: 9000,
+        data: "2026-07-20",
+      },
+    ];
+    const rules = [
+      {
+        id: "one",
+        field: "descricao" as const,
+        operator: "CONTAINS" as const,
+        value: "ponte",
+        secondValue: "",
+      },
+      {
+        id: "two",
+        field: "valor" as const,
+        operator: "GREATER_THAN" as const,
+        value: "5000",
+        secondValue: "",
+      },
+    ];
+
+    expect(applyManualFilters(rows, rules, "ALL")).toEqual([]);
+    expect(applyManualFilters(rows, rules, "ANY")).toEqual(rows);
   });
 });

@@ -261,6 +261,37 @@ public class FinanceAllocationService {
     }
 
     @Transactional(readOnly = true)
+    public List<AllocationResponse> list(String unitId, String userId) {
+        if (blank(userId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Ator autenticado é obrigatório."
+            );
+        }
+        String actorId = userId.trim();
+        String normalizedUnitId = blank(unitId) ? null : unitId.trim();
+        Optional<Set<String>> allowed = access.allowedUnitIds(
+                actorId,
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        );
+        if (normalizedUnitId != null
+                && allowed.map(ids -> !ids.contains(normalizedUnitId))
+                        .orElse(false)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Você não possui acesso a esta unidade financeira."
+            );
+        }
+        return repository.list(normalizedUnitId).stream()
+                .filter(snapshot -> allowed
+                        .map(ids -> snapshot.items().stream()
+                                .allMatch(item -> ids.contains(item.unitId())))
+                        .orElse(true))
+                .map(this::response)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public AllocationHistoryResponse history(String allocationId) {
         if (blank(allocationId)) {
             throw badRequest("rateioId é obrigatório.");

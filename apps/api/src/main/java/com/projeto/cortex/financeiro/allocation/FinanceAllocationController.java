@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -26,6 +27,13 @@ public class FinanceAllocationController {
     ) {
         this.service = service;
         this.currentUser = currentUser;
+    }
+
+    @GetMapping
+    public java.util.List<AllocationResponse> list(
+            @RequestParam(required = false) String unidadeId
+    ) {
+        return service.list(unidadeId, currentUser.requireUserId());
     }
 
     @PutMapping("/origens/{tipo}/{origemId}")

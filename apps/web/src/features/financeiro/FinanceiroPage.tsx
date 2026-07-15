@@ -2,14 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import { buscarObrasRelacionadas } from "../home/homeApi";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
+import { getSession, isAlfa } from "../auth/authSession";
 import {
   EMPTY_FINANCE_FILTERS,
   filtersFromSearchParams,
   filtersToSearchParams,
 } from "./financeiroFilters";
-import type { FinanceFilters } from "./financeiro.types";
+import type {
+  FinanceCapabilities,
+  FinanceControlUnit,
+  FinanceControlUnitType,
+  FinanceFilters,
+} from "./financeiro.types";
+import {
+  buscarCapacidadesUnidade,
+  buscarUnidadesFinanceiras,
+} from "./financeiroApi";
 import {
   useFinanceiroData,
   type FinanceSection,
@@ -20,21 +29,28 @@ import { FinanceInvoicesPanel } from "./FinanceInvoicesPanel";
 import { FinancePaymentsPanel } from "./FinancePaymentsPanel";
 import { FinanceCostCentersPanel } from "./FinanceCostCentersPanel";
 import { FinanceReportsPanel } from "./FinanceReportsPanel";
+import { FinanceAllocationsPanel } from "./FinanceAllocationsPanel";
+import { FinanceGeneralScopePanel } from "./FinanceGeneralScopePanel";
+import { FinanceManualFilters } from "./FinanceManualFilters";
 import "./FinanceiroPage.css";
 
-interface WorksiteOption {
-  id: string;
-  codigo: string;
-  nome: string;
-}
+type FinanceScopeType = "GERAL" | Exclude<FinanceControlUnitType, "CORPORATIVO">;
 
 const SECTIONS: { id: FinanceSection; label: string }[] = [
   { id: "visao-geral", label: "Visão geral" },
   { id: "compras", label: "Compras" },
   { id: "notas-fiscais", label: "Notas fiscais" },
   { id: "pagamentos", label: "Pagamentos e cobranças" },
+  { id: "rateios", label: "Rateios" },
   { id: "centros-custo", label: "Centros de custo" },
   { id: "relatorios", label: "Relatórios" },
+];
+
+const SCOPES: { id: FinanceScopeType; label: string }[] = [
+  { id: "GERAL", label: "Visão geral" },
+  { id: "OBRA", label: "Obras" },
+  { id: "ATIVO", label: "Equipamentos" },
+  { id: "ADMINISTRATIVO", label: "Administrativo" },
 ];
 
 function sectionFromParams(params: URLSearchParams): FinanceSection {
@@ -44,12 +60,24 @@ function sectionFromParams(params: URLSearchParams): FinanceSection {
     : "visao-geral";
 }
 
+function scopeFromParams(params: URLSearchParams): FinanceScopeType {
+  const requested = params.get("escopo");
+  return SCOPES.some((scope) => scope.id === requested)
+    ? requested as FinanceScopeType
+    : "GERAL";
+}
+
 export function FinanceiroPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [worksites, setWorksites] = useState<WorksiteOption[]>([]);
-  const [worksiteError, setWorksiteError] = useState("");
+  const [units, setUnits] = useState<FinanceControlUnit[]>([]);
+  const [unitError, setUnitError] = useState("");
+  const [unitVersion, setUnitVersion] = useState(0);
+  const [unitCapabilities, setUnitCapabilities] =
+    useState<FinanceCapabilities | null>(null);
   const [reportGroup, setReportGroup] = useState("CENTRO_CUSTO");
   const section = sectionFromParams(searchParams);
+  const scopeType = scopeFromParams(searchParams);
+  const selectedUnitId = searchParams.get("unidade")?.trim() ?? "";
   const filters = useMemo(
     () => filtersFromSearchParams(searchParams),
     [searchParams],
@@ -58,66 +86,86 @@ export function FinanceiroPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadWorksites() {
+    async function loadUnits() {
       try {
         const remote = navigator.onLine
-          ? await buscarObrasRelacionadas()
+          ? await buscarUnidadesFinanceiras()
           : [];
-        const options = remote.map((obra) => ({
-          id: obra.id,
-          codigo: obra.codigoContrato || "",
-          nome: obra.nome || obra.codigoContrato || obra.id,
-        }));
-        if (!cancelled && options.length > 0) {
-          setWorksites(options);
+        if (!cancelled && remote.length > 0) {
+          setUnits(remote);
           return;
         }
         const local = await listObrasLocais();
         if (!cancelled) {
-          setWorksites(local.map((obra) => ({
+          setUnits(local.map((obra) => ({
             id: obra.id,
-            codigo: obra.codigoContrato,
+            tipo: "OBRA",
+            obraId: obra.id,
+            ativoId: null,
+            codigo: obra.codigoContrato || `OBRA:${obra.id}`,
             nome: obra.nome,
+            status: "ATIVA",
+            versao: 0,
           })));
         }
       } catch (reason: unknown) {
         try {
           const local = await listObrasLocais();
           if (!cancelled) {
-            setWorksites(local.map((obra) => ({
+            setUnits(local.map((obra) => ({
               id: obra.id,
-              codigo: obra.codigoContrato,
+              tipo: "OBRA",
+              obraId: obra.id,
+              ativoId: null,
+              codigo: obra.codigoContrato || `OBRA:${obra.id}`,
               nome: obra.nome,
+              status: "ATIVA",
+              versao: 0,
             })));
           }
         } catch {
           if (!cancelled) {
-            setWorksiteError(reason instanceof Error
+            setUnitError(reason instanceof Error
               ? reason.message
-              : "Não foi possível carregar as obras disponíveis.");
+              : "Não foi possível carregar as unidades financeiras.");
           }
         }
       }
     }
-    void loadWorksites();
+    void loadUnits();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [unitVersion]);
 
   useEffect(() => {
-    if (filters.obraId || worksites.length === 0) return;
-    const params = filtersToSearchParams({
-      ...filters,
-      obraId: worksites[0].id,
-    });
-    params.set("secao", section);
-    setSearchParams(params, { replace: true });
-  }, [filters, section, setSearchParams, worksites]);
+    let cancelled = false;
+    if (!selectedUnitId || filters.obraId) {
+      queueMicrotask(() => {
+        if (!cancelled) setUnitCapabilities(null);
+      });
+      return () => { cancelled = true; };
+    }
+    void buscarCapacidadesUnidade(selectedUnitId)
+      .then((capabilities) => {
+        if (!cancelled) setUnitCapabilities(capabilities);
+      })
+      .catch(() => {
+        if (!cancelled) setUnitCapabilities(null);
+      });
+    return () => { cancelled = true; };
+  }, [filters.obraId, selectedUnitId]);
 
-  function applyParams(nextFilters: FinanceFilters, nextSection = section) {
+  function applyParams(
+    nextFilters: FinanceFilters,
+    nextSection = section,
+    nextScope = scopeType,
+    nextUnitId = selectedUnitId,
+  ) {
     const params = filtersToSearchParams(nextFilters);
     params.set("secao", nextSection);
+    params.set("escopo", nextScope);
+    if (nextUnitId) params.set("unidade", nextUnitId);
     setSearchParams(params, { replace: true });
   }
 
@@ -129,9 +177,33 @@ export function FinanceiroPage() {
     updateFilters({ ...filters, ...patch });
   }
 
-  const selectedWorksite = worksites.find((obra) => obra.id === filters.obraId);
+  const selectedUnit = units.find((unit) => unit.id === selectedUnitId);
+  const visibleUnits = scopeType === "GERAL"
+    ? units.filter((unit) => unit.tipo !== "CORPORATIVO")
+    : units.filter((unit) => unit.tipo === scopeType);
   const permissions = data.capabilities?.permissoes ?? [];
   const canView = permissions.includes("FINANCEIRO_VISUALIZAR");
+  const canOperateUnit = isAlfa(getSession()) ||
+    Boolean(unitCapabilities?.permissoes.includes("FINANCEIRO_OPERAR"));
+
+  function selectScope(nextScope: FinanceScopeType) {
+    applyParams(
+      { ...filters, obraId: "" },
+      section,
+      nextScope,
+      "",
+    );
+  }
+
+  function selectUnit(unitId: string) {
+    const unit = units.find((candidate) => candidate.id === unitId);
+    applyParams(
+      { ...filters, obraId: unit?.obraId ?? "" },
+      section,
+      scopeType,
+      unit?.id ?? "",
+    );
+  }
 
   return (
     <CortexShell
@@ -142,35 +214,47 @@ export function FinanceiroPage() {
       <main className="finance-page">
         <header className="finance-page-header">
           <div>
-            <p className="finance-kicker">Gestão financeira</p>
-            <h1>Dinheiro da obra, sem pontos cegos.</h1>
+            <p className="finance-kicker">Operação</p>
+            <h1>Financeiro</h1>
             <p>
-              Compras, documentos, liquidações e cobranças no mesmo fluxo,
-              sempre filtrados pela obra e pelas permissões do servidor.
+              Compras, notas fiscais, rateios, pagamentos e cobranças da operação.
             </p>
           </div>
-          <label className="finance-worksite-select">
-            Obra em análise
-            <select
-              value={filters.obraId}
-              onChange={(event) => patchFilters({
-                ...EMPTY_FINANCE_FILTERS,
-                obraId: event.target.value,
-              })}
-            >
-              <option value="">Selecione uma obra</option>
-              {worksites.map((obra) => (
-                <option key={obra.id} value={obra.id}>
-                  {obra.codigo ? `${obra.codigo} · ` : ""}{obra.nome}
-                </option>
-              ))}
-            </select>
-          </label>
         </header>
 
-        {worksiteError ? (
-          <div className="finance-error-state" role="alert">{worksiteError}</div>
+        {unitError ? (
+          <div className="finance-error-state" role="alert">{unitError}</div>
         ) : null}
+
+        <section className="finance-scope-bar" aria-label="Escopo financeiro">
+          <nav>
+            {SCOPES.map((scope) => (
+              <button
+                key={scope.id}
+                type="button"
+                className={scopeType === scope.id ? "is-active" : ""}
+                onClick={() => selectScope(scope.id)}
+              >
+                {scope.label}
+              </button>
+            ))}
+          </nav>
+          {scopeType !== "GERAL" ? (
+            <label>
+              Unidade em análise
+              <select value={selectedUnitId} onChange={(event) => selectUnit(event.target.value)}>
+                <option value="">Consolidado autorizado</option>
+                {visibleUnits.map((unit) => (
+                  <option key={unit.id} value={unit.id}>
+                    {unit.codigo} · {unit.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p>{units.length} unidades autorizadas no consolidado</p>
+          )}
+        </section>
 
         <nav className="finance-section-nav" aria-label="Áreas do financeiro">
           {SECTIONS.map((item) => (
@@ -186,6 +270,7 @@ export function FinanceiroPage() {
         </nav>
 
         {filters.obraId && (
+          <>
           <FinanceFiltersBar
             filters={filters}
             section={section}
@@ -204,12 +289,53 @@ export function FinanceiroPage() {
               moeda: filters.moeda,
             })}
           />
+          {!["visao-geral", "centros-custo", "relatorios"].includes(section) ? (
+            <FinanceManualFilters
+              mode={filters.manualMode}
+              rules={filters.manualRules}
+              onModeChange={(manualMode) => patchFilters({ manualMode })}
+              onRulesChange={(manualRules) => patchFilters({ manualRules })}
+            />
+          ) : null}
+          </>
         )}
 
-        {!filters.obraId ? (
+        {!filters.obraId && section === "visao-geral" ? (
+          <FinanceGeneralScopePanel
+            units={visibleUnits}
+            selectedUnitId={selectedUnitId}
+            canAdminister={isAlfa(getSession())}
+            onSelect={(unit) => {
+              const nextScope = unit.tipo === "CORPORATIVO" ? "GERAL" : unit.tipo;
+              applyParams(
+                { ...filters, obraId: unit.obraId ?? "" },
+                section,
+                nextScope,
+                unit.id,
+              );
+            }}
+            onChanged={() => setUnitVersion((value) => value + 1)}
+          />
+        ) : !filters.obraId && section === "rateios" ? (
+          <FinanceAllocationsPanel
+            units={units}
+            selectedUnitId={selectedUnitId}
+            purchases={[]}
+            invoices={[]}
+            ledger={[]}
+            canOperate={canOperateUnit}
+            onChanged={data.reload}
+          />
+        ) : !filters.obraId ? (
           <section className="finance-empty">
             <div className="finance-empty-mark" aria-hidden="true">↳</div>
-            <div><h2>Selecione uma obra</h2><p>O Córtex não combina dados financeiros de obras diferentes.</p></div>
+            <div>
+              <h2>Escolha uma obra para esta área</h2>
+              <p>
+                Compras, notas e pagamentos continuam vinculados à origem real.
+                Use Rateios para consultar equipamentos e unidades administrativas.
+              </p>
+            </div>
           </section>
         ) : data.loading && !data.capabilities ? (
           <div className="finance-loading" role="status">Carregando o escopo financeiro…</div>
@@ -219,7 +345,7 @@ export function FinanceiroPage() {
             <div>
               <h2>Acesso financeiro não concedido</h2>
               <p>
-                Você pode acessar {selectedWorksite?.nome || "esta obra"}, mas
+                Você pode acessar {selectedUnit?.nome || "esta obra"}, mas
                 não possui a capacidade FINANCEIRO_VISUALIZAR para os dados financeiros.
               </p>
             </div>
@@ -268,6 +394,17 @@ export function FinanceiroPage() {
                 categories={data.categories}
                 statuses={data.statuses}
                 permissions={permissions}
+                onChanged={data.reload}
+              />
+            )}
+            {canView && section === "rateios" && (
+              <FinanceAllocationsPanel
+                units={units}
+                selectedUnitId={selectedUnitId}
+                purchases={data.purchases}
+                invoices={data.invoices}
+                ledger={data.ledger}
+                canOperate={permissions.includes("FINANCEIRO_OPERAR")}
                 onChanged={data.reload}
               />
             )}

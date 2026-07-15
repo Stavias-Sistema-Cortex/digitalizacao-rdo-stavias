@@ -113,6 +113,22 @@ class FinanceAllocationControllerMockMvcTest {
                 .andExpect(jsonPath("$.rateioId").value("rateio-1"));
     }
 
+    @Test
+    void listsAllocationsInsideTheAuthenticatedUnitScope() throws Exception {
+        when(currentUser.requireUserId()).thenReturn("beta-1");
+        when(service.list("unit-1", "beta-1"))
+                .thenReturn(List.of(response()));
+
+        mockMvc.perform(get("/api/financeiro/rateios")
+                        .queryParam("unidadeId", "unit-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("rateio-1"))
+                .andExpect(jsonPath("$[0].itens[0].unidadeControleId")
+                        .value("unit-1"));
+
+        verify(service).list("unit-1", "beta-1");
+    }
+
     private AllocationResponse response() {
         return new AllocationResponse(
                 "rateio-1",

@@ -178,6 +178,41 @@ public class FinanceAllocationRepository {
                 .map(header -> snapshot(header, items(header.id(), true)));
     }
 
+    public List<AllocationSnapshot> list(String unitId) {
+        String where = " WHERE r.status = 'ATIVO'";
+        List<Object> arguments = new ArrayList<>();
+        if (unitId != null && !unitId.isBlank()) {
+            where += """
+                     AND EXISTS (
+                         SELECT 1
+                         FROM finance_rateio_item scoped_item
+                         WHERE scoped_item.rateio_id = r.id
+                           AND scoped_item.unidade_controle_id = ?
+                     )
+                    """;
+            arguments.add(unitId.trim());
+        }
+        where += " ORDER BY r.atualizado_em DESC, r.id LIMIT 500";
+        List<AllocationHeader> headers = jdbc.query(
+                headerSql() + where,
+                (rs, rowNum) -> mapHeader(rs),
+                arguments.toArray()
+        );
+        if (headers.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<AllocationItemRecord>> groupedItems =
+                itemsByAllocation(headers.stream()
+                        .map(AllocationHeader::id)
+                        .toList());
+        return headers.stream()
+                .map(header -> snapshot(
+                        header,
+                        groupedItems.getOrDefault(header.id(), List.of())
+                ))
+                .toList();
+    }
+
     public Map<String, AllocationUnit> lockUnits(Set<String> unitIds) {
         if (unitIds == null || unitIds.isEmpty()) {
             return Map.of();
@@ -401,6 +436,41 @@ public class FinanceAllocationRepository {
                 ),
                 allocationId
         );
+    }
+
+    private Map<String, List<AllocationItemRecord>> itemsByAllocation(
+            List<String> allocationIds
+    ) {
+        String placeholders = allocationIds.stream()
+                .map(ignored -> "?")
+                .collect(Collectors.joining(","));
+        Map<String, List<AllocationItemRecord>> grouped = new LinkedHashMap<>();
+        jdbc.query(
+                """
+                SELECT rateio_id, id, unidade_controle_id, centro_custo_id,
+                       categoria_id, valor_alocado, percentual, ordem
+                FROM finance_rateio_item
+                WHERE rateio_id IN (%s)
+                ORDER BY rateio_id, ordem
+                """.formatted(placeholders),
+                rs -> {
+                    String allocationId = rs.getString("rateio_id");
+                    grouped.computeIfAbsent(
+                            allocationId,
+                            ignored -> new ArrayList<>()
+                    ).add(new AllocationItemRecord(
+                            rs.getString("id"),
+                            rs.getString("unidade_controle_id"),
+                            rs.getString("centro_custo_id"),
+                            rs.getString("categoria_id"),
+                            rs.getBigDecimal("valor_alocado"),
+                            rs.getBigDecimal("percentual"),
+                            rs.getInt("ordem")
+                    ));
+                },
+                allocationIds.toArray()
+        );
+        return grouped;
     }
 
     private String sourceClause(AllocationSourceType type) {

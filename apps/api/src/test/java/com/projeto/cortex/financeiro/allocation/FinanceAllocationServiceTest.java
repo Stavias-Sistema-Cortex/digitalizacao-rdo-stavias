@@ -283,6 +283,47 @@ class FinanceAllocationServiceTest {
         );
     }
 
+    @Test
+    void consolidatedListNeverLeaksPartiallyAuthorizedAllocation() {
+        when(access.allowedUnitIds(
+                "beta-1",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(Optional.of(Set.of("unit-1")));
+        when(repository.list(null)).thenReturn(List.of(snapshot("BRL", 0L)));
+
+        assertThat(service.list(null, "beta-1")).isEmpty();
+    }
+
+    @Test
+    void unitListRequiresTheSelectedUnitAndEveryDestination() {
+        when(access.allowedUnitIds(
+                "beta-1",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(Optional.of(Set.of("unit-1", "unit-2")));
+        when(repository.list("unit-1"))
+                .thenReturn(List.of(snapshot("BRL", 0L)));
+
+        assertThat(service.list("unit-1", "beta-1"))
+                .extracting(AllocationResponse::id)
+                .containsExactly("rateio-1");
+    }
+
+    @Test
+    void rejectsAUnitOutsideTheAuthenticatedScopeBeforeQueryingAllocations() {
+        when(access.allowedUnitIds(
+                "beta-1",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(Optional.of(Set.of("unit-2")));
+
+        assertThatThrownBy(() -> service.list("unit-1", "beta-1"))
+                .isInstanceOfSatisfying(
+                        ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode())
+                                .isEqualTo(HttpStatus.FORBIDDEN)
+                );
+        verify(repository, never()).list(any());
+    }
+
     private SaveAllocationRequest request(List<AllocationItemRequest> items) {
         return new SaveAllocationRequest(
                 "mutation-1",

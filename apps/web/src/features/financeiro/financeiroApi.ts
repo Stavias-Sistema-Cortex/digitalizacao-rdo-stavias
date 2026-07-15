@@ -8,6 +8,10 @@ import { financeQueryParams } from "./financeiroFilters";
 import { ensureRegisteredDevice } from "../../lib/sync/registerDevice";
 import type {
   FinanceAuditEvent,
+  FinanceAllocation,
+  FinanceAllocationHistoryEntry,
+  FinanceAllocationItem,
+  FinanceAllocationSourceType,
   FinanceCapabilities,
   FinanceCategory,
   FinanceCharge,
@@ -27,6 +31,8 @@ import type {
   FinanceStatusDefinition,
   FinanceSettlement,
   FinanceSupplier,
+  FinanceControlUnit,
+  FinanceControlUnitType,
 } from "./financeiro.types";
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -71,6 +77,88 @@ export async function buscarCapacidadesFinanceiras(
     "/financeiro/capacidades",
     new URLSearchParams({ obraId }),
   )));
+}
+
+export async function buscarCapacidadesUnidade(
+  unidadeId: string,
+): Promise<FinanceCapabilities> {
+  return readJson(await apiFetch(endpoint(
+    "/financeiro/capacidades",
+    new URLSearchParams({ unidadeId }),
+  )));
+}
+
+export async function buscarUnidadesFinanceiras(
+  tipo?: FinanceControlUnitType,
+  busca?: string,
+): Promise<FinanceControlUnit[]> {
+  const params = new URLSearchParams();
+  if (tipo) params.set("tipo", tipo);
+  params.set("status", "ATIVA");
+  if (busca?.trim()) params.set("busca", busca.trim());
+  return readJson(await apiFetch(endpoint(
+    "/financeiro/unidades",
+    params,
+  )));
+}
+
+export async function criarUnidadeAdministrativa(
+  codigo: string,
+  nome: string,
+): Promise<FinanceControlUnit> {
+  return readJson(await apiFetch(
+    "/financeiro/unidades/administrativas",
+    jsonRequest("POST", { codigo, nome }),
+  ));
+}
+
+export async function buscarRateios(
+  unidadeId?: string,
+): Promise<FinanceAllocation[]> {
+  const params = new URLSearchParams();
+  if (unidadeId?.trim()) params.set("unidadeId", unidadeId.trim());
+  return readJson(await apiFetch(endpoint("/financeiro/rateios", params)));
+}
+
+export async function buscarRateioOrigem(
+  origemTipo: FinanceAllocationSourceType,
+  origemId: string,
+): Promise<FinanceAllocation | null> {
+  const response = await apiFetch(
+    `/financeiro/rateios/origens/${origemTipo}/${encodeURIComponent(origemId)}`,
+  );
+  if (response.status === 404) return null;
+  return readJson(response);
+}
+
+export async function salvarRateio(
+  origemTipo: FinanceAllocationSourceType,
+  origemId: string,
+  itens: Pick<FinanceAllocationItem,
+    "unidadeControleId" | "centroCustoId" | "categoriaId" | "valor">[],
+  current?: FinanceAllocation | null,
+): Promise<FinanceAllocation> {
+  const deviceId = await ensureRegisteredDevice();
+  return readJson(await apiFetch(
+    `/financeiro/rateios/origens/${origemTipo}/${encodeURIComponent(origemId)}`,
+    jsonRequest("PUT", {
+      clientMutationId: crypto.randomUUID(),
+      baseVersion: current?.versao ?? 0,
+      origemTipo,
+      origemId,
+      itens,
+      correlacaoId: crypto.randomUUID(),
+      dispositivoId: deviceId,
+    }),
+  ));
+}
+
+export async function buscarHistoricoRateio(
+  rateioId: string,
+): Promise<{ rateioId: string; eventos: FinanceAllocationHistoryEntry[] }> {
+  return readJson(await apiFetch(
+    `/financeiro/rateios/${encodeURIComponent(rateioId)}/historico`,
+  ));
 }
 
 export async function buscarFornecedores(

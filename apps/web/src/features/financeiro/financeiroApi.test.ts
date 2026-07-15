@@ -19,6 +19,8 @@ vi.mock("../../lib/sync/registerDevice", () => ({
 }));
 
 import {
+  buscarRateios,
+  buscarUnidadesFinanceiras,
   buscarCompras,
   buscarLancamentos,
   buscarNotasFiscais,
@@ -45,6 +47,8 @@ const FILTERS: FinanceFilters = {
   tipo: "PAGAR",
   moeda: "BRL",
   query: "concreto",
+  manualMode: "ALL",
+  manualRules: [],
 };
 
 function okResponse(): Response {
@@ -157,5 +161,17 @@ describe("financeiroApi query contracts", () => {
       sha256Cliente: "a".repeat(64),
       dispositivoId: "device-1",
     });
+  });
+
+  it("lista unidades e rateios no escopo explícito sem obra sintética", async () => {
+    await buscarUnidadesFinanceiras("ATIVO", "escavadeira");
+    await buscarRateios("unit-asset-1");
+
+    expect(mocks.apiFetch.mock.calls[0][0]).toBe(
+      "/financeiro/unidades?tipo=ATIVO&status=ATIVA&busca=escavadeira",
+    );
+    expect(mocks.apiFetch.mock.calls[1][0]).toBe(
+      "/financeiro/rateios?unidadeId=unit-asset-1",
+    );
   });
 });

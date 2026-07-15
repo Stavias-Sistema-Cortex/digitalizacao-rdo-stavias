@@ -31,12 +31,14 @@ import type {
   FinanceStatusDefinition,
   FinanceSupplier,
 } from "./financeiro.types";
+import { filterFinanceRows } from "./financeiroFilters";
 
 export type FinanceSection =
   | "visao-geral"
   | "compras"
   | "notas-fiscais"
   | "pagamentos"
+  | "rateios"
   | "centros-custo"
   | "relatorios";
 
@@ -145,12 +147,22 @@ export function useFinanceiroData(
             listPendingFinancePurchases(filters.obraId),
           ]);
           if (!cancelled) {
-            setPurchases(mergeFinancePurchases(serverRows, localRows));
+            setPurchases(filterFinanceRows(
+              mergeFinancePurchases(serverRows, localRows),
+              purchaseManualRow,
+              filters.manualRules,
+              filters.manualMode,
+            ));
           }
         }
         if (section === "notas-fiscais") {
           const rows = await buscarNotasFiscais(filters);
-          if (!cancelled) setInvoices(rows);
+          if (!cancelled) setInvoices(filterFinanceRows(
+            rows,
+            invoiceManualRow,
+            filters.manualRules,
+            filters.manualMode,
+          ));
         }
         if (section === "pagamentos") {
           const [ledgerRows, chargeRows] = await Promise.all([
@@ -158,8 +170,40 @@ export function useFinanceiroData(
             buscarCobrancas(filters.obraId),
           ]);
           if (!cancelled) {
-            setLedger(ledgerRows);
+            setLedger(filterFinanceRows(
+              ledgerRows,
+              ledgerManualRow,
+              filters.manualRules,
+              filters.manualMode,
+            ));
             setCharges(chargeRows);
+          }
+        }
+        if (section === "rateios") {
+          const [purchaseRows, invoiceRows, ledgerRows] = await Promise.all([
+            buscarCompras(filters),
+            buscarNotasFiscais(filters),
+            buscarLancamentos(filters),
+          ]);
+          if (!cancelled) {
+            setPurchases(filterFinanceRows(
+              purchaseRows,
+              purchaseManualRow,
+              filters.manualRules,
+              filters.manualMode,
+            ));
+            setInvoices(filterFinanceRows(
+              invoiceRows,
+              invoiceManualRow,
+              filters.manualRules,
+              filters.manualMode,
+            ));
+            setLedger(filterFinanceRows(
+              ledgerRows,
+              ledgerManualRow,
+              filters.manualRules,
+              filters.manualMode,
+            ));
           }
         }
         if (section === "relatorios") {
@@ -204,5 +248,41 @@ export function useFinanceiroData(
     loading,
     error,
     reload,
+  };
+}
+
+function purchaseManualRow(row: FinancePurchase) {
+  return {
+    descricao: row.descricao,
+    numero: row.numeroPedido,
+    fornecedor: row.fornecedorNome ?? "",
+    status: row.statusNome ?? row.statusCodigo ?? "",
+    tipo: "COMPRA",
+    valor: row.valorContratado ?? row.valorPrevisto,
+    data: row.entregaPrevistaEm ?? row.criadoEm,
+  };
+}
+
+function invoiceManualRow(row: FinanceInvoice) {
+  return {
+    descricao: row.observacoes ?? row.tipoDocumento,
+    numero: row.numero,
+    fornecedor: row.fornecedorNome ?? row.fornecedorCnpj ?? "",
+    status: row.statusNome ?? row.statusCodigo ?? "",
+    tipo: row.tipoDocumento,
+    valor: row.valorLiquido,
+    data: row.dataEmissao,
+  };
+}
+
+function ledgerManualRow(row: FinanceLedgerEntry) {
+  return {
+    descricao: row.descricao,
+    numero: row.numeroDocumento ?? "",
+    fornecedor: row.fornecedorNome ?? "",
+    status: row.statusNome ?? row.statusCodigo ?? "",
+    tipo: row.tipo,
+    valor: row.valorLiquido,
+    data: row.vencimentoEm,
   };
 }

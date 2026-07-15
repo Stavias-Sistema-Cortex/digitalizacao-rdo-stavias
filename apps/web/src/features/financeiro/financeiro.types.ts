@@ -5,8 +5,70 @@ export type FinancialPermission =
   | "FINANCEIRO_ADMINISTRAR";
 
 export interface FinanceCapabilities {
-  obraId: string;
+  unidadeControleId?: string | null;
+  obraId: string | null;
   permissoes: FinancialPermission[];
+}
+
+export type FinanceControlUnitType =
+  | "OBRA"
+  | "ATIVO"
+  | "ADMINISTRATIVO"
+  | "CORPORATIVO";
+
+export interface FinanceControlUnit {
+  id: string;
+  tipo: FinanceControlUnitType;
+  obraId: string | null;
+  ativoId: string | null;
+  codigo: string;
+  nome: string;
+  status: "ATIVA" | "ARQUIVADA";
+  versao: number;
+}
+
+export type FinanceAllocationSourceType =
+  | "COMPRA"
+  | "NOTA_FISCAL"
+  | "LANCAMENTO";
+
+export interface FinanceAllocationItem {
+  id: string;
+  unidadeControleId: string;
+  centroCustoId: string | null;
+  categoriaId: string | null;
+  valor: number;
+  percentual: number;
+  ordem: number;
+}
+
+export interface FinanceAllocation {
+  id: string;
+  origemTipo: FinanceAllocationSourceType;
+  origemId: string;
+  moeda: string;
+  valorTotal: number;
+  status: "ATIVO" | "ARQUIVADO";
+  itens: FinanceAllocationItem[];
+  criadoPor: string;
+  criadoEm: string;
+  atualizadoPor: string | null;
+  atualizadoEm: string;
+  versao: number;
+}
+
+export interface FinanceAllocationHistoryEntry {
+  id: string;
+  operacao: "CRIAR" | "ATUALIZAR" | "ARQUIVAR";
+  versaoAnterior: number | null;
+  versaoNova: number;
+  estadoAnterior: unknown;
+  estadoNovo: unknown;
+  alteradoPor: string;
+  alteradoEm: string;
+  clientMutationId: string;
+  correlacaoId: string | null;
+  dispositivoId: string | null;
 }
 
 export interface FinanceFilters {
@@ -21,6 +83,50 @@ export interface FinanceFilters {
   tipo: string;
   moeda: string;
   query: string;
+  manualMode: FinanceManualMode;
+  manualRules: FinanceManualFilter[];
+}
+
+export type FinanceManualMode = "ALL" | "ANY";
+
+export type FinanceManualField =
+  | "descricao"
+  | "numero"
+  | "fornecedor"
+  | "status"
+  | "tipo"
+  | "valor"
+  | "data";
+
+export type FinanceManualOperator =
+  | "CONTAINS"
+  | "NOT_CONTAINS"
+  | "EQUALS"
+  | "NOT_EQUALS"
+  | "STARTS_WITH"
+  | "GREATER_THAN"
+  | "LESS_THAN"
+  | "BETWEEN"
+  | "ON"
+  | "BEFORE"
+  | "AFTER";
+
+export interface FinanceManualFilter {
+  id: string;
+  field: FinanceManualField;
+  operator: FinanceManualOperator;
+  value: string;
+  secondValue: string;
+}
+
+export interface FinanceManualRow {
+  descricao: string;
+  numero: string;
+  fornecedor: string;
+  status: string;
+  tipo: string;
+  valor: number;
+  data: string;
 }
 
 export interface FinanceLineItem {

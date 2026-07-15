@@ -1,7 +1,7 @@
 # Córtex: Financeiro Geral, Documentos Fiscais e Operação Rastreável
 
 **Data:** 2026-07-14
-**Status:** aprovado em conversa; aguardando revisão deste documento
+**Status:** aprovado em conversa; implementação em andamento
 **Worktree:** `feat/cortex-mensagens-financeiro`
 **Escopo:** banco, API, PWA/offline, UI, autorização, documentos fiscais, ontologia, StavIA, PDOR e verificação
 
