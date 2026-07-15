@@ -2,6 +2,8 @@
 target/
 apps/api/target/
 tmp/
+apps/api/var/cortex-attachments/
+var/cortex-attachments/
 
 # macOS
 .DS_Store
