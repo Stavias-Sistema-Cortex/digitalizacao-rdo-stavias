@@ -209,8 +209,12 @@ git commit -m "feat(finance): add control units and allocation schema"
 - Create: `apps/api/src/main/java/com/projeto/cortex/financeiro/unit/FinancialUnitController.java`
 - Modify: `apps/api/src/main/java/com/projeto/cortex/financeiro/access/FinancialAccessService.java`
 - Modify: `apps/api/src/main/java/com/projeto/cortex/financeiro/access/FinancialGrantRepository.java`
+- Modify: `apps/api/src/main/java/com/projeto/cortex/obras/ObraController.java`
+- Modify: `apps/api/src/main/java/com/projeto/cortex/obras/ObraService.java`
 - Create: `apps/api/src/test/java/com/projeto/cortex/financeiro/unit/FinancialUnitServiceTest.java`
+- Create: `apps/api/src/test/java/com/projeto/cortex/financeiro/unit/FinancialUnitControllerMockMvcTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/financeiro/access/FinancialAccessServiceTest.java`
+- Modify: `apps/api/src/test/java/com/projeto/cortex/obras/ObraServiceTest.java`
 
 **Interfaces:**
 
@@ -226,13 +230,14 @@ public List<FinancialUnitResponse> list(FinancialUnitFilter filter);
 public FinancialUnitResponse createAdministrative(CreateFinancialUnitRequest request,
                                                    String actorId);
 public FinancialUnitResponse ensureAssetUnit(String assetId, String actorId);
+public FinancialUnitResponse ensureWorksiteUnit(String obraId, String actorId);
 public boolean hasPermissionForUnit(String userId, String unitId,
                                     FinancialPermission permission);
 public void requireUnitPermission(String unitId, FinancialPermission permission);
 public String resolveWorksiteUnitId(String obraId);
 ```
 
-- [ ] **Step 1: Write failing unit and access tests**
+- [x] **Step 1: Write failing unit and access tests**
 
 Cover:
 
@@ -243,6 +248,7 @@ Cover:
 @Test void betaNeverSeesAdministrativeOrCorporateUnit();
 @Test void administrativeCreationRequiresAlfaAndProjectsActor();
 @Test void ensureAssetUnitIsIdempotentAndNeverInfersAnAsset();
+@Test void creatingWorksiteCreatesItsUnitWithTheAuthenticatedAlfaAsActor();
 ```
 
 The access test must assert the exact policy:
@@ -259,13 +265,13 @@ assertThat(service.hasPermissionForUnit(
 )).isTrue();
 ```
 
-- [ ] **Step 2: Run tests and confirm missing unit classes/methods**
+- [x] **Step 2: Run tests and confirm missing unit classes/methods**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinancialUnitServiceTest,FinancialAccessServiceTest test`
 
 Expected: compilation FAIL for the new unit types and access methods.
 
-- [ ] **Step 3: Implement repository, service and controller**
+- [x] **Step 3: Implement repository, service and controller**
 
 Expose:
 
@@ -277,17 +283,19 @@ POST /api/financeiro/unidades/ativos/{ativoId}/garantir
 
 `POST` endpoints call `CurrentUserService.requireAlfa()`. `GET` filters in SQL using bound parameters and the access service removes unauthorized units. Creation uses `UUID`, normalized code/name and `FinanceOntologyProjector.success(...)` with actor and `UNIDADE_FINANCEIRA_CRIADA`.
 
-- [ ] **Step 4: Preserve worksite access compatibility**
+`ObraController` passes the authenticated Alfa id to `ObraService`; in the same transaction, immediately after persisting the real worksite, `ObraService` calls `ensureWorksiteUnit`. The unit uses `origem = 'OBRA_CRIADA'` and the real actor. No lazy fallback may create a unit without authorship.
+
+- [x] **Step 4: Preserve worksite access compatibility**
 
 `hasPermission(userId, obraId, permission)` and `requirePermission(obraId, permission)` remain public and resolve `obraId -> unitId`. The old `allowedObraIds` remains worksite-based. Add unit-specific repository queries without deleting legacy query methods until controllers are migrated.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinancialUnitServiceTest,FinancialAccessServiceTest test`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/src/main/java/com/projeto/cortex/financeiro/unit apps/api/src/main/java/com/projeto/cortex/financeiro/access/FinancialAccessService.java apps/api/src/main/java/com/projeto/cortex/financeiro/access/FinancialGrantRepository.java apps/api/src/test/java/com/projeto/cortex/financeiro/unit apps/api/src/test/java/com/projeto/cortex/financeiro/access/FinancialAccessServiceTest.java

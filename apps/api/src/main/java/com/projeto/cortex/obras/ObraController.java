@@ -33,7 +33,10 @@ public class ObraController {
     @ResponseStatus(HttpStatus.CREATED)
     public ObraResponse criarObra(@RequestBody ObraRequest request) {
         currentUserService.requireAdmin();
-        return obraService.criarObra(request);
+        return obraService.criarObra(
+                request,
+                currentUserService.requireUserId()
+        );
     }
 
     @GetMapping("/api/obras/relacionadas")

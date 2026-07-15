@@ -1,5 +1,6 @@
 package com.projeto.cortex.obras;
 
+import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -15,10 +16,16 @@ public class ObraService {
 
     private final ObraRepository obraRepository;
     private final CortexOperationalMemoryService memoryService;
+    private final FinancialUnitService financialUnitService;
 
-    public ObraService(ObraRepository obraRepository, CortexOperationalMemoryService memoryService) {
+    public ObraService(
+            ObraRepository obraRepository,
+            CortexOperationalMemoryService memoryService,
+            FinancialUnitService financialUnitService
+    ) {
         this.obraRepository = obraRepository;
         this.memoryService = memoryService;
+        this.financialUnitService = financialUnitService;
     }
 
     public List<ObraResponse> listarObras(String query) {
@@ -36,7 +43,7 @@ public class ObraService {
     }
 
     @Transactional
-    public ObraResponse criarObra(ObraRequest request) {
+    public ObraResponse criarObra(ObraRequest request, String actorId) {
         String codigoContrato = normalizarObrigatorio(request.codigoContrato(), "codigoContrato");
         String nome = normalizarObrigatorio(request.nome(), "nome");
 
@@ -71,9 +78,10 @@ public class ObraService {
                 normalizarOpcional(request.observacoes())
         );
 
-        Obra salva = obraRepository.save(obra);
+        Obra salva = obraRepository.saveAndFlush(obra);
 
         ObraSyncEvento.registrarAtualizacao(memoryService, salva);
+        financialUnitService.ensureWorksiteUnit(salva.getId(), actorId);
 
         return ObraResponse.from(salva);
     }

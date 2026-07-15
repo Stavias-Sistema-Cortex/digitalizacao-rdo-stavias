@@ -42,6 +42,30 @@ public class FinancialGrantRepository {
         return result != null && result == 1;
     }
 
+    public boolean existsActiveForUnit(
+            String colaboradorId,
+            String unitId,
+            FinancialPermission permission
+    ) {
+        Integer result = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM permissao_financeira_colaborador
+                    WHERE colaborador_id = ?
+                      AND unidade_controle_id = ?
+                      AND permissao = ?
+                      AND status = 'ATIVA'
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                colaboradorId,
+                unitId,
+                permission.name()
+        );
+        return result != null && result == 1;
+    }
+
     public Set<String> findActiveObraIds(
             String colaboradorId,
             FinancialPermission permission
@@ -54,6 +78,37 @@ public class FinancialGrantRepository {
                   AND permissao = ?
                   AND status = 'ATIVA'
                 ORDER BY obra_id
+                """,
+                String.class,
+                colaboradorId,
+                permission.name()
+        ));
+    }
+
+    public Set<String> findActiveUnitIds(
+            String colaboradorId,
+            FinancialPermission permission
+    ) {
+        return new LinkedHashSet<>(jdbcTemplate.queryForList(
+                """
+                SELECT DISTINCT p.unidade_controle_id
+                FROM permissao_financeira_colaborador p
+                JOIN finance_unidade_controle u
+                  ON u.id = p.unidade_controle_id
+                 AND u.status = 'ATIVA'
+                LEFT JOIN vinculo_colaborador_obra v
+                  ON u.tipo = 'OBRA'
+                 AND v.obra_id = u.obra_id
+                 AND v.colaborador_id = p.colaborador_id
+                 AND v.status = 'ATIVO'
+                WHERE p.colaborador_id = ?
+                  AND p.permissao = ?
+                  AND p.status = 'ATIVA'
+                  AND (
+                      u.tipo = 'ATIVO'
+                      OR (u.tipo = 'OBRA' AND v.id IS NOT NULL)
+                  )
+                ORDER BY p.unidade_controle_id
                 """,
                 String.class,
                 colaboradorId,
