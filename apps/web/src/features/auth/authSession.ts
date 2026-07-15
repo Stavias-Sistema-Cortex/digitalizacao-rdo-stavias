@@ -6,8 +6,6 @@ export type AuthSession = {
   colaboradorId: string | null;
   nome: string | null;
   cpfMascarado: string;
-  /** CPF (somente dígitos) do próprio usuário, para renovar o token. */
-  cpf: string | null;
   perfil: string | null;
   /** Papel de acesso: "ALFA" (global) ou "BETA" (operacional). */
   papelAcesso: string | null;
@@ -32,19 +30,29 @@ export function getSession(): AuthSession | null {
       return null;
     }
 
-    const parsed = JSON.parse(raw) as AuthSession;
+    const parsed = JSON.parse(raw) as AuthSession & { cpf?: unknown };
     if (!parsed || typeof parsed.cpfMascarado !== "string") {
       return null;
     }
 
-    return parsed;
+    // Sessões antigas podem conter o CPF usado para uma renovação silenciosa.
+    // A credencial não é necessária para manter a sessão e nunca volta a ser
+    // exposta ao restante do app.
+    const { cpf: _legacyCpf, ...session } = parsed;
+    if (Object.hasOwn(parsed, "cpf")) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    }
+    return session;
   } catch {
     return null;
   }
 }
 
 export function setSession(session: AuthSession): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  const { cpf: _legacyCpf, ...safeSession } = session as AuthSession & {
+    cpf?: unknown;
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(safeSession));
   window.dispatchEvent(
     new Event(AUTH_SESSION_CHANGED_EVENT),
   );

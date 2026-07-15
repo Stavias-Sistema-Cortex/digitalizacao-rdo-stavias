@@ -1,7 +1,6 @@
 import {
   clearSession,
   getSession,
-  setSession,
 } from "../../features/auth/authSession";
 
 const DEFAULT_API_PREFIX = "/api";
@@ -88,41 +87,6 @@ async function rawFetch(
   }
 }
 
-/**
- * Reautentica silenciosamente usando o CPF da sessão para renovar o token
- * (ex.: sessão offline que voltou a ter conexão, ou token expirado).
- */
-async function reautenticarComCpf(cpfDigits: string): Promise<string | null> {
-  try {
-    const response = await fetch(apiUrl("/auth/login"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ cpf: cpfDigits, senha: cpfDigits }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const body = (await response.json()) as { token?: unknown };
-    const token = typeof body.token === "string" ? body.token : null;
-    if (!token) {
-      return null;
-    }
-
-    const session = getSession();
-    if (session) {
-      setSession({ ...session, token });
-    }
-    return token;
-  } catch {
-    return null;
-  }
-}
-
 export async function apiFetch(
   path: string,
   options: ApiRequestOptions = {},
@@ -132,22 +96,11 @@ export async function apiFetch(
 
   let response = await rawFetch(path, options, authHeader);
 
-  // Token ausente, expirado ou emitido para outro espelho local: tenta uma
-  // renovação silenciosa e repete a chamada.
-  const online =
-    typeof navigator === "undefined" || navigator.onLine;
-  if (
-    (response.status === 401 || response.status === 403) &&
-    !isAuthPath(path) &&
-    session?.cpf &&
-    online
-  ) {
-    const novoToken = await reautenticarComCpf(session.cpf);
-    if (novoToken) {
-      response = await rawFetch(path, options, `Bearer ${novoToken}`);
-    } else if (response.status === 401) {
-      clearSession();
-    }
+  // Um 401 prova que o token não é mais aceito. Em vez de reter o CPF como
+  // senha para uma renovação silenciosa, encerra a sessão e pede autenticação
+  // explícita quando houver conexão.
+  if (response.status === 401 && !isAuthPath(path)) {
+    clearSession();
   }
 
   return response;
