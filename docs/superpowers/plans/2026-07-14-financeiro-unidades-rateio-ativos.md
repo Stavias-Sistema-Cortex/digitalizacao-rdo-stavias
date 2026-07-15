@@ -639,37 +639,40 @@ git commit -m "feat(finance): sync and project generalized finance entities"
 
 - Modify only if a test exposes a real regression in files already touched above.
 
-- [ ] **Step 1: Run migration and access suites**
+- [x] **Step 1: Run migration and access suites**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest='Finance*MigrationTest,com.projeto.cortex.financeiro.access.*Test' test`
 
 Expected: PASS.
 
-- [ ] **Step 2: Run all finance unit tests**
+- [x] **Step 2: Run all finance unit tests**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest='com.projeto.cortex.financeiro.*Test' test`
 
 Expected: PASS.
 
-- [ ] **Step 3: Run MySQL integration tests**
+- [x] **Step 3: Run MySQL integration tests**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest='com.projeto.cortex.pdor.Finance*MysqlIntegrationTest' test`
 
 Expected: PASS; tests may be skipped only with explicit Testcontainers evidence that Docker is unavailable.
 
-- [ ] **Step 4: Run the complete API build**
+- [x] **Step 4: Run the complete API build**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw clean test`
 
 Expected: `BUILD SUCCESS`.
 
-- [ ] **Step 5: Inspect changes and forbidden shortcuts**
+- [x] **Step 5: Inspect changes and forbidden shortcuts**
 
 Run: `git diff --check && ! rg -n "OBRA_CORPORATIVA|INSERT INTO obra|TODO|TBD" apps/api/src/main/resources/db/migration/V34__finance_control_units_allocations_and_assets.sql apps/api/src/main/java/com/projeto/cortex/financeiro/{unit,allocation,asset}`
 
 Expected: exit 0.
 
-- [ ] **Step 6: Record final verification commit if fixes were necessary**
+- [x] **Step 6: Record final verification commit if fixes were necessary**
+
+No corrective code changes were necessary after the final verification; only
+this execution record was updated.
 
 ```bash
 git add -A
