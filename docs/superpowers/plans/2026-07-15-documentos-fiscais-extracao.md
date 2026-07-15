@@ -115,14 +115,14 @@ React 19, TypeScript, Vitest.
 - Modify: `apps/web/src/features/financeiro/FinanceiroPage.css`
 - Modify/create Vitest files.
 
-- [ ] Nova nota oferece `Enviar documento` e `Preencher manualmente`.
-- [ ] `accept` inclui os formatos realmente suportados.
-- [ ] Mostrar progresso, hash, extrator, confiança, avisos e revisão.
-- [ ] Preencher somente candidatos retornados; fornecedor por CNPJ exato.
-- [ ] Permitir editar todos os campos antes de confirmar.
-- [ ] Salvar nota e vínculo; falha parcial mostra retomada sem duplicar nota.
-- [ ] Anexar novos documentos também em notas existentes.
-- [ ] Commit: `feat(web): ingest and review fiscal documents`.
+- [x] Nova nota oferece `Enviar documento` e `Preencher manualmente`.
+- [x] `accept` inclui os formatos realmente suportados.
+- [x] Mostrar progresso, hash, extrator, confiança, avisos e revisão.
+- [x] Preencher somente candidatos retornados; fornecedor por CNPJ exato.
+- [x] Permitir editar todos os campos antes de confirmar.
+- [x] Salvar nota e vínculo; falha parcial mostra retomada sem duplicar nota.
+- [x] Anexar novos documentos também em notas existentes.
+- [x] Commit: `feat(web): ingest and review fiscal documents`.
 
 ### Task 6: Verificação integral
 

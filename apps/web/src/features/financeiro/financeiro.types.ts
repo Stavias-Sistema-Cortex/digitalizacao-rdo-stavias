@@ -182,7 +182,68 @@ export interface FinanceInvoiceDocument {
   nomeOriginal: string;
   mediaType: string;
   tamanhoBytes: number;
+  enviadoPor: string;
+  enviadoEm: string;
+  dispositivoId: string | null;
+  clientMutationId: string | null;
+  sha256Cliente: string | null;
+  sha256Servidor: string;
+  inspecaoStatus: "APROVADO" | "QUARENTENA";
+  extracaoJobId: string | null;
+  extratorVersao: string | null;
+  confirmadoPor: string;
+  confirmadoEm: string;
+  confirmacaoClientMutationId: string;
+  confirmacaoDispositivoId: string | null;
+  confirmacaoCorrelacaoId: string | null;
   criadoEm: string;
+}
+
+export type FiscalExtractionStatus =
+  | "EXTRAIDO"
+  | "REVISAO_NECESSARIA"
+  | "FALHA";
+
+export type FiscalCandidateValidation =
+  | "VALIDO"
+  | "DIVERGENTE"
+  | "NAO_VERIFICADO";
+
+export interface FinanceFiscalCandidate {
+  field: string;
+  normalizedValue: unknown;
+  originalText: string | null;
+  extractor: string;
+  extractorVersion: string;
+  location: string | null;
+  confidence: number;
+  validation: FiscalCandidateValidation;
+  validationDetail: string | null;
+}
+
+export interface FinanceFiscalExtraction {
+  id: string;
+  storedObjectId: string;
+  obraId: string;
+  fileName: string;
+  mediaType: string;
+  size: number;
+  clientMutationId: string;
+  format: "XML" | "PDF" | "IMAGEM";
+  status: FiscalExtractionStatus;
+  extractor: string | null;
+  extractorVersion: string | null;
+  clientSha256: string | null;
+  serverSha256: string;
+  candidates: FinanceFiscalCandidate[];
+  warnings: string[];
+  autorizacaoFiscal: "NAO_VERIFICADA";
+  createdBy: string;
+  deviceId: string | null;
+  correlationId: string | null;
+  createdAt: string;
+  completedAt: string;
+  replayed: boolean;
 }
 
 export interface FinanceLedgerEntry {

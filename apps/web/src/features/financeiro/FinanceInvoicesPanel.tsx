@@ -5,17 +5,25 @@ import {
   buscarDocumentosNota,
   salvarNotaFiscal,
   urlConteudoDocumento,
+  vincularDocumentoNota,
 } from "./financeiroApi";
+import { getSession } from "../auth/authSession";
 import type {
   FinanceCategory,
   FinanceCostCenter,
   FinanceInvoice,
   FinanceInvoiceDocument,
   FinanceInvoiceDraft,
+  FinanceFiscalExtraction,
   FinanceStatusDefinition,
   FinanceSupplier,
   FinancialPermission,
 } from "./financeiro.types";
+import {
+  documentTypeForExtraction,
+  fiscalExtractionDefaults,
+} from "./financeiroFiscal";
+import type { FiscalFormDefaults } from "./financeiroFiscal";
 import {
   formatDate,
   formatMoney,
@@ -23,6 +31,7 @@ import {
   statusTone,
 } from "./financeiroView";
 import { FinanceDrawer } from "./FinanceDrawer";
+import { FiscalDocumentIntake } from "./FiscalDocumentIntake";
 
 interface FinanceInvoicesPanelProps {
   obraId: string;
@@ -187,6 +196,25 @@ function InvoiceForm({
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [extraction, setExtraction] = useState<FinanceFiscalExtraction | null>(null);
+  const [confirmationMutationId, setConfirmationMutationId] = useState("");
+  const [persistedInvoice, setPersistedInvoice] = useState<FinanceInvoice | null>(null);
+  const extracted: FiscalFormDefaults = extraction
+    ? fiscalExtractionDefaults(extraction, suppliers)
+    : {};
+
+  function extractedValue(
+    field: keyof typeof extracted,
+    fallback: string | number,
+  ): string | number {
+    return extracted[field] ?? fallback;
+  }
+
+  function receiveExtraction(value: FinanceFiscalExtraction) {
+    setExtraction(value);
+    setConfirmationMutationId(crypto.randomUUID());
+    setError("");
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -200,7 +228,7 @@ function InvoiceForm({
       fornecedorId: text(form, "fornecedorId"),
       centroCustoId: nullableText(form, "centroCustoId"),
       categoriaId: nullableText(form, "categoriaId"),
-      responsavelId: invoice?.responsavelId ?? null,
+      responsavelId: invoice?.responsavelId ?? getSession()?.colaboradorId ?? null,
       statusId: text(form, "statusId"),
       numero: text(form, "numero"),
       serie: text(form, "serie"),
@@ -215,38 +243,89 @@ function InvoiceForm({
       desconto,
       acrescimo,
       retencoes,
-      valorLiquido: bruto - desconto + acrescimo - retencoes,
+      valorLiquido: number(form, "valorLiquido"),
       observacoes: nullableText(form, "observacoes"),
     };
+    const calculatedNet = bruto - desconto + acrescimo - retencoes;
     if (!draft.fornecedorId || !draft.statusId || !draft.numero || !draft.serie ||
-      !draft.dataEmissao || !draft.vencimentoEm || !draft.moeda || draft.valorLiquido < 0) {
+      !draft.responsavelId || !draft.dataEmissao || !draft.vencimentoEm ||
+      !draft.moeda || draft.valorLiquido < 0) {
       setError("Preencha a identificação, o fornecedor, o status, as datas, a moeda e valores válidos.");
+      return;
+    }
+    if (Math.abs(calculatedNet - draft.valorLiquido) > 0.0001) {
+      setError("O valor líquido deve fechar com bruto − desconto + acréscimo − retenções.");
       return;
     }
     setSaving(true);
     setError("");
+    let savedForRetry = persistedInvoice;
     try {
-      await salvarNotaFiscal(draft, invoice ?? undefined);
+      const saved = persistedInvoice ?? await salvarNotaFiscal(
+        draft,
+        invoice ?? undefined,
+      );
+      savedForRetry = saved;
+      setPersistedInvoice(saved);
+      if (extraction && extraction.status !== "FALHA") {
+        await vincularDocumentoNota(
+          saved,
+          extraction,
+          documentTypeForExtraction(extraction),
+          true,
+          confirmationMutationId || crypto.randomUUID(),
+        );
+      }
       onSaved();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "Não foi possível salvar a nota fiscal.");
+      setError(reason instanceof Error
+        ? (savedForRetry
+          ? `A nota foi salva, mas o documento ainda não foi vinculado. ${reason.message}`
+          : reason.message)
+        : "Não foi possível salvar a nota fiscal.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <form className="finance-form" onSubmit={(event) => void submit(event)}>
+    <form
+      key={extraction?.id ?? invoice?.id ?? "manual"}
+      className="finance-form"
+      onSubmit={(event) => void submit(event)}
+    >
+      {!invoice ? (
+        <div className="finance-invoice-entry">
+          <FiscalDocumentIntake
+            obraId={obraId}
+            extraction={extraction}
+            onExtracted={receiveExtraction}
+            disabled={saving}
+          />
+          <button
+            type="button"
+            className="finance-text-action"
+            disabled={saving}
+            onClick={() => {
+              setExtraction(null);
+              setConfirmationMutationId("");
+              setError("");
+            }}
+          >
+            Preencher manualmente
+          </button>
+        </div>
+      ) : null}
       <div className="finance-form-grid">
-        <label>Número<input required name="numero" defaultValue={invoice?.numero ?? ""} /></label>
-        <label>Série<input required name="serie" defaultValue={invoice?.serie ?? ""} /></label>
-        <label>Tipo<select name="tipoDocumento" defaultValue={invoice?.tipoDocumento ?? "NFE"}>
-          <option value="NFE">NF-e</option><option value="NFS">NFS-e</option><option value="RECIBO">Recibo</option>
+        <label>Número<input required name="numero" defaultValue={extractedValue("numero", invoice?.numero ?? "")} /></label>
+        <label>Série<input required name="serie" defaultValue={extractedValue("serie", invoice?.serie ?? "")} /></label>
+        <label>Tipo<select name="tipoDocumento" defaultValue={extractedValue("tipoDocumento", invoice?.tipoDocumento ?? "NFE")}>
+          <option value="NFE">NF-e</option><option value="NFSE">NFS-e</option><option value="CTE">CT-e</option><option value="RECIBO">Recibo</option><option value="OUTRO">Outro</option>
         </select></label>
         <label>Status<select required name="statusId" defaultValue={invoice?.statusId ?? statuses[0]?.id ?? ""}>
           <option value="">Selecione</option>{statuses.map((status) => <option key={status.id} value={status.id}>{status.nome}</option>)}
         </select></label>
-        <label className="is-wide">Fornecedor<select required name="fornecedorId" defaultValue={invoice?.fornecedorId ?? ""}>
+        <label className="is-wide">Fornecedor<select required name="fornecedorId" defaultValue={extractedValue("fornecedorId", invoice?.fornecedorId ?? "")}>
           <option value="">Selecione</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.nomeFantasia || supplier.razaoSocial}</option>)}
         </select></label>
         <label>Centro de custo<select name="centroCustoId" defaultValue={invoice?.centroCustoId ?? ""}>
@@ -255,20 +334,26 @@ function InvoiceForm({
         <label>Categoria<select name="categoriaId" defaultValue={invoice?.categoriaId ?? ""}>
           <option value="">Não informada</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.nome}</option>)}
         </select></label>
-        <label>Emissão<input required type="date" name="dataEmissao" defaultValue={invoice?.dataEmissao ?? ""} /></label>
-        <label>Competência<input type="date" name="dataCompetencia" defaultValue={invoice?.dataCompetencia ?? ""} /></label>
+        <label>Emissão<input required type="date" name="dataEmissao" defaultValue={extractedValue("dataEmissao", invoice?.dataEmissao ?? "")} /></label>
+        <label>Competência<input type="date" name="dataCompetencia" defaultValue={extractedValue("dataCompetencia", invoice?.dataCompetencia ?? "")} /></label>
         <label>Recebimento<input type="date" name="dataRecebimento" defaultValue={invoice?.dataRecebimento ?? ""} /></label>
-        <label>Vencimento<input required type="date" name="vencimentoEm" defaultValue={invoice?.vencimentoEm ?? ""} /></label>
-        <label>Moeda<input required name="moeda" maxLength={3} defaultValue={invoice?.moeda ?? "BRL"} /></label>
-        <label>Valor bruto<input required min="0" step="0.01" type="number" name="valorBruto" defaultValue={invoice?.valorBruto ?? ""} /></label>
-        <label>Desconto<input min="0" step="0.01" type="number" name="desconto" defaultValue={invoice?.desconto ?? 0} /></label>
-        <label>Acréscimo<input min="0" step="0.01" type="number" name="acrescimo" defaultValue={invoice?.acrescimo ?? 0} /></label>
-        <label>Retenções<input min="0" step="0.01" type="number" name="retencoes" defaultValue={invoice?.retencoes ?? 0} /></label>
-        <label className="is-wide">Chave de acesso<input name="chaveAcesso" defaultValue={invoice?.chaveAcesso ?? ""} /></label>
+        <label>Vencimento<input required type="date" name="vencimentoEm" defaultValue={extractedValue("vencimentoEm", invoice?.vencimentoEm ?? "")} /></label>
+        <label>Moeda<input required name="moeda" maxLength={3} defaultValue={extractedValue("moeda", invoice?.moeda ?? "BRL")} /></label>
+        <label>Valor bruto<input required min="0" step="0.01" type="number" name="valorBruto" defaultValue={extractedValue("valorBruto", invoice?.valorBruto ?? "")} /></label>
+        <label>Desconto<input min="0" step="0.01" type="number" name="desconto" defaultValue={extractedValue("desconto", invoice?.desconto ?? 0)} /></label>
+        <label>Acréscimo<input min="0" step="0.01" type="number" name="acrescimo" defaultValue={extractedValue("acrescimo", invoice?.acrescimo ?? 0)} /></label>
+        <label>Retenções<input min="0" step="0.01" type="number" name="retencoes" defaultValue={extractedValue("retencoes", invoice?.retencoes ?? 0)} /></label>
+        <label>Valor líquido<input required min="0" step="0.01" type="number" name="valorLiquido" defaultValue={extractedValue("valorLiquido", invoice?.valorLiquido ?? "")} /></label>
+        <label className="is-wide">Chave de acesso<input name="chaveAcesso" defaultValue={extractedValue("chaveAcesso", invoice?.chaveAcesso ?? "")} /></label>
         <label className="is-wide">Observações<textarea name="observacoes" rows={3} defaultValue={invoice?.observacoes ?? ""} /></label>
       </div>
       {error ? <p className="finance-form-error" role="alert">{error}</p> : null}
-      <footer><button className="finance-primary-action" disabled={saving} type="submit">{saving ? "Salvando…" : "Salvar nota fiscal"}</button></footer>
+      <footer>
+        {persistedInvoice && extraction ? (
+          <span className="finance-form-resume">Nota salva. Falta confirmar o documento.</span>
+        ) : null}
+        <button className="finance-primary-action" disabled={saving} type="submit">{saving ? "Salvando…" : persistedInvoice ? "Retomar vínculo" : "Salvar nota fiscal"}</button>
+      </footer>
     </form>
   );
 }
@@ -288,6 +373,9 @@ function InvoiceDocuments({
   const [selected, setSelected] = useState<FinanceInvoiceDocument | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [extraction, setExtraction] = useState<FinanceFiscalExtraction | null>(null);
+  const [confirmationMutationId, setConfirmationMutationId] = useState("");
+  const [attaching, setAttaching] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -319,6 +407,32 @@ function InvoiceDocuments({
     }
   }
 
+  async function attach() {
+    if (!extraction || extraction.status === "FALHA") return;
+    setAttaching(true);
+    setError("");
+    try {
+      const linked = await vincularDocumentoNota(
+        invoice,
+        extraction,
+        documentTypeForExtraction(extraction),
+        documents.length === 0,
+        confirmationMutationId || crypto.randomUUID(),
+      );
+      const rows = await buscarDocumentosNota(invoice.id, invoice.obraId);
+      setDocuments(rows);
+      setSelected(rows.find((row) => row.id === linked.id) ?? linked);
+      setExtraction(null);
+      setConfirmationMutationId("");
+    } catch (reason: unknown) {
+      setError(reason instanceof Error
+        ? reason.message
+        : "Não foi possível vincular o documento.");
+    } finally {
+      setAttaching(false);
+    }
+  }
+
   return (
     <FinanceDrawer title={`Nota fiscal ${invoice.numero}`} description={invoice.fornecedorNome || undefined} onClose={onClose} wide>
       <dl className="finance-detail-list is-horizontal">
@@ -326,6 +440,30 @@ function InvoiceDocuments({
         <div><dt>Vencimento</dt><dd>{formatDate(invoice.vencimentoEm)}</dd></div>
         <div><dt>OCR</dt><dd>{invoice.ocrStatus === "NAO_CONFIGURADO" ? "Não configurado" : invoice.ocrStatus}</dd></div>
       </dl>
+      {canArchive ? (
+        <section className="finance-existing-document-upload">
+          <FiscalDocumentIntake
+            obraId={invoice.obraId}
+            extraction={extraction}
+            onExtracted={(value) => {
+              setExtraction(value);
+              setConfirmationMutationId(crypto.randomUUID());
+              setError("");
+            }}
+            disabled={attaching}
+          />
+          {extraction && extraction.status !== "FALHA" ? (
+            <button
+              type="button"
+              className="finance-primary-action"
+              disabled={attaching}
+              onClick={() => void attach()}
+            >
+              {attaching ? "Vinculando…" : "Confirmar documento"}
+            </button>
+          ) : null}
+        </section>
+      ) : null}
       <section className="finance-document-viewer">
         <nav aria-label="Documentos da nota">
           {documents.map((document) => (
@@ -350,6 +488,11 @@ function InvoiceDocuments({
               <a className="finance-secondary-action" href={urlConteudoDocumento(invoice.id, selected.id, invoice.obraId)}>
                 Abrir documento
               </a>
+              <dl className="finance-document-trace">
+                <div><dt>Enviado por</dt><dd>{selected.enviadoPor}</dd></div>
+                <div><dt>Confirmado por</dt><dd>{selected.confirmadoPor}</dd></div>
+                <div><dt>Integridade</dt><dd>{selected.inspecaoStatus === "APROVADO" ? "Hash conferido" : "Em quarentena"}</dd></div>
+              </dl>
             </>
           ) : <p>Nenhum documento vinculado a esta nota fiscal.</p>}
         </div>

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   readResponseBody: vi.fn(),
   responseErrorMessage: vi.fn(),
+  ensureRegisteredDevice: vi.fn(),
 }));
 
 vi.mock("../../lib/api/apiClient", () => ({
@@ -13,14 +14,22 @@ vi.mock("../../lib/api/apiClient", () => ({
   responseErrorMessage: mocks.responseErrorMessage,
 }));
 
+vi.mock("../../lib/sync/registerDevice", () => ({
+  ensureRegisteredDevice: mocks.ensureRegisteredDevice,
+}));
+
 import {
   buscarCompras,
   buscarLancamentos,
   buscarNotasFiscais,
+  enviarDocumentoFiscal,
   registrarLiquidacao,
+  vincularDocumentoNota,
 } from "./financeiroApi";
 import type {
+  FinanceFiscalExtraction,
   FinanceFilters,
+  FinanceInvoice,
   FinanceLedgerEntry,
 } from "./financeiro.types";
 
@@ -47,6 +56,7 @@ describe("financeiroApi query contracts", () => {
     vi.clearAllMocks();
     mocks.apiFetch.mockResolvedValue(okResponse());
     mocks.readResponseBody.mockResolvedValue([]);
+    mocks.ensureRegisteredDevice.mockResolvedValue("device-1");
   });
 
   it("envia prioridade somente ao endpoint de compras", async () => {
@@ -87,6 +97,65 @@ describe("financeiroApi query contracts", () => {
       tipo: "RECEBIMENTO",
       valorTotal: 150,
       lancamentos: [{ lancamentoId: "lancamento-1", valorAplicado: 150 }],
+    });
+  });
+
+  it("envia arquivo fiscal com hash, mutação estável e dispositivo", async () => {
+    const extraction = {
+      id: "job-1",
+      storedObjectId: "object-1",
+      serverSha256: "a".repeat(64),
+    } as FinanceFiscalExtraction;
+    mocks.readResponseBody.mockResolvedValue(extraction);
+    const file = new File(["<NFe/>"] , "nota.xml", {
+      type: "application/xml",
+    });
+
+    const result = await enviarDocumentoFiscal(
+      file,
+      "obra-1",
+      "upload-mutation-1",
+    );
+
+    const url = String(mocks.apiFetch.mock.calls[0][0]);
+    const request = mocks.apiFetch.mock.calls[0][1] as RequestInit;
+    expect(url).toContain("/financeiro/notas-fiscais/extracoes?");
+    expect(url).toContain("obraId=obra-1");
+    expect(url).toContain("clientMutationId=upload-mutation-1");
+    expect(url).toContain("dispositivoId=device-1");
+    expect(url).toMatch(/sha256Cliente=[0-9a-f]{64}/);
+    expect(request.method).toBe("POST");
+    expect((request.body as FormData).get("arquivo")).toBe(file);
+    expect(result).toBe(extraction);
+  });
+
+  it("vincula o job confirmado sem perder hashes ou autoria do dispositivo", async () => {
+    mocks.readResponseBody.mockResolvedValue({ id: "document-1" });
+    const extraction = {
+      id: "job-1",
+      storedObjectId: "object-1",
+      clientSha256: "a".repeat(64),
+    } as FinanceFiscalExtraction;
+
+    await vincularDocumentoNota(
+      { id: "invoice-1", obraId: "obra-1" } as FinanceInvoice,
+      extraction,
+      "XML",
+      true,
+      "confirmation-mutation-1",
+    );
+
+    const request = mocks.apiFetch.mock.calls[0][1] as RequestInit;
+    expect(mocks.apiFetch.mock.calls[0][0])
+      .toContain("/financeiro/notas-fiscais/invoice-1/anexos?obraId=obra-1");
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      storedObjectId: "object-1",
+      tipoDocumento: "XML",
+      principal: true,
+      clientMutationId: "confirmation-mutation-1",
+      extracaoJobId: "job-1",
+      sha256Cliente: "a".repeat(64),
+      dispositivoId: "device-1",
     });
   });
 });

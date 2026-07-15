@@ -5,6 +5,7 @@ import {
   responseErrorMessage,
 } from "../../lib/api/apiClient";
 import { financeQueryParams } from "./financeiroFilters";
+import { ensureRegisteredDevice } from "../../lib/sync/registerDevice";
 import type {
   FinanceAuditEvent,
   FinanceCapabilities,
@@ -13,6 +14,7 @@ import type {
   FinanceChargePreview,
   FinanceCostCenter,
   FinanceFilters,
+  FinanceFiscalExtraction,
   FinanceInvoice,
   FinanceInvoiceDraft,
   FinanceInvoiceDocument,
@@ -179,6 +181,56 @@ export async function buscarDocumentosNota(
   )));
 }
 
+export async function enviarDocumentoFiscal(
+  file: File,
+  obraId: string,
+  clientMutationId: string,
+): Promise<FinanceFiscalExtraction> {
+  const [deviceId, clientSha256] = await Promise.all([
+    ensureRegisteredDevice(),
+    sha256(file),
+  ]);
+  const params = new URLSearchParams({
+    obraId,
+    clientMutationId,
+    sha256Cliente: clientSha256,
+    dispositivoId: deviceId,
+  });
+  const body = new FormData();
+  body.append("arquivo", file);
+  return readJson(await apiFetch(endpoint(
+    "/financeiro/notas-fiscais/extracoes",
+    params,
+  ), {
+    method: "POST",
+    headers: { "X-Correlation-Id": crypto.randomUUID() },
+    body,
+  }));
+}
+
+export async function vincularDocumentoNota(
+  invoice: Pick<FinanceInvoice, "id" | "obraId">,
+  extraction: FinanceFiscalExtraction,
+  documentType: string,
+  principal: boolean,
+  clientMutationId: string,
+): Promise<FinanceInvoiceDocument> {
+  const deviceId = await ensureRegisteredDevice();
+  return readJson(await apiFetch(endpoint(
+    `/financeiro/notas-fiscais/${encodeURIComponent(invoice.id)}/anexos`,
+    new URLSearchParams({ obraId: invoice.obraId }),
+  ), jsonRequest("POST", {
+    id: crypto.randomUUID(),
+    storedObjectId: extraction.storedObjectId,
+    tipoDocumento: documentType,
+    principal,
+    clientMutationId,
+    extracaoJobId: extraction.id,
+    sha256Cliente: extraction.clientSha256,
+    dispositivoId: deviceId,
+  })));
+}
+
 export async function salvarNotaFiscal(
   draft: FinanceInvoiceDraft,
   current?: FinanceInvoice,
@@ -197,6 +249,16 @@ export async function salvarNotaFiscal(
     path,
     jsonRequest(current ? "PUT" : "POST", body),
   ));
+}
+
+async function sha256(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await file.arrayBuffer(),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export async function arquivarNotaFiscal(

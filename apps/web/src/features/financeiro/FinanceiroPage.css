@@ -754,6 +754,49 @@
 .finance-form footer { display: flex; justify-content: space-between; gap: 10px; padding-top: 14px; border-top: 1px solid #e0e4e1; }
 .finance-form footer .finance-primary-action { margin-left: auto; }
 .finance-form-error { margin: 0; padding: 10px 12px; border-left: 3px solid #c74b39; background: #fff0ed; color: #963b2d; font-size: 0.76rem; line-height: 1.5; }
+.finance-form-resume { align-self: center; color: #6c726f; font-size: 0.72rem; }
+.finance-invoice-entry { display: grid; gap: 10px; padding-bottom: 18px; border-bottom: 1px solid #e0e4e1; }
+.finance-text-action { justify-self: start; padding: 0; border: 0; background: transparent; color: #52655d; font-size: 0.72rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+
+.finance-fiscal-intake { display: grid; gap: 14px; border: 1px solid #d8deda; background: #fff; }
+.finance-fiscal-intake__heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 16px; }
+.finance-fiscal-intake__heading > div { display: grid; gap: 4px; }
+.finance-fiscal-intake__heading strong { color: var(--finance-ink); font-size: 0.78rem; }
+.finance-fiscal-intake__heading span { color: #777e7a; font-size: 0.68rem; line-height: 1.45; }
+.finance-fiscal-progress { display: flex; align-items: center; gap: 10px; margin: 0 16px 16px; color: #5f6863; font-size: 0.72rem; }
+.finance-fiscal-progress > span { width: 12px; height: 12px; border: 2px solid #c9d2cd; border-top-color: #2f5f4d; border-radius: 50%; animation: finance-spin 0.8s linear infinite; }
+.finance-fiscal-retry { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px 16px; padding: 10px 12px; border-left: 3px solid #b44b3a; background: #fff4f1; }
+.finance-fiscal-retry p { margin: 0; color: #8f392e; font-size: 0.72rem; }
+.finance-fiscal-retry button { border: 0; background: transparent; color: #7b3228; font-size: 0.68rem; font-weight: 700; text-decoration: underline; }
+.finance-fiscal-review { display: grid; gap: 14px; padding: 15px 16px; border-top: 1px solid #e2e6e3; background: #f7f8f5; }
+.finance-fiscal-review > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.finance-fiscal-review > header > div { display: grid; gap: 4px; min-width: 0; }
+.finance-fiscal-review > header strong { overflow: hidden; color: #303834; font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
+.finance-fiscal-review > header span { color: #7a817d; font-size: 0.65rem; }
+.finance-fiscal-status { padding: 4px 7px; border: 1px solid #c8d2cc; color: #385c4e !important; font-size: 0.62rem !important; font-weight: 750; text-transform: uppercase; white-space: nowrap; }
+.finance-fiscal-status.is-revisao_necessaria { border-color: #d9c595; color: #765b19 !important; }
+.finance-fiscal-status.is-falha { border-color: #dfb0a7; color: #91382c !important; }
+.finance-fiscal-review > dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.finance-fiscal-review > dl > div { min-width: 0; }
+.finance-fiscal-review dt { color: #818783; font-size: 0.62rem; }
+.finance-fiscal-review dd { margin: 3px 0 0; overflow: hidden; color: #3c4540; font-family: "Roboto Finance", sans-serif; font-size: 0.68rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.finance-fiscal-warnings { display: grid; gap: 5px; margin: 0; padding: 10px 12px 10px 28px; border-left: 3px solid #b48a32; background: #fff9e9; color: #6f581f; font-size: 0.68rem; line-height: 1.45; }
+.finance-fiscal-candidates > p { margin: 0 0 7px; color: #626a66; font-size: 0.65rem; font-weight: 750; text-transform: uppercase; }
+.finance-fiscal-candidates ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; margin: 0; padding: 1px; background: #dfe4e1; list-style: none; }
+.finance-fiscal-candidates li { display: grid; gap: 5px; min-width: 0; padding: 9px 10px; background: #fff; }
+.finance-fiscal-candidates li.is-divergent { box-shadow: inset 3px 0 #b44b3a; }
+.finance-fiscal-candidates li > div { display: flex; justify-content: space-between; gap: 10px; min-width: 0; }
+.finance-fiscal-candidates li strong { color: #737a76; font-size: 0.63rem; }
+.finance-fiscal-candidates li span { overflow: hidden; color: #303834; font-size: 0.68rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.finance-fiscal-candidates li small { overflow: hidden; color: #929793; font-size: 0.58rem; text-overflow: ellipsis; white-space: nowrap; }
+.finance-existing-document-upload { display: grid; gap: 10px; margin-bottom: 20px; }
+.finance-existing-document-upload > .finance-primary-action { justify-self: end; }
+.finance-document-trace { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; margin: 0; border-top: 1px solid #e4e8e5; }
+.finance-document-trace > div { min-width: 0; padding: 9px; }
+.finance-document-trace dt { color: #858b87; font-size: 0.6rem; }
+.finance-document-trace dd { margin: 3px 0 0; overflow: hidden; color: #414944; font-size: 0.64rem; text-overflow: ellipsis; white-space: nowrap; }
+
+@keyframes finance-spin { to { transform: rotate(360deg); } }
 
 .finance-detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 0 0 24px; }
 .finance-detail-list.is-horizontal { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -855,6 +898,11 @@
   .finance-detail-list,
   .finance-detail-list.is-horizontal { grid-template-columns: 1fr; }
   .finance-form label.is-wide { grid-column: auto; }
+  .finance-fiscal-intake__heading { align-items: stretch; flex-direction: column; }
+  .finance-fiscal-intake__heading .finance-secondary-action { align-self: flex-start; }
+  .finance-fiscal-review > dl,
+  .finance-fiscal-candidates ul,
+  .finance-document-trace { grid-template-columns: 1fr; }
   .finance-empty,
   .finance-denied { align-items: flex-start; padding: 24px; }
 }
@@ -869,5 +917,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .finance-progress span { animation: none; }
+  .finance-progress span,
+  .finance-fiscal-progress > span { animation: none; }
 }
