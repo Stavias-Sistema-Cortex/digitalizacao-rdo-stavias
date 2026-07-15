@@ -155,6 +155,7 @@ public class PdorKnowledgeSource
                 "versaoPremissas",
                 snapshot.assumptionsVersion()
         );
+        putText(attributes, "versaoDados", snapshot.dataVersion());
         attributes.put(
                 "statusExecucao",
                 snapshot.executionStatus().name()
@@ -212,6 +213,17 @@ public class PdorKnowledgeSource
                 "erroExecucao",
                 snapshot.executionError()
         );
+        putText(attributes, "iniciadoPor", snapshot.initiatedBy());
+        putText(attributes, "tipoIniciador", snapshot.initiatorType());
+        putJson(attributes, "escopoAnalisado", snapshot.analysisScope());
+        putJson(attributes, "janelaTemporal", snapshot.temporalWindow());
+        putJson(attributes, "featuresUtilizadas", snapshot.featuresUsed());
+        putJson(attributes, "dadosAusentes", snapshot.missingData());
+        putJson(attributes, "limitacoes", snapshot.limitations());
+        putJson(attributes, "alertasDerivados", snapshot.alerts());
+        putJson(attributes, "recomendacoes", snapshot.recommendations());
+        putJson(attributes, "comparacaoAnterior", snapshot.previousComparison());
+        putJson(attributes, "evidencias", snapshot.evidence());
 
         List<String> warnings = jsonTextList(snapshot.warnings());
         attributes.put("warnings", warnings);
@@ -309,6 +321,13 @@ public class PdorKnowledgeSource
         if (snapshot.revenueP50() != null) {
             summary.append(", P50 ")
                     .append(snapshot.revenueP50());
+        }
+
+        if (
+                hasText(snapshot.calibrationStatus())
+                && !"CALIBRATED".equals(snapshot.calibrationStatus())
+        ) {
+            summary.append(", modelo não calibrado");
         }
 
         summary.append(".");
@@ -421,6 +440,16 @@ public class PdorKnowledgeSource
             Boolean value
     ) {
         if (value != null) {
+            attributes.put(key, value);
+        }
+    }
+
+    private void putJson(
+            Map<String, Object> attributes,
+            String key,
+            JsonNode value
+    ) {
+        if (value != null && !value.isNull()) {
             attributes.put(key, value);
         }
     }

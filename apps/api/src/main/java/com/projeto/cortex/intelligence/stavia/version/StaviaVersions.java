@@ -27,7 +27,7 @@ public final class StaviaVersions {
             "STAVIA-HISTORY-SOURCE-0.1.0";
 
     public static final String PDOR_SOURCE =
-            "STAVIA-PDOR-SOURCE-0.2.0";
+            "STAVIA-PDOR-SOURCE-0.3.0";
 
     public static final String ONTOLOGY_SOURCE =
             "STAVIA-ONTOLOGY-SOURCE-0.1.0";

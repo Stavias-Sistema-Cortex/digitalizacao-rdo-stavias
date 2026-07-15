@@ -120,6 +120,9 @@ class PdorKnowledgeSourceTest {
 
         assertThat(evidence.attributes())
                 .containsEntry("statusExecucao", "SUCCESS")
+                .containsEntry("versaoDados", "dados-1")
+                .containsEntry("iniciadoPor", "usuario-1")
+                .containsEntry("tipoIniciador", "USER")
                 .containsEntry(
                         "revenueP50",
                         new BigDecimal("110.00")
@@ -128,6 +131,19 @@ class PdorKnowledgeSourceTest {
                         "probabilityBelow95Pct",
                         new BigDecimal("0.250000")
                 );
+        assertThat(evidence.attributes())
+                .containsKeys(
+                        "escopoAnalisado",
+                        "janelaTemporal",
+                        "featuresUtilizadas",
+                        "dadosAusentes",
+                        "limitacoes",
+                        "alertasDerivados",
+                        "recomendacoes",
+                        "comparacaoAnterior",
+                        "evidencias"
+                );
+        assertThat(evidence.summary()).contains("não calibrado");
     }
 
     @Test
@@ -258,7 +274,7 @@ class PdorKnowledgeSourceTest {
                 objectMapper.createArrayNode()
                         .add("Orçamento total aprovado ausente."),
                 success ? "DETERMINISTIC" : null,
-                success ? "CALIBRATED" : null,
+                success ? "NOT_CALIBRATED" : null,
                 success ? "PRODUCTION" : null,
                 success ? "MODERATE" : null,
                 success ? new BigDecimal("100.00") : null,
@@ -280,7 +296,29 @@ class PdorKnowledgeSourceTest {
                 success ? 10000 : null,
                 objectMapper.createArrayNode(),
                 success ? null : "Dados insuficientes.",
-                LocalDateTime.of(2026, 6, 25, 10, 0)
+                LocalDateTime.of(2026, 6, 25, 10, 0),
+                "dados-1",
+                objectMapper.createObjectNode().put("objetivo", "PREVISAO_RECEITA_FINAL"),
+                objectMapper.createObjectNode().put("dataReferencia", "2026-06-08"),
+                objectMapper.createArrayNode().addObject().put("campo", "contractValue"),
+                objectMapper.createArrayNode().addObject().put("campo", "laborCapacityHours"),
+                objectMapper.createArrayNode().addObject()
+                        .put("codigo", "MODELO_NAO_CALIBRADO")
+                        .put("descricao", "O modelo não está calibrado."),
+                objectMapper.createArrayNode().addObject()
+                        .put("codigo", "RISCO_RECEITA_ELEVADO")
+                        .put("titulo", "Risco de receita elevado"),
+                objectMapper.createArrayNode().addObject()
+                        .put("codigo", "REVISAR_DRIVERS")
+                        .put("titulo", "Revisar fatores de risco"),
+                objectMapper.createObjectNode()
+                        .put("disponivel", true)
+                        .put("direcaoRisco", "SUBIU"),
+                objectMapper.createArrayNode().addObject()
+                        .put("tipoEntidade", "RDO")
+                        .put("entidadeId", "rdo-1"),
+                "usuario-1",
+                "USER"
         );
     }
 

@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -7,6 +8,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 import com.projeto.cortex.intelligence.stavia.generation.DeterministicStaviaResponseGenerator;
@@ -357,6 +359,68 @@ class DeterministicStaviaResponseGeneratorTest {
         assertTrue(response.text().contains("PDOR foi executado"));
         assertTrue(response.text().contains("valor contratual"));
         assertTrue(response.text().contains("P50, P80, P95"));
+    }
+
+    @Test
+    void shouldExplainSuccessfulPdorWithCalibrationComparisonAndEvidence() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion(
+                        "Explique por que o risco do PDOR mudou.",
+                        "usuario-1",
+                        "obra-1"
+                ),
+                StaviaIntent.CONSULTAR_PDOR,
+                List.of(new StaviaEvidence(
+                        StaviaEvidenceTypes.PDOR,
+                        "pdor-2",
+                        "Snapshot PDOR calculado.",
+                        Instant.parse("2026-06-25T12:00:00Z"),
+                        true,
+                        Map.ofEntries(
+                                Map.entry("statusExecucao", "SUCCESS"),
+                                Map.entry("statusExecucaoLabel", "Concluído"),
+                                Map.entry("codigoCw", "CW38386"),
+                                Map.entry("dataReferencia", "2026-06-08"),
+                                Map.entry("versaoModelo", "PDOR-0.2.0"),
+                                Map.entry("versaoPremissas", "PDOR-ASSUMPTIONS-0.2.0"),
+                                Map.entry("versaoDados", "dados-1"),
+                                Map.entry("calibrationStatus", "NOT_CALIBRATED"),
+                                Map.entry("confidence", new BigDecimal("0.61")),
+                                Map.entry("nivelRisco", "HIGH"),
+                                Map.entry("revenueP50", new BigDecimal("950000")),
+                                Map.entry("probabilityBelowContract", new BigDecimal("0.72")),
+                                Map.entry("drivers", List.of(Map.of(
+                                        "description", "Produtividade abaixo do esperado"
+                                ))),
+                                Map.entry("dadosAusentes", List.of(Map.of(
+                                        "rotulo", "Capacidade de mão de obra em horas"
+                                ))),
+                                Map.entry("limitacoes", List.of(Map.of(
+                                        "descricao", "O modelo não está calibrado."
+                                ))),
+                                Map.entry("recomendacoes", List.of(Map.of(
+                                        "titulo", "Revisar fatores de risco"
+                                ))),
+                                Map.entry("comparacaoAnterior", Map.of(
+                                        "disponivel", true,
+                                        "direcaoRisco", "SUBIU"
+                                )),
+                                Map.entry("evidencias", List.of(Map.of(
+                                        "tipoEntidade", "RDO",
+                                        "entidadeId", "rdo-1"
+                                )))
+                        )
+                ))
+        );
+
+        assertThat(response.text())
+                .contains("Não calibrado")
+                .contains("Versão dos dados")
+                .contains("O risco subiu")
+                .contains("Produtividade abaixo do esperado")
+                .contains("Capacidade de mão de obra em horas")
+                .contains("Revisar fatores de risco")
+                .contains("1 objeto consultado");
     }
 
     @Test

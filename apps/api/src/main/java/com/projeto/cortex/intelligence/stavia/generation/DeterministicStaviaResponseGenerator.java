@@ -1,5 +1,6 @@
 package com.projeto.cortex.intelligence.stavia.generation;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.projeto.cortex.intelligence.stavia.intent.StaviaIntent;
 import com.projeto.cortex.intelligence.stavia.model.StaviaAnswerType;
 import com.projeto.cortex.intelligence.stavia.model.StaviaEvidence;
@@ -2837,6 +2838,23 @@ public class DeterministicStaviaResponseGenerator
         );
         appendMetric(
                 answer,
+                "Versão dos dados",
+                attributeText(attributes, "versaoDados")
+        );
+        appendMetric(
+                answer,
+                "Calibração",
+                pdorCalibrationLabel(
+                        attributeText(attributes, "calibrationStatus")
+                )
+        );
+        appendMetric(
+                answer,
+                "Nível de risco",
+                attributeText(attributes, "nivelRisco")
+        );
+        appendMetric(
+                answer,
                 "Confiança",
                 percentText(attributes.get("confidence"))
         );
@@ -2870,7 +2888,161 @@ public class DeterministicStaviaResponseGenerator
                 percentText(attributes.get("heuristicRiskScore"))
         );
 
+        appendPdorComparison(answer, attributes.get("comparacaoAnterior"));
+        appendStructuredSection(
+                answer,
+                "Principais fatores",
+                attributes.get("drivers"),
+                4,
+                "description",
+                "descricao",
+                "code"
+        );
+        appendStructuredSection(
+                answer,
+                "Dados ausentes ou ambíguos",
+                attributes.get("dadosAusentes"),
+                5,
+                "rotulo",
+                "campo"
+        );
+        appendStructuredSection(
+                answer,
+                "Limitações",
+                attributes.get("limitacoes"),
+                4,
+                "descricao",
+                "codigo"
+        );
+        appendStructuredSection(
+                answer,
+                "Alertas derivados",
+                attributes.get("alertasDerivados"),
+                4,
+                "titulo",
+                "descricao",
+                "codigo"
+        );
+        appendStructuredSection(
+                answer,
+                "Recomendações rastreáveis",
+                attributes.get("recomendacoes"),
+                4,
+                "titulo",
+                "detalhe",
+                "codigo"
+        );
+        appendPdorEvidenceCount(answer, attributes.get("evidencias"));
+
         return answer.toString();
+    }
+
+    private String pdorCalibrationLabel(String value) {
+        return switch (value) {
+            case "CALIBRATED" -> "Calibrado";
+            case "NOT_CALIBRATED" -> "Não calibrado";
+            case "PARTIALLY_CALIBRATED" -> "Parcialmente calibrado";
+            default -> value;
+        };
+    }
+
+    private void appendPdorComparison(StringBuilder answer, Object value) {
+        if (!structuredBoolean(value, "disponivel")) {
+            return;
+        }
+        String direction = structuredText(value, "direcaoRisco");
+        String explanation = switch (direction) {
+            case "SUBIU" -> "O risco subiu em relação à execução anterior.";
+            case "CAIU" -> "O risco caiu em relação à execução anterior.";
+            case "ESTAVEL" -> "O risco permaneceu estável em relação à execução anterior.";
+            default -> "A execução anterior existe, mas a direção do risco não é comparável.";
+        };
+        answer.append("\n\nComparação: ").append(explanation);
+    }
+
+    private void appendStructuredSection(
+            StringBuilder answer,
+            String title,
+            Object value,
+            int limit,
+            String... fields
+    ) {
+        List<String> items = structuredItems(value, fields).stream()
+                .distinct()
+                .limit(limit)
+                .toList();
+        if (items.isEmpty()) {
+            return;
+        }
+        answer.append("\n\n").append(title).append(":");
+        items.forEach(item -> answer.append("\n- ").append(item));
+    }
+
+    private List<String> structuredItems(Object value, String... fields) {
+        List<String> items = new ArrayList<>();
+        if (value instanceof JsonNode node && node.isArray()) {
+            node.forEach(item -> addStructuredItem(items, item, fields));
+        } else if (value instanceof List<?> list) {
+            list.forEach(item -> addStructuredItem(items, item, fields));
+        }
+        return items;
+    }
+
+    private void addStructuredItem(
+            List<String> target,
+            Object item,
+            String... fields
+    ) {
+        for (String field : fields) {
+            String text = structuredText(item, field);
+            if (hasText(text)) {
+                target.add(text);
+                return;
+            }
+        }
+        if (item != null && !(item instanceof Map<?, ?>) && !(item instanceof JsonNode)) {
+            String text = String.valueOf(item);
+            if (hasText(text)) {
+                target.add(text);
+            }
+        }
+    }
+
+    private String structuredText(Object value, String field) {
+        if (value instanceof JsonNode node) {
+            JsonNode fieldValue = node.get(field);
+            return fieldValue == null || fieldValue.isNull() ? "" : fieldValue.asText("");
+        }
+        if (value instanceof Map<?, ?> map) {
+            Object fieldValue = map.get(field);
+            return fieldValue == null ? "" : String.valueOf(fieldValue);
+        }
+        return "";
+    }
+
+    private boolean structuredBoolean(Object value, String field) {
+        if (value instanceof JsonNode node) {
+            return node.path(field).asBoolean(false);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Object fieldValue = map.get(field);
+            return fieldValue instanceof Boolean booleanValue && booleanValue;
+        }
+        return false;
+    }
+
+    private void appendPdorEvidenceCount(StringBuilder answer, Object value) {
+        int count = 0;
+        if (value instanceof JsonNode node && node.isArray()) {
+            count = node.size();
+        } else if (value instanceof List<?> list) {
+            count = list.size();
+        }
+        if (count > 0) {
+            answer.append("\n\nEvidências: ")
+                    .append(count)
+                    .append(count == 1 ? " objeto consultado." : " objetos consultados.");
+        }
     }
 
     private void appendPdorReference(
