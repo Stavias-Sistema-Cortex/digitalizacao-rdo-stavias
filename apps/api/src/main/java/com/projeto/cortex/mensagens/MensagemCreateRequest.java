@@ -1,6 +1,6 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 public record MensagemCreateRequest(
@@ -8,7 +8,7 @@ public record MensagemCreateRequest(
         String conversaId,
         String clientMessageId,
         String texto,
-        LocalDateTime enviadaClienteEm,
+        Instant enviadaClienteEm,
         List<MensagemReferenciaRequest> referencias,
         List<MensagemAnexoPreparacaoRequest> anexos
 ) {

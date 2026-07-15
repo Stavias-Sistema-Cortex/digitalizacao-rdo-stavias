@@ -1,6 +1,6 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record MensagemReferenciaResponse(
         String id,
@@ -8,6 +8,6 @@ public record MensagemReferenciaResponse(
         String tipoObjeto,
         String objetoId,
         String obraId,
-        LocalDateTime criadoEm
+        Instant criadoEm
 ) {
 }

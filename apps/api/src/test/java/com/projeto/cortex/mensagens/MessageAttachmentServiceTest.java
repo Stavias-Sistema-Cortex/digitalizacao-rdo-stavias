@@ -9,7 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -80,7 +80,7 @@ class MessageAttachmentServiceTest {
         when(repository.markAvailable(
                 eq("attachment-1"), eq(1L),
                 eq("ab/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-                eq("foto.jpg"), eq("image/jpeg"), any(LocalDateTime.class)
+                eq("foto.jpg"), eq("image/jpeg"), any(Instant.class)
         )).thenReturn(1);
 
         MensagemAnexoResponse response = service.upload(
@@ -117,7 +117,7 @@ class MessageAttachmentServiceTest {
 
         verify(repository).markFailedIfVersion(
                 eq("attachment-1"), eq(1L), contains("hash"),
-                any(LocalDateTime.class)
+                any(Instant.class)
         );
         verify(staged, never()).commit();
     }
@@ -198,7 +198,7 @@ class MessageAttachmentServiceTest {
 
         verify(repository).markFailedIfVersion(
                 eq("attachment-1"), eq(1L), contains("armazenar"),
-                any(LocalDateTime.class)
+                any(Instant.class)
         );
     }
 
@@ -245,13 +245,13 @@ class MessageAttachmentServiceTest {
     }
 
     private MessageAttachmentRecord available() {
-        LocalDateTime now = LocalDateTime.of(2026, 7, 15, 11, 0);
+        Instant now = Instant.parse("2026-07-15T11:00:00Z");
         return new MessageAttachmentRecord(
                 "attachment-1", "message-1", "user-1",
                 "client-attachment-1", "foto.jpg", "foto.jpg", "image/jpeg",
                 6, "a".repeat(64),
                 "ab/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-                "DISPONIVEL", null, now.minusMinutes(1), now, now, 2
+                "DISPONIVEL", null, now.minusSeconds(60), now, now, 2
         );
     }
 

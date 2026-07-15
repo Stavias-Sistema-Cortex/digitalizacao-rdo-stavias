@@ -4,6 +4,7 @@ import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +27,7 @@ class MessageMemoryPublisherTest {
         CortexOperationalMemoryService memoryService =
                 mock(CortexOperationalMemoryService.class);
         MessageMemoryPublisher publisher = new MessageMemoryPublisher(memoryService);
-        LocalDateTime now = LocalDateTime.of(2026, 7, 15, 10, 30);
+        Instant now = Instant.parse("2026-07-15T10:30:00Z");
         MensagemReferenciaResponse reference = new MensagemReferenciaResponse(
                 "reference-1", "message-1", "OBRA", "obra-1", "obra-1", now
         );
@@ -111,7 +112,7 @@ class MessageMemoryPublisherTest {
         );
         MensagemReciboResponse receipt = new MensagemReciboResponse(
                 "receipt-1", "message-1", "beta-1",
-                LocalDateTime.of(2026, 7, 15, 10, 45), null
+                Instant.parse("2026-07-15T10:45:00Z"), null
         );
 
         publisher.mensagemEntregue(conversation, receipt, "beta-1");
@@ -139,12 +140,12 @@ class MessageMemoryPublisherTest {
                 "conversation-1", "OBRA", "Obra Norte",
                 "obra-1", null, "ATIVA"
         );
-        LocalDateTime now = LocalDateTime.of(2026, 7, 15, 11, 0);
+        Instant now = Instant.parse("2026-07-15T11:00:00Z");
         MensagemAnexoResponse attachment = new MensagemAnexoResponse(
                 "attachment-1", "message-1", "client-attachment-1",
                 "foto.jpg", "foto.jpg", "image/jpeg", 128,
                 "a".repeat(64), "DISPONIVEL", null,
-                now.minusMinutes(1), now, now, 2
+                now.minusSeconds(60), now, now, 2
         );
 
         publisher.anexoDisponivel(conversation, attachment, "beta-1");

@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @RestController
 @RequestMapping("/api")
@@ -26,10 +26,10 @@ public class MessageController {
             @PathVariable String conversationId,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime antesDeClienteEm,
+            Instant antesDeClienteEm,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime antesDeServidorEm,
+            Instant antesDeServidorEm,
             @RequestParam(required = false) String antesDeId,
             @RequestParam(required = false) Integer limit
     ) {

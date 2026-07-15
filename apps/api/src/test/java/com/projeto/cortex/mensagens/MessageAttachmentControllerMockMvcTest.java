@@ -13,7 +13,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayInputStream;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -93,13 +93,13 @@ class MessageAttachmentControllerMockMvcTest {
     }
 
     private MensagemAnexoResponse attachment() {
-        LocalDateTime now = LocalDateTime.of(2026, 7, 15, 11, 0);
+        Instant now = Instant.parse("2026-07-15T11:00:00Z");
         return new MensagemAnexoResponse(
                 "attachment-1", "message-1", "client-attachment-1",
                 "relatorio-final.pdf", "relatorio-final.pdf",
                 MediaType.APPLICATION_PDF_VALUE, 8,
                 "a".repeat(64), "DISPONIVEL", null,
-                now.minusMinutes(1), now, now, 2
+                now.minusSeconds(60), now, now, 2
         );
     }
 }

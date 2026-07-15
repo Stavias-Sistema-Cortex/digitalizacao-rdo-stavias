@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -62,7 +62,7 @@ public class MessageService {
         List<ResolvedMessageReference> references = request.referencias().stream()
                 .map(reference -> referenceResolver.resolve(reference, conversation))
                 .toList();
-        LocalDateTime serverNow = LocalDateTime.now();
+        Instant serverNow = Instant.now();
         try {
             repository.insertMessage(request, senderId, serverNow);
             for (ResolvedMessageReference reference : references) {
@@ -135,7 +135,7 @@ public class MessageService {
         repository.markDelivered(
                 normalizedMessageId,
                 userId,
-                LocalDateTime.now()
+                Instant.now()
         );
         MensagemReciboResponse after = requireUpdatedReceipt(
                 normalizedMessageId,
@@ -166,7 +166,7 @@ public class MessageService {
             return before;
         }
 
-        repository.markRead(normalizedMessageId, userId, LocalDateTime.now());
+        repository.markRead(normalizedMessageId, userId, Instant.now());
         MensagemReciboResponse after = requireUpdatedReceipt(
                 normalizedMessageId,
                 userId
@@ -236,7 +236,7 @@ public class MessageService {
                 requireId(request.clientMessageId(), "clientMessageId"),
                 text,
                 request.enviadaClienteEm() == null
-                        ? LocalDateTime.now()
+                        ? Instant.now()
                         : request.enviadaClienteEm(),
                 references,
                 attachments

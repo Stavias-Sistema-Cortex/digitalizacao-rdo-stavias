@@ -1,12 +1,12 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record MensagemReciboResponse(
         String id,
         String mensagemId,
         String colaboradorId,
-        LocalDateTime entregueEm,
-        LocalDateTime lidaEm
+        Instant entregueEm,
+        Instant lidaEm
 ) {
 }

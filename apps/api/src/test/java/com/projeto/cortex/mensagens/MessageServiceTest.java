@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -62,7 +62,7 @@ class MessageServiceTest {
         MensagemCreateRequest request = new MensagemCreateRequest(
                 "message-1", "conversation-1", "client-message-1",
                 "Frente liberada para a próxima etapa.",
-                LocalDateTime.of(2026, 7, 15, 10, 30),
+                Instant.parse("2026-07-15T10:30:00Z"),
                 List.of(reference),
                 List.of(attachment)
         );
@@ -83,7 +83,7 @@ class MessageServiceTest {
         verify(repository).insertMessage(
                 eq(request),
                 eq("user-1"),
-                any(LocalDateTime.class)
+                any(Instant.class)
         );
         verify(repository).insertReference("message-1", resolved, "user-1");
         verify(repository).prepareAttachment("message-1", attachment, "user-1");
@@ -91,7 +91,7 @@ class MessageServiceTest {
                 eq("message-1"),
                 eq("conversation-1"),
                 eq("user-1"),
-                any(LocalDateTime.class)
+                any(Instant.class)
         );
         verify(memoryPublisher).mensagemEnviada(scope, expected);
     }
@@ -148,7 +148,7 @@ class MessageServiceTest {
 
         assertThatThrownBy(() -> service.enviar(new MensagemCreateRequest(
                 "message-1", "conversation-1", "client-message-1",
-                null, LocalDateTime.of(2026, 7, 15, 10, 30),
+                null, Instant.parse("2026-07-15T10:30:00Z"),
                 List.of(), List.of(attachment)
         ))).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
                 assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST)
@@ -167,7 +167,7 @@ class MessageServiceTest {
 
         assertThatThrownBy(() -> service.enviar(new MensagemCreateRequest(
                 "message-1", "conversation-1", "client-message-1",
-                null, LocalDateTime.of(2026, 7, 15, 10, 30),
+                null, Instant.parse("2026-07-15T10:30:00Z"),
                 List.of(), List.of(attachment)
         ))).isInstanceOfSatisfying(ResponseStatusException.class, exception ->
                 assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST)
@@ -180,8 +180,8 @@ class MessageServiceTest {
     void listsHistoryOnlyAfterConversationPolicyAndPreservesCursor() {
         ConversationScope scope = scope();
         MensagemCursor cursor = new MensagemCursor(
-                LocalDateTime.of(2026, 7, 15, 10, 0),
-                LocalDateTime.of(2026, 7, 15, 10, 0, 1),
+                Instant.parse("2026-07-15T10:00:00Z"),
+                Instant.parse("2026-07-15T10:00:01Z"),
                 "message-0"
         );
         MensagemPageResponse expected = new MensagemPageResponse(
@@ -201,14 +201,14 @@ class MessageServiceTest {
         );
         MensagemReciboResponse after = new MensagemReciboResponse(
                 "receipt-1", "message-1", "user-1",
-                LocalDateTime.of(2026, 7, 15, 11, 0),
-                LocalDateTime.of(2026, 7, 15, 11, 0)
+                Instant.parse("2026-07-15T11:00:00Z"),
+                Instant.parse("2026-07-15T11:00:00Z")
         );
         when(accessPolicy.requireMessageRead("message-1")).thenReturn(scope);
         when(repository.findReceipt("message-1", "user-1"))
                 .thenReturn(Optional.of(before), Optional.of(after));
         when(repository.markRead(
-                eq("message-1"), eq("user-1"), any(LocalDateTime.class)
+                eq("message-1"), eq("user-1"), any(Instant.class)
         )).thenReturn(1);
 
         MensagemReciboResponse receipt = service.marcarLida("message-1");
@@ -225,13 +225,13 @@ class MessageServiceTest {
         );
         MensagemReciboResponse after = new MensagemReciboResponse(
                 "receipt-1", "message-1", "user-1",
-                LocalDateTime.of(2026, 7, 15, 10, 45), null
+                Instant.parse("2026-07-15T10:45:00Z"), null
         );
         when(accessPolicy.requireMessageRead("message-1")).thenReturn(scope);
         when(repository.findReceipt("message-1", "user-1"))
                 .thenReturn(Optional.of(before), Optional.of(after));
         when(repository.markDelivered(
-                eq("message-1"), eq("user-1"), any(LocalDateTime.class)
+                eq("message-1"), eq("user-1"), any(Instant.class)
         )).thenReturn(1);
 
         MensagemReciboResponse receipt = service.marcarEntregue("message-1");
@@ -244,7 +244,7 @@ class MessageServiceTest {
     void alreadyDeliveredReceiptDoesNotPublishAnotherEvent() {
         MensagemReciboResponse delivered = new MensagemReciboResponse(
                 "receipt-1", "message-1", "user-1",
-                LocalDateTime.of(2026, 7, 15, 10, 45), null
+                Instant.parse("2026-07-15T10:45:00Z"), null
         );
         when(accessPolicy.requireMessageRead("message-1")).thenReturn(scope());
         when(repository.findReceipt("message-1", "user-1"))
@@ -270,8 +270,8 @@ class MessageServiceTest {
     void alreadyReadReceiptDoesNotPublishAnotherEvent() {
         MensagemReciboResponse read = new MensagemReciboResponse(
                 "receipt-1", "message-1", "user-1",
-                LocalDateTime.of(2026, 7, 15, 11, 0),
-                LocalDateTime.of(2026, 7, 15, 11, 0)
+                Instant.parse("2026-07-15T11:00:00Z"),
+                Instant.parse("2026-07-15T11:00:00Z")
         );
         when(accessPolicy.requireMessageRead("message-1")).thenReturn(scope());
         when(repository.findReceipt("message-1", "user-1"))
@@ -292,14 +292,14 @@ class MessageServiceTest {
     private MensagemCreateRequest request(String id, String clientId, String text) {
         return new MensagemCreateRequest(
                 id, "conversation-1", clientId, text,
-                LocalDateTime.of(2026, 7, 15, 10, 30),
+                Instant.parse("2026-07-15T10:30:00Z"),
                 List.of(), List.of()
         );
     }
 
     private MensagemResponse message() {
-        LocalDateTime client = LocalDateTime.of(2026, 7, 15, 10, 30);
-        LocalDateTime server = LocalDateTime.of(2026, 7, 15, 10, 30, 1);
+        Instant client = Instant.parse("2026-07-15T10:30:00Z");
+        Instant server = Instant.parse("2026-07-15T10:30:01Z");
         return new MensagemResponse(
                 "message-1", "conversation-1", "user-1", "Usuário",
                 "client-message-1", "Frente liberada para a próxima etapa.",

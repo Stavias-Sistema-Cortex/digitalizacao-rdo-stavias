@@ -12,7 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -52,18 +52,37 @@ class MessageControllerMockMvcTest {
                                   "conversaId": "tampered-conversation",
                                   "clientMessageId": "client-message-1",
                                   "texto": "Frente liberada",
-                                  "enviadaClienteEm": "2026-07-15T10:30:00"
+                                  "enviadaClienteEm": "2026-07-15T10:30:00Z"
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value("message-1"))
-                .andExpect(jsonPath("$.conversaId").value("conversation-1"));
+                .andExpect(jsonPath("$.conversaId").value("conversation-1"))
+                .andExpect(jsonPath("$.enviadaClienteEm")
+                        .value("2026-07-15T10:30:00Z"))
+                .andExpect(jsonPath("$.criadaServidorEm")
+                        .value("2026-07-15T10:30:01Z"));
 
         verify(service).enviar(eq(new MensagemCreateRequest(
                 "message-1", "conversation-1", "client-message-1",
-                "Frente liberada", LocalDateTime.of(2026, 7, 15, 10, 30),
+                "Frente liberada", Instant.parse("2026-07-15T10:30:00Z"),
                 null, null
         )));
+    }
+
+    @Test
+    void rejectsClientTimestampWithoutExplicitOffset() throws Exception {
+        mockMvc.perform(post("/api/conversas/conversation-1/mensagens")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "id": "message-1",
+                                  "clientMessageId": "client-message-1",
+                                  "texto": "Frente liberada",
+                                  "enviadaClienteEm": "2026-07-15T10:30:00"
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -74,8 +93,8 @@ class MessageControllerMockMvcTest {
                 ));
 
         mockMvc.perform(get("/api/conversas/conversation-1/mensagens")
-                        .param("antesDeClienteEm", "2026-07-15T10:30:00")
-                        .param("antesDeServidorEm", "2026-07-15T10:30:01")
+                        .param("antesDeClienteEm", "2026-07-15T10:30:00Z")
+                        .param("antesDeServidorEm", "2026-07-15T10:30:01Z")
                         .param("antesDeId", "message-0")
                         .param("limit", "25"))
                 .andExpect(status().isOk())
@@ -85,8 +104,8 @@ class MessageControllerMockMvcTest {
         verify(service).listar(
                 eq("conversation-1"),
                 eq(new MensagemCursor(
-                        LocalDateTime.of(2026, 7, 15, 10, 30),
-                        LocalDateTime.of(2026, 7, 15, 10, 30, 1),
+                        Instant.parse("2026-07-15T10:30:00Z"),
+                        Instant.parse("2026-07-15T10:30:01Z"),
                         "message-0"
                 )),
                 eq(25)
@@ -97,8 +116,8 @@ class MessageControllerMockMvcTest {
     void exposesIdempotentDeliveryAndReadReceipts() throws Exception {
         MensagemReciboResponse receipt = new MensagemReciboResponse(
                 "receipt-1", "message-1", "user-1",
-                LocalDateTime.of(2026, 7, 15, 11, 0),
-                LocalDateTime.of(2026, 7, 15, 11, 0)
+                Instant.parse("2026-07-15T11:00:00Z"),
+                Instant.parse("2026-07-15T11:00:00Z")
         );
         when(service.marcarEntregue("message-1")).thenReturn(receipt);
         when(service.marcarLida("message-1")).thenReturn(receipt);
@@ -124,8 +143,8 @@ class MessageControllerMockMvcTest {
     }
 
     private MensagemResponse message() {
-        LocalDateTime client = LocalDateTime.of(2026, 7, 15, 10, 30);
-        LocalDateTime server = LocalDateTime.of(2026, 7, 15, 10, 30, 1);
+        Instant client = Instant.parse("2026-07-15T10:30:00Z");
+        Instant server = Instant.parse("2026-07-15T10:30:01Z");
         return new MensagemResponse(
                 "message-1", "conversation-1", "user-1", "Usuário",
                 "client-message-1", "Frente liberada", "ENVIADA",

@@ -1,6 +1,6 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record MensagemAnexoResponse(
         String id,
@@ -13,9 +13,9 @@ public record MensagemAnexoResponse(
         String hashSha256,
         String status,
         String ultimoErro,
-        LocalDateTime criadoEm,
-        LocalDateTime atualizadoEm,
-        LocalDateTime disponivelEm,
+        Instant criadoEm,
+        Instant atualizadoEm,
+        Instant disponivelEm,
         long versaoEntidade
 ) {
 }

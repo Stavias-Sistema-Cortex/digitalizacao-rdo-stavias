@@ -5,7 +5,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -66,11 +66,11 @@ class MessageRepository {
                         )
                     )
                     """);
-            params.add(cursor.enviadaClienteEm());
-            params.add(cursor.enviadaClienteEm());
-            params.add(cursor.criadaServidorEm());
-            params.add(cursor.enviadaClienteEm());
-            params.add(cursor.criadaServidorEm());
+            params.add(sqlTimestamp(cursor.enviadaClienteEm()));
+            params.add(sqlTimestamp(cursor.enviadaClienteEm()));
+            params.add(sqlTimestamp(cursor.criadaServidorEm()));
+            params.add(sqlTimestamp(cursor.enviadaClienteEm()));
+            params.add(sqlTimestamp(cursor.criadaServidorEm()));
             params.add(cursor.id());
         }
         params.add(limit + 1);
@@ -105,7 +105,7 @@ class MessageRepository {
     void insertMessage(
             MensagemCreateRequest request,
             String senderId,
-            LocalDateTime serverNow
+            Instant serverNow
     ) {
         jdbcTemplate.update(
                 """
@@ -120,9 +120,9 @@ class MessageRepository {
                 senderId,
                 request.clientMessageId(),
                 request.texto(),
-                request.enviadaClienteEm(),
-                serverNow,
-                serverNow
+                sqlTimestamp(request.enviadaClienteEm()),
+                sqlTimestamp(serverNow),
+                sqlTimestamp(serverNow)
         );
         jdbcTemplate.update(
                 """
@@ -131,8 +131,8 @@ class MessageRepository {
                     atualizado_em = ?
                 WHERE id = ?
                 """,
-                serverNow,
-                serverNow,
+                sqlTimestamp(serverNow),
+                sqlTimestamp(serverNow),
                 request.conversaId()
         );
     }
@@ -186,7 +186,7 @@ class MessageRepository {
             String messageId,
             String conversationId,
             String senderId,
-            LocalDateTime now
+            Instant now
     ) {
         jdbcTemplate.update(
                 """
@@ -207,9 +207,9 @@ class MessageRepository {
                 """,
                 messageId,
                 senderId,
-                now,
+                sqlTimestamp(now),
                 senderId,
-                now,
+                sqlTimestamp(now),
                 conversationId
         );
     }
@@ -235,7 +235,7 @@ class MessageRepository {
     int markDelivered(
             String messageId,
             String collaboratorId,
-            LocalDateTime now
+            Instant now
     ) {
         return jdbcTemplate.update(
                 """
@@ -246,14 +246,14 @@ class MessageRepository {
                   AND colaborador_id = ?
                   AND entregue_em IS NULL
                 """,
-                now,
-                now,
+                sqlTimestamp(now),
+                sqlTimestamp(now),
                 messageId,
                 collaboratorId
         );
     }
 
-    int markRead(String messageId, String collaboratorId, LocalDateTime now) {
+    int markRead(String messageId, String collaboratorId, Instant now) {
         return jdbcTemplate.update(
                 """
                 UPDATE mensagem_recibo
@@ -264,9 +264,9 @@ class MessageRepository {
                   AND colaborador_id = ?
                   AND lida_em IS NULL
                 """,
-                now,
-                now,
-                now,
+                sqlTimestamp(now),
+                sqlTimestamp(now),
+                sqlTimestamp(now),
                 messageId,
                 collaboratorId
         );
@@ -328,7 +328,7 @@ class MessageRepository {
                         rs.getString("tipo_objeto"),
                         rs.getString("objeto_id"),
                         rs.getString("obra_id"),
-                        local(rs.getTimestamp("criado_em"))
+                        instant(rs.getTimestamp("criado_em"))
                 ),
                 messageId
         );
@@ -358,9 +358,9 @@ class MessageRepository {
                         rs.getString("hash_sha256"),
                         rs.getString("status"),
                         rs.getString("ultimo_erro"),
-                        local(rs.getTimestamp("criado_em")),
-                        local(rs.getTimestamp("atualizado_em")),
-                        local(rs.getTimestamp("disponivel_em")),
+                        instant(rs.getTimestamp("criado_em")),
+                        instant(rs.getTimestamp("atualizado_em")),
+                        instant(rs.getTimestamp("disponivel_em")),
                         rs.getLong("versao_linha")
                 ),
                 messageId
@@ -389,9 +389,9 @@ class MessageRepository {
                 rs.getString("client_message_id"),
                 rs.getString("texto"),
                 rs.getString("estado"),
-                local(rs.getTimestamp("enviada_cliente_em")),
-                local(rs.getTimestamp("criada_servidor_em")),
-                local(rs.getTimestamp("atualizada_em")),
+                instant(rs.getTimestamp("enviada_cliente_em")),
+                instant(rs.getTimestamp("criada_servidor_em")),
+                instant(rs.getTimestamp("atualizada_em")),
                 rs.getLong("versao_linha"),
                 List.of(),
                 List.of(),
@@ -404,8 +404,8 @@ class MessageRepository {
                 rs.getString("id"),
                 rs.getString("mensagem_id"),
                 rs.getString("colaborador_id"),
-                local(rs.getTimestamp("entregue_em")),
-                local(rs.getTimestamp("lida_em"))
+                instant(rs.getTimestamp("entregue_em")),
+                instant(rs.getTimestamp("lida_em"))
         );
     }
 
@@ -424,7 +424,11 @@ class MessageRepository {
         return base.isBlank() ? "anexo" : base.substring(0, Math.min(255, base.length()));
     }
 
-    private LocalDateTime local(Timestamp timestamp) {
-        return timestamp == null ? null : timestamp.toLocalDateTime();
+    private Timestamp sqlTimestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
+    }
+
+    private Instant instant(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
     }
 }

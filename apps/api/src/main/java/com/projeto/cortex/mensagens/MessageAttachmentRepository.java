@@ -4,7 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Optional;
 
 @Repository
@@ -42,9 +42,9 @@ class MessageAttachmentRepository {
                         resultSet.getString("storage_key"),
                         resultSet.getString("status"),
                         resultSet.getString("ultimo_erro"),
-                        local(resultSet.getTimestamp("criado_em")),
-                        local(resultSet.getTimestamp("atualizado_em")),
-                        local(resultSet.getTimestamp("disponivel_em")),
+                        instant(resultSet.getTimestamp("criado_em")),
+                        instant(resultSet.getTimestamp("atualizado_em")),
+                        instant(resultSet.getTimestamp("disponivel_em")),
                         resultSet.getLong("versao_linha")
                 ),
                 attachmentId
@@ -57,7 +57,7 @@ class MessageAttachmentRepository {
             String storageKey,
             String safeFilename,
             String mimeType,
-            LocalDateTime now
+            Instant now
     ) {
         return jdbcTemplate.update(
                 """
@@ -78,8 +78,8 @@ class MessageAttachmentRepository {
                 storageKey,
                 safeFilename,
                 mimeType,
-                now,
-                now,
+                sqlTimestamp(now),
+                sqlTimestamp(now),
                 attachmentId,
                 expectedVersion
         );
@@ -89,7 +89,7 @@ class MessageAttachmentRepository {
             String attachmentId,
             long expectedVersion,
             String error,
-            LocalDateTime now
+            Instant now
     ) {
         String safeError = error == null
                 ? "Falha ao processar o anexo."
@@ -109,7 +109,7 @@ class MessageAttachmentRepository {
                   AND removido_em IS NULL
                 """,
                 safeError,
-                now,
+                sqlTimestamp(now),
                 attachmentId,
                 expectedVersion
         );
@@ -118,7 +118,7 @@ class MessageAttachmentRepository {
     int markMissingIfVersion(
             String attachmentId,
             long expectedVersion,
-            LocalDateTime now
+            Instant now
     ) {
         return jdbcTemplate.update(
                 """
@@ -134,13 +134,17 @@ class MessageAttachmentRepository {
                   AND status = 'DISPONIVEL'
                   AND removido_em IS NULL
                 """,
-                now,
+                sqlTimestamp(now),
                 attachmentId,
                 expectedVersion
         );
     }
 
-    private LocalDateTime local(Timestamp timestamp) {
-        return timestamp == null ? null : timestamp.toLocalDateTime();
+    private Timestamp sqlTimestamp(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
+    }
+
+    private Instant instant(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
     }
 }

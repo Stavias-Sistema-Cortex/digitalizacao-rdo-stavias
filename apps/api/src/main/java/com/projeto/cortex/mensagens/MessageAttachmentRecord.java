@@ -1,6 +1,6 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 record MessageAttachmentRecord(
         String id,
@@ -15,9 +15,9 @@ record MessageAttachmentRecord(
         String storageKey,
         String status,
         String lastError,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt,
-        LocalDateTime availableAt,
+        Instant createdAt,
+        Instant updatedAt,
+        Instant availableAt,
         long entityVersion
 ) {
 

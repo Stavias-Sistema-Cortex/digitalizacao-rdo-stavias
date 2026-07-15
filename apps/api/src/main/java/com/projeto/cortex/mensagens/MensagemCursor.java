@@ -1,10 +1,10 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public record MensagemCursor(
-        LocalDateTime enviadaClienteEm,
-        LocalDateTime criadaServidorEm,
+        Instant enviadaClienteEm,
+        Instant criadaServidorEm,
         String id
 ) {
 }

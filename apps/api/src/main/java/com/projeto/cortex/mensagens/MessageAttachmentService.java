@@ -12,7 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Service
 public class MessageAttachmentService {
@@ -98,7 +98,7 @@ public class MessageAttachmentService {
 
             committedStorageKey = staged.commit();
             registerRollbackCleanup(committedStorageKey);
-            LocalDateTime now = LocalDateTime.now();
+            Instant now = Instant.now();
             int updated = repository.markAvailable(
                     attachment.id(),
                     attachment.entityVersion(),
@@ -193,7 +193,7 @@ public class MessageAttachmentService {
             repository.markMissingIfVersion(
                     attachment.id(),
                     attachment.entityVersion(),
-                    LocalDateTime.now()
+                    Instant.now()
             );
             throw new ResponseStatusException(
                     HttpStatus.SERVICE_UNAVAILABLE,
@@ -240,7 +240,7 @@ public class MessageAttachmentService {
                 attachment.id(),
                 attachment.entityVersion(),
                 reason,
-                LocalDateTime.now()
+                Instant.now()
         );
     }
 

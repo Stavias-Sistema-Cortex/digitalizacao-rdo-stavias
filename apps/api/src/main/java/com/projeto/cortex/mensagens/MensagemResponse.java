@@ -1,6 +1,6 @@
 package com.projeto.cortex.mensagens;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 public record MensagemResponse(
@@ -11,9 +11,9 @@ public record MensagemResponse(
         String clientMessageId,
         String texto,
         String estado,
-        LocalDateTime enviadaClienteEm,
-        LocalDateTime criadaServidorEm,
-        LocalDateTime atualizadaEm,
+        Instant enviadaClienteEm,
+        Instant criadaServidorEm,
+        Instant atualizadaEm,
         long versaoEntidade,
         List<MensagemReferenciaResponse> referencias,
         List<MensagemAnexoResponse> anexos,
