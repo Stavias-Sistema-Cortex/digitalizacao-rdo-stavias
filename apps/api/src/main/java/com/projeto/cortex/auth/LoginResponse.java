@@ -14,4 +14,9 @@ public record LoginResponse(
                 novoToken, colaboradorId, nome, cpfMascarado, perfil, grupo, papelAcesso
         );
     }
+
+    @Override
+    public String toString() {
+        return "LoginResponse[authentication=REDACTED]";
+    }
 }
