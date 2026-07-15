@@ -94,7 +94,7 @@ export async function apiFetch(
   const session = getSession();
   const authHeader = session?.token ? `Bearer ${session.token}` : undefined;
 
-  let response = await rawFetch(path, options, authHeader);
+  const response = await rawFetch(path, options, authHeader);
 
   // Um 401 prova que o token não é mais aceito. Em vez de reter o CPF como
   // senha para uma renovação silenciosa, encerra a sessão e pede autenticação

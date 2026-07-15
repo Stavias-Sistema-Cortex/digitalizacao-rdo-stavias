@@ -40,7 +40,8 @@ export function getSession(): AuthSession | null {
     // Sessões antigas podem conter o CPF usado para uma renovação silenciosa.
     // A credencial não é necessária para manter a sessão e nunca volta a ser
     // exposta ao restante do app.
-    const { cpf: _legacyCpf, ...session } = parsed;
+    const session = { ...parsed };
+    delete session.cpf;
     if (Object.hasOwn(parsed, "cpf")) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     }
@@ -51,9 +52,10 @@ export function getSession(): AuthSession | null {
 }
 
 export function setSession(session: AuthSession): void {
-  const { cpf: _legacyCpf, ...safeSession } = session as AuthSession & {
+  const safeSession = { ...(session as AuthSession & {
     cpf?: unknown;
-  };
+  }) };
+  delete safeSession.cpf;
   localStorage.setItem(SESSION_KEY, JSON.stringify(safeSession));
   window.dispatchEvent(
     new Event(AUTH_SESSION_CHANGED_EVENT),
