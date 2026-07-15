@@ -3,6 +3,7 @@ package com.projeto.cortex.sync;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.memory.OperationalEventTraceContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,13 +42,23 @@ class SyncServiceHandlerDelegationTest {
                 .put("id", "equipe-1")
                 .put("nome", "Equipe Norte")
                 .put("versaoEntidade", 1);
-        when(handler.apply(any())).thenReturn(new SyncMutationApplied(
-                "EQUIPE",
-                "equipe-1",
-                1,
-                91,
-                domainResult
-        ));
+        when(handler.apply(any())).thenAnswer(invocation -> {
+            OperationalEventTraceContext.Trace trace =
+                    OperationalEventTraceContext.current().orElseThrow();
+            assertThat(trace.origin()).isEqualTo("OFFLINE");
+            assertThat(trace.syncStatus()).isEqualTo("SYNCED");
+            assertThat(trace.actorId()).isEqualTo("alfa-1");
+            assertThat(trace.deviceId()).isEqualTo("device-1");
+            assertThat(trace.correlationId()).isEqualTo("mutation-1");
+            assertThat(trace.causationId()).isEqualTo("mutation-1");
+            return new SyncMutationApplied(
+                    "EQUIPE",
+                    "equipe-1",
+                    1,
+                    91,
+                    domainResult
+            );
+        });
 
         when(currentUserService.requireUserId()).thenReturn("alfa-1");
         when(jdbcTemplate.queryForObject(
@@ -98,6 +109,7 @@ class SyncServiceHandlerDelegationTest {
             assertThat(result.resultado()).isEqualTo(domainResult);
         });
         verify(handler).apply(mutation);
+        assertThat(OperationalEventTraceContext.current()).isEmpty();
     }
 
     @Test
