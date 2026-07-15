@@ -300,7 +300,8 @@ class AuthRateLimiterMysqlIntegrationTest {
                         new JdbcTemplate(dataSource)
                 ),
                 new OtpCryptography(TEST_KEY, new SecureRandom()),
-                policy
+                policy,
+                true
         );
     }
 

@@ -35,7 +35,8 @@ class AuthRateLimiterTest {
         AuthRateLimiter limiter = new AuthRateLimiter(
                 buckets,
                 cryptography,
-                policy
+                policy,
+                true
         );
 
         assertThat(limiter.allow("11144477735", "203.0.113.7")).isTrue();
@@ -82,7 +83,8 @@ class AuthRateLimiterTest {
         AuthRateLimiter limiter = new AuthRateLimiter(
                 buckets,
                 cryptography,
-                policy
+                policy,
+                true
         );
 
         assertThat(limiter.allow(
@@ -131,7 +133,8 @@ class AuthRateLimiterTest {
         AuthRateLimiter limiter = new AuthRateLimiter(
                 buckets,
                 cryptography,
-                policy
+                policy,
+                true
         );
 
         assertThat(limiter.allow(
@@ -158,7 +161,8 @@ class AuthRateLimiterTest {
         AuthRateLimiter limiter = new AuthRateLimiter(
                 buckets,
                 cryptography,
-                policy
+                policy,
+                true
         );
 
         assertThat(limiter.allow(
@@ -189,7 +193,8 @@ class AuthRateLimiterTest {
         AuthRateLimiter limiter = new AuthRateLimiter(
                 buckets,
                 cryptography,
-                policy
+                policy,
+                true
         );
 
         assertThat(limiter.allow("11144477735", "203.0.113.7"))
@@ -209,5 +214,36 @@ class AuthRateLimiterTest {
         assertThat(globalKeys.getAllValues())
                 .hasSize(2)
                 .doesNotHaveDuplicates();
+    }
+
+    @Test
+    void disabledLocalRateLimitNeverCreatesOrConsumesBuckets() {
+        RateLimitBucketRepository buckets = mock(
+                RateLimitBucketRepository.class
+        );
+        OtpPolicy policy = new OtpPolicy(600, 5, 5, 100, 900);
+        OtpCryptography cryptography = new OtpCryptography(
+                "test-only-otp-hmac-key-material-00000001".getBytes(),
+                new SecureRandom()
+        );
+        AuthRateLimiter limiter = new AuthRateLimiter(
+                buckets,
+                cryptography,
+                policy,
+                false
+        );
+
+        assertThat(limiter.allowCpfLogin(
+                "11144477735",
+                "203.0.113.7"
+        )).isTrue();
+        assertThat(limiter.allow(
+                "11144477735",
+                "203.0.113.7"
+        )).isTrue();
+
+        verify(buckets, never()).hasCapacity(anyString(), eq(100), eq(900));
+        verify(buckets, never()).consume(anyList(), eq(5), eq(900));
+        verify(buckets, never()).consume(anyList(), eq(100), eq(900));
     }
 }
