@@ -8,7 +8,10 @@ import {
   CORTEX_DATABASE_NAME,
   getCortexDb,
 } from "./cortexDb";
-import { bindLocalDataToUser } from "./localDataScope";
+import {
+  bindLocalDataToUser,
+  clearUserScopedLocalStorage,
+} from "./localDataScope";
 
 async function resetDatabase(): Promise<void> {
   await closeCortexDb();
@@ -19,6 +22,21 @@ beforeEach(resetDatabase);
 afterEach(resetDatabase);
 
 describe("bindLocalDataToUser", () => {
+  it("remove o histórico auxiliar da StavIA ao encerrar ou trocar a sessão", () => {
+    const removed: string[] = [];
+
+    clearUserScopedLocalStorage({
+      removeItem(key: string) {
+        removed.push(key);
+      },
+    });
+
+    expect(removed).toEqual([
+      "cortex:stavia:chat:operacional",
+      "cortex:stavia:last-context",
+    ]);
+  });
+
   it("preserva o cache da mesma identidade", async () => {
     await bindLocalDataToUser("user-1");
     const database = await getCortexDb();

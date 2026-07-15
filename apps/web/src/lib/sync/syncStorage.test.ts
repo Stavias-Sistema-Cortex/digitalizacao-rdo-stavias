@@ -91,28 +91,19 @@ const baseMutation = {
 } as OutboxMutationRecord;
 
 describe("mutationAfterResolvableConflict", () => {
-  it("reabre conflito com a versão atual do servidor como base", () => {
-    const updated = mutationAfterResolvableConflict(
+  it("não reenvia automaticamente uma substituição integral de RDO", () => {
+    expect(
+      mutationAfterResolvableConflict(
       baseMutation,
       "2026-07-02T12:00:00.000Z",
       "m-1-retry",
-    );
-
-    expect(updated).not.toBeNull();
-    expect(updated?.clientMutationId).toBe("m-1-retry");
-    expect(updated?.status).toBe("PENDING");
-    expect(updated?.baseVersao).toBe(12);
-    expect(updated?.tentativas).toBe(0);
-    expect(updated?.ultimaTentativaEm).toBeNull();
-    expect(updated?.conflito).toBeNull();
-    expect(updated?.criadaNoClienteEm).toBe(
-      "2026-07-02T12:00:00.000Z",
-    );
-    expect(updated?.updatedAt).toBe("2026-07-02T12:00:00.000Z");
+      ),
+    ).toBeNull();
   });
 
-  it("mantém atualização com base zero para confirmar se o RDO existe", () => {
-    const updated = mutationAfterResolvableConflict(
+  it("não transforma conflito de RDO ausente em uma atualização pendente", () => {
+    expect(
+      mutationAfterResolvableConflict(
       {
         ...baseMutation,
         conflito: {
@@ -124,14 +115,8 @@ describe("mutationAfterResolvableConflict", () => {
       },
       "2026-07-02T12:00:00.000Z",
       "m-1-retry",
-    );
-
-    expect(updated).not.toBeNull();
-    expect(updated?.clientMutationId).toBe("m-1-retry");
-    expect(updated?.operacao).toBe("ATUALIZAR_RDO_RASCUNHO");
-    expect(updated?.baseVersao).toBe(0);
-    expect(updated?.status).toBe("PENDING");
-    expect(updated?.conflito).toBeNull();
+      ),
+    ).toBeNull();
   });
 
   it("mantém bloqueado quando o conflito não informa versão atual válida", () => {

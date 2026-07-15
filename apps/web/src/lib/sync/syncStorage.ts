@@ -1047,6 +1047,18 @@ export function mutationAfterResolvableConflict(
     return null;
   }
 
+  // Uma atualização de RDO substitui o rascunho inteiro. Reaproveitar seu
+  // payload antigo com uma versão nova do servidor apagaria alterações feitas
+  // por outra pessoa. Esse conflito precisa de revisão explícita na tela de
+  // RDO; somente mutações que não têm esse semântico de substituição podem ser
+  // reenfileiradas automaticamente.
+  if (
+    mutation.entidadeTipo === "RDO" &&
+    mutation.operacao === "ATUALIZAR_RDO_RASCUNHO"
+  ) {
+    return null;
+  }
+
   const serverVersion = conflictServerVersion(mutation);
   if (serverVersion === null) {
     return null;
