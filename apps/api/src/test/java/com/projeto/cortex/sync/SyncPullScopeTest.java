@@ -2,10 +2,7 @@ package com.projeto.cortex.sync;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.rdos.RdoDraftUpdateService;
-import com.projeto.cortex.rdos.RdoQueryService;
-import com.projeto.cortex.rdos.RdoService;
-import com.projeto.cortex.rdos.RdoWorkflowService;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -26,11 +23,8 @@ class SyncPullScopeTest {
             mock(JdbcTemplate.class),
             new ObjectMapper(),
             mock(TransactionTemplate.class),
-            mock(RdoService.class),
-            mock(RdoDraftUpdateService.class),
-            mock(RdoWorkflowService.class),
-            mock(RdoQueryService.class),
-            mock(CurrentUserService.class)
+            mock(CurrentUserService.class),
+            List.of()
     );
 
     @Test

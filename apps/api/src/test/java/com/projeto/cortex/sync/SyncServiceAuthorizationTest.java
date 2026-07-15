@@ -6,6 +6,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
+import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
 import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.time.LocalDateTime;
@@ -21,6 +22,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * §14.20: a sincronização rejeita mutações cujo obraId o usuário não tem
@@ -32,12 +34,12 @@ class SyncServiceAuthorizationTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RdoService rdoService = mock(RdoService.class);
+    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final CurrentUserService currentUserService =
             mock(CurrentUserService.class);
-    private final SyncService service = new SyncService(
-            mock(JdbcTemplate.class),
+    private final RdoSyncMutationHandler handler = new RdoSyncMutationHandler(
+            jdbcTemplate,
             objectMapper,
-            mock(TransactionTemplate.class),
             rdoService,
             mock(RdoDraftUpdateService.class),
             mock(RdoWorkflowService.class),
@@ -61,7 +63,7 @@ class SyncServiceAuthorizationTest {
                 "Você não possui permissão para acessar esta obra."
         )).when(currentUserService).requireWorksiteAccess("obra-proibida");
 
-        assertThatThrownBy(() -> service.aplicarOperacao(criarRdo("obra-proibida")))
+        assertThatThrownBy(() -> handler.apply(criarRdo("obra-proibida")))
                 .isInstanceOf(ResponseStatusException.class);
 
         verify(rdoService, never()).criarRascunho(any(RdoCreateRequest.class));
@@ -69,7 +71,23 @@ class SyncServiceAuthorizationTest {
 
     @Test
     void aplicaMutacaoNaObraAutorizada() {
-        service.aplicarOperacao(criarRdo("obra-vinculada"));
+        RdoResponse response = mock(RdoResponse.class);
+        when(response.id()).thenReturn("rdo-1");
+        when(rdoService.criarRascunho(any(RdoCreateRequest.class))).thenReturn(response);
+        when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("SELECT versao_entidade"),
+                org.mockito.ArgumentMatchers.eq(Long.class),
+                org.mockito.ArgumentMatchers.eq("RDO"),
+                org.mockito.ArgumentMatchers.eq("rdo-1")
+        )).thenReturn(1L);
+        when(jdbcTemplate.queryForObject(
+                org.mockito.ArgumentMatchers.contains("SELECT ev.commit_seq"),
+                org.mockito.ArgumentMatchers.eq(Long.class),
+                org.mockito.ArgumentMatchers.eq("RDO"),
+                org.mockito.ArgumentMatchers.eq("rdo-1")
+        )).thenReturn(1L);
+
+        handler.apply(criarRdo("obra-vinculada"));
 
         verify(currentUserService).requireWorksiteAccess("obra-vinculada");
         verify(rdoService).criarRascunho(any(RdoCreateRequest.class));

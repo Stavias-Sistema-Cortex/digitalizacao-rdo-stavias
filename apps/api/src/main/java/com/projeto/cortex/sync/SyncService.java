@@ -19,14 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
-import com.projeto.cortex.rdos.RdoCreateRequest;
-import com.projeto.cortex.rdos.RdoDraftUpdateService;
-import com.projeto.cortex.rdos.RdoQueryService;
-import com.projeto.cortex.rdos.RdoResponse;
-import com.projeto.cortex.rdos.RdoService;
-import com.projeto.cortex.rdos.RdoWorkflowService;
 
 @Service
 public class SyncService {
@@ -35,12 +28,6 @@ public class SyncService {
     private static final int MAX_LIMIT = 500;
     private static final int MAX_MUTACOES_POR_PUSH = 100;
 
-    private static final Set<String> OPERACOES_SUPORTADAS = Set.of(
-            "CRIAR_RDO",
-            "ATUALIZAR_RDO_RASCUNHO",
-            "ENVIAR_RDO"
-    );
-
     private static final Set<String> OPERACOES_VALIDAS_NO_BANCO = Set.of(
             "CRIAR_RDO",
             "ATUALIZAR_RDO_RASCUNHO",
@@ -48,36 +35,33 @@ public class SyncService {
             "CANCELAR_RDO",
             "CRIAR_OBRA",
             "ATUALIZAR_OBRA",
+            "CRIAR_EQUIPE",
+            "ATUALIZAR_EQUIPE",
+            "ARQUIVAR_EQUIPE",
+            "ADICIONAR_MEMBRO_EQUIPE",
+            "ATUALIZAR_MEMBRO_EQUIPE",
+            "ENCERRAR_MEMBRO_EQUIPE",
             "OUTRA"
     );
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
-    private final RdoService rdoService;
-    private final RdoDraftUpdateService rdoDraftUpdateService;
-    private final RdoWorkflowService rdoWorkflowService;
-    private final RdoQueryService rdoQueryService;
     private final CurrentUserService currentUserService;
+    private final SyncMutationHandlerRegistry handlerRegistry;
 
     public SyncService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             TransactionTemplate transactionTemplate,
-            RdoService rdoService,
-            RdoDraftUpdateService rdoDraftUpdateService,
-            RdoWorkflowService rdoWorkflowService,
-            RdoQueryService rdoQueryService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            List<SyncMutationHandler> mutationHandlers
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.transactionTemplate = transactionTemplate;
-        this.rdoService = rdoService;
-        this.rdoDraftUpdateService = rdoDraftUpdateService;
-        this.rdoWorkflowService = rdoWorkflowService;
-        this.rdoQueryService = rdoQueryService;
         this.currentUserService = currentUserService;
+        this.handlerRegistry = new SyncMutationHandlerRegistry(mutationHandlers);
     }
 
     public SyncPullResponse pull(
@@ -441,17 +425,13 @@ public class SyncService {
             String dispositivoId,
             SyncPushRequest.MutacaoCliente mutacao
     ) {
-        validarBaseVersao(mutacao);
-
-        RdoResponse response = aplicarOperacao(mutacao);
-        long commitSeq = commitSeqEntidade("RDO", response.id());
-        long versaoEntidade = versaoAtualEntidade(
-                "RDO",
-                response.id()
-        );
-
-        ObjectNode resultado = objectMapper.valueToTree(response);
-        resultado.put("versaoEntidade", versaoEntidade);
+        SyncMutationHandler handler = handlerRegistry.require(mutacao.operacao());
+        validarBaseVersao(mutacao, handler);
+        SyncMutationApplied applied = handler.apply(mutacao);
+        validarResultadoAplicado(mutacao, applied);
+        JsonNode resultado = applied.result() == null
+                ? objectMapper.createObjectNode()
+                : applied.result();
 
         jdbcTemplate.update(
                 """
@@ -468,9 +448,9 @@ public class SyncService {
                 WHERE dispositivo_id = ?
                   AND client_mutation_id = ?
                 """,
-                "RDO",
-                response.id(),
-                commitSeq,
+                applied.entityType(),
+                applied.entityId(),
+                applied.commitSeq(),
                 toJson(resultado),
                 dispositivoId,
                 mutacao.clientMutationId()
@@ -479,10 +459,10 @@ public class SyncService {
         return new SyncPushResponse.ResultadoMutacao(
                 mutacao.clientMutationId(),
                 "APLICADA",
-                "RDO",
-                response.id(),
+                applied.entityType(),
+                applied.entityId(),
                 mutacao.operacao(),
-                commitSeq,
+                applied.commitSeq(),
                 resultado,
                 objectMapper.createObjectNode(),
                 null
@@ -689,39 +669,11 @@ public class SyncService {
         );
     }
 
-    // Visível no pacote para teste de autorização do sync (§14.20).
-    RdoResponse aplicarOperacao(SyncPushRequest.MutacaoCliente mutacao) {
-        return switch (mutacao.operacao()) {
-            case "CRIAR_RDO" -> {
-                RdoCreateRequest request = toValue(mutacao.payload(), RdoCreateRequest.class);
-                currentUserService.requireWorksiteAccess(request.obraId());
-                if (request.id() != null && !request.id().isBlank() && rdoExiste(request.id())) {
-                    currentUserService.requireRdoAccess(request.id());
-                    yield rdoQueryService.buscarPorId(request.id());
-                }
-                yield rdoService.criarRascunho(request);
-            }
-            case "ATUALIZAR_RDO_RASCUNHO" -> {
-                String entidadeId = exigirEntidadeId(mutacao);
-                currentUserService.requireRdoAccess(entidadeId);
-                RdoCreateRequest request = toValue(mutacao.payload(), RdoCreateRequest.class);
-                currentUserService.requireWorksiteAccess(request.obraId());
-                yield rdoDraftUpdateService.atualizarRascunho(entidadeId, request);
-            }
-            case "ENVIAR_RDO" -> {
-                String entidadeId = exigirEntidadeId(mutacao);
-                currentUserService.requireRdoAccess(entidadeId);
-                yield rdoWorkflowService.enviar(entidadeId);
-            }
-            default -> throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Operação não suportada: " + mutacao.operacao()
-            );
-        };
-    }
-
-    private void validarBaseVersao(SyncPushRequest.MutacaoCliente mutacao) {
-        if ("CRIAR_RDO".equals(mutacao.operacao())) {
+    private void validarBaseVersao(
+            SyncPushRequest.MutacaoCliente mutacao,
+            SyncMutationHandler handler
+    ) {
+        if (!handler.requiresBaseVersion(mutacao.operacao())) {
             return;
         }
 
@@ -764,42 +716,6 @@ public class SyncService {
         } catch (EmptyResultDataAccessException exception) {
             return 0;
         }
-    }
-
-    private long commitSeqEntidade(String entidadeTipo, String entidadeId) {
-        Long commitSeq = jdbcTemplate.queryForObject(
-                """
-                SELECT ev.commit_seq
-                FROM cortex_estado_entidade e
-                JOIN cortex_evento_operacional ev
-                    ON ev.sequencia = e.ultimo_evento_seq
-                WHERE e.tipo_entidade = ?
-                  AND e.entidade_id = ?
-                """,
-                Long.class,
-                entidadeTipo,
-                entidadeId
-        );
-
-        if (commitSeq == null) {
-            throw new IllegalStateException("Evento da entidade não encontrado para o cursor de sync.");
-        }
-
-        return commitSeq;
-    }
-
-    private boolean rdoExiste(String rdoId) {
-        Integer total = jdbcTemplate.queryForObject(
-                """
-                SELECT COUNT(*)
-                FROM rdo
-                WHERE id = ?
-                """,
-                Integer.class,
-                rdoId
-        );
-
-        return total != null && total > 0;
     }
 
     private SyncPushResponse.ResultadoMutacao buscarResultadoMutacaoExistenteOuNull(
@@ -951,21 +867,45 @@ public class SyncService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "operacao é obrigatória.");
         }
 
-        if (!OPERACOES_SUPORTADAS.contains(mutacao.operacao())) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Operação não suportada pelo sync push: " + mutacao.operacao()
-            );
-        }
+        handlerRegistry.require(mutacao.operacao());
 
         if (!"CRIAR_RDO".equals(mutacao.operacao())) {
             if (mutacao.entidadeTipo() == null || mutacao.entidadeTipo().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "entidadeTipo é obrigatório.");
             }
 
-            if (!"RDO".equals(mutacao.entidadeTipo())) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Apenas entidadeTipo RDO é suportado agora.");
-            }
+        }
+    }
+
+    private void validarResultadoAplicado(
+            SyncPushRequest.MutacaoCliente mutacao,
+            SyncMutationApplied applied
+    ) {
+        if (applied == null
+                || applied.entityType() == null
+                || applied.entityType().isBlank()
+                || applied.entityId() == null
+                || applied.entityId().isBlank()
+                || applied.commitSeq() <= 0) {
+            throw new IllegalStateException("Handler retornou resultado de sync inválido.");
+        }
+
+        if (mutacao.entidadeTipo() != null
+                && !mutacao.entidadeTipo().isBlank()
+                && !mutacao.entidadeTipo().equals(applied.entityType())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "entidadeTipo não corresponde ao resultado da operação."
+            );
+        }
+
+        if (mutacao.entidadeId() != null
+                && !mutacao.entidadeId().isBlank()
+                && !mutacao.entidadeId().equals(applied.entityId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "entidadeId não corresponde ao resultado da operação."
+            );
         }
     }
 
@@ -1019,18 +959,6 @@ public class SyncService {
             return objectMapper.writeValueAsString(jsonNode);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("JSON inválido.", exception);
-        }
-    }
-
-    private <T> T toValue(JsonNode jsonNode, Class<T> type) {
-        try {
-            if (jsonNode == null || jsonNode.isNull()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "payload é obrigatório.");
-            }
-
-            return objectMapper.treeToValue(jsonNode, type);
-        } catch (JsonProcessingException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "payload inválido para " + type.getSimpleName());
         }
     }
 
