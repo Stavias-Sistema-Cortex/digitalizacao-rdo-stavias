@@ -76,13 +76,13 @@ React 19, TypeScript, Vitest.
 - Modify: `apps/api/pom.xml`
 - Create: corresponding unit tests.
 
-- [ ] Testar XML NF-e com namespaces, chave, emitente, datas e totais.
-- [ ] Testar XXE, XML malformado, chave inválida e total divergente.
-- [ ] Testar PDF textual; preservar página/trecho/confiança.
-- [ ] Testar imagem e PDF digitalizado com provider OCR fake e indisponível.
-- [ ] Recalcular `bruto - desconto + acrescimo - retencoes`.
-- [ ] Nunca marcar autorização fiscal como confirmada.
-- [ ] Commit: `feat(finance): extract auditable fiscal candidates`.
+- [x] Testar XML NF-e com namespaces, chave, emitente, datas e totais.
+- [x] Testar XXE, XML malformado, chave inválida e total divergente.
+- [x] Testar PDF textual; preservar página/trecho/confiança.
+- [x] Testar imagem e PDF digitalizado com provider OCR fake e indisponível.
+- [x] Recalcular `bruto - desconto + acrescimo - retencoes`.
+- [x] Nunca marcar autorização fiscal como confirmada.
+- [x] Commit: `feat(finance): extract auditable fiscal candidates`.
 
 ### Task 4: Expor upload idempotente e vínculo integral
 
