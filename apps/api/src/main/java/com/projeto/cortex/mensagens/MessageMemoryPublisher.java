@@ -261,19 +261,66 @@ public class MessageMemoryPublisher {
         state.put("id", message.id());
         state.put("conversaId", message.conversaId());
         state.put("remetenteId", message.remetenteId());
+        state.put("remetenteNome", message.remetenteNome());
+        state.put("clientMessageId", message.clientMessageId());
         state.put("texto", message.texto());
         state.put("estado", message.estado());
         state.put("enviadaClienteEm", message.enviadaClienteEm());
         state.put("criadaServidorEm", message.criadaServidorEm());
+        state.put("atualizadaEm", message.atualizadaEm());
         state.put("referencias", message.referencias().stream()
-                .map(reference -> Map.of(
-                        "tipo", reference.tipoObjeto(),
-                        "id", reference.objetoId()
-                ))
+                .map(this::referenceState)
                 .toList());
-        state.put("anexoIds", message.anexos().stream()
-                .map(MensagemAnexoResponse::id)
+        state.put("anexos", message.anexos().stream()
+                .map(this::attachmentState)
                 .toList());
+        state.put("recibos", message.recibos().stream()
+                .map(this::receiptState)
+                .toList());
+        return state;
+    }
+
+    private Map<String, Object> referenceState(
+            MensagemReferenciaResponse reference
+    ) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("id", reference.id());
+        state.put("mensagemId", reference.mensagemId());
+        state.put("tipoObjeto", reference.tipoObjeto());
+        state.put("objetoId", reference.objetoId());
+        state.put("obraId", reference.obraId());
+        state.put("criadoEm", reference.criadoEm());
+        return state;
+    }
+
+    private Map<String, Object> attachmentState(
+            MensagemAnexoResponse attachment
+    ) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("id", attachment.id());
+        state.put("mensagemId", attachment.mensagemId());
+        state.put("clientAttachmentId", attachment.clientAttachmentId());
+        state.put("nomeOriginal", attachment.nomeOriginal());
+        state.put("nomeSeguro", attachment.nomeSeguro());
+        state.put("mimeType", attachment.mimeType());
+        state.put("tamanhoBytes", attachment.tamanhoBytes());
+        state.put("hashSha256", attachment.hashSha256());
+        state.put("status", attachment.status());
+        state.put("ultimoErro", attachment.ultimoErro());
+        state.put("criadoEm", attachment.criadoEm());
+        state.put("atualizadoEm", attachment.atualizadoEm());
+        state.put("disponivelEm", attachment.disponivelEm());
+        state.put("versaoEntidade", attachment.versaoEntidade());
+        return state;
+    }
+
+    private Map<String, Object> receiptState(MensagemReciboResponse receipt) {
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("id", receipt.id());
+        state.put("mensagemId", receipt.mensagemId());
+        state.put("colaboradorId", receipt.colaboradorId());
+        state.put("entregueEm", receipt.entregueEm());
+        state.put("lidaEm", receipt.lidaEm());
         return state;
     }
 

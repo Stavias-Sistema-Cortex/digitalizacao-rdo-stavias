@@ -97,7 +97,14 @@ class MessageMemoryPublisherTest {
                 .containsEntry("worksiteId", "obra-1")
                 .doesNotContainKeys("storageKey", "caminho", "conteudo");
         assertThat(payload.get("afterState").toString())
-                .contains("Frente liberada", "attachment-1")
+                .contains(
+                        "Frente liberada",
+                        "client-message-1",
+                        "Beta",
+                        "reference-1",
+                        "attachment-1",
+                        "image/jpeg"
+                )
                 .doesNotContain("storageKey", "caminho", "conteudo");
     }
 

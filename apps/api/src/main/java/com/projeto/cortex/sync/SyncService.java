@@ -84,7 +84,8 @@ public class SyncService {
         // autorizadas (§13). Alfa recebe tudo; Beta recebe suas obras + catálogos
         // globais de referência, nunca eventos confidenciais de outras obras.
         FiltroPull filtro = filtroPorEscopo(
-                currentUserService.allowedObraIds(currentUserId)
+                currentUserService.allowedObraIds(currentUserId),
+                currentUserId
         );
 
         List<Object> parametros = new ArrayList<>();
@@ -161,7 +162,10 @@ public class SyncService {
      * referência — nunca eventos confidenciais de outras obras nem dados
      * pessoais. Visível no pacote para teste.
      */
-    FiltroPull filtroPorEscopo(Optional<Set<String>> obrasAutorizadas) {
+    FiltroPull filtroPorEscopo(
+            Optional<Set<String>> obrasAutorizadas,
+            String currentUserId
+    ) {
         if (obrasAutorizadas.isEmpty()) {
             return new FiltroPull("", List.of());
         }
@@ -171,9 +175,11 @@ public class SyncService {
         StringBuilder escopo = new StringBuilder();
 
         if (!obras.isEmpty()) {
-            escopo.append("obra_id IN (")
+            escopo.append("(obra_id IN (")
                     .append(placeholders(obras.size()))
-                    .append(")");
+                    .append(") AND tipo_entidade NOT IN (")
+                    .append("'CONVERSA','PARTICIPACAO_CONVERSA',")
+                    .append("'MENSAGEM','MENSAGEM_ANEXO','RECIBO_MENSAGEM'))");
             parametros.addAll(obras);
         }
 
@@ -184,6 +190,54 @@ public class SyncService {
                 .append(placeholders(EVENTOS_REFERENCIA_GLOBAL.size()))
                 .append("))");
         parametros.addAll(EVENTOS_REFERENCIA_GLOBAL);
+
+        escopo.append(" OR (")
+                .append("(tipo_entidade = 'CONVERSA' AND EXISTS (")
+                .append("SELECT 1 FROM conversa_participante scope_cp ")
+                .append("WHERE scope_cp.conversa_id = entidade_id ")
+                .append("AND scope_cp.colaborador_id = ? ")
+                .append("AND scope_cp.status = 'ATIVO' ")
+                .append("AND scope_cp.saiu_em IS NULL)) OR ")
+                .append("(tipo_entidade = 'PARTICIPACAO_CONVERSA' AND EXISTS (")
+                .append("SELECT 1 FROM conversa_participante scope_target ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_target.conversa_id ")
+                .append("WHERE scope_target.id = entidade_id ")
+                .append("AND scope_cp.colaborador_id = ? ")
+                .append("AND scope_cp.status = 'ATIVO' ")
+                .append("AND scope_cp.saiu_em IS NULL)) OR ")
+                .append("(tipo_entidade = 'MENSAGEM' AND EXISTS (")
+                .append("SELECT 1 FROM mensagem scope_m ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_m.conversa_id ")
+                .append("WHERE scope_m.id = entidade_id ")
+                .append("AND scope_cp.colaborador_id = ? ")
+                .append("AND scope_cp.status = 'ATIVO' ")
+                .append("AND scope_cp.saiu_em IS NULL)) OR ")
+                .append("(tipo_entidade = 'MENSAGEM_ANEXO' AND EXISTS (")
+                .append("SELECT 1 FROM mensagem_anexo scope_a ")
+                .append("JOIN mensagem scope_m ON scope_m.id = scope_a.mensagem_id ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_m.conversa_id ")
+                .append("WHERE scope_a.id = entidade_id ")
+                .append("AND scope_cp.colaborador_id = ? ")
+                .append("AND scope_cp.status = 'ATIVO' ")
+                .append("AND scope_cp.saiu_em IS NULL)) OR ")
+                .append("(tipo_entidade = 'RECIBO_MENSAGEM' AND EXISTS (")
+                .append("SELECT 1 FROM mensagem_recibo scope_r ")
+                .append("JOIN mensagem scope_m ON scope_m.id = scope_r.mensagem_id ")
+                .append("JOIN conversa_participante scope_cp ")
+                .append("ON scope_cp.conversa_id = scope_m.conversa_id ")
+                .append("WHERE scope_r.id = entidade_id ")
+                .append("AND scope_cp.colaborador_id = ? ")
+                .append("AND scope_cp.status = 'ATIVO' ")
+                .append("AND scope_cp.saiu_em IS NULL)))");
+        String normalizedUserId = currentUserId == null
+                ? ""
+                : currentUserId.trim();
+        for (int index = 0; index < 5; index++) {
+            parametros.add(normalizedUserId);
+        }
 
         return new FiltroPull(" AND (" + escopo + ")", parametros);
     }

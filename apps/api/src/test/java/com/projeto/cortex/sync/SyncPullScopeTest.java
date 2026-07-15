@@ -29,7 +29,10 @@ class SyncPullScopeTest {
 
     @Test
     void alfaRecebeTudoSemFiltro() {
-        SyncService.FiltroPull filtro = service.filtroPorEscopo(Optional.empty());
+        SyncService.FiltroPull filtro = service.filtroPorEscopo(
+                Optional.empty(),
+                "alfa-1"
+        );
 
         assertThat(filtro.condicaoSql()).isEmpty();
         assertThat(filtro.parametros()).isEmpty();
@@ -38,25 +41,41 @@ class SyncPullScopeTest {
     @Test
     void betaFiltraPorObrasVinculadasMaisReferencia() {
         SyncService.FiltroPull filtro =
-                service.filtroPorEscopo(Optional.of(Set.of("obra-1")));
+                service.filtroPorEscopo(
+                        Optional.of(Set.of("obra-1")),
+                        "beta-1"
+                );
 
         assertThat(filtro.condicaoSql())
                 .contains("obra_id IN (?)")
-                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)");
+                .contains("obra_id IS NULL AND tipo_entidade IN (?,?,?,?)")
+                .contains("FROM conversa_participante scope_cp")
+                .contains("scope_cp.colaborador_id = ?")
+                .contains("FROM mensagem scope_m")
+                .contains("FROM mensagem_anexo scope_a")
+                .contains("FROM mensagem_recibo scope_r");
         assertThat(filtro.parametros())
                 .containsExactly(
                         "obra-1",
                         "ATIVO",
                         "EQUIPAMENTO",
                         "SERVICO",
-                        "FUNCAO_OPERACIONAL"
+                        "FUNCAO_OPERACIONAL",
+                        "beta-1",
+                        "beta-1",
+                        "beta-1",
+                        "beta-1",
+                        "beta-1"
                 );
     }
 
     @Test
     void betaSemVinculoRecebeSomenteReferenciaGlobal() {
         SyncService.FiltroPull filtro =
-                service.filtroPorEscopo(Optional.of(Set.of()));
+                service.filtroPorEscopo(
+                        Optional.of(Set.of()),
+                        "beta-1"
+                );
 
         assertThat(filtro.condicaoSql())
                 .doesNotContain("obra_id IN (")
@@ -66,7 +85,12 @@ class SyncPullScopeTest {
                         "ATIVO",
                         "EQUIPAMENTO",
                         "SERVICO",
-                        "FUNCAO_OPERACIONAL"
+                        "FUNCAO_OPERACIONAL",
+                        "beta-1",
+                        "beta-1",
+                        "beta-1",
+                        "beta-1",
+                        "beta-1"
                 );
     }
 }
