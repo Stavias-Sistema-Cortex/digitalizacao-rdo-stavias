@@ -97,7 +97,7 @@ export function filtersToSearchParams(
   }
   const rules = filters.manualRules
     .slice(0, MAX_MANUAL_RULES)
-    .filter(isValidManualRule);
+    .filter(isSupportedManualRule);
   if (rules.length > 0) {
     params.set("fm", filters.manualMode === "ANY" ? "ANY" : "ALL");
     rules.forEach((rule) => params.append("f", [
@@ -134,13 +134,18 @@ function parseManualRule(serialized: string): FinanceManualFilter | null {
     value: value.trim().slice(0, 240),
     secondValue: secondValue.trim().slice(0, 240),
   };
-  return isValidManualRule(candidate) ? candidate : null;
+  return isSupportedManualRule(candidate) ? candidate : null;
 }
 
 export function isValidManualRule(rule: FinanceManualFilter): boolean {
-  const operators = MANUAL_OPERATORS[rule.field];
-  if (!operators?.includes(rule.operator) || !rule.value.trim()) return false;
+  if (!isSupportedManualRule(rule)) return false;
+  if (!rule.value.trim()) return false;
   return rule.operator !== "BETWEEN" || Boolean(rule.secondValue.trim());
+}
+
+function isSupportedManualRule(rule: FinanceManualFilter): boolean {
+  const operators = MANUAL_OPERATORS[rule.field];
+  return Boolean(operators?.includes(rule.operator));
 }
 
 export function manualOperatorsFor(

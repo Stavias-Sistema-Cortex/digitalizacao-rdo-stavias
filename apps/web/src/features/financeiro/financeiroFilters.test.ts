@@ -97,6 +97,25 @@ describe("financeiroFilters", () => {
     expect(financeQueryParams(filters).has("f")).toBe(false);
   });
 
+  it("preserva o rascunho de uma regra manual enquanto o usuário preenche", () => {
+    const filters = filtersFromSearchParams(new URLSearchParams(
+      "obra=obra-1&f=descricao%7CCONTAINS%7C%7C",
+    ));
+
+    expect(filters.manualRules).toEqual([
+      {
+        id: "manual-0",
+        field: "descricao",
+        operator: "CONTAINS",
+        value: "",
+        secondValue: "",
+      },
+    ]);
+    expect(filtersToSearchParams(filters).getAll("f")).toEqual([
+      "descricao|CONTAINS||",
+    ]);
+  });
+
   it("aplica todos ou qualquer filtro somente por campos allowlisted", () => {
     const rows = [
       {
