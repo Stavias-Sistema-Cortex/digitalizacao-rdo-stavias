@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.memory.OperationalEventTraceContext;
 
 @Service
 public class SyncService {
@@ -387,7 +388,7 @@ public class SyncService {
             return transactionTemplate.execute(status -> processarMutacaoAplicavel(dispositivoId, mutacao));
         } catch (DuplicateKeyException exception) {
             return buscarResultadoMutacaoExistente(dispositivoId, mutacao.clientMutationId());
-        } catch (SyncBaseVersionConflictException exception) {
+        } catch (SyncVersionConflictException exception) {
             return registrarConflitoEmNovaTransacao(dispositivoId, mutacao, exception);
         } catch (ResponseStatusException exception) {
             String erro = exception.getReason() == null
@@ -427,7 +428,15 @@ public class SyncService {
     ) {
         SyncMutationHandler handler = handlerRegistry.require(mutacao.operacao());
         validarBaseVersao(mutacao, handler);
-        SyncMutationApplied applied = handler.apply(mutacao);
+        SyncMutationApplied applied;
+        try (OperationalEventTraceContext.Scope ignored =
+                     OperationalEventTraceContext.openOffline(
+                             dispositivoId,
+                             currentUserService.requireUserId(),
+                             mutacao.clientMutationId()
+                     )) {
+            applied = handler.apply(mutacao);
+        }
         validarResultadoAplicado(mutacao, applied);
         JsonNode resultado = applied.result() == null
                 ? objectMapper.createObjectNode()
@@ -510,14 +519,14 @@ public class SyncService {
     private SyncPushResponse.ResultadoMutacao registrarConflitoEmNovaTransacao(
             String dispositivoId,
             SyncPushRequest.MutacaoCliente mutacao,
-            SyncBaseVersionConflictException exception
+            SyncVersionConflictException exception
     ) {
         return transactionTemplate.execute(status -> {
             JsonNode conflito = objectMapper.valueToTree(new ConflitoVersao(
-                    exception.entidadeTipo,
-                    exception.entidadeId,
-                    exception.baseVersao,
-                    exception.versaoAtual
+                    exception.entityType(),
+                    exception.entityId(),
+                    exception.baseVersion(),
+                    exception.currentVersion()
             ));
 
             registrarMutacaoFinalizada(
@@ -689,7 +698,7 @@ public class SyncService {
         long versaoAtual = versaoAtualEntidade(mutacao.entidadeTipo(), entidadeId);
 
         if (versaoAtual != mutacao.baseVersao()) {
-            throw new SyncBaseVersionConflictException(
+            throw new SyncVersionConflictException(
                     mutacao.entidadeTipo(),
                     entidadeId,
                     mutacao.baseVersao(),
@@ -986,23 +995,4 @@ public class SyncService {
     ) {
     }
 
-    private static class SyncBaseVersionConflictException extends RuntimeException {
-        private final String entidadeTipo;
-        private final String entidadeId;
-        private final long baseVersao;
-        private final long versaoAtual;
-
-        private SyncBaseVersionConflictException(
-                String entidadeTipo,
-                String entidadeId,
-                long baseVersao,
-                long versaoAtual
-        ) {
-            super("Conflito de versão.");
-            this.entidadeTipo = entidadeTipo;
-            this.entidadeId = entidadeId;
-            this.baseVersao = baseVersao;
-            this.versaoAtual = versaoAtual;
-        }
-    }
 }

@@ -164,4 +164,78 @@ class SyncServiceHandlerDelegationTest {
         verify(handler, never()).apply(any());
         verify(transactionTemplate, never()).execute(any());
     }
+
+    @Test
+    void domainRaceConflictIsPersistedAsStructuredDiscardedResult() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        TransactionTemplate transactionTemplate = mock(TransactionTemplate.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        SyncMutationHandler handler = mock(SyncMutationHandler.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        when(handler.operations()).thenReturn(Set.of("ATUALIZAR_EQUIPE"));
+        when(handler.requiresBaseVersion("ATUALIZAR_EQUIPE")).thenReturn(true);
+        when(handler.apply(any())).thenThrow(new SyncVersionConflictException(
+                "EQUIPE", "equipe-1", 4, 5
+        ));
+        when(currentUserService.requireUserId()).thenReturn("alfa-1");
+        when(jdbcTemplate.queryForObject(
+                contains("FROM sync_dispositivo"),
+                eq(Integer.class),
+                eq("device-1"),
+                eq("alfa-1")
+        )).thenReturn(1);
+        when(jdbcTemplate.queryForObject(
+                contains("FROM sync_mutacao_cliente"),
+                any(RowMapper.class),
+                eq("device-1"),
+                eq("mutation-conflict")
+        )).thenThrow(new EmptyResultDataAccessException(1));
+        when(jdbcTemplate.queryForObject(
+                contains("FROM cortex_estado_entidade"),
+                eq(Long.class),
+                eq("EQUIPE"),
+                eq("equipe-1")
+        )).thenReturn(4L);
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            TransactionCallback<Object> callback = invocation.getArgument(0);
+            return callback.doInTransaction(mock(TransactionStatus.class));
+        });
+
+        SyncService service = new SyncService(
+                jdbcTemplate,
+                objectMapper,
+                transactionTemplate,
+                currentUserService,
+                List.of(handler)
+        );
+        SyncPushRequest.MutacaoCliente mutation = new SyncPushRequest.MutacaoCliente(
+                "mutation-conflict",
+                "EQUIPE",
+                "equipe-1",
+                "ATUALIZAR_EQUIPE",
+                4L,
+                objectMapper.createObjectNode(),
+                LocalDateTime.of(2026, 7, 15, 14, 30)
+        );
+
+        SyncPushResponse response = service.push(new SyncPushRequest(
+                "device-1",
+                List.of(mutation)
+        ));
+
+        assertThat(response.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("DESCARTADA");
+            assertThat(result.erro()).isEqualTo("Conflito de versão.");
+            assertThat(result.conflito().path("entidadeTipo").asText()).isEqualTo("EQUIPE");
+            assertThat(result.conflito().path("entidadeId").asText()).isEqualTo("equipe-1");
+            assertThat(result.conflito().path("baseVersao").asLong()).isEqualTo(4);
+            assertThat(result.conflito().path("versaoAtual").asLong()).isEqualTo(5);
+        });
+        verify(jdbcTemplate).update(
+                contains("ON DUPLICATE KEY UPDATE"),
+                any(Object[].class)
+        );
+    }
 }
