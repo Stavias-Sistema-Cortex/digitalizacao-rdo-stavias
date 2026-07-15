@@ -54,6 +54,14 @@ class StaviaIntentClassifierTest {
     }
 
     @Test
+    void shouldRouteMapAndMessageQuestionsToScopedOperationalIntents() {
+        assertThat(classifier.classify("O que existe no mapa desta obra?"))
+                .isEqualTo(StaviaIntent.CONSULTAR_OBRA);
+        assertThat(classifier.classify("Resuma as mensagens e anexos da conversa."))
+                .isEqualTo(StaviaIntent.CONSULTAR_HISTORICO);
+    }
+
+    @Test
     void shouldClassifyPortugueseIntentVariationsDistinctly() {
         assertThat(
                 classifier.classify(

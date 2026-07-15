@@ -38,7 +38,14 @@ public class StaviaIntentClassifier {
                             "editado",
                             "edicoes",
                             "ultimas 24",
-                            "aconteceu"
+                            "aconteceu",
+                            "mensagem",
+                            "mensagens",
+                            "conversa",
+                            "conversas",
+                            "chat",
+                            "arquivo compartilhado",
+                            "anexo da conversa"
                     ),
                     rule(
                             StaviaIntent.CONSULTAR_RECEITA_EM_RISCO,
@@ -154,6 +161,16 @@ public class StaviaIntentClassifier {
                             "listar rdos",
                             "pertencem",
                             "pertence"
+                    ),
+                    rule(
+                            StaviaIntent.CONSULTAR_OBRA,
+                            "mapa",
+                            "geometria",
+                            "dados geograficos",
+                            "perimetro da obra",
+                            "frente de trabalho no mapa",
+                            "ponto operacional",
+                            "coordenada no mapa"
                     ),
                     rule(
                             StaviaIntent.CONSULTAR_EQUIPE,

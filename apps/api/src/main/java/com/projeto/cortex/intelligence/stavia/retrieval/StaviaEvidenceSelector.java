@@ -39,7 +39,8 @@ public class StaviaEvidenceSelector {
             case CONSULTAR_OBRA ->
                     Set.of(
                             StaviaEvidenceTypes.OBRA,
-                            StaviaEvidenceTypes.CONTEXTO_OBRA
+                            StaviaEvidenceTypes.CONTEXTO_OBRA,
+                            StaviaEvidenceTypes.GEOMETRIA
                     );
 
             case CONSULTAR_ESTADO_ATUAL ->
@@ -55,7 +56,8 @@ public class StaviaEvidenceSelector {
 
             case CONSULTAR_HISTORICO ->
                     Set.of(
-                            StaviaEvidenceTypes.EVENTO_OPERACIONAL
+                            StaviaEvidenceTypes.EVENTO_OPERACIONAL,
+                            StaviaEvidenceTypes.MENSAGEM
                     );
 
             case CONSULTAR_RDO ->

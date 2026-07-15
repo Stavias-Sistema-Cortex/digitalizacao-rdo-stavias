@@ -424,6 +424,66 @@ class DeterministicStaviaResponseGeneratorTest {
     }
 
     @Test
+    void shouldExplainPersistedMapObjectsWithIdsAndSources() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion("O que existe no mapa?", "u1", "obra-1"),
+                StaviaIntent.CONSULTAR_OBRA,
+                List.of(new StaviaEvidence(
+                        StaviaEvidenceTypes.GEOMETRIA,
+                        "geo-1",
+                        "Frente de trabalho persistida.",
+                        Instant.parse("2026-07-01T12:00:00Z"),
+                        true,
+                        Map.of(
+                                "geometriaId", "geo-1",
+                                "categoria", "FRENTE_TRABALHO",
+                                "tipoGeometria", "POINT",
+                                "fonte", "OPERACAO"
+                        )
+                ))
+        );
+
+        assertThat(response.text()).contains(
+                "1 geometria operacional vigente",
+                "FRENTE_TRABALHO",
+                "geo-1",
+                "OPERACAO"
+        );
+    }
+
+    @Test
+    void shouldSummarizeOnlyAuthorizedMessageEvidenceWithoutInventingDecisions() {
+        StaviaGeneratedResponse response = generator.generate(
+                new StaviaQuestion("Resuma as mensagens.", "u1", "obra-1"),
+                StaviaIntent.CONSULTAR_HISTORICO,
+                List.of(new StaviaEvidence(
+                        StaviaEvidenceTypes.MENSAGEM,
+                        "msg-1",
+                        "Mensagem autorizada.",
+                        Instant.parse("2026-07-02T13:00:00Z"),
+                        true,
+                        Map.of(
+                                "mensagemId", "msg-1",
+                                "remetenteNome", "Maria",
+                                "enviadaEm", "2026-07-02T10:00:00",
+                                "texto", "Liberar frente após inspeção.",
+                                "referencias", List.of(Map.of("objetoId", "rdo-1")),
+                                "anexos", List.of(Map.of("anexoId", "anexo-1"))
+                        )
+                ))
+        );
+
+        assertThat(response.text()).contains(
+                "1 mensagem autorizada",
+                "msg-1",
+                "Liberar frente após inspeção.",
+                "referências 1",
+                "anexos 1",
+                "participante ativo"
+        );
+    }
+
+    @Test
     void shouldComposeCollaboratorProfileFromLegacyAllocations() {
         StaviaGeneratedResponse response = generator.generate(
                 new StaviaQuestion(

@@ -117,6 +117,16 @@ public class StaviaQueryPlanner {
             return combined;
         }
 
+        StaviaQueryPlan messages = messagePlan(question, normalized);
+        if (messages.planned()) {
+            return messages;
+        }
+
+        StaviaQueryPlan geospatial = geospatialPlan(question, normalized);
+        if (geospatial.planned()) {
+            return geospatial;
+        }
+
         StaviaQueryPlan crossWorksiteAllocation =
                 crossWorksiteAllocationPlan(
                         question,
@@ -684,9 +694,56 @@ public class StaviaQueryPlanner {
                 List.of(),
                 List.of(),
                 List.of(),
-                List.of("mao-de-obra-dos-rdos"),
+                List.of("equipes-configuradas", "mao-de-obra-dos-rdos"),
                 false,
                 false,
+                false
+        );
+    }
+
+    private StaviaQueryPlan messagePlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        if (!containsAny(normalized, "mensagem", "mensagens", "conversa", "chat",
+                "arquivo compartilhado", "anexo da conversa")) {
+            return StaviaQueryPlan.empty();
+        }
+        return new StaviaQueryPlan(
+                QueryDomain.OBRA,
+                QueryOperation.LIST_OBJECTS,
+                entities(question),
+                temporalFilter(normalized, requestsLatest(normalized)),
+                List.of("texto", "remetente", "referencias", "anexos"),
+                List.of("REFERENCIA", "ANEXA"),
+                List.of(),
+                List.of("mensagens-autorizadas"),
+                requestsLatest(normalized),
+                true,
+                false
+        );
+    }
+
+    private StaviaQueryPlan geospatialPlan(
+            StaviaQuestion question,
+            String normalized
+    ) {
+        if (!containsAny(normalized, "mapa", "geometria", "geograf",
+                "perimetro", "frente de trabalho", "ponto operacional",
+                "coordenada")) {
+            return StaviaQueryPlan.empty();
+        }
+        return new StaviaQueryPlan(
+                QueryDomain.OBRA,
+                QueryOperation.LIST_OBJECTS,
+                entities(question),
+                TemporalFilter.none(),
+                List.of("categoria", "tipoGeometria", "objetoRelacionado", "fonte"),
+                List.of("LOCALIZA", "REPRESENTA"),
+                List.of(),
+                List.of("geometrias-operacionais"),
+                false,
+                true,
                 false
         );
     }

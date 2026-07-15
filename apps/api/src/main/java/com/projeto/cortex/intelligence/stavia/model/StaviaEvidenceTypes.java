@@ -95,6 +95,12 @@ public final class StaviaEvidenceTypes {
     public static final String CONTEXTO_OBRA =
             "CONTEXTO_OBRA";
 
+    public static final String GEOMETRIA =
+            "GEOMETRIA";
+
+    public static final String MENSAGEM =
+            "MENSAGEM";
+
     private StaviaEvidenceTypes() {
     }
 }

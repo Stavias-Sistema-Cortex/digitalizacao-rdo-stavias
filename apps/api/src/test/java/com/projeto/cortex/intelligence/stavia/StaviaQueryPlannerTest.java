@@ -20,6 +20,23 @@ class StaviaQueryPlannerTest {
             );
 
     @Test
+    void shouldPlanAuthorizedMessagesAndGeospatialSourcesExplicitly() {
+        StaviaQueryPlan messages = planner.plan(
+                new StaviaQuestion("Resuma as mensagens desta obra.", "u1", "obra-1"),
+                new StaviaClassification(StaviaIntent.CONSULTAR_HISTORICO, 1.0)
+        );
+        StaviaQueryPlan map = planner.plan(
+                new StaviaQuestion("Explique os eventos no mapa.", "u1", "obra-1"),
+                new StaviaClassification(StaviaIntent.CONSULTAR_OBRA, 1.0)
+        );
+
+        assertThat(messages.requiredSources()).containsExactly("mensagens-autorizadas");
+        assertThat(messages.requiresHistory()).isTrue();
+        assertThat(map.requiredSources()).containsExactly("geometrias-operacionais");
+        assertThat(map.domain()).isEqualTo(QueryDomain.OBRA);
+    }
+
+    @Test
     void shouldPlanLatestWeatherAsGenericRdoAttributeQuery() {
         StaviaQueryPlan plan =
                 planner.plan(
@@ -220,7 +237,7 @@ class StaviaQueryPlannerTest {
                         org.assertj.core.groups.Tuple.tuple("ROLE", "operador")
                 );
         assertThat(plan.requiredSources())
-                .containsExactly("mao-de-obra-dos-rdos");
+                .containsExactly("equipes-configuradas", "mao-de-obra-dos-rdos");
     }
 
     @Test

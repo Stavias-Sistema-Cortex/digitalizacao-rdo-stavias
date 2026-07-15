@@ -76,6 +76,26 @@ public class DeterministicStaviaResponseGenerator
                         evidences
                 );
 
+        if (hasEvidenceType(focusedEvidence, StaviaEvidenceTypes.GEOMETRIA)) {
+            return buildResponse(
+                    buildGeospatialAnswer(focusedEvidence),
+                    hasValidatedEvidence(focusedEvidence, StaviaEvidenceTypes.GEOMETRIA)
+                            ? StaviaAnswerType.FATO
+                            : StaviaAnswerType.INFORMACAO_INSUFICIENTE,
+                    focusedEvidence
+            );
+        }
+
+        if (hasEvidenceType(focusedEvidence, StaviaEvidenceTypes.MENSAGEM)) {
+            return buildResponse(
+                    buildMessagingAnswer(focusedEvidence),
+                    hasValidatedEvidence(focusedEvidence, StaviaEvidenceTypes.MENSAGEM)
+                            ? StaviaAnswerType.FATO
+                            : StaviaAnswerType.INFORMACAO_INSUFICIENTE,
+                    focusedEvidence
+            );
+        }
+
         if (intent == StaviaIntent.CONSULTAR_RDO) {
             if (hasEvidenceType(
                     focusedEvidence,
@@ -1777,6 +1797,78 @@ public class DeterministicStaviaResponseGenerator
         }
 
         return successfulPdorAnswer(code, attributes);
+    }
+
+    private String buildGeospatialAnswer(List<StaviaEvidence> evidences) {
+        List<StaviaEvidence> geometries = evidences.stream()
+                .filter(item -> StaviaEvidenceTypes.GEOMETRIA.equals(item.type()))
+                .filter(StaviaEvidence::validated)
+                .toList();
+        if (geometries.isEmpty()) {
+            return "Não encontrei geometria operacional vigente para esta obra. "
+                    + "A Stav.IA não inferiu coordenadas, perímetros ou frentes de trabalho.";
+        }
+        StringBuilder answer = new StringBuilder()
+                .append("Encontrei ")
+                .append(geometries.size())
+                .append(geometries.size() == 1
+                        ? " geometria operacional vigente no mapa:"
+                        : " geometrias operacionais vigentes no mapa:");
+        geometries.stream().limit(20).forEach(item -> answer
+                .append("\n- ")
+                .append(attributeText(item.attributes(), "categoria"))
+                .append(" · ")
+                .append(attributeText(item.attributes(), "tipoGeometria"))
+                .append(" · ID ")
+                .append(attributeText(item.attributes(), "geometriaId"))
+                .append(" · fonte ")
+                .append(attributeText(item.attributes(), "fonte")));
+        answer.append("\n\nA consulta foi limitada à obra autorizada e às geometrias vigentes persistidas.");
+        return answer.toString();
+    }
+
+    private String buildMessagingAnswer(List<StaviaEvidence> evidences) {
+        List<StaviaEvidence> messages = evidences.stream()
+                .filter(item -> StaviaEvidenceTypes.MENSAGEM.equals(item.type()))
+                .filter(StaviaEvidence::validated)
+                .toList();
+        if (messages.isEmpty()) {
+            return "Não encontrei mensagens autorizadas relacionadas a esta obra. "
+                    + "A Stav.IA não inferiu decisões, arquivos ou pendências ausentes.";
+        }
+        StringBuilder answer = new StringBuilder()
+                .append("Encontrei ")
+                .append(messages.size())
+                .append(messages.size() == 1
+                        ? " mensagem autorizada relacionada à obra:"
+                        : " mensagens autorizadas relacionadas à obra:");
+        messages.stream().limit(20).forEach(item -> {
+            Map<String, Object> attributes = item.attributes();
+            answer.append("\n- ")
+                    .append(attributeText(attributes, "remetenteNome"))
+                    .append(" · ID ")
+                    .append(attributeText(attributes, "mensagemId"));
+            String sentAt = attributeText(attributes, "enviadaEm");
+            if (hasText(sentAt)) answer.append(" · ").append(sentAt);
+            String text = attributeText(attributes, "texto");
+            if (hasText(text)) answer.append(": ").append(text);
+            int referenceCount = structuredCount(attributes.get("referencias"));
+            int attachmentCount = structuredCount(attributes.get("anexos"));
+            if (referenceCount > 0) answer.append(" · referências ").append(referenceCount);
+            if (attachmentCount > 0) answer.append(" · anexos ").append(attachmentCount);
+        });
+        answer.append("\n\nSomente conversas em que o usuário é participante ativo foram consultadas.");
+        return answer.toString();
+    }
+
+    private boolean hasValidatedEvidence(List<StaviaEvidence> evidences, String type) {
+        return evidences.stream().anyMatch(item -> type.equals(item.type()) && item.validated());
+    }
+
+    private int structuredCount(Object value) {
+        if (value instanceof JsonNode node && node.isArray()) return node.size();
+        if (value instanceof List<?> list) return list.size();
+        return 0;
     }
 
     private String buildFinancialAnswer(
