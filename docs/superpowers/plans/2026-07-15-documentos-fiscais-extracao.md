@@ -42,11 +42,11 @@ React 19, TypeScript, Vitest.
 - Create: `apps/api/src/test/java/com/projeto/cortex/financeiro/invoice/FinanceFiscalExtractionMigrationTest.java`
 - Create: `apps/api/src/test/java/com/projeto/cortex/pdor/FinanceFiscalExtractionMigrationMysqlIntegrationTest.java`
 
-- [ ] Escrever o contrato falhando para autoria, hashes, job e candidatos.
-- [ ] Implementar V37 com backfill seguro de vínculos legados.
-- [ ] Validar FKs, unicidade idempotente, checks de status e rollback MySQL.
-- [ ] Executar os testes com JDK 21 e MySQL real.
-- [ ] Commit: `feat(finance): persist fiscal extraction traceability`.
+- [x] Escrever o contrato falhando para autoria, hashes, job e candidatos.
+- [x] Implementar V37 com backfill seguro de vínculos legados.
+- [x] Validar FKs, unicidade idempotente, checks de status e rollback MySQL.
+- [x] Executar os testes com JDK 21 e MySQL real.
+- [x] Commit: `feat(finance): persist fiscal extraction traceability`.
 
 ### Task 2: Inspecionar todos os formatos fiscais aceitos
 
