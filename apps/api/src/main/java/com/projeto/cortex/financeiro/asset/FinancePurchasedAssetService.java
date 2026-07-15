@@ -118,7 +118,7 @@ public class FinancePurchasedAssetService {
         List<ResolvedTarget> resolved = resolveTargets(
                 item,
                 request.ativos(),
-                audit.actorId()
+                audit
         );
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         List<PurchasedLinkRecord> fallback = new ArrayList<>();
@@ -287,7 +287,7 @@ public class FinancePurchasedAssetService {
     private List<ResolvedTarget> resolveTargets(
             PurchasedItem item,
             List<PurchasedAssetTarget> targets,
-            String actorId
+            FinanceAuditContext audit
     ) {
         Set<String> assetIds = new LinkedHashSet<>();
         Set<String> newCodes = new LinkedHashSet<>();
@@ -358,7 +358,7 @@ public class FinancePurchasedAssetService {
             }
             FinancialUnitResponse unit = units.ensureAssetUnit(
                     target.asset().id(),
-                    actorId
+                    audit
             );
             resolved.add(new ResolvedTarget(
                     target.sequence(),

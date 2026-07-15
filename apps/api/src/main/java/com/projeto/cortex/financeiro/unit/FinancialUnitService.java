@@ -61,10 +61,22 @@ public class FinancialUnitService {
             CreateFinancialUnitRequest request,
             String actorId
     ) {
+        return createAdministrative(
+                request,
+                FinanceAuditContext.online(actorId, null)
+        );
+    }
+
+    @Transactional
+    public FinancialUnitResponse createAdministrative(
+            CreateFinancialUnitRequest request,
+            FinanceAuditContext rawAudit
+    ) {
         if (request == null) {
             throw badRequest("Dados da unidade administrativa são obrigatórios.");
         }
-        String actor = requireId(actorId, "ator");
+        FinanceAuditContext audit = requireAudit(rawAudit);
+        String actor = audit.actorId();
         String code = requireCode(request.codigo());
         String name = requireName(request.nome());
         if (repository.findByCode(code).isPresent()) {
@@ -77,7 +89,7 @@ public class FinancialUnitService {
             throw conflict("Já existe uma unidade financeira com este código.");
         }
         FinancialUnitRecord created = current(id);
-        projectCreated(created, actor, Map.of());
+        projectCreated(created, audit, Map.of());
         return FinancialUnitResponse.from(created);
     }
 
@@ -86,8 +98,20 @@ public class FinancialUnitService {
             String assetId,
             String actorId
     ) {
+        return ensureAssetUnit(
+                assetId,
+                FinanceAuditContext.online(actorId, null)
+        );
+    }
+
+    @Transactional
+    public FinancialUnitResponse ensureAssetUnit(
+            String assetId,
+            FinanceAuditContext rawAudit
+    ) {
         String normalizedAssetId = requireId(assetId, "ativoId");
-        String actor = requireId(actorId, "ator");
+        FinanceAuditContext audit = requireAudit(rawAudit);
+        String actor = audit.actorId();
         FinancialUnitRecord existing = repository.findByAsset(normalizedAssetId)
                 .orElse(null);
         if (existing != null) {
@@ -109,7 +133,7 @@ public class FinancialUnitService {
                     .orElseThrow(() -> duplicate));
         }
         FinancialUnitRecord created = current(id);
-        projectCreated(created, actor, Map.of("ATIVO", asset.id()));
+        projectCreated(created, audit, Map.of("ATIVO", asset.id()));
         return FinancialUnitResponse.from(created);
     }
 
@@ -118,8 +142,20 @@ public class FinancialUnitService {
             String worksiteId,
             String actorId
     ) {
+        return ensureWorksiteUnit(
+                worksiteId,
+                FinanceAuditContext.online(actorId, null)
+        );
+    }
+
+    @Transactional
+    public FinancialUnitResponse ensureWorksiteUnit(
+            String worksiteId,
+            FinanceAuditContext rawAudit
+    ) {
         String normalizedWorksiteId = requireId(worksiteId, "obraId");
-        String actor = requireId(actorId, "ator");
+        FinanceAuditContext audit = requireAudit(rawAudit);
+        String actor = audit.actorId();
         FinancialUnitRecord existing = repository.findByWorksite(
                 normalizedWorksiteId
         ).orElse(null);
@@ -144,13 +180,13 @@ public class FinancialUnitService {
             ).orElseThrow(() -> duplicate));
         }
         FinancialUnitRecord created = current(id);
-        projectCreated(created, actor, Map.of("OBRA", worksite.id()));
+        projectCreated(created, audit, Map.of("OBRA", worksite.id()));
         return FinancialUnitResponse.from(created);
     }
 
     private void projectCreated(
             FinancialUnitRecord created,
-            String actorId,
+            FinanceAuditContext audit,
             Map<String, String> related
     ) {
         Map<String, Object> newState = Map.of(
@@ -159,7 +195,7 @@ public class FinancialUnitService {
                 "codigo", created.code(),
                 "nome", created.name(),
                 "status", created.status(),
-                "atorId", actorId
+                "atorId", audit.actorId()
         );
         ontology.success(
                 "UNIDADE_FINANCEIRA",
@@ -167,10 +203,27 @@ public class FinancialUnitService {
                 created.name(),
                 "UNIDADE_FINANCEIRA_CRIADA",
                 created.worksiteId(),
-                FinanceAuditContext.online(actorId, null),
+                audit,
                 Map.of(),
                 newState,
                 related
+        );
+    }
+
+    private FinanceAuditContext requireAudit(FinanceAuditContext audit) {
+        if (audit == null) {
+            throw badRequest("Contexto de auditoria é obrigatório.");
+        }
+        String actor = requireId(audit.actorId(), "ator");
+        String origin = audit.origin();
+        if (!"ONLINE".equals(origin) && !"OFFLINE".equals(origin)) {
+            throw badRequest("Origem da auditoria financeira é inválida.");
+        }
+        return new FinanceAuditContext(
+                actor,
+                audit.deviceId(),
+                audit.correlationId(),
+                origin
         );
     }
 

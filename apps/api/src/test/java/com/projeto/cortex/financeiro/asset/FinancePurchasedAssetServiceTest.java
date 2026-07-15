@@ -63,9 +63,15 @@ class FinancePurchasedAssetServiceTest {
         when(repository.findActiveAsset("asset-2")).thenReturn(Optional.of(
                 new AssetRecord("asset-2", "EQ-2", "Rolo", "Máquinas")
         ));
-        when(units.ensureAssetUnit(eq("asset-1"), eq("alfa-1")))
+        when(units.ensureAssetUnit(
+                eq("asset-1"),
+                any(FinanceAuditContext.class)
+        ))
                 .thenReturn(unit("unit-1", "asset-1"));
-        when(units.ensureAssetUnit(eq("asset-2"), eq("alfa-1")))
+        when(units.ensureAssetUnit(
+                eq("asset-2"),
+                any(FinanceAuditContext.class)
+        ))
                 .thenReturn(unit("unit-2", "asset-2"));
         when(repository.incrementItemVersion("item-1", 4L, "alfa-1"))
                 .thenReturn(true);
@@ -197,6 +203,14 @@ class FinancePurchasedAssetServiceTest {
         assertThat(history.getAllValues())
                 .extracting(PurchasedLinkHistoryWrite::correlationId)
                 .containsOnly("correlation-1");
+
+        ArgumentCaptor<FinanceAuditContext> unitAudit =
+                ArgumentCaptor.forClass(FinanceAuditContext.class);
+        verify(units, org.mockito.Mockito.times(2)).ensureAssetUnit(
+                any(),
+                unitAudit.capture()
+        );
+        assertThat(unitAudit.getAllValues()).containsOnly(audit());
     }
 
     private ConfirmPurchasedAssetsRequest request(

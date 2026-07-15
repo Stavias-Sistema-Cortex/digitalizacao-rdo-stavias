@@ -594,17 +594,17 @@ entityType = "FINANCE_RATEIO"; operations = {"UPSERT"}
 entityType = "FINANCE_COMPRA_ITEM_ATIVO"; operations = {"CONFIRM"}
 ```
 
-- [ ] **Step 1: Write failing sync coverage tests**
+- [x] **Step 1: Write failing sync coverage tests**
 
 Assert registry presence, base-version requirements, actor taken from `SyncMutationContext` rather than payload, idempotency by client mutation id, server snapshot, `SYNCED` status and identical ontology fields between online/offline paths.
 
-- [ ] **Step 2: Run tests and confirm missing handlers**
+- [x] **Step 2: Run tests and confirm missing handlers**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinancialUnitSyncOperationHandlerTest,FinanceAllocationSyncOperationHandlerTest,FinancePurchasedAssetSyncOperationHandlerTest,SyncHandlerCoverageTest test`
 
 Expected: FAIL because handlers are absent from the registry.
 
-- [ ] **Step 3: Implement thin handlers**
+- [x] **Step 3: Implement thin handlers**
 
 Handlers deserialize payloads with the configured `ObjectMapper`, construct audit context from authenticated sync context, delegate to the same domain services used online, and return canonical server snapshots. Do not duplicate business rules.
 
@@ -618,13 +618,13 @@ new FinanceOntologyRelation("UNIDADE_FINANCEIRA", unitId,
 new FinanceOntologyRelation("ATIVO", assetId, "ORIGINOU_ATIVO");
 ```
 
-- [ ] **Step 4: Run sync and finance regression**
+- [x] **Step 4: Run sync and finance regression**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest='com.projeto.cortex.financeiro.*Test,com.projeto.cortex.sync.SyncHandlerCoverageTest' test`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/main/java/com/projeto/cortex/financeiro apps/api/src/test/java/com/projeto/cortex/financeiro apps/api/src/test/java/com/projeto/cortex/sync/SyncHandlerCoverageTest.java

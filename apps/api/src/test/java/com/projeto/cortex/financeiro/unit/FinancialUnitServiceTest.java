@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
+import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.CreateFinancialUnitRequest;
 import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.FinancialUnitFilter;
@@ -120,6 +121,44 @@ class FinancialUnitServiceTest {
                 eq("UNIDADE_FINANCEIRA_CRIADA"),
                 eq(null),
                 any(),
+                eq(Map.of()),
+                any(),
+                eq(Map.of())
+        );
+    }
+
+    @Test
+    void preservesOfflineAuditUntilOntologyProjection() {
+        CreateFinancialUnitRequest request = new CreateFinancialUnitRequest(
+                "ADM-CAMPO", "Administração de campo"
+        );
+        when(repository.findByCode("ADM-CAMPO")).thenReturn(Optional.empty());
+        when(repository.findById(any())).thenAnswer(invocation -> Optional.of(
+                unit(
+                        invocation.getArgument(0),
+                        FinancialUnitType.ADMINISTRATIVO,
+                        null,
+                        null,
+                        "ADM-CAMPO",
+                        "Administração de campo"
+                )
+        ));
+        FinanceAuditContext audit = new FinanceAuditContext(
+                "alfa-1",
+                "device-1",
+                "correlation-1",
+                "OFFLINE"
+        );
+
+        service.createAdministrative(request, audit);
+
+        verify(ontology).success(
+                eq("UNIDADE_FINANCEIRA"),
+                any(),
+                eq("Administração de campo"),
+                eq("UNIDADE_FINANCEIRA_CRIADA"),
+                eq(null),
+                eq(audit),
                 eq(Map.of()),
                 any(),
                 eq(Map.of())

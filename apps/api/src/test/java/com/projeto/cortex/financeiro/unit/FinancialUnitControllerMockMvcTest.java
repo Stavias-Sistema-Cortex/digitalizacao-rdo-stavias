@@ -96,7 +96,10 @@ class FinancialUnitControllerMockMvcTest {
                         "/api/financeiro/unidades/ativos/asset-1/garantir"
                 )).andExpect(status().isForbidden());
 
-        verify(service, never()).ensureAssetUnit(any(), any());
+        verify(service, never()).ensureAssetUnit(
+                any(),
+                org.mockito.ArgumentMatchers.anyString()
+        );
     }
 
     private FinancialUnitResponse response() {
