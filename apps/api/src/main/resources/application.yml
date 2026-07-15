@@ -109,7 +109,7 @@ cortex:
   storage:
     provider: ${CORTEX_STORAGE_PROVIDER:}
     max-size-bytes: ${CORTEX_STORAGE_MAX_SIZE_BYTES:26214400}
-    allowed-media-types: ${CORTEX_STORAGE_ALLOWED_MEDIA_TYPES:application/pdf,application/zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/png,image/jpeg,image/gif,image/webp,text/plain,text/csv}
+    allowed-media-types: ${CORTEX_STORAGE_ALLOWED_MEDIA_TYPES:application/pdf,application/xml,text/xml,application/zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/png,image/jpeg,image/gif,image/webp,image/tiff,text/plain,text/csv}
     local:
       root: ${CORTEX_STORAGE_LOCAL_ROOT:}
       persistent: ${CORTEX_STORAGE_LOCAL_PERSISTENT:false}

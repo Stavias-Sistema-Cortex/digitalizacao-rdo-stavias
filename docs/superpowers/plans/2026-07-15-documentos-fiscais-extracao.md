@@ -56,11 +56,12 @@ React 19, TypeScript, Vitest.
 - Modify: `apps/api/src/main/java/com/projeto/cortex/storage/StorageProperties.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/storage/StoredObjectContentInspectorTest.java`
 
-- [ ] Escrever testes falhando para XML seguro e TIFF little/big endian.
-- [ ] Detectar XML, PDF, JPEG, PNG, WebP e TIFF por conteúdo.
-- [ ] Rejeitar MIME divergente, ZIP e binário arbitrário.
-- [ ] Executar regressão de storage.
-- [ ] Commit: `feat(storage): inspect fiscal document formats`.
+- [x] Escrever testes falhando para XML seguro e TIFF little/big endian.
+- [x] Detectar XML, PDF, JPEG, PNG, WebP e TIFF por conteúdo.
+- [x] Rejeitar MIME divergente e binário arbitrário; preservar ZIP somente
+  como complemento genérico, nunca como entrada do extrator fiscal.
+- [x] Executar regressão de storage.
+- [x] Commit: `feat(storage): inspect fiscal document formats`.
 
 ### Task 3: Extrair candidatos com evidência e conferência matemática
 

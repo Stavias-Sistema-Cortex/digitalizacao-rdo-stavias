@@ -13,6 +13,8 @@ public class StorageProperties {
     private long maxSizeBytes = 26_214_400;
     private Set<String> allowedMediaTypes = new LinkedHashSet<>(Set.of(
             "application/pdf",
+            "application/xml",
+            "text/xml",
             "application/zip",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -21,6 +23,7 @@ public class StorageProperties {
             "image/jpeg",
             "image/gif",
             "image/webp",
+            "image/tiff",
             "text/plain",
             "text/csv"
     ));

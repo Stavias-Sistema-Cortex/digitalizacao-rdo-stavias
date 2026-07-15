@@ -85,7 +85,14 @@ public final class StoredObjectContentInspector {
             );
         }
 
-        String detected = detect(head.toByteArray());
+        byte[] inspectedHead = head.toByteArray();
+        String detected = detect(inspectedHead);
+        if ("application/xml".equals(detected)
+                && containsUnsafeXmlDeclaration(inspectedHead)) {
+            throw unsupported(
+                    "XML com DTD ou declaração de entidade não é permitido."
+            );
+        }
         if (ZIP_DOCUMENT_TYPES.contains(declared)
                 && "application/zip".equals(detected)) {
             detected = declared;
@@ -116,6 +123,10 @@ public final class StoredObjectContentInspector {
 
     private static boolean compatible(String declared, String detected) {
         if (declared.equals(detected)) {
+            return true;
+        }
+        if (("application/xml".equals(declared) || "text/xml".equals(declared))
+                && "application/xml".equals(detected)) {
             return true;
         }
         return declared.startsWith("text/")
@@ -155,15 +166,43 @@ public final class StoredObjectContentInspector {
         if (startsWith(head, "%PDF-".getBytes(StandardCharsets.US_ASCII))) {
             return "application/pdf";
         }
+        if (startsWith(head, new byte[] {'I', 'I', 0x2a, 0x00})
+                || startsWith(head, new byte[] {'M', 'M', 0x00, 0x2a})) {
+            return "image/tiff";
+        }
         if (startsWith(head, new byte[] {'P', 'K', 0x03, 0x04})
                 || startsWith(head, new byte[] {'P', 'K', 0x05, 0x06})
                 || startsWith(head, new byte[] {'P', 'K', 0x07, 0x08})) {
             return "application/zip";
         }
+        if (isXmlDocument(head)) {
+            return "application/xml";
+        }
         if (isUtf8Text(head)) {
             return "text/plain";
         }
         return "application/octet-stream";
+    }
+
+    private static boolean isXmlDocument(byte[] head) {
+        if (!isUtf8Text(head)) {
+            return false;
+        }
+        String sample = new String(head, StandardCharsets.UTF_8);
+        if (!sample.isEmpty() && sample.charAt(0) == '\ufeff') {
+            sample = sample.substring(1);
+        }
+        sample = sample.stripLeading();
+        if (sample.startsWith("<?xml")) {
+            return true;
+        }
+        return sample.matches("(?s)<[A-Za-z_][A-Za-z0-9_.:-]*(?:\\s|/?>).*");
+    }
+
+    private static boolean containsUnsafeXmlDeclaration(byte[] head) {
+        String sample = new String(head, StandardCharsets.UTF_8)
+                .toUpperCase(Locale.ROOT);
+        return sample.contains("<!DOCTYPE") || sample.contains("<!ENTITY");
     }
 
     private static boolean isUtf8Text(byte[] bytes) {
