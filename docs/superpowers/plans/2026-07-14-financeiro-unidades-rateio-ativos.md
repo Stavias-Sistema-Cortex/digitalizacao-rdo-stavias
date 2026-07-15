@@ -54,7 +54,7 @@ finance_compra_item_ativo_historico(id, vinculo_id, operacao,
                                     dispositivo_id)
 ```
 
-- [ ] **Step 1: Write the failing migration contract test**
+- [x] **Step 1: Write the failing migration contract test**
 
 ```java
 package com.projeto.cortex.financeiro;
@@ -114,13 +114,13 @@ class FinanceControlUnitsMigrationTest {
 }
 ```
 
-- [ ] **Step 2: Run the contract test and confirm it fails because V34 does not exist**
+- [x] **Step 2: Run the contract test and confirm it fails because V34 does not exist**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinanceControlUnitsMigrationTest test`
 
 Expected: FAIL with `NoSuchFileException: ...V34__finance_control_units_allocations_and_assets.sql`.
 
-- [ ] **Step 3: Add the minimal V34 schema and deterministic backfill**
+- [x] **Step 3: Add the minimal V34 schema and deterministic backfill**
 
 The migration must:
 
@@ -162,7 +162,7 @@ ALTER TABLE finance_compra_item
 
 `finance_unidade_controle` must use a shape check: `OBRA` requires only `obra_id`; `ATIVO` requires only `ativo_id`; `ADMINISTRATIVO` and `CORPORATIVO` require neither. It must unique-index non-null `obra_id` and `ativo_id`. `criado_por`/`atualizado_por` may be null only for rows with `origem = 'MIGRACAO_OBRA'`, because the legacy `obra` table has no author column; every online/offline creation requires a real actor at the service boundary. Rateio source must be exactly one of `compra_id`, `nota_fiscal_id`, `lancamento_id`. All non-null actor columns reference `colaborador(id)`.
 
-- [ ] **Step 4: Add a MySQL integration test for backfill, constraints and referential integrity**
+- [x] **Step 4: Add a MySQL integration test for backfill, constraints and referential integrity**
 
 Use the same `@Testcontainers(disabledWithoutDocker = true)`, `MySQLContainer<?>`, Flyway and `JdbcTemplate` setup as `FinanceCoreMigrationMysqlIntegrationTest`. Test all of:
 
@@ -183,13 +183,13 @@ assertThatThrownBy(() -> jdbc.update(
 
 The test must seed a real collaborator, worksite, supplier, configurable statuses, purchase, invoice and asset; no production-like defaults may be added to the migration.
 
-- [ ] **Step 5: Run migration tests**
+- [x] **Step 5: Run migration tests**
 
 Run: `JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -q -Dtest=FinanceControlUnitsMigrationTest,FinanceControlUnitsMigrationMysqlIntegrationTest test`
 
 Expected: PASS; MySQL test is skipped only when Docker is unavailable.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/src/main/resources/db/migration/V34__finance_control_units_allocations_and_assets.sql apps/api/src/test/java/com/projeto/cortex/financeiro/FinanceControlUnitsMigrationTest.java apps/api/src/test/java/com/projeto/cortex/pdor/FinanceControlUnitsMigrationMysqlIntegrationTest.java
