@@ -19,7 +19,8 @@ public record PdorInputBundle(
         List<String> warnings,
         List<String> missingRequiredFields,
         SourceValues sourceValues,
-        PdorEngine.HistoricalSeries historicalSeries
+        PdorEngine.HistoricalSeries historicalSeries,
+        List<PdorEvidenceReference> evidenceReferences
 ) {
     public PdorInputBundle {
         inputs = Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
@@ -29,6 +30,26 @@ public record PdorInputBundle(
         historicalSeries = historicalSeries == null
                 ? PdorEngine.HistoricalSeries.EMPTY
                 : historicalSeries;
+        evidenceReferences = evidenceReferences == null
+                ? List.of()
+                : List.copyOf(evidenceReferences);
+    }
+
+    public PdorInputBundle(
+            String obraId,
+            String codigoObra,
+            LocalDate referenceDate,
+            Map<String, Object> inputs,
+            Map<String, PdorInputOrigin> origins,
+            List<String> warnings,
+            List<String> missingRequiredFields,
+            SourceValues sourceValues,
+            PdorEngine.HistoricalSeries historicalSeries
+    ) {
+        this(
+                obraId, codigoObra, referenceDate, inputs, origins, warnings,
+                missingRequiredFields, sourceValues, historicalSeries, List.of()
+        );
     }
 
     public boolean canCalculate() {

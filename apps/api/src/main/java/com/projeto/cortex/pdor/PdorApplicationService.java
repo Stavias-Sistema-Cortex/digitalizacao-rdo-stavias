@@ -42,6 +42,8 @@ public class PdorApplicationService {
     private final PdorContextBuilder contextBuilder;
     private final PdorEngine engine;
     private final CortexOperationalMemoryService memoryService;
+    private final PdorExecutionInitiatorResolver initiatorResolver;
+    private final PdorExplainabilityBuilder explainabilityBuilder;
 
     @Autowired
     public PdorApplicationService(
@@ -49,7 +51,8 @@ public class PdorApplicationService {
             PdorInputLoader inputLoader,
             PdorSnapshotRepository snapshotRepository,
             ObjectMapper objectMapper,
-            CortexOperationalMemoryService memoryService
+            CortexOperationalMemoryService memoryService,
+            PdorExecutionInitiatorResolver initiatorResolver
     ) {
         this(
                 obraRepository,
@@ -58,7 +61,21 @@ public class PdorApplicationService {
                 objectMapper,
                 memoryService,
                 new PdorContextBuilder(),
-                new PdorEngine()
+                new PdorEngine(),
+                initiatorResolver
+        );
+    }
+
+    PdorApplicationService(
+            ObraRepository obraRepository,
+            PdorInputLoader inputLoader,
+            PdorSnapshotRepository snapshotRepository,
+            ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService
+    ) {
+        this(
+                obraRepository, inputLoader, snapshotRepository, objectMapper,
+                memoryService, new PdorContextBuilder(), new PdorEngine(), null
         );
     }
 
@@ -71,6 +88,22 @@ public class PdorApplicationService {
             PdorContextBuilder contextBuilder,
             PdorEngine engine
     ) {
+        this(
+                obraRepository, inputLoader, snapshotRepository, objectMapper,
+                memoryService, contextBuilder, engine, null
+        );
+    }
+
+    PdorApplicationService(
+            ObraRepository obraRepository,
+            PdorInputLoader inputLoader,
+            PdorSnapshotRepository snapshotRepository,
+            ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService,
+            PdorContextBuilder contextBuilder,
+            PdorEngine engine,
+            PdorExecutionInitiatorResolver initiatorResolver
+    ) {
         this.obraRepository = obraRepository;
         this.inputLoader = inputLoader;
         this.snapshotRepository = snapshotRepository;
@@ -79,6 +112,8 @@ public class PdorApplicationService {
         this.memoryService = memoryService;
         this.contextBuilder = contextBuilder;
         this.engine = engine;
+        this.initiatorResolver = initiatorResolver;
+        this.explainabilityBuilder = new PdorExplainabilityBuilder(this.objectMapper);
     }
 
     public PdorResultadoResponse calcular(
@@ -160,23 +195,34 @@ public class PdorApplicationService {
             String originEventId,
             String idempotencyKey
     ) {
-        PdorSnapshot snapshot;
+        PdorSnapshot previous = snapshotRepository.findLatestByObraId(obra.getId())
+                .orElse(null);
+        PdorSnapshot baseSnapshot;
 
         if (!inputs.canCalculate()) {
-            snapshot = buildInsufficientDataSnapshot(
+            baseSnapshot = buildInsufficientDataSnapshot(
                     inputs,
                     triggerType,
                     originEventId,
                     idempotencyKey
             );
         } else {
-            snapshot = buildCalculationSnapshot(
+            baseSnapshot = buildCalculationSnapshot(
                     inputs,
                     triggerType,
                     originEventId,
                     idempotencyKey
             );
         }
+
+        PdorExecutionInitiator initiator = initiatorResolver == null
+                ? PdorExecutionInitiator.process()
+                : initiatorResolver.resolve();
+        PdorSnapshot snapshot = baseSnapshot.withExplainability(
+                calculateDataVersion(inputs),
+                explainabilityBuilder.build(baseSnapshot, inputs, previous),
+                initiator
+        );
 
         try {
             snapshotRepository.insert(snapshot);
@@ -221,13 +267,14 @@ public class PdorApplicationService {
                 "Snapshot PDOR analisa a receita da obra."
         );
 
-        String tipoEvento =
-                snapshot.executionStatus() == PdorExecutionStatus.SUCCESS
-                        ? "PDOR_CALCULADO"
-                        : "PDOR_INSUFICIENTE";
+        String tipoEvento = switch (snapshot.executionStatus()) {
+            case SUCCESS -> "PDOR_CALCULADO";
+            case INSUFFICIENT_DATA -> "PDOR_INSUFICIENTE";
+            case FAILED -> "PDOR_FALHOU";
+        };
 
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("schemaVersion", 1);
+        payload.put("schemaVersion", 2);
         payload.put("obraId", obra.getId());
         payload.put("snapshotId", snapshot.id());
         payload.put("dataReferencia", snapshot.referenceDate());
@@ -244,6 +291,32 @@ public class PdorApplicationService {
         obraRelacionada.put("tipo", "OBRA");
         obraRelacionada.put("id", obra.getId());
 
+        List<Map<String, Object>> relatedEntities = new ArrayList<>();
+        relatedEntities.add(obraRelacionada);
+        if (snapshot.evidence() != null && snapshot.evidence().isArray()) {
+            snapshot.evidence().forEach(evidence -> {
+                String entityType = evidence.path("tipoEntidade").asText("");
+                String entityId = evidence.path("entidadeId").asText("");
+                if (!entityType.isBlank() && !entityId.isBlank()) {
+                    memoryService.registrarRelacaoAtiva(
+                            "PDOR", snapshot.id(), entityType, entityId,
+                            "GERADO_A_PARTIR_DE", FONTE,
+                            "Evidência utilizada na execução PDOR."
+                    );
+                    relatedEntities.add(Map.of("tipo", entityType, "id", entityId));
+                }
+            });
+        }
+
+        payload.put("versaoModelo", snapshot.modelVersion());
+        payload.put("versaoPremissas", snapshot.assumptionsVersion());
+        payload.put("versaoDados", snapshot.dataVersion());
+        payload.put("calibracao", snapshot.calibrationStatus());
+        payload.put("confianca", snapshot.confidence());
+        payload.put("iniciadoPor", snapshot.initiatedBy());
+        payload.put("tipoIniciador", snapshot.initiatorType());
+        payload.put("comparacaoAnterior", snapshot.previousComparison());
+
         memoryService.registrarEventoDetalhado(
                 snapshot.id(),
                 "PDOR",
@@ -253,12 +326,12 @@ public class PdorApplicationService {
                 obra.getId(),
                 null,
                 null,
-                List.of(obraRelacionada),
+                relatedEntities,
                 "ONLINE",
                 "SYNCED",
                 snapshot.executedAt(),
                 LocalDateTime.now(),
-                1,
+                2,
                 payload
         );
 
@@ -583,6 +656,27 @@ public class PdorApplicationService {
         } catch (Exception exception) {
             throw new IllegalStateException(
                     "Não foi possível calcular a chave de idempotência do PDOR.",
+                    exception
+            );
+        }
+    }
+
+    String calculateDataVersion(PdorInputBundle inputs) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("obraId", inputs.obraId());
+            payload.put("referenceDate", inputs.referenceDate());
+            payload.put("inputs", inputs.inputs());
+            payload.put("inputOrigins", inputs.originsAsMap());
+            payload.put("missingRequiredFields", inputs.missingRequiredFields());
+            payload.put("evidenceReferences", inputs.evidenceReferences());
+            String json = objectMapper.writeValueAsString(canonicalize(payload));
+            byte[] hash = MessageDigest.getInstance("SHA-256")
+                    .digest(json.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "Não foi possível calcular a versão dos dados do PDOR.",
                     exception
             );
         }

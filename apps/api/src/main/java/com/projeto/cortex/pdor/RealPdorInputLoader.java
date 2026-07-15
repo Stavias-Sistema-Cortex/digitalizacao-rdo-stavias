@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -53,6 +54,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
         FinanceStats finance = buscarFinanceStats(obra.getId(), referenceDate);
         ServiceQuantityStats serviceQuantity =
                 buscarServiceQuantityStats(obra.getId(), referenceDate);
+        TeamStats team = buscarTeamStats(obra.getId(), referenceDate);
+        int activeGeospatialFeatureCount =
+                buscarActiveGeospatialFeatureCount(obra.getId(), referenceDate);
+        WeatherStats weather = buscarWeatherStats(obra.getId(), referenceDate);
 
         QuantityChoice quantity =
                 escolherQuantidade(programacao, rdo, serviceQuantity);
@@ -229,6 +234,130 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Soma das quantidades previstas informadas nos RDOs.",
                 false
         );
+
+        put(
+                inputs,
+                origins,
+                missing,
+                "activeTeamCount",
+                "Equipes vigentes na obra",
+                PdorDataAvailability.DIRECT,
+                team.teamCount(),
+                "equipe + equipe_obra",
+                "Equipes com vigência na obra na data de referência.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "activeTeamMemberCount",
+                "Membros vigentes nas equipes",
+                PdorDataAvailability.DIRECT,
+                team.memberCount(),
+                "equipe_membro + equipe_obra",
+                "Pessoas com participação vigente nas equipes da obra.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "activeTeamFunctionCount",
+                "Funções operacionais vigentes",
+                PdorDataAvailability.DIRECT,
+                team.functionCount(),
+                "equipe_membro.funcao_operacional_id",
+                "Funções operacionais distintas nas equipes vigentes.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "responsibleTeamMemberCount",
+                "Responsáveis vigentes nas equipes",
+                PdorDataAvailability.DIRECT,
+                team.responsibleMemberCount(),
+                "equipe_membro.responsavel",
+                "Membros vigentes marcados como responsáveis.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "laborCapacityHours",
+                "Capacidade de mão de obra em horas",
+                PdorDataAvailability.ABSENT,
+                null,
+                "equipe_membro",
+                "O cadastro registra participação e função, mas não disponibilidade, jornada ou horas de capacidade.",
+                false
+        );
+        if (team.teamCount() == 0) {
+            warnings.add("Nenhuma equipe vigente foi encontrada para a obra na data de referência.");
+        } else if (team.memberCount() == 0) {
+            warnings.add("As equipes vigentes não possuem membros vigentes na data de referência.");
+        } else {
+            warnings.add(
+                    "A quantidade de membros não foi convertida em capacidade de mão de obra porque não há jornada ou disponibilidade estruturada."
+            );
+            if (team.responsibleMemberCount() == 0) {
+                warnings.add("As equipes vigentes não possuem membro responsável definido.");
+            }
+        }
+
+        put(
+                inputs,
+                origins,
+                missing,
+                "activeGeospatialFeatureCount",
+                "Geometrias operacionais vigentes",
+                PdorDataAvailability.DIRECT,
+                activeGeospatialFeatureCount,
+                "obra_geometria",
+                "Geometrias com vigência na obra na data de referência.",
+                false
+        );
+
+        put(
+                inputs,
+                origins,
+                missing,
+                "weatherObservationCount",
+                "RDOs com observação climática",
+                PdorDataAvailability.DIRECT,
+                weather.observationCount(),
+                "rdo.condicao_manha/condicao_tarde/condicao_noite/pluviometria_mm",
+                "Contagem de RDOs com condição climática ou pluviometria observada até a referência.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "rainfallMmObserved",
+                "Pluviometria observada acumulada",
+                weather.rainfallMeasurementCount() > 0
+                        ? PdorDataAvailability.DIRECT
+                        : PdorDataAvailability.ABSENT,
+                weather.rainfallMeasurementCount() > 0 ? weather.rainfallMm() : null,
+                "rdo.pluviometria_mm",
+                weather.rainfallMeasurementCount() > 0
+                        ? "Soma da pluviometria registrada em RDOs até a data de referência."
+                        : "Nenhum RDO possui pluviometria estruturada até a data de referência.",
+                false
+        );
+        if (weather.observationCount() == 0) {
+            warnings.add(
+                    "Clima indisponível: não há condição climática ou pluviometria registrada em RDO; nenhuma condição foi inferida."
+            );
+        } else if (weather.rainfallMeasurementCount() == 0) {
+            warnings.add(
+                    "Há condição climática qualitativa em RDO, mas não há pluviometria estruturada para quantificação."
+            );
+        }
         put(
                 inputs,
                 origins,
@@ -486,8 +615,236 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 new PdorEngine.HistoricalSeries(
                         productivityLossWeekly,
                         materialOverconsumptionWeekly
-                )
+                ),
+                buscarEvidencias(obra.getId(), referenceDate)
         );
+    }
+
+    private TeamStats buscarTeamStats(String obraId, LocalDate referenceDate) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT
+                    COUNT(DISTINCT equipe.id) AS total_equipes,
+                    COUNT(DISTINCT membro.id) AS total_membros,
+                    COUNT(DISTINCT membro.funcao_operacional_id) AS total_funcoes,
+                    COUNT(DISTINCT CASE WHEN membro.responsavel = 1 THEN membro.id END)
+                        AS total_responsaveis
+                FROM equipe_obra participacao
+                JOIN equipe
+                  ON equipe.id = participacao.equipe_id
+                LEFT JOIN equipe_membro membro
+                  ON membro.equipe_id = equipe.id
+                 AND DATE(membro.inicio_em) <= ?
+                 AND (membro.fim_em IS NULL OR DATE(membro.fim_em) >= ?)
+                WHERE participacao.obra_id = ?
+                  AND DATE(participacao.inicio_em) <= ?
+                  AND (participacao.fim_em IS NULL OR DATE(participacao.fim_em) >= ?)
+                  AND DATE(equipe.inicio_validade_em) <= ?
+                  AND (equipe.fim_validade_em IS NULL OR DATE(equipe.fim_validade_em) >= ?)
+                """,
+                (rs, rowNum) -> new TeamStats(
+                        rs.getInt("total_equipes"),
+                        rs.getInt("total_membros"),
+                        rs.getInt("total_funcoes"),
+                        rs.getInt("total_responsaveis")
+                ),
+                referenceDate,
+                referenceDate,
+                obraId,
+                referenceDate,
+                referenceDate,
+                referenceDate,
+                referenceDate
+        );
+    }
+
+    private int buscarActiveGeospatialFeatureCount(
+            String obraId,
+            LocalDate referenceDate
+    ) {
+        Integer count = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM obra_geometria
+                WHERE obra_id = ?
+                  AND DATE(valido_desde) <= ?
+                  AND (valido_ate IS NULL OR DATE(valido_ate) >= ?)
+                """,
+                Integer.class,
+                obraId,
+                referenceDate,
+                referenceDate
+        );
+        return count == null ? 0 : count;
+    }
+
+    private WeatherStats buscarWeatherStats(String obraId, LocalDate referenceDate) {
+        return jdbcTemplate.queryForObject(
+                """
+                SELECT
+                    SUM(CASE
+                            WHEN NULLIF(TRIM(condicao_manha), '') IS NOT NULL
+                              OR NULLIF(TRIM(condicao_tarde), '') IS NOT NULL
+                              OR NULLIF(TRIM(condicao_noite), '') IS NOT NULL
+                              OR pluviometria_mm IS NOT NULL
+                                THEN 1
+                            ELSE 0
+                        END) AS total_observacoes,
+                    SUM(CASE WHEN pluviometria_mm IS NOT NULL THEN 1 ELSE 0 END)
+                        AS total_medicoes_chuva,
+                    SUM(pluviometria_mm) AS pluviometria_mm
+                FROM rdo
+                WHERE obra_id = ?
+                  AND cancelado_em IS NULL
+                  AND data_rdo <= ?
+                """,
+                (rs, rowNum) -> new WeatherStats(
+                        rs.getInt("total_observacoes"),
+                        rs.getInt("total_medicoes_chuva"),
+                        valueOrZero(rs.getBigDecimal("pluviometria_mm"))
+                ),
+                obraId,
+                referenceDate
+        );
+    }
+
+    private List<PdorEvidenceReference> buscarEvidencias(
+            String obraId,
+            LocalDate referenceDate
+    ) {
+        List<PdorEvidenceReference> evidence = new ArrayList<>();
+        addEvidence(
+                evidence,
+                """
+                SELECT id, criado_em AS observed_at
+                FROM programacao_operacional
+                WHERE obra_id = ? AND cancelado_em IS NULL AND data_programacao <= ?
+                ORDER BY data_programacao DESC, id
+                LIMIT 50
+                """,
+                "PROGRAMACAO", "programacao_operacional", "PLANEJAMENTO",
+                obraId, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT id, criado_em AS observed_at
+                FROM rdo
+                WHERE obra_id = ? AND cancelado_em IS NULL AND data_rdo <= ?
+                ORDER BY data_rdo DESC, id
+                LIMIT 50
+                """,
+                "RDO", "rdo", "EXECUCAO_REAL",
+                obraId, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT id, criado_em AS observed_at
+                FROM item_contratual
+                WHERE obra_id = ? AND status = 'ATIVO'
+                  AND (vigencia_inicio IS NULL OR vigencia_inicio <= ?)
+                  AND (vigencia_fim IS NULL OR vigencia_fim >= ?)
+                ORDER BY codigo_item, id
+                LIMIT 50
+                """,
+                "ITEM_CONTRATUAL", "item_contratual", "BASE_CONTRATUAL",
+                obraId, referenceDate, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT id, criado_em AS observed_at
+                FROM execucao_servico_rdo
+                WHERE obra_id = ? AND cancelada = 0 AND data_execucao <= ?
+                ORDER BY data_execucao DESC, id
+                LIMIT 50
+                """,
+                "EXECUCAO_SERVICO_RDO", "execucao_servico_rdo", "PRODUCAO_E_RECEITA",
+                obraId, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT DISTINCT equipe.id, equipe.criado_em AS observed_at
+                FROM equipe
+                JOIN equipe_obra participacao ON participacao.equipe_id = equipe.id
+                WHERE participacao.obra_id = ?
+                  AND DATE(participacao.inicio_em) <= ?
+                  AND (participacao.fim_em IS NULL OR DATE(participacao.fim_em) >= ?)
+                  AND DATE(equipe.inicio_validade_em) <= ?
+                  AND (equipe.fim_validade_em IS NULL OR DATE(equipe.fim_validade_em) >= ?)
+                ORDER BY equipe.id
+                LIMIT 50
+                """,
+                "EQUIPE", "equipe + equipe_obra", "CONTEXTO_OPERACIONAL",
+                obraId, referenceDate, referenceDate, referenceDate, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT DISTINCT membro.id, membro.criado_em AS observed_at
+                FROM equipe_membro membro
+                JOIN equipe_obra participacao ON participacao.equipe_id = membro.equipe_id
+                WHERE participacao.obra_id = ?
+                  AND DATE(participacao.inicio_em) <= ?
+                  AND (participacao.fim_em IS NULL OR DATE(participacao.fim_em) >= ?)
+                  AND DATE(membro.inicio_em) <= ?
+                  AND (membro.fim_em IS NULL OR DATE(membro.fim_em) >= ?)
+                ORDER BY membro.id
+                LIMIT 50
+                """,
+                "EQUIPE_MEMBRO", "equipe_membro", "COMPOSICAO_DA_EQUIPE",
+                obraId, referenceDate, referenceDate, referenceDate, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT id, criado_em AS observed_at
+                FROM obra_geometria
+                WHERE obra_id = ?
+                  AND DATE(valido_desde) <= ?
+                  AND (valido_ate IS NULL OR DATE(valido_ate) >= ?)
+                ORDER BY valido_desde DESC, id
+                LIMIT 50
+                """,
+                "OBRA_GEOMETRIA", "obra_geometria", "CONTEXTO_GEOGRAFICO",
+                obraId, referenceDate, referenceDate
+        );
+        addEvidence(
+                evidence,
+                """
+                SELECT id, ocorrido_em AS observed_at
+                FROM cortex_evento_operacional
+                WHERE obra_id = ? AND ocorrido_em < DATE_ADD(?, INTERVAL 1 DAY)
+                ORDER BY ocorrido_em DESC, commit_seq DESC
+                LIMIT 50
+                """,
+                "EVENTO_OPERACIONAL", "cortex_evento_operacional", "HISTORICO_ONTOLOGICO",
+                obraId, referenceDate
+        );
+        return evidence;
+    }
+
+    private void addEvidence(
+            List<PdorEvidenceReference> target,
+            String sql,
+            String entityType,
+            String source,
+            String role,
+            Object... arguments
+    ) {
+        target.addAll(jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> new PdorEvidenceReference(
+                        entityType,
+                        rs.getString("id"),
+                        source,
+                        role,
+                        toLocalDateTime(rs.getTimestamp("observed_at"))
+                ),
+                arguments
+        ));
     }
 
     private ProgramacaoStats buscarProgramacaoStats(String obraId) {
@@ -1149,6 +1506,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
         return date == null ? null : date.toLocalDate();
     }
 
+    private LocalDateTime toLocalDateTime(java.sql.Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toLocalDateTime();
+    }
+
     private Integer nullableInteger(Object value) {
         if (value == null) {
             return null;
@@ -1194,6 +1555,21 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private record SyncStats(
             int pendingEvents,
             Integer hoursSinceLastSync
+    ) {
+    }
+
+    private record TeamStats(
+            int teamCount,
+            int memberCount,
+            int functionCount,
+            int responsibleMemberCount
+    ) {
+    }
+
+    private record WeatherStats(
+            int observationCount,
+            int rainfallMeasurementCount,
+            BigDecimal rainfallMm
     ) {
     }
 

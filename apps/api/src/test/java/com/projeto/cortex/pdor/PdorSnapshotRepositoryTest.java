@@ -24,11 +24,11 @@ class PdorSnapshotRepositoryTest {
         assertThat(jdbcTemplate.sql)
                 .contains("INSERT INTO pdor_snapshot")
                 .doesNotContain("CAST(? AS JSON)");
-        assertThat(jdbcTemplate.args).hasSize(37);
-        assertThat(jdbcTemplate.args[11].toString()).contains("contractValue");
-        assertThat(jdbcTemplate.args[12].toString()).contains("availability");
-        assertThat(jdbcTemplate.args[13].toString()).contains("warning");
-        assertThat(jdbcTemplate.args[35].toString()).contains("LOW_DATA_QUALITY");
+        assertThat(jdbcTemplate.args).hasSize(49);
+        assertThat(jdbcTemplate.args[12].toString()).contains("contractValue");
+        assertThat(jdbcTemplate.args[13].toString()).contains("availability");
+        assertThat(jdbcTemplate.args[23].toString()).contains("warning");
+        assertThat(jdbcTemplate.args[47].toString()).contains("LOW_DATA_QUALITY");
     }
 
     private static PdorSnapshot snapshot(ObjectMapper objectMapper) {

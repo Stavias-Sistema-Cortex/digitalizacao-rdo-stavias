@@ -98,6 +98,23 @@ class PdorApplicationServiceTest {
         assertThat(response.drivers().isArray()).isTrue();
         assertThat(response.warnings().isArray()).isTrue();
         assertThat(response.inputs().isObject()).isTrue();
+        assertThat(response.versaoDados()).hasSize(64);
+        assertThat(response.escopoAnalisado().path("obraId").asText())
+                .isEqualTo(obra.getId());
+        assertThat(response.janelaTemporal().path("dataReferencia").asText())
+                .isEqualTo("2026-06-08");
+        assertThat(response.featuresUtilizadas().isArray()).isTrue();
+        assertThat(response.featuresUtilizadas().toString())
+                .contains("contractValue", "measuredRevenue");
+        assertThat(response.dadosAusentes().isArray()).isTrue();
+        assertThat(response.limitacoes().isArray()).isTrue();
+        assertThat(response.alertasDerivados().isArray()).isTrue();
+        assertThat(response.recomendacoes().isArray()).isTrue();
+        assertThat(response.comparacaoAnterior().path("disponivel").asBoolean())
+                .isFalse();
+        assertThat(response.evidencias().isArray()).isTrue();
+        assertThat(response.tipoIniciador()).isEqualTo("PROCESS");
+        assertThat(response.iniciadoPor()).isEqualTo("PROCESSO_PDOR");
         assertThat(snapshotRepository.size()).isEqualTo(1);
     }
 
@@ -228,6 +245,12 @@ class PdorApplicationServiceTest {
                 service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
 
         assertThat(second.id()).isNotEqualTo(first.id());
+        assertThat(second.comparacaoAnterior().path("disponivel").asBoolean())
+                .isTrue();
+        assertThat(second.comparacaoAnterior().path("snapshotAnteriorId").asText())
+                .isEqualTo(first.id());
+        assertThat(second.comparacaoAnterior().path("inputsAlterados").toString())
+                .contains("measuredRevenue");
         assertThat(snapshotRepository.size()).isEqualTo(2);
         assertThat(snapshotRepository.findById(first.id())
                 .orElseThrow()
@@ -738,7 +761,19 @@ class PdorApplicationServiceTest {
                     snapshot.simulationIterations(),
                     snapshot.drivers(),
                     snapshot.executionError(),
-                    time
+                    time,
+                    snapshot.dataVersion(),
+                    snapshot.analysisScope(),
+                    snapshot.temporalWindow(),
+                    snapshot.featuresUsed(),
+                    snapshot.missingData(),
+                    snapshot.limitations(),
+                    snapshot.alerts(),
+                    snapshot.recommendations(),
+                    snapshot.previousComparison(),
+                    snapshot.evidence(),
+                    snapshot.initiatedBy(),
+                    snapshot.initiatorType()
             );
         }
     }

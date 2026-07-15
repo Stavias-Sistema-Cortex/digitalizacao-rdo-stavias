@@ -44,4 +44,26 @@ class PdorMigrationTest {
         assertThat(sql).contains("ENGINE = InnoDB");
         assertThat(sql).contains("DEFAULT CHARACTER SET = utf8mb4");
     }
+
+    @Test
+    void v30ShouldAddReproducibleExplainabilityAndInitiatorMetadata() throws Exception {
+        String sql = Files.readString(Path.of(
+                "src/main/resources/db/migration/V30__strengthen_pdor_explainability.sql"
+        ));
+
+        assertThat(sql).contains("versao_dados CHAR(64)");
+        assertThat(sql).contains("escopo_analise_json JSON");
+        assertThat(sql).contains("janela_temporal_json JSON");
+        assertThat(sql).contains("features_utilizadas_json JSON");
+        assertThat(sql).contains("dados_ausentes_json JSON");
+        assertThat(sql).contains("limitacoes_json JSON");
+        assertThat(sql).contains("alertas_json JSON");
+        assertThat(sql).contains("recomendacoes_json JSON");
+        assertThat(sql).contains("comparacao_anterior_json JSON");
+        assertThat(sql).contains("evidencias_json JSON");
+        assertThat(sql).contains("iniciado_por VARCHAR(120)");
+        assertThat(sql).contains("tipo_iniciador VARCHAR(20)");
+        assertThat(sql).contains("USER", "PROCESS", "UNKNOWN");
+        assertThat(sql).doesNotContain("ON DELETE CASCADE");
+    }
 }

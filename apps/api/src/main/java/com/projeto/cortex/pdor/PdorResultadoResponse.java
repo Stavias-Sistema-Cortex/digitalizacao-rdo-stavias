@@ -43,7 +43,19 @@ public record PdorResultadoResponse(
         JsonNode origemDados,
         JsonNode inputs,
         String erroExecucao,
-        boolean snapshotExistente
+        boolean snapshotExistente,
+        String versaoDados,
+        JsonNode escopoAnalisado,
+        JsonNode janelaTemporal,
+        JsonNode featuresUtilizadas,
+        JsonNode dadosAusentes,
+        JsonNode limitacoes,
+        JsonNode alertasDerivados,
+        JsonNode recomendacoes,
+        JsonNode comparacaoAnterior,
+        JsonNode evidencias,
+        String iniciadoPor,
+        String tipoIniciador
 ) {
     public static PdorResultadoResponse from(
             PdorSnapshot snapshot,
@@ -91,7 +103,19 @@ public record PdorResultadoResponse(
                 snapshot.inputOrigins(),
                 snapshot.inputs(),
                 snapshot.executionError(),
-                snapshotExistente
+                snapshotExistente,
+                snapshot.dataVersion(),
+                snapshot.analysisScope(),
+                snapshot.temporalWindow(),
+                snapshot.featuresUsed(),
+                snapshot.missingData(),
+                snapshot.limitations(),
+                snapshot.alerts(),
+                snapshot.recommendations(),
+                snapshot.previousComparison(),
+                snapshot.evidence(),
+                snapshot.initiatedBy(),
+                snapshot.initiatorType()
         );
     }
 

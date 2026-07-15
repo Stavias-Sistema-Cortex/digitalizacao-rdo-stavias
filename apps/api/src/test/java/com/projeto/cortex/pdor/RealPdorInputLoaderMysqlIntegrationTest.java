@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -208,6 +209,63 @@ class RealPdorInputLoaderMysqlIntegrationTest {
         assertThat(bundle.warnings())
                 .anySatisfy(warning ->
                         assertThat(warning).contains("itens contratuais e execuções de serviço"));
+        assertThat(bundle.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityType)
+                .contains("RDO", "ITEM_CONTRATUAL", "EXECUCAO_SERVICO_RDO");
+    }
+
+    @Test
+    void shouldExposeRealTeamGeospatialAndWeatherContextWithoutInventingCapacity() {
+        Obra obra = Obra.criar(
+                "CW-CONTEXT",
+                "CW-CONTEXT",
+                "Teste Contexto",
+                "Obra teste contexto",
+                "Intervias",
+                null,
+                "Leme",
+                "SP",
+                "SP 330",
+                "ATIVA",
+                "TESTE",
+                null,
+                null
+        );
+        insertObra(obra);
+
+        String rdoId = insertRdo(obra, LocalDate.of(2026, 6, 20), null);
+        jdbcTemplate.update(
+                """
+                UPDATE rdo
+                SET condicao_manha = 'Chuva leve', pluviometria_mm = 12.500
+                WHERE id = ?
+                """,
+                rdoId
+        );
+
+        String colaboradorId = insertColaborador();
+        insertTeamContext(obra, colaboradorId);
+        insertGeometry(obra, colaboradorId);
+
+        PdorInputBundle bundle = loader.load(obra, LocalDate.of(2026, 6, 20));
+
+        assertThat(bundle.inputs())
+                .containsEntry("activeTeamCount", 1)
+                .containsEntry("activeTeamMemberCount", 1)
+                .containsEntry("activeTeamFunctionCount", 1)
+                .containsEntry("responsibleTeamMemberCount", 1)
+                .containsEntry("activeGeospatialFeatureCount", 1)
+                .containsEntry("weatherObservationCount", 1);
+        assertDecimalInput(bundle, "rainfallMmObserved", "12.500");
+        assertThat(bundle.inputs().get("laborCapacityHours")).isNull();
+        assertThat(bundle.origins().get("laborCapacityHours").availability())
+                .isEqualTo(PdorDataAvailability.ABSENT);
+        assertThat(bundle.warnings())
+                .anySatisfy(warning -> assertThat(warning)
+                        .contains("quantidade de membros não foi convertida em capacidade"));
+        assertThat(bundle.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityType)
+                .contains("RDO", "EQUIPE", "EQUIPE_MEMBRO", "OBRA_GEOMETRIA");
     }
 
     private void assertDecimalInput(
@@ -440,6 +498,98 @@ class RealPdorInputLoaderMysqlIntegrationTest {
                 "TESTE"
         );
         return id;
+    }
+
+    private String insertColaborador() {
+        String id = uuid();
+        jdbcTemplate.update(
+                """
+                INSERT INTO colaborador (
+                    id, banco_origem, tabela_origem, pk_origem, nome,
+                    nome_perfil, papel_acesso, ativo
+                ) VALUES (?, 'TESTE', 'TESTE', ?, 'Pessoa teste', 'OPERACIONAL', 'BETA', 1)
+                """,
+                id,
+                id
+        );
+        return id;
+    }
+
+    private void insertTeamContext(Obra obra, String colaboradorId) {
+        String functionId = uuid();
+        String teamId = uuid();
+        jdbcTemplate.update(
+                """
+                INSERT INTO funcao_operacional (
+                    id, codigo, nome, criado_por, atualizado_por
+                ) VALUES (?, ?, 'Encarregado', ?, ?)
+                """,
+                functionId,
+                "ENCARREGADO_" + functionId,
+                colaboradorId,
+                colaboradorId
+        );
+        jdbcTemplate.update(
+                """
+                INSERT INTO equipe (
+                    id, obra_principal_id, nome, status, inicio_validade_em,
+                    criado_por, atualizado_por
+                ) VALUES (?, ?, 'Equipe contexto', 'ATIVA', ?, ?, ?)
+                """,
+                teamId,
+                obra.getId(),
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                colaboradorId,
+                colaboradorId
+        );
+        jdbcTemplate.update(
+                """
+                INSERT INTO equipe_obra (
+                    id, equipe_id, obra_id, status, inicio_em, atribuido_por
+                ) VALUES (?, ?, ?, 'ATIVO', ?, ?)
+                """,
+                uuid(),
+                teamId,
+                obra.getId(),
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                colaboradorId
+        );
+        jdbcTemplate.update(
+                """
+                INSERT INTO equipe_membro (
+                    id, equipe_id, colaborador_id, funcao_operacional_id,
+                    responsavel, status, inicio_em, atribuido_por, atualizado_por
+                ) VALUES (?, ?, ?, ?, 1, 'ATIVO', ?, ?, ?)
+                """,
+                uuid(),
+                teamId,
+                colaboradorId,
+                functionId,
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                colaboradorId,
+                colaboradorId
+        );
+    }
+
+    private void insertGeometry(Obra obra, String colaboradorId) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO obra_geometria (
+                    id, obra_id, categoria, tipo_geometria, geometria_json,
+                    propriedades_json, fonte, status, valido_desde,
+                    versao_linha, criado_por, atualizado_por, criado_em, atualizado_em
+                ) VALUES (?, ?, 'LOCALIZACAO_OBRA', 'POINT', ?, '{}', 'TESTE',
+                    'ATIVA', ?, 0, ?, ?, ?, ?)
+                """,
+                uuid(),
+                obra.getId(),
+                "{\"type\":\"Point\",\"coordinates\":[-47.39,-22.18]}",
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                colaboradorId,
+                colaboradorId,
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                LocalDateTime.of(2026, 1, 1, 0, 0)
+        );
     }
 
     private void insertExecucaoServico(

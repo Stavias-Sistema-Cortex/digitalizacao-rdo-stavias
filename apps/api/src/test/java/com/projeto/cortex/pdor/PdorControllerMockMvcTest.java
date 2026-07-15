@@ -79,6 +79,9 @@ class PdorControllerMockMvcTest {
     @MockBean
     private CortexOperationalMemoryService memoryService;
 
+    @MockBean
+    private PdorExecutionInitiatorResolver initiatorResolver;
+
     private Obra obra;
 
     @BeforeEach
@@ -101,6 +104,8 @@ class PdorControllerMockMvcTest {
 
         when(obraRepository.findAtivasByIdentificador("CW38386"))
                 .thenReturn(List.of(obra));
+        when(initiatorResolver.resolve())
+                .thenReturn(new PdorExecutionInitiator("usuario-teste", "USER"));
     }
 
     @Test
