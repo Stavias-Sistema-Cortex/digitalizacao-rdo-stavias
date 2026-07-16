@@ -23,34 +23,24 @@ import {
   useFinanceiroData,
   type FinanceSection,
 } from "./useFinanceiroData";
-import { FinanceOverviewPanel } from "./FinanceOverviewPanel";
+import { FinanceRevenueTracePage } from "./FinanceRevenueTracePage";
 import { FinancePurchasesPanel } from "./FinancePurchasesPanel";
 import { FinanceInvoicesPanel } from "./FinanceInvoicesPanel";
 import { FinancePaymentsPanel } from "./FinancePaymentsPanel";
 import { FinanceCostCentersPanel } from "./FinanceCostCentersPanel";
 import { FinanceReportsPanel } from "./FinanceReportsPanel";
 import { FinanceAllocationsPanel } from "./FinanceAllocationsPanel";
-import { FinanceGeneralScopePanel } from "./FinanceGeneralScopePanel";
 import { FinanceManualFilters } from "./FinanceManualFilters";
 import "./FinanceiroPage.css";
 
 type FinanceScopeType = "GERAL" | Exclude<FinanceControlUnitType, "CORPORATIVO">;
 
 const SECTIONS: { id: FinanceSection; label: string }[] = [
-  { id: "visao-geral", label: "Visão geral" },
-  { id: "compras", label: "Compras" },
-  { id: "notas-fiscais", label: "Notas fiscais" },
-  { id: "pagamentos", label: "Pagamentos e cobranças" },
-  { id: "rateios", label: "Rateios" },
-  { id: "centros-custo", label: "Centros de custo" },
-  { id: "relatorios", label: "Relatórios" },
+  { id: "visao-geral", label: "Rastreio de receita" },
 ];
 
 const SCOPES: { id: FinanceScopeType; label: string }[] = [
-  { id: "GERAL", label: "Visão geral" },
-  { id: "OBRA", label: "Obras" },
-  { id: "ATIVO", label: "Equipamentos" },
-  { id: "ADMINISTRATIVO", label: "Administrativo" },
+  { id: "GERAL", label: "Consolidado das obras" },
 ];
 
 function sectionFromParams(params: URLSearchParams): FinanceSection {
@@ -59,7 +49,6 @@ function sectionFromParams(params: URLSearchParams): FinanceSection {
     ? requested as FinanceSection
     : "visao-geral";
 }
-
 function scopeFromParams(params: URLSearchParams): FinanceScopeType {
   const requested = params.get("escopo");
   return SCOPES.some((scope) => scope.id === requested)
@@ -71,7 +60,7 @@ export function FinanceiroPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [units, setUnits] = useState<FinanceControlUnit[]>([]);
   const [unitError, setUnitError] = useState("");
-  const [unitVersion, setUnitVersion] = useState(0);
+  const [unitVersion] = useState(0);
   const [unitCapabilities, setUnitCapabilities] =
     useState<FinanceCapabilities | null>(null);
   const [reportGroup, setReportGroup] = useState("CENTRO_CUSTO");
@@ -217,7 +206,7 @@ export function FinanceiroPage() {
             <p className="finance-kicker">Operação</p>
             <h1>Financeiro</h1>
             <p>
-              Compras, notas fiscais, rateios, pagamentos e cobranças da operação.
+              Produção dos RDOs, receita operacional e projeção de receita por obra e serviço.
             </p>
           </div>
         </header>
@@ -300,22 +289,8 @@ export function FinanceiroPage() {
           </>
         )}
 
-        {!filters.obraId && section === "visao-geral" ? (
-          <FinanceGeneralScopePanel
-            units={visibleUnits}
-            selectedUnitId={selectedUnitId}
-            canAdminister={isAlfa(getSession())}
-            onSelect={(unit) => {
-              const nextScope = unit.tipo === "CORPORATIVO" ? "GERAL" : unit.tipo;
-              applyParams(
-                { ...filters, obraId: unit.obraId ?? "" },
-                section,
-                nextScope,
-                unit.id,
-              );
-            }}
-            onChanged={() => setUnitVersion((value) => value + 1)}
-          />
+        {section === "visao-geral" ? (
+          <FinanceRevenueTracePage obraId={filters.obraId} de={filters.de} ate={filters.ate} />
         ) : !filters.obraId && section === "rateios" ? (
           <FinanceAllocationsPanel
             units={units}
@@ -359,7 +334,6 @@ export function FinanceiroPage() {
               </div>
             ) : null}
             {data.loading ? <div className="finance-progress" role="status"><span />Atualizando dados reais…</div> : null}
-            {canView && section === "visao-geral" && <FinanceOverviewPanel overview={data.overview} ledger={data.ledger} />}
             {canView && section === "compras" && (
               <FinancePurchasesPanel
                 obraId={filters.obraId}

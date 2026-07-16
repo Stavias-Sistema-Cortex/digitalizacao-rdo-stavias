@@ -442,6 +442,44 @@ export interface FinanceOverview {
   possuiOrcamentoVinculado: boolean;
 }
 
+export interface FinanceOperationalService {
+  nome: string;
+  unidade: string;
+  quantidadeExecutada: number;
+  custoRealizado: number;
+  receitaOperacionalEstimada: number | null;
+  margem: number | null;
+  margemPercentual: number | null;
+  quantidadeRdos: number;
+}
+
+export interface FinanceOperationalResult {
+  obraId: string;
+  de: string | null;
+  ate: string | null;
+  producaoRealizada: number;
+  receitaOperacionalEstimada: number;
+  custoRealizado: number;
+  margemAtual: number;
+  margemPercentual: number | null;
+  receitaMedida: number;
+  receitaAprovada: number;
+  receitaFaturada: number;
+  receitaRecebida: number;
+  servicos: FinanceOperationalService[];
+  pdor: {
+    dataReferencia: string | null;
+    statusExecucao: string;
+    statusExecucaoLabel: string | null;
+    receitaPrevistaFinal: number | null;
+    custoPrevistoFinal: number | null;
+    margemPrevista: number | null;
+    receitaEmRisco: number | null;
+    confianca: number | null;
+    qualidadeDados: number | null;
+  } | null;
+}
+
 export interface FinanceReportRow {
   grupoId: string | null;
   grupoNome: string;
