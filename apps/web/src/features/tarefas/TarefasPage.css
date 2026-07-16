@@ -420,3 +420,78 @@
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 }
+
+/* Cortex 2.1 · quadro de compromissos */
+.tarefas-topbar {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-ink);
+}
+
+.tarefas-topbar h1,
+.tarefa-form h3,
+.tarefas-eficiencia h3 {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.tarefas-card,
+.tarefa-sugestoes { border-radius: var(--radius-container); }
+
+.tarefas-equipe-tabs {
+  gap: 18px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tarefas-equipe-tab {
+  position: relative;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 0;
+  transition: color var(--transition-functional);
+}
+
+.tarefas-equipe-tab:hover:not(.tarefas-equipe-tab--active) {
+  background: transparent;
+  color: var(--color-ink);
+}
+
+.tarefas-equipe-tab--active {
+  background: transparent;
+  color: var(--color-ink);
+  font-weight: 500;
+  box-shadow: inset 0 -3px var(--color-brand-yellow);
+}
+
+.tarefas-nova-equipe input,
+.tarefas-nova-equipe button,
+.tarefa-excluir,
+.tarefa-form input,
+.tarefa-form textarea,
+.tarefa-prio-botao,
+.tarefa-sugestoes button,
+.tarefa-form-enviar {
+  border-radius: var(--radius-control);
+}
+
+.tarefa-item {
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: var(--radius-control);
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional);
+}
+
+.tarefa-item:hover {
+  border-color: #aeb8b1;
+  background: #fcfdfc;
+}
+
+.tarefa-linha-titulo strong,
+.tarefas-eficiencia-resumo strong { font-weight: 600; }
+
+.tarefas-nova-equipe button,
+.tarefa-prio-botao,
+.tarefa-form-enviar,
+.tarefa-prio { font-weight: 500; }

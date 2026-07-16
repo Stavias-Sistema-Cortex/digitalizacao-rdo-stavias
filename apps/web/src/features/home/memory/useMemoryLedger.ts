@@ -32,9 +32,10 @@ export function useMemoryLedger(
 ): MemoryLedgerState {
   const session = getSession();
   const userId = session?.colaboradorId ?? "";
-  const allowedObraIds = session?.escopoGlobal
-    ? null
-    : session?.obraIds ?? [];
+  const allowedObraIds = useMemo<readonly string[] | null>(
+    () => session?.escopoGlobal ? null : session?.obraIds ?? [],
+    [session?.escopoGlobal, session?.obraIds],
+  );
   const filtersKey = JSON.stringify(filters);
   const [serverEvents, setServerEvents] = useState<MemoryEvent[]>([]);
   const [localEvents, setLocalEvents] = useState<OperationalEventRecord[]>([]);
@@ -50,12 +51,16 @@ export function useMemoryLedger(
 
   useEffect(() => {
     let cancelled = false;
-    setServerEvents([]);
-    setNextCursor(null);
-    setHasMore(false);
-    setError(null);
-    setServerAvailable(false);
-    setIsInitialLoading(true);
+    queueMicrotask(() => {
+      if (!cancelled) {
+        setServerEvents([]);
+        setNextCursor(null);
+        setHasMore(false);
+        setError(null);
+        setServerAvailable(false);
+        setIsInitialLoading(true);
+      }
+    });
 
     void listOperationalEvents()
       .then((events) => {
