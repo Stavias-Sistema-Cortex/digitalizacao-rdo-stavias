@@ -139,7 +139,14 @@ git commit -m "feat(api): restore traceable operational revenue"
 
 - [ ] **Step 1: Restore the 5174 components and data contracts**
 
-Copy the three component files exactly from `c569c19`. Port the revenue types, `buscarRastreioReceita`, PDOR lookup, and operational-result query from the same commit into the current files without removing the newer `buscarAuditoriaFinanceira` removal or the Cortex 2.1 Memory link.
+Copy `FinanceRevenueTracePage.tsx` and `FinanceOperationalResultPanel.tsx` from
+`c569c19`. Base `FinanceTraceEvidenceDrawer.tsx` on that commit, but remove the
+`buscarAuditoriaFinanceira` request and the inline event list: the drawer keeps
+obra, item contratual, RDO IDs, revenue states and PDOR evidence, while global
+ontology modifications remain exclusive to `Home > Memória`. Port the revenue
+types, `buscarRastreioReceita`, PDOR lookup and operational-result query from the
+same commit without reintroducing `FinanceAuditEvent` or
+`/ontology/timeline` in Financeiro.
 
 - [ ] **Step 2: Reduce visible Financeiro navigation to one section**
 
