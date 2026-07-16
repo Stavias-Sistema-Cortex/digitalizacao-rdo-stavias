@@ -422,9 +422,10 @@ public class EquipeService {
                 """
                 INSERT INTO equipe_membro (
                     id, equipe_id, colaborador_id, funcao_operacional_id,
-                    responsavel, status, inicio_em, atribuido_por, atualizado_por,
+                    responsavel, status, inicio_em, adicionado_por, atribuido_por,
+                    atualizado_por,
                     versao_linha
-                ) VALUES (?, ?, ?, ?, ?, 'ATIVO', ?, ?, ?, 1)
+                ) VALUES (?, ?, ?, ?, ?, 'ATIVO', ?, ?, ?, ?, 1)
                 """,
                 participationId,
                 team.id(),
@@ -432,6 +433,7 @@ public class EquipeService {
                 functionId,
                 responsible,
                 start,
+                actorId,
                 actorId,
                 actorId
         );
@@ -572,6 +574,8 @@ public class EquipeService {
                 SET status = 'ENCERRADO',
                     fim_em = ?,
                     motivo_encerramento = ?,
+                    removido_em = ?,
+                    removido_por = ?,
                     encerrado_por = ?,
                     atualizado_por = ?,
                     versao_linha = versao_linha + 1
@@ -581,6 +585,8 @@ public class EquipeService {
                 """,
                 end,
                 reason,
+                end,
+                actorId,
                 actorId,
                 actorId,
                 before.id(),
@@ -673,6 +679,8 @@ public class EquipeService {
                 SET status = 'ENCERRADO',
                     fim_em = ?,
                     motivo_encerramento = ?,
+                    removido_em = ?,
+                    removido_por = ?,
                     encerrado_por = ?,
                     atualizado_por = ?,
                     versao_linha = versao_linha + 1
@@ -681,6 +689,8 @@ public class EquipeService {
                 """,
                 archivedAt,
                 reason,
+                archivedAt,
+                actorId,
                 actorId,
                 actorId,
                 before.id()
@@ -909,11 +919,12 @@ public class EquipeService {
         jdbcTemplate.update(
                 """
                 INSERT INTO equipe (
-                    id, obra_principal_id, nome, descricao, status,
+                    id, obra_id, obra_principal_id, nome, descricao, status,
                     inicio_validade_em, criado_por, atualizado_por, versao_linha
-                ) VALUES (?, ?, ?, ?, 'ATIVA', ?, ?, ?, 1)
+                ) VALUES (?, ?, ?, ?, ?, 'ATIVA', ?, ?, ?, 1)
                 """,
                 id,
+                worksiteId,
                 worksiteId,
                 name,
                 description,

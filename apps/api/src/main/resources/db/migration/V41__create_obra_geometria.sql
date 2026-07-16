@@ -1,4 +1,4 @@
--- Camada geoespacial temporal do Córtex. GeoJSON preserva a geometria de
+-- Camada geoespacial temporal reconciliada após a sequência V1-V40. GeoJSON preserva a geometria de
 -- origem sem fabricar shapes e permite servir o mesmo contrato aos providers.
 CREATE TABLE obra_geometria (
     id CHAR(36) NOT NULL,

@@ -120,8 +120,9 @@ class EquipeServiceTest {
         verify(currentUserService).requireAlfa();
         verify(currentUserService, atLeastOnce()).requireWorksiteAccess("obra-1");
         verify(jdbcTemplate).update(
-                contains("versao_linha"),
+                contains("obra_id, obra_principal_id"),
                 eq("equipe-1"),
+                eq("obra-1"),
                 eq("obra-1"),
                 eq("Equipe Norte"),
                 eq("Pavimentação do trecho norte"),
@@ -249,13 +250,14 @@ class EquipeServiceTest {
 
         assertThat(created).isEqualTo(member);
         verify(jdbcTemplate).update(
-                contains("versao_linha"),
+                contains("adicionado_por, atribuido_por"),
                 eq("participacao-1"),
                 eq("equipe-1"),
                 eq("colab-1"),
                 eq("funcao-1"),
                 eq(false),
                 eq(startedAt),
+                eq("alfa-1"),
                 eq("alfa-1"),
                 eq("alfa-1")
         );
@@ -316,9 +318,11 @@ class EquipeServiceTest {
 
         assertThat(ended).isEqualTo(after);
         verify(jdbcTemplate).update(
-                contains("SET status = 'ENCERRADO'"),
+                contains("removido_em"),
                 eq(endedAt),
                 eq("Realocação"),
+                eq(endedAt),
+                eq("alfa-1"),
                 eq("alfa-1"),
                 eq("alfa-1"),
                 eq("participacao-1"),
@@ -386,6 +390,8 @@ class EquipeServiceTest {
                 contains("UPDATE equipe_membro"),
                 eq(archivedAt),
                 eq("Fim do trecho"),
+                eq(archivedAt),
+                eq("alfa-1"),
                 eq("alfa-1"),
                 eq("alfa-1"),
                 eq("equipe-1")

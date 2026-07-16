@@ -10,9 +10,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ObraGeometriaMigrationTest {
 
     @Test
-    void v29CreatesTemporalGeospatialFeaturesWithoutCascadeDeletion() throws Exception {
+    void v41CreatesTemporalGeospatialFeaturesWithoutCascadeDeletion() throws Exception {
         Path migration = Path.of(
-                "src/main/resources/db/migration/V29__create_obra_geometria.sql"
+                "src/main/resources/db/migration/V41__create_obra_geometria.sql"
         );
         assertThat(migration).exists();
         String sql = Files.readString(migration);

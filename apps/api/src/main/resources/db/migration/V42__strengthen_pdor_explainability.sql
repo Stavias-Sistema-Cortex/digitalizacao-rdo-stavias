@@ -1,4 +1,4 @@
--- Metadados de reprodutibilidade e explicabilidade explícita do PDOR.
+-- Metadados de reprodutibilidade e explicabilidade explícita do PDOR após V1-V41.
 -- Snapshots anteriores são preservados e marcados como legado; novas
 -- execuções passam a preencher todos os campos com evidência estruturada.
 ALTER TABLE pdor_snapshot

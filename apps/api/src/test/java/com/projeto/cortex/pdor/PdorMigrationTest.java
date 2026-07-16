@@ -46,9 +46,9 @@ class PdorMigrationTest {
     }
 
     @Test
-    void v30ShouldAddReproducibleExplainabilityAndInitiatorMetadata() throws Exception {
+    void v42ShouldAddReproducibleExplainabilityAndInitiatorMetadata() throws Exception {
         String sql = Files.readString(Path.of(
-                "src/main/resources/db/migration/V30__strengthen_pdor_explainability.sql"
+                "src/main/resources/db/migration/V42__strengthen_pdor_explainability.sql"
         ));
 
         assertThat(sql).contains("versao_dados CHAR(64)");
