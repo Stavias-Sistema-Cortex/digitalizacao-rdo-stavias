@@ -3,6 +3,7 @@ import type {
   MemoryDiffRow,
   MemoryEntityRef,
   MemoryEvent,
+  MemoryFilters,
 } from "./memory.types";
 
 const EVENT_LABELS: Record<string, string> = {
@@ -85,6 +86,43 @@ export function memoryDiffRows(event: MemoryEvent): MemoryDiffRow[] {
     }));
 }
 
+export function filterMemoryEvents(
+  events: MemoryEvent[],
+  filters: MemoryFilters,
+): MemoryEvent[] {
+  const entityType = normalized(filters.entityType);
+  const entityId = text(filters.entityId);
+  const obraId = text(filters.obraId);
+  const rdoId = text(filters.rdoId);
+  const actorId = text(filters.actorId);
+  const eventType = normalized(filters.eventType);
+  const origin = normalized(filters.origin);
+  const result = normalized(filters.result);
+  const from = timestamp(text(filters.from));
+  const to = timestamp(text(filters.to));
+
+  return events.filter((event) => {
+    if (obraId && event.obraId !== obraId) return false;
+    if (rdoId && event.rdoId !== rdoId) return false;
+    if (actorId && event.actorId !== actorId) return false;
+    if (eventType && normalized(event.type) !== eventType) return false;
+    if (origin && normalized(event.origin) !== origin) return false;
+    if (result && normalized(event.result) !== result) return false;
+    if (filters.from && timestamp(event.occurredAt) < from) return false;
+    if (filters.to && timestamp(event.occurredAt) > to) return false;
+    if (entityType && entityId) {
+      const matchesPrincipal =
+        normalized(event.principalEntity.type) === entityType &&
+        event.principalEntity.id === entityId;
+      const matchesRelated = event.relatedEntities.some((entity) =>
+        normalized(entity.type) === entityType && entity.id === entityId
+      );
+      if (!matchesPrincipal && !matchesRelated) return false;
+    }
+    return true;
+  });
+}
+
 function memoryEventFromDevice(
   event: OperationalEventRecord,
 ): MemoryEvent {
@@ -163,6 +201,10 @@ function timestamp(value: string | null): number {
 
 function text(value: string | null | undefined): string | null {
   return value?.trim() || null;
+}
+
+function normalized(value: string | null | undefined): string | null {
+  return text(value)?.toLocaleUpperCase("pt-BR") ?? null;
 }
 
 function sameValue(left: unknown, right: unknown): boolean {
