@@ -7,7 +7,6 @@ import {
 import { financeQueryParams } from "./financeiroFilters";
 import { ensureRegisteredDevice } from "../../lib/sync/registerDevice";
 import type {
-  FinanceAuditEvent,
   FinanceAllocation,
   FinanceAllocationHistoryEntry,
   FinanceAllocationItem,
@@ -587,32 +586,4 @@ export async function enviarCobranca(
     `/financeiro/cobrancas/${encodeURIComponent(chargeId)}/enviar`,
     new URLSearchParams({ obraId }),
   ), jsonRequest("POST", null)));
-}
-
-interface TimelineEventApi {
-  id: string;
-  type: string;
-  occurredAt: string | null;
-  origin: string | null;
-  payload: unknown;
-}
-
-export async function buscarAuditoriaFinanceira(
-  entityType: string,
-  entityId: string,
-): Promise<FinanceAuditEvent[]> {
-  const events = await readJson<TimelineEventApi[]>(await apiFetch(endpoint(
-    "/ontology/timeline",
-    new URLSearchParams({ entityType, entityId, limit: "50" }),
-  )));
-  return events.map((event) => ({
-    id: event.id,
-    type: event.type,
-    occurredAt: event.occurredAt,
-    origin: event.origin,
-    payload: event.payload && typeof event.payload === "object" &&
-      !Array.isArray(event.payload)
-      ? event.payload as Record<string, unknown>
-      : {},
-  }));
 }

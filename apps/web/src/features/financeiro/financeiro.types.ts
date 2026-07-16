@@ -488,11 +488,3 @@ export interface FinanceChargePreview {
   hashConteudo: string;
   confirmadaEm: string;
 }
-
-export interface FinanceAuditEvent {
-  id: string;
-  type: string;
-  occurredAt: string | null;
-  origin: string | null;
-  payload: Record<string, unknown>;
-}

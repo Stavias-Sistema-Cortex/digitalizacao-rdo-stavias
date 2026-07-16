@@ -7,6 +7,14 @@ describe("Cortex 2.1 institutional UI policy", () => {
     resolve(process.cwd(), "src/index.css"),
     "utf8",
   );
+  const financeApi = readFileSync(
+    resolve(process.cwd(), "src/features/financeiro/financeiroApi.ts"),
+    "utf8",
+  );
+  const financePurchases = readFileSync(
+    resolve(process.cwd(), "src/features/financeiro/FinancePurchasesPanel.tsx"),
+    "utf8",
+  );
 
   it("defines the institutional palette and geometry", () => {
     expect(css).toContain("--color-ink: #111312");
@@ -19,5 +27,11 @@ describe("Cortex 2.1 institutional UI policy", () => {
     expect(css).not.toMatch(
       /\.stavia-launcher\s*\{[^}]*border-radius:\s*4px/s,
     );
+  });
+
+  it("keeps ontology event listings exclusive to Home > Memória", () => {
+    expect(financeApi).not.toContain("/ontology/timeline");
+    expect(financePurchases).not.toContain("buscarAuditoriaFinanceira");
+    expect(financePurchases).toContain("memoryHref");
   });
 });
