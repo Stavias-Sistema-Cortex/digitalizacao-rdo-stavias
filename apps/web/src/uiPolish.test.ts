@@ -66,9 +66,13 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(authenticatedCss).not.toContain("backdrop-filter");
   });
 
-  it("usa uma sidebar plana e métricas operacionais discretas", () => {
+  it("usa uma sidebar institucional em preto e verde e métricas operacionais discretas", () => {
     expect(rule(globalCss, ".cortex-sidebar")).toContain(
-      "background: var(--color-brand-teal);",
+      "background: linear-gradient(",
+    );
+    expect(rule(globalCss, ".cortex-sidebar")).toContain("#111312 0%");
+    expect(rule(globalCss, ".cortex-sidebar")).toContain(
+      "var(--color-brand-teal) 100%",
     );
     expect(rule(globalCss, ".cortex-sidebar")).not.toContain("radial-gradient");
     expect(rule(globalCss, ".metric-card")).toContain(

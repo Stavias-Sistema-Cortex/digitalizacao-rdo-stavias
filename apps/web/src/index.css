@@ -660,7 +660,12 @@ textarea:focus {
   padding: 25px 40px 10px;
   border: 0;
   border-radius: 0;
-  background: var(--color-brand-teal);
+  background: linear-gradient(
+    155deg,
+    #111312 0%,
+    #123a37 46%,
+    var(--color-brand-teal) 100%
+  );
   color: #eef7ef;
 }
 
@@ -676,16 +681,19 @@ textarea:focus {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid #cbd5cf;
+  border: 1px solid var(--color-brand-yellow);
   border-radius: 999px;
-  background: #17504d;
+  background: #123a37;
   color: #eef7ef;
   box-shadow: 0 6px 18px rgb(8 36 34 / 30%);
-  transition: background 140ms ease;
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
 .sidebar-toggle:hover {
-  background: #1d5f5b;
+  background: var(--color-brand-teal);
 }
 
 .sidebar-toggle svg {
@@ -802,7 +810,7 @@ textarea:focus {
   gap: 6px;
 }
 
-/* Nav minimalista: botões chatos, ativo assinado pela barra amarela. */
+/* Navegação enquadrada: cada estado ocupa o perímetro completo do controle. */
 .sidebar-nav-item {
   position: relative;
   display: flex;
@@ -811,16 +819,17 @@ textarea:focus {
   width: 100%;
   min-height: 44px;
   padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   background: transparent;
   color: #eef7ef;
   font-size: 0.92rem;
   font-weight: 500;
   text-align: left;
   transition:
-    background 0.16s ease,
-    color 0.16s ease;
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
 .sidebar-nav-item img,
@@ -837,24 +846,14 @@ textarea:focus {
 }
 
 .sidebar-nav-item:hover {
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 34%);
+  background: rgb(255 255 255 / 6%);
 }
 
 .sidebar-nav-item.active {
-  background: rgb(255 255 255 / 10%);
+  border: 1px solid var(--color-brand-yellow);
+  background: rgb(255 255 255 / 5%);
   font-weight: 600;
-}
-
-/* Item ativo: barra amarela de pista na lateral. */
-.sidebar-nav-item.active::before {
-  content: "";
-  position: absolute;
-  top: 20%;
-  bottom: 20%;
-  left: 0;
-  width: 3px;
-  border-radius: 999px;
-  background: #fed203;
 }
 
 .sidebar-footer button {
@@ -864,18 +863,22 @@ textarea:focus {
   gap: 10px;
   min-height: 40px;
   padding: 0 6px;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: #eef7ef;
   font-size: 0.9rem;
   font-weight: 600;
   text-align: left;
-  border-radius: 8px;
-  transition: background 0.16s ease;
+  border-radius: var(--radius-control);
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
 .sidebar-footer button:hover {
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 34%);
+  background: rgb(255 255 255 / 6%);
 }
 
 .sidebar-footer button:disabled {
