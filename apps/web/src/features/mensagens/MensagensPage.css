@@ -1389,3 +1389,104 @@
   .mensagens-list { scroll-behavior: auto; }
   .mensagens-spin { animation: none; }
 }
+
+/* Cortex 2.1 · correspondência operacional */
+.mensagens-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-ink);
+}
+
+.mensagens-header h1,
+.mensagens-thread-header h2,
+.mensagens-thread-empty h2,
+.mensagens-dialog h2 {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.mensagens-primary,
+.mensagens-alert,
+.mensagens-search input,
+.mensagens-search button,
+.mensagens-search-results header button,
+.mensagens-composer textarea,
+.mensagens-attach,
+.mensagens-dialog input,
+.mensagens-dialog select,
+.mensagens-dialog fieldset,
+.mensagens-directory-search button,
+.mensagens-dialog form > footer > button:first-child {
+  border-radius: var(--radius-control);
+}
+
+.mensagens-workspace,
+.mensagens-dialog {
+  border-radius: var(--radius-container);
+}
+
+.mensagens-workspace { border-color: #bfc7c2; }
+.mensagens-conversations,
+.mensagens-context { background: #f7f8f6; }
+
+.mensagens-pane-heading,
+.mensagens-search,
+.mensagens-thread-header,
+.mensagens-composer,
+.mensagens-context > header,
+.mensagens-context > section {
+  border-color: #c8cfca;
+}
+
+.mensagens-conversation-list > li > button {
+  transition:
+    background-color var(--transition-functional),
+    color var(--transition-functional);
+}
+
+.mensagens-conversation-list > li > button.active {
+  background: #fff;
+  box-shadow: inset 3px 0 var(--color-ink);
+}
+
+.mensagens-avatar,
+.mensagens-context-people li > span {
+  border-radius: var(--radius-control);
+  background: #dfe5e1;
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.mensagem-item article,
+.mensagem-item--mine article {
+  border-radius: var(--radius-container);
+}
+
+.mensagem-item article { border-top-left-radius: 2px; }
+.mensagem-item--mine article {
+  border-top-right-radius: 2px;
+  border-top-left-radius: var(--radius-container);
+}
+
+.mensagens-primary,
+.mensagens-alert button,
+.mensagens-search > label,
+.mensagens-composer > label,
+.mensagens-search button,
+.mensagens-search-results header button,
+.mensagem-sync,
+.mensagem-item article > footer button,
+.mensagem-item details summary,
+.mensagens-attach,
+.mensagens-dialog form > label,
+.mensagens-directory-search label,
+.mensagens-directory-search button,
+.mensagens-dialog form > footer > button:first-child,
+.mensagens-dialog legend {
+  font-weight: 500;
+}
+
+.mensagem-attachments button,
+.mensagens-file-preview li,
+.mensagens-context-documents button {
+  border-radius: var(--radius-control);
+}

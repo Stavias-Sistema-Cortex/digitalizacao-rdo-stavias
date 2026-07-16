@@ -18,6 +18,18 @@ function rule(css: string, selector: string): string {
   return css.slice(start, end + 2);
 }
 
+function lastRule(css: string, selector: string): string {
+  const start = css.lastIndexOf(`${selector} {`);
+  if (start < 0) {
+    throw new Error(`Regra CSS ausente: ${selector}`);
+  }
+  const end = css.indexOf("\n}", start);
+  if (end < 0) {
+    throw new Error(`Regra CSS sem fechamento: ${selector}`);
+  }
+  return css.slice(start, end + 2);
+}
+
 const globalCss = readCss("./index.css");
 const syncCss = readCss("./components/SyncStatusBanner.css");
 const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
@@ -38,12 +50,15 @@ const authenticatedCss = [
 
 describe("polimento visual da plataforma autenticada", () => {
   it("centraliza a paleta e a escala de raios aprovadas", () => {
-    expect(rule(globalCss, ":root")).toContain("--color-text: #18231f;");
+    expect(rule(globalCss, ":root")).toContain("--color-ink: #111312;");
+    expect(rule(globalCss, ":root")).toContain("--color-graphite: #292d2b;");
+    expect(rule(globalCss, ":root")).toContain("--color-text: var(--color-ink);");
     expect(rule(globalCss, ":root")).toContain("--color-brand-teal: #124e4a;");
     expect(rule(globalCss, ":root")).toContain("--color-brand-yellow: #f2c800;");
-    expect(rule(globalCss, ":root")).toContain("--radius-sm: 8px;");
-    expect(rule(globalCss, ":root")).toContain("--radius-md: 12px;");
-    expect(rule(globalCss, ":root")).toContain("--radius-lg: 16px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-control: 4px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-container: 6px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-sm: var(--radius-control);");
+    expect(rule(globalCss, ":root")).toContain("--radius-lg: var(--radius-container);");
   });
 
   it("remove receitas de vidro da interface autenticada", () => {
@@ -61,13 +76,13 @@ describe("polimento visual da plataforma autenticada", () => {
     );
   });
 
-  it("enquadra métricas RDO com moldura amarela e cantos quadrados", () => {
-    const metricCard = rule(globalCss, ".metric-card");
+  it("enquadra métricas RDO como registro branco com acentos estruturais", () => {
+    const metricCard = lastRule(globalCss, ".metric-card");
     expect(metricCard).toContain(
-      "border: 2px solid var(--color-brand-yellow);",
+      "border: 1px solid var(--color-border);",
     );
-    expect(metricCard).toContain("border-radius: 0;");
-    expect(metricCard).not.toContain("border-top:");
+    expect(metricCard).toContain("border-radius: var(--radius-control);");
+    expect(metricCard).toContain("border-top: 2px solid var(--color-ink);");
   });
 
   it("mantém foco visível para os controles principais", () => {
@@ -94,8 +109,8 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(syncCss, ".sync-chip__action")).toContain(
       "border-radius: var(--radius-sm);",
     );
-    expect(rule(globalCss, ".home-card")).toContain(
-      "border-radius: var(--radius-lg);",
+    expect(lastRule(globalCss, ".home-card")).toContain(
+      "border-radius: var(--radius-container);",
     );
     expect(rule(tarefasCss, ".tarefa-form-enviar")).toContain(
       "border-radius: var(--radius-sm);",
@@ -103,13 +118,13 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("tokeniza os filtros e delimita os cartões estáticos da Home", () => {
-    expect(rule(globalCss, ".home-topbar")).toContain(
-      "border-bottom: 1px solid var(--color-border);",
+    expect(lastRule(globalCss, ".home-topbar")).toContain(
+      "border-bottom-color: var(--color-ink);",
     );
 
     const chip = rule(globalCss, ".chip");
     expect(chip).toContain("border: 1px solid var(--color-border);");
-    expect(chip).toContain("border-radius: var(--radius-sm);");
+    expect(chip).toContain("border-radius: var(--radius-control);");
     expect(chip).toContain("background: var(--color-surface);");
 
     const ufSelect = rule(globalCss, ".home-uf-filter select");
@@ -117,8 +132,8 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(ufSelect).toContain("border-radius: var(--radius-sm);");
     expect(ufSelect).toContain("background: var(--color-surface);");
 
-    expect(rule(globalCss, ".chip--active")).toContain(
-      "background: var(--color-brand-yellow);",
+    expect(lastRule(globalCss, ".chip--active")).toContain(
+      "background: var(--color-ink);",
     );
     expect(rule(globalCss, ".home-obra-card")).toContain(
       "border: 1px solid var(--color-border);",
@@ -138,14 +153,14 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("alinha à esquerda e contém a hierarquia operacional dos RDOs", () => {
-    const filterLabel = rule(globalCss, ".rdo-filter-grid label");
-    expect(filterLabel).toContain("letter-spacing: 0;");
-    expect(filterLabel).toContain("text-transform: none;");
+    const filterLabel = lastRule(globalCss, ".rdo-filter-grid label");
+    expect(filterLabel).toContain("font-weight: 500;");
+    expect(filterLabel).toContain("text-transform: uppercase;");
 
-    const metric = rule(globalCss, ".metric-card");
-    expect(metric).toContain("min-height: 82px;");
-    expect(metric).toContain("padding: 14px 16px;");
-    expect(metric).toContain("border-radius: 0;");
+    const metric = lastRule(globalCss, ".metric-card");
+    expect(metric).toContain("min-height: 76px;");
+    expect(metric).toContain("padding: 12px 14px;");
+    expect(metric).toContain("border-radius: var(--radius-control);");
     expect(rule(globalCss, ".metric-card span")).toContain(
       "text-align: left;",
     );
@@ -255,14 +270,12 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("marca a obra selecionada sem alterar as cores semânticas do PDOR", () => {
-    const surfaces = rule(globalCss, ".obras-list,\n.obras-detail");
-    expect(surfaces).toContain("border: 1px solid var(--color-border);");
-    expect(surfaces).toContain("border-radius: var(--radius-lg);");
-    expect(surfaces).toContain("background: var(--color-surface);");
+    const surfaces = lastRule(globalCss, ".obras-list,\n.obras-detail");
+    expect(surfaces).toContain("border-radius: var(--radius-container);");
 
-    const active = rule(globalCss, ".obras-list-item.active");
-    expect(active).toContain("border-color: var(--color-border);");
-    expect(active).toContain("background: #f7f9f7;");
+    const active = lastRule(globalCss, ".obras-list-item.active");
+    expect(active).toContain("border-color: var(--color-ink);");
+    expect(active).toContain("background: #fff;");
 
     const marker = rule(globalCss, ".obras-list-item.active::before");
     expect(marker).toContain('content: "";');
@@ -329,8 +342,8 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(priority).toContain("border: 1px solid var(--color-border);");
     expect(priority).toContain("background: var(--color-surface);");
 
-    expect(rule(tarefasCss, ".tarefas-equipe-tab--active")).toContain(
-      "background: var(--color-brand-yellow);",
+    expect(lastRule(tarefasCss, ".tarefas-equipe-tab--active")).toContain(
+      "box-shadow: inset 0 -3px var(--color-brand-yellow);",
     );
     expect(rule(tarefasCss, ".tarefa-form-enviar")).toContain(
       "box-shadow: none;",
@@ -348,8 +361,8 @@ describe("polimento visual da plataforma autenticada", () => {
 
   it("normaliza integrações e Gestão de Obras sem um tema escuro paralelo", () => {
     const tableHeading = rule(integracoesCss, ".integracoes-table th");
-    expect(tableHeading).toContain("color: var(--color-muted);");
-    expect(tableHeading).toContain("letter-spacing: 0;");
+    expect(tableHeading).toContain("color: var(--color-ink);");
+    expect(tableHeading).toContain("letter-spacing: 0.06em;");
 
     const reportLabel = rule(integracoesCss, ".integracoes-report dt");
     expect(reportLabel).toContain("color: var(--color-muted);");

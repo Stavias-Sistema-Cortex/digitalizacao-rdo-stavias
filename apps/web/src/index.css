@@ -1474,7 +1474,9 @@ textarea:focus {
 
 .chip {
   min-height: 32px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
+  background: var(--color-surface);
   color: var(--color-muted);
   font-weight: 400;
   transition:
@@ -1518,12 +1520,14 @@ textarea:focus {
 
 .home-obra-card,
 .home-card {
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-container);
   box-shadow: none;
 }
 
 .home-obra-card {
   padding: 20px;
+  border: 1px solid var(--color-border);
   border-top: 3px solid var(--color-ink);
 }
 
@@ -1759,9 +1763,12 @@ textarea:focus {
 }
 
 .obras-list-item.active::before {
+  content: "";
   top: 12px;
   bottom: 12px;
+  width: 3px;
   border-radius: 0;
+  background: var(--color-brand-yellow);
 }
 
 .obras-list-title,
@@ -2843,6 +2850,26 @@ textarea:focus {
 
 /* Home e Obras são declaradas acima em blocos legados; esta camada final
    fixa a precedência do vocabulário visual 2.1 sem tocar na StavIA. */
+.home-topbar {
+  border-bottom-color: var(--color-ink);
+}
+
+.home-card {
+  border-radius: var(--radius-container);
+}
+
+.chip--active {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+  font-weight: 500;
+}
+
+.obras-list,
+.obras-detail {
+  border-radius: var(--radius-container);
+}
+
 .home-topbar,
 .obras-topbar {
   border-bottom-color: var(--color-ink);
@@ -2868,6 +2895,12 @@ textarea:focus {
 .obras-create-action,
 .obras-detail-actions > a {
   border-radius: var(--radius-control);
+}
+
+.obras-create-action {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  font-weight: 500;
 }
 
 .home-card h3,
