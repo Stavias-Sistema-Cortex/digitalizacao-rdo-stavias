@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
+import { memoryHref } from "../home/memory/memoryLocation";
 import type {
   LocalRdoRecord,
   OperationalEventRecord,
@@ -40,18 +42,6 @@ function formatDate(value: string): string {
   }
 
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -261,30 +251,6 @@ function hasOccurrence(
   );
 }
 
-function eventLabel(event: OperationalEventRecord): string {
-  return event.type
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/^./, (first) => first.toUpperCase());
-}
-
-function eventSyncLabel(
-  status: OperationalEventRecord["syncStatus"],
-): string {
-  switch (status) {
-    case "LOCAL_ONLY":
-      return "Somente local";
-    case "PENDING_SYNC":
-      return "Pendente de sincronização";
-    case "SYNCING":
-      return "Sincronizando";
-    case "SYNCED":
-      return "Sincronizado";
-    case "SYNC_FAILED":
-      return "Falha ao sincronizar";
-  }
-}
-
 export function RdoLocalList({
   records,
   events,
@@ -383,11 +349,6 @@ export function RdoLocalList({
     statusFilter,
     syncFilter,
   ]);
-
-  const visibleIds = new Set(filteredRecords.map((record) => record.id));
-  const visibleEvents = events.filter(
-    (event) => !event.rdoId || visibleIds.has(event.rdoId),
-  );
 
   const metrics = {
     trechos: filteredRecords.reduce(
@@ -572,7 +533,7 @@ export function RdoLocalList({
               <h2>Nenhum RDO encontrado</h2>
               <p>
                 Ajuste os filtros ou crie um RDO para iniciar a
-                timeline operacional.
+                sequência operacional.
               </p>
               <button
                 type="button"
@@ -703,6 +664,17 @@ export function RdoLocalList({
                   >
                     Perguntar à StavIA
                   </button>
+                  <Link
+                    className="secondary-button"
+                    to={memoryHref({
+                      obraId: record.obraId,
+                      rdoId: record.id,
+                      entityType: "RDO",
+                      entityId: record.id,
+                    })}
+                  >
+                    Ver na Memória
+                  </Link>
                 </div>
               </article>
             );
@@ -710,35 +682,14 @@ export function RdoLocalList({
         </div>
 
         <aside className="rdo-side-panel">
-          <section className="timeline-panel">
-            <h2>Últimas atualizações operacionais</h2>
-            <div className="timeline-list">
-              {visibleEvents.slice(0, 8).map((event) => (
-                <button
-                  type="button"
-                  className={`timeline-item timeline-item--${event.syncStatus.toLowerCase()}`}
-                  key={event.id}
-                  onClick={() => {
-                    if (event.rdoId) {
-                      setProfile({
-                        type: "RDO",
-                        id: event.rdoId,
-                        label: event.rdoId,
-                      });
-                    }
-                  }}
-                >
-                  <strong>{eventLabel(event)}</strong>
-                  <span>{formatDateTime(event.occurredAt)}</span>
-                  <small>{eventSyncLabel(event.syncStatus)}</small>
-                </button>
-              ))}
-              {visibleEvents.length === 0 ? (
-                <p className="muted-text">
-                  Nenhum evento ontológico local ainda.
-                </p>
-              ) : null}
-            </div>
+          <section className="rdo-memory-link-panel">
+            <span className="eyebrow">Registro central</span>
+            <h2>Memória operacional</h2>
+            <p className="muted-text">
+              Consulte autores, estados e commits de todos os RDOs no
+              registro ontológico centralizado.
+            </p>
+            <Link to={memoryHref()}>Abrir Memória</Link>
           </section>
         </aside>
       </section>
@@ -860,19 +811,22 @@ function ProfileDrawer({
         </div>
       </section>
 
-      <section>
-        <h3>Timeline</h3>
-        <div className="profile-list">
-          {relatedEvents.slice(0, 12).map((event) => (
-            <div className="profile-event" key={event.id}>
-              <strong>{eventLabel(event)}</strong>
-              <span>
-                {formatDateTime(event.occurredAt)} ·{" "}
-                {eventSyncLabel(event.syncStatus)}
-              </span>
-            </div>
-          ))}
-        </div>
+      <section className="profile-memory-link">
+        <h3>Memória da entidade</h3>
+        <p>
+          {relatedEvents.length} registro{relatedEvents.length === 1 ? "" : "s"}
+          {" "}localmente conhecido{relatedEvents.length === 1 ? "" : "s"}.
+        </p>
+        <Link
+          to={memoryHref({
+            obraId: profile.type === "OBRA" ? profile.id : undefined,
+            rdoId: profile.type === "RDO" ? profile.id : undefined,
+            entityType: profile.type,
+            entityId: profile.id,
+          })}
+        >
+          Ver alterações na Memória
+        </Link>
       </section>
     </aside>
   );

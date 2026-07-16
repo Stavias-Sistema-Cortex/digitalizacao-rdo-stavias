@@ -4,37 +4,6 @@ import {
   responseErrorMessage,
 } from "../../lib/api/apiClient";
 
-export interface ObraTimelineEventApi {
-  id: string;
-  commitSeq: number | null;
-  type: string;
-  principalEntityType: string;
-  principalEntityId: string;
-  relatedEntities: unknown;
-  obraId: string | null;
-  rdoId: string | null;
-  colaboradorId: string | null;
-  occurredAt: string | null;
-  syncedAt: string | null;
-  origin: string | null;
-  syncStatus: string | null;
-  schemaVersion: number | null;
-  payload: unknown;
-}
-
-export interface ObraTimelineEvent {
-  id: string;
-  commitSeq: number | null;
-  type: string;
-  principalEntityType: string;
-  principalEntityId: string;
-  obraId: string | null;
-  occurredAt: string | null;
-  origin: string | null;
-  syncStatus: string | null;
-  payload: Record<string, unknown>;
-}
-
 async function readJson<T>(response: Response): Promise<T> {
   const data = await readResponseBody(response);
 
@@ -45,51 +14,6 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 
   return data as T;
-}
-
-function objectPayload(value: unknown): Record<string, unknown> {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  ) {
-    return value as Record<string, unknown>;
-  }
-
-  return {};
-}
-
-export function obraTimelineEventFromApi(
-  api: ObraTimelineEventApi,
-): ObraTimelineEvent {
-  return {
-    id: api.id,
-    commitSeq: api.commitSeq,
-    type: api.type,
-    principalEntityType: api.principalEntityType,
-    principalEntityId: api.principalEntityId,
-    obraId: api.obraId,
-    occurredAt: api.occurredAt,
-    origin: api.origin,
-    syncStatus: api.syncStatus,
-    payload: objectPayload(api.payload),
-  };
-}
-
-export async function buscarTimelineObra(
-  obraId: string,
-): Promise<ObraTimelineEvent[]> {
-  const params = new URLSearchParams({
-    entityType: "OBRA",
-    entityId: obraId,
-    limit: "50",
-  });
-  const response = await apiFetch(
-    `/ontology/timeline?${params.toString()}`,
-  );
-  const data = await readJson<ObraTimelineEventApi[]>(response);
-
-  return data.map(obraTimelineEventFromApi);
 }
 
 export interface ObraPdorApi {
