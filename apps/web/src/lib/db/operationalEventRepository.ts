@@ -1,5 +1,8 @@
 import { getCortexDb } from "./cortexDb";
 import type {
+  CanonicalMutationResult,
+  CanonicalOperationalEventRecord,
+  LegacyOperationalEventRecord,
   OperationalEntityRef,
   OperationalEventOrigin,
   OperationalEventRecord,
@@ -7,7 +10,7 @@ import type {
   OperationalEventType,
 } from "./db.types";
 
-export interface OperationalEventInput {
+export interface LegacyOperationalEventInput {
   id?: string;
   type: OperationalEventType;
   principalEntity: OperationalEntityRef;
@@ -23,6 +26,21 @@ export interface OperationalEventInput {
   payload?: Record<string, unknown>;
   syncStatus?: OperationalEventSyncStatus;
   schemaVersion?: number;
+}
+
+export type OperationalEventInput = LegacyOperationalEventInput;
+
+export interface CanonicalOperationalEventInput
+  extends LegacyOperationalEventInput {
+  clientMutationId: string;
+  deviceId: string;
+  correlationId: string;
+  causationId: string | null;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  result: CanonicalMutationResult;
+  errorCategory: string | null;
+  entityVersion: number | null;
 }
 
 export interface OperationalEventFilter {
@@ -42,9 +60,9 @@ export function operationalEntityKey(
   return `${entity.tipo}:${entity.id}`;
 }
 
-export function buildOperationalEvent(
-  input: OperationalEventInput,
-): OperationalEventRecord {
+export function buildLegacyOperationalEvent(
+  input: LegacyOperationalEventInput,
+): LegacyOperationalEventRecord {
   const occurredAt = input.occurredAt ?? new Date().toISOString();
 
   return {
@@ -64,6 +82,30 @@ export function buildOperationalEvent(
     payload: input.payload ?? {},
     syncStatus: input.syncStatus ?? "PENDING_SYNC",
     schemaVersion: input.schemaVersion ?? 1,
+  };
+}
+
+/**
+ * @deprecated Compatibility alias for v12 writers. New mutation flows must use
+ * buildCanonicalOperationalEvent.
+ */
+export const buildOperationalEvent = buildLegacyOperationalEvent;
+
+export function buildCanonicalOperationalEvent(
+  input: CanonicalOperationalEventInput,
+): CanonicalOperationalEventRecord {
+  return {
+    ...buildLegacyOperationalEvent(input),
+    contractVersion: 13,
+    clientMutationId: input.clientMutationId,
+    deviceId: input.deviceId,
+    correlationId: input.correlationId,
+    causationId: input.causationId,
+    previousState: input.previousState,
+    newState: input.newState,
+    result: input.result,
+    errorCategory: input.errorCategory,
+    entityVersion: input.entityVersion,
   };
 }
 

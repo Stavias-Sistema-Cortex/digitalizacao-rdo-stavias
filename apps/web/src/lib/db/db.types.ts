@@ -1,3 +1,5 @@
+import type { OperationalFeatureCollection } from "../../features/obras/map/mapGeometry";
+
 export type LocalSyncStatus =
   | "LOCAL_ONLY"
   | "PENDING_SYNC"
@@ -141,7 +143,7 @@ export type LocalRdoMaterialRecord = LocalRdoChildRecord;
 export type LocalRdoControleGeometricoRecord =
   LocalRdoChildRecord;
 
-export interface OutboxMutationRecord {
+interface OutboxMutationRecordBase {
   clientMutationId: string;
   entidadeTipo: SyncEntityType;
   entidadeId: string;
@@ -158,11 +160,33 @@ export interface OutboxMutationRecord {
   transport?: OutboxTransport;
   dependsOnMutationIds?: string[];
   correlationId?: string;
+}
+
+export interface LegacyOutboxMutationRecord
+  extends OutboxMutationRecordBase {
+  contractVersion?: 12;
   fieldPatch?: MutationFieldPatch;
   trace?: MutationTrace;
   nextAttemptAt?: string | null;
   blockedReason?: string | null;
 }
+
+export interface CanonicalOutboxMutationRecord
+  extends OutboxMutationRecordBase {
+  contractVersion: 13;
+  correlationId: string;
+  fieldPatch: MutationFieldPatch;
+  trace: MutationTrace;
+  nextAttemptAt: string | null;
+  blockedReason: string | null;
+}
+
+export type StoredOutboxMutationRecord =
+  | LegacyOutboxMutationRecord
+  | CanonicalOutboxMutationRecord;
+
+/** Stored v12/v13 read boundary. Canonical writers use CanonicalOutboxMutationRecord. */
+export type OutboxMutationRecord = StoredOutboxMutationRecord;
 
 export type MensagemSyncStatus =
   | "LOCAL"
@@ -255,12 +279,8 @@ export interface ProcessedEventRecord {
   aplicadoEm: string;
 }
 
-export interface OperationalEventRecord {
+interface OperationalEventRecordBase {
   id: string;
-  clientMutationId?: string;
-  deviceId?: string;
-  correlationId?: string;
-  causationId?: string | null;
   type: OperationalEventType;
   principalEntity: OperationalEntityRef;
   principalEntityKey: string;
@@ -274,14 +294,44 @@ export interface OperationalEventRecord {
   responsibleUserId: string | null;
   responsibleUserName: string | null;
   payload: Record<string, unknown>;
+  syncStatus: OperationalEventSyncStatus;
+  schemaVersion: number;
+}
+
+export interface LegacyOperationalEventRecord
+  extends OperationalEventRecordBase {
+  contractVersion?: 12;
+  clientMutationId?: string;
+  deviceId?: string;
+  correlationId?: string;
+  causationId?: string | null;
   previousState?: Record<string, unknown>;
   newState?: Record<string, unknown>;
   result?: CanonicalMutationResult;
   errorCategory?: string | null;
   entityVersion?: number | null;
-  syncStatus: OperationalEventSyncStatus;
-  schemaVersion: number;
 }
+
+export interface CanonicalOperationalEventRecord
+  extends OperationalEventRecordBase {
+  contractVersion: 13;
+  clientMutationId: string;
+  deviceId: string;
+  correlationId: string;
+  causationId: string | null;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  result: CanonicalMutationResult;
+  errorCategory: string | null;
+  entityVersion: number | null;
+}
+
+export type StoredOperationalEventRecord =
+  | LegacyOperationalEventRecord
+  | CanonicalOperationalEventRecord;
+
+/** Stored v12/v13 read boundary. Canonical writers use CanonicalOperationalEventRecord. */
+export type OperationalEventRecord = StoredOperationalEventRecord;
 
 export type AttachmentType = "FOTO" | "VIDEO";
 
@@ -342,7 +392,7 @@ export interface ObraLocalRecord {
 
 export interface ObraGeometryLocalRecord {
   obraId: string;
-  geometry: Record<string, unknown>;
+  geometry: OperationalFeatureCollection;
   entityVersion: number | null;
   syncStatus: CanonicalMutationResult;
   updatedAt: string;

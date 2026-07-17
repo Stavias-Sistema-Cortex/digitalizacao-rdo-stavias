@@ -79,6 +79,11 @@ describe("canonical mutation IndexedDB contract", () => {
       expect.arrayContaining(["by-client-mutation-id", "by-result"]),
     );
     expect([...db.objectStoreNames]).toContain("obra_geometries");
+    const geometryStore = db.transaction("obra_geometries").store;
+    expect(geometryStore.keyPath).toBe("obraId");
+    expect([...geometryStore.indexNames]).toEqual(
+      expect.arrayContaining(["by-updated-at", "by-sync-status"]),
+    );
     expect(
       await db.get("outbox_mutations", "queued-before-v13"),
     ).toMatchObject({ payload: { preserved: true } });
