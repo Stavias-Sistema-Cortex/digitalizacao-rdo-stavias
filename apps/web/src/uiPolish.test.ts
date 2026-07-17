@@ -185,8 +185,20 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(syncStatusBannerSource).toContain(
       'import { SyncStateStrip } from "./institutional/SyncStateStrip";',
     );
+    expect(syncStatusBannerSource).toContain(
+      'from "./syncPresentation";',
+    );
     expect(syncStatusBannerSource).toMatch(
-      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s+presentationError=\{manualSyncError\}\s*\/>/s,
+      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s+presentationError=\{manualSyncError\?\.message \?\? null\}\s*\/>/s,
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /useEffect\(\(\) => \{[\s\S]*?shouldClearManualSyncPresentationError\(/,
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /shouldClearManualSyncPresentationError\(\s*manualSyncError,\s*snapshot,?\s*\)/s,
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /const clearId = window\.setTimeout\(\(\) => \{\s*setManualSyncError\(\(current\) =>\s*current === manualSyncError \? null : current,\s*\);\s*}, 0\);\s*return \(\) => window\.clearTimeout\(clearId\);/s,
     );
     expect(syncStatusBannerSource).toContain(
       "const chipTitle = snapshot.isLoading && !manualSyncError",
@@ -214,6 +226,21 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(
       rule(narrowSyncCss, "  .sync-status-global-state"),
     ).toContain("width: min(250px, calc(100vw - 120px));");
+  });
+
+  it("limita o peso do chip de sincronização por função institucional", () => {
+    expect(rule(globalCss, ".sidebar-nav-item.active")).toContain(
+      "font-weight: 500;",
+    );
+    expect(rule(globalCss, "\n.sidebar-footer button")).toContain(
+      "font-weight: 500;",
+    );
+    expect(rule(syncCss, ".sync-chip__count")).toContain(
+      "font-weight: 500;",
+    );
+    expect(rule(syncCss, ".sync-chip__action")).toContain(
+      "font-weight: 500;",
+    );
   });
 
   it("enquadra métricas RDO como registro branco com acentos estruturais", () => {

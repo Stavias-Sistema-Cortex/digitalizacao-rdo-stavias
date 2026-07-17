@@ -11,6 +11,10 @@ import {
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
 import { SyncStateStrip } from "./institutional/SyncStateStrip";
+import {
+  shouldClearManualSyncPresentationError,
+  type ManualSyncPresentationError,
+} from "./syncPresentation";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -145,7 +149,7 @@ export function SyncStatusBanner() {
   const { snapshot, refresh } =
     useSyncStatus();
   const [manualSyncError, setManualSyncError] =
-    useState("");
+    useState<ManualSyncPresentationError | null>(null);
   const [isManualSyncing, setIsManualSyncing] =
     useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -182,7 +186,7 @@ export function SyncStatusBanner() {
   );
 
   const visibleSyncError =
-    manualSyncError ||
+    manualSyncError?.message ??
     (displayedStatus === "ERROR" || displayedStatus === "CONFLICT"
       ? snapshot.lastSyncError
       : null);
@@ -191,6 +195,26 @@ export function SyncStatusBanner() {
     snapshot.pendingCount +
     snapshot.errorCount +
     snapshot.conflictCount;
+
+  useEffect(() => {
+    if (
+      !manualSyncError ||
+      !shouldClearManualSyncPresentationError(
+        manualSyncError,
+        snapshot,
+      )
+    ) {
+      return undefined;
+    }
+
+    const clearId = window.setTimeout(() => {
+      setManualSyncError((current) =>
+        current === manualSyncError ? null : current,
+      );
+    }, 0);
+
+    return () => window.clearTimeout(clearId);
+  }, [manualSyncError, snapshot]);
 
   // Fecha o popover ao clicar fora ou pressionar Escape.
   useEffect(() => {
@@ -225,15 +249,17 @@ export function SyncStatusBanner() {
 
   async function handleSyncNow(): Promise<void> {
     setIsManualSyncing(true);
-    setManualSyncError("");
 
     try {
       await syncNow();
     } catch (error: unknown) {
       setManualSyncError(
-        error instanceof Error
-          ? error.message
-          : "Falha ao sincronizar agora.",
+        {
+          message: error instanceof Error
+            ? error.message
+            : "Falha ao sincronizar agora.",
+          occurredAt: new Date().toISOString(),
+        },
       );
     } finally {
       setIsManualSyncing(false);
@@ -253,7 +279,7 @@ export function SyncStatusBanner() {
       <SyncStateStrip
         snapshot={snapshot}
         className="sync-status-global-state"
-        presentationError={manualSyncError}
+        presentationError={manualSyncError?.message ?? null}
       />
       <div
         className={`sync-chip sync-chip--${chipStatus.toLowerCase()}`}

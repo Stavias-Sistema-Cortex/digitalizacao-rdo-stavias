@@ -74,7 +74,7 @@
   background: var(--sync-color);
   color: #ffffff;
   font-size: 0.62rem;
-  font-weight: 800;
+  font-weight: 500;
   line-height: 16px;
   text-align: center;
 }
@@ -179,7 +179,7 @@
   background: #ffffff;
   color: #17504d;
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 500;
   transition:
     background 140ms ease,
     border-color 140ms ease;

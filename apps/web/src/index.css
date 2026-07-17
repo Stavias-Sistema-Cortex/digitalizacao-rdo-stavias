@@ -873,7 +873,7 @@ textarea:focus {
 .sidebar-nav-item.active {
   border-color: transparent;
   background: rgb(255 255 255 / 10%);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .sidebar-nav-item.active::before {
@@ -897,7 +897,7 @@ textarea:focus {
   background: transparent;
   color: #eef7ef;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   border-radius: var(--radius-control);
   transition:
