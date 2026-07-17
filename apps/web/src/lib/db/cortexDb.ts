@@ -15,6 +15,7 @@ import type {
   MensagemAnexoLocalRecord,
   MensagemLocalRecord,
   LocalOperationalRoleRecord,
+  ObraGeometryLocalRecord,
   ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
@@ -31,7 +32,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 12;
+export const CORTEX_DATABASE_VERSION = 13;
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -91,6 +92,7 @@ interface CortexDbSchema extends DBSchema {
       "by-status": OutboxMutationRecord["status"];
       "by-created-at": string;
       "by-entity-id": string;
+      "by-next-attempt-at": string;
     };
   };
 
@@ -119,6 +121,8 @@ interface CortexDbSchema extends DBSchema {
       "by-type": OperationalEventRecord["type"];
       "by-sync-status": OperationalEventRecord["syncStatus"];
       "by-occurred-at": string;
+      "by-client-mutation-id": string;
+      "by-result": NonNullable<OperationalEventRecord["result"]>;
     };
   };
 
@@ -147,6 +151,15 @@ interface CortexDbSchema extends DBSchema {
     indexes: {
       "by-updated-at": string;
       "by-status": string;
+    };
+  };
+
+  obra_geometries: {
+    key: string;
+    value: ObraGeometryLocalRecord;
+    indexes: {
+      "by-updated-at": string;
+      "by-sync-status": ObraGeometryLocalRecord["syncStatus"];
     };
   };
 
@@ -398,6 +411,11 @@ export async function getCortexDb(): Promise<
           );
         }
 
+        const outbox = transaction.objectStore("outbox_mutations");
+        if (!outbox.indexNames.contains("by-next-attempt-at")) {
+          outbox.createIndex("by-next-attempt-at", "nextAttemptAt");
+        }
+
         if (
           !database.objectStoreNames.contains("sync_state")
         ) {
@@ -467,6 +485,17 @@ export async function getCortexDb(): Promise<
             "by-occurred-at",
             "occurredAt",
           );
+        }
+
+        const events = transaction.objectStore("operational_events");
+        if (!events.indexNames.contains("by-client-mutation-id")) {
+          events.createIndex(
+            "by-client-mutation-id",
+            "clientMutationId",
+          );
+        }
+        if (!events.indexNames.contains("by-result")) {
+          events.createIndex("by-result", "result");
         }
 
         if (
@@ -540,6 +569,15 @@ export async function getCortexDb(): Promise<
 
           obraStore.createIndex("by-updated-at", "updatedAt");
           obraStore.createIndex("by-status", "status");
+        }
+
+        if (!database.objectStoreNames.contains("obra_geometries")) {
+          const geometries = database.createObjectStore(
+            "obra_geometries",
+            { keyPath: "obraId" },
+          );
+          geometries.createIndex("by-updated-at", "updatedAt");
+          geometries.createIndex("by-sync-status", "syncStatus");
         }
 
         if (

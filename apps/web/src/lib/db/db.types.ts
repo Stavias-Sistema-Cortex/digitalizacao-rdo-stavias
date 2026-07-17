@@ -50,7 +50,31 @@ export type OutboxMutationStatus =
   | "SYNCING"
   | "SYNCED"
   | "ERROR"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "REJECTED";
+
+export type CanonicalMutationResult =
+  | "LOCAL"
+  | "PENDING"
+  | "SYNCING"
+  | "SYNCED"
+  | "CONFLICT"
+  | "REJECTED";
+
+export interface MutationFieldPatch {
+  changed: Record<string, unknown>;
+  baseValues: Record<string, unknown>;
+}
+
+export interface MutationTrace {
+  actorId: string;
+  deviceId: string;
+  authorizationScope: string[];
+  correlationId: string;
+  causationId: string | null;
+  ontologyEventId: string;
+  payloadHash: string;
+}
 
 export type SyncEntityType =
   | "RDO"
@@ -134,6 +158,10 @@ export interface OutboxMutationRecord {
   transport?: OutboxTransport;
   dependsOnMutationIds?: string[];
   correlationId?: string;
+  fieldPatch?: MutationFieldPatch;
+  trace?: MutationTrace;
+  nextAttemptAt?: string | null;
+  blockedReason?: string | null;
 }
 
 export type MensagemSyncStatus =
@@ -229,6 +257,10 @@ export interface ProcessedEventRecord {
 
 export interface OperationalEventRecord {
   id: string;
+  clientMutationId?: string;
+  deviceId?: string;
+  correlationId?: string;
+  causationId?: string | null;
   type: OperationalEventType;
   principalEntity: OperationalEntityRef;
   principalEntityKey: string;
@@ -242,6 +274,11 @@ export interface OperationalEventRecord {
   responsibleUserId: string | null;
   responsibleUserName: string | null;
   payload: Record<string, unknown>;
+  previousState?: Record<string, unknown>;
+  newState?: Record<string, unknown>;
+  result?: CanonicalMutationResult;
+  errorCategory?: string | null;
+  entityVersion?: number | null;
   syncStatus: OperationalEventSyncStatus;
   schemaVersion: number;
 }
@@ -300,6 +337,14 @@ export interface ObraLocalRecord {
   latitude: number | null;
   longitude: number | null;
   valorContratual: number | null;
+  updatedAt: string;
+}
+
+export interface ObraGeometryLocalRecord {
+  obraId: string;
+  geometry: Record<string, unknown>;
+  entityVersion: number | null;
+  syncStatus: CanonicalMutationResult;
   updatedAt: string;
 }
 
