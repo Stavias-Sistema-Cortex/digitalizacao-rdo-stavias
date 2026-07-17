@@ -47,7 +47,10 @@ describe("Cortex 2.1 institutional UI policy", () => {
   it("defines the institutional palette and geometry", () => {
     expect(css).toContain("--color-ink: #111312");
     expect(css).toContain("--radius-control: 4px");
-    expect(css).toContain("--radius-container: 6px");
+    expect(css).toContain("--radius-container: 4px");
+    expect(css).toContain(".institutional-page");
+    expect(css).toContain(".institutional-frame");
+    expect(css).toContain(".tabular-nums");
   });
 
   it("provides restrained motion without changing StavIA geometry", () => {
@@ -96,6 +99,7 @@ describe("Cortex 2.1 institutional UI policy", () => {
     expect(css).toMatch(
       /\.home-obra-card\s*\{[^}]*border:\s*2px solid var\(--color-ink\)/s,
     );
+    expect(css).not.toContain(".brand-tick");
   });
 
   it("keeps global StavIA context but removes the local Obras launcher", () => {
