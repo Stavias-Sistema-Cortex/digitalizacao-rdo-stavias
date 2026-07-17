@@ -62,3 +62,27 @@ export interface MemoryDiffRow {
   previous: unknown;
   next: unknown;
 }
+
+export interface MemoryFieldConflictValues {
+  base?: unknown;
+  local?: unknown;
+  remote?: unknown;
+}
+
+export type MemoryFieldConflicts = Record<
+  string,
+  MemoryFieldConflictValues
+>;
+
+export interface MemoryConflictReviewRecord {
+  eventId: string;
+  clientMutationId: string;
+  actorId: string | null;
+  actorName: string | null;
+  deviceId: string | null;
+  entity: MemoryEntityRef;
+  operation: string;
+  occurredAt: string | null;
+  updatedAt: string | null;
+  conflicts: MemoryFieldConflicts;
+}

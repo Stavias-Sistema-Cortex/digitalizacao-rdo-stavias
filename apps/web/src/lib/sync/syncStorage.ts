@@ -1503,6 +1503,19 @@ export async function applyPushResultAtomically(
       updatedAt: timestamp,
     });
 
+    const eventStore = transaction.objectStore("operational_events");
+    const correlatedEvents = await eventStore
+      .index("by-client-mutation-id")
+      .getAll(mutation.clientMutationId);
+    await Promise.all(
+      correlatedEvents.map((event) =>
+        eventStore.put({
+          ...event,
+          result: "CONFLICT",
+        }),
+      ),
+    );
+
     if (rdo) {
       await rdoStore.put(
         rdoAfterConflict(rdo, result, timestamp),

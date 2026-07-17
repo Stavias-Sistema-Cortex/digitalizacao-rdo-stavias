@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { OperationalEventRecord } from "../../../lib/db/db.types";
+import type {
+  CanonicalOperationalEventRecord,
+  CanonicalOutboxMutationRecord,
+  OperationalEventRecord,
+} from "../../../lib/db/db.types";
 import type { MemoryEvent } from "./memory.types";
 import {
+  memoryConflictReviewRecords,
   memoryDiffRows,
   memoryEventLabel,
   mergeMemoryEvents,
@@ -114,5 +119,119 @@ describe("memoryViewModel", () => {
       { field: "quantidade", previous: 2, next: 3 },
       { field: "status", previous: "RASCUNHO", next: "ENVIADO" },
     ]);
+  });
+
+  it("expõe no dispositivo somente a proveniência canônica realmente armazenada", () => {
+    const canonical = localEvent({
+      contractVersion: 13,
+      clientMutationId: "mutation-conflict",
+      deviceId: "device-1",
+      correlationId: "correlation-1",
+      causationId: "causation-1",
+      previousState: { titulo: "Base" },
+      newState: { titulo: "Local" },
+      result: "CONFLICT",
+      errorCategory: "FIELD_CONFLICT",
+      entityVersion: 4,
+    });
+
+    const [event] = mergeMemoryEvents(
+      [],
+      [canonical],
+      ["obra-1"],
+      "actor-1",
+    );
+
+    expect(event).toMatchObject({
+      deviceId: "device-1",
+      correlationId: "correlation-1",
+      causationId: "causation-1",
+      previousState: { titulo: "Base" },
+      newState: { titulo: "Local" },
+      result: "CONFLICT",
+      errorCategory: "FIELD_CONFLICT",
+    });
+  });
+
+  it("projeta revisão de conflito apenas quando evento e triplas estão armazenados", () => {
+    const mutation: CanonicalOutboxMutationRecord = {
+      contractVersion: 13,
+      clientMutationId: "mutation-conflict",
+      entidadeTipo: "RDO",
+      entidadeId: "rdo-1",
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersao: 4,
+      payload: { titulo: "Local" },
+      status: "CONFLICT",
+      tentativas: 1,
+      ultimaTentativaEm: "2026-07-17T15:01:00Z",
+      ultimoErro: "Conflito de campo.",
+      conflito: {
+        titulo: { base: "Base", local: "Local", remote: "Remoto" },
+      },
+      criadaNoClienteEm: "2026-07-17T15:00:00Z",
+      updatedAt: "2026-07-17T15:02:00Z",
+      transport: "SYNC_PUSH",
+      dependsOnMutationIds: [],
+      correlationId: "correlation-1",
+      fieldPatch: {
+        changed: { titulo: "Local" },
+        baseValues: { titulo: "Base" },
+      },
+      trace: {
+        actorId: "actor-1",
+        deviceId: "device-1",
+        authorizationScope: ["obra-1"],
+        correlationId: "correlation-1",
+        causationId: null,
+        ontologyEventId: "event-conflict",
+        payloadHash: "a".repeat(64),
+      },
+      nextAttemptAt: null,
+      blockedReason: null,
+    };
+    const conflictEvent = localEvent({
+      contractVersion: 13,
+      id: "event-conflict",
+      principalEntity: { tipo: "RDO", id: "rdo-1" },
+      principalEntityKey: "RDO:rdo-1",
+      rdoId: "rdo-1",
+      clientMutationId: mutation.clientMutationId,
+      deviceId: "device-1",
+      correlationId: "correlation-1",
+      causationId: null,
+      previousState: { titulo: "Base" },
+      newState: { titulo: "Local" },
+      result: "CONFLICT",
+      errorCategory: "FIELD_CONFLICT",
+      entityVersion: 4,
+    }) as CanonicalOperationalEventRecord;
+    const unstructured = {
+      ...mutation,
+      clientMutationId: "mutation-version-only",
+      conflito: { versaoAtual: 5 },
+      trace: {
+        ...mutation.trace,
+        ontologyEventId: "event-version-only",
+      },
+    };
+
+    expect(memoryConflictReviewRecords(
+      [conflictEvent],
+      [mutation, unstructured],
+    )).toEqual([{
+      eventId: "event-conflict",
+      clientMutationId: "mutation-conflict",
+      actorId: "actor-1",
+      actorName: "Ana",
+      deviceId: "device-1",
+      entity: { type: "RDO", id: "rdo-1", name: null },
+      operation: "ATUALIZAR_RDO_RASCUNHO",
+      occurredAt: "2026-07-16T15:00:00Z",
+      updatedAt: "2026-07-17T15:02:00Z",
+      conflicts: {
+        titulo: { base: "Base", local: "Local", remote: "Remoto" },
+      },
+    }]);
   });
 });

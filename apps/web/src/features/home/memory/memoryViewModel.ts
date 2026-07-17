@@ -1,8 +1,14 @@
-import type { OperationalEventRecord } from "../../../lib/db/db.types";
 import type {
+  OperationalEventRecord,
+  OutboxMutationRecord,
+} from "../../../lib/db/db.types";
+import type {
+  MemoryConflictReviewRecord,
   MemoryDiffRow,
   MemoryEntityRef,
   MemoryEvent,
+  MemoryFieldConflicts,
+  MemoryFieldConflictValues,
   MemoryFilters,
 } from "./memory.types";
 
@@ -86,6 +92,54 @@ export function memoryDiffRows(event: MemoryEvent): MemoryDiffRow[] {
     }));
 }
 
+export function memoryConflictReviewRecords(
+  localEvents: OperationalEventRecord[],
+  mutations: OutboxMutationRecord[],
+): MemoryConflictReviewRecord[] {
+  const eventsByMutation = new Map<string, OperationalEventRecord[]>();
+
+  for (const event of localEvents) {
+    const clientMutationId = text(event.clientMutationId);
+    if (!clientMutationId || normalized(event.result) !== "CONFLICT") {
+      continue;
+    }
+    const events = eventsByMutation.get(clientMutationId) ?? [];
+    events.push(event);
+    eventsByMutation.set(clientMutationId, events);
+  }
+
+  return mutations.flatMap((mutation) => {
+    if (mutation.status !== "CONFLICT") {
+      return [];
+    }
+    const conflicts = storedFieldConflicts(mutation.conflito);
+    if (Object.keys(conflicts).length === 0) {
+      return [];
+    }
+    const candidates = eventsByMutation.get(mutation.clientMutationId) ?? [];
+    const eventId = text(mutation.trace?.ontologyEventId);
+    const event = eventId
+      ? candidates.find((candidate) => candidate.id === eventId)
+      : candidates[0];
+    if (!event) {
+      return [];
+    }
+
+    return [{
+      eventId: event.id,
+      clientMutationId: mutation.clientMutationId,
+      actorId: text(event.responsibleUserId),
+      actorName: text(event.responsibleUserName),
+      deviceId: text(event.deviceId),
+      entity: entityRef(event.principalEntity),
+      operation: mutation.operacao,
+      occurredAt: text(event.occurredAt),
+      updatedAt: text(mutation.updatedAt),
+      conflicts,
+    }];
+  }).sort(compareConflictReviews);
+}
+
 export function filterMemoryEvents(
   events: MemoryEvent[],
   filters: MemoryFilters,
@@ -146,14 +200,18 @@ function memoryEventFromDevice(
     origin: text(event.origin),
     syncStatus: text(event.syncStatus),
     schemaVersion: event.schemaVersion,
-    deviceId: null,
-    correlationId: null,
-    causationId: null,
-    previousState: nestedObject(event.payload, "previousState"),
-    newState: nestedObject(event.payload, "newState"),
+    deviceId: text(event.deviceId),
+    correlationId: text(event.correlationId),
+    causationId: text(event.causationId),
+    previousState: optionalObject(event.previousState) ??
+      nestedObject(event.payload, "previousState"),
+    newState: optionalObject(event.newState) ??
+      nestedObject(event.payload, "newState"),
     payload: event.payload,
-    result: event.syncStatus === "SYNC_FAILED" ? "FALHA" : null,
-    errorCategory: null,
+    result: text(event.result) ?? (
+      event.syncStatus === "SYNC_FAILED" ? "FALHA" : null
+    ),
+    errorCategory: text(event.errorCategory),
   };
 }
 
@@ -178,6 +236,50 @@ function nestedObject(
     return value as Record<string, unknown>;
   }
   return {};
+}
+
+function optionalObject(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function storedFieldConflicts(
+  value: Record<string, unknown> | null,
+): MemoryFieldConflicts {
+  const stored = optionalObject(value);
+  if (!stored) {
+    return {};
+  }
+
+  const conflicts: MemoryFieldConflicts = {};
+  for (const field of Object.keys(stored).sort()) {
+    const values = optionalObject(stored[field]);
+    if (!values) {
+      continue;
+    }
+    const conflict: MemoryFieldConflictValues = {};
+    for (const key of ["base", "local", "remote"] as const) {
+      if (Object.prototype.hasOwnProperty.call(values, key)) {
+        conflict[key] = values[key];
+      }
+    }
+    if (Object.keys(conflict).length > 0) {
+      conflicts[field] = conflict;
+    }
+  }
+  return conflicts;
+}
+
+function compareConflictReviews(
+  left: MemoryConflictReviewRecord,
+  right: MemoryConflictReviewRecord,
+): number {
+  const timeDifference = timestamp(right.updatedAt) - timestamp(left.updatedAt);
+  return timeDifference || left.eventId.localeCompare(right.eventId);
 }
 
 function compareEvents(left: MemoryEvent, right: MemoryEvent): number {
