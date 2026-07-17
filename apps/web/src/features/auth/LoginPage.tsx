@@ -6,7 +6,6 @@ import {
   type SubmitEvent,
 } from "react";
 
-import canteiroBackdrop from "../../assets/login/stavias-canteiro.png";
 import staviasTile from "../../assets/stavias-s-tile.png";
 import {
   formatCpf,
@@ -91,33 +90,44 @@ export function LoginPage() {
 
   return (
     <main className="cortex-login">
-      <img
-        className="login__backdrop"
-        src={canteiroBackdrop}
-        alt=""
-        aria-hidden="true"
-      />
-      <div className="login__tint" aria-hidden="true" />
+      <section
+        className="login__stage"
+        aria-labelledby="login-system-title"
+      >
+        <div className="login__identity">
+          <div className="login__brand">
+            <img
+              className="login__mark"
+              src={staviasTile}
+              alt="Stavias"
+              draggable={false}
+            />
+            <span>Stavias</span>
+          </div>
 
-      <section className="login__stage">
-        <h1 className="visually-hidden">Entrar no Stavias Córtex</h1>
-        <img
-          className="login__mark"
-          src={staviasTile}
-          alt="Stavias"
-          draggable={false}
-        />
+          <div className="login__identity-copy">
+            <p className="login__classification">Sistema Córtex</p>
+            <h1 id="login-system-title">Acesso institucional</h1>
+            <p>
+              Ambiente operacional para gestão rastreável de obras,
+              registros de campo e decisões de infraestrutura.
+            </p>
+          </div>
+
+          <p className="login__security-note">
+            <span aria-hidden="true" />
+            Ambiente monitorado. Use somente suas credenciais individuais.
+          </p>
+        </div>
 
         <div className="login__card">
-          <p className="login__phrase">
-            Do minério ao asfalto
-            <br />
-            que <em>move</em> o país.
-          </p>
-
-          <p className="login__subtitle">
-            Informe seu CPF cadastrado no Academy.
-          </p>
+          <header className="login__card-header">
+            <p className="login__eyebrow">Área restrita</p>
+            <h2>Entrar no sistema</h2>
+            <p className="login__subtitle">
+              Informe o CPF vinculado ao seu cadastro no Academy.
+            </p>
+          </header>
 
           {!online ? (
             <p className="login__offline" role="status">
@@ -205,13 +215,15 @@ export function LoginPage() {
           </form>
 
           <p className="login__hint">
-            Acesso restrito a colaboradores ativos. Problemas para entrar?
-            Procure o RH ou o apontador da sua obra.
+            Acesso destinado a colaboradores autorizados. As ações realizadas
+            no sistema são vinculadas à identidade autenticada.
           </p>
         </div>
       </section>
 
-      <p className="login__footer">© 2026 Stavias — Sistema Córtex</p>
+      <p className="login__footer">
+        © 2026 Stavias · Sistema Córtex · Ambiente operacional restrito
+      </p>
     </main>
   );
 }

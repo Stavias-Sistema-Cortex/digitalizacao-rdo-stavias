@@ -126,8 +126,7 @@ export function ObrasPage() {
     useState(false);
   const [showCreateWorksite, setShowCreateWorksite] =
     useState(false);
-  const { openStavia, setStaviaContext } =
-    useStaviaLauncher();
+  const { setStaviaContext } = useStaviaLauncher();
   const canCreateWorksite = isAlfa(getSession());
 
   useEffect(() => {
@@ -326,7 +325,7 @@ export function ObrasPage() {
               <>
                 <div className="obras-detail-header">
                   <div>
-                    <span className="home-obra-pill">
+                    <span className="obras-status-marker">
                       {focusedObra.status}
                     </span>
                     <h2>{focusedObra.nome}</h2>
@@ -342,17 +341,6 @@ export function ObrasPage() {
                     >
                       Ver na Memória
                     </Link>
-                    <button
-                      type="button"
-                      className="obras-stavia-button"
-                      onClick={() =>
-                        openStavia({
-                          obraId: focusedObra.id,
-                        })
-                      }
-                    >
-                      StavIA
-                    </button>
                   </div>
                 </div>
 

@@ -1229,8 +1229,7 @@
   max-width: 1440px;
   margin: 18px auto 20px;
   padding: 22px;
-  border: 1px solid var(--finance-line);
-  border-top: 3px solid var(--finance-ink);
+  border: 2px solid var(--finance-ink);
   border-radius: var(--radius-container);
   background: #fff;
 }

@@ -83,10 +83,10 @@ describe("polimento visual da plataforma autenticada", () => {
   it("enquadra métricas RDO como registro branco com acentos estruturais", () => {
     const metricCard = lastRule(globalCss, ".metric-card");
     expect(metricCard).toContain(
-      "border: 1px solid var(--color-border);",
+      "border: 2px solid var(--color-ink);",
     );
     expect(metricCard).toContain("border-radius: var(--radius-control);");
-    expect(metricCard).toContain("border-top: 2px solid var(--color-ink);");
+    expect(metricCard).not.toContain("border-top:");
   });
 
   it("mantém foco visível para os controles principais", () => {
@@ -140,7 +140,7 @@ describe("polimento visual da plataforma autenticada", () => {
       "background: var(--color-ink);",
     );
     expect(rule(globalCss, ".home-obra-card")).toContain(
-      "border: 1px solid var(--color-border);",
+      "border: 2px solid var(--color-ink);",
     );
     expect(rule(globalCss, ".home-card")).toContain(
       "border: 1px solid var(--color-border);",
@@ -273,18 +273,15 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(launcher).toContain("height: 48px;");
   });
 
-  it("marca a obra selecionada sem alterar as cores semânticas do PDOR", () => {
+  it("enquadra a obra selecionada sem alterar as cores semânticas do PDOR", () => {
     const surfaces = lastRule(globalCss, ".obras-list,\n.obras-detail");
     expect(surfaces).toContain("border-radius: var(--radius-container);");
 
     const active = lastRule(globalCss, ".obras-list-item.active");
-    expect(active).toContain("border-color: var(--color-ink);");
+    expect(active).toContain("border: 1px solid var(--color-ink);");
     expect(active).toContain("background: #fff;");
 
-    const marker = rule(globalCss, ".obras-list-item.active::before");
-    expect(marker).toContain('content: "";');
-    expect(marker).toContain("width: 3px;");
-    expect(marker).toContain("background: var(--color-brand-yellow);");
+    expect(globalCss).not.toContain(".obras-list-item.active::before");
 
     expect(rule(globalCss, ".obras-pdor-risk--alto")).toContain(
       "color: #a3322a;",
