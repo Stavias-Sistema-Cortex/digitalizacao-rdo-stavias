@@ -39,6 +39,9 @@ const programacaoCss = readCss(
   "./features/programacoes/ProgramacaoSemanalImport.css",
 );
 const staviaCss = readCss("./features/stavia/StaviaPanel.css");
+const institutionalCss = readCss(
+  "./components/institutional/institutional.css",
+);
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -59,6 +62,26 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(globalCss, ":root")).toContain("--radius-container: 4px;");
     expect(rule(globalCss, ":root")).toContain("--radius-sm: var(--radius-control);");
     expect(rule(globalCss, ":root")).toContain("--radius-lg: var(--radius-container);");
+  });
+
+  it("mantém status, dados e rastreios na escala de corpo Poppins", () => {
+    expect(rule(institutionalCss, ".institutional-status")).toContain(
+      "font-weight: 500;",
+    );
+    expect(
+      rule(institutionalCss, ".institutional-sync-state__facts dd"),
+    ).toContain("font-weight: 500;");
+    expect(rule(institutionalCss, ".trace-reference")).toContain(
+      "font-weight: 500;",
+    );
+
+    const traceId = rule(
+      institutionalCss,
+      ".trace-reference__id",
+    );
+
+    expect(traceId).not.toContain("font-family:");
+    expect(traceId).toContain("font-variant-numeric: tabular-nums;");
   });
 
   it("remove receitas de vidro da interface autenticada", () => {

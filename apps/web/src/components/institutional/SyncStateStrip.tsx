@@ -13,7 +13,7 @@ export interface SyncStateStripProps {
 
 function institutionalStateFromSyncStatus(
   status: SyncStatusSnapshot["status"],
-): InstitutionalStatusState {
+): InstitutionalStatusState | null {
   switch (status) {
     case "OFFLINE":
       return "LOCAL";
@@ -26,7 +26,7 @@ function institutionalStateFromSyncStatus(
     case "CONFLICT":
       return "CONFLICT";
     case "ERROR":
-      return "REJECTED";
+      return null;
   }
 }
 
@@ -65,15 +65,37 @@ export function SyncStateStrip({
   const lastSync = formatLastSync(
     snapshot.lastSyncCompletedAt,
   );
+  const institutionalState = institutionalStateFromSyncStatus(
+    snapshot.status,
+  );
 
   return (
     <section
       aria-label="Estado de sincronização"
       className={classNames}
     >
-      <InstitutionalStatus
-        state={institutionalStateFromSyncStatus(snapshot.status)}
-      />
+      {institutionalState ? (
+        <InstitutionalStatus state={institutionalState} />
+      ) : (
+        <p
+          className="institutional-sync-state__error"
+          data-sync-error-count={snapshot.errorCount}
+          data-sync-status="ERROR"
+          role="status"
+        >
+          <span>Falha na sincronização</span>
+          {snapshot.errorCount > 0 ? (
+            <span className="tabular-nums">
+              {snapshot.errorCount} falha
+              {snapshot.errorCount === 1 ? "" : "s"} local
+              {snapshot.errorCount === 1 ? "" : "is"}
+            </span>
+          ) : null}
+          {snapshot.lastSyncError ? (
+            <span>{snapshot.lastSyncError}</span>
+          ) : null}
+        </p>
+      )}
       <dl className="institutional-sync-state__facts">
         <div>
           <dt>Fila local</dt>
