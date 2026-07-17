@@ -97,6 +97,10 @@
   --sync-color: #64748b;
 }
 
+.sync-chip--checking {
+  --sync-color: #64748b;
+}
+
 .sync-chip--error,
 .sync-chip--conflict {
   --sync-color: #c23b3b;

@@ -56,6 +56,55 @@ describe("institutional interface primitives", () => {
     expect(markup).toContain('data-state="SYNCED"');
   });
 
+  it("keeps sync status and counters unknown while local state is loading", () => {
+    const markup = renderToStaticMarkup(
+      <SyncStateStrip
+        snapshot={{
+          status: "SYNCED",
+          isOnline: true,
+          pendingCount: 0,
+          syncingCount: 0,
+          errorCount: 0,
+          conflictCount: 0,
+          lastSyncCompletedAt: null,
+          lastSyncError: null,
+          isLoading: true,
+        }}
+      />,
+    );
+
+    expect(markup).toContain('data-sync-status="CHECKING"');
+    expect(markup).toContain("Verificando estado local");
+    expect(markup).toContain('aria-label="Ainda verificando"');
+    expect(markup).not.toContain('data-state="SYNCED"');
+    expect(markup).not.toContain(">0</dd>");
+  });
+
+  it("shows a manual sync failure instead of a stale synced snapshot", () => {
+    const manualFailureProps = {
+      snapshot: {
+        status: "SYNCED" as const,
+        isOnline: true,
+        pendingCount: 0,
+        syncingCount: 0,
+        errorCount: 0,
+        conflictCount: 0,
+        lastSyncCompletedAt: null,
+        lastSyncError: null,
+        isLoading: false,
+      },
+      presentationError: "A sincronização manual expirou.",
+    };
+    const markup = renderToStaticMarkup(
+      <SyncStateStrip {...manualFailureProps} />,
+    );
+
+    expect(markup).toContain('data-sync-status="ERROR"');
+    expect(markup).toContain("Falha na sincronização");
+    expect(markup).toContain("A sincronização manual expirou.");
+    expect(markup).not.toContain('data-state="SYNCED"');
+  });
+
   it("reports sync errors without mislabelling them as rejections", () => {
     const markup = renderToStaticMarkup(
       <SyncStateStrip

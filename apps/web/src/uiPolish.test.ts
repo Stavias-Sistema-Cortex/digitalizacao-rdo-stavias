@@ -48,6 +48,9 @@ const syncStateStripSource = readCss(
 const syncStatusBannerSource = readCss(
   "./components/SyncStatusBanner.tsx",
 );
+const cortexShellSource = readCss(
+  "./components/shell/CortexShell.tsx",
+);
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -133,13 +136,65 @@ describe("polimento visual da plataforma autenticada", () => {
     ).toContain("filter: grayscale(1) brightness(0) invert(1);");
   });
 
+  it("remove amarelo decorativo e geometria circular dos controles do shell", () => {
+    const toggle = rule(globalCss, ".sidebar-toggle");
+    const resizer = rule(
+      globalCss,
+      [
+        ".sidebar-resizer:hover,",
+        ".sidebar-resizer:focus-visible,",
+        ".cortex-shell.is-resizing .sidebar-resizer",
+      ].join("\n"),
+    );
+    const brand = rule(globalCss, ".sidebar-brand");
+    const avatar = rule(globalCss, ".avatar-button");
+    const profileMenu = rule(globalCss, ".profile-menu");
+    const profileScope = rule(globalCss, ".profile-menu-scope");
+    const profileActions = rule(
+      globalCss,
+      ".profile-menu-logout,\n.profile-menu-security",
+    );
+
+    expect(toggle).toContain("border-radius: var(--radius-control);");
+    expect(toggle).toContain("box-shadow: none;");
+    expect(toggle).not.toMatch(/brand-yellow|#fed203|999px/);
+    expect(resizer).not.toMatch(/254 210 3|brand-yellow/);
+    expect(brand).not.toMatch(/#fed203|brand-yellow/);
+    expect(brand).toContain("border-bottom: 1px solid rgb(255 255 255 / 28%);");
+    expect(avatar).toContain("border-radius: var(--radius-control);");
+    expect(avatar).toContain("font-weight: 500;");
+    expect(profileMenu).toContain("border-radius: var(--radius-container);");
+    expect(profileMenu).toContain("box-shadow: none;");
+    expect(profileScope).toContain("border-radius: var(--radius-control);");
+    expect(profileScope).toContain("font-weight: 500;");
+    expect(profileActions).toContain("border-radius: var(--radius-control);");
+    expect(profileActions).toContain("font-weight: 500;");
+  });
+
+  it("expõe opções de perfil por um popover semântico, não por um menu inválido", () => {
+    expect(cortexShellSource).toContain('aria-haspopup="dialog"');
+    expect(cortexShellSource).toMatch(
+      /<div\s+className="profile-menu"\s+role="dialog"\s+aria-label="Opções do perfil"/s,
+    );
+    expect(cortexShellSource).toContain('aria-label="Opções do perfil"');
+    expect(cortexShellSource).not.toContain('role="menu"');
+    expect(cortexShellSource).not.toContain('role="menuitem"');
+  });
+
   it("expõe fatos globais de sincronização junto ao perfil", () => {
     expect(syncStatusBannerSource).toContain(
       'import { SyncStateStrip } from "./institutional/SyncStateStrip";',
     );
     expect(syncStatusBannerSource).toMatch(
-      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s*\/>/s,
+      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s+presentationError=\{manualSyncError\}\s*\/>/s,
     );
+    expect(syncStatusBannerSource).toContain(
+      "const chipTitle = snapshot.isLoading && !manualSyncError",
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /snapshot\.isLoading\s*\?\s*"CHECKING"\s*:\s*snapshot\.status/,
+    );
+    expect(syncCss).toContain(".sync-chip--checking");
     expect(syncCss).toContain(".sync-status-global-state");
     expect(syncStateStripSource).toContain("<dt>Fila local</dt>");
     expect(syncStateStripSource).toContain("<dt>Conflitos</dt>");

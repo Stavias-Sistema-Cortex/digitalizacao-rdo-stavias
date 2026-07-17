@@ -9,6 +9,7 @@ import "./institutional.css";
 export interface SyncStateStripProps {
   snapshot: SyncStatusSnapshot;
   className?: string;
+  presentationError?: string | null;
 }
 
 function institutionalStateFromSyncStatus(
@@ -52,6 +53,7 @@ function formatLastSync(
 export function SyncStateStrip({
   snapshot,
   className,
+  presentationError = null,
 }: SyncStateStripProps) {
   const classNames = [
     "institutional-sync-state",
@@ -62,6 +64,11 @@ export function SyncStateStrip({
     .join(" ");
   const queueCount =
     snapshot.pendingCount + snapshot.syncingCount;
+  const isChecking = snapshot.isLoading && !presentationError;
+  const isError =
+    !isChecking &&
+    (snapshot.status === "ERROR" || Boolean(presentationError));
+  const errorMessage = presentationError || snapshot.lastSyncError;
   const lastSync = formatLastSync(
     snapshot.lastSyncCompletedAt,
   );
@@ -74,7 +81,32 @@ export function SyncStateStrip({
       aria-label="Estado de sincronização"
       className={classNames}
     >
-      {institutionalState ? (
+      {isChecking ? (
+        <p
+          className="institutional-sync-state__checking"
+          data-sync-status="CHECKING"
+          role="status"
+        >
+          Verificando estado local
+        </p>
+      ) : isError ? (
+        <p
+          className="institutional-sync-state__error"
+          data-sync-error-count={snapshot.errorCount}
+          data-sync-status="ERROR"
+          role="status"
+        >
+          <span>Falha na sincronização</span>
+          {snapshot.errorCount > 0 ? (
+            <span className="tabular-nums">
+              {snapshot.errorCount} falha
+              {snapshot.errorCount === 1 ? "" : "s"} local
+              {snapshot.errorCount === 1 ? "" : "is"}
+            </span>
+          ) : null}
+          {errorMessage ? <span>{errorMessage}</span> : null}
+        </p>
+      ) : institutionalState ? (
         <InstitutionalStatus state={institutionalState} />
       ) : (
         <p
@@ -99,25 +131,47 @@ export function SyncStateStrip({
       <dl className="institutional-sync-state__facts">
         <div>
           <dt>Fila local</dt>
-          <dd className="tabular-nums">{queueCount}</dd>
+          {isChecking ? (
+            <dd
+              className="tabular-nums"
+              aria-label="Ainda verificando"
+            >
+              —
+            </dd>
+          ) : (
+            <dd className="tabular-nums">{queueCount}</dd>
+          )}
         </div>
         <div>
           <dt>Conflitos</dt>
-          <dd className="tabular-nums">
-            {snapshot.conflictCount}
-          </dd>
+          {isChecking ? (
+            <dd
+              className="tabular-nums"
+              aria-label="Ainda verificando"
+            >
+              —
+            </dd>
+          ) : (
+            <dd className="tabular-nums">
+              {snapshot.conflictCount}
+            </dd>
+          )}
         </div>
         <div className="institutional-sync-state__last-sync">
           <dt>Última sincronização</dt>
-          <dd>
-            {lastSync && snapshot.lastSyncCompletedAt ? (
-              <time dateTime={snapshot.lastSyncCompletedAt}>
-                {lastSync}
-              </time>
-            ) : (
-              "Não registrada"
-            )}
-          </dd>
+          {isChecking ? (
+            <dd aria-label="Ainda verificando">—</dd>
+          ) : (
+            <dd>
+              {lastSync && snapshot.lastSyncCompletedAt ? (
+                <time dateTime={snapshot.lastSyncCompletedAt}>
+                  {lastSync}
+                </time>
+              ) : (
+                "Não registrada"
+              )}
+            </dd>
+          )}
         </div>
       </dl>
     </section>

@@ -18,6 +18,8 @@ interface StatusContent {
   description: string;
 }
 
+type SyncChipStatus = SyncUiStatus | "CHECKING";
+
 function pluralize(
   count: number,
   singular: string,
@@ -151,6 +153,11 @@ export function SyncStatusBanner() {
 
   const displayedStatus: SyncUiStatus =
     manualSyncError ? "ERROR" : snapshot.status;
+  const chipStatus: SyncChipStatus = manualSyncError
+    ? "ERROR"
+    : snapshot.isLoading
+      ? "CHECKING"
+      : snapshot.status;
 
   const content = useMemo(
     () =>
@@ -184,26 +191,6 @@ export function SyncStatusBanner() {
     snapshot.pendingCount +
     snapshot.errorCount +
     snapshot.conflictCount;
-
-  useEffect(() => {
-    if (
-      manualSyncError &&
-      !snapshot.lastSyncError &&
-      snapshot.status !== "ERROR"
-    ) {
-      const resetId = window.setTimeout(() => {
-        setManualSyncError("");
-      }, 0);
-
-      return () => window.clearTimeout(resetId);
-    }
-
-    return undefined;
-  }, [
-    manualSyncError,
-    snapshot.lastSyncError,
-    snapshot.status,
-  ]);
 
   // Fecha o popover ao clicar fora ou pressionar Escape.
   useEffect(() => {
@@ -254,7 +241,7 @@ export function SyncStatusBanner() {
     }
   }
 
-  const chipTitle = snapshot.isLoading
+  const chipTitle = snapshot.isLoading && !manualSyncError
     ? "Verificando sincronização"
     : content.title;
 
@@ -266,9 +253,10 @@ export function SyncStatusBanner() {
       <SyncStateStrip
         snapshot={snapshot}
         className="sync-status-global-state"
+        presentationError={manualSyncError}
       />
       <div
-        className={`sync-chip sync-chip--${displayedStatus.toLowerCase()}`}
+        className={`sync-chip sync-chip--${chipStatus.toLowerCase()}`}
       >
         <button
           type="button"

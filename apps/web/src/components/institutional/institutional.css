@@ -122,6 +122,14 @@
   overflow-wrap: anywhere;
 }
 
+.institutional-sync-state__checking {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .trace-reference {
   display: inline-flex;
   align-items: baseline;

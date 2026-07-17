@@ -448,13 +448,17 @@ export function CortexShell({
                 setIsProfileMenuOpen((open) => !open)
               }
               aria-expanded={isProfileMenuOpen}
-              aria-haspopup="menu"
+              aria-haspopup="dialog"
               title={session?.nome ?? "Perfil"}
             >
               {sessionInitials(session?.nome ?? null)}
             </button>
             {isProfileMenuOpen && (
-              <div className="profile-menu" role="menu">
+              <div
+                className="profile-menu"
+                role="dialog"
+                aria-label="Opções do perfil"
+              >
                 <p className="profile-menu-name">
                   {session?.nome ?? "Colaborador"}
                 </p>
@@ -466,7 +470,6 @@ export function CortexShell({
                 <button
                   type="button"
                   className="profile-menu-security"
-                  role="menuitem"
                   onClick={() => {
                     setIsProfileMenuOpen(false);
                     navigate("/seguranca");
@@ -477,7 +480,6 @@ export function CortexShell({
                 <button
                   type="button"
                   className="profile-menu-logout"
-                  role="menuitem"
                   onClick={() => {
                     void handleLogout();
                   }}
