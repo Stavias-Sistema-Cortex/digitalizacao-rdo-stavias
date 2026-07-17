@@ -1,67 +1,105 @@
-# Cortex 2.1 — refinamento visual de Obras e sidebar
+# Cortex 2.1 — molduras institucionais, Obras e login
 
 ## Objetivo
 
-Refinar a página de Obras e a navegação lateral do Cortex 2.1 com uma linguagem institucional mais consistente: enquadramentos completos em vez de acentos parciais, amarelo reservado a informação e marca, e superfícies de dados com calor visual controlado.
+Eliminar faixas pretas ou amarelas que aparecem apenas no topo de cartões, convertendo-as em molduras completas; restaurar a barra vertical amarela da navegação; refinar Obras; e transformar o login em uma superfície séria de acesso institucional.
 
 ## Escopo aprovado
+
+### Molduras completas
+
+- Todo cartão, painel ou bloco que use faixa preta/amarela grossa apenas no topo passa a usar a mesma cor em todo o perímetro.
+- A regra cobre Home, RDO, Obras, Integrações, Financeiro e desbloqueio offline.
+- Molduras grandes usam espessura equilibrada de `2px`; cartões métricos preservam alternância preta/amarela com `2px` completos.
+- Separadores internos, títulos, indicadores, spinner e elementos que não são superfícies de conteúdo não são convertidos.
+- Raios permanecem pequenos e sombras continuam removidas.
 
 ### Sidebar
 
 - Manter o gradiente existente entre `#111312` e o verde institucional `#124e4a`.
-- Remover o amarelo do frame dos botões laterais.
-- Usar borda transparente no estado neutro, borda branca translúcida no hover e frame branco translúcido completo no estado ativo.
-- Preservar os modos expandido, recolhido e mobile, incluindo foco visível e transições funcionais.
+- Remover o frame amarelo completo do item ativo.
+- Restaurar o marcador vertical amarelo à esquerda do botão selecionado.
+- Manter borda transparente, fundo branco discreto e foco amarelo acessível.
+- Preservar os modos expandido, recolhido e mobile.
 
 ### Página de Obras
 
-- Remover apenas o botão verde `StavIA` do cabeçalho da obra.
-- Preservar o contexto da obra para o launcher global da StavIA; a remoção é somente do atalho local.
-- Substituir a barra amarela parcial do item selecionado por um frame preto completo.
-- Substituir as bordas pretas apenas no topo dos painéis de detalhes e PDOR por frames pretos completos.
-- Manter o link `Ver na Memória` e as demais ações existentes.
+- Remover somente o botão verde `StavIA` do cabeçalho da obra.
+- Preservar `setStaviaContext` para o launcher global da StavIA.
+- Converter a barra amarela parcial do item selecionado em moldura preta completa.
+- Converter as faixas pretas dos painéis de detalhes e PDOR em molduras pretas completas.
+- Manter o link `Ver na Memória` e as demais ações.
 
 ### Status da obra
 
-- Renderizar `ATIVA` como texto preto, sem pill verde.
+- Renderizar `ATIVA` como texto preto sem pill verde.
 - Posicionar uma faixa amarela de marca-texto atrás do texto com pseudo-elemento, leve irregularidade e geometria compacta.
-- Manter contraste legível e evitar sombra, brilho ou animação decorativa.
+- Não usar brilho, sombra ou movimento decorativo.
 
-### Cartões de dados
+### Cartões de dados de Obras
 
-- Aplicar a todos os itens de `.obras-facts`, incluindo Contrato, Valor contratual, Localização, Rodovia, Coordenadas e Atualizado em.
-- Usar um gradiente diagonal de branco para amarelo-claro, com predominância de branco.
+- Aplicar a Contrato, Valor contratual, Localização, Rodovia, Coordenadas e Atualizado em.
+- Usar gradiente diagonal com predominância branca e término amarelo-claro `#fff3b0`.
 - Usar borda quente discreta, texto escuro e raio de `3px`.
-- Não adicionar elevação, hover cenográfico ou informação fictícia.
+
+### Login institucional
+
+- Remover visualmente a fotografia do canteiro e o véu fotográfico.
+- Usar o mesmo gradiente preto–verde da sidebar como fundo integral.
+- Criar composição desktop em duas áreas: identificação institucional à esquerda e formulário branco à direita.
+- Identificação: tile Stavias pequeno, rótulo `Sistema Córtex`, título `Acesso institucional` e texto objetivo de ambiente operacional restrito.
+- Formulário: título `Entrar no sistema`, instrução do CPF, campo, ação amarela, passkey secundária, estados offline/erro e nota de suporte.
+- Card branco com moldura clara, raio de `4px`, sem blur, glassmorphism ou sombra pesada.
+- Mobile empilha identificação e formulário sem perder contraste ou ordem de foco.
+- Preservar autenticação CPF, passkey, validação, mensagens e acessibilidade existentes.
 
 ## Direção visual
 
-- **Paleta:** preto `#111312`, verde `#124e4a`, amarelo `#f2c800`, amarelo-claro `#fff3b0`, branco `#ffffff` e cinza de borda institucional.
-- **Tipografia:** preservar a família atual; status, valores e títulos usam peso moderado, sem aumentar o negrito geral.
-- **Assinatura:** o marca-texto amarelo do status é o único gesto expressivo. Os demais elementos permanecem geométricos e sóbrios.
-- **Movimento:** transições apenas de `background-color`, `border-color` e `color`, respeitando `prefers-reduced-motion`.
+- **Paleta:** `#111312`, `#124e4a`, `#f2c800`, `#fff3b0`, `#ffffff` e cinzas institucionais.
+- **Tipografia:** manter Poppins; títulos em peso `600`, texto em `400`/`500`, dados com numerais tabulares.
+- **Assinatura:** gradiente preto–verde e marca-texto amarelo do status; o restante é geométrico, silencioso e formal.
+- **Movimento:** transições funcionais de cor/borda e entrada curta opcional, sempre desativada em `prefers-reduced-motion`.
+
+## Inventário de superfícies com faixa grossa
+
+- `.home-obra-card`
+- `.rdo-command-band`
+- `.metric-card` e sua alternância amarela
+- `.rdo-memory-link-panel`
+- `.obras-detail`
+- `.obras-pdor`
+- `.integracoes-table-card`
+- `.integracoes-report`
+- `.finance-operational-result`
+- `.offline-unlock__card`
 
 ## Arquivos previstos
 
-- `apps/web/src/features/obras/ObrasPage.tsx`
 - `apps/web/src/index.css`
+- `apps/web/src/features/obras/ObrasPage.tsx`
+- `apps/web/src/features/auth/LoginPage.tsx`
+- `apps/web/src/features/auth/LoginPage.css`
+- `apps/web/src/features/integracoes/IntegracoesPage.css`
+- `apps/web/src/features/financeiro/FinanceiroPage.css`
+- `apps/web/src/features/auth/OfflineUnlockPage.css`
 - `apps/web/src/features/home/institutionalUiPolicy.test.ts`
-- `apps/web/src/uiPolish.test.ts`, caso o contrato visual compartilhado precise ser ajustado
+- `apps/web/src/uiPolish.test.ts`
 
 ## Critérios de aceitação
 
-1. Não existe botão local `StavIA` na página de Obras.
-2. O launcher global continua recebendo o contexto da obra selecionada.
-3. Nenhum botão lateral ativo usa frame amarelo.
-4. Sidebar e item ativo de Obras usam frames completos, sem pseudo-elementos de barra lateral.
-5. Os painéis de detalhes e PDOR têm frame preto em todo o perímetro.
-6. O status `ATIVA` aparece em preto sobre faixa amarela de marca-texto.
-7. Todos os cartões de fatos usam gradiente branco–amarelo-claro.
-8. Lint, testes web, build e smoke da rota `/obras` passam.
+1. Nenhum cartão do inventário mantém faixa preta/amarela grossa apenas no topo.
+2. Os botões da sidebar usam barra vertical amarela ao selecionar, sem frame amarelo.
+3. Não existe botão local `StavIA` em Obras, mas o contexto global continua atualizado.
+4. O item ativo de Obras e os painéis da obra têm molduras completas.
+5. `ATIVA` aparece em preto sobre marca-texto amarelo.
+6. Os cartões de fatos usam gradiente branco–amarelo-claro.
+7. O login usa fundo preto–verde, composição formal e card branco sem fotografia ou blur.
+8. Login CPF, passkey, offline, erros, foco e responsividade continuam funcionais.
+9. Lint, testes web, build e smoke das rotas `/login`, `/obras` e `/` em `5177` passam.
 
 ## Fora de escopo
 
-- Alterar comportamento, respostas ou launcher global da StavIA.
-- Modificar dados, API ou ontologia de Obras.
-- Redesenhar formulários de criação ou gestão administrativa de obras.
-- Introduzir novas cores, fontes ou dependências de UI.
+- Alterar API, autenticação, dados ou ontologia.
+- Remover ou redesenhar o launcher global da StavIA.
+- Converter separadores internos e indicadores que não sejam cartões.
+- Introduzir nova fonte ou dependência de UI.
