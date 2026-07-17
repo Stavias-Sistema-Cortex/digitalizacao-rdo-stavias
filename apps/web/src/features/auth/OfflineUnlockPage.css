@@ -3,17 +3,18 @@
   display: grid;
   place-items: center;
   padding: 32px 20px;
-  background: #f3f5f1;
-  color: #183b2a;
+  background: linear-gradient(155deg, #111312 0%, #123a37 46%, #124e4a 100%);
+  color: #ffffff;
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
 }
 
 .offline-unlock__card {
   width: min(100%, 460px);
   padding: 36px;
-  border: 2px solid #e8c900;
-  border-radius: var(--radius-container);
+  border: 2px solid #f2c800;
+  border-radius: 4px;
   background: #ffffff;
-  box-shadow: 0 16px 44px rgb(25 54 39 / 10%);
+  box-shadow: none;
 }
 
 .offline-unlock__mark {
@@ -25,9 +26,9 @@
 
 .offline-unlock__eyebrow {
   margin: 0 0 8px;
-  color: #587064;
+  color: #52645b;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -36,6 +37,7 @@
   margin: 0;
   color: #173627;
   font-size: clamp(1.65rem, 5vw, 2.1rem);
+  font-weight: 600;
   line-height: 1.12;
 }
 
@@ -48,7 +50,8 @@
 .offline-unlock__notice {
   margin: 0 0 18px;
   padding: 12px 14px;
-  border-left: 3px solid #b53632;
+  border: 1px solid #b53632;
+  border-radius: 2px;
   background: #fff4f2;
   color: #8f2926;
   font-size: 0.9rem;
@@ -59,16 +62,16 @@
 .offline-unlock__secondary {
   width: 100%;
   min-height: 48px;
-  border-radius: 10px;
+  border-radius: 4px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .offline-unlock__primary {
-  border: 1px solid #183b2a;
-  background: #183b2a;
-  color: #ffffff;
+  border: 1px solid #caa700;
+  background: #f2c800;
+  color: #111312;
 }
 
 .offline-unlock__primary:disabled {
@@ -78,9 +81,9 @@
 
 .offline-unlock__secondary {
   margin-top: 10px;
-  border: 1px solid #bdc9c1;
+  border: 1px solid #8f9792;
   background: #ffffff;
-  color: #24513a;
+  color: #111312;
 }
 
 .offline-unlock__primary:focus-visible,
@@ -100,6 +103,6 @@
 @media (max-width: 520px) {
   .offline-unlock__card {
     padding: 28px 22px;
-    border-radius: 14px;
+    border-radius: 4px;
   }
 }

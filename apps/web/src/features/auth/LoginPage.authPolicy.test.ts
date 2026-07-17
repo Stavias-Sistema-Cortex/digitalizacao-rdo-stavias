@@ -3,6 +3,28 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("LoginPage auth policy", () => {
+  it("uses the official Cortex lockup as one accessible image", () => {
+    const loginPageSource = readFileSync(
+      new URL("./LoginPage.tsx", import.meta.url),
+      "utf8",
+    );
+    const loginCss = readFileSync(
+      new URL("./LoginPage.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(loginPageSource).toContain(
+      'import cortexLogo from "../../assets/login/cortex-logo.png"',
+    );
+    expect(loginPageSource).toContain('alt="Stavias Córtex"');
+    expect(loginPageSource).toContain('className="login__brand-lockup"');
+    expect(loginPageSource).toContain("draggable={false}");
+    expect(loginPageSource).not.toContain("staviasTile");
+    expect(loginCss).toMatch(
+      /\.login__brand-lockup\s*\{[^}]*max-width:\s*440px/s,
+    );
+  });
+
   it("usa CPF direto e mantém a passkey como ação minimalista", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
