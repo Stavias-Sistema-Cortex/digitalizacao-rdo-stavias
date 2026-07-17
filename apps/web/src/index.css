@@ -802,7 +802,7 @@ textarea:focus {
   gap: 6px;
 }
 
-/* Nav minimalista: botões chatos, ativo assinado pela barra amarela. */
+/* Navegação institucional: seleção marcada por uma barra vertical amarela. */
 .sidebar-nav-item {
   position: relative;
   display: flex;
@@ -841,11 +841,11 @@ textarea:focus {
 }
 
 .sidebar-nav-item.active {
+  border-color: transparent;
   background: rgb(255 255 255 / 10%);
   font-weight: 600;
 }
 
-/* Item ativo: barra amarela de pista na lateral. */
 .sidebar-nav-item.active::before {
   content: "";
   position: absolute;
@@ -853,8 +853,7 @@ textarea:focus {
   bottom: 20%;
   left: 0;
   width: 3px;
-  border-radius: 999px;
-  background: #fed203;
+  background: var(--color-brand-yellow);
 }
 
 .sidebar-footer button {
@@ -1527,8 +1526,7 @@ textarea:focus {
 
 .home-obra-card {
   padding: 20px;
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
 }
 
 .home-obra-header h2,
@@ -1573,7 +1571,7 @@ textarea:focus {
 
 .rdo-command-band {
   padding: 24px;
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
   border-radius: var(--radius-container);
 }
 
@@ -1621,13 +1619,12 @@ textarea:focus {
   position: relative;
   min-height: 76px;
   padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-top: 2px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
   border-radius: var(--radius-control);
 }
 
 .metric-card:nth-child(2n) {
-  border-top-color: var(--color-brand-yellow);
+  border-color: var(--color-brand-yellow);
 }
 
 .metric-card span {
@@ -1695,8 +1692,7 @@ textarea:focus {
 
 .rdo-memory-link-panel {
   padding: 18px;
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
   border-radius: var(--radius-container);
   background: #fff;
 }
@@ -1762,22 +1758,13 @@ textarea:focus {
   color: var(--color-ink);
 }
 
-.obras-list-item.active::before {
-  content: "";
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: 0;
-  background: var(--color-brand-yellow);
-}
-
 .obras-list-title,
 .obras-facts dd {
   font-weight: 600;
 }
 
 .obras-detail {
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
 }
 
 .obras-detail-actions {
@@ -1805,25 +1792,26 @@ textarea:focus {
   color: #fff;
 }
 
-.obras-stavia-button {
-  font-weight: 500;
-}
-
 .obras-facts {
   gap: 8px;
 }
 
 .obras-facts div {
   min-height: 68px;
+  border: 1px solid #eadf9f;
   border-radius: 3px;
-  background: #f8f9f7;
+  background: linear-gradient(
+    135deg,
+    #fff 18%,
+    #fffdf2 62%,
+    #fff3b0 100%
+  );
 }
 
 .obras-pdor {
   margin-bottom: 0;
   padding: 18px;
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
   border-radius: var(--radius-container);
   background: #fff;
 }
@@ -2550,15 +2538,6 @@ textarea:focus {
   background: #f7f9f7;
 }
 
-.obras-list-item.active::before {
-  content: "";
-  position: absolute;
-  inset: 8px auto 8px 0;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--color-brand-yellow);
-}
-
 .obras-list-title,
 .obras-list-meta {
   display: block;
@@ -2599,16 +2578,6 @@ textarea:focus {
   font-size: 0.78rem;
 }
 
-.obras-stavia-button {
-  border: 1px solid #0e5e57;
-  border-radius: 999px;
-  background: #0e5e57;
-  color: #fff;
-  padding: 8px 14px;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
 .obras-facts {
   display: grid;
   grid-template-columns: repeat(
@@ -2621,9 +2590,14 @@ textarea:focus {
 
 .obras-facts div {
   min-height: 74px;
-  border: 1px solid #e7ece8;
-  border-radius: 12px;
-  background: #fbfcfb;
+  border: 1px solid #eadf9f;
+  border-radius: 3px;
+  background: linear-gradient(
+    135deg,
+    #fff 18%,
+    #fffdf2 62%,
+    #fff3b0 100%
+  );
   padding: 12px;
 }
 
@@ -2887,7 +2861,7 @@ textarea:focus {
 .home-obra-card,
 .obras-detail,
 .obras-pdor {
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
 }
 
 .home-obra-selector select,
@@ -2925,9 +2899,28 @@ textarea:focus {
 }
 
 .obras-list-item.active {
-  border-color: var(--color-ink);
+  border: 1px solid var(--color-ink);
   background: #fff;
   color: var(--color-ink);
+}
+
+.obras-status-marker {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  color: var(--color-ink);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.obras-status-marker::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 48% -5px -2px;
+  background: var(--color-brand-yellow);
+  transform: rotate(-1deg);
 }
 
 .obras-detail-actions {
@@ -2949,8 +2942,6 @@ textarea:focus {
 .obras-pdor {
   margin-bottom: 0;
   padding: 18px;
-  border-right: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-  border-left: 1px solid var(--color-border);
+  border: 2px solid var(--color-ink);
   background: #fff;
 }

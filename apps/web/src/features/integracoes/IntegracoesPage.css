@@ -1,7 +1,6 @@
 .integracoes-table-card {
   overflow-x: auto;
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
   border-radius: var(--radius-container);
   background: var(--color-surface);
 }
@@ -48,8 +47,7 @@
 }
 
 .integracoes-report {
-  border: 1px solid var(--color-border);
-  border-top: 3px solid var(--color-ink);
+  border: 2px solid var(--color-ink);
   border-radius: var(--radius-container);
   background: var(--color-surface);
 }
