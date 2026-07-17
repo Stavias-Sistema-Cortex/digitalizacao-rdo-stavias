@@ -67,8 +67,10 @@ function coordinatorInput(rdo = localRdo()) {
     newState: { ...rdo },
     actor: fixtureActor(),
     createdAt: CREATED_AT,
-    write: async (tx: LocalMutationTransaction<"rdos">) =>
-      tx.objectStore("rdos").put(rdo),
+    write: (tx: LocalMutationTransaction<"rdos">) => {
+      void tx.objectStore("rdos").put(rdo);
+      return undefined;
+    },
   };
 }
 
@@ -219,8 +221,8 @@ describe("local mutation coordinator", () => {
     await expect(
       commitLocalMutation({
         ...input,
-        write: async (tx) => {
-          await tx.objectStore("rdos").put(rdo);
+        write: (tx) => {
+          void tx.objectStore("rdos").put(rdo).catch(() => undefined);
           throw new Error("boom");
         },
       }),
@@ -229,6 +231,140 @@ describe("local mutation coordinator", () => {
     expect(await db.getAll("rdos")).toHaveLength(0);
     expect(await db.getAll("outbox_mutations")).toHaveLength(0);
     expect(await db.getAll("operational_events")).toHaveLength(0);
+    expect(queuedEvents).toBe(0);
+  });
+
+  it("rejects a delayed async writer before a partial domain commit", async () => {
+    const db = await getCortexDb();
+    let queuedEvents = 0;
+    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
+      queuedEvents += 1;
+    });
+    const rdo = localRdo();
+    const input = coordinatorInput(rdo);
+    const delayedWriter = (async (
+      tx: LocalMutationTransaction<"rdos">,
+    ) => {
+      await tx.objectStore("rdos").put(rdo);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      throw new Error("late failure");
+    }) as unknown as typeof input.write;
+
+    await expect(
+      commitLocalMutation({ ...input, write: delayedWriter }),
+    ).rejects.toThrow(
+      "Local mutation write must synchronously enqueue IndexedDB requests and return undefined.",
+    );
+
+    expect(await db.getAll("rdos")).toHaveLength(0);
+    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await db.getAll("operational_events")).toHaveLength(0);
+    expect(queuedEvents).toBe(0);
+  });
+
+  it("rejects a directly returned IndexedDB request promise", async () => {
+    const db = await getCortexDb();
+    let queuedEvents = 0;
+    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
+      queuedEvents += 1;
+    });
+    const rdo = localRdo();
+    const input = coordinatorInput(rdo);
+    const promiseReturningWriter = ((
+      tx: LocalMutationTransaction<"rdos">,
+    ) => tx.objectStore("rdos").put(rdo)) as unknown as typeof input.write;
+
+    await expect(
+      commitLocalMutation({ ...input, write: promiseReturningWriter }),
+    ).rejects.toThrow(
+      "Local mutation write must synchronously enqueue IndexedDB requests and return undefined.",
+    );
+
+    expect(await db.getAll("rdos")).toHaveLength(0);
+    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await db.getAll("operational_events")).toHaveLength(0);
+    expect(queuedEvents).toBe(0);
+  });
+
+  it("persists one immutable state snapshot across async boundaries", async () => {
+    const db = await getCortexDb();
+    const rdo = localRdo();
+    const previousState = {
+      statusRdo: "NOVO",
+      metadata: { source: "before" },
+    };
+    const newState = {
+      ...rdo,
+      payload: { observacoes: "snapshot original" },
+    };
+    const expectedPreviousState = structuredClone(previousState);
+    const expectedNewState = structuredClone(newState);
+    const input = {
+      ...coordinatorInput(rdo),
+      previousState,
+      newState,
+      write: (tx: LocalMutationTransaction<"rdos">) => {
+        void tx.objectStore("rdos").put(rdo);
+        newState.payload.observacoes = "mutated inside write";
+        previousState.metadata.source = "mutated inside write";
+        return undefined;
+      },
+    };
+
+    const committed = commitLocalMutation(input);
+    newState.numeroRdo = "MUTATED-AFTER-INVOKE";
+    newState.payload.observacoes = "mutated after invoke";
+    previousState.statusRdo = "MUTATED-AFTER-INVOKE";
+
+    const result = await committed;
+
+    expect(result.mutation.payload).toEqual(expectedNewState);
+    expect(result.mutation.trace.payloadHash).toBe(
+      await mutationPayloadHash(expectedNewState),
+    );
+    expect(result.mutation.fieldPatch.changed).toMatchObject({
+      payload: { observacoes: "snapshot original" },
+      numeroRdo: "RDO-001",
+    });
+    expect(result.event.previousState).toEqual(expectedPreviousState);
+    expect(result.event.newState).toEqual(expectedNewState);
+    expect(
+      await db.get("outbox_mutations", result.mutation.clientMutationId),
+    ).toMatchObject({ payload: expectedNewState });
+    expect(await db.get("operational_events", result.event.id)).toMatchObject({
+      previousState: expectedPreviousState,
+      newState: expectedNewState,
+    });
+  });
+
+  it("rejects an empty authorization scope before opening a write", async () => {
+    const db = await getCortexDb();
+    let queuedEvents = 0;
+    let writeCalls = 0;
+    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
+      queuedEvents += 1;
+    });
+    const input = coordinatorInput();
+
+    await expect(
+      commitLocalMutation({
+        ...input,
+        actor: {
+          ...input.actor,
+          authorizationScope: [],
+        },
+        write: (tx) => {
+          writeCalls += 1;
+          void tx.objectStore("rdos").put(localRdo());
+          return undefined;
+        },
+      }),
+    ).rejects.toThrow("actor.authorizationScope is required.");
+
+    expect(await db.getAll("rdos")).toHaveLength(0);
+    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await db.getAll("operational_events")).toHaveLength(0);
+    expect(writeCalls).toBe(0);
     expect(queuedEvents).toBe(0);
   });
 });

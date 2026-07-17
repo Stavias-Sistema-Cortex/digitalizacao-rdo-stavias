@@ -14,6 +14,7 @@ import type {
   StoredOperationalEventRecord,
   StoredOutboxMutationRecord,
 } from "../db/db.types";
+import type { CommitLocalMutationInput } from "./localMutationCoordinator";
 
 type Assert<T extends true> = T;
 
@@ -73,4 +74,8 @@ export type CanonicalMutationContractTypecheck = [
   Assert<IsRequired<CanonicalOperationalEventInput, "entityVersion">>,
   Assert<IsNotAssignable<LegacyOperationalEventInput, CanonicalOperationalEventInput>>,
   Assert<Equal<ObraGeometryLocalRecord["geometry"], OperationalFeatureCollection>>,
+  Assert<Equal<
+    ReturnType<CommitLocalMutationInput<"rdos">["write"]>,
+    undefined
+  >>,
 ];

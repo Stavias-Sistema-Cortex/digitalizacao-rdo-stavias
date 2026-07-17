@@ -13,7 +13,7 @@ import type {
 } from "../db/db.types";
 import { buildCanonicalEventFromMutation } from "../db/operationalEventRepository";
 import {
-  buildMutationEnvelope,
+  buildMutationEnvelopeWithSnapshots,
   type BuildMutationEnvelopeInput,
   type MutationEntity,
 } from "./mutationEnvelope";
@@ -48,9 +48,20 @@ export interface CommitLocalMutationInput<
   stores: readonly TStore[];
   entity: LocalMutationEntity;
   eventType: OperationalEventType;
+  /**
+   * Synchronously enqueue IndexedDB requests on this transaction and return
+   * exactly undefined. Do not mark this callback async, await timers/network,
+   * or return an idb request Promise; transaction.done is the commit boundary.
+   *
+   * @example
+   * write: (tx) => {
+   *   void tx.objectStore("rdos").put(record).catch(() => undefined);
+   *   return undefined;
+   * }
+   */
   write: (
     transaction: LocalMutationTransaction<TStore>,
-  ) => Promise<unknown> | unknown;
+  ) => undefined;
 }
 
 export interface CommittedLocalMutation {
@@ -63,22 +74,31 @@ export async function commitLocalMutation<
 >(
   input: CommitLocalMutationInput<TStore>,
 ): Promise<CommittedLocalMutation> {
-  const mutation = await buildMutationEnvelope(input);
+  const entity = snapshotLocalMutationEntity(input.entity);
+  const {
+    mutation,
+    previousState,
+    newState,
+    actor,
+  } = await buildMutationEnvelopeWithSnapshots({
+    ...input,
+    entity,
+  });
   const event = buildCanonicalEventFromMutation({
     mutation,
     type: input.eventType,
     principalEntity: {
-      tipo: input.entity.type,
-      id: input.entity.id,
-      nome: input.entity.name,
+      tipo: entity.type,
+      id: entity.id,
+      nome: entity.name,
     },
-    relatedEntities: input.entity.relatedEntities ?? [],
-    obraId: input.entity.obraId ?? null,
-    rdoId: input.entity.rdoId ?? null,
-    colaboradorId: input.entity.colaboradorId ?? null,
-    responsibleUserName: input.actor.actorName,
-    previousState: input.previousState,
-    newState: input.newState,
+    relatedEntities: entity.relatedEntities ?? [],
+    obraId: entity.obraId ?? null,
+    rdoId: entity.rdoId ?? null,
+    colaboradorId: entity.colaboradorId ?? null,
+    responsibleUserName: actor.actorName,
+    previousState,
+    newState,
   });
   const db = await getCortexDb();
   const storeNames: Array<TStore | CanonicalWriteStore> = [
@@ -91,9 +111,23 @@ export async function commitLocalMutation<
   const transaction = db.transaction(storeNames, "readwrite");
 
   try {
-    await input.write(transaction);
-    await transaction.objectStore("outbox_mutations").add(mutation);
-    await transaction.objectStore("operational_events").add(event);
+    const writeResult: unknown = input.write(transaction);
+    if (writeResult !== undefined) {
+      if (isThenable(writeResult)) {
+        void Promise.resolve(writeResult).catch(() => undefined);
+      }
+      throw new TypeError(
+        "Local mutation write must synchronously enqueue IndexedDB requests and return undefined.",
+      );
+    }
+    void transaction
+      .objectStore("outbox_mutations")
+      .add(mutation)
+      .catch(() => undefined);
+    void transaction
+      .objectStore("operational_events")
+      .add(event)
+      .catch(() => undefined);
     await transaction.done;
   } catch (error) {
     try {
@@ -110,4 +144,35 @@ export async function commitLocalMutation<
   }
 
   return { mutation, event };
+}
+
+function snapshotLocalMutationEntity(
+  entity: LocalMutationEntity,
+): LocalMutationEntity {
+  return {
+    type: entity.type,
+    id: entity.id,
+    ...(entity.name === undefined ? {} : { name: entity.name }),
+    ...(entity.obraId === undefined ? {} : { obraId: entity.obraId }),
+    ...(entity.rdoId === undefined ? {} : { rdoId: entity.rdoId }),
+    ...(entity.colaboradorId === undefined
+      ? {}
+      : { colaboradorId: entity.colaboradorId }),
+    ...(entity.relatedEntities === undefined
+      ? {}
+      : {
+          relatedEntities: entity.relatedEntities.map((related) => ({
+            tipo: related.tipo,
+            id: related.id,
+            ...(related.nome === undefined ? {} : { nome: related.nome }),
+          })),
+        }),
+  };
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" && value !== null) ||
+    typeof value === "function"
+  ) && "then" in value && typeof value.then === "function";
 }

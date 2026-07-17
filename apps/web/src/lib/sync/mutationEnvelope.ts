@@ -32,10 +32,24 @@ export interface BuildMutationEnvelopeInput {
   dependsOnMutationIds?: readonly string[];
 }
 
+export interface BuiltMutationEnvelopeSnapshots {
+  mutation: CanonicalOutboxMutationRecord;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  actor: MutationActor;
+}
+
 export async function mutationPayloadHash(
   value: unknown,
 ): Promise<string> {
   const canonicalPayload = canonicalJson(value);
+
+  return hashCanonicalJson(canonicalPayload);
+}
+
+async function hashCanonicalJson(
+  canonicalPayload: string,
+): Promise<string> {
   const digest = new Uint8Array(
     await crypto.subtle.digest(
       "SHA-256",
@@ -51,12 +65,21 @@ export async function mutationPayloadHash(
 export async function buildMutationEnvelope(
   input: BuildMutationEnvelopeInput,
 ): Promise<CanonicalOutboxMutationRecord> {
+  return (await buildMutationEnvelopeWithSnapshots(input)).mutation;
+}
+
+export async function buildMutationEnvelopeWithSnapshots(
+  input: BuildMutationEnvelopeInput,
+): Promise<BuiltMutationEnvelopeSnapshots> {
   validateRequiredText(input.entity.type, "entity.type");
   validateRequiredText(input.entity.id, "entity.id");
   validateRequiredText(input.operation, "operation");
   validateRequiredText(input.actor.actorId, "actor.actorId");
   validateRequiredText(input.actor.actorName, "actor.actorName");
   validateRequiredText(input.actor.deviceId, "actor.deviceId");
+  if (input.actor.authorizationScope.length === 0) {
+    throw new TypeError("actor.authorizationScope is required.");
+  }
   input.actor.authorizationScope.forEach((scope, index) =>
     validateRequiredText(scope, `actor.authorizationScope[${index}]`),
   );
@@ -68,8 +91,19 @@ export async function buildMutationEnvelope(
     validateRequiredText(input.causationId, "causationId");
   }
 
-  canonicalJson(input.previousState);
-  canonicalJson(input.newState);
+  const previousStateJson = canonicalJson(input.previousState);
+  const newStateJson = canonicalJson(input.newState);
+  const previousState = recordSnapshot(
+    previousStateJson,
+    "previousState",
+  );
+  const newState = recordSnapshot(newStateJson, "newState");
+  const actor: MutationActor = {
+    actorId: input.actor.actorId,
+    actorName: input.actor.actorName,
+    deviceId: input.actor.deviceId,
+    authorizationScope: [...input.actor.authorizationScope],
+  };
 
   const clientMutationId = crypto.randomUUID();
   const ontologyEventId = crypto.randomUUID();
@@ -77,18 +111,19 @@ export async function buildMutationEnvelope(
   const causationId = input.causationId ?? null;
   const createdAt = input.createdAt ?? new Date().toISOString();
   const fieldPatch = buildFieldPatch(
-    input.previousState,
-    input.newState,
+    previousState,
+    newState,
   );
+  const payloadHash = await hashCanonicalJson(newStateJson);
 
-  return {
+  const mutation: CanonicalOutboxMutationRecord = {
     contractVersion: 13,
     clientMutationId,
     entidadeTipo: input.entity.type,
     entidadeId: input.entity.id,
     operacao: input.operation,
     baseVersao: input.baseVersion,
-    payload: input.newState,
+    payload: newState,
     status: "PENDING",
     tentativas: 0,
     ultimaTentativaEm: null,
@@ -103,17 +138,40 @@ export async function buildMutationEnvelope(
     correlationId,
     fieldPatch,
     trace: {
-      actorId: input.actor.actorId,
-      deviceId: input.actor.deviceId,
-      authorizationScope: [...input.actor.authorizationScope],
+      actorId: actor.actorId,
+      deviceId: actor.deviceId,
+      authorizationScope: [...actor.authorizationScope],
       correlationId,
       causationId,
       ontologyEventId,
-      payloadHash: await mutationPayloadHash(input.newState),
+      payloadHash,
     },
     nextAttemptAt: null,
     blockedReason: null,
   };
+
+  return {
+    mutation,
+    previousState,
+    newState,
+    actor,
+  };
+}
+
+function recordSnapshot(
+  canonicalValue: string,
+  field: string,
+): Record<string, unknown> {
+  const snapshot: unknown = JSON.parse(canonicalValue);
+  if (
+    snapshot === null ||
+    typeof snapshot !== "object" ||
+    Array.isArray(snapshot)
+  ) {
+    throw new TypeError(`${field} must be a JSON object.`);
+  }
+
+  return snapshot as Record<string, unknown>;
 }
 
 function buildFieldPatch(
