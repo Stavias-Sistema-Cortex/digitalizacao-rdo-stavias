@@ -1,0 +1,58 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+
+import { InstitutionalPageHeader } from "./InstitutionalPageHeader";
+import { InstitutionalStatus } from "./InstitutionalStatus";
+import { SyncStateStrip } from "./SyncStateStrip";
+import { TraceReference } from "./TraceReference";
+
+describe("institutional interface primitives", () => {
+  it("renders a labelled page header with a single page heading", () => {
+    const markup = renderToStaticMarkup(
+      <InstitutionalPageHeader eyebrow="Ontologia operacional" title="Obras" />,
+    );
+
+    expect(markup).toContain("<header");
+    expect(markup).toContain("Ontologia operacional");
+    expect(markup).toContain("<h1>Obras</h1>");
+  });
+
+  it("links a trace reference directly to its memory event without a timeline", () => {
+    const markup = renderToStaticMarkup(
+      <TraceReference entityId="obra-42" eventId="event-123" />,
+    );
+
+    expect(markup).toContain('href="/home?tab=memory&amp;event=event-123"');
+    expect(markup).not.toMatch(/timeline/i);
+  });
+
+  it("exposes an institutional state through the status role", () => {
+    const markup = renderToStaticMarkup(<InstitutionalStatus state="SYNCING" />);
+
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain('data-state="SYNCING"');
+  });
+
+  it("renders synchronization facts with a machine-readable last-sync time", () => {
+    const markup = renderToStaticMarkup(
+      <SyncStateStrip
+        snapshot={{
+          status: "SYNCED",
+          isOnline: true,
+          pendingCount: 0,
+          syncingCount: 0,
+          errorCount: 0,
+          conflictCount: 0,
+          lastSyncCompletedAt: "2026-07-17T12:30:00.000Z",
+          lastSyncError: null,
+          isLoading: false,
+        }}
+      />,
+    );
+
+    expect(markup).toContain("<dl");
+    expect(markup).toContain("<time");
+    expect(markup).toContain('dateTime="2026-07-17T12:30:00.000Z"');
+    expect(markup).toContain('data-state="SYNCED"');
+  });
+});

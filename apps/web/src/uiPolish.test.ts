@@ -56,7 +56,7 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(globalCss, ":root")).toContain("--color-brand-teal: #124e4a;");
     expect(rule(globalCss, ":root")).toContain("--color-brand-yellow: #f2c800;");
     expect(rule(globalCss, ":root")).toContain("--radius-control: 4px;");
-    expect(rule(globalCss, ":root")).toContain("--radius-container: 6px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-container: 4px;");
     expect(rule(globalCss, ":root")).toContain("--radius-sm: var(--radius-control);");
     expect(rule(globalCss, ":root")).toContain("--radius-lg: var(--radius-container);");
   });
