@@ -268,10 +268,23 @@ function storedFieldConflicts(
       }
     }
     if (Object.keys(conflict).length > 0) {
-      conflicts[field] = conflict;
+      setOwnDataProperty(conflicts, field, conflict);
     }
   }
   return conflicts;
+}
+
+function setOwnDataProperty<T>(
+  target: Record<string, T>,
+  field: string,
+  value: T,
+): void {
+  Object.defineProperty(target, field, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function compareConflictReviews(

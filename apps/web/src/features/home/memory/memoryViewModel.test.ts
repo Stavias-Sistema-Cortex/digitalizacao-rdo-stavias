@@ -65,6 +65,69 @@ function localEvent(
   };
 }
 
+function conflictMutation(
+  clientMutationId = "mutation-conflict",
+  conflito: Record<string, unknown> = {
+    titulo: { base: "Base", local: "Local", remote: "Remoto" },
+  },
+): CanonicalOutboxMutationRecord {
+  return {
+    contractVersion: 13,
+    clientMutationId,
+    entidadeTipo: "RDO",
+    entidadeId: "rdo-1",
+    operacao: "ATUALIZAR_RDO_RASCUNHO",
+    baseVersao: 4,
+    payload: { titulo: "Local" },
+    status: "CONFLICT",
+    tentativas: 1,
+    ultimaTentativaEm: "2026-07-17T15:01:00Z",
+    ultimoErro: "Conflito de campo.",
+    conflito,
+    criadaNoClienteEm: "2026-07-17T15:00:00Z",
+    updatedAt: "2026-07-17T15:02:00Z",
+    transport: "SYNC_PUSH",
+    dependsOnMutationIds: [],
+    correlationId: "correlation-1",
+    fieldPatch: {
+      changed: { titulo: "Local" },
+      baseValues: { titulo: "Base" },
+    },
+    trace: {
+      actorId: "actor-1",
+      deviceId: "device-1",
+      authorizationScope: ["obra-1"],
+      correlationId: "correlation-1",
+      causationId: null,
+      ontologyEventId: `event-${clientMutationId}`,
+      payloadHash: "a".repeat(64),
+    },
+    nextAttemptAt: null,
+    blockedReason: null,
+  };
+}
+
+function conflictEvent(
+  mutation: CanonicalOutboxMutationRecord,
+): CanonicalOperationalEventRecord {
+  return localEvent({
+    contractVersion: 13,
+    id: mutation.trace.ontologyEventId,
+    principalEntity: { tipo: "RDO", id: mutation.entidadeId },
+    principalEntityKey: `RDO:${mutation.entidadeId}`,
+    rdoId: mutation.entidadeId,
+    clientMutationId: mutation.clientMutationId,
+    deviceId: mutation.trace.deviceId,
+    correlationId: mutation.trace.correlationId,
+    causationId: mutation.trace.causationId,
+    previousState: { titulo: "Base" },
+    newState: { titulo: "Local" },
+    result: "CONFLICT",
+    errorCategory: "FIELD_CONFLICT",
+    entityVersion: mutation.baseVersao,
+  }) as CanonicalOperationalEventRecord;
+}
+
 describe("memoryViewModel", () => {
   it("mescla eventos locais autorizados e mantém o servidor como verdade", () => {
     const result = mergeMemoryEvents(
@@ -154,73 +217,14 @@ describe("memoryViewModel", () => {
   });
 
   it("projeta revisão de conflito apenas quando evento e triplas estão armazenados", () => {
-    const mutation: CanonicalOutboxMutationRecord = {
-      contractVersion: 13,
-      clientMutationId: "mutation-conflict",
-      entidadeTipo: "RDO",
-      entidadeId: "rdo-1",
-      operacao: "ATUALIZAR_RDO_RASCUNHO",
-      baseVersao: 4,
-      payload: { titulo: "Local" },
-      status: "CONFLICT",
-      tentativas: 1,
-      ultimaTentativaEm: "2026-07-17T15:01:00Z",
-      ultimoErro: "Conflito de campo.",
-      conflito: {
-        titulo: { base: "Base", local: "Local", remote: "Remoto" },
-      },
-      criadaNoClienteEm: "2026-07-17T15:00:00Z",
-      updatedAt: "2026-07-17T15:02:00Z",
-      transport: "SYNC_PUSH",
-      dependsOnMutationIds: [],
-      correlationId: "correlation-1",
-      fieldPatch: {
-        changed: { titulo: "Local" },
-        baseValues: { titulo: "Base" },
-      },
-      trace: {
-        actorId: "actor-1",
-        deviceId: "device-1",
-        authorizationScope: ["obra-1"],
-        correlationId: "correlation-1",
-        causationId: null,
-        ontologyEventId: "event-conflict",
-        payloadHash: "a".repeat(64),
-      },
-      nextAttemptAt: null,
-      blockedReason: null,
-    };
-    const conflictEvent = localEvent({
-      contractVersion: 13,
-      id: "event-conflict",
-      principalEntity: { tipo: "RDO", id: "rdo-1" },
-      principalEntityKey: "RDO:rdo-1",
-      rdoId: "rdo-1",
-      clientMutationId: mutation.clientMutationId,
-      deviceId: "device-1",
-      correlationId: "correlation-1",
-      causationId: null,
-      previousState: { titulo: "Base" },
-      newState: { titulo: "Local" },
-      result: "CONFLICT",
-      errorCategory: "FIELD_CONFLICT",
-      entityVersion: 4,
-    }) as CanonicalOperationalEventRecord;
-    const unstructured = {
-      ...mutation,
-      clientMutationId: "mutation-version-only",
-      conflito: { versaoAtual: 5 },
-      trace: {
-        ...mutation.trace,
-        ontologyEventId: "event-version-only",
-      },
-    };
+    const mutation = conflictMutation();
+    const event = conflictEvent(mutation);
 
     expect(memoryConflictReviewRecords(
-      [conflictEvent],
-      [mutation, unstructured],
+      [event],
+      [mutation],
     )).toEqual([{
-      eventId: "event-conflict",
+      eventId: "event-mutation-conflict",
       clientMutationId: "mutation-conflict",
       actorId: "actor-1",
       actorName: "Ana",
@@ -233,5 +237,44 @@ describe("memoryViewModel", () => {
         titulo: { base: "Base", local: "Local", remote: "Remoto" },
       },
     }]);
+  });
+
+  it("omite conflito apenas de versão mesmo com evento correlacionado", () => {
+    const mutation = conflictMutation(
+      "mutation-version-only",
+      { versaoAtual: 5 },
+    );
+
+    expect(memoryConflictReviewRecords(
+      [conflictEvent(mutation)],
+      [mutation],
+    )).toEqual([]);
+  });
+
+  it("omite conflito estruturado sem evento persistido", () => {
+    expect(memoryConflictReviewRecords(
+      [],
+      [conflictMutation("mutation-without-event")],
+    )).toEqual([]);
+  });
+
+  it("preserva __proto__ como campo próprio na revisão armazenada", () => {
+    const storedConflicts = JSON.parse(
+      '{"__proto__":{"base":"Base","local":"Local","remote":"Remoto"}}',
+    ) as Record<string, unknown>;
+    const mutation = conflictMutation(
+      "mutation-proto-field",
+      storedConflicts,
+    );
+
+    const [review] = memoryConflictReviewRecords(
+      [conflictEvent(mutation)],
+      [mutation],
+    );
+
+    expect(review).toBeDefined();
+    expect(Object.getPrototypeOf(review?.conflicts)).toBe(Object.prototype);
+    expect(Object.hasOwn(review?.conflicts ?? {}, "__proto__")).toBe(true);
+    expect(review?.conflicts).toEqual(storedConflicts);
   });
 });

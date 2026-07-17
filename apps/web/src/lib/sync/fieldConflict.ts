@@ -44,7 +44,11 @@ export function classifyFieldConflict(
     }
 
     copyPresentValue(merged, field, local);
-    conflicts[field] = conflictValues(base, local, remote);
+    setOwnDataProperty(
+      conflicts,
+      field,
+      conflictValues(base, local, remote),
+    );
   }
 
   return {
@@ -57,15 +61,20 @@ export function classifyFieldConflict(
 interface PresentFieldValue {
   present: boolean;
   value: unknown;
+  canonical: string | null;
 }
 
 function fieldValue(
   values: Record<string, unknown>,
   field: string,
 ): PresentFieldValue {
+  const present = Object.prototype.hasOwnProperty.call(values, field);
+  const value = values[field];
+
   return {
-    present: Object.prototype.hasOwnProperty.call(values, field),
-    value: values[field],
+    present,
+    value,
+    canonical: present ? canonicalJson(value) : null,
   };
 }
 
@@ -74,7 +83,7 @@ function sameFieldValue(
   right: PresentFieldValue,
 ): boolean {
   return left.present === right.present && (
-    !left.present || canonicalJson(left.value) === canonicalJson(right.value)
+    !left.present || left.canonical === right.canonical
   );
 }
 
@@ -84,8 +93,21 @@ function copyPresentValue(
   source: PresentFieldValue,
 ): void {
   if (source.present) {
-    target[field] = source.value;
+    setOwnDataProperty(target, field, source.value);
   }
+}
+
+function setOwnDataProperty<T>(
+  target: Record<string, T>,
+  field: string,
+  value: T,
+): void {
+  Object.defineProperty(target, field, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
 }
 
 function conflictValues(

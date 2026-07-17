@@ -85,4 +85,72 @@ describe("classifyFieldConflict", () => {
       { participantes: [] },
     )).toThrow("Canonical JSON rejects undefined at $[0].");
   });
+
+  it.each([
+    ["base", { invalid: new Array<string>(1) }, {}, {}],
+    ["local", {}, { invalid: undefined }, {}],
+    ["remote", {}, {}, (() => {
+      const cycle: Record<string, unknown> = {};
+      cycle.self = cycle;
+      return { invalid: cycle };
+    })()],
+  ])("validates a value present only in %s", (
+    _side,
+    base,
+    local,
+    remote,
+  ) => {
+    expect(() => classifyFieldConflict(base, local, remote)).toThrow(
+      "Canonical JSON rejects",
+    );
+  });
+
+  it.each([
+    ["non-finite number", Number.NaN],
+    ["function", () => undefined],
+    ["bigint", BigInt(1)],
+    ["symbol", Symbol("invalid")],
+    ["non-plain object", new Date("2026-07-17T12:00:00Z")],
+    ["symbol key", (() => {
+      const value = { visible: true };
+      Object.defineProperty(value, Symbol("invalid"), {
+        enumerable: true,
+        value: true,
+      });
+      return value;
+    })()],
+  ])("rejects a one-sided %s", (_label, invalid) => {
+    expect(() => classifyFieldConflict(
+      {},
+      {},
+      { invalid },
+    )).toThrow("Canonical JSON rejects");
+  });
+
+  it("preserves a JSON __proto__ field as an own data property", () => {
+    const base = JSON.parse(
+      '{"__proto__":{"source":"base"},"prazo":"2026-07-20"}',
+    ) as Record<string, unknown>;
+    const local = JSON.parse(
+      '{"__proto__":{"source":"local"},"prazo":"2026-07-20"}',
+    ) as Record<string, unknown>;
+    const remote = JSON.parse(
+      '{"__proto__":{"source":"remote"},"prazo":"2026-07-21"}',
+    ) as Record<string, unknown>;
+
+    const resolution = classifyFieldConflict(base, local, remote);
+
+    expect(Object.getPrototypeOf(resolution.merged)).toBe(Object.prototype);
+    expect(Object.hasOwn(resolution.merged, "__proto__")).toBe(true);
+    expect(Object.hasOwn(resolution.conflicts, "__proto__")).toBe(true);
+    expect(resolution).toEqual({
+      canAutoMerge: false,
+      merged: JSON.parse(
+        '{"__proto__":{"source":"local"},"prazo":"2026-07-21"}',
+      ),
+      conflicts: JSON.parse(
+        '{"__proto__":{"base":{"source":"base"},"local":{"source":"local"},"remote":{"source":"remote"}}}',
+      ),
+    });
+  });
 });
