@@ -29,6 +29,8 @@ export function useAutomaticSync(enabled = true): void {
         persistAutomaticSyncRetryMetadata,
       clearRetryMetadata:
         clearAutomaticSyncRetryMetadata,
+      shouldRetryResult: (summary) =>
+        summary.retryableErrors > 0,
       onSuccess: (trigger, summary) => {
         lastReportedErrorRef.current = null;
 

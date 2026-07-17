@@ -1,3 +1,5 @@
+import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
+
 export const AUTOMATIC_SYNC_INTERVAL_MS = 30_000;
 export const AUTOMATIC_SYNC_MAX_RETRY_DELAY_MS = 300_000;
 export const LOCAL_MUTATION_QUEUED_EVENT =
@@ -11,6 +13,7 @@ export type AutomaticSyncTrigger =
   | "ONLINE"
   | "INTERVAL"
   | "VISIBILITY"
+  | "AUTH_SESSION"
   | "RETRY";
 
 export interface AutomaticSyncRetryMetadata {
@@ -42,8 +45,8 @@ interface SchedulerEventTarget {
   ) => void;
 }
 
-export interface AutomaticSyncSchedulerOptions {
-  syncNow: () => Promise<unknown>;
+export interface AutomaticSyncSchedulerOptions<TResult = unknown> {
+  syncNow: () => Promise<TResult>;
   hasOnlineSession: () => boolean;
   loadRetryMetadata: () => Promise<AutomaticSyncRetryMetadata>;
   persistRetryMetadata: (
@@ -58,9 +61,10 @@ export interface AutomaticSyncSchedulerOptions {
   visibilityTarget?: SchedulerEventTarget;
   getVisibilityState?: () => DocumentVisibilityState;
   intervalMs?: number;
+  shouldRetryResult?: (result: TResult) => boolean;
   onSuccess?: (
     trigger: AutomaticSyncTrigger,
-    result: unknown,
+    result: TResult,
   ) => void;
   onError?: (
     trigger: AutomaticSyncTrigger,
@@ -128,8 +132,8 @@ function retryTimestamp(value: string | null): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-export function createAutomaticSyncScheduler(
-  options: AutomaticSyncSchedulerOptions,
+export function createAutomaticSyncScheduler<TResult = unknown>(
+  options: AutomaticSyncSchedulerOptions<TResult>,
 ): AutomaticSyncScheduler {
   const now = options.now ?? Date.now;
   const random = options.random ?? Math.random;
@@ -242,6 +246,17 @@ export function createAutomaticSyncScheduler(
     inFlightPromise = Promise.resolve()
       .then(() => options.syncNow())
       .then(async (result) => {
+        if (options.shouldRetryResult?.(result)) {
+          runFailed = true;
+          await handleRunFailure(
+            trigger,
+            new Error(
+              "A sincronização deixou operações pendentes para nova tentativa.",
+            ),
+          );
+          return;
+        }
+
         await options.clearRetryMetadata();
         retryAttempt = 0;
         nextAttemptAt = null;
@@ -312,6 +327,10 @@ export function createAutomaticSyncScheduler(
     request("ONLINE");
   };
 
+  const handleAuthSessionChanged: EventListener = () => {
+    request("AUTH_SESSION");
+  };
+
   const handleVisibilityChange: EventListener = () => {
     if (getVisibilityState() === "visible") {
       request("VISIBILITY");
@@ -330,6 +349,10 @@ export function createAutomaticSyncScheduler(
       handleLocalMutationQueued,
     );
     eventTarget.addEventListener("online", handleOnline);
+    eventTarget.addEventListener(
+      AUTH_SESSION_CHANGED_EVENT,
+      handleAuthSessionChanged,
+    );
     visibilityTarget.addEventListener(
       "visibilitychange",
       handleVisibilityChange,
@@ -355,6 +378,10 @@ export function createAutomaticSyncScheduler(
       handleLocalMutationQueued,
     );
     eventTarget.removeEventListener("online", handleOnline);
+    eventTarget.removeEventListener(
+      AUTH_SESSION_CHANGED_EVENT,
+      handleAuthSessionChanged,
+    );
     visibilityTarget.removeEventListener(
       "visibilitychange",
       handleVisibilityChange,

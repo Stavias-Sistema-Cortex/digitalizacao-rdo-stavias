@@ -14,6 +14,7 @@ export interface PushOutboxSummary {
   pushed: number;
   applied: number;
   errors: number;
+  retryableErrors: number;
   conflicts: number;
 }
 
@@ -28,6 +29,7 @@ export async function pushOutbox(
       pushed: 0,
       applied: 0,
       errors: 0,
+      retryableErrors: 0,
       conflicts: 0,
     };
   }
@@ -56,6 +58,7 @@ export async function pushOutbox(
 
     let applied = 0;
     let errors = 0;
+    let retryableErrors = 0;
     let conflicts = 0;
 
     for (const mutation of pendingMutations) {
@@ -70,6 +73,7 @@ export async function pushOutbox(
         );
 
         errors += 1;
+        retryableErrors += 1;
         continue;
       }
 
@@ -88,6 +92,7 @@ export async function pushOutbox(
       pushed: pendingMutations.length,
       applied,
       errors,
+      retryableErrors,
       conflicts,
     };
   } catch (error: unknown) {

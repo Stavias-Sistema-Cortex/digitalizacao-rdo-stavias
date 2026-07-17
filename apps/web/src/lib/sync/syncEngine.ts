@@ -64,6 +64,7 @@ async function executeSync(): Promise<SyncRunSummary> {
       pushed: uploadSummary.pushed + pushSummary.pushed,
       applied: uploadSummary.applied + pushSummary.applied,
       errors: uploadSummary.errors + pushSummary.errors,
+      retryableErrors: pushSummary.retryableErrors,
       conflicts: pushSummary.conflicts,
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,

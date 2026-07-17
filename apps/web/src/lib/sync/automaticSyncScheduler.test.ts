@@ -19,6 +19,7 @@ import {
   mutationAfterAutomaticSyncRetryCleared,
   mutationAfterAutomaticSyncRetryScheduled,
 } from "./syncStorage";
+import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 
 const STARTED_AT = Date.parse("2026-07-17T12:00:00.000Z");
 
@@ -183,6 +184,35 @@ describe("automatic sync scheduling", () => {
     fixture.scheduler.dispose();
   });
 
+  it("stays mounted after offline unlock and syncs on an online session change", async () => {
+    let online = false;
+    let onlineSession = false;
+    const fixture = schedulerFixture({
+      isOnline: () => online,
+      hasOnlineSession: () => onlineSession,
+    });
+
+    fixture.scheduler.start();
+    fixture.eventTarget.dispatchEvent(
+      new Event(AUTH_SESSION_CHANGED_EVENT),
+    );
+    await flushPromises();
+
+    expect(fixture.syncNow).not.toHaveBeenCalled();
+    expect(fixture.loadRetryMetadata).not.toHaveBeenCalled();
+
+    online = true;
+    onlineSession = true;
+    fixture.eventTarget.dispatchEvent(
+      new Event(AUTH_SESSION_CHANGED_EVENT),
+    );
+    await flushPromises();
+
+    expect(fixture.syncNow).toHaveBeenCalledTimes(1);
+
+    fixture.scheduler.dispose();
+  });
+
   it("coalesces concurrent triggers into one follow-up run", async () => {
     let finishFirstRun!: () => void;
     const firstRun = new Promise<void>((resolve) => {
@@ -246,6 +276,61 @@ describe("automatic sync scheduling", () => {
     fixture.scheduler.dispose();
   });
 
+  it("backs off when a resolved summary still contains retryable pending work", async () => {
+    const retryableSummary = {
+      deviceId: "device-1",
+      pushed: 1,
+      applied: 0,
+      errors: 1,
+      retryableErrors: 1,
+      conflicts: 0,
+      pulled: 0,
+      acknowledgedCommitSeq: 4,
+    };
+    const successfulSummary = {
+      ...retryableSummary,
+      applied: 1,
+      errors: 0,
+      retryableErrors: 0,
+    };
+    const syncNow = vi
+      .fn()
+      .mockResolvedValueOnce(retryableSummary)
+      .mockResolvedValueOnce(successfulSummary);
+    const onSuccess = vi.fn();
+    const fixture = schedulerFixture({
+      syncNow,
+      shouldRetryResult: (result) =>
+        typeof result === "object" &&
+        result !== null &&
+        "retryableErrors" in result &&
+        result.retryableErrors === 1,
+      onSuccess,
+    });
+
+    fixture.scheduler.start();
+    await flushPromises();
+
+    expect(fixture.persistRetryMetadata).toHaveBeenCalledWith({
+      attempt: 1,
+      nextAttemptAt: "2026-07-17T12:00:01.000Z",
+    });
+    expect(fixture.clearRetryMetadata).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(syncNow).toHaveBeenCalledTimes(2);
+    expect(fixture.clearRetryMetadata).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledWith(
+      "RETRY",
+      successfulSummary,
+    );
+
+    fixture.scheduler.dispose();
+  });
+
   it("hydrates a persisted retry window after reload", async () => {
     const fixture = schedulerFixture({
       loadRetryMetadata: vi.fn().mockResolvedValue({
@@ -265,6 +350,7 @@ describe("automatic sync scheduling", () => {
     await vi.advanceTimersByTimeAsync(1);
     await flushPromises();
     expect(fixture.syncNow).toHaveBeenCalledTimes(1);
+    expect(fixture.clearRetryMetadata).toHaveBeenCalledTimes(1);
 
     fixture.scheduler.dispose();
   });
