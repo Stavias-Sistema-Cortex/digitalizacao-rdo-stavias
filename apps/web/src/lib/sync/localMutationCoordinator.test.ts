@@ -13,11 +13,13 @@ import { databaseNameForScope } from "../db/localDataNamespace";
 import {
   LOCAL_MUTATION_QUEUED_EVENT,
   commitLocalMutation,
+  type CommitLocalMutationInput,
   type LocalMutationTransaction,
 } from "./localMutationCoordinator";
 import {
   buildMutationEnvelope,
   mutationPayloadHash,
+  type BuildMutationEnvelopeInput,
 } from "./mutationEnvelope";
 
 const OBRA_ID = "00000000-0000-4000-8000-000000000001";
@@ -157,6 +159,104 @@ describe("canonical mutation hashing", () => {
     });
     expect(mutation.trace.payloadHash).toBe(
       await mutationPayloadHash(newState),
+    );
+  });
+
+  it("snapshots every envelope field before the first async boundary", async () => {
+    const entity: BuildMutationEnvelopeInput["entity"] = {
+      type: "RDO",
+      id: localRdo().id,
+    };
+    const authorizationScope = [OBRA_ID];
+    const actor = {
+      ...fixtureActor(),
+      authorizationScope,
+    };
+    const dependencies = ["dependency-original"];
+    const input: BuildMutationEnvelopeInput = {
+      entity,
+      operation: "ENVIAR_RDO",
+      baseVersion: 4,
+      previousState: { statusRdo: "RASCUNHO" },
+      newState: { statusRdo: "ENVIADO" },
+      actor,
+      correlationId: "correlation-original",
+      causationId: "causation-original",
+      createdAt: CREATED_AT,
+      transport: "SYNC_PUSH",
+      dependsOnMutationIds: dependencies,
+    };
+
+    const pending = buildMutationEnvelope(input);
+    entity.type = "MENSAGEM";
+    entity.id = "00000000-0000-4000-8000-000000000099";
+    input.operation = "CRIAR_MENSAGEM";
+    input.baseVersion = 99;
+    input.transport = "OBJECT_UPLOAD";
+    input.correlationId = "correlation-mutated";
+    input.causationId = "causation-mutated";
+    input.createdAt = "2026-07-17T13:00:00.000Z";
+    actor.actorId = "00000000-0000-4000-8000-000000000098";
+    actor.actorName = "Operador alterado";
+    actor.deviceId = "00000000-0000-4000-8000-000000000097";
+    authorizationScope[0] =
+      "00000000-0000-4000-8000-000000000096";
+    dependencies[0] = "dependency-mutated";
+
+    const mutation = await pending;
+
+    expect(mutation).toMatchObject({
+      entidadeTipo: "RDO",
+      entidadeId: localRdo().id,
+      operacao: "ENVIAR_RDO",
+      baseVersao: 4,
+      transport: "SYNC_PUSH",
+      criadaNoClienteEm: CREATED_AT,
+      updatedAt: CREATED_AT,
+      dependsOnMutationIds: ["dependency-original"],
+      correlationId: "correlation-original",
+      trace: {
+        actorId: ownerId,
+        deviceId: fixtureActor().deviceId,
+        authorizationScope: [OBRA_ID],
+        correlationId: "correlation-original",
+        causationId: "causation-original",
+      },
+    });
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects a non-finite base version (%s)",
+    async (baseVersion) => {
+      await expect(
+        buildMutationEnvelope({
+          entity: { type: "RDO", id: localRdo().id },
+          operation: "ENVIAR_RDO",
+          baseVersion,
+          previousState: {},
+          newState: { statusRdo: "ENVIADO" },
+          actor: fixtureActor(),
+        }),
+      ).rejects.toThrow("baseVersion must be finite or null.");
+    },
+  );
+
+  it.each([
+    ["blank", [" "]],
+    ["sparse", new Array<string>(1)],
+  ])("rejects a %s dependency id", async (_label, dependencies) => {
+    await expect(
+      buildMutationEnvelope({
+        entity: { type: "RDO", id: localRdo().id },
+        operation: "ENVIAR_RDO",
+        baseVersion: null,
+        previousState: {},
+        newState: { statusRdo: "ENVIADO" },
+        actor: fixtureActor(),
+        dependsOnMutationIds: dependencies,
+      }),
+    ).rejects.toThrow(
+      "dependsOnMutationIds[0] must be a nonblank string.",
     );
   });
 });
@@ -337,6 +437,69 @@ describe("local mutation coordinator", () => {
     });
   });
 
+  it("keeps pre-await provenance across the coordinator boundary", async () => {
+    const rdo = localRdo();
+    const authorizationScope = [OBRA_ID];
+    const dependencies = ["dependency-original"];
+    const input: CommitLocalMutationInput<"rdos"> = {
+      ...coordinatorInput(rdo),
+      entity: {
+        type: "RDO",
+        id: rdo.id,
+        name: "RDO original",
+        obraId: rdo.obraId,
+        rdoId: rdo.id,
+      },
+      actor: {
+        ...fixtureActor(),
+        actorName: "Operador original",
+        authorizationScope,
+      },
+      correlationId: "correlation-original",
+      causationId: "causation-original",
+      dependsOnMutationIds: dependencies,
+    };
+
+    const pending = commitLocalMutation(input);
+    input.entity.id = "00000000-0000-4000-8000-000000000095";
+    input.entity.name = "RDO alterado";
+    input.entity.obraId =
+      "00000000-0000-4000-8000-000000000094";
+    input.entity.rdoId = "00000000-0000-4000-8000-000000000093";
+    input.actor.actorName = "Operador alterado";
+    authorizationScope[0] =
+      "00000000-0000-4000-8000-000000000092";
+    input.correlationId = "correlation-mutated";
+    input.causationId = "causation-mutated";
+    input.eventType = "RDO_EDITADO";
+    dependencies[0] = "dependency-mutated";
+
+    const result = await pending;
+
+    expect(result.mutation).toMatchObject({
+      entidadeId: rdo.id,
+      dependsOnMutationIds: ["dependency-original"],
+      correlationId: "correlation-original",
+      trace: {
+        authorizationScope: [OBRA_ID],
+        correlationId: "correlation-original",
+        causationId: "causation-original",
+      },
+    });
+    expect(result.event).toMatchObject({
+      type: "RDO_CRIADO",
+      principalEntity: {
+        id: rdo.id,
+        nome: "RDO original",
+      },
+      obraId: OBRA_ID,
+      rdoId: rdo.id,
+      responsibleUserName: "Operador original",
+      correlationId: "correlation-original",
+      causationId: "causation-original",
+    });
+  });
+
   it("rejects an empty authorization scope before opening a write", async () => {
     const db = await getCortexDb();
     let queuedEvents = 0;
@@ -360,6 +523,40 @@ describe("local mutation coordinator", () => {
         },
       }),
     ).rejects.toThrow("actor.authorizationScope is required.");
+
+    expect(await db.getAll("rdos")).toHaveLength(0);
+    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await db.getAll("operational_events")).toHaveLength(0);
+    expect(writeCalls).toBe(0);
+    expect(queuedEvents).toBe(0);
+  });
+
+  it("rejects a sparse authorization scope before opening a write", async () => {
+    const db = await getCortexDb();
+    let queuedEvents = 0;
+    let writeCalls = 0;
+    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
+      queuedEvents += 1;
+    });
+    const input = coordinatorInput();
+    const sparseScope = new Array<string>(1);
+
+    await expect(
+      commitLocalMutation({
+        ...input,
+        actor: {
+          ...input.actor,
+          authorizationScope: sparseScope,
+        },
+        write: (tx) => {
+          writeCalls += 1;
+          void tx.objectStore("rdos").put(localRdo());
+          return undefined;
+        },
+      }),
+    ).rejects.toThrow(
+      "actor.authorizationScope[0] must be a nonblank string.",
+    );
 
     expect(await db.getAll("rdos")).toHaveLength(0);
     expect(await db.getAll("outbox_mutations")).toHaveLength(0);

@@ -75,18 +75,50 @@ export async function commitLocalMutation<
   input: CommitLocalMutationInput<TStore>,
 ): Promise<CommittedLocalMutation> {
   const entity = snapshotLocalMutationEntity(input.entity);
+  const eventType = snapshotRequiredText(
+    input.eventType,
+    "eventType",
+  ) as OperationalEventType;
+  const stores = snapshotRequiredTextArray(
+    input.stores,
+    "stores",
+  ) as TStore[];
+  const write = input.write;
+  const envelopeInput: BuildMutationEnvelopeInput = {
+    entity: {
+      type: entity.type,
+      id: entity.id,
+    },
+    operation: input.operation,
+    baseVersion: input.baseVersion,
+    previousState: input.previousState,
+    newState: input.newState,
+    actor: input.actor,
+    ...(input.correlationId === undefined
+      ? {}
+      : { correlationId: input.correlationId }),
+    ...(input.causationId === undefined
+      ? {}
+      : { causationId: input.causationId }),
+    ...(input.createdAt === undefined
+      ? {}
+      : { createdAt: input.createdAt }),
+    ...(input.transport === undefined
+      ? {}
+      : { transport: input.transport }),
+    ...(input.dependsOnMutationIds === undefined
+      ? {}
+      : { dependsOnMutationIds: input.dependsOnMutationIds }),
+  };
   const {
     mutation,
     previousState,
     newState,
     actor,
-  } = await buildMutationEnvelopeWithSnapshots({
-    ...input,
-    entity,
-  });
+  } = await buildMutationEnvelopeWithSnapshots(envelopeInput);
   const event = buildCanonicalEventFromMutation({
     mutation,
-    type: input.eventType,
+    type: eventType,
     principalEntity: {
       tipo: entity.type,
       id: entity.id,
@@ -103,7 +135,7 @@ export async function commitLocalMutation<
   const db = await getCortexDb();
   const storeNames: Array<TStore | CanonicalWriteStore> = [
     ...new Set<TStore | CanonicalWriteStore>([
-      ...input.stores,
+      ...stores,
       "outbox_mutations",
       "operational_events",
     ]),
@@ -111,7 +143,7 @@ export async function commitLocalMutation<
   const transaction = db.transaction(storeNames, "readwrite");
 
   try {
-    const writeResult: unknown = input.write(transaction);
+    const writeResult: unknown = write(transaction);
     if (writeResult !== undefined) {
       if (isThenable(writeResult)) {
         void Promise.resolve(writeResult).catch(() => undefined);
@@ -149,25 +181,99 @@ export async function commitLocalMutation<
 function snapshotLocalMutationEntity(
   entity: LocalMutationEntity,
 ): LocalMutationEntity {
+  const type = snapshotRequiredText(entity.type, "entity.type");
+  const id = snapshotRequiredText(entity.id, "entity.id");
+  const name = snapshotOptionalText(entity.name, "entity.name");
+  const obraId = snapshotOptionalText(entity.obraId, "entity.obraId");
+  const rdoId = snapshotOptionalText(entity.rdoId, "entity.rdoId");
+  const colaboradorId = snapshotOptionalText(
+    entity.colaboradorId,
+    "entity.colaboradorId",
+  );
+  const relatedEntities = entity.relatedEntities === undefined
+    ? undefined
+    : snapshotRelatedEntities(entity.relatedEntities);
+
   return {
-    type: entity.type,
-    id: entity.id,
-    ...(entity.name === undefined ? {} : { name: entity.name }),
-    ...(entity.obraId === undefined ? {} : { obraId: entity.obraId }),
-    ...(entity.rdoId === undefined ? {} : { rdoId: entity.rdoId }),
-    ...(entity.colaboradorId === undefined
-      ? {}
-      : { colaboradorId: entity.colaboradorId }),
-    ...(entity.relatedEntities === undefined
-      ? {}
-      : {
-          relatedEntities: entity.relatedEntities.map((related) => ({
-            tipo: related.tipo,
-            id: related.id,
-            ...(related.nome === undefined ? {} : { nome: related.nome }),
-          })),
-        }),
+    type: type as LocalMutationEntity["type"],
+    id,
+    ...(name === undefined ? {} : { name }),
+    ...(obraId === undefined ? {} : { obraId }),
+    ...(rdoId === undefined ? {} : { rdoId }),
+    ...(colaboradorId === undefined ? {} : { colaboradorId }),
+    ...(relatedEntities === undefined ? {} : { relatedEntities }),
   };
+}
+
+function snapshotRelatedEntities(
+  entities: readonly OperationalEntityRef[],
+): OperationalEntityRef[] {
+  const snapshot: OperationalEntityRef[] = [];
+
+  for (let index = 0; index < entities.length; index += 1) {
+    const entity = entities[index];
+    if (entity === undefined || entity === null) {
+      throw new TypeError(
+        `entity.relatedEntities[${index}] is required.`,
+      );
+    }
+    const tipo = snapshotRequiredText(
+      entity.tipo,
+      `entity.relatedEntities[${index}].tipo`,
+    );
+    const id = snapshotRequiredText(
+      entity.id,
+      `entity.relatedEntities[${index}].id`,
+    );
+    const nome = snapshotOptionalText(
+      entity.nome,
+      `entity.relatedEntities[${index}].nome`,
+    );
+
+    snapshot.push({
+      tipo,
+      id,
+      ...(nome === undefined ? {} : { nome }),
+    });
+  }
+
+  return snapshot;
+}
+
+function snapshotRequiredTextArray(
+  values: readonly string[],
+  field: string,
+): string[] {
+  const snapshot: string[] = [];
+
+  for (let index = 0; index < values.length; index += 1) {
+    const value = snapshotRequiredText(
+      values[index],
+      `${field}[${index}]`,
+    );
+    snapshot.push(value);
+  }
+
+  return snapshot;
+}
+
+function snapshotRequiredText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`${field} must be a nonblank string.`);
+  }
+
+  return value;
+}
+
+function snapshotOptionalText(
+  value: unknown,
+  field: string,
+): string | null | undefined {
+  if (value === undefined || value === null) {
+    return value;
+  }
+
+  return snapshotRequiredText(value, field);
 }
 
 function isThenable(value: unknown): value is PromiseLike<unknown> {

@@ -39,6 +39,24 @@ export interface BuiltMutationEnvelopeSnapshots {
   actor: MutationActor;
 }
 
+interface PreparedMutationEnvelope {
+  entity: MutationEntity;
+  operation: SyncOperation;
+  baseVersion: number | null;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  newStateJson: string;
+  actor: MutationActor;
+  clientMutationId: string;
+  ontologyEventId: string;
+  correlationId: string;
+  causationId: string | null;
+  createdAt: string;
+  transport: OutboxTransport;
+  dependsOnMutationIds: string[];
+  fieldPatch: MutationFieldPatch;
+}
+
 export async function mutationPayloadHash(
   value: unknown,
 ): Promise<string> {
@@ -71,79 +89,35 @@ export async function buildMutationEnvelope(
 export async function buildMutationEnvelopeWithSnapshots(
   input: BuildMutationEnvelopeInput,
 ): Promise<BuiltMutationEnvelopeSnapshots> {
-  validateRequiredText(input.entity.type, "entity.type");
-  validateRequiredText(input.entity.id, "entity.id");
-  validateRequiredText(input.operation, "operation");
-  validateRequiredText(input.actor.actorId, "actor.actorId");
-  validateRequiredText(input.actor.actorName, "actor.actorName");
-  validateRequiredText(input.actor.deviceId, "actor.deviceId");
-  if (input.actor.authorizationScope.length === 0) {
-    throw new TypeError("actor.authorizationScope is required.");
-  }
-  input.actor.authorizationScope.forEach((scope, index) =>
-    validateRequiredText(scope, `actor.authorizationScope[${index}]`),
-  );
-
-  if (input.correlationId !== undefined) {
-    validateRequiredText(input.correlationId, "correlationId");
-  }
-  if (input.causationId !== undefined && input.causationId !== null) {
-    validateRequiredText(input.causationId, "causationId");
-  }
-
-  const previousStateJson = canonicalJson(input.previousState);
-  const newStateJson = canonicalJson(input.newState);
-  const previousState = recordSnapshot(
-    previousStateJson,
-    "previousState",
-  );
-  const newState = recordSnapshot(newStateJson, "newState");
-  const actor: MutationActor = {
-    actorId: input.actor.actorId,
-    actorName: input.actor.actorName,
-    deviceId: input.actor.deviceId,
-    authorizationScope: [...input.actor.authorizationScope],
-  };
-
-  const clientMutationId = crypto.randomUUID();
-  const ontologyEventId = crypto.randomUUID();
-  const correlationId = input.correlationId ?? clientMutationId;
-  const causationId = input.causationId ?? null;
-  const createdAt = input.createdAt ?? new Date().toISOString();
-  const fieldPatch = buildFieldPatch(
-    previousState,
-    newState,
-  );
-  const payloadHash = await hashCanonicalJson(newStateJson);
+  const prepared = prepareMutationEnvelope(input);
+  const payloadHash = await hashCanonicalJson(prepared.newStateJson);
 
   const mutation: CanonicalOutboxMutationRecord = {
     contractVersion: 13,
-    clientMutationId,
-    entidadeTipo: input.entity.type,
-    entidadeId: input.entity.id,
-    operacao: input.operation,
-    baseVersao: input.baseVersion,
-    payload: newState,
+    clientMutationId: prepared.clientMutationId,
+    entidadeTipo: prepared.entity.type,
+    entidadeId: prepared.entity.id,
+    operacao: prepared.operation,
+    baseVersao: prepared.baseVersion,
+    payload: prepared.newState,
     status: "PENDING",
     tentativas: 0,
     ultimaTentativaEm: null,
     ultimoErro: null,
     conflito: null,
-    criadaNoClienteEm: createdAt,
-    updatedAt: createdAt,
-    transport: input.transport ?? "SYNC_PUSH",
-    dependsOnMutationIds: [
-      ...new Set(input.dependsOnMutationIds ?? []),
-    ],
-    correlationId,
-    fieldPatch,
+    criadaNoClienteEm: prepared.createdAt,
+    updatedAt: prepared.createdAt,
+    transport: prepared.transport,
+    dependsOnMutationIds: prepared.dependsOnMutationIds,
+    correlationId: prepared.correlationId,
+    fieldPatch: prepared.fieldPatch,
     trace: {
-      actorId: actor.actorId,
-      deviceId: actor.deviceId,
-      authorizationScope: [...actor.authorizationScope],
-      correlationId,
-      causationId,
-      ontologyEventId,
+      actorId: prepared.actor.actorId,
+      deviceId: prepared.actor.deviceId,
+      authorizationScope: [...prepared.actor.authorizationScope],
+      correlationId: prepared.correlationId,
+      causationId: prepared.causationId,
+      ontologyEventId: prepared.ontologyEventId,
       payloadHash,
     },
     nextAttemptAt: null,
@@ -152,9 +126,95 @@ export async function buildMutationEnvelopeWithSnapshots(
 
   return {
     mutation,
+    previousState: prepared.previousState,
+    newState: prepared.newState,
+    actor: prepared.actor,
+  };
+}
+
+function prepareMutationEnvelope(
+  input: BuildMutationEnvelopeInput,
+): PreparedMutationEnvelope {
+  const entity: MutationEntity = {
+    type: input.entity.type,
+    id: input.entity.id,
+  };
+  const operation = input.operation;
+  const baseVersion = input.baseVersion;
+  const actorId = input.actor.actorId;
+  const actorName = input.actor.actorName;
+  const deviceId = input.actor.deviceId;
+  const authorizationScope = snapshotRequiredTextArray(
+    input.actor.authorizationScope,
+    "actor.authorizationScope",
+  );
+  const correlationIdInput = input.correlationId;
+  const causationIdInput = input.causationId;
+  const createdAtInput = input.createdAt;
+  const transport = input.transport ?? "SYNC_PUSH";
+  const dependsOnMutationIds = snapshotRequiredTextArray(
+    input.dependsOnMutationIds ?? [],
+    "dependsOnMutationIds",
+  );
+  const previousStateJson = canonicalJson(input.previousState);
+  const newStateJson = canonicalJson(input.newState);
+
+  validateRequiredText(entity.type, "entity.type");
+  validateRequiredText(entity.id, "entity.id");
+  validateRequiredText(operation, "operation");
+  validateRequiredText(actorId, "actor.actorId");
+  validateRequiredText(actorName, "actor.actorName");
+  validateRequiredText(deviceId, "actor.deviceId");
+  if (authorizationScope.length === 0) {
+    throw new TypeError("actor.authorizationScope is required.");
+  }
+  if (baseVersion !== null && !Number.isFinite(baseVersion)) {
+    throw new TypeError("baseVersion must be finite or null.");
+  }
+  if (correlationIdInput !== undefined) {
+    validateRequiredText(correlationIdInput, "correlationId");
+  }
+  if (causationIdInput !== undefined && causationIdInput !== null) {
+    validateRequiredText(causationIdInput, "causationId");
+  }
+  if (createdAtInput !== undefined) {
+    validateRequiredText(createdAtInput, "createdAt");
+  }
+  validateRequiredText(transport, "transport");
+
+  const previousState = recordSnapshot(
+    previousStateJson,
+    "previousState",
+  );
+  const newState = recordSnapshot(newStateJson, "newState");
+  const actor: MutationActor = {
+    actorId,
+    actorName,
+    deviceId,
+    authorizationScope,
+  };
+  const clientMutationId = crypto.randomUUID();
+  const ontologyEventId = crypto.randomUUID();
+  const correlationId = correlationIdInput ?? clientMutationId;
+  const causationId = causationIdInput ?? null;
+  const createdAt = createdAtInput ?? new Date().toISOString();
+
+  return {
+    entity,
+    operation,
+    baseVersion,
     previousState,
     newState,
+    newStateJson,
     actor,
+    clientMutationId,
+    ontologyEventId,
+    correlationId,
+    causationId,
+    createdAt,
+    transport,
+    dependsOnMutationIds: [...new Set(dependsOnMutationIds)],
+    fieldPatch: buildFieldPatch(previousState, newState),
   };
 }
 
@@ -283,8 +343,27 @@ function canonicalJsonAt(
   }
 }
 
-function validateRequiredText(value: string, field: string): void {
-  if (!value.trim()) {
+function snapshotRequiredTextArray(
+  values: readonly string[],
+  field: string,
+): string[] {
+  const snapshot: string[] = [];
+
+  for (let index = 0; index < values.length; index += 1) {
+    const value: unknown = values[index];
+    if (typeof value !== "string" || !value.trim()) {
+      throw new TypeError(
+        `${field}[${index}] must be a nonblank string.`,
+      );
+    }
+    snapshot.push(value);
+  }
+
+  return snapshot;
+}
+
+function validateRequiredText(value: unknown, field: string): void {
+  if (typeof value !== "string" || !value.trim()) {
     throw new TypeError(`${field} is required.`);
   }
 }
