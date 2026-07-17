@@ -10,6 +10,7 @@ import {
   type SyncUiStatus,
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
+import { SyncStateStrip } from "./institutional/SyncStateStrip";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -260,87 +261,102 @@ export function SyncStatusBanner() {
   return (
     <div
       ref={rootRef}
-      className={`sync-chip sync-chip--${displayedStatus.toLowerCase()}`}
+      className="sync-status-control"
     >
-      <button
-        type="button"
-        className="sync-chip__button"
-        onClick={() => setIsOpen((open) => !open)}
-        aria-expanded={isOpen}
-        aria-haspopup="dialog"
-        aria-label={`Sincronização: ${chipTitle}`}
-        title={chipTitle}
+      <SyncStateStrip
+        snapshot={snapshot}
+        className="sync-status-global-state"
+      />
+      <div
+        className={`sync-chip sync-chip--${displayedStatus.toLowerCase()}`}
       >
-        <svg
-          className="sync-chip__icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
+        <button
+          type="button"
+          className="sync-chip__button"
+          onClick={() => setIsOpen((open) => !open)}
+          aria-expanded={isOpen}
+          aria-haspopup="dialog"
+          aria-label={`Sincronização: ${chipTitle}`}
+          title={chipTitle}
         >
-          <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
-          <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
-          <path d="M3 21v-5h5" />
-          <path d="M21 3v5h-5" />
-        </svg>
-        <span className="sync-chip__dot" aria-hidden="true" />
-        {attentionCount > 0 ? (
-          <span className="sync-chip__count" aria-hidden="true">
-            {attentionCount > 9 ? "9+" : attentionCount}
-          </span>
-        ) : null}
-      </button>
-
-      <span className="visually-hidden" role="status" aria-live="polite">
-        {chipTitle}
-      </span>
-
-      {isOpen ? (
-        <div
-          className="sync-chip__popover"
-          role="dialog"
-          aria-label="Estado da sincronização"
-        >
-          <div className="sync-chip__header">
-            <span className="sync-chip__header-dot" aria-hidden="true" />
-            <strong>{chipTitle}</strong>
-          </div>
-
-          <p className="sync-chip__description">
-            {snapshot.isLoading
-              ? "Consultando o estado local."
-              : content.description}
-          </p>
-
-          <p className="sync-chip__meta">
-            {lastSyncText
-              ? `Última sincronização: ${lastSyncText}`
-              : "Ainda não sincronizado"}
-          </p>
-
-          {visibleSyncError && (
-            <p className="sync-chip__error">
-              {visibleSyncError}
-            </p>
-          )}
-
-          <button
-            type="button"
-            className="sync-chip__action"
-            onClick={() => {
-              void handleSyncNow();
-            }}
-            disabled={isManualSyncing}
+          <svg
+            className="sync-chip__icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
           >
-            {isManualSyncing
-              ? "Sincronizando..."
-              : "Sincronizar agora"}
-          </button>
-        </div>
-      ) : null}
+            <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+            <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+            <path d="M3 21v-5h5" />
+            <path d="M21 3v5h-5" />
+          </svg>
+          <span className="sync-chip__dot" aria-hidden="true" />
+          {attentionCount > 0 ? (
+            <span className="sync-chip__count" aria-hidden="true">
+              {attentionCount > 9 ? "9+" : attentionCount}
+            </span>
+          ) : null}
+        </button>
+
+        <span
+          className="visually-hidden"
+          role="status"
+          aria-live="polite"
+        >
+          {chipTitle}
+        </span>
+
+        {isOpen ? (
+          <div
+            className="sync-chip__popover"
+            role="dialog"
+            aria-label="Estado da sincronização"
+          >
+            <div className="sync-chip__header">
+              <span
+                className="sync-chip__header-dot"
+                aria-hidden="true"
+              />
+              <strong>{chipTitle}</strong>
+            </div>
+
+            <p className="sync-chip__description">
+              {snapshot.isLoading
+                ? "Consultando o estado local."
+                : content.description}
+            </p>
+
+            <p className="sync-chip__meta">
+              {lastSyncText
+                ? `Última sincronização: ${lastSyncText}`
+                : "Ainda não sincronizado"}
+            </p>
+
+            {visibleSyncError && (
+              <p className="sync-chip__error">
+                {visibleSyncError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="sync-chip__action"
+              onClick={() => {
+                void handleSyncNow();
+              }}
+              disabled={isManualSyncing}
+            >
+              {isManualSyncing
+                ? "Sincronizando..."
+                : "Sincronizar agora"}
+            </button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

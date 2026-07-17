@@ -1,9 +1,20 @@
 /*
  * Estado de sincronização como um chip minimalista.
- * O componente vive no cluster flutuante do topo-direito (ao lado de
- * "Sair"); a cor do ponto comunica o estado e o popover carrega o
- * detalhe + a ação manual.
+ * O componente vive no cluster global ao lado do perfil. A faixa expõe
+ * fatos da fila local, e o chip preserva a ação manual e o detalhe.
  */
+
+.sync-status-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sync-status-global-state {
+  width: min(430px, 46vw);
+  min-width: 0;
+}
 
 .sync-chip {
   --sync-color: #64748b;
@@ -178,6 +189,16 @@
 .sync-chip__action:disabled {
   cursor: progress;
   opacity: 0.6;
+}
+
+@media (max-width: 620px) {
+  .sync-status-control {
+    align-items: flex-start;
+  }
+
+  .sync-status-global-state {
+    width: min(250px, calc(100vw - 120px));
+  }
 }
 
 /* ---------- Animações ---------- */

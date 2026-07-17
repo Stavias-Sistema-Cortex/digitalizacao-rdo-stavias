@@ -651,6 +651,10 @@ textarea:focus {
   transition: grid-template-columns 220ms ease;
 }
 
+.cortex-shell-content {
+  min-width: 0;
+}
+
 /* Durante o arrasto: sem transição (borracha) e sem seleção de texto. */
 .cortex-shell.is-resizing {
   transition: none;
@@ -1939,15 +1943,17 @@ textarea:focus {
   opacity: 0.55;
 }
 
-/* Cluster flutuante do topo-direito: chip de sync + sair. */
+/* O cluster global ocupa o fluxo da página, sem cobrir o conteúdo. */
 .floating-controls {
-  position: fixed;
-  top: 16px;
-  right: 16px;
+  position: sticky;
+  top: 0;
   z-index: 60;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  min-width: 0;
+  padding: 16px 16px 0;
 }
 
 .logout-button {
@@ -2839,8 +2845,7 @@ textarea:focus {
   }
 
   .floating-controls {
-    top: 12px;
-    right: 12px;
+    padding: 12px 12px 0;
   }
 
   .home-dashboard,

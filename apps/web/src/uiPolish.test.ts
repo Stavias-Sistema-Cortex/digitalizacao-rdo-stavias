@@ -42,6 +42,12 @@ const staviaCss = readCss("./features/stavia/StaviaPanel.css");
 const institutionalCss = readCss(
   "./components/institutional/institutional.css",
 );
+const syncStateStripSource = readCss(
+  "./components/institutional/SyncStateStrip.tsx",
+);
+const syncStatusBannerSource = readCss(
+  "./components/SyncStatusBanner.tsx",
+);
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -101,6 +107,58 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(globalCss, ".metric-card")).toContain(
       "background: var(--color-surface);",
     );
+  });
+
+  it("mantém a navegação lateral com um único marcador amarelo vertical", () => {
+    const activeItem = rule(globalCss, ".sidebar-nav-item.active");
+    const activeMarkers = globalCss.match(
+      /\.sidebar-nav-item\.active::before\s*\{/g,
+    );
+
+    expect(globalCss).toMatch(
+      /\.sidebar-nav-item\s*\{[^}]*position:\s*relative;[^}]*border-radius:\s*var\(--radius-control\);/s,
+    );
+    expect(globalCss).not.toMatch(
+      /\.sidebar-nav-item\s*\{[^}]*border-radius:\s*999px;/s,
+    );
+    expect(activeItem).not.toMatch(
+      /border[^;}]*var\(--color-brand-yellow\)/,
+    );
+    expect(activeMarkers).toHaveLength(1);
+    expect(
+      rule(globalCss, ".sidebar-nav-item.active::before"),
+    ).toContain("background: var(--color-brand-yellow);");
+    expect(
+      rule(globalCss, ".sidebar-nav-item img,\n.sidebar-footer button img"),
+    ).toContain("filter: grayscale(1) brightness(0) invert(1);");
+  });
+
+  it("expõe fatos globais de sincronização junto ao perfil", () => {
+    expect(syncStatusBannerSource).toContain(
+      'import { SyncStateStrip } from "./institutional/SyncStateStrip";',
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s*\/>/s,
+    );
+    expect(syncCss).toContain(".sync-status-global-state");
+    expect(syncStateStripSource).toContain("<dt>Fila local</dt>");
+    expect(syncStateStripSource).toContain("<dt>Conflitos</dt>");
+    expect(syncStateStripSource).toContain(
+      "<dt>Última sincronização</dt>",
+    );
+    expect(rule(globalCss, ".cortex-shell-content")).toContain(
+      "min-width: 0;",
+    );
+    const controls = rule(globalCss, ".floating-controls");
+    expect(controls).toContain("position: sticky;");
+    expect(controls).toContain("justify-content: flex-end;");
+
+    const narrowSyncCss = syncCss.slice(
+      syncCss.indexOf("@media (max-width: 620px)"),
+    );
+    expect(
+      rule(narrowSyncCss, "  .sync-status-global-state"),
+    ).toContain("width: min(250px, calc(100vw - 120px));");
   });
 
   it("enquadra métricas RDO como registro branco com acentos estruturais", () => {
@@ -265,8 +323,7 @@ describe("polimento visual da plataforma autenticada", () => {
       globalCss.lastIndexOf("@media (max-width: 620px)"),
     );
     const floatingControls = rule(narrowCss, ".floating-controls");
-    expect(floatingControls).toContain("top: 12px;");
-    expect(floatingControls).toContain("right: 12px;");
+    expect(floatingControls).toContain("padding: 12px 12px 0;");
     expect(
       rule(
         narrowCss,
