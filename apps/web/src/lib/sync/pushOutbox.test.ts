@@ -83,4 +83,59 @@ describe("pushOutbox retry classification", () => {
       "O servidor não retornou resultado para esta mutação.",
     );
   });
+
+  it.each([
+    ["successful", "APLICADA"],
+    ["conflicted", "DESCARTADA"],
+  ] as const)(
+    "does not requeue an earlier %s terminal result when a later result fails",
+    async (_label, terminalStatus) => {
+      const terminal = mutation(`terminal-${terminalStatus}`);
+      const laterFailure = mutation(`later-${terminalStatus}`);
+      mocks.listReadyPendingOutboxMutations.mockResolvedValue([
+        terminal,
+        laterFailure,
+      ]);
+      mocks.pushMutationsApi.mockResolvedValue({
+        resultados: [
+          {
+            clientMutationId: terminal.clientMutationId,
+            status: terminalStatus,
+            entidadeTipo: "RDO",
+            entidadeId: terminal.entidadeId,
+          },
+          {
+            clientMutationId: laterFailure.clientMutationId,
+            status: "APLICADA",
+            entidadeTipo: "RDO",
+            entidadeId: laterFailure.entidadeId,
+          },
+        ],
+      });
+      mocks.applyPushResultAtomically.mockImplementation(
+        async (result: { clientMutationId: string }) => {
+          if (
+            result.clientMutationId ===
+            laterFailure.clientMutationId
+          ) {
+            throw new Error("Falha ao persistir resultado posterior");
+          }
+        },
+      );
+
+      await expect(pushOutbox("device-1")).rejects.toThrow(
+        "Falha ao persistir resultado posterior",
+      );
+
+      expect(mocks.returnMutationToPending).not.toHaveBeenCalledWith(
+        terminal.clientMutationId,
+        expect.any(String),
+      );
+      expect(mocks.returnMutationToPending).toHaveBeenCalledTimes(1);
+      expect(mocks.returnMutationToPending).toHaveBeenCalledWith(
+        laterFailure.clientMutationId,
+        "Falha ao persistir resultado posterior",
+      );
+    },
+  );
 });

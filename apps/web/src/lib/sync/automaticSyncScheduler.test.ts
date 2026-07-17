@@ -367,6 +367,9 @@ describe("automatic sync scheduling", () => {
       new Event("cortex:local-mutation-queued"),
     );
     fixture.eventTarget.dispatchEvent(new Event("online"));
+    fixture.eventTarget.dispatchEvent(
+      new Event(AUTH_SESSION_CHANGED_EVENT),
+    );
     fixture.visibilityTarget.dispatchEvent(
       new Event("visibilitychange"),
     );

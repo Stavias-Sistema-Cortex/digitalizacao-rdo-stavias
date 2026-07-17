@@ -24,20 +24,24 @@ import {
   clearAutomaticSyncRetryMetadata,
   loadAutomaticSyncRetryMetadata,
   persistAutomaticSyncRetryMetadata,
+  returnMutationToPending,
 } from "./syncStorage";
 
 const OBRA_ID = "00000000-0000-4000-8000-000000000002";
 const SCOPE_MATERIAL = `BETA:${OBRA_ID}`;
 
-function pendingMutation(): OutboxMutationRecord {
+function pendingMutation(
+  clientMutationId = "retry-storage-1",
+  status: OutboxMutationRecord["status"] = "PENDING",
+): OutboxMutationRecord {
   return {
-    clientMutationId: "retry-storage-1",
+    clientMutationId,
     entidadeTipo: "RDO",
     entidadeId: "rdo-1",
     operacao: "CRIAR_RDO",
     baseVersao: null,
     payload: { id: "rdo-1", preserved: true },
-    status: "PENDING",
+    status,
     tentativas: 0,
     ultimaTentativaEm: null,
     ultimoErro: "Falha transitória",
@@ -129,6 +133,54 @@ describe("automatic sync retry IndexedDB persistence", () => {
     ).resolves.toEqual({
       attempt: 0,
       nextAttemptAt: null,
+    });
+  });
+
+  it("returns only SYNCING rows to PENDING and preserves every terminal status", async () => {
+    const database = await getCortexDb();
+    const terminalMutations = [
+      pendingMutation("terminal-synced", "SYNCED"),
+      pendingMutation("terminal-conflict", "CONFLICT"),
+      pendingMutation("terminal-error", "ERROR"),
+    ];
+    const inProgress = pendingMutation("retry-in-progress", "SYNCING");
+
+    await Promise.all(
+      [...terminalMutations, inProgress].map((mutation) =>
+        database.put("outbox_mutations", mutation),
+      ),
+    );
+
+    for (const mutation of terminalMutations) {
+      await returnMutationToPending(
+        mutation.clientMutationId,
+        "Falha posterior no lote",
+      );
+    }
+    await returnMutationToPending(
+      inProgress.clientMutationId,
+      "Falha posterior no lote",
+    );
+
+    for (const mutation of terminalMutations) {
+      await expect(
+        database.get(
+          "outbox_mutations",
+          mutation.clientMutationId,
+        ),
+      ).resolves.toMatchObject({
+        status: mutation.status,
+        ultimoErro: mutation.ultimoErro,
+      });
+    }
+    await expect(
+      database.get(
+        "outbox_mutations",
+        inProgress.clientMutationId,
+      ),
+    ).resolves.toMatchObject({
+      status: "PENDING",
+      ultimoErro: "Falha posterior no lote",
     });
   });
 });

@@ -1604,7 +1604,7 @@ export async function returnMutationToPending(
 
   const mutation = await outboxStore.get(clientMutationId);
 
-  if (!mutation) {
+  if (!mutation || mutation.status !== "SYNCING") {
     await transaction.done;
     return;
   }
