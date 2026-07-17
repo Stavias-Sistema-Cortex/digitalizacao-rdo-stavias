@@ -18,9 +18,148 @@ import type {
   SyncPullEvent,
   SyncPushMutationResult,
 } from "./sync.types";
+import type { AutomaticSyncRetryMetadata } from "./automaticSyncScheduler";
 
 function nowUtc(): string {
   return new Date().toISOString();
+}
+
+export function automaticSyncRetryMetadataFromMutations(
+  mutations: OutboxMutationRecord[],
+): AutomaticSyncRetryMetadata {
+  const scheduled = mutations
+    .filter(
+      (mutation) =>
+        mutation.status === "PENDING" &&
+        typeof mutation.nextAttemptAt === "string" &&
+        Number.isFinite(Date.parse(mutation.nextAttemptAt)),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.nextAttemptAt as string) -
+        Date.parse(right.nextAttemptAt as string),
+    );
+
+  if (scheduled.length === 0) {
+    return {
+      attempt: 0,
+      nextAttemptAt: null,
+    };
+  }
+
+  return {
+    attempt: scheduled.reduce(
+      (highest, mutation) =>
+        Math.max(
+          highest,
+          Number.isFinite(mutation.tentativas)
+            ? Math.max(0, Math.floor(mutation.tentativas))
+            : 0,
+        ),
+      0,
+    ),
+    nextAttemptAt: scheduled[0].nextAttemptAt ?? null,
+  };
+}
+
+export function mutationAfterAutomaticSyncRetryScheduled(
+  mutation: OutboxMutationRecord,
+  metadata: AutomaticSyncRetryMetadata,
+  timestamp: string,
+): OutboxMutationRecord {
+  return {
+    ...mutation,
+    tentativas: Math.max(
+      mutation.tentativas,
+      Math.max(0, Math.floor(metadata.attempt)),
+    ),
+    nextAttemptAt: metadata.nextAttemptAt,
+    updatedAt: timestamp,
+  };
+}
+
+export function mutationAfterAutomaticSyncRetryCleared(
+  mutation: OutboxMutationRecord,
+  timestamp: string,
+): OutboxMutationRecord {
+  return {
+    ...mutation,
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    nextAttemptAt: null,
+    updatedAt: timestamp,
+  };
+}
+
+export async function loadAutomaticSyncRetryMetadata(): Promise<AutomaticSyncRetryMetadata> {
+  const database = await getCortexDb();
+  const pending = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-status",
+    "PENDING",
+  );
+
+  return automaticSyncRetryMetadataFromMutations(pending);
+}
+
+export async function persistAutomaticSyncRetryMetadata(
+  metadata: AutomaticSyncRetryMetadata,
+): Promise<void> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    "outbox_mutations",
+    "readwrite",
+  );
+  const store = transaction.objectStore("outbox_mutations");
+  const pending = await store
+    .index("by-status")
+    .getAll("PENDING");
+  const timestamp = nowUtc();
+
+  await Promise.all(
+    pending.map((mutation) =>
+      store.put(
+        mutationAfterAutomaticSyncRetryScheduled(
+          mutation,
+          metadata,
+          timestamp,
+        ),
+      ),
+    ),
+  );
+
+  await transaction.done;
+}
+
+export async function clearAutomaticSyncRetryMetadata(): Promise<void> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    "outbox_mutations",
+    "readwrite",
+  );
+  const store = transaction.objectStore("outbox_mutations");
+  const pending = await store
+    .index("by-status")
+    .getAll("PENDING");
+  const timestamp = nowUtc();
+  const scheduled = pending.filter(
+    (mutation) =>
+      mutation.nextAttemptAt !== null &&
+      mutation.nextAttemptAt !== undefined,
+  );
+
+  await Promise.all(
+    scheduled.map((mutation) =>
+      store.put(
+        mutationAfterAutomaticSyncRetryCleared(
+          mutation,
+          timestamp,
+        ),
+      ),
+    ),
+  );
+
+  await transaction.done;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

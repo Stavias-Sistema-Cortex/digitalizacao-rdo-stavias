@@ -8,8 +8,6 @@ import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
-  queueErroredMutationsForRetry,
-  queueResolvableConflictsForRetry,
   recoverInterruptedMutations,
   repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync,
@@ -43,8 +41,6 @@ async function executeSync(): Promise<SyncRunSummary> {
     await repairMissingObraReferencesForSync();
     await repairMissingMaoObraReferencesForSync();
     await repairRdoCreateMutationsForSync();
-    await queueErroredMutationsForRetry();
-    await queueResolvableConflictsForRetry();
 
     const deviceId = await ensureRegisteredDevice();
     const uploadSummary = await processObjectUploads();

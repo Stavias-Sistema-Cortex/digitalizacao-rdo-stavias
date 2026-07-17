@@ -4,15 +4,13 @@ import {
 } from "react";
 
 import { hasOnlineSession } from "../../features/auth/authSession";
+import { createAutomaticSyncScheduler } from "./automaticSyncScheduler";
 import { syncNow } from "./syncEngine";
-
-const SYNC_INTERVAL_MS = 30_000;
-
-type AutomaticSyncTrigger =
-  | "STARTUP"
-  | "ONLINE"
-  | "INTERVAL"
-  | "VISIBILITY";
+import {
+  clearAutomaticSyncRetryMetadata,
+  loadAutomaticSyncRetryMetadata,
+  persistAutomaticSyncRetryMetadata,
+} from "./syncStorage";
 
 export function useAutomaticSync(enabled = true): void {
   const lastReportedErrorRef =
@@ -22,35 +20,24 @@ export function useAutomaticSync(enabled = true): void {
     if (!enabled) {
       return;
     }
-    let disposed = false;
-
-    async function tryAutomaticSync(
-      trigger: AutomaticSyncTrigger,
-    ): Promise<void> {
-      if (disposed || !navigator.onLine) {
-        return;
-      }
-
-      if (!hasOnlineSession()) {
-        return;
-      }
-
-      try {
-        const summary = await syncNow();
-
+    const scheduler = createAutomaticSyncScheduler({
+      syncNow,
+      hasOnlineSession,
+      loadRetryMetadata:
+        loadAutomaticSyncRetryMetadata,
+      persistRetryMetadata:
+        persistAutomaticSyncRetryMetadata,
+      clearRetryMetadata:
+        clearAutomaticSyncRetryMetadata,
+      onSuccess: (trigger, summary) => {
         lastReportedErrorRef.current = null;
 
-        if (!disposed) {
-          console.info(
-            `[sync automático:${trigger}] concluído`,
-            summary,
-          );
-        }
-      } catch (error: unknown) {
-        if (disposed) {
-          return;
-        }
-
+        console.info(
+          `[sync automático:${trigger}] concluído`,
+          summary,
+        );
+      },
+      onError: (trigger, error) => {
         const message =
           error instanceof Error
             ? error.message
@@ -65,54 +52,13 @@ export function useAutomaticSync(enabled = true): void {
 
           lastReportedErrorRef.current = message;
         }
-      }
-    }
-
-    function handleOnline(): void {
-      void tryAutomaticSync("ONLINE");
-    }
-
-    function handleVisibilityChange(): void {
-      if (
-        document.visibilityState === "visible"
-      ) {
-        void tryAutomaticSync("VISIBILITY");
-      }
-    }
-
-    window.addEventListener(
-      "online",
-      handleOnline,
-    );
-
-    document.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange,
-    );
-
-    const intervalId = window.setInterval(
-      () => {
-        void tryAutomaticSync("INTERVAL");
       },
-      SYNC_INTERVAL_MS,
-    );
+    });
 
-    void tryAutomaticSync("STARTUP");
+    scheduler.start();
 
     return () => {
-      disposed = true;
-
-      window.removeEventListener(
-        "online",
-        handleOnline,
-      );
-
-      document.removeEventListener(
-        "visibilitychange",
-        handleVisibilityChange,
-      );
-
-      window.clearInterval(intervalId);
+      scheduler.dispose();
     };
   }, [enabled]);
 }
