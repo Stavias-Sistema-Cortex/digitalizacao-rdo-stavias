@@ -11,7 +11,7 @@
 .offline-unlock__card {
   width: min(100%, 460px);
   padding: 36px;
-  border: 2px solid #f2c800;
+  border: 2px solid #111312;
   border-radius: 4px;
   background: #ffffff;
   box-shadow: none;
@@ -88,7 +88,7 @@
 
 .offline-unlock__primary:focus-visible,
 .offline-unlock__secondary:focus-visible {
-  outline: 3px solid rgb(232 201 0 / 38%);
+  outline: 3px solid #124e4a;
   outline-offset: 2px;
 }
 

@@ -386,7 +386,7 @@
 }
 
 .cortex-login button:focus-visible {
-  outline: 3px solid var(--login-yellow);
+  outline: 3px solid var(--login-ink);
   outline-offset: 2px;
 }
 
