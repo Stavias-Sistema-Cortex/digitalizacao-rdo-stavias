@@ -2,6 +2,7 @@ import {
   openDB,
   type DBSchema,
   type IDBPDatabase,
+  type StoreNames,
 } from "idb";
 
 import type {
@@ -34,7 +35,7 @@ import { currentDataDatabaseName } from "./localDataNamespace";
 
 export const CORTEX_DATABASE_VERSION = 13;
 
-interface CortexDbSchema extends DBSchema {
+export interface CortexDbSchema extends DBSchema {
   rdos: {
     key: string;
     value: LocalRdoRecord;
@@ -250,6 +251,8 @@ interface CortexDbSchema extends DBSchema {
     };
   };
 }
+
+export type CortexStoreName = StoreNames<CortexDbSchema>;
 
 const databasePromises = new Map<
   string,

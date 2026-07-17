@@ -1,5 +1,6 @@
 import { getCortexDb } from "./cortexDb";
 import type {
+  CanonicalOutboxMutationRecord,
   CanonicalMutationResult,
   CanonicalOperationalEventRecord,
   LegacyOperationalEventRecord,
@@ -41,6 +42,19 @@ export interface CanonicalOperationalEventInput
   result: CanonicalMutationResult;
   errorCategory: string | null;
   entityVersion: number | null;
+}
+
+export interface CanonicalEventFromMutationInput {
+  mutation: CanonicalOutboxMutationRecord;
+  type: OperationalEventType;
+  principalEntity: OperationalEntityRef;
+  relatedEntities: OperationalEntityRef[];
+  obraId: string | null;
+  rdoId: string | null;
+  colaboradorId: string | null;
+  responsibleUserName: string;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
 }
 
 export interface OperationalEventFilter {
@@ -107,6 +121,39 @@ export function buildCanonicalOperationalEvent(
     errorCategory: input.errorCategory,
     entityVersion: input.entityVersion,
   };
+}
+
+export function buildCanonicalEventFromMutation(
+  input: CanonicalEventFromMutationInput,
+): CanonicalOperationalEventRecord {
+  const { mutation } = input;
+
+  return buildCanonicalOperationalEvent({
+    id: mutation.trace.ontologyEventId,
+    clientMutationId: mutation.clientMutationId,
+    deviceId: mutation.trace.deviceId,
+    correlationId: mutation.trace.correlationId,
+    causationId: mutation.trace.causationId,
+    type: input.type,
+    principalEntity: input.principalEntity,
+    relatedEntities: input.relatedEntities,
+    obraId: input.obraId,
+    rdoId: input.rdoId,
+    colaboradorId: input.colaboradorId,
+    occurredAt: mutation.criadaNoClienteEm,
+    syncedAt: null,
+    origin: "OFFLINE",
+    responsibleUserId: mutation.trace.actorId,
+    responsibleUserName: input.responsibleUserName,
+    payload: mutation.payload,
+    syncStatus: "PENDING_SYNC",
+    schemaVersion: 1,
+    previousState: input.previousState,
+    newState: input.newState,
+    result: "PENDING",
+    errorCategory: null,
+    entityVersion: mutation.baseVersao,
+  });
 }
 
 export async function putOperationalEvent(
