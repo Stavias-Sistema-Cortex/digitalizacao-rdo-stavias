@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 
+import { SyncStateStrip } from "../../components/institutional/SyncStateStrip";
+import { TraceReference } from "../../components/institutional/TraceReference";
+import { useSyncStatus } from "../../lib/sync/useSyncStatus";
 import {
   filterObrasByChip,
   filterObrasByRodovia,
@@ -7,6 +10,7 @@ import {
   OBRA_STATUS_CHIPS,
   type ObraStatusChip,
 } from "./homeFilters";
+import { operationalEventLabel } from "./eventLabels";
 import { FinanceHomeCard } from "./FinanceHomeCard";
 import { MaisStaviasCard } from "./MaisStaviasCard";
 import { MemorySummaryCard } from "./MemorySummaryCard";
@@ -28,7 +32,9 @@ export function HomeOverview({ data }: HomeOverviewProps) {
     events,
     latestRdo,
     isLoading,
+    dataUpdatedAt,
   } = data;
+  const { snapshot } = useSyncStatus();
   const [chip, setChip] = useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
   const [rodoviaFilter, setRodoviaFilter] = useState("");
@@ -61,12 +67,94 @@ export function HomeOverview({ data }: HomeOverviewProps) {
       ? obraOptions
       : [focusedObra, ...obraOptions];
   }, [obraOptions, focusedObra]);
+  const exceptionEvents = useMemo(
+    () => events.filter((event) => event.syncStatus !== "SYNCED"),
+    [events],
+  );
+  const pendingCount = snapshot.pendingCount + snapshot.syncingCount;
+  const freshness = formatFreshness(dataUpdatedAt);
 
   return (
     <div className="home-overview">
+      <section
+        className="home-exception-register"
+        aria-labelledby="home-exceptions-heading"
+      >
+        <header className="home-exception-register__heading">
+          <div>
+            <span className="home-section-index">Leitura prioritária</span>
+            <h2 id="home-exceptions-heading">Exceções operacionais</h2>
+            <p>
+              Pendências, conflitos e atualização local antecedem a leitura
+              consolidada do empreendimento. Os totais de sincronização são
+              deste dispositivo; a lista abaixo respeita a obra em foco.
+            </p>
+          </div>
+          <p className="home-exception-register__sync-caption">
+            Última sincronização, fila local e conflitos permanecem explícitos.
+          </p>
+        </header>
+
+        <dl className="home-exception-register__facts">
+          <div>
+            <dt>Conflitos no dispositivo</dt>
+            <dd>{snapshot.isLoading ? "—" : snapshot.conflictCount}</dd>
+          </div>
+          <div>
+            <dt>Falhas no dispositivo</dt>
+            <dd>{snapshot.isLoading ? "—" : snapshot.errorCount}</dd>
+          </div>
+          <div>
+            <dt>Na fila do dispositivo</dt>
+            <dd>{snapshot.isLoading ? "—" : pendingCount}</dd>
+          </div>
+          <div>
+            <dt>Atualização local</dt>
+            <dd>
+              {dataUpdatedAt && freshness ? (
+                <time dateTime={dataUpdatedAt}>{freshness}</time>
+              ) : (
+                "Não registrada"
+              )}
+            </dd>
+          </div>
+        </dl>
+
+        <SyncStateStrip
+          className="home-exception-register__sync"
+          snapshot={snapshot}
+        />
+
+        {exceptionEvents.length === 0 ? (
+          <p className="home-exception-register__empty">
+            Nenhum evento local fora do estado sincronizado nesta obra.
+          </p>
+        ) : (
+          <ol className="home-exception-register__list">
+            {exceptionEvents.slice(0, 4).map((event) => (
+              <li key={event.id}>
+                <div>
+                  <strong>{operationalEventLabel(event.type)}</strong>
+                  <span>
+                    {event.principalEntity.tipo} · {event.principalEntity.nome ?? event.principalEntity.id}
+                  </span>
+                </div>
+                <span className="home-exception-register__result">
+                  {event.result ?? event.syncStatus}
+                </span>
+                <TraceReference
+                  entityId={event.principalEntity.id}
+                  eventId={event.id}
+                />
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
       <header className="home-topbar">
         <div>
-          <span className="home-section-index">01 / Operação</span>
+          <span className="home-section-index">Recorte da operação</span>
           <h2>Obras relacionadas</h2>
         </div>
         <div
@@ -118,7 +206,7 @@ export function HomeOverview({ data }: HomeOverviewProps) {
           latestRdo={latestRdo}
         />
       ) : (
-        <section className="home-obra-card home-obra-card--empty">
+        <section className="home-obra-card home-worksite-command home-obra-card--empty">
           {isLoading ? (
             <p>Carregando obras…</p>
           ) : obras.length === 0 ? (
@@ -132,16 +220,38 @@ export function HomeOverview({ data }: HomeOverviewProps) {
         </section>
       )}
 
-      <div className="home-cards-grid">
+      <section
+        className="home-command-summaries"
+        aria-label="Resumos operacionais"
+      >
         {focusedObra ? <FinanceHomeCard obraId={focusedObra.id} /> : null}
-        <MensagensCard />
         <MemorySummaryCard
           events={events}
           obraId={focusedObra?.id ?? null}
         />
         <TimeCard latestRdo={latestRdo} />
+      </section>
+
+      <aside className="home-secondary-links" aria-label="Acessos secundários">
+        <MensagensCard />
         <MaisStaviasCard />
-      </div>
+      </aside>
     </div>
   );
+}
+
+function formatFreshness(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }

@@ -1,8 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { TraceReference } from "../../../components/institutional/TraceReference";
 import type { ObraLocalRecord } from "../../../lib/db/db.types";
-import type { MemoryEvent, MemoryFilters } from "./memory.types";
+import type {
+  MemoryConflictReviewRecord,
+  MemoryEvent,
+  MemoryFilters,
+} from "./memory.types";
 import {
   memoryDiffRows,
   memoryEventLabel,
@@ -46,14 +51,39 @@ const EVENT_TYPES = [
 
 export function MemoryLedger({ obras }: MemoryLedgerProps) {
   const [search, setSearch] = useSearchParams();
+  const requestedEventId = search.get("event")?.trim() || null;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
-    () => new Set(),
+    () => requestedEventId ? new Set([requestedEventId]) : new Set(),
   );
+  const locatedEventIdRef = useRef<string | null>(null);
   const filters = useMemo(
     () => filtersFromSearch(search),
     [search],
   );
   const ledger = useMemoryLedger(filters);
+
+  useEffect(() => {
+    if (!requestedEventId) {
+      locatedEventIdRef.current = null;
+      return;
+    }
+    if (
+      locatedEventIdRef.current === requestedEventId ||
+      !ledger.events.some((event) => event.id === requestedEventId)
+    ) {
+      return;
+    }
+
+    const target = document.getElementById(
+      memoryEventAnchorId(requestedEventId),
+    );
+    if (!target) {
+      return;
+    }
+
+    target.scrollIntoView({ block: "center" });
+    locatedEventIdRef.current = requestedEventId;
+  }, [ledger.events, requestedEventId]);
 
   function setFilter(field: typeof FILTER_FIELDS[number], value: string) {
     const next = new URLSearchParams(search);
@@ -88,11 +118,11 @@ export function MemoryLedger({ obras }: MemoryLedgerProps) {
     <div className="memory-ledger">
       <header className="memory-ledger__header">
         <div>
-          <span className="home-section-index">02 / Ontologia</span>
+          <span className="home-section-index">Rastreio ontológico</span>
           <h2>Memória operacional</h2>
           <p>
-            Registro cronológico das alterações que constituem o Córtex.
-            Cada entrada preserva ator, entidade, origem e estado conhecido.
+            Registro técnico de eventos, identificadores e estados de
+            sincronização no escopo autorizado.
           </p>
         </div>
         <button type="button" onClick={ledger.reload}>
@@ -101,12 +131,17 @@ export function MemoryLedger({ obras }: MemoryLedgerProps) {
       </header>
 
       <section className="memory-coverage" data-mode={ledger.coverage.mode}>
-        <span className="memory-coverage__mark" aria-hidden="true" />
         <div>
           <strong>{ledger.coverage.label}</strong>
           <span>{ledger.coverage.detail}</span>
         </div>
       </section>
+
+      <MemoryReviewRegister
+        isReviewLoading={ledger.isReviewLoading}
+        reviewError={ledger.reviewError}
+        reviewRecords={ledger.reviewRecords}
+      />
 
       <section className="memory-filters" aria-label="Filtros da Memória">
         <div className="memory-filters__heading">
@@ -201,8 +236,11 @@ export function MemoryLedger({ obras }: MemoryLedgerProps) {
 
       <section className="memory-register" aria-live="polite">
         <div className="memory-register__heading">
-          <span>Registro</span>
-          <strong>{ledger.events.length} entradas neste recorte</strong>
+          <div>
+            <span>Registro técnico</span>
+            <strong>{ledger.events.length} entradas neste recorte</strong>
+          </div>
+          <span>Selecione um evento para inspecionar a alteração</span>
         </div>
 
         {ledger.error ? (
@@ -221,16 +259,32 @@ export function MemoryLedger({ obras }: MemoryLedgerProps) {
             Nenhuma alteração corresponde ao recorte informado.
           </div>
         ) : (
-          <ol className="memory-list">
-            {ledger.events.map((event) => (
-              <MemoryLedgerRow
-                key={`${event.sourceKind}:${event.id}`}
-                event={event}
-                expanded={expandedIds.has(event.id)}
-                onToggle={() => toggleExpanded(event.id)}
-              />
-            ))}
-          </ol>
+          <div className="memory-table-scroll">
+            <table className="memory-ledger-table">
+              <thead>
+                <tr>
+                  <th scope="col">ID do evento</th>
+                  <th scope="col">Horário</th>
+                  <th scope="col">Ator</th>
+                  <th scope="col">Dispositivo</th>
+                  <th scope="col">Entidade</th>
+                  <th scope="col">Ação</th>
+                  <th scope="col">Origem</th>
+                  <th scope="col">Resultado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.events.map((event) => (
+                  <MemoryLedgerRow
+                    key={`${event.sourceKind}:${event.id}`}
+                    event={event}
+                    expanded={expandedIds.has(event.id)}
+                    onToggle={() => toggleExpanded(event.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {ledger.hasMore ? (
@@ -248,6 +302,95 @@ export function MemoryLedger({ obras }: MemoryLedgerProps) {
   );
 }
 
+function MemoryReviewRegister({
+  isReviewLoading,
+  reviewError,
+  reviewRecords,
+}: {
+  isReviewLoading: boolean;
+  reviewError: string | null;
+  reviewRecords: MemoryConflictReviewRecord[];
+}) {
+  const reviewCount = isReviewLoading ? "—" : reviewError ? "?" : reviewRecords.length;
+
+  return (
+    <section
+      className="memory-review-register"
+      aria-label="Registros que exigem revisão"
+    >
+      <header className="memory-review-register__heading">
+        <div>
+          <span>Conflitos persistidos</span>
+          <h3>Revisão necessária</h3>
+          <p>
+            Itens abaixo são derivados da fila local com conflitos de campo
+            preservados para decisão humana.
+          </p>
+        </div>
+        <strong
+          aria-label={isReviewLoading
+            ? "Fila em verificação"
+            : reviewError ? "Fila indisponível" : undefined}
+        >
+          {reviewCount}
+        </strong>
+      </header>
+
+      {isReviewLoading ? (
+        <p className="memory-review-register__empty" role="status">
+          Consultando a fila local de revisão…
+        </p>
+      ) : reviewError ? (
+        <p className="memory-notice memory-notice--error" role="alert">
+          <strong>Fila local indisponível</strong>
+          <span>
+            Não foi possível verificar a fila local de itens que exigem revisão.
+          </span>
+        </p>
+      ) : reviewRecords.length === 0 ? (
+        <p className="memory-review-register__empty">
+          Nenhum conflito de campo persistido exige revisão neste recorte.
+        </p>
+      ) : (
+        <div className="memory-review-table-scroll">
+          <table className="memory-review-table">
+            <thead>
+              <tr>
+                <th scope="col">Evento</th>
+                <th scope="col">Atualizado</th>
+                <th scope="col">Ator</th>
+                <th scope="col">Dispositivo</th>
+                <th scope="col">Entidade</th>
+                <th scope="col">Operação</th>
+                <th scope="col">Campos em conflito</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reviewRecords.map((record) => (
+                <tr key={record.clientMutationId}>
+                  <td>
+                    <TraceReference
+                      entityId={record.entity.id}
+                      eventId={record.eventId}
+                      href={`#${memoryEventAnchorId(record.eventId)}`}
+                    />
+                  </td>
+                  <td>{formatDateTime(record.updatedAt ?? record.occurredAt)}</td>
+                  <td>{record.actorName ?? record.actorId ?? "Não informado"}</td>
+                  <td>{record.deviceId ?? "Não informado"}</td>
+                  <td>{formatEntity(record.entity)}</td>
+                  <td>{record.operation}</td>
+                  <td>{conflictFields(record)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function MemoryLedgerRow({
   event,
   expanded,
@@ -258,84 +401,93 @@ function MemoryLedgerRow({
   onToggle: () => void;
 }) {
   const diffs = memoryDiffRows(event);
-  const pending = event.sourceKind === "DEVICE";
+  const result = eventResult(event);
 
   return (
-    <li className="memory-entry">
-      <button
-        type="button"
-        className="memory-entry__summary"
-        aria-expanded={expanded}
-        onClick={onToggle}
-      >
-        <span className="memory-entry__commit">
-          {pending ? "LOCAL" : `#${event.commitSeq ?? "—"}`}
-        </span>
-        <span className="memory-entry__main">
-          <strong>{memoryEventLabel(event.type)}</strong>
-          <span>
-            {event.actorLabel} · {entityDescription(event)}
-          </span>
-        </span>
-        <span className="memory-entry__time">
-          {formatDateTime(event.occurredAt)}
-        </span>
-        <span className={pending
-          ? "memory-entry__status is-pending"
-          : "memory-entry__status"}
+    <>
+      <tr id={memoryEventAnchorId(event.id)} className="memory-ledger-table__row">
+        <td data-label="ID do evento">
+          <button
+            type="button"
+            className="memory-event-toggle"
+            aria-expanded={expanded}
+            onClick={onToggle}
+          >
+            <span>{event.id}</span>
+            <small>
+              {event.sourceKind === "DEVICE"
+                ? "Registro local"
+                : `Commit #${event.commitSeq ?? "—"}`}
+            </small>
+          </button>
+        </td>
+        <td data-label="Horário">
+          <time dateTime={event.occurredAt ?? undefined}>
+            {formatDateTime(event.occurredAt)}
+          </time>
+        </td>
+        <td data-label="Ator">{event.actorLabel}</td>
+        <td data-label="Dispositivo">{eventDevice(event)}</td>
+        <td data-label="Entidade">{entityDescription(event)}</td>
+        <td data-label="Ação">{memoryEventLabel(event.type)}</td>
+        <td data-label="Origem">{eventOrigin(event)}</td>
+        <td
+          className="memory-ledger-table__result"
+          data-result={result}
+          data-label="Resultado"
         >
-          {pending ? "Commit pendente" : event.result ?? "Registrado"}
-        </span>
-        <span className="memory-entry__toggle" aria-hidden="true">
-          {expanded ? "−" : "+"}
-        </span>
-      </button>
-
+          {result}
+        </td>
+      </tr>
       {expanded ? (
-        <div className="memory-entry__details">
-          <section>
-            <h3>Alteração de estado</h3>
-            {diffs.length === 0 ? (
-              <p className="memory-entry__muted">
-                O evento não informou um estado anterior e posterior comparável.
-              </p>
-            ) : (
-              <div className="memory-diff" role="table" aria-label="Antes e depois">
-                <div className="memory-diff__head" role="row">
-                  <span role="columnheader">Campo</span>
-                  <span role="columnheader">Antes</span>
-                  <span role="columnheader">Depois</span>
-                </div>
-                {diffs.map((diff) => (
-                  <div key={diff.field} className="memory-diff__row" role="row">
-                    <strong role="cell">{humanizeField(diff.field)}</strong>
-                    <span role="cell">{formatValue(diff.previous)}</span>
-                    <span role="cell">{formatValue(diff.next)}</span>
+        <tr className="memory-ledger-table__details-row">
+          <td colSpan={8}>
+            <div className="memory-entry__details">
+              <section>
+                <h3>Alteração de estado</h3>
+                {diffs.length === 0 ? (
+                  <p className="memory-entry__muted">
+                    O evento não informou um estado anterior e posterior comparável.
+                  </p>
+                ) : (
+                  <div className="memory-diff">
+                    <div className="memory-diff__head">
+                      <span>Campo</span>
+                      <span>Antes</span>
+                      <span>Depois</span>
+                    </div>
+                    {diffs.map((diff) => (
+                      <div key={diff.field} className="memory-diff__row">
+                        <strong>{humanizeField(diff.field)}</strong>
+                        <span>{formatValue(diff.previous)}</span>
+                        <span>{formatValue(diff.next)}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-          <section className="memory-entry__trace">
-            <h3>Vínculo técnico</h3>
-            <dl>
-              <div><dt>Evento</dt><dd>{event.id}</dd></div>
-              <div><dt>Entidade</dt><dd>{entityDescription(event)}</dd></div>
-              <div><dt>Origem</dt><dd>{event.source ?? event.origin ?? "Não informada"}</dd></div>
-              <div><dt>Dispositivo</dt><dd>{event.deviceId ?? (pending ? "Este dispositivo" : "Não informado")}</dd></div>
-              <div><dt>Correlação</dt><dd>{event.correlationId ?? "Não informada"}</dd></div>
-              <div><dt>Causação</dt><dd>{event.causationId ?? "Não informada"}</dd></div>
-            </dl>
-          </section>
-          {Object.keys(event.payload).length > 0 ? (
-            <details className="memory-entry__payload">
-              <summary>Payload registrado</summary>
-              <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-            </details>
-          ) : null}
-        </div>
+                )}
+              </section>
+              <section className="memory-entry__trace">
+                <h3>Vínculo técnico</h3>
+                <dl>
+                  <div><dt>Evento</dt><dd>{event.id}</dd></div>
+                  <div><dt>Entidade</dt><dd>{entityDescription(event)}</dd></div>
+                  <div><dt>Origem</dt><dd>{eventOrigin(event)}</dd></div>
+                  <div><dt>Dispositivo</dt><dd>{eventDevice(event)}</dd></div>
+                  <div><dt>Correlação</dt><dd>{event.correlationId ?? "Não informada"}</dd></div>
+                  <div><dt>Causação</dt><dd>{event.causationId ?? "Não informada"}</dd></div>
+                </dl>
+              </section>
+              {Object.keys(event.payload).length > 0 ? (
+                <details className="memory-entry__payload">
+                  <summary>Payload registrado</summary>
+                  <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+                </details>
+              ) : null}
+            </div>
+          </td>
+        </tr>
       ) : null}
-    </li>
+    </>
   );
 }
 
@@ -348,9 +500,40 @@ function filtersFromSearch(search: URLSearchParams): MemoryFilters {
   return filters;
 }
 
+function conflictFields(record: MemoryConflictReviewRecord): string {
+  return Object.keys(record.conflicts)
+    .sort((left, right) => left.localeCompare(right, "pt-BR"))
+    .join(", ");
+}
+
 function entityDescription(event: MemoryEvent): string {
-  const name = event.principalEntity.name;
-  return `${event.principalEntity.type} · ${name ?? event.principalEntity.id}`;
+  return formatEntity(event.principalEntity);
+}
+
+function formatEntity(entity: MemoryEvent["principalEntity"]): string {
+  return `${entity.type} · ${entity.name ?? entity.id}`;
+}
+
+function eventDevice(event: MemoryEvent): string {
+  return event.deviceId ?? (
+    event.sourceKind === "DEVICE" ? "Este dispositivo" : "Não informado"
+  );
+}
+
+function eventOrigin(event: MemoryEvent): string {
+  return event.source ?? event.origin ?? (
+    event.sourceKind === "DEVICE" ? "Este dispositivo" : "Não informada"
+  );
+}
+
+function eventResult(event: MemoryEvent): string {
+  return event.result ?? event.syncStatus ?? (
+    event.sourceKind === "DEVICE" ? "LOCAL" : "REGISTRADO"
+  );
+}
+
+function memoryEventAnchorId(eventId: string): string {
+  return `memory-event-${encodeURIComponent(eventId)}`;
 }
 
 function formatDateTime(value: string | null): string {

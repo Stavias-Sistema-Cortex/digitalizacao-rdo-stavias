@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
 import { CortexShell } from "../../components/shell/CortexShell";
 import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import { HomeOverview } from "./HomeOverview";
@@ -26,16 +27,12 @@ export function HomePage() {
       isRefreshing={data.isLoading}
     >
       <main className="home-dashboard">
-        <header className="home-page-heading">
-          <div>
-            <span>Córtex 2.1 / Centro operacional</span>
-            <h1>Visão do empreendimento</h1>
-          </div>
-          <p>
-            Leitura consolidada da operação e de sua memória ontológica,
-            preservada por obra, entidade e responsável.
-          </p>
-        </header>
+        <InstitutionalPageHeader
+          className="home-command-header"
+          eyebrow="Centro operacional"
+          title="Visão do empreendimento"
+          description="Comando operacional de infraestrutura com exceções, recorte de obra e rastreabilidade local explícitos."
+        />
         <HomeSubnav />
         <section
           id={`home-panel-${activeTab}`}
@@ -43,7 +40,10 @@ export function HomePage() {
           aria-labelledby={`home-tab-${activeTab}`}
         >
           {activeTab === "memory" ? (
-            <MemoryLedger obras={data.obras} />
+            <MemoryLedger
+              key={search.get("event") ?? "memory-ledger"}
+              obras={data.obras}
+            />
           ) : (
             <HomeOverview data={data} />
           )}

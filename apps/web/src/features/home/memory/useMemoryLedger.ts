@@ -2,11 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { getSession, hasOnlineSession } from "../../auth/authSession";
 import { listOperationalEvents } from "../../../lib/db/operationalEventRepository";
-import type { OperationalEventRecord } from "../../../lib/db/db.types";
+import { listOutboxMutations } from "../../../lib/db/outboxRepository";
+import type {
+  OperationalEventRecord,
+  OutboxMutationRecord,
+} from "../../../lib/db/db.types";
 import { fetchMemoryPage } from "./memoryApi";
-import type { MemoryEvent, MemoryFilters } from "./memory.types";
+import type {
+  MemoryConflictReviewRecord,
+  MemoryEvent,
+  MemoryFilters,
+} from "./memory.types";
 import {
   filterMemoryEvents,
+  memoryConflictReviewRecords,
   mergeMemoryEvents,
 } from "./memoryViewModel";
 
@@ -22,6 +31,9 @@ export interface MemoryLedgerState {
   loadMore: () => Promise<void>;
   reload: () => void;
   coverage: MemoryCoverage;
+  reviewRecords: MemoryConflictReviewRecord[];
+  isReviewLoading: boolean;
+  reviewError: string | null;
   error: string | null;
   isInitialLoading: boolean;
   isLoadingMore: boolean;
@@ -39,6 +51,12 @@ export function useMemoryLedger(
   const filtersKey = JSON.stringify(filters);
   const [serverEvents, setServerEvents] = useState<MemoryEvent[]>([]);
   const [localEvents, setLocalEvents] = useState<OperationalEventRecord[]>([]);
+  const [outboxMutations, setOutboxMutations] = useState<
+    OutboxMutationRecord[]
+  >([]);
+  const [isOutboxLoading, setIsOutboxLoading] = useState(true);
+  const [localReviewError, setLocalReviewError] = useState<string | null>(null);
+  const [outboxReviewError, setOutboxReviewError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +65,8 @@ export function useMemoryLedger(
   const [serverAvailable, setServerAvailable] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
+  const isReviewLoading = isInitialLoading || isOutboxLoading;
+  const reviewError = localReviewError ?? outboxReviewError;
   const canReachServer = navigator.onLine && hasOnlineSession();
 
   useEffect(() => {
@@ -59,6 +79,9 @@ export function useMemoryLedger(
         setError(null);
         setServerAvailable(false);
         setIsInitialLoading(true);
+        setIsOutboxLoading(true);
+        setLocalReviewError(null);
+        setOutboxReviewError(null);
       }
     });
 
@@ -67,13 +90,31 @@ export function useMemoryLedger(
         if (!cancelled) {
           setLocalEvents(events);
           setIsInitialLoading(false);
+          setLocalReviewError(null);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setLocalEvents([]);
           setIsInitialLoading(false);
+          setLocalReviewError("A leitura dos registros locais falhou.");
           setError("Não foi possível ler os registros deste dispositivo.");
+        }
+      });
+
+    void listOutboxMutations()
+      .then((mutations) => {
+        if (!cancelled) {
+          setOutboxMutations(mutations);
+          setIsOutboxLoading(false);
+          setOutboxReviewError(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOutboxMutations([]);
+          setIsOutboxLoading(false);
+          setOutboxReviewError("A leitura da fila local falhou.");
         }
       });
 
@@ -115,6 +156,14 @@ export function useMemoryLedger(
     ),
     [serverEvents, localEvents, allowedObraIds, userId, filters],
   );
+  const reviewRecords = useMemo(() => {
+    const visibleEventIds = new Set(events.map((event) => event.id));
+
+    return memoryConflictReviewRecords(
+      localEvents,
+      outboxMutations,
+    ).filter((record) => visibleEventIds.has(record.eventId));
+  }, [events, localEvents, outboxMutations]);
 
   const coverage = useMemo<MemoryCoverage>(() => {
     if (!canReachServer) {
@@ -171,6 +220,9 @@ export function useMemoryLedger(
     loadMore,
     reload,
     coverage,
+    reviewRecords,
+    isReviewLoading,
+    reviewError,
     error,
     isInitialLoading,
     isLoadingMore,
