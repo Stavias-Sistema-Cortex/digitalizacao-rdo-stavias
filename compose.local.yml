@@ -1,0 +1,77 @@
+services:
+  cortex-mysql:
+    image: mysql:8.4
+    container_name: cortex-mysql-local
+    environment:
+      MYSQL_DATABASE: cortex_dev
+      MYSQL_USER: cortex_app
+      MYSQL_PASSWORD: ${CORTEX_DB_PASSWORD:?Set CORTEX_DB_PASSWORD for the local MySQL user}
+      MYSQL_ROOT_PASSWORD: ${CORTEX_MYSQL_ROOT_PASSWORD:?Set CORTEX_MYSQL_ROOT_PASSWORD for local MySQL admin access}
+    ports:
+      - "3307:3306"
+    volumes:
+      - cortex_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u\"$${MYSQL_USER}\" -p\"$${MYSQL_PASSWORD}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  cortex-api:
+    build:
+      context: ./apps/api
+    container_name: cortex-api-local
+    depends_on:
+      cortex-mysql:
+        condition: service_healthy
+    environment:
+      CORTEX_DB_URL: jdbc:mysql://cortex-mysql:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      CORTEX_DB_USER: cortex_app
+      CORTEX_DB_PASSWORD: ${CORTEX_DB_PASSWORD:?Set CORTEX_DB_PASSWORD for the API datasource}
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:?Set the local CPF HMAC key id}
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:?Set the local CPF HMAC key material}
+      CORTEX_AUTH_DEV_ADMIN_ENABLED: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:-true}
+      CORTEX_EMAIL_PROVIDER: fake
+      CORTEX_STORAGE_PROVIDER: local
+      CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
+      CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
+      CORTEX_IMPORT_ENABLED: ${CORTEX_IMPORT_ENABLED:-true}
+      CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-true}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      CORTEX_STAVIA_GENERATOR_MODE: ${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}
+      CORTEX_STAVIA_INTERPRETER_MODE: ${CORTEX_STAVIA_INTERPRETER_MODE:-deterministic}
+      CORTEX_SYNC_INITIAL_DELAY_MS: ${CORTEX_SYNC_INITIAL_DELAY_MS:-10000}
+      CORTEX_SYNC_FIXED_DELAY_MS: ${CORTEX_SYNC_FIXED_DELAY_MS:-300000}
+      CORTEX_ACADEMY_DB_URL: ${CORTEX_ACADEMY_DB_URL:-${ACAD_DB_URL:-}}
+      CORTEX_ACADEMY_DB_USER: ${CORTEX_ACADEMY_DB_USER:-${ACAD_DB_USER:-}}
+      CORTEX_ACADEMY_DB_PASSWORD: ${CORTEX_ACADEMY_DB_PASSWORD:-${ACAD_DB_PASSWORD:-}}
+      CORTEX_ZELADORIA_DB_URL: ${CORTEX_ZELADORIA_DB_URL:-${ZLD_DB_URL:-}}
+      CORTEX_ZELADORIA_DB_USER: ${CORTEX_ZELADORIA_DB_USER:-${ZLD_DB_USER:-}}
+      CORTEX_ZELADORIA_DB_PASSWORD: ${CORTEX_ZELADORIA_DB_PASSWORD:-${ZLD_DB_PASSWORD:-}}
+    ports:
+      - "8081:8080"
+    volumes:
+      - cortex_object_data:/var/lib/cortex/objects
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/readiness | grep -q '\"status\":\"READY\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+
+  cortex-web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_CORTEX_API_BASE_URL: /api
+        VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: ${CORTEX_STORAGE_MAX_SIZE_BYTES:-26214400}
+    container_name: cortex-web-local
+    depends_on:
+      cortex-api:
+        condition: service_healthy
+    ports:
+      - "5173:8080"
+
+volumes:
+  cortex_mysql_data:
+  cortex_object_data:

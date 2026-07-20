@@ -1,0 +1,340 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  buildOperationalFeatureCollection,
+  isValidWorksiteCoordinate,
+  type OperationalFeatureCollection,
+  type WorksiteMapPoint,
+} from "./mapGeometry";
+import {
+  mountOperationalMap,
+  type MapViewMode,
+  type OperationalMapController,
+} from "./mapAdapter";
+import { buscarMapaObra, type ObraMapData } from "./obraMapApi";
+import {
+  resolveMapProvider,
+  resolveMapProviderForId,
+  type MapProvider,
+  type MapProviderId,
+} from "./mapProvider";
+import "./OperationalMap.css";
+
+interface OperationalMapProps {
+  obra: WorksiteMapPoint;
+}
+
+interface RemoteState {
+  status: "loading" | "ready" | "error";
+  data: ObraMapData | null;
+  message: string | null;
+}
+
+function firstCoordinate(
+  collection: OperationalFeatureCollection,
+): [number, number] | null {
+  function visit(value: unknown): [number, number] | null {
+    if (
+      Array.isArray(value) &&
+      value.length >= 2 &&
+      typeof value[0] === "number" &&
+      typeof value[1] === "number"
+    ) {
+      return [value[0], value[1]];
+    }
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        const found = visit(child);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  for (const feature of collection.features) {
+    const found = visit(feature.geometry.coordinates);
+    if (found) return found;
+  }
+  return null;
+}
+
+function MapCanvas({
+  provider,
+  features,
+  center,
+  mode,
+  centerRequest,
+}: {
+  provider: MapProvider;
+  features: OperationalFeatureCollection;
+  center: [number, number];
+  mode: MapViewMode;
+  centerRequest: number;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const controllerRef = useRef<OperationalMapController | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let cancelled = false;
+    let controller: OperationalMapController | null = null;
+
+    mountOperationalMap({
+      container,
+      provider,
+      features,
+      center,
+      mode,
+      onRuntimeError: (message) => {
+        if (!cancelled) setError(message);
+      },
+    })
+      .then((mounted) => {
+        if (cancelled) {
+          mounted.destroy();
+          return;
+        }
+        controller = mounted;
+        controllerRef.current = mounted;
+        setStatus("ready");
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setStatus("error");
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Não foi possível carregar o provider de mapa.",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      controllerRef.current = null;
+      controller?.destroy();
+    };
+  }, [center, features, mode, provider]);
+
+  useEffect(() => {
+    if (centerRequest > 0) {
+      controllerRef.current?.centerOn(center[0], center[1]);
+    }
+  }, [center, centerRequest]);
+
+  return (
+    <div className="operational-map-canvas-wrap">
+      <div ref={containerRef} className="operational-map-canvas" />
+      {status === "loading" ? (
+        <div className="operational-map-overlay" role="status">
+          Carregando imagens de satélite…
+        </div>
+      ) : null}
+      {status === "error" ? (
+        <div className="operational-map-overlay operational-map-overlay--error">
+          <strong>Mapa temporariamente indisponível</strong>
+          <span>{error}</span>
+        </div>
+      ) : null}
+      {status === "ready" && error ? (
+        <p className="operational-map-runtime-warning">{error}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export function OperationalMap({ obra }: OperationalMapProps) {
+  const defaultProvider = useMemo(() => resolveMapProvider(), []);
+  const [providerId, setProviderId] =
+    useState<MapProviderId>(defaultProvider.id);
+  const [mode, setMode] = useState<MapViewMode>("2d");
+  const [centerRequest, setCenterRequest] = useState(0);
+  const [remote, setRemote] = useState<RemoteState>({
+    status: "loading",
+    data: null,
+    message: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    buscarMapaObra(obra.id)
+      .then((data) => {
+        if (!cancelled) {
+          setRemote({ status: "ready", data, message: null });
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setRemote({
+            status: "error",
+            data: null,
+            message:
+              reason instanceof Error
+                ? reason.message
+                : "Camadas geoespaciais indisponíveis.",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [obra.id]);
+
+  const provider = useMemo(
+    () => resolveMapProviderForId(providerId),
+    [providerId],
+  );
+  const authoritativeWorksite = remote.data?.obra ?? obra;
+  const featureCollection = useMemo(
+    () =>
+      buildOperationalFeatureCollection(
+        authoritativeWorksite,
+        remote.data?.features ?? [],
+      ),
+    [authoritativeWorksite, remote.data?.features],
+  );
+  const center = useMemo(
+    () =>
+      isValidWorksiteCoordinate(
+        authoritativeWorksite.latitude,
+        authoritativeWorksite.longitude,
+      )
+        ? ([
+            authoritativeWorksite.longitude,
+            authoritativeWorksite.latitude,
+          ] as [number, number])
+        : firstCoordinate(featureCollection),
+    [authoritativeWorksite, featureCollection],
+  );
+  const categories = useMemo(
+    () =>
+      [...new Set(
+        featureCollection.features.map((feature) =>
+          String(feature.properties.categoria),
+        ),
+      )],
+    [featureCollection.features],
+  );
+  const mapSignature = `${provider.id}:${remote.status}:${featureCollection.features
+    .map((feature) => `${feature.id}:${String(feature.properties.versao ?? "")}`)
+    .join("|")}`;
+
+  return (
+    <section className="operational-map" aria-labelledby="operational-map-title">
+      <header className="operational-map-header">
+        <div>
+          <p className="eyebrow">Território operacional</p>
+          <h3 id="operational-map-title">Mapa da obra</h3>
+          <span>
+            {center
+              ? `${center[1].toFixed(6)}, ${center[0].toFixed(6)}`
+              : "Sem coordenadas autoritativas"}
+          </span>
+        </div>
+        <div className="operational-map-controls">
+          <label>
+            <span>Provider</span>
+            <select
+              value={providerId}
+              onChange={(event) =>
+                setProviderId(event.target.value as MapProviderId)
+              }
+            >
+              <option value="maptiler">MapTiler Satellite</option>
+              <option value="mapbox">
+                Mapbox Satellite
+                {resolveMapProviderForId("mapbox").configured
+                  ? ""
+                  : " · não configurado"}
+              </option>
+            </select>
+          </label>
+          <div className="operational-map-view-toggle" role="group" aria-label="Visualização">
+            <button
+              type="button"
+              className={mode === "2d" ? "active" : ""}
+              onClick={() => setMode("2d")}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              className={mode === "3d" ? "active" : ""}
+              disabled={!provider.capabilities.perspective3d}
+              onClick={() => setMode("3d")}
+            >
+              3D
+            </button>
+          </div>
+          <button
+            type="button"
+            className="operational-map-center-button"
+            disabled={!center || !provider.configured}
+            onClick={() => setCenterRequest((value) => value + 1)}
+          >
+            Centralizar
+          </button>
+        </div>
+      </header>
+
+      {defaultProvider.fallbackReason ? (
+        <p className="operational-map-notice">{defaultProvider.fallbackReason}</p>
+      ) : null}
+      {remote.status === "error" ? (
+        <p className="operational-map-notice">
+          {remote.message} A localização salva no dispositivo continua disponível.
+        </p>
+      ) : null}
+
+      {!provider.configured ? (
+        <div className="operational-map-empty operational-map-empty--config">
+          <span aria-hidden="true">⌁</span>
+          <strong>{provider.label} ainda não está configurado</strong>
+          <p>{provider.missingConfiguration}</p>
+          <small>
+            Nenhum provider é simulado; a página permanece funcional sem a chave.
+          </small>
+        </div>
+      ) : !center ? (
+        <div className="operational-map-empty">
+          <span aria-hidden="true">⌖</span>
+          <strong>Localização ainda não registrada</strong>
+          <p>
+            Cadastre coordenadas ou uma geometria real para posicionar esta obra.
+          </p>
+        </div>
+      ) : (
+        <MapCanvas
+          key={mapSignature}
+          provider={provider}
+          features={featureCollection}
+          center={center}
+          mode={mode}
+          centerRequest={centerRequest}
+        />
+      )}
+
+      <footer className="operational-map-footer">
+        <div className="operational-map-legend" aria-label="Camadas exibidas">
+          {categories.length > 0 ? (
+            categories.map((category) => (
+              <span key={category}>{category.replaceAll("_", " ")}</span>
+            ))
+          ) : (
+            <span>Nenhuma camada geoespacial disponível</span>
+          )}
+        </div>
+        <small>
+          {remote.status === "loading"
+            ? "Consultando camadas autoritativas…"
+            : `${remote.data?.features.length ?? 0} geometria(s) ontológica(s)`}
+        </small>
+      </footer>
+    </section>
+  );
+}

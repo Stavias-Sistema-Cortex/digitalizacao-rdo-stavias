@@ -1,0 +1,431 @@
+/*
+ * Tela de login do Sistema Córtex (Stavias).
+ * Todos os seletores são escopados em .cortex-login para sobrescrever os
+ * estilos globais de input/label/button definidos em index.css.
+ *
+ * Direção (mock "LOADING PAGE" do Figma): fotografia do canteiro em tela
+ * cheia sob um véu teal uniforme, o tile "S" amarelo centralizado e um
+ * card teal escuro carregando a frase da marca — o formulário vive dentro
+ * desse card. O amarelo Stavias fica reservado à ação e aos acentos.
+ */
+
+.cortex-login {
+  --teal-veil-top: rgb(23 82 76 / 38%);
+  --teal-veil-bottom: rgb(10 48 44 / 66%);
+  --teal-card: rgb(18 62 57 / 90%);
+  --teal-ink: #0e2e29;
+  --yellow: #fed203;
+  --yellow-hover: #ffdc35;
+  --ink-on-yellow: #143c36;
+  --field: #ffffff;
+  --field-placeholder: rgb(14 46 41 / 40%);
+  --text-strong: #ffffff;
+  --text-soft: rgb(255 255 255 / 72%);
+  --text-faint: rgb(255 255 255 / 50%);
+  --hairline: rgb(255 255 255 / 14%);
+  --error: #ff8a73;
+  --error-ink: #ffd2c7;
+
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(24px, 4vh, 56px) 20px clamp(48px, 7vh, 72px);
+  overflow: hidden;
+  isolation: isolate;
+  background: #10403b;
+  color: var(--text-strong);
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------- Fotografia + véu teal ---------- */
+
+.login__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.login__tint {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    var(--teal-veil-top) 0%,
+    rgb(16 66 61 / 46%) 55%,
+    var(--teal-veil-bottom) 100%
+  );
+}
+
+/* ---------- Composição central ---------- */
+
+.login__stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(22px, 3.6vh, 34px);
+  width: 100%;
+}
+
+/* Tile "S" amarelo, recortado do logo horizontal da marca. */
+.login__mark {
+  display: block;
+  width: clamp(84px, 11vh, 108px);
+  height: auto;
+  border-radius: 12px;
+  box-shadow: 0 18px 44px -18px rgb(4 24 22 / 85%);
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Card teal escuro: frase da marca + formulário. */
+.login__card {
+  width: min(408px, 100%);
+  padding: clamp(26px, 3.6vw, 36px);
+  border-radius: 12px;
+  background: var(--teal-card);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
+  box-shadow: 0 30px 70px -30px rgb(3 20 18 / 90%);
+}
+
+
+.login__phrase {
+  margin: 0;
+  font-size: clamp(1.3rem, 2.4vw, 1.55rem);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-strong);
+}
+
+.login__phrase em {
+  font-style: italic;
+  font-weight: 600;
+  color: var(--yellow);
+}
+
+.login__subtitle {
+  margin: 12px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+
+/* Aviso de conectividade: só aparece quando o dispositivo está offline. */
+.login__offline {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: rgb(254 210 3 / 10%);
+  border: 1px solid rgb(254 210 3 / 32%);
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--text-strong);
+}
+
+.login__offline::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--yellow);
+}
+
+/* ---------- Formulário ---------- */
+
+.login__form {
+  margin-top: clamp(20px, 3vh, 26px);
+  display: flex;
+  flex-direction: column;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.cortex-login .login-field__label {
+  margin: 0 0 8px 2px;
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.cortex-login .login-field__input {
+  width: 100%;
+  height: 54px;
+  min-height: 54px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--teal-ink);
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  outline: none;
+  box-shadow: 0 2px 10px -4px rgb(0 0 0 / 35%);
+  transition: box-shadow 150ms ease;
+}
+
+.cortex-login .login-field__input::placeholder {
+  color: var(--field-placeholder);
+  font-weight: 400;
+}
+
+.cortex-login .login-field__input:hover:not(:disabled) {
+  box-shadow: 0 4px 14px -4px rgb(0 0 0 / 40%);
+}
+
+.cortex-login .login-field__input:focus {
+  box-shadow:
+    0 0 0 3px var(--yellow),
+    0 4px 14px -4px rgb(0 0 0 / 40%);
+}
+
+.cortex-login .login-field__input:disabled {
+  opacity: 0.75;
+}
+
+/* Estado de erro do campo */
+.cortex-login .login-field__input--error,
+.cortex-login .login-field__input--error:focus {
+  box-shadow:
+    0 0 0 3px rgb(255 138 115 / 85%),
+    0 4px 14px -4px rgb(0 0 0 / 40%);
+}
+
+.login-field__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 2px 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--error-ink);
+}
+
+.login-field__error::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--error);
+  color: #3a0f08;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Botão principal */
+.cortex-login .login__submit {
+  margin-top: 20px;
+  height: 54px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--yellow);
+  color: var(--ink-on-yellow);
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition:
+    transform 130ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+
+.cortex-login .login__submit:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 8px 18px -12px rgb(254 210 3 / 45%);
+}
+
+.cortex-login .login__submit:disabled {
+  cursor: progress;
+  opacity: 0.92;
+}
+
+.login__submit-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.login__spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2.5px solid rgb(20 60 54 / 30%);
+  border-top-color: var(--ink-on-yellow);
+  animation: login-spin 0.7s linear infinite;
+}
+
+.cortex-login .login__passkey {
+  align-self: center;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.cortex-login .login__passkey:hover:not(:disabled) {
+  color: var(--yellow);
+}
+
+.cortex-login .login__passkey:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Mensagem de erro de autenticação (nível do formulário) */
+.login__alert {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgb(255 138 115 / 14%);
+  border: 1px solid rgb(255 138 115 / 40%);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--error-ink);
+}
+
+.login__alert::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--error);
+  color: #3a0f08;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+/* Nota de acesso restrito / suporte */
+.login__hint {
+  margin: 22px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+/* Rodapé */
+.login__footer {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+/* ---------- Animações ---------- */
+
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Entrada orquestrada: o tile assenta primeiro, o card vem logo atrás. */
+.login__mark {
+  animation: login-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login__card {
+  animation: login-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) 90ms both;
+}
+
+/* ---------- Responsivo ---------- */
+
+@media (max-width: 560px) {
+  .cortex-login {
+    padding-inline: 14px;
+  }
+
+  .login__phrase {
+    font-size: 1.2rem;
+  }
+
+  .login__subtitle {
+    font-size: 0.84rem;
+  }
+
+  .cortex-login .login-field__input,
+  .cortex-login .login__submit {
+    height: 52px;
+    min-height: 52px;
+  }
+}
+
+/* Foco acessível para teclado */
+.cortex-login a:focus-visible,
+.cortex-login button:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 3px;
+}
+
+.cortex-login .login-field__input:focus-visible {
+  outline: none;
+}
+
+/* Respeita preferência por menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  .cortex-login *,
+  .cortex-login *::before,
+  .cortex-login *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

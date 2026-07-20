@@ -1,0 +1,140 @@
+package com.projeto.cortex.pdor;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+public record PdorSnapshot(
+        String id,
+        String obraId,
+        String codigoObra,
+        LocalDateTime executedAt,
+        LocalDate referenceDate,
+        String modelVersion,
+        String assumptionsVersion,
+        PdorExecutionStatus executionStatus,
+        PdorTriggerType triggerType,
+        String originEventId,
+        String idempotencyKey,
+        JsonNode inputs,
+        JsonNode inputOrigins,
+        JsonNode warnings,
+        String calculationMode,
+        String calibrationStatus,
+        String projectPhase,
+        String riskLevel,
+        BigDecimal revenueP10,
+        BigDecimal revenueP50,
+        BigDecimal revenueP80,
+        BigDecimal revenueP95,
+        BigDecimal racRci,
+        BigDecimal racRciSpi,
+        BigDecimal racBottomUp,
+        BigDecimal racWeighted,
+        BigDecimal rci,
+        BigDecimal spi,
+        BigDecimal probabilityBelowContract,
+        BigDecimal probabilityBelow95Pct,
+        BigDecimal probabilityBelow90Pct,
+        BigDecimal heuristicRiskScore,
+        BigDecimal confidence,
+        Boolean simulationConverged,
+        Integer simulationIterations,
+        JsonNode drivers,
+        String executionError,
+        LocalDateTime createdAt,
+        String dataVersion,
+        JsonNode analysisScope,
+        JsonNode temporalWindow,
+        JsonNode featuresUsed,
+        JsonNode missingData,
+        JsonNode limitations,
+        JsonNode alerts,
+        JsonNode recommendations,
+        JsonNode previousComparison,
+        JsonNode evidence,
+        String initiatedBy,
+        String initiatorType
+) {
+    PdorSnapshot withExplainability(
+            String dataVersion,
+            PdorExplainability explainability,
+            PdorExecutionInitiator initiator
+    ) {
+        return new PdorSnapshot(
+                id, obraId, codigoObra, executedAt, referenceDate,
+                modelVersion, assumptionsVersion, executionStatus, triggerType,
+                originEventId, idempotencyKey, inputs, inputOrigins, warnings,
+                calculationMode, calibrationStatus, projectPhase, riskLevel,
+                revenueP10, revenueP50, revenueP80, revenueP95,
+                racRci, racRciSpi, racBottomUp, racWeighted, rci, spi,
+                probabilityBelowContract, probabilityBelow95Pct,
+                probabilityBelow90Pct, heuristicRiskScore, confidence,
+                simulationConverged, simulationIterations, drivers,
+                executionError, createdAt, dataVersion,
+                explainability.analysisScope(), explainability.temporalWindow(),
+                explainability.featuresUsed(), explainability.missingData(),
+                explainability.limitations(), explainability.alerts(),
+                explainability.recommendations(), explainability.previousComparison(),
+                explainability.evidence(), initiator.id(), initiator.type()
+        );
+    }
+
+    public PdorSnapshot(
+            String id,
+            String obraId,
+            String codigoObra,
+            LocalDateTime executedAt,
+            LocalDate referenceDate,
+            String modelVersion,
+            String assumptionsVersion,
+            PdorExecutionStatus executionStatus,
+            PdorTriggerType triggerType,
+            String originEventId,
+            String idempotencyKey,
+            JsonNode inputs,
+            JsonNode inputOrigins,
+            JsonNode warnings,
+            String calculationMode,
+            String calibrationStatus,
+            String projectPhase,
+            String riskLevel,
+            BigDecimal revenueP10,
+            BigDecimal revenueP50,
+            BigDecimal revenueP80,
+            BigDecimal revenueP95,
+            BigDecimal racRci,
+            BigDecimal racRciSpi,
+            BigDecimal racBottomUp,
+            BigDecimal racWeighted,
+            BigDecimal rci,
+            BigDecimal spi,
+            BigDecimal probabilityBelowContract,
+            BigDecimal probabilityBelow95Pct,
+            BigDecimal probabilityBelow90Pct,
+            BigDecimal heuristicRiskScore,
+            BigDecimal confidence,
+            Boolean simulationConverged,
+            Integer simulationIterations,
+            JsonNode drivers,
+            String executionError,
+            LocalDateTime createdAt
+    ) {
+        this(
+                id, obraId, codigoObra, executedAt, referenceDate,
+                modelVersion, assumptionsVersion, executionStatus, triggerType,
+                originEventId, idempotencyKey, inputs, inputOrigins, warnings,
+                calculationMode, calibrationStatus, projectPhase, riskLevel,
+                revenueP10, revenueP50, revenueP80, revenueP95,
+                racRci, racRciSpi, racBottomUp, racWeighted, rci, spi,
+                probabilityBelowContract, probabilityBelow95Pct,
+                probabilityBelow90Pct, heuristicRiskScore, confidence,
+                simulationConverged, simulationIterations, drivers,
+                executionError, createdAt, idempotencyKey,
+                null, null, null, null, null, null, null, null, null,
+                "LEGADO_NAO_REGISTRADO", "UNKNOWN"
+        );
+    }
+}

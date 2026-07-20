@@ -1,0 +1,60 @@
+package com.projeto.cortex.intelligence.stavia.knowledge.rdo;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+
+public record RdoKnowledgeRecord(
+        String id,
+        String worksiteId,
+        String worksiteCode,
+        String programacaoId,
+        String programacaoChave,
+        LocalDate programacaoData,
+        String programacaoServico,
+        String programacaoStatus,
+        String programacaoFechamento,
+        String programacaoEncarregado,
+        String programacaoPeriodo,
+        String programacaoFaixa,
+        String programacaoKmInicial,
+        String programacaoKmFinal,
+        BigDecimal programacaoExtensaoM,
+        BigDecimal programacaoAreaM2,
+        BigDecimal programacaoVolumeM3,
+        BigDecimal programacaoToneladaMassa,
+        String programacaoTipoCap,
+        BigDecimal programacaoCap,
+        String numeroRdo,
+        LocalDate dataRdo,
+        String cliente,
+        String cidade,
+        String contrato,
+        String rodovia,
+        String uf,
+        String kmInicialProgramado,
+        String kmFinalProgramado,
+        String kmInicialInterditado,
+        String kmFinalInterditado,
+        String turno,
+        LocalTime horaInicio,
+        LocalTime horaFim,
+        String condicaoManha,
+        String condicaoTarde,
+        String condicaoNoite,
+        BigDecimal pluviometriaMm,
+        String status,
+        String observacoes,
+        String preenchidoPor,
+        String apontadorRdo,
+        String encarregadoObra,
+        String fiscalizacaoCampo,
+        int totalMaoObra,
+        int totalEquipamentos,
+        int totalMateriais,
+        int totalControlesGeometricos,
+        LocalDateTime criadoEm,
+        LocalDateTime atualizadoEm
+) {
+}

@@ -1,0 +1,554 @@
+package com.projeto.cortex.intelligence.stavia.semantic;
+
+import com.projeto.cortex.intelligence.stavia.planning.QueryDomain;
+import com.projeto.cortex.intelligence.stavia.text.StaviaText;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+@Component
+public class StaviaSemanticCatalog {
+
+    private final Map<QueryDomain, List<SemanticAttribute>> attributesByDomain;
+
+    public StaviaSemanticCatalog() {
+        attributesByDomain = buildAttributes();
+    }
+
+    public List<SemanticAttribute> matchAttributes(
+            QueryDomain domain,
+            String question
+    ) {
+        String normalized =
+                StaviaText.normalize(question);
+
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+
+        List<SemanticAttribute> attributes =
+                attributesByDomain.getOrDefault(domain, List.of());
+
+        List<SemanticAttribute> matched =
+                new ArrayList<>();
+
+        for (SemanticAttribute attribute : attributes) {
+            if (
+                    attribute.aliases()
+                            .stream()
+                            .map(StaviaText::normalize)
+                            .anyMatch(alias ->
+                                    containsAlias(normalized, alias)
+                            )
+            ) {
+                matched.add(attribute);
+            }
+        }
+
+        return matched.stream()
+                .filter(SemanticAttribute::visible)
+                .distinct()
+                .toList();
+    }
+
+    public List<SemanticAttribute> attributesFor(
+            QueryDomain domain,
+            List<String> names
+    ) {
+        Set<String> requested =
+                names == null
+                        ? Set.of()
+                        : names.stream()
+                                .map(value -> value.toLowerCase(Locale.ROOT))
+                                .collect(java.util.stream.Collectors.toSet());
+
+        return attributesByDomain
+                .getOrDefault(domain, List.of())
+                .stream()
+                .filter(attribute ->
+                        requested.contains(
+                                attribute.name()
+                                        .toLowerCase(Locale.ROOT)
+                        )
+                )
+                .toList();
+    }
+
+    public List<String> aliasesFor(
+            QueryDomain domain,
+            String attributeName
+    ) {
+        return attributesByDomain
+                .getOrDefault(domain, List.of())
+                .stream()
+                .filter(attribute ->
+                        attribute.name().equals(attributeName)
+                )
+                .findFirst()
+                .map(SemanticAttribute::aliases)
+                .orElseGet(List::of);
+    }
+
+    private boolean containsAlias(String normalized, String alias) {
+        if (alias.isBlank()) {
+            return false;
+        }
+
+        if (alias.contains(" ")) {
+            return normalized.contains(alias);
+        }
+
+        return StaviaText.containsWord(normalized, alias);
+    }
+
+    private Map<QueryDomain, List<SemanticAttribute>> buildAttributes() {
+        Map<QueryDomain, List<SemanticAttribute>> catalog =
+                new LinkedHashMap<>();
+
+        catalog.put(
+                QueryDomain.OBRA,
+                List.of(
+                        attribute(
+                                "OBRA",
+                                "cidade",
+                                List.of(
+                                        "cidade",
+                                        "municipio",
+                                        "município",
+                                        "cidade da obra"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        ),
+                        attribute(
+                                "OBRA",
+                                "uf",
+                                List.of(
+                                        "uf",
+                                        "estado",
+                                        "estado da obra"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        ),
+                        attribute(
+                                "OBRA",
+                                "rodovia",
+                                List.of(
+                                        "rodovia",
+                                        "estrada",
+                                        "localizacao",
+                                        "localização",
+                                        "onde fica"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        ),
+                        attribute(
+                                "OBRA",
+                                "cliente",
+                                List.of(
+                                        "cliente",
+                                        "contratante"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        ),
+                        attribute(
+                                "OBRA",
+                                "nome",
+                                List.of(
+                                        "nome",
+                                        "nome da obra",
+                                        "qual obra",
+                                        "que obra"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        ),
+                        attribute(
+                                "OBRA",
+                                "status",
+                                List.of(
+                                        "status",
+                                        "situacao",
+                                        "situação",
+                                        "como esta",
+                                        "como está"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        ),
+                        attribute(
+                                "OBRA",
+                                "codigo",
+                                List.of(
+                                        "codigo",
+                                        "código",
+                                        "codigo cw",
+                                        "código cw",
+                                        "contrato",
+                                        "codigo da obra",
+                                        "código da obra"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-de-obras",
+                                false
+                        )
+                )
+        );
+
+        catalog.put(
+                QueryDomain.RDO,
+                List.of(
+                        attribute(
+                                "RDO",
+                                "dataRdo",
+                                List.of(
+                                        "data do rdo",
+                                        "data rdo",
+                                        "data operacional do rdo",
+                                        "dia do rdo",
+                                        "quando foi o rdo",
+                                        "quando esse rdo",
+                                        "quando este rdo"
+                                ),
+                                "DATE",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "turno",
+                                List.of(
+                                        "turno",
+                                        "turno da obra",
+                                        "turno do rdo",
+                                        "periodo",
+                                        "período",
+                                        "periodo de trabalho",
+                                        "diurno",
+                                        "noturno"
+                                ),
+                                "ENUM",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmInicialProgramado",
+                                List.of(
+                                        "trecho programado inicial",
+                                        "km inicial programado",
+                                        "trecho inicial programado",
+                                        "inicio programado",
+                                        "início programado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmFinalProgramado",
+                                List.of(
+                                        "trecho programado final",
+                                        "km final programado",
+                                        "trecho final programado",
+                                        "final programado",
+                                        "fim programado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmInicialInterditado",
+                                List.of(
+                                        "trecho interditado inicial",
+                                        "km inicial interditado",
+                                        "inicio interditado",
+                                        "início interditado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "kmFinalInterditado",
+                                List.of(
+                                        "trecho interditado final",
+                                        "km final interditado",
+                                        "final interditado",
+                                        "fim interditado"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "preenchidoPor",
+                                List.of(
+                                        "preenchido por",
+                                        "quem preencheu",
+                                        "quem fez o rdo",
+                                        "responsavel pelo preenchimento",
+                                        "responsável pelo preenchimento"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "apontadorRdo",
+                                List.of(
+                                        "apontador",
+                                        "apontador rdo",
+                                        "apontador do rdo"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "encarregadoObra",
+                                List.of(
+                                        "encarregado",
+                                        "encarregado da obra",
+                                        "encarregado obra"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "fiscalizacaoCampo",
+                                List.of(
+                                        "fiscalizacao",
+                                        "fiscalização",
+                                        "fiscalizacao de campo",
+                                        "fiscalização de campo",
+                                        "fiscal"
+                                ),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "condicaoManha",
+                                List.of(
+                                        "clima",
+                                        "tempo",
+                                        "condicao de clima",
+                                        "condicao climatica",
+                                        "clima da manha",
+                                        "tempo de manha",
+                                        "condicao climatica da manha",
+                                        "manha"
+                                ),
+                                "ENUM",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "condicaoTarde",
+                                List.of(
+                                        "clima",
+                                        "tempo",
+                                        "condicao de clima",
+                                        "condicao climatica",
+                                        "clima da tarde",
+                                        "tempo da tarde",
+                                        "condicao climatica da tarde",
+                                        "tarde"
+                                ),
+                                "ENUM",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "condicaoNoite",
+                                List.of(
+                                        "clima",
+                                        "tempo",
+                                        "condicao de clima",
+                                        "condicao climatica",
+                                        "clima da noite",
+                                        "tempo da noite",
+                                        "condicao climatica da noite",
+                                        "noite"
+                                ),
+                                "ENUM",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "pluviometriaMm",
+                                List.of(
+                                        "chuva",
+                                        "choveu",
+                                        "pluviometria",
+                                        "milimetros de chuva",
+                                        "mm de chuva",
+                                        "quanto choveu"
+                                ),
+                                "DECIMAL",
+                                "mm",
+                                "cadastro-rdos",
+                                false
+                        ),
+                        attribute(
+                                "RDO",
+                                "numeroRdo",
+                                List.of("rdo", "relatorio diario", "ultimo rdo"),
+                                "TEXT",
+                                null,
+                                "cadastro-rdos",
+                                false
+                        )
+                )
+        );
+
+        catalog.put(
+                QueryDomain.COLABORADOR,
+                List.of(
+                        attribute(
+                                "COLABORADOR",
+                                "nome",
+                                List.of("colaborador", "funcionario", "nome"),
+                                "TEXT",
+                                null,
+                                "cadastro-colaboradores",
+                                false
+                        ),
+                        attribute(
+                                "COLABORADOR",
+                                "equipe",
+                                List.of("equipe", "time", "turma"),
+                                "TEXT",
+                                null,
+                                "alocacoes-colaboradores",
+                                false
+                        ),
+                        attribute(
+                                "COLABORADOR",
+                                "horas",
+                                List.of("horas", "banco de horas", "frequencia", "falta"),
+                                "DECIMAL",
+                                "h",
+                                "frequencia-banco-horas",
+                                false
+                        )
+                )
+        );
+
+        catalog.put(
+                QueryDomain.EQUIPAMENTO,
+                List.of(
+                        attribute(
+                                "EQUIPAMENTO",
+                                "descricao",
+                                List.of(
+                                        "equipamento",
+                                        "maquina",
+                                        "maquinario",
+                                        "frota",
+                                        "patrimonio",
+                                        "placa"
+                                ),
+                                "TEXT",
+                                null,
+                                "equipamentos-dos-rdos",
+                                false
+                        )
+                )
+        );
+
+        catalog.put(
+                QueryDomain.FINANCEIRO,
+                List.of(
+                        attribute("SNAPSHOT_FINANCEIRO", "receita", List.of("receita"), "DECIMAL", "BRL", "previsao-financeira", false),
+                        attribute("SNAPSHOT_FINANCEIRO", "margem", List.of("margem"), "DECIMAL", "BRL", "previsao-financeira", false),
+                        attribute("EXECUCAO_SERVICO", "producao", List.of("producao", "servico", "execucao"), "DECIMAL", null, "previsao-financeira", false),
+                        attribute("NOTA_FISCAL", "valorAberto", List.of("valor aberto", "saldo da nota", "nota vencida"), "DECIMAL", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("NOTA_FISCAL", "vencimentoEm", List.of("vencimento", "vencida", "atrasada"), "DATE", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("COMPRA", "totalComprado", List.of("total comprado", "quanto foi comprado", "valor comprado"), "DECIMAL", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("COMPRA", "criadoPorId", List.of("quem criou a compra", "criador da compra"), "REFERENCE", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false),
+                        attribute("FORNECEDOR", "quantidadeCobrancasPendentes", List.of("cobrancas pendentes", "fornecedor pendente"), "INTEGER", null, StaviaBusinessSemanticCatalog.FINANCE_SOURCE, false)
+                )
+        );
+
+        catalog.put(
+                QueryDomain.MENSAGENS,
+                List.of(
+                        attribute("MENSAGEM_ANEXO", "storageStatus", List.of("armazenamento pendente", "documento pendente"), "ENUM", null, StaviaBusinessSemanticCatalog.MESSAGE_SYNC_SOURCE, false),
+                        attribute("MENSAGEM_ANEXO", "syncStatus", List.of("sincronizacao pendente", "sync pendente", "mensagem pendente"), "ENUM", null, StaviaBusinessSemanticCatalog.MESSAGE_SYNC_SOURCE, false)
+                )
+        );
+
+        return Map.copyOf(catalog);
+    }
+
+    private SemanticAttribute attribute(
+            String objectType,
+            String name,
+            List<String> aliases,
+            String dataType,
+            String unit,
+            String source,
+            boolean sensitive
+    ) {
+        return new SemanticAttribute(
+                objectType,
+                name,
+                aliases,
+                dataType,
+                unit,
+                source,
+                true,
+                sensitive,
+                "STAVIA_CONSULTAR"
+        );
+    }
+}

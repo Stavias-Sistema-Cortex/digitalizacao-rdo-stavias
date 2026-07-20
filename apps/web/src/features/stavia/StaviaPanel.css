@@ -1,0 +1,1130 @@
+/* ============================================================
+   Stav.IA — chat surface tokens (scoped)
+   ============================================================ */
+.stavia-page,
+.stavia-floating-overlay,
+.stavia-launcher {
+  --stav-signal: #fed203;
+  --stav-signal-deep: #e7bd00;
+  --stav-teal: #026965;
+  --stav-teal-deep: #01524e;
+  --stav-ink: #123331;
+  --stav-ink-soft: rgb(18 51 49 / 58%);
+  --stav-paper: #f7f6f1;
+  --stav-surface: #ffffff;
+  --stav-mist: #e6e4da;
+  --stav-asphalt: #1d2a28;
+  --stav-font:
+    "Poppins",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Poppins",
+    sans-serif;
+}
+
+/* ============================================================
+   Page variant (full page)
+   ============================================================ */
+.stavia-page {
+  display: flex;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 20px;
+  background: var(--stav-paper);
+  color: var(--stav-ink);
+  font-family: var(--stav-font);
+}
+
+.stavia-page .stavia-shell {
+  width: min(860px, 100%);
+  height: calc(100dvh - 40px);
+}
+
+/* ============================================================
+   Shell (header / thread / composer)
+   ============================================================ */
+.stavia-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--stav-mist);
+  border-radius: 50px;
+  color: var(--stav-ink);
+  font-family: var(--stav-font);
+}
+
+.stavia-shell :focus-visible,
+.stavia-launcher:focus-visible {
+  outline: 2px solid var(--stav-teal);
+  outline-offset: 2px;
+}
+
+/* o campo de pergunta não ganha destaque de foco (pedido do usuário);
+   também neutraliza o input:focus global do index.css */
+.stavia-shell .stavia-composer textarea:focus,
+.stavia-shell .stavia-composer textarea:focus-visible {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+/* ============================================================
+   Topbar
+   ============================================================ */
+.stavia-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 12px 12px 10px 16px;
+  border-radius: 50px 50px 0 0;
+  background: var(--stav-signal);
+}
+
+.stavia-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* card branco do logo saltando pra fora do amarelo */
+.stavia-logo-card {
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin: -32px 0 -4px;
+  padding: 12px 5px;
+  border: 1px solid #efe7cf;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 26px -16px rgb(20 40 35 / 45%);
+}
+
+.stavia-brand-logo {
+  display: block;
+  width: 180px;
+  height: 38px;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.stavia-topbar .stavia-icon-button {
+  color: rgb(18 51 49 / 76%);
+}
+
+.stavia-topbar .stavia-icon-button:hover:not(:disabled) {
+  background: rgb(18 51 49 / 10%);
+  color: var(--stav-ink);
+}
+
+.stavia-status-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.stavia-status-dot.is-online {
+  background: #2f9e63;
+  box-shadow: 0 0 0 3px rgb(47 158 99 / 16%);
+}
+
+.stavia-status-dot.is-offline {
+  background: #c9503d;
+  box-shadow: 0 0 0 3px rgb(201 80 61 / 16%);
+}
+
+.stavia-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.stavia-icon-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 30px;
+  background: transparent;
+  color: var(--stav-ink-soft);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.stavia-icon-button svg {
+  width: 30px;
+  height: 18px;
+}
+
+.stavia-icon-button:hover:not(:disabled) {
+  background: rgb(18 51 49 / 7%);
+  color: var(--stav-ink);
+}
+
+.stavia-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.stavia-icon-button.is-busy svg {
+  animation: stavia-spin 1s linear infinite;
+}
+
+/* ============================================================
+   Offline note
+   ============================================================ */
+.stavia-offline-note {
+  flex: none;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--stav-signal-deep);
+  background: rgb(255 255 255 / 74%);
+  color: #6d5310;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* ============================================================
+   Thread
+   ============================================================ */
+.stavia-thread {
+  flex: 1;
+  min-height: 0;
+  padding: 20px clamp(16px, 4vw, 28px);
+    background: radial-gradient(140% 52% at 50% 38%, rgba(254, 255, 231, 0.48) 0%, rgb(94 178 170 / 0%) 62%), linear-gradient(180deg, #FED203 10%, #fbdc4f 40%, #f4eac0 74%, #ecd986 100%);  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+}
+
+/* --- empty state --- */
+.stavia-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 12px;
+  text-align: center;
+}
+
+.stavia-empty h2 {
+  margin: 6px 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* faixa central — eco discreto da assinatura */
+.stavia-empty h2::before {
+  content: "";
+  display: block;
+  width: 56px;
+  margin: 0 auto 14px;
+  border-top: 3px dashed rgb(255 255 255 / 88%);
+}
+
+.stavia-empty p {
+  margin: 0;
+  max-width: 400px;
+  color: var(--stav-ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.stavia-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 520px;
+  margin-top: 14px;
+}
+
+.stavia-chips button {
+  padding: 9px 14px;
+  border: 1px solid #efe7cf;
+  border-radius: 999px;
+  background: var(--stav-surface);
+  color: var(--stav-ink);
+  font: 500 0.82rem/1.25 var(--stav-font);
+  box-shadow: 0 8px 20px -16px rgb(20 40 35 / 45%);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.stavia-chips button:hover:not(:disabled) {
+  border-color: var(--stav-teal);
+  background: #f0f8f6;
+}
+
+.stavia-chips button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.stavia-empty small {
+  margin-top: 16px;
+  color: var(--stav-ink-soft);
+  font-size: 0.72rem;
+}
+
+/* --- messages --- */
+.stavia-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.stavia-bubble {
+  max-width: 85%;
+  padding: 11px 14px;
+  border-radius: 16px;
+  font-size: 0.93rem;
+  line-height: 1.55;
+}
+
+.stavia-bubble p {
+  margin: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.stavia-bubble footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 0.68rem;
+  font-weight: 300;
+}
+
+.stavia-bubble--user {
+  align-self: flex-end;
+  border-bottom-right-radius: 6px;
+  background: var(--stav-teal);
+  color: #fbfef9;
+}
+
+.stavia-bubble--user footer {
+  justify-content: flex-end;
+  color: rgb(255 255 255 / 62%);
+}
+
+.stavia-bubble--assistant {
+  align-self: flex-start;
+  border: 1px solid #efe7cf;
+  border-bottom-left-radius: 6px;
+  background: var(--stav-surface);
+}
+
+.stavia-bubble--assistant footer {
+  color: var(--stav-ink-soft);
+}
+
+/* --- thinking: tachas amarelas sobre asfalto (assinatura) --- */
+.stavia-thinking {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border-bottom-left-radius: 6px;
+  background: var(--stav-asphalt);
+}
+
+.stavia-thinking span {
+  width: 15px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--stav-signal);
+  animation: stavia-lane 900ms linear infinite;
+}
+
+.stavia-thinking span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.stavia-thinking span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes stavia-lane {
+  0% {
+    opacity: 0.25;
+    transform: translateX(7px);
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.25;
+    transform: translateX(-7px);
+  }
+}
+
+/* --- warnings + evidence (inline na thread) --- */
+.stavia-answer-extras {
+  display: grid;
+  gap: 8px;
+  align-self: flex-start;
+  width: min(100%, 85%);
+}
+
+.stavia-warning {
+  margin: 0;
+  padding: 10px 13px;
+  border: 1px solid #ecd97a;
+  border-radius: 12px;
+  background: var(--stav-surface);
+  color: #6d5310;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.stavia-evidence {
+  display: grid;
+  gap: 6px;
+}
+
+.stavia-evidence-empty {
+  margin: 0;
+  color: var(--stav-ink-soft);
+  font-size: 0.8rem;
+}
+
+.stavia-source {
+  border: 1px solid #efe7cf;
+  border-radius: 12px;
+  background: var(--stav-surface);
+  font-size: 0.82rem;
+}
+
+.stavia-source summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.stavia-source summary small {
+  flex: none;
+  color: var(--stav-ink-soft);
+}
+
+.stavia-source pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 10px 13px;
+  border-top: 1px solid var(--stav-mist);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  overflow: auto;
+}
+
+/* ============================================================
+   Inline note (erro / status)
+   ============================================================ */
+.stavia-note {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-align: center;
+}
+
+.stavia-note.is-error {
+  background: #fdf0ed;
+  color: #8b2d21;
+}
+
+.stavia-note.is-success {
+  background: #eff8ef;
+  color: #2d5c3b;
+}
+
+/* ============================================================
+   Composer
+   ============================================================ */
+.stavia-composer-area {
+width: 430px;
+height: 150px;
+border-radius: 50px;
+background: rgba(255, 255, 255, 0.2);
+backdrop-filter: blur(4px) url(#lg-filter) blur(8px) saturate(1.5) brightness(1.1);
+-webkit-backdrop-filter: blur(32px) saturate(1.8) brightness(1.15) contrast(1.05);
+box-shadow:
+  inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+  inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.5),
+  inset 0 0 12px rgba(255, 255, 255, 0.2),
+  0 8px 32px rgba(0, 0, 0, 0.2);
+  
+}
+
+.stavia-context-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stavia-context-chip {
+	position: relative;
+  right: -30px;  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px dashed var(--stav-mist);
+  border-radius: 999px;
+  background: transparent;
+  font: 500 0.76rem var(--stav-font);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.stavia-context-chip svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.stavia-context-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-context-chip:hover:not(:disabled) {
+  border-color: var(--stav-teal);
+}
+
+.stavia-context-chip.is-active {
+  border-style: solid;
+  background: #f0f8f6;
+  color: var(--stav-teal);
+}
+
+.stavia-context-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.stavia-dismiss-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--stav-ink-soft);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.stavia-dismiss-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.stavia-dismiss-button:hover:not(:disabled) {
+  background: rgb(18 51 49 / 7%);
+  color: var(--stav-ink);
+}
+
+.stavia-dismiss-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.stavia-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 18px;
+}
+
+.stavia-plus-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: var(--stav-ink-soft);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.stavia-plus-button svg {
+  width: 19px;
+  height: 19px;
+}
+
+.stavia-plus-button:hover {
+  background: rgb(18 51 49 / 7%);
+  color: var(--stav-ink);
+}
+
+.stavia-plus-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.stavia-plus-button:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.stavia-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 140px;
+  padding: 8px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--stav-ink);
+  font: 400 0.95rem/1.5 var(--stav-font);
+  resize: none;
+  outline: none;
+}
+
+.stavia-composer textarea::placeholder {
+  color: var(--stav-ink-soft);
+}
+
+.stavia-send-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--stav-teal);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.stavia-send-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.stavia-send-button:hover:not(:disabled) {
+  background: var(--stav-teal-deep);
+}
+
+.stavia-send-button:disabled {
+  background: var(--stav-mist);
+  cursor: not-allowed;
+}
+
+.stavia-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgb(255 255 255 / 35%);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: stavia-spin 0.7s linear infinite;
+}
+
+@keyframes stavia-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- attach tray --- */
+.stavia-attach-tray {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 14px;
+  background: var(--stav-paper);
+}
+
+.stavia-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--stav-teal);
+  font: 500 0.78rem var(--stav-font);
+}
+
+.stavia-attach-chip svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.stavia-attach-chip span {
+  overflow: hidden;
+  max-width: 150px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-attach-tray input[type="text"] {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 9px;
+  background: var(--stav-surface);
+  color: var(--stav-ink);
+  font: 400 0.82rem var(--stav-font);
+  outline: none;
+}
+
+.stavia-attach-tray input[type="text"]:focus {
+  border-color: var(--stav-teal);
+}
+
+.stavia-attach-send {
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--stav-teal);
+  color: #fff;
+  font: 600 0.78rem var(--stav-font);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.stavia-attach-send:hover:not(:disabled) {
+  background: var(--stav-teal-deep);
+}
+
+.stavia-attach-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ============================================================
+   Context selector modal
+   ============================================================ */
+.stavia-context-modal-backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(13 24 22 / 45%);
+}
+
+.stavia-context-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(640px, 100%);
+  max-height: min(680px, 90vh);
+  padding: 18px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 18px;
+  background: var(--stav-surface);
+  box-shadow: 0 24px 60px -30px rgb(0 0 0 / 45%);
+  color: var(--stav-ink);
+  font-family: var(--stav-font);
+}
+
+.stavia-context-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stavia-context-modal h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.stavia-context-modal input[type="search"] {
+  flex: none;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 12px;
+  background: var(--stav-paper);
+  color: var(--stav-ink);
+  font: 400 0.9rem var(--stav-font);
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.stavia-context-modal input[type="search"]:focus {
+  border-color: var(--stav-teal);
+  box-shadow: 0 0 0 3px rgb(2 105 101 / 12%);
+}
+
+.stavia-context-modal-summary {
+  margin: 0;
+  color: var(--stav-ink-soft);
+  font-size: 0.74rem;
+}
+
+.stavia-context-option-list {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+  padding-right: 2px;
+  overflow: auto;
+}
+
+.stavia-context-empty {
+  padding: 16px;
+  border: 1px dashed var(--stav-mist);
+  border-radius: 12px;
+  color: var(--stav-ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.stavia-context-option {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--stav-mist);
+  border-radius: 12px;
+  background: var(--stav-surface);
+  font-family: var(--stav-font);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.stavia-context-option:hover,
+.stavia-context-option.is-selected {
+  border-color: var(--stav-teal);
+  background: #f0f8f6;
+}
+
+.stavia-context-option strong {
+  overflow: hidden;
+  color: var(--stav-ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-context-option em {
+  overflow: hidden;
+  color: var(--stav-ink-soft);
+  font-size: 0.78rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stavia-context-option small {
+  color: var(--stav-ink-soft);
+  font-size: 0.72rem;
+}
+
+/* ============================================================
+   Floating variant (janela dockada)
+   ============================================================ */
+.stavia-floating-overlay {
+  position: fixed;
+  z-index: 78;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 16px;
+  background: rgb(13 24 22 / 14%);
+}
+
+.stavia-floating-card {
+  width: min(430px, 100%);
+  height: min(700px, 100%);
+  border-radius: 50px;
+  animation: stavia-card-in 240ms cubic-bezier(0.2, 0.8, 0.25, 1);
+  box-shadow:
+    0 24px 64px -24px rgb(16 34 30 / 100%),
+    0 6px 18px -10px rgb(16 34 30 / 100%);
+}
+
+.stavia-floating-card .stavia-shell {
+  height: 100%;
+}
+
+@keyframes stavia-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ============================================================
+   Floating launcher
+   ============================================================ */
+.stavia-launcher {
+  position: fixed;
+  z-index: 82;
+  top: auto;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 156px;
+  height: 58px;
+  border: 0;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      135deg,
+      rgb(255 246 139 / 42%),
+      rgb(254 210 3 / 0%) 42%
+    ),
+    #fed203;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 58%),
+    inset 0 -10px 18px rgb(190 145 0 / 14%),
+    0 12px 30px -8px rgb(20 40 35 / 30%);
+  cursor: grab;
+  overflow: hidden;
+  touch-action: none;
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    );
+  -webkit-user-select: none;
+  user-select: none;
+  will-change: transform;
+  transition:
+    transform 460ms cubic-bezier(0.18, 0.9, 0.22, 1.18),
+    box-shadow 260ms ease,
+    filter 260ms ease;
+}
+
+.stavia-launcher::before {
+  position: absolute;
+  inset: -48% -22%;
+  content: "";
+  background:
+    radial-gradient(
+      circle at 22% 24%,
+      rgb(255 255 255 / 62%),
+      rgb(255 255 255 / 0%) 28%
+    ),
+    linear-gradient(
+      120deg,
+      rgb(255 255 255 / 0%) 28%,
+      rgb(255 255 255 / 38%) 47%,
+      rgb(255 255 255 / 0%) 67%
+    );
+  opacity: 0.46;
+  transform: translateX(-26%) rotate(-8deg);
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 260ms ease;
+}
+
+.stavia-launcher:hover {
+  filter: saturate(1.08) brightness(1.02);
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    )
+    scale(1.045);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 70%),
+    inset 0 -12px 22px rgb(190 145 0 / 16%),
+    0 18px 40px -8px rgb(20 40 35 / 34%);
+}
+
+.stavia-launcher:hover::before {
+  opacity: 0.76;
+  transform: translateX(24%) rotate(8deg);
+}
+
+.stavia-launcher:active {
+  cursor: grabbing;
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    )
+    scale(0.98);
+}
+
+.stavia-launcher.is-dragging,
+.stavia-launcher.is-dragging:hover,
+.stavia-launcher.is-dragging:active {
+  cursor: grabbing;
+  transform:
+    translate3d(
+      var(--stavia-launcher-x, 0),
+      var(--stavia-launcher-y, 0),
+      0
+    )
+    scale(1.025);
+  transition:
+    box-shadow 180ms ease,
+    filter 180ms ease;
+}
+
+.stavia-launcher img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 122px;
+  height: 42px;
+  mix-blend-mode: screen;
+  object-fit: cover;
+  object-position: center;
+  filter: contrast(1.22) brightness(1.14);
+  pointer-events: none;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 560px) {
+  .stavia-floating-overlay {
+    padding: 26px 0 0;
+    background: rgb(13 24 22 / 25%);
+  }
+
+  .stavia-floating-card {
+    width: 100%;
+    height: 100%;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .stavia-floating-card .stavia-shell,
+  .stavia-page .stavia-shell {
+    border: 0;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .stavia-floating-card .stavia-topbar,
+  .stavia-page .stavia-topbar {
+    border-radius: 18px 18px 0 0;
+  }
+
+  .stavia-composer-area {
+    border-radius: 0;
+  }
+
+  .stavia-page {
+    padding: 26px 0 0;
+  }
+
+  .stavia-page .stavia-shell {
+    width: 100%;
+    height: calc(100dvh - 26px);
+  }
+
+  .stavia-bubble {
+    max-width: 92%;
+  }
+
+  .stavia-attach-tray {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .stavia-launcher {
+    position: absolute;
+    top: 238px;
+    right: 12px;
+    bottom: auto;
+    width: 112px;
+    height: 48px;
+  }
+
+  .stavia-launcher img {
+    width: 86px;
+    height: 32px;
+  }
+}
+
+/* ============================================================
+   Reduced motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .stavia-floating-card {
+    animation: none;
+  }
+
+  .stavia-thinking span {
+    animation: none;
+  }
+
+  .stavia-icon-button.is-busy svg {
+    animation: none;
+  }
+
+  .stavia-thread {
+    scroll-behavior: auto;
+  }
+
+  .stavia-launcher,
+  .stavia-launcher::before {
+    transition: none;
+  }
+}

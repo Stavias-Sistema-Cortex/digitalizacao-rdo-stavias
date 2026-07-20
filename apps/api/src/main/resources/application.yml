@@ -1,0 +1,163 @@
+spring:
+  output:
+    ansi:
+      enabled: ALWAYS
+
+  datasource:
+    url: ${CORTEX_DB_URL:jdbc:mysql://127.0.0.1:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${CORTEX_DB_USER:cortex_app}
+    password: ${CORTEX_DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${PORT:${SERVER_PORT:8080}}
+  forward-headers-strategy: none
+
+cortex:
+  auth:
+    session:
+      ttl-seconds: ${CORTEX_AUTH_SESSION_TTL_SECONDS:43200}
+      cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:true}
+      same-site: ${CORTEX_AUTH_COOKIE_SAME_SITE:Lax}
+    webauthn:
+      rp-id: ${CORTEX_AUTH_WEBAUTHN_RP_ID:}
+      rp-name: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:}
+      allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:}
+      challenge-ttl-seconds: ${CORTEX_AUTH_WEBAUTHN_CHALLENGE_TTL_SECONDS:300}
+      rate-limit:
+        max-requests: ${CORTEX_AUTH_WEBAUTHN_RATE_LIMIT_MAX_REQUESTS:20}
+        global-max-requests: ${CORTEX_AUTH_WEBAUTHN_GLOBAL_RATE_LIMIT_MAX_REQUESTS:2000}
+        window-seconds: ${CORTEX_AUTH_WEBAUTHN_RATE_LIMIT_WINDOW_SECONDS:900}
+      max-request-body-bytes: ${CORTEX_AUTH_WEBAUTHN_MAX_REQUEST_BODY_BYTES:65536}
+    offline-grant:
+      key-id: ${CORTEX_AUTH_OFFLINE_GRANT_KEY_ID:}
+      private-key-file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE:}
+      public-key-file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:}
+      ttl-seconds: ${CORTEX_AUTH_OFFLINE_GRANT_TTL_SECONDS:86400}
+      max-worksites: ${CORTEX_AUTH_OFFLINE_GRANT_MAX_WORKSITES:500}
+    cpf-hmac:
+      current-key-id: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:}
+      current-key-file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:}
+      current-key-inline: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:}
+      previous-key-id: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_ID:}
+      previous-key-file: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY_FILE:}
+      previous-key-inline: ${CORTEX_AUTH_CPF_HMAC_PREVIOUS_KEY:}
+    dev-admin:
+      enabled: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:false}
+    trusted-proxy-cidrs: ${CORTEX_AUTH_TRUSTED_PROXY_CIDRS:}
+    provisioning:
+      enabled: ${CORTEX_AUTH_PROVISIONING_ENABLED:false}
+      file: ${CORTEX_AUTH_PROVISIONING_FILE:}
+    retention:
+      challenge-retention-seconds: ${CORTEX_AUTH_CHALLENGE_RETENTION_SECONDS:86400}
+      rate-limit-retention-seconds: ${CORTEX_AUTH_RATE_LIMIT_RETENTION_SECONDS:86400}
+      batch-size: ${CORTEX_AUTH_RETENTION_BATCH_SIZE:1000}
+      initial-delay-ms: ${CORTEX_AUTH_RETENTION_INITIAL_DELAY_MS:3600000}
+      fixed-delay-ms: ${CORTEX_AUTH_RETENTION_FIXED_DELAY_MS:300000}
+    otp:
+      hmac-key-file: ${CORTEX_AUTH_OTP_HMAC_KEY_FILE:}
+      hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:}
+      ttl-seconds: ${CORTEX_AUTH_OTP_TTL_SECONDS:600}
+      max-attempts: ${CORTEX_AUTH_OTP_MAX_ATTEMPTS:5}
+      rate-limit-max-requests: ${CORTEX_AUTH_OTP_RATE_LIMIT_MAX_REQUESTS:5}
+      rate-limit-global-max-requests: ${CORTEX_AUTH_OTP_RATE_LIMIT_GLOBAL_MAX_REQUESTS:100}
+      rate-limit-window-seconds: ${CORTEX_AUTH_OTP_RATE_LIMIT_WINDOW_SECONDS:900}
+      delivery:
+        core-pool-size: ${CORTEX_AUTH_OTP_DELIVERY_CORE_POOL_SIZE:8}
+        max-pool-size: ${CORTEX_AUTH_OTP_DELIVERY_MAX_POOL_SIZE:8}
+        queue-capacity: ${CORTEX_AUTH_OTP_DELIVERY_QUEUE_CAPACITY:100}
+        max-delivery-seconds: ${CORTEX_AUTH_OTP_DELIVERY_MAX_DELIVERY_SECONDS:20}
+
+  email:
+    provider: ${CORTEX_EMAIL_PROVIDER:}
+    from: ${CORTEX_SMTP_FROM:}
+    sender-profile-key: ${CORTEX_EMAIL_SENDER_PROFILE_KEY:}
+    smtp:
+      host: ${CORTEX_SMTP_HOST:}
+      port: ${CORTEX_SMTP_PORT:587}
+      username: ${CORTEX_SMTP_USERNAME:}
+      password-file: ${CORTEX_SMTP_PASSWORD_FILE:}
+      password-inline: ${CORTEX_SMTP_PASSWORD:}
+      start-tls: ${CORTEX_SMTP_STARTTLS:true}
+      connect-timeout-ms: ${CORTEX_SMTP_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${CORTEX_SMTP_READ_TIMEOUT_MS:5000}
+      write-timeout-ms: ${CORTEX_SMTP_WRITE_TIMEOUT_MS:5000}
+
+  finance:
+    email:
+      retry:
+        max-attempts: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_ATTEMPTS:4}
+        initial-delay-seconds: ${CORTEX_FINANCE_EMAIL_RETRY_INITIAL_DELAY_SECONDS:120}
+        max-delay-seconds: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_DELAY_SECONDS:3600}
+      dispatch:
+        lease-seconds: ${CORTEX_FINANCE_EMAIL_DISPATCH_LEASE_SECONDS:120}
+      scheduler:
+        enabled: ${CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:false}
+        batch-size: ${CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE:25}
+        initial-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_INITIAL_DELAY_MS:30000}
+        fixed-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_FIXED_DELAY_MS:60000}
+
+  storage:
+    provider: ${CORTEX_STORAGE_PROVIDER:}
+    max-size-bytes: ${CORTEX_STORAGE_MAX_SIZE_BYTES:26214400}
+    allowed-media-types: ${CORTEX_STORAGE_ALLOWED_MEDIA_TYPES:application/pdf,application/xml,text/xml,application/zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/png,image/jpeg,image/gif,image/webp,image/tiff,text/plain,text/csv}
+    local:
+      root: ${CORTEX_STORAGE_LOCAL_ROOT:}
+      persistent: ${CORTEX_STORAGE_LOCAL_PERSISTENT:false}
+    s3:
+      bucket: ${CORTEX_STORAGE_S3_BUCKET:}
+      region: ${CORTEX_STORAGE_S3_REGION:}
+      endpoint: ${CORTEX_STORAGE_S3_ENDPOINT:}
+      prefix: ${CORTEX_STORAGE_S3_PREFIX:}
+      path-style: ${CORTEX_STORAGE_S3_PATH_STYLE:false}
+
+  import:
+    enabled: ${CORTEX_IMPORT_ENABLED:false}
+
+  sync:
+    enabled: ${CORTEX_SYNC_ENABLED:false}
+    initial-delay-ms: ${CORTEX_SYNC_INITIAL_DELAY_MS:60000}
+    fixed-delay-ms: ${CORTEX_SYNC_FIXED_DELAY_MS:300000}
+
+  sources:
+    zeladoria:
+      url: ${CORTEX_ZELADORIA_DB_URL:${ZLD_DB_URL:}}
+      username: ${CORTEX_ZELADORIA_DB_USER:${ZLD_DB_USER:}}
+      password: ${CORTEX_ZELADORIA_DB_PASSWORD:${ZLD_DB_PASSWORD:}}
+
+    academy:
+      url: ${CORTEX_ACADEMY_DB_URL:${ACAD_DB_URL:}}
+      username: ${CORTEX_ACADEMY_DB_USER:${ACAD_DB_USER:}}
+      password: ${CORTEX_ACADEMY_DB_PASSWORD:${ACAD_DB_PASSWORD:}}
+
+    zld:
+      url: ${ZLD_DB_URL:}
+      username: ${ZLD_DB_USER:}
+      password: ${ZLD_DB_PASSWORD:}
+
+    acad:
+      url: ${ACAD_DB_URL:}
+      username: ${ACAD_DB_USER:}
+      password: ${ACAD_DB_PASSWORD:}
+
+  stavia:
+    generator-mode: ${CORTEX_STAVIA_GENERATOR_MODE:prompt}
+    interpreter-mode: ${CORTEX_STAVIA_INTERPRETER_MODE:llm-on-doubt}
+    llm:
+      base-url: ${CORTEX_STAVIA_LLM_BASE_URL:http://localhost:11434/v1}
+      model: ${CORTEX_STAVIA_LLM_MODEL:gemma4:latest}
+      api-key: ${CORTEX_STAVIA_LLM_API_KEY:}
+      connect-timeout-ms: 2000
+      read-timeout-ms: ${CORTEX_STAVIA_LLM_READ_TIMEOUT_MS:45000}
+      max-evidences: 50
+      confidence-threshold: 0.45
+      breaker-failure-threshold: 3
+      breaker-open-seconds: 30

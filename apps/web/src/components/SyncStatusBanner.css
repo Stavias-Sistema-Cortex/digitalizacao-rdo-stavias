@@ -1,0 +1,207 @@
+/*
+ * Estado de sincronização como um chip minimalista.
+ * O componente vive no cluster flutuante do topo-direito (ao lado de
+ * "Sair"); a cor do ponto comunica o estado e o popover carrega o
+ * detalhe + a ação manual.
+ */
+
+.sync-chip {
+  --sync-color: #64748b;
+
+  position: relative;
+}
+
+.sync-chip__button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: #243e30;
+  box-shadow: none;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.sync-chip__button:hover {
+  background: #ffffff;
+  border-color: #b6c3bc;
+}
+
+.sync-chip__icon {
+  width: 17px;
+  height: 17px;
+}
+
+/* Ponto de status ancorado na borda do chip. */
+.sync-chip__dot {
+  position: absolute;
+  right: -1px;
+  top: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  background: var(--sync-color);
+}
+
+/* Contador discreto de alterações que precisam de atenção. */
+.sync-chip__count {
+  position: absolute;
+  right: -6px;
+  bottom: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--sync-color);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ---------- Estados ---------- */
+
+.sync-chip--synced {
+  --sync-color: #2f7d4f;
+}
+
+.sync-chip--pending {
+  --sync-color: #b97d10;
+}
+
+.sync-chip--syncing {
+  --sync-color: #2563eb;
+}
+
+.sync-chip--offline {
+  --sync-color: #64748b;
+}
+
+.sync-chip--error,
+.sync-chip--conflict {
+  --sync-color: #c23b3b;
+}
+
+.sync-chip--syncing .sync-chip__icon {
+  animation: sync-chip-spin 1.1s linear infinite;
+}
+
+.sync-chip--syncing .sync-chip__dot {
+  animation: sync-chip-pulse 1.2s infinite;
+}
+
+/* ---------- Popover ---------- */
+
+.sync-chip__popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 80;
+  width: min(304px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+  animation: none;
+}
+
+.sync-chip__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #18211d;
+  font-size: 0.9rem;
+}
+
+.sync-chip__header-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--sync-color);
+  box-shadow: 0 0 0 4px
+    color-mix(in srgb, var(--sync-color) 16%, transparent);
+}
+
+.sync-chip__description {
+  margin: 10px 0 0;
+  color: #4b564f;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.sync-chip__meta {
+  margin: 10px 0 0;
+  color: #68756e;
+  font-size: 0.74rem;
+}
+
+.sync-chip__error {
+  margin: 10px 0 0;
+  color: #a33b3b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.sync-chip__action {
+  width: 100%;
+  margin-top: 14px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #cbd5cf;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: #17504d;
+  font-size: 0.84rem;
+  font-weight: 700;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+}
+
+.sync-chip__action:hover:not(:disabled) {
+  background: #f4f7f5;
+  border-color: #9fbdb2;
+}
+
+.sync-chip__action:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* ---------- Animações ---------- */
+
+@keyframes sync-chip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sync-chip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-chip__icon,
+  .sync-chip__dot {
+    animation: none !important;
+  }
+}

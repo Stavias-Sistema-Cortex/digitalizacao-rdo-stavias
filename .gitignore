@@ -1,5 +1,24 @@
-data/raw/
-data/private/
+# Java / Maven
+target/
+apps/api/target/
+tmp/
+apps/api/var/cortex-attachments/
+var/cortex-attachments/
+
+# macOS
+.DS_Store
+
+# local tooling
+.neurotrace/
+
+# secrets
 .env
 .env.*
 !.env.example
+.env.local
+
+# Superpowers brainstorm sessions
+.superpowers/
+
+# Local Git worktrees
+.worktrees/

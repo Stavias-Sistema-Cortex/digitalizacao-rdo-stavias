@@ -1,0 +1,128 @@
+package com.projeto.cortex.pdor;
+
+import org.flywaydb.core.Flyway;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
+import java.time.Instant;
+import java.util.Locale;
+
+final class PdorMysqlTestDatabase {
+
+    private static final String HOST_URL =
+            "jdbc:mysql://127.0.0.1:3307/";
+    private static final String URL_OPTIONS =
+            "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+                    + "&connectTimeout=2000&socketTimeout=60000";
+    private static final String ROOT_PASSWORD_ENV = "CORTEX_MYSQL_ROOT_PASSWORD";
+    private static final String ROOT_USER = "root";
+
+    private final String databaseName;
+
+    private PdorMysqlTestDatabase(String databaseName) {
+        this.databaseName = databaseName;
+    }
+
+    static boolean isAvailable() {
+        if (rootPassword().isBlank()) {
+            return false;
+        }
+        try (Connection ignored = DriverManager.getConnection(
+                HOST_URL + URL_OPTIONS,
+                ROOT_USER,
+                rootPassword()
+        )) {
+            return true;
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
+    static PdorMysqlTestDatabase create(String prefix) {
+        String databaseName = "cortex_pdor_" + sanitize(prefix)
+                + "_" + Instant.now().toEpochMilli()
+                + "_" + Long.toUnsignedString(System.nanoTime());
+        PdorMysqlTestDatabase database = new PdorMysqlTestDatabase(databaseName);
+        database.createSchema();
+        return database;
+    }
+
+    String jdbcUrl() {
+        return HOST_URL + databaseName + URL_OPTIONS;
+    }
+
+    DataSource dataSource() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource.setUrl(jdbcUrl());
+        dataSource.setUsername(ROOT_USER);
+        dataSource.setPassword(requiredRootPassword());
+        return dataSource;
+    }
+
+    void migrate() {
+        Flyway.configure()
+                .dataSource(jdbcUrl(), ROOT_USER, requiredRootPassword())
+                .locations("filesystem:src/main/resources/db/migration")
+                .load()
+                .migrate();
+    }
+
+    void drop() {
+        try (Connection connection = DriverManager.getConnection(
+                HOST_URL + URL_OPTIONS,
+                ROOT_USER,
+                requiredRootPassword()
+        );
+             Statement statement = connection.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS `" + databaseName + "`");
+        } catch (Exception ignored) {
+            // Best-effort cleanup for local integration tests.
+        }
+    }
+
+    private void createSchema() {
+        try (Connection connection = DriverManager.getConnection(
+                HOST_URL + URL_OPTIONS,
+                ROOT_USER,
+                requiredRootPassword()
+        );
+             Statement statement = connection.createStatement()) {
+            statement.execute("DROP DATABASE IF EXISTS `" + databaseName + "`");
+            statement.execute("""
+                    CREATE DATABASE `%s`
+                    DEFAULT CHARACTER SET utf8mb4
+                    COLLATE utf8mb4_unicode_ci
+                    """.formatted(databaseName));
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "MySQL local indisponível para testes PDOR em "
+                            + HOST_URL
+                            + ". Inicie docker compose -f compose.local.yml up -d cortex-mysql.",
+                    exception
+            );
+        }
+    }
+
+    private static String sanitize(String value) {
+        return value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_]", "_");
+    }
+
+    static String rootPassword() {
+        return System.getenv().getOrDefault(ROOT_PASSWORD_ENV, "");
+    }
+
+    private static String requiredRootPassword() {
+        String password = rootPassword();
+        if (password.isBlank()) {
+            throw new IllegalStateException(
+                    "Defina " + ROOT_PASSWORD_ENV
+                            + " para executar testes MySQL locais."
+            );
+        }
+        return password;
+    }
+}

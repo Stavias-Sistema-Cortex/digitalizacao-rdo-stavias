@@ -1,0 +1,287 @@
+package com.projeto.cortex.obras.mapa;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.LocalDateTime;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+@Service
+public class ObraMapaService {
+
+    private static final Set<String> CATEGORIES = Set.of(
+            "LOCALIZACAO_OBRA", "PERIMETRO_OBRA", "TRECHO", "PONTO_OPERACIONAL",
+            "FRENTE_TRABALHO", "EQUIPAMENTO", "EVENTO", "RDO", "OCORRENCIA",
+            "PROGRAMACAO"
+    );
+    private static final Set<String> POINT_CATEGORIES = Set.of(
+            "LOCALIZACAO_OBRA", "PONTO_OPERACIONAL", "EQUIPAMENTO", "EVENTO",
+            "RDO", "OCORRENCIA"
+    );
+
+    private final ObraRepository obraRepository;
+    private final ObraGeometriaRepository featureRepository;
+    private final CurrentUserService currentUserService;
+    private final ObraGeometriaMemoryPublisher memoryPublisher;
+    private final ObjectMapper objectMapper;
+
+    public ObraMapaService(
+            ObraRepository obraRepository,
+            ObraGeometriaRepository featureRepository,
+            CurrentUserService currentUserService,
+            ObraGeometriaMemoryPublisher memoryPublisher,
+            ObjectMapper objectMapper
+    ) {
+        this.obraRepository = obraRepository;
+        this.featureRepository = featureRepository;
+        this.currentUserService = currentUserService;
+        this.memoryPublisher = memoryPublisher;
+        this.objectMapper = objectMapper;
+    }
+
+    @Transactional(readOnly = true)
+    public ObraMapaResponse buscarMapa(String obraId) {
+        currentUserService.requireWorksiteAccess(obraId);
+        Obra obra = requireWorksite(obraId);
+        return new ObraMapaResponse(
+                new ObraMapaResponse.ObraLocalizacaoResponse(
+                        obra.getId(), obra.getNome(), obra.getLatitude(), obra.getLongitude()
+                ),
+                featureRepository
+                        .findByObraIdAndStatusOrderByValidoDesdeAscIdAsc(obraId, "ATIVA")
+                        .stream()
+                        .map(this::toResponse)
+                        .toList()
+        );
+    }
+
+    @Transactional
+    public ObraGeometriaResponse criar(String obraId, ObraGeometriaRequest request) {
+        currentUserService.requireAlfa();
+        requireWorksite(obraId);
+        NormalizedRequest normalized = normalize(request, obraId, false);
+        String actorId = currentUserService.requireUserId();
+        ObraGeometria saved = featureRepository.saveAndFlush(ObraGeometria.criar(
+                obraId, normalized.category(), normalized.objectType(), normalized.objectId(),
+                normalized.geometryType(), normalized.geometryJson(), normalized.propertiesJson(),
+                normalized.source(), normalized.validFrom(), actorId
+        ));
+        ObraGeometriaResponse response = toResponse(saved);
+        memoryPublisher.criada(response, obraId, actorId);
+        return response;
+    }
+
+    @Transactional
+    public ObraGeometriaResponse atualizar(
+            String obraId,
+            String featureId,
+            ObraGeometriaRequest request
+    ) {
+        currentUserService.requireAlfa();
+        ObraGeometria feature = requireFeature(obraId, featureId);
+        long baseVersion = requireBaseVersion(request == null ? null : request.baseVersao());
+        requireMatchingVersion(feature, baseVersion);
+        String reason = requiredText(request.motivo(), "Motivo da alteração geográfica obrigatório.");
+        NormalizedRequest normalized = normalize(request, obraId, true);
+        String actorId = currentUserService.requireUserId();
+        ObraGeometriaResponse before = toResponse(feature);
+        feature.atualizar(
+                normalized.category(), normalized.objectType(), normalized.objectId(),
+                normalized.geometryType(), normalized.geometryJson(), normalized.propertiesJson(),
+                normalized.source(), normalized.validFrom(), actorId
+        );
+        ObraGeometriaResponse after = toResponse(featureRepository.saveAndFlush(feature));
+        memoryPublisher.atualizada(before, after, obraId, actorId, baseVersion, reason);
+        return after;
+    }
+
+    @Transactional
+    public ObraGeometriaResponse encerrar(
+            String obraId,
+            String featureId,
+            ObraGeometriaEndRequest request
+    ) {
+        currentUserService.requireAlfa();
+        ObraGeometria feature = requireFeature(obraId, featureId);
+        if (!"ATIVA".equals(feature.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Geometria já encerrada.");
+        }
+        long baseVersion = requireBaseVersion(request == null ? null : request.baseVersao());
+        requireMatchingVersion(feature, baseVersion);
+        String reason = requiredText(request.motivo(), "Motivo do encerramento obrigatório.");
+        LocalDateTime validUntil = request.validoAte();
+        if (validUntil != null && validUntil.isBefore(feature.getValidoDesde())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Fim da vigência não pode anteceder seu início."
+            );
+        }
+        String actorId = currentUserService.requireUserId();
+        ObraGeometriaResponse before = toResponse(feature);
+        feature.encerrar(validUntil, reason, actorId);
+        ObraGeometriaResponse after = toResponse(featureRepository.saveAndFlush(feature));
+        memoryPublisher.encerrada(before, after, obraId, actorId, baseVersion, reason);
+        return after;
+    }
+
+    private NormalizedRequest normalize(
+            ObraGeometriaRequest request,
+            String obraId,
+            boolean update
+    ) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geometria obrigatória.");
+        }
+        String category = requiredText(request.categoria(), "Categoria geoespacial obrigatória.")
+                .toUpperCase(Locale.ROOT);
+        if (!CATEGORIES.contains(category)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Categoria geoespacial inválida.");
+        }
+        String geometryType = GeoJsonValidator.validate(request.geometry());
+        validateCategoryGeometry(category, geometryType);
+
+        String objectType = optionalUpper(request.objetoTipo());
+        String objectId = optional(request.objetoId());
+        if (category.equals("LOCALIZACAO_OBRA") || category.equals("PERIMETRO_OBRA")) {
+            objectType = "OBRA";
+            objectId = obraId;
+        } else if ((objectType == null) != (objectId == null)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "objetoTipo e objetoId devem ser informados juntos."
+            );
+        } else if (objectType == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Camadas operacionais devem referenciar seu objeto ontológico."
+            );
+        }
+
+        String source = optionalUpper(request.fonte());
+        if (source == null) {
+            source = "GESTAO_MAPA";
+        }
+        try {
+            return new NormalizedRequest(
+                    category, objectType, objectId, geometryType,
+                    objectMapper.writeValueAsString(request.geometry()),
+                    objectMapper.writeValueAsString(
+                            request.properties() == null ? Map.of() : request.properties()
+                    ),
+                    source, request.validoDesde()
+            );
+        } catch (JsonProcessingException error) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "GeoJSON ou propriedades inválidas.", error
+            );
+        }
+    }
+
+    private void validateCategoryGeometry(String category, String geometryType) {
+        if (POINT_CATEGORIES.contains(category) && !geometryType.equals("POINT")) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "A categoria " + category + " exige geometria Point."
+            );
+        }
+        if (category.equals("PERIMETRO_OBRA")
+                && !Set.of("POLYGON", "MULTIPOLYGON").contains(geometryType)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Perímetro de obra exige Polygon ou MultiPolygon."
+            );
+        }
+        if (Set.of("TRECHO", "FRENTE_TRABALHO").contains(category)
+                && !Set.of("LINESTRING", "MULTILINESTRING", "POLYGON", "MULTIPOLYGON")
+                .contains(geometryType)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Trechos e frentes exigem linha ou polígono."
+            );
+        }
+    }
+
+    private Obra requireWorksite(String obraId) {
+        return obraRepository.findById(obraId)
+                .filter(obra -> obra.getArquivadoEm() == null)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Obra não encontrada."));
+    }
+
+    private ObraGeometria requireFeature(String obraId, String featureId) {
+        return featureRepository.findByIdAndObraId(featureId, obraId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Geometria da obra não encontrada."
+                ));
+    }
+
+    private long requireBaseVersion(Long value) {
+        if (value == null || value < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "baseVersao obrigatória.");
+        }
+        return value;
+    }
+
+    private void requireMatchingVersion(ObraGeometria feature, long baseVersion) {
+        if (feature.getVersaoLinha() != baseVersion) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A geometria foi alterada por outra operação. Recarregue antes de continuar."
+            );
+        }
+    }
+
+    private ObraGeometriaResponse toResponse(ObraGeometria feature) {
+        try {
+            JsonNode geometry = objectMapper.readTree(feature.getGeometriaJson());
+            Map<String, Object> properties = objectMapper.readValue(
+                    feature.getPropriedadesJson(), new TypeReference<>() { }
+            );
+            return new ObraGeometriaResponse(
+                    feature.getId(), feature.getCategoria(), feature.getObjetoTipo(),
+                    feature.getObjetoId(), geometry, properties, feature.getFonte(),
+                    feature.getStatus(), feature.getValidoDesde(), feature.getValidoAte(),
+                    feature.getMotivoEncerramento(), feature.getVersaoLinha(),
+                    feature.getCriadoPor(), feature.getAtualizadoPor(),
+                    feature.getCriadoEm(), feature.getAtualizadoEm()
+            );
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException("Geometria persistida contém JSON inválido.", error);
+        }
+    }
+
+    private String requiredText(String value, String message) {
+        String normalized = optional(value);
+        if (normalized == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+        }
+        return normalized;
+    }
+
+    private String optional(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String optionalUpper(String value) {
+        String normalized = optional(value);
+        return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
+    }
+
+    private record NormalizedRequest(
+            String category,
+            String objectType,
+            String objectId,
+            String geometryType,
+            String geometryJson,
+            String propertiesJson,
+            String source,
+            LocalDateTime validFrom
+    ) {
+    }
+}
