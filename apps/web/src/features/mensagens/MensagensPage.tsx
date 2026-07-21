@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -11,32 +10,18 @@ import { useSearchParams } from "react-router-dom";
 import { CortexShell } from "../../components/shell/CortexShell";
 import type {
   ConversaLocalRecord,
-  ConversaTipo,
   MensagemAnexoLocalRecord,
-  MensagemSyncStatus,
   ObraLocalRecord,
 } from "../../lib/db/db.types";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
 import { getSession, hasOnlineSession, isAlfa } from "../auth/authSession";
+import { ConversationInfoPane } from "./components/ConversationInfoPane";
+import { ConversationsPane } from "./components/ConversationsPane";
 import { CreateConversationDialog } from "./components/CreateConversationDialog";
-import {
-  IconCheckDouble,
-  IconChevronLeft,
-  IconClock,
-  IconClose,
-  IconFile,
-  IconInfo,
-  IconPaperclip,
-  IconSend,
-  IconSpinner,
-  IconWarning,
-} from "./components/icons";
-import {
-  formatClock,
-  formatFileSize,
-  messageFrom,
-} from "./mensagensFormat";
+import { MessageComposer } from "./components/MessageComposer";
+import { MessageThread } from "./components/MessageThread";
+import { messageFrom } from "./mensagensFormat";
 import {
   downloadMessageAttachmentApi,
   searchMessagesApi,
@@ -58,9 +43,11 @@ import {
   storeServerMessages,
   type MensagemComAnexos,
 } from "./mensagensRepository";
-import { mensagemStatusLabel } from "./mensagensQueue";
 import {
+  activeParticipant,
   buildMessageTimeline,
+  conversationName,
+  conversationScope,
   type ConversationPreview,
 } from "./mensagensView";
 import "./MensagensPage.css";
@@ -87,8 +74,7 @@ export function MensagensPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [mobilePane, setMobilePane] = useState<"list" | "thread" | "context">("list");
   const [contextOpen, setContextOpen] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [now, setNow] = useState(() => new Date());
 
   const loadLocal = useCallback(async () => {
     const [localConversations, localPreviews, localWorksites] = await Promise.all([
@@ -184,12 +170,11 @@ export function MensagensPage() {
   const timeline = useMemo(() => buildMessageTimeline(messages), [messages]);
   const isGroup = selected ? selected.tipo !== "DIRETA" : false;
 
+  // As legendas de run são relativas; sem este tique elas congelam.
   useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }, [body, selectedId]);
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   async function handleRefresh() {
     if (refreshing) return;
@@ -226,7 +211,6 @@ export function MensagensPage() {
       await queueMessage({ conversaId: selectedId, corpo: body, files });
       setDrafts((current) => ({ ...current, [selectedId]: "" }));
       setFiles([]);
-      if (fileInput.current) fileInput.current.value = "";
       await loadMessages(selectedId);
       if (navigator.onLine && hasOnlineSession()) {
         void syncNow()
@@ -347,181 +331,58 @@ export function MensagensPage() {
           }`}
           aria-label="Mensagens"
         >
-          <aside className="mensagens-conversations">
-            <header className="mensagens-pane-heading">
-              <strong>Conversas</strong>
-              <span>{navigator.onLine ? "Online" : "Offline"}</span>
-            </header>
-            <form className="mensagens-search" onSubmit={handleSearch}>
-              <label htmlFor="mensagens-search">Buscar no histórico</label>
-              <div>
-                <input
-                  id="mensagens-search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Mensagem, medição, ocorrência…"
-                />
-                <button type="submit" aria-label="Buscar mensagens">
-                  Buscar
-                </button>
-              </div>
-            </form>
+          <ConversationsPane
+            loading={loading}
+            conversations={conversations}
+            previews={previews}
+            selectedId={selectedId}
+            currentUserId={session?.colaboradorId ?? ""}
+            isOnline={navigator.onLine}
+            search={search}
+            searchResults={searchResults}
+            onSearchChange={setSearch}
+            onSearchSubmit={handleSearch}
+            onCloseSearch={() => setSearchResults(null)}
+            onSelect={chooseConversation}
+            onChooseSearchResult={chooseSearchResult}
+          />
 
-            {searchResults ? (
-              <SearchResults
-                results={searchResults}
-                conversations={conversations}
-                onChoose={chooseSearchResult}
-                onClose={() => setSearchResults(null)}
+          <MessageThread
+            conversation={selected}
+            title={selected ? conversationName(selected, session?.colaboradorId) : ""}
+            scope={selected ? conversationScope(selected) : ""}
+            participantCount={
+              selected ? selected.participantes.filter(activeParticipant).length : 0
+            }
+            timeline={timeline}
+            hasMessages={messages.length > 0}
+            currentUserId={session?.colaboradorId ?? ""}
+            isGroup={isGroup}
+            now={now}
+            onBack={() => setMobilePane("list")}
+            onOpenInfo={openContext}
+            onOpenAttachment={openAttachment}
+            onRetry={handleRetry}
+            composer={
+              <MessageComposer
+                value={body}
+                files={files}
+                sending={sending}
+                isOnline={navigator.onLine}
+                onChange={(value) =>
+                  selectedId &&
+                  setDrafts((current) => ({ ...current, [selectedId]: value }))
+                }
+                onFilesChange={setFiles}
+                onRemoveFile={(index) =>
+                  setFiles((current) =>
+                    current.filter((_, itemIndex) => itemIndex !== index),
+                  )
+                }
+                onSubmit={handleSend}
               />
-            ) : (
-              <ConversationList
-                loading={loading}
-                conversations={conversations}
-                selectedId={selectedId}
-                currentUserId={session?.colaboradorId ?? ""}
-                previews={previews}
-                onSelect={chooseConversation}
-              />
-            )}
-          </aside>
-
-          <section className="mensagens-thread" aria-live="polite">
-            {selected ? (
-              <>
-                <header className="mensagens-thread-header">
-                  <button
-                    type="button"
-                    className="mensagens-mobile-back"
-                    onClick={() => setMobilePane("list")}
-                    aria-label="Voltar para conversas"
-                  >
-                    <IconChevronLeft />
-                  </button>
-                  <span className="mensagens-thread-avatar" aria-hidden="true">
-                    {conversationName(selected, session?.colaboradorId)
-                      .slice(0, 1)
-                      .toUpperCase()}
-                  </span>
-                  <div className="mensagens-thread-heading">
-                    <h2>{conversationName(selected, session?.colaboradorId)}</h2>
-                    <p>
-                      {conversationScope(selected)} ·{" "}
-                      {selected.participantes.filter(activeParticipant).length}{" "}
-                      participantes
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="mensagens-info-btn"
-                    onClick={openContext}
-                    aria-label="Ver contexto da conversa"
-                  >
-                    <IconInfo />
-                  </button>
-                </header>
-
-                <ol className="mensagens-list">
-                  {messages.length === 0 ? (
-                    <li className="mensagens-empty">
-                      Nenhuma mensagem nesta conversa.
-                    </li>
-                  ) : (
-                    timeline.map((entry) => entry.kind === "date" ? (
-                      <li className="mensagens-date-separator" key={entry.key}>
-                        <span>{entry.label}</span>
-                      </li>
-                    ) : (
-                      <MessageItem
-                        key={entry.key}
-                        message={entry.message}
-                        showAuthor={entry.startsRun}
-                        mine={entry.message.autorId === session?.colaboradorId}
-                        isGroup={isGroup}
-                        onOpenAttachment={openAttachment}
-                        onRetry={handleRetry}
-                      />
-                    ))
-                  )}
-                </ol>
-
-                <form className="mensagens-composer" onSubmit={handleSend}>
-                  {files.length > 0 ? (
-                    <ul className="mensagens-file-preview">
-                      {files.map((file, index) => (
-                        <li key={`${file.name}-${file.lastModified}`}>
-                          <span>{file.name}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFiles((current) =>
-                                current.filter((_, itemIndex) => itemIndex !== index),
-                              )
-                            }
-                          >
-                            Remover
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="mensagens-composer-bar">
-                    <label className="mensagens-attach" aria-label="Anexar arquivos">
-                      <input
-                        ref={fileInput}
-                        type="file"
-                        multiple
-                        onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-                      />
-                      <IconPaperclip />
-                    </label>
-                    <textarea
-                      ref={textareaRef}
-                      id="mensagem-body"
-                      value={body}
-                      onChange={(event) =>
-                        selectedId &&
-                        setDrafts((current) => ({
-                          ...current,
-                          [selectedId]: event.target.value,
-                        }))
-                      }
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "Enter" &&
-                          !event.shiftKey &&
-                          !event.nativeEvent.isComposing
-                        ) {
-                          event.preventDefault();
-                          event.currentTarget.form?.requestSubmit();
-                        }
-                      }}
-                      placeholder="Mensagem"
-                      rows={1}
-                    />
-                    <button
-                      type="submit"
-                      className="mensagens-send"
-                      disabled={sending || (!body.trim() && files.length === 0)}
-                      aria-label="Enviar mensagem"
-                    >
-                      {sending ? <IconSpinner /> : <IconSend />}
-                    </button>
-                  </div>
-                  {!navigator.onLine ? (
-                    <span className="mensagens-composer-hint">
-                      Offline — a mensagem será enviada quando reconectar.
-                    </span>
-                  ) : null}
-                </form>
-              </>
-            ) : (
-              <div className="mensagens-thread-empty">
-                <h2>Selecione uma conversa</h2>
-                <p>O histórico autorizado será carregado deste dispositivo.</p>
-              </div>
-            )}
-          </section>
+            }
+          />
 
           {contextOpen ? (
             <button
@@ -531,7 +392,7 @@ export function MensagensPage() {
               onClick={() => setContextOpen(false)}
             />
           ) : null}
-          <ConversationContext
+          <ConversationInfoPane
             conversation={selected}
             messages={messages}
             worksites={worksites}
@@ -558,309 +419,3 @@ export function MensagensPage() {
     </CortexShell>
   );
 }
-
-function MessageItem({
-  message,
-  showAuthor,
-  mine,
-  isGroup,
-  onOpenAttachment,
-  onRetry,
-}: {
-  message: MensagemComAnexos;
-  showAuthor: boolean;
-  mine: boolean;
-  isGroup: boolean;
-  onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
-  onRetry: (messageId: string) => Promise<void>;
-}) {
-  const failed = message.syncStatus === "FALHOU";
-  const bubbleClass = [
-    "mensagem-bubble",
-    mine ? "mensagem-bubble--mine" : "mensagem-bubble--in",
-    showAuthor ? "mensagem-bubble--tail" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return (
-    <li
-      className={`mensagem-item${mine ? " mensagem-item--mine" : ""}${
-        showAuthor ? " mensagem-item--lead" : ""
-      }`}
-    >
-      <div className={bubbleClass}>
-        {isGroup && !mine && showAuthor ? (
-          <span className="mensagem-autor">{message.autorNome}</span>
-        ) : null}
-        {message.status === "EXCLUIDA" ? (
-          <p className="mensagem-deleted">Mensagem excluída</p>
-        ) : message.corpo ? (
-          <p className="mensagem-corpo">{message.corpo}</p>
-        ) : null}
-        {message.anexos.length > 0 ? (
-          <ul className="mensagem-attachments">
-            {message.anexos.map((attachment) => (
-              <li key={attachment.id}>
-                <button
-                  type="button"
-                  onClick={() => void onOpenAttachment(attachment)}
-                >
-                  <IconFile />
-                  <span>{attachment.nome}</span>
-                  <small>{formatFileSize(attachment.tamanhoBytes)}</small>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <span className="mensagem-meta">
-          <time dateTime={message.criadaNoClienteEm}>
-            {formatClock(message.criadaNoClienteEm)}
-          </time>
-          {mine ? <MessageTick status={message.syncStatus} /> : null}
-        </span>
-        {failed ? (
-          <div className="mensagem-retry">
-            <span>Falha ao enviar</span>
-            <button type="button" onClick={() => void onRetry(message.id)}>
-              Tentar novamente
-            </button>
-          </div>
-        ) : null}
-        {message.ultimoErro ? (
-          <details className="mensagem-error">
-            <summary>Detalhes da sincronização</summary>
-            <p>{message.ultimoErro}</p>
-          </details>
-        ) : null}
-      </div>
-    </li>
-  );
-}
-
-function MessageTick({ status }: { status: MensagemSyncStatus }) {
-  const label = mensagemStatusLabel(status);
-  if (status === "FALHOU") {
-    return (
-      <IconWarning className="mensagem-tick mensagem-tick--fail" title={label} />
-    );
-  }
-  if (status === "SINCRONIZADO") {
-    return <IconCheckDouble className="mensagem-tick" title={label} />;
-  }
-  return <IconClock className="mensagem-tick" title={label} />;
-}
-
-function ConversationContext({
-  conversation,
-  messages,
-  worksites,
-  onBack,
-  onClose,
-  onOpenAttachment,
-}: {
-  conversation: ConversaLocalRecord | null;
-  messages: MensagemComAnexos[];
-  worksites: ObraLocalRecord[];
-  onBack: () => void;
-  onClose: () => void;
-  onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
-}) {
-  if (!conversation) {
-    return (
-      <aside className="mensagens-context">
-        <p className="mensagens-list-status">O contexto aparece ao abrir uma conversa.</p>
-      </aside>
-    );
-  }
-  const worksite = worksites.find((item) => item.id === conversation.obraId);
-  const participants = conversation.participantes.filter(activeParticipant);
-  const attachments = messages.flatMap((message) => message.anexos);
-  return (
-    <aside className="mensagens-context" aria-label="Contexto da conversa">
-      <header>
-        <button
-          type="button"
-          className="mensagens-mobile-back"
-          onClick={onBack}
-          aria-label="Voltar para a conversa"
-        >
-          <IconChevronLeft />
-        </button>
-        <div>
-          <strong>Contexto</strong>
-          <span>{conversationScope(conversation)}</span>
-        </div>
-        <button
-          type="button"
-          className="mensagens-drawer-close"
-          onClick={onClose}
-          aria-label="Fechar contexto"
-        >
-          <IconClose />
-        </button>
-      </header>
-
-      {conversation.obraId ? (
-        <section>
-          <h3>Obra</h3>
-          <strong>{worksite?.nome ?? "Obra vinculada"}</strong>
-          <p>{worksite?.codigoContrato ?? shortIdentifier(conversation.obraId)}</p>
-        </section>
-      ) : null}
-
-      <section>
-        <h3>Pessoas</h3>
-        <ul className="mensagens-context-people">
-          {participants.map((participant) => (
-            <li key={participant.colaboradorId}>
-              <span aria-hidden="true">{participant.nome.slice(0, 1).toUpperCase()}</span>
-              <div>
-                <strong>{participant.nome}</strong>
-                <small>{participant.papel === "ADMIN" ? "Administrador" : "Membro"}</small>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
-        <h3>Documentos</h3>
-        {attachments.length === 0 ? (
-          <p>Nenhum documento nesta conversa.</p>
-        ) : (
-          <ul className="mensagens-context-documents">
-            {attachments.map((attachment) => (
-              <li key={attachment.id}>
-                <button type="button" onClick={() => void onOpenAttachment(attachment)}>
-                  <strong>{attachment.nome}</strong>
-                  <small>{formatFileSize(attachment.tamanhoBytes)}</small>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </aside>
-  );
-}
-
-function ConversationList(props: {
-  loading: boolean;
-  conversations: ConversaLocalRecord[];
-  selectedId: string | null;
-  currentUserId: string;
-  previews: Record<string, ConversationPreview>;
-  onSelect: (id: string) => void;
-}) {
-  if (props.loading) return <p className="mensagens-list-status">Carregando conversas…</p>;
-  if (props.conversations.length === 0) {
-    return (
-      <p className="mensagens-list-status">
-        Nenhuma conversa autorizada foi encontrada.
-      </p>
-    );
-  }
-  return (
-    <ul className="mensagens-conversation-list">
-      {props.conversations.map((conversation) => (
-        <li key={conversation.id}>
-          <button
-            type="button"
-            className={conversation.id === props.selectedId ? "active" : ""}
-            onClick={() => props.onSelect(conversation.id)}
-          >
-            <span className="mensagens-avatar" aria-hidden="true">
-              {conversationName(conversation, props.currentUserId).slice(0, 1).toUpperCase()}
-            </span>
-            <span>
-              <strong>{conversationName(conversation, props.currentUserId)}</strong>
-              <small>
-                {props.previews[conversation.id]?.text ?? conversationScope(conversation)}
-              </small>
-            </span>
-            <time>{formatListDate(
-              props.previews[conversation.id]?.at ?? conversation.atualizadaEm,
-            )}</time>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function SearchResults(props: {
-  results: MensagemComAnexos[];
-  conversations: ConversaLocalRecord[];
-  onChoose: (message: MensagemComAnexos) => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="mensagens-search-results">
-      <header>
-        <strong>{props.results.length} resultado(s)</strong>
-        <button type="button" onClick={props.onClose}>Voltar</button>
-      </header>
-      <ul>
-        {props.results.map((message) => (
-          <li key={message.id}>
-            <button type="button" onClick={() => props.onChoose(message)}>
-              <strong>{message.autorNome}</strong>
-              <span>{message.corpo || "Mensagem com anexo"}</span>
-              <small>
-                {props.conversations.find((item) => item.id === message.conversaId)?.titulo ||
-                  formatMessageTime(message.criadaNoClienteEm)}
-              </small>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-
-function conversationName(conversation: ConversaLocalRecord, currentUserId?: string) {
-  if (conversation.titulo) return conversation.titulo;
-  const others = conversation.participantes
-    .filter(activeParticipant)
-    .filter((participant) => participant.colaboradorId !== currentUserId)
-    .map((participant) => participant.nome);
-  return others.join(", ") || "Conversa direta";
-}
-
-function conversationScope(conversation: ConversaLocalRecord) {
-  const labels: Record<ConversaTipo, string> = {
-    DIRETA: "Conversa direta",
-    GRUPO: "Grupo",
-    EQUIPE: "Equipe da obra",
-    OBRA: "Conversa da obra",
-  };
-  return labels[conversation.tipo];
-}
-
-function activeParticipant(participant: ConversaLocalRecord["participantes"][number]) {
-  return participant.status === "ATIVO";
-}
-
-function formatMessageTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat("pt-BR", {
-        dateStyle: "short",
-        timeStyle: "short",
-      }).format(date);
-}
-
-function formatListDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(date);
-}
-
-function shortIdentifier(value: string): string {
-  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
-}
-

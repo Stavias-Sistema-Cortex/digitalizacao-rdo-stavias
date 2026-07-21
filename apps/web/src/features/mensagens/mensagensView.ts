@@ -1,4 +1,8 @@
-import type { MensagemLocalRecord } from "../../lib/db/db.types";
+import type {
+  ConversaLocalRecord,
+  ConversaTipo,
+  MensagemLocalRecord,
+} from "../../lib/db/db.types";
 
 export interface ConversationPreview {
   messageId: string;
@@ -90,6 +94,34 @@ export function hasPendingMessage(
   preview: ConversationPreview | undefined,
 ): boolean {
   return preview !== undefined && preview.syncStatus !== "SINCRONIZADO";
+}
+
+export function conversationName(
+  conversation: ConversaLocalRecord,
+  currentUserId?: string,
+): string {
+  if (conversation.titulo) return conversation.titulo;
+  const others = conversation.participantes
+    .filter(activeParticipant)
+    .filter((participant) => participant.colaboradorId !== currentUserId)
+    .map((participant) => participant.nome);
+  return others.join(", ") || "Conversa direta";
+}
+
+export function conversationScope(conversation: ConversaLocalRecord): string {
+  const labels: Record<ConversaTipo, string> = {
+    DIRETA: "Conversa direta",
+    GRUPO: "Grupo",
+    EQUIPE: "Equipe da obra",
+    OBRA: "Conversa da obra",
+  };
+  return labels[conversation.tipo];
+}
+
+export function activeParticipant(
+  participant: ConversaLocalRecord["participantes"][number],
+): boolean {
+  return participant.status === "ATIVO";
 }
 
 function previewText(message: MensagemLocalRecord, hasAttachment: boolean): string {
