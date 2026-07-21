@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type FormEvent,
 } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -20,14 +19,25 @@ import type {
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
 import { getSession, hasOnlineSession, isAlfa } from "../auth/authSession";
+import { CreateConversationDialog } from "./components/CreateConversationDialog";
 import {
-  buscarColaboradores,
-  buscarColaboradoresDaObra,
-  type ColaboradorDaObra,
-  type ColaboradorLookup,
-} from "../rdos/rdoLookupApi";
+  IconCheckDouble,
+  IconChevronLeft,
+  IconClock,
+  IconClose,
+  IconFile,
+  IconInfo,
+  IconPaperclip,
+  IconSend,
+  IconSpinner,
+  IconWarning,
+} from "./components/icons";
 import {
-  createConversationApi,
+  formatClock,
+  formatFileSize,
+  messageFrom,
+} from "./mensagensFormat";
+import {
   downloadMessageAttachmentApi,
   searchMessagesApi,
 } from "./mensagensApi";
@@ -54,18 +64,6 @@ import {
   type ConversationPreview,
 } from "./mensagensView";
 import "./MensagensPage.css";
-
-type DirectoryPerson = {
-  id: string;
-  nome: string;
-  detalhe: string;
-};
-
-const CREATE_TYPES: { value: ConversaTipo; label: string }[] = [
-  { value: "DIRETA", label: "Direta" },
-  { value: "GRUPO", label: "Grupo" },
-  { value: "OBRA", label: "Obra" },
-];
 
 export function MensagensPage() {
   const session = getSession();
@@ -617,7 +615,7 @@ function MessageItem({
         ) : null}
         <span className="mensagem-meta">
           <time dateTime={message.criadaNoClienteEm}>
-            {formatMessageTimeOnly(message.criadaNoClienteEm)}
+            {formatClock(message.criadaNoClienteEm)}
           </time>
           {mine ? <MessageTick status={message.syncStatus} /> : null}
         </span>
@@ -821,171 +819,6 @@ function SearchResults(props: {
   );
 }
 
-function CreateConversationDialog(props: {
-  obrasPromise: Promise<ObraLocalRecord[]>;
-  alfa: boolean;
-  onClose: () => void;
-  onCreated: (conversation: Awaited<ReturnType<typeof createConversationApi>>) => Promise<void>;
-}) {
-  const [type, setType] = useState<ConversaTipo>("DIRETA");
-  const [title, setTitle] = useState("");
-  const [obras, setObras] = useState<ObraLocalRecord[]>([]);
-  const [obraId, setObraId] = useState("");
-  const [query, setQuery] = useState("");
-  const [people, setPeople] = useState<DirectoryPerson[]>([]);
-  const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    void props.obrasPromise.then(setObras).catch((cause) => setError(messageFrom(cause)));
-  }, [props.obrasPromise]);
-
-  async function searchPeople() {
-    setBusy(true);
-    setError("");
-    try {
-      if (!props.alfa && !obraId) {
-        throw new Error("Selecione uma obra para consultar participantes autorizados.");
-      }
-      const found = obraId
-        ? mapWorksitePeople(await buscarColaboradoresDaObra(obraId))
-        : mapGlobalPeople(await buscarColaboradores(query));
-      setPeople(
-        found.filter((person) =>
-          person.nome.toLocaleLowerCase("pt-BR").includes(query.trim().toLocaleLowerCase("pt-BR")),
-        ),
-      );
-    } catch (cause: unknown) {
-      setError(messageFrom(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      if (type === "DIRETA" && selectedPeople.length !== 1) {
-        throw new Error("Selecione uma pessoa para a conversa direta.");
-      }
-      if (type === "GRUPO" && (!title.trim() || selectedPeople.length < 1)) {
-        throw new Error("Informe o nome do grupo e selecione ao menos uma pessoa.");
-      }
-      if (type === "OBRA" && !obraId) {
-        throw new Error("Selecione a obra da conversa.");
-      }
-      const created = await createConversationApi({
-        tipo: type,
-        titulo: type === "DIRETA" ? null : title,
-        obraId: type === "OBRA" ? obraId : null,
-        participanteIds: selectedPeople,
-      });
-      await props.onCreated(created);
-    } catch (cause: unknown) {
-      setError(messageFrom(cause));
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="mensagens-dialog-backdrop" role="presentation">
-      <section
-        className="mensagens-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="nova-conversa-title"
-      >
-        <header>
-          <div>
-            <p className="eyebrow">Participantes autorizados</p>
-            <h2 id="nova-conversa-title">Nova conversa</h2>
-          </div>
-          <button type="button" onClick={props.onClose} aria-label="Fechar">×</button>
-        </header>
-        <form onSubmit={submit}>
-          <label>
-            Tipo
-            <select
-              value={type}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) => {
-                setType(event.target.value as ConversaTipo);
-                setSelectedPeople([]);
-              }}
-            >
-              {CREATE_TYPES.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          {type !== "DIRETA" ? (
-            <label>
-              Nome da conversa
-              <input value={title} onChange={(event) => setTitle(event.target.value)} />
-            </label>
-          ) : null}
-          <label>
-            {type === "OBRA" ? "Obra" : "Obra usada para consultar pessoas"}
-            <select value={obraId} onChange={(event) => setObraId(event.target.value)}>
-              <option value="">{props.alfa ? "Catálogo global" : "Selecione"}</option>
-              {obras.map((obra) => (
-                <option key={obra.id} value={obra.id}>{obra.nome}</option>
-              ))}
-            </select>
-          </label>
-          <div className="mensagens-directory-search">
-            <label>
-              Buscar participante
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Nome"
-              />
-            </label>
-            <button type="button" onClick={() => void searchPeople()} disabled={busy}>
-              Consultar
-            </button>
-          </div>
-          <fieldset>
-            <legend>Participantes</legend>
-            {people.length === 0 ? (
-              <p>Consulte o diretório autorizado para selecionar pessoas.</p>
-            ) : (
-              people.map((person) => (
-                <label key={person.id} className="mensagens-person">
-                  <input
-                    type={type === "DIRETA" ? "radio" : "checkbox"}
-                    name="participantes"
-                    checked={selectedPeople.includes(person.id)}
-                    onChange={() =>
-                      setSelectedPeople((current) =>
-                        type === "DIRETA"
-                          ? [person.id]
-                          : current.includes(person.id)
-                            ? current.filter((id) => id !== person.id)
-                            : [...current, person.id],
-                      )
-                    }
-                  />
-                  <span><strong>{person.nome}</strong><small>{person.detalhe}</small></span>
-                </label>
-              ))
-            )}
-          </fieldset>
-          {error ? <p className="mensagens-form-error" role="alert">{error}</p> : null}
-          <footer>
-            <button type="button" onClick={props.onClose}>Cancelar</button>
-            <button type="submit" className="mensagens-primary" disabled={busy}>
-              {busy ? "Criando…" : "Criar conversa"}
-            </button>
-          </footer>
-        </form>
-      </section>
-    </div>
-  );
-}
 
 function conversationName(conversation: ConversaLocalRecord, currentUserId?: string) {
   if (conversation.titulo) return conversation.titulo;
@@ -1020,16 +853,6 @@ function formatMessageTime(value: string) {
       }).format(date);
 }
 
-function formatMessageTimeOnly(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(date);
-}
-
 function formatListDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -1037,211 +860,7 @@ function formatListDate(value: string) {
     : new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(date);
 }
 
-function formatFileSize(bytes: number) {
-  return bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
 function shortIdentifier(value: string): string {
   return value.length > 12 ? `${value.slice(0, 8)}…` : value;
 }
 
-function mapWorksitePeople(values: ColaboradorDaObra[]): DirectoryPerson[] {
-  return values.map((person) => ({
-    id: person.id,
-    nome: person.nome || "Colaborador",
-    detalhe: person.nomePerfil || person.nomeGrupo || "Vínculo ativo",
-  }));
-}
-
-function mapGlobalPeople(values: ColaboradorLookup[]): DirectoryPerson[] {
-  return values
-    .filter((person) => person.ativo)
-    .map((person) => ({
-      id: person.id,
-      nome: person.nome || "Colaborador",
-      detalhe: person.nomePerfil || person.nomeGrupo || "Ativo",
-    }));
-}
-
-function messageFrom(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "Não foi possível concluir a operação.";
-}
-
-type IconProps = { className?: string; title?: string };
-
-function IconPaperclip() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l8.49-8.49a3.67 3.67 0 0 1 5.19 5.19l-8.49 8.49a1.83 1.83 0 0 1-2.6-2.6l7.78-7.78" />
-    </svg>
-  );
-}
-
-function IconSend() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M3.4 3.1a1 1 0 0 0-1.36 1.22l2.1 6.06a1 1 0 0 0 .82.66l7.72 1.02a.34.34 0 0 1 0 .68l-7.72 1.02a1 1 0 0 0-.82.66l-2.1 6.06A1 1 0 0 0 3.4 21.9l17.9-8.98a1 1 0 0 0 0-1.84Z" />
-    </svg>
-  );
-}
-
-function IconSpinner() {
-  return (
-    <svg
-      className="mensagens-spin"
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3a9 9 0 1 0 9 9" />
-    </svg>
-  );
-}
-
-function IconInfo() {
-  return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <line x1="12" y1="11" x2="12" y2="16.5" strokeLinecap="round" />
-      <circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function IconChevronLeft() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-function IconClose() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <line x1="6" y1="6" x2="18" y2="18" />
-      <line x1="18" y1="6" x2="6" y2="18" />
-    </svg>
-  );
-}
-
-function IconFile() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 3 14 8 19 8" />
-    </svg>
-  );
-}
-
-function IconClock({ className, title }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      role={title ? "img" : undefined}
-      aria-hidden={title ? undefined : true}
-    >
-      {title ? <title>{title}</title> : null}
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7.5 12 12 15 14" />
-    </svg>
-  );
-}
-
-function IconCheckDouble({ className, title }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      role={title ? "img" : undefined}
-      aria-hidden={title ? undefined : true}
-    >
-      {title ? <title>{title}</title> : null}
-      <path d="M2 12.5 6 16.5 13 8" />
-      <path d="M8 13 11.5 16.5 18.5 8" />
-    </svg>
-  );
-}
-
-function IconWarning({ className, title }: IconProps) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      role={title ? "img" : undefined}
-      aria-hidden={title ? undefined : true}
-    >
-      {title ? <title>{title}</title> : null}
-      <path d="M12 3.5 2.3 20.5h19.4z" />
-      <line x1="12" y1="10" x2="12" y2="14.5" />
-      <circle cx="12" cy="17.4" r="0.5" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
