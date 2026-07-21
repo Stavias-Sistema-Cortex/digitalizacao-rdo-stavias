@@ -307,19 +307,29 @@ const agora = new Date(2026, 6, 21, 14, 0);
 
 describe("formatRelativeTime", () => {
   it("mostra 'agora' abaixo de um minuto", () => {
-    expect(formatRelativeTime(localIso(2026, 7, 21, 13, 59), agora)).toBe("agora");
+    expect(formatRelativeTime(localIso(2026, 7, 21, 14, 0), agora)).toBe("agora");
+  });
+
+  it("conta o primeiro minuto completo", () => {
+    expect(formatRelativeTime(localIso(2026, 7, 21, 13, 59), agora)).toBe("há 1 min");
   });
 
   it("conta minutos na primeira hora", () => {
     expect(formatRelativeTime(localIso(2026, 7, 21, 13, 55), agora)).toBe("há 5 min");
   });
 
-  it("conta horas no mesmo dia", () => {
+  it("conta horas nas primeiras 24 horas", () => {
     expect(formatRelativeTime(localIso(2026, 7, 21, 11, 0), agora)).toBe("há 3 h");
   });
 
-  it("nomeia o dia anterior", () => {
-    expect(formatRelativeTime(localIso(2026, 7, 20, 14, 32), agora)).toBe("ontem 14:32");
+  // A regra de horas vence até 24h: 23h atrás já é ontem no calendário,
+  // mas o rótulo continua "há 23 h".
+  it("ainda conta horas às 23 horas, mesmo já sendo o dia anterior", () => {
+    expect(formatRelativeTime(localIso(2026, 7, 20, 14, 32), agora)).toBe("há 23 h");
+  });
+
+  it("nomeia o dia anterior passadas 24 horas", () => {
+    expect(formatRelativeTime(localIso(2026, 7, 20, 13, 0), agora)).toBe("ontem 13:00");
   });
 
   it("usa data curta a partir de dois dias", () => {
@@ -464,7 +474,18 @@ cd /Users/joaolucas/digitalizacao-rdo-stavias/apps/web
 npx vitest run src/features/mensagens/mensagensFormat.test.ts
 ```
 
-Expected: PASS, 13 tests.
+Expected: PASS, 17 tests.
+
+`messageFrom` is added to this module here too, in the same file, because Task 4
+needs it shared between the page and the dialog:
+
+```ts
+export function messageFrom(cause: unknown): string {
+  return cause instanceof Error
+    ? cause.message
+    : "Não foi possível concluir a operação.";
+}
+```
 
 - [ ] **Step 5: Commit**
 
