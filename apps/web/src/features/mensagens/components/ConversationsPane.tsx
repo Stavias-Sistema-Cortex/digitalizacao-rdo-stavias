@@ -1,12 +1,16 @@
 import type { FormEvent } from "react";
 
 import type { ConversaLocalRecord } from "../../../lib/db/db.types";
+import { conversationInitials, formatRelativeTime } from "../mensagensFormat";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import {
   conversationName,
   conversationScope,
+  hasPendingMessage,
+  previewLabel,
   type ConversationPreview,
 } from "../mensagensView";
+import { IconClose, IconSearch } from "./icons";
 
 export interface ConversationsPaneProps {
   loading: boolean;
@@ -15,6 +19,7 @@ export interface ConversationsPaneProps {
   selectedId: string | null;
   currentUserId: string;
   isOnline: boolean;
+  now: Date;
   search: string;
   searchResults: MensagemComAnexos[] | null;
   onSearchChange: (value: string) => void;
@@ -31,18 +36,27 @@ export function ConversationsPane(props: ConversationsPaneProps) {
         <strong>Conversas</strong>
         <span>{props.isOnline ? "Online" : "Offline"}</span>
       </header>
-      <form className="mensagens-search" onSubmit={props.onSearchSubmit}>
-        <label htmlFor="mensagens-search">Buscar no histórico</label>
-        <div>
+      <form className="mensagens-search" onSubmit={props.onSearchSubmit} role="search">
+        <label className="mensagens-visually-hidden" htmlFor="mensagens-search">
+          Buscar no histórico
+        </label>
+        <div className="mensagens-search-field">
+          <IconSearch />
           <input
             id="mensagens-search"
             value={props.search}
             onChange={(event) => props.onSearchChange(event.target.value)}
-            placeholder="Mensagem, medição, ocorrência…"
+            placeholder="Buscar no histórico"
           />
-          <button type="submit" aria-label="Buscar mensagens">
-            Buscar
-          </button>
+          {props.search ? (
+            <button
+              type="button"
+              onClick={props.onCloseSearch}
+              aria-label="Limpar busca"
+            >
+              <IconClose />
+            </button>
+          ) : null}
         </div>
       </form>
 
@@ -60,6 +74,7 @@ export function ConversationsPane(props: ConversationsPaneProps) {
           selectedId={props.selectedId}
           currentUserId={props.currentUserId}
           previews={props.previews}
+          now={props.now}
           onSelect={props.onSelect}
         />
       )}
@@ -73,6 +88,7 @@ function ConversationList(props: {
   selectedId: string | null;
   currentUserId: string;
   previews: Record<string, ConversationPreview>;
+  now: Date;
   onSelect: (id: string) => void;
 }) {
   if (props.loading) return <p className="mensagens-list-status">Carregando conversas…</p>;
@@ -93,17 +109,29 @@ function ConversationList(props: {
             onClick={() => props.onSelect(conversation.id)}
           >
             <span className="mensagens-avatar" aria-hidden="true">
-              {conversationName(conversation, props.currentUserId).slice(0, 1).toUpperCase()}
+              {conversationInitials(
+                conversationName(conversation, props.currentUserId),
+              )}
+              {hasPendingMessage(props.previews[conversation.id]) ? (
+                <i className="mensagens-avatar-dot" />
+              ) : null}
             </span>
-            <span>
+            <span className="mensagens-row-body">
               <strong>{conversationName(conversation, props.currentUserId)}</strong>
               <small>
-                {props.previews[conversation.id]?.text ?? conversationScope(conversation)}
+                {previewLabel(
+                  props.previews[conversation.id],
+                  props.currentUserId,
+                  conversationScope(conversation),
+                )}
               </small>
             </span>
-            <time>{formatListDate(
-              props.previews[conversation.id]?.at ?? conversation.atualizadaEm,
-            )}</time>
+            <time>
+              {formatRelativeTime(
+                props.previews[conversation.id]?.at ?? conversation.atualizadaEm,
+                props.now,
+              )}
+            </time>
           </button>
         </li>
       ))}
@@ -149,11 +177,4 @@ function formatMessageTime(value: string) {
         dateStyle: "short",
         timeStyle: "short",
       }).format(date);
-}
-
-function formatListDate(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(date);
 }

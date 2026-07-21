@@ -358,6 +358,7 @@ export function MensagensPage() {
             selectedId={selectedId}
             currentUserId={session?.colaboradorId ?? ""}
             isOnline={navigator.onLine}
+            now={now}
             search={search}
             searchResults={searchResults}
             onSearchChange={setSearch}
