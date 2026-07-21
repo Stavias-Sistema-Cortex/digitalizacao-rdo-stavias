@@ -437,7 +437,7 @@ export function MensagensPage() {
                       <MessageItem
                         key={entry.key}
                         message={entry.message}
-                        showAuthor={entry.showAuthor}
+                        showAuthor={entry.startsRun}
                         mine={entry.message.autorId === session?.colaboradorId}
                         isGroup={isGroup}
                         onOpenAttachment={openAttachment}
