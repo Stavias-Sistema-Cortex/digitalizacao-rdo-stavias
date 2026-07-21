@@ -152,6 +152,39 @@ class CsrfRequestFilterTest {
         verifyNoInteractions(sessions, cookies);
     }
 
+    @Test
+    void postgresqlActivationExemptsOnlyTheEmailOtpPaths() throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        CsrfRequestFilter filter = new CsrfRequestFilter(
+                sessions,
+                cookies,
+                new AuthPublicEndpointPolicy(false, true)
+        );
+        FilterChain chain = mock(FilterChain.class);
+        MockHttpServletRequest otp = request(
+                "POST",
+                "/api/auth/email/challenges/"
+                        + "30000000-0000-0000-0000-000000000003/verify"
+        );
+
+        filter.doFilter(otp, new MockHttpServletResponse(), chain);
+        verify(chain).doFilter(
+                org.mockito.ArgumentMatchers.eq(otp),
+                org.mockito.ArgumentMatchers.any()
+        );
+
+        MockHttpServletRequest passkey = request(
+                "POST",
+                "/api/auth/passkeys/authentication/options"
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(passkey, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
+
     private MockHttpServletRequest request(String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRequestURI(path);

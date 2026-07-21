@@ -1,14 +1,17 @@
 package com.projeto.cortex.auth;
 
 import com.projeto.cortex.common.SecurityRuntimeMode;
+import com.projeto.cortex.common.RuntimeReadiness;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /** Refuses an authenticated production cutover without a recoverable ALFA. */
 @Component
-public final class AuthReadinessIndicator implements InitializingBean {
+@Profile("!postgresql-common")
+public final class AuthReadinessIndicator implements InitializingBean, RuntimeReadiness {
 
     private static final String VERIFIED_ACTIVE_ALFA_COUNT = """
             SELECT COUNT(*)
@@ -53,6 +56,7 @@ public final class AuthReadinessIndicator implements InitializingBean {
         }
     }
 
+    @Override
     public void verifyRuntimeReadiness() {
         Integer databaseReady = jdbcTemplate.queryForObject(
                 "SELECT 1",

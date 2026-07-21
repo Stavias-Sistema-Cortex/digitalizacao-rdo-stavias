@@ -1,28 +1,46 @@
 package com.projeto.cortex.auth.otp;
 
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Shared e-mail challenge pre-gate plus global circuit breaker. */
 @Service
 public class AuthRateLimiter {
 
-    private final RateLimitBucketRepository buckets;
+    private final AuthRateLimitStore buckets;
     private final OtpCryptography cryptography;
     private final OtpPolicy policy;
+    private final AuthenticationIdentifierNormalizer identifierNormalizer;
 
+    /** Compatibility constructor for legacy tests and direct MySQL callers. */
     public AuthRateLimiter(
-            RateLimitBucketRepository buckets,
+            AuthRateLimitStore buckets,
             OtpCryptography cryptography,
             OtpPolicy policy
+    ) {
+        this(buckets, cryptography, policy, new MysqlCpfIdentifierNormalizer());
+    }
+
+    @Autowired
+    public AuthRateLimiter(
+            AuthRateLimitStore buckets,
+            OtpCryptography cryptography,
+            OtpPolicy policy,
+            AuthenticationIdentifierNormalizer identifierNormalizer
     ) {
         this.buckets = buckets;
         this.cryptography = cryptography;
         this.policy = policy;
+        this.identifierNormalizer = identifierNormalizer;
     }
 
     public boolean allow(String identifier, String clientIp) {
-        return allowScoped("email-challenge", identifier, clientIp);
+        return allowScoped(
+                "email-challenge",
+                identifierNormalizer.canonicalize(identifier),
+                clientIp
+        );
     }
 
     private boolean allowScoped(
@@ -66,7 +84,7 @@ public class AuthRateLimiter {
 
         String identifierBucket = cryptography.bucketDigest(
                 "identifier",
-                scope + ":" + AuthRequestNormalizer.identifier(identifier)
+                scope + ":" + identifier
         );
         return buckets.consume(
                 List.of(identifierBucket),

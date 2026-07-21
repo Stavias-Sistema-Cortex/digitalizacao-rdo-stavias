@@ -1,6 +1,10 @@
 package com.projeto.cortex.auth;
 
+import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
+import com.projeto.cortex.auth.session.ResolvedAuthSession;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -9,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -31,7 +36,8 @@ import org.springframework.web.server.ResponseStatusException;
  * concessão por inferência (alocação operacional ou presença em RDO anterior).
  */
 @Service
-public class CurrentUserService {
+@Profile("!postgresql-common")
+public class CurrentUserService implements AuthSessionProfileResolver {
 
     public static final String REQUEST_ATTRIBUTE_USER_ID =
             "cortex.authenticatedUserId";
@@ -226,6 +232,45 @@ public class CurrentUserService {
         );
 
         return Optional.of(Set.copyOf(ids));
+    }
+
+    @Override
+    public void requireEligibleForSessionIssue(AuthenticatedIdentity identity) {
+        if (identity == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Identidade autenticada inválida."
+            );
+        }
+    }
+
+    @Override
+    public AuthSessionResponse profileForIssuedSession(
+            AuthenticatedIdentity identity,
+            Instant expiresAt
+    ) {
+        requireEligibleForSessionIssue(identity);
+        return AuthSessionResponse.from(
+                identity,
+                expiresAt,
+                allowedObraIds(identity.colaboradorId())
+        );
+    }
+
+    @Override
+    public AuthSessionResponse profileForResolvedSession(
+            ResolvedAuthSession session
+    ) {
+        if (session == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Sessão inválida ou expirada."
+            );
+        }
+        return AuthSessionResponse.from(
+                session,
+                allowedObraIds(session.collaboratorId())
+        );
     }
 
     private boolean temVinculoAtivo(String colaboradorId, String obraId) {

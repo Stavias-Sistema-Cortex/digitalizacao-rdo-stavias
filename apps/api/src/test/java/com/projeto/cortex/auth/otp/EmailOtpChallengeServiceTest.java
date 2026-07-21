@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth.otp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -232,6 +233,22 @@ class EmailOtpChallengeServiceTest {
                 "collaborator-id",
                 SYNTHETIC_EMAIL
         );
+    }
+
+    @Test
+    void activationRaceFailsTheTransactionInsteadOfCommittingConsumption() {
+        Instant now = Instant.parse("2026-07-13T18:00:00Z");
+        when(challenges.lockForVerification(CHALLENGE_ID))
+                .thenReturn(Optional.of(realCandidate(CODE, now)));
+        when(challenges.consume(
+                eq(CHALLENGE_ID), eq("collaborator-id"), anyString()
+        )).thenReturn(1);
+        when(challenges.activateIdentity("collaborator-id", SYNTHETIC_EMAIL))
+                .thenReturn(0);
+
+        assertThatThrownBy(() -> service.verify(CHALLENGE_ID, CODE))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Identidade não pôde ser ativada.");
     }
 
     @Test

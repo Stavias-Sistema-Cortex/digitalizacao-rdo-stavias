@@ -1,0 +1,139 @@
+.email-otp-access {
+  --otp-ink: #111312;
+  --otp-green: #124e4a;
+  --otp-yellow: #f2c800;
+  --otp-muted: #66706b;
+  --otp-error: #8f2f25;
+}
+
+.email-otp-access__header {
+  padding-bottom: 20px;
+  border-bottom: 1px solid #d9ddda;
+}
+
+.email-otp-access__eyebrow {
+  margin: 0 0 9px;
+  color: var(--otp-green);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.email-otp-access__header h2 {
+  margin: 0;
+  color: var(--otp-ink);
+  font-size: clamp(1.4rem, 2.7vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.email-otp-access__header p:last-child {
+  margin: 10px 0 0;
+  color: var(--otp-muted);
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.email-otp-access__form {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.email-otp-access__form label {
+  color: #303532;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.email-otp-access__form input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid #aeb5b0;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--otp-ink);
+  font-size: 1rem;
+  font-weight: 500;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.email-otp-access__form input:focus {
+  border-color: var(--otp-ink);
+  box-shadow: 0 0 0 3px rgb(242 200 0 / 38%);
+  outline: 0;
+}
+
+.email-otp-access__form input:disabled,
+.email-otp-access__form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.email-otp-access__form button {
+  min-height: 50px;
+  margin-top: 8px;
+  border: 1px solid #caa700;
+  border-radius: 4px;
+  background: var(--otp-yellow);
+  color: var(--otp-ink);
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.email-otp-access__form button:hover:not(:disabled) {
+  border-color: var(--otp-ink);
+  background: #ffd91f;
+}
+
+.email-otp-access__form .email-otp-access__secondary {
+  margin-top: 0;
+  border-color: #8f9792;
+  background: #fff;
+  color: var(--otp-ink);
+}
+
+.email-otp-access__messages {
+  min-height: 48px;
+  margin-top: 16px;
+}
+
+.email-otp-access__notice,
+.email-otp-access__error {
+  margin: 0;
+  padding: 11px 12px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.email-otp-access__notice {
+  border-left: 4px solid var(--otp-yellow);
+  background: #f8f7ef;
+  color: #3b3d31;
+}
+
+.email-otp-access__error {
+  border: 1px solid #d9aaa5;
+  background: #fff2ef;
+  color: #69231c;
+}
+
+.email-otp-access button:focus-visible,
+.email-otp-access input:focus-visible {
+  outline: 3px solid var(--otp-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .email-otp-access *,
+  .email-otp-access *::before,
+  .email-otp-access *::after {
+    transition: none !important;
+  }
+}

@@ -35,11 +35,21 @@ public final class OtpCryptography {
 
     private final SecretKeySpec key;
     private final SecureRandom secureRandom;
+    private final AuthenticationIdentifierNormalizer identifierNormalizer;
 
     public OtpCryptography(byte[] keyMaterial, SecureRandom secureRandom) {
+        this(keyMaterial, secureRandom, new MysqlCpfIdentifierNormalizer());
+    }
+
+    public OtpCryptography(
+            byte[] keyMaterial,
+            SecureRandom secureRandom,
+            AuthenticationIdentifierNormalizer identifierNormalizer
+    ) {
         if (keyMaterial == null
                 || keyMaterial.length < 32
-                || secureRandom == null) {
+                || secureRandom == null
+                || identifierNormalizer == null) {
             throw invalidInput();
         }
         byte[] keyCopy = Arrays.copyOf(keyMaterial, keyMaterial.length);
@@ -49,6 +59,7 @@ public final class OtpCryptography {
             Arrays.fill(keyCopy, (byte) 0);
         }
         this.secureRandom = secureRandom;
+        this.identifierNormalizer = identifierNormalizer;
     }
 
     public String generateCode() {
@@ -85,8 +96,13 @@ public final class OtpCryptography {
     public String identifierDigest(String identifier) {
         return hmac(
                 IDENTIFIER_DOMAIN,
-                AuthRequestNormalizer.identifier(identifier)
+                identifierNormalizer.canonicalize(identifier)
         );
+    }
+
+    /** Returns a canonical identifier or the fixed invalid sentinel. */
+    public String canonicalizeIdentifier(String identifier) {
+        return identifierNormalizer.canonicalize(identifier);
     }
 
     public boolean matchesDigest(String candidate, String stored) {

@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
  * through a mounted owner-only file; application arguments are ignored.
  */
 @Component
+@Profile("!postgresql-common")
 @ConditionalOnProperty(
         prefix = "cortex.auth.provisioning",
         name = "enabled",

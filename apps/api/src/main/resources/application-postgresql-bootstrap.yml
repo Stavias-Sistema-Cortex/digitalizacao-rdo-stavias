@@ -1,0 +1,17 @@
+spring:
+  config:
+    activate:
+      on-profile: postgresql-bootstrap
+  main:
+    web-application-type: none
+  flyway:
+    enabled: false
+
+cortex:
+  postgresql:
+    bootstrap:
+      enabled: ${CORTEX_POSTGRES_BOOTSTRAP_ENABLED:false}
+      admin-cpf-file: ${CORTEX_BOOTSTRAP_ADMIN_CPF_FILE:}
+    schema-readiness:
+      enabled: true
+    runtime-ready: false

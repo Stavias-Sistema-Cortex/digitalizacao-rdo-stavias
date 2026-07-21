@@ -1,85 +1,28 @@
 import { clearSession } from "../../features/auth/authSession";
+import { apiUrl } from "./apiEndpoint";
+import {
+  ApiError,
+  apiError,
+  responseErrorMessage,
+  responseField,
+} from "./apiError";
 
-const DEFAULT_API_PREFIX = "/api";
 const CSRF_COOKIE = "cortex_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+
+export {
+  ApiError,
+  apiError,
+  apiUrl,
+  responseErrorMessage,
+  responseField,
+};
 
 export interface ApiRequestOptions extends RequestInit {
   timeoutMs?: number;
   connectionErrorMessage?: string;
   timeoutErrorMessage?: string;
-}
-
-export function apiUrl(path: string): string {
-  const configuredBaseUrl =
-    import.meta.env.VITE_CORTEX_API_BASE_URL?.trim();
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (!configuredBaseUrl) {
-    return `${DEFAULT_API_PREFIX}${normalizedPath}`;
-  }
-  return `${validatedApiBaseUrl(configuredBaseUrl)}${normalizedPath}`;
-}
-
-function validatedApiBaseUrl(configuredBaseUrl: string): string {
-  const isRootRelative =
-    configuredBaseUrl.startsWith("/") &&
-    !configuredBaseUrl.startsWith("//");
-  const isAbsoluteHttp = /^https?:\/\//i.test(configuredBaseUrl);
-  if (!isRootRelative && !isAbsoluteHttp) {
-    throw new Error(
-      "VITE_CORTEX_API_BASE_URL deve ser uma URL absoluta http(s) ou iniciar com /.",
-    );
-  }
-
-  const browserOrigin =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : "http://localhost";
-  let parsed: URL;
-  try {
-    parsed = new URL(configuredBaseUrl, browserOrigin);
-  } catch {
-    throw new Error(
-      "VITE_CORTEX_API_BASE_URL não é uma URL válida.",
-    );
-  }
-
-  if (
-    parsed.username ||
-    parsed.password ||
-    parsed.search ||
-    parsed.hash
-  ) {
-    throw new Error(
-      "VITE_CORTEX_API_BASE_URL não pode conter credenciais, query ou fragmento.",
-    );
-  }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(
-      "VITE_CORTEX_API_BASE_URL deve usar HTTP ou HTTPS.",
-    );
-  }
-
-  if (
-    !isRootRelative &&
-    typeof window !== "undefined" &&
-    (parsed.hostname !== window.location.hostname ||
-      parsed.protocol !== window.location.protocol)
-  ) {
-    throw new Error(
-      "A API e a PWA devem usar o mesmo hostname e protocolo para que o cookie CSRF host-only funcione. Publique /api na mesma origem ou use apenas outra porta no desenvolvimento.",
-    );
-  }
-
-  const normalizedPath =
-    parsed.pathname === "/"
-      ? ""
-      : parsed.pathname.replace(/\/+$/, "");
-  return isRootRelative
-    ? normalizedPath
-    : `${parsed.origin}${normalizedPath}`;
 }
 
 async function rawFetch(
@@ -187,34 +130,4 @@ export async function readResponseBody(
   } catch {
     return responseText;
   }
-}
-
-export function responseField(
-  body: unknown,
-  field: "message" | "detail" | "error",
-): string | null {
-  if (typeof body === "object" && body !== null && field in body) {
-    const value = (body as Record<string, unknown>)[field];
-    return typeof value === "string" ? value : null;
-  }
-  return null;
-}
-
-export function responseErrorMessage(
-  body: unknown,
-  fallbackStatus: number,
-): string {
-  const message =
-    responseField(body, "message") ??
-    responseField(body, "detail") ??
-    responseField(body, "error") ??
-    (typeof body === "string" ? body : `HTTP ${fallbackStatus}`);
-  return normalizeResponseErrorMessage(message);
-}
-
-function normalizeResponseErrorMessage(message: string): string {
-  if (/invalid cors request/i.test(message)) {
-    return "A API recusou a origem desta tela (CORS). Abra o Córtex por uma origem autorizada ou configure CORTEX_CORS_ALLOWED_ORIGINS no backend.";
-  }
-  return message;
 }

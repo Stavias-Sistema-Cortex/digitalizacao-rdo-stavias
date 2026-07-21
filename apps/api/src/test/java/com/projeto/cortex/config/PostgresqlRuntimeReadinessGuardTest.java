@@ -1,0 +1,101 @@
+package com.projeto.cortex.config;
+
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.core.Ordered;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class PostgresqlRuntimeReadinessGuardTest {
+
+    @Test
+    void executesAsAnEarlyBeanFactoryPreflight() {
+        PostgresqlRuntimeReadinessGuard guard = guard(mock(JdbcTemplate.class), true, released());
+
+        assertThat(BeanFactoryPostProcessor.class)
+                .isAssignableFrom(PostgresqlRuntimeReadinessGuard.class);
+        assertThat(guard.getOrder()).isEqualTo(Ordered.HIGHEST_PRECEDENCE + 2);
+    }
+
+    @Test
+    void refusesWhenOwnerRuntimeFlagIsFalse() {
+        assertThatThrownBy(() -> guard(mock(JdbcTemplate.class), false, released())
+                .verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("CORTEX_POSTGRES_RUNTIME_READY");
+    }
+
+    @Test
+    void trueFlagStillRefusesTheEmptyCleanStartSurfaceRegistry() {
+        PostgresqlRuntimeSurfaceRegistry emptyRegistry = new PostgresqlRuntimeSurfaceRegistry();
+
+        assertThat(emptyRegistry.releasedSurfaces()).isEmpty();
+        assertThatThrownBy(() -> guard(mock(JdbcTemplate.class), true, emptyRegistry)
+                .verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("superfície operacional PostgreSQL segura");
+    }
+
+    @Test
+    void refusesSuccessfulV45WhenTheExplicitV44RowIsAbsent() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("baseline V44");
+        verify(jdbcTemplate).queryForObject(contains("version = '44'"), eq(Integer.class));
+    }
+
+    @Test
+    void refusesWithoutAVerifiedActiveAlfa() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 0);
+
+        assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ALFA ativo")
+                .hasMessageContaining("e-mail verificado");
+    }
+
+    @Test
+    void acceptsOnlyV44VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
+
+        assertThatCode(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void probesPostgresqlWithANativeTrueBooleanForEndpointReadiness() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject("SELECT TRUE", Boolean.class)).thenReturn(true);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
+
+        assertThatCode(() -> guard(jdbcTemplate, true, released())
+                .verifyRuntimeReadiness()).doesNotThrowAnyException();
+    }
+
+    private PostgresqlRuntimeReadinessGuard guard(
+            JdbcTemplate jdbcTemplate,
+            boolean runtimeReady,
+            PostgresqlRuntimeSurfaceRegistry registry
+    ) {
+        return new PostgresqlRuntimeReadinessGuard(jdbcTemplate, 44, runtimeReady, registry);
+    }
+
+    private PostgresqlRuntimeSurfaceRegistry released() {
+        return new PostgresqlRuntimeSurfaceRegistry(Set.of("test-postgresql-safe-slice"));
+    }
+}

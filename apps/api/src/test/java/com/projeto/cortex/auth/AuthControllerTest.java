@@ -6,6 +6,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.projeto.cortex.auth.activation.PostgresqlActivationSessionProfileResolver;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
@@ -58,17 +60,22 @@ class AuthControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
                 otp,
-                authService,
+                Optional.of(authService),
                 addresses,
                 sessions,
                 cookies,
-                currentUsers
+                currentUsers,
+                new DirectCpfLoginPolicy(false)
         )).build();
-        when(currentUsers.allowedObraIds(any())).thenReturn(Optional.of(
-                java.util.Set.of(
-                        "40000000-0000-0000-0000-000000000004"
+        when(currentUsers.profileForIssuedSession(any(), any())).thenAnswer(
+                invocation -> profileFor(
+                        invocation.getArgument(0),
+                        invocation.getArgument(1)
                 )
-        ));
+        );
+        when(currentUsers.profileForResolvedSession(any())).thenAnswer(
+                invocation -> profileFor(invocation.getArgument(0))
+        );
     }
 
     @Test
@@ -112,6 +119,31 @@ class AuthControllerTest {
 
         verify(authService, never()).autenticarPorCpf(any());
         verify(sessions, never()).issue(any());
+    }
+
+    @Test
+    void postgresqlDirectCpfReturnsGoneBeforeCpfNormalizationOrLegacyAuth()
+            throws Exception {
+        MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
+                new AuthController(
+                        otp,
+                        Optional.of(authService),
+                        addresses,
+                        sessions,
+                        cookies,
+                        currentUsers,
+                        new DirectCpfLoginPolicy(true)
+                )
+        ).build();
+
+        postgresqlMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"123\"}"))
+                .andExpect(status().isGone());
+
+        verify(authService, never()).autenticarPorCpf(any());
+        verify(sessions, never()).issue(any());
+        verify(cookies, never()).write(any(), any());
     }
 
     @Test
@@ -201,6 +233,39 @@ class AuthControllerTest {
     }
 
     @Test
+    void activationOtpBuildsOnlyTheInitialAlfaGlobalProfileWithoutLegacyScope()
+            throws Exception {
+        AuthenticatedIdentity identity = identity(PapelAcesso.ALFA);
+        IssuedAuthSession issued = issuedSession();
+        when(otp.verify(CHALLENGE_ID, "123456")).thenReturn(Optional.of(identity));
+        when(sessions.issue(identity)).thenReturn(issued);
+        MockMvc activationMvc = MockMvcBuilders.standaloneSetup(
+                new AuthController(
+                        otp,
+                        Optional.empty(),
+                        addresses,
+                        sessions,
+                        cookies,
+                        new PostgresqlActivationSessionProfileResolver(),
+                        new DirectCpfLoginPolicy(true)
+                )
+        ).build();
+
+        activationMvc.perform(post(
+                        "/api/auth/email/challenges/{id}/verify",
+                        CHALLENGE_ID
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"123456\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.papelAcesso").value("ALFA"))
+                .andExpect(jsonPath("$.escopoGlobal").value(true))
+                .andExpect(jsonPath("$.obraIds").isEmpty());
+
+        verifyNoInteractions(authService);
+        verify(cookies).write(any(HttpServletResponse.class), eq(issued));
+    }
+
+    @Test
     void currentSessionUsesOnlyTheFilterResolvedPrincipal() throws Exception {
         ResolvedAuthSession resolved = new ResolvedAuthSession(
                 SESSION_ID,
@@ -210,9 +275,6 @@ class AuthControllerTest {
                 EXPIRY,
                 "a".repeat(64)
         );
-        when(currentUsers.allowedObraIds(COLLABORATOR_ID))
-                .thenReturn(Optional.empty());
-
         mockMvc.perform(get("/api/auth/session").requestAttr(
                         AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
                         resolved
@@ -270,5 +332,31 @@ class AuthControllerTest {
 
     private String token(char character) {
         return String.valueOf(character).repeat(43);
+    }
+
+    private AuthSessionResponse profileFor(
+            AuthenticatedIdentity identity,
+            Instant expiry
+    ) {
+        return AuthSessionResponse.from(
+                identity,
+                expiry,
+                identity.papelAcesso() == PapelAcesso.ALFA
+                        ? Optional.empty()
+                        : Optional.of(java.util.Set.of(
+                                "40000000-0000-0000-0000-000000000004"
+                        ))
+        );
+    }
+
+    private AuthSessionResponse profileFor(ResolvedAuthSession session) {
+        return AuthSessionResponse.from(
+                session,
+                session.role() == PapelAcesso.ALFA
+                        ? Optional.empty()
+                        : Optional.of(java.util.Set.of(
+                                "40000000-0000-0000-0000-000000000004"
+                        ))
+        );
     }
 }

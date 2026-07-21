@@ -144,7 +144,7 @@ public class ColaboradorImportService {
         LocalDateTime criadoEmOrigem = sourceUser.criadoEm();
 
         return new UsuarioAcademy(
-                stableColaboradorId(pkOrigem),
+                AcademyCollaboratorIdentity.fromAcademyUserId(idUsuario),
                 pkOrigem,
                 pkOrigem,
                 cpfNormalizado,
@@ -619,13 +619,6 @@ public class ColaboradorImportService {
         metadata.put("importBatchId", syncRunId);
         metadata.put("sourceHash", hashOrigem);
         return metadata;
-    }
-
-    private String stableColaboradorId(String pkOrigem) {
-        return UUID.nameUUIDFromBytes(
-                (BANCO_ORIGEM + ":" + TABELA_ORIGEM + ":" + pkOrigem)
-                        .getBytes(StandardCharsets.UTF_8)
-        ).toString();
     }
 
     private String stableCheckpointId() {

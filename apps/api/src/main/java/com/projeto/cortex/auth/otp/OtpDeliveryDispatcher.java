@@ -32,7 +32,7 @@ public class OtpDeliveryDispatcher {
 
     private final EmailGateway emailGateway;
     private final Executor executor;
-    private final EmailOtpChallengeRepository challenges;
+    private final EmailOtpChallengeStore challenges;
     private final Duration deliveryTimeout;
     private final Semaphore providerSlots;
     private final LongAdder expiredDeliveries = new LongAdder();
@@ -44,7 +44,7 @@ public class OtpDeliveryDispatcher {
     public OtpDeliveryDispatcher(
             EmailGateway emailGateway,
             @Qualifier("otpDeliveryExecutor") Executor executor,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             @Value("${cortex.auth.otp.delivery.max-delivery-seconds:20}")
             int maxDeliverySeconds,
             @Value("${cortex.auth.otp.delivery.max-pool-size:8}")
@@ -62,7 +62,7 @@ public class OtpDeliveryDispatcher {
     OtpDeliveryDispatcher(
             EmailGateway emailGateway,
             Executor executor,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             Duration deliveryTimeout
     ) {
         this(emailGateway, executor, challenges, deliveryTimeout, 8);
@@ -71,7 +71,7 @@ public class OtpDeliveryDispatcher {
     OtpDeliveryDispatcher(
             EmailGateway emailGateway,
             Executor executor,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             Duration deliveryTimeout,
             int maxConcurrentProviderCalls
     ) {
@@ -113,7 +113,7 @@ public class OtpDeliveryDispatcher {
 
     private void deliver(OtpDeliveryRequested event) {
         try {
-            Optional<EmailOtpChallengeRepository.DeliveryState> current =
+            Optional<EmailOtpChallengeStore.DeliveryState> current =
                     challenges.deliveryState(event.challengeId());
             if (current.isEmpty() || !current.orElseThrow().pending()) {
                 invalidatedDeliveries.increment();
@@ -122,7 +122,7 @@ public class OtpDeliveryDispatcher {
                 );
                 return;
             }
-            EmailOtpChallengeRepository.DeliveryState state =
+            EmailOtpChallengeStore.DeliveryState state =
                     current.orElseThrow();
             if (state.expired()) {
                 expiredDeliveries.increment();
