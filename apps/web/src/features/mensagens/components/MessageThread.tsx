@@ -5,7 +5,13 @@ import type {
   MensagemAnexoLocalRecord,
   MensagemSyncStatus,
 } from "../../../lib/db/db.types";
-import { formatClock, formatFileSize } from "../mensagensFormat";
+import {
+  conversationInitials,
+  formatClock,
+  formatFileSize,
+  formatRelativeTime,
+  initials,
+} from "../mensagensFormat";
 import { mensagemStatusLabel } from "../mensagensQueue";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import type { MessageTimelineEntry } from "../mensagensView";
@@ -59,7 +65,7 @@ export function MessageThread(props: MessageThreadProps) {
           <IconChevronLeft />
         </button>
         <span className="mensagens-thread-avatar" aria-hidden="true">
-          {props.title.slice(0, 1).toUpperCase()}
+          {conversationInitials(props.title)}
         </span>
         <div className="mensagens-thread-heading">
           <h2>{props.title}</h2>
@@ -89,9 +95,10 @@ export function MessageThread(props: MessageThreadProps) {
             <MessageItem
               key={entry.key}
               message={entry.message}
-              showAuthor={entry.startsRun}
+              startsRun={entry.startsRun}
               mine={entry.message.autorId === props.currentUserId}
-              isGroup={props.isGroup}
+              showAuthorName={props.isGroup}
+              now={props.now}
               onOpenAttachment={props.onOpenAttachment}
               onRetry={props.onRetry}
             />
@@ -106,78 +113,104 @@ export function MessageThread(props: MessageThreadProps) {
 
 function MessageItem({
   message,
-  showAuthor,
+  startsRun,
   mine,
-  isGroup,
+  showAuthorName,
+  now,
   onOpenAttachment,
   onRetry,
 }: {
   message: MensagemComAnexos;
-  showAuthor: boolean;
+  startsRun: boolean;
   mine: boolean;
-  isGroup: boolean;
+  showAuthorName: boolean;
+  now: Date;
   onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
   onRetry: (messageId: string) => Promise<void>;
 }) {
   const failed = message.syncStatus === "FALHOU";
+  // Ainda no aparelho: a bolha fica vazada até o servidor confirmar.
+  const pending = mine && !failed && message.syncStatus !== "SINCRONIZADO";
   const bubbleClass = [
     "mensagem-bubble",
     mine ? "mensagem-bubble--mine" : "mensagem-bubble--in",
-    showAuthor ? "mensagem-bubble--tail" : "",
+    pending ? "mensagem-bubble--pendente" : "",
+    failed ? "mensagem-bubble--falhou" : "",
   ]
     .filter(Boolean)
     .join(" ");
   return (
     <li
       className={`mensagem-item${mine ? " mensagem-item--mine" : ""}${
-        showAuthor ? " mensagem-item--lead" : ""
+        startsRun ? " mensagem-item--lead" : ""
       }`}
     >
-      <div className={bubbleClass}>
-        {isGroup && !mine && showAuthor ? (
-          <span className="mensagem-autor">{message.autorNome}</span>
-        ) : null}
-        {message.status === "EXCLUIDA" ? (
-          <p className="mensagem-deleted">Mensagem excluída</p>
-        ) : message.corpo ? (
-          <p className="mensagem-corpo">{message.corpo}</p>
-        ) : null}
-        {message.anexos.length > 0 ? (
-          <ul className="mensagem-attachments">
-            {message.anexos.map((attachment) => (
-              <li key={attachment.id}>
-                <button
-                  type="button"
-                  onClick={() => void onOpenAttachment(attachment)}
-                >
-                  <IconFile />
-                  <span>{attachment.nome}</span>
-                  <small>{formatFileSize(attachment.tamanhoBytes)}</small>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <span className="mensagem-meta">
-          <time dateTime={message.criadaNoClienteEm}>
-            {formatClock(message.criadaNoClienteEm)}
+      {startsRun ? (
+        <p className="mensagem-caption">
+          {!mine && showAuthorName ? (
+            <span className="mensagem-caption-nome">{message.autorNome}</span>
+          ) : null}
+          <time
+            dateTime={message.criadaNoClienteEm}
+            title={formatClock(message.criadaNoClienteEm)}
+          >
+            {formatRelativeTime(message.criadaNoClienteEm, now)}
           </time>
-          {mine ? <MessageTick status={message.syncStatus} /> : null}
-        </span>
-        {failed ? (
-          <div className="mensagem-retry">
-            <span>Falha ao enviar</span>
-            <button type="button" onClick={() => void onRetry(message.id)}>
-              Tentar novamente
-            </button>
-          </div>
-        ) : null}
-        {message.ultimoErro ? (
-          <details className="mensagem-error">
-            <summary>Detalhes da sincronização</summary>
-            <p>{message.ultimoErro}</p>
-          </details>
-        ) : null}
+        </p>
+      ) : null}
+      <div className="mensagem-linha">
+        {mine ? null : (
+          <span
+            className={`mensagem-avatar-mini${
+              startsRun ? "" : " mensagem-avatar-mini--vazio"
+            }`}
+            aria-hidden="true"
+          >
+            {startsRun ? initials(message.autorNome) : ""}
+          </span>
+        )}
+        <div className={bubbleClass}>
+          {message.status === "EXCLUIDA" ? (
+            <p className="mensagem-deleted">Mensagem excluída</p>
+          ) : message.corpo ? (
+            <p className="mensagem-corpo">{message.corpo}</p>
+          ) : null}
+          {message.anexos.length > 0 ? (
+            <ul className="mensagem-attachments">
+              {message.anexos.map((attachment) => (
+                <li key={attachment.id}>
+                  <button
+                    type="button"
+                    onClick={() => void onOpenAttachment(attachment)}
+                  >
+                    <IconFile />
+                    <span>{attachment.nome}</span>
+                    <small>{formatFileSize(attachment.tamanhoBytes)}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {mine ? (
+            <span className="mensagem-meta">
+              <MessageTick status={message.syncStatus} />
+            </span>
+          ) : null}
+          {failed ? (
+            <div className="mensagem-retry">
+              <span>Não saiu deste aparelho</span>
+              <button type="button" onClick={() => void onRetry(message.id)}>
+                Tentar de novo
+              </button>
+            </div>
+          ) : null}
+          {message.ultimoErro ? (
+            <details className="mensagem-error">
+              <summary>Detalhes da sincronização</summary>
+              <p>{message.ultimoErro}</p>
+            </details>
+          ) : null}
+        </div>
       </div>
     </li>
   );

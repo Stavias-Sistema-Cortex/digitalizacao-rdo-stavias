@@ -41,4 +41,17 @@ describe("layout da aba Mensagens", () => {
   it("não introduz tema escuro nesta aba", () => {
     expect(css).not.toContain("prefers-color-scheme: dark");
   });
+
+  // As bolhas deixaram de ser teal sólido; texto claro sobre elas sumiria.
+  it("mantém o estado de falha legível sobre bolha clara", () => {
+    expect(rule(".mensagem-retry")).toContain("color: #a3312a;");
+    expect(rule(".mensagem-retry button")).toContain("color: #a3312a;");
+    expect(css).not.toContain("#ffd0c9");
+    expect(css).not.toContain("color: rgb(255 255 255");
+  });
+
+  it("distingue a bolha que ainda não saiu do aparelho", () => {
+    expect(rule(".mensagem-bubble--pendente")).toContain("border-style: dashed;");
+    expect(rule(".mensagem-bubble--pendente")).toContain("background: #fff;");
+  });
 });

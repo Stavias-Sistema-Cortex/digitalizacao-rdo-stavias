@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  conversationInitials,
   formatClock,
   formatFileSize,
   formatRelativeTime,
@@ -93,5 +94,23 @@ describe("initials", () => {
 
   it("devolve interrogação para nome vazio", () => {
     expect(initials("   ")).toBe("?");
+  });
+});
+
+describe("conversationInitials", () => {
+  it("ignora o número final do título da obra", () => {
+    expect(conversationInitials("Obra Rodovia Vila Nova — Trecho 3")).toBe("OR");
+  });
+
+  it("funciona para nome de pessoa em conversa direta", () => {
+    expect(conversationInitials("João Souza")).toBe("JS");
+  });
+
+  it("usa uma letra quando há só uma palavra", () => {
+    expect(conversationInitials("Terraplenagem")).toBe("T");
+  });
+
+  it("devolve interrogação quando não há palavra alguma", () => {
+    expect(conversationInitials("— 3")).toBe("?");
   });
 });

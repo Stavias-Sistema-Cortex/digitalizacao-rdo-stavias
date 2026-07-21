@@ -412,85 +412,109 @@
 
 .mensagem-item {
   display: flex;
-  justify-content: flex-start;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .mensagem-item--mine {
-  justify-content: flex-end;
+  align-items: flex-end;
 }
 
 .mensagem-item--lead {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .mensagens-list > .mensagem-item:first-of-type {
   margin-top: 0;
 }
 
+/* Legenda do run: nome (só em grupo) e tempo relativo, fora da bolha. */
+.mensagem-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0 0 5px;
+  color: #7d8a83;
+  font-size: 0.68rem;
+}
+
+.mensagem-item:not(.mensagem-item--mine) .mensagem-caption {
+  padding-left: 42px;
+}
+
+.mensagem-caption-nome {
+  color: #2b4a41;
+  font-weight: 650;
+}
+
+/* O rótulo é reescrito a cada minuto; dígitos tabulares evitam o tremor. */
+.mensagem-caption time {
+  font-variant-numeric: tabular-nums;
+}
+
+.mensagem-linha {
+  display: flex;
+  max-width: min(560px, 82%);
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.mensagem-avatar-mini {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d7e6e0;
+  color: #124e4a;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.mensagem-avatar-mini--vazio {
+  background: transparent;
+}
+
 .mensagem-bubble {
   position: relative;
   display: flex;
-  max-width: min(560px, 78%);
+  min-width: 0;
   flex-wrap: wrap;
   align-items: flex-end;
   column-gap: 8px;
   row-gap: 2px;
-  padding: 7px 11px 6px;
-  border-radius: 16px;
+  padding: 9px 13px;
+  border-radius: 14px;
 }
 
 .mensagem-bubble--in {
-  background: #fff;
-  border: 1px solid rgb(18 35 31 / 8%);
-  box-shadow: 0 1px 1.5px rgb(11 31 27 / 9%), 0 1px 3px rgb(11 31 27 / 5%);
+  border: 1px solid #e6ebe8;
+  background: #f4f6f5;
+  color: var(--color-text);
 }
 
 .mensagem-bubble--mine {
-  background: #155e56;
-  color: #fff;
-  box-shadow: 0 1px 2px rgb(9 40 36 / 22%);
+  border: 1px solid #cbe2da;
+  background: #d9ece6;
+  color: #123f39;
 }
 
-/* Tail on the first bubble of a run (top-outer corner) */
-.mensagem-bubble--in.mensagem-bubble--tail {
-  border-top-left-radius: 2px;
-}
-
-.mensagem-bubble--in.mensagem-bubble--tail::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -6px;
-  width: 7px;
-  height: 13px;
+/*
+ * Assinatura da tela: enquanto a mensagem não sai do aparelho a bolha fica
+ * vazada. O encarregado enxerga de relance a cauda do que ainda não subiu.
+ */
+.mensagem-bubble--pendente {
+  border-style: dashed;
+  border-color: #a9c9bf;
   background: #fff;
-  border-left: 1px solid rgb(18 35 31 / 8%);
-  clip-path: polygon(100% 0, 0 0, 100% 55%);
+  color: #2a4a42;
 }
 
-.mensagem-bubble--mine.mensagem-bubble--tail {
-  border-top-right-radius: 2px;
-}
-
-.mensagem-bubble--mine.mensagem-bubble--tail::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: -6px;
-  width: 7px;
-  height: 13px;
-  background: #155e56;
-  clip-path: polygon(0 0, 100% 0, 0 55%);
-}
-
-.mensagem-autor {
-  flex: 0 0 100%;
-  overflow: hidden;
-  color: #1f8579;
-  font-size: 0.74rem;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.mensagem-bubble--falhou {
+  border-color: #e0b4ae;
+  background: #fff6f5;
+  color: #6d2a24;
 }
 
 .mensagem-corpo {
@@ -500,7 +524,7 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   font-size: 0.9rem;
-  line-height: 1.42;
+  line-height: 1.45;
 }
 
 .mensagem-deleted {
@@ -512,31 +536,27 @@
 }
 
 .mensagem-bubble--mine .mensagem-deleted {
-  color: rgb(255 255 255 / 72%);
+  color: #5d7a70;
 }
 
 .mensagem-meta {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
-  gap: 4px;
-  color: #97a29b;
-  font-size: 0.64rem;
-  white-space: nowrap;
-}
-
-.mensagem-bubble--mine .mensagem-meta {
-  color: rgb(255 255 255 / 68%);
+  color: #5c7d73;
 }
 
 .mensagem-tick {
   width: 15px;
   height: 15px;
-  color: rgb(255 255 255 / 85%);
+}
+
+.mensagem-bubble--pendente .mensagem-meta {
+  color: #7c9a90;
 }
 
 .mensagem-tick--fail {
-  color: #ffb4ab;
+  color: #a3312a;
 }
 
 .mensagem-attachments {
@@ -561,9 +581,9 @@
 }
 
 .mensagem-bubble--mine .mensagem-attachments button {
-  border-color: rgb(255 255 255 / 22%);
-  background: rgb(255 255 255 / 14%);
-  color: #eaf5f1;
+  border-color: #bcd8ce;
+  background: rgb(255 255 255 / 70%);
+  color: #24483e;
 }
 
 .mensagem-attachments svg {
@@ -587,7 +607,7 @@
 }
 
 .mensagem-bubble--mine .mensagem-attachments small {
-  color: rgb(255 255 255 / 62%);
+  color: #5d7a70;
 }
 
 .mensagem-retry {
@@ -595,15 +615,15 @@
   flex: 0 0 100%;
   align-items: center;
   gap: 9px;
-  margin-top: 3px;
-  color: #ffd0c9;
+  margin-top: 4px;
+  color: #a3312a;
   font-size: 0.68rem;
 }
 
 .mensagem-retry button {
   border: 0;
   background: transparent;
-  color: #fff;
+  color: #a3312a;
   font-size: inherit;
   font-weight: 650;
   text-decoration: underline;
@@ -617,13 +637,13 @@
 }
 
 .mensagem-error summary {
-  color: rgb(255 255 255 / 72%);
+  color: #5d7a70;
   cursor: pointer;
 }
 
 .mensagem-error p {
   margin: 5px 0 0;
-  color: rgb(255 255 255 / 80%);
+  color: #4a5851;
 }
 
 .mensagens-empty {
