@@ -15,6 +15,7 @@ import type {
 } from "../../lib/db/db.types";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
+import { useSyncStatus } from "../../lib/sync/useSyncStatus";
 import { getSession, hasOnlineSession, isAlfa } from "../auth/authSession";
 import { ConversationInfoPane } from "./components/ConversationInfoPane";
 import { ConversationsPane } from "./components/ConversationsPane";
@@ -80,6 +81,7 @@ export function MensagensPage() {
     () => localStorage.getItem(INFO_COLLAPSED_KEY) === "1",
   );
   const [now, setNow] = useState(() => new Date());
+  const { snapshot } = useSyncStatus();
 
   const loadLocal = useCallback(async () => {
     const [localConversations, localPreviews, localWorksites] = await Promise.all([
@@ -415,7 +417,12 @@ export function MensagensPage() {
           ) : null}
           <ConversationInfoPane
             conversation={selected}
+            title={selected ? conversationName(selected, session?.colaboradorId) : ""}
+            scope={selected ? conversationScope(selected) : ""}
             messages={messages}
+            now={now}
+            isOnline={snapshot.isOnline}
+            lastSyncCompletedAt={snapshot.lastSyncCompletedAt}
             worksites={worksites}
             onBack={() => setMobilePane("thread")}
             onClose={() => setContextOpen(false)}

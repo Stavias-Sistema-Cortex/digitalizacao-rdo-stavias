@@ -1,6 +1,6 @@
 import { useEffect, useRef, type FormEvent } from "react";
 
-import { IconPaperclip, IconSend, IconSpinner } from "./icons";
+import { IconImage, IconPaperclip, IconSend, IconSpinner } from "./icons";
 
 export interface MessageComposerProps {
   value: string;
@@ -45,15 +45,6 @@ export function MessageComposer(props: MessageComposerProps) {
         </ul>
       ) : null}
       <div className="mensagens-composer-bar">
-        <label className="mensagens-attach" aria-label="Anexar arquivos">
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            onChange={(event) => props.onFilesChange(Array.from(event.target.files ?? []))}
-          />
-          <IconPaperclip />
-        </label>
         <textarea
           ref={textareaRef}
           id="mensagem-body"
@@ -72,6 +63,24 @@ export function MessageComposer(props: MessageComposerProps) {
           placeholder="Mensagem"
           rows={1}
         />
+        <label className="mensagens-attach" aria-label="Anexar foto">
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(event) => props.onFilesChange(Array.from(event.target.files ?? []))}
+          />
+          <IconImage />
+        </label>
+        <label className="mensagens-attach" aria-label="Anexar arquivos">
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            onChange={(event) => props.onFilesChange(Array.from(event.target.files ?? []))}
+          />
+          <IconPaperclip />
+        </label>
         <button
           type="submit"
           className="mensagens-send"

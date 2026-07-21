@@ -146,6 +146,12 @@
     display: none;
   }
 
+  /* Em fluxo a barra "Contexto" só repetiria o escopo que o bloco de
+     identidade já mostra, e seus botões pertencem à gaveta. */
+  .mensagens-workspace .mensagens-context > header {
+    display: none;
+  }
+
   .mensagens-workspace--info-hidden {
     grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   }
@@ -722,22 +728,31 @@
 /* ---- Composer ------------------------------------------------------------ */
 
 .mensagens-composer {
-  padding: 10px 14px 14px;
+  padding: 12px 14px 16px;
   border-top: 1px solid var(--color-border);
   background: #fff;
 }
 
+/* Barra única: campo e ações dentro da mesma cápsula, como na referência. */
 .mensagens-composer-bar {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 4px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid #d7ddd8;
+  border-radius: 24px;
+  background: #fff;
+}
+
+.mensagens-composer-bar:focus-within {
+  border-color: #b9c4be;
 }
 
 .mensagens-attach {
   display: grid;
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   place-items: center;
   border-radius: 50%;
   color: #4d5b54;
@@ -747,6 +762,11 @@
 .mensagens-attach:hover {
   background: #eef2ef;
   color: var(--color-brand-teal);
+}
+
+.mensagens-attach:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
 }
 
 .mensagens-attach input {
@@ -760,22 +780,18 @@
 .mensagens-composer textarea {
   display: block;
   width: 100%;
-  min-height: 44px;
+  min-height: 38px;
   max-height: 140px;
   flex: 1 1 auto;
-  padding: 11px 16px;
-  border: 1px solid #d7ddd8;
-  border-radius: 22px;
-  background: #f7f9f7;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
   color: var(--color-text);
   line-height: 1.4;
   resize: none;
 }
 
 .mensagens-composer textarea:focus {
-  min-height: 44px;
-  border-color: #b9c4be;
-  background: #fff;
   outline: none;
   box-shadow: none;
 }
@@ -783,8 +799,8 @@
 .mensagens-send {
   display: grid;
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   place-items: center;
   border: 0;
   border-radius: 50%;
@@ -804,7 +820,7 @@
 
 .mensagens-composer-hint {
   display: block;
-  margin: 7px 4px 0 56px;
+  margin: 8px 0 0 14px;
   color: #a15a2a;
   font-size: 0.68rem;
 }
@@ -814,7 +830,7 @@
   gap: 7px;
   overflow-x: auto;
   margin-bottom: 9px;
-  padding-left: 52px;
+  padding-left: 8px;
 }
 
 .mensagens-file-preview li {
@@ -890,21 +906,93 @@
 
 .mensagens-drawer-close:hover { background: #e2e7e4; }
 
-.mensagens-context > section {
-  padding: 16px;
+.mensagens-info-identity {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 28px 20px 22px;
+  border-bottom: 1px solid #e5eae7;
+  text-align: center;
+}
+
+.mensagens-info-avatar {
+  display: grid;
+  width: 84px;
+  height: 84px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d7e6e0;
+  color: #124e4a;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.mensagens-info-identity strong {
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.mensagens-info-identity small {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+}
+
+.mensagens-info-section {
   border-bottom: 1px solid #e5eae7;
 }
 
-.mensagens-context h3 {
-  margin: 0 0 10px;
+.mensagens-info-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
   color: #758079;
   font-size: 0.65rem;
+  font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  cursor: pointer;
 }
 
-.mensagens-context section > strong { font-size: 0.8rem; }
-.mensagens-context section > p { margin: 4px 0 0; color: var(--color-muted); font-size: 0.7rem; line-height: 1.5; }
+.mensagens-info-toggle:hover {
+  color: var(--color-brand-teal);
+}
+
+.mensagens-info-toggle svg {
+  flex: 0 0 auto;
+  transition: transform 0.16s ease;
+}
+
+.mensagens-chevron--fechado {
+  transform: rotate(-90deg);
+}
+
+.mensagens-info-body {
+  padding: 0 16px 16px;
+}
+
+.mensagens-info-linha {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 12px;
+}
+
+.mensagens-info-linha:last-child {
+  margin-bottom: 0;
+}
+
+.mensagens-info-linha strong { font-size: 0.78rem; }
+.mensagens-info-linha small { color: var(--color-muted); font-size: 0.68rem; }
+
+.mensagens-info-vazio {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.74rem;
+}
 
 .mensagens-context-people,
 .mensagens-context-documents {
@@ -926,6 +1014,7 @@
   display: grid;
   width: 34px;
   height: 34px;
+  flex: 0 0 auto;
   place-items: center;
   border-radius: 50%;
   background: #d7e6e0;
@@ -1232,7 +1321,7 @@
   }
 
   .mensagens-file-preview {
-    padding-left: 48px;
+    padding-left: 8px;
   }
 
   .mensagens-directory-search {
