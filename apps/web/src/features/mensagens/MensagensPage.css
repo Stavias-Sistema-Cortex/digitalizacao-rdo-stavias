@@ -64,10 +64,19 @@
   font-weight: 650;
 }
 
+/*
+ * A sidebar do shell é redimensionável, então largura de viewport não responde
+ * "cabe uma terceira coluna?". O frame é o container consultado; o grid mora
+ * dentro dele porque um elemento não consulta o próprio container.
+ */
+.mensagens-frame {
+  container-type: inline-size;
+}
+
 .mensagens-workspace {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: min(760px, calc(100vh - 165px));
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -75,10 +84,82 @@
   background: var(--color-surface);
 }
 
+/* Painel único: só o painel escolhido por mobilePane aparece. */
+.mensagens-conversations,
+.mensagens-thread,
+.mensagens-context {
+  display: none;
+}
+
+.mensagens-workspace--list .mensagens-conversations { display: flex; }
+.mensagens-workspace--thread .mensagens-thread { display: grid; }
+.mensagens-workspace--context .mensagens-context { display: flex; }
+
+@container (min-width: 640px) {
+  .mensagens-workspace {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  }
+
+  .mensagens-conversations { display: flex; }
+  .mensagens-thread { display: grid; }
+
+  /* Nesta faixa o contexto é gaveta sobreposta. */
+  .mensagens-context {
+    position: absolute;
+    z-index: 6;
+    display: flex;
+    inset: 0 0 0 auto;
+    width: min(340px, 86%);
+    border-left: 1px solid var(--color-border);
+    box-shadow: -16px 0 44px rgb(18 35 31 / 16%);
+    transform: translateX(102%);
+    transition: transform 0.22s ease;
+    pointer-events: none;
+  }
+
+  .mensagens-workspace--drawer-open .mensagens-context {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+}
+
+@container (min-width: 1040px) {
+  .mensagens-workspace {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 320px;
+  }
+
+  /* Terceira coluna em fluxo: sem gaveta, sem sombra, sem transform. */
+  .mensagens-context {
+    position: static;
+    width: auto;
+    box-shadow: none;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /*
+   * Precisa vencer as regras-base, que aparecem depois neste arquivo;
+   * o descendente eleva a especificidade e torna a ordem irrelevante.
+   */
+  .mensagens-workspace .mensagens-drawer-backdrop,
+  .mensagens-workspace .mensagens-drawer-close {
+    display: none;
+  }
+
+  .mensagens-workspace--info-hidden {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  }
+
+  .mensagens-workspace--info-hidden .mensagens-context {
+    display: none;
+  }
+}
+
 /* ---- Conversations pane -------------------------------------------------- */
 
 .mensagens-conversations {
   min-width: 0;
+  flex-direction: column;
   border-right: 1px solid var(--color-border);
   background: #f8faf9;
 }
@@ -227,8 +308,9 @@
 
 /* ---- Thread -------------------------------------------------------------- */
 
+/* `display` fica só nos alternadores de painel acima; defini-lo aqui venceria
+   por ordem de origem e mostraria a thread junto da lista no painel único. */
 .mensagens-thread {
-  display: grid;
   min-width: 0;
   grid-template-rows: auto minmax(0, 1fr) auto;
   background: #ffffff;
@@ -707,22 +789,10 @@
 }
 
 .mensagens-context {
-  position: absolute;
-  z-index: 6;
-  inset: 0 0 0 auto;
-  width: min(340px, 86%);
+  min-width: 0;
+  flex-direction: column;
   overflow-y: auto;
-  border-left: 1px solid var(--color-border);
   background: #fcfdfc;
-  box-shadow: -16px 0 44px rgb(18 35 31 / 16%);
-  transform: translateX(102%);
-  transition: transform 0.22s ease;
-  pointer-events: none;
-}
-
-.mensagens-workspace--drawer-open .mensagens-context {
-  transform: translateX(0);
-  pointer-events: auto;
 }
 
 .mensagens-context > header {
@@ -1024,30 +1094,6 @@
   .mensagens-page {
     width: min(100% - 20px, 760px);
   }
-
-  .mensagens-workspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .mensagens-conversations,
-  .mensagens-thread,
-  .mensagens-context { display: none; }
-
-  .mensagens-workspace--list .mensagens-conversations { display: block; }
-  .mensagens-workspace--thread .mensagens-thread { display: grid; }
-  .mensagens-workspace--context .mensagens-context { display: block; }
-
-  /* Context returns to an in-flow pane on mobile (no drawer) */
-  .mensagens-context {
-    position: static;
-    width: auto;
-    box-shadow: none;
-    transform: none;
-    pointer-events: auto;
-  }
-
-  .mensagens-drawer-backdrop { display: none; }
-  .mensagens-drawer-close { display: none; }
 
   .mensagens-mobile-back {
     display: inline-grid;

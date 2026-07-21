@@ -52,6 +52,8 @@ import {
 } from "./mensagensView";
 import "./MensagensPage.css";
 
+const INFO_COLLAPSED_KEY = "cortex.ui.mensagensContextoRecolhido";
+
 export function MensagensPage() {
   const session = getSession();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,6 +76,9 @@ export function MensagensPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [mobilePane, setMobilePane] = useState<"list" | "thread" | "context">("list");
   const [contextOpen, setContextOpen] = useState(false);
+  const [infoCollapsed, setInfoCollapsed] = useState(
+    () => localStorage.getItem(INFO_COLLAPSED_KEY) === "1",
+  );
   const [now, setNow] = useState(() => new Date());
 
   const loadLocal = useCallback(async () => {
@@ -297,6 +302,20 @@ export function MensagensPage() {
     setMobilePane("context");
   }
 
+  /**
+   * O mesmo botão serve às duas larguras: acima de 1040px de frame ele recolhe
+   * a coluna em fluxo (a gaveta está invisível), abaixo ele abre a gaveta (a
+   * coluna recolhida está invisível).
+   */
+  function toggleInfo() {
+    setInfoCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(INFO_COLLAPSED_KEY, next ? "1" : "0");
+      return next;
+    });
+    openContext();
+  }
+
   return (
     <CortexShell
       active="mensagens"
@@ -325,10 +344,11 @@ export function MensagensPage() {
           </div>
         ) : null}
 
+        <div className="mensagens-frame">
         <section
           className={`mensagens-workspace mensagens-workspace--${mobilePane}${
             contextOpen ? " mensagens-workspace--drawer-open" : ""
-          }`}
+          }${infoCollapsed ? " mensagens-workspace--info-hidden" : ""}`}
           aria-label="Mensagens"
         >
           <ConversationsPane
@@ -360,7 +380,7 @@ export function MensagensPage() {
             isGroup={isGroup}
             now={now}
             onBack={() => setMobilePane("list")}
-            onOpenInfo={openContext}
+            onOpenInfo={toggleInfo}
             onOpenAttachment={openAttachment}
             onRetry={handleRetry}
             composer={
@@ -401,6 +421,7 @@ export function MensagensPage() {
             onOpenAttachment={openAttachment}
           />
         </section>
+        </div>
 
         {showCreate ? (
           <CreateConversationDialog
