@@ -1,0 +1,153 @@
+.cortex-activation {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(24px, 5vw, 64px);
+  background: linear-gradient(150deg, #111312 0%, #0e302d 48%, #124e4a 100%);
+  color: #fff;
+}
+
+.cortex-activation__stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  width: min(1040px, 100%);
+  min-height: min(640px, calc(100dvh - 144px));
+  margin: auto;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 4px;
+  background: #10312f;
+  overflow: hidden;
+}
+
+.cortex-activation__identity {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(38px, 6vw, 72px);
+}
+
+.cortex-activation__logo {
+  display: block;
+  width: min(100%, 350px);
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.cortex-activation__rule {
+  width: 100%;
+  height: 4px;
+  max-width: 164px;
+  margin: 44px 0 26px;
+  background: #f2c800;
+}
+
+.cortex-activation__classification,
+.cortex-activation__complete-label {
+  margin: 0 0 12px;
+  color: #f2c800;
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cortex-activation h1 {
+  max-width: 590px;
+  margin: 0;
+  color: #fff;
+  font-size: clamp(2rem, 4.6vw, 3.8rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+
+.cortex-activation__lead {
+  max-width: 580px;
+  margin: 24px 0 0;
+  color: rgb(255 255 255 / 78%);
+  font-size: 0.96rem;
+  line-height: 1.72;
+}
+
+.cortex-activation__scope {
+  max-width: 580px;
+  margin: 30px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid rgb(255 255 255 / 25%);
+  color: rgb(255 255 255 / 66%);
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.cortex-activation__panel {
+  display: flex;
+  align-items: center;
+  padding: clamp(32px, 5vw, 54px);
+  border: 1px solid #d9ddda;
+  border-radius: 4px;
+  background: #fff;
+  color: #111312;
+}
+
+.cortex-activation__panel > * {
+  width: 100%;
+}
+
+.cortex-activation__complete {
+  padding-left: 18px;
+  border-left: 4px solid #f2c800;
+}
+
+.cortex-activation__complete h2 {
+  margin: 0;
+  color: #111312;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.cortex-activation__complete > p:last-child {
+  margin: 14px 0 0;
+  color: #66706b;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.cortex-activation__footer {
+  margin: 22px 0 0;
+  color: rgb(255 255 255 / 58%);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .cortex-activation {
+    display: block;
+    padding: 16px;
+  }
+
+  .cortex-activation__stage {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .cortex-activation__identity,
+  .cortex-activation__panel {
+    padding: 32px 26px;
+  }
+
+  .cortex-activation__rule {
+    margin: 30px 0 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cortex-activation *,
+  .cortex-activation *::before,
+  .cortex-activation *::after {
+    transition: none !important;
+  }
+}

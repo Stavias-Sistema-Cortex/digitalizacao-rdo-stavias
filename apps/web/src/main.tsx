@@ -1,36 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { registerSW } from "virtual:pwa-register";
 
-import App from "./App.tsx";
 import "./index.css";
-
-import { initializeCortexDb } from "./lib/db/cortexDb";
-import { initializeAuthSession } from "./features/auth/authService";
-
-registerSW({
-  immediate: true,
-  onRegisterError(error: unknown) {
-    console.warn(
-      "Não foi possível registrar o modo offline da aplicação.",
-      error,
-    );
-  },
-});
+import { probeActivationOnly } from "./features/auth/activationBootstrap";
+import { resolveCortexAuthMode } from "./features/auth/cortexAuthMode";
 
 async function bootstrap(): Promise<void> {
-  let authUnavailable = false;
-  try {
-    const session = await initializeAuthSession();
-    if (session) {
-      await initializeCortexDb();
-    }
-  } catch {
-    authUnavailable = true;
-    // Sem sessão online válida, o App apresenta o login. Dados locais ficam
-    // intactos e o desbloqueio offline será tratado pelo cofre PRF dedicado.
-  }
-
   const rootElement = document.getElementById("root");
 
   if (!rootElement) {
@@ -39,11 +14,21 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  createRoot(rootElement).render(
-    <StrictMode>
-      <App initialAuthUnavailable={authUnavailable} />
-    </StrictMode>,
-  );
+  const root = createRoot(rootElement);
+  resolveCortexAuthMode();
+
+  if (await probeActivationOnly()) {
+    const { ActivationPage } = await import("./features/auth/ActivationPage");
+    root.render(
+      <StrictMode>
+        <ActivationPage />
+      </StrictMode>,
+    );
+    return;
+  }
+
+  const { mountNormalCortex } = await import("./bootstrap/normalBootstrap");
+  await mountNormalCortex(root);
 }
 
 bootstrap().catch((error: unknown) => {

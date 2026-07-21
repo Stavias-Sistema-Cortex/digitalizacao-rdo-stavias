@@ -19,6 +19,20 @@ class ExternalSourceAdapterTest {
     }
 
     @Test
+    void academyBootstrapLookupShouldRequireCortexReadOnlyConfiguration() {
+        AcademySourceAdapter adapter =
+                new AcademySourceAdapter("", "", "");
+
+        assertThatThrownBy(() ->
+                adapter.findSingleActiveUserForBootstrap("synthetic-canonical-id")
+        )
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("CORTEX_ACADEMY_DB_URL")
+                .hasMessageContaining("CORTEX_ACADEMY_DB_USER")
+                .hasMessageContaining("CORTEX_ACADEMY_DB_PASSWORD");
+    }
+
+    @Test
     void zeladoriaAdapterShouldRequireCortexReadOnlyConfiguration() {
         ZeladoriaSourceAdapter adapter =
                 new ZeladoriaSourceAdapter("", "", "");

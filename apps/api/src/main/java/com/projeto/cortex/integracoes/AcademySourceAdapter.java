@@ -11,12 +11,21 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class AcademySourceAdapter {
 
     private static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 30;
     private static final int DEFAULT_MAX_ROWS = 10_000;
+
+    private static final class AmbiguousBootstrapSourceException
+            extends IllegalStateException {
+
+        private AmbiguousBootstrapSourceException() {
+            super("Resultado Academy ambíguo para bootstrap.");
+        }
+    }
 
     private static final String SQL_SELECT_USUARIOS = """
             SELECT
@@ -36,6 +45,28 @@ public class AcademySourceAdapter {
             LEFT JOIN perfil p
                 ON p.id_perfil = u.id_perfil
             ORDER BY u.id_usuario
+            """;
+
+    private static final String SQL_SELECT_BOOTSTRAP_USER = """
+            SELECT
+                u.id_usuario,
+                u.nome,
+                u.email,
+                u.ativo,
+                u.id_grupo,
+                g.nome AS nome_grupo,
+                u.id_perfil,
+                p.nome_perfil,
+                u.criado_em
+            FROM usuarios u
+            LEFT JOIN grupos g
+                ON g.id_grupo = u.id_grupo
+            LEFT JOIN perfil p
+                ON p.id_perfil = u.id_perfil
+            WHERE REPLACE(REPLACE(REPLACE(TRIM(u.cpf), '.', ''), '-', ''), ' ', '') = ?
+              AND u.ativo = 1
+            ORDER BY u.id_usuario
+            LIMIT 2
             """;
 
     private final String url;
@@ -97,6 +128,46 @@ public class AcademySourceAdapter {
         return List.copyOf(users);
     }
 
+    /**
+     * Reads at most one active Academy user for the privileged bootstrap path.
+     * The caller owns the protected normalized identifier and receives no copy
+     * of it back from this source adapter.
+     */
+    public Optional<AcademyBootstrapUser> findSingleActiveUserForBootstrap(
+            String canonicalCpf
+    ) {
+        validateConfig();
+
+        try (
+                Connection connection = openReadOnlyConnection();
+                PreparedStatement statement = connection.prepareStatement(
+                        SQL_SELECT_BOOTSTRAP_USER
+                )
+        ) {
+            statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
+            statement.setMaxRows(2);
+            statement.setString(1, canonicalCpf);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+
+                AcademyBootstrapUser user = readBootstrapUser(resultSet);
+                if (resultSet.next()) {
+                    throw new AmbiguousBootstrapSourceException();
+                }
+                return Optional.of(user);
+            }
+        } catch (AmbiguousBootstrapSourceException exception) {
+            throw exception;
+        } catch (Exception ignored) {
+            throw new IllegalStateException(
+                    "Falha ao consultar a fonte Academy para bootstrap."
+            );
+        }
+    }
+
     public boolean testConnection() {
         try (
                 Connection connection =
@@ -118,8 +189,17 @@ public class AcademySourceAdapter {
                         password
                 );
 
-        connection.setReadOnly(true);
-        return connection;
+        try {
+            connection.setReadOnly(true);
+            return connection;
+        } catch (Exception exception) {
+            try {
+                connection.close();
+            } catch (Exception ignored) {
+                // The source setup error remains the only externally visible signal.
+            }
+            throw exception;
+        }
     }
 
     private UsuarioAcademyRecord readUser(ResultSet resultSet)
@@ -140,6 +220,23 @@ public class AcademySourceAdapter {
                 criadoEm == null
                         ? null
                         : criadoEm.toLocalDateTime()
+        );
+    }
+
+    private AcademyBootstrapUser readBootstrapUser(ResultSet resultSet)
+            throws Exception {
+        Timestamp criadoEm = resultSet.getTimestamp("criado_em");
+
+        return new AcademyBootstrapUser(
+                resultSet.getInt("id_usuario"),
+                resultSet.getString("nome"),
+                resultSet.getString("email"),
+                resultSet.getBoolean("ativo"),
+                nullableString(resultSet, "id_grupo"),
+                resultSet.getString("nome_grupo"),
+                nullableString(resultSet, "id_perfil"),
+                resultSet.getString("nome_perfil"),
+                criadoEm == null ? null : criadoEm.toLocalDateTime()
         );
     }
 

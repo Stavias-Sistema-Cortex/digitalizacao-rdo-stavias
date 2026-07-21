@@ -8,6 +8,7 @@ import com.projeto.cortex.auth.otp.OtpChallengeResponse;
 import com.projeto.cortex.auth.otp.OtpVerifyRequest;
 import com.projeto.cortex.auth.session.AuthCookieService;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
+import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.auth.session.ResolvedAuthSession;
@@ -15,6 +16,8 @@ import com.projeto.cortex.auth.identity.CpfNormalizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,26 +37,30 @@ public class AuthController {
             "Filtro de CPF desativado.";
 
     private final EmailOtpChallengeService otpChallenges;
-    private final AuthService authService;
+    private final Optional<AuthService> authService;
     private final ClientAddressResolver clientAddresses;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
-    private final CurrentUserService currentUsers;
+    private final AuthSessionProfileResolver sessionProfiles;
+    private final DirectCpfLoginPolicy directCpfLoginPolicy;
 
+    @Autowired
     public AuthController(
             EmailOtpChallengeService otpChallenges,
-            AuthService authService,
+            Optional<AuthService> authService,
             ClientAddressResolver clientAddresses,
             AuthSessionService sessions,
             AuthCookieService cookies,
-            CurrentUserService currentUsers
+            AuthSessionProfileResolver sessionProfiles,
+            DirectCpfLoginPolicy directCpfLoginPolicy
     ) {
         this.otpChallenges = otpChallenges;
         this.authService = authService;
         this.clientAddresses = clientAddresses;
         this.sessions = sessions;
         this.cookies = cookies;
-        this.currentUsers = currentUsers;
+        this.sessionProfiles = sessionProfiles;
+        this.directCpfLoginPolicy = directCpfLoginPolicy;
     }
 
     @PostMapping("/api/auth/email/challenges")
@@ -83,13 +90,13 @@ public class AuthController {
                 HttpStatus.UNAUTHORIZED,
                 "Código inválido ou expirado."
         ));
+        sessionProfiles.requireEligibleForSessionIssue(identity);
         IssuedAuthSession issued = sessions.issue(identity);
         cookies.write(response, issued);
         response.setHeader("Cache-Control", "no-store");
-        return AuthSessionResponse.from(
+        return sessionProfiles.profileForIssuedSession(
                 identity,
-                issued.expiresAt(),
-                currentUsers.allowedObraIds(identity.colaboradorId())
+                issued.expiresAt()
         );
     }
 
@@ -103,10 +110,7 @@ public class AuthController {
                 AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION
         );
         if (value instanceof ResolvedAuthSession session) {
-            return AuthSessionResponse.from(
-                    session,
-                    currentUsers.allowedObraIds(session.collaboratorId())
-            );
+            return sessionProfiles.profileForResolvedSession(session);
         }
         throw new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED,
@@ -133,18 +137,24 @@ public class AuthController {
             HttpServletResponse response
     ) {
         response.setHeader("Cache-Control", "no-store");
+        directCpfLoginPolicy.requireEnabled();
         String cpf = canonicalCpf(request);
-        AuthenticatedIdentity identity = authService.autenticarPorCpf(cpf)
+        AuthenticatedIdentity identity = authService.orElseThrow(
+                () -> new ResponseStatusException(
+                        HttpStatus.SERVICE_UNAVAILABLE,
+                        "Autenticação indisponível."
+                )
+        ).autenticarPorCpf(cpf)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.UNAUTHORIZED,
                         LOGIN_REJECTED_MESSAGE
                 ));
+        sessionProfiles.requireEligibleForSessionIssue(identity);
         IssuedAuthSession issued = sessions.issue(identity);
         cookies.write(response, issued);
-        return AuthSessionResponse.from(
+        return sessionProfiles.profileForIssuedSession(
                 identity,
-                issued.expiresAt(),
-                currentUsers.allowedObraIds(identity.colaboradorId())
+                issued.expiresAt()
         );
     }
 

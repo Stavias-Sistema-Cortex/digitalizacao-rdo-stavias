@@ -1,0 +1,15 @@
+spring:
+  config:
+    activate:
+      on-profile: postgresql-common
+  datasource:
+    url: ${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/StaviasCortex}
+    username: ${CORTEX_POSTGRES_USER:joaolucas}
+    password: ${CORTEX_POSTGRES_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    locations: classpath:db/migration-postgresql
+
+cortex:
+  postgresql:
+    required-schema-version: 44

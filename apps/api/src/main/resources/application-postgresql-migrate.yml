@@ -1,0 +1,16 @@
+spring:
+  config:
+    activate:
+      on-profile: postgresql-migrate
+  main:
+    web-application-type: none
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    clean-disabled: true
+
+cortex:
+  postgresql:
+    schema-readiness:
+      enabled: false
+    runtime-ready: false

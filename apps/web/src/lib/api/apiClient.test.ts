@@ -8,7 +8,13 @@ vi.mock("../../features/auth/authSession", () => ({
   clearSession: mocks.clearSession,
 }));
 
-import { apiFetch, apiUrl, responseErrorMessage } from "./apiClient";
+import {
+  ApiError,
+  apiError,
+  apiFetch,
+  apiUrl,
+  responseErrorMessage,
+} from "./apiClient";
 
 const fetchMock = vi.fn();
 const csrfToken = "c".repeat(43);
@@ -34,6 +40,36 @@ describe("responseErrorMessage", () => {
     expect(
       responseErrorMessage({ message: "Invalid CORS request" }, 403),
     ).toContain("CORS");
+  });
+
+  it("preserva somente códigos de máquina delimitados no ApiError", () => {
+    const activation = apiError(
+      {
+        code: "CORTEX_ACTIVATION_ONLY",
+        message: "Ativação inicial do Córtex em andamento.",
+        internal: { database: "não pode atravessar" },
+      },
+      503,
+    );
+    expect(activation).toBeInstanceOf(ApiError);
+    expect(activation).toMatchObject({
+      status: 503,
+      code: "CORTEX_ACTIVATION_ONLY",
+    });
+    expect(activation.message).toBe(
+      "Ativação inicial do Córtex em andamento.",
+    );
+    expect(Object.keys(activation)).not.toContain("body");
+    expect(apiError({ code: "raw@email.example" }, 503).code).toBeNull();
+    expect(
+      apiError(
+        {
+          message: "Senha, CPF e detalhes do banco não devem atravessar.",
+          detail: "stack trace",
+        },
+        500,
+      ).message,
+    ).toBe("Não foi possível concluir a solicitação ao Córtex.");
   });
 });
 

@@ -18,19 +18,29 @@ public class AuthSessionFilter extends OncePerRequestFilter {
 
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
+    private final AuthPublicEndpointPolicy publicEndpoints;
 
     public AuthSessionFilter(
             AuthSessionService sessions,
             AuthCookieService cookies
     ) {
+        this(sessions, cookies, AuthPublicEndpointPolicy.legacy());
+    }
+
+    public AuthSessionFilter(
+            AuthSessionService sessions,
+            AuthCookieService cookies,
+            AuthPublicEndpointPolicy publicEndpoints
+    ) {
         this.sessions = sessions;
         this.cookies = cookies;
+        this.publicEndpoints = publicEndpoints;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return AuthPublicEndpointPolicy.isOutsideApi(request)
-                || AuthPublicEndpointPolicy.isPublicAuthenticationRequest(
+        return publicEndpoints.isOutsideApi(request)
+                || publicEndpoints.isPublicAuthenticationRequest(
                         request
                 );
     }

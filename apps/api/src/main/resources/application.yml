@@ -1,4 +1,11 @@
 spring:
+  profiles:
+    group:
+      postgresql: [postgresql-common]
+      postgresql-migrate: [postgresql-common]
+      postgresql-bootstrap: [postgresql-common]
+      postgresql-activation: [postgresql-common]
+
   output:
     ansi:
       enabled: ALWAYS
@@ -22,6 +29,11 @@ server:
   forward-headers-strategy: none
 
 cortex:
+  postgresql:
+    schema-readiness:
+      enabled: false
+    runtime-ready: false
+
   auth:
     session:
       ttl-seconds: ${CORTEX_AUTH_SESSION_TTL_SECONDS:43200}

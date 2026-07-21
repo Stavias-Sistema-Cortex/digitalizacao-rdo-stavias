@@ -20,14 +20,14 @@ public class AuthSessionService {
     private static final Base64.Encoder TOKEN_ENCODER =
             Base64.getUrlEncoder().withoutPadding();
 
-    private final JdbcAuthSessionRepository repository;
+    private final AuthSessionRepository repository;
     private final AuthSessionProperties properties;
     private final SecureRandom secureRandom;
     private final Supplier<String> sessionIdSupplier;
 
     @Autowired
     public AuthSessionService(
-            JdbcAuthSessionRepository repository,
+            AuthSessionRepository repository,
             AuthSessionProperties properties
     ) {
         this(
@@ -39,7 +39,7 @@ public class AuthSessionService {
     }
 
     AuthSessionService(
-            JdbcAuthSessionRepository repository,
+            AuthSessionRepository repository,
             AuthSessionProperties properties,
             SecureRandom secureRandom,
             Supplier<String> sessionIdSupplier

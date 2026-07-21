@@ -1,0 +1,14 @@
+spring:
+  config:
+    activate:
+      on-profile: postgresql
+  main:
+    web-application-type: servlet
+  flyway:
+    enabled: false
+
+cortex:
+  postgresql:
+    schema-readiness:
+      enabled: true
+    runtime-ready: ${CORTEX_POSTGRES_RUNTIME_READY:false}

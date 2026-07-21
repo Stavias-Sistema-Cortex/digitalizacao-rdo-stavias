@@ -33,3 +33,13 @@ Comece por [docs/deploy-checklist.md](docs/deploy-checklist.md) e
 banco nem contém credenciais. Produção falha fechada sem secrets por arquivo,
 origem HTTPS exata, SMTP autenticado, storage durável e um ALFA ativo com e-mail
 verificado.
+
+## Fundação PostgreSQL limpa
+
+O PostgreSQL `StaviasCortex` é uma fundação canônica nova, não um cutover
+automático do runtime MySQL. Academy e Zeladoria continuam somente como fontes
+MySQL de leitura. Veja o
+[runbook de clean start PostgreSQL](docs/operations/cortex-postgresql-clean-start.md)
+antes de provisionar, migrar, fazer bootstrap ou ativar esse ambiente. O
+runtime operacional PostgreSQL permanece propositalmente bloqueado até uma
+release posterior registrar um slice seguro e verificado.

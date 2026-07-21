@@ -131,6 +131,39 @@ class AuthSessionFilterTest {
         verifyNoInteractions(sessions);
     }
 
+    @Test
+    void postgresqlActivationMakesOnlyEmailOtpPreAuthPublic() throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        AuthSessionFilter filter = new AuthSessionFilter(
+                sessions,
+                cookies,
+                new AuthPublicEndpointPolicy(false, true)
+        );
+        FilterChain chain = mock(FilterChain.class);
+        MockHttpServletRequest otp = request(
+                "POST",
+                "/api/auth/email/challenges"
+        );
+
+        filter.doFilter(otp, new MockHttpServletResponse(), chain);
+        verify(chain).doFilter(
+                org.mockito.ArgumentMatchers.eq(otp),
+                org.mockito.ArgumentMatchers.any()
+        );
+
+        MockHttpServletRequest passkey = request(
+                "POST",
+                "/api/auth/passkeys/authentication/options"
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(cookies.readSessionToken(passkey)).thenReturn(Optional.empty());
+
+        filter.doFilter(passkey, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
     private MockHttpServletRequest request(String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRequestURI(path);

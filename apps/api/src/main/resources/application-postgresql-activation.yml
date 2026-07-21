@@ -1,0 +1,14 @@
+spring:
+  config:
+    activate:
+      on-profile: postgresql-activation
+  main:
+    web-application-type: servlet
+  flyway:
+    enabled: false
+
+cortex:
+  postgresql:
+    schema-readiness:
+      enabled: true
+    runtime-ready: false

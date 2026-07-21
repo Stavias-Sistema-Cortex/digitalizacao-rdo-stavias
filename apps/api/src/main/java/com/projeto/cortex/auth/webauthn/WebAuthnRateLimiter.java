@@ -1,7 +1,7 @@
 package com.projeto.cortex.auth.webauthn;
 
 import com.projeto.cortex.auth.otp.OtpCryptography;
-import com.projeto.cortex.auth.otp.RateLimitBucketRepository;
+import com.projeto.cortex.auth.otp.AuthRateLimitStore;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
@@ -10,12 +10,12 @@ import org.springframework.stereotype.Service;
 @Service
 public class WebAuthnRateLimiter {
 
-    private final RateLimitBucketRepository buckets;
+    private final AuthRateLimitStore buckets;
     private final OtpCryptography cryptography;
     private final WebAuthnRateLimitPolicy policy;
 
     public WebAuthnRateLimiter(
-            RateLimitBucketRepository buckets,
+            AuthRateLimitStore buckets,
             OtpCryptography cryptography,
             WebAuthnRateLimitPolicy policy
     ) {

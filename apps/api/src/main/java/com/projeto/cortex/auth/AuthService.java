@@ -3,10 +3,12 @@ package com.projeto.cortex.auth;
 import com.projeto.cortex.auth.identity.AuthIdentityRepository;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import java.util.Optional;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 /** Resolves an eligible Academy-linked CPF into the current session identity. */
 @Service
+@Profile("!postgresql-common")
 public class AuthService {
 
     private final AuthIdentityRepository identities;

@@ -15,11 +15,12 @@ public class AuthFilterConfiguration {
     @Bean
     FilterRegistrationBean<AuthSessionFilter> authSessionFilterRegistration(
             AuthSessionService sessions,
-            AuthCookieService cookies
+            AuthCookieService cookies,
+            AuthPublicEndpointPolicy publicEndpoints
     ) {
         FilterRegistrationBean<AuthSessionFilter> registration =
                 new FilterRegistrationBean<>(
-                        new AuthSessionFilter(sessions, cookies)
+                        new AuthSessionFilter(sessions, cookies, publicEndpoints)
                 );
         registration.setName("cortexAuthSessionFilter");
         registration.setOrder(AUTH_FILTER_ORDER);
@@ -30,11 +31,12 @@ public class AuthFilterConfiguration {
     @Bean
     FilterRegistrationBean<CsrfRequestFilter> csrfRequestFilterRegistration(
             AuthSessionService sessions,
-            AuthCookieService cookies
+            AuthCookieService cookies,
+            AuthPublicEndpointPolicy publicEndpoints
     ) {
         FilterRegistrationBean<CsrfRequestFilter> registration =
                 new FilterRegistrationBean<>(
-                        new CsrfRequestFilter(sessions, cookies)
+                        new CsrfRequestFilter(sessions, cookies, publicEndpoints)
                 );
         registration.setName("cortexCsrfRequestFilter");
         registration.setOrder(CSRF_FILTER_ORDER);

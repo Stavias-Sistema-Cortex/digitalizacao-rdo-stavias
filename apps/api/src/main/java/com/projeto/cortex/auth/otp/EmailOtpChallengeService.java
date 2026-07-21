@@ -1,7 +1,7 @@
 package com.projeto.cortex.auth.otp;
 
 import com.projeto.cortex.auth.PapelAcesso;
-import com.projeto.cortex.auth.identity.AuthIdentityChallengeLookup;
+import com.projeto.cortex.auth.identity.AuthenticationChallengeLookup;
 import com.projeto.cortex.email.EmailMessage;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,7 +20,7 @@ public class EmailOtpChallengeService {
 
     private final AuthRateLimiter rateLimiter;
     private final EmailOtpChallengeIssuer issuer;
-    private final EmailOtpChallengeRepository challenges;
+    private final EmailOtpChallengeStore challenges;
     private final OtpCryptography cryptography;
     private final OtpPolicy policy;
     private final Supplier<String> challengeIds;
@@ -29,7 +29,7 @@ public class EmailOtpChallengeService {
     public EmailOtpChallengeService(
             AuthRateLimiter rateLimiter,
             EmailOtpChallengeIssuer issuer,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             OtpCryptography cryptography,
             OtpPolicy policy
     ) {
@@ -46,7 +46,7 @@ public class EmailOtpChallengeService {
     EmailOtpChallengeService(
             AuthRateLimiter rateLimiter,
             EmailOtpChallengeIssuer issuer,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             OtpCryptography cryptography,
             OtpPolicy policy,
             Supplier<String> challengeIds
@@ -60,9 +60,9 @@ public class EmailOtpChallengeService {
     }
 
     public EmailOtpChallengeService(
-            AuthIdentityChallengeLookup identities,
+            AuthenticationChallengeLookup identities,
             AuthRateLimiter rateLimiter,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             OtpCryptography cryptography,
             OtpPolicy policy,
             ApplicationEventPublisher events
@@ -74,17 +74,40 @@ public class EmailOtpChallengeService {
                 cryptography,
                 policy,
                 events,
+                new MysqlCpfIdentifierNormalizer(),
                 () -> UUID.randomUUID().toString()
         );
     }
 
     EmailOtpChallengeService(
-            AuthIdentityChallengeLookup identities,
+            AuthenticationChallengeLookup identities,
             AuthRateLimiter rateLimiter,
-            EmailOtpChallengeRepository challenges,
+            EmailOtpChallengeStore challenges,
             OtpCryptography cryptography,
             OtpPolicy policy,
             ApplicationEventPublisher events,
+            Supplier<String> challengeIds
+    ) {
+        this(
+                identities,
+                rateLimiter,
+                challenges,
+                cryptography,
+                policy,
+                events,
+                new MysqlCpfIdentifierNormalizer(),
+                challengeIds
+        );
+    }
+
+    EmailOtpChallengeService(
+            AuthenticationChallengeLookup identities,
+            AuthRateLimiter rateLimiter,
+            EmailOtpChallengeStore challenges,
+            OtpCryptography cryptography,
+            OtpPolicy policy,
+            ApplicationEventPublisher events,
+            AuthenticationIdentifierNormalizer identifierNormalizer,
             Supplier<String> challengeIds
     ) {
         this(
@@ -94,7 +117,8 @@ public class EmailOtpChallengeService {
                         challenges,
                         cryptography,
                         policy,
-                        events
+                        events,
+                        identifierNormalizer
                 ),
                 challenges,
                 cryptography,
@@ -128,12 +152,12 @@ public class EmailOtpChallengeService {
         if (!canonicalUuid(challengeId)) {
             return Optional.empty();
         }
-        Optional<EmailOtpChallengeRepository.LockedChallenge> locked =
+        Optional<EmailOtpChallengeStore.LockedChallenge> locked =
                 challenges.lockForVerification(challengeId);
         if (locked.isEmpty()) {
             return Optional.empty();
         }
-        EmailOtpChallengeRepository.LockedChallenge candidate =
+        EmailOtpChallengeStore.LockedChallenge candidate =
                 locked.orElseThrow();
         if (!PENDING.equals(candidate.challengeStatus())) {
             return Optional.empty();
@@ -205,7 +229,7 @@ public class EmailOtpChallengeService {
     }
 
     private boolean eligibleAtVerification(
-            EmailOtpChallengeRepository.LockedChallenge candidate,
+            EmailOtpChallengeStore.LockedChallenge candidate,
             Optional<PapelAcesso> role
     ) {
         return candidate.collaboratorActive()

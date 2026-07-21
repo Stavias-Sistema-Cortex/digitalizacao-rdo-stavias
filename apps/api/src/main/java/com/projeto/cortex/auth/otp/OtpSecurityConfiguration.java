@@ -6,9 +6,11 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.EnvironmentAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 
 @Configuration(proxyBeanMethods = false)
@@ -19,6 +21,13 @@ public class OtpSecurityConfiguration implements EnvironmentAware {
     @Override
     public void setEnvironment(Environment environment) {
         this.environment = environment;
+    }
+
+    @Bean
+    @Profile("!postgresql-common")
+    @ConditionalOnMissingBean(AuthenticationIdentifierNormalizer.class)
+    AuthenticationIdentifierNormalizer legacyIdentifierNormalizer() {
+        return new MysqlCpfIdentifierNormalizer();
     }
 
     @Bean
@@ -44,7 +53,8 @@ public class OtpSecurityConfiguration implements EnvironmentAware {
     @Bean
     OtpCryptography otpCryptography(
             @Value("${cortex.auth.otp.hmac-key-file:}") String keyFile,
-            @Value("${cortex.auth.otp.hmac-key-inline:}") String keyInline
+            @Value("${cortex.auth.otp.hmac-key-inline:}") String keyInline,
+            AuthenticationIdentifierNormalizer identifierNormalizer
     ) {
         boolean localOrTestOnly = hasOnlyLocalOrTestProfiles();
         String normalizedFile = optionalValue(keyFile);
@@ -61,7 +71,11 @@ public class OtpSecurityConfiguration implements EnvironmentAware {
                 "OTP HMAC"
         );
         try {
-            return new OtpCryptography(key, new SecureRandom());
+            return new OtpCryptography(
+                    key,
+                    new SecureRandom(),
+                    identifierNormalizer
+            );
         } finally {
             Arrays.fill(key, (byte) 0);
         }

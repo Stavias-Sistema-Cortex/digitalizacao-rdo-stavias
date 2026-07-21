@@ -3,7 +3,7 @@ package com.projeto.cortex.auth.otp;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.auth.identity.AmbiguousAuthIdentityException;
 import com.projeto.cortex.auth.identity.AuthIdentity;
-import com.projeto.cortex.auth.identity.AuthIdentityChallengeLookup;
+import com.projeto.cortex.auth.identity.AuthenticationChallengeLookup;
 import com.projeto.cortex.email.EmailMessage;
 import java.time.Instant;
 import java.util.Optional;
@@ -16,31 +16,37 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class EmailOtpChallengeIssuer {
 
-    private final AuthIdentityChallengeLookup identities;
-    private final EmailOtpChallengeRepository challenges;
+    private final AuthenticationChallengeLookup identities;
+    private final EmailOtpChallengeStore challenges;
     private final OtpCryptography cryptography;
     private final OtpPolicy policy;
     private final ApplicationEventPublisher events;
+    private final AuthenticationIdentifierNormalizer identifierNormalizer;
 
     public EmailOtpChallengeIssuer(
-            AuthIdentityChallengeLookup identities,
-            EmailOtpChallengeRepository challenges,
+            AuthenticationChallengeLookup identities,
+            EmailOtpChallengeStore challenges,
             OtpCryptography cryptography,
             OtpPolicy policy,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            AuthenticationIdentifierNormalizer identifierNormalizer
     ) {
         this.identities = identities;
         this.challenges = challenges;
         this.cryptography = cryptography;
         this.policy = policy;
         this.events = events;
+        this.identifierNormalizer = identifierNormalizer;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void issue(String challengeId, String identifier) {
-        Optional<AuthIdentity> identity = resolveEligible(identifier);
+        String canonicalIdentifier = identifierNormalizer.canonicalize(identifier);
+        Optional<AuthIdentity> identity = identifierNormalizer.isInvalid(
+                canonicalIdentifier
+        ) ? Optional.empty() : resolveEligible(canonicalIdentifier);
         String code = cryptography.generateCode();
-        String identifierDigest = cryptography.identifierDigest(identifier);
+        String identifierDigest = cryptography.identifierDigest(canonicalIdentifier);
         String codeDigest = identity
                 .map(value -> cryptography.codeDigest(
                         challengeId,
@@ -69,9 +75,9 @@ public class EmailOtpChallengeIssuer {
                 .orElseGet(OtpDeliveryRequested::decoy));
     }
 
-    private Optional<AuthIdentity> resolveEligible(String identifier) {
+    private Optional<AuthIdentity> resolveEligible(String canonicalIdentifier) {
         try {
-            return identities.find(identifier)
+            return identities.find(canonicalIdentifier)
                     .filter(this::eligibleForChallenge);
         } catch (AmbiguousAuthIdentityException exception) {
             return Optional.empty();

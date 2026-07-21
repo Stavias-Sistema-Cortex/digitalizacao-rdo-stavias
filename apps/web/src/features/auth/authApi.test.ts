@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  apiError: vi.fn(),
   apiFetch: vi.fn(),
   readResponseBody: vi.fn(),
   responseErrorMessage: vi.fn(),
 }));
 
 vi.mock("../../lib/api/apiClient", () => ({
+  apiError: mocks.apiError,
   apiFetch: mocks.apiFetch,
   readResponseBody: mocks.readResponseBody,
   responseErrorMessage: mocks.responseErrorMessage,
@@ -35,6 +37,7 @@ describe("authApi", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.responseErrorMessage.mockReturnValue("Falha controlada.");
+    mocks.apiError.mockReturnValue(new Error("Falha controlada."));
   });
 
   it("entra com CPF e retorna somente o perfil seguro", async () => {
