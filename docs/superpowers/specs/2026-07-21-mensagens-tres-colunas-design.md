@@ -107,8 +107,12 @@ Nova função pura `formatRelativeTime(iso, now)` em `mensagensFormat.ts`:
 | dia anterior | `ontem 14:32` |
 | demais | `12/07 14:32` |
 
-Usa `Intl.RelativeTimeFormat("pt-BR", { numeric: "auto", style: "narrow" })` até
-24h. `now` é parâmetro para o teste ser determinístico. A página mantém um
+Os rótulos até 24h são montados à mão (`há ${n} min` / `há ${n} h`), não com
+`Intl.RelativeTimeFormat`: em pt-BR o ICU do Node devolve `há 5 minutos` no
+estilo `narrow` e `há 1 min.` com `numeric: "auto"`, formas que divergem entre
+Node (onde os testes rodam) e navegador (onde a tela roda) e que não são a saída
+desejada. `Intl.DateTimeFormat` continua sendo usado para `HH:mm` e `DD/MM`.
+`now` é parâmetro para o teste ser determinístico. A página mantém um
 `useEffect` com `setInterval` de 60s que atualiza um estado `now`, senão as
 legendas congelam com a aba aberta.
 
