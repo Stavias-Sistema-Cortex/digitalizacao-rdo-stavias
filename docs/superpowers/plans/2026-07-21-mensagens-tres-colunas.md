@@ -199,22 +199,28 @@ const HISTORICO = [
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width, height: 1000 } });
 
-await page.route("**/api/**", async (route) => {
-  const url = route.request().url();
-  const json = (body) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
-  if (url.includes("/auth/session")) return json(PERFIL);
-  if (url.includes("/mensagens/conversas/")) return json(HISTORICO);
-  if (url.includes("/mensagens/conversas")) return json(CONVERSAS);
-  if (url.includes("/mensagens/busca")) return json([]);
-  return json([]);
-});
+// Pathname predicate, not a glob: "**/api/**" also matches Vite source
+// modules such as /src/lib/api/apiEndpoint.ts, which then get served as
+// JSON and break the module graph — the page renders blank.
+await page.route(
+  (url) => url.pathname.startsWith("/api/"),
+  async (route) => {
+    const url = route.request().url();
+    const json = (body) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    if (url.includes("/auth/session")) return json(PERFIL);
+    if (url.includes("/mensagens/conversas/")) return json(HISTORICO);
+    if (url.includes("/mensagens/conversas")) return json(CONVERSAS);
+    if (url.includes("/mensagens/busca")) return json([]);
+    return json([]);
+  },
+);
 
 await page.addInitScript((isCollapsed) => {
   localStorage.setItem("cortex.ui.mensagensContextoRecolhido", isCollapsed ? "1" : "0");
 }, collapsed);
 
-await page.goto("http://127.0.0.1:5173/mensagens", { waitUntil: "networkidle" });
+await page.goto("http://127.0.0.1:5174/mensagens", { waitUntil: "networkidle" });
 await page.waitForTimeout(1200);
 
 mkdirSync(join(here, "shots"), { recursive: true });
@@ -224,14 +230,28 @@ console.log(file);
 await browser.close();
 ```
 
-- [ ] **Step 5: Start the dev server if it is not already running**
+- [ ] **Step 5: Start a dev server for THIS worktree on port 5174**
+
+Port 5173 is already held by a Vite server running out of
+`.worktrees/cortex-2-1-sync-transport/apps/web`. Screenshotting 5173 silently
+captures unrelated code. This plan uses 5174, and Playwright needs `playwright`
+resolvable from the scratchpad.
 
 ```bash
+ln -sfn "$(ls -d /Users/joaolucas/.npm/_npx/*/node_modules/playwright | head -1 | xargs dirname)" \
+  /private/tmp/claude-501/-Users-joaolucas-digitalizacao-rdo-stavias/702f330c-fcc8-4fa9-9715-486648955e66/scratchpad/node_modules
 cd /Users/joaolucas/digitalizacao-rdo-stavias/apps/web
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/ || npm run dev
+npm run dev -- --port 5174 --host 127.0.0.1
 ```
 
-Expected: `200`. If not, start `npm run dev` in the background and re-check.
+Run the server in the background, then confirm:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:5174/
+```
+
+Expected: `200`. Confirm the served code is this worktree's by checking that the
+first screenshot shows the two-column baseline with dark teal own-bubbles.
 
 - [ ] **Step 6: Capture the baseline**
 
@@ -2161,7 +2181,7 @@ cd /private/tmp/claude-501/-Users-joaolucas-digitalizacao-rdo-stavias/702f330c-f
 node shot.mjs composer 1440
 ```
 
-Then in a real browser at `http://127.0.0.1:5173/mensagens`: type a message and confirm the bar grows to two lines without the icons drifting; attach a file and confirm the chip appears above the bar; confirm the send button is disabled with an empty field and enabled once text is typed.
+Then in a real browser at `http://127.0.0.1:5174/mensagens`: type a message and confirm the bar grows to two lines without the icons drifting; attach a file and confirm the chip appears above the bar; confirm the send button is disabled with an empty field and enabled once text is typed.
 
 - [ ] **Step 6: Commit**
 
