@@ -14,6 +14,7 @@ import type {
   ConversaLocalRecord,
   ConversaTipo,
   MensagemAnexoLocalRecord,
+  MensagemSyncStatus,
   ObraLocalRecord,
 } from "../../lib/db/db.types";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
@@ -87,7 +88,9 @@ export function MensagensPage() {
   );
   const [showCreate, setShowCreate] = useState(false);
   const [mobilePane, setMobilePane] = useState<"list" | "thread" | "context">("list");
+  const [contextOpen, setContextOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const loadLocal = useCallback(async () => {
     const [localConversations, localPreviews, localWorksites] = await Promise.all([
@@ -181,6 +184,14 @@ export function MensagensPage() {
   );
   const body = selectedId ? drafts[selectedId] ?? "" : "";
   const timeline = useMemo(() => buildMessageTimeline(messages), [messages]);
+  const isGroup = selected ? selected.tipo !== "DIRETA" : false;
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+  }, [body, selectedId]);
 
   async function handleRefresh() {
     if (refreshing) return;
@@ -288,13 +299,20 @@ export function MensagensPage() {
     setSelectedId(result.conversaId);
     setSearchParams({ conversa: result.conversaId });
     setSearchResults(null);
+    setContextOpen(false);
     setMobilePane("thread");
   }
 
   function chooseConversation(id: string) {
     setSelectedId(id);
     setSearchParams({ conversa: id });
+    setContextOpen(false);
     setMobilePane("thread");
+  }
+
+  function openContext() {
+    setContextOpen(true);
+    setMobilePane("context");
   }
 
   return (
@@ -326,7 +344,9 @@ export function MensagensPage() {
         ) : null}
 
         <section
-          className={`mensagens-workspace mensagens-workspace--${mobilePane}`}
+          className={`mensagens-workspace mensagens-workspace--${mobilePane}${
+            contextOpen ? " mensagens-workspace--drawer-open" : ""
+          }`}
           aria-label="Mensagens"
         >
           <aside className="mensagens-conversations">
@@ -376,19 +396,30 @@ export function MensagensPage() {
                     type="button"
                     className="mensagens-mobile-back"
                     onClick={() => setMobilePane("list")}
+                    aria-label="Voltar para conversas"
                   >
-                    Conversas
+                    <IconChevronLeft />
                   </button>
-                  <div>
+                  <span className="mensagens-thread-avatar" aria-hidden="true">
+                    {conversationName(selected, session?.colaboradorId)
+                      .slice(0, 1)
+                      .toUpperCase()}
+                  </span>
+                  <div className="mensagens-thread-heading">
                     <h2>{conversationName(selected, session?.colaboradorId)}</h2>
-                    <p>{conversationScope(selected)}</p>
+                    <p>
+                      {conversationScope(selected)} ·{" "}
+                      {selected.participantes.filter(activeParticipant).length}{" "}
+                      participantes
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="mensagens-context-toggle"
-                    onClick={() => setMobilePane("context")}
+                    className="mensagens-info-btn"
+                    onClick={openContext}
+                    aria-label="Ver contexto da conversa"
                   >
-                    {selected.participantes.filter(activeParticipant).length} participantes
+                    <IconInfo />
                   </button>
                 </header>
 
@@ -408,6 +439,7 @@ export function MensagensPage() {
                         message={entry.message}
                         showAuthor={entry.showAuthor}
                         mine={entry.message.autorId === session?.colaboradorId}
+                        isGroup={isGroup}
                         onOpenAttachment={openAttachment}
                         onRetry={handleRetry}
                       />
@@ -435,44 +467,54 @@ export function MensagensPage() {
                       ))}
                     </ul>
                   ) : null}
-                  <label htmlFor="mensagem-body">Nova mensagem</label>
-                  <textarea
-                    id="mensagem-body"
-                    value={body}
-                    onChange={(event) => selectedId && setDrafts((current) => ({
-                      ...current,
-                      [selectedId]: event.target.value,
-                    }))}
-                    onKeyDown={(event) => {
-                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                        event.preventDefault();
-                        event.currentTarget.form?.requestSubmit();
-                      }
-                    }}
-                    placeholder="Mensagem"
-                    rows={1}
-                  />
-                  <div>
-                    <label className="mensagens-attach">
+                  <div className="mensagens-composer-bar">
+                    <label className="mensagens-attach" aria-label="Anexar arquivos">
                       <input
                         ref={fileInput}
                         type="file"
                         multiple
                         onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
                       />
-                      Anexar arquivos
+                      <IconPaperclip />
                     </label>
-                    <span>
-                      {navigator.onLine ? "Conectado" : "Offline — será enviado depois"}
-                    </span>
+                    <textarea
+                      ref={textareaRef}
+                      id="mensagem-body"
+                      value={body}
+                      onChange={(event) =>
+                        selectedId &&
+                        setDrafts((current) => ({
+                          ...current,
+                          [selectedId]: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.shiftKey &&
+                          !event.nativeEvent.isComposing
+                        ) {
+                          event.preventDefault();
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }}
+                      placeholder="Mensagem"
+                      rows={1}
+                    />
                     <button
                       type="submit"
-                      className="mensagens-primary"
+                      className="mensagens-send"
                       disabled={sending || (!body.trim() && files.length === 0)}
+                      aria-label="Enviar mensagem"
                     >
-                      {sending ? "Salvando…" : "Enviar"}
+                      {sending ? <IconSpinner /> : <IconSend />}
                     </button>
                   </div>
+                  {!navigator.onLine ? (
+                    <span className="mensagens-composer-hint">
+                      Offline — a mensagem será enviada quando reconectar.
+                    </span>
+                  ) : null}
                 </form>
               </>
             ) : (
@@ -483,11 +525,20 @@ export function MensagensPage() {
             )}
           </section>
 
+          {contextOpen ? (
+            <button
+              type="button"
+              className="mensagens-drawer-backdrop"
+              aria-label="Fechar contexto"
+              onClick={() => setContextOpen(false)}
+            />
+          ) : null}
           <ConversationContext
             conversation={selected}
             messages={messages}
             worksites={worksites}
             onBack={() => setMobilePane("thread")}
+            onClose={() => setContextOpen(false)}
             onOpenAttachment={openAttachment}
           />
         </section>
@@ -514,29 +565,39 @@ function MessageItem({
   message,
   showAuthor,
   mine,
+  isGroup,
   onOpenAttachment,
   onRetry,
 }: {
   message: MensagemComAnexos;
   showAuthor: boolean;
   mine: boolean;
+  isGroup: boolean;
   onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
   onRetry: (messageId: string) => Promise<void>;
 }) {
-  const showSync = message.syncStatus !== "SINCRONIZADO";
+  const failed = message.syncStatus === "FALHOU";
+  const bubbleClass = [
+    "mensagem-bubble",
+    mine ? "mensagem-bubble--mine" : "mensagem-bubble--in",
+    showAuthor ? "mensagem-bubble--tail" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <li className={mine ? "mensagem-item mensagem-item--mine" : "mensagem-item"}>
-      <article>
-        <header className={showAuthor ? "" : "is-continuation"}>
-          {showAuthor ? <strong>{message.autorNome}</strong> : <span />}
-          <time dateTime={message.criadaNoClienteEm}>
-            {formatMessageTimeOnly(message.criadaNoClienteEm)}
-          </time>
-        </header>
+    <li
+      className={`mensagem-item${mine ? " mensagem-item--mine" : ""}${
+        showAuthor ? " mensagem-item--lead" : ""
+      }`}
+    >
+      <div className={bubbleClass}>
+        {isGroup && !mine && showAuthor ? (
+          <span className="mensagem-autor">{message.autorNome}</span>
+        ) : null}
         {message.status === "EXCLUIDA" ? (
           <p className="mensagem-deleted">Mensagem excluída</p>
         ) : message.corpo ? (
-          <p>{message.corpo}</p>
+          <p className="mensagem-corpo">{message.corpo}</p>
         ) : null}
         {message.anexos.length > 0 ? (
           <ul className="mensagem-attachments">
@@ -546,7 +607,7 @@ function MessageItem({
                   type="button"
                   onClick={() => void onOpenAttachment(attachment)}
                 >
-                  <b aria-hidden="true">DOC</b>
+                  <IconFile />
                   <span>{attachment.nome}</span>
                   <small>{formatFileSize(attachment.tamanhoBytes)}</small>
                 </button>
@@ -554,27 +615,42 @@ function MessageItem({
             ))}
           </ul>
         ) : null}
-        {showSync ? (
-          <footer>
-            <span className={`mensagem-sync mensagem-sync--${message.syncStatus.toLowerCase()}`}>
-              {mensagemStatusLabel(message.syncStatus)}
-            </span>
-            {message.syncStatus === "FALHOU" ? (
-              <button type="button" onClick={() => void onRetry(message.id)}>
-                Tentar novamente
-              </button>
-            ) : null}
-          </footer>
+        <span className="mensagem-meta">
+          <time dateTime={message.criadaNoClienteEm}>
+            {formatMessageTimeOnly(message.criadaNoClienteEm)}
+          </time>
+          {mine ? <MessageTick status={message.syncStatus} /> : null}
+        </span>
+        {failed ? (
+          <div className="mensagem-retry">
+            <span>Falha ao enviar</span>
+            <button type="button" onClick={() => void onRetry(message.id)}>
+              Tentar novamente
+            </button>
+          </div>
         ) : null}
         {message.ultimoErro ? (
-          <details>
+          <details className="mensagem-error">
             <summary>Detalhes da sincronização</summary>
             <p>{message.ultimoErro}</p>
           </details>
         ) : null}
-      </article>
+      </div>
     </li>
   );
+}
+
+function MessageTick({ status }: { status: MensagemSyncStatus }) {
+  const label = mensagemStatusLabel(status);
+  if (status === "FALHOU") {
+    return (
+      <IconWarning className="mensagem-tick mensagem-tick--fail" title={label} />
+    );
+  }
+  if (status === "SINCRONIZADO") {
+    return <IconCheckDouble className="mensagem-tick" title={label} />;
+  }
+  return <IconClock className="mensagem-tick" title={label} />;
 }
 
 function ConversationContext({
@@ -582,12 +658,14 @@ function ConversationContext({
   messages,
   worksites,
   onBack,
+  onClose,
   onOpenAttachment,
 }: {
   conversation: ConversaLocalRecord | null;
   messages: MensagemComAnexos[];
   worksites: ObraLocalRecord[];
   onBack: () => void;
+  onClose: () => void;
   onOpenAttachment: (attachment: MensagemAnexoLocalRecord) => Promise<void>;
 }) {
   if (!conversation) {
@@ -603,10 +681,26 @@ function ConversationContext({
   return (
     <aside className="mensagens-context" aria-label="Contexto da conversa">
       <header>
-        <button type="button" className="mensagens-mobile-back" onClick={onBack}>
-          Conversa
+        <button
+          type="button"
+          className="mensagens-mobile-back"
+          onClick={onBack}
+          aria-label="Voltar para a conversa"
+        >
+          <IconChevronLeft />
         </button>
-        <div><strong>Contexto</strong><span>{conversationScope(conversation)}</span></div>
+        <div>
+          <strong>Contexto</strong>
+          <span>{conversationScope(conversation)}</span>
+        </div>
+        <button
+          type="button"
+          className="mensagens-drawer-close"
+          onClick={onClose}
+          aria-label="Fechar contexto"
+        >
+          <IconClose />
+        </button>
       </header>
 
       {conversation.obraId ? (
@@ -973,4 +1067,181 @@ function mapGlobalPeople(values: ColaboradorLookup[]): DirectoryPerson[] {
 
 function messageFrom(cause: unknown): string {
   return cause instanceof Error ? cause.message : "Não foi possível concluir a operação.";
+}
+
+type IconProps = { className?: string; title?: string };
+
+function IconPaperclip() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21.44 11.05 12.25 20.24a5.5 5.5 0 0 1-7.78-7.78l8.49-8.49a3.67 3.67 0 0 1 5.19 5.19l-8.49 8.49a1.83 1.83 0 0 1-2.6-2.6l7.78-7.78" />
+    </svg>
+  );
+}
+
+function IconSend() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M3.4 3.1a1 1 0 0 0-1.36 1.22l2.1 6.06a1 1 0 0 0 .82.66l7.72 1.02a.34.34 0 0 1 0 .68l-7.72 1.02a1 1 0 0 0-.82.66l-2.1 6.06A1 1 0 0 0 3.4 21.9l17.9-8.98a1 1 0 0 0 0-1.84Z" />
+    </svg>
+  );
+}
+
+function IconSpinner() {
+  return (
+    <svg
+      className="mensagens-spin"
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3a9 9 0 1 0 9 9" />
+    </svg>
+  );
+}
+
+function IconInfo() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <line x1="12" y1="11" x2="12" y2="16.5" strokeLinecap="round" />
+      <circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function IconChevronLeft() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+  );
+}
+
+function IconFile() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 3 14 8 19 8" />
+    </svg>
+  );
+}
+
+function IconClock({ className, title }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role={title ? "img" : undefined}
+      aria-hidden={title ? undefined : true}
+    >
+      {title ? <title>{title}</title> : null}
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7.5 12 12 15 14" />
+    </svg>
+  );
+}
+
+function IconCheckDouble({ className, title }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role={title ? "img" : undefined}
+      aria-hidden={title ? undefined : true}
+    >
+      {title ? <title>{title}</title> : null}
+      <path d="M2 12.5 6 16.5 13 8" />
+      <path d="M8 13 11.5 16.5 18.5 8" />
+    </svg>
+  );
+}
+
+function IconWarning({ className, title }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role={title ? "img" : undefined}
+      aria-hidden={title ? undefined : true}
+    >
+      {title ? <title>{title}</title> : null}
+      <path d="M12 3.5 2.3 20.5h19.4z" />
+      <line x1="12" y1="10" x2="12" y2="14.5" />
+      <circle cx="12" cy="17.4" r="0.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
 }
