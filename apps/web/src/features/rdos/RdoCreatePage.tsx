@@ -906,6 +906,7 @@ export function RdoCreatePage({
             Córtex · Operação de campo
           </p>
 
+
           <h1>
             {isExisting
               ? "Editar Relatório Diário de Obra"
@@ -915,7 +916,8 @@ export function RdoCreatePage({
           <span className="brand-tick" aria-hidden="true" />
 
           <p className="subtitle">
-            Registre e continue editando o relatório mesmo
+            Registre e cont
+            inue editando o relatório mesmo
             sem conexão com a internet.
           </p>
         </div>

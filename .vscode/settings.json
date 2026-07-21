@@ -1,3 +1,19 @@
 {
-    "java.compile.nullAnalysis.mode": "automatic"
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "files.watcherExclude": {
+        "**/.worktrees/**": true,
+        "**/node_modules/**": true,
+        "**/target/**": true
+    },
+    "search.exclude": {
+        "**/.worktrees/**": true,
+        "**/node_modules/**": true,
+        "**/target/**": true
+    },
+    "java.import.exclusions": [
+        "**/.worktrees/**",
+        "**/node_modules/**",
+        "**/target/**"
+    ]
 }
