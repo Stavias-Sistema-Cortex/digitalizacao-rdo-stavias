@@ -8,6 +8,7 @@ import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
   recoverInterruptedMutations,
+  recoverCanonicalConflictReconciliations,
   repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync,
   resolveCanonicalUploadReplacements,
@@ -37,7 +38,7 @@ async function executeSync(
     isSyncing: true,
     lastSyncStartedAt: new Date().toISOString(),
     lastSyncError: null,
-  });
+  }, guard);
   assertSyncSession(guard);
 
   try {
@@ -56,6 +57,8 @@ async function executeSync(
     assertSyncSession(guard);
     await resolveCanonicalUploadReplacements(guard);
     assertSyncSession(guard);
+    await recoverCanonicalConflictReconciliations(guard);
+    assertSyncSession(guard);
     const pushSummary = await pushOutbox(deviceId, guard);
     assertSyncSession(guard);
     const pullSummary = await pullEvents(deviceId, guard);
@@ -73,7 +76,7 @@ async function executeSync(
       isSyncing: false,
       lastSyncCompletedAt: new Date().toISOString(),
       lastSyncError: null,
-    });
+    }, guard);
     assertSyncSession(guard);
 
     return {
@@ -98,7 +101,7 @@ async function executeSync(
         isSyncing: false,
         lastSyncCompletedAt: new Date().toISOString(),
         lastSyncError: message,
-      });
+      }, guard);
       assertSyncSession(guard);
     } catch {
       // The original session is gone; its next run recovers SYNCING rows.

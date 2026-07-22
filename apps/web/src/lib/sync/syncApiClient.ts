@@ -10,8 +10,8 @@ import type {
 } from "./sync.types";
 import {
   apiFetch,
+  apiError,
   readResponseBody,
-  responseErrorMessage,
 } from "../api/apiClient";
 
 interface RequestOptions extends RequestInit {
@@ -37,12 +37,7 @@ async function requestJson<T>(
   const body = await readResponseBody(response);
 
   if (!response.ok) {
-    throw new Error(
-      `Falha na API ${response.status}: ${responseErrorMessage(
-        body,
-        response.status,
-      )}`,
-    );
+    throw apiError(body, response.status);
   }
 
   return body as T;

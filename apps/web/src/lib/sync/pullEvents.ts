@@ -21,7 +21,7 @@ export async function pullEvents(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<PullEventsSummary> {
   assertSyncSession(guard);
-  const initialState = await getSyncState();
+  const initialState = await getSyncState(guard);
   assertSyncSession(guard);
 
   let cursor = initialState.lastPulledCommitSeq;

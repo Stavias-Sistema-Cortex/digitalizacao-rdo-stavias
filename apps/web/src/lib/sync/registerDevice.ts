@@ -26,7 +26,7 @@ export async function ensureRegisteredDevice(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<string> {
   assertSyncSession(guard);
-  const currentState = await getSyncState();
+  const currentState = await getSyncState(guard);
   assertSyncSession(guard);
   const session = getSession();
   const usuarioId =
@@ -71,7 +71,7 @@ export async function ensureRegisteredDevice(
           lastPulledCommitSeq: 0,
           lastAckedCommitSeq: 0,
         }),
-  });
+  }, guard);
   assertSyncSession(guard);
 
   return response.id;

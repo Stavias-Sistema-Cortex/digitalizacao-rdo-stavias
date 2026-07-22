@@ -14,6 +14,7 @@ import {
   type SyncPushMutationResult,
 } from "./sync.types";
 import { retryDispositionForResult } from "./automaticSyncRetryStorage";
+import { classifyAutomaticRequestFailure } from "./automaticRequestFailure";
 import {
   assertSyncSession,
   captureOnlineSyncSession,
@@ -163,15 +164,24 @@ export async function pushOutbox(
     };
   } catch (error: unknown) {
     assertSyncSession(guard);
-    const message = errorMessage(error);
+    const failure = classifyAutomaticRequestFailure(error);
     for (const { row } of prepared) {
       if (handled.has(row.clientMutationId)) continue;
-      await returnMutationToPending(
-        row.clientMutationId,
-        message,
-        "NETWORK_TRANSIENT",
-        guard,
-      );
+      if (failure.retryable) {
+        await returnMutationToPending(
+          row.clientMutationId,
+          failure.message,
+          failure.safeCode,
+          guard,
+        );
+      } else {
+        await rejectMutationLocally(
+          row.clientMutationId,
+          failure.safeCode,
+          failure.message,
+          guard,
+        );
+      }
     }
     throw error;
   }

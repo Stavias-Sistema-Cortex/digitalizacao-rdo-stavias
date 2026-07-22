@@ -34,6 +34,7 @@ vi.mock("./syncStorage", () => ({
   queueErroredMutationsForRetry: vi.fn(),
   queueResolvableConflictsForRetry: vi.fn(),
   recoverInterruptedMutations: vi.fn(),
+  recoverCanonicalConflictReconciliations: vi.fn(),
   repairMissingMaoObraReferencesForSync: vi.fn(),
   repairMissingObraReferencesForSync: vi.fn(),
   resolveCanonicalUploadReplacements: vi.fn(),

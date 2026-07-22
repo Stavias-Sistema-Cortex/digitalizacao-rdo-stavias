@@ -3,7 +3,11 @@ import "fake-indexeddb/auto";
 import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, setSession } from "../../features/auth/authSession";
+import {
+  clearSession,
+  getSession,
+  setSession,
+} from "../../features/auth/authSession";
 import { closeCortexDb, getCortexDb } from "../db/cortexDb";
 import type { LocalRdoRecord } from "../db/db.types";
 import { databaseNameForScope } from "../db/localDataNamespace";
@@ -12,10 +16,12 @@ import {
   type LocalMutationCommand,
 } from "./localMutationCoordinator";
 import { canonicalMutationJson } from "./mutationEnvelope";
+import { captureOnlineSyncSession } from "./syncSession";
 import {
   applyPushResultAtomically,
   markMutationAsSyncing,
   reconcileCanonicalConflict,
+  recoverCanonicalConflictReconciliations,
   recoverInterruptedMutations,
 } from "./syncStorage";
 
@@ -141,6 +147,61 @@ describe("atomic canonical push results", () => {
     expect(second.mutation.status).toBe("PENDING");
   });
 
+  it("rolls back a push-result transaction on same-scope session rotation", async () => {
+    const committed = await commitLocalMutation(
+      command(MUTATION_1, EVENT_1, record("A"), record("B")),
+    );
+    await markMutationAsSyncing(committed.mutation);
+    const guard = captureOnlineSyncSession();
+    const database = await getCortexDb();
+    const originalSession = getSession()!;
+    const databaseWithTransaction = database as unknown as {
+      transaction: (...args: unknown[]) => unknown;
+    };
+    const originalTransaction =
+      databaseWithTransaction.transaction.bind(database);
+    let startedTransaction: { done: Promise<unknown> } | null = null;
+    const transactionSpy = vi
+      .spyOn(databaseWithTransaction, "transaction")
+      .mockImplementation(
+      (...args: unknown[]) => {
+        const transaction = originalTransaction(...args);
+        startedTransaction = transaction as { done: Promise<unknown> };
+        queueMicrotask(() => {
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        });
+        return transaction;
+      },
+      );
+
+    await expect(
+      applyPushResultAtomically(
+        {
+          clientMutationId: MUTATION_1,
+          status: "APLICADA",
+          eventoServidorCommitSeq: 99,
+          resultado: { versaoEntidade: 4 },
+        },
+        guard,
+      ),
+    ).rejects.toBeDefined();
+    await startedTransaction?.done.catch(() => undefined);
+
+    transactionSpy.mockRestore();
+    setSession(originalSession);
+    expect(await database.get("outbox_mutations", MUTATION_1)).toMatchObject({
+      status: "SYNCING",
+    });
+    const event = await database.get("operational_events", EVENT_1);
+    expect(event).toMatchObject({ result: "SYNCING" });
+    expect(event?.serverCommitSequence).toBeFalsy();
+  });
+
   it("keeps a partial conflict terminal and durable without mutating v13 provenance", async () => {
     const committed = await commitLocalMutation(
       command(MUTATION_1, EVENT_1, record("A"), record("B")),
@@ -241,6 +302,47 @@ describe("atomic canonical push results", () => {
       responsavel: "Bia",
       versaoEntidade: 4,
       syncStatus: "PENDING_SYNC",
+    });
+  });
+
+  it("recovers one auto-merge replacement after conflict persistence and reload", async () => {
+    const base = record("A", "Ana", 3);
+    const local = record("B", "Ana", 3);
+    const committed = await commitLocalMutation(
+      command(MUTATION_1, EVENT_1, base, local),
+    );
+    await markMutationAsSyncing(committed.mutation);
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_1,
+      status: "CONFLITO",
+      conflito: {
+        versaoAtual: 4,
+        remoteCompleto: true,
+        snapshotRemoto: record("A", "Bia", 4),
+      },
+      erro: "Conflito de versão.",
+    });
+
+    await closeCortexDb();
+    expect(
+      await recoverCanonicalConflictReconciliations(undefined, {
+        replacementMutationId: () => MUTATION_2,
+        replacementEventId: () => EVENT_2,
+        occurredAt: () => "2026-07-22T12:00:03.000Z",
+      }),
+    ).toBe(1);
+    expect(await recoverCanonicalConflictReconciliations()).toBe(0);
+
+    await closeCortexDb();
+    const database = await getCortexDb();
+    const all = await database.getAll("outbox_mutations");
+    expect(all).toHaveLength(2);
+    expect(await database.get("outbox_mutations", MUTATION_1)).toMatchObject({
+      status: "CONFLICT",
+    });
+    expect(await database.get("outbox_mutations", MUTATION_2)).toMatchObject({
+      status: "PENDING",
+      causationId: MUTATION_1,
     });
   });
 

@@ -14,7 +14,7 @@ export async function acknowledgeCurrentCursor(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {
   assertSyncSession(guard);
-  const state = await getSyncState();
+  const state = await getSyncState(guard);
   assertSyncSession(guard);
   const requestedCursor = state.lastPulledCommitSeq;
 
@@ -43,7 +43,7 @@ export async function acknowledgeCurrentCursor(
 
   await updateSyncState({
     lastAckedCommitSeq: persistedCursor,
-  });
+  }, guard);
   assertSyncSession(guard);
 
   return persistedCursor;

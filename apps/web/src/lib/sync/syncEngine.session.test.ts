@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   repairMaoObra: vi.fn(async () => 0),
   repairRdo: vi.fn(async () => 0),
   resolveUploads: vi.fn(async () => 0),
+  recoverConflicts: vi.fn(async () => 0),
   ensureDevice: vi.fn(async () => "device"),
   uploads: vi.fn(async () => ({ pushed: 0, applied: 0, errors: 0 })),
   push: vi.fn(async () => ({
@@ -46,6 +47,7 @@ vi.mock("./syncStorage", () => ({
   repairMissingMaoObraReferencesForSync: mocks.repairMaoObra,
   repairMissingObraReferencesForSync: mocks.repairObra,
   resolveCanonicalUploadReplacements: mocks.resolveUploads,
+  recoverCanonicalConflictReconciliations: mocks.recoverConflicts,
 }));
 vi.mock("../db/localRdoService", () => ({
   repairRdoCreateMutationsForSync: mocks.repairRdo,
@@ -101,5 +103,14 @@ describe("session-scoped sync single flight", () => {
     );
     expect(mocks.ensureDevice).not.toHaveBeenCalled();
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it("recovers durable canonical conflicts before selecting rows to push", async () => {
+    await syncNow();
+
+    expect(mocks.recoverConflicts).toHaveBeenCalledTimes(1);
+    expect(mocks.recoverConflicts.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.push.mock.invocationCallOrder[0],
+    );
   });
 });

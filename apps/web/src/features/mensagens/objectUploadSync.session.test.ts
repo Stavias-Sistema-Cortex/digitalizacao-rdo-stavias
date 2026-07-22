@@ -3,16 +3,16 @@ import "fake-indexeddb/auto";
 import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, setSession } from "../auth/authSession";
+import { clearSession, getSession, setSession } from "../auth/authSession";
 import { closeCortexDb, getCortexDb } from "../../lib/db/cortexDb";
 import { databaseNameForScope } from "../../lib/db/localDataNamespace";
 import { captureOnlineSyncSession } from "../../lib/sync/syncSession";
 
 const mocks = vi.hoisted(() => ({ apiFetch: vi.fn(), body: vi.fn() }));
-vi.mock("../../lib/api/apiClient", () => ({
+vi.mock("../../lib/api/apiClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/api/apiClient")>()),
   apiFetch: mocks.apiFetch,
   readResponseBody: mocks.body,
-  responseErrorMessage: () => "erro",
 }));
 
 import { processObjectUploads } from "./objectUploadSync";
@@ -119,7 +119,10 @@ afterEach(async () => {
 
 describe("object upload session guard", () => {
   it("persists a transient upload retry per row instead of requiring a manual action", async () => {
-    mocks.apiFetch.mockRejectedValueOnce(new Error("rede indisponível"));
+    const { ApiTransportError } = await import("../../lib/api/apiClient");
+    mocks.apiFetch.mockRejectedValueOnce(
+      new ApiTransportError("rede indisponível", "CONNECTION"),
+    );
 
     await expect(processObjectUploads()).resolves.toMatchObject({ errors: 1 });
 
@@ -127,10 +130,60 @@ describe("object upload session guard", () => {
     expect(await database.get("outbox_mutations", UPLOAD_ID)).toMatchObject({
       status: "PENDING",
       retryAttempt: 1,
-      lastSafeCode: "UPLOAD_TRANSIENT",
+      lastSafeCode: "NETWORK_UNAVAILABLE",
       nextAttemptAt: expect.any(String),
     });
   });
+
+  it.each([
+    { status: 403, code: "ACCESS_DENIED" },
+    { status: 422, code: "UPLOAD_INVALID" },
+  ])(
+    "keeps upload HTTP $status terminal until user or session action",
+    async ({ status, code }) => {
+      mocks.apiFetch.mockResolvedValueOnce(
+        new Response("{}", { status }),
+      );
+      mocks.body.mockResolvedValueOnce({ code });
+
+      await expect(processObjectUploads()).resolves.toMatchObject({
+        errors: 1,
+      });
+
+      const database = await getCortexDb();
+      expect(await database.get("outbox_mutations", UPLOAD_ID)).toMatchObject({
+        status: "REJECTED",
+        retryAttempt: 0,
+        nextAttemptAt: null,
+        lastSafeCode: code,
+      });
+      expect(await database.get("mensagem_anexos", ATTACHMENT_ID)).toMatchObject({
+        syncStatus: "FALHOU",
+      });
+    },
+  );
+
+  it.each([429, 503])(
+    "schedules upload HTTP %i as transient",
+    async (status) => {
+      mocks.apiFetch.mockResolvedValueOnce(
+        new Response("{}", { status }),
+      );
+      mocks.body.mockResolvedValueOnce(null);
+
+      await expect(processObjectUploads()).resolves.toMatchObject({
+        errors: 1,
+      });
+
+      const database = await getCortexDb();
+      expect(await database.get("outbox_mutations", UPLOAD_ID)).toMatchObject({
+        status: "PENDING",
+        retryAttempt: 1,
+        nextAttemptAt: expect.any(String),
+        lastSafeCode: `HTTP_${status}_TRANSIENT`,
+      });
+    },
+  );
 
   it("fails closed after fetch and never applies into the replacement session", async () => {
     const guard = captureOnlineSyncSession();
@@ -164,5 +217,46 @@ describe("object upload session guard", () => {
     expect(
       await replacementDatabase.get("outbox_mutations", UPLOAD_ID),
     ).toBeUndefined();
+  });
+
+  it("rolls back upload state when the same-scope session rotates mid-transaction", async () => {
+    const guard = captureOnlineSyncSession();
+    const database = await getCortexDb();
+    const originalSession = getSession()!;
+    const databaseWithTransaction = database as unknown as {
+      transaction: (...args: unknown[]) => unknown;
+    };
+    const originalTransaction =
+      databaseWithTransaction.transaction.bind(database);
+    let startedTransaction: { done: Promise<unknown> } | null = null;
+    const transactionSpy = vi
+      .spyOn(databaseWithTransaction, "transaction")
+      .mockImplementation(
+      (...args: unknown[]) => {
+        const transaction = originalTransaction(...args);
+        startedTransaction = transaction as { done: Promise<unknown> };
+        queueMicrotask(() => {
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        });
+        return transaction;
+      },
+      );
+
+    await expect(processObjectUploads(20, guard)).rejects.toBeDefined();
+    await startedTransaction?.done.catch(() => undefined);
+
+    transactionSpy.mockRestore();
+    setSession(originalSession);
+    expect(await database.get("outbox_mutations", UPLOAD_ID)).toMatchObject({
+      status: "PENDING",
+    });
+    expect(await database.get("mensagem_anexos", ATTACHMENT_ID)).toMatchObject({
+      syncStatus: "NA_FILA",
+    });
   });
 });

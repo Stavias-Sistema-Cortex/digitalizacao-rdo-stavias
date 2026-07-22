@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OutboxMutationRecord } from "../db/db.types";
+import { ApiError } from "../api/apiError";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -148,4 +149,55 @@ describe("pushOutbox row isolation", () => {
     expect(mocks.apply).toHaveBeenCalledTimes(2);
     expect(summary).toMatchObject({ pushed: 2, applied: 1, errors: 1 });
   });
+
+  it.each([
+    { status: 403, code: "ACCESS_DENIED" },
+    { status: 422, code: "CANONICAL_INVALID" },
+  ])(
+    "keeps request-level HTTP $status terminal until user or session action",
+    async ({ status, code }) => {
+      const blocked = mutation(`terminal-${status}`, 13);
+      mocks.list.mockResolvedValue([blocked]);
+      mocks.serialize.mockResolvedValue({
+        clientMutationId: blocked.clientMutationId,
+      });
+      mocks.api.mockRejectedValue(
+        new ApiError("Falha segura.", status, code),
+      );
+
+      await expect(pushOutbox("device-1")).rejects.toBeInstanceOf(ApiError);
+
+      expect(mocks.reject).toHaveBeenCalledWith(
+        blocked.clientMutationId,
+        code,
+        "Falha segura.",
+        expect.any(Object),
+      );
+      expect(mocks.retry).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([429, 503])(
+    "schedules request-level HTTP %i as transient",
+    async (status) => {
+      const pending = mutation(`transient-${status}`, 13);
+      mocks.list.mockResolvedValue([pending]);
+      mocks.serialize.mockResolvedValue({
+        clientMutationId: pending.clientMutationId,
+      });
+      mocks.api.mockRejectedValue(
+        new ApiError("Falha segura.", status, null),
+      );
+
+      await expect(pushOutbox("device-1")).rejects.toBeInstanceOf(ApiError);
+
+      expect(mocks.retry).toHaveBeenCalledWith(
+        pending.clientMutationId,
+        "Falha segura.",
+        `HTTP_${status}_TRANSIENT`,
+        expect.any(Object),
+      );
+      expect(mocks.reject).not.toHaveBeenCalled();
+    },
+  );
 });

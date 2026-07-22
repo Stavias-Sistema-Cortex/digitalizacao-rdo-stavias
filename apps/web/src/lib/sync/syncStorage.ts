@@ -1,4 +1,3 @@
-import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { getCortexDb } from "../db/cortexDb";
 import type {
   CanonicalOperationalEventRecord,
@@ -22,6 +21,7 @@ import type {
   SyncPushMutationResult,
 } from "./sync.types";
 import {
+  assertCanonicalPayloadHash,
   buildCanonicalMutation,
   canonicalMutationJson,
   isCanonicalOutboxMutation,
@@ -39,6 +39,7 @@ import {
   captureOnlineSyncSession,
   type SyncSessionGuard,
 } from "./syncSession";
+import { guardSyncTransaction } from "./guardedSyncTransaction";
 
 function nowUtc(): string {
   return new Date().toISOString();
@@ -309,6 +310,124 @@ async function putCanonicalEvent(
   event: CanonicalOperationalEventRecord,
 ): Promise<void> {
   await transaction.objectStore("operational_events").put(event);
+}
+
+async function assertCanonicalMutationEventProvenance(
+  mutation: CanonicalOutboxMutationRecord,
+  event: CanonicalOperationalEventRecord,
+): Promise<void> {
+  await assertCanonicalPayloadHash(mutation);
+  const rebuilt = await buildCanonicalMutation({
+    clientMutationId: mutation.clientMutationId,
+    ontologyEventId: mutation.trace.ontologyEventId,
+    deviceId: mutation.deviceId,
+    userId: mutation.userId,
+    obraId: mutation.obraId,
+    entityType: mutation.entityType,
+    entityId: mutation.entityId,
+    operation: mutation.operation,
+    transportOperation: mutation.operacao,
+    baseVersion: mutation.baseVersion,
+    changedFields: mutation.changedFields,
+    occurredAt: mutation.occurredAt,
+    previousSnapshot: event.previousState,
+    nextSnapshot: event.newState,
+    authorizationScope: mutation.trace.authorizationScope,
+    correlationId: mutation.correlationId,
+    causationId: mutation.causationId,
+    transport: mutation.transport ?? "SYNC_PUSH",
+    dependsOnMutationIds: mutation.dependsOnMutationIds ?? [],
+    relatedEntities: mutation.relatedEntities ?? [],
+  });
+  const provenance = (candidate: CanonicalOutboxMutationRecord) => ({
+    schemaVersion: candidate.schemaVersion,
+    clientMutationId: candidate.clientMutationId,
+    deviceId: candidate.deviceId,
+    userId: candidate.userId,
+    obraId: candidate.obraId,
+    entityType: candidate.entityType,
+    entityId: candidate.entityId,
+    operation: candidate.operation,
+    baseVersion: candidate.baseVersion,
+    changedFields: candidate.changedFields,
+    occurredAt: candidate.occurredAt,
+    payload: candidate.payload,
+    entidadeTipo: candidate.entidadeTipo,
+    entidadeId: candidate.entidadeId,
+    operacao: candidate.operacao,
+    baseVersao: candidate.baseVersao,
+    criadaNoClienteEm: candidate.criadaNoClienteEm,
+    transport: candidate.transport ?? "SYNC_PUSH",
+    dependsOnMutationIds: candidate.dependsOnMutationIds ?? [],
+    correlationId: candidate.correlationId,
+    causationId: candidate.causationId,
+    fieldPatch: candidate.fieldPatch,
+    relatedEntities: candidate.relatedEntities ?? [],
+    trace: candidate.trace,
+  });
+  if (
+    canonicalMutationJson(provenance(mutation)) !==
+    canonicalMutationJson(provenance(rebuilt.mutation))
+  ) {
+    throw new TypeError("Canonical mutation provenance is incoherent.");
+  }
+
+  const expectedEvent = {
+    id: mutation.trace.ontologyEventId,
+    principalEntityType: mutation.entityType,
+    principalEntityId: mutation.entityId,
+    principalEntityKey: `${mutation.entityType}:${mutation.entityId}`,
+    relatedEntities: mutation.relatedEntities ?? [],
+    obraId: mutation.obraId,
+    rdoId: mutation.entityType === "RDO" ? mutation.entityId : null,
+    occurredAt: mutation.occurredAt,
+    syncedAt: null,
+    origin: "OFFLINE",
+    responsibleUserId: mutation.userId,
+    payload: rebuilt.nextSnapshot,
+    syncStatus: "PENDING_SYNC",
+    schemaVersion: 13,
+    clientMutationId: mutation.clientMutationId,
+    deviceId: mutation.deviceId,
+    correlationId: mutation.correlationId,
+    causationId: mutation.causationId,
+    previousState: rebuilt.previousSnapshot,
+    newState: rebuilt.nextSnapshot,
+    result: "PENDING",
+    errorCategory: null,
+    entityVersion: mutation.baseVersion,
+  };
+  const actualEvent = {
+    id: event.id,
+    principalEntityType: event.principalEntity.tipo,
+    principalEntityId: event.principalEntity.id,
+    principalEntityKey: event.principalEntityKey,
+    relatedEntities: event.relatedEntities,
+    obraId: event.obraId,
+    rdoId: event.rdoId,
+    occurredAt: event.occurredAt,
+    syncedAt: event.syncedAt,
+    origin: event.origin,
+    responsibleUserId: event.responsibleUserId,
+    payload: event.payload,
+    syncStatus: event.syncStatus,
+    schemaVersion: event.schemaVersion,
+    clientMutationId: event.clientMutationId,
+    deviceId: event.deviceId,
+    correlationId: event.correlationId,
+    causationId: event.causationId,
+    previousState: event.previousState,
+    newState: event.newState,
+    result: event.result,
+    errorCategory: event.errorCategory,
+    entityVersion: event.entityVersion,
+  };
+  if (
+    canonicalMutationJson(actualEvent) !==
+    canonicalMutationJson(expectedEvent)
+  ) {
+    throw new TypeError("Canonical mutation event provenance is incoherent.");
+  }
 }
 
 interface OperationalEventSyncTransaction {
@@ -595,10 +714,11 @@ export async function recoverInterruptedMutations(
   const database = await getCortexDb();
   assertSyncSession(guard);
 
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const outboxStore =
     transaction.objectStore("outbox_mutations");
@@ -680,8 +800,7 @@ export async function recoverInterruptedMutations(
     }
   }
 
-  await transaction.done;
-  assertSyncSession(guard);
+  await guardedTransaction.complete();
 }
 
 export async function repairMissingObraReferencesForSync(): Promise<number> {
@@ -1232,10 +1351,11 @@ export async function markMutationAsSyncing(
   const database = await getCortexDb();
   assertSyncSession(guard);
 
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const outboxStore =
     transaction.objectStore("outbox_mutations");
@@ -1329,8 +1449,7 @@ export async function markMutationAsSyncing(
     }
   }
 
-  await transaction.done;
-  assertSyncSession(guard);
+  await guardedTransaction.complete();
 }
 
 /**
@@ -1371,10 +1490,11 @@ export async function applyPushResultAtomically(
   const database = await getCortexDb();
   assertSyncSession(guard);
 
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const outboxStore =
     transaction.objectStore("outbox_mutations");
@@ -1637,8 +1757,7 @@ export async function applyPushResultAtomically(
     }
   }
 
-  await transaction.done;
-  assertSyncSession(guard);
+  await guardedTransaction.complete();
 }
 
 /**
@@ -1648,9 +1767,9 @@ export async function applyPushResultAtomically(
  */
 export async function reconcileCanonicalConflict(
   clientMutationId: string,
-  replacementMutationId = crypto.randomUUID(),
-  replacementEventId = crypto.randomUUID(),
-  occurredAt = nowUtc(),
+  replacementMutationId: string = crypto.randomUUID(),
+  replacementEventId: string = crypto.randomUUID(),
+  occurredAt: string = nowUtc(),
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<CanonicalOutboxMutationRecord | null> {
   assertSyncSession(guard);
@@ -1666,6 +1785,15 @@ export async function reconcileCanonicalConflict(
     original.status !== "CONFLICT"
   ) {
     return null;
+  }
+  const existingReplacement = (await database.getAll("outbox_mutations"))
+    .find(
+      (candidate): candidate is CanonicalOutboxMutationRecord =>
+        isCanonicalOutboxMutation(candidate) &&
+        candidate.causationId === original.clientMutationId,
+    );
+  if (existingReplacement) {
+    return existingReplacement;
   }
   const events = await database.getAllFromIndex(
     "operational_events",
@@ -1745,65 +1873,106 @@ export async function reconcileCanonicalConflict(
     serverCommitSequence: null,
   };
   const originalSnapshot = canonicalMutationJson(original);
-  const transaction = database.transaction(
-    [
-      "outbox_mutations",
-      "operational_events",
-      "rdos",
-      "mensagens",
-      "mensagem_conversas",
-      "mensagem_anexos",
-    ],
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      [
+        "outbox_mutations",
+        "operational_events",
+        "rdos",
+        "mensagens",
+        "mensagem_conversas",
+        "mensagem_anexos",
+      ],
+      "readwrite",
+    ),
+    guard,
   );
-  const abortOnSessionChange = () => {
-    try {
-      assertSyncSession(guard);
-    } catch {
-      try {
-        transaction.abort();
-      } catch {
-        // The transaction may already be closed.
-      }
-    }
-  };
-  if (typeof window !== "undefined") {
-    window.addEventListener(
-      AUTH_SESSION_CHANGED_EVENT,
-      abortOnSessionChange,
-    );
+  const transaction = guardedTransaction.transaction;
+  const current = await transaction
+    .objectStore("outbox_mutations")
+    .get(clientMutationId);
+  if (!current || canonicalMutationJson(current) !== originalSnapshot) {
+    transaction.abort();
+    throw new Error("O conflito mudou durante a reconciliação.");
   }
-  try {
-    const current = await transaction
-      .objectStore("outbox_mutations")
-      .get(clientMutationId);
-    if (!current || canonicalMutationJson(current) !== originalSnapshot) {
-      transaction.abort();
-      throw new Error("O conflito mudou durante a reconciliação.");
-    }
-    await transaction.objectStore("outbox_mutations").add(built.mutation);
-    await transaction
-      .objectStore("operational_events")
-      .add(replacementEvent);
-    await transaction
-      .objectStore(principalStoreFor(original.entityType))
-      .put(nextSnapshot as never);
-    await transaction.done;
-    assertSyncSession(guard);
-  } finally {
-    if (typeof window !== "undefined") {
-      window.removeEventListener(
-        AUTH_SESSION_CHANGED_EVENT,
-        abortOnSessionChange,
-      );
-    }
+  const concurrentReplacement = (
+    await transaction.objectStore("outbox_mutations").getAll()
+  ).find(
+    (candidate): candidate is CanonicalOutboxMutationRecord =>
+      isCanonicalOutboxMutation(candidate) &&
+      candidate.causationId === original.clientMutationId,
+  );
+  if (concurrentReplacement) {
+    await guardedTransaction.complete();
+    return concurrentReplacement;
   }
+  await transaction.objectStore("outbox_mutations").add(built.mutation);
+  await transaction
+    .objectStore("operational_events")
+    .add(replacementEvent);
+  await transaction
+    .objectStore(principalStoreFor(original.entityType))
+    .put(nextSnapshot as never);
+  await guardedTransaction.complete();
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new Event("cortex:local-mutation-queued"),
     );
   }
   return built.mutation;
+}
+
+export interface CanonicalConflictRecoveryOptions {
+  replacementMutationId?: () => string;
+  replacementEventId?: () => string;
+  occurredAt?: () => string;
+}
+
+/**
+ * A complete terminal conflict is itself the durable reconciliation marker.
+ * Scanning it on every automatic run closes the crash window between result
+ * persistence and creation of the causally linked replacement.
+ */
+export async function recoverCanonicalConflictReconciliations(
+  guard?: SyncSessionGuard,
+  options: CanonicalConflictRecoveryOptions = {},
+): Promise<number> {
+  const expectedGuard = guard ?? captureOnlineSyncSession();
+  assertSyncSession(expectedGuard);
+  const database = await getCortexDb();
+  assertSyncSession(expectedGuard);
+  const all = await database.getAll("outbox_mutations");
+  const replacementCauses = new Set(
+    all
+      .filter(isCanonicalOutboxMutation)
+      .map((candidate) => candidate.causationId)
+      .filter((value): value is string => typeof value === "string"),
+  );
+  let created = 0;
+
+  for (const original of all) {
+    if (
+      !isCanonicalOutboxMutation(original) ||
+      original.status !== "CONFLICT" ||
+      replacementCauses.has(original.clientMutationId)
+    ) {
+      continue;
+    }
+    assertSyncSession(expectedGuard);
+    const replacement = await reconcileCanonicalConflict(
+      original.clientMutationId,
+      options.replacementMutationId?.() ?? crypto.randomUUID(),
+      options.replacementEventId?.() ?? crypto.randomUUID(),
+      options.occurredAt?.() ?? nowUtc(),
+      expectedGuard,
+    );
+    if (replacement?.causationId === original.clientMutationId) {
+      replacementCauses.add(original.clientMutationId);
+      created += 1;
+    }
+  }
+
+  return created;
 }
 
 export interface CanonicalUploadReplacementOptions {
@@ -1838,60 +2007,58 @@ export async function resolveCanonicalUploadReplacements(
       continue;
     }
     assertSyncSession(expectedGuard);
-    const resolvedObjects = new Map<
+    try {
+      const resolvedObjects = new Map<
       string,
       { objectId: string; sha256: string }
-    >();
-    for (const dependencyId of original.dependsOnMutationIds ?? []) {
-      const attachment = await database.getFromIndex(
-        "mensagem_anexos",
-        "by-upload-mutation-id",
-        dependencyId,
-      );
-      if (
-        attachment?.syncStatus === "SINCRONIZADO" &&
-        typeof attachment.objetoId === "string" &&
-        attachment.objetoId &&
-        typeof attachment.sha256 === "string" &&
-        attachment.sha256
-      ) {
-        resolvedObjects.set(dependencyId, {
-          objectId: attachment.objetoId,
-          sha256: attachment.sha256,
-        });
+      >();
+      for (const dependencyId of original.dependsOnMutationIds ?? []) {
+        const attachment = await database.getFromIndex(
+          "mensagem_anexos",
+          "by-upload-mutation-id",
+          dependencyId,
+        );
+        if (
+          attachment?.syncStatus === "SINCRONIZADO" &&
+          typeof attachment.objetoId === "string" &&
+          attachment.objetoId &&
+          typeof attachment.sha256 === "string" &&
+          attachment.sha256
+        ) {
+          resolvedObjects.set(dependencyId, {
+            objectId: attachment.objetoId,
+            sha256: attachment.sha256,
+          });
+        }
       }
-    }
-    if (
-      resolvedObjects.size !==
-      (original.dependsOnMutationIds ?? []).length
-    ) {
-      continue;
-    }
-    const events = await database.getAllFromIndex(
-      "operational_events",
-      "by-client-mutation-id",
-      original.clientMutationId,
-    );
-    if (events.length !== 1 || events[0].schemaVersion !== 13) {
-      await rejectMutationLocally(
+      if (
+        resolvedObjects.size !==
+        (original.dependsOnMutationIds ?? []).length
+      ) {
+        continue;
+      }
+      const events = await database.getAllFromIndex(
+        "operational_events",
+        "by-client-mutation-id",
         original.clientMutationId,
-        "LOCAL_CANONICAL_EVENT_INVALID",
-        "A mutação de anexo não possui evento local único.",
-        expectedGuard,
       );
-      continue;
-    }
-    const originalEvent = events[0] as CanonicalOperationalEventRecord;
-    const occurredAt = (options.occurredAt ?? nowUtc)();
-    const nextSnapshot = resolveCanonicalUploadReferences(
-      original.payload,
-      resolvedObjects,
-    );
-    const replacementMutationId =
-      (options.replacementMutationId ?? crypto.randomUUID)();
-    const replacementEventId =
-      (options.replacementEventId ?? crypto.randomUUID)();
-    const built = await buildCanonicalMutation({
+      if (events.length !== 1 || events[0].schemaVersion !== 13) {
+        throw new TypeError(
+          "A mutação de anexo não possui evento local único.",
+        );
+      }
+      const originalEvent = events[0] as CanonicalOperationalEventRecord;
+      await assertCanonicalMutationEventProvenance(original, originalEvent);
+      const occurredAt = (options.occurredAt ?? nowUtc)();
+      const nextSnapshot = resolveCanonicalUploadReferences(
+        original.payload,
+        resolvedObjects,
+      );
+      const replacementMutationId = options.replacementMutationId?.() ??
+        crypto.randomUUID();
+      const replacementEventId = options.replacementEventId?.() ??
+        crypto.randomUUID();
+      const built = await buildCanonicalMutation({
       clientMutationId: replacementMutationId,
       ontologyEventId: replacementEventId,
       deviceId: original.deviceId,
@@ -1911,9 +2078,9 @@ export async function resolveCanonicalUploadReplacements(
       transport: original.transport,
       dependsOnMutationIds: [],
       relatedEntities: original.relatedEntities,
-    });
-    assertSyncSession(expectedGuard);
-    const replacementEvent: CanonicalOperationalEventRecord = {
+      });
+      assertSyncSession(expectedGuard);
+      const replacementEvent: CanonicalOperationalEventRecord = {
       ...originalEvent,
       id: built.mutation.trace.ontologyEventId,
       occurredAt: built.mutation.occurredAt,
@@ -1931,37 +2098,23 @@ export async function resolveCanonicalUploadReplacements(
       errorCategory: null,
       entityVersion: built.mutation.baseVersion,
       serverCommitSequence: null,
-    };
-    const originalSnapshot = canonicalMutationJson(original);
-    const transaction = database.transaction(
-      [
-        "outbox_mutations",
-        "operational_events",
-        "rdos",
-        "mensagens",
-        "mensagem_conversas",
-        "mensagem_anexos",
-      ],
-      "readwrite",
-    );
-    const abortOnSessionChange = () => {
-      try {
-        assertSyncSession(expectedGuard);
-      } catch {
-        try {
-          transaction.abort();
-        } catch {
-          // The transaction may already be closed.
-        }
-      }
-    };
-    if (typeof window !== "undefined") {
-      window.addEventListener(
-        AUTH_SESSION_CHANGED_EVENT,
-        abortOnSessionChange,
+      };
+      const originalSnapshot = canonicalMutationJson(original);
+      const guardedTransaction = guardSyncTransaction(
+        database.transaction(
+          [
+            "outbox_mutations",
+            "operational_events",
+            "rdos",
+            "mensagens",
+            "mensagem_conversas",
+            "mensagem_anexos",
+          ],
+          "readwrite",
+        ),
+        expectedGuard,
       );
-    }
-    try {
+      const transaction = guardedTransaction.transaction;
       const current = await transaction
         .objectStore("outbox_mutations")
         .get(original.clientMutationId);
@@ -1996,16 +2149,18 @@ export async function resolveCanonicalUploadReplacements(
       await transaction
         .objectStore(principalStoreFor(original.entityType))
         .put(nextSnapshot as never);
-      await transaction.done;
-      assertSyncSession(expectedGuard);
+      await guardedTransaction.complete();
       created += 1;
-    } finally {
-      if (typeof window !== "undefined") {
-        window.removeEventListener(
-          AUTH_SESSION_CHANGED_EVENT,
-          abortOnSessionChange,
-        );
-      }
+    } catch (error: unknown) {
+      assertSyncSession(expectedGuard);
+      await rejectMutationLocally(
+        original.clientMutationId,
+        "LOCAL_CANONICAL_UPLOAD_INVALID",
+        error instanceof Error
+          ? error.message
+          : "A mutação de upload canônica é inválida.",
+        expectedGuard,
+      );
     }
   }
 
@@ -2103,14 +2258,18 @@ export async function rejectMutationLocally(
   assertSyncSession(guard);
   const database = await getCortexDb();
   assertSyncSession(guard);
-  const transaction = database.transaction(
-    ["outbox_mutations", "operational_events"],
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      ["outbox_mutations", "operational_events"],
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
   const outbox = transaction.objectStore("outbox_mutations");
   const mutation = await outbox.get(clientMutationId);
   if (!mutation) {
-    await transaction.done;
+    await guardedTransaction.complete();
     return;
   }
   const timestamp = nowUtc();
@@ -2137,8 +2296,7 @@ export async function rejectMutationLocally(
       });
     }
   }
-  await transaction.done;
-  assertSyncSession(guard);
+  await guardedTransaction.complete();
 }
 
 export async function returnMutationToPending(
@@ -2151,10 +2309,11 @@ export async function returnMutationToPending(
   const database = await getCortexDb();
   assertSyncSession(guard);
 
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const outboxStore =
     transaction.objectStore("outbox_mutations");
@@ -2164,7 +2323,7 @@ export async function returnMutationToPending(
   const mutation = await outboxStore.get(clientMutationId);
 
   if (!mutation) {
-    await transaction.done;
+    await guardedTransaction.complete();
     return;
   }
 
@@ -2240,8 +2399,7 @@ export async function returnMutationToPending(
     }
   }
 
-  await transaction.done;
-  assertSyncSession(guard);
+  await guardedTransaction.complete();
 }
 
 function applySafeRdoEvent(
@@ -2277,16 +2435,20 @@ export async function applyPulledEventsAtomically(
   const database = await getCortexDb();
   assertSyncSession(guard);
 
-  const transaction = database.transaction(
-    [
-      "processed_events",
-      "rdos",
-      "sync_state",
-      "obras",
-      "previsao_snapshots",
-    ],
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      [
+        "processed_events",
+        "rdos",
+        "sync_state",
+        "obras",
+        "previsao_snapshots",
+      ],
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const processedStore =
     transaction.objectStore("processed_events");
@@ -2439,8 +2601,7 @@ export async function applyPulledEventsAtomically(
     lastPulledCommitSeq: resultingCursor,
   });
 
-  await transaction.done;
-  assertSyncSession(guard);
+  await guardedTransaction.complete();
 
   return resultingCursor;
 }
