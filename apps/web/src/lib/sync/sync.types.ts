@@ -154,7 +154,9 @@ export async function toPushMutationRequest(
         changed: { ...mutation.fieldPatch.changed },
         baseValues: { ...mutation.fieldPatch.baseValues },
       },
-      relatedEntities: mutation.relatedEntities.map((entity) => ({ ...entity })),
+      relatedEntities: (mutation.relatedEntities ?? []).map((entity) => ({
+        ...entity,
+      })),
       dependsOnMutationIds: [...(mutation.dependsOnMutationIds ?? [])],
     };
   }

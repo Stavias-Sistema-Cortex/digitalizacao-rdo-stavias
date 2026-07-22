@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -194,7 +195,176 @@ class PostgresqlCanonicalMutationIT {
         assertThat(setup.domainWrites()).hasValue(1);
     }
 
+    @Test
+    void failedLegacyRetryPreservesOriginalHashAndRejectsChangedReplay() {
+        Setup setup = setup(true);
+        String clientId = "legacy-" + UUID.randomUUID();
+        String entityId = UUID.randomUUID().toString();
+        SyncPushRequest.MutacaoCliente mutation = legacyMutation(
+                setup,
+                clientId,
+                entityId,
+                "fail-once"
+        );
+
+        SyncPushResponse failed = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(mutation))
+        );
+        Map<String, Object> failedReceipt = jdbc.queryForMap(
+                "SELECT payload_hash, envelope_hash FROM sync_mutacao_cliente "
+                        + "WHERE dispositivo_id = ? AND client_mutation_id = ?",
+                setup.deviceOne(),
+                clientId
+        );
+        SyncPushResponse retried = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(mutation))
+        );
+        Map<String, Object> appliedReceipt = jdbc.queryForMap(
+                "SELECT payload_hash, envelope_hash FROM sync_mutacao_cliente "
+                        + "WHERE dispositivo_id = ? AND client_mutation_id = ?",
+                setup.deviceOne(),
+                clientId
+        );
+        SyncPushResponse changedReplay = setup.service().push(
+                new SyncPushRequest(
+                        setup.deviceOne(),
+                        List.of(legacyMutation(setup, clientId, entityId, "changed"))
+                )
+        );
+
+        assertThat(failed.resultados().getFirst().status()).isEqualTo("ERRO");
+        assertThat(retried.resultados().getFirst().status()).isEqualTo("APLICADA");
+        assertThat(failedReceipt.get("payload_hash")).isNotNull();
+        assertThat(appliedReceipt.get("payload_hash"))
+                .isEqualTo(failedReceipt.get("payload_hash"));
+        assertThat(failedReceipt.get("envelope_hash")).isNull();
+        assertThat(appliedReceipt.get("envelope_hash")).isNull();
+        assertThat(changedReplay.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("ERRO");
+            assertThat(result.erro()).contains("outro conteúdo");
+            assertThat(result.eventoServidorCommitSeq()).isNull();
+        });
+        assertThat(setup.attempts()).hasValue(2);
+        assertThat(setup.domainWrites()).hasValue(1);
+    }
+
+    @Test
+    void malformedCanonicalProvenanceIsRejectedWithoutDurableReceipt() throws Exception {
+        Setup setup = setup(false);
+        SyncPushRequest.MutacaoCliente valid = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "valid"
+        );
+        SyncPushRequest.MutacaoCliente badHash = copyCanonical(
+                valid,
+                valid.payload().deepCopy(),
+                valid.entityId(),
+                "0".repeat(64),
+                valid.changedFields()
+        );
+        SyncPushRequest.MutacaoCliente validFields = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "valid-fields"
+        );
+        ArrayList<String> fieldsWithNull = new ArrayList<>(validFields.changedFields());
+        fieldsWithNull.add(null);
+        SyncPushRequest.MutacaoCliente badFields = copyCanonical(
+                validFields,
+                validFields.payload().deepCopy(),
+                validFields.entityId(),
+                validFields.trace().payloadHash(),
+                fieldsWithNull
+        );
+
+        SyncPushResponse badHashResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(badHash))
+        );
+        SyncPushResponse badFieldsResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(badFields))
+        );
+
+        assertRejected(badHashResponse, "PAYLOAD_HASH_MISMATCH");
+        assertRejected(badFieldsResponse, "MALFORMED_CHANGED_FIELDS");
+        assertThat(setup.attempts()).hasValue(0);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sync_mutacao_cliente "
+                        + "WHERE proprietario_id = ? AND client_mutation_id IN (?, ?)",
+                Integer.class,
+                setup.ownerId(),
+                badHash.clientMutationId(),
+                badFields.clientMutationId()
+        )).isZero();
+    }
+
+    @Test
+    void canonicalCreateBindsPayloadAndAppliedIdentityWithFullRollback() throws Exception {
+        String wrongAppliedId = UUID.randomUUID().toString();
+        Setup setup = setup(false, wrongAppliedId);
+        SyncPushRequest.MutacaoCliente valid = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "identity"
+        );
+        ObjectNode mismatchedPayload = valid.payload().deepCopy();
+        mismatchedPayload.put("id", UUID.randomUUID().toString());
+        SyncPushRequest.MutacaoCliente payloadMismatch = copyCanonical(
+                valid,
+                mismatchedPayload,
+                valid.entityId(),
+                hash(mismatchedPayload),
+                valid.changedFields()
+        );
+
+        SyncPushResponse payloadMismatchResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(payloadMismatch))
+        );
+        assertRejected(payloadMismatchResponse, "PRINCIPAL_ENTITY_ID_MISMATCH");
+        assertThat(setup.attempts()).hasValue(0);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sync_mutacao_cliente "
+                        + "WHERE proprietario_id = ? AND client_mutation_id = ?",
+                Integer.class,
+                setup.ownerId(),
+                payloadMismatch.clientMutationId()
+        )).isZero();
+
+        SyncPushRequest.MutacaoCliente appliedMismatch = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "applied-mismatch"
+        );
+        SyncPushResponse appliedMismatchResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(appliedMismatch))
+        );
+
+        assertThat(appliedMismatchResponse.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("ERRO");
+            assertThat(result.erro()).contains("aplicação inválida");
+        });
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM cortex_evento_operacional "
+                        + "WHERE entidade_id = ? OR client_mutation_id = ?",
+                Integer.class,
+                wrongAppliedId,
+                appliedMismatch.clientMutationId()
+        )).isZero();
+    }
+
     private Setup setup(boolean failOnce) {
+        return setup(failOnce, null);
+    }
+
+    private Setup setup(boolean failOnce, String appliedEntityOverride) {
         String ownerId = collaborator();
         String obraId = worksite();
         String deviceOne = device(ownerId);
@@ -246,17 +416,22 @@ class PostgresqlCanonicalMutationIT {
                     )));
                 }
                 domainWrites.incrementAndGet();
+                String appliedEntityId = appliedEntityOverride == null
+                        ? (mutation.entityId() == null
+                                ? mutation.entidadeId()
+                                : mutation.entityId())
+                        : appliedEntityOverride;
                 memory.registrarEvento(
                         "RDO",
-                        mutation.entityId(),
+                        appliedEntityId,
                         "RDO_CRIADO",
                         "POSTGRESQL_IT",
                         obraId,
                         Map.of("value", mutation.payload().path("value").asText())
                 );
                 ObjectNode result = mapper.createObjectNode();
-                result.put("id", mutation.entityId());
-                return new AppliedSyncMutation("RDO", mutation.entityId(), result);
+                result.put("id", appliedEntityId);
+                return new AppliedSyncMutation("RDO", appliedEntityId, result);
             }
         };
         SyncService service = new SyncService(
@@ -323,6 +498,64 @@ class PostgresqlCanonicalMutationIT {
                 List.of(),
                 List.of()
         );
+    }
+
+    private SyncPushRequest.MutacaoCliente legacyMutation(
+            Setup setup,
+            String clientId,
+            String entityId,
+            String value
+    ) {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", entityId);
+        payload.put("obraId", setup.obraId());
+        payload.put("value", value);
+        return new SyncPushRequest.MutacaoCliente(
+                clientId,
+                "RDO",
+                entityId,
+                "CRIAR_RDO",
+                null,
+                payload,
+                LocalDateTime.parse("2026-07-21T12:00:00"),
+                clientId
+        );
+    }
+
+    private SyncPushRequest.MutacaoCliente copyCanonical(
+            SyncPushRequest.MutacaoCliente original,
+            ObjectNode payload,
+            String entityId,
+            String payloadHash,
+            List<String> changedFields
+    ) {
+        return new SyncPushRequest.MutacaoCliente(
+                original.clientMutationId(), original.entidadeTipo(), entityId,
+                original.operacao(), original.baseVersao(), payload,
+                original.criadaNoClienteEm(), original.correlacaoId(), original.schemaVersion(),
+                original.deviceId(), original.userId(), original.obraId(), original.entityType(),
+                entityId, original.operation(), original.baseVersion(), changedFields,
+                original.occurredAt(),
+                new SyncPushRequest.MutationTrace(
+                        original.trace().actorId(),
+                        original.trace().deviceId(),
+                        original.trace().authorizationScope(),
+                        original.trace().correlationId(),
+                        original.trace().causationId(),
+                        original.trace().ontologyEventId(),
+                        payloadHash
+                ),
+                new SyncPushRequest.FieldPatch(payload, original.fieldPatch().baseValues()),
+                original.relatedEntities(), original.dependsOnMutationIds()
+        );
+    }
+
+    private void assertRejected(SyncPushResponse response, String category) {
+        assertThat(response.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("REJEITADA");
+            assertThat(result.resultado().path("rejeicao").path("categoria").asText())
+                    .isEqualTo(category);
+        });
     }
 
     private String hash(ObjectNode payload) throws Exception {

@@ -116,6 +116,44 @@ describe("toPushMutationRequest canonical boundary", () => {
     });
   });
 
+  it("normalizes a retained v13 row without relatedEntities without mutating its provenance", async () => {
+    const mutation = await canonicalMutation();
+    const retainedRow = { ...mutation } as Record<string, unknown>;
+    delete retainedRow.relatedEntities;
+    const provenanceBefore = structuredClone(retainedRow);
+
+    await expect(
+      toPushMutationRequest(
+        retainedRow as unknown as CanonicalOutboxMutationRecord,
+      ),
+    ).resolves.toEqual({
+      schemaVersion: mutation.schemaVersion,
+      clientMutationId: mutation.clientMutationId,
+      deviceId: mutation.deviceId,
+      userId: mutation.userId,
+      obraId: mutation.obraId,
+      entityType: mutation.entityType,
+      entityId: mutation.entityId,
+      operation: mutation.operation,
+      baseVersion: mutation.baseVersion,
+      changedFields: mutation.changedFields,
+      occurredAt: mutation.occurredAt,
+      payload: mutation.payload,
+      entidadeTipo: mutation.entidadeTipo,
+      entidadeId: mutation.entidadeId,
+      operacao: mutation.operacao,
+      baseVersao: mutation.baseVersao,
+      criadaNoClienteEm: mutation.criadaNoClienteEm,
+      correlacaoId: mutation.correlationId,
+      trace: mutation.trace,
+      fieldPatch: mutation.fieldPatch,
+      relatedEntities: [],
+      dependsOnMutationIds: mutation.dependsOnMutationIds,
+    });
+    expect(retainedRow).toEqual(provenanceBefore);
+    expect(retainedRow).not.toHaveProperty("relatedEntities");
+  });
+
   it("fails closed when canonical aliases diverge", async () => {
     await expect(
       toPushMutationRequest({
