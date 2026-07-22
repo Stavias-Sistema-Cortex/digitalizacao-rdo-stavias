@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class RdoResponseContractTest {
 
     @Test
-    void shouldExposeAllRdoHeaderFieldsNeededByOfflineAndStavia() {
+    void shouldExposeAllRdoHeaderFieldsNeededByOfflineClients() {
         assertThat(recordComponentNames(RdoResponse.class))
                 .contains(
                         "condicaoManha",

@@ -32,6 +32,10 @@ the graph runtime.
   `apps/api/src/main/java/com/projeto/cortex/intelligence/stavia/` tree.
 - `backend/test/` contains its former package tests plus the assistant-only
   MySQL reader integration tests that previously imported that package.
+- `backend/resources/stavia/` contains the former assistant ontology fixture
+  removed from Maven's production-resource root.
+- `backend/scripts/` contains the retired end-to-end assistant smoke script;
+  it is preservation material and must not be invoked by Cortex 3 launchers.
 
 ## Restoration boundary
 

@@ -1,136 +1,209 @@
 # Runtime Foundation Task 4 Implementer Report
 
-## Scope and base
+## Scope and commits
 
 - Task: Runtime Foundation Task 4 — archive the StavIA backend and enforce the
   executable runtime boundary.
 - Worktree: `/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery`.
 - Branch: `feat/cortex.v3-delivery`.
-- Base: `f311b29ff616dd5bd3556dac0b347ae76ce15b16`.
+- Original implementation commit: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
+- Review-fix base: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
 - Archive lineage recorded by the plan: `b9b619e`.
-- Planned subject: `refactor(api): archive StavIA runtime`.
-- No frontend, migration, offline, RDO, Financeiro, Task 5, or Task 6 file was
-  changed.
+- This review fix does not change frontend runtime, offline behavior, RDO
+  behavior, Financeiro behavior, skills, plans, or Task 5+ implementation.
+  Two pre-existing backend test names/comments were made assistant-neutral;
+  their assertions and product behavior are unchanged.
 
-## Inventory and operational boundary
+## Review findings addressed
 
-- Moved with `git mv` all 182 tracked production files from
-  `apps/api/src/main/java/com/projeto/cortex/intelligence/stavia/` to
-  `archive/stavia/backend/main/`.
-- Moved with `git mv` all 68 tracked package tests from
-  `apps/api/src/test/java/com/projeto/cortex/intelligence/stavia/` to
-  `archive/stavia/backend/test/`.
-- Repository-wide API source inspection found three additional compiled tests
-  outside that package whose entire subject depended on archived StavIA readers
-  or orchestration. They were also moved with `git mv` to
-  `archive/stavia/backend/test/pdor/`:
-  - `JdbcOperationalHistoryReaderMysqlIntegrationTest`;
-  - `StaviaBusinessKnowledgeMysqlIntegrationTest`;
-  - `StaviaSystemKnowledgeReadersMysqlIntegrationTest`.
-- No production import, bean, route, provider, or security wiring outside the
-  package referenced `com.projeto.cortex.intelligence.stavia` or `/api/stavia`.
-- Tasks 1–3 already provide the independent runtime replacements under
-  `com.projeto.cortex.ontology.graph`: immutable graph records, committed-event
-  projection, PostgreSQL repository/checkpointing, bounded authorization-aware
-  query service, and `/api/ontology/**` controller. The archive does not copy
-  intents, prompts, response generation/formatting, query audit,
-  knowledge-source orchestration, or reprogramming into that graph module.
-- Added `archive/stavia/README.md` with source commit `b9b619e`, archival date
-  2026-07-21, non-build/archive-only rules, extracted graph classes, layout, and
-  restoration restricted to a separate repository or dedicated branch/worktree.
+### Runtime/configuration residues
+
+- Removed all `CORTEX_STAVIA_*` wiring from `.env.example`,
+  `compose.local.yml`, `compose.production.example.yml`, and
+  `scripts/dev/run-api.sh`.
+- Moved with `git mv`:
+  - `scripts/dev/smoke-stavia-sync.sh` to
+    `archive/stavia/backend/scripts/smoke-stavia-sync.sh`;
+  - `apps/api/src/main/resources/stavia/rdo-ontology.json` to
+    `archive/stavia/backend/resources/stavia/rdo-ontology.json`.
+- Updated `archive/stavia/README.md` so both archive-only surfaces are explicit.
+- Removed residual assistant terminology from active backend source/test
+  material. The only semantic rename is the generic
+  `staviaEvidencePolicy` -> `evidencePolicy`; its values and coverage contract
+  remain unchanged. STAVIAS corporate/product branding and upstream database
+  identifiers such as `StaviasCortex` and `dbstavias_*` remain valid.
+
+### PostgreSQL forward migration
+
+- Added
+  `db/migration-postgresql/V45_1__retire_stavia_runtime.sql`, deliberately
+  below the reserved V46+ range.
+- It drops only, in dependency-safe order:
+  1. `stavia_context_snapshots`;
+  2. `stavia_queries`;
+  3. `stavia_contexto_obra`.
+- The current-chain PostgreSQL test now proves Flyway applies exactly V44,
+  V45, and V45.1 and compares the exact 114-table result against the frozen
+  V44 inventory minus those three tables plus `graph_projection_checkpoint`.
+  This proves the generic `ontology_*`, `operational_*`, and all unrelated
+  tables remain.
+- V44-only tests still target `44`; the historical inventory still represents
+  the exact V44 baseline, including the three legacy tables.
+
+### Current runtime/readiness version
+
+- The shared PostgreSQL profile, mode configuration guard, schema readiness
+  guard, runtime readiness guard, and activation readiness probe now require
+  the completed current chain through V45.1.
+- Readiness SQL checks the successful Flyway `45.1` row. Messages and tests no
+  longer describe V44 as sufficient for the current runtime.
+- The isolated migration-contract tests that deliberately stop Flyway at V44
+  remain unchanged; they continue to prove the immutable baseline independently
+  from current-runtime readiness.
+
+No V1–V44 migration, the V44 inventory, or V45 was modified or moved.
+Checksums retained:
+
+- MySQL V18:
+  `bac9e6ccf530cab35ac00727524e85a6a6161d0b8788f97af5c0e07e922d715b`;
+- MySQL V22:
+  `c87f7dbcff6084f34581cb854eab29826ad03c35708732480d22b81808410467`;
+- PostgreSQL V44:
+  `7dbea9ba9027e06c458b7fe7fd3ea1181bff56b457973590eaddff60754a86eb`.
+
+### Boundary contract and allowlist
+
+`StaviaRuntimeBoundaryTest` now inspects both paths and content across:
+
+- `apps/api/src/main/**` and `apps/api/src/test/**`, including resources;
+- `apps/api/pom.xml`;
+- `.env.example`, both compose examples, and `scripts/**`;
+- `target/classes/**`;
+- application entries inside every direct `target/*.jar`.
+
+It rejects assistant-named directories/resources, package/classes, routes,
+environment/configuration keys, scripts, and compiled/JAR content. It resolves
+the repository from Maven's stable `basedir` and therefore also works when
+Maven is invoked with an absolute `-f` from another directory.
+
+The explicit, documented source allowlist is limited to:
+
+- immutable MySQL V18;
+- immutable MySQL V22;
+- immutable PostgreSQL V44;
+- forward-only retirement migration V45.1;
+- frozen V44 required-table inventory;
+- the V44-only structural resource contract.
+
+The boundary test source itself is excluded because its required class/file
+name contains the retired assistant spelling. The archive is outside all
+scanned build/runtime surfaces. Compiled output allows only the four versioned
+migration resources above; no assistant fixture, Java package, route, or
+configuration is allowed.
 
 ## TDD evidence
 
-### RED
+### Expanded boundary RED
+
+Command:
 
 `mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
 
 - Exit: `1`.
+- Result: 2 tests, 2 failures, 0 errors, 0 skipped.
+- The source/config failure listed 14 concrete violations: env, two compose
+  files, `run-api.sh`, assistant smoke script path/content, ontology resource
+  path, two active production references, and active test references.
+- The build-output failure listed the packaged ontology resource and compiled
+  policy references in `target/classes` and the Spring Boot JAR.
+- These were assertion failures against real residues, not harness or compile
+  errors.
+
+### PostgreSQL current-chain RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=PostgresqlCleanStartFlowIT test`
+
+- Exit: `1`.
 - Result: 1 test, 1 failure, 0 errors, 0 skipped.
-- Expected reason: active sources contained the assistant package,
-  `/api/stavia`, and `StaviaQueryController`; the failure was an assertion
-  failure, not a test-harness or compilation error.
+- Expected reason: Flyway applied `[44, 45]`, while the new contract required
+  `[44, 45, 45.1]`. The migration did not exist yet.
+
+### Runtime/readiness V45.1 RED
+
+Commands:
+
+`mvn -f apps/api/pom.xml -Dtest=PostgresqlFoundationContractTest,PostgresqlProfileModesContractTest,PostgresqlModeConfigurationGuardTest,PostgresqlEffectiveConfigurationTest,PostgresqlSchemaReadinessGuardTest,PostgresqlRuntimeReadinessGuardTest test`
+
+- Exit: `1` after a successful compile.
+- Result: 38 tests, 11 assertion failures, 0 errors. The failures showed the
+  shared profile and three runtime guards still required V44.
+
+`mvn -f apps/api/pom.xml -Dtest=PostgresqlActivationReadinessTest test`
+
+- Exit: `1`.
+- Result: 2 tests, 2 assertion failures, 0 errors. The active activation probe
+  still queried Flyway V44 and reported the V44 baseline as sufficient.
 
 ### GREEN
 
-1. `mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
    - Exit: `0`.
-   - Result: 1 test, 0 failures/errors/skips.
-2. `mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest,OntologyGraphContractTest test`
+   - 2 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml -Dtest=PostgresqlCleanStartFlowIT test`
    - Exit: `0`.
-   - Result: 3 tests, 0 failures/errors/skips.
+   - 1 test, 0 failures/errors/skips.
+   - PostgreSQL 18.4 applied V44, V45, and V45.1 and the exact current table
+     inventory passed.
 3. `mvn -f apps/api/pom.xml clean test`
    - Exit: `0`.
-   - Result: 732 tests, 0 failures, 0 errors, 53 skipped.
-   - Clean compilation produced 457 production sources and 242 test sources;
-     no class file remained under the archived assistant package.
+   - 735 tests, 0 failures, 0 errors, 53 skipped.
 4. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
    - Exit: `0`.
-   - Surefire: 732 tests, 0 failures, 0 errors, 53 skipped.
+   - Surefire: 735 tests, 0 failures, 0 errors, 53 skipped.
    - Failsafe: 22 tests, 0 failures, 0 errors, 0 skipped.
-   - PostgreSQL 18.4 containers applied V44 and V45; the independent graph
-     repository and authorized query-service ITs passed without the StavIA
-     package on the runtime/test classpath.
+   - Includes isolated target-44 baseline tests and unrestricted current-chain
+     tests through V45.1.
+5. `mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+   after the unrestricted verify produced the Spring Boot JAR:
+   - Exit: `0`.
+   - 2 tests, 0 failures/errors/skips; this run inspected the packaged JAR.
+6. The same focused command with the absolute `pom.xml` path from `/tmp`:
+   - Exit: `0`.
+   - 2 tests, 0 failures/errors/skips; this proves stable Maven `basedir`
+     resolution outside both the repository and module working directories.
+7. Runtime/readiness focused GREEN:
+   - 38 tests, 0 failures/errors/skips for the shared profile and three guards.
+   - 2 tests, 0 failures/errors/skips for
+     `PostgresqlActivationReadinessTest`.
 
-The boundary test reads production Java, resources, active test Java, and the
-compiled assistant package output. Forbidden strings are assembled in the test
-source so the same literal repository scan can return no false-positive match.
-The pre-existing graph contract received the same non-semantic string split.
+Flyway continues to emit the pre-existing warning that PostgreSQL 18.4 is newer
+than the version it declares tested support for (16); no migration or test
+failed because of that warning.
 
-## Test-count reconciliation
+## Static and artifact evidence
 
-- Reviewed Task 3 base: 1020 tests, 0 failures, 0 errors, 57 skipped.
-- Task 4 clean suite: 732 tests, 0 failures, 0 errors, 53 skipped.
-- The archive removes 289 StavIA test executions from Maven (the 68 package test
-  files plus the three assistant-only integration test files) and adds one
-  executable boundary test: `1020 - 289 + 1 = 732`.
-- The four-test skipped-count reduction belongs to those archived conditional
-  assistant integration tests. Their sources remain recoverable in the archive;
-  they are intentionally non-build because the assistant runtime itself is
-  intentionally non-build.
+- Active env/compose/scripts/application/source scan for `CORTEX_STAVIA`,
+  assistant configuration, `/api/stavia`, and `/stavia/`: no matches.
+- `target/classes/stavia/rdo-ontology.json`: absent.
+- `target/classes/com/projeto/cortex/intelligence/stavia`: absent.
+- JAR entries under either assistant resource/package path: absent.
+- The only assistant-named resources in the JAR are the explicitly allowlisted
+  V18, V22, V44, and V45.1 migrations.
+- Diff against the review-fix base for all MySQL migrations, PostgreSQL V44,
+  PostgreSQL V45, and the V44 inventory: empty.
+- Active source scan for readiness checks that still accept Flyway V44: no
+  matches outside the explicit immutable-boundary documentation.
+- `git diff --check`: exit `0`.
 
-## Configuration and dependencies
+## Residual risk and boundary
 
-- Removed the complete 14-line `cortex.stavia` block from
-  `apps/api/src/main/resources/application.yml`, including generator/interpreter
-  modes, Ollama endpoint/model/key, timeouts, evidence limit, confidence, and
-  breaker settings.
-- No `pom.xml` dependency was removed. The inventory found no assistant-exclusive
-  dependency: the archived code used Spring Web/JDBC/JPA/Jackson facilities that
-  remain required by active API modules, and the POM declares no Ollama or other
-  dedicated assistant client library. Removing a shared dependency would be
-  unproven and outside this task.
-- The corporate `<description>Stavias Sistema Cortex API</description>` remains
-  byte-for-byte unchanged.
-
-## Static and packaging evidence
-
-- `rg -n "intelligence\\.stavia|/api/stavia|StaviaQueryController" apps/api/src/main apps/api/src/test`
-  - Exit: `1`, no matches (expected success condition for an absence scan).
-- Scan for `cortex.stavia`, `CORTEX_STAVIA_`, and assistant property wiring in
-  `apps/api/src/main`, `apps/api/src/test`, and `apps/api/pom.xml`
-  - Exit: `1`, no matches.
-- Archive inventory assertion
-  - Exit: `0`; exactly 182 main files and 71 test files are archived, and both
-    former active package roots are absent.
-- The packaged Spring Boot JAR contains no entry under
-  `com/projeto/cortex/intelligence/stavia` and no `StaviaQueryController`.
-- `git diff --check`
-  - Exit: `0`.
-
-## Risks and follow-up context
-
-- Archive Java files retain their historical package declarations and imports,
-  but their location is deliberately outside all Maven source/test roots. They
-  are preservation material, not a supported compilable module.
-- Three MySQL integration tests outside the original package were assistant-only
-  even though their fixtures touched operational tables. Keeping them compiled
-  would retain direct archive imports; rewriting those reader-specific contracts
-  as graph tests here would duplicate Tasks 1–3 and blur the assistant boundary.
-  Their source is preserved, while the independent graph contracts and complete
-  active API suite remain executable.
-- Frontend assistant controls remain for Task 5 by explicit scope. This report
-  makes no claim about the web runtime.
-- PostgreSQL full-runtime activation remains Task 6. This task relies on the
-  reviewed Task 1–3 graph commits at the exact base and does not broaden into
-  datasource/migration changes.
+- Historical migration resources must remain packaged so Flyway can validate
+  already-applied checksums and migrate supported databases. They are not
+  runtime assistant wiring.
+- The archived smoke script and ontology fixture retain their historical
+  contents by design, but live only below `archive/stavia` and are excluded from
+  Maven and launch surfaces.
+- Frontend assistant removal remains Runtime Foundation Task 5 and is not
+  claimed by this backend fix.

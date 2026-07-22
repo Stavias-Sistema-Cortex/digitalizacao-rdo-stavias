@@ -19,6 +19,16 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
+    void configuredRuntimeRequiresTheCompleteV45_1Chain() throws Exception {
+        var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
+                "CLEAN_START_REQUIRED_SCHEMA_VERSION"
+        );
+        field.setAccessible(true);
+
+        assertThat(field.get(null)).isEqualTo("45.1");
+    }
+
+    @Test
     void executesAsAnEarlyBeanFactoryPreflight() {
         PostgresqlRuntimeReadinessGuard guard = guard(mock(JdbcTemplate.class), true, released());
 
@@ -47,14 +57,14 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesSuccessfulV45WhenTheExplicitV44RowIsAbsent() {
+    void refusesWhenTheExplicitV45_1RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("baseline V44");
-        verify(jdbcTemplate).queryForObject(contains("version = '44'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V45.1");
+        verify(jdbcTemplate).queryForObject(contains("version = '45.1'"), eq(Integer.class));
     }
 
     @Test
@@ -69,7 +79,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV44VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV45_1VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -92,7 +102,9 @@ class PostgresqlRuntimeReadinessGuardTest {
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
-        return new PostgresqlRuntimeReadinessGuard(jdbcTemplate, 44, runtimeReady, registry);
+        return new PostgresqlRuntimeReadinessGuard(
+                jdbcTemplate, "45.1", runtimeReady, registry
+        );
     }
 
     private PostgresqlRuntimeSurfaceRegistry released() {

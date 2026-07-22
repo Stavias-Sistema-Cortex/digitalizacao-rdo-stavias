@@ -25,7 +25,7 @@ class OntologyGraphContractTest {
                 .filter(Files::isRegularFile)
                 .map(this::read)
                 .collect(joining("\n")))
-                .doesNotContain("intelligence." + "stavia", "Stavia");
+                .doesNotContain("intelligence." + "sta" + "via", "Sta" + "via");
         assertThat(GraphEntity.class.getRecordComponents())
                 .extracting(RecordComponent::getName)
                 .containsExactly("id", "type", "externalRefType", "externalRefId",

@@ -53,8 +53,6 @@ services:
 
       CORTEX_IMPORT_ENABLED: "false"
       CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-false}
-      CORTEX_STAVIA_GENERATOR_MODE: ${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}
-      CORTEX_STAVIA_INTERPRETER_MODE: ${CORTEX_STAVIA_INTERPRETER_MODE:-deterministic}
     secrets:
       - cortex_cpf_hmac
       - cortex_otp_hmac
