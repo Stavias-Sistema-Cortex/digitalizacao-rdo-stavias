@@ -29,6 +29,9 @@ export interface ObjectUploadSummary {
   errors: number;
 }
 
+export const CANONICAL_UPLOAD_REFERENCE_BLOCKED =
+  "CANONICAL_UPLOAD_REFERENCE_REQUIRES_REPLACEMENT";
+
 export async function processObjectUploads(
   limit = 20,
 ): Promise<ObjectUploadSummary> {
@@ -202,21 +205,45 @@ async function applyUploadedObject(
     if (!dependent.dependsOnMutationIds?.includes(uploadMutationId)) {
       continue;
     }
-    if (isCanonicalOutboxMutation(dependent)) {
-      continue;
-    }
-    await outbox.put({
-      ...dependent,
-      payload: resolveUploadReference(
-        dependent.payload,
+    await outbox.put(
+      dependentAfterUploadResolution(
+        dependent,
         uploadMutationId,
         objectId,
         sha256,
+        timestamp,
       ),
-      updatedAt: timestamp,
-    });
+    );
   }
   await transaction.done;
+}
+
+export function dependentAfterUploadResolution(
+  dependent: OutboxMutationRecord,
+  uploadMutationId: string,
+  objectId: string,
+  sha256: string,
+  timestamp: string,
+): OutboxMutationRecord {
+  if (isCanonicalOutboxMutation(dependent)) {
+    return {
+      ...dependent,
+      blockedReason: CANONICAL_UPLOAD_REFERENCE_BLOCKED,
+      ultimoErro:
+        "O anexo foi enviado; a mutação canônica aguarda um envelope substituto rastreável.",
+      updatedAt: timestamp,
+    };
+  }
+  return {
+    ...dependent,
+    payload: resolveUploadReference(
+      dependent.payload,
+      uploadMutationId,
+      objectId,
+      sha256,
+    ),
+    updatedAt: timestamp,
+  };
 }
 
 async function markUploadFailed(

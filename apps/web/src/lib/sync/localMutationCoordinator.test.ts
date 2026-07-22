@@ -347,6 +347,43 @@ describe("canonical local mutation coordinator", () => {
     expect(await database.get("rdos", RDO_ID)).toBeUndefined();
   });
 
+  it("binds an RDO envelope to the rdos store and the same authorized worksite", async () => {
+    const wrongStoreValue = {
+      id: RDO_ID,
+      codigoContrato: "C-1",
+      nome: "Obra indevida",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "ATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      updatedAt: OCCURRED_AT,
+    };
+    await expect(
+      commitLocalMutation({
+        ...command(),
+        nextSnapshot: wrongStoreValue,
+        write: () => [{
+          store: "obras",
+          value: wrongStoreValue,
+          principal: true,
+        }],
+      } as unknown as LocalMutationCommand<"obras">),
+    ).rejects.toThrow(/RDO requires principal store rdos/i);
+
+    const foreignRecord = { ...rdo(), obraId: FOREIGN_OBRA_ID };
+    await expect(
+      commitLocalMutation({
+        ...command(foreignRecord),
+        obraId: OBRA_ID,
+      }),
+    ).rejects.toThrow(/RDO obraId must equal envelope obraId/i);
+  });
+
   it("clones the declarative domain write before hashing", async () => {
     const record = rdo();
     const input = command(record);

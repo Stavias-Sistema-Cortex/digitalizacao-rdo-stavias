@@ -1,9 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CANONICAL_UPLOAD_REFERENCE_BLOCKED,
+  dependentAfterUploadResolution,
   resolveUploadReference,
   verifyUploadIntegrity,
 } from "./objectUploadSync";
+import type { OutboxMutationRecord } from "../../lib/db/db.types";
+
+function dependentMutation(): OutboxMutationRecord {
+  return {
+    clientMutationId: "message-1",
+    entidadeTipo: "MENSAGEM",
+    entidadeId: "message-1",
+    operacao: "CRIAR_MENSAGEM",
+    baseVersao: null,
+    payload: { anexos: [{ uploadMutationId: "upload-a" }] },
+    status: "PENDING",
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: "2026-07-21T12:00:00.000Z",
+    updatedAt: "2026-07-21T12:00:00.000Z",
+    dependsOnMutationIds: ["upload-a"],
+  };
+}
 
 describe("message attachment upload sync", () => {
   it("replaces only the uploaded dependency with the server object reference", () => {
@@ -41,5 +63,23 @@ describe("message attachment upload sync", () => {
         4,
       ),
     ).toThrow("integridade");
+  });
+
+  it("blocks a canonical dependent instead of sending an unresolved placeholder", () => {
+    const canonical = {
+      ...dependentMutation(),
+      schemaVersion: 13,
+    } as OutboxMutationRecord;
+    const resolved = dependentAfterUploadResolution(
+      canonical,
+      "upload-a",
+      "object-a",
+      "a".repeat(64),
+      "2026-07-21T13:00:00.000Z",
+    );
+
+    expect(resolved.payload).toEqual(canonical.payload);
+    expect(resolved.blockedReason).toBe(CANONICAL_UPLOAD_REFERENCE_BLOCKED);
+    expect(resolved.status).toBe("PENDING");
   });
 });

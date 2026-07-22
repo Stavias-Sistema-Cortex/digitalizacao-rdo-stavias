@@ -121,6 +121,7 @@ export function selectReadyOutboxMutations(
     .filter((mutation) => {
       if (
         mutation.status !== "PENDING" ||
+        Boolean(mutation.blockedReason) ||
         !isSyncPush(mutation) ||
         cycles.has(mutation.clientMutationId) ||
         missingByMutation.has(mutation.clientMutationId)

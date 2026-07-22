@@ -15,6 +15,7 @@ import type {
   OperationalEntityRef,
   OperationalEventType,
   OutboxTransport,
+  SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
 import {
@@ -52,6 +53,13 @@ const OPERATIONAL_EVENT_TYPES = [
 
 type CanonicalWriteStore = "outbox_mutations" | "operational_events";
 export type LocalDomainStore = Exclude<CortexStoreName, CanonicalWriteStore>;
+
+const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
+  RDO: "rdos",
+  CONVERSA: "mensagem_conversas",
+  MENSAGEM: "mensagens",
+  MENSAGEM_ANEXO: "mensagem_anexos",
+} as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
 export type LocalMutationDomainWrite<TStore extends LocalDomainStore> = {
   [Store in TStore]: {
@@ -249,6 +257,8 @@ function prepareCoordinatorInput<TStore extends LocalDomainStore>(
     command.write,
     envelope.nextSnapshot,
     envelope.entityId,
+    envelope.entityType,
+    envelope.obraId,
   );
 
   return {
@@ -265,6 +275,8 @@ function prepareWrites<TStore extends LocalDomainStore>(
   writer: LocalMutationCommand<TStore>["write"],
   nextSnapshot: Record<string, unknown>,
   entityId: string,
+  entityType: string,
+  obraId: string,
 ): LocalMutationDomainWrite<TStore>[] {
   const result: unknown = writer();
   if (isThenable(result)) {
@@ -295,19 +307,39 @@ function prepareWrites<TStore extends LocalDomainStore>(
     throw new TypeError("Local mutation write plan requires one principal write.");
   }
   const principal = principals[0];
+  const principalValue = principal.value as unknown;
   if (writes.some((write) => write !== principal && write.store === principal.store)) {
     throw new TypeError(
       "Principal domain store may contain only the principal write.",
     );
   }
   if (
-    principal.value === null ||
-    typeof principal.value !== "object" ||
-    Array.isArray(principal.value) ||
-    !("id" in principal.value) ||
-    principal.value.id !== entityId
+    principalValue === null ||
+    typeof principalValue !== "object" ||
+    Array.isArray(principalValue) ||
+    !("id" in principalValue) ||
+    principalValue.id !== entityId
   ) {
     throw new TypeError("Principal domain write id must equal entityId.");
+  }
+  const expectedStore = PRINCIPAL_STORE_BY_ENTITY_TYPE[
+    entityType as keyof typeof PRINCIPAL_STORE_BY_ENTITY_TYPE
+  ];
+  if (expectedStore === undefined) {
+    throw new TypeError(
+      `entityType ${entityType} does not have a local principal store.`,
+    );
+  }
+  if (principal.store !== expectedStore) {
+    throw new TypeError(
+      `entityType ${entityType} requires principal store ${expectedStore}.`,
+    );
+  }
+  if (
+    entityType === "RDO" &&
+    (!("obraId" in principalValue) || principalValue.obraId !== obraId)
+  ) {
+    throw new TypeError("Principal RDO obraId must equal envelope obraId.");
   }
   if (
     canonicalMutationJson(principal.value) !==

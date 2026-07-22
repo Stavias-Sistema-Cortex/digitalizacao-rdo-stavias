@@ -63,6 +63,16 @@ describe("selectReadyOutboxMutations", () => {
     expect(selectReadyOutboxMutations([legacy], 100))
       .toEqual([legacy]);
   });
+
+  it("never releases a mutation with a durable blocked reason", () => {
+    const upload = mutation("upload-1", "SYNCED");
+    upload.transport = "OBJECT_UPLOAD";
+    const blocked = mutation("message-1", "PENDING", ["upload-1"]);
+    blocked.blockedReason =
+      "CANONICAL_UPLOAD_REFERENCE_REQUIRES_REPLACEMENT";
+
+    expect(selectReadyOutboxMutations([blocked, upload], 100)).toEqual([]);
+  });
 });
 
 describe("analyzeOutboxDependencies", () => {
