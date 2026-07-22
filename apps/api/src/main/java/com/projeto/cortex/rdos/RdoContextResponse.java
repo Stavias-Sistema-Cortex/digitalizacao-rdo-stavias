@@ -1,15 +1,21 @@
 package com.projeto.cortex.rdos;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 public record RdoContextResponse(
         ObraContexto obra,
         LocalDate data,
+        String nextNumberSuggestion,
+        PreviousRdo previousRdo,
+        List<PreviousWorkforceItem> previousWorkforce,
         List<ProgramacaoContexto> programacoes,
         List<ColaboradorContexto> colaboradores,
-        List<EquipamentoContexto> equipamentos
+        List<EquipamentoContexto> equipamentos,
+        CreationProvenance provenance
 ) {
 
     public record ObraContexto(
@@ -21,7 +27,32 @@ public record RdoContextResponse(
             String cidade,
             String uf,
             String rodovia,
-            String status
+            String status,
+            long version
+    ) {
+    }
+
+    public record PreviousRdo(
+            String id,
+            String numeroRdo,
+            LocalDate dataRdo,
+            String status,
+            long version
+    ) {
+    }
+
+    public record PreviousWorkforceItem(
+            String sourceItemId,
+            String sourceRdoId,
+            String collaboratorId,
+            String nameSnapshot,
+            String roleSnapshot,
+            String linkType,
+            BigDecimal quantity,
+            LocalTime startTime,
+            LocalTime endTime,
+            String observations,
+            String availability
     ) {
     }
 
@@ -54,10 +85,8 @@ public record RdoContextResponse(
             String id,
             String codigoColaborador,
             String nome,
-            String email,
-            String nomeGrupo,
-            String nomePerfil,
-            String cpfMascarado
+            String papelNaObra,
+            String nomePerfil
     ) {
     }
 
@@ -66,6 +95,15 @@ public record RdoContextResponse(
             String codigoExterno,
             String nome,
             String categoria
+    ) {
+    }
+
+    public record CreationProvenance(
+            long sourceVersion,
+            String worksiteId,
+            LocalDate selectedDate,
+            String previousRdoId,
+            Instant generatedAt
     ) {
     }
 }

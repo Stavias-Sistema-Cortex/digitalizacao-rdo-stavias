@@ -112,6 +112,26 @@ class OperationalGraphProjectorTest {
     }
 
     @Test
+    void projectsRdoCreationOriginAsTemporalDerivation() {
+        GraphProjectionBatch projection = projector.project(new CommittedOperationalEvent(
+                5L,
+                "event-rdo-derived",
+                "RDO_CREATED",
+                ref("RDO", "rdo-current"),
+                List.of(
+                        ref("WORKSITE", "obra-1"),
+                        ref("RDO", "rdo-previous")
+                ),
+                Instant.parse("2026-07-22T12:00:00Z"),
+                Map.of("number", "RDO-0042")
+        ));
+
+        assertThat(projection.relations())
+                .extracting(GraphRelation::type)
+                .containsExactlyInAnyOrder("BELONGS_TO_WORKSITE", "DERIVED_FROM");
+    }
+
+    @Test
     void recordsOnlyTheStableSafeFailureCodeWhenProjectionPersistenceFails() {
         RecordingFailingRepository repository = new RecordingFailingRepository();
         GraphProjectionService service = new GraphProjectionService(projector, repository);

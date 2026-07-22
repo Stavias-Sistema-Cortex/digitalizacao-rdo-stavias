@@ -155,7 +155,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 appliedVersions.add(rows.getString("version"));
             }
         }
-        assertThat(appliedVersions).containsExactly("44", "45", "45.1", "46", "47");
+        assertThat(appliedVersions).containsExactly("44", "45", "45.1", "46", "47", "48");
     }
 
     private void assertCurrentTableInventory(JdbcTemplate jdbc) throws Exception {
@@ -163,6 +163,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         assertThat(expectedTables).containsAll(RETIRED_ASSISTANT_TABLES);
         expectedTables.removeAll(RETIRED_ASSISTANT_TABLES);
         expectedTables.add("graph_projection_checkpoint");
+        expectedTables.add("rdo_number_sequence");
 
         Set<String> actualTables = new TreeSet<>(jdbc.queryForList("""
                 SELECT table_name
@@ -173,7 +174,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 ORDER BY table_name
                 """, String.class));
 
-        assertThat(expectedTables).hasSize(114).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
+        assertThat(expectedTables).hasSize(115).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
         assertThat(actualTables)
                 .doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES)
                 .containsExactlyElementsOf(expectedTables);

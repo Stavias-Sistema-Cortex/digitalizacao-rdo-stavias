@@ -13,7 +13,10 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -25,6 +28,7 @@ public class RdoService {
     private final RdoAttachmentService attachmentService;
     private final RdoOperationalEventService operationalEventService;
     private final PrevisaoFinanceiraService previsaoFinanceiraService;
+    private final RdoQueryService queryService;
 
     public RdoService(
             JdbcTemplate jdbcTemplate,
@@ -32,7 +36,8 @@ public class RdoService {
             RdoOperationalDetailService operationalDetailService,
             RdoAttachmentService attachmentService,
             RdoOperationalEventService operationalEventService,
-            PrevisaoFinanceiraService previsaoFinanceiraService
+            PrevisaoFinanceiraService previsaoFinanceiraService,
+            RdoQueryService queryService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryPublisher = memoryPublisher;
@@ -40,10 +45,14 @@ public class RdoService {
         this.attachmentService = attachmentService;
         this.operationalEventService = operationalEventService;
         this.previsaoFinanceiraService = previsaoFinanceiraService;
+        this.queryService = queryService;
     }
 
     @Transactional
     public RdoResponse criarRascunho(RdoCreateRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "RDO é obrigatório.");
+        }
         if (request.obraId() == null || request.obraId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "obraId é obrigatório.");
         }
@@ -52,8 +61,36 @@ public class RdoService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dataRdo é obrigatório.");
         }
 
-        ObraDados obra = buscarObra(request.obraId());
-        ProgramacaoDados programacao = buscarProgramacaoOpcional(request.programacaoId(), request.obraId());
+        String obraId = request.obraId().strip();
+        String rdoId = requireUuid(request.id(), "id");
+        String clientMutationId = textoLimitadoObrigatorio(
+                request.clientMutationId(), "clientMutationId", 120
+        );
+        bloquearCriacaoDeterministicamente(rdoId, clientMutationId);
+        RdoExistente replay = buscarReplay(clientMutationId, rdoId);
+        if (replay != null) {
+            if (!replay.id().equals(rdoId)
+                    || !replay.obraId().equals(obraId)
+                    || !replay.dataRdo().equals(request.dataRdo())
+                    || !Objects.equals(
+                            replay.previousRdoId(),
+                            nuloSeVazio(request.previousRdoId())
+                    )
+                    || !Objects.equals(
+                            replay.creationContextVersion(),
+                            request.creationContextVersion()
+                    )
+                    || !Objects.equals(replay.clientMutationId(), clientMutationId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "A mutação de criação já foi aplicada com outro conteúdo, RDO ou obra."
+                );
+            }
+            return queryService.buscarPorId(replay.id());
+        }
+
+        ObraDados obra = buscarObra(obraId);
+        ProgramacaoDados programacao = buscarProgramacaoOpcional(request.programacaoId(), obraId);
 
         if (programacao != null && !programacao.dataProgramacao().equals(request.dataRdo())) {
             throw new ResponseStatusException(
@@ -62,14 +99,9 @@ public class RdoService {
             );
         }
 
-        String rdoId = primeiroNaoVazio(request.id(), UUID.randomUUID().toString());
-
-        if (rdoExiste(rdoId)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Já existe um RDO com este id: " + rdoId
-            );
-        }
+        validarProveniencia(request, obraId);
+        String apontadorNome = validarEquipeEApontador(request, obraId);
+        NumberAllocation number = alocarNumero(obraId);
         String status = "RASCUNHO";
         String diaSemana = diaSemanaPt(request.dataRdo());
 
@@ -96,7 +128,12 @@ public class RdoService {
                     obra_id,
                     programacao_id,
                     numero_rdo,
+                    numero_sequencial,
                     data_rdo,
+                    previous_rdo_id,
+                    creation_context_version,
+                    client_mutation_id,
+                    apontador_colaborador_id,
                     dia_semana,
                     cliente,
                     contrato,
@@ -120,13 +157,18 @@ public class RdoService {
                     apontador_rdo,
                     encarregado_obra,
                     fiscalizacao_campo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rdoId,
-                request.obraId(),
+                obraId,
                 programacao == null ? null : programacao.id(),
-                request.numeroRdo(),
+                number.display(),
+                number.value(),
                 request.dataRdo(),
+                nuloSeVazio(request.previousRdoId()),
+                request.creationContextVersion(),
+                clientMutationId,
+                nuloSeVazio(request.apontadorColaboradorId()),
                 diaSemana,
                 cliente,
                 contrato,
@@ -147,7 +189,7 @@ public class RdoService {
                 status,
                 request.observacoes(),
                 nuloSeVazio(request.preenchidoPor()),
-                nuloSeVazio(request.apontadorRdo()),
+                apontadorNome,
                 nuloSeVazio(request.encarregadoObra()),
                 nuloSeVazio(request.fiscalizacaoCampo())
         );
@@ -163,7 +205,7 @@ public class RdoService {
         RdoOperationalDetailService.RdoOperationalDetails detalhes =
                 operationalDetailService.substituirDetalhes(
                         rdoId,
-                        request.obraId(),
+                        obraId,
                         programacao == null ? null : programacao.id(),
                         request.dataRdo(),
                         request.turno(),
@@ -173,36 +215,40 @@ public class RdoService {
 
         attachmentService.substituirAttachments(
                 rdoId,
-                request.obraId(),
+                obraId,
                 request.attachments()
         );
 
         memoryPublisher.registrarRdoCriado(
                 rdoId,
-                request.obraId(),
+                obraId,
                 programacao == null ? null : programacao.id(),
-                request.numeroRdo(),
+                number.display(),
                 status
         );
 
         operationalEventService.registrarEventosCliente(
                 rdoId,
-                request.obraId(),
+                obraId,
                 request.operationalEvents()
         );
 
         previsaoFinanceiraService.recalcularAposMudancaRdo(
-                request.obraId(),
+                obraId,
                 request.dataRdo(),
                 null
         );
 
         return new RdoResponse(
                 rdoId,
-                request.obraId(),
+                obraId,
                 programacao == null ? null : programacao.id(),
-                request.numeroRdo(),
+                number.display(),
                 request.dataRdo(),
+                nuloSeVazio(request.previousRdoId()),
+                request.creationContextVersion(),
+                clientMutationId,
+                nuloSeVazio(request.apontadorColaboradorId()),
                 diaSemana,
                 cliente,
                 contrato,
@@ -223,7 +269,7 @@ public class RdoService {
                 status,
                 request.observacoes(),
                 nuloSeVazio(request.preenchidoPor()),
-                nuloSeVazio(request.apontadorRdo()),
+                apontadorNome,
                 nuloSeVazio(request.encarregadoObra()),
                 nuloSeVazio(request.fiscalizacaoCampo()),
                 maoObra,
@@ -243,7 +289,7 @@ public class RdoService {
         List<RdoResponse.MaoObraItem> response = new ArrayList<>();
 
         for (RdoCreateRequest.MaoObraItem item : listaSegura(itens)) {
-            String id = UUID.randomUUID().toString();
+            String id = idOuNovo(item.id(), "maoObra.id");
             BigDecimal quantidade = valorOuUm(item.quantidade());
             String tipoVinculo = primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO");
             String colaboradorId = nuloSeVazio(item.colaboradorId());
@@ -260,8 +306,9 @@ public class RdoService {
                         quantidade,
                         hora_inicio,
                         hora_fim,
-                        observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        observacoes,
+                        origem_item_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     id,
                     rdoId,
@@ -272,7 +319,8 @@ public class RdoService {
                     quantidade,
                     item.horaInicio(),
                     item.horaFim(),
-                    item.observacoes()
+                    item.observacoes(),
+                    nuloSeVazio(item.origemItemId())
             );
 
             response.add(new RdoResponse.MaoObraItem(
@@ -284,7 +332,8 @@ public class RdoService {
                     quantidade,
                     item.horaInicio(),
                     item.horaFim(),
-                    item.observacoes()
+                    item.observacoes(),
+                    nuloSeVazio(item.origemItemId())
             ));
         }
 
@@ -515,14 +564,314 @@ public class RdoService {
     }
 
 
-    private boolean rdoExiste(String rdoId) {
-        Integer total = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM rdo WHERE id = ?",
-                Integer.class,
+    private void bloquearCriacao(String key) {
+        jdbcTemplate.query(
+                "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
+                rs -> null,
+                key
+        );
+    }
+
+    private void bloquearCriacaoDeterministicamente(
+            String rdoId,
+            String clientMutationId
+    ) {
+        if (rdoId.equals(clientMutationId)) {
+            bloquearCriacao(rdoId);
+            return;
+        }
+        String first = rdoId.compareTo(clientMutationId) < 0
+                ? rdoId
+                : clientMutationId;
+        String second = first.equals(rdoId) ? clientMutationId : rdoId;
+        bloquearCriacao(first);
+        bloquearCriacao(second);
+    }
+
+    private RdoExistente buscarReplay(String clientMutationId, String rdoId) {
+        return jdbcTemplate.query(
+                """
+                SELECT id, obra_id, data_rdo, previous_rdo_id,
+                       creation_context_version, client_mutation_id
+                FROM rdo
+                WHERE id = ?
+                   OR (? IS NOT NULL AND client_mutation_id = ?)
+                ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END
+                LIMIT 1
+                """,
+                rs -> rs.next()
+                        ? new RdoExistente(
+                                rs.getString("id"),
+                                rs.getString("obra_id"),
+                                rs.getDate("data_rdo").toLocalDate(),
+                                rs.getString("previous_rdo_id"),
+                                rs.getObject("creation_context_version", Long.class),
+                                rs.getString("client_mutation_id")
+                        )
+                        : null,
+                rdoId,
+                clientMutationId,
+                clientMutationId,
                 rdoId
         );
+    }
 
-        return total != null && total > 0;
+    private void validarProveniencia(RdoCreateRequest request, String obraId) {
+        if (request.creationContextVersion() == null
+                || request.creationContextVersion() <= 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "creationContextVersion é obrigatório e deve ser positivo."
+            );
+        }
+        String previousRdoId = nuloSeVazio(request.previousRdoId());
+        if (previousRdoId == null) {
+            return;
+        }
+        Integer valid = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM rdo
+                    WHERE id = ?
+                      AND obra_id = ?
+                      AND data_rdo < ?
+                      AND status <> 'CANCELADO'
+                      AND cancelado_em IS NULL
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                previousRdoId,
+                obraId,
+                request.dataRdo()
+        );
+        if (valid == null || valid != 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O RDO de origem não é elegível para esta obra e data."
+            );
+        }
+    }
+
+    private String validarEquipeEApontador(RdoCreateRequest request, String obraId) {
+        Set<String> itemIds = new HashSet<>();
+        Set<String> collaboratorIds = new HashSet<>();
+        String previousRdoId = nuloSeVazio(request.previousRdoId());
+
+        for (RdoCreateRequest.MaoObraItem item : listaSegura(request.maoObra())) {
+            String itemId = idOuNovo(item.id(), "maoObra.id");
+            if (!itemIds.add(itemId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "maoObra contém IDs duplicados."
+                );
+            }
+            String collaboratorId = requireText(item.colaboradorId(), "maoObra.colaboradorId");
+            if (!collaboratorIds.add(collaboratorId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "maoObra contém colaborador duplicado."
+                );
+            }
+            validarColaboradorDaObra(collaboratorId, obraId);
+            validarOrigemItem(
+                    nuloSeVazio(item.origemItemId()),
+                    previousRdoId,
+                    collaboratorId,
+                    obraId
+            );
+        }
+
+        String apontadorId = nuloSeVazio(request.apontadorColaboradorId());
+        if (apontadorId == null) {
+            return null;
+        }
+        if (!collaboratorIds.contains(apontadorId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O apontador deve integrar a mão de obra selecionada."
+            );
+        }
+        validarColaboradorDaObra(apontadorId, obraId);
+        return jdbcTemplate.queryForObject(
+                "SELECT nome FROM colaborador WHERE id = ?",
+                String.class,
+                apontadorId
+        );
+    }
+
+    private void validarColaboradorDaObra(String collaboratorId, String obraId) {
+        Integer valid = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM colaborador collaborator
+                    JOIN vinculo_colaborador_obra link
+                      ON link.colaborador_id = collaborator.id
+                     AND link.obra_id = ?
+                     AND link.status = 'ATIVO'
+                    WHERE collaborator.id = ?
+                      AND collaborator.ativo = TRUE
+                      AND collaborator.deletado_em IS NULL
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                obraId,
+                collaboratorId
+        );
+        if (valid == null || valid != 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Colaborador não está ativo e vinculado à obra do RDO."
+            );
+        }
+    }
+
+    private void validarOrigemItem(
+            String originItemId,
+            String previousRdoId,
+            String collaboratorId,
+            String obraId
+    ) {
+        if (originItemId == null) {
+            return;
+        }
+        if (previousRdoId == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "origemItemId exige previousRdoId."
+            );
+        }
+        Integer valid = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM rdo_mao_obra source_item
+                    JOIN rdo source_rdo ON source_rdo.id = source_item.rdo_id
+                    WHERE source_item.id = ?
+                      AND source_item.rdo_id = ?
+                      AND source_item.colaborador_id = ?
+                      AND source_rdo.obra_id = ?
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                originItemId,
+                previousRdoId,
+                collaboratorId,
+                obraId
+        );
+        if (valid == null || valid != 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O item de origem não pertence ao RDO anterior, colaborador e obra informados."
+            );
+        }
+    }
+
+    private NumberAllocation alocarNumero(String obraId) {
+        Long initial = jdbcTemplate.queryForObject(
+                """
+                SELECT COALESCE(
+                    MAX(substring(numero_rdo FROM '^RDO-([0-9]{1,18})$')::bigint) + 1,
+                    1
+                )
+                FROM rdo
+                WHERE obra_id = ?
+                  AND numero_rdo ~ '^RDO-[0-9]{1,18}$'
+                """,
+                Long.class,
+                obraId
+        );
+        jdbcTemplate.update(
+                """
+                INSERT INTO rdo_number_sequence (obra_id, next_value)
+                VALUES (?, ?)
+                ON CONFLICT (obra_id) DO UPDATE
+                SET next_value = GREATEST(
+                        rdo_number_sequence.next_value,
+                        EXCLUDED.next_value
+                    ),
+                    updated_at = now()
+                """,
+                obraId,
+                initial == null ? 1L : initial
+        );
+        Long allocated = jdbcTemplate.queryForObject(
+                """
+                UPDATE rdo_number_sequence
+                SET next_value = next_value + 1,
+                    updated_at = now()
+                WHERE obra_id = ?
+                RETURNING next_value - 1
+                """,
+                Long.class,
+                obraId
+        );
+        long value = allocated == null ? 1L : allocated;
+        return new NumberAllocation(value, RdoContextService.formatNumber(value));
+    }
+
+    private String idOuNovo(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+        try {
+            return UUID.fromString(value.strip()).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " deve ser UUID."
+            );
+        }
+    }
+
+    private String requireUuid(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " é obrigatório e deve ser UUID."
+            );
+        }
+        try {
+            return UUID.fromString(value.strip()).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " deve ser UUID."
+            );
+        }
+    }
+
+    private String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " é obrigatório."
+            );
+        }
+        return value.strip();
+    }
+
+    private String textoLimitadoOpcional(String value, String fieldName, int maxLength) {
+        String normalized = nuloSeVazio(value);
+        if (normalized != null && normalized.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " excede " + maxLength + " caracteres."
+            );
+        }
+        return normalized;
+    }
+
+    private String textoLimitadoObrigatorio(String value, String fieldName, int maxLength) {
+        String normalized = textoLimitadoOpcional(value, fieldName, maxLength);
+        if (normalized == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " é obrigatório."
+            );
+        }
+        return normalized;
     }
 
     private ObraDados buscarObra(String obraId) {
@@ -735,6 +1084,19 @@ public class RdoService {
             String rodovia,
             String kmInicial,
             String kmFinal
+    ) {
+    }
+
+    private record NumberAllocation(long value, String display) {
+    }
+
+    private record RdoExistente(
+            String id,
+            String obraId,
+            LocalDate dataRdo,
+            String previousRdoId,
+            Long creationContextVersion,
+            String clientMutationId
     ) {
     }
 }

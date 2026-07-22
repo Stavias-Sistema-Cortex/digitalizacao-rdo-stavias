@@ -14,6 +14,10 @@ public record RdoCreateRequest(
 
         String numeroRdo,
         LocalDate dataRdo,
+        String previousRdoId,
+        Long creationContextVersion,
+        String clientMutationId,
+        String apontadorColaboradorId,
 
         String cliente,
         String contrato,
@@ -52,6 +56,7 @@ public record RdoCreateRequest(
 ) {
 
     public record MaoObraItem(
+            String id,
             String colaboradorId,
             String nomeColaborador,
             String cargo,
@@ -59,7 +64,8 @@ public record RdoCreateRequest(
             BigDecimal quantidade,
             LocalTime horaInicio,
             LocalTime horaFim,
-            String observacoes
+            String observacoes,
+            String origemItemId
     ) {
     }
 

@@ -14,6 +14,10 @@ public record RdoResponse(
 
         String numeroRdo,
         LocalDate dataRdo,
+        String previousRdoId,
+        Long creationContextVersion,
+        String clientMutationId,
+        String apontadorColaboradorId,
         String diaSemana,
 
         String cliente,
@@ -60,7 +64,8 @@ public record RdoResponse(
             BigDecimal quantidade,
             LocalTime horaInicio,
             LocalTime horaFim,
-            String observacoes
+            String observacoes,
+            String origemItemId
     ) {
     }
 

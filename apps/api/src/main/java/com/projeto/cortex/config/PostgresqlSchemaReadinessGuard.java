@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
 public final class PostgresqlSchemaReadinessGuard
         implements BeanFactoryPostProcessor, EnvironmentAware, PriorityOrdered {
 
-    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "47";
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "48";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)

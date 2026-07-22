@@ -49,21 +49,21 @@ class PostgresqlEffectiveConfigurationTest {
     }
 
     @Test
-    void rejectsResolvedV46OverrideInTheEnvironmentOnlyGuardBeforeDatabaseWork() {
+    void rejectsResolvedV47OverrideInTheEnvironmentOnlyGuardBeforeDatabaseWork() {
         contextRunner("postgresql-activation")
-                .withPropertyValues("cortex.postgresql.required-schema-version=46")
+                .withPropertyValues("cortex.postgresql.required-schema-version=47")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getEnvironment().getProperty(
                             "cortex.postgresql.required-schema-version"
-                    )).isEqualTo("46");
+                    )).isEqualTo("47");
 
                     assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
                             context.getEnvironment()
                     ).verifyConfiguration())
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("required-schema-version")
-                            .hasMessageContaining("47");
+                            .hasMessageContaining("48");
                 });
     }
 

@@ -12,7 +12,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -76,6 +79,18 @@ public class RdoDraftUpdateService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dataRdo é obrigatório.");
         }
 
+        if (!estadoAnterior.obraId().equals(request.obraId().strip())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A obra de um RDO existente não pode ser alterada."
+            );
+        }
+        validarProvenienciaImutavelEData(
+                rdoId,
+                request,
+                estadoAnterior.obraId()
+        );
+
         ObraDados obra = buscarObra(request.obraId());
         ProgramacaoDados programacao = buscarProgramacaoOpcional(request.programacaoId(), request.obraId());
 
@@ -104,12 +119,16 @@ public class RdoDraftUpdateService {
                 programacao == null ? null : programacao.kmFinal()
         );
 
+        String apontadorNome = validarEquipeEApontador(
+                request.obraId(),
+                request.maoObra(),
+                request.apontadorColaboradorId()
+        );
+
         String updateSql = """
                 UPDATE rdo
                 SET
-                    obra_id = ?,
                     programacao_id = ?,
-                    numero_rdo = ?,
                     data_rdo = ?,
                     dia_semana = ?,
                     cliente = ?,
@@ -131,6 +150,7 @@ public class RdoDraftUpdateService {
                     observacoes = ?,
                     preenchido_por = ?,
                     apontador_rdo = ?,
+                    apontador_colaborador_id = ?,
                     encarregado_obra = ?,
                     fiscalizacao_campo = ?,
                     versao_linha = versao_linha + 1
@@ -150,9 +170,7 @@ public class RdoDraftUpdateService {
         }
 
         Object[] updateParameters = {
-                request.obraId(),
                 programacao == null ? null : programacao.id(),
-                request.numeroRdo(),
                 request.dataRdo(),
                 diaSemana,
                 cliente,
@@ -173,7 +191,8 @@ public class RdoDraftUpdateService {
                 request.pluviometriaMm(),
                 request.observacoes(),
                 nuloSeVazio(request.preenchidoPor()),
-                nuloSeVazio(request.apontadorRdo()),
+                apontadorNome,
+                nuloSeVazio(request.apontadorColaboradorId()),
                 nuloSeVazio(request.encarregadoObra()),
                 nuloSeVazio(request.fiscalizacaoCampo()),
                 rdoId
@@ -200,9 +219,9 @@ public class RdoDraftUpdateService {
             );
         }
 
-        apagarItens(rdoId);
+        apagarItensExcetoMaoObra(rdoId);
 
-        inserirMaoObra(rdoId, request.maoObra());
+        reconciliarMaoObra(rdoId, request.obraId(), request.maoObra());
         inserirEquipamentos(rdoId, request.equipamentos());
         inserirMateriais(rdoId, request.materiais());
         inserirControlesGeometricos(rdoId, request.controlesGeometricos());
@@ -229,7 +248,7 @@ public class RdoDraftUpdateService {
                 rdoId,
                 request.obraId(),
                 programacao == null ? null : programacao.id(),
-                request.numeroRdo(),
+                estadoAnterior.numeroRdo(),
                 "RASCUNHO",
                 estadoAnterior.versaoLinha(),
                 estadoNovo.versaoLinha(),
@@ -265,6 +284,57 @@ public class RdoDraftUpdateService {
         }
     }
 
+    private void validarProvenienciaImutavelEData(
+            String rdoId,
+            RdoCreateRequest request,
+            String obraId
+    ) {
+        CreationProvenance persisted = jdbcTemplate.queryForObject(
+                """
+                SELECT current_rdo.previous_rdo_id,
+                       current_rdo.creation_context_version,
+                       current_rdo.client_mutation_id,
+                       previous_rdo.data_rdo AS previous_rdo_date
+                FROM rdo current_rdo
+                LEFT JOIN rdo previous_rdo
+                  ON previous_rdo.id = current_rdo.previous_rdo_id
+                 AND previous_rdo.obra_id = current_rdo.obra_id
+                WHERE current_rdo.id = ?
+                  AND current_rdo.obra_id = ?
+                """,
+                (rs, rowNum) -> new CreationProvenance(
+                        rs.getString("previous_rdo_id"),
+                        rs.getObject("creation_context_version", Long.class),
+                        rs.getString("client_mutation_id"),
+                        rs.getObject("previous_rdo_date", java.time.LocalDate.class)
+                ),
+                rdoId,
+                obraId
+        );
+        if (!Objects.equals(
+                persisted.previousRdoId(),
+                nuloSeVazio(request.previousRdoId())
+        ) || !Objects.equals(
+                persisted.creationContextVersion(),
+                request.creationContextVersion()
+        ) || !Objects.equals(
+                persisted.clientMutationId(),
+                nuloSeVazio(request.clientMutationId())
+        )) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A proveniência de criação do RDO não pode ser alterada."
+            );
+        }
+        if (persisted.previousRdoDate() != null
+                && !request.dataRdo().isAfter(persisted.previousRdoDate())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A data do RDO deve ser posterior ao RDO de origem."
+            );
+        }
+    }
+
     private long versaoEntidadeAtual(String rdoId) {
         Long version = jdbcTemplate.queryForObject(
                 """
@@ -279,34 +349,276 @@ public class RdoDraftUpdateService {
         return version == null ? 0 : version;
     }
 
-    private void apagarItens(String rdoId) {
+    private void apagarItensExcetoMaoObra(String rdoId) {
         jdbcTemplate.update("DELETE FROM rdo_controle_geometrico WHERE rdo_id = ?", rdoId);
         jdbcTemplate.update("DELETE FROM rdo_material WHERE rdo_id = ?", rdoId);
         jdbcTemplate.update("DELETE FROM rdo_equipamento WHERE rdo_id = ?", rdoId);
-        jdbcTemplate.update("DELETE FROM rdo_mao_obra WHERE rdo_id = ?", rdoId);
     }
 
-    private void inserirMaoObra(String rdoId, List<RdoCreateRequest.MaoObraItem> itens) {
-        for (RdoCreateRequest.MaoObraItem item : listaSegura(itens)) {
+    private void reconciliarMaoObra(
+            String rdoId,
+            String obraId,
+            List<RdoCreateRequest.MaoObraItem> itens
+    ) {
+        List<RdoCreateRequest.MaoObraItem> requested = listaSegura(itens);
+        Set<String> requestedIds = new HashSet<>();
+        for (RdoCreateRequest.MaoObraItem item : requested) {
+            String itemId = requireUuid(item.id(), "maoObra.id");
+            if (!requestedIds.add(itemId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "maoObra contém IDs duplicados."
+                );
+            }
+        }
+
+        List<String> existingIds = jdbcTemplate.queryForList(
+                "SELECT id FROM rdo_mao_obra WHERE rdo_id = ?",
+                String.class,
+                rdoId
+        );
+        List<String> removed = existingIds.stream()
+                .filter(id -> !requestedIds.contains(id))
+                .toList();
+        if (!removed.isEmpty()) {
+            String placeholders = String.join(",", java.util.Collections.nCopies(removed.size(), "?"));
+            Object[] references = removed.toArray();
+            Integer usedAsProvenance = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM rdo_mao_obra WHERE origem_item_id IN (" + placeholders + ")",
+                    Integer.class,
+                    references
+            );
+            if (usedAsProvenance != null && usedAsProvenance > 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "A mão de obra já é origem de outro RDO e não pode ser removida."
+                );
+            }
+            Object[] deleteParameters = new Object[removed.size() + 1];
+            deleteParameters[0] = rdoId;
+            for (int index = 0; index < removed.size(); index++) {
+                deleteParameters[index + 1] = removed.get(index);
+            }
             jdbcTemplate.update(
+                    "DELETE FROM rdo_mao_obra WHERE rdo_id = ? AND id IN (" + placeholders + ")",
+                    deleteParameters
+            );
+        }
+
+        String previousRdoId = jdbcTemplate.queryForObject(
+                "SELECT previous_rdo_id FROM rdo WHERE id = ?",
+                String.class,
+                rdoId
+        );
+        for (RdoCreateRequest.MaoObraItem item : requested) {
+            String itemId = requireUuid(item.id(), "maoObra.id");
+            String collaboratorId = requireText(
+                    item.colaboradorId(), "maoObra.colaboradorId"
+            );
+            validarColaboradorDaObra(collaboratorId, obraId);
+            String requestedOrigin = nuloSeVazio(item.origemItemId());
+            ExistingWorkforceItem persisted = jdbcTemplate.query(
+                    "SELECT origem_item_id FROM rdo_mao_obra WHERE id = ? AND rdo_id = ?",
+                    rs -> rs.next()
+                            ? new ExistingWorkforceItem(rs.getString("origem_item_id"))
+                            : null,
+                    itemId,
+                    rdoId
+            );
+            if (persisted != null
+                    && !Objects.equals(persisted.originItemId(), requestedOrigin)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "A origem de um item de mão de obra não pode ser alterada."
+                );
+            }
+            String origin = persisted == null
+                    ? requestedOrigin
+                    : persisted.originItemId();
+            validarOrigemItem(origin, previousRdoId, collaboratorId, obraId);
+
+            int updated = jdbcTemplate.update(
                     """
-                    INSERT INTO rdo_mao_obra (
-                        id, rdo_id, colaborador_id, nome_colaborador, cargo,
-                        tipo_vinculo, quantidade, hora_inicio, hora_fim, observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    UPDATE rdo_mao_obra
+                    SET colaborador_id = ?,
+                        nome_colaborador = ?,
+                        cargo = ?,
+                        tipo_vinculo = ?,
+                        quantidade = ?,
+                        hora_inicio = ?,
+                        hora_fim = ?,
+                        observacoes = ?,
+                        origem_item_id = ?
+                    WHERE id = ?
+                      AND rdo_id = ?
                     """,
-                    UUID.randomUUID().toString(),
-                    rdoId,
-                    nuloSeVazio(item.colaboradorId()),
+                    collaboratorId,
                     item.nomeColaborador(),
                     item.cargo(),
                     primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO"),
                     valorOuUm(item.quantidade()),
                     item.horaInicio(),
                     item.horaFim(),
-                    item.observacoes()
+                    item.observacoes(),
+                    origin,
+                    itemId,
+                    rdoId
+            );
+            if (updated == 0) {
+                Integer collision = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM rdo_mao_obra WHERE id = ?",
+                        Integer.class,
+                        itemId
+                );
+                if (collision != null && collision > 0) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "O ID de mão de obra já pertence a outro RDO."
+                    );
+                }
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO rdo_mao_obra (
+                            id, rdo_id, colaborador_id, nome_colaborador, cargo,
+                            tipo_vinculo, quantidade, hora_inicio, hora_fim,
+                            observacoes, origem_item_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        itemId,
+                        rdoId,
+                        collaboratorId,
+                        item.nomeColaborador(),
+                        item.cargo(),
+                        primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO"),
+                        valorOuUm(item.quantidade()),
+                        item.horaInicio(),
+                        item.horaFim(),
+                        item.observacoes(),
+                        origin
+                );
+            }
+        }
+    }
+
+    private String validarEquipeEApontador(
+            String obraId,
+            List<RdoCreateRequest.MaoObraItem> itens,
+            String apontadorId
+    ) {
+        Set<String> collaborators = new HashSet<>();
+        for (RdoCreateRequest.MaoObraItem item : listaSegura(itens)) {
+            requireUuid(item.id(), "maoObra.id");
+            String collaboratorId = requireText(
+                    item.colaboradorId(), "maoObra.colaboradorId"
+            );
+            if (!collaborators.add(collaboratorId)) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "maoObra contém colaborador duplicado."
+                );
+            }
+            validarColaboradorDaObra(collaboratorId, obraId);
+        }
+        String normalizedApontador = nuloSeVazio(apontadorId);
+        if (normalizedApontador == null) {
+            return null;
+        }
+        if (!collaborators.contains(normalizedApontador)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O apontador deve integrar a mão de obra selecionada."
             );
         }
+        validarColaboradorDaObra(normalizedApontador, obraId);
+        return jdbcTemplate.queryForObject(
+                "SELECT nome FROM colaborador WHERE id = ?",
+                String.class,
+                normalizedApontador
+        );
+    }
+
+    private void validarColaboradorDaObra(String collaboratorId, String obraId) {
+        Integer valid = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM colaborador collaborator
+                    JOIN vinculo_colaborador_obra link
+                      ON link.colaborador_id = collaborator.id
+                     AND link.obra_id = ?
+                     AND link.status = 'ATIVO'
+                    WHERE collaborator.id = ?
+                      AND collaborator.ativo = TRUE
+                      AND collaborator.deletado_em IS NULL
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                obraId,
+                collaboratorId
+        );
+        if (valid == null || valid != 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Colaborador não está ativo e vinculado à obra do RDO."
+            );
+        }
+    }
+
+    private void validarOrigemItem(
+            String originItemId,
+            String previousRdoId,
+            String collaboratorId,
+            String obraId
+    ) {
+        if (originItemId == null) {
+            return;
+        }
+        Integer valid = jdbcTemplate.queryForObject(
+                """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM rdo_mao_obra source_item
+                    JOIN rdo source_rdo ON source_rdo.id = source_item.rdo_id
+                    WHERE source_item.id = ?
+                      AND source_item.rdo_id = ?
+                      AND source_item.colaborador_id = ?
+                      AND source_rdo.obra_id = ?
+                ) THEN 1 ELSE 0 END
+                """,
+                Integer.class,
+                originItemId,
+                previousRdoId,
+                collaboratorId,
+                obraId
+        );
+        if (valid == null || valid != 1) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O item de origem não pertence ao RDO anterior, colaborador e obra informados."
+            );
+        }
+    }
+
+    private String requireUuid(String value, String fieldName) {
+        String normalized = requireText(value, fieldName);
+        try {
+            return UUID.fromString(normalized).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " deve ser UUID."
+            );
+        }
+    }
+
+    private String requireText(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " é obrigatório."
+            );
+        }
+        return value.strip();
     }
 
     private void inserirEquipamentos(String rdoId, List<RdoCreateRequest.EquipamentoItem> itens) {
@@ -609,6 +921,17 @@ public class RdoDraftUpdateService {
             String rodovia,
             String kmInicial,
             String kmFinal
+    ) {
+    }
+
+    private record ExistingWorkforceItem(String originItemId) {
+    }
+
+    private record CreationProvenance(
+            String previousRdoId,
+            Long creationContextVersion,
+            String clientMutationId,
+            java.time.LocalDate previousRdoDate
     ) {
     }
 }

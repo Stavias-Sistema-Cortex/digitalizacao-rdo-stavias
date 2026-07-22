@@ -135,6 +135,9 @@ public class OperationalGraphProjector {
             return "BELONGS_TO_WORKSITE";
         }
         if ("RDO".equals(targetType)) {
+            if ("RDO".equals(sourceType)) {
+                return "DERIVED_FROM";
+            }
             if ("RDO_EXECUTION".equals(sourceType)) {
                 return "RECORDED_IN";
             }
