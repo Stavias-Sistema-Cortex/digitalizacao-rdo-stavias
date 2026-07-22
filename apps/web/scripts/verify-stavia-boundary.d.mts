@@ -1,9 +1,12 @@
 export const LEGACY_LOCAL_STORAGE_KEYS: readonly string[];
 export const LEGACY_SNAPSHOT_STORE: string;
+export const CORPORATE_SOURCE_ALLOWLIST: ReadonlySet<string>;
+export const CORPORATE_ASSET_ALLOWLIST: ReadonlySet<string>;
 
 export function findAssistantTokens(
   text: string,
 ): Array<{ index: number; token: string }>;
+export function isViteRuntimeSourceFile(file: string): boolean;
 export function inspectLegacySource(
   files: Array<{ path: string; content: string }>,
 ): string[];

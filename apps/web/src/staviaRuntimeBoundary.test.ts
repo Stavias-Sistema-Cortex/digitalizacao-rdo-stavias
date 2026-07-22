@@ -1,16 +1,24 @@
 import {
   existsSync,
+  mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 import {
+  CORPORATE_ASSET_ALLOWLIST,
+  CORPORATE_SOURCE_ALLOWLIST,
   findAssistantTokens,
   inspectSourceBoundary,
+  isViteRuntimeSourceFile,
   verifyDist,
   verifySourceBoundary,
 } from "../scripts/verify-stavia-boundary.mjs";
@@ -18,37 +26,46 @@ import {
 const WEB_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const REPOSITORY_ROOT = path.resolve(WEB_ROOT, "../..");
 
-const CORPORATE_SOURCE_ALLOWLIST = new Set([
-  "apps/web/index.html",
-  "apps/web/vite.config.ts",
-  "apps/web/src/components/shell/CortexShell.tsx",
-  "apps/web/src/features/auth/ActivationPage.tsx",
-  "apps/web/src/features/auth/LoginPage.css",
-  "apps/web/src/features/auth/LoginPage.tsx",
-  "apps/web/src/features/auth/OfflineUnlockPage.tsx",
-  "apps/web/src/features/home/HomePage.tsx",
-  "apps/web/src/features/home/MaisStaviasCard.tsx",
-  "apps/web/src/features/rdos/RdoLocalList.tsx",
-  "apps/web/src/index.css",
-  "compose.production.example.yml",
-  ".env.postgresql.example",
-  "scripts/dev/migrate-postgres-cortex.sh",
-  "scripts/dev/postgres-cortex-common.sh",
-  "scripts/smoke-deploy.sh",
-]);
-
-const CORPORATE_ASSET_ALLOWLIST = new Set([
-  "apps/web/public/stavias-cortex-logo.png",
-  "apps/web/src/assets/login/stavias-canteiro.png",
-  "apps/web/src/assets/login/stavias-logo.png",
-  "apps/web/src/assets/stavias-s-tile.png",
-]);
-
 const LEGACY_LOCAL_STORAGE_KEYS = [
   "cortex:stavia:chat:operacional",
   "cortex:stavia:last-context",
 ] as const;
 const LEGACY_SNAPSHOT_STORE = "stavia_snapshots";
+
+function validCleanupFixtures(): Array<{ path: string; content: string }> {
+  return [
+    {
+      path: "apps/web/src/lib/db/localDataScope.ts",
+      content: `const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n  "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n  "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n] as const;\nexport function clear(target) {\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}`,
+    },
+    {
+      path: "apps/web/src/lib/db/cortexDb.ts",
+      content: `const LEGACY_ASSISTANT_STORE = "${LEGACY_SNAPSHOT_STORE}"; if (database.objectStoreNames.contains(LEGACY_ASSISTANT_STORE)) database.deleteObjectStore(LEGACY_ASSISTANT_STORE);`,
+    },
+  ];
+}
+
+function writeBoundaryRepository(
+  runtimePath: string,
+  runtimeContent: string,
+): string {
+  const repositoryRoot = mkdtempSync(
+    path.join(tmpdir(), "cortex-stavia-boundary-"),
+  );
+  for (const fixture of validCleanupFixtures()) {
+    const destination = path.join(repositoryRoot, fixture.path);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    writeFileSync(destination, fixture.content);
+  }
+  const runtimeDestination = path.join(
+    repositoryRoot,
+    "apps/web/src",
+    runtimePath,
+  );
+  mkdirSync(path.dirname(runtimeDestination), { recursive: true });
+  writeFileSync(runtimeDestination, runtimeContent);
+  return repositoryRoot;
+}
 
 function relativeToRepository(file: string): string {
   return path.relative(REPOSITORY_ROOT, file).split(path.sep).join("/");
@@ -66,14 +83,7 @@ function listFiles(root: string): string[] {
 }
 
 function runtimeSourceFiles(): string[] {
-  return listFiles(path.join(WEB_ROOT, "src")).filter((file) => {
-    const basename = path.basename(file);
-    return (
-      /\.(?:css|json|ts|tsx)$/.test(file) &&
-      !basename.includes(".test.") &&
-      !basename.includes(".spec.")
-    );
-  });
+  return listFiles(path.join(WEB_ROOT, "src")).filter(isViteRuntimeSourceFile);
 }
 
 function supportFiles(): string[] {
@@ -120,6 +130,119 @@ describe("StavIA runtime boundary", () => {
     }
   });
 
+  it("scans every Vite source extension and only excludes terminal test files", () => {
+    const runtimeVariants = [
+      "runtime.css",
+      "runtime.json",
+      "runtime.ts",
+      "runtime.tsx",
+      "runtime.js",
+      "runtime.jsx",
+      "runtime.mjs",
+      "runtime.mts",
+      "runtime.cjs",
+      "runtime.cts",
+      "runtime.test-helper.ts",
+    ];
+    const scanResults = runtimeVariants.map((runtimePath) => {
+      const repositoryRoot = writeBoundaryRepository(
+        runtimePath,
+        "StaviaLauncherProvider",
+      );
+      try {
+        expect(() => verifySourceBoundary(repositoryRoot)).toThrow(
+          /forbidden content token/i,
+        );
+        return runtimePath;
+      } finally {
+        rmSync(repositoryRoot, { recursive: true, force: true });
+      }
+    });
+
+    expect(scanResults).toEqual(runtimeVariants);
+
+    for (const terminalTestPath of [
+      "runtime.test.ts",
+      "runtime.spec.tsx",
+      "runtime.test.jsx",
+      "runtime.spec.mts",
+    ]) {
+      const repositoryRoot = writeBoundaryRepository(
+        terminalTestPath,
+        "StaviaLauncherProvider",
+      );
+      try {
+        expect(() => verifySourceBoundary(repositoryRoot)).not.toThrow();
+      } finally {
+        rmSync(repositoryRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("rejects assistant roles hidden behind the plural corporate brand", () => {
+    const assistantRoleFixtures = [
+      "StaviasLauncherProvider",
+      "useStavias",
+      "useStaviasLauncher",
+      "StaviasAssistantContext",
+      "StaviasApiClient",
+      "StaviasChatControl",
+    ];
+
+    for (const assistantRole of assistantRoleFixtures) {
+      expect(assistantTokens(assistantRole), assistantRole).not.toEqual([]);
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          {
+            path: "apps/web/src/features/home/HomePage.tsx",
+            content: assistantRole,
+          },
+        ]),
+        assistantRole,
+      ).not.toEqual([]);
+    }
+  });
+
+  it("keeps corporate Stavias occurrences scoped to approved roles and paths", () => {
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/features/home/HomePage.tsx",
+          content: `import { MaisStaviasCard } from "./MaisStaviasCard";`,
+        },
+        {
+          path: "apps/web/src/features/home/MaisStaviasCard.tsx",
+          content: `export function MaisStaviasCard() { return "https://www.stavias.com.br"; }`,
+        },
+        {
+          path: "apps/web/public/stavias-cortex-logo.png",
+          content: "",
+        },
+      ]),
+    ).toEqual([]);
+
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/features/obras/UnapprovedBrand.ts",
+          content: `export const brand = "Stavias";`,
+        },
+      ]),
+    ).not.toEqual([]);
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/public/stavias-unapproved-logo.png",
+          content: "",
+        },
+      ]),
+    ).not.toEqual([]);
+  });
+
   it("does not hide a second or active use of a legacy identifier", () => {
     for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
       expect(
@@ -136,16 +259,7 @@ describe("StavIA runtime boundary", () => {
       ),
     ).not.toEqual([]);
 
-    const cleanupFixtures = [
-      {
-        path: "apps/web/src/lib/db/localDataScope.ts",
-        content: `const keys = ["${LEGACY_LOCAL_STORAGE_KEYS[0]}", "${LEGACY_LOCAL_STORAGE_KEYS[1]}"]; function clear(target) { for (const key of keys) target.removeItem(key); }`,
-      },
-      {
-        path: "apps/web/src/lib/db/cortexDb.ts",
-        content: `const LEGACY_ASSISTANT_STORE = "${LEGACY_SNAPSHOT_STORE}"; if (database.objectStoreNames.contains(LEGACY_ASSISTANT_STORE)) database.deleteObjectStore(LEGACY_ASSISTANT_STORE);`,
-      },
-    ];
+    const cleanupFixtures = validCleanupFixtures();
     const activeRegressions = [
       `localStorage.getItem("${LEGACY_LOCAL_STORAGE_KEYS[0]}")`,
       `localStorage.setItem("${LEGACY_LOCAL_STORAGE_KEYS[1]}", "private")`,
@@ -162,6 +276,28 @@ describe("StavIA runtime boundary", () => {
       ]);
       expect(fixtureViolations, activeRegression).not.toEqual([]);
     }
+  });
+
+  it("rejects exported or imported aliases of the private legacy key collection", () => {
+    const exportedCleanup = validCleanupFixtures();
+    exportedCleanup[0] = {
+      ...exportedCleanup[0],
+      content: exportedCleanup[0].content.replace(
+        "const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS",
+        "export const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS",
+      ),
+    };
+    expect(inspectSourceBoundary(exportedCleanup)).not.toEqual([]);
+
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/active-regression.ts",
+          content: `import { LEGACY_PRIVATE_LOCAL_STORAGE_KEYS as keys } from "./lib/db/localDataScope"; localStorage.getItem(keys[0]);`,
+        },
+      ]),
+    ).not.toEqual([]);
   });
 
   it("keeps assistant sources, hooks, controls and CSS outside the web runtime", () => {
@@ -240,15 +376,20 @@ describe("StavIA runtime boundary", () => {
     expect(() => verifyDist(distRoot)).not.toThrow();
   });
 
-  it("makes the build run an explicit verifier after Vite emits dist", () => {
+  it("makes every Vite build script run the explicit dist verifier", () => {
     const packageJson = JSON.parse(
       readFileSync(path.join(WEB_ROOT, "package.json"), "utf8"),
     ) as { scripts?: Record<string, string> };
-    const build = packageJson.scripts?.build ?? "";
-
-    expect(build).toMatch(
-      /vite build\s*&&\s*node scripts\/verify-stavia-boundary\.mjs --dist$/,
+    const viteBuildScripts = Object.entries(packageJson.scripts ?? {}).filter(
+      ([, command]) => /\bvite build\b/.test(command),
     );
+
+    expect(viteBuildScripts.length).toBeGreaterThan(0);
+    for (const [name, command] of viteBuildScripts) {
+      expect(command, name).toMatch(
+        /vite build\s*&&\s*node scripts\/verify-stavia-boundary\.mjs --dist$/,
+      );
+    }
     expect(
       existsSync(
         path.join(WEB_ROOT, "scripts/verify-stavia-boundary.mjs"),

@@ -6,6 +6,7 @@
   runtime while preserving the existing operational application.
 - Base commit: `d8d8136b3718b76dc106b59a76778dddc9858107`.
 - Reviewer-fix pass base: `ed99db38bf31345d54fc9df9bfdb15822fc04e25`.
+- Boundary-hardening pass base: `30ac327c5dd0feec1fd8c8a925c64e17278eb0a4`.
 - Worktree: `/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery`.
 - No backend, Task 6, offline mutation, RDO domain, or Financeiro domain code was
   changed. RDO changes are limited to removing assistant callbacks and controls.
@@ -133,7 +134,16 @@ case-insensitive and rejects singular assistant spellings in identifiers,
 paths, content, endpoints, environment names, and UI copy, including
 `useStaviaLauncher`, `staviaLauncherContext`, `StaviaLauncherProvider`,
 `features/stavia`, `/api/stavia`, `VITE_STAVIA_*`, and `Abrir na StavIA`
-variants. Plural `Stavias` branding remains outside that singular rule.
+variants. Plain plural `Stavias` branding is then evaluated by the exact
+corporate policy below.
+
+The boundary-hardening pass makes that corporate exception role-specific.
+Ordinary corporate occurrences are accepted only in the executable verifier's
+exact source/asset allowlists. Assistant-role families such as
+`StaviasLauncherProvider`, `useStavias`, `useStaviasLauncher`,
+`StaviasAssistantContext`, `StaviasApiClient`, and `StaviasChatControl` remain
+forbidden even inside an allowlisted corporate source and in compiled output.
+Unapproved corporate source, asset, and generated artifact paths are rejected.
 
 Legacy identifiers are now audited across the complete scanned source set
 before they are masked for assistant-token inspection. Each localStorage key
@@ -150,6 +160,24 @@ Vitest covers the missing-dist failure and package-script ordering; the real
 build below exercised the generated JS, CSS, HTML, manifest, service worker,
 assets, legacy deletion-only code, and chunk paths without recursive build/test
 invocation.
+
+The source classifier now covers every Vite text source extension used by the
+project (`css`, `json`, `ts`, `tsx`, `js`, `jsx`, `mjs`, `mts`, `cjs`, and
+`cts`). It excludes only filenames ending in an exact `.test.<ext>` or
+`.spec.<ext>` suffix; runtime names such as `runtime.test-helper.ts` remain
+scanned. Source assets are also included for path policy even when their binary
+content is not read.
+
+The historical localStorage literals are constrained to a private, fixed
+`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration. The executable verifier
+requires exactly the declaration and the `target.removeItem(key)` loop, rejects
+an exported collection, rejects any additional consumer of its symbol, and
+rejects imported/aliased active reads. This closes the prior cross-file alias
+bypass while retaining the one-way privacy cleanup.
+
+All package scripts containing `vite build` now end in the same mandatory
+`node scripts/verify-stavia-boundary.mjs --dist` gate. The regression enumerates
+the package scripts instead of checking only the default build.
 
 ## Responsive geometry evidence
 
@@ -186,12 +214,13 @@ gate. Authenticated runtime browser proof remains Task 6.
 - Targeted migration/responsive tests:
   `2 files / 21 tests passed`.
 - Boundary after production build: `1 file / 4 tests passed`.
-- Reviewer-fix focused suite: `3 files / 18 tests passed`.
-- Full web suite after fixes: `52 files / 236 tests passed`.
+- Boundary-hardening focused suite: `3 files / 14 tests passed`.
+- Full web suite after boundary hardening: `52 files / 240 tests passed`.
 - Lint: `npm --prefix apps/web run lint` exited 0.
-- TypeScript/Vite/PWA build plus mandatory dist verifier:
-  `npm --prefix apps/web run build` exited 0, generated 89 precache entries,
-  and printed `StavIA source and dist boundary verified.`
+- TypeScript/Vite/PWA builds plus mandatory dist verifier:
+  `build`, `build:local`, and `build:compose` each exited 0, generated 89
+  precache entries, and printed
+  `StavIA source and dist boundary verified.`
 - Geometry CLI: `npm --prefix apps/web run verify:mensagens-geometry` exited 0
   with the three measurements recorded above.
 - Dist path scan for singular assistant assets/chunks exited 1 with no matches.
@@ -205,8 +234,8 @@ gate. Authenticated runtime browser proof remains Task 6.
 ## Risks and limits
 
 - `dist` remains ignored, but absence can no longer pass the artifact gate:
-  direct verifier execution fails, and every ordinary production build scans
-  the newly emitted output before succeeding.
+  direct verifier execution fails, and every current `vite build` package
+  variant scans the newly emitted output before succeeding.
 - Historical assistant data is intentionally deleted on the next IndexedDB
   upgrade and logout/session change. The migration tests now prove a fresh v13
   lacks the store and a v12 upgrade preserves multiple non-assistant stores,
