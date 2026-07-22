@@ -156,7 +156,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
             }
         }
         assertThat(appliedVersions).containsExactly(
-                "44", "45", "45.1", "46", "47", "48", "49", "50", "51"
+                "44", "45", "45.1", "46", "47", "48", "49", "50", "51", "52"
         );
     }
 

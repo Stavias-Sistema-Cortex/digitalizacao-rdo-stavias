@@ -121,6 +121,8 @@ public record RdoCreateRequest(
 
     public record ServicoExecutadoItem(
             String id,
+            String serviceId,
+            String priceVersionId,
             String servicoNome,
             String itemContratualId,
             BigDecimal quantidadeExecutada,
@@ -134,6 +136,28 @@ public record RdoCreateRequest(
             Boolean producaoRejeitada,
             String observacoes
     ) {
+        public ServicoExecutadoItem(
+                String id,
+                String servicoNome,
+                String itemContratualId,
+                BigDecimal quantidadeExecutada,
+                String unidade,
+                String trechoInicial,
+                String trechoFinal,
+                String localizacao,
+                String turno,
+                String statusValidacao,
+                Boolean retrabalho,
+                Boolean producaoRejeitada,
+                String observacoes
+        ) {
+            this(
+                    id, null, null, servicoNome, itemContratualId,
+                    quantidadeExecutada, unidade, trechoInicial, trechoFinal,
+                    localizacao, turno, statusValidacao, retrabalho,
+                    producaoRejeitada, observacoes
+            );
+        }
     }
 
     public record AlocacaoColaboradorItem(

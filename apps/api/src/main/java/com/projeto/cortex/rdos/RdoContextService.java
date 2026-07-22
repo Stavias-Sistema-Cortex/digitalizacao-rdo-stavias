@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -63,7 +64,15 @@ public class RdoContextService {
         List<RdoContextResponse.EquipamentoContexto> equipamentos =
                 listarEquipamentosAtivosDaObra(obraId);
 
+        long catalogRevision = buscarCatalogRevision();
+        List<RdoContextResponse.ServiceCatalogContext> serviceCatalog =
+                listarCatalogoServicos(obraId, data, catalogRevision);
+        long priceChoiceCount = serviceCatalog.stream()
+                .mapToLong(service -> service.priceChoices().size())
+                .sum();
+
         long sourceVersion = calcularSourceVersion(obraId);
+        String nextNumberSuggestion = sugerirProximoNumero(obraId);
         Instant generatedAt = Instant.now();
         Instant staleAfter = generatedAt.plus(15, ChronoUnit.MINUTES);
         RdoContextResponse.ContextCoverage coverage = new RdoContextResponse.ContextCoverage(
@@ -71,20 +80,22 @@ public class RdoContextService {
                 complete(programacoes.size()),
                 complete(colaboradores.size()),
                 complete(equipamentos.size()),
-                notConfigured(),
-                notConfigured()
+                complete(serviceCatalog.size()),
+                complete(priceChoiceCount)
         );
         Map<String, Object> snapshotPayload = new LinkedHashMap<>();
         snapshotPayload.put("obra", obra);
         snapshotPayload.put("data", data);
-        snapshotPayload.put("nextNumberSuggestion", sugerirProximoNumero(obraId));
+        snapshotPayload.put("nextNumberSuggestion", nextNumberSuggestion);
         snapshotPayload.put("previousRdo", previousRdo);
         snapshotPayload.put("previousWorkforce", previousWorkforce);
         snapshotPayload.put("programacoes", programacoes);
         snapshotPayload.put("colaboradores", colaboradores);
         snapshotPayload.put("equipamentos", equipamentos);
+        snapshotPayload.put("serviceCatalog", serviceCatalog);
         snapshotPayload.put("coverage", coverage);
         snapshotPayload.put("sourceVersion", sourceVersion);
+        snapshotPayload.put("catalogRevision", catalogRevision);
         long receiptVersion = persistirSnapshot(
                 obraId,
                 data,
@@ -99,15 +110,17 @@ public class RdoContextService {
         return new RdoContextResponse(
                 obra,
                 data,
-                sugerirProximoNumero(obraId),
+                nextNumberSuggestion,
                 previousRdo,
                 previousWorkforce,
                 programacoes,
                 colaboradores,
                 equipamentos,
+                serviceCatalog,
                 coverage,
                 new RdoContextResponse.ContextFreshness(
-                        "FRESH", sourceVersion, generatedAt, staleAfter
+                        "FRESH", sourceVersion, catalogRevision,
+                        generatedAt, staleAfter
                 ),
                 new RdoContextResponse.CreationProvenance(
                         receiptVersion,
@@ -122,10 +135,6 @@ public class RdoContextService {
 
     private RdoContextResponse.CoverageSection complete(long count) {
         return new RdoContextResponse.CoverageSection("COMPLETE", count, count, true);
-    }
-
-    private RdoContextResponse.CoverageSection notConfigured() {
-        return new RdoContextResponse.CoverageSection("NOT_CONFIGURED", 0, 0, false);
     }
 
     private long persistirSnapshot(
@@ -485,6 +494,80 @@ public class RdoContextService {
         return "RDO-%04d".formatted(value);
     }
 
+    private long buscarCatalogRevision() {
+        Long revision = jdbcTemplate.queryForObject(
+                "SELECT revision FROM service_catalog_revision WHERE singleton = TRUE",
+                Long.class
+        );
+        return revision == null ? 0L : revision;
+    }
+
+    private List<RdoContextResponse.ServiceCatalogContext> listarCatalogoServicos(
+            String obraId,
+            LocalDate selectedDate,
+            long catalogRevision
+    ) {
+        List<ServiceContextRow> services = jdbcTemplate.query(
+                """
+                SELECT id, codigo, nome, descricao
+                FROM catalogo_servico
+                WHERE status = 'ACTIVE'
+                  AND commit_revision <= ?
+                ORDER BY codigo, nome, id
+                """,
+                (rs, rowNumber) -> new ServiceContextRow(
+                        rs.getString("id"), rs.getString("codigo"),
+                        rs.getString("nome"), rs.getString("descricao")
+                ),
+                catalogRevision
+        );
+        Map<String, List<RdoContextResponse.ServicePriceChoice>> pricesByService =
+                new LinkedHashMap<>();
+        jdbcTemplate.query(
+                """
+                SELECT price.id, price.service_id, price.unidade, price.moeda,
+                       price.versao, price.valor_unitario, price.vigencia_inicio,
+                       cortex_price_effective_valid_to(price.id) AS effective_valid_to
+                FROM service_price_version price
+                JOIN catalogo_servico service ON service.id = price.service_id
+                WHERE price.obra_id = ?
+                  AND price.moeda = 'BRL'
+                  AND price.commit_revision <= ?
+                  AND service.commit_revision <= ?
+                  AND price.vigencia_inicio <= ?
+                  AND (
+                      cortex_price_effective_valid_to(price.id) IS NULL
+                      OR cortex_price_effective_valid_to(price.id) >= ?
+                  )
+                ORDER BY service.codigo, price.unidade, price.versao, price.id
+                """,
+                rs -> {
+                    pricesByService.computeIfAbsent(
+                            rs.getString("service_id"), ignored -> new ArrayList<>()
+                    ).add(new RdoContextResponse.ServicePriceChoice(
+                            rs.getString("id"), rs.getString("service_id"),
+                            rs.getString("unidade"), rs.getString("moeda"),
+                            rs.getInt("versao"), rs.getBigDecimal("valor_unitario"),
+                            rs.getDate("vigencia_inicio").toLocalDate(),
+                            rs.getDate("effective_valid_to") == null
+                                    ? null
+                                    : rs.getDate("effective_valid_to").toLocalDate()
+                    ));
+                },
+                obraId, catalogRevision, catalogRevision,
+                selectedDate, selectedDate
+        );
+        return services.stream()
+                .map(service -> new RdoContextResponse.ServiceCatalogContext(
+                        service.id(), service.code(), service.name(),
+                        service.description(),
+                        List.copyOf(pricesByService.getOrDefault(
+                                service.id(), List.of()
+                        ))
+                ))
+                .toList();
+    }
+
     private LocalTime toLocalTime(java.sql.Time value) {
         return value == null ? null : value.toLocalTime();
     }
@@ -515,5 +598,13 @@ public class RdoContextService {
                 ),
                 obraId
         );
+    }
+
+    private record ServiceContextRow(
+            String id,
+            String code,
+            String name,
+            String description
+    ) {
     }
 }

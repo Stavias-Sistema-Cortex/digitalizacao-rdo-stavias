@@ -37,8 +37,8 @@ class PostgresqlOntologyGraphRepositoryIT {
 
             assertThat(graphCounts(jdbc)).isEqualTo(firstCounts);
             assertThat(firstCounts)
-                    .containsEntry("entities", 5)
-                    .containsEntry("relations", 4)
+                    .containsEntry("entities", 6)
+                    .containsEntry("relations", 5)
                     .containsEntry("events", 1)
                     .containsEntry("evidences", 1);
             assertThat(repository.currentCheckpoint()).hasValue(42L);

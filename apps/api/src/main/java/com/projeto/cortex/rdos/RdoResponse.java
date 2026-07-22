@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -125,6 +126,8 @@ public record RdoResponse(
 
     public record ServicoExecutadoItem(
             String id,
+            String serviceId,
+            String priceVersionId,
             String servicoNome,
             String itemContratualId,
             BigDecimal quantidadeExecutada,
@@ -135,11 +138,42 @@ public record RdoResponse(
             String turno,
             String statusValidacao,
             String estadoReceita,
-            BigDecimal receitaOperacionalEstimativa,
+            String revenueCoverageCode,
+            BigDecimal unitPriceSnapshot,
+            String currency,
+            BigDecimal revenueAmount,
+            String revenueEvidenceId,
+            String revenueEventId,
+            Instant acceptedAt,
             boolean retrabalho,
             boolean producaoRejeitada,
             String observacoes
     ) {
+        public ServicoExecutadoItem(
+                String id,
+                String servicoNome,
+                String itemContratualId,
+                BigDecimal quantidadeExecutada,
+                String unidade,
+                String trechoInicial,
+                String trechoFinal,
+                String localizacao,
+                String turno,
+                String statusValidacao,
+                String estadoReceita,
+                BigDecimal ignoredLegacyRevenue,
+                boolean retrabalho,
+                boolean producaoRejeitada,
+                String observacoes
+        ) {
+            this(
+                    id, null, null, servicoNome, itemContratualId,
+                    quantidadeExecutada, unidade, trechoInicial, trechoFinal,
+                    localizacao, turno, statusValidacao, estadoReceita,
+                    "HISTORICAL_UNPRICED", null, null, BigDecimal.ZERO.setScale(2),
+                    null, null, null, retrabalho, producaoRejeitada, observacoes
+            );
+        }
     }
 
     public record AlocacaoColaboradorItem(

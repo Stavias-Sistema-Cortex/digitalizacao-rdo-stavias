@@ -25,7 +25,8 @@ class OperationalGraphProjectorTest {
         assertThat(first.entities())
                 .extracting(GraphEntity::externalRefId)
                 .containsExactlyInAnyOrder(
-                        "execution-9", "obra-1", "rdo-7", "service-5", "price-3"
+                        "execution-9", "obra-1", "rdo-7", "service-5", "price-3",
+                        "revenue-evidence-9"
                 );
         assertThat(first.entities()).allSatisfy(entity ->
                 assertThat(UUID.fromString(entity.id())).isNotNull()
@@ -34,9 +35,10 @@ class OperationalGraphProjectorTest {
                 .extracting(GraphRelation::type)
                 .contains(
                         "BELONGS_TO_WORKSITE",
-                        "RECORDED_IN",
+                        "EXECUTED_IN",
                         "EXECUTES_SERVICE",
-                        "PRICED_BY"
+                        "PRICED_BY",
+                        "GENERATES_REVENUE"
                 );
         assertThat(first.events()).singleElement()
                 .extracting(GraphEvent::sourceId)
@@ -47,7 +49,9 @@ class OperationalGraphProjectorTest {
                     assertThat(evidence.metadata())
                             .containsEntry("acceptedQuantity", "12.500")
                             .containsEntry("unitPrice", "18.40")
-                            .containsEntry("revenue", "230.00");
+                            .containsEntry("revenue", "230.00")
+                            .containsEntry("currency", "BRL")
+                            .containsEntry("revenueEvidenceId", "revenue-evidence-9");
                 });
     }
 
@@ -208,13 +212,16 @@ class OperationalGraphProjectorTest {
                         ref("WORKSITE", "obra-1"),
                         ref("RDO", "rdo-7"),
                         ref("SERVICE", "service-5"),
-                        ref("SERVICE_PRICE_VERSION", "price-3")
+                        ref("SERVICE_PRICE_VERSION", "price-3"),
+                        ref("REVENUE_EVIDENCE", "revenue-evidence-9")
                 ),
                 Instant.parse("2026-07-21T12:00:00Z"),
                 Map.of(
                         "acceptedQuantity", "12.500",
                         "unitPrice", "18.40",
                         "revenue", "230.00",
+                        "currency", "BRL",
+                        "revenueEvidenceId", "revenue-evidence-9",
                         "unit", "M2",
                         "worksiteId", "obra-1"
                 )

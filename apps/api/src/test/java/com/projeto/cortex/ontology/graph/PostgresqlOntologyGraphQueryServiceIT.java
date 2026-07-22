@@ -80,7 +80,10 @@ class PostgresqlOntologyGraphQueryServiceIT {
                     0,
                     100
             )).extracting(GraphRelation::type)
-                    .contains("BELONGS_TO_WORKSITE", "RECORDED_IN", "EXECUTES_SERVICE", "PRICED_BY");
+                    .contains(
+                            "BELONGS_TO_WORKSITE", "EXECUTED_IN",
+                            "EXECUTES_SERVICE", "PRICED_BY", "GENERATES_REVENUE"
+                    );
             assertThat(queryService.listEventsScoped(Set.of("obra-1"), executionEntityId, null, 0, 10))
                     .extracting(GraphEvent::sourceId)
                     .containsExactly("event-42");

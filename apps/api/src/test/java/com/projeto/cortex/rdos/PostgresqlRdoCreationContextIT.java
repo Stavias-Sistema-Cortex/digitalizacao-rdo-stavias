@@ -136,6 +136,19 @@ class PostgresqlRdoCreationContextIT {
                     .load()
                     .migrate();
 
+            // The production context is gated on the current V52 schema. The
+            // assertions below still prove V48/V49/V50 upgrade preservation.
+            Flyway.configure()
+                    .dataSource(
+                            upgradeDatabase.getJdbcUrl(),
+                            upgradeDatabase.getUsername(),
+                            upgradeDatabase.getPassword()
+                    )
+                    .locations("classpath:db/migration-postgresql")
+                    .target("52")
+                    .load()
+                    .migrate();
+
             assertThat(upgradeJdbc.queryForObject(
                     "SELECT count(*) FROM rdo WHERE obra_id = ? AND numero_rdo = 'RDO-0041'",
                     Integer.class,
@@ -250,8 +263,9 @@ class PostgresqlRdoCreationContextIT {
                         RdoContextResponse.CoverageSection::complete
                 ).containsExactly("COMPLETE", 301L, 301L, true);
         assertThat(response.coverage().equipamentos().status()).isEqualTo("COMPLETE");
-        assertThat(response.coverage().serviceCatalog().status()).isEqualTo("NOT_CONFIGURED");
-        assertThat(response.coverage().priceCatalog().status()).isEqualTo("NOT_CONFIGURED");
+        assertThat(response.coverage().serviceCatalog().status()).isEqualTo("COMPLETE");
+        assertThat(response.coverage().priceCatalog().status()).isEqualTo("COMPLETE");
+        assertThat(response.freshness().catalogRevision()).isNotNegative();
         assertThat(response.freshness().status()).isEqualTo("FRESH");
         assertThat(response.freshness().staleAfter())
                 .isAfter(response.freshness().generatedAt());

@@ -56,7 +56,9 @@ final class OperationalGraphPayloadPolicy {
             "quantity",
             "unitPrice",
             "revenue",
-            "unit"
+            "unit",
+            "currency",
+            "revenueEvidenceId"
     );
     private static final Set<String> BUSINESS_LABEL_KEYS = Set.of(
             "name",

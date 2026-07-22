@@ -160,7 +160,7 @@ public class OperationalGraphProjector {
                 return "DERIVED_FROM";
             }
             if ("RDO_EXECUTION".equals(sourceType)) {
-                return "RECORDED_IN";
+                return "EXECUTED_IN";
             }
             if ("COLLABORATOR".equals(sourceType)) {
                 return "PARTICIPATES_IN";
@@ -175,6 +175,10 @@ public class OperationalGraphProjector {
         if ("RDO_EXECUTION".equals(sourceType)
                 && "SERVICE_PRICE_VERSION".equals(targetType)) {
             return "PRICED_BY";
+        }
+        if ("RDO_EXECUTION".equals(sourceType)
+                && "REVENUE_EVIDENCE".equals(targetType)) {
+            return "GENERATES_REVENUE";
         }
         if ("SERVICE_PRICE_VERSION".equals(sourceType) && "SERVICE".equals(targetType)) {
             return "PRICES";
@@ -251,7 +255,8 @@ public class OperationalGraphProjector {
         Map<String, Object> metadata = new LinkedHashMap<>();
         copyIfPresent(event.payload(), metadata,
                 "acceptedQuantity", "quantity", "unitPrice", "revenue", "unit",
-                "priceVersionId", "worksiteId", "obraId", "rdoId", "serviceId");
+                "currency", "revenueEvidenceId", "priceVersionId", "worksiteId",
+                "obraId", "rdoId", "serviceId");
         return List.of(new GraphEvidence(
                 deterministicId("evidence", "REVENUE:" + event.commitId() + ":" + principal.id()),
                 principal.id(),
@@ -275,6 +280,7 @@ public class OperationalGraphProjector {
             case "SERVICE" -> "item_contratual";
             case "SERVICE_PRICE_VERSION" -> "service_price_version";
             case "RDO_EXECUTION" -> "execucao_servico_rdo";
+            case "REVENUE_EVIDENCE" -> "execucao_servico_rdo";
             default -> type.toLowerCase(Locale.ROOT);
         };
         return new EntityDescriptor(
@@ -293,7 +299,8 @@ public class OperationalGraphProjector {
             case "EQUIPAMENTO", "EQUIPMENT" -> "ASSET";
             case "ITEM_CONTRATUAL", "SERVICO" -> "SERVICE";
             case "PRECO_SERVICO", "SERVICE_PRICE" -> "SERVICE_PRICE_VERSION";
-            case "EXECUTION", "EXECUCAO_SERVICO_RDO" -> "RDO_EXECUTION";
+            case "EXECUTION", "EXECUCAO_SERVICO_RDO", "RDO_SERVICE_EXECUTED" ->
+                    "RDO_EXECUTION";
             default -> type;
         };
     }

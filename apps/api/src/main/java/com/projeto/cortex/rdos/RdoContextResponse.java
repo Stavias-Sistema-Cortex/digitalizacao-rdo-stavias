@@ -15,10 +15,31 @@ public record RdoContextResponse(
         List<ProgramacaoContexto> programacoes,
         List<ColaboradorContexto> colaboradores,
         List<EquipamentoContexto> equipamentos,
+        List<ServiceCatalogContext> serviceCatalog,
         ContextCoverage coverage,
         ContextFreshness freshness,
         CreationProvenance provenance
 ) {
+
+    public RdoContextResponse(
+            ObraContexto obra,
+            LocalDate data,
+            String nextNumberSuggestion,
+            PreviousRdo previousRdo,
+            List<PreviousWorkforceItem> previousWorkforce,
+            List<ProgramacaoContexto> programacoes,
+            List<ColaboradorContexto> colaboradores,
+            List<EquipamentoContexto> equipamentos,
+            ContextCoverage coverage,
+            ContextFreshness freshness,
+            CreationProvenance provenance
+    ) {
+        this(
+                obra, data, nextNumberSuggestion, previousRdo,
+                previousWorkforce, programacoes, colaboradores, equipamentos,
+                List.of(), coverage, freshness, provenance
+        );
+    }
 
     public record ObraContexto(
             String id,
@@ -100,6 +121,27 @@ public record RdoContextResponse(
     ) {
     }
 
+    public record ServiceCatalogContext(
+            String id,
+            String code,
+            String name,
+            String description,
+            List<ServicePriceChoice> priceChoices
+    ) {
+    }
+
+    public record ServicePriceChoice(
+            String id,
+            String serviceId,
+            String unit,
+            String currency,
+            int version,
+            BigDecimal unitPrice,
+            LocalDate validFrom,
+            LocalDate effectiveValidTo
+    ) {
+    }
+
     public record CreationProvenance(
             long receiptVersion,
             long sourceVersion,
@@ -131,8 +173,17 @@ public record RdoContextResponse(
     public record ContextFreshness(
             String status,
             long sourceVersion,
+            long catalogRevision,
             Instant generatedAt,
             Instant staleAfter
     ) {
+        public ContextFreshness(
+                String status,
+                long sourceVersion,
+                Instant generatedAt,
+                Instant staleAfter
+        ) {
+            this(status, sourceVersion, 0L, generatedAt, staleAfter);
+        }
     }
 }

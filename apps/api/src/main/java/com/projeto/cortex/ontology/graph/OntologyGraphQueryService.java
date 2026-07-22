@@ -39,7 +39,8 @@ public class OntologyGraphQueryService {
      * never inherit another worksite by walking back through a shared collaborator or asset.
      */
     private static final String FORWARD_SCOPE_RELATIONS = """
-            'BELONGS_TO_WORKSITE', 'PARTICIPATES_IN', 'USED_IN', 'RECORDED_IN'
+            'BELONGS_TO_WORKSITE', 'PARTICIPATES_IN', 'USED_IN',
+            'RECORDED_IN', 'EXECUTED_IN'
             """;
 
     /**
@@ -51,7 +52,8 @@ public class OntologyGraphQueryService {
      * absent: the operational projector does not emit them as worksite provenance.
      */
     private static final String REVERSE_SCOPE_RELATIONS = """
-            'EXECUTES_SERVICE', 'PRICED_BY', 'PRICES', 'USES_ASSET'
+            'EXECUTES_SERVICE', 'PRICED_BY', 'PRICES', 'USES_ASSET',
+            'GENERATES_REVENUE'
             """;
 
     private final JdbcTemplate jdbc;

@@ -22,7 +22,21 @@ class RdoResponseContractTest {
     @Test
     void shouldExposeOperationalChildObservationsAndAttachmentMetadata() {
         assertThat(recordComponentNames(RdoResponse.ServicoExecutadoItem.class))
-                .contains("observacoes");
+                .contains(
+                        "serviceId",
+                        "priceVersionId",
+                        "revenueCoverageCode",
+                        "unitPriceSnapshot",
+                        "currency",
+                        "revenueAmount",
+                        "revenueEvidenceId",
+                        "revenueEventId",
+                        "acceptedAt",
+                        "observacoes"
+                );
+        assertThat(recordComponentNames(RdoCreateRequest.ServicoExecutadoItem.class))
+                .contains("serviceId", "priceVersionId")
+                .doesNotContain("custoRealizado");
         assertThat(recordComponentNames(RdoResponse.AlocacaoColaboradorItem.class))
                 .contains("observacoes");
         assertThat(recordComponentNames(RdoResponse.AttachmentItem.class))

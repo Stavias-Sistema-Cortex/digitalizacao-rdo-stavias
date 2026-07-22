@@ -3,7 +3,7 @@ package com.projeto.cortex.importacao;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
-import com.projeto.cortex.rdos.RdoCreateRequest;
+import com.projeto.cortex.rdos.RdoHistoricalImportServiceCommand;
 import com.projeto.cortex.rdos.RdoMemoryPublisher;
 import com.projeto.cortex.rdos.RdoOperationalDetailService;
 import org.apache.poi.ss.usermodel.Cell;
@@ -516,8 +516,10 @@ public class RdoImportacaoHistoricaService {
         inserirServicoImportado(
                 rdoId,
                 linha.obraId(),
-                programacaoId,
-                linha.dataRdo(),
+                cabecalho.id(),
+                cabecalho.nomeArquivo(),
+                linha.aba(),
+                linha.numeroLinha(),
                 turno,
                 payload
         );
@@ -575,8 +577,10 @@ public class RdoImportacaoHistoricaService {
         inserirServicoImportado(
                 rdoId,
                 linha.obraId(),
-                programacaoId,
-                linha.dataRdo(),
+                cabecalho.id(),
+                cabecalho.nomeArquivo(),
+                linha.aba(),
+                linha.numeroLinha(),
                 text(linha.payloadNormalizado(), "turno"),
                 linha.payloadNormalizado()
         );
@@ -598,8 +602,10 @@ public class RdoImportacaoHistoricaService {
     private void inserirServicoImportado(
             String rdoId,
             String obraId,
-            String programacaoId,
-            LocalDate dataRdo,
+            String importacaoId,
+            String nomeArquivo,
+            String aba,
+            Integer numeroLinha,
             String turno,
             JsonNode payload
     ) {
@@ -610,31 +616,17 @@ public class RdoImportacaoHistoricaService {
             return;
         }
 
-        RdoCreateRequest.ServicoExecutadoItem item =
-                new RdoCreateRequest.ServicoExecutadoItem(
-                        null,
-                        servico,
-                        text(payload, "itemContratualId"),
-                        quantidade,
+        operationalDetailService.substituirServicoImportadoHistorico(
+                new RdoHistoricalImportServiceCommand(
+                        rdoId, obraId, importacaoId, nomeArquivo, aba,
+                        numeroLinha, null, servico,
+                        text(payload, "itemContratualId"), quantidade,
                         text(payload, "unidade"),
                         text(payload, "trechoInicial"),
                         text(payload, "trechoFinal"),
-                        text(payload, "localizacao"),
-                        turno,
-                        "REGISTRADA",
-                        false,
-                        false,
+                        text(payload, "localizacao"), turno,
                         text(payload, "observacoes")
-                );
-
-        operationalDetailService.substituirDetalhes(
-                rdoId,
-                obraId,
-                programacaoId,
-                dataRdo,
-                turno,
-                List.of(item),
-                List.of()
+                )
         );
     }
 

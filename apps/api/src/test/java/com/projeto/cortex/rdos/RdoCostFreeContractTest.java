@@ -64,6 +64,8 @@ class RdoCostFreeContractTest {
                 "custoHora",
                 "custoTotal"
         );
+        assertThat(recordComponentNames(RdoResponse.ServicoExecutadoItem.class))
+                .doesNotContain("receitaOperacionalEstimativa");
     }
 
     @Test
