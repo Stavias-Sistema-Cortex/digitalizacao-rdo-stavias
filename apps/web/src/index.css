@@ -992,8 +992,7 @@ textarea:focus {
 }
 
 .rdo-operational-card,
-.timeline-panel,
-.stavia-suggestion-panel {
+.timeline-panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -1100,13 +1099,11 @@ textarea:focus {
   margin-top: 16px;
 }
 
-.timeline-panel,
-.stavia-suggestion-panel {
+.timeline-panel {
   padding: 16px;
 }
 
 .timeline-panel h2,
-.stavia-suggestion-panel h2,
 .profile-drawer h3 {
   margin: 0 0 12px;
   color: #203429;
@@ -1114,8 +1111,7 @@ textarea:focus {
 }
 
 .timeline-list,
-.profile-list,
-.stavia-suggestion-panel {
+.profile-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1123,7 +1119,6 @@ textarea:focus {
 
 .timeline-item,
 .profile-list button,
-.stavia-suggestion-panel button,
 .profile-event {
   width: 100%;
   padding: 11px;
@@ -1513,7 +1508,6 @@ textarea:focus {
   .rdo-filter-grid,
   .rdo-operational-card,
   .timeline-panel,
-  .stavia-suggestion-panel,
   .profile-drawer {
     padding: 16px;
   }
@@ -2243,16 +2237,6 @@ textarea:focus {
   margin: 0;
   color: #6f7d75;
   font-size: 0.78rem;
-}
-
-.obras-stavia-button {
-  border: 1px solid #0e5e57;
-  border-radius: 999px;
-  background: #0e5e57;
-  color: #fff;
-  padding: 8px 14px;
-  font-size: 0.78rem;
-  font-weight: 700;
 }
 
 .obras-facts {

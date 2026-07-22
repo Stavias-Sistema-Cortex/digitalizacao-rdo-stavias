@@ -1,4 +1,4 @@
-const USER_SCOPED_LOCAL_STORAGE_KEYS = [
+const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [
   "cortex:stavia:chat:operacional",
   "cortex:stavia:last-context",
 ] as const;
@@ -6,9 +6,8 @@ const USER_SCOPED_LOCAL_STORAGE_KEYS = [
 type LocalStorageRemover = Pick<Storage, "removeItem">;
 
 /**
- * A conversa e o último contexto da StavIA são auxiliares de interface, mas
- * podem conter conteúdo operacional. Eles seguem a mesma fronteira de
- * identidade do IndexedDB e não podem sobreviver a uma troca de usuário.
+ * Remove somente chaves históricas do assistente que podem conter conteúdo
+ * operacional privado. Elas nunca são lidas nem recriadas pelo runtime atual.
  */
 export function clearUserScopedLocalStorage(
   storage?: LocalStorageRemover,
@@ -21,7 +20,7 @@ export function clearUserScopedLocalStorage(
     return;
   }
 
-  for (const key of USER_SCOPED_LOCAL_STORAGE_KEYS) {
+  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {
     target.removeItem(key);
   }
 }

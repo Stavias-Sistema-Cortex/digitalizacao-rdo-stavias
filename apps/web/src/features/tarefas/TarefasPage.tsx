@@ -44,7 +44,6 @@ import {
   setLastAccessedObraId,
 } from "../home/lastAccessedObra";
 import type { ChartPeriod } from "../home/progressSeries";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   equipesDaObra,
   responsaveisSugeridos,
@@ -141,8 +140,6 @@ export function TarefasPage() {
     () => colaboradorStorageKey(getSession()),
     [],
   );
-  const { setStaviaContext } = useStaviaLauncher();
-
   const [obras, setObras] = useState<ObraLocalRecord[]>(
     [],
   );
@@ -283,10 +280,6 @@ export function TarefasPage() {
     },
     [storageKey],
   );
-
-  useEffect(() => {
-    setStaviaContext({ obraId: focusedObraId ?? "" });
-  }, [focusedObraId, setStaviaContext]);
 
   useEffect(() => {
     let cancelled = false;

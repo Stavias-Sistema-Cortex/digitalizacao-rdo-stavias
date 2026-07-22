@@ -80,12 +80,7 @@
   /* Sem isto a linha implícita é `auto`: a thread cresce com o histórico e
      vaza para fora da altura fixa em vez de a lista rolar por dentro. */
   grid-template-rows: minmax(0, 1fr);
-  /*
-   * O launcher da StavIA é fixo no canto inferior direito (58px + 24px de
-   * folga). Sem descontar essa faixa, em telas por volta de 1100x1000 o rodapé
-   * do composer cai embaixo dele e o botão enviar deixa de receber o clique.
-   */
-  height: min(760px, calc(100vh - 275px));
+  height: min(760px, calc(100vh - 193px));
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 12px;

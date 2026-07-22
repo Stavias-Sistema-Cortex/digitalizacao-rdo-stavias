@@ -26,7 +26,7 @@ const gestaoObrasCss = readCss("./features/obras/gestao/gestaoObras.css");
 const programacaoCss = readCss(
   "./features/programacoes/ProgramacaoSemanalImport.css",
 );
-const staviaCss = readCss("./features/stavia/StaviaPanel.css");
+const mensagensCss = readCss("./features/mensagens/MensagensPage.css");
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -34,6 +34,7 @@ const authenticatedCss = [
   gestaoObrasCss,
   programacaoCss,
   tarefasCss,
+  mensagensCss,
 ].join("\n");
 
 describe("polimento visual da plataforma autenticada", () => {
@@ -218,7 +219,7 @@ describe("polimento visual da plataforma autenticada", () => {
     );
   });
 
-  it("reserva zonas móveis para o cluster e o launcher sem colisões", () => {
+  it("reserva zonas móveis para o cluster sem colisões", () => {
     const narrowCss = globalCss.slice(
       globalCss.lastIndexOf("@media (max-width: 620px)"),
     );
@@ -242,16 +243,14 @@ describe("polimento visual da plataforma autenticada", () => {
       "padding-bottom: calc(120px + env(safe-area-inset-bottom));",
     );
 
-    const staviaNarrowCss = staviaCss.slice(
-      staviaCss.lastIndexOf("@media (max-width: 560px)"),
+  });
+
+  it("devolve ao workspace de Mensagens a faixa antes reservada ao launcher", () => {
+    const workspace = rule(mensagensCss, ".mensagens-workspace");
+    expect(workspace).toContain(
+      "height: min(760px, calc(100vh - 193px));",
     );
-    const launcher = rule(staviaNarrowCss, ".stavia-launcher");
-    expect(launcher).toContain("position: absolute;");
-    expect(launcher).toContain("right: 12px;");
-    expect(launcher).toContain("top: 238px;");
-    expect(launcher).toContain("bottom: auto;");
-    expect(launcher).toContain("width: 112px;");
-    expect(launcher).toContain("height: 48px;");
+    expect(workspace).not.toContain("calc(100vh - 275px)");
   });
 
   it("marca a obra selecionada sem alterar as cores semânticas do PDOR", () => {

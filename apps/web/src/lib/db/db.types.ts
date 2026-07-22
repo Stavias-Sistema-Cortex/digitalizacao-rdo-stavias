@@ -280,13 +280,6 @@ export interface RdoAttachmentRecord {
   removedAt: string | null;
 }
 
-export interface StaviaSnapshotRecord {
-  key: "default";
-  snapshot: import("../../features/stavia/stavia.types").StaviaSnapshot;
-  localSyncedAt: string;
-  updatedAt: string;
-}
-
 export interface ObraLocalRecord {
   id: string;
   codigoContrato: string;

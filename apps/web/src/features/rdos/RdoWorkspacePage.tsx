@@ -6,7 +6,6 @@ import {
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { getSession } from "../auth/authSession";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   listOperationalEvents,
 } from "../../lib/db/operationalEventRepository";
@@ -61,17 +60,6 @@ export function RdoWorkspacePage() {
 
   const [loadError, setLoadError] =
     useState("");
-  const { openStavia, setStaviaContext } =
-    useStaviaLauncher();
-
-  useEffect(() => {
-    if (mode.type === "FORM") {
-      setStaviaContext({
-        obraId: mode.draft.obraId,
-        rdoId: mode.draft.id,
-      });
-    }
-  }, [mode, setStaviaContext]);
 
   const loadRecords =
     useCallback(async () => {
@@ -223,12 +211,6 @@ export function RdoWorkspacePage() {
         onOpen={handleOpen}
         onRefresh={() => {
           void loadRecords();
-        }}
-        onOpenStavia={(context) => {
-          openStavia({
-            obraId: context?.obraId ?? "",
-            rdoId: context?.rdoId ?? "",
-          });
         }}
       />
     </CortexShell>

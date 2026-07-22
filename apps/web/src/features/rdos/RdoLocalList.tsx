@@ -19,10 +19,6 @@ interface RdoLocalListProps {
   isImporting: boolean;
   onOpen: (record: LocalRdoRecord) => void;
   onRefresh: () => void;
-  onOpenStavia: (context?: {
-    obraId?: string;
-    rdoId?: string;
-  }) => void;
 }
 
 type PeriodFilter = "TODOS" | "HOJE" | "7_DIAS" | "30_DIAS";
@@ -296,7 +292,6 @@ export function RdoLocalList({
   isImporting,
   onOpen,
   onRefresh,
-  onOpenStavia,
 }: RdoLocalListProps) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [obraFilter, setObraFilter] = useState("");
@@ -432,13 +427,6 @@ export function RdoLocalList({
         </div>
 
         <div className="rdo-command-actions">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => onOpenStavia()}
-          >
-            Abrir StavIA
-          </button>
           <button
             type="button"
             className="secondary-button"
@@ -690,18 +678,6 @@ export function RdoLocalList({
                     {record.statusRdo === "ENVIADO"
                       ? "RDO enviado"
                       : "Continuar RDO"}
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() =>
-                      onOpenStavia({
-                        obraId: record.obraId,
-                        rdoId: record.id,
-                      })
-                    }
-                  >
-                    Perguntar à StavIA
                   </button>
                 </div>
               </article>

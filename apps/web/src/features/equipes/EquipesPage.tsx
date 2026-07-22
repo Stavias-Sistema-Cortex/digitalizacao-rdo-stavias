@@ -23,7 +23,6 @@ import {
   listConversationsApi,
 } from "../mensagens/mensagensApi";
 import { storeServerConversations } from "../mensagens/mensagensRepository";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   hidratarColaboradoresAcademy,
   listarColaboradoresConhecidos,
@@ -149,7 +148,6 @@ export function EquipesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTeamId = searchParams.get("equipe");
-  const { setStaviaContext } = useStaviaLauncher();
   const [teams, setTeams] = useState<TeamDto[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<TeamDto | null>(null);
   const [roles, setRoles] = useState<OperationalRoleDto[]>([]);
@@ -280,10 +278,6 @@ export function EquipesPage() {
       cancelled = true;
     };
   }, [alfa, hasAuthenticatedConnection, reloadTick, selectedTeamId]);
-
-  useEffect(() => {
-    setStaviaContext({ obraId: selectedTeam?.obraPrincipalId ?? "" });
-  }, [selectedTeam?.obraPrincipalId, setStaviaContext]);
 
   const visibleTeams = useMemo(() => filterTeams(teams, filters), [filters, teams]);
   const activeMembers = selectedTeam?.membros.filter((member) => member.status === "ATIVO") ?? [];

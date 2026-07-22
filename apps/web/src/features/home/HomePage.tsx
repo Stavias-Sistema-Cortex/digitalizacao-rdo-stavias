@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   filterObrasByChip,
   filterObrasByRodovia,
@@ -33,11 +32,6 @@ export function HomePage() {
     useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
   const [rodoviaFilter, setRodoviaFilter] = useState("");
-  const { setStaviaContext } = useStaviaLauncher();
-
-  useEffect(() => {
-    setStaviaContext({ obraId: focusedObra?.id ?? "" });
-  }, [focusedObra?.id, setStaviaContext]);
 
   const ufs = useMemo(
     () =>

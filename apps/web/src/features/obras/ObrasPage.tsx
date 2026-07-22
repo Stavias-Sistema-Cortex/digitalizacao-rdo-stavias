@@ -13,7 +13,6 @@ import {
   type ObraStatusChip,
 } from "../home/homeFilters";
 import { useHomeData } from "../home/useHomeData";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import { getSession, isAlfa } from "../auth/authSession";
 import {
   buscarPdorAtual,
@@ -186,13 +185,7 @@ export function ObrasPage() {
     useState(false);
   const [showCreateWorksite, setShowCreateWorksite] =
     useState(false);
-  const { openStavia, setStaviaContext } =
-    useStaviaLauncher();
   const canCreateWorksite = isAlfa(getSession());
-
-  useEffect(() => {
-    setStaviaContext({ obraId: focusedObra?.id ?? "" });
-  }, [focusedObra?.id, setStaviaContext]);
 
   const ufs = useMemo(
     () =>
@@ -454,17 +447,6 @@ export function ObrasPage() {
                     <h2>{focusedObra.nome}</h2>
                     <p>{obraSubtitle(focusedObra) || "-"}</p>
                   </div>
-                  <button
-                    type="button"
-                    className="obras-stavia-button"
-                    onClick={() =>
-                      openStavia({
-                        obraId: focusedObra?.id ?? "",
-                      })
-                    }
-                  >
-                    StavIA
-                  </button>
                 </div>
 
                 <dl className="obras-facts">

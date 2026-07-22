@@ -21,7 +21,6 @@ import type {
   PrevisaoSnapshotRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
-  StaviaSnapshotRecord,
   SyncStateRecord,
   TarefaRecord,
   LocalTeamHistoryRecord,
@@ -31,7 +30,8 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 12;
+export const CORTEX_DATABASE_VERSION = 13;
+const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -130,14 +130,6 @@ interface CortexDbSchema extends DBSchema {
       "by-obra-id": string;
       "by-sync-status": RdoAttachmentRecord["syncStatus"];
       "by-created-at": string;
-    };
-  };
-
-  stavia_snapshots: {
-    key: "default";
-    value: StaviaSnapshotRecord;
-    indexes: {
-      "by-updated-at": string;
     };
   };
 
@@ -256,7 +248,12 @@ export async function getCortexDb(): Promise<
     databaseName,
     CORTEX_DATABASE_VERSION,
     {
-      upgrade(database, _oldVersion, _newVersion, transaction) {
+      upgrade(database, oldVersion, _newVersion, transaction) {
+        const legacyDatabase =
+          database as unknown as Pick<
+            IDBDatabase,
+            "objectStoreNames" | "deleteObjectStore"
+          >;
         if (!database.objectStoreNames.contains("rdos")) {
           const rdoStore = database.createObjectStore("rdos", {
             keyPath: "id",
@@ -515,22 +512,10 @@ export async function getCortexDb(): Promise<
         }
 
         if (
-          !database.objectStoreNames.contains(
-            "stavia_snapshots",
-          )
+          oldVersion < 13 &&
+          legacyDatabase.objectStoreNames.contains(LEGACY_ASSISTANT_STORE)
         ) {
-          const staviaSnapshotStore =
-            database.createObjectStore(
-              "stavia_snapshots",
-              {
-                keyPath: "key",
-              },
-            );
-
-          staviaSnapshotStore.createIndex(
-            "by-updated-at",
-            "updatedAt",
-          );
+          legacyDatabase.deleteObjectStore(LEGACY_ASSISTANT_STORE);
         }
 
         if (!database.objectStoreNames.contains("obras")) {

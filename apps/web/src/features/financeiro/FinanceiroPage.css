@@ -1085,15 +1085,6 @@
   .finance-allocation-items > div > button { grid-column: 2; }
 }
 
-@media (max-width: 560px) {
-  .cortex-shell:has(.finance-page) ~ .stavia-launcher {
-    position: fixed;
-    top: auto;
-    right: 12px;
-    bottom: 16px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .finance-progress span,
   .finance-fiscal-progress > span { animation: none; }
