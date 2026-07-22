@@ -155,7 +155,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 appliedVersions.add(rows.getString("version"));
             }
         }
-        assertThat(appliedVersions).containsExactly("44", "45", "45.1");
+        assertThat(appliedVersions).containsExactly("44", "45", "45.1", "46");
     }
 
     private void assertCurrentTableInventory(JdbcTemplate jdbc) throws Exception {

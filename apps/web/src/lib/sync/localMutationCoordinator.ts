@@ -129,6 +129,7 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
   const built = await buildCanonicalMutation({
     ...prepared.envelope,
     authorizationScope: authorizedSession.authorizationScope,
+    relatedEntities: prepared.relatedEntities,
   });
   assertSessionUnchanged(authorizedSession, prepared.envelope);
   const event = canonicalEvent(prepared, built, authorizedSession.actorName);

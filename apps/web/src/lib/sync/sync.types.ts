@@ -1,5 +1,9 @@
 import type {
   OutboxMutationRecord,
+  CanonicalMutationOperation,
+  MutationFieldPatch,
+  MutationTrace,
+  OperationalEntityRef,
   SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
@@ -31,6 +35,20 @@ export interface SyncPushMutationRequest {
   payload: Record<string, unknown>;
   criadaNoClienteEm: string;
   correlacaoId: string;
+  schemaVersion?: 13;
+  deviceId?: string;
+  userId?: string;
+  obraId?: string;
+  entityType?: string;
+  entityId?: string;
+  operation?: CanonicalMutationOperation;
+  baseVersion?: number | null;
+  changedFields?: readonly string[];
+  occurredAt?: string;
+  trace?: MutationTrace;
+  fieldPatch?: MutationFieldPatch;
+  relatedEntities?: readonly OperationalEntityRef[];
+  dependsOnMutationIds?: readonly string[];
 }
 
 export interface SyncPushRequest {
@@ -41,7 +59,9 @@ export interface SyncPushRequest {
 export type ServerMutationStatus =
   | "APLICADA"
   | "ERRO"
-  | "DESCARTADA";
+  | "DESCARTADA"
+  | "CONFLITO"
+  | "REJEITADA";
 
 export interface SyncMutationEntityResult
   extends Record<string, unknown> {
@@ -107,6 +127,36 @@ export async function toPushMutationRequest(
 ): Promise<SyncPushMutationRequest> {
   if (isCanonicalOutboxMutation(mutation)) {
     await assertCanonicalPayloadHash(mutation);
+    return {
+      schemaVersion: mutation.schemaVersion,
+      clientMutationId: mutation.clientMutationId,
+      deviceId: mutation.deviceId,
+      userId: mutation.userId,
+      obraId: mutation.obraId,
+      entityType: mutation.entityType,
+      entityId: mutation.entityId,
+      operation: mutation.operation,
+      baseVersion: mutation.baseVersion,
+      changedFields: [...mutation.changedFields],
+      occurredAt: mutation.occurredAt,
+      payload: mutation.payload,
+      entidadeTipo: mutation.entidadeTipo,
+      entidadeId: mutation.entidadeId,
+      operacao: mutation.operacao,
+      baseVersao: mutation.baseVersao,
+      criadaNoClienteEm: mutation.criadaNoClienteEm,
+      correlacaoId: mutation.correlationId,
+      trace: {
+        ...mutation.trace,
+        authorizationScope: [...mutation.trace.authorizationScope],
+      },
+      fieldPatch: {
+        changed: { ...mutation.fieldPatch.changed },
+        baseValues: { ...mutation.fieldPatch.baseValues },
+      },
+      relatedEntities: mutation.relatedEntities.map((entity) => ({ ...entity })),
+      dependsOnMutationIds: [...(mutation.dependsOnMutationIds ?? [])],
+    };
   }
   return {
     clientMutationId: mutation.clientMutationId,

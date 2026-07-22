@@ -3,6 +3,7 @@ import type {
   CanonicalMutationOperation,
   CanonicalOutboxMutationRecord,
   MutationFieldPatch,
+  OperationalEntityRef,
   OutboxMutationRecord,
   OutboxTransport,
   SyncEntityType,
@@ -80,6 +81,7 @@ export interface BuildCanonicalMutationInput {
   causationId?: string | null;
   transport?: OutboxTransport;
   dependsOnMutationIds?: readonly string[];
+  relatedEntities?: readonly OperationalEntityRef[];
 }
 
 export interface BuiltCanonicalMutation {
@@ -99,6 +101,7 @@ interface PreparedCanonicalMutation {
   causationId: string | null;
   transport: OutboxTransport;
   dependsOnMutationIds: string[];
+  relatedEntities: OperationalEntityRef[];
   fieldPatch: MutationFieldPatch;
   canonicalPayload: string;
 }
@@ -231,6 +234,7 @@ export async function buildCanonicalMutation(
     correlationId: prepared.correlationId,
     causationId: prepared.causationId,
     fieldPatch: prepared.fieldPatch,
+    relatedEntities: prepared.relatedEntities,
     trace: {
       actorId: envelope.userId,
       deviceId: envelope.deviceId,
@@ -295,6 +299,13 @@ function prepareCanonicalMutation(
     ? null
     : uuid(input.causationId, "causationId");
   const transport = outboxTransport(input.transport ?? "SYNC_PUSH");
+  const relatedEntities = (input.relatedEntities ?? []).map((entity, index) => ({
+    tipo: requiredText(entity.tipo, `relatedEntities[${index}].tipo`),
+    id: uuid(entity.id, `relatedEntities[${index}].id`),
+    nome: entity.nome == null
+      ? null
+      : requiredText(entity.nome, `relatedEntities[${index}].nome`),
+  }));
 
   if (operation === "CREATE" && input.baseVersion !== null) {
     throw new TypeError("CREATE requires baseVersion null.");
@@ -345,6 +356,7 @@ function prepareCanonicalMutation(
     causationId,
     transport,
     dependsOnMutationIds,
+    relatedEntities,
     fieldPatch: fieldPatch(previousSnapshot, nextSnapshot, changedFields),
     canonicalPayload: nextJson,
   };

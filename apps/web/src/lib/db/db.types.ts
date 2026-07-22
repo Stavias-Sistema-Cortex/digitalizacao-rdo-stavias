@@ -194,6 +194,7 @@ export interface CanonicalOutboxMutationRecord
   readonly correlationId: string;
   readonly causationId: string | null;
   readonly fieldPatch: MutationFieldPatch;
+  readonly relatedEntities: readonly OperationalEntityRef[];
   readonly trace: MutationTrace;
   nextAttemptAt: string | null;
   blockedReason: string | null;

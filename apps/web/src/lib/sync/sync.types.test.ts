@@ -36,6 +36,13 @@ async function canonicalMutation(): Promise<CanonicalOutboxMutationRecord> {
     correlationId: "00000000-0000-4000-8000-000000000001",
     causationId: null,
     fieldPatch: { changed: { id: "value" }, baseValues: {} },
+    relatedEntities: [
+      {
+        tipo: "RDO",
+        id: "00000000-0000-4000-8000-000000000007",
+        nome: "RDO anterior",
+      },
+    ],
     trace: {
       actorId: "00000000-0000-4000-8000-000000000003",
       deviceId: "00000000-0000-4000-8000-000000000002",
@@ -52,10 +59,60 @@ async function canonicalMutation(): Promise<CanonicalOutboxMutationRecord> {
 
 describe("toPushMutationRequest canonical boundary", () => {
   it("serializes a coherent canonical mutation", async () => {
-    await expect(toPushMutationRequest(await canonicalMutation())).resolves.toMatchObject({
+    await expect(toPushMutationRequest(await canonicalMutation())).resolves
+      .toMatchObject({
+        schemaVersion: 13,
+        clientMutationId: "00000000-0000-4000-8000-000000000001",
+        deviceId: "00000000-0000-4000-8000-000000000002",
+        userId: "00000000-0000-4000-8000-000000000003",
+        obraId: "00000000-0000-4000-8000-000000000004",
+        entityType: "RDO",
+        entityId: "00000000-0000-4000-8000-000000000005",
+        operation: "CREATE",
+        baseVersion: null,
+        changedFields: ["id"],
+        occurredAt: "2026-07-21T12:00:00.000Z",
+        entidadeTipo: "RDO",
+        operacao: "CRIAR_RDO",
+        baseVersao: null,
+        trace: {
+          ontologyEventId: "00000000-0000-4000-8000-000000000006",
+          actorId: "00000000-0000-4000-8000-000000000003",
+        },
+        relatedEntities: [
+          {
+            tipo: "RDO",
+            id: "00000000-0000-4000-8000-000000000007",
+          },
+        ],
+      });
+  });
+
+  it("keeps the legacy v1 wire contract unchanged", async () => {
+    await expect(toPushMutationRequest({
+      clientMutationId: "legacy-1",
       entidadeTipo: "RDO",
+      entidadeId: "legacy-rdo",
       operacao: "CRIAR_RDO",
       baseVersao: null,
+      payload: { id: "legacy-rdo" },
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: null,
+      conflito: null,
+      criadaNoClienteEm: "2026-07-21T12:00:00.000Z",
+      updatedAt: "2026-07-21T12:00:00.000Z",
+      correlationId: "legacy-correlation",
+    })).resolves.toEqual({
+      clientMutationId: "legacy-1",
+      entidadeTipo: "RDO",
+      entidadeId: "legacy-rdo",
+      operacao: "CRIAR_RDO",
+      baseVersao: null,
+      payload: { id: "legacy-rdo" },
+      criadaNoClienteEm: "2026-07-21T12:00:00.000Z",
+      correlacaoId: "legacy-correlation",
     });
   });
 
