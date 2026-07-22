@@ -242,20 +242,19 @@ describe("polimento visual da plataforma autenticada", () => {
       globalCss.lastIndexOf("@media (max-width: 620px)"),
     );
     const floatingControls = rule(narrowCss, ".floating-controls");
-    expect(floatingControls).toContain("top: 12px;");
-    expect(floatingControls).toContain("right: 12px;");
+    expect(floatingControls).toContain("padding: 12px 12px 0;");
     expect(
       rule(
         narrowCss,
         ".home-dashboard,\n  .rdo-dashboard,\n  .obras-page",
       ),
-    ).toContain("padding-top: 84px;");
+    ).toContain("padding-top: 24px;");
 
     const tarefasNarrowCss = tarefasCss.slice(
       tarefasCss.lastIndexOf("@media (max-width: 620px)"),
     );
     expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
-      "padding-top: 84px;",
+      "padding-top: 24px;",
     );
     expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
       "padding-bottom: calc(120px + env(safe-area-inset-bottom));",
