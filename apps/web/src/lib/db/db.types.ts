@@ -179,6 +179,8 @@ interface OutboxMutationRecordBase {
   transport?: OutboxTransport;
   dependsOnMutationIds?: string[];
   correlationId?: string;
+  retryAttempt?: number;
+  lastSafeCode?: string | null;
 }
 
 export interface LegacyOutboxMutationRecord
@@ -322,6 +324,7 @@ export interface OperationalEventRecord {
   result?: CanonicalMutationResult;
   errorCategory?: string | null;
   entityVersion?: number | null;
+  serverCommitSequence?: number | null;
 }
 
 export interface CanonicalOperationalEventRecord

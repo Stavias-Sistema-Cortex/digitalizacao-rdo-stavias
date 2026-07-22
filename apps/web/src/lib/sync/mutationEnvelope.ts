@@ -246,6 +246,8 @@ export async function buildCanonicalMutation(
     },
     nextAttemptAt: null,
     blockedReason: null,
+    retryAttempt: 0,
+    lastSafeCode: null,
   };
 
   assertCanonicalTransportCoherence(mutation);

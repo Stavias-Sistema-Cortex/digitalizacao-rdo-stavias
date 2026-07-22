@@ -9,6 +9,15 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../features/auth/authSession", () => ({
   hasOnlineSession: mocks.hasOnlineSession,
 }));
+vi.mock("./syncSession", () => ({
+  captureOnlineSyncSession: () => {
+    if (!mocks.hasOnlineSession()) {
+      throw new Error("Faça login novamente para sincronizar com o servidor.");
+    }
+    return { fingerprint: "session", userId: "user" };
+  },
+  assertSyncSession: vi.fn(),
+}));
 vi.mock("../db/syncStateRepository", () => ({
   updateSyncState: mocks.updateSyncState,
 }));
@@ -27,6 +36,7 @@ vi.mock("./syncStorage", () => ({
   recoverInterruptedMutations: vi.fn(),
   repairMissingMaoObraReferencesForSync: vi.fn(),
   repairMissingObraReferencesForSync: vi.fn(),
+  resolveCanonicalUploadReplacements: vi.fn(),
 }));
 
 vi.stubGlobal("navigator", { onLine: true });

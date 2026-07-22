@@ -32,6 +32,20 @@ function mutation(
 }
 
 describe("selectReadyOutboxMutations", () => {
+  it("keeps a row in backoff out of the ready batch without blocking a new row", () => {
+    const delayed = mutation("delayed", "PENDING");
+    const independent = mutation("independent", "PENDING");
+    delayed.nextAttemptAt = "2026-07-22T12:00:10.000Z";
+
+    expect(
+      selectReadyOutboxMutations(
+        [delayed, independent],
+        10,
+        Date.parse("2026-07-22T12:00:05.000Z"),
+      ).map((item) => item.clientMutationId),
+    ).toEqual(["independent"]);
+  });
+
   it("blocks a message until every attachment upload is synced", () => {
     const upload = mutation("upload-1", "PENDING");
     upload.transport = "OBJECT_UPLOAD";

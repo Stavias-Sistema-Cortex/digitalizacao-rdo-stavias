@@ -117,6 +117,7 @@ export interface SyncRunSummary {
   pushed: number;
   applied: number;
   errors: number;
+  retryableErrors: number;
   conflicts: number;
   pulled: number;
   acknowledgedCommitSeq: number;

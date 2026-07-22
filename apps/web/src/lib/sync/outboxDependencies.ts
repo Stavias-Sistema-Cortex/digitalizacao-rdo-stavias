@@ -99,6 +99,7 @@ export function analyzeOutboxDependencies(
 export function selectReadyOutboxMutations(
   mutations: OutboxMutationRecord[],
   limit: number,
+  now = Date.now(),
 ): OutboxMutationRecord[] {
   const safeLimit = Math.max(0, Math.floor(limit));
   if (safeLimit === 0) {
@@ -123,6 +124,9 @@ export function selectReadyOutboxMutations(
         mutation.status !== "PENDING" ||
         Boolean(mutation.blockedReason) ||
         !isSyncPush(mutation) ||
+        (typeof mutation.nextAttemptAt === "string" &&
+          Number.isFinite(Date.parse(mutation.nextAttemptAt)) &&
+          Date.parse(mutation.nextAttemptAt) > now) ||
         cycles.has(mutation.clientMutationId) ||
         missingByMutation.has(mutation.clientMutationId)
       ) {

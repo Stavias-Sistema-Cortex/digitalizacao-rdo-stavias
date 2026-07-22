@@ -10,7 +10,6 @@ import {
 import {
   AUTH_SESSION_CHANGED_EVENT,
   getSession,
-  hasOnlineSession,
   isAlfa,
   setSession,
 } from "./features/auth/authSession";
@@ -22,7 +21,7 @@ import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
 import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
-import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
+import { useAppAutomaticSync } from "./appAutomaticSync";
 
 const HomePage = lazy(() =>
   import("./features/home/HomePage").then((module) => ({
@@ -143,7 +142,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     useState<OfflineVaultMetadata | null>(null);
   const [vaultChecked, setVaultChecked] = useState(false);
 
-  useAutomaticSync(hasOnlineSession());
+  useAppAutomaticSync(session);
 
   useEffect(() => {
     function refreshSession() {

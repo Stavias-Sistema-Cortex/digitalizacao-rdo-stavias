@@ -9,6 +9,12 @@ import {
   assertCanonicalPayloadHash,
   isCanonicalOutboxMutation,
 } from "../../lib/sync/mutationEnvelope";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "../../lib/sync/syncSession";
+import { mutationAfterRetryScheduled } from "../../lib/sync/automaticSyncRetryStorage";
 import { emitMessagesChanged } from "./mensagensRepository";
 
 interface StoredObjectUploadResponse {
@@ -34,13 +40,19 @@ export const CANONICAL_UPLOAD_REFERENCE_BLOCKED =
 
 export async function processObjectUploads(
   limit = 20,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<ObjectUploadSummary> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
   const candidates = (await database.getAll("outbox_mutations"))
     .filter(
       (mutation) =>
         mutation.status === "PENDING" &&
-        mutation.transport === "OBJECT_UPLOAD",
+        mutation.transport === "OBJECT_UPLOAD" &&
+        (!mutation.nextAttemptAt ||
+          !Number.isFinite(Date.parse(mutation.nextAttemptAt)) ||
+          Date.parse(mutation.nextAttemptAt) <= Date.now()),
     )
     .sort((left, right) =>
       left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
@@ -51,15 +63,19 @@ export async function processObjectUploads(
   let errors = 0;
   for (const mutation of candidates) {
     try {
-      await processOneUpload(mutation);
+      await processOneUpload(mutation, database, guard);
       applied += 1;
     } catch (error: unknown) {
+      // A session switch must never turn into a write in the new namespace.
+      assertSyncSession(guard);
       errors += 1;
       await markUploadFailed(
+        database,
         mutation,
         error instanceof Error
           ? error.message
           : "Falha desconhecida ao enviar o anexo.",
+        guard,
       );
     }
   }
@@ -71,11 +87,13 @@ export async function processObjectUploads(
 
 async function processOneUpload(
   mutation: OutboxMutationRecord,
+  database: Awaited<ReturnType<typeof getCortexDb>>,
+  guard: SyncSessionGuard,
 ): Promise<void> {
+  assertSyncSession(guard);
   if (isCanonicalOutboxMutation(mutation)) {
     await assertCanonicalPayloadHash(mutation);
   }
-  const database = await getCortexDb();
   const attachment = await database.getFromIndex(
     "mensagem_anexos",
     "by-upload-mutation-id",
@@ -126,6 +144,7 @@ async function processOneUpload(
     });
   }
   await starting.done;
+  assertSyncSession(guard);
 
   const form = new FormData();
   form.append(
@@ -147,7 +166,9 @@ async function processOneUpload(
     timeoutErrorMessage:
       "O envio do anexo demorou demais. O arquivo continua salvo neste dispositivo.",
   });
+  assertSyncSession(guard);
   const body = await readResponseBody(response);
+  assertSyncSession(guard);
   if (!response.ok) {
     throw new Error(responseErrorMessage(body, response.status));
   }
@@ -158,18 +179,22 @@ async function processOneUpload(
     attachment.tamanhoBytes,
   );
   await applyUploadedObject(
+    database,
     mutation.clientMutationId,
     uploaded.id,
     uploaded.sha256,
+    guard,
   );
 }
 
 async function applyUploadedObject(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
   uploadMutationId: string,
   objectId: string,
   sha256: string,
+  guard: SyncSessionGuard,
 ): Promise<void> {
-  const database = await getCortexDb();
+  assertSyncSession(guard);
   const transaction = database.transaction(
     ["outbox_mutations", "mensagem_anexos"],
     "readwrite",
@@ -216,6 +241,7 @@ async function applyUploadedObject(
     );
   }
   await transaction.done;
+  assertSyncSession(guard);
 }
 
 export function dependentAfterUploadResolution(
@@ -247,10 +273,12 @@ export function dependentAfterUploadResolution(
 }
 
 async function markUploadFailed(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
   mutation: OutboxMutationRecord,
   message: string,
+  guard: SyncSessionGuard,
 ): Promise<void> {
-  const database = await getCortexDb();
+  assertSyncSession(guard);
   const transaction = database.transaction(
     ["outbox_mutations", "mensagem_anexos", "mensagens"],
     "readwrite",
@@ -261,12 +289,13 @@ async function markUploadFailed(
   const messageStore = transaction.objectStore("mensagens");
   const current = await outboxStore.get(mutation.clientMutationId);
   if (current) {
-    await outboxStore.put({
-      ...current,
-      status: "ERROR",
-      ultimoErro: message,
-      updatedAt: timestamp,
-    });
+    await outboxStore.put(
+      mutationAfterRetryScheduled(current, {
+        safeCode: "UPLOAD_TRANSIENT",
+        message,
+        now: Date.parse(timestamp),
+      }),
+    );
   }
   const attachment = await attachmentStore
     .index("by-upload-mutation-id")
@@ -274,7 +303,7 @@ async function markUploadFailed(
   if (attachment) {
     await attachmentStore.put({
       ...attachment,
-      syncStatus: "FALHOU",
+      syncStatus: "NA_FILA",
       ultimoErro: message,
       updatedAt: timestamp,
     });
@@ -282,13 +311,14 @@ async function markUploadFailed(
     if (localMessage) {
       await messageStore.put({
         ...localMessage,
-        syncStatus: "FALHOU",
+        syncStatus: "NA_FILA",
         ultimoErro: message,
         updatedAt: timestamp,
       });
     }
   }
   await transaction.done;
+  assertSyncSession(guard);
 }
 
 export function resolveUploadReference(

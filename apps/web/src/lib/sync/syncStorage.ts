@@ -1,5 +1,8 @@
+import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { getCortexDb } from "../db/cortexDb";
 import type {
+  CanonicalOperationalEventRecord,
+  CanonicalOutboxMutationRecord,
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
@@ -18,7 +21,24 @@ import type {
   SyncPullEvent,
   SyncPushMutationResult,
 } from "./sync.types";
-import { isCanonicalOutboxMutation } from "./mutationEnvelope";
+import {
+  buildCanonicalMutation,
+  canonicalMutationJson,
+  isCanonicalOutboxMutation,
+} from "./mutationEnvelope";
+import {
+  classifyFieldConflict,
+  remoteSnapshotEvidence,
+} from "./fieldConflict";
+import {
+  mutationAfterRetryScheduled,
+  retryDispositionForResult,
+} from "./automaticSyncRetryStorage";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "./syncSession";
 
 function nowUtc(): string {
   return new Date().toISOString();
@@ -256,7 +276,9 @@ interface RdoChildSyncTransaction {
 }
 
 interface OperationalEventStoreUpdater {
-  index: (name: "by-rdo-id") => {
+  index: (
+    name: "by-rdo-id" | "by-client-mutation-id",
+  ) => {
     getAll: (
       query: string,
     ) => Promise<OperationalEventRecord[]>;
@@ -264,6 +286,29 @@ interface OperationalEventStoreUpdater {
   put: (
     value: OperationalEventRecord,
   ) => Promise<IDBValidKey>;
+}
+
+async function exactCanonicalEvent(
+  transaction: OperationalEventSyncTransaction,
+  clientMutationId: string,
+): Promise<CanonicalOperationalEventRecord> {
+  const events = await transaction
+    .objectStore("operational_events")
+    .index("by-client-mutation-id")
+    .getAll(clientMutationId);
+  if (events.length !== 1 || events[0].schemaVersion !== 13) {
+    throw new Error(
+      `Mutação canônica ${clientMutationId} não possui evento local único.`,
+    );
+  }
+  return events[0] as CanonicalOperationalEventRecord;
+}
+
+async function putCanonicalEvent(
+  transaction: OperationalEventSyncTransaction,
+  event: CanonicalOperationalEventRecord,
+): Promise<void> {
+  await transaction.objectStore("operational_events").put(event);
 }
 
 interface OperationalEventSyncTransaction {
@@ -543,8 +588,12 @@ async function updateRdoAttachmentsObraReference(
   );
 }
 
-export async function recoverInterruptedMutations(): Promise<void> {
+export async function recoverInterruptedMutations(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<void> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
 
   const transaction = database.transaction(
     RDO_SYNC_TRANSACTION_STORES,
@@ -559,15 +608,32 @@ export async function recoverInterruptedMutations(): Promise<void> {
     await outboxStore.index("by-status").getAll("SYNCING");
 
   for (const mutation of syncingMutations) {
+    const timestamp = nowUtc();
     const updatedMutation: OutboxMutationRecord = {
       ...mutation,
       status: "PENDING",
+      nextAttemptAt: null,
+      lastSafeCode: isCanonicalOutboxMutation(mutation)
+        ? "INTERRUPTED_RUN"
+        : mutation.lastSafeCode,
       ultimoErro:
         "Sincronização anterior foi interrompida antes da confirmação.",
-      updatedAt: nowUtc(),
+      updatedAt: timestamp,
     };
 
     await outboxStore.put(updatedMutation);
+    if (isCanonicalOutboxMutation(mutation)) {
+      const event = await exactCanonicalEvent(
+        transaction,
+        mutation.clientMutationId,
+      );
+      await putCanonicalEvent(transaction, {
+        ...event,
+        result: "PENDING",
+        syncStatus: "PENDING_SYNC",
+        errorCategory: "INTERRUPTED_RUN",
+      });
+    }
 
     const rdo = await rdoStore.get(mutation.entidadeId);
 
@@ -575,26 +641,28 @@ export async function recoverInterruptedMutations(): Promise<void> {
       await rdoStore.put({
         ...rdo,
         syncStatus: "PENDING_SYNC",
-        updatedAt: nowUtc(),
+        updatedAt: timestamp,
       });
 
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
         "PENDING_SYNC",
-        nowUtc(),
+        timestamp,
       );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "PENDING_SYNC",
-        nowUtc(),
-      );
+      if (!isCanonicalOutboxMutation(mutation)) {
+        await updateRdoOperationalEventsSyncStatus(
+          transaction,
+          mutation.entidadeId,
+          "PENDING_SYNC",
+          timestamp,
+        );
+      }
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
         "PENDING_SYNC",
-        nowUtc(),
+        timestamp,
       );
     }
 
@@ -606,13 +674,14 @@ export async function recoverInterruptedMutations(): Promise<void> {
           ...message,
           syncStatus: "NA_FILA",
           ultimoErro: updatedMutation.ultimoErro,
-          updatedAt: nowUtc(),
+          updatedAt: timestamp,
         });
       }
     }
   }
 
   await transaction.done;
+  assertSyncSession(guard);
 }
 
 export async function repairMissingObraReferencesForSync(): Promise<number> {
@@ -1157,8 +1226,11 @@ export async function queueResolvableConflictsForRetry(): Promise<number> {
 
 export async function markMutationAsSyncing(
   mutation: OutboxMutationRecord,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<void> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
 
   const transaction = database.transaction(
     RDO_SYNC_TRANSACTION_STORES,
@@ -1189,20 +1261,33 @@ export async function markMutationAsSyncing(
     );
   }
 
+  const timestamp = nowUtc();
   await outboxStore.put({
     ...currentMutation,
     status: "SYNCING",
     tentativas: currentMutation.tentativas + 1,
-    ultimaTentativaEm: nowUtc(),
+    ultimaTentativaEm: timestamp,
+    nextAttemptAt: null,
     ultimoErro: null,
-    updatedAt: nowUtc(),
+    updatedAt: timestamp,
   });
+
+  if (isCanonicalOutboxMutation(currentMutation)) {
+    const event = await exactCanonicalEvent(
+      transaction,
+      currentMutation.clientMutationId,
+    );
+    await putCanonicalEvent(transaction, {
+      ...event,
+      result: "SYNCING",
+      syncStatus: "SYNCING",
+      errorCategory: null,
+    });
+  }
 
   const rdo = await rdoStore.get(currentMutation.entidadeId);
 
   if (rdo) {
-    const timestamp = nowUtc();
-
     await rdoStore.put({
       ...rdo,
       syncStatus: "SYNCING",
@@ -1215,12 +1300,14 @@ export async function markMutationAsSyncing(
       "SYNCING",
       timestamp,
     );
-    await updateRdoOperationalEventsSyncStatus(
-      transaction,
-      currentMutation.entidadeId,
-      "SYNCING",
-      timestamp,
-    );
+    if (!isCanonicalOutboxMutation(currentMutation)) {
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        currentMutation.entidadeId,
+        "SYNCING",
+        timestamp,
+      );
+    }
     await updateRdoAttachmentsSyncStatus(
       transaction,
       currentMutation.entidadeId,
@@ -1237,12 +1324,13 @@ export async function markMutationAsSyncing(
         ...message,
         syncStatus: "SINCRONIZANDO",
         ultimoErro: null,
-        updatedAt: nowUtc(),
+        updatedAt: timestamp,
       });
     }
   }
 
   await transaction.done;
+  assertSyncSession(guard);
 }
 
 /**
@@ -1277,8 +1365,11 @@ export function rdoAfterConflict(
 
 export async function applyPushResultAtomically(
   result: SyncPushMutationResult,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<void> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
 
   const transaction = database.transaction(
     RDO_SYNC_TRANSACTION_STORES,
@@ -1308,23 +1399,43 @@ export async function applyPushResultAtomically(
       ? await messageStore.get(mutation.entidadeId)
       : undefined;
   const timestamp = nowUtc();
+  const canonicalEvent = isCanonicalOutboxMutation(mutation)
+    ? await exactCanonicalEvent(transaction, mutation.clientMutationId)
+    : null;
+  const disposition = retryDispositionForResult(result);
+  const resultVersion =
+    result.resultado &&
+    typeof result.resultado.versaoEntidade === "number"
+      ? result.resultado.versaoEntidade
+      : rdo?.versaoEntidade ?? canonicalEvent?.entityVersion ?? null;
 
   if (result.status === "APLICADA") {
     await outboxStore.put({
       ...mutation,
       status: "SYNCED",
+      retryAttempt: 0,
+      nextAttemptAt: null,
+      lastSafeCode: null,
       ultimoErro: null,
       conflito: null,
+      blockedReason: null,
       updatedAt: timestamp,
     });
 
-    if (rdo) {
-      const resultVersion =
-        result.resultado &&
-        typeof result.resultado.versaoEntidade === "number"
-          ? result.resultado.versaoEntidade
-          : rdo.versaoEntidade;
+    if (canonicalEvent) {
+      await putCanonicalEvent(transaction, {
+        ...canonicalEvent,
+        result: "SYNCED",
+        syncStatus: "SYNCED",
+        syncedAt: timestamp,
+        errorCategory: null,
+        entityVersion: resultVersion,
+        serverCommitSequence:
+          result.eventoServidorCommitSeq ?? null,
+      });
+    }
 
+    if (rdo) {
       await rdoStore.put({
         ...rdo,
         syncStatus: "SYNCED",
@@ -1338,12 +1449,14 @@ export async function applyPushResultAtomically(
         "SYNCED",
         timestamp,
       );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "SYNCED",
-        timestamp,
-      );
+      if (!canonicalEvent) {
+        await updateRdoOperationalEventsSyncStatus(
+          transaction,
+          mutation.entidadeId,
+          "SYNCED",
+          timestamp,
+        );
+      }
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
@@ -1373,15 +1486,50 @@ export async function applyPushResultAtomically(
         updatedAt: timestamp,
       });
     }
-  } else if (result.status === "DESCARTADA") {
+  } else if (
+    result.status === "DESCARTADA" ||
+    result.status === "CONFLITO"
+  ) {
+    const remote = remoteSnapshotEvidence(result.conflito);
+    const fieldResolution = canonicalEvent
+      ? classifyFieldConflict(
+          canonicalEvent.previousState,
+          canonicalEvent.newState,
+          remote,
+        )
+      : null;
+    const blockedReason = !remote.complete
+      ? "REMOTE_SNAPSHOT_UNAVAILABLE"
+      : fieldResolution && !fieldResolution.canAutoMerge
+        ? "FIELD_CONFLICT_REQUIRES_REVIEW"
+        : null;
+    const conflict = canonicalEvent
+      ? {
+          ...objectValue(result.conflito),
+          remoteSnapshotComplete: remote.complete,
+          fieldConflicts: fieldResolution?.conflicts ?? [],
+        }
+      : result.conflito ?? null;
     await outboxStore.put({
       ...mutation,
       status: "CONFLICT",
+      nextAttemptAt: null,
+      lastSafeCode: disposition.safeCode,
+      blockedReason,
       ultimoErro:
         result.erro ?? "Conflito informado pelo servidor.",
-      conflito: result.conflito ?? null,
+      conflito: conflict,
       updatedAt: timestamp,
     });
+
+    if (canonicalEvent) {
+      await putCanonicalEvent(transaction, {
+        ...canonicalEvent,
+        result: "CONFLICT",
+        syncStatus: "SYNC_FAILED",
+        errorCategory: disposition.safeCode,
+      });
+    }
 
     if (rdo) {
       await rdoStore.put(
@@ -1394,12 +1542,14 @@ export async function applyPushResultAtomically(
         "CONFLICT",
         timestamp,
       );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "SYNC_FAILED",
-        timestamp,
-      );
+      if (!canonicalEvent) {
+        await updateRdoOperationalEventsSyncStatus(
+          transaction,
+          mutation.entidadeId,
+          "SYNC_FAILED",
+          timestamp,
+        );
+      }
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
@@ -1417,45 +1567,69 @@ export async function applyPushResultAtomically(
       });
     }
   } else {
-    await outboxStore.put({
-      ...mutation,
-      status: "ERROR",
-      ultimoErro:
-        result.erro ?? "Erro informado pelo servidor.",
-      conflito: result.conflito ?? null,
-      updatedAt: timestamp,
-    });
+    const messageText = result.erro ?? "Erro informado pelo servidor.";
+    const updatedMutation: OutboxMutationRecord =
+      isCanonicalOutboxMutation(mutation) && disposition.retryable
+        ? mutationAfterRetryScheduled(mutation, {
+            safeCode: disposition.safeCode,
+            message: messageText,
+            now: Date.parse(timestamp),
+          })
+        : {
+            ...mutation,
+            status:
+              result.status === "REJEITADA" ? "REJECTED" : "ERROR",
+            nextAttemptAt: null,
+            lastSafeCode: disposition.safeCode,
+            ultimoErro: messageText,
+            conflito: result.conflito ?? null,
+            updatedAt: timestamp,
+          };
+    await outboxStore.put(updatedMutation);
+
+    if (canonicalEvent) {
+      await putCanonicalEvent(transaction, {
+        ...canonicalEvent,
+        result: disposition.retryable ? "PENDING" : "REJECTED",
+        syncStatus: disposition.retryable
+          ? "PENDING_SYNC"
+          : "SYNC_FAILED",
+        errorCategory: disposition.safeCode,
+      });
+    }
 
     if (rdo) {
       await rdoStore.put({
         ...rdo,
-        syncStatus: "ERROR",
+        syncStatus: disposition.retryable ? "PENDING_SYNC" : "ERROR",
         updatedAt: timestamp,
       });
 
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "ERROR",
+        disposition.retryable ? "PENDING_SYNC" : "ERROR",
         timestamp,
       );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "SYNC_FAILED",
-        timestamp,
-      );
+      if (!canonicalEvent) {
+        await updateRdoOperationalEventsSyncStatus(
+          transaction,
+          mutation.entidadeId,
+          disposition.retryable ? "PENDING_SYNC" : "SYNC_FAILED",
+          timestamp,
+        );
+      }
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "SYNC_FAILED",
+        disposition.retryable ? "PENDING_SYNC" : "SYNC_FAILED",
         timestamp,
       );
     }
     if (message) {
       await messageStore.put({
         ...message,
-        syncStatus: "FALHOU",
+        syncStatus: disposition.retryable ? "NA_FILA" : "FALHOU",
         ultimoErro:
           result.erro ?? "Erro informado pelo servidor.",
         updatedAt: timestamp,
@@ -1464,13 +1638,518 @@ export async function applyPushResultAtomically(
   }
 
   await transaction.done;
+  assertSyncSession(guard);
+}
+
+/**
+ * A canonical conflict is never rewritten. When the server provides a full
+ * remote snapshot and the three-way merge is disjoint, this creates a new
+ * v13 envelope whose causation points at the terminal original.
+ */
+export async function reconcileCanonicalConflict(
+  clientMutationId: string,
+  replacementMutationId = crypto.randomUUID(),
+  replacementEventId = crypto.randomUUID(),
+  occurredAt = nowUtc(),
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<CanonicalOutboxMutationRecord | null> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const original = await database.get(
+    "outbox_mutations",
+    clientMutationId,
+  );
+  if (
+    !original ||
+    !isCanonicalOutboxMutation(original) ||
+    original.status !== "CONFLICT"
+  ) {
+    return null;
+  }
+  const events = await database.getAllFromIndex(
+    "operational_events",
+    "by-client-mutation-id",
+    clientMutationId,
+  );
+  if (events.length !== 1 || events[0].schemaVersion !== 13) {
+    throw new Error(
+      `Mutação canônica ${clientMutationId} não possui evento local único.`,
+    );
+  }
+  const originalEvent = events[0] as CanonicalOperationalEventRecord;
+  const remote = remoteSnapshotEvidence(original.conflito);
+  const resolution = classifyFieldConflict(
+    originalEvent.previousState,
+    originalEvent.newState,
+    remote,
+  );
+  const serverVersion = original.conflito?.versaoAtual;
+  if (
+    !remote.complete ||
+    !remote.snapshot ||
+    !resolution.canAutoMerge ||
+    !Number.isSafeInteger(serverVersion) ||
+    (serverVersion as number) < 0 ||
+    original.operation === "CREATE"
+  ) {
+    return null;
+  }
+
+  const nextSnapshot = replacementDomainSnapshot(
+    original,
+    resolution.merged,
+    serverVersion as number,
+    occurredAt,
+  );
+  const built = await buildCanonicalMutation({
+    clientMutationId: replacementMutationId,
+    ontologyEventId: replacementEventId,
+    deviceId: original.deviceId,
+    userId: original.userId,
+    obraId: original.obraId,
+    entityType: original.entityType,
+    entityId: original.entityId,
+    operation: original.operation,
+    transportOperation: original.operacao,
+    baseVersion: serverVersion as number,
+    occurredAt,
+    previousSnapshot: remote.snapshot,
+    nextSnapshot,
+    authorizationScope: original.trace.authorizationScope,
+    correlationId: original.correlationId,
+    causationId: original.clientMutationId,
+    transport: original.transport,
+    dependsOnMutationIds: original.dependsOnMutationIds,
+    relatedEntities: original.relatedEntities,
+  });
+  assertSyncSession(guard);
+
+  const replacementEvent: CanonicalOperationalEventRecord = {
+    ...originalEvent,
+    id: built.mutation.trace.ontologyEventId,
+    occurredAt: built.mutation.occurredAt,
+    syncedAt: null,
+    origin: "OFFLINE",
+    payload: built.nextSnapshot,
+    syncStatus: "PENDING_SYNC",
+    clientMutationId: built.mutation.clientMutationId,
+    deviceId: built.mutation.deviceId,
+    correlationId: built.mutation.correlationId,
+    causationId: built.mutation.causationId,
+    previousState: built.previousSnapshot,
+    newState: built.nextSnapshot,
+    result: "PENDING",
+    errorCategory: null,
+    entityVersion: built.mutation.baseVersion,
+    serverCommitSequence: null,
+  };
+  const originalSnapshot = canonicalMutationJson(original);
+  const transaction = database.transaction(
+    [
+      "outbox_mutations",
+      "operational_events",
+      "rdos",
+      "mensagens",
+      "mensagem_conversas",
+      "mensagem_anexos",
+    ],
+    "readwrite",
+  );
+  const abortOnSessionChange = () => {
+    try {
+      assertSyncSession(guard);
+    } catch {
+      try {
+        transaction.abort();
+      } catch {
+        // The transaction may already be closed.
+      }
+    }
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener(
+      AUTH_SESSION_CHANGED_EVENT,
+      abortOnSessionChange,
+    );
+  }
+  try {
+    const current = await transaction
+      .objectStore("outbox_mutations")
+      .get(clientMutationId);
+    if (!current || canonicalMutationJson(current) !== originalSnapshot) {
+      transaction.abort();
+      throw new Error("O conflito mudou durante a reconciliação.");
+    }
+    await transaction.objectStore("outbox_mutations").add(built.mutation);
+    await transaction
+      .objectStore("operational_events")
+      .add(replacementEvent);
+    await transaction
+      .objectStore(principalStoreFor(original.entityType))
+      .put(nextSnapshot as never);
+    await transaction.done;
+    assertSyncSession(guard);
+  } finally {
+    if (typeof window !== "undefined") {
+      window.removeEventListener(
+        AUTH_SESSION_CHANGED_EVENT,
+        abortOnSessionChange,
+      );
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new Event("cortex:local-mutation-queued"),
+    );
+  }
+  return built.mutation;
+}
+
+export interface CanonicalUploadReplacementOptions {
+  replacementMutationId?: () => string;
+  replacementEventId?: () => string;
+  occurredAt?: () => string;
+}
+
+export async function resolveCanonicalUploadReplacements(
+  guard?: SyncSessionGuard,
+  options: CanonicalUploadReplacementOptions = {},
+): Promise<number> {
+  const expectedGuard = guard ?? captureOnlineSyncSession();
+  assertSyncSession(expectedGuard);
+  const database = await getCortexDb();
+  assertSyncSession(expectedGuard);
+  const all = await database.getAll("outbox_mutations");
+  let created = 0;
+
+  for (const original of all) {
+    if (
+      !isCanonicalOutboxMutation(original) ||
+      original.status !== "PENDING" ||
+      original.blockedReason !==
+        "CANONICAL_UPLOAD_REFERENCE_REQUIRES_REPLACEMENT" ||
+      all.some(
+        (candidate) =>
+          isCanonicalOutboxMutation(candidate) &&
+          candidate.causationId === original.clientMutationId,
+      )
+    ) {
+      continue;
+    }
+    assertSyncSession(expectedGuard);
+    const resolvedObjects = new Map<
+      string,
+      { objectId: string; sha256: string }
+    >();
+    for (const dependencyId of original.dependsOnMutationIds ?? []) {
+      const attachment = await database.getFromIndex(
+        "mensagem_anexos",
+        "by-upload-mutation-id",
+        dependencyId,
+      );
+      if (
+        attachment?.syncStatus === "SINCRONIZADO" &&
+        typeof attachment.objetoId === "string" &&
+        attachment.objetoId &&
+        typeof attachment.sha256 === "string" &&
+        attachment.sha256
+      ) {
+        resolvedObjects.set(dependencyId, {
+          objectId: attachment.objetoId,
+          sha256: attachment.sha256,
+        });
+      }
+    }
+    if (
+      resolvedObjects.size !==
+      (original.dependsOnMutationIds ?? []).length
+    ) {
+      continue;
+    }
+    const events = await database.getAllFromIndex(
+      "operational_events",
+      "by-client-mutation-id",
+      original.clientMutationId,
+    );
+    if (events.length !== 1 || events[0].schemaVersion !== 13) {
+      await rejectMutationLocally(
+        original.clientMutationId,
+        "LOCAL_CANONICAL_EVENT_INVALID",
+        "A mutação de anexo não possui evento local único.",
+        expectedGuard,
+      );
+      continue;
+    }
+    const originalEvent = events[0] as CanonicalOperationalEventRecord;
+    const occurredAt = (options.occurredAt ?? nowUtc)();
+    const nextSnapshot = resolveCanonicalUploadReferences(
+      original.payload,
+      resolvedObjects,
+    );
+    const replacementMutationId =
+      (options.replacementMutationId ?? crypto.randomUUID)();
+    const replacementEventId =
+      (options.replacementEventId ?? crypto.randomUUID)();
+    const built = await buildCanonicalMutation({
+      clientMutationId: replacementMutationId,
+      ontologyEventId: replacementEventId,
+      deviceId: original.deviceId,
+      userId: original.userId,
+      obraId: original.obraId,
+      entityType: original.entityType,
+      entityId: original.entityId,
+      operation: original.operation,
+      transportOperation: original.operacao,
+      baseVersion: original.baseVersion,
+      occurredAt,
+      previousSnapshot: original.payload,
+      nextSnapshot,
+      authorizationScope: original.trace.authorizationScope,
+      correlationId: original.correlationId,
+      causationId: original.clientMutationId,
+      transport: original.transport,
+      dependsOnMutationIds: [],
+      relatedEntities: original.relatedEntities,
+    });
+    assertSyncSession(expectedGuard);
+    const replacementEvent: CanonicalOperationalEventRecord = {
+      ...originalEvent,
+      id: built.mutation.trace.ontologyEventId,
+      occurredAt: built.mutation.occurredAt,
+      syncedAt: null,
+      origin: "OFFLINE",
+      payload: built.nextSnapshot,
+      syncStatus: "PENDING_SYNC",
+      clientMutationId: built.mutation.clientMutationId,
+      deviceId: built.mutation.deviceId,
+      correlationId: built.mutation.correlationId,
+      causationId: built.mutation.causationId,
+      previousState: built.previousSnapshot,
+      newState: built.nextSnapshot,
+      result: "PENDING",
+      errorCategory: null,
+      entityVersion: built.mutation.baseVersion,
+      serverCommitSequence: null,
+    };
+    const originalSnapshot = canonicalMutationJson(original);
+    const transaction = database.transaction(
+      [
+        "outbox_mutations",
+        "operational_events",
+        "rdos",
+        "mensagens",
+        "mensagem_conversas",
+        "mensagem_anexos",
+      ],
+      "readwrite",
+    );
+    const abortOnSessionChange = () => {
+      try {
+        assertSyncSession(expectedGuard);
+      } catch {
+        try {
+          transaction.abort();
+        } catch {
+          // The transaction may already be closed.
+        }
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener(
+        AUTH_SESSION_CHANGED_EVENT,
+        abortOnSessionChange,
+      );
+    }
+    try {
+      const current = await transaction
+        .objectStore("outbox_mutations")
+        .get(original.clientMutationId);
+      if (!current || canonicalMutationJson(current) !== originalSnapshot) {
+        transaction.abort();
+        throw new Error(
+          "A dependência canônica mudou durante a resolução do upload.",
+        );
+      }
+      await transaction.objectStore("outbox_mutations").put({
+        ...original,
+        status: "REJECTED",
+        nextAttemptAt: null,
+        lastSafeCode: "SUPERSEDED_BY_REPLACEMENT",
+        blockedReason: `SUPERSEDED_BY:${built.mutation.clientMutationId}`,
+        ultimoErro:
+          "Envelope substituído após a resolução rastreável do upload.",
+        updatedAt: occurredAt,
+      });
+      await transaction.objectStore("operational_events").put({
+        ...originalEvent,
+        result: "REJECTED",
+        syncStatus: "SYNC_FAILED",
+        errorCategory: "SUPERSEDED_BY_REPLACEMENT",
+      });
+      await transaction
+        .objectStore("outbox_mutations")
+        .add(built.mutation);
+      await transaction
+        .objectStore("operational_events")
+        .add(replacementEvent);
+      await transaction
+        .objectStore(principalStoreFor(original.entityType))
+        .put(nextSnapshot as never);
+      await transaction.done;
+      assertSyncSession(expectedGuard);
+      created += 1;
+    } finally {
+      if (typeof window !== "undefined") {
+        window.removeEventListener(
+          AUTH_SESSION_CHANGED_EVENT,
+          abortOnSessionChange,
+        );
+      }
+    }
+  }
+
+  if (created > 0 && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("cortex:local-mutation-queued"));
+  }
+  return created;
+}
+
+function resolveCanonicalUploadReferences(
+  payload: Readonly<Record<string, unknown>>,
+  resolved: ReadonlyMap<string, { objectId: string; sha256: string }>,
+): Record<string, unknown> {
+  function replace(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(replace);
+    if (value === null || typeof value !== "object") return value;
+    const record = value as Record<string, unknown>;
+    const uploadMutationId = record.uploadMutationId;
+    if (
+      typeof uploadMutationId === "string" &&
+      resolved.has(uploadMutationId)
+    ) {
+      const object = resolved.get(uploadMutationId)!;
+      return { objetoId: object.objectId, sha256: object.sha256 };
+    }
+    return Object.fromEntries(
+      Object.entries(record).map(([key, item]) => [key, replace(item)]),
+    );
+  }
+  return replace(payload) as Record<string, unknown>;
+}
+
+function replacementDomainSnapshot(
+  mutation: CanonicalOutboxMutationRecord,
+  merged: Record<string, unknown>,
+  serverVersion: number,
+  occurredAt: string,
+): Record<string, unknown> {
+  if (merged.id !== mutation.entityId) {
+    throw new Error("O snapshot remoto não corresponde à entidade canônica.");
+  }
+  if (
+    mutation.entityType === "RDO" &&
+    merged.obraId !== mutation.obraId
+  ) {
+    throw new Error("O snapshot remoto não corresponde à obra canônica.");
+  }
+  if (mutation.entityType === "RDO") {
+    return {
+      ...merged,
+      versaoEntidade: serverVersion,
+      syncStatus: "PENDING_SYNC",
+      updatedAt: occurredAt,
+    };
+  }
+  if (mutation.entityType === "MENSAGEM") {
+    return {
+      ...merged,
+      versaoEntidade: serverVersion,
+      syncStatus: "NA_FILA",
+      ultimoErro: null,
+      updatedAt: occurredAt,
+    };
+  }
+  if (mutation.entityType === "MENSAGEM_ANEXO") {
+    return {
+      ...merged,
+      syncStatus: "NA_FILA",
+      ultimoErro: null,
+      updatedAt: occurredAt,
+    };
+  }
+  return { ...merged };
+}
+
+function principalStoreFor(
+  entityType: string,
+): "rdos" | "mensagens" | "mensagem_conversas" | "mensagem_anexos" {
+  if (entityType === "RDO") return "rdos";
+  if (entityType === "MENSAGEM") return "mensagens";
+  if (entityType === "CONVERSA") return "mensagem_conversas";
+  if (entityType === "MENSAGEM_ANEXO") return "mensagem_anexos";
+  throw new Error(
+    `entityType ${entityType} não possui snapshot local reconciliável.`,
+  );
+}
+
+/** Quarantines one locally corrupt row without preventing independent work. */
+export async function rejectMutationLocally(
+  clientMutationId: string,
+  safeCode: string,
+  message: string,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<void> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const transaction = database.transaction(
+    ["outbox_mutations", "operational_events"],
+    "readwrite",
+  );
+  const outbox = transaction.objectStore("outbox_mutations");
+  const mutation = await outbox.get(clientMutationId);
+  if (!mutation) {
+    await transaction.done;
+    return;
+  }
+  const timestamp = nowUtc();
+  await outbox.put({
+    ...mutation,
+    status: "REJECTED",
+    nextAttemptAt: null,
+    lastSafeCode: safeCode,
+    blockedReason: safeCode,
+    ultimoErro: message,
+    updatedAt: timestamp,
+  });
+  if (isCanonicalOutboxMutation(mutation)) {
+    const eventStore = transaction.objectStore("operational_events");
+    const events = await eventStore
+      .index("by-client-mutation-id")
+      .getAll(clientMutationId);
+    if (events.length === 1 && events[0].schemaVersion === 13) {
+      await eventStore.put({
+        ...events[0],
+        result: "REJECTED",
+        syncStatus: "SYNC_FAILED",
+        errorCategory: safeCode,
+      });
+    }
+  }
+  await transaction.done;
+  assertSyncSession(guard);
 }
 
 export async function returnMutationToPending(
   clientMutationId: string,
   errorMessage: string,
+  safeCode = "NETWORK_TRANSIENT",
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<void> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
 
   const transaction = database.transaction(
     RDO_SYNC_TRANSACTION_STORES,
@@ -1491,12 +2170,32 @@ export async function returnMutationToPending(
 
   const timestamp = nowUtc();
 
-  await outboxStore.put({
-    ...mutation,
-    status: "PENDING",
-    ultimoErro: errorMessage,
-    updatedAt: timestamp,
-  });
+  const pending = isCanonicalOutboxMutation(mutation)
+    ? mutationAfterRetryScheduled(mutation, {
+        safeCode,
+        message: errorMessage,
+        now: Date.parse(timestamp),
+      })
+    : {
+        ...mutation,
+        status: "PENDING" as const,
+        ultimoErro: errorMessage,
+        updatedAt: timestamp,
+      };
+  await outboxStore.put(pending);
+
+  if (isCanonicalOutboxMutation(mutation)) {
+    const event = await exactCanonicalEvent(
+      transaction,
+      mutation.clientMutationId,
+    );
+    await putCanonicalEvent(transaction, {
+      ...event,
+      result: "PENDING",
+      syncStatus: "PENDING_SYNC",
+      errorCategory: safeCode,
+    });
+  }
 
   const rdo = await rdoStore.get(mutation.entidadeId);
 
@@ -1513,12 +2212,14 @@ export async function returnMutationToPending(
       "PENDING_SYNC",
       timestamp,
     );
-    await updateRdoOperationalEventsSyncStatus(
-      transaction,
-      mutation.entidadeId,
-      "PENDING_SYNC",
-      timestamp,
-    );
+    if (!isCanonicalOutboxMutation(mutation)) {
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+    }
     await updateRdoAttachmentsSyncStatus(
       transaction,
       mutation.entidadeId,
@@ -1540,6 +2241,7 @@ export async function returnMutationToPending(
   }
 
   await transaction.done;
+  assertSyncSession(guard);
 }
 
 function applySafeRdoEvent(
@@ -1569,8 +2271,11 @@ function applySafeRdoEvent(
 export async function applyPulledEventsAtomically(
   events: SyncPullEvent[],
   nextCommitSeq: number,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
 
   const transaction = database.transaction(
     [
@@ -1735,6 +2440,7 @@ export async function applyPulledEventsAtomically(
   });
 
   await transaction.done;
+  assertSyncSession(guard);
 
   return resultingCursor;
 }

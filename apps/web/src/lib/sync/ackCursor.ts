@@ -3,11 +3,19 @@ import {
   updateSyncState,
 } from "../db/syncStateRepository";
 import { ackCursorApi } from "./syncApiClient";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "./syncSession";
 
 export async function acknowledgeCurrentCursor(
   deviceId: string,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {
+  assertSyncSession(guard);
   const state = await getSyncState();
+  assertSyncSession(guard);
   const requestedCursor = state.lastPulledCommitSeq;
 
   if (requestedCursor <= state.lastAckedCommitSeq) {
@@ -19,6 +27,7 @@ export async function acknowledgeCurrentCursor(
     ultimoEventoRecebidoCommitSeq:
       requestedCursor,
   });
+  assertSyncSession(guard);
 
   const persistedCursor =
     typeof response.ultimoEventoRecebidoCommitSeq ===
@@ -35,6 +44,7 @@ export async function acknowledgeCurrentCursor(
   await updateSyncState({
     lastAckedCommitSeq: persistedCursor,
   });
+  assertSyncSession(guard);
 
   return persistedCursor;
 }

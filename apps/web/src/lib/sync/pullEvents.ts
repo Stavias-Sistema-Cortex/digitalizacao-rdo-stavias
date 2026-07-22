@@ -1,6 +1,11 @@
 import { getSyncState } from "../db/syncStateRepository";
 import { pullEventsApi } from "./syncApiClient";
 import { applyPulledEventsAtomically } from "./syncStorage";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "./syncSession";
 
 const PAGE_LIMIT = 100;
 const MAX_PAGES_PER_RUN = 50;
@@ -13,8 +18,11 @@ export interface PullEventsSummary {
 
 export async function pullEvents(
   deviceId: string,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<PullEventsSummary> {
+  assertSyncSession(guard);
   const initialState = await getSyncState();
+  assertSyncSession(guard);
 
   let cursor = initialState.lastPulledCommitSeq;
   let pulled = 0;
@@ -27,12 +35,15 @@ export async function pullEvents(
       deviceId,
       PAGE_LIMIT,
     );
+    assertSyncSession(guard);
 
     const newCursor =
       await applyPulledEventsAtomically(
         response.eventos,
         response.nextCommitSeq,
+        guard,
       );
+    assertSyncSession(guard);
 
     pulled += response.eventos.length;
     for (const event of response.eventos) {
