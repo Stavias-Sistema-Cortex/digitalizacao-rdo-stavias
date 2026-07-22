@@ -10,6 +10,8 @@
 - Review-fix base: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
 - Re-review boundary-coverage fix base:
   `00d1800d7e9b822674d9816675bc129914234a77`.
+- Final brand-matcher review-fix base:
+  `4417a7a40ae5673b576a4d0fcd420714e3a2e7da`.
 - Archive lineage recorded by the plan: `b9b619e`.
 - This review fix does not change frontend runtime, offline behavior, RDO
   behavior, Financeiro behavior, skills, plans, or Task 5+ implementation.
@@ -18,6 +20,9 @@
 - The re-review coverage fix changes only
   `StaviaRuntimeBoundaryTest.java` and this report. It does not change V45.1,
   readiness, archive, frontend, or any later task.
+- The final brand-matcher fix also changes only
+  `StaviaRuntimeBoundaryTest.java` and this report. All discovery scanners,
+  historical exceptions, compiled/JAR inspection, and V45.1 remain unchanged.
 
 ## Review findings addressed
 
@@ -125,7 +130,65 @@ scanned build/runtime surfaces. Compiled output allows only the four versioned
 migration resources above; no assistant fixture, Java package, route, or
 configuration is allowed.
 
+### Final corporate-brand matcher closure
+
+- Removed the permissive case-insensitive `StavIA(?!s)` suffix exception. The
+  common inspector now rejects every remaining case-insensitive `stavia`
+  occurrence after sanitizing only exact, case-sensitive approved literals.
+- Exact reference sanitization uses Unicode letter/number/underscore identifier
+  limits. An approved literal therefore cannot mask a CamelCase prefix or a
+  longer identifier such as `StaviaSnapshotService`, `StaviaSpringContextTest`,
+  `STAVIASRuntime`, or `RuntimeSTAVIAS`.
+- The exact standalone corporate mark `STAVIAS` and product description
+  `Stavias Sistema Cortex API` remain allowed. Existing concrete upstream and
+  corporate literals are enumerated rather than accepted by a generic
+  `StaviaS...` rule.
+- Approved accented product literals are compiled both in their text form and
+  in the ISO-8859-1 byte-preserving view used by the common class/JAR scanner;
+  this keeps binary inspection exact without broadening the allowlist.
+- Synthetic regressions exercise both retired names through source paths and
+  content, `target/classes` paths and content, and Spring Boot JAR-style entry
+  paths and content. Case and boundary variants are inspected independently so
+  one rejected spelling cannot mask another false negative.
+
 ## TDD evidence
+
+### Final brand-matcher RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 10 tests, 2 failures, 0 errors, 0 skipped.
+- `rejectsRetiredAssistantNamesAcrossSourceCompiledAndJarLikeSurfaces` expected
+  six path/content violations for `StaviaSnapshotService` and
+  `StaviaSpringContextTest`, but the permissive matcher returned none.
+- `rejectsUnapprovedCorporateBrandCaseAndBoundaryVariants` expected an
+  assistant-content violation for case/boundary variants, but the permissive
+  matcher returned none.
+
+### Final brand-matcher GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 10 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 743 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 743 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 again exercised the isolated V44 baseline and current
+     V44/V45/V45.1 chain.
+4. After `verify` produced the Spring Boot JAR, the boundary ran from `/tmp`
+   with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 10 tests, 0 failures/errors/skips; JAR application entries were scanned.
+
+The pre-existing Flyway warning about PostgreSQL 18.4 being newer than its
+declared tested support through PostgreSQL 16 remains unchanged.
 
 ### Re-review boundary-coverage RED
 

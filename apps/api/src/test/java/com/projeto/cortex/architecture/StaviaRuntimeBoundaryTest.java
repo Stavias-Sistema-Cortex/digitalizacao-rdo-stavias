@@ -19,7 +19,19 @@ class StaviaRuntimeBoundaryTest {
 
     private static final String ASSISTANT_NAME = "Stav" + "IA";
     private static final Pattern ASSISTANT_REFERENCE = Pattern.compile(
-            "(?i)" + ASSISTANT_NAME + "(?!s)"
+            "(?i)" + ASSISTANT_NAME
+    );
+    private static final Pattern APPROVED_REFERENCE = exactReferencePattern(
+            "Stavias Sistema Cortex API",
+            "STAVIAS_HISTORY",
+            "StaviasCortex",
+            "dbstavias_acad",
+            "dbstavias_zld",
+            "Stavias Córtex",
+            "Stavias From",
+            "Córtex Stavias",
+            "Financeiro Stavias",
+            "STAVIAS"
     );
     private static final Path THIS_TEST = Path.of(
             "apps/api/src/test/java/com/projeto/cortex/architecture/"
@@ -129,6 +141,63 @@ class StaviaRuntimeBoundaryTest {
 
         assertThat(violations)
                 .containsExactly(POSTGRESQL_BASELINE_CONTRACT + " [assistant content]");
+    }
+
+    @Test
+    void rejectsRetiredAssistantNamesAcrossSourceCompiledAndJarLikeSurfaces() {
+        List<String> violations = new ArrayList<>();
+
+        inspect("apps/api/src/main/java/example/StaviaSnapshotService.java",
+                "class StaviaSpringContextTest {}".getBytes(StandardCharsets.UTF_8),
+                violations);
+        inspect("target/classes/example/StaviaSpringContextTest.class",
+                "StaviaSnapshotService".getBytes(StandardCharsets.ISO_8859_1),
+                violations);
+        inspect("cortex-api.jar!/BOOT-INF/classes/example/StaviaSnapshotService.class",
+                "StaviaSpringContextTest".getBytes(StandardCharsets.ISO_8859_1),
+                violations);
+
+        assertThat(violations).containsExactly(
+                "apps/api/src/main/java/example/StaviaSnapshotService.java [assistant path]",
+                "apps/api/src/main/java/example/StaviaSnapshotService.java [assistant content]",
+                "target/classes/example/StaviaSpringContextTest.class [assistant path]",
+                "target/classes/example/StaviaSpringContextTest.class [assistant content]",
+                "cortex-api.jar!/BOOT-INF/classes/example/StaviaSnapshotService.class [assistant path]",
+                "cortex-api.jar!/BOOT-INF/classes/example/StaviaSnapshotService.class [assistant content]"
+        );
+    }
+
+    @Test
+    void allowsExactCorporateBrandAndProductName() {
+        List<String> violations = new ArrayList<>();
+
+        inspect("branding.txt",
+                "STAVIAS\nStavias Sistema Cortex API".getBytes(StandardCharsets.UTF_8),
+                violations);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void rejectsUnapprovedCorporateBrandCaseAndBoundaryVariants() {
+        for (String unapproved : List.of(
+                "stavias",
+                "Stavias",
+                "StAvIaS",
+                "StaviaS",
+                "STAVias",
+                "STAVIASRuntime",
+                "RuntimeSTAVIAS",
+                "PrefixStavias Sistema Cortex API",
+                "stavias Sistema Cortex API")) {
+            List<String> violations = new ArrayList<>();
+
+            inspect("branding.txt", unapproved.getBytes(StandardCharsets.UTF_8), violations);
+
+            assertThat(violations)
+                    .as("unapproved case/boundary variant %s", unapproved)
+                    .containsExactly("branding.txt [assistant content]");
+        }
     }
 
     private static List<Path> activeRelativeSourceAndLauncherFiles() throws IOException {
@@ -243,13 +312,33 @@ class StaviaRuntimeBoundaryTest {
     }
 
     private static void inspect(String displayPath, byte[] bytes, List<String> violations) {
-        if (ASSISTANT_REFERENCE.matcher(displayPath.replace('\\', '/')).find()) {
+        if (containsAssistantReference(displayPath.replace('\\', '/'))) {
             violations.add(displayPath + " [assistant path]");
         }
         String content = new String(bytes, StandardCharsets.ISO_8859_1);
-        if (ASSISTANT_REFERENCE.matcher(content).find()) {
+        if (containsAssistantReference(content)) {
             violations.add(displayPath + " [assistant content]");
         }
+    }
+
+    private static boolean containsAssistantReference(String value) {
+        String inspectedValue = APPROVED_REFERENCE.matcher(value).replaceAll("");
+        return ASSISTANT_REFERENCE.matcher(inspectedValue).find();
+    }
+
+    private static Pattern exactReferencePattern(String... references) {
+        String alternatives = String.join("|",
+                Stream.of(references)
+                        .flatMap(reference -> Stream.of(
+                                reference,
+                                new String(reference.getBytes(StandardCharsets.UTF_8),
+                                        StandardCharsets.ISO_8859_1)))
+                        .distinct()
+                        .map(Pattern::quote)
+                        .toList());
+        String identifierCharacter = "[\\p{L}\\p{N}_]";
+        return Pattern.compile("(?<!" + identifierCharacter + ")(?:"
+                + alternatives + ")(?!" + identifierCharacter + ")");
     }
 
     private static void inspectJar(Path jar, List<String> violations) throws IOException {
