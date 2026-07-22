@@ -114,6 +114,18 @@ afterEach(async () => {
 });
 
 describe("transação inicial do novo RDO", () => {
+  function canonicalContextDraft(id = RDO_ID) {
+    const draft = createEmptyRdo();
+    draft.id = id;
+    draft.obraId = OBRA_ID;
+    draft.dataRdo = "2026-07-22";
+    draft.creationContextVersion = 7;
+    draft.numeroRdo = "RDO-0021";
+    draft.contrato = "CTR-A";
+    draft.previousRdoId = SOURCE_RDO_ID;
+    return draft;
+  }
+
   async function expectNoCreateWrites(rdoId = RDO_ID) {
     const database = await getCortexDb();
     expect(await database.get("rdos", rdoId)).toBeUndefined();
@@ -620,10 +632,65 @@ describe("transação inicial do novo RDO", () => {
     await expectNoCreateWrites();
   });
 
-  it("aceita contexto stale completo e catálogos explicitamente não configurados offline", async () => {
+  it("rejeita freshness não autoritativo, ISO inválido e janela temporal impossível", async () => {
+    const invalidContexts = [
+      (() => {
+        const value = context();
+        value.freshness.status = "LOCAL_PENDING";
+        return value;
+      })(),
+      (() => {
+        const value = context();
+        value.freshness.status = "PARTIAL";
+        return value;
+      })(),
+      (() => {
+        const value = context();
+        value.freshness.status = "ARBITRARY";
+        return value;
+      })(),
+      (() => {
+        const value = context();
+        value.freshness.status = "STALE";
+        return value;
+      })(),
+      (() => {
+        const value = context();
+        value.freshness.staleAfter = value.freshness.generatedAt;
+        return value;
+      })(),
+      (() => {
+        const value = context();
+        value.freshness.staleAfter = "2026-07-22T11:59:59.999Z";
+        return value;
+      })(),
+      (() => {
+        const value = context();
+        value.freshness.generatedAt = "22/07/2026 12:00";
+        value.provenance.generatedAt = "22/07/2026 12:00";
+        return value;
+      })(),
+    ];
+
+    for (const [index, invalidContext] of invalidContexts.entries()) {
+      await putRdoCreationContext(invalidContext);
+      const draft = canonicalContextDraft(
+        `00000000-0000-4000-8000-${String(index + 38).padStart(12, "0")}`,
+      );
+
+      await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+        "Contexto versionado da obra é obrigatório para criar o RDO.",
+      );
+      await expectNoCreateWrites(draft.id);
+    }
+  });
+
+  it("deriva stale por clock de snapshot FRESH coerente e permite criação offline", async () => {
     const stale = context();
-    stale.freshness.status = "STALE";
-    stale.freshness.staleAfter = "2026-07-22T11:00:00.000Z";
+    stale.freshness.generatedAt = "2026-07-22T12:00:00.000Z";
+    stale.provenance.generatedAt = stale.freshness.generatedAt;
+    stale.freshness.staleAfter = "2026-07-22T12:15:00.000Z";
+    expect(Date.parse(stale.freshness.staleAfter)).toBeLessThan(Date.now());
     await putRdoCreationContext(stale);
     setOfflineSession({
       colaboradorId: USER_ID,
@@ -633,14 +700,7 @@ describe("transação inicial do novo RDO", () => {
       obraIds: [OBRA_ID],
       expiraEm: new Date(Date.now() + 60_000).toISOString(),
     });
-    const draft = createEmptyRdo();
-    draft.id = RDO_ID;
-    draft.obraId = OBRA_ID;
-    draft.dataRdo = "2026-07-22";
-    draft.creationContextVersion = 7;
-    draft.numeroRdo = "RDO-0021";
-    draft.contrato = "CTR-A";
-    draft.previousRdoId = SOURCE_RDO_ID;
+    const draft = canonicalContextDraft();
 
     const created = await saveNewRdoDraftAtomically(draft);
 

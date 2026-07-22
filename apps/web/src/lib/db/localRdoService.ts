@@ -135,6 +135,39 @@ function contextualText(value: string | null | undefined): string {
   return value?.trim() ?? "";
 }
 
+const CONTRACT_INSTANT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
+
+function parseContractInstant(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const match = CONTRACT_INSTANT_PATTERN.exec(value);
+  if (!match) return null;
+  const [year, month, day, hour, minute, second] = match
+    .slice(1, 7)
+    .map(Number);
+  const millisecond = Number((match[7] ?? "").padEnd(3, "0").slice(0, 3));
+  const timestamp = Date.UTC(
+    year,
+    month - 1,
+    day,
+    hour,
+    minute,
+    second,
+    millisecond,
+  );
+  const parsed = new Date(timestamp);
+  return year >= 1000 &&
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month - 1 &&
+      parsed.getUTCDate() === day &&
+      parsed.getUTCHours() === hour &&
+      parsed.getUTCMinutes() === minute &&
+      parsed.getUTCSeconds() === second &&
+      parsed.getUTCMilliseconds() === millisecond
+    ? timestamp
+    : null;
+}
+
 function hasCanonicalCreationIdentity(
   draft: RdoDraft,
   context: RdoCreationContextLookup,
@@ -162,6 +195,8 @@ function validCreationContextReceipt(
   try {
     const context = record.context as unknown as RdoCreationContextLookup;
     const { coverage, freshness, provenance } = context;
+    const generatedAt = parseContractInstant(freshness.generatedAt);
+    const staleAfter = parseContractInstant(freshness.staleAfter);
     return record.obraId === draft.obraId &&
       record.selectedDate === draft.dataRdo &&
       record.receiptVersion === draft.creationContextVersion &&
@@ -176,10 +211,12 @@ function validCreationContextReceipt(
       Number.isSafeInteger(provenance.sourceVersion) &&
       provenance.sourceVersion >= 0 &&
       provenance.sourceVersion === freshness.sourceVersion &&
+      freshness.status === "FRESH" &&
       provenance.generatedAt === freshness.generatedAt &&
       provenance.previousRdoId === (context.previousRdo?.id ?? null) &&
-      Number.isFinite(Date.parse(provenance.generatedAt)) &&
-      Number.isFinite(Date.parse(freshness.staleAfter)) &&
+      generatedAt !== null &&
+      staleAfter !== null &&
+      generatedAt < staleAfter &&
       canonicalMutationJson(record.coverage) ===
         canonicalMutationJson(coverage as unknown as Record<string, unknown>) &&
       completeCoverage(coverage.previousWorkforce) &&
