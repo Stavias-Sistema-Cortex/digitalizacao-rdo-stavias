@@ -18,7 +18,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @Service
 public class RdoContextService {
@@ -139,40 +138,34 @@ public class RdoContextService {
             Instant generatedAt,
             Instant staleAfter
     ) {
-        for (int attempt = 0; attempt < 4; attempt += 1) {
-            UUID snapshotId = UUID.randomUUID();
-            long receiptVersion = snapshotId.getMostSignificantBits() & Long.MAX_VALUE;
-            if (receiptVersion == 0) {
-                continue;
+        try {
+            Long receiptVersion = jdbcTemplate.queryForObject(
+                    """
+                    INSERT INTO rdo_creation_context_snapshot (
+                        snapshot_id, obra_id, selected_date,
+                        previous_rdo_id, source_version, payload_hash,
+                        coverage_json, generated_at, stale_after
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+                    RETURNING receipt_version
+                    """,
+                    Long.class,
+                    java.util.UUID.randomUUID().toString(),
+                    obraId,
+                    data,
+                    previousRdoId,
+                    sourceVersion,
+                    payloadHash,
+                    objectMapper.writeValueAsString(coverage),
+                    java.sql.Timestamp.from(generatedAt),
+                    java.sql.Timestamp.from(staleAfter)
+            );
+            if (receiptVersion == null || receiptVersion <= 0) {
+                throw new IllegalStateException("Receipt de contexto inválido retornado pelo PostgreSQL.");
             }
-            try {
-                jdbcTemplate.update(
-                        """
-                        INSERT INTO rdo_creation_context_snapshot (
-                            receipt_version, snapshot_id, obra_id, selected_date,
-                            previous_rdo_id, source_version, payload_hash,
-                            coverage_json, generated_at, stale_after
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
-                        """,
-                        receiptVersion,
-                        snapshotId.toString(),
-                        obraId,
-                        data,
-                        previousRdoId,
-                        sourceVersion,
-                        payloadHash,
-                        objectMapper.writeValueAsString(coverage),
-                        java.sql.Timestamp.from(generatedAt),
-                        java.sql.Timestamp.from(staleAfter)
-                );
-                return receiptVersion;
-            } catch (org.springframework.dao.DuplicateKeyException collision) {
-                // Cryptographically random receipt collision: retry with a new UUID.
-            } catch (JsonProcessingException exception) {
-                throw new IllegalStateException("Não foi possível serializar a cobertura do contexto.", exception);
-            }
+            return receiptVersion;
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Não foi possível serializar a cobertura do contexto.", exception);
         }
-        throw new IllegalStateException("Não foi possível alocar um receipt de contexto único.");
     }
 
     private RdoContextResponse.ObraContexto buscarObra(String obraId) {

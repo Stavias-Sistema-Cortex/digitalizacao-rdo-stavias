@@ -68,7 +68,7 @@ class PostgresqlRdoCreationContextIT {
     }
 
     @Test
-    void upgradeV48PreservaNumerosLegadosDuplicadosSemBloquearNovosAutoritativos() {
+    void upgradeDeV48EV49AplicadasPreservaChecksumELiberaV50() {
         try (PostgreSQLContainer<?> upgradeDatabase = new PostgreSQLContainer<>("postgres:18")
                 .withDatabaseName("cortex_rdo_v48_upgrade_it")) {
             upgradeDatabase.start();
@@ -87,6 +87,29 @@ class PostgresqlRdoCreationContextIT {
                     upgradeDatabase.getUsername(),
                     upgradeDatabase.getPassword()
             ));
+
+            Flyway.configure()
+                    .dataSource(
+                            upgradeDatabase.getJdbcUrl(),
+                            upgradeDatabase.getUsername(),
+                            upgradeDatabase.getPassword()
+                    )
+                    .locations("classpath:db/migration-postgresql")
+                    .target("49")
+                    .load()
+                    .migrate();
+
+            assertThat(upgradeJdbc.queryForObject(
+                    "SELECT count(*) FROM flyway_schema_history WHERE success AND version IN ('48', '49')",
+                    Integer.class
+            )).isEqualTo(2);
+            assertThat(upgradeJdbc.queryForObject(
+                    """
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_name = 'rdo' AND column_name = 'creation_owner_id'
+                    """,
+                    Integer.class
+            )).isZero();
             String obraId = id();
             upgradeJdbc.update(
                     "INSERT INTO obra (id, codigo_contrato, nome) VALUES (?, ?, 'Obra upgrade')",
@@ -109,6 +132,7 @@ class PostgresqlRdoCreationContextIT {
                             upgradeDatabase.getPassword()
                     )
                     .locations("classpath:db/migration-postgresql")
+                    .target("50")
                     .load()
                     .migrate();
 
@@ -122,6 +146,17 @@ class PostgresqlRdoCreationContextIT {
                     .nextNumberSuggestion()).isEqualTo("RDO-0042");
             assertThat(upgradeJdbc.queryForObject(
                     "SELECT count(*) FROM flyway_schema_history WHERE success AND version = '48'",
+                    Integer.class
+            )).isOne();
+            assertThat(upgradeJdbc.queryForObject(
+                    "SELECT count(*) FROM flyway_schema_history WHERE success AND version = '50'",
+                    Integer.class
+            )).isOne();
+            assertThat(upgradeJdbc.queryForObject(
+                    """
+                    SELECT count(*) FROM information_schema.columns
+                    WHERE table_name = 'rdo' AND column_name = 'creation_owner_id'
+                    """,
                     Integer.class
             )).isOne();
         }
@@ -186,6 +221,8 @@ class PostgresqlRdoCreationContextIT {
         assertThat(response.nextNumberSuggestion()).isEqualTo("RDO-1000");
         assertThat(response.provenance().sourceVersion()).isPositive();
         assertThat(response.provenance().receiptVersion()).isPositive();
+        assertThat(response.provenance().receiptVersion())
+                .isLessThanOrEqualTo(9_007_199_254_740_991L);
         assertThat(response.provenance().previousRdoId()).isEqualTo(anterior);
     }
 
@@ -397,6 +434,51 @@ class PostgresqlRdoCreationContextIT {
                 Long.class,
                 obraId
         )).isEqualTo(2L);
+    }
+
+    @Test
+    void mesmaMutacaoDeOwnersDiferentesCriaDoisRdosDeterministicamente()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "OWNERS-DIFERENTES");
+        String ownerA = inserirColaborador("Owner A", null, null);
+        String ownerB = inserirColaborador("Owner B", null, null);
+        vincular(ownerA, obraId, "OPERACIONAL", "ATIVO");
+        vincular(ownerB, obraId, "OPERACIONAL", "ATIVO");
+        String mutationId = id();
+        String rdoA = id();
+        String rdoB = id();
+        RdoCreateRequest requestA = request(
+                rdoA, obraId, mutationId, 1L, null, ownerA, id(), null
+        );
+        RdoCreateRequest requestB = request(
+                rdoB, obraId, mutationId, 1L, null, ownerB, id(), null
+        );
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<RdoResponse> first = executor.submit(
+                    createTask(start, service(ownerA), requestA)
+            );
+            Future<RdoResponse> second = executor.submit(
+                    createTask(start, service(ownerB), requestB)
+            );
+            start.countDown();
+
+            assertThat(List.of(first.get().id(), second.get().id()))
+                    .containsExactlyInAnyOrder(rdoA, rdoB);
+        }
+
+        assertThat(jdbc.queryForList(
+                """
+                SELECT creation_owner_id
+                FROM rdo
+                WHERE client_mutation_id = ?
+                ORDER BY creation_owner_id
+                """,
+                String.class,
+                mutationId
+        )).containsExactlyInAnyOrder(ownerA, ownerB);
     }
 
     @Test
@@ -766,6 +848,114 @@ class PostgresqlRdoCreationContextIT {
                 """,
                 equipmentId
         )).isEqualTo(beforeReplay);
+    }
+
+    @Test
+    void remocaoDeFotoInativaObjetoEFechaTodasAsArestasSemReabrirNoReplay() {
+        String obraId = id();
+        inserirObra(obraId, "FOTO-REMOVIDA");
+        String rdoId = id();
+        inserirRdo(
+                rdoId,
+                obraId,
+                "RDO-FOTO-001",
+                SELECTED_DATE,
+                "RASCUNHO",
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        );
+        String attachmentId = id();
+        jdbc.update(
+                """
+                INSERT INTO rdo_attachment (
+                    id, rdo_id, obra_id, tipo, nome, nome_original,
+                    mime_type, tamanho_original_bytes,
+                    tamanho_comprimido_bytes, tamanho_bytes, sync_status
+                ) VALUES (?, ?, ?, 'FOTO', 'frente.jpg', 'frente-original.jpg',
+                          'image/jpeg', 1024, 768, 768, 'SYNCED')
+                """,
+                attachmentId,
+                rdoId,
+                obraId
+        );
+        RdoMemoryPublisher publisher = realMemoryPublisher();
+        publisher.registrarRdoCriado(
+                rdoId, obraId, null, "RDO-FOTO-001", "RASCUNHO"
+        );
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*) FROM cortex_relacao
+                WHERE origem_tipo = 'RDO' AND origem_id = ?
+                  AND destino_tipo = 'RDO_FOTO' AND destino_id = ?
+                  AND tipo_relacao = 'POSSUI_FOTO' AND ativa = TRUE
+                """,
+                Integer.class,
+                rdoId,
+                attachmentId
+        )).isOne();
+
+        jdbc.update(
+                "UPDATE rdo_attachment SET removido_em = now() WHERE id = ?",
+                attachmentId
+        );
+        publisher.registrarRdoEditado(
+                rdoId, obraId, null, "RDO-FOTO-001", "RASCUNHO",
+                0, 1, List.of()
+        );
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT status FROM cortex_objeto
+                WHERE tipo_entidade = 'RDO_FOTO' AND entidade_id = ?
+                """,
+                String.class,
+                attachmentId
+        )).isEqualTo("INATIVO");
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*) FROM cortex_relacao
+                WHERE ativa = TRUE
+                  AND ((origem_tipo = 'RDO_FOTO' AND origem_id = ?)
+                    OR (destino_tipo = 'RDO_FOTO' AND destino_id = ?))
+                """,
+                Integer.class,
+                attachmentId,
+                attachmentId
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*) FROM cortex_relacao
+                WHERE origem_tipo = 'RDO' AND origem_id = ?
+                  AND destino_tipo = 'RDO_FOTO' AND destino_id = ?
+                  AND tipo_relacao = 'POSSUI_FOTO' AND ativa = FALSE
+                """,
+                Integer.class,
+                rdoId,
+                attachmentId
+        )).isOne();
+        Long inactiveVersion = jdbc.queryForObject(
+                """
+                SELECT versao_linha FROM cortex_objeto
+                WHERE tipo_entidade = 'RDO_FOTO' AND entidade_id = ?
+                """,
+                Long.class,
+                attachmentId
+        );
+
+        publisher.registrarRdoEditado(
+                rdoId, obraId, null, "RDO-FOTO-001", "RASCUNHO",
+                1, 2, List.of()
+        );
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT versao_linha FROM cortex_objeto
+                WHERE tipo_entidade = 'RDO_FOTO' AND entidade_id = ?
+                """,
+                Long.class,
+                attachmentId
+        )).isEqualTo(inactiveVersion);
     }
 
     @Test

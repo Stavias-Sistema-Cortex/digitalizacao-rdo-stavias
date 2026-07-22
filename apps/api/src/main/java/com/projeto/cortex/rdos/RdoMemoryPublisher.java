@@ -755,17 +755,21 @@ public class RdoMemoryPublisher {
 
     private void reconciliarFilhosRemovidos(String rdoId) {
         inativarFilhosAusentes(
-                rdoId, "RDO_MAO_OBRA", "rdo_mao_obra", "rdo_mao_obra"
+                rdoId, "RDO_MAO_OBRA", "rdo_mao_obra", "rdo_mao_obra", ""
         );
         inativarFilhosAusentes(
-                rdoId, "RDO_EQUIPAMENTO", "rdo_equipamento", "rdo_equipamento"
+                rdoId, "RDO_EQUIPAMENTO", "rdo_equipamento", "rdo_equipamento", ""
         );
         inativarFilhosAusentes(
-                rdoId, "MATERIAL_RDO", "rdo_material", "rdo_material"
+                rdoId, "MATERIAL_RDO", "rdo_material", "rdo_material", ""
         );
         inativarFilhosAusentes(
                 rdoId, "CONTROLE_GEOMETRICO", "rdo_controle_geometrico",
-                "rdo_controle_geometrico"
+                "rdo_controle_geometrico", ""
+        );
+        inativarFilhosAusentes(
+                rdoId, "RDO_FOTO", "rdo_attachment",
+                "rdo_attachment", "AND current_child.removido_em IS NULL"
         );
     }
 
@@ -773,7 +777,8 @@ public class RdoMemoryPublisher {
             String rdoId,
             String entityType,
             String entityTable,
-            String currentTable
+            String currentTable,
+            String currentPredicate
     ) {
         List<MemoryChild> removed = jdbcTemplate.query(
                 """
@@ -794,8 +799,9 @@ public class RdoMemoryPublisher {
                       FROM %s current_child
                       WHERE current_child.id = objeto.entidade_id
                         AND current_child.rdo_id = ?
+                        %s
                   )
-                """.formatted(currentTable),
+                """.formatted(currentTable, currentPredicate),
                 (rs, rowNumber) -> new MemoryChild(
                         rs.getString("entidade_id"),
                         rs.getString("codigo_externo"),

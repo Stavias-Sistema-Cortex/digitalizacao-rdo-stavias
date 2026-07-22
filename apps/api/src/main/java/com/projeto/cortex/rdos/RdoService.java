@@ -83,7 +83,7 @@ public class RdoService {
                 rdoId,
                 ownerId + ":" + clientMutationId
         );
-        RdoExistente replay = buscarReplay(clientMutationId, rdoId);
+        RdoExistente replay = buscarReplay(clientMutationId, rdoId, ownerId);
         if (replay != null) {
             if (!replay.id().equals(rdoId)
                     || !Objects.equals(replay.clientMutationId(), clientMutationId)
@@ -601,7 +601,7 @@ public class RdoService {
         bloquearCriacao(second);
     }
 
-    private RdoExistente buscarReplay(String clientMutationId, String rdoId) {
+    private RdoExistente buscarReplay(String clientMutationId, String rdoId, String ownerId) {
         return jdbcTemplate.query(
                 """
                 SELECT id, obra_id, data_rdo, previous_rdo_id,
@@ -609,7 +609,9 @@ public class RdoService {
                        creation_owner_id, creation_payload_hash
                 FROM rdo
                 WHERE id = ?
-                   OR (? IS NOT NULL AND client_mutation_id = ?)
+                   OR (? IS NOT NULL
+                       AND client_mutation_id = ?
+                       AND creation_owner_id = ?)
                 ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END
                 LIMIT 1
                 """,
@@ -628,6 +630,7 @@ public class RdoService {
                 rdoId,
                 clientMutationId,
                 clientMutationId,
+                ownerId,
                 rdoId
         );
     }
