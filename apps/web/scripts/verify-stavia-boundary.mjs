@@ -17,90 +17,110 @@ export const LEGACY_LOCAL_STORAGE_KEYS = [
 ];
 export const LEGACY_SNAPSHOT_STORE = "stavia_snapshots";
 
-const CORPORATE_SOURCE_RULES = new Map([
-  ["apps/web/index.html", [["Córtex Stavias", 1]]],
-  ["apps/web/vite.config.ts", [["Córtex Stavias", 1]]],
+const CORPORATE_SOURCE_LINES = new Map([
+  ["apps/web/index.html", ["<title>Córtex Stavias</title>"]],
+  ["apps/web/vite.config.ts", ["name: \"Córtex Stavias\","]],
   [
     "apps/web/src/components/shell/CortexShell.tsx",
     [
-      ["staviasTile", 2],
-      ["../../assets/stavias-s-tile.png", 1],
-      ["/stavias-cortex-logo.png", 1],
-      ["Stavias Córtex", 2],
+      "import staviasTile from \"../../assets/stavias-s-tile.png\";",
+      "src=\"/stavias-cortex-logo.png\"",
+      "alt=\"Stavias Córtex\"",
+      "src={staviasTile}",
+      "alt=\"Stavias Córtex\"",
     ],
   ],
   [
     "apps/web/src/features/auth/ActivationPage.tsx",
-    [["Stavias Córtex", 2]],
+    [
+      "alt=\"Stavias Córtex\"",
+      "Stavias Córtex · Ambiente institucional restrito",
+    ],
   ],
   [
     "apps/web/src/features/auth/LoginPage.css",
     [
-      ["Tela de login do Sistema Córtex (Stavias).", 1],
-      ["O amarelo Stavias fica reservado à ação e aos acentos.", 1],
+      "* Tela de login do Sistema Córtex (Stavias).",
+      "* desse card. O amarelo Stavias fica reservado à ação e aos acentos.",
     ],
   ],
   [
     "apps/web/src/features/auth/LoginPage.tsx",
     [
-      ["staviasTile", 2],
-      ["../../assets/login/stavias-canteiro.png", 1],
-      ["../../assets/stavias-s-tile.png", 1],
-      ["Stavias Córtex", 1],
-      ["alt=\"Stavias\"", 1],
-      ["© 2026 Stavias — Sistema Córtex", 1],
+      "import canteiroBackdrop from \"../../assets/login/stavias-canteiro.png\";",
+      "import staviasTile from \"../../assets/stavias-s-tile.png\";",
+      "<h1 className=\"visually-hidden\">Entrar no Stavias Córtex</h1>",
+      "src={staviasTile}",
+      "alt=\"Stavias\"",
+      "<p className=\"login__footer\">© 2026 Stavias — Sistema Córtex</p>",
     ],
   ],
   [
     "apps/web/src/features/auth/OfflineUnlockPage.tsx",
     [
-      ["staviasTile", 2],
-      ["../../assets/stavias-s-tile.png", 1],
-      ["alt=\"Stavias\"", 1],
+      "import staviasTile from \"../../assets/stavias-s-tile.png\";",
+      "src={staviasTile}",
+      "alt=\"Stavias\"",
     ],
   ],
   [
     "apps/web/src/features/home/HomePage.tsx",
-    [["MaisStaviasCard", 3]],
+    [
+      "import { MaisStaviasCard } from \"./MaisStaviasCard\";",
+      "<MaisStaviasCard />",
+    ],
   ],
   [
     "apps/web/src/features/home/MaisStaviasCard.tsx",
     [
-      ["Links externos das plataformas Stavias", 1],
-      ["STAVIAS_LINKS", 2],
-      ["Portal Stavias", 1],
-      ["https://www.stavias.com.br", 1],
-      ["Stavias Academy", 1],
-      ["https://academy.stavias.com.br", 1],
-      ["https://suporte.stavias.com.br", 1],
-      ["MaisStaviasCard", 1],
-      ["Mais Stavias", 1],
+      "// Links externos das plataformas Stavias; ajustar URLs conforme o ambiente.",
+      "const STAVIAS_LINKS: { label: string; href: string }[] = [",
+      "label: \"Portal Stavias\",",
+      "href: \"https://www.stavias.com.br\",",
+      "label: \"Stavias Academy\",",
+      "href: \"https://academy.stavias.com.br\",",
+      "href: \"https://suporte.stavias.com.br\",",
+      "export function MaisStaviasCard() {",
+      "<h3>Mais Stavias</h3>",
+      "{STAVIAS_LINKS.map((link) => (",
     ],
   ],
   [
     "apps/web/src/features/rdos/RdoLocalList.tsx",
-    [["Stavias · Sistema Córtex", 1]],
+    ["<p className=\"eyebrow\">Stavias · Sistema Córtex</p>"],
   ],
   [
     "apps/web/src/index.css",
     [
-      ["Amarelo Stavias", 1],
-      ["Modo compacto: só o tile da Stavias e os ícones dos botões.", 1],
+      "/* Amarelo Stavias = ação principal, como no \"Entrar\" do login. */",
+      "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",
     ],
   ],
   [
     "compose.production.example.yml",
     [
-      ["Stavias Córtex", 1],
-      ["authenticated Stavias From mailbox", 1],
+      "CORTEX_AUTH_WEBAUTHN_RP_NAME: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:-Stavias Córtex}",
+      "CORTEX_SMTP_FROM: ${CORTEX_SMTP_FROM:?Set the authenticated Stavias From mailbox}",
     ],
   ],
-  [".env.postgresql.example", [["StaviasCortex", 1]]],
-  ["scripts/dev/migrate-postgres-cortex.sh", [["StaviasCortex", 1]]],
-  ["scripts/dev/postgres-cortex-common.sh", [["StaviasCortex", 1]]],
-  ["scripts/smoke-deploy.sh", [["Córtex Stavias", 1]]],
+  [
+    ".env.postgresql.example",
+    ["CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex"],
+  ],
+  [
+    "scripts/dev/migrate-postgres-cortex.sh",
+    ["# Explicit transition 1/4: install V44 in an already provisioned StaviasCortex."],
+  ],
+  [
+    "scripts/dev/postgres-cortex-common.sh",
+    ["printf '%s' 'StaviasCortex'"],
+  ],
+  [
+    "scripts/smoke-deploy.sh",
+    ["request \"$BASE_URL/manifest.webmanifest\" | grep -q '\"name\":\"Córtex Stavias\"'"],
+  ],
 ]);
-export const CORPORATE_SOURCE_ALLOWLIST = new Set(CORPORATE_SOURCE_RULES.keys());
+export const CORPORATE_SOURCE_ALLOWLIST = new Set(CORPORATE_SOURCE_LINES.keys());
 export const CORPORATE_ASSET_ALLOWLIST = new Set([
   "apps/web/public/stavias-cortex-logo.png",
   "apps/web/src/assets/login/stavias-canteiro.png",
@@ -196,106 +216,67 @@ function findCorporateTokens(text) {
   }));
 }
 
-function isIdentifierCharacter(character) {
-  return typeof character === "string" && /[\p{L}\p{N}_$]/u.test(character);
-}
-
-function isCompleteApprovedOccurrence(content, index, fragment) {
-  const startsWithIdentifier = isIdentifierCharacter(fragment[0]);
-  const endsWithIdentifier = isIdentifierCharacter(fragment.at(-1));
-  if (
-    startsWithIdentifier &&
-    index > 0 &&
-    isIdentifierCharacter(content[index - 1])
-  ) {
-    return false;
-  }
-  if (!endsWithIdentifier) {
-    return true;
-  }
-
-  const afterIndex = index + fragment.length;
-  if (isIdentifierCharacter(content[afterIndex])) {
-    return false;
-  }
-  if (!/\s/.test(fragment)) {
-    return true;
-  }
-  let nextNonSpace = afterIndex;
-  while (/\s/.test(content[nextNonSpace] ?? "")) {
-    nextNonSpace += 1;
-  }
-  return !isIdentifierCharacter(content[nextNonSpace]);
-}
-
-function maskCompleteCorporateFragments(content, fragments) {
-  let masked = content;
-  for (const fragment of [...fragments].sort(
-    (left, right) => right.length - left.length,
-  )) {
-    let searchFrom = 0;
-    while (searchFrom < masked.length) {
-      const index = masked.indexOf(fragment, searchFrom);
-      if (index < 0) {
-        break;
-      }
-      if (isCompleteApprovedOccurrence(masked, index, fragment)) {
-        masked =
-          masked.slice(0, index) +
-          "#".repeat(fragment.length) +
-          masked.slice(index + fragment.length);
-      }
-      searchFrom = index + fragment.length;
-    }
-  }
-  return masked;
-}
-
 function maskAllowedCorporateSource(pathname, content, violations) {
-  const rules = CORPORATE_SOURCE_RULES.get(pathname);
-  if (!rules) {
+  const expectedLines = CORPORATE_SOURCE_LINES.get(pathname);
+  if (!expectedLines) {
     return content;
   }
 
-  for (const [fragment, expectedCount] of rules) {
-    const actualCount = occurrenceCount(content, fragment);
+  const expectedCounts = new Map();
+  for (const line of expectedLines) {
+    expectedCounts.set(line, (expectedCounts.get(line) ?? 0) + 1);
+  }
+  const actualCorporateLines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => findCorporateTokens(line).length > 0);
+  const actualCounts = new Map();
+  for (const line of actualCorporateLines) {
+    actualCounts.set(line, (actualCounts.get(line) ?? 0) + 1);
+  }
+  for (const line of new Set([...expectedCounts.keys(), ...actualCounts.keys()])) {
+    const expectedCount = expectedCounts.get(line) ?? 0;
+    const actualCount = actualCounts.get(line) ?? 0;
     if (actualCount !== expectedCount) {
       violations.push(
-        `${pathname}: corporate fragment ${JSON.stringify(fragment)} expected ${expectedCount}, found ${actualCount}`,
+        `${pathname}: corporate line ${JSON.stringify(line)} expected ${expectedCount}, found ${actualCount}`,
       );
     }
   }
-  return maskCompleteCorporateFragments(
-    content,
-    rules.map(([fragment]) => fragment),
-  );
+  return content
+    .split(/(\r?\n)/)
+    .map((line) =>
+      expectedCounts.has(line.trim()) ? "#".repeat(line.length) : line,
+    )
+    .join("");
 }
 
-const CORPORATE_DIST_FRAGMENTS = [
-  "Córtex Stavias",
-  "Stavias · Sistema Córtex",
-  "Portal Stavias",
-  "https://www.stavias.com.br",
-  "Stavias Academy",
-  "https://academy.stavias.com.br",
-  "https://suporte.stavias.com.br",
-  "Mais Stavias",
-  "/assets/stavias-canteiro-",
-  "/assets/stavias-s-tile-",
-  "/stavias-cortex-logo.png",
-  "stavias-cortex-logo.png",
-  "assets/stavias-canteiro-",
-  "assets/stavias-s-tile-",
-  "assets/stavias-logo-",
-  "Entrar no Stavias Córtex",
-  "alt:`Stavias Córtex`",
-  "alt:`Stavias`",
-  "© 2026 Stavias — Sistema Córtex",
-  "Stavias Córtex · Ambiente institucional restrito",
+const CORPORATE_DIST_PATTERNS = [
+  /<title>Córtex Stavias<\/title>/g,
+  /"name":"Córtex Stavias"/g,
+  /url:"stavias-cortex-logo\.png"/g,
+  /url:"assets\/(?:stavias-s-tile|stavias-canteiro|stavias-logo)-[A-Za-z0-9_-]+\.png"/g,
+  /`\/assets\/(?:stavias-s-tile|stavias-canteiro|stavias-logo)-[A-Za-z0-9_-]+\.png`/g,
+  /src:`\/stavias-cortex-logo\.png`/g,
+  /children:`Stavias · Sistema Córtex`/g,
+  /label:`Portal Stavias`/g,
+  /href:`https:\/\/www\.stavias\.com\.br`/g,
+  /label:`Stavias Academy`/g,
+  /href:`https:\/\/academy\.stavias\.com\.br`/g,
+  /href:`https:\/\/suporte\.stavias\.com\.br`/g,
+  /children:`Mais Stavias`/g,
+  /children:`Entrar no Stavias Córtex`/g,
+  /alt:`Stavias`/g,
+  /alt:`Stavias Córtex`/g,
+  /children:`© 2026 Stavias — Sistema Córtex`/g,
+  /children:`Stavias Córtex · Ambiente institucional restrito`/g,
 ];
 
 function maskAllowedCorporateDist(content) {
-  return maskCompleteCorporateFragments(content, CORPORATE_DIST_FRAGMENTS);
+  return CORPORATE_DIST_PATTERNS.reduce(
+    (masked, pattern) => masked.replace(pattern, "[approved-corporate-brand]"),
+    content,
+  );
 }
 
 export function inspectDistCorporateContent(content) {
@@ -450,7 +431,7 @@ export function inspectLegacySource(files) {
     }
     const remainingReferences = file.content
       .replace(
-        /import\s*\{\s*clearUserScopedLocalStorage\s*\}\s*from\s*["'][^"']+["']\s*;?/g,
+        /import\s*\{\s*clearUserScopedLocalStorage\s*\}\s*from\s*["'][^"']*localDataScope(?:\.[cm]?[jt]sx?)?["']\s*;?/g,
         "[approved-cleanup-import]",
       )
       .replace(
@@ -460,6 +441,11 @@ export function inspectLegacySource(files) {
     if (/\bclearUserScopedLocalStorage\b/.test(remainingReferences)) {
       violations.push(
         `${file.path}: cleanup function may only be imported by name and called without arguments`,
+      );
+    }
+    if (/localDataScope|clearUserScoped/i.test(remainingReferences)) {
+      violations.push(
+        `${file.path}: cleanup module and symbol may not be referenced through computed or facade access`,
       );
     }
   }
@@ -590,14 +576,18 @@ function tokenSequenceInvokesViteBuild(tokens) {
     return viteIndex >= 0 && tokens.slice(viteIndex + 1).includes("build");
 }
 
-function invokesViteBuild(command) {
+function invokesViteBuild(command, seen = new Set()) {
+  if (seen.has(command)) {
+    return false;
+  }
+  seen.add(command);
   return tokenizeShellCommands(command).some(
     (tokens) =>
       tokenSequenceInvokesViteBuild(tokens) ||
       tokens.some(
         (tokenValue) =>
           /\s/.test(tokenValue) &&
-          tokenizeShellCommands(tokenValue).some(tokenSequenceInvokesViteBuild),
+          invokesViteBuild(tokenValue, seen),
       ),
   );
 }

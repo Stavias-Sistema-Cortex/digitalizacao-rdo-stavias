@@ -280,13 +280,17 @@ describe("StavIA runtime boundary", () => {
     }
     expect(
       inspectDistCorporateContent(
-        "Portal Stavias, https://www.stavias.com.br; Mais Stavias.",
+        "label:`Portal Stavias`,href:`https://www.stavias.com.br`,children:`Mais Stavias`",
       ),
     ).toEqual([]);
     for (const extendedApprovedFragment of [
       "AgentPortal Stavias",
       "Portal StaviasAgent",
       "Entrar no Stavias Córtex Assistant",
+      "Portal Stavias-Assistant",
+      "Portal Stavias—Assistant",
+      "Assistant Portal Stavias",
+      "Assistant—Portal Stavias",
     ]) {
       expect(
         inspectDistCorporateContent(extendedApprovedFragment),
@@ -300,10 +304,10 @@ describe("StavIA runtime boundary", () => {
       path.join(WEB_ROOT, "src/features/home/HomePage.tsx"),
       "utf8",
     );
-    const activationPage = readFileSync(
+    const originalActivationPage = readFileSync(
       path.join(WEB_ROOT, "src/features/auth/ActivationPage.tsx"),
       "utf8",
-    ).replace("Stavias Córtex", "Stavias Córtex Assistant");
+    );
 
     for (const extendedIdentifier of [
       "MaisStaviasCardAgent",
@@ -323,15 +327,27 @@ describe("StavIA runtime boundary", () => {
         extendedIdentifier,
       ).not.toEqual([]);
     }
-    expect(
-      inspectSourceBoundary([
-        ...validCleanupFixtures(),
-        {
-          path: "apps/web/src/features/auth/ActivationPage.tsx",
-          content: activationPage,
-        },
-      ]),
-    ).not.toEqual([]);
+    for (const extendedCopy of [
+      "Stavias Córtex Assistant",
+      "Stavias Córtex-Assistant",
+      "Stavias Córtex—Assistant",
+      "Assistant Stavias Córtex",
+      "Assistant—Stavias Córtex",
+    ]) {
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          {
+            path: "apps/web/src/features/auth/ActivationPage.tsx",
+            content: originalActivationPage.replace(
+              "Stavias Córtex",
+              extendedCopy,
+            ),
+          },
+        ]),
+        extendedCopy,
+      ).not.toEqual([]);
+    }
 
   });
 
@@ -390,6 +406,25 @@ describe("StavIA runtime boundary", () => {
         },
       ]),
     ).not.toEqual([]);
+
+    for (const computedModuleLoad of [
+      String.raw`await import(\`./lib/db/localDataScope\`)`,
+      `await import("./lib/db/localDataScope.js")`,
+      String.raw`require(\`./lib/db/localDataScope\`)`,
+      `require("./lib/db/" + "localDataScope")`,
+      `export * from "./localDataScope"; const cleanup = scope["clearUserScoped" + "LocalStorage"]; cleanup();`,
+    ]) {
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          {
+            path: "apps/web/src/active-regression.ts",
+            content: computedModuleLoad,
+          },
+        ]),
+        computedModuleLoad,
+      ).not.toEqual([]);
+    }
   });
 
   it("rejects cleanup callers that can capture private legacy keys", () => {
@@ -513,6 +548,8 @@ describe("StavIA runtime boundary", () => {
       `vite --define 'process.env.X="a;b"' build`,
       `vite --define "process.env.X=a|b" build`,
       `sh -c 'vite --mode production build'`,
+      `sh -c "bash -c 'vite --mode production build'"`,
+      `bash -c "sh -c 'vite --mode production build'"`,
     ]) {
       expect(
         inspectPackageBuildScripts({ unsafe: unsafeCommand }),

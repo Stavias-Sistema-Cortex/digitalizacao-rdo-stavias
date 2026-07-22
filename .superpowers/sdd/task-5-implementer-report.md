@@ -139,19 +139,17 @@ variants. Plain plural `Stavias` branding is then evaluated by the exact
 corporate policy below.
 
 The occurrence-policy pass removes the former role blacklist/file-level
-exception. Every legitimate corporate occurrence is now an exact fragment with
-an exact count in its specific source path: company copy, domains, asset names,
-`MaisStaviasCard`, and `STAVIAS_LINKS`. After those fragments are masked, any
-remaining plural occurrence is rejected. This fails closed for both known and
-future role words, including `StaviasAgent`, `StaviasCopilot`,
-`StaviasResponse`, `StaviasAIChat`, `StaviasRuntimeProvider`,
-`useStaviasCortexLauncher`, and `Stavias Runtime Provider`. Generated text uses
-the same principle with exact artifact-safe fragments, while generated paths
-retain their exact asset allowlist. Unapproved source, asset, and compiled
-occurrences are rejected. Approved fragments are masked only as complete
-identifiers or phrases: prefix/suffix extensions such as
-`AgentMaisStaviasCard`, `MaisStaviasCardAgent`, `Portal StaviasAgent`, and
-`Stavias Córtex Assistant` remain visible to the fail-closed scan.
+exception. Every legitimate source occurrence is now an exact trimmed source
+line with an exact per-path count: company copy, domains, asset imports,
+`MaisStaviasCard`, and `STAVIAS_LINKS`. Any prefix, suffix, punctuation, copy,
+or identifier change invalidates the whole line before masking. Generated text
+uses complete syntactic patterns such as an exact `label`, `href`, `alt`,
+`children`, manifest field, HTML title, or hashed corporate asset reference;
+generated paths retain their exact asset allowlist. This fails closed for both
+known and future role words, including plain, Unicode, punctuation-delimited,
+and approved-prefix variants such as `StaviasAgent`, `Portal Stavias—Assistant`,
+`Assistant Stavias Córtex`, `AgentMaisStaviasCard`, and
+`MaisStaviasCardAgent`.
 
 Legacy identifiers are now audited across the complete scanned source set
 before they are masked for assistant-token inspection. Each localStorage key
@@ -185,8 +183,11 @@ keys. The executable verifier requires the fixed declaration and
 additional consumer of its symbol, and permits consumers only as an exact named
 import followed by a zero-argument call. Export aliases, function aliases, and
 callback arguments fail the gate. Namespace, dynamic, and CommonJS loading of
-the cleanup module are rejected as well, preventing computed-property aliases.
-SSR retains the explicit no-op path.
+the cleanup module are rejected as well. After the sole exact named import and
+zero-argument call are masked, any remaining `localDataScope` or
+`clearUserScoped` fragment fails, covering template literals, `.js` dynamic
+imports, concatenated CommonJS paths, re-export facades, and computed-property
+aliases. SSR retains the explicit no-op path.
 
 All `build`/`build:*` package scripts and every raw Vite build invocation now
 must end in the mandatory
@@ -195,8 +196,9 @@ inspector recognizes options before the Vite command, including
 `vite --mode production build`, `vite --config vite.config.ts build`, and a
 line-broken command. Its shell tokenizer preserves quoted metacharacters, so
 `vite --define 'process.env.X="a;b"' build` cannot escape by looking like two
-commands; nested `sh -c 'vite ... build'` is also inspected. Appending anything
-after the verifier is rejected.
+commands. Nested `sh -c`/`bash -c` command values are inspected recursively
+with a visited-command set, so multiple wrapper levels cannot hide a raw Vite
+build. Appending anything after the verifier is rejected.
 
 ## Responsive geometry evidence
 
