@@ -622,7 +622,6 @@ public class RdoImportacaoHistoricaService {
                         text(payload, "localizacao"),
                         turno,
                         "REGISTRADA",
-                        decimal(payload, "custoRealizado"),
                         false,
                         false,
                         text(payload, "observacoes")

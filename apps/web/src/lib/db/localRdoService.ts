@@ -477,41 +477,84 @@ function buildEquipamentoPayload(
 function buildServicoExecutadoPayload(
   item: ServicoExecutadoDraft,
 ) {
-  const base = removeLocalId(item);
-
   return {
-    ...base,
     id: item.localId,
+    servicoNome: item.servicoNome,
     itemContratualId: nullIfEmpty(
-      base.itemContratualId,
+      item.itemContratualId,
     ),
-    unidade: nullIfEmpty(base.unidade),
-    trechoInicial: nullIfEmpty(base.trechoInicial),
-    trechoFinal: nullIfEmpty(base.trechoFinal),
-    localizacao: nullIfEmpty(base.localizacao),
-    turno: nullIfEmpty(base.turno),
-    observacoes: nullIfEmpty(base.observacoes),
+    quantidadeExecutada: item.quantidadeExecutada,
+    unidade: nullIfEmpty(item.unidade),
+    trechoInicial: nullIfEmpty(item.trechoInicial),
+    trechoFinal: nullIfEmpty(item.trechoFinal),
+    localizacao: nullIfEmpty(item.localizacao),
+    turno: nullIfEmpty(item.turno),
+    statusValidacao: item.statusValidacao,
+    retrabalho: item.retrabalho,
+    producaoRejeitada: item.producaoRejeitada,
+    observacoes: nullIfEmpty(item.observacoes),
   };
 }
 
 function buildAlocacaoPayload(
   item: AlocacaoColaboradorDraft,
 ) {
-  const base = removeLocalId(item);
-
   return {
-    ...base,
     id: item.localId,
-    colaboradorId: nullIfEmpty(base.colaboradorId),
-    equipe: nullIfEmpty(base.equipe),
-    servicoNome: nullIfEmpty(base.servicoNome),
-    horaInicio: nullIfEmpty(base.horaInicio),
-    horaFim: nullIfEmpty(base.horaFim),
-    turno: nullIfEmpty(base.turno),
-    funcao: nullIfEmpty(base.funcao),
-    centroCusto: nullIfEmpty(base.centroCusto),
-    fonte: nullIfEmpty(base.fonte),
-    observacoes: nullIfEmpty(base.observacoes),
+    colaboradorId: nullIfEmpty(item.colaboradorId),
+    equipe: nullIfEmpty(item.equipe),
+    servicoNome: nullIfEmpty(item.servicoNome),
+    horaInicio: nullIfEmpty(item.horaInicio),
+    horaFim: nullIfEmpty(item.horaFim),
+    percentualDia: item.percentualDia,
+    turno: nullIfEmpty(item.turno),
+    funcao: nullIfEmpty(item.funcao),
+    centroCusto: nullIfEmpty(item.centroCusto),
+    tipoAlocacao: item.tipoAlocacao,
+    fonte: nullIfEmpty(item.fonte),
+    status: item.status,
+    observacoes: nullIfEmpty(item.observacoes),
+  };
+}
+
+function buildServicoExecutadoLocalPayload(
+  item: ServicoExecutadoDraft,
+): ServicoExecutadoDraft {
+  return {
+    localId: item.localId,
+    servicoNome: item.servicoNome,
+    itemContratualId: item.itemContratualId,
+    quantidadeExecutada: item.quantidadeExecutada,
+    unidade: item.unidade,
+    trechoInicial: item.trechoInicial,
+    trechoFinal: item.trechoFinal,
+    localizacao: item.localizacao,
+    turno: item.turno,
+    statusValidacao: item.statusValidacao,
+    retrabalho: item.retrabalho,
+    producaoRejeitada: item.producaoRejeitada,
+    observacoes: item.observacoes,
+  };
+}
+
+function buildAlocacaoLocalPayload(
+  item: AlocacaoColaboradorDraft,
+): AlocacaoColaboradorDraft {
+  return {
+    localId: item.localId,
+    colaboradorId: item.colaboradorId,
+    equipe: item.equipe,
+    servicoNome: item.servicoNome,
+    horaInicio: item.horaInicio,
+    horaFim: item.horaFim,
+    percentualDia: item.percentualDia,
+    turno: item.turno,
+    funcao: item.funcao,
+    centroCusto: item.centroCusto,
+    tipoAlocacao: item.tipoAlocacao,
+    fonte: item.fonte,
+    status: item.status,
+    observacoes: item.observacoes,
   };
 }
 
@@ -753,9 +796,11 @@ function buildRdoLocalPayload(
     apontadorRdo: draft.apontadorRdo,
     encarregadoObra: draft.encarregadoObra,
     fiscalizacaoCampo: draft.fiscalizacaoCampo,
-    servicosExecutados: draft.servicosExecutados,
+    servicosExecutados: draft.servicosExecutados.map(
+      buildServicoExecutadoLocalPayload,
+    ),
     alocacoesColaboradores:
-      draft.alocacoesColaboradores,
+      draft.alocacoesColaboradores.map(buildAlocacaoLocalPayload),
     maoObra: draft.maoObra,
     equipamentos: draft.equipamentos,
     materiais: draft.materiais,

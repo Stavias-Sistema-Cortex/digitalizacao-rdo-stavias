@@ -189,7 +189,6 @@ function mapServicosExecutados(
         item.statusValidacao,
         empty.statusValidacao,
       ) as ServicoExecutadoDraft["statusValidacao"],
-      custoRealizado: asNumericInput(item.custoRealizado),
       retrabalho: item.retrabalho === true,
       producaoRejeitada: item.producaoRejeitada === true,
       observacoes: asString(item.observacoes),
@@ -228,7 +227,6 @@ function mapAlocacoesColaboradores(
         item.status,
         empty.status,
       ) as AlocacaoColaboradorDraft["status"],
-      custoHora: asNumericInput(item.custoHora),
       observacoes: asString(item.observacoes),
     };
   });

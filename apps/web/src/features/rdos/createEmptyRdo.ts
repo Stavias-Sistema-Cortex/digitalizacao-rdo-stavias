@@ -73,7 +73,6 @@ export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
     localizacao: "",
     turno: "",
     statusValidacao: "",
-    custoRealizado: "",
     retrabalho: false,
     producaoRejeitada: false,
     observacoes: "",
@@ -95,7 +94,6 @@ export function createEmptyAlocacaoColaborador(): AlocacaoColaboradorDraft {
     tipoAlocacao: "",
     fonte: "",
     status: "",
-    custoHora: "",
     observacoes: "",
   };
 }

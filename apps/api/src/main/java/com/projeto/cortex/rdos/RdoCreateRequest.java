@@ -130,7 +130,6 @@ public record RdoCreateRequest(
             String localizacao,
             String turno,
             String statusValidacao,
-            BigDecimal custoRealizado,
             Boolean retrabalho,
             Boolean producaoRejeitada,
             String observacoes
@@ -151,7 +150,6 @@ public record RdoCreateRequest(
             String tipoAlocacao,
             String fonte,
             String status,
-            BigDecimal custoHora,
             String observacoes
     ) {
     }

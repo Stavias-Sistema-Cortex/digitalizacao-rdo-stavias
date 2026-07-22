@@ -136,7 +136,6 @@ public record RdoResponse(
             String statusValidacao,
             String estadoReceita,
             BigDecimal receitaOperacionalEstimativa,
-            BigDecimal custoRealizado,
             boolean retrabalho,
             boolean producaoRejeitada,
             String observacoes
@@ -158,8 +157,6 @@ public record RdoResponse(
             String tipoAlocacao,
             String fonte,
             String status,
-            BigDecimal custoHora,
-            BigDecimal custoTotal,
             String observacoes
     ) {
     }

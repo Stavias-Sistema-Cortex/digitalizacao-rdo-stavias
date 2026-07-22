@@ -1473,7 +1473,7 @@ export function RdoCreatePage({
       <section className="form-card">
         <CollectionHeader
           title="Serviços executados"
-          description="Serviços, quantidades, item contratual e custo realizado."
+          description="Serviços, quantidades e item contratual executado."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -1641,19 +1641,6 @@ export function RdoCreatePage({
                     </option>
                   </select>
                 </label>
-
-                <NumericField
-                  label="Custo realizado"
-                  value={item.custoRealizado}
-                  onChange={(value) =>
-                    updateServicoExecutado(
-                      item.localId,
-                      {
-                        custoRealizado: value,
-                      },
-                    )
-                  }
-                />
 
                 <label>
                   Trecho inicial
@@ -2069,18 +2056,6 @@ export function RdoCreatePage({
                   </select>
                 </label>
 
-                <NumericField
-                  label="Custo/hora"
-                  value={item.custoHora}
-                  onChange={(value) =>
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        custoHora: value,
-                      },
-                    )
-                  }
-                />
               </div>
 
               <label className="full-width">

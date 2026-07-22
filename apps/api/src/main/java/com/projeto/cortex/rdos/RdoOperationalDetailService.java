@@ -159,7 +159,6 @@ public class RdoOperationalDetailService {
                     status_validacao,
                     estado_receita,
                     receita_operacional_estimativa,
-                    custo_realizado,
                     retrabalho,
                     producao_rejeitada,
                     observacoes
@@ -181,7 +180,6 @@ public class RdoOperationalDetailService {
                         rs.getString("status_validacao"),
                         rs.getString("estado_receita"),
                         rs.getBigDecimal("receita_operacional_estimativa"),
-                        rs.getBigDecimal("custo_realizado"),
                         rs.getBoolean("retrabalho"),
                         rs.getBoolean("producao_rejeitada"),
                         rs.getString("observacoes")
@@ -210,8 +208,6 @@ public class RdoOperationalDetailService {
                     tipo_alocacao,
                     fonte,
                     status,
-                    custo_hora,
-                    custo_total,
                     observacoes
                 FROM alocacao_colaborador
                 WHERE rdo_id = ?
@@ -233,8 +229,6 @@ public class RdoOperationalDetailService {
                         rs.getString("tipo_alocacao"),
                         rs.getString("fonte"),
                         rs.getString("status"),
-                        rs.getBigDecimal("custo_hora"),
-                        rs.getBigDecimal("custo_total"),
                         rs.getString("observacoes")
                 ),
                 rdoId
@@ -301,8 +295,6 @@ public class RdoOperationalDetailService {
                     Boolean.TRUE.equals(item.retrabalho());
             boolean producaoRejeitada =
                     Boolean.TRUE.equals(item.producaoRejeitada());
-            BigDecimal custoRealizado =
-                    dinheiro(item.custoRealizado());
 
             String id = idOuNovo(item.id(), "servicosExecutados.id");
             String chaveExecucao =
@@ -339,13 +331,12 @@ public class RdoOperationalDetailService {
                         status_validacao,
                         estado_receita,
                         receita_operacional_estimativa,
-                        custo_realizado,
                         retrabalho,
                         producao_rejeitada,
                         fonte,
                         chave_execucao,
                         observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     id,
                     rdoId,
@@ -363,7 +354,6 @@ public class RdoOperationalDetailService {
                     statusValidacao,
                     estadoReceita,
                     receita,
-                    custoRealizado,
                     retrabalho,
                     producaoRejeitada,
                     "RDO",
@@ -379,8 +369,7 @@ public class RdoOperationalDetailService {
                     item.servicoNome(),
                     itemContratual,
                     statusValidacao,
-                    receita,
-                    custoRealizado
+                    receita
             );
 
             response.add(new RdoResponse.ServicoExecutadoItem(
@@ -396,7 +385,6 @@ public class RdoOperationalDetailService {
                     statusValidacao,
                     estadoReceita,
                     receita,
-                    custoRealizado,
                     retrabalho,
                     producaoRejeitada,
                     item.observacoes()
@@ -433,10 +421,6 @@ public class RdoOperationalDetailService {
                     normalizarTipoAlocacao(item.tipoAlocacao());
             String status =
                     normalizarStatusAlocacao(item.status());
-            BigDecimal custoHora =
-                    dinheiro4(item.custoHora());
-            BigDecimal custoTotal =
-                    custoTotal(custoHora, intervalo.minutos());
 
             validarSemSobreposicao(
                     rdoId,
@@ -493,11 +477,9 @@ public class RdoOperationalDetailService {
                         tipo_alocacao,
                         fonte,
                         status,
-                        custo_hora,
-                        custo_total,
                         observacoes,
                         chave_alocacao
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     id,
                     colaborador.id(),
@@ -517,8 +499,6 @@ public class RdoOperationalDetailService {
                     tipoAlocacao,
                     primeiroNaoVazio(item.fonte(), "RDO"),
                     status,
-                    custoHora,
-                    custoTotal,
                     item.observacoes(),
                     chaveAlocacao
             );
@@ -534,8 +514,7 @@ public class RdoOperationalDetailService {
                     item.funcao(),
                     tipoAlocacao,
                     status,
-                    intervalo.minutos(),
-                    custoTotal
+                    intervalo.minutos()
             );
 
             response.add(new RdoResponse.AlocacaoColaboradorItem(
@@ -553,8 +532,6 @@ public class RdoOperationalDetailService {
                     tipoAlocacao,
                     primeiroNaoVazio(item.fonte(), "RDO"),
                     status,
-                    custoHora,
-                    custoTotal,
                     item.observacoes()
             ));
         }
@@ -918,17 +895,6 @@ public class RdoOperationalDetailService {
         return status;
     }
 
-    private BigDecimal custoTotal(BigDecimal custoHora, int minutos) {
-        if (custoHora == null) {
-            return null;
-        }
-
-        return dinheiro(
-                custoHora.multiply(BigDecimal.valueOf(minutos))
-                        .divide(BigDecimal.valueOf(60), 6, RoundingMode.HALF_UP)
-        );
-    }
-
     private void registrarServicoNaMemoria(
             String execucaoId,
             String rdoId,
@@ -937,8 +903,7 @@ public class RdoOperationalDetailService {
             String servicoNome,
             ItemContratualDados itemContratual,
             String statusValidacao,
-            BigDecimal receita,
-            BigDecimal custo
+            BigDecimal receita
     ) {
         ServicoCatalogado servico = servicoCatalogado(servicoNome);
 
@@ -1040,7 +1005,6 @@ public class RdoOperationalDetailService {
         payload.put("servicoNome", servico.nome());
         payload.put("statusValidacao", statusValidacao);
         payload.put("receitaOperacionalEstimativa", receita);
-        payload.put("custoRealizado", custo);
 
         memoryService.registrarEvento(
                 "EXECUCAO_SERVICO_RDO",
@@ -1063,8 +1027,7 @@ public class RdoOperationalDetailService {
             String funcao,
             String tipoAlocacao,
             String status,
-            int minutos,
-            BigDecimal custoTotal
+            int minutos
     ) {
         memoryService.registrarObjeto(
                 "COLABORADOR",
@@ -1177,7 +1140,6 @@ public class RdoOperationalDetailService {
         payload.put("tipoAlocacao", tipoAlocacao);
         payload.put("status", status);
         payload.put("minutos", minutos);
-        payload.put("custoTotal", custoTotal);
 
         memoryService.registrarEvento(
                 "ALOCACAO_COLABORADOR",
@@ -1297,10 +1259,6 @@ public class RdoOperationalDetailService {
 
     private BigDecimal dinheiro(BigDecimal value) {
         return value == null ? null : value.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private BigDecimal dinheiro4(BigDecimal value) {
-        return value == null ? null : value.setScale(4, RoundingMode.HALF_UP);
     }
 
     private String sha256(String value) {

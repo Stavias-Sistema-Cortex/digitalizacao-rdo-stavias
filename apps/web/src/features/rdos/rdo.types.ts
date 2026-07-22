@@ -103,7 +103,6 @@ export interface ServicoExecutadoDraft {
   localizacao: string;
   turno: "" | TurnoRdo;
   statusValidacao: "" | "REGISTRADA" | "VALIDADA" | "REJEITADA";
-  custoRealizado: NumericInput;
   retrabalho: boolean;
   producaoRejeitada: boolean;
   observacoes: string;
@@ -132,7 +131,6 @@ export interface AlocacaoColaboradorDraft {
     | "OUTRO";
   fonte: string;
   status: "" | "REGISTRADA" | "VALIDADA" | "CONFLITO";
-  custoHora: NumericInput;
   observacoes: string;
 }
 
