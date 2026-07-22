@@ -116,6 +116,118 @@ public class PostgresqlServiceCatalogOntologyPublisher
     }
 
     @Override
+    public void priceVersionSuperseded(
+            ServicePriceVersion predecessor,
+            ServicePriceVersion replacement,
+            ServiceCatalogEntry service,
+            String actorId,
+            String clientMutationId
+    ) {
+        memory.registrarObjeto(
+                "SERVICE", service.id(), service.code(), service.name(),
+                service.status(), SOURCE, "catalogo_servico", Map.of()
+        );
+        memory.registrarObjeto(
+                "SERVICE_PRICE_VERSION",
+                predecessor.id(),
+                null,
+                priceName(service, predecessor),
+                "SUPERSEDED",
+                SOURCE,
+                "service_price_version",
+                Map.of()
+        );
+        memory.registrarObjeto(
+                "SERVICE_PRICE_VERSION",
+                replacement.id(),
+                null,
+                priceName(service, replacement),
+                "ACTIVE",
+                SOURCE,
+                "service_price_version",
+                Map.of()
+        );
+        memory.registrarRelacaoAtiva(
+                "SERVICE", service.id(),
+                "SERVICE_PRICE_VERSION", predecessor.id(),
+                "PRICED_BY", SOURCE,
+                "Preço versionado por obra, unidade e moeda."
+        );
+        memory.registrarRelacaoAtiva(
+                "SERVICE", service.id(),
+                "SERVICE_PRICE_VERSION", replacement.id(),
+                "PRICED_BY", SOURCE,
+                "Preço versionado por obra, unidade e moeda."
+        );
+        memory.registrarRelacaoAtiva(
+                "SERVICE_PRICE_VERSION", replacement.id(),
+                "SERVICE_PRICE_VERSION", predecessor.id(),
+                "SUPERSEDES", SOURCE,
+                "Nova versão substitui temporalmente a versão anterior."
+        );
+        memory.registrarRelacaoAtiva(
+                "SERVICE_PRICE_VERSION", replacement.id(),
+                "WORKSITE", replacement.obraId(),
+                "BELONGS_TO_WORKSITE", SOURCE,
+                "Preço autorizado exclusivamente no escopo da obra."
+        );
+
+        Map<String, Object> predecessorState = new LinkedHashMap<>();
+        predecessorState.put("priceVersionId", predecessor.id());
+        predecessorState.put("serviceId", service.id());
+        predecessorState.put("serviceName", service.name());
+        predecessorState.put("worksiteId", predecessor.obraId());
+        predecessorState.put("status", "SUPERSEDED");
+        predecessorState.put("supersededById", replacement.id());
+        publish(
+                "SERVICE_PRICE_VERSION_SUPERSEDED",
+                "SERVICE_PRICE_VERSION",
+                predecessor.id(),
+                predecessor.obraId(),
+                actorId,
+                clientMutationId,
+                List.of(
+                        Map.of("tipo", "SERVICE", "id", service.id()),
+                        Map.of("tipo", "WORKSITE", "id", predecessor.obraId())
+                ),
+                predecessorState
+        );
+
+        Map<String, Object> replacementState = new LinkedHashMap<>();
+        replacementState.put("priceVersionId", replacement.id());
+        replacementState.put("serviceId", service.id());
+        replacementState.put("serviceName", service.name());
+        replacementState.put("worksiteId", replacement.obraId());
+        replacementState.put("unit", replacement.unit());
+        replacementState.put("currency", replacement.currency());
+        replacementState.put("unitPrice", replacement.unitPrice().toPlainString());
+        replacementState.put("version", replacement.version());
+        replacementState.put("validFrom", replacement.validFrom().toString());
+        if (replacement.validTo() != null) {
+            replacementState.put("validTo", replacement.validTo().toString());
+        }
+        replacementState.put("supersedesId", predecessor.id());
+        replacementState.put("status", "ACTIVE");
+        publish(
+                "SERVICE_PRICE_VERSION_PUBLISHED",
+                "SERVICE_PRICE_VERSION",
+                replacement.id(),
+                replacement.obraId(),
+                actorId,
+                clientMutationId,
+                List.of(
+                        Map.of("tipo", "SERVICE", "id", service.id()),
+                        Map.of("tipo", "WORKSITE", "id", replacement.obraId()),
+                        Map.of(
+                                "tipo", "SERVICE_PRICE_VERSION",
+                                "id", predecessor.id()
+                        )
+                ),
+                replacementState
+        );
+    }
+
+    @Override
     public void priceVersionCancelled(
             ServicePriceVersion price,
             ServiceCatalogEntry service,

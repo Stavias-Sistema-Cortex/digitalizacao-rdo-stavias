@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import org.mockito.Answers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -33,7 +35,12 @@ class ServicePriceCatalogServiceTest {
 
     @BeforeEach
     void setUp() {
-        repository = mock(ServicePriceCatalogRepository.class);
+        repository = mock(ServicePriceCatalogRepository.class, invocation -> {
+            if ("worksiteExists".equals(invocation.getMethod().getName())) {
+                return true;
+            }
+            return Answers.RETURNS_DEFAULTS.answer(invocation);
+        });
         ontology = mock(ServiceCatalogOntologyPublisher.class);
         service = new ServicePriceCatalogService(
                 repository,
@@ -140,6 +147,13 @@ class ServicePriceCatalogServiceTest {
         assertThat(result.supersedesId()).isEqualTo(PRICE);
         assertThat(result.unitPrice()).isEqualByComparingTo("130.0000");
         verify(repository).supersedePrice(any());
+        verify(ontology).priceVersionSuperseded(
+                previous,
+                replacement,
+                serviceEntry(),
+                ACTOR,
+                "mutation-price-2"
+        );
     }
 
     @Test
@@ -232,6 +246,124 @@ class ServicePriceCatalogServiceTest {
         );
     }
 
+    @Test
+    void missingWorksiteRejectsListBeforeCatalogRead() {
+        ServicePriceCatalogRepository missingRepository =
+                mock(ServicePriceCatalogRepository.class);
+        ServicePriceCatalogService missingService = new ServicePriceCatalogService(
+                missingRepository, ontology, Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+
+        assertThatThrownBy(() -> missingService.list(OBRA, null, null, 50))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(
+                        ((ResponseStatusException) error).getStatusCode()
+                ).isEqualTo(HttpStatus.NOT_FOUND))
+                .hasMessageContaining("SERVICE_CATALOG_WORKSITE_NOT_FOUND");
+        verify(missingRepository, never()).list(
+                any(), any(), any(), org.mockito.ArgumentMatchers.anyInt()
+        );
+    }
+
+    @Test
+    void missingWorksiteRejectsWriteBeforeDomainLookup() {
+        ServicePriceCatalogRepository missingRepository =
+                mock(ServicePriceCatalogRepository.class);
+        ServicePriceCatalogService missingService = new ServicePriceCatalogService(
+                missingRepository, ontology, Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+
+        assertThatThrownBy(() -> missingService.createPrice(
+                OBRA,
+                ACTOR,
+                SERVICE,
+                priceCommand(
+                        "mutation-missing-worksite", "10.0000",
+                        LocalDate.of(2026, 1, 1), null
+                )
+        )).isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(
+                        ((ResponseStatusException) error).getStatusCode()
+                ).isEqualTo(HttpStatus.NOT_FOUND))
+                .hasMessageContaining("SERVICE_CATALOG_WORKSITE_NOT_FOUND");
+        verify(missingRepository, never()).findService(any());
+        verify(missingRepository, never()).createPrice(any());
+    }
+
+    @Test
+    void acceptsExactNumericEighteenScaleFourMaximum() {
+        CreateServicePriceCommand command = priceCommand(
+                "mutation-price-max", "99999999999999.9999",
+                LocalDate.of(2026, 1, 1), null
+        );
+        ServicePriceVersion created = priceVersion(
+                new BigDecimal("99999999999999.9999")
+        );
+        when(repository.findMutation(ACTOR, "mutation-price-max"))
+                .thenReturn(Optional.empty());
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(serviceEntry()));
+        when(repository.createPrice(any())).thenReturn(created);
+
+        assertThat(service.createPrice(OBRA, ACTOR, SERVICE, command).unitPrice())
+                .isEqualByComparingTo("99999999999999.9999");
+        verify(repository).createPrice(any());
+    }
+
+    @Test
+    void rejectsFirstNumericEighteenScaleFourOverflowBeforePersistence() {
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(serviceEntry()));
+        assertThatThrownBy(() -> service.createPrice(
+                OBRA,
+                ACTOR,
+                SERVICE,
+                priceCommand(
+                        "mutation-price-overflow", "100000000000000.0000",
+                        LocalDate.of(2026, 1, 1), null
+                )
+        )).isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(
+                        ((ResponseStatusException) error).getStatusCode()
+                ).isEqualTo(HttpStatus.BAD_REQUEST))
+                .hasMessageContaining("valorUnitario")
+                .hasMessageNotContaining("SQL");
+        verify(repository, never()).createPrice(any());
+    }
+
+    @Test
+    void terminalSupersessionRepositoryCodesAreStableSafeConflicts() {
+        ServicePriceVersion previous = priceVersion();
+        when(repository.findPrice(OBRA, PRICE)).thenReturn(Optional.of(previous));
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(serviceEntry()));
+
+        for (String safeCode : java.util.List.of(
+                "SERVICE_PRICE_ALREADY_TERMINATED",
+                "SERVICE_PRICE_SUPERSESSION_INVALID"
+        )) {
+            String mutation = "mutation-" + safeCode.toLowerCase();
+            when(repository.findMutation(ACTOR, mutation)).thenReturn(Optional.empty());
+            doThrow(new ServicePriceCancellationException(safeCode))
+                    .when(repository).supersedePrice(any());
+
+            SupersedeServicePriceCommand command = new SupersedeServicePriceCommand(
+                    mutation, new BigDecimal("130.0000"),
+                    LocalDate.of(2026, 4, 1), null, "CONTRATO_MEDIDO"
+            );
+            assertThatThrownBy(() -> service.supersedePrice(
+                    OBRA, ACTOR, PRICE, command
+            )).isInstanceOf(ResponseStatusException.class)
+                    .satisfies(error -> assertThat(
+                            ((ResponseStatusException) error).getStatusCode()
+                    ).isEqualTo(HttpStatus.CONFLICT))
+                    .hasMessageContaining(safeCode)
+                    .hasMessageNotContaining("constraint")
+                    .hasMessageNotContaining("SQL");
+        }
+        verify(ontology, never()).priceVersionPublished(any(), any(), any(), any());
+        verify(ontology, never()).priceVersionSuperseded(
+                any(), any(), any(), any(), any()
+        );
+    }
+
     private static CreateServicePriceCommand priceCommand(
             String mutationId,
             String value,
@@ -261,6 +393,10 @@ class ServicePriceCatalogServiceTest {
     }
 
     private static ServicePriceVersion priceVersion() {
+        return priceVersion(new BigDecimal("125.5000"));
+    }
+
+    private static ServicePriceVersion priceVersion(BigDecimal unitPrice) {
         return new ServicePriceVersion(
                 PRICE,
                 OBRA,
@@ -268,7 +404,7 @@ class ServicePriceCatalogServiceTest {
                 "M2",
                 "BRL",
                 1,
-                new BigDecimal("125.5000"),
+                unitPrice,
                 LocalDate.of(2026, 1, 1),
                 LocalDate.of(2026, 3, 31),
                 null,

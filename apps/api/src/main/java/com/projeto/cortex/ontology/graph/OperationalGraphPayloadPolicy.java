@@ -47,6 +47,7 @@ final class OperationalGraphPayloadPolicy {
     );
     private static final Set<String> PRICE_KEYS = Set.of(
             "priceVersionId",
+            "supersedesId",
             "unitPrice",
             "unit"
     );

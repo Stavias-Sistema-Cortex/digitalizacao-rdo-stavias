@@ -91,6 +91,25 @@ class OperationalGraphProjectorTest {
                 occurredAt,
                 Map.of("unitPrice", "18.40")
         ));
+        GraphProjectionBatch supersession = projector.project(
+                new CommittedOperationalEvent(
+                        5L,
+                        "event-price-v2",
+                        "SERVICE_PRICE_VERSION_PUBLISHED",
+                        ref("SERVICE_PRICE_VERSION", "price-v2"),
+                        List.of(
+                                ref("SERVICE", "service-5"),
+                                ref("WORKSITE", "obra-1"),
+                                ref("SERVICE_PRICE_VERSION", "price-v1")
+                        ),
+                        occurredAt.plusSeconds(1),
+                        Map.of(
+                                "unitPrice", "20.00",
+                                "supersedesId", "price-v1",
+                                "status", "ACTIVE"
+                        )
+                )
+        );
 
         assertThat(rdo.relations()).extracting(GraphRelation::type)
                 .containsExactly("BELONGS_TO_WORKSITE");
@@ -112,6 +131,29 @@ class OperationalGraphProjectorTest {
                 .isEqualTo("service-5");
         assertThat(priceEntities.get(pricedBy.targetEntityId()).externalRefId())
                 .isEqualTo("price-3");
+        assertThat(supersession.relations())
+                .filteredOn(relation -> "SUPERSEDES".equals(relation.type()))
+                .singleElement();
+        GraphRelation supersedes = supersession.relations().stream()
+                .filter(relation -> "SUPERSEDES".equals(relation.type()))
+                .findFirst()
+                .orElse(null);
+        if (supersedes == null) {
+            return;
+        }
+        Map<String, GraphEntity> supersessionEntities = supersession.entities().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GraphEntity::id, java.util.function.Function.identity()
+                ));
+        assertThat(supersessionEntities.get(supersedes.sourceEntityId()).externalRefId())
+                .isEqualTo("price-v2");
+        assertThat(supersessionEntities.get(supersedes.targetEntityId()).externalRefId())
+                .isEqualTo("price-v1");
+        assertThat(supersession.events()).singleElement().satisfies(event ->
+                assertThat(event.payload())
+                        .containsEntry("supersedesId", "price-v1")
+                        .containsEntry("status", "ACTIVE")
+        );
         assertThat(projector.project(new CommittedOperationalEvent(
                 4L,
                 "event-price",

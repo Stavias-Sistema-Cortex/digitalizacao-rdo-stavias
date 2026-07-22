@@ -19,13 +19,13 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV49Chain() throws Exception {
+    void configuredRuntimeRequiresTheCompleteV51Chain() throws Exception {
         var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
                 "CLEAN_START_REQUIRED_SCHEMA_VERSION"
         );
         field.setAccessible(true);
 
-        assertThat(field.get(null)).isEqualTo("49");
+        assertThat(field.get(null)).isEqualTo("51");
     }
 
     @Test
@@ -97,14 +97,14 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV49RowIsAbsent() {
+    void refusesWhenTheExplicitV51RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V49");
-        verify(jdbcTemplate).queryForObject(contains("version = '49'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V51");
+        verify(jdbcTemplate).queryForObject(contains("version = '51'"), eq(Integer.class));
     }
 
     @Test
@@ -119,7 +119,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV49VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV51VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -143,7 +143,7 @@ class PostgresqlRuntimeReadinessGuardTest {
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "49", runtimeReady, registry
+                jdbcTemplate, "51", runtimeReady, registry
         );
     }
 

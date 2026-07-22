@@ -156,7 +156,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
             }
         }
         assertThat(appliedVersions).containsExactly(
-                "44", "45", "45.1", "46", "47", "48", "49"
+                "44", "45", "45.1", "46", "47", "48", "49", "50", "51"
         );
     }
 
@@ -169,6 +169,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         expectedTables.add("rdo_number_sequence");
         expectedTables.add("rdo_creation_context_snapshot");
         expectedTables.add("catalogo_servico");
+        expectedTables.add("service_catalog_revision");
         expectedTables.add("service_catalog_mutation");
         expectedTables.add("service_price_version");
         expectedTables.add("service_price_version_cancellation");
@@ -182,7 +183,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                 ORDER BY table_name
                 """, String.class));
 
-        assertThat(expectedTables).hasSize(121).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
+        assertThat(expectedTables).hasSize(122).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
         assertThat(actualTables)
                 .doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES)
                 .containsExactlyElementsOf(expectedTables);

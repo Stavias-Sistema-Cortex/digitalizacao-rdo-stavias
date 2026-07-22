@@ -134,6 +134,34 @@ class OperationalGraphPayloadPolicyTest {
                 .isEqualTo("collaborator-1");
     }
 
+    @Test
+    void keepsOnlyTheStructuralSupersessionIdentifierForPriceEvents() {
+        GraphProjectionBatch batch = projector.project(new CommittedOperationalEvent(
+                30L,
+                "event-price-superseded",
+                "SERVICE_PRICE_VERSION_PUBLISHED",
+                new CommittedOperationalEvent.EntityRef(
+                        "SERVICE_PRICE_VERSION", "price-v2"
+                ),
+                List.of(new CommittedOperationalEvent.EntityRef(
+                        "SERVICE_PRICE_VERSION", "price-v1"
+                )),
+                Instant.parse("2026-07-22T12:00:00Z"),
+                Map.of(
+                        "supersedesId", "price-v1",
+                        "status", "ACTIVE",
+                        "reason", "private free-form text"
+                )
+        ));
+
+        assertThat(batch.events()).singleElement().satisfies(event ->
+                assertThat(event.payload())
+                        .containsEntry("supersedesId", "price-v1")
+                        .containsEntry("status", "ACTIVE")
+                        .doesNotContainKey("reason")
+        );
+    }
+
     private record AdversarialProjection(
             String eventType,
             String entityType,

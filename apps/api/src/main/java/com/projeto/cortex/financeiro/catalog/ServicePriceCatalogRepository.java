@@ -7,6 +7,8 @@ import java.util.Optional;
 
 public interface ServicePriceCatalogRepository {
 
+    boolean worksiteExists(String obraId);
+
     Optional<CatalogMutation> findMutation(String actorId, String clientMutationId);
 
     Optional<ServiceCatalogEntry> findService(String serviceId);

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
@@ -16,6 +17,62 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class PostgresqlServiceCatalogOntologyPublisherTest {
+
+    @Test
+    void publishesSupersessionStatesAndReplacementToPredecessorRelation() {
+        CortexOperationalMemoryService memory = mock(CortexOperationalMemoryService.class);
+        PostgresqlServiceCatalogOntologyPublisher publisher =
+                new PostgresqlServiceCatalogOntologyPublisher(memory);
+        ServiceCatalogEntry service = new ServiceCatalogEntry(
+                "service-1", "PAV.CBUQ", "Pavimentação CBUQ", null,
+                "ACTIVE", Instant.parse("2026-07-22T12:00:00Z")
+        );
+        ServicePriceVersion predecessor = new ServicePriceVersion(
+                "price-1", "obra-1", "service-1", "M2", "BRL", 1,
+                new BigDecimal("125.0000"), LocalDate.of(2026, 1, 1),
+                null, null, "ACTIVE", null,
+                Instant.parse("2026-07-22T12:00:00Z")
+        );
+        ServicePriceVersion replacement = new ServicePriceVersion(
+                "price-2", "obra-1", "service-1", "M2", "BRL", 2,
+                new BigDecimal("130.0000"), LocalDate.of(2026, 7, 1),
+                null, "price-1", "ACTIVE", null,
+                Instant.parse("2026-07-22T12:01:00Z")
+        );
+
+        publisher.priceVersionSuperseded(
+                predecessor, replacement, service,
+                "actor-private", "mutation-sensitive"
+        );
+
+        verify(memory).registrarObjeto(
+                "SERVICE_PRICE_VERSION", "price-1", null,
+                "PAV.CBUQ · M2 · BRL · v1", "SUPERSEDED",
+                "CORTEX_FINANCEIRO", "service_price_version", Map.of()
+        );
+        verify(memory).registrarObjeto(
+                "SERVICE_PRICE_VERSION", "price-2", null,
+                "PAV.CBUQ · M2 · BRL · v2", "ACTIVE",
+                "CORTEX_FINANCEIRO", "service_price_version", Map.of()
+        );
+        verify(memory).registrarRelacaoAtiva(
+                "SERVICE_PRICE_VERSION", "price-2",
+                "SERVICE_PRICE_VERSION", "price-1",
+                "SUPERSEDES", "CORTEX_FINANCEIRO",
+                "Nova versão substitui temporalmente a versão anterior."
+        );
+        var events = mockingDetails(memory).getInvocations().stream()
+                .filter(invocation -> invocation.getMethod().getName()
+                        .equals("registrarEventoAuditado"))
+                .toList();
+        org.assertj.core.api.Assertions.assertThat(events).hasSize(2);
+        org.assertj.core.api.Assertions.assertThat(events)
+                .extracting(invocation -> invocation.getArgument(3, String.class))
+                .containsExactlyInAnyOrder(
+                        "SERVICE_PRICE_VERSION_SUPERSEDED",
+                        "SERVICE_PRICE_VERSION_PUBLISHED"
+                );
+    }
 
     @Test
     void publishesServicePriceVersionAndPricedByWithoutPiiOrSecretMetadata() {

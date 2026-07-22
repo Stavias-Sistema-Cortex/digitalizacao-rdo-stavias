@@ -16,6 +16,14 @@ public interface ServiceCatalogOntologyPublisher {
             String clientMutationId
     );
 
+    void priceVersionSuperseded(
+            ServicePriceVersion predecessor,
+            ServicePriceVersion replacement,
+            ServiceCatalogEntry service,
+            String actorId,
+            String clientMutationId
+    );
+
     void priceVersionCancelled(
             ServicePriceVersion price,
             ServiceCatalogEntry service,

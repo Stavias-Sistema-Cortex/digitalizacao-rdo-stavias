@@ -62,6 +62,7 @@ public class ServicePriceCatalogService {
             CreateServiceCommand command
     ) {
         String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
         String actor = uuid(actorId, "actorId");
         CreateServiceCommand normalized = normalize(command);
         String hash = requestHash(worksite, normalized);
@@ -103,6 +104,7 @@ public class ServicePriceCatalogService {
             CreateServicePriceCommand command
     ) {
         String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
         String actor = uuid(actorId, "actorId");
         String serviceIdNormalized = uuid(serviceId, "serviceId");
         ServiceCatalogEntry service = repository.findService(serviceIdNormalized)
@@ -130,13 +132,7 @@ public class ServicePriceCatalogService {
         } catch (ServicePriceValidityOverlapException overlap) {
             throw conflict("SERVICE_PRICE_VALIDITY_OVERLAP");
         } catch (DataIntegrityViolationException race) {
-            Optional<CatalogMutation> receipt = repository.findMutation(
-                    actor, normalized.clientMutationId()
-            );
-            if (receipt.isPresent()) {
-                return replayPrice(worksite, receipt.orElseThrow(), hash);
-            }
-            throw conflict("SERVICE_PRICE_VALIDITY_OVERLAP");
+            throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
         }
         ontology.priceVersionPublished(
                 created, service, actor, normalized.clientMutationId()
@@ -152,6 +148,7 @@ public class ServicePriceCatalogService {
             SupersedeServicePriceCommand command
     ) {
         String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
         String actor = uuid(actorId, "actorId");
         String previousId = uuid(priceId, "priceId");
         ServicePriceVersion previous = repository.findPrice(worksite, previousId)
@@ -179,17 +176,17 @@ public class ServicePriceCatalogService {
             return replayPrice(worksite, concurrentReplay.receipt(), hash);
         } catch (ServicePriceValidityOverlapException overlap) {
             throw conflict("SERVICE_PRICE_VALIDITY_OVERLAP");
+        } catch (ServicePriceCancellationException terminal) {
+            throw conflict(terminal.getMessage());
         } catch (DataIntegrityViolationException race) {
-            Optional<CatalogMutation> receipt = repository.findMutation(
-                    actor, normalized.clientMutationId()
-            );
-            if (receipt.isPresent()) {
-                return replayPrice(worksite, receipt.orElseThrow(), hash);
-            }
-            throw conflict("SERVICE_PRICE_VALIDITY_OVERLAP");
+            throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
         }
-        ontology.priceVersionPublished(
-                replacement, catalogService, actor, normalized.clientMutationId()
+        ontology.priceVersionSuperseded(
+                previous,
+                replacement,
+                catalogService,
+                actor,
+                normalized.clientMutationId()
         );
         return replacement;
     }
@@ -202,6 +199,7 @@ public class ServicePriceCatalogService {
             CancelServicePriceCommand command
     ) {
         String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
         String actor = uuid(actorId, "actorId");
         String normalizedPriceId = uuid(priceId, "priceId");
         ServicePriceVersion previous = repository.findPrice(worksite, normalizedPriceId)
@@ -234,13 +232,7 @@ public class ServicePriceCatalogService {
         } catch (ServicePriceCancellationException conflict) {
             throw conflict(conflict.getMessage());
         } catch (DataIntegrityViolationException race) {
-            Optional<CatalogMutation> receipt = repository.findMutation(
-                    actor, normalized.clientMutationId()
-            );
-            if (receipt.isPresent()) {
-                return replayPrice(worksite, receipt.orElseThrow(), hash);
-            }
-            throw conflict("SERVICE_PRICE_ALREADY_TERMINATED");
+            throw conflict("SERVICE_PRICE_WRITE_CONFLICT");
         }
     }
 
@@ -252,6 +244,7 @@ public class ServicePriceCatalogService {
             Integer limit
     ) {
         String worksite = uuid(obraId, "obraId");
+        requireWorksite(worksite);
         String normalizedQuery = query == null ? null
                 : FinanceValidation.optionalText(query, "query", 200);
         String normalizedCursor = cursor == null ? null
@@ -454,7 +447,18 @@ public class ServicePriceCatalogService {
 
     private static BigDecimal price(BigDecimal value) {
         BigDecimal validated = FinanceValidation.money(value, "valorUnitario");
+        if (validated.precision() - validated.scale() > 14) {
+            throw FinanceValidation.badRequest(
+                    "valorUnitario deve ter no máximo 14 dígitos inteiros."
+            );
+        }
         return validated.setScale(4);
+    }
+
+    private void requireWorksite(String worksiteId) {
+        if (!repository.worksiteExists(worksiteId)) {
+            throw notFound("SERVICE_CATALOG_WORKSITE_NOT_FOUND");
+        }
     }
 
     private static String source(String value) {

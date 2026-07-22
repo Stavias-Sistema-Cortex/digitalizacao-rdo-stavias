@@ -51,6 +51,45 @@ public class PostgresqlServicePriceCatalogRepository
             LEFT JOIN service_price_version_cancellation cancellation
               ON cancellation.price_version_id = price.id
             """;
+    private static final String SNAPSHOT_PRICE_PROJECTION = """
+            SELECT price.id,
+                   price.obra_id,
+                   price.service_id,
+                   price.unidade,
+                   price.moeda,
+                   price.versao,
+                   price.valor_unitario,
+                   price.vigencia_inicio,
+                   price.vigencia_fim,
+                   price.supersedes_id,
+                   CASE
+                       WHEN cancellation.id IS NOT NULL THEN 'CANCELLED'
+                       WHEN successor.id IS NOT NULL THEN 'SUPERSEDED'
+                       ELSE 'ACTIVE'
+                   END AS effective_status,
+                   CASE
+                       WHEN price.vigencia_fim IS NULL
+                            AND successor.vigencia_inicio IS NULL
+                            AND cancellation.vigencia_cancelamento IS NULL
+                           THEN NULL
+                       ELSE LEAST(
+                           COALESCE(price.vigencia_fim, 'infinity'::date),
+                           COALESCE(successor.vigencia_inicio - 1, 'infinity'::date),
+                           COALESCE(
+                               cancellation.vigencia_cancelamento - 1,
+                               'infinity'::date
+                           )
+                       )
+                   END AS effective_valid_to,
+                   price.criado_em
+            FROM service_price_version price
+            LEFT JOIN service_price_version successor
+              ON successor.supersedes_id = price.id
+             AND successor.commit_revision <= :snapshotRevision
+            LEFT JOIN service_price_version_cancellation cancellation
+              ON cancellation.price_version_id = price.id
+             AND cancellation.commit_revision <= :snapshotRevision
+            """;
 
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate namedJdbc;
@@ -58,6 +97,15 @@ public class PostgresqlServicePriceCatalogRepository
     public PostgresqlServicePriceCatalogRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
         this.namedJdbc = new NamedParameterJdbcTemplate(jdbc);
+    }
+
+    @Override
+    public boolean worksiteExists(String obraId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT count(*) FROM obra
+                WHERE id = ? AND arquivado_em IS NULL
+                """, Integer.class, obraId);
+        return count != null && count == 1;
     }
 
     @Override
@@ -205,34 +253,41 @@ public class PostgresqlServicePriceCatalogRepository
     ) {
         String normalizedQuery = normalizeQuery(query);
         CatalogCursor decoded = decodeCursor(cursor, normalizedQuery);
-        List<Object> filterParameters = new ArrayList<>();
-        String filterSql = searchFilter(normalizedQuery, filterParameters);
-
-        Long total = jdbc.queryForObject(
-                "SELECT count(*) FROM catalogo_servico service " + filterSql,
-                Long.class,
-                filterParameters.toArray()
+        long currentRevision = currentRevision();
+        if (decoded != null && decoded.highWaterMark() != currentRevision) {
+            throw staleSnapshot();
+        }
+        long snapshotRevision = decoded == null
+                ? currentRevision
+                : decoded.highWaterMark();
+        CatalogCoverageCounts totals = coverageCounts(
+                obraId, normalizedQuery, snapshotRevision
         );
 
-        List<Object> pageParameters = new ArrayList<>(filterParameters);
+        MapSqlParameterSource pageParameters = snapshotParameters(
+                obraId, normalizedQuery, snapshotRevision
+        ).addValue("limit", limit + 1);
         StringBuilder pageSql = new StringBuilder("""
                 SELECT id, codigo, nome, descricao, status, criado_em
                 FROM catalogo_servico service
-                """).append(filterSql);
+                WHERE service.commit_revision <= :snapshotRevision
+                """).append(searchPredicate(normalizedQuery));
         if (decoded != null) {
-            pageSql.append(filterSql.isEmpty() ? " WHERE " : " AND ")
-                    .append("(service.codigo > ? OR (service.codigo = ? AND service.id > ?))");
-            pageParameters.add(decoded.code());
-            pageParameters.add(decoded.code());
-            pageParameters.add(decoded.id());
+            pageSql.append("""
+                     AND (
+                         service.codigo > :cursorCode
+                         OR (service.codigo = :cursorCode AND service.id > :cursorId)
+                     )
+                    """);
+            pageParameters.addValue("cursorCode", decoded.code());
+            pageParameters.addValue("cursorId", decoded.id());
         }
-        pageSql.append(" ORDER BY service.codigo, service.id LIMIT ?");
-        pageParameters.add(limit + 1);
+        pageSql.append(" ORDER BY service.codigo, service.id LIMIT :limit");
 
-        List<ServiceCatalogEntry> loaded = jdbc.query(
+        List<ServiceCatalogEntry> loaded = namedJdbc.query(
                 pageSql.toString(),
-                (resultSet, rowNumber) -> mapService(resultSet),
-                pageParameters.toArray()
+                pageParameters,
+                (resultSet, rowNumber) -> mapService(resultSet)
         );
         boolean hasMore = loaded.size() > limit;
         List<ServiceCatalogEntry> services = hasMore
@@ -240,7 +295,8 @@ public class PostgresqlServicePriceCatalogRepository
                 : List.copyOf(loaded);
         Map<String, List<ServicePriceVersion>> prices = pricesByService(
                 obraId,
-                services.stream().map(ServiceCatalogEntry::id).toList()
+                services.stream().map(ServiceCatalogEntry::id).toList(),
+                snapshotRevision
         );
         List<ServiceCatalogRow> rows = services.stream()
                 .map(service -> new ServiceCatalogRow(
@@ -249,15 +305,29 @@ public class PostgresqlServicePriceCatalogRepository
                 ))
                 .toList();
         String nextCursor = hasMore && !services.isEmpty()
-                ? encodeCursor(services.getLast(), normalizedQuery)
+                ? encodeCursor(
+                        services.getLast(), normalizedQuery, snapshotRevision
+                )
                 : null;
+        int returnedPriceVersions = prices.values().stream()
+                .mapToInt(List::size)
+                .sum();
+        int returnedCancellations = cancellationCount(
+                obraId,
+                services.stream().map(ServiceCatalogEntry::id).toList(),
+                snapshotRevision
+        );
         return new ServiceCatalogPage(
                 rows,
                 nextCursor,
-                total == null ? 0L : total,
+                totals.serviceCount(),
+                totals.priceVersionCount(),
+                totals.cancellationCount(),
                 rows.size(),
+                returnedPriceVersions,
+                returnedCancellations,
                 nextCursor == null ? "COMPLETE" : "PARTIAL",
-                highWaterMark(obraId)
+                snapshotRevision
         );
     }
 
@@ -308,8 +378,12 @@ public class PostgresqlServicePriceCatalogRepository
             if (contains(exception, "SERVICE_PRICE_VALIDITY_OVERLAP")) {
                 throw new ServicePriceValidityOverlapException();
             }
-            if (contains(exception, "SERVICE_PRICE_SUPERSESSION_INVALID")
-                    || contains(exception, "SERVICE_PRICE_ALREADY_TERMINATED")
+            if (contains(exception, "SERVICE_PRICE_SUPERSESSION_INVALID")) {
+                throw new ServicePriceCancellationException(
+                        "SERVICE_PRICE_SUPERSESSION_INVALID"
+                );
+            }
+            if (contains(exception, "SERVICE_PRICE_ALREADY_TERMINATED")
                     || contains(exception, "uq_service_price_version_supersedes")) {
                 throw new ServicePriceCancellationException(
                         "SERVICE_PRICE_ALREADY_TERMINATED"
@@ -370,18 +444,21 @@ public class PostgresqlServicePriceCatalogRepository
 
     private Map<String, List<ServicePriceVersion>> pricesByService(
             String obraId,
-            List<String> serviceIds
+            List<String> serviceIds,
+            long snapshotRevision
     ) {
         if (serviceIds.isEmpty()) {
             return Map.of();
         }
         MapSqlParameterSource parameters = new MapSqlParameterSource()
                 .addValue("obraId", obraId)
-                .addValue("serviceIds", serviceIds);
+                .addValue("serviceIds", serviceIds)
+                .addValue("snapshotRevision", snapshotRevision);
         List<ServicePriceVersion> prices = namedJdbc.query(
-                PRICE_PROJECTION + """
+                SNAPSHOT_PRICE_PROJECTION + """
                          WHERE price.obra_id = :obraId
                            AND price.service_id IN (:serviceIds)
+                           AND price.commit_revision <= :snapshotRevision
                          ORDER BY price.service_id, price.versao DESC, price.id
                         """,
                 parameters,
@@ -396,38 +473,109 @@ public class PostgresqlServicePriceCatalogRepository
         return Map.copyOf(immutable);
     }
 
-    private Instant highWaterMark(String obraId) {
-        Timestamp timestamp = jdbc.queryForObject("""
-                SELECT GREATEST(
-                    COALESCE((SELECT max(criado_em) FROM catalogo_servico),
-                             '1970-01-01T00:00:00Z'::timestamptz),
-                    COALESCE((SELECT max(criado_em) FROM service_price_version
-                              WHERE obra_id = ?),
-                             '1970-01-01T00:00:00Z'::timestamptz),
-                    COALESCE((SELECT max(criado_em)
-                              FROM service_price_version_cancellation
-                              WHERE obra_id = ?),
-                             '1970-01-01T00:00:00Z'::timestamptz)
-                )
-                """, Timestamp.class, obraId, obraId);
-        return timestamp == null ? Instant.EPOCH : timestamp.toInstant();
+    private int cancellationCount(
+            String obraId,
+            List<String> serviceIds,
+            long snapshotRevision
+    ) {
+        if (serviceIds.isEmpty()) {
+            return 0;
+        }
+        Integer count = namedJdbc.queryForObject("""
+                SELECT count(*)
+                FROM service_price_version_cancellation cancellation
+                JOIN service_price_version price
+                  ON price.id = cancellation.price_version_id
+                 AND price.obra_id = cancellation.obra_id
+                WHERE cancellation.obra_id = :obraId
+                  AND cancellation.commit_revision <= :snapshotRevision
+                  AND price.commit_revision <= :snapshotRevision
+                  AND price.service_id IN (:serviceIds)
+                """, new MapSqlParameterSource()
+                .addValue("obraId", obraId)
+                .addValue("snapshotRevision", snapshotRevision)
+                .addValue("serviceIds", serviceIds), Integer.class);
+        return count == null ? 0 : count;
     }
 
-    private String searchFilter(String query, List<Object> parameters) {
+    private CatalogCoverageCounts coverageCounts(
+            String obraId,
+            String query,
+            long snapshotRevision
+    ) {
+        MapSqlParameterSource parameters = snapshotParameters(
+                obraId, query, snapshotRevision
+        );
+        String search = searchPredicate(query);
+        Long serviceCount = namedJdbc.queryForObject("""
+                SELECT count(*)
+                FROM catalogo_servico service
+                WHERE service.commit_revision <= :snapshotRevision
+                """ + search, parameters, Long.class);
+        Long priceCount = namedJdbc.queryForObject("""
+                SELECT count(*)
+                FROM service_price_version price
+                JOIN catalogo_servico service ON service.id = price.service_id
+                WHERE price.obra_id = :obraId
+                  AND price.commit_revision <= :snapshotRevision
+                  AND service.commit_revision <= :snapshotRevision
+                """ + search, parameters, Long.class);
+        Long cancellationCount = namedJdbc.queryForObject("""
+                SELECT count(*)
+                FROM service_price_version_cancellation cancellation
+                JOIN service_price_version price
+                  ON price.id = cancellation.price_version_id
+                 AND price.obra_id = cancellation.obra_id
+                JOIN catalogo_servico service ON service.id = price.service_id
+                WHERE cancellation.obra_id = :obraId
+                  AND cancellation.commit_revision <= :snapshotRevision
+                  AND price.commit_revision <= :snapshotRevision
+                  AND service.commit_revision <= :snapshotRevision
+                """ + search, parameters, Long.class);
+        return new CatalogCoverageCounts(
+                serviceCount == null ? 0L : serviceCount,
+                priceCount == null ? 0L : priceCount,
+                cancellationCount == null ? 0L : cancellationCount
+        );
+    }
+
+    private static MapSqlParameterSource snapshotParameters(
+            String obraId,
+            String query,
+            long snapshotRevision
+    ) {
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("obraId", obraId)
+                .addValue("snapshotRevision", snapshotRevision);
+        if (query != null) {
+            parameters.addValue("searchPattern", "%" + escapeLike(query) + "%");
+        }
+        return parameters;
+    }
+
+    private static String searchPredicate(String query) {
         if (query == null) {
             return "";
         }
-        String pattern = "%" + escapeLike(query) + "%";
-        parameters.add(pattern);
-        parameters.add(pattern);
-        parameters.add(pattern);
         return """
-                 WHERE (
-                    service.codigo ILIKE ? ESCAPE '\\'
-                    OR service.nome ILIKE ? ESCAPE '\\'
-                    OR COALESCE(service.descricao, '') ILIKE ? ESCAPE '\\'
+                 AND (
+                    service.codigo ILIKE :searchPattern ESCAPE '\\'
+                    OR service.nome ILIKE :searchPattern ESCAPE '\\'
+                    OR COALESCE(service.descricao, '')
+                        ILIKE :searchPattern ESCAPE '\\'
                  )
                 """;
+    }
+
+    private long currentRevision() {
+        Long revision = jdbc.queryForObject("""
+                SELECT revision FROM service_catalog_revision
+                WHERE singleton = TRUE
+                """, Long.class);
+        if (revision == null || revision < 0) {
+            throw new IllegalStateException("Service catalog revision unavailable.");
+        }
+        return revision;
     }
 
     private static String normalizeQuery(String value) {
@@ -482,15 +630,21 @@ public class PostgresqlServicePriceCatalogRepository
             }
             String[] fields = new String(bytes, StandardCharsets.UTF_8)
                     .split("\\n", -1);
-            if (fields.length != 4
-                    || !"v1".equals(fields[0])
+            if (fields.length != 5
+                    || !"v2".equals(fields[0])
                     || !queryHash(query).equals(fields[1])
-                    || fields[2].isBlank()
-                    || fields[2].length() > 80) {
+                    || fields[3].isBlank()
+                    || fields[3].length() > 80) {
+                throw invalidCursor();
+            }
+            long highWaterMark = Long.parseLong(fields[2]);
+            if (highWaterMark < 0) {
                 throw invalidCursor();
             }
             return new CatalogCursor(
-                    fields[2], UUID.fromString(fields[3]).toString()
+                    highWaterMark,
+                    fields[3],
+                    UUID.fromString(fields[4]).toString()
             );
         } catch (ResponseStatusException exception) {
             throw exception;
@@ -501,10 +655,12 @@ public class PostgresqlServicePriceCatalogRepository
 
     private static String encodeCursor(
             ServiceCatalogEntry service,
-            String query
+            String query,
+            long highWaterMark
     ) {
         String value = String.join(
-                "\n", "v1", queryHash(query), service.code(), service.id()
+                "\n", "v2", queryHash(query), Long.toString(highWaterMark),
+                service.code(), service.id()
         );
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(value.getBytes(StandardCharsets.UTF_8));
@@ -526,6 +682,12 @@ public class PostgresqlServicePriceCatalogRepository
         );
     }
 
+    private static ResponseStatusException staleSnapshot() {
+        return new ResponseStatusException(
+                HttpStatus.CONFLICT, "SERVICE_CATALOG_SNAPSHOT_STALE"
+        );
+    }
+
     private static boolean contains(Throwable failure, String fragment) {
         Throwable current = failure;
         while (current != null) {
@@ -538,6 +700,13 @@ public class PostgresqlServicePriceCatalogRepository
         return false;
     }
 
-    private record CatalogCursor(String code, String id) {
+    private record CatalogCursor(long highWaterMark, String code, String id) {
+    }
+
+    private record CatalogCoverageCounts(
+            long serviceCount,
+            long priceVersionCount,
+            long cancellationCount
+    ) {
     }
 }
