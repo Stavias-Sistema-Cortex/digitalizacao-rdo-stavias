@@ -8,6 +8,7 @@ import { createEmptyRdo } from "../createEmptyRdo";
 import {
   RDO_TEMPLATE_SHA256,
   RDO_WORKBOOK_FIELDS,
+  mapRdoWorkbook,
   type RdoWorkbookSnapshot,
 } from "./rdoWorkbookMapping";
 import { exportRdoWorkbook } from "./exportRdoWorkbook";
@@ -277,6 +278,71 @@ function paritySnapshot(): RdoWorkbookSnapshot {
   };
 }
 
+type PrintableBoundaryCase = {
+  label: string;
+  limit: number;
+  mutate: (value: RdoWorkbookSnapshot, text: string) => void;
+};
+
+const JAVA_PRINTABLE_BOUNDARIES: PrintableBoundaryCase[] = [
+  {
+    label: "km inicial programado",
+    limit: 12,
+    mutate: (value, text) => { value.rdo.kmInicialProgramado = text; },
+  },
+  {
+    label: "km final programado",
+    limit: 12,
+    mutate: (value, text) => { value.rdo.kmFinalProgramado = text; },
+  },
+  {
+    label: "km inicial interditado",
+    limit: 12,
+    mutate: (value, text) => { value.rdo.kmInicialInterditado = text; },
+  },
+  {
+    label: "km final interditado",
+    limit: 12,
+    mutate: (value, text) => { value.rdo.kmFinalInterditado = text; },
+  },
+  {
+    label: "material",
+    limit: 24,
+    mutate: (value, text) => {
+      value.rdo.materiais[0] = {
+        ...value.rdo.materiais[0],
+        materialNome: text,
+        quantidadePrevista: "",
+        quantidadeUsinada: "",
+        quantidadeAplicada: "",
+        quantidadeSobra: "",
+      };
+    },
+  },
+  {
+    label: "número do trecho",
+    limit: 12,
+    mutate: (value, text) => { value.rdo.controlesGeometricos[0].numero = text; },
+  },
+  {
+    label: "pista",
+    limit: 16,
+    mutate: (value, text) => { value.rdo.controlesGeometricos[0].pista = text; },
+  },
+  {
+    label: "faixa",
+    limit: 16,
+    mutate: (value, text) => { value.rdo.controlesGeometricos[0].faixa = text; },
+  },
+  {
+    label: "ordem de serviço",
+    limit: 30,
+    mutate: (value, text) => {
+      value.rdo.controlesGeometricos[0].ordemServico = text;
+    },
+  },
+];
+
 async function templateBytes(): Promise<Uint8Array> {
   return new Uint8Array(await readFile(SERVER_TEMPLATE));
 }
@@ -414,6 +480,36 @@ describe("RDO workbook mapping", () => {
     expect(cellStyles[titleStyle]).toContain('vertical="center"');
     expect(cellStyles[titleStyle]).toContain('shrinkToFit="1"');
   });
+
+  it.each(JAVA_PRINTABLE_BOUNDARIES)(
+    "matches Java fail-closed boundaries for $label",
+    ({ label, limit, mutate }) => {
+      for (const accepted of ["W".repeat(limit), "😀".repeat(limit)]) {
+        const candidate = snapshot();
+        mutate(candidate, accepted);
+        expect(() => mapRdoWorkbook(candidate)).not.toThrow();
+      }
+
+      const message =
+        `O conteúdo de ${label} não permanece legível no RDO (` +
+        `limite de ${limit} caracteres em uma linha); ` +
+        "nenhum conteúdo foi truncado.";
+      for (const rejected of [
+        "W".repeat(limit + 1),
+        "valor\nquebra",
+        "valor\rquebra",
+      ]) {
+        const candidate = snapshot();
+        mutate(candidate, rejected);
+        expect(() => mapRdoWorkbook(candidate)).toThrowError(
+          expect.objectContaining({
+            code: "RDO_EXPORT_PRINT_OVERFLOW",
+            message,
+          }),
+        );
+      }
+    },
+  );
 
   it("refuses an incomplete local snapshot with an exact code", async () => {
     await expect(

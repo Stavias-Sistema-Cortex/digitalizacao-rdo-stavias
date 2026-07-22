@@ -541,7 +541,15 @@ function printableValidation(
   equipment: EquipamentoDraft[],
   materials: MaterialRow[],
   geometry: ControleGeometricoDraft[],
-  serviceRows: Array<{ activity: string; start: string; end: string }>,
+  serviceRows: Array<{
+    activity: string;
+    start: string;
+    end: string;
+    itemNumber: string;
+    roadway: string;
+    lane: string;
+    serviceOrder: string;
+  }>,
   observationText: string,
 ): void {
   const { obra, rdo } = snapshot;
@@ -550,6 +558,10 @@ function printableValidation(
   assertPrintable("número do RDO", firstNonBlank(rdo.numeroRdo, rdo.id), 20);
   assertPrintable("rodovia", rdo.rodovia, 18);
   assertPrintable("dia da semana", weekday(rdo.dataRdo), 16);
+  assertPrintable("km inicial programado", rdo.kmInicialProgramado, 12);
+  assertPrintable("km final programado", rdo.kmFinalProgramado, 12);
+  assertPrintable("km inicial interditado", rdo.kmInicialInterditado, 12);
+  assertPrintable("km final interditado", rdo.kmFinalInterditado, 12);
   assertPrintable("nome do apontador", selectedApontadorName(rdo), 40);
   assertPrintable("nome do encarregado", rdo.encarregadoObra, 40);
   assertPrintable("nome da fiscalização", rdo.fiscalizacaoCampo, 40);
@@ -558,10 +570,13 @@ function printableValidation(
     assertPrintable("descrição do equipamento", item.descricao, 24);
     assertPrintable("prefixo do equipamento", item.prefixo, 8);
   }
+  for (const item of rdo.materiais) {
+    assertPrintable("material", item.materialNome, 24);
+    assertPrintable("unidade do material", item.unidade, 5);
+    assertPrintable("nota fiscal", item.notaFiscal, 24);
+  }
   for (const row of materials) {
     assertPrintable("descrição da linha de material", row.description, 28);
-    assertPrintable("unidade do material", row.unit, 5);
-    assertPrintable("nota fiscal", row.invoice, 24);
   }
   for (const item of geometry) {
     assertPrintable("subtrecho do controle geométrico", item.subtrecho, 32);
@@ -569,6 +584,10 @@ function printableValidation(
   for (const row of serviceRows) {
     assertPrintable("início do trecho", row.start, 20);
     assertPrintable("fim do trecho", row.end, 20);
+    assertPrintable("número do trecho", row.itemNumber, 12);
+    assertPrintable("pista", row.roadway, 16);
+    assertPrintable("faixa", row.lane, 16);
+    assertPrintable("ordem de serviço", row.serviceOrder, 30);
     assertPrintable("atividade executada", row.activity, 80);
   }
   assertObservationPrintable(observationText);

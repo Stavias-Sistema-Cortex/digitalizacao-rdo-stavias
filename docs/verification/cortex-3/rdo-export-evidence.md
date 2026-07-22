@@ -12,6 +12,15 @@ Data da verificação: 22/07/2026.
 - Nenhuma linha operacional parcial é descartada ou completada com zero; o exportador falha com um código exato.
 - O arquivo resultante não contém fórmula, hyperlink, macro, relação externa, `customXml`, autor do template, PII ou os canários de segredo da fixture.
 
+### Paridade fail-closed dos limites de impressão
+
+Um vetor idêntico Java/TypeScript cobre os quatro campos de KM (12 codepoints), material original (24), número do trecho (12), pista (16), faixa (16) e ordem de serviço (30). Para cada campo, os dois exportadores:
+
+- aceitam ASCII exatamente no limite;
+- aceitam emoji astral exatamente no limite, provando contagem por codepoint e não por UTF-16;
+- rejeitam `limite + 1`, LF e CR;
+- retornam a mesma mensagem `O conteúdo de <campo> não permanece legível no RDO (limite de <n> caracteres em uma linha); nenhum conteúdo foi truncado.`; o TypeScript usa o código estável `RDO_EXPORT_PRINT_OVERFLOW`.
+
 ## Paridade Java/TypeScript
 
 A mesma fixture completa foi exportada por Java e TypeScript. Ela inclui clima, pluviometria, interdição, horários, dois grupos de mão de obra, equipamento, três movimentos de material, controle geométrico, serviço, observações, assinaturas e a entrada maliciosa `@cmd` + email + CPF + Bearer. Os valores sensíveis aparecem apenas redigidos.
@@ -45,8 +54,8 @@ Resultado durável: [parity.json](rdo-export/parity.json) registra `equivalent: 
 Hashes dos XLSX gerados:
 
 ```text
-db931a1edf71677e9a56549a48b06b760ed422c11b5ce3a13de7f36367c6ec8d  server.xlsx
-f61898bb748ad474f300f4e99572d37d1a94022c3b451ce3610acd0111f3424c  offline.xlsx
+ba78f8f411e46486a223e35a9d29a62a12e4b13310b9b1fb2f9f190d0497aee9  server.xlsx
+5d546984cf2bfe497c673c5fe46488453ee1e8fc6a511890229aa4c7d0904223  offline.xlsx
 ```
 
 Os hashes binários diferem porque Apache POI e o patch OOXML do navegador serializam metadados e ZIP de formas distintas. A comparação semântica acima cobre nomes, valores, tipos, contagens, mesclagens e impressão.
@@ -80,8 +89,8 @@ Renders versionados:
 
 ```text
 assets/RDO-v1-CHRAOGWD.xlsx
-assets/exportRdoWorkbook-EZfx_kyb.js
-assets/rdoWorkbookMapping-BtBfLn3S.js
+assets/exportRdoWorkbook-BGlstg2D.js
+assets/rdoWorkbookMapping-wTLJn48Y.js
 assets/xlsx-CKkngM-o.js
 ```
 
@@ -93,7 +102,7 @@ Comandos e resultados:
 
 ```text
 npm --prefix apps/web test -- --run
-91 arquivos, 480 testes aprovados
+91 arquivos, 489 testes aprovados
 
 npm --prefix apps/web run lint
 PASS, zero erro
@@ -102,10 +111,10 @@ npm --prefix apps/web run build
 PASS; verificação da fronteira StavIA aprovada; PWA com 93 entradas
 
 mvn -f apps/api/pom.xml -Dtest=RdoXlsxExportServiceTest test
-10 testes do exportador aprovados
+11 testes do exportador aprovados
 
 mvn -f apps/api/pom.xml -Dtest='<quatro testes do módulo rdos.export>' test
-17 testes do módulo aprovados
+18 testes do módulo aprovados
 ```
 
 O audit de dependências de produção reportou zero vulnerabilidades críticas/altas/moderadas e uma baixa transitiva existente em `dompurify` (`GHSA-c2j3-45gr-mqc4`). A adição direta de `fflate` reutiliza a resolução já presente no lockfile e não adicionou advisory. Nenhuma correção automática destrutiva foi aplicada.

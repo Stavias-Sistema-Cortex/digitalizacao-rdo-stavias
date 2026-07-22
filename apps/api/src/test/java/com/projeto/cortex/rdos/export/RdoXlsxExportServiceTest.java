@@ -1,6 +1,7 @@
 package com.projeto.cortex.rdos.export;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -488,6 +489,71 @@ class RdoXlsxExportServiceTest {
     }
 
     @Test
+    void matchesOfflineCodePointAndLineBreakBoundariesForStructuredFields() {
+        RdoResponse base = populatedRdo("rdo-print-parity", "RDO-PRINT-PARITY");
+        List<PrintableParityCase> cases = List.of(
+                new PrintableParityCase(
+                        "kmInicialProgramado", "km inicial programado", 12
+                ),
+                new PrintableParityCase(
+                        "kmFinalProgramado", "km final programado", 12
+                ),
+                new PrintableParityCase(
+                        "kmInicialInterditado", "km inicial interditado", 12
+                ),
+                new PrintableParityCase(
+                        "kmFinalInterditado", "km final interditado", 12
+                ),
+                new PrintableParityCase("material", "material", 24),
+                new PrintableParityCase("numero", "número do trecho", 12),
+                new PrintableParityCase("pista", "pista", 16),
+                new PrintableParityCase("faixa", "faixa", 16),
+                new PrintableParityCase(
+                        "ordemServico", "ordem de serviço", 30
+                )
+        );
+
+        for (PrintableParityCase testCase : cases) {
+            for (String accepted : List.of(
+                    "W".repeat(testCase.limit()),
+                    "😀".repeat(testCase.limit())
+            )) {
+                when(queryService.buscarPorId(base.id())).thenReturn(
+                        withPrintableField(base, testCase.field(), accepted)
+                );
+                assertThatCode(() -> service.export(base.id()))
+                        .as(testCase.section() + " accepted")
+                        .doesNotThrowAnyException();
+            }
+
+            String expectedReason = "O conteúdo de " + testCase.section()
+                    + " não permanece legível no RDO (limite de "
+                    + testCase.limit() + " caracteres em uma linha); "
+                    + "nenhum conteúdo foi truncado.";
+            for (String rejected : List.of(
+                    "W".repeat(testCase.limit() + 1),
+                    "valor\nquebra",
+                    "valor\rquebra"
+            )) {
+                when(queryService.buscarPorId(base.id())).thenReturn(
+                        withPrintableField(base, testCase.field(), rejected)
+                );
+                assertThatThrownBy(() -> service.export(base.id()))
+                        .as(testCase.section() + " rejected")
+                        .isInstanceOfSatisfying(
+                                ResponseStatusException.class,
+                                exception -> {
+                                    assertThat(exception.getStatusCode())
+                                            .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                                    assertThat(exception.getReason())
+                                            .isEqualTo(expectedReason);
+                                }
+                        );
+            }
+        }
+    }
+
+    @Test
     void rejectsOverflowWithExactCoverageInsteadOfTruncating() {
         List<RdoResponse.ControleGeometricoItem> controls = new ArrayList<>();
         for (int index = 0; index < 22; index++) {
@@ -716,6 +782,72 @@ class RdoXlsxExportServiceTest {
         );
     }
 
+    private static RdoResponse withPrintableField(
+            RdoResponse original,
+            String field,
+            String value
+    ) {
+        List<RdoResponse.MaterialItem> materials = "material".equals(field)
+                ? List.of(new RdoResponse.MaterialItem(
+                        "mat-print", value, "t", null, null, null, null,
+                        "NF-PRINT", null, null
+                ))
+                : original.materiais();
+        boolean controlField = List.of(
+                "numero", "pista", "faixa", "ordemServico"
+        ).contains(field);
+        List<RdoResponse.ControleGeometricoItem> controls = controlField
+                ? List.of(withPrintableControlField(parityControl(), field, value))
+                : original.controlesGeometricos();
+        return new RdoResponse(
+                original.id(), original.obraId(), original.programacaoId(),
+                original.numeroRdo(), original.dataRdo(), original.previousRdoId(),
+                original.creationContextVersion(), original.clientMutationId(),
+                original.apontadorColaboradorId(), original.diaSemana(),
+                original.cliente(), original.contrato(), original.rodovia(),
+                original.cidade(), original.uf(),
+                "kmInicialProgramado".equals(field)
+                        ? value : original.kmInicialProgramado(),
+                "kmFinalProgramado".equals(field)
+                        ? value : original.kmFinalProgramado(),
+                "kmInicialInterditado".equals(field)
+                        ? value : original.kmInicialInterditado(),
+                "kmFinalInterditado".equals(field)
+                        ? value : original.kmFinalInterditado(),
+                original.turno(), original.horaInicio(), original.horaFim(),
+                original.condicaoManha(), original.condicaoTarde(),
+                original.condicaoNoite(), original.pluviometriaMm(),
+                original.status(), original.observacoes(), original.preenchidoPor(),
+                original.apontadorRdo(), original.encarregadoObra(),
+                original.fiscalizacaoCampo(), original.maoObra(),
+                original.equipamentos(), materials, controls,
+                original.servicosExecutados(), original.alocacoesColaboradores(),
+                original.attachments()
+        );
+    }
+
+    private static RdoResponse.ControleGeometricoItem withPrintableControlField(
+            RdoResponse.ControleGeometricoItem original,
+            String field,
+            String value
+    ) {
+        return new RdoResponse.ControleGeometricoItem(
+                original.id(), original.subtrecho(),
+                "numero".equals(field) ? value : original.numero(),
+                original.estacaInicial(), original.estacaFinal(),
+                original.kmInicial(), original.kmFinal(),
+                "pista".equals(field) ? value : original.pista(),
+                "faixa".equals(field) ? value : original.faixa(),
+                "ordemServico".equals(field) ? value : original.ordemServico(),
+                original.atividadeObservacoes(), original.comprimentoM(),
+                original.larguraM(), original.espessura1Cm(),
+                original.espessura2Cm(), original.espessura3Cm(),
+                original.espessuraMediaCm(), original.areaM2(),
+                original.volumeM3(), original.densidade(),
+                original.massaTonelada(), original.observacoes()
+        );
+    }
+
     private static RdoResponse withMaliciousText(RdoResponse original) {
         String maliciousObservations = """
                 @cmd ana@example.com 123.456.789-09
@@ -874,6 +1006,13 @@ class RdoXlsxExportServiceTest {
             String id,
             RdoResponse rdo,
             String section
+    ) {
+    }
+
+    private record PrintableParityCase(
+            String field,
+            String section,
+            int limit
     ) {
     }
 
