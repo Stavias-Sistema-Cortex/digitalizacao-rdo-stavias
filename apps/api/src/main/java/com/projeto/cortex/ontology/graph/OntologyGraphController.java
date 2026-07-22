@@ -3,8 +3,12 @@ package com.projeto.cortex.ontology.graph;
 import com.projeto.cortex.auth.CurrentUserService;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -48,16 +52,19 @@ public class OntologyGraphController {
         PageRequest pagination = page(page, size, limit);
         validateSearch(q);
         validateFilter(type);
-        authorizeScope(obraId, null);
-        return queryService.listEntities(
-                        obraId,
+        EffectiveScope scope = authorizeScope(obraId, null);
+        List<GraphEntity> entities = queryService.listEntitiesScoped(
+                        scope.worksiteIds(),
                         type,
                         q,
                         pagination.page(),
                         pagination.size()
-                ).stream()
-                .map(this::authorizedEntityResponse)
-                .toList();
+                );
+        authorizeObjects(
+                entities.stream().map(GraphEntity::id).collect(Collectors.toSet()),
+                scope
+        );
+        return entities.stream().map(OntologyGraphEntityResponse::from).toList();
     }
 
     /** Compatibility alias retained for existing graph search clients. */
@@ -77,7 +84,7 @@ public class OntologyGraphController {
     public OntologyGraphEntityResponse entity(@PathVariable String id) {
         currentUserService.requireUserId();
         validateIdentifier(id);
-        authorizeEntity(id);
+        authorizeScope(null, id);
         return queryService.findEntity(id)
                 .map(OntologyGraphEntityResponse::from)
                 .orElseThrow(this::notFound);
@@ -213,17 +220,22 @@ public class OntologyGraphController {
         int boundedDepth = depth(depth);
         PageRequest pagination = page(page, size, limit);
         validateFilter(type);
-        authorizeScope(obraId, entityId);
-        return queryService.listRelations(
-                        obraId,
+        EffectiveScope scope = authorizeScope(obraId, entityId);
+        List<GraphRelation> relations = queryService.listRelationsScoped(
+                        scope.worksiteIds(),
                         entityId,
                         type,
                         boundedDepth,
                         pagination.page(),
                         pagination.size()
-                ).stream()
-                .map(this::authorizedRelationResponse)
-                .toList();
+                );
+        Set<String> endpointIds = new LinkedHashSet<>();
+        relations.forEach(relation -> {
+            endpointIds.add(relation.sourceEntityId());
+            endpointIds.add(relation.targetEntityId());
+        });
+        authorizeObjects(endpointIds, scope);
+        return relations.stream().map(OntologyGraphRelationResponse::from).toList();
     }
 
     private List<OntologyGraphEventResponse> queryEvents(
@@ -237,16 +249,23 @@ public class OntologyGraphController {
         currentUserService.requireUserId();
         PageRequest pagination = page(page, size, limit);
         validateFilter(type);
-        authorizeScope(obraId, entityId);
-        return queryService.listEvents(
-                        obraId,
+        EffectiveScope scope = authorizeScope(obraId, entityId);
+        List<GraphEvent> events = queryService.listEventsScoped(
+                        scope.worksiteIds(),
                         entityId,
                         type,
                         pagination.page(),
                         pagination.size()
-                ).stream()
-                .map(this::authorizedEventResponse)
-                .toList();
+                );
+        Set<String> endpointIds = new LinkedHashSet<>();
+        events.forEach(event -> {
+            endpointIds.add(event.entityId());
+            if (hasText(event.relatedEntityId())) {
+                endpointIds.add(event.relatedEntityId());
+            }
+        });
+        authorizeObjects(endpointIds, scope);
+        return events.stream().map(OntologyGraphEventResponse::from).toList();
     }
 
     private List<OntologyGraphStateResponse> queryStates(
@@ -260,16 +279,19 @@ public class OntologyGraphController {
         currentUserService.requireUserId();
         PageRequest pagination = page(page, size, limit);
         validateFilter(type);
-        authorizeScope(obraId, entityId);
-        return queryService.listStates(
-                        obraId,
+        EffectiveScope scope = authorizeScope(obraId, entityId);
+        List<GraphState> states = queryService.listStatesScoped(
+                        scope.worksiteIds(),
                         entityId,
                         type,
                         pagination.page(),
                         pagination.size()
-                ).stream()
-                .map(this::authorizedStateResponse)
-                .toList();
+                );
+        authorizeObjects(
+                states.stream().map(GraphState::entityId).collect(Collectors.toSet()),
+                scope
+        );
+        return states.stream().map(OntologyGraphStateResponse::from).toList();
     }
 
     private List<OntologyGraphEvidenceResponse> queryEvidences(
@@ -283,77 +305,78 @@ public class OntologyGraphController {
         currentUserService.requireUserId();
         PageRequest pagination = page(page, size, limit);
         validateFilter(type);
-        authorizeScope(obraId, entityId);
-        return queryService.listEvidences(
-                        obraId,
+        EffectiveScope scope = authorizeScope(obraId, entityId);
+        List<GraphEvidence> evidences = queryService.listEvidencesScoped(
+                        scope.worksiteIds(),
                         entityId,
                         type,
                         pagination.page(),
                         pagination.size()
-                ).stream()
-                .map(this::authorizedEvidenceResponse)
-                .toList();
+                );
+        authorizeObjects(
+                evidences.stream().map(GraphEvidence::entityId).collect(Collectors.toSet()),
+                scope
+        );
+        return evidences.stream().map(OntologyGraphEvidenceResponse::from).toList();
     }
 
-    private void authorizeScope(String obraId, String entityId) {
-        currentUserService.requireUserId();
+    private EffectiveScope authorizeScope(String obraId, String entityId) {
+        String userId = currentUserService.requireUserId();
         validateIdentifier(obraId);
         validateIdentifier(entityId);
         if (hasText(obraId)) {
-            currentUserService.requireWorksiteAccess(obraId);
+            String normalizedObraId = obraId.trim();
+            currentUserService.requireWorksiteAccess(normalizedObraId);
             if (hasText(entityId)) {
-                authorizeEntity(entityId);
+                Set<String> entityWorksites = resolvedWorksites(entityId);
+                if (!entityWorksites.contains(normalizedObraId)) {
+                    throw accessDenied();
+                }
             }
-            return;
+            return new EffectiveScope(Set.of(normalizedObraId));
         }
         if (hasText(entityId)) {
-            authorizeEntity(entityId);
-            return;
+            Set<String> entityWorksites = resolvedWorksites(entityId);
+            Optional<Set<String>> allowedWorksites = currentUserService.allowedObraIds(userId);
+            if (allowedWorksites.isEmpty()) {
+                return new EffectiveScope(entityWorksites);
+            }
+            Set<String> intersection = new LinkedHashSet<>(entityWorksites);
+            intersection.retainAll(allowedWorksites.orElseThrow());
+            if (intersection.isEmpty()) {
+                throw accessDenied();
+            }
+            return new EffectiveScope(Set.copyOf(intersection));
         }
         currentUserService.requireAdmin();
+        return new EffectiveScope(null);
     }
 
-    private void authorizeEntity(String entityId) {
-        String worksiteId = queryService.resolveWorksiteId(entityId)
-                .orElseThrow(this::notFound);
-        currentUserService.requireWorksiteAccess(worksiteId);
-    }
-
-    private void authorizeRelation(GraphRelation relation) {
-        authorizeEntity(relation.sourceEntityId());
-        authorizeEntity(relation.targetEntityId());
-    }
-
-    private void authorizeEvent(GraphEvent event) {
-        authorizeEntity(event.entityId());
-        if (hasText(event.relatedEntityId())) {
-            authorizeEntity(event.relatedEntityId());
+    private Set<String> resolvedWorksites(String entityId) {
+        String normalizedEntityId = entityId.trim();
+        Set<String> worksiteIds = queryService.resolveWorksiteIds(Set.of(normalizedEntityId))
+                .getOrDefault(normalizedEntityId, Set.of());
+        if (worksiteIds.isEmpty()) {
+            throw notFound();
         }
+        return worksiteIds;
     }
 
-    private OntologyGraphEntityResponse authorizedEntityResponse(GraphEntity entity) {
-        authorizeEntity(entity.id());
-        return OntologyGraphEntityResponse.from(entity);
-    }
-
-    private OntologyGraphRelationResponse authorizedRelationResponse(GraphRelation relation) {
-        authorizeRelation(relation);
-        return OntologyGraphRelationResponse.from(relation);
-    }
-
-    private OntologyGraphEventResponse authorizedEventResponse(GraphEvent event) {
-        authorizeEvent(event);
-        return OntologyGraphEventResponse.from(event);
-    }
-
-    private OntologyGraphStateResponse authorizedStateResponse(GraphState state) {
-        authorizeEntity(state.entityId());
-        return OntologyGraphStateResponse.from(state);
-    }
-
-    private OntologyGraphEvidenceResponse authorizedEvidenceResponse(GraphEvidence evidence) {
-        authorizeEntity(evidence.entityId());
-        return OntologyGraphEvidenceResponse.from(evidence);
+    private void authorizeObjects(Set<String> entityIds, EffectiveScope scope) {
+        if (entityIds.isEmpty()) {
+            return;
+        }
+        Map<String, Set<String>> resolved = queryService.resolveWorksiteIds(entityIds);
+        for (String entityId : entityIds) {
+            Set<String> worksiteIds = resolved.getOrDefault(entityId, Set.of());
+            if (worksiteIds.isEmpty()) {
+                throw notFound();
+            }
+            if (scope.worksiteIds() != null
+                    && worksiteIds.stream().noneMatch(scope.worksiteIds()::contains)) {
+                throw accessDenied();
+            }
+        }
     }
 
     private PageRequest page(Integer page, Integer size, Integer limit) {
@@ -419,11 +442,18 @@ public class OntologyGraphController {
         return new OntologyGraphRequestException(HttpStatus.NOT_FOUND, "ONTOLOGY_NOT_FOUND");
     }
 
+    private OntologyGraphRequestException accessDenied() {
+        return new OntologyGraphRequestException(HttpStatus.FORBIDDEN, "ONTOLOGY_ACCESS_DENIED");
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
     private record PageRequest(int page, int size) {
+    }
+
+    private record EffectiveScope(Set<String> worksiteIds) {
     }
 
     private static final class OntologyGraphRequestException extends RuntimeException {

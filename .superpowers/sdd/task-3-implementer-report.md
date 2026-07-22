@@ -8,6 +8,8 @@
 - Base: `da2224ed40e9d41495a01d4e11d97928e075b09e`.
 - Head: `HEAD` (the Task 3 commit containing this report).
 - Planned subject: `refactor(ontology): expose graph independently of StavIA`.
+- Review-fix base: `89b5fd1ae3a8d136561d6433070901376d5b30bb`.
+- Planned review-fix subject: `fix(ontology): enforce bounded graph authorization scope`.
 - Ported source commits: none; behavior was ported from the current worktree controller/service contracts.
 
 ## Files
@@ -55,15 +57,44 @@
 5. Prohibited-pattern scan over the new runtime/test files
    - No assistant package/type import, MySQL JSON function, `ON DUPLICATE KEY`, JSON fixture/fallback, or removed controller remained.
 
+### Review-fix RED
+
+1. `mvn -f apps/api/pom.xml -Ppostgresql-it -DskipTests -Dit.test=PostgresqlOntologyGraphQueryServiceIT verify`
+   - Exit: `1` during test compilation.
+   - Expected failure: 14 errors showed that the query service had no batch `resolveWorksiteIds(Set<String>)` or set-scoped list APIs required by the shared-worksite regressions.
+2. `mvn -f apps/api/pom.xml -Dtest=OntologyGraphAuthorizationMockMvcTest test`
+   - Exit: `1` after correcting one test import before counting the run as evidence.
+   - Expected failures: 8 of 13 tests failed because the old controller still selected one worksite, called the unscoped list methods, and could not authorize the shared 100-relation page through two batch resolutions.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it -Dtest=OntologyGraphAuthorizationMockMvcTest -Dit.test=PostgresqlOntologyGraphQueryServiceIT verify`
+   - Exit: `1`.
+   - Expected PostgreSQL failure: a depth-3 traversal crossed a foreign entity and then exposed a local-to-local `HIDDEN_LOCAL` relation; the nested result still depended on forbidden topology.
+
+### Review-fix GREEN
+
+1. `mvn -f apps/api/pom.xml -Dtest=OntologyGraphAuthorizationMockMvcTest,OperationalTimelineControllerAuthorizationMockMvcTest test`
+   - Exit: `0`.
+   - Result: 19 tests, 0 failures, 0 errors, 0 skipped.
+2. `mvn -f apps/api/pom.xml test`
+   - Exit: `0`.
+   - Result: 1019 tests, 0 failures, 0 errors, 57 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it -Dtest=OntologyGraphAuthorizationMockMvcTest -Dit.test=PostgresqlOntologyGraphQueryServiceIT verify`
+   - Exit: `0`.
+   - Surefire: 15 tests, 0 failures, 0 errors, 0 skipped.
+   - Failsafe: 3 tests, 0 failures, 0 errors, 0 skipped.
+   - Real PostgreSQL 18.4 proved all distinct reachable worksites through depth 3, equal-depth candidates, scalar metadata plus continued traversal, cycles, orphans, nested foreign/orphan filtering before pagination, foreign-bridge traversal exclusion, and literal `%`, `_`, and backslash search.
+4. `git diff --check` and prohibited-pattern scan
+   - Exit: `0`; no singular resolver, arbitrary resolution `LIMIT 1`, assistant import, MySQL JSON function, or interpolated user SQL remained.
+
 ## Decisions
 
 - The API now owns independent top-level endpoints `/api/ontology/entities`, `/relations`, `/events`, `/states`, and `/evidences`; existing `/api/ontology/search` and nested `/entities/{id}/...` paths remain as compatibility aliases.
 - Response records live in the independent graph package and retain public JSON names such as `entityType`, `relationType`, `eventType`, `stateType`, and `evidenceType`; they import no assistant DTO/model.
 - Unscoped graph lists remain Alfa-only for compatibility. A scoped Beta must supply an authorized `obraId` or entity scope.
-- Every detail is scoped before its payload query. Every returned entity is re-resolved to a worksite; relation source/target and event principal/related entities are all checked; state/evidence entity IDs are checked before serialization.
-- Worksite resolution recognizes `OBRA` and projected `WORKSITE`, PostgreSQL `metadata_json ->> 'obraId'` / `->> 'worksiteId'`, and a fixed whitelist of authoritative graph relations. Recursive resolution is cycle-safe and capped at depth 3.
+- Every detail is scoped before its payload query. Lists receive the effective authorized worksite set in SQL before ordering/pagination; relation source/target, event principal/related entity, state entity, and evidence entity are then checked together in one post-query resolution batch as defense in depth.
+- Worksite resolution returns every distinct reachable worksite for every requested entity seed. It recognizes `OBRA` and projected `WORKSITE`, PostgreSQL `metadata_json ->> 'obraId'` / `->> 'worksiteId'`, and a fixed whitelist of authoritative graph relations; traversal continues after metadata is found, remains cycle-safe, and is capped at depth 3.
+- Entity-scoped requests authorize by intersection between the complete resolved set and `CurrentUserService.allowedObraIds`. A shared entity therefore remains visible to a Beta with any authorized intersection instead of depending on projection order or an arbitrary equal-depth row.
 - Forbidden/unauthorized/not-found errors return only a stable code. HTTP 403 bodies never include the authorization message or confirm object existence.
-- Page size defaults to 50 and rejects values above 100. Page, search, type-filter, identifier, and traversal depth are bounded; depth rejects values outside 1–3. The read-only query transaction has a five-second timeout.
+- Page size defaults to 50 and rejects values above 100. Page, search, type-filter, identifier, and traversal depth are bounded; exact accepted/rejected boundaries are covered and depth rejects values outside 1–3. Literal search escapes backslash before `%` and `_` and uses an explicit SQL `ESCAPE` clause.
 - SQL values use JDBC placeholders throughout. Dynamic SQL fragments are fixed internal column aliases/clauses only; production query SQL uses PostgreSQL recursive CTEs, arrays, and jsonb operators with no MySQL fallback.
 - The old controller was kept while the new MockMvc target first reached green, then removed. Its legacy test was removed only after equivalent Alfa/Beta assertions were present in the new test.
 
@@ -71,4 +102,4 @@
 
 - Flyway 10.10.0 still emits the previously recorded warning that PostgreSQL 18.4 is newer than its declared tested maximum (PostgreSQL 16). V44→V45 and all Task 3 PostgreSQL queries passed; dependency validation remains assigned to the later completion/security slice.
 - The new query service intentionally contains PostgreSQL-only SQL. Activating the complete mutable PostgreSQL application runtime remains Runtime Foundation Task 6; no MySQL dialect branch or fallback was added here.
-- Query authorization is defense in depth: SQL scopes rows by worksite and the controller independently resolves and checks every returned graph object. This adds bounded recursive work per page; page size, depth, and transaction timeout cap the exposure, while production query-plan measurement remains appropriate in the later runtime-proof slice.
+- Query authorization is defense in depth: SQL scopes rows and recursive traversal by the effective worksite set before pagination, then the controller resolves all returned endpoint IDs in one batch. A size-100 relation page performs at most two worksite-resolution batches (root plus at most 200 distinct response endpoints), rather than up to 200 per-row CTE calls. The query-service timeout remains five seconds per service call, not a claimed whole-request deadline; production query-plan and request-deadline measurement remain appropriate in the later runtime-proof slice.

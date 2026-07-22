@@ -9,9 +9,15 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -38,40 +44,30 @@ public class OntologyGraphQueryService {
         this.objectMapper = objectMapper;
     }
 
-    public Optional<String> resolveWorksiteId(String entityId) {
-        if (!hasText(entityId)) {
-            return Optional.empty();
+    public Map<String, Set<String>> resolveWorksiteIds(Set<String> entityIds) {
+        Set<String> normalizedIds = normalized(entityIds);
+        if (normalizedIds.isEmpty()) {
+            return Map.of();
         }
+        Map<String, Set<String>> resolved = new LinkedHashMap<>();
+        normalizedIds.forEach(id -> resolved.put(id, new LinkedHashSet<>()));
 
+        String placeholders = placeholders(normalizedIds.size());
         String sql = """
-                WITH RECURSIVE entity_scope(entity_id, obra_id, depth, path) AS (
+                WITH RECURSIVE entity_scope(root_id, entity_id, obra_id, depth, path) AS (
                     SELECT entity.id,
-                           CASE
-                               WHEN UPPER(entity.entity_type) IN ('OBRA', 'WORKSITE')
-                                AND LOWER(COALESCE(entity.external_ref_type, '')) = 'obra'
-                                   THEN NULLIF(entity.external_ref_id, '')
-                               ELSE COALESCE(
-                                   NULLIF(entity.metadata_json ->> 'obraId', ''),
-                                   NULLIF(entity.metadata_json ->> 'worksiteId', '')
-                               )
-                           END,
+                           entity.id,
+                           %s,
                            0,
                            ARRAY[entity.id]::varchar[]
                     FROM ontology_entities entity
-                    WHERE entity.id = ?
+                    WHERE entity.id IN (%s)
 
                     UNION ALL
 
-                    SELECT related.id,
-                           CASE
-                               WHEN UPPER(related.entity_type) IN ('OBRA', 'WORKSITE')
-                                AND LOWER(COALESCE(related.external_ref_type, '')) = 'obra'
-                                   THEN NULLIF(related.external_ref_id, '')
-                               ELSE COALESCE(
-                                   NULLIF(related.metadata_json ->> 'obraId', ''),
-                                   NULLIF(related.metadata_json ->> 'worksiteId', '')
-                               )
-                           END,
+                    SELECT scope.root_id,
+                           related.id,
+                           %s,
                            scope.depth + 1,
                            scope.path || related.id
                     FROM entity_scope scope
@@ -85,22 +81,36 @@ public class OntologyGraphQueryService {
                               THEN relation.target_entity_id
                           ELSE relation.source_entity_id
                       END
-                    WHERE scope.obra_id IS NULL
-                      AND scope.depth < 3
+                    WHERE scope.depth < 3
                       AND NOT related.id = ANY(scope.path)
                 )
-                SELECT obra_id
+                SELECT DISTINCT root_id, obra_id
                 FROM entity_scope
                 WHERE obra_id IS NOT NULL
-                ORDER BY depth
-                LIMIT 1
-                """.formatted(AUTHORITATIVE_RELATIONS);
-        List<String> results = jdbc.queryForList(sql, String.class, entityId.trim());
-        return results.stream().filter(this::hasText).findFirst();
+                ORDER BY root_id, obra_id
+                """.formatted(
+                worksiteExpression("entity"),
+                placeholders,
+                worksiteExpression("related"),
+                AUTHORITATIVE_RELATIONS
+        );
+        jdbc.query(sql, resultSet -> {
+            while (resultSet.next()) {
+                String rootId = resultSet.getString("root_id");
+                String worksiteId = resultSet.getString("obra_id");
+                if (hasText(rootId) && hasText(worksiteId)) {
+                    resolved.computeIfAbsent(rootId, ignored -> new LinkedHashSet<>())
+                            .add(worksiteId);
+                }
+            }
+            return null;
+        }, normalizedIds.toArray());
+        resolved.replaceAll((ignored, worksiteIds) -> Set.copyOf(worksiteIds));
+        return Map.copyOf(resolved);
     }
 
-    public List<GraphEntity> listEntities(
-            String obraId,
+    public List<GraphEntity> listEntitiesScoped(
+            Set<String> worksiteIds,
             String type,
             String query,
             int page,
@@ -112,7 +122,7 @@ public class OntologyGraphQueryService {
                 WHERE 1 = 1
                 """);
         List<Object> params = new ArrayList<>();
-        addWorksitePredicate(sql, params, "entity.id", obraId);
+        addWorksitePredicate(sql, params, "entity.id", worksiteIds);
 
         if (hasText(type)) {
             sql.append(" AND UPPER(entity.entity_type) = UPPER(?)");
@@ -121,13 +131,13 @@ public class OntologyGraphQueryService {
         if (hasText(query)) {
             sql.append("""
                      AND (
-                        LOWER(entity.canonical_name) LIKE ?
-                        OR LOWER(COALESCE(entity.description, '')) LIKE ?
-                        OR LOWER(COALESCE(entity.external_ref_id, '')) LIKE ?
-                        OR LOWER(entity.id) LIKE ?
+                        LOWER(entity.canonical_name) LIKE ? ESCAPE '\\'
+                        OR LOWER(COALESCE(entity.description, '')) LIKE ? ESCAPE '\\'
+                        OR LOWER(COALESCE(entity.external_ref_id, '')) LIKE ? ESCAPE '\\'
+                        OR LOWER(entity.id) LIKE ? ESCAPE '\\'
                      )
                     """);
-            String pattern = "%" + query.trim().toLowerCase() + "%";
+            String pattern = literalContainsPattern(query);
             params.add(pattern);
             params.add(pattern);
             params.add(pattern);
@@ -136,6 +146,20 @@ public class OntologyGraphQueryService {
         sql.append(" ORDER BY entity.updated_at DESC, entity.canonical_name, entity.id LIMIT ? OFFSET ?");
         addPage(params, page, size);
         return jdbc.query(sql.toString(), this::mapEntity, params.toArray());
+    }
+
+    private String worksiteExpression(String alias) {
+        return """
+                CASE
+                    WHEN UPPER(%1$s.entity_type) IN ('OBRA', 'WORKSITE')
+                     AND LOWER(COALESCE(%1$s.external_ref_type, '')) = 'obra'
+                        THEN NULLIF(%1$s.external_ref_id, '')
+                    ELSE COALESCE(
+                        NULLIF(%1$s.metadata_json ->> 'obraId', ''),
+                        NULLIF(%1$s.metadata_json ->> 'worksiteId', '')
+                    )
+                END
+                """.formatted(alias);
     }
 
     public Optional<GraphEntity> findEntity(String id) {
@@ -153,8 +177,8 @@ public class OntologyGraphQueryService {
         }
     }
 
-    public List<GraphRelation> listRelations(
-            String obraId,
+    public List<GraphRelation> listRelationsScoped(
+            Set<String> worksiteIds,
             String entityId,
             String type,
             int depth,
@@ -164,6 +188,23 @@ public class OntologyGraphQueryService {
         StringBuilder sql = new StringBuilder();
         List<Object> params = new ArrayList<>();
         if (hasText(entityId) && depth > 1) {
+            StringBuilder traversalScopeSql = new StringBuilder("1 = 1");
+            List<Object> traversalScopeParams = new ArrayList<>();
+            if (worksiteIds != null) {
+                traversalScopeSql.setLength(0);
+                addWorksiteExpression(
+                        traversalScopeSql,
+                        traversalScopeParams,
+                        """
+                        CASE
+                            WHEN edge.source_entity_id = reachable.entity_id
+                                THEN edge.target_entity_id
+                            ELSE edge.source_entity_id
+                        END
+                        """,
+                        worksiteIds
+                );
+            }
             sql.append("""
                     WITH RECURSIVE reachable(entity_id, depth, path) AS (
                         SELECT ?::varchar, 0, ARRAY[?::varchar]
@@ -189,6 +230,7 @@ public class OntologyGraphQueryService {
                                   THEN edge.target_entity_id
                               ELSE edge.source_entity_id
                           END) = ANY(reachable.path)
+                          AND %s
                     )
                     SELECT DISTINCT relation.*
                     FROM ontology_relations relation
@@ -197,10 +239,11 @@ public class OntologyGraphQueryService {
                      AND (relation.source_entity_id = reachable.entity_id
                           OR relation.target_entity_id = reachable.entity_id)
                     WHERE 1 = 1
-                    """);
+                    """.formatted(traversalScopeSql));
             params.add(entityId.trim());
             params.add(entityId.trim());
             params.add(depth);
+            params.addAll(traversalScopeParams);
             params.add(depth);
         } else {
             sql.append("""
@@ -214,8 +257,8 @@ public class OntologyGraphQueryService {
                 params.add(entityId.trim());
             }
         }
-        addWorksitePredicate(sql, params, "relation.source_entity_id", obraId);
-        addWorksitePredicate(sql, params, "relation.target_entity_id", obraId);
+        addWorksitePredicate(sql, params, "relation.source_entity_id", worksiteIds);
+        addWorksitePredicate(sql, params, "relation.target_entity_id", worksiteIds);
         if (hasText(type)) {
             sql.append(" AND UPPER(relation.relation_type) = UPPER(?)");
             params.add(type.trim());
@@ -225,8 +268,8 @@ public class OntologyGraphQueryService {
         return jdbc.query(sql.toString(), this::mapRelation, params.toArray());
     }
 
-    public List<GraphEvent> listEvents(
-            String obraId,
+    public List<GraphEvent> listEventsScoped(
+            Set<String> worksiteIds,
             String entityId,
             String type,
             int page,
@@ -238,10 +281,10 @@ public class OntologyGraphQueryService {
                 WHERE 1 = 1
                 """);
         List<Object> params = new ArrayList<>();
-        addWorksitePredicate(sql, params, "event.entity_id", obraId);
-        if (hasText(obraId)) {
+        addWorksitePredicate(sql, params, "event.entity_id", worksiteIds);
+        if (worksiteIds != null) {
             sql.append(" AND (event.related_entity_id IS NULL OR ");
-            addWorksiteExpression(sql, params, "event.related_entity_id", obraId);
+            addWorksiteExpression(sql, params, "event.related_entity_id", worksiteIds);
             sql.append(")");
         }
         if (hasText(entityId)) {
@@ -258,8 +301,8 @@ public class OntologyGraphQueryService {
         return jdbc.query(sql.toString(), this::mapEvent, params.toArray());
     }
 
-    public List<GraphState> listStates(
-            String obraId,
+    public List<GraphState> listStatesScoped(
+            Set<String> worksiteIds,
             String entityId,
             String type,
             int page,
@@ -271,15 +314,15 @@ public class OntologyGraphQueryService {
                 WHERE 1 = 1
                 """);
         List<Object> params = new ArrayList<>();
-        addWorksitePredicate(sql, params, "state.entity_id", obraId);
+        addWorksitePredicate(sql, params, "state.entity_id", worksiteIds);
         addEntityAndTypeFilters(sql, params, "state.entity_id", entityId, "state.state_type", type);
         sql.append(" ORDER BY state.valid_from DESC, state.id LIMIT ? OFFSET ?");
         addPage(params, page, size);
         return jdbc.query(sql.toString(), this::mapState, params.toArray());
     }
 
-    public List<GraphEvidence> listEvidences(
-            String obraId,
+    public List<GraphEvidence> listEvidencesScoped(
+            Set<String> worksiteIds,
             String entityId,
             String type,
             int page,
@@ -291,7 +334,7 @@ public class OntologyGraphQueryService {
                 WHERE 1 = 1
                 """);
         List<Object> params = new ArrayList<>();
-        addWorksitePredicate(sql, params, "evidence.entity_id", obraId);
+        addWorksitePredicate(sql, params, "evidence.entity_id", worksiteIds);
         addEntityAndTypeFilters(
                 sql,
                 params,
@@ -309,11 +352,11 @@ public class OntologyGraphQueryService {
             StringBuilder sql,
             List<Object> params,
             String entityIdExpression,
-            String obraId
+            Set<String> worksiteIds
     ) {
-        if (hasText(obraId)) {
+        if (worksiteIds != null) {
             sql.append(" AND ");
-            addWorksiteExpression(sql, params, entityIdExpression, obraId);
+            addWorksiteExpression(sql, params, entityIdExpression, worksiteIds);
         }
     }
 
@@ -321,8 +364,13 @@ public class OntologyGraphQueryService {
             StringBuilder sql,
             List<Object> params,
             String entityIdExpression,
-            String obraId
+            Set<String> worksiteIds
     ) {
+        Set<String> normalizedWorksiteIds = normalized(worksiteIds);
+        if (normalizedWorksiteIds.isEmpty()) {
+            sql.append("1 = 0");
+            return;
+        }
         sql.append("""
                 EXISTS (
                     WITH RECURSIVE scoped_worksite(entity_id, obra_id, depth, path) AS (
@@ -366,17 +414,19 @@ public class OntologyGraphQueryService {
                                   THEN scope_relation.target_entity_id
                               ELSE scope_relation.source_entity_id
                           END
-                        WHERE scope.obra_id IS NULL
-                          AND scope.depth < 3
+                        WHERE scope.depth < 3
                           AND NOT related.id = ANY(scope.path)
                     )
                     SELECT 1
                     FROM scoped_worksite
-                    WHERE obra_id = ?
+                    WHERE obra_id IN (%s)
                 )
-                """.formatted(entityIdExpression, AUTHORITATIVE_RELATIONS));
-        String normalized = obraId.trim();
-        params.add(normalized);
+                """.formatted(
+                entityIdExpression,
+                AUTHORITATIVE_RELATIONS,
+                placeholders(normalizedWorksiteIds.size())
+        ));
+        params.addAll(normalizedWorksiteIds);
     }
 
     private void addEntityAndTypeFilters(
@@ -400,6 +450,32 @@ public class OntologyGraphQueryService {
     private void addPage(List<Object> params, int page, int size) {
         params.add(size);
         params.add((long) page * size);
+    }
+
+    private Set<String> normalized(Set<String> values) {
+        if (values == null || values.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> normalized = new TreeSet<>();
+        for (String value : values) {
+            if (hasText(value)) {
+                normalized.add(value.trim());
+            }
+        }
+        return normalized;
+    }
+
+    private String placeholders(int count) {
+        return String.join(", ", Collections.nCopies(count, "?"));
+    }
+
+    private String literalContainsPattern(String query) {
+        String escaped = query.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     private GraphEntity mapEntity(ResultSet resultSet, int rowNumber) throws SQLException {
