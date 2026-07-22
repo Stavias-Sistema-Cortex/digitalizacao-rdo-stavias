@@ -13,6 +13,8 @@ ALTER TABLE rdo
     ADD COLUMN previous_rdo_id varchar(36),
     ADD COLUMN creation_context_version bigint,
     ADD COLUMN client_mutation_id varchar(120),
+    ADD COLUMN creation_owner_id varchar(36),
+    ADD COLUMN creation_payload_hash varchar(64),
     ADD COLUMN apontador_colaborador_id varchar(36),
     ADD COLUMN numero_sequencial bigint;
 
@@ -24,6 +26,14 @@ ALTER TABLE rdo
     ADD CONSTRAINT fk_rdo_apontador_colaborador
         FOREIGN KEY (apontador_colaborador_id)
         REFERENCES colaborador(id) ON DELETE RESTRICT,
+    ADD CONSTRAINT fk_rdo_creation_owner
+        FOREIGN KEY (creation_owner_id)
+        REFERENCES colaborador(id) ON DELETE RESTRICT,
+    ADD CONSTRAINT chk_rdo_creation_payload_hash
+        CHECK (
+            creation_payload_hash IS NULL
+            OR creation_payload_hash ~ '^[0-9a-f]{64}$'
+        ),
     ADD CONSTRAINT chk_rdo_creation_context_version
         CHECK (creation_context_version IS NULL OR creation_context_version > 0),
     ADD CONSTRAINT chk_rdo_numero_sequencial
@@ -39,6 +49,7 @@ CREATE UNIQUE INDEX uq_rdo_obra_numero_sequencial
 
 CREATE INDEX idx_rdo_previous_rdo ON rdo (previous_rdo_id);
 CREATE INDEX idx_rdo_apontador_colaborador ON rdo (apontador_colaborador_id);
+CREATE INDEX idx_rdo_creation_owner ON rdo (creation_owner_id);
 
 ALTER TABLE rdo_mao_obra
     ADD COLUMN origem_item_id varchar(36),

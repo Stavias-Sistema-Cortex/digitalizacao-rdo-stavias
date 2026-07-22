@@ -1,5 +1,7 @@
 package com.projeto.cortex.rdos;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
@@ -23,6 +25,8 @@ import java.util.UUID;
 public class RdoService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final CurrentUserService currentUserService;
+    private final RdoCreationPayloadHasher creationPayloadHasher;
     private final RdoMemoryPublisher memoryPublisher;
     private final RdoOperationalDetailService operationalDetailService;
     private final RdoAttachmentService attachmentService;
@@ -32,6 +36,8 @@ public class RdoService {
 
     public RdoService(
             JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            CurrentUserService currentUserService,
             RdoMemoryPublisher memoryPublisher,
             RdoOperationalDetailService operationalDetailService,
             RdoAttachmentService attachmentService,
@@ -40,6 +46,8 @@ public class RdoService {
             RdoQueryService queryService
     ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.currentUserService = currentUserService;
+        this.creationPayloadHasher = new RdoCreationPayloadHasher(objectMapper);
         this.memoryPublisher = memoryPublisher;
         this.operationalDetailService = operationalDetailService;
         this.attachmentService = attachmentService;
@@ -66,21 +74,18 @@ public class RdoService {
         String clientMutationId = textoLimitadoObrigatorio(
                 request.clientMutationId(), "clientMutationId", 120
         );
-        bloquearCriacaoDeterministicamente(rdoId, clientMutationId);
+        String ownerId = requireUuid(currentUserService.requireUserId(), "usuário autenticado");
+        String payloadHash = creationPayloadHasher.hash(request);
+        bloquearCriacaoDeterministicamente(
+                rdoId,
+                ownerId + ":" + clientMutationId
+        );
         RdoExistente replay = buscarReplay(clientMutationId, rdoId);
         if (replay != null) {
             if (!replay.id().equals(rdoId)
-                    || !replay.obraId().equals(obraId)
-                    || !replay.dataRdo().equals(request.dataRdo())
-                    || !Objects.equals(
-                            replay.previousRdoId(),
-                            nuloSeVazio(request.previousRdoId())
-                    )
-                    || !Objects.equals(
-                            replay.creationContextVersion(),
-                            request.creationContextVersion()
-                    )
-                    || !Objects.equals(replay.clientMutationId(), clientMutationId)) {
+                    || !Objects.equals(replay.clientMutationId(), clientMutationId)
+                    || !Objects.equals(replay.creationOwnerId(), ownerId)
+                    || !Objects.equals(replay.creationPayloadHash(), payloadHash)) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
                         "A mutação de criação já foi aplicada com outro conteúdo, RDO ou obra."
@@ -133,6 +138,8 @@ public class RdoService {
                     previous_rdo_id,
                     creation_context_version,
                     client_mutation_id,
+                    creation_owner_id,
+                    creation_payload_hash,
                     apontador_colaborador_id,
                     dia_semana,
                     cliente,
@@ -157,7 +164,7 @@ public class RdoService {
                     apontador_rdo,
                     encarregado_obra,
                     fiscalizacao_campo
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rdoId,
                 obraId,
@@ -168,6 +175,8 @@ public class RdoService {
                 nuloSeVazio(request.previousRdoId()),
                 request.creationContextVersion(),
                 clientMutationId,
+                ownerId,
+                payloadHash,
                 nuloSeVazio(request.apontadorColaboradorId()),
                 diaSemana,
                 cliente,
@@ -592,7 +601,8 @@ public class RdoService {
         return jdbcTemplate.query(
                 """
                 SELECT id, obra_id, data_rdo, previous_rdo_id,
-                       creation_context_version, client_mutation_id
+                       creation_context_version, client_mutation_id,
+                       creation_owner_id, creation_payload_hash
                 FROM rdo
                 WHERE id = ?
                    OR (? IS NOT NULL AND client_mutation_id = ?)
@@ -606,7 +616,9 @@ public class RdoService {
                                 rs.getDate("data_rdo").toLocalDate(),
                                 rs.getString("previous_rdo_id"),
                                 rs.getObject("creation_context_version", Long.class),
-                                rs.getString("client_mutation_id")
+                                rs.getString("client_mutation_id"),
+                                rs.getString("creation_owner_id"),
+                                rs.getString("creation_payload_hash")
                         )
                         : null,
                 rdoId,
@@ -1096,7 +1108,9 @@ public class RdoService {
             LocalDate dataRdo,
             String previousRdoId,
             Long creationContextVersion,
-            String clientMutationId
+            String clientMutationId,
+            String creationOwnerId,
+            String creationPayloadHash
     ) {
     }
 }

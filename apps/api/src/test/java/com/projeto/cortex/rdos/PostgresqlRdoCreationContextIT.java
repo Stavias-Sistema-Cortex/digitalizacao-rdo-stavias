@@ -7,6 +7,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -17,6 +19,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -190,7 +193,7 @@ class PostgresqlRdoCreationContextIT {
                 "ENVIADO", LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(1));
         String equipeA = id();
         String equipeB = id();
-        RdoService service = service();
+        RdoService service = service(colaborador);
         CountDownLatch start = new CountDownLatch(1);
 
         try (var executor = Executors.newFixedThreadPool(2)) {
@@ -226,7 +229,7 @@ class PostgresqlRdoCreationContextIT {
         RdoCreateRequest request = request(
                 rdoId, obraId, mutationId, 1L, null, colaborador, id(), null
         );
-        RdoService service = service();
+        RdoService service = service(colaborador);
 
         RdoResponse first = transactions.execute(status -> service.criarRascunho(request));
         RdoResponse replay = transactions.execute(status -> service.criarRascunho(request));
@@ -241,16 +244,43 @@ class PostgresqlRdoCreationContextIT {
                 "SELECT next_value FROM rdo_number_sequence WHERE obra_id = ?",
                 Long.class, obraId
         )).isEqualTo(2L);
+        assertThat(jdbc.queryForMap(
+                "SELECT creation_owner_id, creation_payload_hash FROM rdo WHERE id = ?",
+                rdoId
+        )).satisfies(row -> {
+            assertThat(row.get("creation_owner_id")).isEqualTo(colaborador);
+            assertThat(row.get("creation_payload_hash").toString())
+                    .matches("[0-9a-f]{64}");
+        });
 
-        var mismatchedJson = mapper.valueToTree(request);
-        ((com.fasterxml.jackson.databind.node.ObjectNode) mismatchedJson)
-                .put("dataRdo", "2026-07-23");
+        ObjectNode mismatchedJson = mapper.valueToTree(request);
+        ((ObjectNode) mismatchedJson.withArray("maoObra").get(0))
+                .put("observacoes", "conteúdo divergente");
         RdoCreateRequest mismatchedReplay = mapper.treeToValue(
                 mismatchedJson,
                 RdoCreateRequest.class
         );
         assertThatThrownBy(() -> transactions.execute(
                 status -> service.criarRascunho(mismatchedReplay)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
+
+        String alternateApontador = inserirColaborador("Apontador alternativo", null, null);
+        vincular(alternateApontador, obraId, "APONTADOR", "ATIVO");
+        ObjectNode alternateApontadorJson = mapper.valueToTree(request);
+        alternateApontadorJson.put("apontadorColaboradorId", alternateApontador);
+        RdoCreateRequest alternateApontadorReplay = mapper.treeToValue(
+                alternateApontadorJson,
+                RdoCreateRequest.class
+        );
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service.criarRascunho(alternateApontadorReplay)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
+
+        String otherOwner = inserirColaborador("Outro dono", null, null);
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service(otherOwner).criarRascunho(request)
         )).isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("outro conteúdo");
     }
@@ -265,7 +295,7 @@ class PostgresqlRdoCreationContextIT {
         RdoCreateRequest request = request(
                 id(), obraId, mutationId, 1L, null, colaborador, id(), null
         );
-        RdoService service = service();
+        RdoService service = service(colaborador);
         CountDownLatch start = new CountDownLatch(1);
 
         try (var executor = Executors.newFixedThreadPool(2)) {
@@ -274,6 +304,60 @@ class PostgresqlRdoCreationContextIT {
             start.countDown();
 
             assertThat(replay.get().numeroRdo()).isEqualTo(first.get().numeroRdo());
+        }
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo WHERE client_mutation_id = ?",
+                Integer.class,
+                mutationId
+        )).isOne();
+        assertThat(jdbc.queryForObject(
+                "SELECT next_value FROM rdo_number_sequence WHERE obra_id = ?",
+                Long.class,
+                obraId
+        )).isEqualTo(2L);
+    }
+
+    @Test
+    void replayConcorrenteDivergenteRecusaUmPayloadSemConsumirOutroNumero()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "REPLAY-DIVERGENTE");
+        String colaborador = inserirColaborador("Equipe", null, null);
+        vincular(colaborador, obraId, "APONTADOR", "ATIVO");
+        String mutationId = id();
+        RdoCreateRequest original = request(
+                id(), obraId, mutationId, 1L, null, colaborador, id(), null
+        );
+        ObjectNode divergentJson = mapper.valueToTree(original);
+        divergentJson.put("observacoes", "payload concorrente diferente");
+        RdoCreateRequest divergent = mapper.treeToValue(
+                divergentJson,
+                RdoCreateRequest.class
+        );
+        RdoService service = service(colaborador);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<RdoResponse> first = executor.submit(createTask(start, service, original));
+            Future<RdoResponse> second = executor.submit(createTask(start, service, divergent));
+            start.countDown();
+
+            int successes = 0;
+            int conflicts = 0;
+            for (Future<RdoResponse> future : List.of(first, second)) {
+                try {
+                    future.get();
+                    successes += 1;
+                } catch (ExecutionException exception) {
+                    assertThat(exception.getCause())
+                            .isInstanceOf(ResponseStatusException.class)
+                            .hasMessageContaining("outro conteúdo");
+                    conflicts += 1;
+                }
+            }
+            assertThat(successes).isOne();
+            assertThat(conflicts).isOne();
         }
 
         assertThat(jdbc.queryForObject(
@@ -306,7 +390,7 @@ class PostgresqlRdoCreationContextIT {
                 "ENVIADO", LocalDateTime.now().minusDays(1), LocalDateTime.now().minusDays(1));
         String origemB = id();
         inserirMaoObra(origemB, previousB, colaboradorB, "Apontador");
-        RdoService service = service();
+        RdoService service = service(colaboradorA);
 
         RdoCreateRequest crossScope = request(
                 id(), obraA, id(), 1L, previousB, colaboradorB, id(), origemB
@@ -359,7 +443,7 @@ class PostgresqlRdoCreationContextIT {
         RdoCreateRequest create = request(
                 rdoId, obraA, id(), 1L, null, colaborador, itemId, null
         );
-        transactions.execute(status -> service().criarRascunho(create));
+        transactions.execute(status -> service(colaborador).criarRascunho(create));
         RdoDraftUpdateService updateService = draftService();
 
         transactions.execute(status -> updateService.atualizarRascunho(rdoId, create));
@@ -411,7 +495,7 @@ class PostgresqlRdoCreationContextIT {
                 currentItemId,
                 sourceItemId
         );
-        transactions.execute(status -> service().criarRascunho(create));
+        transactions.execute(status -> service(collaborator).criarRascunho(create));
         com.fasterxml.jackson.databind.node.ObjectNode withoutOriginJson =
                 mapper.valueToTree(create);
         ((com.fasterxml.jackson.databind.node.ObjectNode) withoutOriginJson
@@ -462,7 +546,7 @@ class PostgresqlRdoCreationContextIT {
                 id(),
                 sourceItemId
         );
-        transactions.execute(status -> service().criarRascunho(create));
+        transactions.execute(status -> service(collaborator).criarRascunho(create));
         com.fasterxml.jackson.databind.node.ObjectNode invalidDateJson =
                 mapper.valueToTree(create);
         invalidDateJson.put("dataRdo", SELECTED_DATE.minusDays(1).toString());
@@ -493,7 +577,7 @@ class PostgresqlRdoCreationContextIT {
         };
     }
 
-    private RdoService service() {
+    private RdoService service(String ownerId) {
         RdoOperationalDetailService details = mock(RdoOperationalDetailService.class);
         when(details.substituirDetalhes(
                 any(), any(), any(), any(), any(), any(), any()
@@ -502,8 +586,12 @@ class PostgresqlRdoCreationContextIT {
         ));
         RdoAttachmentService attachments = mock(RdoAttachmentService.class);
         when(attachments.listar(any())).thenReturn(List.of());
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        when(currentUserService.requireUserId()).thenReturn(ownerId);
         return new RdoService(
                 jdbc,
+                mapper,
+                currentUserService,
                 mock(RdoMemoryPublisher.class),
                 details,
                 attachments,
