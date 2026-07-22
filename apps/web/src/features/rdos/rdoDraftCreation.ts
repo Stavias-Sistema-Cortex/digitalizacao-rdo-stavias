@@ -75,15 +75,36 @@ function mergeImportedEvidence(
     previousRdoId: contextual.previousRdoId,
     creationContextVersion: contextual.creationContextVersion,
     apontadorColaboradorId: "",
-    numeroRdo: imported.numeroRdo.trim()
-      ? imported.numeroRdo
-      : contextual.numeroRdo,
+    cliente: contextual.cliente,
+    contrato: contextual.contrato,
+    rodovia: contextual.rodovia,
+    cidade: contextual.cidade,
+    uf: contextual.uf,
+    numeroRdo: contextual.numeroRdo,
     maoObra: [
       ...structuredClone(imported.maoObra),
       ...contextual.maoObra.filter(
         (row) => !importedCollaboratorIds.has(row.colaboradorId),
       ),
     ],
+    importEvidence: {
+      source: "IMPORTED_DOCUMENT",
+      rawWorksiteIdentity: imported.importEvidence?.rawWorksiteIdentity ?? {
+        numeroRdo: imported.numeroRdo,
+        obraId: imported.obraId,
+        dataRdo: imported.dataRdo,
+        cliente: imported.cliente,
+        contrato: imported.contrato,
+        rodovia: imported.rodovia,
+        cidade: imported.cidade,
+        uf: imported.uf,
+      },
+      boundContext: {
+        obraId: contextual.obraId,
+        dataRdo: contextual.dataRdo,
+        receiptVersion: contextual.creationContextVersion!,
+      },
+    },
     syncStatus: "LOCAL_ONLY",
   };
 }

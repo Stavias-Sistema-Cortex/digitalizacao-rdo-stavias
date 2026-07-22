@@ -3,7 +3,11 @@ import "fake-indexeddb/auto";
 import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { clearSession, setSession } from "../auth/authSession";
+import {
+  clearSession,
+  setOfflineSession,
+  setSession,
+} from "../auth/authSession";
 import {
   closeCortexDb,
   getCortexDb,
@@ -21,6 +25,7 @@ import { createEmptyMaoObra, createEmptyRdo } from "./createEmptyRdo";
 import {
   createAndPersistRdoDraft,
 } from "./rdoDraftCreation";
+import { putRdoCreationContext } from "./rdoCreationContextRepository";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 
 const USER_ID = "00000000-0000-4000-8000-000000000010";
@@ -99,6 +104,7 @@ beforeEach(async () => {
   databaseName = await databaseNameForScope(USER_ID, `BETA:${OBRA_ID}`);
   await initializeCortexDb();
   await updateSyncState({ deviceId: DEVICE_ID, usuarioId: USER_ID });
+  await putRdoCreationContext(context());
 });
 
 afterEach(async () => {
@@ -108,6 +114,17 @@ afterEach(async () => {
 });
 
 describe("transação inicial do novo RDO", () => {
+  async function expectNoCreateWrites(rdoId = RDO_ID) {
+    const database = await getCortexDb();
+    expect(await database.get("rdos", rdoId)).toBeUndefined();
+    expect(
+      await database.getAllFromIndex("outbox_mutations", "by-entity-id", rdoId),
+    ).toEqual([]);
+    expect(
+      await database.getAllFromIndex("operational_events", "by-rdo-id", rdoId),
+    ).toEqual([]);
+  }
+
   it("persiste draft, mutação canônica e evento correlacionado antes de retornar", async () => {
     const database = await getCortexDb();
     await database.put("outbox_mutations", {
@@ -313,9 +330,14 @@ describe("transação inicial do novo RDO", () => {
   it("vincula draft importado ao contexto sem alterar células operacionais importadas", async () => {
     const imported = createEmptyRdo();
     imported.id = RDO_ID;
-    imported.dataRdo = "2026-07-22";
+    imported.obraId = "obra-lida-da-planilha";
+    imported.dataRdo = "2026-06-18";
     imported.numeroRdo = "RDO-PLANILHA-77";
+    imported.cliente = "CLIENTE-LIDO-DO-XLSX";
     imported.contrato = "CONTRATO-LIDO-DO-XLSX";
+    imported.rodovia = "RODOVIA-LIDA-DO-XLSX";
+    imported.cidade = "CIDADE-LIDA-DO-XLSX";
+    imported.uf = "RJ";
     imported.observacoes = "Ocorrência preservada do arquivo";
     imported.kmInicialProgramado = "12,300";
     imported.equipamentos = [
@@ -333,7 +355,14 @@ describe("transação inicial do novo RDO", () => {
       },
     ];
 
-    const created = await createAndPersistRdoDraft(context(), {
+    const selectedContext = context();
+    selectedContext.obra.cliente = "Cliente canônico da obra";
+    selectedContext.obra.codigoContrato = "CTR-CANONICO";
+    selectedContext.obra.rodovia = "SP-041";
+    selectedContext.obra.cidade = "Campinas";
+    selectedContext.obra.uf = "SP";
+    await putRdoCreationContext(selectedContext);
+    const created = await createAndPersistRdoDraft(selectedContext, {
       baseDraft: imported,
       occurredAt: "2026-07-22T12:02:00.000Z",
     });
@@ -343,8 +372,12 @@ describe("transação inicial do novo RDO", () => {
       obraId: OBRA_ID,
       dataRdo: "2026-07-22",
       creationContextVersion: 7,
-      numeroRdo: "RDO-PLANILHA-77",
-      contrato: "CONTRATO-LIDO-DO-XLSX",
+      numeroRdo: "RDO-0021",
+      cliente: "Cliente canônico da obra",
+      contrato: "CTR-CANONICO",
+      rodovia: "SP-041",
+      cidade: "Campinas",
+      uf: "SP",
       observacoes: "Ocorrência preservada do arquivo",
       kmInicialProgramado: "12,300",
       equipamentos: [
@@ -354,11 +387,46 @@ describe("transação inicial do novo RDO", () => {
           observacoes: "linha 14",
         }),
       ],
+      importEvidence: {
+        source: "IMPORTED_DOCUMENT",
+        rawWorksiteIdentity: {
+          numeroRdo: "RDO-PLANILHA-77",
+          obraId: "obra-lida-da-planilha",
+          dataRdo: "2026-06-18",
+          cliente: "CLIENTE-LIDO-DO-XLSX",
+          contrato: "CONTRATO-LIDO-DO-XLSX",
+          rodovia: "RODOVIA-LIDA-DO-XLSX",
+          cidade: "CIDADE-LIDA-DO-XLSX",
+          uf: "RJ",
+        },
+        boundContext: {
+          obraId: OBRA_ID,
+          dataRdo: "2026-07-22",
+          receiptVersion: 7,
+        },
+      },
     });
     expect(created.mutation.payload).toMatchObject({
       obraId: OBRA_ID,
       creationContextVersion: 7,
+      cliente: "Cliente canônico da obra",
+      contrato: "CTR-CANONICO",
+      rodovia: "SP-041",
+      cidade: "Campinas",
+      uf: "SP",
       observacoes: "Ocorrência preservada do arquivo",
+    });
+    expect(created.mutation.payload).not.toHaveProperty("importEvidence");
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      payload: expect.objectContaining({
+        importEvidence: expect.objectContaining({
+          rawWorksiteIdentity: expect.objectContaining({
+            numeroRdo: "RDO-PLANILHA-77",
+            contrato: "CONTRATO-LIDO-DO-XLSX",
+          }),
+        }),
+      }),
     });
   });
 
@@ -372,11 +440,215 @@ describe("transação inicial do novo RDO", () => {
     await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
       "Contexto versionado da obra é obrigatório para criar o RDO.",
     );
+    await expectNoCreateWrites();
+  });
+
+  it("rejeita receipt positivo forjado sem qualquer write de CREATE", async () => {
+    const draft = createEmptyRdo();
+    draft.id = RDO_ID;
+    draft.obraId = OBRA_ID;
+    draft.dataRdo = "2026-07-22";
+    draft.creationContextVersion = 999;
+
+    await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+      "Contexto versionado da obra é obrigatório para criar o RDO.",
+    );
+    await expectNoCreateWrites();
+  });
+
+  it("rejeita cache ausente ou pertencente a outro owner sem writes", async () => {
     const database = await getCortexDb();
-    expect(
-      await database.getAllFromIndex("outbox_mutations", "by-entity-id", RDO_ID),
-    ).toEqual([]);
-    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    await database.delete("rdo_creation_contexts", [
+      USER_ID,
+      OBRA_ID,
+      "2026-07-22",
+    ]);
+    await database.put("rdo_creation_contexts", {
+      ownerId: "00000000-0000-4000-8000-000000000099",
+      obraId: OBRA_ID,
+      selectedDate: "2026-07-22",
+      sourceVersion: 5,
+      receiptVersion: 7,
+      cachedAt: "2026-07-22T12:00:00.000Z",
+      coverage: context().coverage as unknown as Record<string, unknown>,
+      context: context() as unknown as Record<string, unknown>,
+    });
+    const draft = createEmptyRdo();
+    draft.id = RDO_ID;
+    draft.obraId = OBRA_ID;
+    draft.dataRdo = "2026-07-22";
+    draft.creationContextVersion = 7;
+
+    await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+      "Contexto versionado da obra é obrigatório para criar o RDO.",
+    );
+    await expectNoCreateWrites();
+  });
+
+  it("rejeita obra ou data sem o cache exato da sessão", async () => {
+    const wrongWorksite = createEmptyRdo();
+    wrongWorksite.id = "00000000-0000-4000-8000-000000000036";
+    wrongWorksite.obraId = "00000000-0000-4000-8000-000000000099";
+    wrongWorksite.dataRdo = "2026-07-22";
+    wrongWorksite.creationContextVersion = 7;
+    const wrongDate = createEmptyRdo();
+    wrongDate.id = "00000000-0000-4000-8000-000000000037";
+    wrongDate.obraId = OBRA_ID;
+    wrongDate.dataRdo = "2026-07-23";
+    wrongDate.creationContextVersion = 7;
+
+    for (const draft of [wrongWorksite, wrongDate]) {
+      await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+        "Contexto versionado da obra é obrigatório para criar o RDO.",
+      );
+      await expectNoCreateWrites(draft.id);
+    }
+  });
+
+  it("rejeita provenance incoerente e cobertura obrigatória ou opcional parcial", async () => {
+    const database = await getCortexDb();
+    const invalidContexts = [
+      {
+        ...context(),
+        provenance: {
+          ...context().provenance,
+          worksiteId: "00000000-0000-4000-8000-000000000099",
+        },
+      },
+      {
+        ...context(),
+        provenance: {
+          ...context().provenance,
+          selectedDate: "2026-07-21",
+        },
+      },
+      {
+        ...context(),
+        coverage: {
+          ...context().coverage,
+          colaboradores: {
+            status: "PARTIAL",
+            complete: false,
+            total: 2,
+            returned: 1,
+          },
+        },
+      },
+      {
+        ...context(),
+        provenance: {
+          ...context().provenance,
+          sourceVersion: 6,
+        },
+      },
+      {
+        ...context(),
+        coverage: {
+          ...context().coverage,
+          serviceCatalog: {
+            status: "PARTIAL",
+            complete: false,
+            total: 2,
+            returned: 1,
+          },
+        },
+      },
+      {
+        ...context(),
+        coverage: {
+          ...context().coverage,
+          priceCatalog: {
+            status: "PARTIAL",
+            complete: false,
+            total: 1,
+            returned: 0,
+          },
+        },
+      },
+    ];
+
+    for (const [index, invalidContext] of invalidContexts.entries()) {
+      await database.put("rdo_creation_contexts", {
+        ownerId: USER_ID,
+        obraId: OBRA_ID,
+        selectedDate: "2026-07-22",
+        sourceVersion: 5,
+        receiptVersion: 7,
+        cachedAt: "2026-07-22T12:00:00.000Z",
+        coverage: invalidContext.coverage as unknown as Record<string, unknown>,
+        context: invalidContext as unknown as Record<string, unknown>,
+      });
+      const draft = createEmptyRdo();
+      draft.id = `${RDO_ID.slice(0, -1)}${index + 3}`;
+      draft.obraId = OBRA_ID;
+      draft.dataRdo = "2026-07-22";
+      draft.creationContextVersion = 7;
+
+      await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+        "Contexto versionado da obra é obrigatório para criar o RDO.",
+      );
+      await expectNoCreateWrites(draft.id);
+    }
+  });
+
+  it("rejeita sessão com escopo revogado antes de gravar o CREATE", async () => {
+    setSession({
+      colaboradorId: USER_ID,
+      nome: "Encarregado",
+      papelAcesso: "BETA",
+      escopoGlobal: false,
+      obraIds: [],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const draft = createEmptyRdo();
+    draft.id = RDO_ID;
+    draft.obraId = OBRA_ID;
+    draft.dataRdo = "2026-07-22";
+    draft.creationContextVersion = 7;
+
+    await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+      "Contexto versionado da obra é obrigatório para criar o RDO.",
+    );
+    setSession({
+      colaboradorId: USER_ID,
+      nome: "Encarregado",
+      papelAcesso: "BETA",
+      escopoGlobal: false,
+      obraIds: [OBRA_ID],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await expectNoCreateWrites();
+  });
+
+  it("aceita contexto stale completo e catálogos explicitamente não configurados offline", async () => {
+    const stale = context();
+    stale.freshness.status = "STALE";
+    stale.freshness.staleAfter = "2026-07-22T11:00:00.000Z";
+    await putRdoCreationContext(stale);
+    setOfflineSession({
+      colaboradorId: USER_ID,
+      nome: "Encarregado",
+      papelAcesso: "BETA",
+      escopoGlobal: false,
+      obraIds: [OBRA_ID],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const draft = createEmptyRdo();
+    draft.id = RDO_ID;
+    draft.obraId = OBRA_ID;
+    draft.dataRdo = "2026-07-22";
+    draft.creationContextVersion = 7;
+    draft.numeroRdo = "RDO-0021";
+    draft.contrato = "CTR-A";
+    draft.previousRdoId = SOURCE_RDO_ID;
+
+    const created = await saveNewRdoDraftAtomically(draft);
+
+    expect(created.mutation).toMatchObject({
+      operation: "CREATE",
+      status: "PENDING",
+      payload: expect.objectContaining({ creationContextVersion: 7 }),
+    });
   });
 
   it("mantém editável um RDO legado já versionado no servidor sem receipt", async () => {

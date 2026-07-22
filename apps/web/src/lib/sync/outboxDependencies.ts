@@ -1,4 +1,8 @@
-import type { OutboxMutationRecord } from "../db/db.types";
+import type {
+  CanonicalOutboxMutationRecord,
+  OutboxMutationRecord,
+} from "../db/db.types";
+import { isCanonicalOutboxMutation } from "./mutationEnvelope";
 
 export interface MissingOutboxDependency {
   mutationId: string;
@@ -9,7 +13,10 @@ export interface InvalidOutboxDependencyAlias {
   mutationId: string;
   dependencyId: string;
   aliasId: string;
-  reason: "ENTITY_MISMATCH";
+  reason:
+    | "ENTITY_MISMATCH"
+    | "NON_CANONICAL_CREATE"
+    | "CAUSATION_MISMATCH";
 }
 
 export interface OutboxDependencyAnalysis {
@@ -59,6 +66,31 @@ interface DependencyResolution {
   missingId: string | null;
   cycle: string[];
   invalidAliasId: string | null;
+  invalidAliasReason: InvalidOutboxDependencyAlias["reason"] | null;
+}
+
+function isCanonicalRdoCreate(
+  mutation: OutboxMutationRecord,
+): mutation is CanonicalOutboxMutationRecord {
+  return isCanonicalOutboxMutation(mutation) &&
+    mutation.entidadeTipo === "RDO" &&
+    mutation.operation === "CREATE" &&
+    mutation.operacao === "CRIAR_RDO" &&
+    mutation.transport === "SYNC_PUSH";
+}
+
+function aliasMismatchReason(
+  current: OutboxMutationRecord,
+  replacement: OutboxMutationRecord,
+): InvalidOutboxDependencyAlias["reason"] | null {
+  if (!sameLogicalEntity(current, replacement)) return "ENTITY_MISMATCH";
+  if (!isCanonicalRdoCreate(current) || !isCanonicalRdoCreate(replacement)) {
+    return "NON_CANONICAL_CREATE";
+  }
+  if (replacement.causationId !== current.clientMutationId) {
+    return "CAUSATION_MISMATCH";
+  }
+  return null;
 }
 
 function resolveDependency(
@@ -77,6 +109,7 @@ function resolveDependency(
         missingId: null,
         cycle: path.slice(cycleAt),
         invalidAliasId: null,
+        invalidAliasReason: null,
       };
     }
     visited.set(currentId, path.length);
@@ -88,6 +121,7 @@ function resolveDependency(
         missingId: currentId,
         cycle: [],
         invalidAliasId: null,
+        invalidAliasReason: null,
       };
     }
     if (current.status === "SYNCED") {
@@ -96,6 +130,7 @@ function resolveDependency(
         missingId: null,
         cycle: [],
         invalidAliasId: null,
+        invalidAliasReason: null,
       };
     }
     const replacementId = supersededById(current);
@@ -105,6 +140,7 @@ function resolveDependency(
         missingId: null,
         cycle: [],
         invalidAliasId: null,
+        invalidAliasReason: null,
       };
     }
     const replacement = byId.get(replacementId);
@@ -114,14 +150,17 @@ function resolveDependency(
         missingId: replacementId,
         cycle: [],
         invalidAliasId: null,
+        invalidAliasReason: null,
       };
     }
-    if (!sameLogicalEntity(current, replacement)) {
+    const mismatchReason = aliasMismatchReason(current, replacement);
+    if (mismatchReason) {
       return {
         satisfied: false,
         missingId: null,
         cycle: [],
         invalidAliasId: currentId,
+        invalidAliasReason: mismatchReason,
       };
     }
     currentId = replacementId;
@@ -151,12 +190,12 @@ export function analyzeOutboxDependencies(
         });
       }
       for (const cycleId of resolution.cycle) cycles.add(cycleId);
-      if (resolution.invalidAliasId) {
+      if (resolution.invalidAliasId && resolution.invalidAliasReason) {
         invalidAliases.push({
           mutationId: mutation.clientMutationId,
           dependencyId,
           aliasId: resolution.invalidAliasId,
-          reason: "ENTITY_MISMATCH",
+          reason: resolution.invalidAliasReason,
         });
       }
     }

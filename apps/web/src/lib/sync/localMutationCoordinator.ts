@@ -122,6 +122,7 @@ export interface CommittedLocalMutation {
 }
 
 interface AuthorizedSession {
+  session: AuthProfile;
   fingerprint: string;
   actorName: string;
   authorizationScope: string[];
@@ -463,6 +464,7 @@ function authorizeActiveSession(
     throw new Error("A obra da mutação não pertence ao escopo da sessão.");
   }
   return {
+    session,
     fingerprint: sessionFingerprint(session),
     actorName: session.nome,
     authorizationScope: session.escopoGlobal
@@ -476,7 +478,10 @@ function assertSessionUnchanged(
   envelope: Pick<BuildCanonicalMutationInput, "userId" | "obraId">,
 ): void {
   const current = authorizeActiveSession(envelope);
-  if (current.fingerprint !== expected.fingerprint) {
+  if (
+    current.session !== expected.session ||
+    current.fingerprint !== expected.fingerprint
+  ) {
     throw new Error("A sessão mudou durante o registro da mutação local.");
   }
 }

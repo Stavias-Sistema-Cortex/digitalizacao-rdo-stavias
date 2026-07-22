@@ -30,7 +30,7 @@ function activeSession() {
   return session;
 }
 
-interface RdoContextSessionGuard {
+export interface RdoContextSessionGuard {
   session: AuthProfile;
   fingerprint: string;
 }
@@ -45,12 +45,12 @@ function sessionFingerprint(session: AuthProfile): string {
   });
 }
 
-function captureContextSession(): RdoContextSessionGuard {
+export function captureContextSession(): RdoContextSessionGuard {
   const session = activeSession();
   return { session, fingerprint: sessionFingerprint(session) };
 }
 
-function assertContextSession(guard: RdoContextSessionGuard): void {
+export function assertContextSession(guard: RdoContextSessionGuard): void {
   const current = getSession();
   if (
     current === null ||

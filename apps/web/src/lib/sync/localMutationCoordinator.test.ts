@@ -472,6 +472,25 @@ describe("canonical local mutation coordinator", () => {
     expect(await database.getAll("outbox_mutations")).toHaveLength(0);
   });
 
+  it("aborts on an exact auth rotation even when the profile fields are equal", async () => {
+    let releaseDigest: ((value: ArrayBuffer) => void) | undefined;
+    vi.spyOn(crypto.subtle, "digest").mockImplementationOnce(
+      () => new Promise<ArrayBuffer>((resolve) => {
+        releaseDigest = resolve;
+      }),
+    );
+    const pending = commitLocalMutation(command());
+    await vi.waitFor(() => expect(releaseDigest).toBeTypeOf("function"));
+    setSession(betaSession());
+    releaseDigest?.(new Uint8Array(32).buffer);
+
+    await expect(pending).rejects.toThrow(/sessão mudou/i);
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await database.getAll("operational_events")).toHaveLength(0);
+  });
+
   it("aborts the IndexedDB transaction when the active session changes during its writes", async () => {
     const originalPut = IDBObjectStore.prototype.put;
     let switched = false;

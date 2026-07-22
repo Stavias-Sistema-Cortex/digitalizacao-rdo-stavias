@@ -37,10 +37,27 @@ function superseded(
   replacementId: string,
   entityId: string,
 ): OutboxMutationRecord {
-  const original = mutation(id, "REJECTED", [], entityId);
+  const original = canonicalRdoCreate(id, "REJECTED", entityId);
   original.blockedReason = `SUPERSEDED_BY:${replacementId}`;
   original.lastSafeCode = "SUPERSEDED_BY_LOCAL_EDIT";
   return original;
+}
+
+function canonicalRdoCreate(
+  id: string,
+  status: OutboxMutationRecord["status"],
+  entityId: string,
+  causationId?: string,
+): OutboxMutationRecord {
+  return {
+    ...mutation(id, status, [], entityId),
+    schemaVersion: 13,
+    entidadeTipo: "RDO",
+    operacao: "CRIAR_RDO",
+    operation: "CREATE",
+    transport: "SYNC_PUSH",
+    causationId,
+  } as OutboxMutationRecord;
 }
 
 describe("selectReadyOutboxMutations", () => {
@@ -102,11 +119,12 @@ describe("selectReadyOutboxMutations", () => {
 
   it("resolves an immutable superseded dependency only after its same-entity replacement syncs", () => {
     const original = superseded("create-a-1", "create-a-2", "rdo-a");
-    const replacement = mutation("create-a-2", "PENDING", [], "rdo-a");
-    replacement.entidadeTipo = "RDO";
-    replacement.operacao = "CRIAR_RDO";
-    original.entidadeTipo = "RDO";
-    original.operacao = "CRIAR_RDO";
+    const replacement = canonicalRdoCreate(
+      "create-a-2",
+      "PENDING",
+      "rdo-a",
+      original.clientMutationId,
+    );
     const dependent = mutation("create-b", "PENDING", [original.clientMutationId], "rdo-b");
     dependent.entidadeTipo = "RDO";
     dependent.operacao = "CRIAR_RDO";
@@ -124,21 +142,106 @@ describe("selectReadyOutboxMutations", () => {
   it("follows repeated replacements without depending on terminal aliases", () => {
     const first = superseded("create-a-1", "create-a-2", "rdo-a");
     const second = superseded("create-a-2", "create-a-3", "rdo-a");
-    const terminal = mutation("create-a-3", "SYNCED", [], "rdo-a");
-    for (const item of [first, second, terminal]) {
-      item.entidadeTipo = "RDO";
-      item.operacao = "CRIAR_RDO";
-    }
+    second.causationId = first.clientMutationId;
+    const terminal = canonicalRdoCreate(
+      "create-a-3",
+      "SYNCED",
+      "rdo-a",
+      second.clientMutationId,
+    );
     const dependent = mutation("create-b", "PENDING", [first.clientMutationId], "rdo-b");
 
     expect(selectReadyOutboxMutations([first, second, terminal, dependent], 100))
       .toEqual([dependent]);
   });
 
+  it("does not accept a same-entity synced CREATE without the exact causal link", () => {
+    const original = superseded("create-a-1", "create-a-2", "rdo-a");
+    const replacement = canonicalRdoCreate("create-a-2", "SYNCED", "rdo-a");
+    const dependent = mutation("create-b", "PENDING", [original.clientMutationId], "rdo-b");
+
+    expect(selectReadyOutboxMutations([original, replacement, dependent], 100))
+      .toEqual([]);
+    expect(analyzeOutboxDependencies([original, replacement, dependent]))
+      .toMatchObject({
+        invalidAliases: [
+          expect.objectContaining({
+            mutationId: dependent.clientMutationId,
+            aliasId: original.clientMutationId,
+            reason: "CAUSATION_MISMATCH",
+          }),
+        ],
+      });
+  });
+
+  it("blocks direct and repeated chains with wrong cause, operation, or transport", () => {
+    const wrongCause = superseded("cause-1", "cause-2", "rdo-cause");
+    const wrongCauseTarget = canonicalRdoCreate(
+      "cause-2",
+      "SYNCED",
+      "rdo-cause",
+      "some-other-mutation",
+    );
+    const wrongOperation = superseded("operation-1", "operation-2", "rdo-operation");
+    const wrongOperationTarget = canonicalRdoCreate(
+      "operation-2",
+      "SYNCED",
+      "rdo-operation",
+      wrongOperation.clientMutationId,
+    );
+    wrongOperationTarget.operation = "UPDATE";
+    wrongOperationTarget.operacao = "ATUALIZAR_RDO_RASCUNHO";
+    const wrongTransport = superseded("transport-1", "transport-2", "rdo-transport");
+    const wrongTransportTarget = canonicalRdoCreate(
+      "transport-2",
+      "SYNCED",
+      "rdo-transport",
+      wrongTransport.clientMutationId,
+    );
+    wrongTransportTarget.transport = "OBJECT_UPLOAD";
+    const chainFirst = superseded("chain-1", "chain-2", "rdo-chain");
+    const chainSecond = superseded("chain-2", "chain-3", "rdo-chain");
+    chainSecond.causationId = chainFirst.clientMutationId;
+    const chainTerminal = canonicalRdoCreate(
+      "chain-3",
+      "SYNCED",
+      "rdo-chain",
+      chainFirst.clientMutationId,
+    );
+    const dependents = [
+      mutation("depends-cause", "PENDING", [wrongCause.clientMutationId]),
+      mutation("depends-operation", "PENDING", [wrongOperation.clientMutationId]),
+      mutation("depends-transport", "PENDING", [wrongTransport.clientMutationId]),
+      mutation("depends-chain", "PENDING", [chainFirst.clientMutationId]),
+    ];
+
+    const all = [
+      wrongCause,
+      wrongCauseTarget,
+      wrongOperation,
+      wrongOperationTarget,
+      wrongTransport,
+      wrongTransportTarget,
+      chainFirst,
+      chainSecond,
+      chainTerminal,
+      ...dependents,
+    ];
+    expect(selectReadyOutboxMutations(all, 100)).toEqual([]);
+    expect(analyzeOutboxDependencies(all).invalidAliases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ reason: "CAUSATION_MISMATCH" }),
+        expect.objectContaining({ reason: "NON_CANONICAL_CREATE" }),
+      ]),
+    );
+  });
+
   it("blocks missing, cyclic, cross-entity, and non-terminal alias corruption", () => {
     const missing = superseded("missing-1", "gone", "rdo-a");
     const cycleA = superseded("cycle-a", "cycle-b", "rdo-cycle");
     const cycleB = superseded("cycle-b", "cycle-a", "rdo-cycle");
+    cycleA.causationId = cycleB.clientMutationId;
+    cycleB.causationId = cycleA.clientMutationId;
     const cross = superseded("cross-1", "cross-2", "rdo-a");
     const crossTarget = mutation("cross-2", "SYNCED", [], "rdo-other");
     const nonTerminal = mutation("pending-alias", "PENDING", [], "rdo-a");

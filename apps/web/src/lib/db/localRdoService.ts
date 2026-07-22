@@ -14,6 +14,11 @@ import {
   type RdoContextCoverageSection,
   type RdoCreationContextLookup,
 } from "../../features/rdos/rdoLookupApi";
+import {
+  assertContextSession,
+  captureContextSession,
+  type RdoContextSessionGuard,
+} from "../../features/rdos/rdoCreationContextRepository";
 import { getCortexDb } from "./cortexDb";
 import type {
   CanonicalOutboxMutationRecord,
@@ -23,12 +28,16 @@ import type {
   OperationalEntityRef,
   OperationalEventRecord,
   OutboxMutationRecord,
+  RdoCreationContextCacheRecord,
 } from "./db.types";
 import {
   buildOperationalEvent,
   queryOperationalEvents,
 } from "./operationalEventRepository";
-import { isCanonicalOutboxMutation } from "../sync/mutationEnvelope";
+import {
+  canonicalMutationJson,
+  isCanonicalOutboxMutation,
+} from "../sync/mutationEnvelope";
 import { guardSyncTransaction } from "../sync/guardedSyncTransaction";
 import {
   assertSyncSession,
@@ -117,6 +126,101 @@ export function rdoCreationContextBlockReason(
     draft.creationContextVersion > 0
     ? null
     : "RDO_CREATION_CONTEXT_REQUIRED";
+}
+
+const RDO_CREATION_CONTEXT_REQUIRED =
+  "Contexto versionado da obra é obrigatório para criar o RDO.";
+
+function contextualText(value: string | null | undefined): string {
+  return value?.trim() ?? "";
+}
+
+function hasCanonicalCreationIdentity(
+  draft: RdoDraft,
+  context: RdoCreationContextLookup,
+): boolean {
+  const previous = context.previousRdo;
+  const canonicalPreviousRdoId =
+    previous &&
+      previous.dataRdo < context.data &&
+      context.provenance.previousRdoId === previous.id
+      ? previous.id
+      : "";
+  return draft.numeroRdo === contextualText(context.nextNumberSuggestion) &&
+    draft.cliente === contextualText(context.obra.cliente) &&
+    draft.contrato === contextualText(context.obra.codigoContrato) &&
+    draft.rodovia === contextualText(context.obra.rodovia) &&
+    draft.cidade === contextualText(context.obra.cidade) &&
+    draft.uf === contextualText(context.obra.uf) &&
+    draft.previousRdoId === canonicalPreviousRdoId;
+}
+
+function validCreationContextReceipt(
+  draft: RdoDraft,
+  record: RdoCreationContextCacheRecord,
+): boolean {
+  try {
+    const context = record.context as unknown as RdoCreationContextLookup;
+    const { coverage, freshness, provenance } = context;
+    return record.obraId === draft.obraId &&
+      record.selectedDate === draft.dataRdo &&
+      record.receiptVersion === draft.creationContextVersion &&
+      record.sourceVersion === provenance.sourceVersion &&
+      context.obra.id === draft.obraId &&
+      context.data === draft.dataRdo &&
+      provenance.worksiteId === draft.obraId &&
+      provenance.selectedDate === draft.dataRdo &&
+      provenance.receiptVersion === draft.creationContextVersion &&
+      Number.isSafeInteger(provenance.receiptVersion) &&
+      provenance.receiptVersion > 0 &&
+      Number.isSafeInteger(provenance.sourceVersion) &&
+      provenance.sourceVersion >= 0 &&
+      provenance.sourceVersion === freshness.sourceVersion &&
+      provenance.generatedAt === freshness.generatedAt &&
+      provenance.previousRdoId === (context.previousRdo?.id ?? null) &&
+      Number.isFinite(Date.parse(provenance.generatedAt)) &&
+      Number.isFinite(Date.parse(freshness.staleAfter)) &&
+      canonicalMutationJson(record.coverage) ===
+        canonicalMutationJson(coverage as unknown as Record<string, unknown>) &&
+      completeCoverage(coverage.previousWorkforce) &&
+      completeCoverage(coverage.programacoes) &&
+      completeCoverage(coverage.colaboradores) &&
+      completeCoverage(coverage.equipamentos) &&
+      explicitCatalogCoverage(coverage.serviceCatalog) &&
+      explicitCatalogCoverage(coverage.priceCatalog) &&
+      hasCanonicalCreationIdentity(draft, context);
+  } catch {
+    return false;
+  }
+}
+
+async function requireExactRdoCreationContext(
+  draft: RdoDraft,
+): Promise<RdoContextSessionGuard> {
+  if (rdoCreationContextBlockReason(draft)) {
+    throw new Error(RDO_CREATION_CONTEXT_REQUIRED);
+  }
+  const guard = captureContextSession();
+  const session = guard.session;
+  if (!session.escopoGlobal && !session.obraIds.includes(draft.obraId)) {
+    throw new Error(RDO_CREATION_CONTEXT_REQUIRED);
+  }
+  const database = await getCortexDb();
+  assertContextSession(guard);
+  const record = await database.get("rdo_creation_contexts", [
+    session.colaboradorId,
+    draft.obraId,
+    draft.dataRdo,
+  ]);
+  assertContextSession(guard);
+  if (
+    !record ||
+    record.ownerId !== session.colaboradorId ||
+    !validCreationContextReceipt(draft, record)
+  ) {
+    throw new Error(RDO_CREATION_CONTEXT_REQUIRED);
+  }
+  return guard;
 }
 
 export interface RdoCreationContextCacheEntry {
@@ -621,6 +725,7 @@ function buildRdoLocalPayload(
     controlesGeometricos:
       draft.controlesGeometricos,
     attachments: attachments.map(attachmentPayload),
+    importEvidence: draft.importEvidence,
   };
 }
 
@@ -1207,13 +1312,11 @@ export async function saveNewRdoDraftAtomically(
   options: { occurredAt?: string } = {},
 ): Promise<SaveRdoDraftResult> {
   validateRdoDraftForSync(draft);
-  if (rdoCreationContextBlockReason(draft)) {
-    throw new Error(
-      "Contexto versionado da obra é obrigatório para criar o RDO.",
-    );
-  }
+  const contextGuard = await requireExactRdoCreationContext(draft);
+  assertContextSession(contextGuard);
 
   const database = await getCortexDb();
+  assertContextSession(contextGuard);
   const timestamp = options.occurredAt ?? nowUtc();
   const localPayload = buildRdoLocalPayload(draft);
   const syncPayload = buildRdoSyncPayload(draft);
@@ -1233,11 +1336,9 @@ export async function saveNewRdoDraftAtomically(
     updatedAt: timestamp,
   };
 
-  const session = getSession();
-  if (!session) {
-    throw new Error("Sessão válida obrigatória para criar o RDO local.");
-  }
+  const session = contextGuard.session;
   const state = await getSyncState();
+  assertContextSession(contextGuard);
   const uuidPattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   const deviceId =
@@ -1253,6 +1354,7 @@ export async function saveNewRdoDraftAtomically(
       lastPulledCommitSeq: 0,
       lastAckedCommitSeq: 0,
     });
+    assertContextSession(contextGuard);
   }
 
   let dependsOnMutationIds: string[] = [];
@@ -1262,6 +1364,7 @@ export async function saveNewRdoDraftAtomically(
       "by-entity-id",
       draft.previousRdoId,
     );
+    assertContextSession(contextGuard);
     const dependency = sourceMutations
       .filter(
         (candidate) =>
@@ -1295,6 +1398,7 @@ export async function saveNewRdoDraftAtomically(
       (value) => ({ store: "rdoControlesGeometricos" as const, value }),
     ),
   ];
+  assertContextSession(contextGuard);
   const committed = await commitLocalMutation<RdoCreationStore>({
     deviceId,
     userId: session.colaboradorId,
@@ -1328,6 +1432,7 @@ export async function saveNewRdoDraftAtomically(
       ...childWrites,
     ],
   });
+  assertContextSession(contextGuard);
 
   return {
     rdo,

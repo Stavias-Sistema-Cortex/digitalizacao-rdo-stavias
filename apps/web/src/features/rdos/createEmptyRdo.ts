@@ -161,6 +161,7 @@ export function createEmptyRdo(): RdoDraft {
     materiais: [],
     controlesGeometricos: [],
     attachments: [],
+    importEvidence: null,
     syncStatus: "LOCAL_ONLY",
   };
 }

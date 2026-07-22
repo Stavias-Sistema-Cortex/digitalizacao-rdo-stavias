@@ -16,6 +16,7 @@ import type {
   NumericInput,
   RdoAttachmentDraft,
   RdoDraft,
+  RdoImportEvidence,
   ServicoExecutadoDraft,
 } from "./rdo.types";
 
@@ -239,6 +240,38 @@ function asNumber(value: unknown, fallback = 0): number {
     : fallback;
 }
 
+function mapImportEvidence(value: unknown): RdoImportEvidence | null {
+  const evidence = asObject(value);
+  const raw = asObject(evidence.rawWorksiteIdentity);
+  const bound = asObject(evidence.boundContext);
+  if (
+    evidence.source !== "IMPORTED_DOCUMENT" ||
+    typeof bound.receiptVersion !== "number" ||
+    !Number.isSafeInteger(bound.receiptVersion) ||
+    bound.receiptVersion <= 0
+  ) {
+    return null;
+  }
+  return {
+    source: "IMPORTED_DOCUMENT",
+    rawWorksiteIdentity: {
+      numeroRdo: asString(raw.numeroRdo),
+      obraId: asString(raw.obraId),
+      dataRdo: asString(raw.dataRdo),
+      cliente: asString(raw.cliente),
+      contrato: asString(raw.contrato),
+      rodovia: asString(raw.rodovia),
+      cidade: asString(raw.cidade),
+      uf: asString(raw.uf),
+    },
+    boundContext: {
+      obraId: asString(bound.obraId),
+      dataRdo: asString(bound.dataRdo),
+      receiptVersion: bound.receiptVersion,
+    },
+  };
+}
+
 function mapAttachments(value: unknown): RdoAttachmentDraft[] {
   return asArray(value).map((rawItem) => {
     const item = asObject(rawItem);
@@ -343,6 +376,7 @@ export function localRecordToDraft(
       payload.controlesGeometricos,
     ),
     attachments: mapAttachments(payload.attachments),
+    importEvidence: mapImportEvidence(payload.importEvidence),
     syncStatus: record.syncStatus,
   };
 }

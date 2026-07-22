@@ -159,6 +159,25 @@ export interface RdoAttachmentDraft {
   metadata: Record<string, unknown>;
 }
 
+export interface RdoImportEvidence {
+  source: "IMPORTED_DOCUMENT";
+  rawWorksiteIdentity: {
+    numeroRdo: string;
+    obraId: string;
+    dataRdo: string;
+    cliente: string;
+    contrato: string;
+    rodovia: string;
+    cidade: string;
+    uf: string;
+  };
+  boundContext: {
+    obraId: string;
+    dataRdo: string;
+    receiptVersion: number;
+  };
+}
+
 export interface RdoDraft {
   id: string;
   obraId: string;
@@ -196,5 +215,6 @@ export interface RdoDraft {
   materiais: MaterialDraft[];
   controlesGeometricos: ControleGeometricoDraft[];
   attachments: RdoAttachmentDraft[];
+  importEvidence: RdoImportEvidence | null;
   syncStatus: RdoSyncStatus;
 }
