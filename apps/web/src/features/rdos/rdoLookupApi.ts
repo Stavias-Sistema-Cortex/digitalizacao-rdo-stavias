@@ -25,6 +25,41 @@ export interface AssetLookup {
   updatedAt: string | null;
 }
 
+export interface RdoContextCoverageSection {
+  status: "COMPLETE" | "NOT_CONFIGURED" | string;
+  total: number;
+  returned: number;
+  complete: boolean;
+}
+
+export interface RdoCreationContextLookup {
+  data: string;
+  previousRdo: { id: string } | null;
+  coverage: {
+    previousWorkforce: RdoContextCoverageSection;
+    programacoes: RdoContextCoverageSection;
+    colaboradores: RdoContextCoverageSection;
+    equipamentos: RdoContextCoverageSection;
+    serviceCatalog: RdoContextCoverageSection;
+    priceCatalog: RdoContextCoverageSection;
+  };
+  freshness: {
+    status: string;
+    sourceVersion: number;
+    generatedAt: string;
+    staleAfter: string;
+  };
+  provenance: {
+    receiptVersion: number;
+    sourceVersion: number;
+    worksiteId: string;
+    selectedDate: string;
+    previousRdoId: string | null;
+    generatedAt: string;
+  };
+  [key: string]: unknown;
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = await readResponseBody(response);
 
@@ -88,4 +123,18 @@ export async function buscarAssets(
     `/assets?${params.toString()}`,
   );
   return readJson<AssetLookup[]>(response);
+}
+
+export async function buscarContextoDeCriacaoRdo(
+  obraId: string,
+  dataRdo: string,
+): Promise<RdoCreationContextLookup> {
+  const params = new URLSearchParams({
+    obraId,
+    data: dataRdo,
+  });
+  const response = await apiFetch(
+    `/rdos/contexto?${params.toString()}`,
+  );
+  return readJson<RdoCreationContextLookup>(response);
 }

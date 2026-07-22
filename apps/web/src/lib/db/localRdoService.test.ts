@@ -7,6 +7,7 @@ import {
   buildRdoSyncPayloadFromLocalRecord,
   canCoalesceLegacyRdoMutation,
   rdoDraftFromLocalRecord,
+  rdoUpdateCreationContextBlockReason,
   validateRdoDraftForSync,
 } from "./localRdoService";
 
@@ -161,6 +162,35 @@ describe("RDO creation-context sync gate", () => {
     draft.apontadorColaboradorId = "";
 
     expect(rdoCreationContextBlockReason(draft)).toBeNull();
+  });
+
+  it("permite null apenas ao atualizar um RDO persistido anterior à V48", () => {
+    const draft = validDraft();
+    draft.creationContextVersion = null;
+    const legacyPersisted: LocalRdoRecord = {
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: draft.numeroRdo,
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "SYNCED",
+      versaoEntidade: 7,
+      payload: { observacoes: "criado antes da V48" },
+      createdAt: "2026-07-03T12:00:00.000Z",
+      updatedAt: "2026-07-03T12:00:00.000Z",
+    };
+
+    expect(rdoUpdateCreationContextBlockReason(draft, legacyPersisted))
+      .toBeNull();
+    expect(rdoUpdateCreationContextBlockReason(draft, {
+      ...legacyPersisted,
+      payload: { creationContextVersion: -1 },
+    })).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+    expect(rdoUpdateCreationContextBlockReason(draft, {
+      ...legacyPersisted,
+      versaoEntidade: null,
+    })).toBe("RDO_CREATION_CONTEXT_REQUIRED");
   });
 });
 

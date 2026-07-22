@@ -24,6 +24,7 @@ vi.mock("../../features/mensagens/mensagensHydration", () => ({
   refreshMessagingAfterPull: vi.fn(async () => undefined),
 }));
 vi.mock("../db/localRdoService", () => ({
+  hydrateBlockedRdoCreationContextsForSync: vi.fn(async () => 0),
   repairRdoCreateMutationsForSync: vi.fn(async () => 0),
 }));
 vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: syncMocks.ack }));

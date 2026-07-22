@@ -9,6 +9,11 @@ import type {
   ServicoExecutadoDraft,
 } from "../../features/rdos/rdo.types";
 import { localRecordToDraft } from "../../features/rdos/localRecordToDraft";
+import {
+  buscarContextoDeCriacaoRdo,
+  type RdoContextCoverageSection,
+  type RdoCreationContextLookup,
+} from "../../features/rdos/rdoLookupApi";
 import { getCortexDb } from "./cortexDb";
 import type {
   LocalRdoChildRecord,
@@ -102,6 +107,113 @@ export function rdoCreationContextBlockReason(
     draft.creationContextVersion > 0
     ? null
     : "RDO_CREATION_CONTEXT_REQUIRED";
+}
+
+export interface RdoCreationContextCacheEntry {
+  schemaVersion: 1;
+  worksiteId: string;
+  selectedDate: string;
+  receiptVersion: number;
+  previousRdoId: string | null;
+  sourceVersion: number;
+  generatedAt: string;
+  staleAfter: string;
+  cachedAt: string;
+  context: RdoCreationContextLookup;
+}
+
+function completeCoverage(
+  section: RdoContextCoverageSection,
+): boolean {
+  return section.status === "COMPLETE" &&
+    section.complete === true &&
+    Number.isSafeInteger(section.total) &&
+    Number.isSafeInteger(section.returned) &&
+    section.total >= 0 &&
+    section.returned === section.total;
+}
+
+function explicitCatalogCoverage(
+  section: RdoContextCoverageSection,
+): boolean {
+  return completeCoverage(section) ||
+    (section.status === "NOT_CONFIGURED" &&
+      section.complete === false &&
+      section.total === 0 &&
+      section.returned === 0);
+}
+
+function durableCreationContextCache(
+  context: RdoCreationContextLookup,
+  rdo: LocalRdoRecord,
+  cachedAt: string,
+): RdoCreationContextCacheEntry | null {
+  const provenance = context?.provenance;
+  const coverage = context?.coverage;
+  const freshness = context?.freshness;
+  const previousRdoId = context?.previousRdo?.id ?? null;
+
+  if (!provenance || !coverage || !freshness ||
+      context.data !== rdo.dataRdo ||
+      freshness.status !== "FRESH" ||
+      provenance.worksiteId !== rdo.obraId ||
+      provenance.selectedDate !== rdo.dataRdo ||
+      provenance.previousRdoId !== previousRdoId ||
+      !Number.isSafeInteger(provenance.receiptVersion) ||
+      provenance.receiptVersion <= 0 ||
+      !Number.isSafeInteger(provenance.sourceVersion) ||
+      provenance.sourceVersion < 0 ||
+      provenance.sourceVersion !== freshness.sourceVersion ||
+      provenance.generatedAt !== freshness.generatedAt ||
+      typeof freshness.staleAfter !== "string" ||
+      !Number.isFinite(Date.parse(freshness.generatedAt)) ||
+      !Number.isFinite(Date.parse(freshness.staleAfter)) ||
+      Date.parse(freshness.staleAfter) <=
+        Date.parse(freshness.generatedAt) ||
+      !completeCoverage(coverage.previousWorkforce) ||
+      !completeCoverage(coverage.programacoes) ||
+      !completeCoverage(coverage.colaboradores) ||
+      !completeCoverage(coverage.equipamentos) ||
+      !explicitCatalogCoverage(coverage.serviceCatalog) ||
+      !explicitCatalogCoverage(coverage.priceCatalog)) {
+    return null;
+  }
+
+  return {
+    schemaVersion: 1,
+    worksiteId: rdo.obraId,
+    selectedDate: rdo.dataRdo,
+    receiptVersion: provenance.receiptVersion,
+    previousRdoId,
+    sourceVersion: provenance.sourceVersion,
+    generatedAt: provenance.generatedAt,
+    staleAfter: freshness.staleAfter,
+    cachedAt,
+    context,
+  };
+}
+
+function legacyPersistedUpdateCanOmitContext(
+  rdo: LocalRdoRecord,
+): boolean {
+  if (rdo.versaoEntidade === null) {
+    return false;
+  }
+  const persisted = rdo.payload.creationContextVersion;
+  return persisted === undefined || persisted === null;
+}
+
+export function rdoUpdateCreationContextBlockReason(
+  draft: RdoDraft,
+  persistedRdo: LocalRdoRecord,
+): "RDO_CREATION_CONTEXT_REQUIRED" | null {
+  const createRule = rdoCreationContextBlockReason(draft);
+  if (createRule === null) {
+    return null;
+  }
+  return legacyPersistedUpdateCanOmitContext(persistedRdo)
+    ? null
+    : createRule;
 }
 
 function entityName(value: string | null | undefined): string | null {
@@ -1167,6 +1279,155 @@ export async function saveNewRdoDraftAtomically(
   };
 }
 
+async function keepRdoContextHydrationRetryable(
+  clientMutationId: string,
+  guard: SyncSessionGuard,
+  timestamp: string,
+): Promise<void> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(["outbox_mutations"], "readwrite"),
+    guard,
+  );
+  const store = guardedTransaction.transaction.objectStore(
+    "outbox_mutations",
+  );
+  const current = await store.get(clientMutationId);
+  if (current &&
+      !isCanonicalOutboxMutation(current) &&
+      current.entidadeTipo === "RDO" &&
+      current.operacao === "CRIAR_RDO" &&
+      current.status !== "SYNCED") {
+    await store.put({
+      ...current,
+      status: "PENDING",
+      ultimoErro:
+        "Contexto da obra indisponível; a sincronização tentará novamente.",
+      conflito: null,
+      blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
+      nextAttemptAt: new Date(
+        Date.parse(timestamp) + 60_000,
+      ).toISOString(),
+      updatedAt: timestamp,
+    });
+  }
+  await guardedTransaction.complete();
+}
+
+export async function hydrateBlockedRdoCreationContextsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const candidates = [
+    ...(await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "PENDING",
+    )),
+    ...(await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "ERROR",
+    )),
+  ].filter((mutation) =>
+    !isCanonicalOutboxMutation(mutation) &&
+    mutation.entidadeTipo === "RDO" &&
+    mutation.operacao === "CRIAR_RDO"
+  );
+  const seenRdoIds = new Set<string>();
+  let hydrated = 0;
+
+  for (const mutation of candidates) {
+    assertSyncSession(guard);
+    if (seenRdoIds.has(mutation.entidadeId)) {
+      continue;
+    }
+    seenRdoIds.add(mutation.entidadeId);
+    const rdo = await database.get("rdos", mutation.entidadeId);
+    if (!rdo || rdo.syncStatus === "SYNCED") {
+      continue;
+    }
+    if (mutation.blockedReason !== "RDO_CREATION_CONTEXT_REQUIRED" &&
+        rdoCreationContextBlockReason(rdoDraftFromLocalRecord(rdo)) === null) {
+      continue;
+    }
+
+    const timestamp = nowUtc();
+    let context: RdoCreationContextLookup;
+    try {
+      context = await buscarContextoDeCriacaoRdo(
+        rdo.obraId,
+        rdo.dataRdo,
+      );
+    } catch {
+      assertSyncSession(guard);
+      await keepRdoContextHydrationRetryable(
+        mutation.clientMutationId,
+        guard,
+        timestamp,
+      );
+      continue;
+    }
+    assertSyncSession(guard);
+
+    const cache = durableCreationContextCache(context, rdo, timestamp);
+    if (!cache) {
+      await keepRdoContextHydrationRetryable(
+        mutation.clientMutationId,
+        guard,
+        timestamp,
+      );
+      continue;
+    }
+
+    const guardedTransaction = guardSyncTransaction(
+      database.transaction(
+        ["rdos", "outbox_mutations"],
+        "readwrite",
+      ),
+      guard,
+    );
+    const transaction = guardedTransaction.transaction;
+    const rdoStore = transaction.objectStore("rdos");
+    const outboxStore = transaction.objectStore("outbox_mutations");
+    const currentRdo = await rdoStore.get(rdo.id);
+    const currentMutation = await outboxStore.get(
+      mutation.clientMutationId,
+    );
+
+    if (!currentRdo ||
+        currentRdo.obraId !== cache.worksiteId ||
+        currentRdo.dataRdo !== cache.selectedDate ||
+        !currentMutation ||
+        currentMutation.entidadeId !== currentRdo.id ||
+        isCanonicalOutboxMutation(currentMutation) ||
+        currentMutation.operacao !== "CRIAR_RDO" ||
+        currentMutation.status === "SYNCED") {
+      await guardedTransaction.complete();
+      continue;
+    }
+
+    await rdoStore.put({
+      ...currentRdo,
+      payload: {
+        ...currentRdo.payload,
+        previousRdoId: cache.previousRdoId,
+        creationContextVersion: cache.receiptVersion,
+        creationContextCache: cache,
+      },
+      updatedAt: timestamp,
+    });
+    await guardedTransaction.complete();
+    hydrated += 1;
+  }
+
+  return hydrated;
+}
+
 export async function repairRdoCreateMutationsForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {
@@ -1197,6 +1458,7 @@ export async function repairRdoCreateMutationsForSync(
     );
   const rdoStore =
     transaction.objectStore("rdos");
+  const eventStore = transaction.objectStore("operational_events");
   const candidates = [
     ...(await outboxStore
       .index("by-status")
@@ -1229,10 +1491,13 @@ export async function repairRdoCreateMutationsForSync(
 
     const draft = rdoDraftFromLocalRecord(rdo);
     const blockedReason = rdoCreationContextBlockReason(draft);
+    const pendingOperationalEvents = (
+      await eventStore.index("by-rdo-id").getAll(rdo.id)
+    ).filter((event) => event.syncStatus !== "SYNCED");
 
     const repairedMutation: OutboxMutationRecord = {
       ...mutation,
-      payload: buildRdoSyncPayload(draft),
+      payload: buildRdoSyncPayload(draft, pendingOperationalEvents),
       status: "PENDING",
       tentativas: mutation.status === "ERROR" ? 0 : mutation.tentativas,
       ultimaTentativaEm: null,
@@ -1344,6 +1609,8 @@ export async function saveExistingRdoDraftAtomically(
 
   const entityIndex =
     outboxStore.index("by-entity-id");
+  const updateContextBlockReason =
+    rdoUpdateCreationContextBlockReason(draft, existingRdo);
 
   const entityMutations =
     await entityIndex.getAll(draft.id);
@@ -1426,7 +1693,7 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
-        blockedReason: rdoCreationContextBlockReason(draft),
+        blockedReason: updateContextBlockReason,
         nextAttemptAt: null,
         updatedAt: timestamp,
       };
@@ -1446,7 +1713,7 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
-        blockedReason: rdoCreationContextBlockReason(draft),
+        blockedReason: updateContextBlockReason,
         nextAttemptAt: null,
         criadaNoClienteEm: timestamp,
         updatedAt: timestamp,

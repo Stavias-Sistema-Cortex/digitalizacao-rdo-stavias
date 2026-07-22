@@ -1,6 +1,9 @@
 import { processObjectUploads } from "../../features/mensagens/objectUploadSync";
 import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
-import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
+import {
+  hydrateBlockedRdoCreationContextsForSync,
+  repairRdoCreateMutationsForSync,
+} from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
 import { acknowledgeCurrentCursor } from "./ackCursor";
 import { pullEvents } from "./pullEvents";
@@ -50,6 +53,8 @@ async function executeSync(
     await repairMissingObraReferencesForSync(guard);
     assertSyncSession(guard);
     await repairMissingMaoObraReferencesForSync(guard);
+    assertSyncSession(guard);
+    await hydrateBlockedRdoCreationContextsForSync(guard);
     assertSyncSession(guard);
     await repairRdoCreateMutationsForSync(guard);
     assertSyncSession(guard);

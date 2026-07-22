@@ -501,6 +501,7 @@ async function updateRdoOperationalEventsSyncStatus(
   rdoId: string,
   syncStatus: OperationalEventRecord["syncStatus"],
   timestamp: string,
+  exactEventIds?: ReadonlySet<string>,
 ): Promise<void> {
   const store = transaction.objectStore("operational_events");
 
@@ -508,7 +509,10 @@ async function updateRdoOperationalEventsSyncStatus(
 
   await Promise.all(
     records
-      .filter((record) => record.syncStatus !== "SYNCED")
+      .filter((record) =>
+        record.syncStatus !== "SYNCED" &&
+        (exactEventIds === undefined || exactEventIds.has(record.id))
+      )
       .map((record) =>
         store.put({
           ...record,
@@ -517,6 +521,24 @@ async function updateRdoOperationalEventsSyncStatus(
             syncStatus === "SYNCED" ? timestamp : record.syncedAt,
         }),
       ),
+  );
+}
+
+function mutationOperationalEventIds(
+  mutation: OutboxMutationRecord,
+): ReadonlySet<string> {
+  const events = mutation.payload.operationalEvents;
+  if (!Array.isArray(events)) {
+    return new Set();
+  }
+  return new Set(
+    events.flatMap((event) => {
+      if (!event || typeof event !== "object") {
+        return [];
+      }
+      const id = (event as Record<string, unknown>).id;
+      return typeof id === "string" && id.length > 0 ? [id] : [];
+    }),
   );
 }
 
@@ -1592,6 +1614,7 @@ export async function applyPushResultAtomically(
           mutation.entidadeId,
           "SYNCED",
           timestamp,
+          mutationOperationalEventIds(mutation),
         );
       }
       await updateRdoAttachmentsSyncStatus(
