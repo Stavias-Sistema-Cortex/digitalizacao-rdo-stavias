@@ -5,6 +5,7 @@
 - Task: remove the frontend StavIA assistant from the compiled Cortex web
   runtime while preserving the existing operational application.
 - Base commit: `d8d8136b3718b76dc106b59a76778dddc9858107`.
+- Reviewer-fix pass base: `ed99db38bf31345d54fc9df9bfdb15822fc04e25`.
 - Worktree: `/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery`.
 - No backend, Task 6, offline mutation, RDO domain, or Financeiro domain code was
   changed. RDO changes are limited to removing assistant callbacks and controls.
@@ -124,15 +125,75 @@ All failures were the intended contract failures, not test harness errors.
 - absence of assistant-named chunks while permitting plural STAVIAS corporate
   branding.
 
+The reviewer-fix pass replaced the source-only matcher with an executable Node
+gate at `apps/web/scripts/verify-stavia-boundary.mjs`. It scans production
+source, CSS, public paths/text assets, package/Vite/support files, repository
+environment and compose examples, and repository/web scripts. The matcher is
+case-insensitive and rejects singular assistant spellings in identifiers,
+paths, content, endpoints, environment names, and UI copy, including
+`useStaviaLauncher`, `staviaLauncherContext`, `StaviaLauncherProvider`,
+`features/stavia`, `/api/stavia`, `VITE_STAVIA_*`, and `Abrir na StavIA`
+variants. Plural `Stavias` branding remains outside that singular rule.
+
+Legacy identifiers are now audited across the complete scanned source set
+before they are masked for assistant-token inspection. Each localStorage key
+must occur exactly once in `localDataScope.ts`, whose only storage capability is
+`removeItem`; `stavia_snapshots` must occur exactly once as the migration
+constant in `cortexDb.ts`, with exactly the constant declaration,
+`objectStoreNames.contains`, and `deleteObjectStore` uses. Regression fixtures
+prove a second occurrence, `getItem`, or active `objectStore` access is rejected.
+
+Compiled output is a separate mandatory gate. `verifyDist` fails for a missing
+or empty `dist`, and `npm run build` now runs
+`tsc -b && vite build && node scripts/verify-stavia-boundary.mjs --dist`.
+Vitest covers the missing-dist failure and package-script ordering; the real
+build below exercised the generated JS, CSS, HTML, manifest, service worker,
+assets, legacy deletion-only code, and chunk paths without recursive build/test
+invocation.
+
+## Responsive geometry evidence
+
+`apps/web/scripts/verify-mensagens-geometry.mjs` is an offline deterministic
+geometry check derived from the current `MensagensPage.css` and shell CSS. It
+extracts the shell/sidebar breakpoint, page gutter, container breakpoints,
+column bounds, workspace height offsets, composer padding/gaps, and control
+dimensions, then computes rectangles and rejects non-positive dimensions,
+frame overflow, column overlap, control overlap, or an unusably narrow text
+area. A mutated-control fixture proves the check fails when composer controls
+exceed their frame.
+
+Fresh automated measurements after reclaiming the former 82 px launcher band:
+
+- 390x844: frame 390 px, workspace 624 px, one 390 px panel; composer controls
+  38/276/38 px, all inside the frame.
+- 1100x800: frame 820 px after the 248 px shell sidebar and 32 px page gutter;
+  columns 340/480 px; composer controls 38/358/38 px, with no overflow/overlap.
+- 1440x900: frame 1160 px; columns 340/500/320 px; composer controls
+  38/378/38 px, with no overflow/overlap.
+
+The real manual browser record in `task-5-browser-verification.md` remains
+intentionally narrower than this authenticated-layout model: at 390x844,
+1100x800, and 1440x900 the preview login surface had no horizontal overflow,
+all visible controls stayed inside the viewport, no framework overlay or
+captured bundle error appeared, and no launcher DOM text/class was present.
+Those were unauthenticated login checks only. Mensagens and other authenticated
+pages were not claimed as manually exercised; their Task 5 evidence here is the
+source/component boundary, generated bundle scan, and deterministic geometry
+gate. Authenticated runtime browser proof remains Task 6.
+
 ## GREEN and artifact evidence
 
 - Targeted migration/responsive tests:
   `2 files / 21 tests passed`.
 - Boundary after production build: `1 file / 4 tests passed`.
-- Full web suite: `52 files / 231 tests passed`.
+- Reviewer-fix focused suite: `3 files / 18 tests passed`.
+- Full web suite after fixes: `52 files / 236 tests passed`.
 - Lint: `npm --prefix apps/web run lint` exited 0.
-- TypeScript/Vite/PWA build: `npm --prefix apps/web run build` exited 0 and
-  generated 89 precache entries.
+- TypeScript/Vite/PWA build plus mandatory dist verifier:
+  `npm --prefix apps/web run build` exited 0, generated 89 precache entries,
+  and printed `StavIA source and dist boundary verified.`
+- Geometry CLI: `npm --prefix apps/web run verify:mensagens-geometry` exited 0
+  with the three measurements recorded above.
 - Dist path scan for singular assistant assets/chunks exited 1 with no matches.
 - Dist content scan for provider/hook/feature path/buttons/CSS/endpoints exited 1
   with no matches.
@@ -143,14 +204,15 @@ All failures were the intended contract failures, not test harness errors.
 
 ## Risks and limits
 
-- The generated `apps/web/dist` directory is ignored, so a checkout without
-  dist cannot scan absent artifacts during ordinary tests. The required final
-  sequence is build, boundary rerun, and explicit chunk scan; this report records
-  that sequence.
+- `dist` remains ignored, but absence can no longer pass the artifact gate:
+  direct verifier execution fails, and every ordinary production build scans
+  the newly emitted output before succeeding.
 - Historical assistant data is intentionally deleted on the next IndexedDB
-  upgrade and logout/session change. The migration test proves a non-assistant
-  RDO record survives the v12-to-v13 upgrade, but does not simulate every browser
-  implementation.
-- Responsive evidence for this task is automated CSS/geometry coverage, as
-  requested. No browser screenshot or manual interaction claim is made.
-- Independent spec/code-quality review remains the parent workflow's next gate.
+  upgrade and logout/session change. The migration tests now prove a fresh v13
+  lacks the store and a v12 upgrade preserves multiple non-assistant stores,
+  records, and indexes, including an unknown future-domain store. They still do
+  not simulate every browser implementation.
+- Manual browser evidence is limited to the unauthenticated login surface and
+  is labeled as such. Authenticated page interaction is not claimed.
+- Independent re-review of this reviewer-fix commit remains the parent
+  workflow's next gate.

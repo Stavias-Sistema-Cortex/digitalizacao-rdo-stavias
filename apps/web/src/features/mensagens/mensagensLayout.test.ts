@@ -1,6 +1,13 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import {
+  geometryViolations,
+  measureMensagensGeometry,
+  readGeometryTokens,
+  verifyMensagensGeometry,
+  VIEWPORTS,
+} from "../../../scripts/verify-mensagens-geometry.mjs";
 
 const css = readFileSync(
   new URL("./MensagensPage.css", import.meta.url),
@@ -20,6 +27,41 @@ function rule(selector: string): string {
 }
 
 describe("layout da aba Mensagens", () => {
+  it("mantém um verificador geométrico reproduzível nos três breakpoints", () => {
+    expect(
+      existsSync(
+        new URL("../../../scripts/verify-mensagens-geometry.mjs", import.meta.url),
+      ),
+    ).toBe(true);
+
+    const measurements = verifyMensagensGeometry(css);
+    expect(measurements.map((measurement) => measurement.viewport.width)).toEqual([
+      390,
+      1100,
+      1440,
+    ]);
+    for (const measurement of measurements) {
+      expect(
+        measurement.columns.every(
+          (column) => column.right <= measurement.frame.right,
+        ),
+      ).toBe(true);
+      expect(measurement.controls.send.right).toBeLessThanOrEqual(
+        measurement.frame.right,
+      );
+    }
+
+    const tokens = readGeometryTokens(css);
+    const brokenTokens = {
+      ...tokens,
+      composerControl: 300,
+    };
+    const broken = measureMensagensGeometry(VIEWPORTS[1], brokenTokens);
+    expect(geometryViolations(broken, brokenTokens)).toEqual(
+      expect.arrayContaining([expect.stringMatching(/column|textarea|control/)]),
+    );
+  });
+
   it("consulta a largura do frame, não a da viewport", () => {
     expect(rule(".mensagens-frame")).toContain("container-type: inline-size;");
     expect(css).toContain("@container (min-width: 640px)");

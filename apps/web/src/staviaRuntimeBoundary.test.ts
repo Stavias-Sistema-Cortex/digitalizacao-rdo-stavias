@@ -8,6 +8,12 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
+import {
+  findAssistantTokens,
+  inspectSourceBoundary,
+  verifyDist,
+  verifySourceBoundary,
+} from "../scripts/verify-stavia-boundary.mjs";
 
 const WEB_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const REPOSITORY_ROOT = path.resolve(WEB_ROOT, "../..");
@@ -86,21 +92,7 @@ function supportFiles(): string[] {
 }
 
 function assistantTokens(text: string): string[] {
-  const withoutLegacyCleanup = LEGACY_LOCAL_STORAGE_KEYS.reduce(
-    (current, key) => current.replaceAll(key, "[legacy-local-cleanup]"),
-    text,
-  )
-    .replaceAll(LEGACY_SNAPSHOT_STORE, "[legacy-store-cleanup]")
-    .replace(/stavias/gi, "[corporate-brand]");
-
-  return [
-    ...withoutLegacyCleanup.matchAll(/\bstavia\b/gi),
-    ...withoutLegacyCleanup.matchAll(/\bStavia[A-Z][A-Za-z]*/g),
-    ...withoutLegacyCleanup.matchAll(/stav\.ia/gi),
-    ...withoutLegacyCleanup.matchAll(/features\/stavia/gi),
-    ...withoutLegacyCleanup.matchAll(/obras-stavia-button/gi),
-    ...withoutLegacyCleanup.matchAll(/\/stavia\//gi),
-  ].map((match) => match[0]);
+  return findAssistantTokens(text).map((match) => match.token);
 }
 
 function corporateOccurrences(file: string): string[] {
@@ -110,16 +102,72 @@ function corporateOccurrences(file: string): string[] {
 }
 
 describe("StavIA runtime boundary", () => {
+  it("recognizes assistant spellings in source, support and path fixtures", () => {
+    const forbiddenFixtures = [
+      "useStaviaLauncher()",
+      "staviaLauncherContext.ts",
+      "StaviaLauncherProvider",
+      "features/stavia/client.ts",
+      "fetch('/api/stavia/query')",
+      "VITE_STAVIA_API_URL=https://example.invalid",
+      "Abrir na StavIA",
+      "abrir-stavia.html",
+      "stav.ia-client.css",
+    ];
+
+    for (const fixture of forbiddenFixtures) {
+      expect(assistantTokens(fixture), fixture).not.toEqual([]);
+    }
+  });
+
+  it("does not hide a second or active use of a legacy identifier", () => {
+    for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
+      expect(
+        assistantTokens(
+          `const cleanup = "${key}"; localStorage.getItem("${key}")`,
+        ),
+        key,
+      ).not.toEqual([]);
+    }
+
+    expect(
+      assistantTokens(
+        `const cleanup = "${LEGACY_SNAPSHOT_STORE}"; database.objectStore("${LEGACY_SNAPSHOT_STORE}")`,
+      ),
+    ).not.toEqual([]);
+
+    const cleanupFixtures = [
+      {
+        path: "apps/web/src/lib/db/localDataScope.ts",
+        content: `const keys = ["${LEGACY_LOCAL_STORAGE_KEYS[0]}", "${LEGACY_LOCAL_STORAGE_KEYS[1]}"]; function clear(target) { for (const key of keys) target.removeItem(key); }`,
+      },
+      {
+        path: "apps/web/src/lib/db/cortexDb.ts",
+        content: `const LEGACY_ASSISTANT_STORE = "${LEGACY_SNAPSHOT_STORE}"; if (database.objectStoreNames.contains(LEGACY_ASSISTANT_STORE)) database.deleteObjectStore(LEGACY_ASSISTANT_STORE);`,
+      },
+    ];
+    const activeRegressions = [
+      `localStorage.getItem("${LEGACY_LOCAL_STORAGE_KEYS[0]}")`,
+      `localStorage.setItem("${LEGACY_LOCAL_STORAGE_KEYS[1]}", "private")`,
+      `database.objectStore("${LEGACY_SNAPSHOT_STORE}")`,
+      `database.createObjectStore("${LEGACY_SNAPSHOT_STORE}")`,
+    ];
+    for (const activeRegression of activeRegressions) {
+      const fixtureViolations = inspectSourceBoundary([
+        ...cleanupFixtures,
+        {
+          path: "apps/web/src/active-regression.ts",
+          content: activeRegression,
+        },
+      ]);
+      expect(fixtureViolations, activeRegression).not.toEqual([]);
+    }
+  });
+
   it("keeps assistant sources, hooks, controls and CSS outside the web runtime", () => {
     expect(existsSync(path.join(WEB_ROOT, "src/features/stavia"))).toBe(false);
 
-    const violations = runtimeSourceFiles().flatMap((file) =>
-      assistantTokens(readFileSync(file, "utf8")).map(
-        (token) => `${relativeToRepository(file)}: ${token}`,
-      ),
-    );
-
-    expect(violations).toEqual([]);
+    expect(() => verifySourceBoundary(REPOSITORY_ROOT)).not.toThrow();
   });
 
   it("allows the corporate STAVIAS brand only in the explicit source and asset allowlists", () => {
@@ -180,60 +228,31 @@ describe("StavIA runtime boundary", () => {
     );
   });
 
-  it("keeps assistant assets, code and named chunks out of an existing Vite dist", () => {
+  it("makes missing dist an error and verifies a real dist when present", () => {
     const distRoot = path.join(WEB_ROOT, "dist");
+    expect(() => verifyDist(path.join(WEB_ROOT, "dist-does-not-exist"))).toThrow(
+      /dist is required/,
+    );
     if (!existsSync(distRoot)) {
       return;
     }
 
-    const distFiles = listFiles(distRoot);
-    const pathViolations = distFiles
-      .map((file) => path.relative(distRoot, file).split(path.sep).join("/"))
-      .filter((file) => /stavia(?!s)/i.test(file));
-    const textFiles = distFiles.filter((file) =>
-      /\.(?:css|html|js|json|mjs|svg|webmanifest)$/.test(file),
-    );
-    const textViolations = textFiles.flatMap((file) =>
-      assistantTokens(readFileSync(file, "utf8")).map(
-        (token) => `${path.relative(distRoot, file)}: ${token}`,
-      ),
-    );
-    const distText = textFiles
-      .map((file) => readFileSync(file, "utf8"))
-      .join("\n");
-    for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
-      expect(distText.split(key)).toHaveLength(2);
-    }
-    const localCleanupStart = distText.indexOf(LEGACY_LOCAL_STORAGE_KEYS[0]);
-    const localCleanupBundle = distText.slice(
-      Math.max(0, localCleanupStart - 40),
-      localCleanupStart + 320,
-    );
-    expect(localCleanupBundle).toContain(LEGACY_LOCAL_STORAGE_KEYS[1]);
-    expect(localCleanupBundle).toContain(".removeItem(");
-    expect(localCleanupBundle).not.toMatch(/\.(?:getItem|setItem)\(/);
-    const legacyStoreBundles = textFiles
-      .map((file) => ({ file, content: readFileSync(file, "utf8") }))
-      .filter(({ content }) => content.includes(LEGACY_SNAPSHOT_STORE));
+    expect(() => verifyDist(distRoot)).not.toThrow();
+  });
 
-    expect(pathViolations).toEqual([]);
-    expect(textViolations).toEqual([]);
-    expect(legacyStoreBundles).toHaveLength(1);
-    const legacyBundle = legacyStoreBundles[0].content;
-    const declaration = legacyBundle.match(
-      /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[`"']stavia_snapshots[`"']/,
+  it("makes the build run an explicit verifier after Vite emits dist", () => {
+    const packageJson = JSON.parse(
+      readFileSync(path.join(WEB_ROOT, "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+    const build = packageJson.scripts?.build ?? "";
+
+    expect(build).toMatch(
+      /vite build\s*&&\s*node scripts\/verify-stavia-boundary\.mjs --dist$/,
     );
-    expect(declaration).not.toBeNull();
-    const minifiedName = declaration?.[1] ?? "";
-    expect(legacyBundle.split(minifiedName)).toHaveLength(4);
-    expect(legacyBundle).toContain(
-      `objectStoreNames.contains(${minifiedName})`,
-    );
-    expect(legacyBundle).toContain(`deleteObjectStore(${minifiedName})`);
-    expect(legacyBundle).not.toMatch(
-      new RegExp(
-        `(?:createObjectStore|objectStore|get|put|transaction)\\(${minifiedName}\\)`,
+    expect(
+      existsSync(
+        path.join(WEB_ROOT, "scripts/verify-stavia-boundary.mjs"),
       ),
-    );
+    ).toBe(true);
   });
 });

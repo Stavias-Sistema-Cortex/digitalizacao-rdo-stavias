@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 
-import { deleteDB, openDB } from "idb";
+import { deleteDB, openDB, type IDBPDatabase } from "idb";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -40,10 +40,24 @@ afterEach(async () => {
 });
 
 describe("IndexedDB assistant cleanup", () => {
-  it("removes only the legacy assistant store during the v12 upgrade", async () => {
+  it("creates a fresh v13 database without the legacy assistant store", async () => {
+    const fresh = await getCortexDb();
+
+    expect(fresh.version).toBe(13);
+    expect(fresh.objectStoreNames.contains("stavia_snapshots")).toBe(false);
+  });
+
+  it("removes only the legacy assistant store and preserves stores, data and indexes during the v12 upgrade", async () => {
     const legacy = await openDB(databaseName, 12, {
       upgrade(database) {
-        database.createObjectStore("rdos", { keyPath: "id" });
+        const rdoStore = database.createObjectStore("rdos", { keyPath: "id" });
+        rdoStore.createIndex("by-obra-id", "obraId");
+        const obraStore = database.createObjectStore("obras", { keyPath: "id" });
+        obraStore.createIndex("by-status", "status");
+        const customStore = database.createObjectStore("future_domain_cache", {
+          keyPath: "id",
+        });
+        customStore.createIndex("by-scope", "scope");
         database.createObjectStore("stavia_snapshots", {
           keyPath: "key",
         });
@@ -51,7 +65,18 @@ describe("IndexedDB assistant cleanup", () => {
     });
     await legacy.put("rdos", {
       id: "rdo-preservado",
+      obraId: WORKSITE_ID,
       statusRdo: "RASCUNHO",
+    });
+    await legacy.put("obras", {
+      id: WORKSITE_ID,
+      status: "ATIVA",
+      nome: "Obra preservada",
+    });
+    await legacy.put("future_domain_cache", {
+      id: "cache-preservado",
+      scope: "operacional",
+      value: 42,
     });
     await legacy.put("stavia_snapshots", {
       key: "default",
@@ -67,5 +92,31 @@ describe("IndexedDB assistant cleanup", () => {
       id: "rdo-preservado",
       statusRdo: "RASCUNHO",
     });
+    const untypedDatabase = upgraded as unknown as IDBPDatabase;
+    expect([...untypedDatabase.objectStoreNames]).toEqual(
+      expect.arrayContaining(["rdos", "obras", "future_domain_cache"]),
+    );
+
+    const verification = untypedDatabase.transaction(
+      ["rdos", "obras", "future_domain_cache"],
+      "readonly",
+    );
+    expect(
+      verification.objectStore("rdos").indexNames.contains("by-obra-id"),
+    ).toBe(true);
+    expect(
+      verification.objectStore("obras").indexNames.contains("by-status"),
+    ).toBe(true);
+    expect(
+      verification.objectStore("future_domain_cache").indexNames.contains("by-scope"),
+    ).toBe(true);
+    expect(await verification.objectStore("obras").get(WORKSITE_ID)).toMatchObject({
+      id: WORKSITE_ID,
+      nome: "Obra preservada",
+    });
+    expect(
+      await verification.objectStore("future_domain_cache").get("cache-preservado"),
+    ).toMatchObject({ id: "cache-preservado", value: 42 });
+    await verification.done;
   });
 });
