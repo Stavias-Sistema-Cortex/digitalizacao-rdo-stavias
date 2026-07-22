@@ -837,6 +837,30 @@
 .finance-audit li strong,
 .finance-audit li span { display: block; font-size: 0.72rem; }
 .finance-audit li span { margin-top: 3px; color: #838890; }
+.finance-memory-reference {
+  align-items: center;
+  background: #f6f7f5;
+  border: 1px solid #d7dbd7;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+.finance-memory-reference h3,
+.finance-memory-reference p { margin: 0; }
+.finance-memory-reference p { color: #68706b; font-size: 0.72rem; margin-top: 4px; }
+.finance-memory-reference a {
+  border: 1px solid #111312;
+  border-radius: 4px;
+  color: #111312;
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 8px 10px;
+  text-decoration: none;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.finance-memory-reference a:hover { background: #111312; color: #fff; }
 
 .finance-document-viewer { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 430px; margin-bottom: 20px; border: 1px solid #dde1de; background: #fff; }
 .finance-document-viewer nav { padding: 10px; border-right: 1px solid #dde1de; background: #f4f5f2; }

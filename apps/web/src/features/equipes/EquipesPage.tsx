@@ -4,7 +4,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import type {
@@ -18,6 +18,7 @@ import {
   isAlfa,
 } from "../auth/authSession";
 import { hydrateObrasRelacionadas } from "../home/homeHydration";
+import { memoryHref } from "../home/memory/memoryLocation";
 import {
   createConversationApi,
   listConversationsApi,
@@ -60,7 +61,6 @@ import {
 } from "./teamLocalRepository";
 import {
   filterTeams,
-  teamHistoryLabel,
   type TeamFilters,
 } from "./teamViewModel";
 import "./EquipesPage.css";
@@ -124,13 +124,6 @@ function formatDateTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
-}
-
-function changedFields(event: TeamHistoryEventDto): string[] {
-  const fields = event.payload.changedFields;
-  return Array.isArray(fields)
-    ? fields.filter((field): field is string => typeof field === "string")
-    : [];
 }
 
 async function fetchAllScopedTeams(): Promise<TeamDto[]> {
@@ -545,7 +538,7 @@ export function EquipesPage() {
               <button className="teams-mobile-back" type="button" onClick={() => setSearchParams({})} aria-label="Voltar às equipes">‹</button>
               <div className="teams-title-mark">{participantInitials(selectedTeam.nome)}</div>
               <div><p>{selectedTeam.obraNome}</p><h2>{selectedTeam.nome}</h2><span>ID {selectedTeam.id} · versão {selectedTeam.versaoEntidade}</span></div>
-              <div className="teams-detail-actions"><button type="button" onClick={() => navigate(`/obras?obra=${encodeURIComponent(selectedTeam.obraPrincipalId)}`)}>Ver obra</button><button type="button" className="is-primary" onClick={() => void openTeamConversation()}>Abrir conversa</button>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={openEditTeam}>Editar</button>}</div>
+              <div className="teams-detail-actions"><button type="button" onClick={() => navigate(`/obras?obra=${encodeURIComponent(selectedTeam.obraPrincipalId)}`)}>Ver obra</button><Link to={memoryHref({ obraId: selectedTeam.obraPrincipalId, entityType: "EQUIPE", entityId: selectedTeam.id })}>Memória ({history.length})</Link><button type="button" className="is-primary" onClick={() => void openTeamConversation()}>Abrir conversa</button>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={openEditTeam}>Editar</button>}</div>
             </header>
             {actionError && <div className="teams-action-error" role="alert">{actionError}<button type="button" onClick={() => setActionError(null)}>×</button></div>}
             <div className="teams-detail-scroll">
@@ -568,8 +561,6 @@ export function EquipesPage() {
               </section>
 
               {formerMembers.length > 0 && <section className="teams-section"><header><div><p>Memória temporal</p><h3>Histórico de membros</h3></div></header><div className="teams-history-table" role="table"><div role="row"><span>Pessoa</span><span>Função</span><span>Período</span><span>Motivo</span></div>{formerMembers.map((member) => <button type="button" role="row" key={member.id} onClick={() => setSelectedMember(member)}><strong>{member.colaboradorNome}</strong><span>{member.funcaoNome}</span><span>{formatDate(member.inicioEm)} — {formatDate(member.fimEm)}</span><span>{member.motivoEncerramento || "Não informado"}</span></button>)}</div></section>}
-
-              {alfa && <section className="teams-section teams-audit"><header><div><p>Somente Alfa</p><h3>Histórico ontológico</h3></div><span>{history.length} eventos</span></header>{history.length === 0 ? <div className="teams-section-empty">Nenhum evento disponível no cache atual.</div> : <ol>{[...history].reverse().map((event) => <li key={event.eventId}><i /><div><strong>{teamHistoryLabel(event)}</strong><p>{changedFields(event).length ? `Campos: ${changedFields(event).join(", ")}` : "Evento estruturado sem lista de campos alterados."}</p><span>{formatDateTime(event.occurredAt)} · {event.source} · ator {event.collaboratorId ?? "sistema"}</span><code>commit {event.commitSeq} · {event.eventId}</code></div></li>)}</ol>}</section>}
 
               {alfa && selectedTeam.status === "ATIVA" && <div className="teams-danger-zone"><div><strong>Arquivar equipe</strong><p>Encerra vínculos ativos preservando todo o histórico.</p></div><button type="button" onClick={() => { setTeamForm((current) => ({ ...current, motivo: "" })); setTeamModalMode("ARCHIVE"); }}>Arquivar</button></div>}
             </div>

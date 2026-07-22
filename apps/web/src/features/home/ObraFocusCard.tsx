@@ -78,21 +78,23 @@ export function ObraFocusCard({
   const localizacao = [obra.cidade, obra.uf]
     .filter(Boolean)
     .join("/");
+  const updatedAt = formatUpdatedAt(obra.updatedAt);
 
   return (
-    <section className="home-obra-card">
+    <section
+      className="home-obra-card home-worksite-command"
+      aria-labelledby={`home-worksite-${obra.id}`}
+    >
       <header className="home-obra-header">
-        <span className="home-obra-pill">
-          Última Obra Acessada
-        </span>
-        <h2>{obra.nome}</h2>
-        <span className="home-obra-status">
-          {obra.status}
-        </span>
+        <div>
+          <span className="home-section-index">Empreendimento em foco</span>
+          <div className="home-obra-title-line">
+            <h2 id={`home-worksite-${obra.id}`}>{obra.nome}</h2>
+            <span className="home-obra-status">{obra.status}</span>
+          </div>
+        </div>
         <label className="home-obra-selector">
-          <span className="visually-hidden">
-            Trocar obra
-          </span>
+          <span>Obra selecionada</span>
           <select
             value={obra.id}
             onChange={(event) => {
@@ -109,71 +111,33 @@ export function ObraFocusCard({
       </header>
 
       <div className="home-obra-body">
-        <div className="home-obra-infos">
+        <dl className="home-obra-infos">
           <div>
-            <span className="info-label">Contrato</span>
-            <strong>
+            <dt>Contrato</dt>
+            <dd>
               {obra.codigoContrato || "—"}
               {obra.cliente ? ` · ${obra.cliente}` : ""}
-            </strong>
+            </dd>
           </div>
           <div>
-            <span className="info-label">Localização</span>
-            <strong>
+            <dt>Localização</dt>
+            <dd>
               {[localizacao, obra.rodovia]
                 .filter(Boolean)
                 .join(" · ") || "—"}
-            </strong>
-            <span className="info-coords">
-              {obra.latitude !== null &&
-              obra.longitude !== null
-                ? `${obra.latitude}, ${obra.longitude}`
-                : "—"}
-            </span>
+              <span className="info-coords">
+                {obra.latitude !== null &&
+                obra.longitude !== null
+                  ? `${obra.latitude}, ${obra.longitude}`
+                  : "Coordenadas não informadas"}
+              </span>
+            </dd>
           </div>
           <div>
-            <span className="info-label">
-              Observações gerais
-            </span>
-            <span>{obra.observacoes || "—"}</span>
+            <dt>Observações operacionais</dt>
+            <dd>{obra.observacoes || "—"}</dd>
           </div>
-          <div className="home-obra-metrics">
-            <div>
-              <span className="info-label">
-                Ocorrências (30d)
-              </span>
-              <strong className="metric-value">
-                {countOcorrencias30d(events)}
-              </strong>
-            </div>
-            <div>
-              <span className="info-label">Último RDO</span>
-              <strong>
-                {latestRdo
-                  ? `${latestRdo.dataRdo} · ${
-                      latestRdo.statusRdo === "ENVIADO"
-                        ? "enviado"
-                        : "rascunho"
-                    }`
-                  : "—"}
-              </strong>
-            </div>
-            <div>
-              <span className="info-label">
-                Progresso geral
-              </span>
-              <strong className="metric-value metric-value--brand">
-                {progressoGeral === null
-                  ? "—"
-                  : `${progressoGeral}%`}
-              </strong>
-            </div>
-          </div>
-          <span className="home-updated-at">
-            dados atualizados em{" "}
-            {formatUpdatedAt(obra.updatedAt) || "—"}
-          </span>
-        </div>
+        </dl>
 
         <div className="home-obra-chart">
           <ProgressChart
@@ -183,6 +147,40 @@ export function ObraFocusCard({
           />
         </div>
       </div>
+
+      <dl className="home-obra-metrics">
+        <div>
+          <dt>Ocorrências nos últimos 30 dias</dt>
+          <dd className="metric-value">{countOcorrencias30d(events)}</dd>
+        </div>
+        <div>
+          <dt>Último RDO</dt>
+          <dd>
+            {latestRdo
+              ? `${latestRdo.dataRdo} · ${
+                  latestRdo.statusRdo === "ENVIADO"
+                    ? "enviado"
+                    : "rascunho"
+                }`
+              : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>Progresso geral</dt>
+          <dd className="metric-value metric-value--brand">
+            {progressoGeral === null ? "—" : `${progressoGeral}%`}
+          </dd>
+        </div>
+      </dl>
+
+      <footer className="home-updated-at">
+        <span>Atualização local</span>
+        {updatedAt ? (
+          <time dateTime={obra.updatedAt}>{updatedAt}</time>
+        ) : (
+          <span>Não registrada</span>
+        )}
+      </footer>
     </section>
   );
 }

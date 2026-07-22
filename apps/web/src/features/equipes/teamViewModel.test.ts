@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TeamDto } from "./teamApi";
-import { filterTeams, teamHistoryLabel } from "./teamViewModel";
+import { filterTeams } from "./teamViewModel";
 
 function team(): TeamDto {
   return {
@@ -65,23 +65,5 @@ describe("teamViewModel", () => {
       status: "",
       activeOn: "",
     })).toHaveLength(0);
-  });
-
-  it("traduz eventos conhecidos e preserva tipo desconhecido consultável", () => {
-    const base = {
-      commitSeq: 1,
-      eventId: "event-1",
-      entityType: "EQUIPE",
-      entityId: "team-1",
-      source: "ONLINE",
-      worksiteId: "obra-1",
-      collaboratorId: "user-1",
-      occurredAt: "2026-07-15T12:00:00",
-      recordedAt: "2026-07-15T12:00:00",
-      entityVersion: 1,
-      payload: {},
-    };
-    expect(teamHistoryLabel({ ...base, eventType: "EQUIPE_CRIADA" })).toBe("Equipe criada");
-    expect(teamHistoryLabel({ ...base, eventType: "CONFLITO_DETECTADO" })).toBe("conflito detectado");
   });
 });

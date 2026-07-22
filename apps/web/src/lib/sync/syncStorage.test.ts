@@ -1,6 +1,25 @@
-import { describe, expect, it } from "vitest";
+import "fake-indexeddb/auto";
+
+import { deleteDB } from "idb";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import {
+  clearSession,
+  setSession,
+} from "../../features/auth/authSession";
+import {
+  closeCortexDb,
+  getCortexDb,
+} from "../db/cortexDb";
+import {
+  applyPushResultAtomically,
   mutationAfterMaoObraReferenceRepair,
   mutationAfterObraReferenceRepair,
   mutationAfterErroredRetry,
@@ -10,10 +29,14 @@ import {
   rdoAfterConflict,
 } from "./syncStorage";
 import type {
+  CanonicalOperationalEventRecord,
+  CanonicalOutboxMutationRecord,
   LocalRdoRecord,
   ObraLocalRecord,
   OutboxMutationRecord,
 } from "../db/db.types";
+import { databaseNameForScope } from "../db/localDataNamespace";
+import { selectReadyOutboxMutations } from "./outboxDependencies";
 import type { SyncPushMutationResult } from "./sync.types";
 
 const baseRdo = {
@@ -395,5 +418,175 @@ describe("rdoAfterMaoObraReferenceRepair", () => {
         nomeColaborador: "Adalberto Canovas Neto",
       },
     ]);
+  });
+});
+
+const CONFLICT_OBRA_ID = "00000000-0000-4000-8000-000000000041";
+const CONFLICT_DEVICE_ID = "00000000-0000-4000-8000-000000000042";
+
+function canonicalMutation(
+  id: string,
+  status: CanonicalOutboxMutationRecord["status"],
+): CanonicalOutboxMutationRecord {
+  return {
+    contractVersion: 13,
+    clientMutationId: id,
+    entidadeTipo: "RDO",
+    entidadeId: `entity-${id}`,
+    operacao: "ATUALIZAR_RDO_RASCUNHO",
+    baseVersao: 1,
+    payload: {
+      id: `entity-${id}`,
+      titulo: "Versão local",
+      nested: { preserved: true },
+    },
+    status,
+    tentativas: status === "SYNCING" ? 1 : 0,
+    ultimaTentativaEm: status === "SYNCING"
+      ? "2026-07-17T12:01:00.000Z"
+      : null,
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: "2026-07-17T12:00:00.000Z",
+    updatedAt: "2026-07-17T12:01:00.000Z",
+    transport: "SYNC_PUSH",
+    dependsOnMutationIds: [],
+    correlationId: `correlation-${id}`,
+    fieldPatch: {
+      changed: { titulo: "Versão local" },
+      baseValues: { titulo: "Versão base" },
+    },
+    trace: {
+      actorId: "actor-1",
+      deviceId: CONFLICT_DEVICE_ID,
+      authorizationScope: [CONFLICT_OBRA_ID],
+      correlationId: `correlation-${id}`,
+      causationId: null,
+      ontologyEventId: `event-${id}`,
+      payloadHash: "a".repeat(64),
+    },
+    nextAttemptAt: null,
+    blockedReason: null,
+  };
+}
+
+function canonicalEvent(
+  mutation: CanonicalOutboxMutationRecord,
+): CanonicalOperationalEventRecord {
+  return {
+    contractVersion: 13,
+    id: mutation.trace.ontologyEventId,
+    type: "RDO_EDITADO",
+    principalEntity: { tipo: "RDO", id: mutation.entidadeId },
+    principalEntityKey: `RDO:${mutation.entidadeId}`,
+    relatedEntities: [],
+    obraId: CONFLICT_OBRA_ID,
+    rdoId: mutation.entidadeId,
+    colaboradorId: "actor-1",
+    occurredAt: mutation.criadaNoClienteEm,
+    syncedAt: null,
+    origin: "OFFLINE",
+    responsibleUserId: "actor-1",
+    responsibleUserName: "Ana",
+    payload: mutation.payload,
+    syncStatus: "PENDING_SYNC",
+    schemaVersion: 1,
+    clientMutationId: mutation.clientMutationId,
+    deviceId: mutation.trace.deviceId,
+    correlationId: mutation.trace.correlationId,
+    causationId: mutation.trace.causationId,
+    previousState: { titulo: "Versão base" },
+    newState: { titulo: "Versão local" },
+    result: mutation.status === "SYNCING" ? "SYNCING" : "PENDING",
+    errorCategory: null,
+    entityVersion: mutation.baseVersao,
+  };
+}
+
+describe("applyPushResultAtomically conflict preservation", () => {
+  let databaseName = "";
+
+  beforeEach(async () => {
+    vi.stubGlobal("BroadcastChannel", undefined);
+    const ownerId = crypto.randomUUID();
+    setSession({
+      colaboradorId: ownerId,
+      nome: "Operador de campo",
+      papelAcesso: "BETA",
+      escopoGlobal: false,
+      obraIds: [CONFLICT_OBRA_ID],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    databaseName = await databaseNameForScope(
+      ownerId,
+      `BETA:${CONFLICT_OBRA_ID}`,
+    );
+  });
+
+  afterEach(async () => {
+    await closeCortexDb();
+    if (databaseName) {
+      await deleteDB(databaseName);
+    }
+    clearSession();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the payload, stores field triples and marks only the correlated event as conflict", async () => {
+    const database = await getCortexDb();
+    const conflicted = canonicalMutation("conflicted", "SYNCING");
+    const independent = canonicalMutation("independent", "PENDING");
+    const structuredConflict = {
+      titulo: {
+        base: "Versão base",
+        local: "Versão local",
+        remote: "Versão remota",
+      },
+    };
+
+    await Promise.all([
+      database.put("outbox_mutations", conflicted),
+      database.put("outbox_mutations", independent),
+      database.put("operational_events", canonicalEvent(conflicted)),
+      database.put("operational_events", canonicalEvent(independent)),
+    ]);
+
+    await applyPushResultAtomically({
+      clientMutationId: conflicted.clientMutationId,
+      status: "DESCARTADA",
+      entidadeTipo: conflicted.entidadeTipo,
+      entidadeId: conflicted.entidadeId,
+      conflito: structuredConflict,
+      erro: "Conflito de campo.",
+    });
+
+    const storedConflict = await database.get(
+      "outbox_mutations",
+      conflicted.clientMutationId,
+    );
+    expect(storedConflict).toMatchObject({
+      status: "CONFLICT",
+      payload: conflicted.payload,
+      conflito: structuredConflict,
+    });
+    expect(await database.getAll("outbox_mutations")).toHaveLength(2);
+    expect(await database.get(
+      "operational_events",
+      conflicted.trace.ontologyEventId,
+    )).toMatchObject({
+      clientMutationId: conflicted.clientMutationId,
+      result: "CONFLICT",
+    });
+    expect(await database.get(
+      "operational_events",
+      independent.trace.ontologyEventId,
+    )).toMatchObject({
+      clientMutationId: independent.clientMutationId,
+      result: "PENDING",
+    });
+    expect(selectReadyOutboxMutations(
+      await database.getAll("outbox_mutations"),
+      100,
+    )).toEqual([independent]);
   });
 });

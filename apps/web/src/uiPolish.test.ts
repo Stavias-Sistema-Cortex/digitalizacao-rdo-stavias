@@ -39,6 +39,18 @@ const programacaoCss = readCss(
   "./features/programacoes/ProgramacaoSemanalImport.css",
 );
 const staviaCss = readCss("./features/stavia/StaviaPanel.css");
+const institutionalCss = readCss(
+  "./components/institutional/institutional.css",
+);
+const syncStateStripSource = readCss(
+  "./components/institutional/SyncStateStrip.tsx",
+);
+const syncStatusBannerSource = readCss(
+  "./components/SyncStatusBanner.tsx",
+);
+const cortexShellSource = readCss(
+  "./components/shell/CortexShell.tsx",
+);
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -61,6 +73,26 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(globalCss, ":root")).toContain("--radius-lg: var(--radius-container);");
   });
 
+  it("mantém status, dados e rastreios na escala de corpo Poppins", () => {
+    expect(rule(institutionalCss, ".institutional-status")).toContain(
+      "font-weight: 500;",
+    );
+    expect(
+      rule(institutionalCss, ".institutional-sync-state__facts dd"),
+    ).toContain("font-weight: 500;");
+    expect(rule(institutionalCss, ".trace-reference")).toContain(
+      "font-weight: 500;",
+    );
+
+    const traceId = rule(
+      institutionalCss,
+      ".trace-reference__id",
+    );
+
+    expect(traceId).not.toContain("font-family:");
+    expect(traceId).toContain("font-variant-numeric: tabular-nums;");
+  });
+
   it("remove receitas de vidro da interface autenticada", () => {
     expect(authenticatedCss).not.toContain("--glass-");
     expect(authenticatedCss).not.toContain("backdrop-filter");
@@ -77,6 +109,137 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(globalCss, ".cortex-sidebar")).not.toContain("radial-gradient");
     expect(rule(globalCss, ".metric-card")).toContain(
       "background: var(--color-surface);",
+    );
+  });
+
+  it("mantém a navegação lateral com um único marcador amarelo vertical", () => {
+    const activeItem = rule(globalCss, ".sidebar-nav-item.active");
+    const activeMarkers = globalCss.match(
+      /\.sidebar-nav-item\.active::before\s*\{/g,
+    );
+
+    expect(globalCss).toMatch(
+      /\.sidebar-nav-item\s*\{[^}]*position:\s*relative;[^}]*border-radius:\s*var\(--radius-control\);/s,
+    );
+    expect(globalCss).not.toMatch(
+      /\.sidebar-nav-item\s*\{[^}]*border-radius:\s*999px;/s,
+    );
+    expect(activeItem).not.toMatch(
+      /border[^;}]*var\(--color-brand-yellow\)/,
+    );
+    expect(activeMarkers).toHaveLength(1);
+    expect(
+      rule(globalCss, ".sidebar-nav-item.active::before"),
+    ).toContain("background: var(--color-brand-yellow);");
+    expect(
+      rule(globalCss, ".sidebar-nav-item img,\n.sidebar-footer button img"),
+    ).toContain("filter: grayscale(1) brightness(0) invert(1);");
+  });
+
+  it("remove amarelo decorativo e geometria circular dos controles do shell", () => {
+    const toggle = rule(globalCss, ".sidebar-toggle");
+    const resizer = rule(
+      globalCss,
+      [
+        ".sidebar-resizer:hover,",
+        ".sidebar-resizer:focus-visible,",
+        ".cortex-shell.is-resizing .sidebar-resizer",
+      ].join("\n"),
+    );
+    const brand = rule(globalCss, ".sidebar-brand");
+    const avatar = rule(globalCss, ".avatar-button");
+    const profileMenu = rule(globalCss, ".profile-menu");
+    const profileScope = rule(globalCss, ".profile-menu-scope");
+    const profileActions = rule(
+      globalCss,
+      ".profile-menu-logout,\n.profile-menu-security",
+    );
+
+    expect(toggle).toContain("border-radius: var(--radius-control);");
+    expect(toggle).toContain("box-shadow: none;");
+    expect(toggle).not.toMatch(/brand-yellow|#fed203|999px/);
+    expect(resizer).not.toMatch(/254 210 3|brand-yellow/);
+    expect(brand).not.toMatch(/#fed203|brand-yellow/);
+    expect(brand).toContain("border-bottom: 1px solid rgb(255 255 255 / 28%);");
+    expect(avatar).toContain("border-radius: var(--radius-control);");
+    expect(avatar).toContain("font-weight: 500;");
+    expect(profileMenu).toContain("border-radius: var(--radius-container);");
+    expect(profileMenu).toContain("box-shadow: none;");
+    expect(profileScope).toContain("border-radius: var(--radius-control);");
+    expect(profileScope).toContain("font-weight: 500;");
+    expect(profileActions).toContain("border-radius: var(--radius-control);");
+    expect(profileActions).toContain("font-weight: 500;");
+  });
+
+  it("expõe opções de perfil por um popover semântico, não por um menu inválido", () => {
+    expect(cortexShellSource).toContain('aria-haspopup="dialog"');
+    expect(cortexShellSource).toMatch(
+      /<div\s+className="profile-menu"\s+role="dialog"\s+aria-label="Opções do perfil"/s,
+    );
+    expect(cortexShellSource).toContain('aria-label="Opções do perfil"');
+    expect(cortexShellSource).not.toContain('role="menu"');
+    expect(cortexShellSource).not.toContain('role="menuitem"');
+  });
+
+  it("expõe fatos globais de sincronização junto ao perfil", () => {
+    expect(syncStatusBannerSource).toContain(
+      'import { SyncStateStrip } from "./institutional/SyncStateStrip";',
+    );
+    expect(syncStatusBannerSource).toContain(
+      'from "./syncPresentation";',
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s+presentationError=\{manualSyncError\?\.message \?\? null\}\s*\/>/s,
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /useEffect\(\(\) => \{[\s\S]*?shouldClearManualSyncPresentationError\(/,
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /shouldClearManualSyncPresentationError\(\s*manualSyncError,\s*snapshot,?\s*\)/s,
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /const clearId = window\.setTimeout\(\(\) => \{\s*setManualSyncError\(\(current\) =>\s*current === manualSyncError \? null : current,\s*\);\s*}, 0\);\s*return \(\) => window\.clearTimeout\(clearId\);/s,
+    );
+    expect(syncStatusBannerSource).toContain(
+      "const chipTitle = snapshot.isLoading && !manualSyncError",
+    );
+    expect(syncStatusBannerSource).toMatch(
+      /snapshot\.isLoading\s*\?\s*"CHECKING"\s*:\s*snapshot\.status/,
+    );
+    expect(syncCss).toContain(".sync-chip--checking");
+    expect(syncCss).toContain(".sync-status-global-state");
+    expect(syncStateStripSource).toContain("<dt>Fila local</dt>");
+    expect(syncStateStripSource).toContain("<dt>Conflitos</dt>");
+    expect(syncStateStripSource).toContain(
+      "<dt>Última sincronização</dt>",
+    );
+    expect(rule(globalCss, ".cortex-shell-content")).toContain(
+      "min-width: 0;",
+    );
+    const controls = rule(globalCss, ".floating-controls");
+    expect(controls).toContain("position: sticky;");
+    expect(controls).toContain("justify-content: flex-end;");
+
+    const narrowSyncCss = syncCss.slice(
+      syncCss.indexOf("@media (max-width: 620px)"),
+    );
+    expect(
+      rule(narrowSyncCss, "  .sync-status-global-state"),
+    ).toContain("width: min(250px, calc(100vw - 120px));");
+  });
+
+  it("limita o peso do chip de sincronização por função institucional", () => {
+    expect(rule(globalCss, ".sidebar-nav-item.active")).toContain(
+      "font-weight: 500;",
+    );
+    expect(rule(globalCss, "\n.sidebar-footer button")).toContain(
+      "font-weight: 500;",
+    );
+    expect(rule(syncCss, ".sync-chip__count")).toContain(
+      "font-weight: 500;",
+    );
+    expect(rule(syncCss, ".sync-chip__action")).toContain(
+      "font-weight: 500;",
     );
   });
 
@@ -242,8 +405,7 @@ describe("polimento visual da plataforma autenticada", () => {
       globalCss.lastIndexOf("@media (max-width: 620px)"),
     );
     const floatingControls = rule(narrowCss, ".floating-controls");
-    expect(floatingControls).toContain("top: 12px;");
-    expect(floatingControls).toContain("right: 12px;");
+    expect(floatingControls).toContain("padding: 12px 12px 0;");
     expect(
       rule(
         narrowCss,

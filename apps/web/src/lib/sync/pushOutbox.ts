@@ -14,6 +14,7 @@ export interface PushOutboxSummary {
   pushed: number;
   applied: number;
   errors: number;
+  retryableErrors: number;
   conflicts: number;
 }
 
@@ -28,6 +29,7 @@ export async function pushOutbox(
       pushed: 0,
       applied: 0,
       errors: 0,
+      retryableErrors: 0,
       conflicts: 0,
     };
   }
@@ -35,6 +37,8 @@ export async function pushOutbox(
   for (const mutation of pendingMutations) {
     await markMutationAsSyncing(mutation);
   }
+
+  const handledMutationIds = new Set<string>();
 
   try {
     const response = await pushMutationsApi({
@@ -56,6 +60,7 @@ export async function pushOutbox(
 
     let applied = 0;
     let errors = 0;
+    let retryableErrors = 0;
     let conflicts = 0;
 
     for (const mutation of pendingMutations) {
@@ -68,12 +73,15 @@ export async function pushOutbox(
           mutation.clientMutationId,
           "O servidor não retornou resultado para esta mutação.",
         );
+        handledMutationIds.add(mutation.clientMutationId);
 
         errors += 1;
+        retryableErrors += 1;
         continue;
       }
 
       await applyPushResultAtomically(result);
+      handledMutationIds.add(mutation.clientMutationId);
 
       if (result.status === "APLICADA") {
         applied += 1;
@@ -88,6 +96,7 @@ export async function pushOutbox(
       pushed: pendingMutations.length,
       applied,
       errors,
+      retryableErrors,
       conflicts,
     };
   } catch (error: unknown) {
@@ -97,6 +106,10 @@ export async function pushOutbox(
         : "Falha desconhecida durante o push.";
 
     for (const mutation of pendingMutations) {
+      if (handledMutationIds.has(mutation.clientMutationId)) {
+        continue;
+      }
+
       await returnMutationToPending(
         mutation.clientMutationId,
         message,

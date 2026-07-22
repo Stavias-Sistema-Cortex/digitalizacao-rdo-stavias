@@ -433,64 +433,72 @@ export function CortexShell({
         </div>
       </aside>
 
-      <div className="floating-controls">
-        <SyncStatusBanner />
-        <div className="profile-menu-anchor">
-          <button
-            type="button"
-            className="avatar-button"
-            onClick={() =>
-              setIsProfileMenuOpen((open) => !open)
-            }
-            aria-expanded={isProfileMenuOpen}
-            aria-haspopup="menu"
-            title={session?.nome ?? "Perfil"}
-          >
-            {sessionInitials(session?.nome ?? null)}
-          </button>
-          {isProfileMenuOpen && (
-            <div className="profile-menu" role="menu">
-              <p className="profile-menu-name">
-                {session?.nome ?? "Colaborador"}
-              </p>
-              <p className="profile-menu-scope">
-                {alfa
-                  ? "Escopo global (Alfa)"
-                  : "Escopo das obras vinculadas (Beta)"}
-              </p>
-              <button
-                type="button"
-                className="profile-menu-security"
-                role="menuitem"
-                onClick={() => {
-                  setIsProfileMenuOpen(false);
-                  navigate("/seguranca");
-                }}
+      <div className="cortex-shell-content">
+        <div
+          className="floating-controls"
+          role="group"
+          aria-label="Controles globais"
+        >
+          <SyncStatusBanner />
+          <div className="profile-menu-anchor">
+            <button
+              type="button"
+              className="avatar-button"
+              onClick={() =>
+                setIsProfileMenuOpen((open) => !open)
+              }
+              aria-expanded={isProfileMenuOpen}
+              aria-haspopup="dialog"
+              title={session?.nome ?? "Perfil"}
+            >
+              {sessionInitials(session?.nome ?? null)}
+            </button>
+            {isProfileMenuOpen && (
+              <div
+                className="profile-menu"
+                role="dialog"
+                aria-label="Opções do perfil"
               >
-                Segurança do dispositivo
-              </button>
-              <button
-                type="button"
-                className="profile-menu-logout"
-                role="menuitem"
-                onClick={() => {
-                  void handleLogout();
-                }}
-                disabled={isLoggingOut}
-              >
-                {isLoggingOut ? "Saindo..." : "Sair"}
-              </button>
-              {logoutError ? (
-                <p className="profile-menu-error" role="alert">
-                  {logoutError}
+                <p className="profile-menu-name">
+                  {session?.nome ?? "Colaborador"}
                 </p>
-              ) : null}
-            </div>
-          )}
+                <p className="profile-menu-scope">
+                  {alfa
+                    ? "Escopo global (Alfa)"
+                    : "Escopo das obras vinculadas (Beta)"}
+                </p>
+                <button
+                  type="button"
+                  className="profile-menu-security"
+                  onClick={() => {
+                    setIsProfileMenuOpen(false);
+                    navigate("/seguranca");
+                  }}
+                >
+                  Segurança do dispositivo
+                </button>
+                <button
+                  type="button"
+                  className="profile-menu-logout"
+                  onClick={() => {
+                    void handleLogout();
+                  }}
+                  disabled={isLoggingOut}
+                >
+                  {isLoggingOut ? "Saindo..." : "Sair"}
+                </button>
+                {logoutError ? (
+                  <p className="profile-menu-error" role="alert">
+                    {logoutError}
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      {children}
+        {children}
+      </div>
     </div>
   );
 }

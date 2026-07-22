@@ -651,6 +651,10 @@ textarea:focus {
   transition: grid-template-columns 220ms ease;
 }
 
+.cortex-shell-content {
+  min-width: 0;
+}
+
 /* Durante o arrasto: sem transição (borracha) e sem seleção de texto. */
 .cortex-shell.is-resizing {
   transition: none;
@@ -696,11 +700,11 @@ textarea:focus {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--color-brand-yellow);
-  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 34%);
+  border-radius: var(--radius-control);
   background: #123a37;
   color: #eef7ef;
-  box-shadow: 0 6px 18px rgb(8 36 34 / 30%);
+  box-shadow: none;
   transition:
     background-color var(--transition-functional),
     border-color var(--transition-functional),
@@ -708,7 +712,8 @@ textarea:focus {
 }
 
 .sidebar-toggle:hover {
-  background: var(--color-brand-teal);
+  border-color: rgb(255 255 255 / 52%);
+  background: rgb(255 255 255 / 10%);
 }
 
 .sidebar-toggle svg {
@@ -737,7 +742,7 @@ textarea:focus {
 .sidebar-resizer:hover,
 .sidebar-resizer:focus-visible,
 .cortex-shell.is-resizing .sidebar-resizer {
-  background: rgb(254 210 3 / 55%);
+  background: rgb(255 255 255 / 24%);
 }
 
 .cortex-shell--collapsed .sidebar-resizer {
@@ -749,7 +754,7 @@ textarea:focus {
   flex-direction: column;
   align-items: center;
   padding-bottom: 12px;
-  border-bottom: 3px solid #fed203;
+  border-bottom: 1px solid rgb(255 255 255 / 28%);
   overflow: hidden;
 }
 
@@ -772,7 +777,7 @@ textarea:focus {
   display: none;
   width: 44px;
   height: auto;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
@@ -868,7 +873,7 @@ textarea:focus {
 .sidebar-nav-item.active {
   border-color: transparent;
   background: rgb(255 255 255 / 10%);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .sidebar-nav-item.active::before {
@@ -881,7 +886,6 @@ textarea:focus {
   background: var(--color-brand-yellow);
 }
 
-
 .sidebar-footer button {
   display: flex;
   align-items: center;
@@ -893,7 +897,7 @@ textarea:focus {
   background: transparent;
   color: #eef7ef;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   border-radius: var(--radius-control);
   transition:
@@ -1940,15 +1944,17 @@ textarea:focus {
   opacity: 0.55;
 }
 
-/* Cluster flutuante do topo-direito: chip de sync + sair. */
+/* O cluster global ocupa o fluxo da página, sem cobrir o conteúdo. */
 .floating-controls {
-  position: fixed;
-  top: 16px;
-  right: 16px;
+  position: sticky;
+  top: 0;
   z-index: 60;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  min-width: 0;
+  padding: 16px 16px 0;
 }
 
 .logout-button {
@@ -2006,11 +2012,11 @@ textarea:focus {
 .avatar-button {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: none;
+  border: 1px solid #0a4f49;
+  border-radius: var(--radius-control);
   background: #0e5e57;
   color: #fff;
-  font-weight: 700;
+  font-weight: 500;
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -2021,16 +2027,16 @@ textarea:focus {
   top: calc(100% + 8px);
   min-width: 200px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-container);
   background: var(--color-surface);
-  box-shadow: var(--shadow-overlay);
+  box-shadow: none;
   padding: 12px;
   z-index: 40;
 }
 
 .profile-menu-name {
   margin: 0;
-  font-weight: 700;
+  font-weight: 500;
   font-size: 0.85rem;
 }
 
@@ -2044,20 +2050,20 @@ textarea:focus {
   margin: 0 0 10px;
   padding: 2px 8px;
   align-self: flex-start;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: #f1f5f9;
   color: #334155;
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .profile-menu-logout,
 .profile-menu-security {
   width: 100%;
-  border: none;
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
   padding: 8px;
-  font-weight: 700;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -2840,8 +2846,7 @@ textarea:focus {
   }
 
   .floating-controls {
-    top: 12px;
-    right: 12px;
+    padding: 12px 12px 0;
   }
 
   .home-dashboard,

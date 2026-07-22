@@ -1,5 +1,6 @@
 package com.projeto.cortex.sync;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -522,6 +524,7 @@ public class SyncService {
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         try {
+            validarRastroCanonico(dispositivoId, mutacao);
             validarMutacao(mutacao);
 
             SyncPushResponse.ResultadoMutacao existente = buscarResultadoMutacaoExistenteOuNull(
@@ -546,12 +549,19 @@ public class SyncService {
             return buscarResultadoMutacaoExistente(dispositivoId, mutacao.clientMutationId());
         } catch (SyncBaseVersionConflictException exception) {
             return registrarConflitoEmNovaTransacao(dispositivoId, mutacao, exception);
+        } catch (SyncTraceRejectionException exception) {
+            return registrarRejeicaoEmNovaTransacao(
+                    dispositivoId,
+                    mutacao,
+                    exception.getMessage(),
+                    exception.category
+            );
         } catch (ResponseStatusException exception) {
             String erro = exception.getReason() == null
                     ? "Mutação rejeitada pelo backend."
                     : exception.getReason();
 
-            return registrarErroEmNovaTransacao(
+            return registrarRejeicaoEmNovaTransacao(
                     dispositivoId,
                     mutacao,
                     erro,
@@ -672,6 +682,12 @@ public class SyncService {
                     payload_json = ?,
                     payload_hash = ?,
                     correlacao_id = ?,
+                    escopo_autorizacao_json = ?,
+                    field_patch_json = ?,
+                    base_values_json = ?,
+                    evento_cliente_id = ?,
+                    causacao_id = ?,
+                    dependencias_json = ?,
                     status = 'PENDENTE',
                     erro = NULL,
                     erro_categoria = NULL,
@@ -689,8 +705,14 @@ public class SyncService {
                 operacaoSeguraParaBanco(mutacao.operacao()),
                 mutacao.baseVersao(),
                 toJson(mutacao.payload()),
-                payloadHash(mutacao),
+                canonicalPayloadHash(mutacao),
                 correlationId(mutacao),
+                authorizationScopeJson(mutacao),
+                fieldPatchJson(mutacao),
+                baseValuesJson(mutacao),
+                validUuidOrNull(mutacao.ontologyEventId()),
+                safeTraceIdOrNull(mutacao.causationId()),
+                dependenciesJson(mutacao),
                 dispositivoId,
                 mutacao.clientMutationId()
         );
@@ -785,6 +807,63 @@ public class SyncService {
         });
     }
 
+    private SyncPushResponse.ResultadoMutacao registrarRejeicaoEmNovaTransacao(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao,
+            String erro,
+            String errorCategory
+    ) {
+        ObjectNode resultado = rejectionResult(errorCategory, erro);
+        if (mutacao == null
+                || !identificadorClienteSeguro(mutacao.clientMutationId())) {
+            return new SyncPushResponse.ResultadoMutacao(
+                    null,
+                    "REJEITADA",
+                    null,
+                    null,
+                    null,
+                    null,
+                    resultado,
+                    objectMapper.createObjectNode(),
+                    erro
+            );
+        }
+
+        return transactionTemplate.execute(status -> {
+            registrarMutacaoFinalizada(
+                    dispositivoId,
+                    mutacao,
+                    "REJEITADA",
+                    erro,
+                    resultado,
+                    objectMapper.createObjectNode(),
+                    null,
+                    errorCategory
+            );
+
+            return new SyncPushResponse.ResultadoMutacao(
+                    mutacao.clientMutationId(),
+                    "REJEITADA",
+                    mutacao.entidadeTipo(),
+                    mutacao.entidadeId(),
+                    mutacao.operacao(),
+                    null,
+                    resultado,
+                    objectMapper.createObjectNode(),
+                    erro
+            );
+        });
+    }
+
+    private ObjectNode rejectionResult(String category, String message) {
+        ObjectNode rejection = objectMapper.createObjectNode();
+        rejection.put("categoria", category);
+        rejection.put("mensagem", message);
+        ObjectNode result = objectMapper.createObjectNode();
+        result.set("rejeicao", rejection);
+        return result;
+    }
+
     private void registrarMutacaoFinalizada(
             String dispositivoId,
             SyncPushRequest.MutacaoCliente mutacao,
@@ -809,6 +888,12 @@ public class SyncService {
                     base_versao,
                     payload_json,
                     payload_hash,
+                    escopo_autorizacao_json,
+                    field_patch_json,
+                    base_values_json,
+                    evento_cliente_id,
+                    causacao_id,
+                    dependencias_json,
                     status,
                     erro,
                     resultado_json,
@@ -820,7 +905,8 @@ public class SyncService {
                 ) VALUES (
                     ?, ?,
                     (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
                     CURRENT_TIMESTAMP(6)
                 )
                 ON DUPLICATE KEY UPDATE
@@ -842,7 +928,13 @@ public class SyncService {
                 operacaoSeguraParaBanco(mutacao.operacao()),
                 mutacao.baseVersao(),
                 toJson(mutacao.payload()),
-                payloadHash(mutacao),
+                persistedPayloadHash(mutacao),
+                authorizationScopeJson(mutacao),
+                fieldPatchJson(mutacao),
+                baseValuesJson(mutacao),
+                validUuidOrNull(mutacao.ontologyEventId()),
+                safeTraceIdOrNull(mutacao.causationId()),
+                dependenciesJson(mutacao),
                 status,
                 erro,
                 toJson(resultado),
@@ -868,12 +960,19 @@ public class SyncService {
                     base_versao,
                     payload_json,
                     payload_hash,
+                    escopo_autorizacao_json,
+                    field_patch_json,
+                    base_values_json,
+                    evento_cliente_id,
+                    causacao_id,
+                    dependencias_json,
                     status,
                     criada_no_cliente_em
                 ) VALUES (
                     ?, ?,
                     (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    'PENDENTE', ?
                 )
                 """,
                 UUID.randomUUID().toString(),
@@ -886,7 +985,13 @@ public class SyncService {
                 operacaoSeguraParaBanco(mutacao.operacao()),
                 mutacao.baseVersao(),
                 toJson(mutacao.payload()),
-                payloadHash(mutacao),
+                canonicalPayloadHash(mutacao),
+                authorizationScopeJson(mutacao),
+                fieldPatchJson(mutacao),
+                baseValuesJson(mutacao),
+                validUuidOrNull(mutacao.ontologyEventId()),
+                safeTraceIdOrNull(mutacao.causationId()),
+                dependenciesJson(mutacao),
                 mutacao.criadaNoClienteEm()
         );
     }
@@ -991,20 +1096,24 @@ public class SyncService {
                 dispositivoId,
                 mutation.clientMutationId()
         );
-        return storedHash == null || storedHash.equals(payloadHash(mutation));
+        return storedHash == null || storedHash.equals(canonicalPayloadHash(mutation));
     }
 
     private SyncPushResponse.ResultadoMutacao idempotencyMismatch(
             SyncPushRequest.MutacaoCliente mutation
     ) {
+        ObjectNode rejection = rejectionResult(
+                "IDEMPOTENCY_MISMATCH",
+                "clientMutationId já foi usado com outro conteúdo."
+        );
         return new SyncPushResponse.ResultadoMutacao(
                 mutation.clientMutationId(),
-                "ERRO",
+                "REJEITADA",
                 mutation.entidadeTipo(),
                 mutation.entidadeId(),
                 mutation.operacao(),
                 null,
-                objectMapper.createObjectNode(),
+                rejection,
                 objectMapper.createObjectNode(),
                 "clientMutationId já foi usado com outro conteúdo."
         );
@@ -1171,6 +1280,96 @@ public class SyncService {
         }
     }
 
+    private void validarRastroCanonico(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (mutacao == null) {
+            throw rejection("MALFORMED_MUTATION", "Mutação nula.");
+        }
+        if (!uuidCanonico(mutacao.actorId())) {
+            throw rejection("MALFORMED_ACTOR_ID", "actorId deve ser um UUID canônico.");
+        }
+        if (!uuidCanonico(mutacao.ontologyEventId())) {
+            throw rejection(
+                    "MALFORMED_ONTOLOGY_EVENT_ID",
+                    "ontologyEventId deve ser um UUID canônico."
+            );
+        }
+        if (mutacao.fieldPatch() == null
+                || mutacao.fieldPatch().changed() == null
+                || !mutacao.fieldPatch().changed().isObject()
+                || mutacao.fieldPatch().baseValues() == null
+                || !mutacao.fieldPatch().baseValues().isObject()) {
+            throw rejection(
+                    "MALFORMED_FIELD_PATCH",
+                    "fieldPatch.changed e fieldPatch.baseValues devem ser objetos JSON."
+            );
+        }
+        validarTraceIds(mutacao);
+
+        String authenticatedOwner = currentUserService.requireUserId();
+        if (!mutacao.actorId().equals(authenticatedOwner)) {
+            throw rejection(
+                    "ACTOR_MISMATCH",
+                    "actorId não corresponde ao proprietário autenticado."
+            );
+        }
+
+        String expectedHash = canonicalPayloadHash(mutacao);
+        if (mutacao.payloadHash() == null
+                || !mutacao.payloadHash().matches("[0-9a-fA-F]{64}")
+                || !mutacao.payloadHash().equalsIgnoreCase(expectedHash)) {
+            throw rejection(
+                    "PAYLOAD_HASH_MISMATCH",
+                    "payloadHash não corresponde ao payload canônico recebido."
+            );
+        }
+
+        if (mutacao.authorizationScope() == null
+                || mutacao.authorizationScope().isEmpty()
+                || mutacao.authorizationScope().stream().anyMatch(scope -> !uuidCanonico(scope))) {
+            throw rejection(
+                    "UNSUPPORTED_AUTHORIZATION_SCOPE",
+                    "authorizationScope deve conter identificadores de obra canônicos."
+            );
+        }
+
+        Optional<Set<String>> allowedScopes = currentUserService.allowedObraIds(
+                authenticatedOwner
+        );
+        if (allowedScopes.isPresent()
+                && !allowedScopes.get().containsAll(mutacao.authorizationScope())) {
+            throw rejection(
+                    "UNSUPPORTED_AUTHORIZATION_SCOPE",
+                    "authorizationScope contém obra fora do escopo autenticado."
+            );
+        }
+
+        // The request-level device is the canonical device identifier for every
+        // mutation in this push. Ownership/active-state was checked by push()
+        // before this method and is never taken from client trace metadata.
+        if (dispositivoId == null || dispositivoId.isBlank()) {
+            throw rejection("UNREGISTERED_DEVICE", "Dispositivo não registrado.");
+        }
+    }
+
+    private void validarTraceIds(SyncPushRequest.MutacaoCliente mutacao) {
+        if (mutacao.causationId() != null
+                && !mutacao.causationId().isBlank()
+                && !identificadorClienteSeguro(mutacao.causationId())) {
+            throw rejection("MALFORMED_CAUSATION_ID", "causationId é inválido.");
+        }
+        if (mutacao.dependsOnMutationIds() == null
+                || mutacao.dependsOnMutationIds().stream()
+                .anyMatch(id -> !identificadorClienteSeguro(id))) {
+            throw rejection(
+                    "MALFORMED_DEPENDENCY_ID",
+                    "dependsOnMutationIds contém identificador inválido."
+            );
+        }
+    }
+
     private void requireAppliedContract(
             SyncOperationHandler handler,
             AppliedSyncMutation applied
@@ -1266,17 +1465,116 @@ public class SyncService {
                 && value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,119}");
     }
 
-    private String payloadHash(SyncPushRequest.MutacaoCliente mutation) {
-        String material = primeiroNaoVazio(mutation.entidadeTipo(), "")
-                + "\n" + primeiroNaoVazio(mutation.entidadeId(), "")
-                + "\n" + primeiroNaoVazio(mutation.operacao(), "")
-                + "\n" + (mutation.baseVersao() == null
-                        ? ""
-                        : mutation.baseVersao())
-                + "\n" + toJson(mutation.payload());
+    private String canonicalPayloadHash(SyncPushRequest.MutacaoCliente mutation) {
+        String material = canonicalJson(mutation.payload());
         return HexFormat.of().formatHex(
                 sha256().digest(material.getBytes(StandardCharsets.UTF_8))
         );
+    }
+
+    private String canonicalJson(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return "null";
+        }
+        if (value.isArray()) {
+            List<String> items = new ArrayList<>();
+            value.forEach(item -> items.add(canonicalJson(item)));
+            return "[" + String.join(",", items) + "]";
+        }
+        if (value.isObject()) {
+            List<String> names = new ArrayList<>();
+            value.fieldNames().forEachRemaining(names::add);
+            Collections.sort(names);
+            List<String> entries = new ArrayList<>();
+            names.forEach(name -> entries.add(
+                    toJson(objectMapper.getNodeFactory().textNode(name))
+                            + ":" + canonicalJson(value.get(name))
+            ));
+            return "{" + String.join(",", entries) + "}";
+        }
+        if (value.isNumber()) {
+            return canonicalNumber(value.decimalValue());
+        }
+        return toJson(value);
+    }
+
+    private String canonicalNumber(BigDecimal value) {
+        BigDecimal normalized = value.stripTrailingZeros();
+        if (normalized.signum() == 0) {
+            return "0";
+        }
+
+        int exponent = normalized.precision() - normalized.scale() - 1;
+        if (exponent > -7 && exponent < 21) {
+            return normalized.toPlainString();
+        }
+
+        String digits = normalized.unscaledValue().abs().toString();
+        String fraction = digits.length() == 1
+                ? digits
+                : digits.charAt(0) + "." + digits.substring(1);
+        String sign = normalized.signum() < 0 ? "-" : "";
+        String exponentSign = exponent >= 0 ? "+" : "";
+        return sign + fraction + "e" + exponentSign + exponent;
+    }
+
+    private String persistedPayloadHash(SyncPushRequest.MutacaoCliente mutation) {
+        if (mutation.payloadHash() != null
+                && mutation.payloadHash().matches("[0-9a-fA-F]{64}")) {
+            return mutation.payloadHash().toLowerCase(Locale.ROOT);
+        }
+        return null;
+    }
+
+    private String authorizationScopeJson(SyncPushRequest.MutacaoCliente mutation) {
+        return toJson(objectMapper.valueToTree(
+                mutation.authorizationScope() == null
+                        ? List.of()
+                        : mutation.authorizationScope()
+        ));
+    }
+
+    private String fieldPatchJson(SyncPushRequest.MutacaoCliente mutation) {
+        return toJson(mutation.fieldPatch() == null
+                ? objectMapper.createObjectNode()
+                : mutation.fieldPatch().changed());
+    }
+
+    private String baseValuesJson(SyncPushRequest.MutacaoCliente mutation) {
+        return toJson(mutation.fieldPatch() == null
+                ? objectMapper.createObjectNode()
+                : mutation.fieldPatch().baseValues());
+    }
+
+    private String dependenciesJson(SyncPushRequest.MutacaoCliente mutation) {
+        return toJson(objectMapper.valueToTree(
+                mutation.dependsOnMutationIds() == null
+                        ? List.of()
+                        : mutation.dependsOnMutationIds()
+        ));
+    }
+
+    private String validUuidOrNull(String value) {
+        return uuidCanonico(value) ? value : null;
+    }
+
+    private String safeTraceIdOrNull(String value) {
+        return identificadorClienteSeguro(value) ? value.strip() : null;
+    }
+
+    private boolean uuidCanonico(String value) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            return UUID.fromString(value).toString().equals(value);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private SyncTraceRejectionException rejection(String category, String message) {
+        return new SyncTraceRejectionException(category, message);
     }
 
     private MessageDigest sha256() {
@@ -1312,6 +1610,15 @@ public class SyncService {
             this.entidadeId = entidadeId;
             this.baseVersao = baseVersao;
             this.versaoAtual = versaoAtual;
+        }
+    }
+
+    private static class SyncTraceRejectionException extends RuntimeException {
+        private final String category;
+
+        private SyncTraceRejectionException(String category, String message) {
+            super(message);
+            this.category = category;
         }
     }
 }
