@@ -416,7 +416,7 @@
 
 @media (max-width: 620px) {
   .tarefas-page {
-    padding-top: 24px;
+    padding-top: 84px;
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 }

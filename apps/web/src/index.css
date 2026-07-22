@@ -357,9 +357,17 @@ h1 {
   line-height: 1.5;
 }
 
-/* Hierarquia de seção vem da tipografia e da divisória, não de uma faixa decorativa. */
+/* Marcador moderno de seção: o traço de pista amarelo antes do título. */
 .section-heading h2::before {
-  content: none;
+  content: "";
+  display: inline-block;
+  width: 20px;
+  height: 3px;
+  margin-right: 12px;
+  border-radius: 999px;
+  background: #fed203;
+  vertical-align: middle;
+  transform: translateY(-2px);
 }
 
 .collection-heading {
@@ -643,10 +651,6 @@ textarea:focus {
   transition: grid-template-columns 220ms ease;
 }
 
-.cortex-shell-content {
-  min-width: 0;
-}
-
 /* Durante o arrasto: sem transição (borracha) e sem seleção de texto. */
 .cortex-shell.is-resizing {
   transition: none;
@@ -692,11 +696,11 @@ textarea:focus {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid rgb(255 255 255 / 34%);
-  border-radius: var(--radius-control);
+  border: 1px solid var(--color-brand-yellow);
+  border-radius: 999px;
   background: #123a37;
   color: #eef7ef;
-  box-shadow: none;
+  box-shadow: 0 6px 18px rgb(8 36 34 / 30%);
   transition:
     background-color var(--transition-functional),
     border-color var(--transition-functional),
@@ -704,8 +708,7 @@ textarea:focus {
 }
 
 .sidebar-toggle:hover {
-  border-color: rgb(255 255 255 / 52%);
-  background: rgb(255 255 255 / 10%);
+  background: var(--color-brand-teal);
 }
 
 .sidebar-toggle svg {
@@ -734,7 +737,7 @@ textarea:focus {
 .sidebar-resizer:hover,
 .sidebar-resizer:focus-visible,
 .cortex-shell.is-resizing .sidebar-resizer {
-  background: rgb(255 255 255 / 24%);
+  background: rgb(254 210 3 / 55%);
 }
 
 .cortex-shell--collapsed .sidebar-resizer {
@@ -746,7 +749,7 @@ textarea:focus {
   flex-direction: column;
   align-items: center;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgb(255 255 255 / 28%);
+  border-bottom: 3px solid #fed203;
   overflow: hidden;
 }
 
@@ -769,7 +772,7 @@ textarea:focus {
   display: none;
   width: 44px;
   height: auto;
-  border-radius: var(--radius-control);
+  border-radius: 10px;
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
@@ -865,7 +868,7 @@ textarea:focus {
 .sidebar-nav-item.active {
   border-color: transparent;
   background: rgb(255 255 255 / 10%);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .sidebar-nav-item.active::before {
@@ -878,6 +881,7 @@ textarea:focus {
   background: var(--color-brand-yellow);
 }
 
+
 .sidebar-footer button {
   display: flex;
   align-items: center;
@@ -889,7 +893,7 @@ textarea:focus {
   background: transparent;
   color: #eef7ef;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 600;
   text-align: left;
   border-radius: var(--radius-control);
   transition:
@@ -1199,9 +1203,9 @@ textarea:focus {
   height: 100vh;
   overflow: auto;
   padding: 24px;
-  border-left: 2px solid var(--color-ink);
+  border-left: 1px solid #dbe3de;
   background: #ffffff;
-  box-shadow: none;
+  box-shadow: var(--shadow-overlay);
 }
 
 .profile-drawer-header {
@@ -1215,7 +1219,7 @@ textarea:focus {
 .profile-drawer-header span {
   color: #69766e;
   font-size: 0.72rem;
-  font-weight: 500;
+  font-weight: 900;
   text-transform: uppercase;
 }
 
@@ -1237,20 +1241,6 @@ textarea:focus {
   color: #203429;
   font-size: 1.2rem;
   font-weight: 800;
-}
-
-.profile-drawer .icon-button {
-  border-color: var(--color-ink);
-  border-radius: 3px;
-  font-weight: 500;
-  transition:
-    background-color var(--transition-functional),
-    color var(--transition-functional);
-}
-
-.profile-drawer .icon-button:hover {
-  background: var(--color-ink);
-  color: #fff;
 }
 
 .profile-summary-grid {
@@ -1871,7 +1861,7 @@ textarea:focus {
 @media (max-width: 620px) {
   .page-shell {
     width: min(100% - 20px, 1180px);
-    padding-top: 24px;
+    padding-top: 64px;
   }
 
   .rdo-dashboard {
@@ -1950,17 +1940,15 @@ textarea:focus {
   opacity: 0.55;
 }
 
-/* O cluster global ocupa o fluxo da página. O resumo compacto evita que
-   controles de utilidade encubram filtros ou dados operacionais. */
+/* Cluster flutuante do topo-direito: chip de sync + sair. */
 .floating-controls {
-  position: relative;
-  z-index: 10;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
-  min-width: 0;
-  padding: 16px 16px 0;
 }
 
 .logout-button {
@@ -2018,11 +2006,11 @@ textarea:focus {
 .avatar-button {
   width: 40px;
   height: 40px;
-  border: 1px solid #0a4f49;
-  border-radius: var(--radius-control);
+  border-radius: 50%;
+  border: none;
   background: #0e5e57;
   color: #fff;
-  font-weight: 500;
+  font-weight: 700;
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -2033,16 +2021,16 @@ textarea:focus {
   top: calc(100% + 8px);
   min-width: 200px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-container);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
-  box-shadow: none;
+  box-shadow: var(--shadow-overlay);
   padding: 12px;
   z-index: 40;
 }
 
 .profile-menu-name {
   margin: 0;
-  font-weight: 500;
+  font-weight: 700;
   font-size: 0.85rem;
 }
 
@@ -2056,20 +2044,20 @@ textarea:focus {
   margin: 0 0 10px;
   padding: 2px 8px;
   align-self: flex-start;
-  border-radius: var(--radius-control);
+  border-radius: 999px;
   background: #f1f5f9;
   color: #334155;
   font-size: 0.7rem;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .profile-menu-logout,
 .profile-menu-security {
   width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
+  border: none;
+  border-radius: 8px;
   padding: 8px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -2700,30 +2688,26 @@ textarea:focus {
 }
 
 .obras-pdor-risk {
-  border: 1px solid #a7c7b8;
-  border-radius: 3px;
+  border-radius: 999px;
   padding: 4px 10px;
   font-size: 0.66rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   background: #eef5f2;
   color: #0e5e57;
 }
 
 .obras-pdor-risk--baixo {
-  border-color: #83b998;
   background: #e6f4ea;
   color: #1e6b3a;
 }
 
 .obras-pdor-risk--medio {
-  border-color: #d5b65d;
   background: #fdf3c8;
   color: #8a6210;
 }
 
 .obras-pdor-risk--alto {
-  border-color: #d6a19c;
   background: #fde4e1;
   color: #a3322a;
 }
@@ -2736,9 +2720,10 @@ textarea:focus {
 
 .obras-pdor-insufficient {
   margin-top: 12px;
-  border: 2px solid #c59f18;
-  border-radius: 3px;
-  background: linear-gradient(135deg, #fff 0%, #fffbeb 100%);
+  border: 1px solid #f0e2b6;
+  border-left: 4px solid #fed203;
+  border-radius: 12px;
+  background: #fffbeb;
   padding: 12px;
 }
 
@@ -2775,8 +2760,7 @@ textarea:focus {
 }
 
 .obras-pdor-grid .obras-pdor-main {
-  border: 2px solid var(--color-ink);
-  background: linear-gradient(135deg, #fff 0%, #fff9de 100%);
+  border-left: 4px solid #fed203;
 }
 
 .obras-pdor-grid dt {
@@ -2856,13 +2840,14 @@ textarea:focus {
   }
 
   .floating-controls {
-    padding: 12px 12px 0;
+    top: 12px;
+    right: 12px;
   }
 
   .home-dashboard,
   .rdo-dashboard,
   .obras-page {
-    padding-top: 24px;
+    padding-top: 84px;
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 }
