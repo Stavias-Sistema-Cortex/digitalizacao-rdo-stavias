@@ -18,6 +18,7 @@ import type {
   SyncPullEvent,
   SyncPushMutationResult,
 } from "./sync.types";
+import { isCanonicalOutboxMutation } from "./mutationEnvelope";
 
 function nowUtc(): string {
   return new Date().toISOString();
@@ -789,6 +790,7 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
 
   const erroredMutations =
     await outboxStore.index("by-status").getAll("ERROR");
+  let queued = 0;
 
   for (const mutation of erroredMutations) {
     const retryMutation = mutationAfterErroredRetry(
@@ -796,7 +798,12 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
       timestamp,
     );
 
+    if (!retryMutation) {
+      continue;
+    }
+
     await outboxStore.put(retryMutation);
+    queued += 1;
 
     const rdo = await rdoStore.get(mutation.entidadeId);
 
@@ -843,7 +850,7 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
 
   await transaction.done;
 
-  return erroredMutations.length;
+  return queued;
 }
 
 export function mutationAfterObraReferenceRepair(
@@ -852,6 +859,9 @@ export function mutationAfterObraReferenceRepair(
   timestamp: string,
   clientMutationId = crypto.randomUUID(),
 ): OutboxMutationRecord | null {
+  if (isCanonicalOutboxMutation(mutation)) {
+    return null;
+  }
   if (
     mutation.entidadeTipo !== "RDO" ||
     (mutation.status !== "ERROR" && mutation.status !== "PENDING")
@@ -908,6 +918,9 @@ export function mutationAfterMaoObraReferenceRepair(
   timestamp: string,
   clientMutationId = crypto.randomUUID(),
 ): OutboxMutationRecord | null {
+  if (isCanonicalOutboxMutation(mutation)) {
+    return null;
+  }
   if (
     mutation.entidadeTipo !== "RDO" ||
     (mutation.status !== "ERROR" && mutation.status !== "PENDING") ||
@@ -997,7 +1010,10 @@ function erroIndicaRdoAusente(error: string | null): boolean {
 export function mutationAfterErroredRetry(
   mutation: OutboxMutationRecord,
   timestamp: string,
-): OutboxMutationRecord {
+): OutboxMutationRecord | null {
+  if (isCanonicalOutboxMutation(mutation)) {
+    return null;
+  }
   const serverMissingRdo =
     mutation.status === "ERROR" &&
     mutation.operacao === "ATUALIZAR_RDO_RASCUNHO" &&
@@ -1036,6 +1052,9 @@ export function mutationAfterResolvableConflict(
   timestamp: string,
   clientMutationId = crypto.randomUUID(),
 ): OutboxMutationRecord | null {
+  if (isCanonicalOutboxMutation(mutation)) {
+    return null;
+  }
   if (mutation.status !== "CONFLICT") {
     return null;
   }

@@ -157,12 +157,49 @@ describe("mutationAfterErroredRetry", () => {
       "2026-07-02T12:00:00.000Z",
     );
 
-    expect(updated.operacao).toBe("CRIAR_RDO");
-    expect(updated.baseVersao).toBeNull();
-    expect(updated.status).toBe("PENDING");
-    expect(updated.tentativas).toBe(0);
-    expect(updated.ultimaTentativaEm).toBeNull();
-    expect(updated.conflito).toBeNull();
+    expect(updated).not.toBeNull();
+    expect(updated?.operacao).toBe("CRIAR_RDO");
+    expect(updated?.baseVersao).toBeNull();
+    expect(updated?.status).toBe("PENDING");
+    expect(updated?.tentativas).toBe(0);
+    expect(updated?.ultimaTentativaEm).toBeNull();
+    expect(updated?.conflito).toBeNull();
+  });
+});
+
+describe("canonical mutation repair boundary", () => {
+  const canonical = {
+    ...baseMutation,
+    schemaVersion: 13,
+    status: "ERROR",
+  } as unknown as OutboxMutationRecord;
+
+  it("never rewrites canonical payload, aliases or provenance in legacy repair paths", () => {
+    expect(
+      mutationAfterObraReferenceRepair(
+        canonical,
+        [],
+        "2026-07-21T12:00:00.000Z",
+      ),
+    ).toBeNull();
+    expect(
+      mutationAfterMaoObraReferenceRepair(
+        canonical,
+        "2026-07-21T12:00:00.000Z",
+      ),
+    ).toBeNull();
+    expect(
+      mutationAfterErroredRetry(
+        canonical,
+        "2026-07-21T12:00:00.000Z",
+      ),
+    ).toBeNull();
+    expect(
+      mutationAfterResolvableConflict(
+        { ...canonical, status: "CONFLICT" },
+        "2026-07-21T12:00:00.000Z",
+      ),
+    ).toBeNull();
   });
 });
 

@@ -3,6 +3,10 @@ import type {
   SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
+import {
+  assertCanonicalTransportCoherence,
+  isCanonicalOutboxMutation,
+} from "./mutationEnvelope";
 
 export interface RegisterDeviceRequest {
   id: string;
@@ -101,6 +105,9 @@ export interface SyncRunSummary {
 export function toPushMutationRequest(
   mutation: OutboxMutationRecord,
 ): SyncPushMutationRequest {
+  if (isCanonicalOutboxMutation(mutation)) {
+    assertCanonicalTransportCoherence(mutation);
+  }
   return {
     clientMutationId: mutation.clientMutationId,
     entidadeTipo: mutation.entidadeTipo,

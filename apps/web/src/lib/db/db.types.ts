@@ -68,18 +68,18 @@ export type CanonicalMutationResult =
   | "REJECTED";
 
 export interface CanonicalMutationEnvelopeV13 {
-  schemaVersion: 13;
-  clientMutationId: string;
-  deviceId: string;
-  userId: string;
-  obraId: string;
-  entityType: string;
-  entityId: string;
-  operation: CanonicalMutationOperation;
-  baseVersion: number | null;
-  changedFields: string[];
-  occurredAt: string;
-  payload: Record<string, unknown>;
+  readonly schemaVersion: 13;
+  readonly clientMutationId: string;
+  readonly deviceId: string;
+  readonly userId: string;
+  readonly obraId: string;
+  readonly entityType: string;
+  readonly entityId: string;
+  readonly operation: CanonicalMutationOperation;
+  readonly baseVersion: number | null;
+  readonly changedFields: readonly string[];
+  readonly occurredAt: string;
+  readonly payload: Readonly<Record<string, unknown>>;
 }
 
 export interface MutationFieldPatch {
@@ -88,13 +88,13 @@ export interface MutationFieldPatch {
 }
 
 export interface MutationTrace {
-  actorId: string;
-  deviceId: string;
-  authorizationScope: string[];
-  correlationId: string;
-  causationId: string | null;
-  ontologyEventId: string;
-  payloadHash: string;
+  readonly actorId: string;
+  readonly deviceId: string;
+  readonly authorizationScope: readonly string[];
+  readonly correlationId: string;
+  readonly causationId: string | null;
+  readonly ontologyEventId: string;
+  readonly payloadHash: string;
 }
 
 export type SyncEntityType =
@@ -163,12 +163,12 @@ export type LocalRdoControleGeometricoRecord =
   LocalRdoChildRecord;
 
 interface OutboxMutationRecordBase {
-  clientMutationId: string;
+  readonly clientMutationId: string;
   entidadeTipo: SyncEntityType;
   entidadeId: string;
   operacao: SyncOperation;
   baseVersao: number | null;
-  payload: Record<string, unknown>;
+  readonly payload: Readonly<Record<string, unknown>>;
   status: OutboxMutationStatus;
   tentativas: number;
   ultimaTentativaEm: string | null;
@@ -191,10 +191,10 @@ export interface LegacyOutboxMutationRecord
 export interface CanonicalOutboxMutationRecord
   extends OutboxMutationRecordBase,
     CanonicalMutationEnvelopeV13 {
-  correlationId: string;
-  causationId: string | null;
-  fieldPatch: MutationFieldPatch;
-  trace: MutationTrace;
+  readonly correlationId: string;
+  readonly causationId: string | null;
+  readonly fieldPatch: MutationFieldPatch;
+  readonly trace: MutationTrace;
   nextAttemptAt: string | null;
   blockedReason: string | null;
 }

@@ -3,6 +3,7 @@ import type {
   CanonicalMutationOperation,
   CanonicalOutboxMutationRecord,
   MutationFieldPatch,
+  OutboxMutationRecord,
   OutboxTransport,
   SyncEntityType,
   SyncOperation,
@@ -12,6 +13,51 @@ export type {
   CanonicalMutationEnvelopeV13,
   CanonicalMutationOperation,
 } from "../db/db.types";
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+const CANONICAL_OPERATIONS = [
+  "CREATE",
+  "UPDATE",
+  "DELETE",
+  "TRANSITION",
+] as const satisfies readonly CanonicalMutationOperation[];
+
+const TRANSPORTS = [
+  "SYNC_PUSH",
+  "OBJECT_UPLOAD",
+] as const satisfies readonly OutboxTransport[];
+
+const SYNC_ENTITY_TYPES = [
+  "RDO",
+  "CONVERSA",
+  "MENSAGEM",
+  "MENSAGEM_ANEXO",
+  "SOLICITACAO_COMPRA",
+  "COMPRA",
+] as const satisfies readonly SyncEntityType[];
+
+const TRANSPORT_OPERATION_TO_CANONICAL = {
+  CRIAR_RDO: "CREATE",
+  ATUALIZAR_RDO_RASCUNHO: "UPDATE",
+  ENVIAR_RDO: "TRANSITION",
+  CRIAR_CONVERSA: "CREATE",
+  ADICIONAR_PARTICIPANTE_CONVERSA: "UPDATE",
+  REMOVER_PARTICIPANTE_CONVERSA: "UPDATE",
+  CRIAR_MENSAGEM: "CREATE",
+  EDITAR_MENSAGEM: "UPDATE",
+  EXCLUIR_MENSAGEM: "DELETE",
+  ADICIONAR_MENSAGEM_ANEXO: "CREATE",
+  CRIAR_SOLICITACAO_COMPRA: "CREATE",
+  ATUALIZAR_SOLICITACAO_COMPRA: "UPDATE",
+  ARQUIVAR_SOLICITACAO_COMPRA: "TRANSITION",
+  CRIAR_COMPRA: "CREATE",
+  ATUALIZAR_COMPRA: "UPDATE",
+  ALTERAR_STATUS_COMPRA: "TRANSITION",
+  DECIDIR_APROVACAO_COMPRA: "TRANSITION",
+  ARQUIVAR_COMPRA: "TRANSITION",
+} as const satisfies Record<SyncOperation, CanonicalMutationOperation>;
 
 export interface BuildCanonicalMutationInput {
   clientMutationId?: string;
@@ -24,7 +70,8 @@ export interface BuildCanonicalMutationInput {
   operation: CanonicalMutationOperation;
   transportOperation: SyncOperation;
   baseVersion: number | null;
-  changedFields: readonly string[];
+  /** Optional assertion. The coordinator always stores the derived exact delta. */
+  changedFields?: readonly string[];
   occurredAt?: string;
   previousSnapshot: Record<string, unknown>;
   nextSnapshot: Record<string, unknown>;
@@ -57,239 +104,11 @@ interface PreparedCanonicalMutation {
 }
 
 export async function mutationPayloadHash(value: unknown): Promise<string> {
-  return hashCanonicalJson(canonicalJson(value));
+  return hashCanonicalJson(canonicalMutationJson(value));
 }
 
-export async function buildCanonicalMutation(
-  input: BuildCanonicalMutationInput,
-): Promise<BuiltCanonicalMutation> {
-  // Preparation is deliberately synchronous: callers cannot mutate provenance
-  // while the SHA-256 promise is pending.
-  const prepared = prepareCanonicalMutation(input);
-  const payloadHash = await hashCanonicalJson(prepared.canonicalPayload);
-  const { envelope } = prepared;
-
-  const mutation: CanonicalOutboxMutationRecord = {
-    ...envelope,
-    entidadeTipo: syncEntityType(envelope.entityType),
-    entidadeId: envelope.entityId,
-    operacao: prepared.transportOperation,
-    baseVersao: envelope.baseVersion,
-    status: "PENDING",
-    tentativas: 0,
-    ultimaTentativaEm: null,
-    ultimoErro: null,
-    conflito: null,
-    criadaNoClienteEm: envelope.occurredAt,
-    updatedAt: envelope.occurredAt,
-    transport: prepared.transport,
-    dependsOnMutationIds: prepared.dependsOnMutationIds,
-    correlationId: prepared.correlationId,
-    causationId: prepared.causationId,
-    fieldPatch: prepared.fieldPatch,
-    trace: {
-      actorId: envelope.userId,
-      deviceId: envelope.deviceId,
-      authorizationScope: prepared.authorizationScope,
-      correlationId: prepared.correlationId,
-      causationId: prepared.causationId,
-      ontologyEventId: prepared.ontologyEventId,
-      payloadHash,
-    },
-    nextAttemptAt: null,
-    blockedReason: null,
-  };
-
-  return {
-    mutation,
-    previousSnapshot: prepared.previousSnapshot,
-    nextSnapshot: prepared.nextSnapshot,
-  };
-}
-
-function prepareCanonicalMutation(
-  input: BuildCanonicalMutationInput,
-): PreparedCanonicalMutation {
-  const clientMutationId = optionalRequiredText(
-    input.clientMutationId,
-    "clientMutationId",
-  ) ?? crypto.randomUUID();
-  const ontologyEventId = optionalRequiredText(
-    input.ontologyEventId,
-    "ontologyEventId",
-  ) ?? crypto.randomUUID();
-  const deviceId = requiredText(input.deviceId, "deviceId");
-  const userId = requiredText(input.userId, "userId");
-  const obraId = requiredText(input.obraId, "obraId");
-  const entityType = requiredText(input.entityType, "entityType");
-  syncEntityType(entityType);
-  const entityId = requiredText(input.entityId, "entityId");
-  const operation = requiredText(
-    input.operation,
-    "operation",
-  ) as CanonicalMutationOperation;
-  const transportOperation = requiredText(
-    input.transportOperation,
-    "transportOperation",
-  ) as SyncOperation;
-  const occurredAt = optionalRequiredText(
-    input.occurredAt,
-    "occurredAt",
-  ) ?? new Date().toISOString();
-  const authorizationScope = requiredTextArray(
-    input.authorizationScope,
-    "authorizationScope",
-    true,
-  );
-  if (!authorizationScope.includes(obraId)) {
-    throw new TypeError("authorizationScope must include obraId.");
-  }
-  const changedFields = requiredTextArray(
-    input.changedFields,
-    "changedFields",
-    true,
-  );
-  const dependsOnMutationIds = requiredTextArray(
-    input.dependsOnMutationIds ?? [],
-    "dependsOnMutationIds",
-    false,
-  );
-  const correlationId = optionalRequiredText(
-    input.correlationId,
-    "correlationId",
-  ) ?? clientMutationId;
-  const causationId = input.causationId === null
-    ? null
-    : optionalRequiredText(input.causationId, "causationId") ?? null;
-  const transport = input.transport ?? "SYNC_PUSH";
-
-  if (
-    input.baseVersion !== null &&
-    (!Number.isSafeInteger(input.baseVersion) || input.baseVersion < 0)
-  ) {
-    throw new TypeError("baseVersion must be a non-negative integer or null.");
-  }
-
-  const previousJson = canonicalJson(input.previousSnapshot);
-  const nextJson = canonicalJson(input.nextSnapshot);
-  const previousSnapshot = recordFromCanonicalJson(
-    previousJson,
-    "previousSnapshot",
-  );
-  const nextSnapshot = recordFromCanonicalJson(nextJson, "nextSnapshot");
-  const uniqueChangedFields = [...new Set(changedFields)];
-
-  return {
-    envelope: {
-      schemaVersion: 13,
-      clientMutationId,
-      deviceId,
-      userId,
-      obraId,
-      entityType,
-      entityId,
-      operation,
-      baseVersion: input.baseVersion,
-      changedFields: uniqueChangedFields,
-      occurredAt,
-      payload: nextSnapshot,
-    },
-    ontologyEventId,
-    transportOperation,
-    previousSnapshot,
-    nextSnapshot,
-    authorizationScope: [...new Set(authorizationScope)],
-    correlationId,
-    causationId,
-    transport,
-    dependsOnMutationIds: [...new Set(dependsOnMutationIds)],
-    fieldPatch: fieldPatch(
-      previousSnapshot,
-      nextSnapshot,
-      uniqueChangedFields,
-    ),
-    canonicalPayload: nextJson,
-  };
-}
-
-function fieldPatch(
-  previous: Record<string, unknown>,
-  next: Record<string, unknown>,
-  changedFields: readonly string[],
-): MutationFieldPatch {
-  const changed: Record<string, unknown> = {};
-  const baseValues: Record<string, unknown> = {};
-
-  for (const field of changedFields) {
-    if (Object.prototype.hasOwnProperty.call(next, field)) {
-      changed[field] = next[field];
-    }
-    if (Object.prototype.hasOwnProperty.call(previous, field)) {
-      baseValues[field] = previous[field];
-    }
-  }
-
-  return { changed, baseValues };
-}
-
-function requiredText(value: unknown, field: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new TypeError(`${field} must be a nonblank string.`);
-  }
-  return value;
-}
-
-function syncEntityType(value: string): SyncEntityType {
-  const supported: readonly SyncEntityType[] = [
-    "RDO",
-    "CONVERSA",
-    "MENSAGEM",
-    "MENSAGEM_ANEXO",
-    "SOLICITACAO_COMPRA",
-    "COMPRA",
-  ];
-  if (!supported.includes(value as SyncEntityType)) {
-    throw new TypeError(
-      `entityType ${value} does not have a registered sync transport.`,
-    );
-  }
-  return value as SyncEntityType;
-}
-
-function optionalRequiredText(
-  value: unknown,
-  field: string,
-): string | undefined {
-  if (value === undefined) return undefined;
-  return requiredText(value, field);
-}
-
-function requiredTextArray(
-  values: readonly string[],
-  field: string,
-  requireValue: boolean,
-): string[] {
-  if (!Array.isArray(values) || (requireValue && values.length === 0)) {
-    throw new TypeError(`${field} is required.`);
-  }
-
-  return Array.from({ length: values.length }, (_unused, index) =>
-    requiredText(values[index], `${field}[${index}]`),
-  );
-}
-
-function recordFromCanonicalJson(
-  value: string,
-  field: string,
-): Record<string, unknown> {
-  const parsed: unknown = JSON.parse(value);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new TypeError(`${field} must be a JSON object.`);
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function canonicalJson(value: unknown): string {
+/** Stable JSON used for provenance comparisons before any asynchronous work. */
+export function canonicalMutationJson(value: unknown): string {
   const seen = new Set<object>();
 
   function normalize(candidate: unknown, path: string): unknown {
@@ -339,6 +158,343 @@ function canonicalJson(value: unknown): string {
   }
 
   return JSON.stringify(normalize(value, "payload"));
+}
+
+export function isCanonicalOutboxMutation(
+  mutation: OutboxMutationRecord,
+): mutation is CanonicalOutboxMutationRecord {
+  return mutation.schemaVersion === 13;
+}
+
+export function assertCanonicalTransportCoherence(
+  mutation: CanonicalOutboxMutationRecord,
+): void {
+  const entityType = syncEntityType(mutation.entityType);
+  if (
+    mutation.entidadeTipo !== entityType ||
+    mutation.entidadeId !== mutation.entityId ||
+    mutation.baseVersao !== mutation.baseVersion ||
+    mutation.criadaNoClienteEm !== mutation.occurredAt
+  ) {
+    throw new TypeError("Canonical mutation transport aliases are incoherent.");
+  }
+  const expectedOperation = canonicalOperationForTransport(mutation.operacao);
+  if (mutation.operation !== expectedOperation) {
+    throw new TypeError("Canonical mutation operation aliases are incoherent.");
+  }
+  canonicalOperation(mutation.operation);
+  uuid(mutation.clientMutationId, "clientMutationId");
+  uuid(mutation.deviceId, "deviceId");
+  uuid(mutation.userId, "userId");
+  uuid(mutation.obraId, "obraId");
+  uuid(mutation.entityId, "entityId");
+  utcInstant(mutation.occurredAt, "occurredAt");
+  canonicalMutationJson(mutation.payload);
+}
+
+export async function buildCanonicalMutation(
+  input: BuildCanonicalMutationInput,
+): Promise<BuiltCanonicalMutation> {
+  // Preparation is deliberately synchronous: callers cannot mutate provenance
+  // while the SHA-256 promise is pending.
+  const prepared = prepareCanonicalMutation(input);
+  const payloadHash = await hashCanonicalJson(prepared.canonicalPayload);
+  const { envelope } = prepared;
+
+  const mutation: CanonicalOutboxMutationRecord = {
+    ...envelope,
+    payload: { ...envelope.payload },
+    changedFields: [...envelope.changedFields],
+    entidadeTipo: syncEntityType(envelope.entityType),
+    entidadeId: envelope.entityId,
+    operacao: prepared.transportOperation,
+    baseVersao: envelope.baseVersion,
+    status: "PENDING",
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: envelope.occurredAt,
+    updatedAt: envelope.occurredAt,
+    transport: prepared.transport,
+    dependsOnMutationIds: prepared.dependsOnMutationIds,
+    correlationId: prepared.correlationId,
+    causationId: prepared.causationId,
+    fieldPatch: prepared.fieldPatch,
+    trace: {
+      actorId: envelope.userId,
+      deviceId: envelope.deviceId,
+      authorizationScope: prepared.authorizationScope,
+      correlationId: prepared.correlationId,
+      causationId: prepared.causationId,
+      ontologyEventId: prepared.ontologyEventId,
+      payloadHash,
+    },
+    nextAttemptAt: null,
+    blockedReason: null,
+  };
+
+  assertCanonicalTransportCoherence(mutation);
+  return {
+    mutation,
+    previousSnapshot: prepared.previousSnapshot,
+    nextSnapshot: prepared.nextSnapshot,
+  };
+}
+
+function prepareCanonicalMutation(
+  input: BuildCanonicalMutationInput,
+): PreparedCanonicalMutation {
+  const clientMutationId = uuid(
+    input.clientMutationId ?? crypto.randomUUID(),
+    "clientMutationId",
+  );
+  const ontologyEventId = uuid(
+    input.ontologyEventId ?? crypto.randomUUID(),
+    "ontologyEventId",
+  );
+  const deviceId = uuid(input.deviceId, "deviceId");
+  const userId = uuid(input.userId, "userId");
+  const obraId = uuid(input.obraId, "obraId");
+  const entityType = syncEntityType(requiredText(input.entityType, "entityType"));
+  const entityId = uuid(input.entityId, "entityId");
+  const operation = canonicalOperation(input.operation);
+  const transportOperation = syncOperation(input.transportOperation);
+  if (canonicalOperationForTransport(transportOperation) !== operation) {
+    throw new TypeError(
+      `transportOperation ${transportOperation} does not represent ${operation}.`,
+    );
+  }
+  const occurredAt = utcInstant(
+    input.occurredAt ?? new Date().toISOString(),
+    "occurredAt",
+  );
+  const authorizationScope = authorizationScopeFor(
+    input.authorizationScope,
+    obraId,
+  );
+  const dependsOnMutationIds = uuidArray(
+    input.dependsOnMutationIds ?? [],
+    "dependsOnMutationIds",
+  );
+  const correlationId = uuid(
+    input.correlationId ?? clientMutationId,
+    "correlationId",
+  );
+  const causationId = input.causationId === null || input.causationId === undefined
+    ? null
+    : uuid(input.causationId, "causationId");
+  const transport = outboxTransport(input.transport ?? "SYNC_PUSH");
+
+  if (operation === "CREATE" && input.baseVersion !== null) {
+    throw new TypeError("CREATE requires baseVersion null.");
+  }
+  if (
+    operation !== "CREATE" &&
+    (!Number.isSafeInteger(input.baseVersion) || (input.baseVersion ?? -1) < 0)
+  ) {
+    throw new TypeError(`${operation} requires a non-negative baseVersion.`);
+  }
+
+  const previousJson = canonicalMutationJson(input.previousSnapshot);
+  const nextJson = canonicalMutationJson(input.nextSnapshot);
+  const previousSnapshot = recordFromCanonicalJson(
+    previousJson,
+    "previousSnapshot",
+  );
+  const nextSnapshot = recordFromCanonicalJson(nextJson, "nextSnapshot");
+  const changedFields = changedFieldsBetween(previousSnapshot, nextSnapshot);
+  if (input.changedFields !== undefined) {
+    const asserted = textArray(input.changedFields, "changedFields");
+    if (canonicalMutationJson(asserted) !== canonicalMutationJson(changedFields)) {
+      throw new TypeError("changedFields must equal the exact snapshot delta.");
+    }
+  }
+
+  return {
+    envelope: {
+      schemaVersion: 13,
+      clientMutationId,
+      deviceId,
+      userId,
+      obraId,
+      entityType,
+      entityId,
+      operation,
+      baseVersion: input.baseVersion,
+      changedFields,
+      occurredAt,
+      payload: nextSnapshot,
+    },
+    ontologyEventId,
+    transportOperation,
+    previousSnapshot,
+    nextSnapshot,
+    authorizationScope,
+    correlationId,
+    causationId,
+    transport,
+    dependsOnMutationIds,
+    fieldPatch: fieldPatch(previousSnapshot, nextSnapshot, changedFields),
+    canonicalPayload: nextJson,
+  };
+}
+
+function changedFieldsBetween(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+): string[] {
+  const keys = [...new Set([...Object.keys(previous), ...Object.keys(next)])]
+    .sort();
+  return keys.filter((field) => {
+    const previousHas = Object.prototype.hasOwnProperty.call(previous, field);
+    const nextHas = Object.prototype.hasOwnProperty.call(next, field);
+    return previousHas !== nextHas ||
+      canonicalMutationJson(previous[field]) !== canonicalMutationJson(next[field]);
+  });
+}
+
+function fieldPatch(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+  changedFields: readonly string[],
+): MutationFieldPatch {
+  const changed: Record<string, unknown> = {};
+  const baseValues: Record<string, unknown> = {};
+
+  for (const field of changedFields) {
+    if (Object.prototype.hasOwnProperty.call(next, field)) {
+      changed[field] = next[field];
+    }
+    if (Object.prototype.hasOwnProperty.call(previous, field)) {
+      baseValues[field] = previous[field];
+    }
+  }
+
+  return { changed, baseValues };
+}
+
+function uuid(value: unknown, field: string): string {
+  const text = requiredText(value, field);
+  if (!UUID_PATTERN.test(text)) {
+    throw new TypeError(`${field} must be a canonical UUID.`);
+  }
+  return text;
+}
+
+function utcInstant(value: unknown, field: string): string {
+  const text = requiredText(value, field);
+  if (!text.endsWith("Z") || !Number.isFinite(Date.parse(text))) {
+    throw new TypeError(`${field} must be a UTC ISO instant.`);
+  }
+  if (new Date(text).toISOString() !== text) {
+    throw new TypeError(`${field} must be a canonical UTC ISO instant.`);
+  }
+  return text;
+}
+
+function canonicalOperation(value: unknown): CanonicalMutationOperation {
+  const text = requiredText(value, "operation");
+  if (!CANONICAL_OPERATIONS.includes(text as CanonicalMutationOperation)) {
+    throw new TypeError(`operation ${text} is not supported.`);
+  }
+  return text as CanonicalMutationOperation;
+}
+
+function syncOperation(value: unknown): SyncOperation {
+  const text = requiredText(value, "transportOperation");
+  if (!(text in TRANSPORT_OPERATION_TO_CANONICAL)) {
+    throw new TypeError(`transportOperation ${text} is not supported.`);
+  }
+  return text as SyncOperation;
+}
+
+function canonicalOperationForTransport(
+  value: SyncOperation,
+): CanonicalMutationOperation {
+  return TRANSPORT_OPERATION_TO_CANONICAL[value];
+}
+
+function outboxTransport(value: unknown): OutboxTransport {
+  const text = requiredText(value, "transport");
+  if (!TRANSPORTS.includes(text as OutboxTransport)) {
+    throw new TypeError(`transport ${text} is not supported.`);
+  }
+  return text as OutboxTransport;
+}
+
+function requiredText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`${field} must be a nonblank string.`);
+  }
+  return value;
+}
+
+function syncEntityType(value: string): SyncEntityType {
+  if (!SYNC_ENTITY_TYPES.includes(value as SyncEntityType)) {
+    throw new TypeError(
+      `entityType ${value} does not have a registered sync transport.`,
+    );
+  }
+  return value as SyncEntityType;
+}
+
+function authorizationScopeFor(
+  values: readonly string[],
+  obraId: string,
+): string[] {
+  const scope = uniqueSortedTextArray(values, "authorizationScope", true);
+  if (scope.length === 1 && scope[0] === "ALFA:GLOBAL") {
+    return scope;
+  }
+  const obraIds = scope.map((value, index) =>
+    uuid(value, `authorizationScope[${index}]`)
+  );
+  if (!obraIds.includes(obraId)) {
+    throw new TypeError("authorizationScope must include obraId.");
+  }
+  return obraIds;
+}
+
+function uuidArray(values: readonly string[], field: string): string[] {
+  if (!Array.isArray(values)) {
+    throw new TypeError(`${field} must be an array.`);
+  }
+  return [...new Set(values.map((value, index) => uuid(value, `${field}[${index}]`)))]
+    .sort();
+}
+
+function textArray(values: readonly string[], field: string): string[] {
+  if (!Array.isArray(values)) {
+    throw new TypeError(`${field} must be an array.`);
+  }
+  return values.map((value, index) =>
+    requiredText(value, `${field}[${index}]`)
+  );
+}
+
+function uniqueSortedTextArray(
+  values: readonly string[],
+  field: string,
+  requireValue = false,
+): string[] {
+  if (!Array.isArray(values) || (requireValue && values.length === 0)) {
+    throw new TypeError(`${field} is required.`);
+  }
+  return [...new Set(values.map((value, index) =>
+    requiredText(value, `${field}[${index}]`)
+  ))].sort();
+}
+
+function recordFromCanonicalJson(
+  value: string,
+  field: string,
+): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new TypeError(`${field} must be a JSON object.`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function hashCanonicalJson(value: string): Promise<string> {
