@@ -76,7 +76,7 @@ function mapEquipamentos(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       assetId: asString(item.assetId),
       prefixo: asString(item.prefixo),
       descricao: asString(item.descricao),
@@ -100,7 +100,7 @@ function mapMateriais(value: unknown): MaterialDraft[] {
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       materialNome: asString(item.materialNome),
       unidade: asString(item.unidade),
       quantidadePrevista: asNumericInput(
@@ -129,7 +129,7 @@ function mapControles(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       subtrecho: asString(item.subtrecho),
       numero: asString(item.numero),
       estacaInicial: asString(item.estacaInicial),
@@ -160,7 +160,7 @@ function mapServicosExecutados(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       servicoNome: asString(item.servicoNome),
       itemContratualId: asString(item.itemContratualId),
       quantidadeExecutada: asNumericInput(
@@ -195,7 +195,7 @@ function mapAlocacoesColaboradores(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       colaboradorId: asString(item.colaboradorId),
       equipe: asString(item.equipe),
       servicoNome: asString(item.servicoNome),

@@ -192,6 +192,7 @@ function buildEquipamentoPayload(
 
   return {
     ...base,
+    id: item.localId,
     assetId: nullIfEmpty(base.assetId),
     horaInicio: nullIfEmpty(base.horaInicio),
     horaFim: nullIfEmpty(base.horaFim),
@@ -206,6 +207,7 @@ function buildServicoExecutadoPayload(
 
   return {
     ...base,
+    id: item.localId,
     itemContratualId: nullIfEmpty(
       base.itemContratualId,
     ),
@@ -225,6 +227,7 @@ function buildAlocacaoPayload(
 
   return {
     ...base,
+    id: item.localId,
     colaboradorId: nullIfEmpty(base.colaboradorId),
     equipe: nullIfEmpty(base.equipe),
     servicoNome: nullIfEmpty(base.servicoNome),
@@ -392,12 +395,18 @@ export function buildRdoSyncPayload(
       .map(buildEquipamentoPayload),
     materiais: draft.materiais
       .filter((item) => !isMaterialEmpty(item))
-      .map(removeLocalId),
+      .map((item) => ({
+        ...removeLocalId(item),
+        id: item.localId,
+      })),
 
     controlesGeometricos:
       draft.controlesGeometricos
         .filter((item) => !isControleEmpty(item))
-        .map(removeLocalId),
+        .map((item) => ({
+          ...removeLocalId(item),
+          id: item.localId,
+        })),
     attachments: attachments
       .filter((item) => item.removedAt === null)
       .map(attachmentPayload),

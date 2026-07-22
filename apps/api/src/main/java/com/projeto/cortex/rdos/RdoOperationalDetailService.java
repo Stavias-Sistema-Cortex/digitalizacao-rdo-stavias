@@ -55,6 +55,12 @@ public class RdoOperationalDetailService {
             List<RdoCreateRequest.ServicoExecutadoItem> servicosExecutados,
             List<RdoCreateRequest.AlocacaoColaboradorItem> alocacoesColaboradores
     ) {
+        List<RemovedChild> previousServices = listarFilhosAtuais(
+                "execucao_servico_rdo", rdoId, "servico_nome"
+        );
+        List<RemovedChild> previousAllocations = listarFilhosAtuais(
+                "alocacao_colaborador", rdoId, "colaborador_id"
+        );
         apagarDetalhes(rdoId);
 
         List<RdoResponse.ServicoExecutadoItem> servicos =
@@ -77,7 +83,64 @@ public class RdoOperationalDetailService {
                         alocacoesColaboradores
                 );
 
+        inativarAusentes(
+                previousServices,
+                servicos.stream().map(RdoResponse.ServicoExecutadoItem::id).toList(),
+                "EXECUCAO_SERVICO_RDO",
+                "execucao_servico_rdo",
+                rdoId
+        );
+        inativarAusentes(
+                previousAllocations,
+                alocacoes.stream().map(RdoResponse.AlocacaoColaboradorItem::id).toList(),
+                "ALOCACAO_COLABORADOR",
+                "alocacao_colaborador",
+                rdoId
+        );
+
         return new RdoOperationalDetails(servicos, alocacoes);
+    }
+
+    private List<RemovedChild> listarFilhosAtuais(
+            String table,
+            String rdoId,
+            String nameColumn
+    ) {
+        return jdbcTemplate.query(
+                "SELECT id, " + nameColumn + " AS child_name FROM " + table + " WHERE rdo_id = ?",
+                (rs, rowNumber) -> new RemovedChild(
+                        rs.getString("id"),
+                        rs.getString("child_name")
+                ),
+                rdoId
+        );
+    }
+
+    private void inativarAusentes(
+            List<RemovedChild> previous,
+            List<String> currentIds,
+            String entityType,
+            String entityTable,
+            String rdoId
+    ) {
+        for (RemovedChild child : previous) {
+            if (currentIds.contains(child.id())) {
+                continue;
+            }
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("rdoId", rdoId);
+            memoryService.registrarObjeto(
+                    entityType,
+                    child.id(),
+                    child.id(),
+                    primeiroNaoVazio(child.name(), child.id()),
+                    "INATIVO",
+                    FONTE,
+                    entityTable,
+                    metadata
+            );
+            memoryService.encerrarRelacoesAtivasDaEntidade(entityType, child.id());
+        }
     }
 
     public List<RdoResponse.ServicoExecutadoItem> listarServicos(String rdoId) {
@@ -241,13 +304,13 @@ public class RdoOperationalDetailService {
             BigDecimal custoRealizado =
                     dinheiro(item.custoRealizado());
 
-            String id = UUID.randomUUID().toString();
+            String id = idOuNovo(item.id(), "servicosExecutados.id");
             String chaveExecucao =
                     sha256(
                             String.join(
                                     "|",
                                     rdoId,
-                                    String.valueOf(index),
+                                    id,
                                     item.servicoNome(),
                                     nullToEmpty(item.itemContratualId()),
                                     item.quantidadeExecutada().toPlainString(),
@@ -393,13 +456,13 @@ public class RdoOperationalDetailService {
                     );
             acumulador.adicionar(intervalo.minutos(), percentual);
 
-            String id = UUID.randomUUID().toString();
+            String id = idOuNovo(item.id(), "alocacoesColaboradores.id");
             String chaveAlocacao =
                     sha256(
                             String.join(
                                     "|",
                                     rdoId,
-                                    String.valueOf(index),
+                                    id,
                                     colaborador.id(),
                                     dataRdo.toString(),
                                     nullToEmpty(intervalo.horaInicio()),
@@ -1017,7 +1080,9 @@ public class RdoOperationalDetailService {
                 alocacaoId,
                 "Alocação de " + colaborador.nome(),
                 status,
-                FONTE
+                FONTE,
+                "alocacao_colaborador",
+                Map.of("rdoId", rdoId, "obraId", obraId)
         );
         memoryService.registrarRelacaoAtiva(
                 "COLABORADOR",
@@ -1256,6 +1321,20 @@ public class RdoOperationalDetailService {
                 .toString();
     }
 
+    private String idOuNovo(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            return UUID.randomUUID().toString();
+        }
+        try {
+            return UUID.fromString(value.strip()).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " deve ser UUID."
+            );
+        }
+    }
+
     private <T> List<T> listaSegura(List<T> lista) {
         return lista == null ? List.of() : lista;
     }
@@ -1325,6 +1404,12 @@ public class RdoOperationalDetailService {
             LocalTime horaInicio,
             LocalTime horaFim,
             int minutos
+    ) {
+    }
+
+    private record RemovedChild(
+            String id,
+            String name
     ) {
     }
 

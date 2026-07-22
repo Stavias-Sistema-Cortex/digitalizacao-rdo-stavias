@@ -690,6 +690,34 @@ public class CortexOperationalMemoryService {
         );
     }
 
+    /**
+     * Encerra todas as arestas ainda ativas de um objeto removido do estado
+     * operacional atual, preservando as linhas para auditoria histórica.
+     */
+    @Transactional
+    public void encerrarRelacoesAtivasDaEntidade(
+            String tipoEntidade,
+            String entidadeId
+    ) {
+        jdbcTemplate.update(
+                """
+                UPDATE cortex_relacao
+                SET ativa = FALSE,
+                    encerrado_em = CURRENT_TIMESTAMP(6),
+                    versao_linha = versao_linha + 1
+                WHERE ativa = TRUE
+                  AND (
+                      (origem_tipo = ? AND origem_id = ?)
+                      OR (destino_tipo = ? AND destino_id = ?)
+                  )
+                """,
+                tipoEntidade,
+                entidadeId,
+                tipoEntidade,
+                entidadeId
+        );
+    }
+
     private long proximaCommitSeq() {
         Long commitSeq = jdbcTemplate.queryForObject(
                 """

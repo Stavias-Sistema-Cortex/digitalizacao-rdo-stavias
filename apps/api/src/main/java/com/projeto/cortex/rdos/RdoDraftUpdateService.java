@@ -226,12 +226,10 @@ public class RdoDraftUpdateService {
             );
         }
 
-        apagarItensExcetoMaoObra(rdoId);
-
         reconciliarMaoObra(rdoId, request.obraId(), request.maoObra());
-        inserirEquipamentos(rdoId, request.equipamentos());
-        inserirMateriais(rdoId, request.materiais());
-        inserirControlesGeometricos(rdoId, request.controlesGeometricos());
+        reconciliarEquipamentos(rdoId, request.obraId(), request.equipamentos());
+        reconciliarMateriais(rdoId, request.materiais());
+        reconciliarControlesGeometricos(rdoId, request.controlesGeometricos());
         operationalDetailService.substituirDetalhes(
                 rdoId,
                 request.obraId(),
@@ -354,12 +352,6 @@ public class RdoDraftUpdateService {
                 rdoId
         );
         return version == null ? 0 : version;
-    }
-
-    private void apagarItensExcetoMaoObra(String rdoId) {
-        jdbcTemplate.update("DELETE FROM rdo_controle_geometrico WHERE rdo_id = ?", rdoId);
-        jdbcTemplate.update("DELETE FROM rdo_material WHERE rdo_id = ?", rdoId);
-        jdbcTemplate.update("DELETE FROM rdo_equipamento WHERE rdo_id = ?", rdoId);
     }
 
     private void reconciliarMaoObra(
@@ -628,111 +620,231 @@ public class RdoDraftUpdateService {
         return value.strip();
     }
 
-    private void inserirEquipamentos(String rdoId, List<RdoCreateRequest.EquipamentoItem> itens) {
-        for (RdoCreateRequest.EquipamentoItem item : listaSegura(itens)) {
-            jdbcTemplate.update(
+    private void reconciliarEquipamentos(
+            String rdoId,
+            String obraId,
+            List<RdoCreateRequest.EquipamentoItem> itens
+    ) {
+        List<RdoCreateRequest.EquipamentoItem> requested = listaSegura(itens);
+        Set<String> requestedIds = idsEquipamentos(requested);
+        apagarAusentes("rdo_equipamento", rdoId, requestedIds);
+
+        for (RdoCreateRequest.EquipamentoItem item : requested) {
+            String id = requireUuid(item.id(), "equipamentos.id");
+            String assetId = nuloSeVazio(item.assetId());
+            String tipoVinculo = primeiroNaoVazio(item.tipoVinculo(), "PROPRIO");
+            BigDecimal quantidade = valorOuUm(item.quantidade());
+            int updated = jdbcTemplate.update(
                     """
-                    INSERT INTO rdo_equipamento (
-                        id, rdo_id, asset_id, prefixo, descricao, tipo_equipamento,
-                        tipo_vinculo, quantidade, hora_inicio, hora_fim, observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    UPDATE rdo_equipamento
+                    SET asset_id = ?, prefixo = ?, descricao = ?, tipo_equipamento = ?,
+                        tipo_vinculo = ?, quantidade = ?, hora_inicio = ?, hora_fim = ?,
+                        observacoes = ?, obra_id = ?
+                    WHERE id = ? AND rdo_id = ?
                     """,
-                    UUID.randomUUID().toString(),
-                    rdoId,
-                    nuloSeVazio(item.assetId()),
-                    item.prefixo(),
-                    item.descricao(),
-                    item.tipoEquipamento(),
-                    primeiroNaoVazio(item.tipoVinculo(), "PROPRIO"),
-                    valorOuUm(item.quantidade()),
-                    item.horaInicio(),
-                    item.horaFim(),
-                    item.observacoes()
+                    assetId, item.prefixo(), item.descricao(), item.tipoEquipamento(),
+                    tipoVinculo, quantidade, item.horaInicio(), item.horaFim(),
+                    item.observacoes(), obraId, id, rdoId
             );
+            if (updated == 0) {
+                requireIdAvailable("rdo_equipamento", id, "equipamento");
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO rdo_equipamento (
+                            id, rdo_id, obra_id, asset_id, prefixo, descricao,
+                            tipo_equipamento, tipo_vinculo, quantidade,
+                            hora_inicio, hora_fim, observacoes
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        id, rdoId, obraId, assetId, item.prefixo(), item.descricao(),
+                        item.tipoEquipamento(), tipoVinculo, quantidade,
+                        item.horaInicio(), item.horaFim(), item.observacoes()
+                );
+            }
         }
     }
 
-    private void inserirMateriais(String rdoId, List<RdoCreateRequest.MaterialItem> itens) {
-        for (RdoCreateRequest.MaterialItem item : listaSegura(itens)) {
+    private void reconciliarMateriais(
+            String rdoId,
+            List<RdoCreateRequest.MaterialItem> itens
+    ) {
+        List<RdoCreateRequest.MaterialItem> requested = listaSegura(itens);
+        Set<String> requestedIds = idsMateriais(requested);
+        apagarAusentes("rdo_material", rdoId, requestedIds);
+
+        for (RdoCreateRequest.MaterialItem item : requested) {
+            String id = requireUuid(item.id(), "materiais.id");
             if (item.materialNome() == null || item.materialNome().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "materialNome é obrigatório.");
             }
-
             BigDecimal sobra = calcularSobra(
-                    item.quantidadeUsinada(),
-                    item.quantidadeAplicada(),
-                    item.quantidadeSobra()
+                    item.quantidadeUsinada(), item.quantidadeAplicada(), item.quantidadeSobra()
             );
-
-            jdbcTemplate.update(
+            int updated = jdbcTemplate.update(
                     """
-                    INSERT INTO rdo_material (
-                        id, rdo_id, material_nome, unidade, quantidade_prevista,
-                        quantidade_usinada, quantidade_aplicada, quantidade_sobra,
-                        nota_fiscal, fornecedor, observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    UPDATE rdo_material
+                    SET material_nome = ?, unidade = ?, quantidade_prevista = ?,
+                        quantidade_usinada = ?, quantidade_aplicada = ?,
+                        quantidade_sobra = ?, nota_fiscal = ?, fornecedor = ?, observacoes = ?
+                    WHERE id = ? AND rdo_id = ?
                     """,
-                    UUID.randomUUID().toString(),
-                    rdoId,
-                    item.materialNome(),
-                    item.unidade(),
-                    item.quantidadePrevista(),
-                    item.quantidadeUsinada(),
-                    item.quantidadeAplicada(),
-                    sobra,
-                    item.notaFiscal(),
-                    item.fornecedor(),
-                    item.observacoes()
+                    item.materialNome(), item.unidade(), item.quantidadePrevista(),
+                    item.quantidadeUsinada(), item.quantidadeAplicada(), sobra,
+                    item.notaFiscal(), item.fornecedor(), item.observacoes(), id, rdoId
+            );
+            if (updated == 0) {
+                requireIdAvailable("rdo_material", id, "material");
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO rdo_material (
+                            id, rdo_id, material_nome, unidade, quantidade_prevista,
+                            quantidade_usinada, quantidade_aplicada, quantidade_sobra,
+                            nota_fiscal, fornecedor, observacoes
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        id, rdoId, item.materialNome(), item.unidade(),
+                        item.quantidadePrevista(), item.quantidadeUsinada(),
+                        item.quantidadeAplicada(), sobra, item.notaFiscal(),
+                        item.fornecedor(), item.observacoes()
+                );
+            }
+        }
+    }
+
+    private void reconciliarControlesGeometricos(
+            String rdoId,
+            List<RdoCreateRequest.ControleGeometricoItem> itens
+    ) {
+        List<RdoCreateRequest.ControleGeometricoItem> requested = listaSegura(itens);
+        Set<String> requestedIds = idsControles(requested);
+        apagarAusentes("rdo_controle_geometrico", rdoId, requestedIds);
+
+        for (RdoCreateRequest.ControleGeometricoItem item : requested) {
+            String id = requireUuid(item.id(), "controlesGeometricos.id");
+            BigDecimal espessuraMediaCm = calcularMedia(
+                    item.espessura1Cm(), item.espessura2Cm(), item.espessura3Cm()
+            );
+            BigDecimal areaM2 = calcularArea(item.comprimentoM(), item.larguraM());
+            BigDecimal volumeM3 = calcularVolume(areaM2, espessuraMediaCm);
+            BigDecimal massaTonelada = calcularMassa(volumeM3, item.densidade());
+            Object[] values = controleValues(item, espessuraMediaCm, areaM2, volumeM3, massaTonelada);
+            Object[] updateValues = Arrays.copyOf(values, values.length + 2);
+            updateValues[values.length] = id;
+            updateValues[values.length + 1] = rdoId;
+            int updated = jdbcTemplate.update(
+                    """
+                    UPDATE rdo_controle_geometrico
+                    SET subtrecho = ?, numero = ?, estaca_inicial = ?, estaca_final = ?,
+                        km_inicial = ?, km_final = ?, pista = ?, faixa = ?, ordem_servico = ?,
+                        atividade_observacoes = ?, comprimento_m = ?, largura_m = ?,
+                        espessura_1_cm = ?, espessura_2_cm = ?, espessura_3_cm = ?,
+                        espessura_media_cm = ?, area_m2 = ?, volume_m3 = ?, densidade = ?,
+                        massa_tonelada = ?, observacoes = ?
+                    WHERE id = ? AND rdo_id = ?
+                    """,
+                    updateValues
+            );
+            if (updated == 0) {
+                requireIdAvailable("rdo_controle_geometrico", id, "controle geométrico");
+                Object[] insertValues = new Object[values.length + 2];
+                insertValues[0] = id;
+                insertValues[1] = rdoId;
+                System.arraycopy(values, 0, insertValues, 2, values.length);
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO rdo_controle_geometrico (
+                            id, rdo_id, subtrecho, numero, estaca_inicial, estaca_final,
+                            km_inicial, km_final, pista, faixa, ordem_servico,
+                            atividade_observacoes, comprimento_m, largura_m,
+                            espessura_1_cm, espessura_2_cm, espessura_3_cm,
+                            espessura_media_cm, area_m2, volume_m3, densidade,
+                            massa_tonelada, observacoes
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        insertValues
+                );
+            }
+        }
+    }
+
+    private Object[] controleValues(
+            RdoCreateRequest.ControleGeometricoItem item,
+            BigDecimal espessuraMediaCm,
+            BigDecimal areaM2,
+            BigDecimal volumeM3,
+            BigDecimal massaTonelada
+    ) {
+        return new Object[]{
+                item.subtrecho(), item.numero(), item.estacaInicial(), item.estacaFinal(),
+                item.kmInicial(), item.kmFinal(), item.pista(), item.faixa(),
+                item.ordemServico(), item.atividadeObservacoes(), item.comprimentoM(),
+                item.larguraM(), item.espessura1Cm(), item.espessura2Cm(),
+                item.espessura3Cm(), espessuraMediaCm, areaM2, volumeM3,
+                item.densidade(), massaTonelada, item.observacoes()
+        };
+    }
+
+    private Set<String> idsEquipamentos(List<RdoCreateRequest.EquipamentoItem> itens) {
+        Set<String> ids = new HashSet<>();
+        for (RdoCreateRequest.EquipamentoItem item : itens) {
+            addUniqueId(ids, requireUuid(item.id(), "equipamentos.id"), "equipamentos");
+        }
+        return ids;
+    }
+
+    private Set<String> idsMateriais(List<RdoCreateRequest.MaterialItem> itens) {
+        Set<String> ids = new HashSet<>();
+        for (RdoCreateRequest.MaterialItem item : itens) {
+            addUniqueId(ids, requireUuid(item.id(), "materiais.id"), "materiais");
+        }
+        return ids;
+    }
+
+    private Set<String> idsControles(List<RdoCreateRequest.ControleGeometricoItem> itens) {
+        Set<String> ids = new HashSet<>();
+        for (RdoCreateRequest.ControleGeometricoItem item : itens) {
+            addUniqueId(ids, requireUuid(item.id(), "controlesGeometricos.id"), "controlesGeometricos");
+        }
+        return ids;
+    }
+
+    private void addUniqueId(Set<String> ids, String id, String collection) {
+        if (!ids.add(id)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    collection + " contém IDs duplicados."
             );
         }
     }
 
-    private void inserirControlesGeometricos(String rdoId, List<RdoCreateRequest.ControleGeometricoItem> itens) {
-        for (RdoCreateRequest.ControleGeometricoItem item : listaSegura(itens)) {
-            BigDecimal espessuraMediaCm = calcularMedia(
-                    item.espessura1Cm(),
-                    item.espessura2Cm(),
-                    item.espessura3Cm()
-            );
+    private void apagarAusentes(String table, String rdoId, Set<String> requestedIds) {
+        if (requestedIds.isEmpty()) {
+            jdbcTemplate.update("DELETE FROM " + table + " WHERE rdo_id = ?", rdoId);
+            return;
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(requestedIds.size(), "?"));
+        Object[] parameters = new Object[requestedIds.size() + 1];
+        parameters[0] = rdoId;
+        int index = 1;
+        for (String id : requestedIds) {
+            parameters[index++] = id;
+        }
+        jdbcTemplate.update(
+                "DELETE FROM " + table + " WHERE rdo_id = ? AND id NOT IN (" + placeholders + ")",
+                parameters
+        );
+    }
 
-            BigDecimal areaM2 = calcularArea(item.comprimentoM(), item.larguraM());
-            BigDecimal volumeM3 = calcularVolume(areaM2, espessuraMediaCm);
-            BigDecimal massaTonelada = calcularMassa(volumeM3, item.densidade());
-
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO rdo_controle_geometrico (
-                        id, rdo_id, subtrecho, estaca_inicial, estaca_final,
-                        numero, km_inicial, km_final, pista, faixa,
-                        ordem_servico, atividade_observacoes, comprimento_m, largura_m,
-                        espessura_1_cm, espessura_2_cm, espessura_3_cm,
-                        espessura_media_cm, area_m2, volume_m3,
-                        densidade, massa_tonelada, observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    UUID.randomUUID().toString(),
-                    rdoId,
-                    item.subtrecho(),
-                    item.estacaInicial(),
-                    item.estacaFinal(),
-                    item.numero(),
-                    item.kmInicial(),
-                    item.kmFinal(),
-                    item.pista(),
-                    item.faixa(),
-                    item.ordemServico(),
-                    item.atividadeObservacoes(),
-                    item.comprimentoM(),
-                    item.larguraM(),
-                    item.espessura1Cm(),
-                    item.espessura2Cm(),
-                    item.espessura3Cm(),
-                    espessuraMediaCm,
-                    areaM2,
-                    volumeM3,
-                    item.densidade(),
-                    massaTonelada,
-                    item.observacoes()
+    private void requireIdAvailable(String table, String id, String label) {
+        Integer collision = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM " + table + " WHERE id = ?",
+                Integer.class,
+                id
+        );
+        if (collision != null && collision > 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "O ID de " + label + " já pertence a outro RDO."
             );
         }
     }

@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
+import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DataAccessException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -656,6 +658,117 @@ class PostgresqlRdoCreationContextIT {
     }
 
     @Test
+    void remocaoDeEquipeEEquipamentoInativaObjetosEArestasSemRecriarNoReplay()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "HISTORICO-FILHOS");
+        String colaborador = inserirColaborador("Equipe", null, null);
+        vincular(colaborador, obraId, "OPERACIONAL", "ATIVO");
+        String assetId = inserirAsset("EQ-HISTORICO");
+        tornarAssetElegivel(assetId, obraId);
+        String workforceId = id();
+        String equipmentId = id();
+        ObjectNode createJson = mapper.valueToTree(request(
+                id(), obraId, id(), 1L, null, colaborador, workforceId, null
+        ));
+        createJson.putArray("equipamentos").addObject()
+                .put("id", equipmentId)
+                .put("assetId", assetId)
+                .put("descricao", "Equipamento rastreável");
+        RdoCreateRequest create = mapper.treeToValue(createJson, RdoCreateRequest.class);
+        RdoMemoryPublisher memoryPublisher = realMemoryPublisher();
+
+        transactions.execute(
+                status -> service(colaborador, memoryPublisher).criarRascunho(create)
+        );
+        assertThat(jdbc.queryForList(
+                "SELECT id FROM rdo_equipamento WHERE rdo_id = ?",
+                String.class,
+                create.id()
+        )).containsExactly(equipmentId);
+
+        ObjectNode removalJson = createJson.deepCopy();
+        removalJson.putArray("maoObra");
+        removalJson.putArray("equipamentos");
+        removalJson.putNull("apontadorColaboradorId");
+        RdoCreateRequest removal = mapper.treeToValue(removalJson, RdoCreateRequest.class);
+        RdoDraftUpdateService updateService = draftService(memoryPublisher);
+        transactions.execute(
+                status -> updateService.atualizarRascunho(create.id(), removal)
+        );
+
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo_mao_obra WHERE rdo_id = ?",
+                Integer.class,
+                create.id()
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo_equipamento WHERE rdo_id = ?",
+                Integer.class,
+                create.id()
+        )).isZero();
+        assertThat(jdbc.queryForList(
+                """
+                SELECT tipo_entidade, entidade_id, status
+                FROM cortex_objeto
+                WHERE (tipo_entidade = 'RDO_MAO_OBRA' AND entidade_id = ?)
+                   OR (tipo_entidade = 'RDO_EQUIPAMENTO' AND entidade_id = ?)
+                ORDER BY tipo_entidade
+                """,
+                workforceId,
+                equipmentId
+        )).allSatisfy(row -> assertThat(row.get("status")).isEqualTo("INATIVO"));
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM cortex_relacao
+                WHERE ativa = TRUE
+                  AND ((origem_id IN (?, ?)) OR (destino_id IN (?, ?)))
+                """,
+                Integer.class,
+                workforceId,
+                equipmentId,
+                workforceId,
+                equipmentId
+        )).isZero();
+        Integer historicalRelations = jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM cortex_relacao
+                WHERE ativa = FALSE
+                  AND ((origem_id IN (?, ?)) OR (destino_id IN (?, ?)))
+                """,
+                Integer.class,
+                workforceId,
+                equipmentId,
+                workforceId,
+                equipmentId
+        );
+        assertThat(historicalRelations).isPositive();
+        Map<String, Object> beforeReplay = jdbc.queryForMap(
+                """
+                SELECT entidade_id, versao_linha
+                FROM cortex_objeto
+                WHERE tipo_entidade = 'RDO_EQUIPAMENTO' AND entidade_id = ?
+                """,
+                equipmentId
+        );
+
+        transactions.execute(
+                status -> updateService.atualizarRascunho(create.id(), removal)
+        );
+
+        assertThat(jdbc.queryForMap(
+                """
+                SELECT entidade_id, versao_linha
+                FROM cortex_objeto
+                WHERE tipo_entidade = 'RDO_EQUIPAMENTO' AND entidade_id = ?
+                """,
+                equipmentId
+        )).isEqualTo(beforeReplay);
+    }
+
+    @Test
     void atualizacaoNaoPodeReescreverProvenienciaDaEquipe() throws Exception {
         String obraId = id();
         inserirObra(obraId, "ORIGEM-IMUTAVEL");
@@ -820,6 +933,17 @@ class PostgresqlRdoCreationContextIT {
                 attachments,
                 mock(RdoOperationalEventService.class),
                 mock(PrevisaoFinanceiraService.class)
+        );
+    }
+
+    private RdoMemoryPublisher realMemoryPublisher() {
+        return new RdoMemoryPublisher(
+                new CortexOperationalMemoryService(
+                        jdbc,
+                        mapper,
+                        mock(ApplicationEventPublisher.class)
+                ),
+                jdbc
         );
     }
 

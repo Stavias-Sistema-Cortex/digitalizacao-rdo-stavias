@@ -70,6 +70,7 @@ public record RdoCreateRequest(
     }
 
     public record EquipamentoItem(
+            String id,
             String assetId,
             String prefixo,
             String descricao,
@@ -83,6 +84,7 @@ public record RdoCreateRequest(
     }
 
     public record MaterialItem(
+            String id,
             String materialNome,
             String unidade,
             BigDecimal quantidadePrevista,
@@ -96,6 +98,7 @@ public record RdoCreateRequest(
     }
 
     public record ControleGeometricoItem(
+            String id,
             String subtrecho,
             String numero,
             String estacaInicial,
@@ -117,6 +120,7 @@ public record RdoCreateRequest(
     }
 
     public record ServicoExecutadoItem(
+            String id,
             String servicoNome,
             String itemContratualId,
             BigDecimal quantidadeExecutada,
@@ -134,6 +138,7 @@ public record RdoCreateRequest(
     }
 
     public record AlocacaoColaboradorItem(
+            String id,
             String colaboradorId,
             String equipe,
             String servicoNome,

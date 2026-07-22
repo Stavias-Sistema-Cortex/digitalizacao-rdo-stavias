@@ -275,6 +275,7 @@ public class RdoMemoryPublisher {
             );
         }
 
+        reconciliarFilhosRemovidos(rdoId);
         registrarAtributosRdo(rdoId);
         registrarMaoObraRdo(rdoId);
         registrarEquipamentosRdo(rdoId);
@@ -752,10 +753,84 @@ public class RdoMemoryPublisher {
         );
     }
 
+    private void reconciliarFilhosRemovidos(String rdoId) {
+        inativarFilhosAusentes(
+                rdoId, "RDO_MAO_OBRA", "rdo_mao_obra", "rdo_mao_obra"
+        );
+        inativarFilhosAusentes(
+                rdoId, "RDO_EQUIPAMENTO", "rdo_equipamento", "rdo_equipamento"
+        );
+        inativarFilhosAusentes(
+                rdoId, "MATERIAL_RDO", "rdo_material", "rdo_material"
+        );
+        inativarFilhosAusentes(
+                rdoId, "CONTROLE_GEOMETRICO", "rdo_controle_geometrico",
+                "rdo_controle_geometrico"
+        );
+    }
+
+    private void inativarFilhosAusentes(
+            String rdoId,
+            String entityType,
+            String entityTable,
+            String currentTable
+    ) {
+        List<MemoryChild> removed = jdbcTemplate.query(
+                """
+                SELECT objeto.entidade_id,
+                       objeto.codigo_externo,
+                       objeto.nome
+                FROM cortex_objeto objeto
+                JOIN cortex_relacao relation
+                  ON relation.destino_tipo = objeto.tipo_entidade
+                 AND relation.destino_id = objeto.entidade_id
+                 AND relation.origem_tipo = 'RDO'
+                 AND relation.origem_id = ?
+                 AND relation.ativa = TRUE
+                WHERE objeto.tipo_entidade = ?
+                  AND objeto.status <> 'INATIVO'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM %s current_child
+                      WHERE current_child.id = objeto.entidade_id
+                        AND current_child.rdo_id = ?
+                  )
+                """.formatted(currentTable),
+                (rs, rowNumber) -> new MemoryChild(
+                        rs.getString("entidade_id"),
+                        rs.getString("codigo_externo"),
+                        rs.getString("nome")
+                ),
+                rdoId,
+                entityType,
+                rdoId
+        );
+        for (MemoryChild child : removed) {
+            memoryService.registrarObjeto(
+                    entityType,
+                    child.id(),
+                    child.externalCode(),
+                    child.name(),
+                    "INATIVO",
+                    FONTE,
+                    entityTable,
+                    metadataRdo(rdoId)
+            );
+            memoryService.encerrarRelacoesAtivasDaEntidade(entityType, child.id());
+        }
+    }
+
     private Map<String, Object> metadataRdo(String rdoId) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("rdoId", rdoId);
         return metadata;
+    }
+
+    private record MemoryChild(
+            String id,
+            String externalCode,
+            String name
+    ) {
     }
 
     private List<Map<String, Object>> relatedEntities(

@@ -360,7 +360,7 @@ public class RdoService {
         List<RdoResponse.EquipamentoItem> response = new ArrayList<>();
 
         for (RdoCreateRequest.EquipamentoItem item : listaSegura(itens)) {
-            String id = UUID.randomUUID().toString();
+            String id = idOuNovo(item.id(), "equipamentos.id");
             BigDecimal quantidade = valorOuUm(item.quantidade());
             String tipoVinculo = primeiroNaoVazio(item.tipoVinculo(), "PROPRIO");
             String assetId = nuloSeVazio(item.assetId());
@@ -422,7 +422,7 @@ public class RdoService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "materialNome é obrigatório.");
             }
 
-            String id = UUID.randomUUID().toString();
+            String id = idOuNovo(item.id(), "materiais.id");
             BigDecimal sobra = calcularSobra(
                     item.quantidadeUsinada(),
                     item.quantidadeAplicada(),
@@ -482,7 +482,7 @@ public class RdoService {
         List<RdoResponse.ControleGeometricoItem> response = new ArrayList<>();
 
         for (RdoCreateRequest.ControleGeometricoItem item : listaSegura(itens)) {
-            String id = UUID.randomUUID().toString();
+            String id = idOuNovo(item.id(), "controlesGeometricos.id");
 
             BigDecimal espessuraMediaCm = calcularMedia(
                     item.espessura1Cm(),

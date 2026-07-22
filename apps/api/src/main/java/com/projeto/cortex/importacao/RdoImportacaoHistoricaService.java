@@ -612,6 +612,7 @@ public class RdoImportacaoHistoricaService {
 
         RdoCreateRequest.ServicoExecutadoItem item =
                 new RdoCreateRequest.ServicoExecutadoItem(
+                        null,
                         servico,
                         text(payload, "itemContratualId"),
                         quantidade,

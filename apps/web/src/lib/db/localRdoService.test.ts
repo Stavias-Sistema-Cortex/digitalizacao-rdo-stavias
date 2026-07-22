@@ -46,8 +46,29 @@ function validDraft() {
   };
   draft.servicosExecutados[0] = {
     ...draft.servicosExecutados[0],
+    localId: "servico-stable-1",
     servicoNome: "Aplicação de CBUQ",
     quantidadeExecutada: 0,
+  };
+  draft.equipamentos[0] = {
+    ...draft.equipamentos[0],
+    localId: "equipamento-stable-1",
+    descricao: "Vibroacabadora",
+  };
+  draft.materiais[0] = {
+    ...draft.materiais[0],
+    localId: "material-stable-1",
+    materialNome: "CBUQ",
+  };
+  draft.controlesGeometricos[0] = {
+    ...draft.controlesGeometricos[0],
+    localId: "controle-stable-1",
+    subtrecho: "km 10 ao 11",
+  };
+  draft.alocacoesColaboradores[0] = {
+    ...draft.alocacoesColaboradores[0],
+    localId: "alocacao-stable-1",
+    colaboradorId: "colaborador-1",
   };
 
   return draft;
@@ -71,7 +92,7 @@ describe("validateRdoDraftForSync", () => {
 });
 
 describe("buildRdoSyncPayload V48 boundary", () => {
-  it("preserva proveniencia e identidade estavel da mao de obra no payload de producao", () => {
+  it("preserva proveniencia e identidade estavel de todos os filhos no payload", () => {
     const payload = buildRdoSyncPayload(validDraft());
 
     expect(payload).toMatchObject({
@@ -85,6 +106,11 @@ describe("buildRdoSyncPayload V48 boundary", () => {
           origemItemId: "mao-obra-anterior-1",
         },
       ],
+      equipamentos: [{ id: "equipamento-stable-1" }],
+      materiais: [{ id: "material-stable-1" }],
+      controlesGeometricos: [{ id: "controle-stable-1" }],
+      servicosExecutados: [{ id: "servico-stable-1" }],
+      alocacoesColaboradores: [{ id: "alocacao-stable-1" }],
     });
     expect(payload.maoObra).not.toEqual(
       expect.arrayContaining([
