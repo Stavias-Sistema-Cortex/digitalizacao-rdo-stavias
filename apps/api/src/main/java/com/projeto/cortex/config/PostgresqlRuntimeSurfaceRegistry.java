@@ -12,10 +12,18 @@ import java.util.Set;
  */
 public final class PostgresqlRuntimeSurfaceRegistry {
 
+    private static final Set<String> CORTEX_RUNTIME_SURFACES = Set.of(
+            "authentication",
+            "finance",
+            "memory-ontology",
+            "rdo",
+            "sync"
+    );
+
     private final Set<String> releasedSurfaces;
 
     public PostgresqlRuntimeSurfaceRegistry() {
-        this(Set.of());
+        this(CORTEX_RUNTIME_SURFACES);
     }
 
     PostgresqlRuntimeSurfaceRegistry(Set<String> releasedSurfaces) {

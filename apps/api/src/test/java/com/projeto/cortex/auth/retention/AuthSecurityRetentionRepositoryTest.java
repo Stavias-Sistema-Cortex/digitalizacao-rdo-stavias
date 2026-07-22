@@ -50,9 +50,8 @@ class AuthSecurityRetentionRepositoryTest {
         assertThat(sql.getAllValues()).allSatisfy(statement ->
                 assertThat(statement)
                         .contains("CURRENT_TIMESTAMP(6)")
-                        .contains("TIMESTAMPADD(")
-                        .contains("SECOND,")
-                        .contains("-?")
+                        .contains("INTERVAL '1 second'")
+                        .contains("WHERE")
                         .contains("ORDER BY")
                         .contains("LIMIT ?")
         );

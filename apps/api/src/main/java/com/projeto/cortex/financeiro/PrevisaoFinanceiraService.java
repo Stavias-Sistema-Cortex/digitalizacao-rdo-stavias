@@ -516,24 +516,24 @@ public class PrevisaoFinanceiraService {
                 SELECT
                     COUNT(*) AS total_execucoes,
                     SUM(CASE WHEN item_contratual_id IS NULL THEN 1 ELSE 0 END) AS execucoes_sem_item,
-                    SUM(CASE WHEN retrabalho = 1 THEN 1 ELSE 0 END) AS retrabalhos,
-                    SUM(CASE WHEN producao_rejeitada = 1 THEN 1 ELSE 0 END) AS producao_rejeitada,
+                    SUM(CASE WHEN retrabalho = TRUE THEN 1 ELSE 0 END) AS retrabalhos,
+                    SUM(CASE WHEN producao_rejeitada = TRUE THEN 1 ELSE 0 END) AS producao_rejeitada,
                     SUM(CASE
                             WHEN data_execucao = ?
                              AND status_validacao IN ('REGISTRADA', 'VALIDADA')
-                             AND producao_rejeitada = 0
+                             AND producao_rejeitada = FALSE
                                 THEN receita_operacional_estimativa
                             ELSE 0
                         END) AS receita_estimada_dia,
                     SUM(CASE
                             WHEN status_validacao IN ('REGISTRADA', 'VALIDADA')
-                             AND producao_rejeitada = 0
+                             AND producao_rejeitada = FALSE
                                 THEN receita_operacional_estimativa
                             ELSE 0
                         END) AS receita_estimada_acumulada,
                     SUM(CASE
                             WHEN status_validacao = 'VALIDADA'
-                             AND producao_rejeitada = 0
+                             AND producao_rejeitada = FALSE
                                 THEN receita_operacional_estimativa
                             ELSE 0
                         END) AS receita_validada_acumulada,
@@ -570,15 +570,15 @@ public class PrevisaoFinanceiraService {
                             ELSE 0
                         END) AS receita_recebida,
                     SUM(CASE
-                            WHEN retrabalho = 1
-                              OR producao_rejeitada = 1
+                            WHEN retrabalho = TRUE
+                              OR producao_rejeitada = TRUE
                               OR status_validacao = 'REJEITADA'
                                 THEN receita_operacional_estimativa
                             ELSE 0
                         END) AS receita_em_risco,
                     SUM(custo_realizado) AS custo_executado,
                     SUM(CASE
-                            WHEN producao_rejeitada = 0
+                            WHEN producao_rejeitada = FALSE
                              AND status_validacao IN ('REGISTRADA', 'VALIDADA')
                                 THEN quantidade_executada
                             ELSE 0
@@ -586,7 +586,7 @@ public class PrevisaoFinanceiraService {
                 FROM execucao_servico_rdo
                 WHERE obra_id = ?
                   AND data_execucao <= ?
-                  AND cancelada = 0
+                  AND cancelada = FALSE
                 """,
                 (rs, rowNumber) -> new ExecutionAggregate(
                         rs.getInt("total_execucoes"),
@@ -634,7 +634,7 @@ public class PrevisaoFinanceiraService {
                 SELECT MAX(data_execucao)
                 FROM execucao_servico_rdo
                 WHERE obra_id = ?
-                  AND cancelada = 0
+                  AND cancelada = FALSE
                 """,
                 (rs, rowNumber) ->
                         rs.getDate(1) == null ? null : rs.getDate(1).toLocalDate(),

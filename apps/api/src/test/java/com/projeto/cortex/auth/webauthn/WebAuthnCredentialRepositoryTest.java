@@ -62,7 +62,7 @@ class WebAuthnCredentialRepositoryTest {
                 eq(300)
         );
         assertThat(compact(sql.getValue()))
-                .contains("TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6))");
+                .contains("CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second')");
         assertThat(hash.getValue())
                 .matches("[0-9a-f]{64}")
                 .doesNotContain(challenge.getBase64Url());
@@ -168,7 +168,7 @@ class WebAuthnCredentialRepositoryTest {
         assertThat(compact(sql.getValue()))
                 .contains("JOIN colaborador")
                 .contains("credencial.revogado_em IS NULL")
-                .contains("colaborador.ativo = 1")
+                .contains("colaborador.ativo = TRUE")
                 .contains("colaborador.deletado_em IS NULL")
                 .contains("colaborador.papel_acesso IN ('ALFA', 'BETA')")
                 .contains("credencial.credential_id = ?")

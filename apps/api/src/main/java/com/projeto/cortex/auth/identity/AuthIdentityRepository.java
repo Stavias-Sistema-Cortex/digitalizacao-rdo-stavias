@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
-import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -20,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
  * another verifiable challenge remains mandatory.
  */
 @Repository
-@Profile("!postgresql-common")
 public class AuthIdentityRepository {
 
     public static final String MANUAL_PENDING_SOURCE = "MANUAL_PENDENTE";
@@ -170,7 +168,7 @@ public class AuthIdentityRepository {
                 INNER JOIN colaborador
                     ON colaborador.id = identity.colaborador_id
                 WHERE identity.colaborador_id = ?
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND identity.status <> 'BLOQUEADA'
                 FOR UPDATE
@@ -229,7 +227,7 @@ public class AuthIdentityRepository {
                 LEFT JOIN auth_identity identity
                     ON identity.colaborador_id = colaborador.id
                 WHERE colaborador.id = ?
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND (
                       identity.status IS NULL

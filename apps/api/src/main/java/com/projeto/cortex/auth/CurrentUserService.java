@@ -13,7 +13,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -36,7 +35,6 @@ import org.springframework.web.server.ResponseStatusException;
  * concessão por inferência (alocação operacional ou presença em RDO anterior).
  */
 @Service
-@Profile("!postgresql-common")
 public class CurrentUserService implements AuthSessionProfileResolver {
 
     public static final String REQUEST_ATTRIBUTE_USER_ID =
@@ -152,7 +150,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                 SELECT papel_acesso
                 FROM colaborador
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 LIMIT 1
                 """,

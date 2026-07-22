@@ -628,7 +628,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     COUNT(DISTINCT equipe.id) AS total_equipes,
                     COUNT(DISTINCT membro.id) AS total_membros,
                     COUNT(DISTINCT membro.funcao_operacional_id) AS total_funcoes,
-                    COUNT(DISTINCT CASE WHEN membro.responsavel = 1 THEN membro.id END)
+                    COUNT(DISTINCT CASE WHEN membro.responsavel = TRUE THEN membro.id END)
                         AS total_responsaveis
                 FROM equipe_obra participacao
                 JOIN equipe
@@ -757,7 +757,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT id, criado_em AS observed_at
                 FROM execucao_servico_rdo
-                WHERE obra_id = ? AND cancelada = 0 AND data_execucao <= ?
+                WHERE obra_id = ? AND cancelada = FALSE AND data_execucao <= ?
                 ORDER BY data_execucao DESC, id
                 LIMIT 50
                 """,
@@ -817,7 +817,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT id, ocorrido_em AS observed_at
                 FROM cortex_evento_operacional
-                WHERE obra_id = ? AND ocorrido_em < DATE_ADD(?, INTERVAL 1 DAY)
+                WHERE obra_id = ? AND ocorrido_em < (? + INTERVAL '1 day')
                 ORDER BY ocorrido_em DESC, commit_seq DESC
                 LIMIT 50
                 """,
@@ -862,11 +862,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     SUM(extensao_m) AS total_extensao_m,
                     SUM(area_m2) AS total_area_m2,
                     SUM(volume_m3) AS total_volume_m3,
-                    SUM(CASE WHEN ? IS NULL OR data_programacao <= ? THEN extensao_m ELSE 0 END)
+                    SUM(CASE WHEN CAST(? AS DATE) IS NULL OR data_programacao <= ? THEN extensao_m ELSE 0 END)
                         AS extensao_ate_referencia,
-                    SUM(CASE WHEN ? IS NULL OR data_programacao <= ? THEN area_m2 ELSE 0 END)
+                    SUM(CASE WHEN CAST(? AS DATE) IS NULL OR data_programacao <= ? THEN area_m2 ELSE 0 END)
                         AS area_ate_referencia,
-                    SUM(CASE WHEN ? IS NULL OR data_programacao <= ? THEN volume_m3 ELSE 0 END)
+                    SUM(CASE WHEN CAST(? AS DATE) IS NULL OR data_programacao <= ? THEN volume_m3 ELSE 0 END)
                         AS volume_ate_referencia,
                     SUM(CASE
                             WHEN extensao_m IS NULL
@@ -923,7 +923,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                   ON cg.rdo_id = r.id
                 WHERE r.obra_id = ?
                   AND r.cancelado_em IS NULL
-                  AND (? IS NULL OR r.data_rdo <= ?)
+                  AND (CAST(? AS DATE) IS NULL OR r.data_rdo <= ?)
                 """,
                 (rs, rowNum) -> new RdoStats(
                         rs.getInt("total_rdos"),
@@ -971,8 +971,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         CASE
                             WHEN eq.hora_inicio IS NOT NULL
                              AND eq.hora_fim IS NOT NULL
-                                THEN TIMESTAMPDIFF(MINUTE, eq.hora_inicio, eq.hora_fim)
-                                     / 60.0 * eq.quantidade
+                                THEN EXTRACT(EPOCH FROM (eq.hora_fim - eq.hora_inicio))
+                                     / 3600.0 * eq.quantidade
                             ELSE NULL
                         END
                     ) AS horas
@@ -981,7 +981,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                   ON eq.rdo_id = r.id
                 WHERE r.obra_id = ?
                   AND r.cancelado_em IS NULL
-                  AND r.data_rdo BETWEEN DATE_SUB(?, INTERVAL 30 DAY) AND ?
+                  AND r.data_rdo BETWEEN (? - INTERVAL '30 days') AND ?
                 """,
                 (rs, rowNum) -> rs.getBigDecimal("horas"),
                 obraId,
@@ -1017,17 +1017,17 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     COALESCE(executado.quantidade, 0) AS quantidade_executada
                 FROM (
                     SELECT
-                        YEARWEEK(data_programacao, 3) AS semana,
+                        TO_CHAR(data_programacao, 'IYYYIW') AS semana,
                         SUM(%1$s) AS quantidade
                     FROM programacao_operacional
                     WHERE obra_id = ?
                       AND cancelado_em IS NULL
                       AND data_programacao <= ?
-                    GROUP BY YEARWEEK(data_programacao, 3)
+                    GROUP BY TO_CHAR(data_programacao, 'IYYYIW')
                     HAVING SUM(%1$s) > 0
                 ) planejado
                 JOIN (
-                    SELECT DISTINCT YEARWEEK(data_rdo, 3) AS semana
+                    SELECT DISTINCT TO_CHAR(data_rdo, 'IYYYIW') AS semana
                     FROM rdo
                     WHERE obra_id = ?
                       AND cancelado_em IS NULL
@@ -1036,7 +1036,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                   ON semanas_com_rdo.semana = planejado.semana
                 LEFT JOIN (
                     SELECT
-                        YEARWEEK(r.data_rdo, 3) AS semana,
+                        TO_CHAR(r.data_rdo, 'IYYYIW') AS semana,
                         SUM(cg.%1$s) AS quantidade
                     FROM rdo r
                     JOIN rdo_controle_geometrico cg
@@ -1044,7 +1044,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     WHERE r.obra_id = ?
                       AND r.cancelado_em IS NULL
                       AND r.data_rdo <= ?
-                    GROUP BY YEARWEEK(r.data_rdo, 3)
+                    GROUP BY TO_CHAR(r.data_rdo, 'IYYYIW')
                 ) executado
                   ON executado.semana = planejado.semana
                 ORDER BY planejado.semana
@@ -1077,7 +1077,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
         return jdbcTemplate.query(
                 """
                 SELECT
-                    YEARWEEK(r.data_rdo, 3) AS semana,
+                    TO_CHAR(r.data_rdo, 'IYYYIW') AS semana,
                     SUM(mat.quantidade_prevista) AS prevista,
                     SUM(mat.quantidade_aplicada) AS aplicada
                 FROM rdo r
@@ -1086,7 +1086,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 WHERE r.obra_id = ?
                   AND r.cancelado_em IS NULL
                   AND r.data_rdo <= ?
-                GROUP BY YEARWEEK(r.data_rdo, 3)
+                GROUP BY TO_CHAR(r.data_rdo, 'IYYYIW')
                 HAVING SUM(mat.quantidade_prevista) > 0
                    AND SUM(mat.quantidade_aplicada) > 0
                 ORDER BY semana
@@ -1166,11 +1166,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 """
                 SELECT
                     SUM(CASE WHEN status = 'PENDENTE' THEN 1 ELSE 0 END) AS pendentes,
-                    TIMESTAMPDIFF(
-                        HOUR,
-                        MAX(COALESCE(aplicada_em, recebida_em)),
+                    EXTRACT(EPOCH FROM (
                         CURRENT_TIMESTAMP(6)
-                    ) AS horas_ultimo_sync
+                        - MAX(COALESCE(aplicada_em, recebida_em))
+                    )) / 3600 AS horas_ultimo_sync
                 FROM sync_mutacao_cliente
                 WHERE entidade_id = ?
                    OR entidade_id IN (
@@ -1212,8 +1211,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
-                          AND cancelada = 0
-                          AND producao_rejeitada = 0
+                          AND cancelada = FALSE
+                          AND producao_rejeitada = FALSE
                           AND status_validacao IN ('REGISTRADA', 'VALIDADA')
                           AND receita_operacional_estimativa IS NOT NULL
                     ) AS revenue_rows,
@@ -1222,8 +1221,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
-                          AND cancelada = 0
-                          AND producao_rejeitada = 0
+                          AND cancelada = FALSE
+                          AND producao_rejeitada = FALSE
                           AND status_validacao IN ('REGISTRADA', 'VALIDADA')
                     ) AS measured_revenue,
                     (
@@ -1231,8 +1230,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
-                          AND cancelada = 0
-                          AND producao_rejeitada = 0
+                          AND cancelada = FALSE
+                          AND producao_rejeitada = FALSE
                           AND status_validacao = 'VALIDADA'
                     ) AS validated_revenue
                 """,
@@ -1284,18 +1283,18 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
-                          AND cancelada = 0
+                          AND cancelada = FALSE
                     ) AS execution_count,
                     (
                         SELECT COUNT(DISTINCT unidade_medida)
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
-                          AND cancelada = 0
+                          AND cancelada = FALSE
                     ) AS execution_unit_count,
                     (
                         SELECT SUM(CASE
-                                WHEN producao_rejeitada = 0
+                                WHEN producao_rejeitada = FALSE
                                  AND status_validacao IN ('REGISTRADA', 'VALIDADA')
                                     THEN quantidade_executada
                                 ELSE 0
@@ -1303,7 +1302,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         FROM execucao_servico_rdo
                         WHERE obra_id = ?
                           AND data_execucao <= ?
-                          AND cancelada = 0
+                          AND cancelada = FALSE
                     ) AS actual_executed
                 """,
                 (rs, rowNumber) -> new ServiceQuantityStats(

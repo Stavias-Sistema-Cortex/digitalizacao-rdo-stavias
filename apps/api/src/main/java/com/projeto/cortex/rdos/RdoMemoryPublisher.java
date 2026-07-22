@@ -820,9 +820,9 @@ public class RdoMemoryPublisher {
                         ) AS codigo_externo,
                         CONCAT(
                             'Programação ',
-                            DATE_FORMAT(
+                            TO_CHAR(
                                 data_programacao,
-                                '%d/%m/%Y'
+                                'DD/MM/YYYY'
                             ),
                             CASE
                                 WHEN servico IS NULL

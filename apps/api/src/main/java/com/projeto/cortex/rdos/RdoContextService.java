@@ -152,7 +152,7 @@ public class RdoContextService {
                     nome_perfil,
                     cpf_mascarado
                 FROM colaborador
-                WHERE ativo = 1
+                WHERE ativo = TRUE
                   AND deletado_em IS NULL
                 ORDER BY nome
                 LIMIT 300
@@ -178,7 +178,7 @@ public class RdoContextService {
                     name,
                     category
                 FROM asset
-                WHERE active = 1
+                WHERE active = TRUE
                   AND deleted_at IS NULL
                 ORDER BY external_code, name
                 LIMIT 300

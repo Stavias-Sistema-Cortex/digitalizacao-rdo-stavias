@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -230,8 +229,8 @@ public class CortexOperationalMemoryService {
                     schema_version,
                     payload_json
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb,
+                    ?::jsonb, ?::jsonb, ?, ?, ?, ?::jsonb
                 )
                 """,
                 eventoId,
@@ -293,9 +292,9 @@ public class CortexOperationalMemoryService {
                     versao_entidade,
                     ultimo_evento_seq
                 ) VALUES (?, ?, 1, ?)
-                ON DUPLICATE KEY UPDATE
-                    versao_entidade = versao_entidade + 1,
-                    ultimo_evento_seq = VALUES(ultimo_evento_seq)
+                ON CONFLICT (tipo_entidade, entidade_id) DO UPDATE SET
+                    versao_entidade = cortex_estado_entidade.versao_entidade + 1,
+                    ultimo_evento_seq = EXCLUDED.ultimo_evento_seq
                 """,
                 tipoEntidade,
                 entidadeId,
@@ -379,17 +378,17 @@ public class CortexOperationalMemoryService {
                     status,
                     fonte,
                     metadados_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    tabela_entidade = COALESCE(VALUES(tabela_entidade), tabela_entidade),
-                    codigo_externo = VALUES(codigo_externo),
-                    chave_canonica = VALUES(chave_canonica),
-                    nome = VALUES(nome),
-                    status = VALUES(status),
-                    fonte = VALUES(fonte),
-                    metadados_json = COALESCE(VALUES(metadados_json), metadados_json),
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                ON CONFLICT (tipo_entidade, entidade_id) DO UPDATE SET
+                    tabela_entidade = COALESCE(EXCLUDED.tabela_entidade, cortex_objeto.tabela_entidade),
+                    codigo_externo = EXCLUDED.codigo_externo,
+                    chave_canonica = EXCLUDED.chave_canonica,
+                    nome = EXCLUDED.nome,
+                    status = EXCLUDED.status,
+                    fonte = EXCLUDED.fonte,
+                    metadados_json = COALESCE(EXCLUDED.metadados_json, cortex_objeto.metadados_json),
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
-                    versao_linha = versao_linha + 1
+                    versao_linha = cortex_objeto.versao_linha + 1
                 """,
                 UUID.randomUUID().toString(),
                 tipoEntidade,
@@ -448,16 +447,16 @@ public class CortexOperationalMemoryService {
                     ?,
                     ?,
                     ?,
-                    ?
+                    ?::jsonb
                 FROM cortex_objeto objeto
                 WHERE objeto.tipo_entidade = ?
                   AND objeto.entidade_id = ?
-                ON DUPLICATE KEY UPDATE
-                    valor_campo = VALUES(valor_campo),
-                    tipo_campo = VALUES(tipo_campo),
-                    confianca = VALUES(confianca),
+                ON CONFLICT (objeto_id, nome_campo, fonte) DO UPDATE SET
+                    valor_campo = EXCLUDED.valor_campo,
+                    tipo_campo = EXCLUDED.tipo_campo,
+                    confianca = EXCLUDED.confianca,
                     valido_em = CURRENT_TIMESTAMP(6),
-                    metadados_json = COALESCE(VALUES(metadados_json), cortex_evidencia_operacional.metadados_json)
+                    metadados_json = COALESCE(EXCLUDED.metadados_json, cortex_evidencia_operacional.metadados_json)
                 """,
                 UUID.randomUUID().toString(),
                 nomeCampo.trim(),
@@ -543,19 +542,19 @@ public class CortexOperationalMemoryService {
                     objeto.tipo_entidade,
                     objeto.entidade_id,
                     ?,
-                    ?,
-                    1
+                    ?::jsonb,
+                    TRUE
                 FROM cortex_objeto objeto
                 WHERE objeto.tipo_entidade = ?
                   AND objeto.entidade_id = ?
-                ON DUPLICATE KEY UPDATE
-                    hash_legado = VALUES(hash_legado),
-                    objeto_id = VALUES(objeto_id),
-                    tipo_entidade = VALUES(tipo_entidade),
-                    entidade_id = VALUES(entidade_id),
-                    import_batch_id = VALUES(import_batch_id),
-                    snapshot_origem_json = VALUES(snapshot_origem_json),
-                    ativo = 1,
+                ON CONFLICT (sistema_legado, tabela_legado, id_legado) DO UPDATE SET
+                    hash_legado = EXCLUDED.hash_legado,
+                    objeto_id = EXCLUDED.objeto_id,
+                    tipo_entidade = EXCLUDED.tipo_entidade,
+                    entidade_id = EXCLUDED.entidade_id,
+                    import_batch_id = EXCLUDED.import_batch_id,
+                    snapshot_origem_json = EXCLUDED.snapshot_origem_json,
+                    ativo = TRUE,
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6)
                 """,
                 UUID.randomUUID().toString(),
@@ -584,13 +583,13 @@ public class CortexOperationalMemoryService {
                 """
                 UPDATE cortex_relacao
                 SET
-                    ativa = 0,
+                    ativa = FALSE,
                     encerrado_em = CURRENT_TIMESTAMP(6),
                     versao_linha = versao_linha + 1
                 WHERE origem_tipo = ?
                   AND origem_id = ?
                   AND tipo_relacao = ?
-                  AND ativa = 1
+                  AND ativa = TRUE
                   AND NOT (destino_tipo = ? AND destino_id = ?)
                 """,
                 origemTipo,
@@ -625,33 +624,30 @@ public class CortexOperationalMemoryService {
             return;
         }
 
-        try {
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO cortex_relacao (
-                        id,
-                        origem_tipo,
-                        origem_id,
-                        destino_tipo,
-                        destino_id,
-                        tipo_relacao,
-                        ativa,
-                        fonte,
-                        observacoes
-                    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-                    """,
-                    UUID.randomUUID().toString(),
-                    origemTipo,
-                    origemId,
-                    destinoTipo,
-                    destinoId,
-                    tipoRelacao,
+        jdbcTemplate.update(
+                """
+                INSERT INTO cortex_relacao (
+                    id,
+                    origem_tipo,
+                    origem_id,
+                    destino_tipo,
+                    destino_id,
+                    tipo_relacao,
+                    ativa,
                     fonte,
                     observacoes
-            );
-        } catch (DuplicateKeyException ignored) {
-            // Relação ativa já existe. Isso mantém a operação idempotente.
-        }
+                ) VALUES (?, ?, ?, ?, ?, ?, TRUE, ?, ?)
+                ON CONFLICT DO NOTHING
+                """,
+                UUID.randomUUID().toString(),
+                origemTipo,
+                origemId,
+                destinoTipo,
+                destinoId,
+                tipoRelacao,
+                fonte,
+                observacoes
+        );
     }
 
     /**
@@ -676,7 +672,7 @@ public class CortexOperationalMemoryService {
                 """
                 UPDATE cortex_relacao
                 SET
-                    ativa = 0,
+                    ativa = FALSE,
                     encerrado_em = CURRENT_TIMESTAMP(6),
                     versao_linha = versao_linha + 1
                 WHERE origem_tipo = ?
@@ -684,7 +680,7 @@ public class CortexOperationalMemoryService {
                   AND destino_tipo = ?
                   AND destino_id = ?
                   AND tipo_relacao = ?
-                  AND ativa = 1
+                  AND ativa = TRUE
                 """,
                 origemTipo,
                 origemId,
@@ -695,27 +691,20 @@ public class CortexOperationalMemoryService {
     }
 
     private long proximaCommitSeq() {
-        int linhasAtualizadas = jdbcTemplate.update(
+        Long commitSeq = jdbcTemplate.queryForObject(
                 """
                 UPDATE cortex_evento_commit_sequence
-                SET ultima_commit_seq = LAST_INSERT_ID(ultima_commit_seq + 1)
+                SET ultima_commit_seq = ultima_commit_seq + 1
                 WHERE id = 1
-                """
-        );
-
-        if (linhasAtualizadas != 1) {
-            throw new IllegalStateException(
-                    "Sequência de commit do córtex não inicializada (linha id=1 ausente)."
-            );
-        }
-
-        Long commitSeq = jdbcTemplate.queryForObject(
-                "SELECT LAST_INSERT_ID()",
+                RETURNING ultima_commit_seq
+                """,
                 Long.class
         );
 
         if (commitSeq == null) {
-            throw new IllegalStateException("Não foi possível gerar commit_seq.");
+            throw new IllegalStateException(
+                    "Sequência de commit do córtex não inicializada (linha id=1 ausente)."
+            );
         }
 
         return commitSeq;

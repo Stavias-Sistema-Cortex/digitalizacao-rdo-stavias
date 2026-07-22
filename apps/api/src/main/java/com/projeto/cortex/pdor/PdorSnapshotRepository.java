@@ -81,9 +81,14 @@ public class PdorSnapshotRepository {
                     erro_execucao
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?,
+                    CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS JSONB),
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, CAST(? AS JSONB), ?
                 )
                 """,
                 snapshot.id(),

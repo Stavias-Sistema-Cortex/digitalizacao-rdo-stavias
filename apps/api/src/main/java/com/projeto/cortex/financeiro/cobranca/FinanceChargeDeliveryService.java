@@ -134,10 +134,10 @@ public class FinanceChargeDeliveryService {
                 FROM finance_cobranca_email
                 WHERE (
                     status = 'NA_FILA'
-                    OR (status = 'AGENDADA' AND agendada_para <= UTC_TIMESTAMP(6))
+                    OR (status = 'AGENDADA' AND agendada_para <= CURRENT_TIMESTAMP(6))
                     OR (status = 'FALHOU'
                         AND proxima_tentativa_em IS NOT NULL
-                        AND proxima_tentativa_em <= UTC_TIMESTAMP(6))
+                        AND proxima_tentativa_em <= CURRENT_TIMESTAMP(6))
                 )
                 ORDER BY COALESCE(
                     proxima_tentativa_em,
@@ -182,10 +182,10 @@ public class FinanceChargeDeliveryService {
                   AND (
                     c.status = 'NA_FILA'
                     OR (c.status = 'AGENDADA'
-                        AND c.agendada_para <= UTC_TIMESTAMP(6))
+                        AND c.agendada_para <= CURRENT_TIMESTAMP(6))
                     OR (c.status = 'FALHOU'
                         AND c.proxima_tentativa_em IS NOT NULL
-                        AND c.proxima_tentativa_em <= UTC_TIMESTAMP(6))
+                        AND c.proxima_tentativa_em <= CURRENT_TIMESTAMP(6))
                   )
                 LIMIT 1
                 FOR UPDATE
@@ -201,7 +201,7 @@ public class FinanceChargeDeliveryService {
                 """
                 UPDATE finance_cobranca_email
                 SET status = 'ENVIANDO', lock_token = ?,
-                    lock_ate = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL ? SECOND),
+                    lock_ate = CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second'),
                     erro_categoria = NULL, erro_sanitizado = NULL,
                     atualizado_por = responsavel_id,
                     versao_linha = versao_linha + 1

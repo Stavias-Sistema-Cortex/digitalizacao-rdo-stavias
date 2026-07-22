@@ -17,7 +17,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** PostgreSQL graph persistence with one locked checkpoint per projector. */
 @Repository
 @Profile("postgresql")
-public final class PostgresqlOntologyGraphRepository implements OntologyGraphRepository {
+public class PostgresqlOntologyGraphRepository implements OntologyGraphRepository {
 
     static final String PROJECTOR_NAME = "operational-graph-v1";
     private static final String DEFAULT_FAILURE_CODE = "GRAPH_PROJECTION_FAILED";

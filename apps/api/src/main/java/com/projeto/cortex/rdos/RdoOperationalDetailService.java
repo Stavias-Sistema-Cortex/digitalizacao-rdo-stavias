@@ -102,7 +102,7 @@ public class RdoOperationalDetailService {
                     observacoes
                 FROM execucao_servico_rdo
                 WHERE rdo_id = ?
-                  AND cancelada = 0
+                  AND cancelada = FALSE
                 ORDER BY data_execucao, servico_nome, id
                 """,
                 (rs, rowNumber) -> new RdoResponse.ServicoExecutadoItem(

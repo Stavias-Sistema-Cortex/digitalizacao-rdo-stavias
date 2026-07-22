@@ -23,8 +23,10 @@ class PdorSnapshotRepositoryTest {
 
         assertThat(jdbcTemplate.sql)
                 .contains("INSERT INTO pdor_snapshot")
-                .doesNotContain("CAST(? AS JSON)");
+                .contains("CAST(? AS JSONB)");
         assertThat(jdbcTemplate.args).hasSize(49);
+        assertThat(jdbcTemplate.sql.chars().filter(character -> character == '?').count())
+                .isEqualTo(jdbcTemplate.args.length);
         assertThat(jdbcTemplate.args[12].toString()).contains("contractValue");
         assertThat(jdbcTemplate.args[13].toString()).contains("availability");
         assertThat(jdbcTemplate.args[23].toString()).contains("warning");

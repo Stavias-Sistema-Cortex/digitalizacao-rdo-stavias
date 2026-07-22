@@ -65,21 +65,21 @@ public class RdoAttachmentService {
                         criado_em,
                         atualizado_em,
                         removido_em
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                        obra_id = VALUES(obra_id),
-                        tipo = VALUES(tipo),
-                        nome = VALUES(nome),
-                        nome_original = VALUES(nome_original),
-                        mime_type = VALUES(mime_type),
-                        tamanho_original_bytes = VALUES(tamanho_original_bytes),
-                        tamanho_comprimido_bytes = VALUES(tamanho_comprimido_bytes),
-                        tamanho_bytes = VALUES(tamanho_bytes),
-                        storage_ref = VALUES(storage_ref),
-                        sync_status = VALUES(sync_status),
-                        metadata_json = VALUES(metadata_json),
-                        atualizado_em = VALUES(atualizado_em),
-                        removido_em = VALUES(removido_em)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, NULL, ?, ?, ?)
+                    ON CONFLICT (id) DO UPDATE SET
+                        obra_id = EXCLUDED.obra_id,
+                        tipo = EXCLUDED.tipo,
+                        nome = EXCLUDED.nome,
+                        nome_original = EXCLUDED.nome_original,
+                        mime_type = EXCLUDED.mime_type,
+                        tamanho_original_bytes = EXCLUDED.tamanho_original_bytes,
+                        tamanho_comprimido_bytes = EXCLUDED.tamanho_comprimido_bytes,
+                        tamanho_bytes = EXCLUDED.tamanho_bytes,
+                        storage_ref = EXCLUDED.storage_ref,
+                        sync_status = EXCLUDED.sync_status,
+                        metadata_json = EXCLUDED.metadata_json,
+                        atualizado_em = EXCLUDED.atualizado_em,
+                        removido_em = EXCLUDED.removido_em
                     """,
                     attachment.id().trim(),
                     rdoId,

@@ -81,7 +81,7 @@ public class PapelAcessoService {
                 WHERE id = ?
                   AND papel_acesso = ?
                   AND versao_linha = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 """,
                 requestedNew.name(),
@@ -110,7 +110,7 @@ public class PapelAcessoService {
                 SELECT id, nome, papel_acesso, versao_linha, atualizado_em
                 FROM colaborador
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 """,
                 roleMapper(),

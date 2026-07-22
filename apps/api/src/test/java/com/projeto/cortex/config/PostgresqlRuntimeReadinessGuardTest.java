@@ -47,7 +47,8 @@ class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
     void trueFlagStillRefusesTheEmptyCleanStartSurfaceRegistry() {
-        PostgresqlRuntimeSurfaceRegistry emptyRegistry = new PostgresqlRuntimeSurfaceRegistry();
+        PostgresqlRuntimeSurfaceRegistry emptyRegistry =
+                new PostgresqlRuntimeSurfaceRegistry(Set.of());
 
         assertThat(emptyRegistry.releasedSurfaces()).isEmpty();
         assertThatThrownBy(() -> guard(mock(JdbcTemplate.class), true, emptyRegistry)

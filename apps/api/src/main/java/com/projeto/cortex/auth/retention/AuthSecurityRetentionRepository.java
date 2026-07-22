@@ -21,19 +21,17 @@ public class AuthSecurityRetentionRepository {
     ) {
         return jdbcTemplate.update("""
                 DELETE FROM auth_email_challenge
-                WHERE status IN (
-                    'PENDENTE',
-                    'CONSUMIDO',
-                    'EXPIRADO',
-                    'BLOQUEADO'
+                WHERE id IN (
+                    SELECT id
+                    FROM auth_email_challenge
+                    WHERE status IN (
+                        'PENDENTE', 'CONSUMIDO', 'EXPIRADO', 'BLOQUEADO'
+                    )
+                      AND expira_em < CURRENT_TIMESTAMP(6)
+                          - (? * INTERVAL '1 second')
+                    ORDER BY expira_em, id
+                    LIMIT ?
                 )
-                  AND expira_em < TIMESTAMPADD(
-                      SECOND,
-                      -?,
-                      CURRENT_TIMESTAMP(6)
-                  )
-                ORDER BY expira_em, id
-                LIMIT ?
                 """,
                 policy.challengeRetentionSeconds(),
                 policy.batchSize()
@@ -46,13 +44,14 @@ public class AuthSecurityRetentionRepository {
     ) {
         return jdbcTemplate.update("""
                 DELETE FROM auth_rate_limit_bucket
-                WHERE atualizado_em < TIMESTAMPADD(
-                    SECOND,
-                    -?,
-                    CURRENT_TIMESTAMP(6)
+                WHERE bucket_key IN (
+                    SELECT bucket_key
+                    FROM auth_rate_limit_bucket
+                    WHERE atualizado_em < CURRENT_TIMESTAMP(6)
+                        - (? * INTERVAL '1 second')
+                    ORDER BY atualizado_em, bucket_key
+                    LIMIT ?
                 )
-                ORDER BY atualizado_em, bucket_key
-                LIMIT ?
                 """,
                 policy.rateLimitRetentionSeconds(),
                 policy.batchSize()
@@ -65,13 +64,14 @@ public class AuthSecurityRetentionRepository {
     ) {
         return jdbcTemplate.update("""
                 DELETE FROM auth_webauthn_challenge
-                WHERE expira_em < TIMESTAMPADD(
-                    SECOND,
-                    -?,
-                    CURRENT_TIMESTAMP(6)
+                WHERE id IN (
+                    SELECT id
+                    FROM auth_webauthn_challenge
+                    WHERE expira_em < CURRENT_TIMESTAMP(6)
+                        - (? * INTERVAL '1 second')
+                    ORDER BY expira_em, id
+                    LIMIT ?
                 )
-                ORDER BY expira_em, id
-                LIMIT ?
                 """,
                 policy.challengeRetentionSeconds(),
                 policy.batchSize()
@@ -84,18 +84,16 @@ public class AuthSecurityRetentionRepository {
     ) {
         return jdbcTemplate.update("""
                 DELETE FROM auth_session
-                WHERE expira_em < TIMESTAMPADD(
-                    SECOND,
-                    -?,
-                    CURRENT_TIMESTAMP(6)
+                WHERE id IN (
+                    SELECT id
+                    FROM auth_session
+                    WHERE expira_em < CURRENT_TIMESTAMP(6)
+                        - (? * INTERVAL '1 second')
+                       OR revogado_em < CURRENT_TIMESTAMP(6)
+                        - (? * INTERVAL '1 second')
+                    ORDER BY expira_em, id
+                    LIMIT ?
                 )
-                   OR revogado_em < TIMESTAMPADD(
-                    SECOND,
-                    -?,
-                    CURRENT_TIMESTAMP(6)
-                )
-                ORDER BY expira_em, id
-                LIMIT ?
                 """,
                 policy.challengeRetentionSeconds(),
                 policy.challengeRetentionSeconds(),

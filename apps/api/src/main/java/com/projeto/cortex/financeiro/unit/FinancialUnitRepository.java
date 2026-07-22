@@ -78,7 +78,7 @@ public class FinancialUnitRepository {
                 SELECT id, name, category
                 FROM asset
                 WHERE id = ?
-                  AND active = 1
+                  AND active = TRUE
                   AND deleted_at IS NULL
                 LIMIT 1
                 """,

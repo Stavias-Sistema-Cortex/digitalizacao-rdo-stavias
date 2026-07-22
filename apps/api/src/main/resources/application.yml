@@ -11,9 +11,10 @@ spring:
       enabled: ALWAYS
 
   datasource:
-    url: ${CORTEX_DB_URL:jdbc:mysql://127.0.0.1:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    username: ${CORTEX_DB_USER:cortex_app}
-    password: ${CORTEX_DB_PASSWORD}
+    url: ${CORTEX_POSTGRES_URL}
+    username: ${CORTEX_POSTGRES_USER:joaolucas}
+    password: ${CORTEX_POSTGRES_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
@@ -22,7 +23,7 @@ spring:
 
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations: classpath:db/migration-postgresql
 
 server:
   port: ${PORT:${SERVER_PORT:8080}}

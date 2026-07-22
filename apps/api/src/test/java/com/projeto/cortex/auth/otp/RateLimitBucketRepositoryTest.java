@@ -81,7 +81,7 @@ class RateLimitBucketRepositoryTest {
                 any()
         );
         assertThat(querySql.getValue())
-                .contains("CURRENT_TIMESTAMP(6)")
+                .contains("clock_timestamp()")
                 .contains("ORDER BY bucket_key")
                 .contains("FOR UPDATE");
 
@@ -93,7 +93,7 @@ class RateLimitBucketRepositoryTest {
                 anyString()
         );
         assertThat(upsertSql.getAllValues())
-                .allMatch(sql -> sql.contains("ON DUPLICATE KEY UPDATE"))
+                .allMatch(sql -> sql.contains("ON CONFLICT (bucket_key) DO NOTHING"))
                 .noneMatch(sql -> sql.contains("INSERT IGNORE"));
     }
 
@@ -177,7 +177,7 @@ class RateLimitBucketRepositoryTest {
                 any()
         );
         assertThat(querySql.getValue())
-                .contains("CURRENT_TIMESTAMP(6)")
+                .contains("clock_timestamp()")
                 .doesNotContain("FOR UPDATE");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }

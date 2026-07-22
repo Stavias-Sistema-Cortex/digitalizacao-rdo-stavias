@@ -19,17 +19,17 @@ class PostgresqlFoundationContractTest {
     private static final Path POSTGRESQL_MIGRATIONS = Path.of("src/main/resources/db/migration-postgresql");
 
     @Test
-    void keepsPostgresqlDependenciesAlongsideMysqlDependencies() throws IOException {
+    void keepsOnlyTheCanonicalPostgresqlRuntimeDependencies() throws IOException {
         String pom = Files.readString(POM);
 
         assertTrue(pom.contains("<artifactId>postgresql</artifactId>"),
                 "PostgreSQL JDBC must be available for the opt-in profile");
         assertTrue(pom.contains("<artifactId>flyway-database-postgresql</artifactId>"),
                 "Flyway PostgreSQL support must be available for the opt-in profile");
-        assertTrue(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
-                "MySQL JDBC must remain available for Academy and Zeladoria");
-        assertTrue(pom.contains("<artifactId>flyway-mysql</artifactId>"),
-                "Flyway MySQL support must remain available for Academy and Zeladoria");
+        assertFalse(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
+                "the canonical runtime must not depend on the retired MySQL driver");
+        assertFalse(pom.contains("<artifactId>flyway-mysql</artifactId>"),
+                "the canonical runtime must not load retired MySQL migrations");
     }
 
     @Test

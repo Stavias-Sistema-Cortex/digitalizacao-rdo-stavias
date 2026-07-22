@@ -293,7 +293,7 @@ public class SyncService {
                     .append("AND relacao.destino_tipo = 'UNIDADE_FINANCEIRA' ")
                     .append("AND relacao.destino_id IN (")
                     .append(placeholders(unitScope.size()))
-                    .append(") AND relacao.ativa = 1)))");
+                    .append(") AND relacao.ativa = TRUE)))");
             scopedParameters.addAll(EVENTOS_FINANCEIROS);
             scopedParameters.addAll(unitScope);
             scopedParameters.addAll(unitScope);
@@ -369,12 +369,12 @@ public class SyncService {
                     tipo,
                     usuario_id,
                     ativo
-                ) VALUES (?, ?, ?, ?, 1)
-                ON DUPLICATE KEY UPDATE
-                    nome = VALUES(nome),
-                    tipo = VALUES(tipo),
-                    usuario_id = VALUES(usuario_id),
-                    ativo = 1,
+                ) VALUES (?, ?, ?, ?, TRUE)
+                ON CONFLICT (id) DO UPDATE SET
+                    nome = EXCLUDED.nome,
+                    tipo = EXCLUDED.tipo,
+                    usuario_id = EXCLUDED.usuario_id,
+                    ativo = TRUE,
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     desativado_em = NULL
                 """,
@@ -391,7 +391,7 @@ public class SyncService {
                     ultimo_evento_recebido_seq,
                     ultimo_evento_recebido_commit_seq
                 ) VALUES (?, 0, 0)
-                ON DUPLICATE KEY UPDATE
+                ON CONFLICT (dispositivo_id) DO UPDATE SET
                     atualizado_em = CURRENT_TIMESTAMP(6)
                 """,
                 id
@@ -434,10 +434,10 @@ public class SyncService {
                     ultimo_evento_recebido_commit_seq,
                     ultimo_pull_em
                 ) VALUES (?, 0, ?, CURRENT_TIMESTAMP(6))
-                ON DUPLICATE KEY UPDATE
+                ON CONFLICT (dispositivo_id) DO UPDATE SET
                     ultimo_evento_recebido_commit_seq = GREATEST(
-                        ultimo_evento_recebido_commit_seq,
-                        VALUES(ultimo_evento_recebido_commit_seq)
+                        sync_estado_dispositivo.ultimo_evento_recebido_commit_seq,
+                        EXCLUDED.ultimo_evento_recebido_commit_seq
                     ),
                     ultimo_pull_em = CURRENT_TIMESTAMP(6)
                 """,
@@ -820,16 +820,16 @@ public class SyncService {
                 ) VALUES (
                     ?, ?,
                     (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?,
                     CURRENT_TIMESTAMP(6)
                 )
-                ON DUPLICATE KEY UPDATE
-                    status = VALUES(status),
-                    erro = VALUES(erro),
-                    erro_categoria = VALUES(erro_categoria),
-                    resultado_json = VALUES(resultado_json),
-                    conflito_json = VALUES(conflito_json),
-                    evento_servidor_commit_seq = VALUES(evento_servidor_commit_seq),
+                ON CONFLICT (dispositivo_id, client_mutation_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    erro = EXCLUDED.erro,
+                    erro_categoria = EXCLUDED.erro_categoria,
+                    resultado_json = EXCLUDED.resultado_json,
+                    conflito_json = EXCLUDED.conflito_json,
+                    evento_servidor_commit_seq = EXCLUDED.evento_servidor_commit_seq,
                     aplicada_em = CURRENT_TIMESTAMP(6)
                 """,
                 UUID.randomUUID().toString(),
@@ -873,7 +873,7 @@ public class SyncService {
                 ) VALUES (
                     ?, ?,
                     (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?, 'PENDENTE', ?
+                    ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'PENDENTE', ?
                 )
                 """,
                 UUID.randomUUID().toString(),
@@ -1120,7 +1120,7 @@ public class SyncService {
                 FROM sync_dispositivo
                 WHERE id = ?
                   AND usuario_id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                 """,
                 Integer.class,
                 dispositivoId.trim(),

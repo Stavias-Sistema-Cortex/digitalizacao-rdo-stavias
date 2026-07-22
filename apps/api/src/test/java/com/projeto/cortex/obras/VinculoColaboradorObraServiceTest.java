@@ -40,7 +40,7 @@ class VinculoColaboradorObraServiceTest {
 
     private void colaboradorExiste() {
         when(jdbc.queryForObject(
-                contains("ativo = 1"),
+                contains("ativo = TRUE"),
                 eq(Integer.class),
                 anyString()
         )).thenReturn(1);

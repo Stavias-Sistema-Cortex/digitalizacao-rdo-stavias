@@ -37,10 +37,8 @@ class CortexOperationalMemoryServiceTest {
                 eq(Long.class),
                 eq("evento-1")
         )).thenThrow(new EmptyResultDataAccessException(1));
-        when(jdbcTemplate.update(contains("UPDATE cortex_evento_commit_sequence")))
-                .thenReturn(1);
         when(jdbcTemplate.queryForObject(
-                eq("SELECT LAST_INSERT_ID()"),
+                contains("RETURNING ultima_commit_seq"),
                 eq(Long.class)
         )).thenReturn(7L);
         when(jdbcTemplate.queryForObject(
@@ -91,10 +89,8 @@ class CortexOperationalMemoryServiceTest {
                 eq(Long.class),
                 eq("evento-offline")
         )).thenThrow(new EmptyResultDataAccessException(1));
-        when(jdbcTemplate.update(contains("UPDATE cortex_evento_commit_sequence")))
-                .thenReturn(1);
         when(jdbcTemplate.queryForObject(
-                eq("SELECT LAST_INSERT_ID()"),
+                contains("RETURNING ultima_commit_seq"),
                 eq(Long.class)
         )).thenReturn(8L);
         when(jdbcTemplate.queryForObject(

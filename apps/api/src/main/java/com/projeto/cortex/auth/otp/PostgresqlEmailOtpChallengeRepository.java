@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** PostgreSQL native e-mail challenge persistence with a decoy-safe row lock. */
 @Repository
 @Profile("postgresql-common")
-public final class PostgresqlEmailOtpChallengeRepository
+public class PostgresqlEmailOtpChallengeRepository
         implements EmailOtpChallengeStore {
 
     private final JdbcTemplate jdbcTemplate;

@@ -35,7 +35,7 @@ public class MysqlEmailOtpChallengeRepository implements EmailOtpChallengeStore 
                     id, colaborador_id, identifier_digest, codigo_digest,
                     expira_em, tentativas, max_tentativas, status
                 ) VALUES (?, ?, ?, ?,
-                    TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)),
+                    CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second'),
                     0, ?, 'PENDENTE')
                 """, challengeId, collaboratorId, identifierDigest,
                 codeDigest, ttlSeconds, maxAttempts);
@@ -172,7 +172,7 @@ public class MysqlEmailOtpChallengeRepository implements EmailOtpChallengeStore 
                 WHERE identity.colaborador_id = ?
                     AND identity.email_autenticacao = ?
                     AND identity.status IN ('PENDENTE', 'ATIVA')
-                    AND colaborador.ativo = 1
+                    AND colaborador.ativo = TRUE
                     AND colaborador.deletado_em IS NULL
                     AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                 """, collaboratorId, authenticationEmail);

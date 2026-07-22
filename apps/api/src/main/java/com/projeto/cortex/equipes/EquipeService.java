@@ -751,7 +751,7 @@ public class EquipeService {
 
     public List<FuncaoOperacionalResponse> listarFuncoes(boolean incluirInativas) {
         currentUserService.requireUserId();
-        String condition = incluirInativas ? "" : " WHERE ativo = 1";
+        String condition = incluirInativas ? "" : " WHERE ativo = TRUE";
         return jdbcTemplate.query(
                 functionSelect() + condition + " ORDER BY ordem_exibicao, nome, id",
                 functionMapper()
@@ -1213,7 +1213,7 @@ public class EquipeService {
 
     private void requireActiveFunction(String functionId) {
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM funcao_operacional WHERE id = ? AND ativo = 1",
+                "SELECT COUNT(*) FROM funcao_operacional WHERE id = ? AND ativo = TRUE",
                 Integer.class,
                 functionId
         );
@@ -1230,7 +1230,7 @@ public class EquipeService {
                 """
                 SELECT COUNT(*)
                 FROM colaborador
-                WHERE id = ? AND ativo = 1 AND deletado_em IS NULL
+                WHERE id = ? AND ativo = TRUE AND deletado_em IS NULL
                 """,
                 Integer.class,
                 collaboratorId
