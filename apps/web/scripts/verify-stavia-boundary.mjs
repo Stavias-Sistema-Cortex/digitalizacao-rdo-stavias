@@ -197,6 +197,20 @@ function occurrenceCount(text, value) {
   return text.split(value).length - 1;
 }
 
+function normalizeStaticReferenceText(text) {
+  const decoded = text
+    .replace(/\\u\{([0-9a-f]+)\}/gi, (_, value) =>
+      String.fromCodePoint(Number.parseInt(value, 16)),
+    )
+    .replace(/\\u([0-9a-f]{4})/gi, (_, value) =>
+      String.fromCharCode(Number.parseInt(value, 16)),
+    )
+    .replace(/\\x([0-9a-f]{2})/gi, (_, value) =>
+      String.fromCharCode(Number.parseInt(value, 16)),
+    );
+  return decoded.replace(/[^A-Za-z0-9_]/g, "");
+}
+
 export function findAssistantTokens(text) {
   const assistantRole =
     /useStavias\b|stavias(?:[./_-]*)(?:assistant|launcher|provider|hook|context|api|client|control|button|chat|query|prompt|completion)/gi;
@@ -211,6 +225,13 @@ export function findAssistantTokens(text) {
 
 function findCorporateTokens(text) {
   return [...text.matchAll(/stavias/gi)].map((match) => ({
+    index: match.index ?? 0,
+    token: match[0],
+  }));
+}
+
+function findForbiddenAssistantTerms(text) {
+  return [...text.matchAll(/\b(?:assistant|copilot)\b/giu)].map((match) => ({
     index: match.index ?? 0,
     token: match[0],
   }));
@@ -254,22 +275,22 @@ function maskAllowedCorporateSource(pathname, content, violations) {
 const CORPORATE_DIST_PATTERNS = [
   /<title>Córtex Stavias<\/title>/g,
   /"name":"Córtex Stavias"/g,
-  /url:"stavias-cortex-logo\.png"/g,
-  /url:"assets\/(?:stavias-s-tile|stavias-canteiro|stavias-logo)-[A-Za-z0-9_-]+\.png"/g,
+  /(?<![\p{L}\p{N}_$])url:"stavias-cortex-logo\.png"/gu,
+  /(?<![\p{L}\p{N}_$])url:"assets\/(?:stavias-s-tile|stavias-canteiro|stavias-logo)-[A-Za-z0-9_-]+\.png"/gu,
   /`\/assets\/(?:stavias-s-tile|stavias-canteiro|stavias-logo)-[A-Za-z0-9_-]+\.png`/g,
-  /src:`\/stavias-cortex-logo\.png`/g,
-  /children:`Stavias · Sistema Córtex`/g,
-  /label:`Portal Stavias`/g,
-  /href:`https:\/\/www\.stavias\.com\.br`/g,
-  /label:`Stavias Academy`/g,
-  /href:`https:\/\/academy\.stavias\.com\.br`/g,
-  /href:`https:\/\/suporte\.stavias\.com\.br`/g,
-  /children:`Mais Stavias`/g,
-  /children:`Entrar no Stavias Córtex`/g,
-  /alt:`Stavias`/g,
-  /alt:`Stavias Córtex`/g,
-  /children:`© 2026 Stavias — Sistema Córtex`/g,
-  /children:`Stavias Córtex · Ambiente institucional restrito`/g,
+  /(?<![\p{L}\p{N}_$])src:`\/stavias-cortex-logo\.png`/gu,
+  /(?<![\p{L}\p{N}_$])children:`Stavias · Sistema Córtex`/gu,
+  /(?<![\p{L}\p{N}_$])label:`Portal Stavias`/gu,
+  /(?<![\p{L}\p{N}_$])href:`https:\/\/www\.stavias\.com\.br`/gu,
+  /(?<![\p{L}\p{N}_$])label:`Stavias Academy`/gu,
+  /(?<![\p{L}\p{N}_$])href:`https:\/\/academy\.stavias\.com\.br`/gu,
+  /(?<![\p{L}\p{N}_$])href:`https:\/\/suporte\.stavias\.com\.br`/gu,
+  /(?<![\p{L}\p{N}_$])children:`Mais Stavias`/gu,
+  /(?<![\p{L}\p{N}_$])children:`Entrar no Stavias Córtex`/gu,
+  /(?<![\p{L}\p{N}_$])alt:`Stavias`/gu,
+  /(?<![\p{L}\p{N}_$])alt:`Stavias Córtex`/gu,
+  /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias — Sistema Córtex`/gu,
+  /(?<![\p{L}\p{N}_$])children:`Stavias Córtex · Ambiente institucional restrito`/gu,
 ];
 
 function maskAllowedCorporateDist(content) {
@@ -288,6 +309,9 @@ export function inspectDistCorporateContent(content) {
     ...findCorporateTokens(masked).map(
       (match) =>
         `corporate Stavias occurrence is not an approved artifact fragment (${match.token})`,
+    ),
+    ...findForbiddenAssistantTerms(masked).map(
+      (match) => `forbidden assistant role term ${match.token}`,
     ),
   ];
 }
@@ -448,6 +472,16 @@ export function inspectLegacySource(files) {
         `${file.path}: cleanup module and symbol may not be referenced through computed or facade access`,
       );
     }
+    const normalizedReferences = normalizeStaticReferenceText(
+      remainingReferences,
+    );
+    if (
+      /localDataScope|clearUserScopedLocalStorage/i.test(normalizedReferences)
+    ) {
+      violations.push(
+        `${file.path}: cleanup module and symbol may not be assembled through strings, templates, or escapes`,
+      );
+    }
   }
 
   const storeOccurrences = runtimeFiles.flatMap((file) =>
@@ -487,6 +521,12 @@ export function inspectLegacySource(files) {
 
 function maskVerifiedLegacySource(file) {
   let content = file.content;
+  if (file.path === "apps/web/package.json") {
+    content = content.replace(
+      '"verify:assistant-boundary"',
+      '"verify:retired-runtime-boundary"',
+    );
+  }
   if (file.path === LOCAL_STORAGE_CLEANUP_PATH) {
     for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
       content = content.replace(key, "[legacy-local-cleanup]");
@@ -494,6 +534,10 @@ function maskVerifiedLegacySource(file) {
   }
   if (file.path === DATABASE_MIGRATION_PATH) {
     content = content.replace(LEGACY_SNAPSHOT_STORE, "[legacy-store-cleanup]");
+    content = content.replaceAll(
+      "LEGACY_ASSISTANT_STORE",
+      "[legacy-retired-store]",
+    );
   }
   return content;
 }
@@ -597,7 +641,8 @@ export function inspectPackageBuildScripts(scripts) {
   for (const [name, command] of Object.entries(scripts)) {
     const isBuildEntry = /^build(?::|$)/.test(name);
     const hasViteBuild = invokesViteBuild(command);
-    if (!isBuildEntry && !hasViteBuild) {
+    const hasBuildOperation = /build/i.test(command);
+    if (!isBuildEntry && !hasViteBuild && !hasBuildOperation) {
       continue;
     }
     if (!VERIFIED_DIST_BUILD_SUFFIX.test(command)) {
@@ -646,10 +691,15 @@ export function inspectSourceBoundary(files) {
     }
     const content = maskVerifiedLegacySource(file).replaceAll(
       VERIFIER_REFERENCE,
-      "[assistant-boundary-verifier]",
+      "[retired-runtime-boundary-verifier]",
     );
     for (const match of findAssistantTokens(content)) {
       violations.push(`${file.path}: forbidden content token ${match.token}`);
+    }
+    for (const match of findForbiddenAssistantTerms(content)) {
+      violations.push(
+        `${file.path}: forbidden assistant role term ${match.token}`,
+      );
     }
     const corporateMasked = maskAllowedCorporateSource(
       file.path,

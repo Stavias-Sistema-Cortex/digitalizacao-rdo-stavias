@@ -149,7 +149,11 @@ generated paths retain their exact asset allowlist. This fails closed for both
 known and future role words, including plain, Unicode, punctuation-delimited,
 and approved-prefix variants such as `StaviasAgent`, `Portal Stavias—Assistant`,
 `Assistant Stavias Córtex`, `AgentMaisStaviasCard`, and
-`MaisStaviasCardAgent`.
+`MaisStaviasCardAgent`. Complete generated property patterns use Unicode-aware
+property boundaries, and standalone `Assistant`/`Copilot` role terms are
+forbidden after the narrowly masked deletion-only legacy constant. This also
+rejects JSX or bundle composition that leaves an approved corporate line/value
+unchanged but appends assistant copy on an adjacent expression.
 
 Legacy identifiers are now audited across the complete scanned source set
 before they are masked for assistant-token inspection. Each localStorage key
@@ -187,7 +191,10 @@ the cleanup module are rejected as well. After the sole exact named import and
 zero-argument call are masked, any remaining `localDataScope` or
 `clearUserScoped` fragment fails, covering template literals, `.js` dynamic
 imports, concatenated CommonJS paths, re-export facades, and computed-property
-aliases. SSR retains the explicit no-op path.
+aliases. A second conservative normalization decodes JavaScript Unicode/hex
+escapes and removes string/template/concatenation punctuation before checking
+the complete module and symbol names, so split strings and escaped identifiers
+cannot evade the policy. SSR retains the explicit no-op path.
 
 All `build`/`build:*` package scripts and every raw Vite build invocation now
 must end in the mandatory
@@ -198,7 +205,11 @@ line-broken command. Its shell tokenizer preserves quoted metacharacters, so
 `vite --define 'process.env.X="a;b"' build` cannot escape by looking like two
 commands. Nested `sh -c`/`bash -c` command values are inspected recursively
 with a visited-command set, so multiple wrapper levels cannot hide a raw Vite
-build. Appending anything after the verifier is rejected.
+build. Independently of executable-token parsing, any package command containing
+a `build` operation is required to end in the verifier. This conservative rule
+closes ANSI-C quoted, partially assembled, path-based, and environment-defaulted
+Vite invocations without trying to evaluate arbitrary shell expansion.
+Appending anything after the verifier is rejected.
 
 ## Responsive geometry evidence
 

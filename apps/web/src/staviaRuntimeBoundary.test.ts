@@ -349,6 +349,58 @@ describe("StavIA runtime boundary", () => {
       ).not.toEqual([]);
     }
 
+    for (const adjacentAssistantCopy of [
+      originalActivationPage.replace(
+        "Stavias Córtex · Ambiente institucional restrito",
+        `{"Assistant — "}\n          Stavias Córtex · Ambiente institucional restrito`,
+      ),
+      originalActivationPage.replace(
+        "Stavias Córtex · Ambiente institucional restrito",
+        `Stavias Córtex · Ambiente institucional restrito\n          {" — Assistant"}`,
+      ),
+    ]) {
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          {
+            path: "apps/web/src/features/auth/ActivationPage.tsx",
+            content: adjacentAssistantCopy,
+          },
+        ]),
+      ).not.toEqual([]);
+    }
+
+    const moreStavias = readFileSync(
+      path.join(WEB_ROOT, "src/features/home/MaisStaviasCard.tsx"),
+      "utf8",
+    ).replace(
+      "↗ {link.label}",
+      `↗ {link.label}{"-Assistant"}`,
+    );
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/features/home/MaisStaviasCard.tsx",
+          content: moreStavias,
+        },
+      ]),
+    ).not.toEqual([]);
+
+    for (const composedGeneratedCopy of [
+      "mylabel:`Portal Stavias`",
+      "βlabel:`Portal Stavias`",
+      "label:`Portal Stavias`+\"-Assistant\"",
+      "\"Assistant-\"+label:`Portal Stavias`",
+      "label:`Portal Stavias`+\n\"-Assistant\"",
+      "label:`Portal Stavias`,children:[link.label,`-Assistant`]",
+    ]) {
+      expect(
+        inspectDistCorporateContent(composedGeneratedCopy),
+        composedGeneratedCopy,
+      ).not.toEqual([]);
+    }
+
   });
 
   it("does not hide a second or active use of a legacy identifier", () => {
@@ -413,6 +465,11 @@ describe("StavIA runtime boundary", () => {
       String.raw`require(\`./lib/db/localDataScope\`)`,
       `require("./lib/db/" + "localDataScope")`,
       `export * from "./localDataScope"; const cleanup = scope["clearUserScoped" + "LocalStorage"]; cleanup();`,
+      `const p = "./lib/db/localD" + "ataScope"; const scope = await import(p); scope["clearUser" + "ScopedLocalStorage"]();`,
+      `const scope = require("./lib/db/localD" + "ataScope.js"); scope["clearUser" + "ScopedLocalStorage"]();`,
+      'const scope = await import(`./lib/db/local${"DataScope"}`); scope["clearUser" + "ScopedLocalStorage"]();',
+      String.raw`import * as scope from "./lib/db/localD\u0061taScope"; scope["clearUser" + "ScopedLocalStorage"]();`,
+      String.raw`export { cl\u0065arUserScopedLocalStorage } from "./lib/db/localD\u0061taScope";`,
     ]) {
       expect(
         inspectSourceBoundary([
@@ -550,6 +607,11 @@ describe("StavIA runtime boundary", () => {
       `sh -c 'vite --mode production build'`,
       `sh -c "bash -c 'vite --mode production build'"`,
       `bash -c "sh -c 'vite --mode production build'"`,
+      `$'vite' build`,
+      `bash -c $'vite --mode production build'`,
+      `./node_modules/.bin/$'vite' build`,
+      `vi$'te' build`,
+      `${"${CORTEX_VITE_BIN:-vite}"} build`,
     ]) {
       expect(
         inspectPackageBuildScripts({ unsafe: unsafeCommand }),
