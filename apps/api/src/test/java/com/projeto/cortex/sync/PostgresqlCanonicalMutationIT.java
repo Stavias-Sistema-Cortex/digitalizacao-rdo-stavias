@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
@@ -303,6 +304,103 @@ class PostgresqlCanonicalMutationIT {
     }
 
     @Test
+    void forgedCanonicalFieldPatchValuesAreRejectedWithoutHandlerOrLedger()
+            throws Exception {
+        Setup setup = setup(false);
+
+        SyncPushRequest.MutacaoCliente nestedBase = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "nested"
+        );
+        ObjectNode nestedPayload = nestedBase.payload().deepCopy();
+        ObjectNode nestedValue = mapper.createObjectNode();
+        nestedValue.putNull("nullable");
+        nestedValue.putObject("details").put("status", "applied");
+        nestedPayload.set("value", nestedValue);
+        ObjectNode forgedNestedChanged = nestedPayload.deepCopy();
+        forgedNestedChanged.withObject("value")
+                .withObject("details")
+                .put("status", "forged");
+        SyncPushRequest.MutacaoCliente forgedNested = copyCanonicalWithPatch(
+                nestedBase,
+                nestedPayload,
+                hash(nestedPayload),
+                new SyncPushRequest.FieldPatch(
+                        forgedNestedChanged,
+                        mapper.createObjectNode()
+                )
+        );
+
+        SyncPushRequest.MutacaoCliente nullBase = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "nullable"
+        );
+        ObjectNode nullPayload = nullBase.payload().deepCopy();
+        nullPayload.putNull("value");
+        ObjectNode nullChanged = nullPayload.deepCopy();
+        nullChanged.remove("value");
+        ObjectNode nullBaseValues = mapper.createObjectNode();
+        nullBaseValues.put("value", "previous");
+        SyncPushRequest.MutacaoCliente forgedNull = copyCanonicalWithPatch(
+                nullBase,
+                nullPayload,
+                hash(nullPayload),
+                new SyncPushRequest.FieldPatch(nullChanged, nullBaseValues)
+        );
+
+        SyncPushRequest.MutacaoCliente deletionBase = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "deleted"
+        );
+        ObjectNode deletionPayload = deletionBase.payload().deepCopy();
+        deletionPayload.remove("value");
+        ObjectNode forgedDeletionChanged = deletionPayload.deepCopy();
+        forgedDeletionChanged.putNull("value");
+        SyncPushRequest.MutacaoCliente forgedDeletion = copyCanonicalWithPatch(
+                deletionBase,
+                deletionPayload,
+                hash(deletionPayload),
+                new SyncPushRequest.FieldPatch(
+                        forgedDeletionChanged,
+                        mapper.createObjectNode()
+                )
+        );
+
+        SyncPushResponse nestedResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(forgedNested))
+        );
+        SyncPushResponse nullResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(forgedNull))
+        );
+        SyncPushResponse deletionResponse = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(forgedDeletion))
+        );
+
+        assertRejected(nestedResponse, "CHANGED_FIELD_VALUE_MISMATCH");
+        assertRejected(nullResponse, "CHANGED_FIELD_VALUE_MISMATCH");
+        assertRejected(deletionResponse, "CHANGED_FIELD_VALUE_MISMATCH");
+        assertThat(setup.attempts()).hasValue(0);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sync_mutacao_cliente "
+                        + "WHERE proprietario_id = ? AND client_mutation_id IN (?, ?, ?)",
+                Integer.class,
+                setup.ownerId(),
+                forgedNested.clientMutationId(),
+                forgedNull.clientMutationId(),
+                forgedDeletion.clientMutationId()
+        )).isZero();
+    }
+
+    @Test
     void canonicalCreateBindsPayloadAndAppliedIdentityWithFullRollback() throws Exception {
         String wrongAppliedId = UUID.randomUUID().toString();
         Setup setup = setup(false, wrongAppliedId);
@@ -550,6 +648,33 @@ class PostgresqlCanonicalMutationIT {
         );
     }
 
+    private SyncPushRequest.MutacaoCliente copyCanonicalWithPatch(
+            SyncPushRequest.MutacaoCliente original,
+            ObjectNode payload,
+            String payloadHash,
+            SyncPushRequest.FieldPatch fieldPatch
+    ) {
+        return new SyncPushRequest.MutacaoCliente(
+                original.clientMutationId(), original.entidadeTipo(), original.entidadeId(),
+                original.operacao(), original.baseVersao(), payload,
+                original.criadaNoClienteEm(), original.correlacaoId(), original.schemaVersion(),
+                original.deviceId(), original.userId(), original.obraId(), original.entityType(),
+                original.entityId(), original.operation(), original.baseVersion(),
+                original.changedFields(), original.occurredAt(),
+                new SyncPushRequest.MutationTrace(
+                        original.trace().actorId(),
+                        original.trace().deviceId(),
+                        original.trace().authorizationScope(),
+                        original.trace().correlationId(),
+                        original.trace().causationId(),
+                        original.trace().ontologyEventId(),
+                        payloadHash
+                ),
+                fieldPatch,
+                original.relatedEntities(), original.dependsOnMutationIds()
+        );
+    }
+
     private void assertRejected(SyncPushResponse response, String category) {
         assertThat(response.resultados()).singleElement().satisfies(result -> {
             assertThat(result.status()).isEqualTo("REJEITADA");
@@ -559,13 +684,40 @@ class PostgresqlCanonicalMutationIT {
     }
 
     private String hash(ObjectNode payload) throws Exception {
-        String canonical = "{\"id\":" + mapper.writeValueAsString(payload.path("id"))
-                + ",\"obraId\":" + mapper.writeValueAsString(payload.path("obraId"))
-                + ",\"value\":" + mapper.writeValueAsString(payload.path("value")) + "}";
+        String canonical = canonicalJson(payload);
         return HexFormat.of().formatHex(
                 MessageDigest.getInstance("SHA-256")
                         .digest(canonical.getBytes(StandardCharsets.UTF_8))
         );
+    }
+
+    private String canonicalJson(JsonNode value) throws Exception {
+        if (value == null || value.isNull()) {
+            return "null";
+        }
+        if (value.isArray()) {
+            List<String> values = new ArrayList<>();
+            value.forEach(item -> {
+                try {
+                    values.add(canonicalJson(item));
+                } catch (Exception exception) {
+                    throw new IllegalStateException(exception);
+                }
+            });
+            return "[" + String.join(",", values) + "]";
+        }
+        if (value.isObject()) {
+            List<String> fields = new ArrayList<>();
+            value.fieldNames().forEachRemaining(fields::add);
+            fields.sort(String::compareTo);
+            List<String> entries = new ArrayList<>();
+            for (String field : fields) {
+                entries.add(mapper.writeValueAsString(field)
+                        + ":" + canonicalJson(value.get(field)));
+            }
+            return "{" + String.join(",", entries) + "}";
+        }
+        return mapper.writeValueAsString(value);
     }
 
     private String collaborator() {

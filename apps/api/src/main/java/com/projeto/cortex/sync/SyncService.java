@@ -1646,6 +1646,20 @@ public class SyncService {
         if (!new ArrayList<>(patchFields).equals(sorted)) {
             throw rejection("CHANGED_FIELDS_MISMATCH", "fieldPatch diverge de changedFields.");
         }
+        for (String field : sorted) {
+            boolean payloadHasField = mutacao.payload().has(field);
+            boolean patchHasField = mutacao.fieldPatch().changed().has(field);
+            if (payloadHasField != patchHasField
+                    || (payloadHasField
+                            && !canonicalJson(mutacao.payload().get(field)).equals(
+                                    canonicalJson(mutacao.fieldPatch().changed().get(field))
+                            ))) {
+                throw rejection(
+                        "CHANGED_FIELD_VALUE_MISMATCH",
+                        "fieldPatch.changed diverge dos valores aplicados no payload."
+                );
+            }
+        }
     }
 
     private void validarEscopoAutorizado(
