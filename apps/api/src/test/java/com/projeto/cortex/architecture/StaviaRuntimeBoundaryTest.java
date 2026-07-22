@@ -14,6 +14,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StaviaRuntimeBoundaryTest {
 
@@ -23,15 +25,218 @@ class StaviaRuntimeBoundaryTest {
     );
     private static final Pattern APPROVED_REFERENCE = exactReferencePattern(
             "Stavias Sistema Cortex API",
-            "STAVIAS_HISTORY",
-            "StaviasCortex",
-            "dbstavias_acad",
-            "dbstavias_zld",
-            "Stavias Córtex",
-            "Stavias From",
-            "Córtex Stavias",
-            "Financeiro Stavias",
             "STAVIAS"
+    );
+    private static final String PACKAGED_CLASSES_PREFIX =
+            "cortex-api-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes/";
+    private static final List<ScopedReference> SCOPED_COMPATIBILITY_REFERENCES = List.of(
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/intelligence/PdorEngine.java",
+                    "STAVIAS_HISTORY",
+                    "AssumptionSource.STAVIAS_HISTORY",
+                    "AssumptionSource.STAVIAS_HISTORY",
+                    "STAVIAS_HISTORY,"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/intelligence/"
+                            + "PdorMonteCarloPotentialValidationTest.java",
+                    "STAVIAS_HISTORY",
+                    "PdorEngine.AssumptionSource.STAVIAS_HISTORY",
+                    "PdorEngine.AssumptionSource.STAVIAS_HISTORY"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/intelligence/PdorEngineTest.java",
+                    "STAVIAS_HISTORY",
+                    "PdorEngine.AssumptionSource.STAVIAS_HISTORY",
+                    "PdorEngine.AssumptionSource.STAVIAS_HISTORY"),
+            sourceReference(
+                    ".env.postgresql.example",
+                    "StaviasCortex",
+                    "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex"),
+            sourceReference(
+                    "scripts/dev/migrate-postgres-cortex.sh",
+                    "StaviasCortex",
+                    "# Explicit transition 1/4: install V44 in an already provisioned "
+                            + "StaviasCortex."),
+            sourceReference(
+                    "scripts/dev/postgres-cortex-common.sh",
+                    "StaviasCortex",
+                    "printf '%s' 'StaviasCortex'"),
+            sourceReference(
+                    "apps/api/src/main/resources/application-postgresql-common.yml",
+                    "StaviasCortex",
+                    "url: ${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/"
+                            + "StaviasCortex}"),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/config/"
+                            + "PostgresqlModeConfigurationGuard.java",
+                    "StaviasCortex",
+                    "endsWith(\"/StaviasCortex\")",
+                    "PostgreSQL canônico StaviasCortex."),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/postgresql/"
+                            + "PostgresqlV44MigrationIT.java",
+                    "StaviasCortex",
+                    ".withDatabaseName(\"StaviasCortex\"))"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/config/"
+                            + "PostgresqlProfileModesContractTest.java",
+                    "StaviasCortex",
+                    "${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/"
+                            + "StaviasCortex}"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/auth/bootstrap/"
+                            + "PostgresqlInitialAlfaBootstrapRepositoryIT.java",
+                    "StaviasCortex",
+                    ".withDatabaseName(\"StaviasCortex\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/config/"
+                            + "PostgresqlProvisionerContractTest.java",
+                    "StaviasCortex",
+                    "commonGuards.contains(\"StaviasCortex\")",
+                    "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/auth/postgresql/"
+                            + "PostgresqlAuthPersistenceTestSupport.java",
+                    "StaviasCortex",
+                    ".withDatabaseName(\"StaviasCortex\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/config/"
+                            + "PostgresqlEffectiveConfigurationTest.java",
+                    "StaviasCortex",
+                    ".contains(\"/StaviasCortex\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/config/"
+                            + "PostgresqlModeConfigurationGuardTest.java",
+                    "StaviasCortex",
+                    ".hasMessageContaining(\"StaviasCortex\")",
+                    ".hasMessageContaining(\"StaviasCortex\")",
+                    "jdbc:postgresql://127.0.0.1:5432/StaviasCortex"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/ontology/graph/"
+                            + "PostgresqlOntologyGraphRepositoryIT.java",
+                    "StaviasCortex",
+                    ".withDatabaseName(\"StaviasCortex\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/ontology/graph/"
+                            + "PostgresqlOntologyGraphQueryServiceIT.java",
+                    "StaviasCortex",
+                    ".withDatabaseName(\"StaviasCortex\"))",
+                    ".withDatabaseName(\"StaviasCortex\"))",
+                    ".withDatabaseName(\"StaviasCortex\"))",
+                    ".withDatabaseName(\"StaviasCortex\"))"),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/colaboradores/"
+                            + "AcademyCollaboratorIdentity.java",
+                    "dbstavias_acad",
+                    "SOURCE_NAMESPACE = \"dbstavias_acad:usuarios:\""),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/colaboradores/"
+                            + "ColaboradorImportService.java",
+                    "dbstavias_acad",
+                    "BANCO_ORIGEM = \"dbstavias_acad\""),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/integracoes/"
+                            + "IntegracaoAdminService.java",
+                    "dbstavias_acad",
+                    "\"dbstavias_acad\","),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/auth/bootstrap/"
+                            + "PostgresqlInitialAlfaBootstrapRepository.java",
+                    "dbstavias_acad",
+                    "ACADEMY_DATABASE = \"dbstavias_acad\""),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/colaboradores/"
+                            + "AcademyCollaboratorIdentityTest.java",
+                    "dbstavias_acad",
+                    "\"dbstavias_acad:usuarios:\""),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/colaboradores/"
+                            + "ColaboradorImportServiceTest.java",
+                    "dbstavias_acad",
+                    "eq(\"dbstavias_acad\")",
+                    "eq(\"dbstavias_acad\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/auth/bootstrap/"
+                            + "PostgresqlInitialAlfaBootstrapRepositoryIT.java",
+                    "dbstavias_acad",
+                    "banco_origem = 'dbstavias_acad'"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/pdor/"
+                            + "ColaboradorImportServiceMysqlIntegrationTest.java",
+                    "dbstavias_acad",
+                    "banco_origem = 'dbstavias_acad'",
+                    "banco_origem = 'dbstavias_acad'"),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
+                    "dbstavias_zld",
+                    "SOURCE_DATABASE = \"dbstavias_zld\"",
+                    "Failed to import assets from dbstavias_zld.ativos"),
+            sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/integracoes/"
+                            + "IntegracaoAdminService.java",
+                    "dbstavias_zld",
+                    "\"dbstavias_zld\","),
+            sourceReference(
+                    "compose.production.example.yml",
+                    "Stavias Córtex",
+                    "CORTEX_AUTH_WEBAUTHN_RP_NAME:-Stavias Córtex}"),
+            sourceReference(
+                    "compose.production.example.yml",
+                    "Stavias From",
+                    "Set the authenticated Stavias From mailbox"),
+            sourceReference(
+                    "scripts/smoke-deploy.sh",
+                    "Córtex Stavias",
+                    "\"name\":\"Córtex Stavias\""),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/pdor/"
+                            + "FinanceEmailChargesMigrationMysqlIntegrationTest.java",
+                    "Financeiro Stavias",
+                    "'FINANCEIRO', 'Financeiro Stavias',"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/pdor/"
+                            + "FinanceChargeDeliveryMysqlIntegrationTest.java",
+                    "Financeiro Stavias",
+                    "'FINANCEIRO', 'Financeiro Stavias',"),
+            compiledReference(
+                    "target/classes/application-postgresql-common.yml",
+                    "StaviasCortex",
+                    1,
+                    "url: ${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/"
+                            + "StaviasCortex}"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/intelligence/PdorEngine.class",
+                    "STAVIAS_HISTORY", 1, "PdorEngine.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/intelligence/"
+                            + "PdorEngine$AssumptionSource.class",
+                    "STAVIAS_HISTORY", 1, "PdorEngine.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/config/"
+                            + "PostgresqlModeConfigurationGuard.class",
+                    "StaviasCortex", 2, "PostgresqlModeConfigurationGuard.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/colaboradores/"
+                            + "AcademyCollaboratorIdentity.class",
+                    "dbstavias_acad", 2, "AcademyCollaboratorIdentity.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/colaboradores/"
+                            + "ColaboradorImportService.class",
+                    "dbstavias_acad", 2, "ColaboradorImportService.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/integracoes/"
+                            + "IntegracaoAdminService.class",
+                    "dbstavias_acad", 1, "IntegracaoAdminService.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/auth/bootstrap/"
+                            + "PostgresqlInitialAlfaBootstrapRepository.class",
+                    "dbstavias_acad", 1, "PostgresqlInitialAlfaBootstrapRepository.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/assets/AssetImportService.class",
+                    "dbstavias_zld", 3, "AssetImportService.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/integracoes/"
+                            + "IntegracaoAdminService.class",
+                    "dbstavias_zld", 1, "IntegracaoAdminService.java")
     );
     private static final Path THIS_TEST = Path.of(
             "apps/api/src/test/java/com/projeto/cortex/architecture/"
@@ -200,6 +405,88 @@ class StaviaRuntimeBoundaryTest {
         }
     }
 
+    @ParameterizedTest(name = "rejects scoped-only reference {0}")
+    @ValueSource(strings = {
+            "STAVIAS_HISTORY",
+            "StaviasCortex",
+            "dbstavias_acad",
+            "dbstavias_zld",
+            "Stavias Córtex",
+            "Stavias From",
+            "Córtex Stavias",
+            "Financeiro Stavias"
+    })
+    void rejectsCompatibilityReferencesOnUnauthorizedSourceClassAndJarSurfaces(
+            String reference) {
+        List<String> violations = new ArrayList<>();
+
+        inspect("apps/api/src/main/java/example/CompatibilityReference.java",
+                reference.getBytes(StandardCharsets.UTF_8), violations);
+        inspect("target/classes/example/CompatibilityReference.class",
+                reference.getBytes(StandardCharsets.ISO_8859_1), violations);
+        inspect("cortex-api.jar!/BOOT-INF/classes/example/CompatibilityReference.class",
+                reference.getBytes(StandardCharsets.ISO_8859_1), violations);
+
+        assertThat(violations).containsExactly(
+                "apps/api/src/main/java/example/CompatibilityReference.java [assistant content]",
+                "target/classes/example/CompatibilityReference.class [assistant content]",
+                "cortex-api.jar!/BOOT-INF/classes/example/CompatibilityReference.class [assistant content]"
+        );
+    }
+
+    @ParameterizedTest(name = "rejects additional occurrence of {0}")
+    @ValueSource(strings = {
+            "STAVIAS_HISTORY|apps/api/src/main/java/com/projeto/cortex/intelligence/PdorEngine.java",
+            "StaviasCortex|.env.postgresql.example",
+            "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/colaboradores/AcademyCollaboratorIdentity.java",
+            "dbstavias_zld|apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
+            "Stavias Córtex|compose.production.example.yml",
+            "Stavias From|compose.production.example.yml",
+            "Córtex Stavias|scripts/smoke-deploy.sh",
+            "Financeiro Stavias|apps/api/src/test/java/com/projeto/cortex/pdor/FinanceEmailChargesMigrationMysqlIntegrationTest.java"
+    })
+    void rejectsAdditionalCompatibilityReferenceInItsEstablishedFile(String fixture)
+            throws IOException {
+        String[] parts = fixture.split("\\|", 2);
+        String reference = parts[0];
+        Path relative = Path.of(parts[1]);
+        byte[] current = Files.readAllBytes(repositoryRoot().resolve(relative));
+        byte[] duplicate = (new String(current, StandardCharsets.UTF_8)
+                + System.lineSeparator() + reference).getBytes(StandardCharsets.UTF_8);
+        List<String> violations = new ArrayList<>();
+
+        inspectSourceFile(relative, duplicate, violations);
+
+        assertThat(violations).containsExactly(relative + " [assistant content]");
+    }
+
+    @ParameterizedTest(name = "rejects Java identifier join {0}")
+    @ValueSource(strings = {
+            "STAVIAS$Runtime",
+            "Runtime$STAVIAS",
+            "STAVIAS$Service",
+            "Stavias$Service",
+            "stavias$Service",
+            "sTaViAs$Service"
+    })
+    void rejectsDollarJoinedAssistantReferencesAcrossSourceClassAndJarSurfaces(
+            String reference) {
+        List<String> violations = new ArrayList<>();
+
+        inspect("apps/api/src/main/java/example/DollarJoined.java",
+                reference.getBytes(StandardCharsets.UTF_8), violations);
+        inspect("target/classes/example/DollarJoined.class",
+                reference.getBytes(StandardCharsets.ISO_8859_1), violations);
+        inspect("cortex-api.jar!/BOOT-INF/classes/example/DollarJoined.class",
+                reference.getBytes(StandardCharsets.ISO_8859_1), violations);
+
+        assertThat(violations).containsExactly(
+                "apps/api/src/main/java/example/DollarJoined.java [assistant content]",
+                "target/classes/example/DollarJoined.class [assistant content]",
+                "cortex-api.jar!/BOOT-INF/classes/example/DollarJoined.class [assistant content]"
+        );
+    }
+
     private static List<Path> activeRelativeSourceAndLauncherFiles() throws IOException {
         Path repository = repositoryRoot();
         return activeSourceAndLauncherFiles(repository).stream()
@@ -316,9 +603,41 @@ class StaviaRuntimeBoundaryTest {
             violations.add(displayPath + " [assistant path]");
         }
         String content = new String(bytes, StandardCharsets.ISO_8859_1);
-        if (containsAssistantReference(content)) {
+        String inspectedContent = removeScopedCompatibilityReferences(displayPath, content);
+        if (containsAssistantReference(inspectedContent)) {
             violations.add(displayPath + " [assistant content]");
         }
+    }
+
+    private static String removeScopedCompatibilityReferences(
+            String displayPath, String content) {
+        String normalizedPath = normalizeCompatibilityPath(displayPath.replace('\\', '/'));
+        String inspectedContent = content;
+        for (ScopedReference scoped : SCOPED_COMPATIBILITY_REFERENCES) {
+            if (!scoped.path().equals(normalizedPath)) {
+                continue;
+            }
+            String encodedReference = binaryView(scoped.reference());
+            String contentAtRule = inspectedContent;
+            boolean exactReferenceCount = literalOccurrences(
+                    contentAtRule, encodedReference) == scoped.expectedOccurrences();
+            boolean exactFragments = scoped.exactFragments().stream()
+                    .distinct()
+                    .allMatch(fragment -> literalOccurrences(contentAtRule, binaryView(fragment))
+                            == literalOccurrences(scoped.exactFragments(), fragment));
+            if (exactReferenceCount && exactFragments) {
+                inspectedContent = inspectedContent.replace(
+                        encodedReference, "x".repeat(encodedReference.length()));
+            }
+        }
+        return inspectedContent;
+    }
+
+    private static String normalizeCompatibilityPath(String displayPath) {
+        if (displayPath.startsWith(PACKAGED_CLASSES_PREFIX)) {
+            return "target/classes/" + displayPath.substring(PACKAGED_CLASSES_PREFIX.length());
+        }
+        return displayPath;
     }
 
     private static boolean containsAssistantReference(String value) {
@@ -336,9 +655,38 @@ class StaviaRuntimeBoundaryTest {
                         .distinct()
                         .map(Pattern::quote)
                         .toList());
-        String identifierCharacter = "[\\p{L}\\p{N}_]";
+        String identifierCharacter = "\\p{javaJavaIdentifierPart}";
         return Pattern.compile("(?<!" + identifierCharacter + ")(?:"
                 + alternatives + ")(?!" + identifierCharacter + ")");
+    }
+
+    private static ScopedReference sourceReference(
+            String path, String reference, String... exactFragments) {
+        List<String> fragments = List.of(exactFragments);
+        int expectedOccurrences = fragments.stream()
+                .mapToInt(fragment -> literalOccurrences(fragment, reference))
+                .sum();
+        if (expectedOccurrences == 0) {
+            throw new IllegalArgumentException("Source fragments must contain " + reference);
+        }
+        return new ScopedReference(path, reference, expectedOccurrences, fragments);
+    }
+
+    private static ScopedReference compiledReference(
+            String path,
+            String reference,
+            int expectedOccurrences,
+            String exactContextFragment) {
+        return new ScopedReference(
+                path, reference, expectedOccurrences, List.of(exactContextFragment));
+    }
+
+    private static int literalOccurrences(List<String> values, String expected) {
+        return (int) values.stream().filter(expected::equals).count();
+    }
+
+    private static String binaryView(String value) {
+        return new String(value.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1);
     }
 
     private static void inspectJar(Path jar, List<String> violations) throws IOException {
@@ -410,5 +758,16 @@ class StaviaRuntimeBoundaryTest {
             }
         }
         throw new IllegalStateException("Unable to locate repository from " + configured);
+    }
+
+    private record ScopedReference(
+            String path,
+            String reference,
+            int expectedOccurrences,
+            List<String> exactFragments) {
+
+        private ScopedReference {
+            exactFragments = List.copyOf(exactFragments);
+        }
     }
 }

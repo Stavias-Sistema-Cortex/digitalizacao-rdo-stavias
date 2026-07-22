@@ -12,6 +12,8 @@
   `00d1800d7e9b822674d9816675bc129914234a77`.
 - Final brand-matcher review-fix base:
   `4417a7a40ae5673b576a4d0fcd420714e3a2e7da`.
+- Final allowlist-scope review-fix base:
+  `e501cf7fd796906ef04da623c9b2c089d321ba1d`.
 - Archive lineage recorded by the plan: `b9b619e`.
 - This review fix does not change frontend runtime, offline behavior, RDO
   behavior, Financeiro behavior, skills, plans, or Task 5+ implementation.
@@ -23,6 +25,9 @@
 - The final brand-matcher fix also changes only
   `StaviaRuntimeBoundaryTest.java` and this report. All discovery scanners,
   historical exceptions, compiled/JAR inspection, and V45.1 remain unchanged.
+- The final allowlist-scope fix has the same two-file boundary. It narrows the
+  common brand exception and adds exact compatibility contexts; no production,
+  migration, archive, discovery, or scanner surface was removed or changed.
 
 ## Review findings addressed
 
@@ -135,23 +140,85 @@ configuration is allowed.
 - Removed the permissive case-insensitive `StavIA(?!s)` suffix exception. The
   common inspector now rejects every remaining case-insensitive `stavia`
   occurrence after sanitizing only exact, case-sensitive approved literals.
-- Exact reference sanitization uses Unicode letter/number/underscore identifier
-  limits. An approved literal therefore cannot mask a CamelCase prefix or a
-  longer identifier such as `StaviaSnapshotService`, `StaviaSpringContextTest`,
-  `STAVIASRuntime`, or `RuntimeSTAVIAS`.
+- Exact reference sanitization uses Java's `javaJavaIdentifierPart` boundary,
+  including Unicode letters/numbers, underscore, and dollar. An approved
+  literal therefore cannot mask a CamelCase or nested-class identifier such as
+  `StaviaSnapshotService`, `STAVIASRuntime`, `RuntimeSTAVIAS`,
+  `STAVIAS$Runtime`, or `Runtime$STAVIAS`.
 - The exact standalone corporate mark `STAVIAS` and product description
-  `Stavias Sistema Cortex API` remain allowed. Existing concrete upstream and
-  corporate literals are enumerated rather than accepted by a generic
-  `StaviaS...` rule.
-- Approved accented product literals are compiled both in their text form and
-  in the ISO-8859-1 byte-preserving view used by the common class/JAR scanner;
-  this keeps binary inspection exact without broadening the allowlist.
+  `Stavias Sistema Cortex API` are now the only global approvals. Existing
+  upstream/database/product compatibility references are accepted only by
+  exact path, literal count, and exact fragment/context rules.
+- Scoped UTF-8 fragments are compared in the same ISO-8859-1 byte-preserving
+  view used by the class/JAR scanner. This keeps accented source contexts exact
+  without granting those literals a repository-wide exception.
 - Synthetic regressions exercise both retired names through source paths and
   content, `target/classes` paths and content, and Spring Boot JAR-style entry
   paths and content. Case and boundary variants are inspected independently so
   one rejected spelling cannot mask another false negative.
 
+### Final allowlist-scope closure
+
+- Removed `STAVIAS_HISTORY`, `StaviasCortex`, `dbstavias_acad`,
+  `dbstavias_zld`, `Stavias Córtex`, `Stavias From`, `Córtex Stavias`, and
+  `Financeiro Stavias` from the global approved-reference pattern.
+- The retained compatibility inventory contains 42 scoped rules across 38
+  exact normalized paths: 32 source/config rules across 29 paths and 10
+  compiled/resource rules across 9 `target/classes` paths. Compiled rules are
+  reused for a JAR entry only under the exact
+  `cortex-api-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes/` prefix.
+- Every source/config rule requires the exact path, total literal count, and
+  every expected fragment with its exact multiplicity. Every compiled rule
+  requires the exact class/resource path, literal count, and an exact class
+  source-file or resource fragment. A mismatch leaves the reference visible to
+  the common assistant detector.
+- Parameterized regressions reject each of the eight scoped-only literals on an
+  arbitrary source, class, and JAR-like surface. A second parameterized set
+  appends each literal to one established file and proves the extra occurrence
+  fails. Dollar-joined exact-brand and case variants are exercised through all
+  three synthetic surfaces.
+
 ## TDD evidence
+
+### Final allowlist-scope RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 32 tests, 19 assertion failures, 0 errors, 0 skipped.
+- All eight former global literals were accepted on arbitrary source, class,
+  and JAR-like content, producing eight failing parameterized invocations.
+- Appending each literal to one legitimate current file produced eight more
+  failing invocations because duplicate counts were not constrained.
+- `STAVIAS$Runtime`, `Runtime$STAVIAS`, and `STAVIAS$Service` produced the
+  remaining three failures. The mixed-case `Stavias$Service` variants already
+  failed closed under the case-sensitive global sanitizer.
+
+### Final allowlist-scope GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 32 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 765 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 765 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 exercised isolated V44 and current V44/V45/V45.1 chains.
+4. After `verify` produced the 95,933,770-byte Spring Boot JAR, the boundary
+   ran from `/tmp` with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 32 tests, 0 failures/errors/skips; `target/classes` and application JAR
+     entries were scanned.
+5. `git diff --check` exits `0`. The generated JAR SHA-256 is
+   `53e51437fb4fc0cdc1259ffb40db603aa5b4a8ed693bfc1e9985e19ee74ac008`.
+
+The pre-existing Flyway warning about PostgreSQL 18.4 being newer than its
+declared tested support through PostgreSQL 16 remains unchanged.
 
 ### Final brand-matcher RED
 
