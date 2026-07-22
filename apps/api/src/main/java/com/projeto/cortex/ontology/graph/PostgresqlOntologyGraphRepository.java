@@ -3,6 +3,7 @@ package com.projeto.cortex.ontology.graph;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.OptionalLong;
@@ -263,20 +264,56 @@ public class PostgresqlOntologyGraphRepository implements OntologyGraphRepositor
     }
 
     private void upsertState(GraphState state) {
-        if (state.validTo() == null) {
+        Timestamp boundary = Timestamp.from(state.validFrom());
+        Timestamp successorStart = jdbc.query("""
+                SELECT valid_from
+                FROM operational_states
+                WHERE entity_id = ?
+                  AND state_type = ?
+                  AND id <> ?
+                  AND (
+                      valid_from > ?
+                      OR (valid_from = ? AND id > ?)
+                  )
+                ORDER BY valid_from, id
+                LIMIT 1
+                """, resultSet -> resultSet.next()
+                ? resultSet.getTimestamp("valid_from")
+                : null,
+                state.entityId(), state.type(), state.id(),
+                boundary, boundary, state.id());
+        String predecessorId = jdbc.query("""
+                SELECT id
+                FROM operational_states
+                WHERE entity_id = ?
+                  AND state_type = ?
+                  AND id <> ?
+                  AND (
+                      valid_from < ?
+                      OR (valid_from = ? AND id < ?)
+                  )
+                ORDER BY valid_from DESC, id DESC
+                LIMIT 1
+                """, resultSet -> resultSet.next() ? resultSet.getString("id") : null,
+                state.entityId(), state.type(), state.id(),
+                boundary, boundary, state.id());
+
+        if (predecessorId != null) {
             jdbc.update("""
                     UPDATE operational_states
                     SET valid_to = ?
-                    WHERE entity_id = ?
-                      AND state_type = ?
-                      AND valid_to IS NULL
-                      AND id <> ?
+                    WHERE id = ?
                     """,
-                    Timestamp.from(state.validFrom()),
-                    state.entityId(),
-                    state.type(),
-                    state.id()
+                    boundary,
+                    predecessorId
             );
+        }
+        Instant resolvedValidTo = state.validTo();
+        if (successorStart != null) {
+            Instant successor = successorStart.toInstant();
+            if (resolvedValidTo == null || resolvedValidTo.isAfter(successor)) {
+                resolvedValidTo = successor;
+            }
         }
         jdbc.update("""
                 INSERT INTO operational_states (
@@ -298,8 +335,8 @@ public class PostgresqlOntologyGraphRepository implements OntologyGraphRepositor
                 state.value(),
                 state.numericValue(),
                 state.unit(),
-                Timestamp.from(state.validFrom()),
-                state.validTo() == null ? null : Timestamp.from(state.validTo()),
+                boundary,
+                resolvedValidTo == null ? null : Timestamp.from(resolvedValidTo),
                 state.sourceEventId(),
                 json(state.metadata())
         );

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -137,7 +138,7 @@ class PostgresqlOntologyGraphRepositoryIT {
                     occurredAt,
                     Map.of(
                             "number", "RDO-007",
-                            "description", "RDO authoritative description",
+                            "description", "free-form text must not be projected",
                             "status", "ACTIVE",
                             "worksiteId", "obra-1"
                     )
@@ -160,13 +161,164 @@ class PostgresqlOntologyGraphRepositoryIT {
                     WHERE external_ref_type = 'rdo' AND external_ref_id = 'rdo-7'
                     """))
                     .containsEntry("canonical_name", "RDO-007")
-                    .containsEntry("description", "RDO authoritative description")
+                    .containsEntry("description", null)
                     .containsEntry("status", "ACTIVE");
             assertThat(jdbc.queryForObject("""
                     SELECT metadata_json ->> 'worksiteId'
                     FROM ontology_entities
                     WHERE external_ref_type = 'rdo' AND external_ref_id = 'rdo-7'
                     """, String.class)).isEqualTo("obra-1");
+        }
+    }
+
+    @Test
+    void insertsDelayedStatesBetweenPredecessorAndSuccessorWithoutOverlap() {
+        try (PostgreSQLContainer<?> database = database()) {
+            database.start();
+            JdbcTemplate jdbc = migratedJdbc(database);
+            PostgresqlOntologyGraphRepository repository = repository(jdbc);
+            OperationalGraphProjector projector = new OperationalGraphProjector();
+            List<GraphProjectionBatch> batches = List.of(
+                    projector.project(statusEvent(
+                            10L, "event-active", "2026-07-22T12:00:00Z", "ACTIVE"
+                    )),
+                    projector.project(statusEvent(
+                            20L, "event-done", "2026-07-22T14:00:00Z", "DONE"
+                    )),
+                    projector.project(statusEvent(
+                            30L, "event-paused-delayed", "2026-07-22T13:00:00Z", "PAUSED"
+                    ))
+            );
+            batches.forEach(batch -> OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, batch.commitSequence(), batch.commitId()
+            ));
+
+            batches.forEach(repository::upsert);
+            repository.upsert(batches.get(2));
+
+            List<StateInterval> timeline = jdbc.query("""
+                    SELECT state_value, valid_from, valid_to
+                    FROM operational_states
+                    WHERE state_type = 'STATUS'
+                    ORDER BY valid_from, id
+                    """, (resultSet, rowNumber) -> new StateInterval(
+                    resultSet.getString("state_value"),
+                    resultSet.getTimestamp("valid_from").toInstant(),
+                    toInstant(resultSet.getTimestamp("valid_to"))
+            ));
+            assertThat(timeline).containsExactly(
+                    new StateInterval(
+                            "ACTIVE",
+                            Instant.parse("2026-07-22T12:00:00Z"),
+                            Instant.parse("2026-07-22T13:00:00Z")
+                    ),
+                    new StateInterval(
+                            "PAUSED",
+                            Instant.parse("2026-07-22T13:00:00Z"),
+                            Instant.parse("2026-07-22T14:00:00Z")
+                    ),
+                    new StateInterval(
+                            "DONE",
+                            Instant.parse("2026-07-22T14:00:00Z"),
+                            null
+                    )
+            );
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM operational_states
+                    WHERE valid_to IS NULL
+                    """, Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM operational_states
+                    WHERE valid_to < valid_from
+                    """, Integer.class)).isZero();
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT valid_to,
+                               LEAD(valid_from) OVER (ORDER BY valid_from, id) AS next_valid_from
+                        FROM operational_states
+                        WHERE state_type = 'STATUS'
+                    ) timeline
+                    WHERE valid_to > next_valid_from
+                    """, Integer.class)).isZero();
+        }
+    }
+
+    @Test
+    void queryProjectionNeverReturnsFreeFormDescriptionForRdoWorksiteOrService() {
+        try (PostgreSQLContainer<?> database = database()) {
+            database.start();
+            JdbcTemplate jdbc = migratedJdbc(database);
+            PostgresqlOntologyGraphRepository repository = repository(jdbc);
+            OperationalGraphProjector projector = new OperationalGraphProjector();
+            String secret = "cpf=52998224725 authorization=Bearer-secret";
+            List<CommittedOperationalEvent> sourceEvents = List.of(
+                    adversarialEvent(
+                            10L, "RDO_CRIADO", "RDO", "rdo-safe",
+                            List.of(new CommittedOperationalEvent.EntityRef(
+                                    "OBRA", "obra-safe"
+                            )),
+                            Map.of("numeroRdo", "RDO-0042", "description", secret)
+                    ),
+                    adversarialEvent(
+                            20L, "OBRA_ATUALIZADA", "OBRA", "obra-safe", List.of(),
+                            Map.of("obraName", "Obra Segura", "description", secret)
+                    ),
+                    adversarialEvent(
+                            30L, "SERVICO_ATUALIZADO", "SERVICO", "service-safe",
+                            List.of(new CommittedOperationalEvent.EntityRef(
+                                    "OBRA", "obra-safe"
+                            )),
+                            Map.of("servicoNome", "Pavimentacao", "description", secret)
+                    )
+            );
+            List<GraphProjectionBatch> batches = sourceEvents.stream()
+                    .map(projector::project)
+                    .toList();
+            batches.forEach(batch -> OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, batch.commitSequence(), batch.commitId()
+            ));
+            batches.forEach(repository::upsert);
+
+            OntologyGraphQueryService queryService = new OntologyGraphQueryService(
+                    jdbc, new ObjectMapper()
+            );
+            List<GraphEntity> entities = queryService.listEntitiesScoped(
+                    java.util.Set.of("obra-safe"), null, null, 0, 100
+            );
+            List<GraphEvent> events = queryService.listEventsScoped(
+                    java.util.Set.of("obra-safe"), null, null, 0, 100
+            );
+
+            assertThat(entities)
+                    .extracting(GraphEntity::canonicalName)
+                    .containsExactlyInAnyOrder("RDO-0042", "Obra Segura", "Pavimentacao");
+            assertThat(entities).allSatisfy(entity -> {
+                assertThat(entity.description()).isNull();
+                assertThat(entity.toString()).doesNotContain(secret);
+            });
+            assertThat(events).extracting(GraphEvent::description)
+                    .containsExactlyInAnyOrder(
+                            "RDO_CRIADO", "OBRA_ATUALIZADA", "SERVICO_ATUALIZADO"
+                    );
+            assertThat(events).allSatisfy(event -> {
+                assertThat(event.payload()).doesNotContainKey("description");
+                assertThat(event.toString()).doesNotContain(secret);
+            });
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM ontology_events
+                    WHERE payload_json ? 'description'
+                       OR description LIKE '%Bearer-secret%'
+                    """, Integer.class)).isZero();
+            assertThat(jdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM ontology_entities
+                    WHERE description LIKE '%Bearer-secret%'
+                       OR metadata_json::text LIKE '%Bearer-secret%'
+                    """, Integer.class)).isZero();
         }
     }
 
@@ -264,6 +416,46 @@ class PostgresqlOntologyGraphRepositoryIT {
         );
     }
 
+    private static CommittedOperationalEvent statusEvent(
+            long sequence,
+            String commitId,
+            String occurredAt,
+            String status
+    ) {
+        return new CommittedOperationalEvent(
+                sequence,
+                commitId,
+                "RDO_STATUS_CHANGED",
+                new CommittedOperationalEvent.EntityRef("RDO", "rdo-temporal"),
+                List.of(),
+                Instant.parse(occurredAt),
+                Map.of("status", status)
+        );
+    }
+
+    private static CommittedOperationalEvent adversarialEvent(
+            long sequence,
+            String eventType,
+            String entityType,
+            String entityId,
+            List<CommittedOperationalEvent.EntityRef> related,
+            Map<String, Object> payload
+    ) {
+        return new CommittedOperationalEvent(
+                sequence,
+                "adversarial-event-" + sequence,
+                eventType,
+                new CommittedOperationalEvent.EntityRef(entityType, entityId),
+                related,
+                Instant.parse("2026-07-22T12:00:00Z").plusSeconds(sequence),
+                payload
+        );
+    }
+
+    private static Instant toInstant(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toInstant();
+    }
+
     private static Map<String, Integer> graphCounts(JdbcTemplate jdbc) {
         return Map.of(
                 "entities", count(jdbc, "ontology_entities"),
@@ -276,5 +468,8 @@ class PostgresqlOntologyGraphRepositoryIT {
 
     private static int count(JdbcTemplate jdbc, String table) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
+    }
+
+    private record StateInterval(String value, Instant validFrom, Instant validTo) {
     }
 }

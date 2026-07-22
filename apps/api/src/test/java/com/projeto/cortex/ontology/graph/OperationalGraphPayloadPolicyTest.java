@@ -19,6 +19,7 @@ class OperationalGraphPayloadPolicyTest {
         payload.put("obraId", "obra-1");
         payload.put("programacaoId", null);
         payload.put("status", "RASCUNHO");
+        payload.put("description", "free-form secret must never enter the graph");
         payload.put("cpf", "52998224725");
         payload.put("email", "private@fixture.invalid");
         payload.put("token", "secret-token");
@@ -43,7 +44,7 @@ class OperationalGraphPayloadPolicyTest {
                     .containsEntry("programacaoId", null)
                     .containsEntry("status", "RASCUNHO")
                     .doesNotContainKeys(
-                            "cpf", "email", "token", "messageBody",
+                            "description", "cpf", "email", "token", "messageBody",
                             "authorizationScope", "arbitrary"
                     );
             assertThat(event.description()).isEqualTo("RDO_CRIADO");
@@ -52,6 +53,55 @@ class OperationalGraphPayloadPolicyTest {
                 .singleElement()
                 .extracting(GraphEntity::canonicalName)
                 .isEqualTo("RDO-0042");
+    }
+
+    @Test
+    void removesFreeFormDescriptionAcrossRdoWorksiteAndServiceSurfaces() {
+        List<AdversarialProjection> cases = List.of(
+                new AdversarialProjection(
+                        "RDO_CRIADO", "RDO", "rdo-42", "numeroRdo", "RDO-0042"
+                ),
+                new AdversarialProjection(
+                        "OBRA_ATUALIZADA", "OBRA", "obra-7", "obraName", "Obra Norte"
+                ),
+                new AdversarialProjection(
+                        "SERVICO_ATUALIZADO", "SERVICO", "service-9",
+                        "servicoNome", "Pavimentacao"
+                )
+        );
+
+        for (int index = 0; index < cases.size(); index++) {
+            AdversarialProjection fixture = cases.get(index);
+            String secret = "cpf=52998224725 token=secret-" + index;
+            GraphProjectionBatch batch = projector.project(new CommittedOperationalEvent(
+                    index + 10L,
+                    "adversarial-" + index,
+                    fixture.eventType(),
+                    new CommittedOperationalEvent.EntityRef(
+                            fixture.entityType(), fixture.entityId()
+                    ),
+                    List.of(),
+                    Instant.parse("2026-07-22T12:00:00Z").plusSeconds(index),
+                    Map.of(
+                            fixture.labelKey(), fixture.label(),
+                            "description", secret,
+                            "status", "ACTIVE"
+                    )
+            ));
+
+            assertThat(batch.events()).singleElement().satisfies(event -> {
+                assertThat(event.description()).isEqualTo(fixture.eventType());
+                assertThat(event.payload())
+                        .containsEntry(fixture.labelKey(), fixture.label())
+                        .doesNotContainKey("description");
+                assertThat(event.payload().toString()).doesNotContain(secret);
+            });
+            assertThat(batch.entities()).singleElement().satisfies(entity -> {
+                assertThat(entity.canonicalName()).isEqualTo(fixture.label());
+                assertThat(entity.description()).isNull();
+                assertThat(entity.metadata().toString()).doesNotContain(secret);
+            });
+        }
     }
 
     @Test
@@ -82,5 +132,14 @@ class OperationalGraphPayloadPolicyTest {
         assertThat(batch.entities()).singleElement()
                 .extracting(GraphEntity::canonicalName)
                 .isEqualTo("collaborator-1");
+    }
+
+    private record AdversarialProjection(
+            String eventType,
+            String entityType,
+            String entityId,
+            String labelKey,
+            String label
+    ) {
     }
 }

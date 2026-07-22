@@ -87,7 +87,6 @@ public class OperationalGraphProjector {
                 providedCanonicalName,
                 descriptor.externalId()
         );
-        String description = principal ? text(event.payload().get("description")) : null;
         String status = principal ? text(event.payload().get("status")) : null;
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("authoritativeExternalId", descriptor.externalId());
@@ -95,7 +94,7 @@ public class OperationalGraphProjector {
         if (providedCanonicalName != null) {
             metadata.put(PROVIDED_CANONICAL_NAME, true);
         }
-        if (description != null) {
+        if (principal) {
             metadata.put(PROVIDED_DESCRIPTION, true);
         }
         if (status != null) {
@@ -108,7 +107,7 @@ public class OperationalGraphProjector {
                 descriptor.externalRefType(),
                 descriptor.externalId(),
                 canonicalName,
-                description,
+                null,
                 status,
                 metadata,
                 event.occurredAt(),
@@ -209,10 +208,7 @@ public class OperationalGraphProjector {
                 null,
                 CANONICAL_EVENT_SOURCE,
                 event.commitId(),
-                Objects.requireNonNullElse(
-                        text(event.payload().get("description")),
-                        event.type()
-                ),
+                event.type(),
                 event.payload(),
                 event.occurredAt(),
                 event.occurredAt()
@@ -292,7 +288,7 @@ public class OperationalGraphProjector {
             case "OBRA" -> "WORKSITE";
             case "COLABORADOR" -> "COLLABORATOR";
             case "EQUIPAMENTO", "EQUIPMENT" -> "ASSET";
-            case "ITEM_CONTRATUAL" -> "SERVICE";
+            case "ITEM_CONTRATUAL", "SERVICO" -> "SERVICE";
             case "PRECO_SERVICO", "SERVICE_PRICE" -> "SERVICE_PRICE_VERSION";
             case "EXECUTION", "EXECUCAO_SERVICO_RDO" -> "RDO_EXECUTION";
             default -> type;

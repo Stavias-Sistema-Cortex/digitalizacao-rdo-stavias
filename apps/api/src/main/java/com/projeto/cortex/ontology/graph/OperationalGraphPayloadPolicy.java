@@ -16,7 +16,6 @@ final class OperationalGraphPayloadPolicy {
     private static final Set<String> BASE_KEYS = Set.of(
             "schemaVersion",
             "status",
-            "description",
             "worksiteId",
             "obraId",
             "rdoId"
@@ -59,7 +58,6 @@ final class OperationalGraphPayloadPolicy {
             "unit"
     );
     private static final Set<String> BUSINESS_LABEL_KEYS = Set.of(
-            "description",
             "name",
             "worksiteName",
             "obraName",
