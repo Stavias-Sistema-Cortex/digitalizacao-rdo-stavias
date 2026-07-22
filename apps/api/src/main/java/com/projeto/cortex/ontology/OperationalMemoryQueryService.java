@@ -1,5 +1,6 @@
 package com.projeto.cortex.ontology;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -461,14 +462,20 @@ public class OperationalMemoryQueryService {
     }
 
     private String scopeHash(OperationalMemoryScope scope) {
-        String canonical = "operational-memory-scope-v1\n"
-                + scope.userId() + "\n"
-                + scope.global() + "\n"
-                + String.join("\n", new TreeSet<>(scope.allowedWorksiteIds())) + "\n"
-                + String.join("\n", new TreeSet<>(scope.financialWorksiteIds())) + "\n"
-                + String.join("\n", new TreeSet<>(scope.financialUnitIds())) + "\n"
-                + conversationVisibilityFingerprint(scope);
-        return sha256(canonical);
+        List<String> fields = new ArrayList<>();
+        fields.add(scope.userId());
+        fields.add(Boolean.toString(scope.global()));
+        appendSortedSet(fields, scope.allowedWorksiteIds());
+        appendSortedSet(fields, scope.financialWorksiteIds());
+        appendSortedSet(fields, scope.financialUnitIds());
+        fields.add(conversationVisibilityFingerprint(scope));
+        return fingerprint("operational-memory-scope-v2", fields);
+    }
+
+    private void appendSortedSet(List<String> fields, Set<String> values) {
+        TreeSet<String> sortedValues = new TreeSet<>(values);
+        fields.add(Integer.toString(sortedValues.size()));
+        fields.addAll(sortedValues);
     }
 
     private String conversationVisibilityFingerprint(OperationalMemoryScope scope) {
@@ -487,33 +494,46 @@ public class OperationalMemoryQueryService {
                 String.class,
                 predicate.parameters().toArray()
         );
-        return String.join("\n", conversationIds);
+        return fingerprint("operational-memory-conversations-v1", conversationIds);
     }
 
-    private String filterHash(OperationalMemoryFilter filter) {
-        return sha256("operational-memory-filter-v1\n"
-                + String.valueOf(filter.query()) + "\n"
-                + String.valueOf(filter.entityType()) + "\n"
-                + String.valueOf(filter.entityId()) + "\n"
-                + String.valueOf(filter.worksiteId()) + "\n"
-                + String.valueOf(filter.rdoId()) + "\n"
-                + String.valueOf(filter.actorId()) + "\n"
-                + String.valueOf(filter.eventType()) + "\n"
-                + String.valueOf(filter.origin()) + "\n"
-                + String.valueOf(filter.result()) + "\n"
-                + String.valueOf(filter.from()) + "\n"
-                + String.valueOf(filter.to()));
+    String filterHash(OperationalMemoryFilter filter) {
+        List<String> fields = new ArrayList<>();
+        fields.add(filter.query());
+        fields.add(filter.entityType());
+        fields.add(filter.entityId());
+        fields.add(filter.worksiteId());
+        fields.add(filter.rdoId());
+        fields.add(filter.actorId());
+        fields.add(filter.eventType());
+        fields.add(filter.origin());
+        fields.add(filter.result());
+        fields.add(filter.from() == null ? null : filter.from().toString());
+        fields.add(filter.to() == null ? null : filter.to().toString());
+        return fingerprint("operational-memory-filter-v2", fields);
     }
 
-    private String sha256(String canonical) {
+    private String fingerprint(String domain, List<String> fields) {
         try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256")
-                            .digest(canonical.getBytes(StandardCharsets.UTF_8))
-            );
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            updateFingerprintField(digest, domain);
+            for (String field : fields) {
+                updateFingerprintField(digest, field);
+            }
+            return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable.", exception);
         }
+    }
+
+    private void updateFingerprintField(MessageDigest digest, String value) {
+        if (value == null) {
+            digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(-1).array());
+            return;
+        }
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+        digest.update(bytes);
     }
 
     private int boundedLimit(Integer requestedLimit) {
