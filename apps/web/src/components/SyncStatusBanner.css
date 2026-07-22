@@ -1,7 +1,8 @@
 /*
  * Estado de sincronização como um chip minimalista.
- * O componente vive no cluster global ao lado do perfil. A faixa expõe
- * fatos da fila local, e o chip preserva a ação manual e o detalhe.
+ * O componente vive no cluster global ao lado do perfil. O topo expõe
+ * apenas um resumo; os fatos completos permanecem no popover e nos painéis
+ * contextuais de cada página.
  */
 
 .sync-status-control {
@@ -11,9 +12,42 @@
   min-width: 0;
 }
 
-.sync-status-global-state {
-  width: min(430px, 46vw);
-  min-width: 0;
+.sync-status-summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  max-width: min(190px, calc(100vw - 158px));
+  padding-inline-start: 8px;
+  border-inline-start: 2px solid currentColor;
+  color: #4b564f;
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-status-summary--synced {
+  color: #2f7d4f;
+}
+
+.sync-status-summary--pending {
+  color: #866900;
+}
+
+.sync-status-summary--syncing {
+  color: #2563eb;
+}
+
+.sync-status-summary--offline,
+.sync-status-summary--checking {
+  color: #64748b;
+}
+
+.sync-status-summary--error,
+.sync-status-summary--conflict {
+  color: #9b3232;
 }
 
 .sync-chip {
@@ -121,7 +155,7 @@
   top: calc(100% + 10px);
   right: 0;
   z-index: 80;
-  width: min(304px, calc(100vw - 32px));
+  width: min(320px, calc(100vw - 32px));
   padding: 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -155,10 +189,24 @@
   line-height: 1.5;
 }
 
-.sync-chip__meta {
-  margin: 10px 0 0;
-  color: #68756e;
-  font-size: 0.74rem;
+.sync-chip__facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.sync-chip__facts dt {
+  font-size: 0.61rem;
+}
+
+.sync-chip__facts dd {
+  font-size: 0.75rem;
+}
+
+.sync-chip__facts .institutional-sync-state__last-sync {
+  grid-column: 1 / -1;
 }
 
 .sync-chip__error {
@@ -196,12 +244,8 @@
 }
 
 @media (max-width: 620px) {
-  .sync-status-control {
-    align-items: flex-start;
-  }
-
-  .sync-status-global-state {
-    width: min(250px, calc(100vw - 120px));
+  .sync-status-summary {
+    max-width: min(150px, calc(100vw - 158px));
   }
 }
 

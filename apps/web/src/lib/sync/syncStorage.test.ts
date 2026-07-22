@@ -24,6 +24,7 @@ import {
   mutationAfterObraReferenceRepair,
   mutationAfterErroredRetry,
   mutationAfterResolvableConflict,
+  rejectNonCanonicalMutation,
   rdoAfterMaoObraReferenceRepair,
   rdoAfterObraReferenceRepair,
   rdoAfterConflict,
@@ -187,6 +188,27 @@ describe("mutationAfterErroredRetry", () => {
     expect(updated.ultimaTentativaEm).toBeNull();
     expect(updated.conflito).toBeNull();
   });
+
+  it("preserva a operação do envelope canônico ao reagendar um erro transitório", () => {
+    const retried = mutationAfterErroredRetry(
+      {
+        ...canonicalMutation("canonical-retry", "ERROR"),
+        baseVersao: 0,
+        ultimoErro: "RDO não encontrado.",
+      },
+      "2026-07-20T12:00:00.000Z",
+    );
+
+    expect(retried).toMatchObject({
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersao: 0,
+      status: "PENDING",
+      clientMutationId: "canonical-retry",
+      trace: {
+        ontologyEventId: "event-canonical-retry",
+      },
+    });
+  });
 });
 
 const currentInterviasObra: ObraLocalRecord = {
@@ -280,6 +302,26 @@ describe("mutationAfterObraReferenceRepair", () => {
         },
       ],
       "2026-07-08T15:30:00.000Z",
+    );
+
+    expect(updated).toBeNull();
+  });
+
+  it("não reescreve o payload de um envelope canônico sem emitir um sucessor rastreável", () => {
+    const updated = mutationAfterObraReferenceRepair(
+      {
+        ...canonicalMutation("canonical-obra", "ERROR"),
+        baseVersao: 0,
+        ultimoErro: "Obra não encontrada: obra-legada",
+        payload: {
+          id: "entity-canonical-obra",
+          obraId: "obra-legada",
+          cliente: "Intervias",
+          contrato: "INTERVIAS-2-PCT",
+        },
+      },
+      [currentInterviasObra],
+      "2026-07-20T12:00:00.000Z",
     );
 
     expect(updated).toBeNull();
@@ -386,6 +428,31 @@ describe("mutationAfterMaoObraReferenceRepair", () => {
         },
       },
       "2026-07-08T15:40:00.000Z",
+    );
+
+    expect(updated).toBeNull();
+  });
+
+  it("não altera a carga de mão de obra de um envelope canônico", () => {
+    const updated = mutationAfterMaoObraReferenceRepair(
+      {
+        ...canonicalMutation("canonical-mao-obra", "ERROR"),
+        operacao: "CRIAR_RDO",
+        baseVersao: null,
+        ultimoErro:
+          "fk_rdo_mao_obra_colaborador FOREIGN KEY (`colaborador_id`)",
+        payload: {
+          id: "entity-canonical-mao-obra",
+          maoObra: [
+            {
+              id: "mao-1",
+              colaboradorId: "colaborador-legado",
+              nomeColaborador: "Adalberto Canovas Neto",
+            },
+          ],
+        },
+      },
+      "2026-07-20T12:00:00.000Z",
     );
 
     expect(updated).toBeNull();
@@ -588,5 +655,239 @@ describe("applyPushResultAtomically conflict preservation", () => {
       await database.getAll("outbox_mutations"),
       100,
     )).toEqual([independent]);
+  });
+
+  it("preserves and explicitly rejects a noncanonical mutation with its correlated event", async () => {
+    const database = await getCortexDb();
+    const canonical = canonicalMutation("legacy", "PENDING");
+    const legacy: OutboxMutationRecord = {
+      ...canonical,
+      contractVersion: 12,
+    };
+    const event = canonicalEvent(canonical);
+    const blockedReason =
+      "Envelope canonico v13 incompleto; a mutacao foi preservada para revisao.";
+
+    await Promise.all([
+      database.put("outbox_mutations", legacy),
+      database.put("operational_events", event),
+    ]);
+
+    await rejectNonCanonicalMutation(
+      legacy.clientMutationId,
+      blockedReason,
+    );
+
+    expect(await database.get(
+      "outbox_mutations",
+      legacy.clientMutationId,
+    )).toMatchObject({
+      status: "REJECTED",
+      payload: legacy.payload,
+      blockedReason,
+      ultimoErro: blockedReason,
+    });
+    expect(await database.get(
+      "operational_events",
+      event.id,
+    )).toMatchObject({
+      clientMutationId: legacy.clientMutationId,
+      result: "REJECTED",
+      errorCategory: "NONCANONICAL_ENVELOPE",
+    });
+  });
+
+  it.each([
+    ["APLICADA", "SYNCED"],
+    ["CONCILIADA", "CONCILIADA"],
+  ] as const)(
+    "stores server status %s as a successful correlated result",
+    async (status, eventResult) => {
+      const database = await getCortexDb();
+      const synced = canonicalMutation(`synced-${status}`, "SYNCING");
+      const event = canonicalEvent(synced);
+
+      await Promise.all([
+        database.put("outbox_mutations", synced),
+        database.put("operational_events", event),
+      ]);
+
+      await applyPushResultAtomically({
+        clientMutationId: synced.clientMutationId,
+        status,
+        entidadeTipo: synced.entidadeTipo,
+        entidadeId: synced.entidadeId,
+        resultado: { versaoEntidade: 2 },
+      });
+
+      expect(await database.get(
+        "outbox_mutations",
+        synced.clientMutationId,
+      )).toMatchObject({
+        status: "SYNCED",
+        payload: synced.payload,
+        conflito: null,
+      });
+      expect(await database.get(
+        "operational_events",
+        event.id,
+      )).toMatchObject({
+        clientMutationId: synced.clientMutationId,
+        syncStatus: "SYNCED",
+        result: eventResult,
+        errorCategory: null,
+      });
+    },
+  );
+
+  it("keeps a later mutation for the same RDO pending when only its predecessor is applied", async () => {
+    const database = await getCortexDb();
+    const rdoId = "shared-rdo";
+    const applied = {
+      ...canonicalMutation("shared-applied", "SYNCING"),
+      entidadeId: rdoId,
+      payload: { id: rdoId, titulo: "Versão aplicada" },
+    };
+    const pending = {
+      ...canonicalMutation("shared-pending", "PENDING"),
+      entidadeId: rdoId,
+      payload: { id: rdoId, titulo: "Versão pendente" },
+    };
+    const rdo: LocalRdoRecord = {
+      id: rdoId,
+      obraId: CONFLICT_OBRA_ID,
+      programacaoId: null,
+      numeroRdo: "RDO-CORRELACAO",
+      dataRdo: "2026-07-20",
+      statusRdo: "RASCUNHO",
+      syncStatus: "PENDING_SYNC",
+      versaoEntidade: 1,
+      payload: pending.payload,
+      createdAt: pending.criadaNoClienteEm,
+      updatedAt: pending.updatedAt,
+    };
+
+    await Promise.all([
+      database.put("outbox_mutations", applied),
+      database.put("outbox_mutations", pending),
+      database.put("operational_events", canonicalEvent(applied)),
+      database.put("operational_events", canonicalEvent(pending)),
+      database.put("rdos", rdo),
+    ]);
+
+    await applyPushResultAtomically({
+      clientMutationId: applied.clientMutationId,
+      status: "APLICADA",
+      entidadeTipo: applied.entidadeTipo,
+      entidadeId: rdoId,
+      resultado: { versaoEntidade: 2 },
+    });
+
+    await expect(database.get(
+      "outbox_mutations",
+      applied.clientMutationId,
+    )).resolves.toMatchObject({ status: "SYNCED" });
+    await expect(database.get(
+      "outbox_mutations",
+      pending.clientMutationId,
+    )).resolves.toMatchObject({ status: "PENDING" });
+    await expect(database.get(
+      "operational_events",
+      applied.trace.ontologyEventId,
+    )).resolves.toMatchObject({
+      syncStatus: "SYNCED",
+      result: "SYNCED",
+    });
+    await expect(database.get(
+      "operational_events",
+      pending.trace.ontologyEventId,
+    )).resolves.toMatchObject({
+      syncStatus: "PENDING_SYNC",
+      result: "PENDING",
+    });
+    await expect(database.get("rdos", rdoId)).resolves.toMatchObject({
+      syncStatus: "PENDING_SYNC",
+      versaoEntidade: 2,
+    });
+  });
+
+  it("stores REJEITADA as REJECTED and preserves the structured rejection category", async () => {
+    const database = await getCortexDb();
+    const rejected = canonicalMutation("rejected", "SYNCING");
+    const event = canonicalEvent(rejected);
+
+    await Promise.all([
+      database.put("outbox_mutations", rejected),
+      database.put("operational_events", event),
+    ]);
+
+    await applyPushResultAtomically({
+      clientMutationId: rejected.clientMutationId,
+      status: "REJEITADA",
+      entidadeTipo: rejected.entidadeTipo,
+      entidadeId: rejected.entidadeId,
+      resultado: {
+        rejeicao: {
+          categoria: "UNSUPPORTED_AUTHORIZATION_SCOPE",
+          mensagem: "Escopo revogado.",
+        },
+      },
+      erro: "Escopo revogado.",
+    });
+
+    expect(await database.get(
+      "outbox_mutations",
+      rejected.clientMutationId,
+    )).toMatchObject({
+      status: "REJECTED",
+      payload: rejected.payload,
+      ultimoErro: "Escopo revogado.",
+    });
+    expect(await database.get(
+      "operational_events",
+      event.id,
+    )).toMatchObject({
+      clientMutationId: rejected.clientMutationId,
+      syncStatus: "SYNC_FAILED",
+      result: "REJECTED",
+      errorCategory: "UNSUPPORTED_AUTHORIZATION_SCOPE",
+    });
+  });
+
+  it("keeps ERRO retryable without converting the correlated event to rejection", async () => {
+    const database = await getCortexDb();
+    const errored = canonicalMutation("errored", "SYNCING");
+    const event = canonicalEvent(errored);
+
+    await Promise.all([
+      database.put("outbox_mutations", errored),
+      database.put("operational_events", event),
+    ]);
+
+    await applyPushResultAtomically({
+      clientMutationId: errored.clientMutationId,
+      status: "ERRO",
+      entidadeTipo: errored.entidadeTipo,
+      entidadeId: errored.entidadeId,
+      erro: "Falha interna transitoria.",
+    });
+
+    expect(await database.get(
+      "outbox_mutations",
+      errored.clientMutationId,
+    )).toMatchObject({
+      status: "ERROR",
+      payload: errored.payload,
+      ultimoErro: "Falha interna transitoria.",
+    });
+    expect(await database.get(
+      "operational_events",
+      event.id,
+    )).toMatchObject({
+      clientMutationId: errored.clientMutationId,
+      syncStatus: "SYNC_FAILED",
+      result: "PENDING",
+      errorCategory: null,
+    });
   });
 });

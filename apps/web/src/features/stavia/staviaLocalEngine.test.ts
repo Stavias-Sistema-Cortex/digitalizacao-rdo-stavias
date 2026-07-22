@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { responderComSnapshotStavia } from "./staviaLocalEngine";
 import {
+  isMemoryOnlyOntologyAttribute,
   loadRdoOntology,
   type RdoOntologyEntityJson,
   type RdoOntologyJson,
@@ -70,6 +71,70 @@ function makeRdo(
 }
 
 describe("staviaLocalEngine", () => {
+  it("centraliza eventos e a timeline ontológica em Home > Memória", () => {
+    const snapshot = {
+      metadata: {
+        snapshotKey: "default",
+        generatedAt: "2026-07-03T12:00:00",
+        databaseUpdatedAt: null,
+        localSyncedAt: null,
+        source: "TEST",
+        status: "LOCAL",
+        dictionaryVersion: "test",
+      },
+      obras: [],
+      rdos: [makeRdo({ id: "rdo-memoria", numeroRdo: "125" })],
+      programacoes: [],
+      pdors: [],
+      operationalEvents: [
+        {
+          id: "evento-memoria",
+          type: "RDO_CRIADO",
+          principalEntityType: "RDO",
+          principalEntityId: "rdo-memoria",
+          obraId: "obra-1",
+          rdoId: "rdo-memoria",
+          colaboradorId: null,
+          occurredAt: "2026-07-03T10:00:00",
+          syncedAt: null,
+          origin: "OFFLINE",
+          syncStatus: "PENDING_SYNC",
+          responsibleUserId: "usuario-ana",
+          responsibleUserName: "Ana Lima",
+          schemaVersion: 1,
+          relatedEntities: [],
+          payload: {},
+        },
+      ],
+    } satisfies StaviaSnapshot;
+    const context = {
+      activeObraId: "obra-1",
+      activeRdoId: "rdo-memoria",
+      lastObraId: null,
+      lastRdoId: null,
+    };
+
+    for (const pergunta of [
+      "Mostre a timeline operacional",
+      "Quem registrou o evento 1?",
+    ]) {
+      const response = responderComSnapshotStavia({
+        snapshot,
+        pergunta,
+        context,
+        isOnline: false,
+      });
+
+      expect(response?.intent).toBe("TIMELINE_OPERACIONAL");
+      expect(response?.answer.answer).toContain("Home → Memória");
+      expect(response?.answer.answer).not.toContain("Ana Lima");
+      expect(response?.answer.metadata).toMatchObject({
+        origemResposta: "MEMORIA_OPERACIONAL_CENTRALIZADA",
+        destino: "HOME_MEMORIA",
+      });
+    }
+  });
+
   it("lista observações de mão de obra e equipamentos do RDO selecionado", () => {
     const activeRdo = makeRdo({
       id: "rdo-observacoes",
@@ -314,7 +379,7 @@ describe("staviaLocalEngine", () => {
     expect(details?.answer.answer).not.toContain("999");
   });
 
-  it("responde cabeçalho, fotos, eventos e alocações pela ontologia local", () => {
+  it("responde cabeçalho, fotos e alocações pela ontologia local", () => {
     const activeRdo = makeRdo({
       id: "rdo-ontologia",
       numeroRdo: "123",
@@ -445,25 +510,6 @@ describe("staviaLocalEngine", () => {
       "Status de sincronização de Foto 1 (trecho-2.webp): PENDING_SYNC",
     );
 
-    const event = responderComSnapshotStavia({
-      snapshot,
-      pergunta: "Qual a origem do evento 1?",
-      context,
-      isOnline: false,
-    });
-    expect(event?.answer.answer).toContain(
-      "Origem de Evento 1 (FOTO_ADICIONADA): OFFLINE",
-    );
-
-    const eventResponsible = responderComSnapshotStavia({
-      snapshot,
-      pergunta: "Quem registrou o evento 1?",
-      context,
-      isOnline: false,
-    });
-    expect(eventResponsible?.answer.answer).toContain(
-      "Usuário responsável de Evento 1 (FOTO_ADICIONADA): Ana Lima",
-    );
   });
 
   it("responde cada célula declarada pelo caminho real do motor local offline", () => {
@@ -478,13 +524,18 @@ describe("staviaLocalEngine", () => {
     let checkedCells = 0;
 
     // O pdor (escopo "obra") é respondido pelo tópico dedicado do motor
-    // local, não pelo caminho genérico da ontologia coberto aqui.
+    // local. Eventos operacionais são auditáveis somente em Home > Memória,
+    // não pelo caminho genérico exercitado aqui.
     const genericEntities = ontology.entities.filter(
-      (entity) => (entity.scope ?? "rdo") === "rdo",
+      (entity) =>
+        (entity.scope ?? "rdo") === "rdo" &&
+        entity.name !== "operationalEvent",
     );
 
     for (const entity of genericEntities) {
-      for (const attribute of entity.attributes) {
+      for (const attribute of entity.attributes.filter(
+        (attribute) => !isMemoryOnlyOntologyAttribute(attribute),
+      )) {
         checkedCells += 1;
         const pergunta = localCoverageQuestion(entity, attribute.label);
         const response = responderComSnapshotStavia({
@@ -521,7 +572,7 @@ describe("staviaLocalEngine", () => {
       }
     }
 
-    expect(checkedCells).toBeGreaterThan(150);
+    expect(checkedCells).toBeGreaterThan(120);
   });
 });
 

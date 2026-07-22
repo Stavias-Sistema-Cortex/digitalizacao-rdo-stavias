@@ -201,9 +201,11 @@
   align-items: center;
   width: fit-content;
   padding: 4px 7px;
-  border-radius: 999px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
   font-size: 0.59rem;
-  font-weight: 700;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: none;
 }
 
@@ -702,8 +704,9 @@
   width: min(390px, 100%);
   height: 100%;
   padding: 25px;
+  border-left: 2px solid var(--color-ink);
   background: #fff;
-  box-shadow: -18px 0 55px rgb(14 45 38 / 18%);
+  box-shadow: none;
   overflow-y: auto;
 }
 
@@ -789,10 +792,10 @@
 .teams-modal {
   width: min(560px, 100%);
   max-height: calc(100dvh - 48px);
-  border: 1px solid #ccd7d0;
-  border-radius: 14px;
+  border: 2px solid var(--color-ink);
+  border-radius: 3px;
   background: #fff;
-  box-shadow: 0 24px 70px rgb(13 44 39 / 22%);
+  box-shadow: none;
   overflow-y: auto;
 }
 
@@ -998,7 +1001,7 @@
 
   .teams-modal {
     max-height: 91dvh;
-    border-radius: 14px 14px 0 0;
+    border-radius: var(--radius-control) var(--radius-control) 0 0;
   }
 }
 
@@ -1134,8 +1137,7 @@
 .teams-relation-list article,
 .teams-history-table,
 .teams-danger-zone,
-.teams-empty-state,
-.teams-modal {
+.teams-empty-state {
   border-radius: var(--radius-container);
 }
 

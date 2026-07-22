@@ -75,7 +75,7 @@ export type MemoryFieldConflicts = Record<
 >;
 
 export interface MemoryConflictReviewRecord {
-  eventId: string;
+  eventId: string | null;
   clientMutationId: string;
   actorId: string | null;
   actorName: string | null;
@@ -84,5 +84,8 @@ export interface MemoryConflictReviewRecord {
   operation: string;
   occurredAt: string | null;
   updatedAt: string | null;
+  status: "CONFLICT" | "REJECTED";
+  reason: string | null;
+  authorizationScope: string[];
   conflicts: MemoryFieldConflicts;
 }

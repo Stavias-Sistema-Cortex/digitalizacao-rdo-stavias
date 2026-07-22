@@ -1,6 +1,9 @@
 import { hasOnlineSession } from "../../features/auth/authSession";
 import { processObjectUploads } from "../../features/mensagens/objectUploadSync";
 import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
+import {
+  materializeReadyMessageMutations,
+} from "../../features/mensagens/mensagensRepository";
 import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
 import { acknowledgeCurrentCursor } from "./ackCursor";
@@ -8,6 +11,8 @@ import { pullEvents } from "./pullEvents";
 import { pushOutbox } from "./pushOutbox";
 import { ensureRegisteredDevice } from "./registerDevice";
 import {
+  classifyLegacyOutboxMutationsForReview,
+  queueErroredMutationsForRetry,
   recoverInterruptedMutations,
   repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync,
@@ -37,13 +42,16 @@ async function executeSync(): Promise<SyncRunSummary> {
   });
 
   try {
+    await classifyLegacyOutboxMutationsForReview();
     await recoverInterruptedMutations();
+    await queueErroredMutationsForRetry();
     await repairMissingObraReferencesForSync();
     await repairMissingMaoObraReferencesForSync();
     await repairRdoCreateMutationsForSync();
 
     const deviceId = await ensureRegisteredDevice();
     const uploadSummary = await processObjectUploads();
+    await materializeReadyMessageMutations();
     const pushSummary = await pushOutbox(deviceId);
     const pullSummary = await pullEvents(deviceId);
     await refreshMessagingAfterPull(

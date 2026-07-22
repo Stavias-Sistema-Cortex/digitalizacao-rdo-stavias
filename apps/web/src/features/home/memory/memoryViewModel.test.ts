@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
+  OutboxMutationRecord,
   OperationalEventRecord,
 } from "../../../lib/db/db.types";
 import type { MemoryEvent } from "./memory.types";
@@ -233,6 +234,9 @@ describe("memoryViewModel", () => {
       operation: "ATUALIZAR_RDO_RASCUNHO",
       occurredAt: "2026-07-16T15:00:00Z",
       updatedAt: "2026-07-17T15:02:00Z",
+      status: "CONFLICT",
+      reason: "Conflito de campo.",
+      authorizationScope: ["obra-1"],
       conflicts: {
         titulo: { base: "Base", local: "Local", remote: "Remoto" },
       },
@@ -256,6 +260,41 @@ describe("memoryViewModel", () => {
       [],
       [conflictMutation("mutation-without-event")],
     )).toEqual([]);
+  });
+
+  it("mantém uma rejeição legada revisável mesmo sem inventar um evento canônico", () => {
+    const rejected = {
+      ...conflictMutation("legacy-rejected"),
+      contractVersion: undefined,
+      trace: undefined,
+      fieldPatch: undefined,
+      nextAttemptAt: undefined,
+      blockedReason: "Rastro canônico ausente; requer revisão.",
+      status: "REJECTED",
+      conflito: null,
+      ultimoErro: "Rastro canônico ausente; requer revisão.",
+      entidadeId: "legacy-message-1",
+      entidadeTipo: "MENSAGEM",
+      operacao: "CRIAR_MENSAGEM",
+      criadaNoClienteEm: "2026-07-20T10:00:00.000Z",
+      updatedAt: "2026-07-20T10:01:00.000Z",
+    } as unknown as OutboxMutationRecord;
+
+    expect(memoryConflictReviewRecords([], [rejected])).toEqual([{
+      eventId: null,
+      clientMutationId: "legacy-rejected",
+      actorId: null,
+      actorName: null,
+      deviceId: null,
+      entity: { type: "MENSAGEM", id: "legacy-message-1", name: null },
+      operation: "CRIAR_MENSAGEM",
+      occurredAt: "2026-07-20T10:00:00.000Z",
+      updatedAt: "2026-07-20T10:01:00.000Z",
+      status: "REJECTED",
+      reason: "Rastro canônico ausente; requer revisão.",
+      authorizationScope: [],
+      conflicts: {},
+    }]);
   });
 
   it("preserva __proto__ como campo próprio na revisão armazenada", () => {

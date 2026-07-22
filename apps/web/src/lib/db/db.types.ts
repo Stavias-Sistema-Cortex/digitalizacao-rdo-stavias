@@ -27,7 +27,9 @@ export type OperationalEventType =
   | "TAREFA_CRIADA"
   | "TAREFA_CONCLUIDA"
   | "TAREFA_REABERTA"
-  | "TAREFA_EXCLUIDA";
+  | "TAREFA_EXCLUIDA"
+  | "MENSAGEM_CRIADA"
+  | "COMPRA_CRIADA";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -60,6 +62,7 @@ export type CanonicalMutationResult =
   | "PENDING"
   | "SYNCING"
   | "SYNCED"
+  | "CONCILIADA"
   | "CONFLICT"
   | "REJECTED";
 
@@ -80,6 +83,7 @@ export interface MutationTrace {
 
 export type SyncEntityType =
   | "RDO"
+  | "TAREFA"
   | "CONVERSA"
   | "MENSAGEM"
   | "MENSAGEM_ANEXO"
@@ -90,6 +94,10 @@ export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
   | "ENVIAR_RDO"
+  | "CRIAR_TAREFA"
+  | "CONCLUIR_TAREFA"
+  | "REABRIR_TAREFA"
+  | "EXCLUIR_TAREFA"
   | "CRIAR_CONVERSA"
   | "ADICIONAR_PARTICIPANTE_CONVERSA"
   | "REMOVER_PARTICIPANTE_CONVERSA"
@@ -415,6 +423,12 @@ export interface TarefaRecord {
   concluidaEm: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Versão confirmada pelo servidor; nula enquanto a criação está offline. */
+  versaoEntidade?: number | null;
+  /** Estado de transporte local, sem substituir a situação operacional. */
+  syncStatus?: LocalSyncStatus;
+  /** Tombstone local para que uma exclusão offline também possa sincronizar. */
+  deletadaEm?: string | null;
 }
 
 export interface ColaboradorLocalRecord {

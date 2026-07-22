@@ -41,6 +41,8 @@ const EVENT_TYPES = [
   "TAREFA_CONCLUIDA",
   "TAREFA_REABERTA",
   "TAREFA_EXCLUIDA",
+  "MENSAGEM_CRIADA",
+  "COMPRA_CRIADA",
   "OBRA_CRIADA",
   "OBRA_ATUALIZADA",
   "EQUIPE_CRIADA",
@@ -320,11 +322,11 @@ function MemoryReviewRegister({
     >
       <header className="memory-review-register__heading">
         <div>
-          <span>Conflitos persistidos</span>
+          <span>Fila de revisão preservada</span>
           <h3>Revisão necessária</h3>
           <p>
-            Itens abaixo são derivados da fila local com conflitos de campo
-            preservados para decisão humana.
+            Itens abaixo mantêm conflitos e rejeições locais sem inventar um
+            evento confirmado pelo servidor.
           </p>
         </div>
         <strong
@@ -349,7 +351,7 @@ function MemoryReviewRegister({
         </p>
       ) : reviewRecords.length === 0 ? (
         <p className="memory-review-register__empty">
-          Nenhum conflito de campo persistido exige revisão neste recorte.
+          Nenhuma pendência local exige revisão neste dispositivo.
         </p>
       ) : (
         <div className="memory-review-table-scroll">
@@ -357,30 +359,36 @@ function MemoryReviewRegister({
             <thead>
               <tr>
                 <th scope="col">Evento</th>
+                <th scope="col">Estado</th>
                 <th scope="col">Atualizado</th>
                 <th scope="col">Ator</th>
                 <th scope="col">Dispositivo</th>
                 <th scope="col">Entidade</th>
                 <th scope="col">Operação</th>
-                <th scope="col">Campos em conflito</th>
+                <th scope="col">Detalhe para revisão</th>
               </tr>
             </thead>
             <tbody>
               {reviewRecords.map((record) => (
                 <tr key={record.clientMutationId}>
                   <td>
-                    <TraceReference
-                      entityId={record.entity.id}
-                      eventId={record.eventId}
-                      href={`#${memoryEventAnchorId(record.eventId)}`}
-                    />
+                    {record.eventId ? (
+                      <TraceReference
+                        entityId={record.entity.id}
+                        eventId={record.eventId}
+                        href={`#${memoryEventAnchorId(record.eventId)}`}
+                      />
+                    ) : (
+                      <span>Sem evento canônico</span>
+                    )}
                   </td>
+                  <td>{reviewStatusLabel(record.status)}</td>
                   <td>{formatDateTime(record.updatedAt ?? record.occurredAt)}</td>
                   <td>{record.actorName ?? record.actorId ?? "Não informado"}</td>
                   <td>{record.deviceId ?? "Não informado"}</td>
                   <td>{formatEntity(record.entity)}</td>
                   <td>{record.operation}</td>
-                  <td>{conflictFields(record)}</td>
+                  <td>{reviewDetail(record)}</td>
                 </tr>
               ))}
             </tbody>
@@ -504,6 +512,19 @@ function conflictFields(record: MemoryConflictReviewRecord): string {
   return Object.keys(record.conflicts)
     .sort((left, right) => left.localeCompare(right, "pt-BR"))
     .join(", ");
+}
+
+function reviewStatusLabel(
+  status: MemoryConflictReviewRecord["status"],
+): string {
+  return status === "CONFLICT" ? "Conflito" : "Rejeitado localmente";
+}
+
+function reviewDetail(record: MemoryConflictReviewRecord): string {
+  if (record.status === "CONFLICT") {
+    return conflictFields(record);
+  }
+  return record.reason ?? "Requer revisão humana antes de novo envio.";
 }
 
 function entityDescription(event: MemoryEvent): string {

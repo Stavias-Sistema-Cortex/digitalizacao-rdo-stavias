@@ -218,6 +218,9 @@ describe("financeiroApi query contracts", () => {
     expect(mocks.apiFetch.mock.calls[0][0]).toBe(
       "/financeiro/rastreio-receita?obraId=obra-1&de=2026-07-01&ate=2026-07-31",
     );
+    expect(mocks.apiFetch.mock.calls[0][1]).toMatchObject({
+      cache: "no-store",
+    });
     expect(result.tiposServico[0].receitaDisponivel).toBe(false);
   });
 });

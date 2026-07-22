@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { SyncStateStrip } from "../../components/institutional/SyncStateStrip";
-import { TraceReference } from "../../components/institutional/TraceReference";
 import { useSyncStatus } from "../../lib/sync/useSyncStatus";
 import {
   filterObrasByChip,
@@ -10,7 +10,6 @@ import {
   OBRA_STATUS_CHIPS,
   type ObraStatusChip,
 } from "./homeFilters";
-import { operationalEventLabel } from "./eventLabels";
 import { FinanceHomeCard } from "./FinanceHomeCard";
 import { MaisStaviasCard } from "./MaisStaviasCard";
 import { MemorySummaryCard } from "./MemorySummaryCard";
@@ -71,8 +70,18 @@ export function HomeOverview({ data }: HomeOverviewProps) {
     () => events.filter((event) => event.syncStatus !== "SYNCED"),
     [events],
   );
+  const memorySearch = useMemo(() => {
+    const params = new URLSearchParams({ tab: "memory" });
+    if (focusedObra?.id) {
+      params.set("obraId", focusedObra.id);
+    }
+    return params.toString();
+  }, [focusedObra]);
   const pendingCount = snapshot.pendingCount + snapshot.syncingCount;
   const freshness = formatFreshness(dataUpdatedAt);
+  const exceptionSummary = exceptionEvents.length === 1
+    ? "alteração local aguarda"
+    : "alterações locais aguardam";
 
   return (
     <div className="home-overview">
@@ -85,9 +94,10 @@ export function HomeOverview({ data }: HomeOverviewProps) {
             <span className="home-section-index">Leitura prioritária</span>
             <h2 id="home-exceptions-heading">Exceções operacionais</h2>
             <p>
-              Pendências, conflitos e atualização local antecedem a leitura
-              consolidada do empreendimento. Os totais de sincronização são
-              deste dispositivo; a lista abaixo respeita a obra em foco.
+              Pendências, revisões, conflitos e atualização local antecedem a
+              leitura consolidada do empreendimento. Os totais de
+              sincronização são deste dispositivo. Os detalhes de cada
+              alteração permanecem concentrados na Memória.
             </p>
           </div>
           <p className="home-exception-register__sync-caption">
@@ -103,6 +113,10 @@ export function HomeOverview({ data }: HomeOverviewProps) {
           <div>
             <dt>Falhas no dispositivo</dt>
             <dd>{snapshot.isLoading ? "—" : snapshot.errorCount}</dd>
+          </div>
+          <div>
+            <dt>Revisões necessárias</dt>
+            <dd>{snapshot.isLoading ? "—" : snapshot.reviewCount}</dd>
           </div>
           <div>
             <dt>Na fila do dispositivo</dt>
@@ -130,25 +144,11 @@ export function HomeOverview({ data }: HomeOverviewProps) {
             Nenhum evento local fora do estado sincronizado nesta obra.
           </p>
         ) : (
-          <ol className="home-exception-register__list">
-            {exceptionEvents.slice(0, 4).map((event) => (
-              <li key={event.id}>
-                <div>
-                  <strong>{operationalEventLabel(event.type)}</strong>
-                  <span>
-                    {event.principalEntity.tipo} · {event.principalEntity.nome ?? event.principalEntity.id}
-                  </span>
-                </div>
-                <span className="home-exception-register__result">
-                  {event.result ?? event.syncStatus}
-                </span>
-                <TraceReference
-                  entityId={event.principalEntity.id}
-                  eventId={event.id}
-                />
-              </li>
-            ))}
-          </ol>
+          <p className="home-exception-register__empty">
+            {exceptionEvents.length} {exceptionSummary} tratamento ou confirmação.
+            {" "}
+            <Link to={`/home?${memorySearch}`}>Consultar Memória</Link>
+          </p>
         )}
       </section>
 

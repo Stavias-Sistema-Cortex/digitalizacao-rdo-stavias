@@ -157,13 +157,11 @@ export function useMemoryLedger(
     [serverEvents, localEvents, allowedObraIds, userId, filters],
   );
   const reviewRecords = useMemo(() => {
-    const visibleEventIds = new Set(events.map((event) => event.id));
-
     return memoryConflictReviewRecords(
       localEvents,
       outboxMutations,
-    ).filter((record) => visibleEventIds.has(record.eventId));
-  }, [events, localEvents, outboxMutations]);
+    );
+  }, [localEvents, outboxMutations]);
 
   const coverage = useMemo<MemoryCoverage>(() => {
     if (!canReachServer) {

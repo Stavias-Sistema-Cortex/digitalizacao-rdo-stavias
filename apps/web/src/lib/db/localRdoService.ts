@@ -9,6 +9,7 @@ import type {
   ServicoExecutadoDraft,
 } from "../../features/rdos/rdo.types";
 import { localRecordToDraft } from "../../features/rdos/localRecordToDraft";
+import { getSession } from "../../features/auth/authSession";
 import { getCortexDb } from "./cortexDb";
 import type {
   LocalRdoChildRecord,
@@ -20,8 +21,20 @@ import type {
 } from "./db.types";
 import {
   buildOperationalEvent,
-  queryOperationalEvents,
+  buildCanonicalEventFromMutation,
 } from "./operationalEventRepository";
+import {
+  buildMutationEnvelopeWithSnapshots,
+  type MutationActor,
+} from "../sync/mutationEnvelope";
+import { LOCAL_MUTATION_QUEUED_EVENT } from "../sync/localMutationCoordinator";
+import {
+  isCanonicalOutboxMutation,
+} from "./outboxContract";
+import {
+  getSyncState,
+  updateSyncState,
+} from "./syncStateRepository";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -52,6 +65,96 @@ interface RdoChildWriteTransaction {
 
 function nowUtc(): string {
   return new Date().toISOString();
+}
+
+function notifyLocalMutationQueued(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(LOCAL_MUTATION_QUEUED_EVENT),
+    );
+  }
+}
+
+async function rdoMutationActor(
+  draft: RdoDraft,
+): Promise<MutationActor> {
+  const session = getSession();
+
+  if (!session) {
+    throw new Error(
+      "Abra uma sessão protegida antes de salvar um RDO local.",
+    );
+  }
+
+  const syncState = await getSyncState();
+  const deviceId =
+    syncState.usuarioId === session.colaboradorId &&
+    syncState.deviceId
+      ? syncState.deviceId
+      : crypto.randomUUID();
+
+  if (
+    syncState.usuarioId !== session.colaboradorId ||
+    syncState.deviceId !== deviceId
+  ) {
+    await updateSyncState({
+      usuarioId: session.colaboradorId,
+      deviceId,
+    });
+  }
+
+  return {
+    actorId: session.colaboradorId,
+    actorName: session.nome,
+    deviceId,
+    authorizationScope: [draft.obraId],
+  };
+}
+
+async function canonicalRdoWrite(input: {
+  draft: RdoDraft;
+  operation: "CRIAR_RDO" | "ATUALIZAR_RDO_RASCUNHO";
+  eventType: "RDO_CRIADO" | "RDO_EDITADO";
+  baseVersion: number | null;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  timestamp: string;
+  causationId?: string | null;
+}) {
+  const actor = await rdoMutationActor(input.draft);
+  const rdo = rdoEntity(input.draft);
+  const obra = obraEntity(input.draft);
+  const envelope = await buildMutationEnvelopeWithSnapshots({
+    entity: {
+      type: "RDO",
+      id: input.draft.id,
+    },
+    operation: input.operation,
+    baseVersion: input.baseVersion,
+    previousState: input.previousState,
+    newState: input.newState,
+    actor,
+    createdAt: input.timestamp,
+    ...(input.causationId === undefined
+      ? {}
+      : { causationId: input.causationId }),
+  });
+
+  return {
+    mutation: envelope.mutation,
+    event: buildCanonicalEventFromMutation({
+      mutation: envelope.mutation,
+      type: input.eventType,
+      principalEntity: rdo,
+      relatedEntities: nonEmptyRelated([obra]),
+      obraId: input.draft.obraId,
+      rdoId: input.draft.id,
+      colaboradorId: actor.actorId,
+      responsibleUserName: actor.actorName,
+      previousState: envelope.previousState,
+      newState: envelope.newState,
+    }),
+  };
 }
 
 function removeLocalId<T extends { localId: string }>(
@@ -466,6 +569,114 @@ function nonEmptyRelated(
   );
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function photoLifecycleEventId(
+  attachmentId: string,
+  lifecycle: "ADICIONADA" | "COMPRIMIDA" | "REMOVIDA",
+): string {
+  const normalizedId = attachmentId.trim();
+
+  if (!isUuid(normalizedId)) {
+    return crypto.randomUUID();
+  }
+
+  if (lifecycle === "ADICIONADA") {
+    return normalizedId;
+  }
+
+  const currentMarker = normalizedId[14];
+  const preferredMarker = lifecycle === "COMPRIMIDA" ? "5" : "6";
+  const alternateMarker = lifecycle === "COMPRIMIDA" ? "d" : "e";
+  const marker = currentMarker === preferredMarker
+    ? alternateMarker
+    : preferredMarker;
+
+  return `${normalizedId.slice(0, 14)}${marker}${normalizedId.slice(15)}`;
+}
+
+function buildPhotoLifecycleEvents(
+  draft: RdoDraft,
+  base: {
+    obraId: string;
+    rdoId: string;
+    occurredAt: string;
+    origin: "OFFLINE";
+    syncStatus: "PENDING_SYNC";
+    schemaVersion: number;
+  },
+  rdo: OperationalEntityRef,
+  obra: OperationalEntityRef,
+): OperationalEventRecord[] {
+  return draft.attachments.flatMap((attachment) => {
+    const relatedEntities = nonEmptyRelated([rdo, obra]);
+    const photo = {
+      tipo: "RDO_FOTO",
+      id: attachment.id,
+      nome: attachment.nome,
+    };
+    const occurredAt = attachment.createdAt || base.occurredAt;
+    const events: OperationalEventRecord[] = [
+      buildOperationalEvent({
+        ...base,
+        id: photoLifecycleEventId(attachment.id, "ADICIONADA"),
+        type: "FOTO_ADICIONADA",
+        principalEntity: photo,
+        relatedEntities,
+        occurredAt,
+        payload: {
+          nomeOriginal: attachment.nomeOriginal,
+          mimeType: attachment.mimeType,
+          tamanhoOriginalBytes: attachment.tamanhoOriginalBytes,
+          tamanhoComprimidoBytes: attachment.tamanhoComprimidoBytes,
+          tamanhoBytes: attachment.tamanhoBytes,
+          syncStatus: attachment.syncStatus,
+          metadata: attachment.metadata,
+        },
+      }),
+    ];
+
+    if (attachment.tamanhoComprimidoBytes < attachment.tamanhoOriginalBytes) {
+      events.push(buildOperationalEvent({
+        ...base,
+        id: photoLifecycleEventId(attachment.id, "COMPRIMIDA"),
+        type: "FOTO_COMPRIMIDA",
+        principalEntity: photo,
+        relatedEntities,
+        occurredAt: attachment.updatedAt || occurredAt,
+        payload: {
+          tamanhoOriginalBytes: attachment.tamanhoOriginalBytes,
+          tamanhoComprimidoBytes: attachment.tamanhoComprimidoBytes,
+          reducaoBytes:
+            attachment.tamanhoOriginalBytes -
+            attachment.tamanhoComprimidoBytes,
+        },
+      }));
+    }
+
+    if (attachment.removedAt !== null) {
+      events.push(buildOperationalEvent({
+        ...base,
+        id: photoLifecycleEventId(attachment.id, "REMOVIDA"),
+        type: "FOTO_REMOVIDA",
+        principalEntity: photo,
+        relatedEntities,
+        occurredAt: attachment.removedAt,
+        payload: {
+          attachmentId: attachment.id,
+          nomeOriginal: attachment.nomeOriginal,
+        },
+      }));
+    }
+
+    return events;
+  });
+}
+
 function buildRdoSaveOperationalEvents(
   draft: RdoDraft,
   isExisting: boolean,
@@ -521,6 +732,13 @@ function buildRdoSaveOperationalEvents(
       },
     }),
   ];
+
+  events.push(...buildPhotoLifecycleEvents(
+    draft,
+    base,
+    rdo,
+    obra,
+  ));
 
   if (draft.programacaoId.trim()) {
     events.push(
@@ -1018,17 +1236,11 @@ export async function saveNewRdoDraftAtomically(
     false,
     timestamp,
   );
-  const pendingOperationalEvents = (
-    await queryOperationalEvents({
-      rdoId: draft.id,
-      limit: 500,
-    })
-  ).filter((event) => event.syncStatus !== "SYNCED");
   const localPayload = buildRdoLocalPayload(draft);
-  const syncPayload = buildRdoSyncPayload(draft, [
-    ...pendingOperationalEvents,
-    ...operationalEvents,
-  ]);
+  const syncPayload = buildRdoSyncPayload(
+    draft,
+    operationalEvents,
+  );
 
   const rdo: LocalRdoRecord = {
     id: draft.id,
@@ -1045,21 +1257,15 @@ export async function saveNewRdoDraftAtomically(
     updatedAt: timestamp,
   };
 
-  const mutation: OutboxMutationRecord = {
-    clientMutationId: crypto.randomUUID(),
-    entidadeTipo: "RDO",
-    entidadeId: draft.id,
-    operacao: "CRIAR_RDO",
-    baseVersao: null,
-    payload: syncPayload,
-    status: "PENDING",
-    tentativas: 0,
-    ultimaTentativaEm: null,
-    ultimoErro: null,
-    conflito: null,
-    criadaNoClienteEm: timestamp,
-    updatedAt: timestamp,
-  };
+  const { mutation, event } = await canonicalRdoWrite({
+    draft,
+    operation: "CRIAR_RDO",
+    eventType: "RDO_CRIADO",
+    baseVersion: null,
+    previousState: {},
+    newState: syncPayload,
+    timestamp,
+  });
 
   const transaction = database.transaction(
     [
@@ -1081,8 +1287,7 @@ export async function saveNewRdoDraftAtomically(
     transaction.objectStore(
       "outbox_mutations",
     );
-  const eventStore =
-    transaction.objectStore("operational_events");
+  const eventStore = transaction.objectStore("operational_events");
 
   const existingRdo =
     await rdoStore.get(draft.id);
@@ -1098,9 +1303,7 @@ export async function saveNewRdoDraftAtomically(
   await Promise.all([
     rdoStore.add(rdo),
     outboxStore.add(mutation),
-    ...operationalEvents.map((event) =>
-      eventStore.put(event),
-    ),
+    eventStore.add(event),
     replaceChildRecords(
       transaction,
       draft,
@@ -1110,6 +1313,7 @@ export async function saveNewRdoDraftAtomically(
   ]);
 
   await transaction.done;
+  notifyLocalMutationQueued();
 
   return {
     rdo,
@@ -1155,6 +1359,10 @@ export async function repairRdoCreateMutationsForSync(): Promise<number> {
       mutation.entidadeTipo !== "RDO" ||
       mutation.operacao !== "CRIAR_RDO"
     ) {
+      continue;
+    }
+
+    if (isCanonicalOutboxMutation(mutation)) {
       continue;
     }
 
@@ -1226,22 +1434,92 @@ export async function saveExistingRdoDraftAtomically(
 
   const database = await getCortexDb();
   const timestamp = nowUtc();
+  const existingRdo = await database.get("rdos", draft.id);
+
+  if (!existingRdo) {
+    throw new Error(
+      `O RDO local ${draft.id} não foi encontrado.`,
+    );
+  }
+
+  if (existingRdo.statusRdo === "ENVIADO") {
+    throw new Error(
+      "Um RDO enviado não pode mais ser editado.",
+    );
+  }
+
+  if (existingRdo.syncStatus === "CONFLICT") {
+    throw new Error(
+      "Este RDO possui um conflito pendente. Resolva o conflito antes de editar.",
+    );
+  }
+
+  const entityMutations = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-entity-id",
+    draft.id,
+  );
+  const activeMutations = entityMutations.filter(
+    (mutation) =>
+      mutation.status === "PENDING" ||
+      mutation.status === "ERROR" ||
+      mutation.status === "SYNCING",
+  );
+
+  if (activeMutations.some(
+    (mutation) => !isCanonicalOutboxMutation(mutation),
+  )) {
+    throw new Error(
+      "Este RDO possui uma mutação legada preservada para revisão na Memória. Não é seguro reescrevê-la automaticamente.",
+    );
+  }
+
+  if (activeMutations.some((mutation) => mutation.status === "SYNCING")) {
+    throw new Error(
+      "Este RDO está sendo sincronizado. Aguarde a confirmação antes de salvar uma nova revisão.",
+    );
+  }
+
+  const supersededMutations = activeMutations
+    .filter(isCanonicalOutboxMutation)
+    .sort((left, right) =>
+      left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
+    );
+  const latestSuperseded = supersededMutations.at(-1) ?? null;
+
+  if (existingRdo.versaoEntidade === null && !latestSuperseded) {
+    throw new Error(
+      "O RDO já existe no servidor, mas sua versão local não foi registrada. A sincronização precisa salvar versaoEntidade antes de permitir esta atualização.",
+    );
+  }
+
   const operationalEvents = buildRdoSaveOperationalEvents(
     draft,
     true,
     timestamp,
   );
-  const pendingOperationalEvents = (
-    await queryOperationalEvents({
-      rdoId: draft.id,
-      limit: 500,
-    })
-  ).filter((event) => event.syncStatus !== "SYNCED");
   const localPayload = buildRdoLocalPayload(draft);
-  const syncPayload = buildRdoSyncPayload(draft, [
-    ...pendingOperationalEvents,
-    ...operationalEvents,
-  ]);
+  const syncPayload = buildRdoSyncPayload(
+    draft,
+    operationalEvents,
+  );
+  const operation = existingRdo.versaoEntidade === null
+    ? "CRIAR_RDO"
+    : "ATUALIZAR_RDO_RASCUNHO";
+  const { mutation, event } = await canonicalRdoWrite({
+    draft,
+    operation,
+    eventType: operation === "CRIAR_RDO" ? "RDO_CRIADO" : "RDO_EDITADO",
+    baseVersion: operation === "CRIAR_RDO"
+      ? null
+      : existingRdo.versaoEntidade,
+    previousState: buildRdoSyncPayloadFromLocalRecord(existingRdo),
+    newState: syncPayload,
+    timestamp,
+    ...(latestSuperseded === null
+      ? {}
+      : { causationId: latestSuperseded.clientMutationId }),
+  });
 
   const transaction = database.transaction(
     [
@@ -1266,140 +1544,6 @@ export async function saveExistingRdoDraftAtomically(
   const eventStore =
     transaction.objectStore("operational_events");
 
-  const existingRdo =
-    await rdoStore.get(draft.id);
-
-  if (!existingRdo) {
-    transaction.abort();
-
-    throw new Error(
-      `O RDO local ${draft.id} não foi encontrado.`,
-    );
-  }
-
-  if (existingRdo.statusRdo === "ENVIADO") {
-    transaction.abort();
-
-    throw new Error(
-      "Um RDO enviado não pode mais ser editado.",
-    );
-  }
-
-  if (
-    existingRdo.syncStatus === "CONFLICT"
-  ) {
-    transaction.abort();
-
-    throw new Error(
-      "Este RDO possui um conflito pendente. Resolva o conflito antes de editar.",
-    );
-  }
-
-  const entityIndex =
-    outboxStore.index("by-entity-id");
-
-  const entityMutations =
-    await entityIndex.getAll(draft.id);
-
-  const existingCreateMutation =
-    entityMutations
-      .filter(
-        (candidate) =>
-          candidate.operacao === "CRIAR_RDO" &&
-          candidate.status !== "SYNCED",
-      )
-      .sort((left, right) =>
-        right.criadaNoClienteEm.localeCompare(
-          left.criadaNoClienteEm,
-        ),
-      )[0];
-
-  let mutation: OutboxMutationRecord;
-
-  /*
-   * O RDO ainda não foi criado com sucesso no servidor.
-   * Atualizamos a mutação CRIAR_RDO existente em vez de
-   * criar outra mutação.
-   */
-  if (
-    existingRdo.versaoEntidade === null &&
-    existingCreateMutation
-  ) {
-    mutation = {
-      ...existingCreateMutation,
-      payload: syncPayload,
-      status: "PENDING",
-      tentativas: 0,
-      ultimaTentativaEm: null,
-      ultimoErro: null,
-      conflito: null,
-      updatedAt: timestamp,
-    };
-  } else {
-    /*
-     * O CRIAR_RDO já foi sincronizado, mas a versão
-     * do servidor ainda não foi armazenada localmente.
-     * Não podemos enviar uma atualização sem baseVersao.
-     */
-    if (
-      existingRdo.versaoEntidade === null
-    ) {
-      transaction.abort();
-
-      throw new Error(
-        "O RDO já existe no servidor, mas sua versão local não foi registrada. A sincronização precisa salvar versaoEntidade antes de permitir esta atualização.",
-      );
-    }
-
-    const existingUpdateMutation =
-      entityMutations
-        .filter(
-          (candidate) =>
-            candidate.operacao ===
-              "ATUALIZAR_RDO_RASCUNHO" &&
-            candidate.status !== "SYNCED",
-        )
-        .sort((left, right) =>
-          right.criadaNoClienteEm.localeCompare(
-            left.criadaNoClienteEm,
-          ),
-        )[0];
-
-    if (existingUpdateMutation) {
-      mutation = {
-        ...existingUpdateMutation,
-        baseVersao:
-          existingRdo.versaoEntidade,
-        payload: syncPayload,
-        status: "PENDING",
-        tentativas: 0,
-        ultimaTentativaEm: null,
-        ultimoErro: null,
-        conflito: null,
-        updatedAt: timestamp,
-      };
-    } else {
-      mutation = {
-        clientMutationId:
-          crypto.randomUUID(),
-        entidadeTipo: "RDO",
-        entidadeId: draft.id,
-        operacao:
-          "ATUALIZAR_RDO_RASCUNHO",
-        baseVersao:
-          existingRdo.versaoEntidade,
-        payload: syncPayload,
-        status: "PENDING",
-        tentativas: 0,
-        ultimaTentativaEm: null,
-        ultimoErro: null,
-        conflito: null,
-        criadaNoClienteEm: timestamp,
-        updatedAt: timestamp,
-      };
-    }
-  }
-
   const updatedRdo: LocalRdoRecord = {
     ...existingRdo,
     obraId: draft.obraId,
@@ -1412,12 +1556,42 @@ export async function saveExistingRdoDraftAtomically(
     updatedAt: timestamp,
   };
 
+  const supersededEvents = await Promise.all(
+    supersededMutations.map(async (superseded) => ({
+      superseded,
+      event: await eventStore.get(superseded.trace.ontologyEventId),
+    })),
+  );
+
   await Promise.all([
     rdoStore.put(updatedRdo),
-    outboxStore.put(mutation),
-    ...operationalEvents.map((event) =>
-      eventStore.put(event),
+    outboxStore.add(mutation),
+    eventStore.add(event),
+    ...supersededMutations.map((superseded) =>
+      outboxStore.put({
+        ...superseded,
+        status: "REJECTED",
+        ultimoErro:
+          "Substituída por uma nova revisão local antes do envio.",
+        conflito: null,
+        nextAttemptAt: null,
+        blockedReason:
+          "Revisão local posterior preservada em nova mutação canônica.",
+        updatedAt: timestamp,
+      }),
     ),
+    ...supersededEvents.flatMap(({ event: priorEvent }) => {
+      if (!priorEvent || priorEvent.contractVersion !== 13) {
+        return [];
+      }
+
+      return [eventStore.put({
+        ...priorEvent,
+        syncStatus: "SYNC_FAILED",
+        result: "REJECTED",
+        errorCategory: "SUPERSEDED_LOCAL_REVISION",
+      })];
+    }),
     replaceChildRecords(
       transaction,
       draft,
@@ -1427,6 +1601,7 @@ export async function saveExistingRdoDraftAtomically(
   ]);
 
   await transaction.done;
+  notifyLocalMutationQueued();
 
   return {
     rdo: updatedRdo,

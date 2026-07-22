@@ -21,6 +21,8 @@ function snapshot(
     syncingCount: 0,
     errorCount: 0,
     conflictCount: 0,
+    reviewCount: 0,
+    reviewReason: null,
     lastSyncCompletedAt: "2026-07-17T15:31:00.000Z",
     lastSyncError: null,
     isLoading: false,

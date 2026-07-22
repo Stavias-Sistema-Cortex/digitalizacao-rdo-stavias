@@ -18,13 +18,17 @@ import type {
   OperationalEventRecord,
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
-import { listLocalRdos } from "../../lib/db/rdoRepository";
+import {
+  discardRejectedLocalRdo,
+  listLocalRdos,
+} from "../../lib/db/rdoRepository";
 import { createEmptyRdo } from "./createEmptyRdo";
 import { importarRdoArquivo } from "./importRdoExcel";
 import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
 import { RdoLocalList } from "./RdoLocalList";
 import type { RdoDraft } from "./rdo.types";
+import "./RdoWorkspacePage.css";
 import {
   colaboradorStorageKey,
   setLastAccessedObraId,
@@ -58,6 +62,8 @@ export function RdoWorkspacePage() {
     useState(true);
   const [isImporting, setIsImporting] =
     useState(false);
+  const [discardingRdoId, setDiscardingRdoId] =
+    useState<string | null>(null);
 
   const [loadError, setLoadError] =
     useState("");
@@ -135,6 +141,39 @@ export function RdoWorkspacePage() {
         localRecordToDraft(record),
       isExisting: true,
     });
+  }
+
+  async function handleDiscardRejected(
+    record: LocalRdoRecord,
+  ) {
+    const recordLabel = record.numeroRdo || record.id;
+    const confirmed = window.confirm(
+      [
+        `Excluir ${recordLabel} deste dispositivo?`,
+        "A cópia local, os anexos e a pendência rejeitada serão removidos.",
+        "O rastro técnico de rejeição já registrado no servidor será preservado para auditoria.",
+      ].join("\n\n"),
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDiscardingRdoId(record.id);
+    setLoadError("");
+
+    try {
+      await discardRejectedLocalRdo(record.id);
+      await loadRecords();
+    } catch (error: unknown) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível excluir o RDO rejeitado localmente.",
+      );
+    } finally {
+      setDiscardingRdoId(null);
+    }
   }
 
   async function handleImportRdoFile(file: File) {
@@ -221,6 +260,10 @@ export function RdoWorkspacePage() {
         }}
         isImporting={isImporting}
         onOpen={handleOpen}
+        onDiscardRejected={(record) => {
+          void handleDiscardRejected(record);
+        }}
+        discardingRdoId={discardingRdoId}
         onRefresh={() => {
           void loadRecords();
         }}

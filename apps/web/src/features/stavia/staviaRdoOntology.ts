@@ -156,6 +156,18 @@ const NOT_VALIDATED_CAVEAT =
   " Esse RDO ainda não consta como validado pela sala técnica; use a "
   + "informação como operacional, não como validação final.";
 
+const MEMORY_ONLY_ATTRIBUTE_NAMES = new Set([
+  "dataImportacao",
+  "usuarioImportacao",
+  "criadoEm",
+  "enviadoEm",
+  "aprovadoEm",
+  "versaoLinha",
+  "updatedAt",
+  "createdAt",
+  "removedAt",
+]);
+
 interface AttributeMatch {
   entity: RdoOntologyEntityJson;
   attribute: RdoOntologyAttributeJson;
@@ -191,8 +203,28 @@ function rdoScopedEntities(
   ontology: RdoOntologyJson,
 ): RdoOntologyEntityJson[] {
   return ontology.entities.filter(
-    (entity) => (entity.scope ?? "rdo") === "rdo",
+    (entity) =>
+      (entity.scope ?? "rdo") === "rdo" &&
+      entity.name !== "operationalEvent",
   );
+}
+
+function mentionsOperationalEvent(normalizedQuestion: string): boolean {
+  return /(?:^|\s)eventos?(?:\s|$)/.test(normalizedQuestion);
+}
+
+function mentionsOperationalHistory(normalizedQuestion: string): boolean {
+  return [
+    /\b(?:criad[oa]s?|enviad[oa]s?|aprovad[oa]s?|importad[oa]s?|atualizad[oa]s?|removid[oa]s?)\s+em\b/,
+    /\b(?:data|usuario)\s+(?:de|da|do)?\s*(?:criacao|envio|aprovacao|importacao|atualizacao|remocao)\b/,
+    /\bversao\s+(?:da|do)\s+(?:linha|rdo)\b/,
+  ].some((pattern) => pattern.test(normalizedQuestion));
+}
+
+export function isMemoryOnlyOntologyAttribute(
+  attribute: Pick<RdoOntologyAttributeJson, "name">,
+): boolean {
+  return MEMORY_ONLY_ATTRIBUTE_NAMES.has(attribute.name);
 }
 
 export function matchesOntologyAttribute(
@@ -200,13 +232,23 @@ export function matchesOntologyAttribute(
   pergunta: string,
 ): boolean {
   const normalized = normalize(pergunta);
+
+  if (
+    mentionsOperationalEvent(normalized) ||
+    mentionsOperationalHistory(normalized)
+  ) {
+    return false;
+  }
+
   const entities = rdoScopedEntities(ontology);
 
   const attributeMatch = entities.some((entity) =>
-    entity.attributes.some((attribute) =>
-      attributeAliases(attribute).some((alias) =>
-        matchesAlias(normalized, alias),
-      ),
+    entity.attributes.some(
+      (attribute) =>
+        !isMemoryOnlyOntologyAttribute(attribute) &&
+        attributeAliases(attribute).some((alias) =>
+          matchesAlias(normalized, alias),
+        ),
     ),
   );
 
@@ -236,7 +278,12 @@ export function answerWithRdoOntology({
 }): StaviaConsultaResponse | null {
   const normalized = normalize(pergunta);
 
-  if (!normalized || rdos.length === 0) {
+  if (
+    !normalized ||
+    rdos.length === 0 ||
+    mentionsOperationalEvent(normalized) ||
+    mentionsOperationalHistory(normalized)
+  ) {
     return null;
   }
 
@@ -702,6 +749,10 @@ function attributeMatches(
 
   for (const entity of rdoScopedEntities(ontology)) {
     for (const attribute of entity.attributes) {
+      if (isMemoryOnlyOntologyAttribute(attribute)) {
+        continue;
+      }
+
       for (const alias of attributeAliases(attribute)) {
         if (matchesAlias(normalized, alias)) {
           matches.push({ entity, attribute, alias: normalize(alias) });
@@ -953,7 +1004,9 @@ function listingAttributes(
   normalized: string,
 ): RdoOntologyAttributeJson[] {
   if (wantsFullRecord(normalized)) {
-    return entity.attributes;
+    return entity.attributes.filter(
+      (attribute) => !isMemoryOnlyOntologyAttribute(attribute),
+    );
   }
 
   const names = new Set<string>();
@@ -961,6 +1014,7 @@ function listingAttributes(
 
   for (const attribute of entity.attributes) {
     if (
+      !isMemoryOnlyOntologyAttribute(attribute) &&
       (attribute.identity || attribute.aggregable) &&
       !names.has(attribute.name)
     ) {
@@ -983,7 +1037,10 @@ function distinctAttributes(
   const attributes: RdoOntologyAttributeJson[] = [];
 
   for (const match of matches) {
-    if (!names.has(match.attribute.name)) {
+    if (
+      !isMemoryOnlyOntologyAttribute(match.attribute) &&
+      !names.has(match.attribute.name)
+    ) {
       names.add(match.attribute.name);
       attributes.push(match.attribute);
     }

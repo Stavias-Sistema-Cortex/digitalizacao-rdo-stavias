@@ -5,14 +5,17 @@ const mocks = vi.hoisted(() => ({
   updateSyncState: vi.fn(),
   ensureRegisteredDevice: vi.fn(),
   processObjectUploads: vi.fn(),
+  materializeReadyMessageMutations: vi.fn(),
   refreshMessagingAfterPull: vi.fn(),
   repairRdoCreateMutationsForSync: vi.fn(),
   acknowledgeCurrentCursor: vi.fn(),
   pullEvents: vi.fn(),
   pushOutbox: vi.fn(),
   recoverInterruptedMutations: vi.fn(),
+  queueErroredMutationsForRetry: vi.fn(),
   repairMissingMaoObraReferencesForSync: vi.fn(),
   repairMissingObraReferencesForSync: vi.fn(),
+  classifyLegacyOutboxMutationsForReview: vi.fn(),
 }));
 
 vi.mock("../../features/auth/authSession", () => ({
@@ -26,6 +29,10 @@ vi.mock("./registerDevice", () => ({
 }));
 vi.mock("../../features/mensagens/objectUploadSync", () => ({
   processObjectUploads: mocks.processObjectUploads,
+}));
+vi.mock("../../features/mensagens/mensagensRepository", () => ({
+  materializeReadyMessageMutations:
+    mocks.materializeReadyMessageMutations,
 }));
 vi.mock("../../features/mensagens/mensagensHydration", () => ({
   refreshMessagingAfterPull: mocks.refreshMessagingAfterPull,
@@ -41,10 +48,14 @@ vi.mock("./pullEvents", () => ({ pullEvents: mocks.pullEvents }));
 vi.mock("./pushOutbox", () => ({ pushOutbox: mocks.pushOutbox }));
 vi.mock("./syncStorage", () => ({
   recoverInterruptedMutations: mocks.recoverInterruptedMutations,
+  queueErroredMutationsForRetry:
+    mocks.queueErroredMutationsForRetry,
   repairMissingMaoObraReferencesForSync:
     mocks.repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync:
     mocks.repairMissingObraReferencesForSync,
+  classifyLegacyOutboxMutationsForReview:
+    mocks.classifyLegacyOutboxMutationsForReview,
 }));
 
 vi.stubGlobal("navigator", { onLine: true });
@@ -62,6 +73,7 @@ describe("syncNow authorization", () => {
       applied: 0,
       errors: 0,
     });
+    mocks.materializeReadyMessageMutations.mockResolvedValue(0);
     mocks.refreshMessagingAfterPull.mockResolvedValue(undefined);
     mocks.repairRdoCreateMutationsForSync.mockResolvedValue(undefined);
     mocks.acknowledgeCurrentCursor.mockResolvedValue(0);
@@ -77,8 +89,10 @@ describe("syncNow authorization", () => {
       conflicts: 0,
     });
     mocks.recoverInterruptedMutations.mockResolvedValue(undefined);
+    mocks.queueErroredMutationsForRetry.mockResolvedValue(0);
     mocks.repairMissingMaoObraReferencesForSync.mockResolvedValue(undefined);
     mocks.repairMissingObraReferencesForSync.mockResolvedValue(undefined);
+    mocks.classifyLegacyOutboxMutationsForReview.mockResolvedValue(0);
   });
 
   it("recusa antes de tocar o estado ou a outbox sem sessão online", async () => {
@@ -118,5 +132,72 @@ describe("syncNow authorization", () => {
       pulled: 3,
       acknowledgedCommitSeq: 12,
     });
+  });
+
+  it("recoloca erros transitórios na fila antes de selecionar o próximo push", async () => {
+    mocks.hasOnlineSession.mockReturnValue(true);
+
+    await expect(syncNow()).resolves.toMatchObject({
+      retryableErrors: 0,
+    });
+
+    expect(
+      mocks.queueErroredMutationsForRetry,
+    ).toHaveBeenCalledOnce();
+    expect(
+      mocks.queueErroredMutationsForRetry.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.pushOutbox.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("classifica envelopes legados antes de qualquer reparo que possa alterar uma mutação", async () => {
+    mocks.hasOnlineSession.mockReturnValue(true);
+
+    await expect(syncNow()).resolves.toMatchObject({
+      retryableErrors: 0,
+    });
+
+    expect(
+      mocks.classifyLegacyOutboxMutationsForReview,
+    ).toHaveBeenCalledOnce();
+    expect(
+      mocks.classifyLegacyOutboxMutationsForReview.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.recoverInterruptedMutations.mock.invocationCallOrder[0],
+    );
+    expect(
+      mocks.classifyLegacyOutboxMutationsForReview.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.repairMissingObraReferencesForSync.mock
+        .invocationCallOrder[0],
+    );
+  });
+
+  it("materializa a mutação canônica da mensagem depois dos uploads e antes do push", async () => {
+    mocks.hasOnlineSession.mockReturnValue(true);
+
+    await expect(syncNow()).resolves.toMatchObject({
+      retryableErrors: 0,
+    });
+
+    expect(
+      mocks.materializeReadyMessageMutations,
+    ).toHaveBeenCalledOnce();
+    expect(
+      mocks.processObjectUploads.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.materializeReadyMessageMutations.mock
+        .invocationCallOrder[0],
+    );
+    expect(
+      mocks.materializeReadyMessageMutations.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.pushOutbox.mock.invocationCallOrder[0],
+    );
   });
 });

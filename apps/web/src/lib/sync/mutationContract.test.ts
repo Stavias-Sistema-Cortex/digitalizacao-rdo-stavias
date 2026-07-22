@@ -86,6 +86,12 @@ describe("canonical mutation IndexedDB contract", () => {
     );
     expect(
       await db.get("outbox_mutations", "queued-before-v13"),
-    ).toMatchObject({ payload: { preserved: true } });
+    ).toEqual({
+      clientMutationId: "queued-before-v13",
+      entidadeId: "rdo-1",
+      status: "PENDING",
+      criadaNoClienteEm: "2026-07-17T00:00:00.000Z",
+      payload: { preserved: true },
+    });
   });
 });

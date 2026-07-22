@@ -181,15 +181,20 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(cortexShellSource).not.toContain('role="menuitem"');
   });
 
-  it("expõe fatos globais de sincronização junto ao perfil", () => {
+  it("mantém o resumo global de sincronização compacto e deixa os fatos no detalhe", () => {
     expect(syncStatusBannerSource).toContain(
-      'import { SyncStateStrip } from "./institutional/SyncStateStrip";',
+      'import { SyncStateFacts } from "./institutional/SyncStateStrip";',
     );
     expect(syncStatusBannerSource).toContain(
       'from "./syncPresentation";',
     );
+    expect(syncStatusBannerSource).toContain("sync-status-summary");
+    expect(syncStatusBannerSource).not.toMatch(/<SyncStateStrip\b/);
+    expect(syncStatusBannerSource).not.toContain(
+      "sync-status-global-state",
+    );
     expect(syncStatusBannerSource).toMatch(
-      /<SyncStateStrip\s+snapshot=\{snapshot\}\s+className="sync-status-global-state"\s+presentationError=\{manualSyncError\?\.message \?\? null\}\s*\/>/s,
+      /<SyncStateFacts\s+snapshot=\{snapshot\}\s+className="sync-chip__facts"\s*\/>/s,
     );
     expect(syncStatusBannerSource).toMatch(
       /useEffect\(\(\) => \{[\s\S]*?shouldClearManualSyncPresentationError\(/,
@@ -207,7 +212,9 @@ describe("polimento visual da plataforma autenticada", () => {
       /snapshot\.isLoading\s*\?\s*"CHECKING"\s*:\s*snapshot\.status/,
     );
     expect(syncCss).toContain(".sync-chip--checking");
-    expect(syncCss).toContain(".sync-status-global-state");
+    expect(syncCss).toContain(".sync-status-summary");
+    expect(syncCss).toContain(".sync-chip__facts");
+    expect(syncCss).not.toContain(".sync-status-global-state");
     expect(syncStateStripSource).toContain("<dt>Fila local</dt>");
     expect(syncStateStripSource).toContain("<dt>Conflitos</dt>");
     expect(syncStateStripSource).toContain(
@@ -217,15 +224,19 @@ describe("polimento visual da plataforma autenticada", () => {
       "min-width: 0;",
     );
     const controls = rule(globalCss, ".floating-controls");
-    expect(controls).toContain("position: sticky;");
+    expect(controls).toContain("position: relative;");
+    expect(controls).not.toContain("position: sticky;");
     expect(controls).toContain("justify-content: flex-end;");
 
-    const narrowSyncCss = syncCss.slice(
-      syncCss.indexOf("@media (max-width: 620px)"),
+    const compactSummary = rule(syncCss, ".sync-status-summary");
+    expect(compactSummary).toContain("border-inline-start: 2px solid currentColor;");
+    expect(compactSummary).toContain("white-space: nowrap;");
+
+    const popoverFacts = rule(syncCss, ".sync-chip__facts");
+    expect(popoverFacts).toContain(
+      "grid-template-columns: repeat(2, minmax(0, 1fr));",
     );
-    expect(
-      rule(narrowSyncCss, "  .sync-status-global-state"),
-    ).toContain("width: min(250px, calc(100vw - 120px));");
+    expect(popoverFacts).toContain("border-top: 1px solid var(--color-border);");
   });
 
   it("limita o peso do chip de sincronização por função institucional", () => {
@@ -411,13 +422,13 @@ describe("polimento visual da plataforma autenticada", () => {
         narrowCss,
         ".home-dashboard,\n  .rdo-dashboard,\n  .obras-page",
       ),
-    ).toContain("padding-top: 84px;");
+    ).toContain("padding-top: 24px;");
 
     const tarefasNarrowCss = tarefasCss.slice(
       tarefasCss.lastIndexOf("@media (max-width: 620px)"),
     );
     expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
-      "padding-top: 84px;",
+      "padding-top: 24px;",
     );
     expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
       "padding-bottom: calc(120px + env(safe-area-inset-bottom));",
@@ -505,12 +516,19 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(priority).toContain("border: 1px solid var(--color-border);");
     expect(priority).toContain("background: var(--color-surface);");
 
-    expect(lastRule(tarefasCss, ".tarefas-equipe-tab--active")).toContain(
-      "box-shadow: inset 0 -3px var(--color-brand-yellow);",
+    const activeTeam = lastRule(
+      tarefasCss,
+      ".tarefas-equipe-tab--active",
     );
-    expect(rule(tarefasCss, ".tarefa-form-enviar")).toContain(
-      "box-shadow: none;",
+    expect(activeTeam).toContain(
+      "border: 1px solid var(--color-ink);",
     );
+    expect(activeTeam).toContain("box-shadow: none;");
+    expect(activeTeam).not.toContain("inset");
+
+    const submit = lastRule(tarefasCss, ".tarefa-form-enviar");
+    expect(submit).toContain("background: var(--color-ink);");
+    expect(submit).toContain("color: var(--color-surface);");
     expect(rule(tarefasCss, ".tarefa-bandeira--1")).toContain(
       "color: #2f6bd8;",
     );

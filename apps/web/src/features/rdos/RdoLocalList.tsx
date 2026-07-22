@@ -1,14 +1,23 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
+import {
+  InstitutionalStatus,
+  type InstitutionalStatusState,
+} from "../../components/institutional/InstitutionalStatus";
+import { SyncStateStrip } from "../../components/institutional/SyncStateStrip";
+import { TraceReference } from "../../components/institutional/TraceReference";
 import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
 import { memoryHref } from "../home/memory/memoryLocation";
 import type {
+  LocalSyncStatus,
   LocalRdoRecord,
   OperationalEventRecord,
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
+import { useSyncStatus } from "../../lib/sync/useSyncStatus";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -20,6 +29,8 @@ interface RdoLocalListProps {
   onImportRdoFile: (file: File) => void;
   isImporting: boolean;
   onOpen: (record: LocalRdoRecord) => void;
+  onDiscardRejected: (record: LocalRdoRecord) => void;
+  discardingRdoId: string | null;
   onRefresh: () => void;
   onOpenStavia: (context?: {
     obraId?: string;
@@ -251,6 +262,44 @@ function hasOccurrence(
   );
 }
 
+function institutionalState(
+  status: LocalSyncStatus,
+): InstitutionalStatusState | null {
+  switch (status) {
+    case "LOCAL_ONLY":
+      return "LOCAL";
+    case "PENDING_SYNC":
+      return "PENDING";
+    case "SYNCING":
+      return "SYNCING";
+    case "SYNCED":
+      return "SYNCED";
+    case "CONFLICT":
+      return "CONFLICT";
+    case "ERROR":
+      return null;
+  }
+}
+
+function RdoSyncStatus({ status }: { status: LocalSyncStatus }) {
+  const state = institutionalState(status);
+
+  return state ? (
+    <InstitutionalStatus
+      state={state}
+      label={formatLocalSyncStatus(status)}
+    />
+  ) : (
+    <span
+      className="institutional-status rdo-status-error"
+      data-state="ERROR"
+      role="status"
+    >
+      {formatLocalSyncStatus(status)}
+    </span>
+  );
+}
+
 export function RdoLocalList({
   records,
   events,
@@ -261,9 +310,12 @@ export function RdoLocalList({
   onImportRdoFile,
   isImporting,
   onOpen,
+  onDiscardRejected,
+  discardingRdoId,
   onRefresh,
   onOpenStavia,
 }: RdoLocalListProps) {
+  const { snapshot } = useSyncStatus();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [obraFilter, setObraFilter] = useState("");
   const [periodFilter, setPeriodFilter] =
@@ -381,55 +433,55 @@ export function RdoLocalList({
 
   return (
     <main className="rdo-dashboard">
-      <section className="rdo-command-band">
-        <div>
-          <p className="eyebrow">Stavias · Sistema Córtex</p>
-          <h1>Relatórios Diários de Obra</h1>
-          <span className="brand-tick" aria-hidden="true" />
-          <p className="subtitle">
-            RDOs locais, eventos ontológicos, fotos e status de
-            sincronização em uma única visão operacional.
-          </p>
-        </div>
+      <InstitutionalPageHeader
+        eyebrow="Operação de campo · Documentos"
+        title="Relatórios Diários de Obra"
+        description="Registros locais de execução, equipe, materiais, medições e evidências de campo."
+        actions={(
+          <div className="rdo-command-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => onOpenStavia()}
+            >
+              Abrir StavIA
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onCreate}
+            >
+              Novo RDO
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={isImporting}
+            >
+              {isImporting ? "Importando..." : "Importar RDO"}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".pdf,.xlsx,.xls,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+              className="visually-hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) {
+                  onImportRdoFile(file);
+                }
+              }}
+            />
+          </div>
+        )}
+      />
 
-        <div className="rdo-command-actions">
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => onOpenStavia()}
-          >
-            Abrir StavIA
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onCreate}
-          >
-            Novo RDO
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => importInputRef.current?.click()}
-            disabled={isImporting}
-          >
-            {isImporting ? "Importando..." : "Importar RDO"}
-          </button>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".pdf,.xlsx,.xls,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
-            className="visually-hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) {
-                onImportRdoFile(file);
-              }
-            }}
-          />
-        </div>
-      </section>
+      <SyncStateStrip
+        snapshot={snapshot}
+        className="rdo-canonical-sync"
+      />
 
       <section className="rdo-filter-grid">
         <label>
@@ -508,20 +560,43 @@ export function RdoLocalList({
       {error && <div className="notice notice-error">{error}</div>}
       {isLoading && <div className="notice">Carregando RDOs locais...</div>}
 
-      <section className="rdo-metric-grid">
-        <MetricCard label="Trechos" value={metrics.trechos} />
-        <MetricCard
-          label="Metros concluídos"
-          value={`${Math.round(metrics.metros).toLocaleString("pt-BR")} m`}
-        />
-        <MetricCard label="Em execução" value={metrics.emExecucao} />
-        <MetricCard
-          label="Equipe e equipamentos"
-          value={`${metrics.pessoas}/${metrics.equipamentos}`}
-        />
-        <MetricCard label="Pendentes de sync" value={metrics.pendentes} />
-        <MetricCard label="Com foto" value={metrics.comFoto} />
-        <MetricCard label="Com ocorrência" value={metrics.comOcorrencia} />
+      <section
+        className="rdo-register-summary institutional-frame"
+        aria-label="Resumo dos documentos filtrados"
+      >
+        <h2>Resumo do registro</h2>
+        <dl>
+          <div>
+            <dt>Trechos</dt>
+            <dd>{metrics.trechos}</dd>
+          </div>
+          <div>
+            <dt>Metros concluídos</dt>
+            <dd>
+              {Math.round(metrics.metros).toLocaleString("pt-BR")} m
+            </dd>
+          </div>
+          <div>
+            <dt>Em execução</dt>
+            <dd>{metrics.emExecucao}</dd>
+          </div>
+          <div>
+            <dt>Equipe / equipamentos</dt>
+            <dd>{metrics.pessoas}/{metrics.equipamentos}</dd>
+          </div>
+          <div>
+            <dt>Pendentes de sync</dt>
+            <dd>{metrics.pendentes}</dd>
+          </div>
+          <div>
+            <dt>Com foto</dt>
+            <dd>{metrics.comFoto}</dd>
+          </div>
+          <div>
+            <dt>Com ocorrência</dt>
+            <dd>{metrics.comOcorrencia}</dd>
+          </div>
+        </dl>
       </section>
 
       <ProgramacaoSemanalImport onRdoCreated={onRefresh} />
@@ -552,6 +627,11 @@ export function RdoLocalList({
             const eventCount = events.filter(
               (event) => event.rdoId === record.id,
             ).length;
+            const latestEvent = events
+              .filter((event) => event.rdoId === record.id)
+              .sort((left, right) =>
+                right.occurredAt.localeCompare(left.occurredAt),
+              )[0];
 
             return (
               <article className="rdo-operational-card" key={record.id}>
@@ -569,11 +649,7 @@ export function RdoLocalList({
                   >
                     {record.numeroRdo || "RDO sem número"}
                   </button>
-                  <span
-                    className={`status-badge status-badge--${record.syncStatus.toLowerCase()}`}
-                  >
-                    {formatLocalSyncStatus(record.syncStatus)}
-                  </span>
+                  <RdoSyncStatus status={record.syncStatus} />
                 </div>
 
                 <div className="rdo-card-subtitle">
@@ -664,17 +740,36 @@ export function RdoLocalList({
                   >
                     Perguntar à StavIA
                   </button>
-                  <Link
-                    className="secondary-button"
-                    to={memoryHref({
-                      obraId: record.obraId,
-                      rdoId: record.id,
-                      entityType: "RDO",
-                      entityId: record.id,
-                    })}
-                  >
-                    Ver na Memória
-                  </Link>
+                  {record.syncStatus === "ERROR" ? (
+                    <button
+                      type="button"
+                      className="secondary-button rdo-discard-button"
+                      onClick={() => onDiscardRejected(record)}
+                      disabled={discardingRdoId === record.id}
+                    >
+                      {discardingRdoId === record.id
+                        ? "Excluindo..."
+                        : "Excluir RDO rejeitado"}
+                    </button>
+                  ) : null}
+                  {latestEvent ? (
+                    <TraceReference
+                      eventId={latestEvent.id}
+                      entityId={record.id}
+                    />
+                  ) : (
+                    <Link
+                      className="rdo-memory-link"
+                      to={memoryHref({
+                        obraId: record.obraId,
+                        rdoId: record.id,
+                        entityType: "RDO",
+                        entityId: record.id,
+                      })}
+                    >
+                      Abrir ficha na Memória
+                    </Link>
+                  )}
                 </div>
               </article>
             );
@@ -705,21 +800,6 @@ export function RdoLocalList({
         />
       ) : null}
     </main>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
   );
 }
 
@@ -779,18 +859,30 @@ function ProfileDrawer({
         </button>
       </div>
 
-      <div className="profile-summary-grid">
-        <MetricCard label="RDOs" value={relatedRecords.length} />
-        <MetricCard label="Eventos" value={relatedEvents.length} />
-        <MetricCard label="Fotos" value={relatedAttachments.length} />
-        <MetricCard
-          label="Pendentes"
-          value={
-            relatedRecords.filter((record) => record.syncStatus !== "SYNCED")
-              .length
-          }
-        />
-      </div>
+      <dl className="profile-summary-grid rdo-profile-summary">
+        <div>
+          <dt>RDOs</dt>
+          <dd>{relatedRecords.length}</dd>
+        </div>
+        <div>
+          <dt>Eventos</dt>
+          <dd>{relatedEvents.length}</dd>
+        </div>
+        <div>
+          <dt>Fotos</dt>
+          <dd>{relatedAttachments.length}</dd>
+        </div>
+        <div>
+          <dt>Pendentes</dt>
+          <dd>
+            {
+              relatedRecords.filter(
+                (record) => record.syncStatus !== "SYNCED",
+              ).length
+            }
+          </dd>
+        </div>
+      </dl>
 
       <section>
         <h3>RDOs relacionados</h3>

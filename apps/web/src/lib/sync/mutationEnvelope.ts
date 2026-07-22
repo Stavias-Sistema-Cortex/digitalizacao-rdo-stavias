@@ -165,7 +165,10 @@ function prepareMutationEnvelope(
   validateRequiredText(actorId, "actor.actorId");
   validateRequiredText(actorName, "actor.actorName");
   validateRequiredText(deviceId, "actor.deviceId");
-  if (authorizationScope.length === 0) {
+  if (
+    authorizationScope.length === 0 &&
+    !allowsConversationScopedTrace(entity.type)
+  ) {
     throw new TypeError("actor.authorizationScope is required.");
   }
   if (baseVersion !== null && !Number.isFinite(baseVersion)) {
@@ -216,6 +219,15 @@ function prepareMutationEnvelope(
     dependsOnMutationIds: [...new Set(dependsOnMutationIds)],
     fieldPatch: buildFieldPatch(previousState, newState),
   };
+}
+
+function allowsConversationScopedTrace(
+  entityType: SyncEntityType,
+): boolean {
+  return (
+    entityType === "MENSAGEM" ||
+    entityType === "MENSAGEM_ANEXO"
+  );
 }
 
 function recordSnapshot(

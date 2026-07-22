@@ -61,6 +61,7 @@ export interface CommitLocalMutationInput<
    */
   write: (
     transaction: LocalMutationTransaction<TStore>,
+    mutation: CanonicalOutboxMutationRecord,
   ) => undefined;
 }
 
@@ -143,7 +144,7 @@ export async function commitLocalMutation<
   const transaction = db.transaction(storeNames, "readwrite");
 
   try {
-    const writeResult: unknown = write(transaction);
+    const writeResult: unknown = write(transaction, mutation);
     if (writeResult !== undefined) {
       if (isThenable(writeResult)) {
         void Promise.resolve(writeResult).catch(() => undefined);

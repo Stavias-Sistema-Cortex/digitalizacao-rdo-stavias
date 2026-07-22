@@ -10,7 +10,7 @@ import {
   type SyncUiStatus,
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
-import { SyncStateStrip } from "./institutional/SyncStateStrip";
+import { SyncStateFacts } from "./institutional/SyncStateStrip";
 import {
   shouldClearManualSyncPresentationError,
   type ManualSyncPresentationError,
@@ -22,7 +22,9 @@ interface StatusContent {
   description: string;
 }
 
-type SyncChipStatus = SyncUiStatus | "CHECKING";
+type SyncChipStatus =
+  | Exclude<SyncUiStatus, "REVIEW">
+  | "CHECKING";
 
 function pluralize(
   count: number,
@@ -38,19 +40,27 @@ function getStatusContent(
   syncingCount: number,
   errorCount: number,
   conflictCount: number,
+  reviewCount: number,
 ): StatusContent {
   const localChangesCount =
     pendingCount +
     syncingCount +
     errorCount +
-    conflictCount;
+    conflictCount +
+    reviewCount;
 
   switch (status) {
     case "OFFLINE":
       return {
         title: "Sem conexão",
         description:
-          localChangesCount > 0
+          reviewCount > 0
+            ? `${pluralize(
+                reviewCount,
+                "registro exige",
+                "registros exigem",
+              )} revisão neste dispositivo. Esses itens não serão reenviados automaticamente.`
+            : localChangesCount > 0
             ? `${pluralize(
                 localChangesCount,
                 "alteração permanece",
@@ -114,6 +124,16 @@ function getStatusContent(
         } para edição.`,
       };
 
+    case "REVIEW":
+      return {
+        title: "Revisão necessária",
+        description: `${pluralize(
+          reviewCount,
+          "registro exige",
+          "registros exigem",
+        )} revisão antes de qualquer novo envio.`,
+      };
+
     case "SYNCED":
       return {
         title: "Sincronizado",
@@ -121,28 +141,6 @@ function getStatusContent(
           "As alterações locais estão alinhadas com o servidor.",
       };
   }
-}
-
-function formatLastSync(
-  value: string | null,
-): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return new Intl.DateTimeFormat(
-    "pt-BR",
-    {
-      dateStyle: "short",
-      timeStyle: "medium",
-    },
-  ).format(date);
 }
 
 export function SyncStatusBanner() {
@@ -161,7 +159,9 @@ export function SyncStatusBanner() {
     ? "ERROR"
     : snapshot.isLoading
       ? "CHECKING"
-      : snapshot.status;
+      : snapshot.status === "REVIEW"
+        ? "CONFLICT"
+        : snapshot.status;
 
   const content = useMemo(
     () =>
@@ -171,6 +171,7 @@ export function SyncStatusBanner() {
         snapshot.syncingCount,
         snapshot.errorCount,
         snapshot.conflictCount,
+        snapshot.reviewCount,
       ),
     [
       displayedStatus,
@@ -178,23 +179,23 @@ export function SyncStatusBanner() {
       snapshot.syncingCount,
       snapshot.errorCount,
       snapshot.conflictCount,
+      snapshot.reviewCount,
     ],
   );
 
-  const lastSyncText = formatLastSync(
-    snapshot.lastSyncCompletedAt,
-  );
-
-  const visibleSyncError =
+  const visibleSyncDetail =
     manualSyncError?.message ??
-    (displayedStatus === "ERROR" || displayedStatus === "CONFLICT"
-      ? snapshot.lastSyncError
-      : null);
+    (displayedStatus === "REVIEW"
+      ? snapshot.reviewReason
+      : displayedStatus === "ERROR" || displayedStatus === "CONFLICT"
+        ? snapshot.lastSyncError
+        : null);
 
   const attentionCount =
     snapshot.pendingCount +
     snapshot.errorCount +
-    snapshot.conflictCount;
+    snapshot.conflictCount +
+    snapshot.reviewCount;
 
   useEffect(() => {
     if (
@@ -276,11 +277,12 @@ export function SyncStatusBanner() {
       ref={rootRef}
       className="sync-status-control"
     >
-      <SyncStateStrip
-        snapshot={snapshot}
-        className="sync-status-global-state"
-        presentationError={manualSyncError?.message ?? null}
-      />
+      <span
+        className={`sync-status-summary sync-status-summary--${chipStatus.toLowerCase()}`}
+        aria-hidden="true"
+      >
+        {chipTitle}
+      </span>
       <div
         className={`sync-chip sync-chip--${chipStatus.toLowerCase()}`}
       >
@@ -344,15 +346,14 @@ export function SyncStatusBanner() {
                 : content.description}
             </p>
 
-            <p className="sync-chip__meta">
-              {lastSyncText
-                ? `Última sincronização: ${lastSyncText}`
-                : "Ainda não sincronizado"}
-            </p>
+            <SyncStateFacts
+              snapshot={snapshot}
+              className="sync-chip__facts"
+            />
 
-            {visibleSyncError && (
+            {visibleSyncDetail && (
               <p className="sync-chip__error">
-                {visibleSyncError}
+                {visibleSyncDetail}
               </p>
             )}
 

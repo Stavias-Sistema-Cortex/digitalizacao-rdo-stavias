@@ -314,6 +314,68 @@
   text-align: center;
 }
 
+.postgresql-access {
+  display: grid;
+  place-items: center;
+  grid-template-rows: 1fr;
+}
+
+.postgresql-access__stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  width: min(980px, 100%);
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: var(--radius-control);
+  background: #10312f;
+  overflow: hidden;
+}
+
+.postgresql-access__identity {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(38px, 6vw, 70px);
+}
+
+.postgresql-access__eyebrow {
+  margin: 0 0 14px;
+  color: var(--login-yellow);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.postgresql-access__identity h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.postgresql-access__identity > p:last-child {
+  max-width: 480px;
+  margin: 20px 0 0;
+  color: rgb(255 255 255 / 76%);
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.postgresql-access__panel {
+  display: flex;
+  align-items: center;
+  padding: clamp(32px, 5vw, 50px);
+  border: 1px solid #d9ddda;
+  border-radius: var(--radius-control);
+  background: #fff;
+}
+
+.postgresql-access__panel > * {
+  width: 100%;
+}
+
 @keyframes login-spin {
   to {
     transform: rotate(360deg);
@@ -365,6 +427,15 @@
   .login__form,
   .login-field {
     min-width: 0;
+  }
+
+  .postgresql-access__stage {
+    grid-template-columns: 1fr;
+  }
+
+  .postgresql-access__identity,
+  .postgresql-access__panel {
+    padding: 32px 26px;
   }
 }
 

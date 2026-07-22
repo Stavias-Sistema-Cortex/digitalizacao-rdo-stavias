@@ -51,6 +51,12 @@ describe("Home institutional command layout", () => {
     expect(memorySummary).toContain("home-command-summary");
   });
 
+  it("keeps ontology change details exclusively in the Memory tab", () => {
+    expect(homeOverview).not.toContain("<TraceReference");
+    expect(homeOverview).toContain("Consultar Memória");
+    expect(memoryLedger).toContain("Registro técnico");
+  });
+
   it("keeps the complete ontology history in a dense technical Memory ledger", () => {
     expect(memoryLedger).toContain('aria-label="Filtros da Memória"');
     expect(memoryLedger).toContain("<table");
@@ -80,6 +86,7 @@ describe("Home institutional command layout", () => {
   it("keeps device-wide sync totals distinct from the focused worksite", () => {
     expect(homeOverview).toContain("Conflitos no dispositivo");
     expect(homeOverview).toContain("Falhas no dispositivo");
+    expect(homeOverview).toContain("Revisões necessárias");
     expect(homeOverview).toContain("Na fila do dispositivo");
     expect(homeOverview).toContain("nesta obra");
   });

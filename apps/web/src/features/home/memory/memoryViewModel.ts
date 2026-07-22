@@ -32,6 +32,8 @@ const EVENT_LABELS: Record<string, string> = {
   TAREFA_CONCLUIDA: "Tarefa concluída",
   TAREFA_REABERTA: "Tarefa reaberta",
   TAREFA_EXCLUIDA: "Tarefa excluída",
+  MENSAGEM_CRIADA: "Mensagem criada",
+  COMPRA_CRIADA: "Compra criada",
   OBRA_CRIADA: "Obra criada",
   OBRA_ATUALIZADA: "Obra atualizada",
   EQUIPE_CRIADA: "Equipe criada",
@@ -100,7 +102,7 @@ export function memoryConflictReviewRecords(
 
   for (const event of localEvents) {
     const clientMutationId = text(event.clientMutationId);
-    if (!clientMutationId || normalized(event.result) !== "CONFLICT") {
+    if (!clientMutationId) {
       continue;
     }
     const events = eventsByMutation.get(clientMutationId) ?? [];
@@ -108,12 +110,16 @@ export function memoryConflictReviewRecords(
     eventsByMutation.set(clientMutationId, events);
   }
 
-  return mutations.flatMap((mutation) => {
-    if (mutation.status !== "CONFLICT") {
+  return mutations.flatMap<MemoryConflictReviewRecord>((mutation) => {
+    const hasBlockedReason = text(mutation.blockedReason) !== null;
+    const isConflict = mutation.status === "CONFLICT";
+    const isRejected =
+      mutation.status === "REJECTED" || hasBlockedReason;
+    if (!isConflict && !isRejected) {
       return [];
     }
     const conflicts = storedFieldConflicts(mutation.conflito);
-    if (Object.keys(conflicts).length === 0) {
+    if (isConflict && Object.keys(conflicts).length === 0) {
       return [];
     }
     const candidates = eventsByMutation.get(mutation.clientMutationId) ?? [];
@@ -121,20 +127,30 @@ export function memoryConflictReviewRecords(
     const event = eventId
       ? candidates.find((candidate) => candidate.id === eventId)
       : candidates[0];
-    if (!event) {
+    if (isConflict && !event) {
       return [];
     }
+    const trace = mutation.trace;
+    const authorizationScope = Array.isArray(trace?.authorizationScope)
+      ? trace.authorizationScope.filter((scope) => text(scope) !== null)
+      : [];
+    const resolvedEventId = event?.id ?? eventId;
 
     return [{
-      eventId: event.id,
+      eventId: resolvedEventId,
       clientMutationId: mutation.clientMutationId,
-      actorId: text(event.responsibleUserId),
-      actorName: text(event.responsibleUserName),
-      deviceId: text(event.deviceId),
-      entity: entityRef(event.principalEntity),
+      actorId: text(event?.responsibleUserId) ?? text(trace?.actorId),
+      actorName: text(event?.responsibleUserName),
+      deviceId: text(event?.deviceId) ?? text(trace?.deviceId),
+      entity: event
+        ? entityRef(event.principalEntity)
+        : { type: mutation.entidadeTipo, id: mutation.entidadeId, name: null },
       operation: mutation.operacao,
-      occurredAt: text(event.occurredAt),
+      occurredAt: text(event?.occurredAt) ?? text(mutation.criadaNoClienteEm),
       updatedAt: text(mutation.updatedAt),
+      status: isConflict ? "CONFLICT" : "REJECTED",
+      reason: text(mutation.blockedReason) ?? text(mutation.ultimoErro),
+      authorizationScope,
       conflicts,
     }];
   }).sort(compareConflictReviews);
@@ -292,7 +308,9 @@ function compareConflictReviews(
   right: MemoryConflictReviewRecord,
 ): number {
   const timeDifference = timestamp(right.updatedAt) - timestamp(left.updatedAt);
-  return timeDifference || left.eventId.localeCompare(right.eventId);
+  return timeDifference || left.clientMutationId.localeCompare(
+    right.clientMutationId,
+  );
 }
 
 function compareEvents(left: MemoryEvent, right: MemoryEvent): number {

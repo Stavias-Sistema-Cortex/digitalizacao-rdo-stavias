@@ -116,16 +116,6 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
 async function fetchAllScopedTeams(): Promise<TeamDto[]> {
   const first = await fetchTeams({ page: 0, size: 100 });
   const teams = [...first.items];
@@ -533,7 +523,7 @@ export function EquipesPage() {
         </aside>
 
         <section className="teams-detail">
-          {!selectedTeamId || !selectedTeam ? <div className="teams-detail-empty"><div><i /><i /><i /></div><h2>Selecione uma equipe</h2><p>Consulte pessoas, vigências, vínculos e mudanças rastreadas pela ontologia.</p></div> : <>
+          {!selectedTeamId || !selectedTeam ? <div className="teams-detail-empty"><div><i /><i /><i /></div><h2>Selecione uma equipe</h2><p>Consulte a composição e os vínculos vigentes. A trilha auditável fica em Home → Memória.</p></div> : <>
             <header className="teams-detail-header">
               <button className="teams-mobile-back" type="button" onClick={() => setSearchParams({})} aria-label="Voltar às equipes">‹</button>
               <div className="teams-title-mark">{participantInitials(selectedTeam.nome)}</div>
@@ -546,7 +536,7 @@ export function EquipesPage() {
                 <div><span>Status</span><strong className={`teams-status teams-status--${selectedTeam.status.toLowerCase()}`}>{selectedTeam.status === "ATIVA" ? "Ativa" : "Arquivada"}</strong></div>
                 <div><span>Vigência</span><strong>{formatDate(selectedTeam.inicioValidadeEm)} — {formatDate(selectedTeam.fimValidadeEm)}</strong></div>
                 <div><span>Responsável</span><strong>{activeMembers.find((member) => member.responsavel)?.colaboradorNome ?? "Não definido"}</strong></div>
-                <div><span>Última mudança</span><strong>{formatDateTime(selectedTeam.atualizadoEm)}</strong></div>
+                <div><span>Memória</span><strong>{history.length} registro(s) auditáveis</strong></div>
               </section>
               {selectedTeam.descricao && <p className="teams-description">{selectedTeam.descricao}</p>}
 
@@ -560,7 +550,7 @@ export function EquipesPage() {
                 <div className="teams-relation-list">{worksites.length > 0 ? worksites.map((link) => <article key={link.id}><i /><div><strong>{link.obraNome}</strong><span>{link.status === "ATIVO" ? "Atuação ativa" : "Vínculo encerrado"} · {formatDate(link.inicioEm)} — {formatDate(link.fimEm)}</span><code>{link.id}</code></div></article>) : <article><i /><div><strong>{selectedTeam.obraNome}</strong><span>Obra principal da equipe</span><code>{selectedTeam.obraPrincipalId}</code></div></article>}</div>
               </section>
 
-              {formerMembers.length > 0 && <section className="teams-section"><header><div><p>Memória temporal</p><h3>Histórico de membros</h3></div></header><div className="teams-history-table" role="table"><div role="row"><span>Pessoa</span><span>Função</span><span>Período</span><span>Motivo</span></div>{formerMembers.map((member) => <button type="button" role="row" key={member.id} onClick={() => setSelectedMember(member)}><strong>{member.colaboradorNome}</strong><span>{member.funcaoNome}</span><span>{formatDate(member.inicioEm)} — {formatDate(member.fimEm)}</span><span>{member.motivoEncerramento || "Não informado"}</span></button>)}</div></section>}
+              {formerMembers.length > 0 && <section className="teams-section"><header><div><p>Memória operacional</p><h3>Participações encerradas</h3></div></header><div className="teams-section-empty"><p>{formerMembers.length} {formerMembers.length === 1 ? "participação encerrada" : "participações encerradas"} registrada(s) para esta equipe.</p><Link to={memoryHref({ obraId: selectedTeam.obraPrincipalId, entityType: "EQUIPE", entityId: selectedTeam.id })}>Abrir Memória</Link></div></section>}
 
               {alfa && selectedTeam.status === "ATIVA" && <div className="teams-danger-zone"><div><strong>Arquivar equipe</strong><p>Encerra vínculos ativos preservando todo o histórico.</p></div><button type="button" onClick={() => { setTeamForm((current) => ({ ...current, motivo: "" })); setTeamModalMode("ARCHIVE"); }}>Arquivar</button></div>}
             </div>

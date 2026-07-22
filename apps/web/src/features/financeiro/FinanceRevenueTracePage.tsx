@@ -53,7 +53,55 @@ export function FinanceRevenueTracePage({
     return <p className="finance-loading">Atualizando rastreio operacional…</p>;
   }
 
+  return (
+    <>
+      <FinanceRevenueTraceContent
+        data={data}
+        onSelectService={setSelectedService}
+      />
+
+      <FinanceTraceEvidenceDrawer
+        service={selectedService}
+        onClose={() => setSelectedService(null)}
+      />
+    </>
+  );
+}
+
+export function FinanceRevenueTraceContent({
+  data,
+  onSelectService,
+}: {
+  data: FinanceRevenueTrace;
+  onSelectService: (
+    service: FinanceRevenueTrace["tiposServico"][number],
+  ) => void;
+}) {
+  if (data.tiposServico.length === 0) {
+    return (
+      <section
+        className="finance-operational-result finance-revenue-empty"
+        data-finance-revenue-state="empty"
+        role="status"
+      >
+        <div className="finance-section-heading">
+          <div>
+            <p className="finance-kicker">Receita operacional</p>
+            <h2>Ainda não há receita operacional registrada</h2>
+            <p>
+              Os valores serão exibidos quando houver uma execução de serviço
+              validada no período, vinculada a uma obra autorizada.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   const total = data.consolidado;
+  const receitaCompleta = data.tiposServico.every(
+    (service) => service.receitaDisponivel,
+  );
   return (
     <>
       <section className="finance-operational-result">
@@ -63,22 +111,37 @@ export function FinanceRevenueTracePage({
             <h2>Receita operacional rastreável</h2>
             <p>
               Valores estimados pela produção registrada; faturamento e recebimento
-              são exibidos separadamente.
+              são exibidos separadamente quando houver preço contratual vinculado.
             </p>
           </div>
         </div>
         <div className="finance-operational-metrics">
           <Metric label="Produção" value={String(total.producao)} />
-          <Metric label="Receita estimada" value={formatMoney(total.receitaEstimada, "BRL")} />
+          <Metric
+            label="Receita estimada"
+            value={receitaCompleta
+              ? formatMoney(total.receitaEstimada, "BRL")
+              : "Indisponível"}
+          />
           <Metric label="Custo" value={formatMoney(total.custo, "BRL")} />
-          <Metric label="Margem" value={formatMoney(total.margem, "BRL")} />
+          <Metric
+            label="Margem"
+            value={receitaCompleta ? formatMoney(total.margem, "BRL") : "Indisponível"}
+          />
         </div>
-        <div className="finance-operational-states">
-          <span>Medida {formatMoney(total.receitaMedida, "BRL")}</span>
-          <span>Aprovada {formatMoney(total.receitaAprovada, "BRL")}</span>
-          <span>Faturada {formatMoney(total.receitaFaturada, "BRL")}</span>
-          <span>Recebida {formatMoney(total.receitaRecebida, "BRL")}</span>
-        </div>
+        {receitaCompleta ? (
+          <div className="finance-operational-states">
+            <span>Medida {formatMoney(total.receitaMedida, "BRL")}</span>
+            <span>Aprovada {formatMoney(total.receitaAprovada, "BRL")}</span>
+            <span>Faturada {formatMoney(total.receitaFaturada, "BRL")}</span>
+            <span>Recebida {formatMoney(total.receitaRecebida, "BRL")}</span>
+          </div>
+        ) : (
+          <p className="finance-revenue-disclosure">
+            <strong>Receita indisponível.</strong> Há execução validada sem preço
+            contratual vinculado; o Córtex não a converte em valor zero.
+          </p>
+        )}
       </section>
 
       <section className="finance-workspace-section">
@@ -128,7 +191,7 @@ export function FinanceRevenueTracePage({
                       <button
                         type="button"
                         className="finance-secondary-action"
-                        onClick={() => setSelectedService(service)}
+                        onClick={() => onSelectService(service)}
                       >
                         Evidências
                       </button>
@@ -140,11 +203,6 @@ export function FinanceRevenueTracePage({
           </div>
         )}
       </section>
-
-      <FinanceTraceEvidenceDrawer
-        service={selectedService}
-        onClose={() => setSelectedService(null)}
-      />
     </>
   );
 }

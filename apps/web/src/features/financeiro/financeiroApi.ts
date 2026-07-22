@@ -534,7 +534,10 @@ export async function buscarRastreioReceita(
   if (filters.obraId) params.set("obraId", filters.obraId);
   if (filters.de) params.set("de", filters.de);
   if (filters.ate) params.set("ate", filters.ate);
-  return readJson(await apiFetch(endpoint("/financeiro/rastreio-receita", params)));
+  return readJson(await apiFetch(
+    endpoint("/financeiro/rastreio-receita", params),
+    { cache: "no-store" },
+  ));
 }
 
 export async function buscarPdorAtual(

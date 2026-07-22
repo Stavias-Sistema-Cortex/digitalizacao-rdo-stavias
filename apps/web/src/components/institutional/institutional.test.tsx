@@ -43,6 +43,8 @@ describe("institutional interface primitives", () => {
           syncingCount: 0,
           errorCount: 0,
           conflictCount: 0,
+          reviewCount: 0,
+          reviewReason: null,
           lastSyncCompletedAt: "2026-07-17T12:30:00.000Z",
           lastSyncError: null,
           isLoading: false,
@@ -66,6 +68,8 @@ describe("institutional interface primitives", () => {
           syncingCount: 0,
           errorCount: 0,
           conflictCount: 0,
+          reviewCount: 0,
+          reviewReason: null,
           lastSyncCompletedAt: null,
           lastSyncError: null,
           isLoading: true,
@@ -89,6 +93,8 @@ describe("institutional interface primitives", () => {
         syncingCount: 0,
         errorCount: 0,
         conflictCount: 0,
+        reviewCount: 0,
+        reviewReason: null,
         lastSyncCompletedAt: null,
         lastSyncError: null,
         isLoading: false,
@@ -115,6 +121,8 @@ describe("institutional interface primitives", () => {
           syncingCount: 0,
           errorCount: 2,
           conflictCount: 0,
+          reviewCount: 0,
+          reviewReason: null,
           lastSyncCompletedAt: null,
           lastSyncError: "Servidor indisponível.",
           isLoading: false,
@@ -129,6 +137,32 @@ describe("institutional interface primitives", () => {
     expect(markup).toContain('role="status"');
     expect(markup).toContain("Falha na sincronização");
     expect(markup).toContain("Servidor indisponível.");
+  });
+
+  it("shows rejected mutations as a review requirement, not a transient sync failure", () => {
+    const markup = renderToStaticMarkup(
+      <SyncStateStrip
+        snapshot={{
+          status: "REVIEW",
+          isOnline: true,
+          pendingCount: 0,
+          syncingCount: 0,
+          errorCount: 0,
+          conflictCount: 0,
+          reviewCount: 1,
+          reviewReason: "Envelope canonico v13 incompleto.",
+          lastSyncCompletedAt: "2026-07-20T12:30:00.000Z",
+          lastSyncError: null,
+          isLoading: false,
+        }}
+      />,
+    );
+
+    expect(markup).toContain('data-sync-status="REVIEW"');
+    expect(markup).toContain('data-sync-review-count="1"');
+    expect(markup).toContain("Revisão necessária");
+    expect(markup).toContain("Envelope canonico v13 incompleto.");
+    expect(markup).not.toContain("Falha na sincronização");
   });
 
 });
