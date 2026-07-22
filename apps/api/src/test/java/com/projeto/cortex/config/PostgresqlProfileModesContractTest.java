@@ -38,7 +38,7 @@ class PostgresqlProfileModesContractTest {
                 "${CORTEX_POSTGRES_USER:joaolucas}",
                 "${CORTEX_POSTGRES_PASSWORD:}",
                 "classpath:db/migration-postgresql",
-                "required-schema-version: 48"
+                "required-schema-version: 49"
         );
         assertThat(common).doesNotContain("schema-readiness:", "runtime-ready:");
         assertThat(common).doesNotContain("${CORTEX_POSTGRES_URL:");

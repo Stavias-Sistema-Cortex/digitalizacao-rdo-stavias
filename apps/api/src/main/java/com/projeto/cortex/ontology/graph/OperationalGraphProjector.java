@@ -135,6 +135,11 @@ public class OperationalGraphProjector {
                 relationType = "USED_IN";
                 source = target;
                 relationTarget = principal;
+            } else if ("SERVICE_PRICE_VERSION".equals(principal.type())
+                    && "SERVICE".equals(target.type())) {
+                relationType = "PRICED_BY";
+                source = target;
+                relationTarget = principal;
             }
 
             if (relationType != null) {

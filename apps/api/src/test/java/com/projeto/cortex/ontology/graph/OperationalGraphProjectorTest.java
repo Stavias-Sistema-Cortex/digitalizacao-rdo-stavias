@@ -99,7 +99,19 @@ class OperationalGraphProjectorTest {
         assertThat(assetUse.relations()).extracting(GraphRelation::type)
                 .contains("USED_IN", "BELONGS_TO_WORKSITE");
         assertThat(price.relations()).extracting(GraphRelation::type)
-                .contains("PRICES", "BELONGS_TO_WORKSITE");
+                .contains("PRICED_BY", "BELONGS_TO_WORKSITE");
+        GraphRelation pricedBy = price.relations().stream()
+                .filter(relation -> "PRICED_BY".equals(relation.type()))
+                .findFirst()
+                .orElseThrow();
+        Map<String, GraphEntity> priceEntities = price.entities().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        GraphEntity::id, java.util.function.Function.identity()
+                ));
+        assertThat(priceEntities.get(pricedBy.sourceEntityId()).externalRefId())
+                .isEqualTo("service-5");
+        assertThat(priceEntities.get(pricedBy.targetEntityId()).externalRefId())
+                .isEqualTo("price-3");
         assertThat(projector.project(new CommittedOperationalEvent(
                 4L,
                 "event-price",

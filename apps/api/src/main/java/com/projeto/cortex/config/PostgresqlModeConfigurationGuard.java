@@ -69,7 +69,7 @@ public final class PostgresqlModeConfigurationGuard
 
         String mode = activePublicModes.getFirst();
         ModeMatrix expected = ModeMatrix.forMode(mode);
-        require(mode, "cortex.postgresql.required-schema-version", "48");
+        require(mode, "cortex.postgresql.required-schema-version", "49");
         requireCanonicalPostgresqlDatasource(mode);
         require(mode, "spring.datasource.driver-class-name", "org.postgresql.Driver");
         require(

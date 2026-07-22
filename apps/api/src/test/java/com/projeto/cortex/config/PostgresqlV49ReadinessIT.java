@@ -12,15 +12,15 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers(disabledWithoutDocker = true)
-class PostgresqlV48ReadinessIT {
+class PostgresqlV49ReadinessIT {
 
     @Container
     private static final PostgreSQLContainer<?> DATABASE =
             new PostgreSQLContainer<>("postgres:18")
-                    .withDatabaseName("cortex_v48_readiness_it");
+                    .withDatabaseName("cortex_v49_readiness_it");
 
     @Test
-    void refusesV47AndAcceptsOnlyTheCompletedV48Chain() {
+    void refusesV48AndAcceptsOnlyTheCompletedV49Chain() {
         Flyway.configure()
                 .dataSource(
                         DATABASE.getJdbcUrl(),
@@ -28,7 +28,7 @@ class PostgresqlV48ReadinessIT {
                         DATABASE.getPassword()
                 )
                 .locations("classpath:db/migration-postgresql")
-                .target("47")
+                .target("48")
                 .load()
                 .migrate();
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
@@ -38,12 +38,12 @@ class PostgresqlV48ReadinessIT {
         ));
         PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
                 jdbc,
-                "48"
+                "49"
         );
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V48");
+                .hasMessageContaining("V49");
 
         Flyway.configure()
                 .dataSource(
@@ -52,7 +52,7 @@ class PostgresqlV48ReadinessIT {
                         DATABASE.getPassword()
                 )
                 .locations("classpath:db/migration-postgresql")
-                .target("48")
+                .target("49")
                 .load()
                 .migrate();
 
