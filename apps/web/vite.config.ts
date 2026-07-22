@@ -72,7 +72,7 @@ export default defineConfig({
         navigateFallback: "/index.html",
 
         globPatterns: [
-          "**/*.{js,css,html,svg,png,ico,webp,woff,woff2,ttf}",
+          "**/*.{js,css,html,svg,png,ico,webp,woff,woff2,ttf,xlsx}",
         ],
 
         cleanupOutdatedCaches: true,

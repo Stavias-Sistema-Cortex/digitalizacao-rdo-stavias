@@ -95,6 +95,7 @@ class RdoXlsxExportServiceTest {
             assertThat(verso.getPrintSetup().getPaperSize()).isEqualTo((short) 9);
             assertThat(verso.getPrintSetup().getLandscape()).isFalse();
             assertThat(verso.getPrintSetup().getScale()).isEqualTo((short) 33);
+            assertThat(workbook.getPrintArea(0)).endsWith("$A$1:$AJ$80");
             assertThat(workbook.getPrintArea(1)).endsWith("$A$2:$AH$70");
             assertThat(containsMergedRange(frente, "B1:AJ3")).isTrue();
             assertThat(containsMergedRange(frente, "X58:AJ59")).isTrue();
@@ -135,7 +136,7 @@ class RdoXlsxExportServiceTest {
             assertThat(numericCell(frente, "J60")).isEqualTo(1000d);
             assertThat(numericCell(frente, "N60")).isEqualTo(0.05d);
             assertThat(stringCell(frente, "X61")).contains("Fresagem");
-            assertThat(stringCell(frente, "X61")).contains("125.50");
+            assertThat(stringCell(frente, "X61")).contains("125.5");
             assertThat(containsMergedRange(frente, "X61:AJ61")).isTrue();
 
             assertThat(verso.getRow(3).getCell(27).getCellType())
@@ -580,6 +581,58 @@ class RdoXlsxExportServiceTest {
         }
     }
 
+    @Test
+    void emitsCompleteSanitizedParityFixtureForOfflineComparison()
+            throws Exception {
+        RdoResponse base = populatedRdo("rdo-parity", "RDO-PARITY");
+        RdoResponse parity = copyRdo(
+                base,
+                base.condicaoManha(),
+                base.condicaoTarde(),
+                base.condicaoNoite(),
+                "@cmd ana@example.com 123.456.789-09 "
+                        + "Bearer BEARER_SECRET_CANARY",
+                base.maoObra(),
+                base.equipamentos(),
+                base.materiais(),
+                List.of(parityControl()),
+                base.servicosExecutados()
+        );
+        when(queryService.buscarPorId("rdo-parity")).thenReturn(parity);
+
+        RdoXlsxExportService.ExportedRdo exported = service.export("rdo-parity");
+        String requestedOutput = System.getProperty("cortex.rdo.parity.output");
+        if (requestedOutput != null && !requestedOutput.isBlank()) {
+            Files.write(Path.of(requestedOutput), exported.content());
+        }
+
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(exported.content())
+        )) {
+            assertThat(stringCell(workbook.getSheetAt(0), "D10")).isEqualTo("X");
+            assertThat(stringCell(workbook.getSheetAt(0), "G11")).isEqualTo("X");
+            assertThat(stringCell(workbook.getSheetAt(0), "J12")).isEqualTo("X");
+            assertThat(stringCell(workbook.getSheetAt(0), "B60")).isEqualTo("10+000");
+            assertThat(stringCell(workbook.getSheetAt(0), "X61")).contains("Fresagem");
+            assertThat(stringCell(workbook.getSheetAt(1), "B8")).isEqualTo("CAP (U)");
+            assertThat(stringCell(workbook.getSheetAt(1), "B26"))
+                    .isEqualTo("km 10 ao km 11");
+            assertThat(stringCell(workbook.getSheetAt(1), "B63"))
+                    .contains("[email removido]")
+                    .contains("[CPF removido]")
+                    .contains("Bearer [segredo removido]")
+                    .doesNotContain("ana@example.com")
+                    .doesNotContain("BEARER_SECRET_CANARY");
+            assertThat(stringCell(workbook.getSheetAt(1), "B69"))
+                    .isEqualTo("Ana Apontadora");
+            assertThat(stringCell(workbook.getSheetAt(1), "L69"))
+                    .isEqualTo("Enzo Encarregado");
+            assertThat(stringCell(workbook.getSheetAt(1), "V69"))
+                    .isEqualTo("Fiscal de Campo");
+            assertThat(allFormulaCells(workbook)).isEmpty();
+        }
+    }
+
     private static RdoResponse populatedRdo(String id, String numero) {
         return new RdoResponse(
                 id, "obra-7", null, numero, LocalDate.of(2026, 7, 22),
@@ -648,6 +701,18 @@ class RdoXlsxExportServiceTest {
                 new BigDecimal("5"), new BigDecimal("3500"),
                 new BigDecimal("175"), new BigDecimal("2.45"),
                 new BigDecimal("12.75"), "Controle aprovado"
+        );
+    }
+
+    private static RdoResponse.ControleGeometricoItem parityControl() {
+        return new RdoResponse.ControleGeometricoItem(
+                "cg-parity", "km 10 ao km 11", "1", "10+000", "11+000",
+                "10", "11", "Pista norte", "Direita", "OS-7",
+                "Regularização", new BigDecimal("1000"), new BigDecimal("3.5"),
+                new BigDecimal("4"), new BigDecimal("5"), new BigDecimal("6"),
+                new BigDecimal("5"), new BigDecimal("3500"),
+                new BigDecimal("175"), new BigDecimal("2.45"),
+                new BigDecimal("428.75"), "Controle aprovado"
         );
     }
 

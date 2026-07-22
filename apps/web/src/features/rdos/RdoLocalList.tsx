@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type Ref } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 
 import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
 import type {
@@ -7,6 +13,14 @@ import type {
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
+import {
+  listCachedAuthorizedRdoWorksites,
+} from "./rdoCreationContextRepository";
+import {
+  localRdoExportAvailability,
+  rdoWorkbookSnapshotFromLocalRecord,
+  type RdoExportAvailability,
+} from "./export/rdoWorkbookMapping";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -304,6 +318,134 @@ export function RdoLocalList({
   const [collaboratorFilter, setCollaboratorFilter] = useState("");
   const [trechoFilter, setTrechoFilter] = useState("");
   const [profile, setProfile] = useState<ProfileTarget | null>(null);
+  const worksiteRequestKey = useMemo(
+    () => [...new Set(records.map((record) => record.obraId))].sort().join("|"),
+    [records],
+  );
+  const [worksiteLoad, setWorksiteLoad] = useState<{
+    key: string;
+    worksites: Map<string, {
+      id: string;
+      nome: string;
+      codigoContrato: string;
+    }>;
+    error: string;
+  }>({ key: "", worksites: new Map(), error: "" });
+  const isLoadingWorksites = worksiteLoad.key !== worksiteRequestKey;
+  const cachedWorksites = worksiteLoad.worksites;
+  const worksiteError = isLoadingWorksites ? "" : worksiteLoad.error;
+  const [exportingRdoId, setExportingRdoId] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<{
+    rdoId: string;
+    message: string;
+    isError: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void listCachedAuthorizedRdoWorksites()
+      .then((worksites) => {
+        if (!active) return;
+        setWorksiteLoad({
+          key: worksiteRequestKey,
+          worksites: new Map(
+            worksites.map((worksite) => [worksite.id, {
+              id: worksite.id,
+              nome: worksite.nome,
+              codigoContrato: worksite.codigoContrato,
+            }]),
+          ),
+          error: "",
+        });
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setWorksiteLoad({
+          key: worksiteRequestKey,
+          worksites: new Map(),
+          error: caught instanceof Error
+            ? caught.message
+            : "Não foi possível validar as obras disponíveis offline.",
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [worksiteRequestKey]);
+
+  const exportAvailabilityByRdo = useMemo(() => {
+    const statuses = new Map<string, RdoExportAvailability>();
+    for (const record of records) {
+      if (isLoadingWorksites) {
+        statuses.set(record.id, {
+          ready: false,
+          code: null,
+          message: "Verificando o snapshot local…",
+        });
+      } else if (worksiteError) {
+        statuses.set(record.id, {
+          ready: false,
+          code: null,
+          message: `Obra offline indisponível: ${worksiteError}`,
+        });
+      } else {
+        statuses.set(
+          record.id,
+          localRdoExportAvailability(
+            record,
+            cachedWorksites.get(record.obraId),
+          ),
+        );
+      }
+    }
+    return statuses;
+  }, [cachedWorksites, isLoadingWorksites, records, worksiteError]);
+
+  async function handleExport(record: LocalRdoRecord) {
+    const availability = exportAvailabilityByRdo.get(record.id);
+    if (!availability?.ready || exportingRdoId) return;
+    setExportingRdoId(record.id);
+    setExportNotice(null);
+    try {
+      const snapshot = rdoWorkbookSnapshotFromLocalRecord(
+        record,
+        cachedWorksites.get(record.obraId),
+      );
+      const {
+        downloadAuthoritativeRdoWorkbook,
+        downloadRdoWorkbook,
+      } = await import("./export/exportRdoWorkbook");
+      const useAuthoritativeServer =
+        typeof navigator !== "undefined" &&
+        navigator.onLine &&
+        record.syncStatus === "SYNCED" &&
+        record.versaoEntidade !== null;
+      if (useAuthoritativeServer) {
+        await downloadAuthoritativeRdoWorkbook(snapshot);
+      } else {
+        await downloadRdoWorkbook(snapshot);
+      }
+      setExportNotice({
+        rdoId: record.id,
+        message: useAuthoritativeServer
+          ? "XLSX autorizado pelo servidor baixado."
+          : record.syncStatus === "SYNCED"
+            ? "XLSX gerado com a cópia local disponível offline."
+            : "XLSX local gerado; o RDO ainda está pendente de sincronização.",
+        isError: false,
+      });
+    } catch (caught: unknown) {
+      setExportNotice({
+        rdoId: record.id,
+        message: caught instanceof Error
+          ? caught.message
+          : "Não foi possível exportar o RDO.",
+        isError: true,
+      });
+    } finally {
+      setExportingRdoId(null);
+    }
+  }
 
   const attachmentsByRdo = useMemo(() => {
     const grouped = new Map<string, RdoAttachmentRecord[]>();
@@ -582,6 +724,11 @@ export function RdoLocalList({
             const eventCount = events.filter(
               (event) => event.rdoId === record.id,
             ).length;
+            const exportAvailability = exportAvailabilityByRdo.get(record.id);
+            const isExporting = exportingRdoId === record.id;
+            const recordExportNotice = exportNotice?.rdoId === record.id
+              ? exportNotice
+              : null;
 
             return (
               <article className="rdo-operational-card" key={record.id}>
@@ -672,6 +819,32 @@ export function RdoLocalList({
                 </div>
 
                 <div className="rdo-card-actions">
+                  <div className="rdo-export-action">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => void handleExport(record)}
+                      disabled={!exportAvailability?.ready || isExporting}
+                      title={exportAvailability?.message}
+                    >
+                      {isExporting ? "Gerando XLSX…" : "Exportar XLSX"}
+                    </button>
+                    <small
+                      className={recordExportNotice?.isError
+                        ? "rdo-export-state rdo-export-state--error"
+                        : "rdo-export-state"}
+                      aria-live="polite"
+                    >
+                      {recordExportNotice?.message ??
+                        (exportAvailability?.ready
+                          ? record.syncStatus === "SYNCED" &&
+                              record.versaoEntidade !== null
+                            ? "Servidor autoritativo · cópia local pronta offline"
+                            : "Dados locais pendentes · exportação offline"
+                          : exportAvailability?.message ??
+                            "Exportação indisponível")}
+                    </small>
+                  </div>
                   <button
                     type="button"
                     className="secondary-button"

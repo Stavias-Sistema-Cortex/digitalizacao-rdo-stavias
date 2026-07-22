@@ -449,6 +449,8 @@ public class RdoXlsxExportService {
     ) {
         Sheet front = workbook.getSheet(FRONT_SHEET);
         Sheet back = workbook.getSheet(BACK_SHEET);
+        workbook.setPrintArea(0, 0, 35, 0, 79);
+        workbook.setPrintArea(1, 0, 33, 1, 69);
         clearOperationalFixtures(front, back);
         populateHeader(workbook, front, back, rdo, worksite);
         populateConditions(workbook, front, rdo);
@@ -1141,7 +1143,7 @@ public class RdoXlsxExportService {
         static WorkedRow fromService(RdoResponse.ServicoExecutadoItem value) {
             String quantity = value.quantidadeExecutada() == null
                     ? ""
-                    : value.quantidadeExecutada().toPlainString()
+                    : value.quantidadeExecutada().stripTrailingZeros().toPlainString()
                             + (value.unidade() == null || value.unidade().isBlank()
                             ? "" : " " + value.unidade());
             String activity = joinNonBlank(
