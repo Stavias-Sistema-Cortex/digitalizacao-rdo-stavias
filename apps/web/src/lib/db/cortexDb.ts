@@ -22,6 +22,7 @@ import type {
   PrevisaoSnapshotRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
+  RdoCreationContextCacheRecord,
   SyncStateRecord,
   TarefaRecord,
   LocalTeamHistoryRecord,
@@ -33,7 +34,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 15;
+export const CORTEX_DATABASE_VERSION = 16;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -145,6 +146,16 @@ export interface CortexDbSchema extends DBSchema {
     indexes: {
       "by-updated-at": string;
       "by-status": string;
+    };
+  };
+
+  rdo_creation_contexts: {
+    key: [string, string, string];
+    value: RdoCreationContextCacheRecord;
+    indexes: {
+      "by-owner": string;
+      "by-obra-date": [string, string];
+      "by-cached-at": string;
     };
   };
 
@@ -567,6 +578,23 @@ export async function getCortexDb(): Promise<
 
           obraStore.createIndex("by-updated-at", "updatedAt");
           obraStore.createIndex("by-status", "status");
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "rdo_creation_contexts",
+          )
+        ) {
+          const contextStore = database.createObjectStore(
+            "rdo_creation_contexts",
+            { keyPath: ["ownerId", "obraId", "selectedDate"] },
+          );
+          contextStore.createIndex("by-owner", "ownerId");
+          contextStore.createIndex(
+            "by-obra-date",
+            ["obraId", "selectedDate"],
+          );
+          contextStore.createIndex("by-cached-at", "cachedAt");
         }
 
         if (

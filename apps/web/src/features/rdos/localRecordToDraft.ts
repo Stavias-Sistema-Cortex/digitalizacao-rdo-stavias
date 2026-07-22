@@ -52,6 +52,16 @@ function mapMaoObra(value: unknown): MaoObraDraft[] {
       ...empty,
       localId: asString(item.localId) || asString(item.id, empty.localId),
       origemItemId: asString(item.origemItemId),
+      sourceRdoId: asString(item.sourceRdoId),
+      origin: asString(
+        item.origin,
+        empty.origin,
+      ) as MaoObraDraft["origin"],
+      availability: asString(
+        item.availability,
+        empty.availability,
+      ) as MaoObraDraft["availability"],
+      selected: item.selected !== false,
       colaboradorId: asString(item.colaboradorId),
       nomeColaborador: asString(item.nomeColaborador),
       cargo: asString(item.cargo),
@@ -297,7 +307,9 @@ export function localRecordToDraft(
     turno:
       asString(payload.turno) === "NOTURNO"
         ? "NOTURNO"
-        : "DIURNO",
+        : asString(payload.turno) === "DIURNO"
+          ? "DIURNO"
+          : "",
     horaInicio: asString(payload.horaInicio),
     horaFim: asString(payload.horaFim),
     condicaoManha: asString(
@@ -308,7 +320,6 @@ export function localRecordToDraft(
     ) as RdoDraft["condicaoTarde"],
     condicaoNoite: asString(
       payload.condicaoNoite,
-      "NAO_APLICAVEL",
     ) as RdoDraft["condicaoNoite"],
     pluviometriaMm:
       payload.pluviometriaMm === null

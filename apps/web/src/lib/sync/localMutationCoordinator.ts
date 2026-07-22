@@ -21,6 +21,7 @@ import type {
 import {
   buildCanonicalMutation,
   canonicalMutationJson,
+  isCanonicalOutboxMutation,
   type BuildCanonicalMutationInput,
 } from "./mutationEnvelope";
 
@@ -61,13 +62,25 @@ const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
   MENSAGEM_ANEXO: "mensagem_anexos",
 } as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
-export type LocalMutationDomainWrite<TStore extends LocalDomainStore> = {
+type LocalMutationDomainPut<TStore extends LocalDomainStore> = {
   [Store in TStore]: {
     store: Store;
     value: CortexDbSchema[Store]["value"];
     principal?: boolean;
+    insertOnly?: boolean;
   };
 }[TStore];
+
+type LocalMutationDomainDelete<TStore extends LocalDomainStore> = {
+  [Store in TStore]: {
+    store: Store;
+    deleteKey: string;
+  };
+}[TStore];
+
+export type LocalMutationDomainWrite<TStore extends LocalDomainStore> =
+  | LocalMutationDomainPut<TStore>
+  | LocalMutationDomainDelete<TStore>;
 
 export interface LocalMutationCommand<TStore extends LocalDomainStore> {
   clientMutationId?: string;
@@ -85,6 +98,8 @@ export interface LocalMutationCommand<TStore extends LocalDomainStore> {
   occurredAt?: string;
   previousSnapshot: Record<string, unknown>;
   nextSnapshot: Record<string, unknown>;
+  /** Persisted principal can wrap the transport payload with local metadata. */
+  principalSnapshot?: Record<string, unknown>;
   eventType: OperationalEventType;
   relatedEntities?: readonly OperationalEntityRef[];
   colaboradorId?: string | null;
@@ -92,6 +107,8 @@ export interface LocalMutationCommand<TStore extends LocalDomainStore> {
   causationId?: string | null;
   transport?: OutboxTransport;
   dependsOnMutationIds?: readonly string[];
+  /** Immutable canonical envelope replaced causally in the same transaction. */
+  supersedesMutationId?: string;
   /**
    * Builds a declarative write plan synchronously. Exactly one write must be
    * principal and equal the canonical nextSnapshot.
@@ -117,6 +134,7 @@ interface PreparedCoordinatorInput<TStore extends LocalDomainStore> {
   relatedEntities: OperationalEntityRef[];
   colaboradorId: string | null;
   writes: LocalMutationDomainWrite<TStore>[];
+  supersedesMutationId: string | null;
 }
 
 export async function commitLocalMutation<TStore extends LocalDomainStore>(
@@ -133,6 +151,14 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
   });
   assertSessionUnchanged(authorizedSession, prepared.envelope);
   const event = canonicalEvent(prepared, built, authorizedSession.actorName);
+  if (
+    prepared.supersedesMutationId &&
+    built.mutation.causationId !== prepared.supersedesMutationId
+  ) {
+    throw new TypeError(
+      "A mutação substituta deve referenciar a mutação original como causa.",
+    );
+  }
   const database = await getCortexDb();
   assertSessionUnchanged(authorizedSession, prepared.envelope);
 
@@ -144,6 +170,8 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
     ]),
   ];
   const transaction = database.transaction(storeNames, "readwrite");
+  const transactionDone = transaction.done;
+  void transactionDone.catch(() => undefined);
   let sessionInvalidated = false;
   const abortOnSessionChange = () => {
     try {
@@ -162,21 +190,66 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
   }
 
   try {
+    if (prepared.supersedesMutationId) {
+      const outboxStore = transaction.objectStore("outbox_mutations");
+      const eventStore = transaction.objectStore("operational_events");
+      const original = await outboxStore.get(prepared.supersedesMutationId);
+      if (
+        !original ||
+        !isCanonicalOutboxMutation(original) ||
+        !["PENDING", "ERROR"].includes(original.status) ||
+        original.entityType !== built.mutation.entityType ||
+        original.entityId !== built.mutation.entityId
+      ) {
+        transaction.abort();
+        throw new Error(
+          "A mutação canônica original não está disponível para substituição.",
+        );
+      }
+      const originalEvents = await eventStore
+        .index("by-client-mutation-id")
+        .getAll(original.clientMutationId);
+      if (originalEvents.length !== 1 || originalEvents[0].schemaVersion !== 13) {
+        transaction.abort();
+        throw new Error(
+          "A mutação canônica original não possui evento local único.",
+        );
+      }
+      await outboxStore.put({
+        ...original,
+        status: "REJECTED",
+        nextAttemptAt: null,
+        lastSafeCode: "SUPERSEDED_BY_LOCAL_EDIT",
+        blockedReason: `SUPERSEDED_BY:${built.mutation.clientMutationId}`,
+        ultimoErro: "Envelope substituído após edição local rastreável.",
+        updatedAt: built.mutation.occurredAt,
+      });
+      await eventStore.put({
+        ...originalEvents[0],
+        result: "REJECTED",
+        syncStatus: "SYNC_FAILED",
+        errorCategory: "SUPERSEDED_BY_LOCAL_EDIT",
+      });
+    }
     for (const write of prepared.writes) {
-      void transaction
-        .objectStore(write.store)
-        .put(write.value as never)
-        .catch(() => undefined);
+      const store = transaction.objectStore(write.store);
+      if ("deleteKey" in write) {
+        void store.delete(write.deleteKey as never).catch(() => undefined);
+      } else {
+        void (write.insertOnly
+          ? store.add(write.value as never)
+          : store.put(write.value as never)
+        ).catch(() => undefined);
+      }
     }
     void transaction
       .objectStore("outbox_mutations")
       .add(built.mutation)
       .catch(() => undefined);
-    void transaction
+    await transaction
       .objectStore("operational_events")
-      .add(event)
-      .catch(() => undefined);
-    await transaction.done;
+      .add(event);
+    await transactionDone;
     assertSessionUnchanged(authorizedSession, prepared.envelope);
   } catch (error) {
     try {
@@ -184,7 +257,7 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
     } catch {
       // A failed IndexedDB request may already have aborted the transaction.
     }
-    await transaction.done.catch(() => undefined);
+    await transactionDone.catch(() => undefined);
     if (sessionInvalidated) {
       throw new Error(
         "A sessão mudou durante o registro da mutação local.",
@@ -256,7 +329,7 @@ function prepareCoordinatorInput<TStore extends LocalDomainStore>(
   };
   const writes = prepareWrites(
     command.write,
-    envelope.nextSnapshot,
+    command.principalSnapshot ?? envelope.nextSnapshot,
     envelope.entityId,
     envelope.entityType,
     envelope.obraId,
@@ -269,6 +342,10 @@ function prepareCoordinatorInput<TStore extends LocalDomainStore>(
     relatedEntities,
     colaboradorId,
     writes,
+    supersedesMutationId:
+      command.supersedesMutationId === undefined
+        ? null
+        : uuid(command.supersedesMutationId, "supersedesMutationId"),
   };
 }
 
@@ -297,13 +374,26 @@ function prepareWrites<TStore extends LocalDomainStore>(
     if (store === "outbox_mutations" || store === "operational_events") {
       throw new TypeError(`write[${index}].store is coordinator-owned.`);
     }
+    if ("deleteKey" in write) {
+      return {
+        store: write.store,
+        deleteKey: requiredText(
+          write.deleteKey,
+          `write[${index}].deleteKey`,
+        ),
+      } as LocalMutationDomainWrite<TStore>;
+    }
     return {
       store: write.store,
       value: cloneForIndexedDb(write.value, `write[${index}].value`),
       principal: write.principal === true,
+      insertOnly: write.insertOnly === true,
     } as LocalMutationDomainWrite<TStore>;
   });
-  const principals = writes.filter((write) => write.principal === true);
+  const principals = writes.filter(
+    (write): write is LocalMutationDomainPut<TStore> =>
+      "value" in write && write.principal === true,
+  );
   if (principals.length !== 1) {
     throw new TypeError("Local mutation write plan requires one principal write.");
   }

@@ -33,8 +33,31 @@ export interface RdoContextCoverageSection {
 }
 
 export interface RdoCreationContextLookup {
+  obra: {
+    id: string;
+    codigoContrato: string | null;
+    codigoCw: string | null;
+    nome: string | null;
+    cliente: string | null;
+    cidade: string | null;
+    uf: string | null;
+    rodovia: string | null;
+    status: string | null;
+    version: number;
+  };
   data: string;
-  previousRdo: { id: string } | null;
+  nextNumberSuggestion: string | null;
+  previousRdo: {
+    id: string;
+    numeroRdo: string;
+    dataRdo: string;
+    status: string;
+    version: number;
+  } | null;
+  previousWorkforce: RdoPreviousWorkforceItem[];
+  programacoes: RdoContextSchedule[];
+  colaboradores: RdoContextCollaborator[];
+  equipamentos: RdoContextEquipment[];
   coverage: {
     previousWorkforce: RdoContextCoverageSection;
     programacoes: RdoContextCoverageSection;
@@ -58,6 +81,75 @@ export interface RdoCreationContextLookup {
     generatedAt: string;
   };
   [key: string]: unknown;
+}
+
+export interface RdoPreviousWorkforceItem {
+  sourceItemId: string;
+  sourceRdoId: string;
+  collaboratorId: string;
+  nameSnapshot: string | null;
+  roleSnapshot: string | null;
+  linkType: string | null;
+  quantity: number | null;
+  startTime: string | null;
+  endTime: string | null;
+  observations: string | null;
+  availability: string | null;
+}
+
+export interface RdoContextCollaborator {
+  id: string;
+  codigoColaborador: string | null;
+  nome: string | null;
+  papelNaObra: string | null;
+  nomePerfil: string | null;
+}
+
+export interface RdoContextEquipment {
+  id: string;
+  codigoExterno: string | null;
+  nome: string | null;
+  categoria: string | null;
+}
+
+export interface RdoContextSchedule {
+  id: string;
+  dataProgramacao: string;
+  equipe: string | null;
+  encarregado: string | null;
+  engenheiro: string | null;
+  cliente: string | null;
+  servico: string | null;
+  tipoServico: string | null;
+  cidade: string | null;
+  uf: string | null;
+  rodovia: string | null;
+  sentido: string | null;
+  faixa: string | null;
+  kmInicial: string | null;
+  kmFinal: string | null;
+  extensaoM: number | null;
+  larguraM: number | null;
+  espessuraCm: number | null;
+  areaM2: number | null;
+  volumeM3: number | null;
+  status: string | null;
+}
+
+export interface RdoAuthorizedWorksiteLookup {
+  id: string;
+  codigoContrato: string | null;
+  nome: string | null;
+  cliente: string | null;
+  cidade: string | null;
+  uf: string | null;
+  rodovia: string | null;
+  status: string | null;
+  observacoes: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  valorContratual: number | string | null;
+  atualizadoEm: string | null;
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -137,4 +229,11 @@ export async function buscarContextoDeCriacaoRdo(
     `/rdos/contexto?${params.toString()}`,
   );
   return readJson<RdoCreationContextLookup>(response);
+}
+
+export async function buscarObrasAutorizadasParaRdo(): Promise<
+  RdoAuthorizedWorksiteLookup[]
+> {
+  const response = await apiFetch("/obras/relacionadas");
+  return readJson<RdoAuthorizedWorksiteLookup[]>(response);
 }

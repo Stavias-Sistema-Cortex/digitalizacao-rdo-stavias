@@ -1,0 +1,159 @@
+.rdo-workforce-editor {
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.rdo-workforce-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) auto minmax(220px, 1fr);
+  align-items: end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.rdo-workforce-controls .add-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.rdo-workforce-empty {
+  margin: 16px 0 0;
+  padding: 14px;
+  border: 1px solid #d8dfda;
+  color: #2c3330;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.rdo-workforce-table-region {
+  max-width: 100%;
+  max-height: 420px;
+  overflow: auto;
+  margin-top: 14px;
+  border: 1px solid #d8dfda;
+  overscroll-behavior: contain;
+}
+
+.rdo-workforce-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #171b19;
+  font-size: 0.74rem;
+}
+
+.rdo-workforce-table th,
+.rdo-workforce-table td {
+  padding: 8px;
+  border-right: 1px solid #d8dfda;
+  border-bottom: 1px solid #d8dfda;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.rdo-workforce-table th:last-child,
+.rdo-workforce-table td:last-child {
+  border-right: 0;
+}
+
+.rdo-workforce-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f4f6f4;
+  color: #2c3330;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.rdo-workforce-table thead th:nth-child(1) {
+  width: 64px;
+}
+
+.rdo-workforce-table thead th:nth-child(2) {
+  width: 190px;
+}
+
+.rdo-workforce-table thead th:nth-child(3) {
+  width: 150px;
+}
+
+.rdo-workforce-table thead th:nth-child(4) {
+  width: 140px;
+}
+
+.rdo-workforce-table thead th:nth-child(5) {
+  width: 74px;
+}
+
+.rdo-workforce-table thead th:nth-child(6),
+.rdo-workforce-table thead th:nth-child(7) {
+  width: 112px;
+}
+
+.rdo-workforce-table tbody th {
+  position: relative;
+  font-weight: 600;
+}
+
+.rdo-workforce-table tbody th span,
+.rdo-workforce-table tbody th small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.rdo-workforce-table tbody th small {
+  margin-top: 3px;
+  color: #8b2f2f;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.rdo-workforce-row--carried > th[scope="row"] {
+  box-shadow: inset 4px 0 #f2c800;
+  padding-left: 12px;
+}
+
+.rdo-workforce-table input,
+.rdo-workforce-table select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 7px;
+  border-radius: 2px;
+  font-size: 0.72rem;
+}
+
+.rdo-workforce-table input[type="checkbox"] {
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+}
+
+.rdo-workforce-table :disabled {
+  cursor: not-allowed;
+  color: #717a75;
+  background: #eef1ef;
+}
+
+@container (max-width: 720px) {
+  .rdo-workforce-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rdo-workforce-controls .add-button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rdo-workforce-editor *,
+  .rdo-workforce-editor *::before,
+  .rdo-workforce-editor *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

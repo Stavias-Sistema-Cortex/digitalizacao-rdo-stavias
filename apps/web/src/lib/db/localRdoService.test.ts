@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { createEmptyRdo } from "../../features/rdos/createEmptyRdo";
+import {
+  createEmptyAlocacaoColaborador,
+  createEmptyControleGeometrico,
+  createEmptyEquipamento,
+  createEmptyMaoObra,
+  createEmptyMaterial,
+  createEmptyRdo,
+  createEmptyServicoExecutado,
+} from "../../features/rdos/createEmptyRdo";
 import type { LocalRdoRecord, OutboxMutationRecord } from "./db.types";
 import {
   buildRdoSyncPayload,
@@ -37,40 +45,40 @@ function validDraft() {
   draft.previousRdoId = "rdo-anterior-1";
   draft.creationContextVersion = 48;
   draft.apontadorColaboradorId = "colaborador-1";
-  draft.maoObra[0] = {
-    ...draft.maoObra[0],
+  draft.maoObra = [{
+    ...createEmptyMaoObra(),
     localId: "mao-obra-stable-1",
     colaboradorId: "colaborador-1",
     nomeColaborador: "Maria Operadora",
     cargo: "Operadora",
     origemItemId: "mao-obra-anterior-1",
-  };
-  draft.servicosExecutados[0] = {
-    ...draft.servicosExecutados[0],
+  }];
+  draft.servicosExecutados = [{
+    ...createEmptyServicoExecutado(),
     localId: "servico-stable-1",
     servicoNome: "Aplicação de CBUQ",
     quantidadeExecutada: 0,
-  };
-  draft.equipamentos[0] = {
-    ...draft.equipamentos[0],
+  }];
+  draft.equipamentos = [{
+    ...createEmptyEquipamento(),
     localId: "equipamento-stable-1",
     descricao: "Vibroacabadora",
-  };
-  draft.materiais[0] = {
-    ...draft.materiais[0],
+  }];
+  draft.materiais = [{
+    ...createEmptyMaterial(),
     localId: "material-stable-1",
     materialNome: "CBUQ",
-  };
-  draft.controlesGeometricos[0] = {
-    ...draft.controlesGeometricos[0],
+  }];
+  draft.controlesGeometricos = [{
+    ...createEmptyControleGeometrico(),
     localId: "controle-stable-1",
     subtrecho: "km 10 ao 11",
-  };
-  draft.alocacoesColaboradores[0] = {
-    ...draft.alocacoesColaboradores[0],
+  }];
+  draft.alocacoesColaboradores = [{
+    ...createEmptyAlocacaoColaborador(),
     localId: "alocacao-stable-1",
     colaboradorId: "colaborador-1",
-  };
+  }];
 
   return draft;
 }

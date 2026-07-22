@@ -391,6 +391,17 @@ export interface ObraLocalRecord {
   updatedAt: string;
 }
 
+export interface RdoCreationContextCacheRecord {
+  ownerId: string;
+  obraId: string;
+  selectedDate: string;
+  sourceVersion: number;
+  receiptVersion: number;
+  cachedAt: string;
+  coverage: Record<string, unknown>;
+  context: Record<string, unknown>;
+}
+
 export type TarefaPrioridade = 1 | 2 | 3;
 
 export interface TarefaRecord {

@@ -10,6 +10,16 @@ export type RdoSyncStatus =
 
 export type TurnoRdo = "DIURNO" | "NOTURNO";
 
+export type WorkforceAvailability =
+  | "AVAILABLE"
+  | "UNAVAILABLE"
+  | "UNKNOWN";
+
+export type WorkforceOrigin =
+  | "PREVIOUS_RDO"
+  | "AUTHORIZED_CONTEXT"
+  | "MANUAL";
+
 export type CondicaoClimatica =
   | ""
   | "BOM"
@@ -21,6 +31,10 @@ export type CondicaoClimatica =
 export interface MaoObraDraft {
   localId: string;
   origemItemId: string;
+  sourceRdoId: string;
+  origin: WorkforceOrigin;
+  availability: WorkforceAvailability;
+  selected: boolean;
   colaboradorId: string;
   nomeColaborador: string;
   cargo: string;
@@ -88,7 +102,7 @@ export interface ServicoExecutadoDraft {
   trechoFinal: string;
   localizacao: string;
   turno: "" | TurnoRdo;
-  statusValidacao: "REGISTRADA" | "VALIDADA" | "REJEITADA";
+  statusValidacao: "" | "REGISTRADA" | "VALIDADA" | "REJEITADA";
   custoRealizado: NumericInput;
   retrabalho: boolean;
   producaoRejeitada: boolean;
@@ -107,6 +121,7 @@ export interface AlocacaoColaboradorDraft {
   funcao: string;
   centroCusto: string;
   tipoAlocacao:
+    | ""
     | "TRABALHO"
     | "DESLOCAMENTO"
     | "TREINAMENTO"
@@ -116,7 +131,7 @@ export interface AlocacaoColaboradorDraft {
     | "AFASTAMENTO"
     | "OUTRO";
   fonte: string;
-  status: "REGISTRADA" | "VALIDADA" | "CONFLITO";
+  status: "" | "REGISTRADA" | "VALIDADA" | "CONFLITO";
   custoHora: NumericInput;
   observacoes: string;
 }
@@ -162,7 +177,7 @@ export interface RdoDraft {
   kmFinalProgramado: string;
   kmInicialInterditado: string;
   kmFinalInterditado: string;
-  turno: TurnoRdo;
+  turno: "" | TurnoRdo;
   horaInicio: string;
   horaFim: string;
   condicaoManha: CondicaoClimatica;

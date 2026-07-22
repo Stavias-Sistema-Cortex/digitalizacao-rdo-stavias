@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -18,12 +19,13 @@ import type {
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
 import { listLocalRdos } from "../../lib/db/rdoRepository";
-import { createEmptyRdo } from "./createEmptyRdo";
 import { importarRdoArquivo } from "./importRdoExcel";
 import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
+import { RdoCreationDialog } from "./RdoCreationDialog";
 import { RdoLocalList } from "./RdoLocalList";
 import type { RdoDraft } from "./rdo.types";
+import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import {
   colaboradorStorageKey,
   setLastAccessedObraId,
@@ -38,9 +40,11 @@ type WorkspaceMode =
       draft: RdoDraft;
       isExisting: boolean;
       initialNotice?: string;
+      creationContext?: RdoCreationContextLookup;
     };
 
 export function RdoWorkspacePage() {
+  const createButtonRef = useRef<HTMLButtonElement | null>(null);
   const [mode, setMode] =
     useState<WorkspaceMode>({
       type: "LIST",
@@ -56,6 +60,8 @@ export function RdoWorkspacePage() {
   const [isLoading, setIsLoading] =
     useState(true);
   const [isImporting, setIsImporting] =
+    useState(false);
+  const [isCreationDialogOpen, setIsCreationDialogOpen] =
     useState(false);
 
   const [loadError, setLoadError] =
@@ -102,11 +108,7 @@ export function RdoWorkspacePage() {
   }, [loadRecords]);
 
   function handleCreate() {
-    setMode({
-      type: "FORM",
-      draft: createEmptyRdo(),
-      isExisting: false,
-    });
+    setIsCreationDialogOpen(true);
   }
 
   function handleOpen(
@@ -172,6 +174,7 @@ export function RdoWorkspacePage() {
           initialDraft={mode.draft}
           isExisting={mode.isExisting}
           initialNotice={mode.initialNotice}
+          creationContext={mode.creationContext}
           onBackToList={() => {
             void handleBackToList();
           }}
@@ -212,7 +215,25 @@ export function RdoWorkspacePage() {
         onRefresh={() => {
           void loadRecords();
         }}
+        createButtonRef={createButtonRef}
       />
+      {isCreationDialogOpen ? (
+        <RdoCreationDialog
+          returnFocusRef={createButtonRef}
+          onClose={() => setIsCreationDialogOpen(false)}
+          onCreated={(draft, creationContext) => {
+            setIsCreationDialogOpen(false);
+            setMode({
+              type: "FORM",
+              draft,
+              isExisting: true,
+              initialNotice:
+                "Rascunho local persistido e incluído na fila de sincronização.",
+              creationContext,
+            });
+          }}
+        />
+      ) : null}
     </CortexShell>
   );
 }

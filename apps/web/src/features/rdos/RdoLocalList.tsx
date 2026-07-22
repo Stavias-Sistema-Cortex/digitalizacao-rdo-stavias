@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type Ref } from "react";
 
 import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
 import type {
@@ -19,6 +19,7 @@ interface RdoLocalListProps {
   isImporting: boolean;
   onOpen: (record: LocalRdoRecord) => void;
   onRefresh: () => void;
+  createButtonRef?: Ref<HTMLButtonElement>;
 }
 
 type PeriodFilter = "TODOS" | "HOJE" | "7_DIAS" | "30_DIAS";
@@ -292,6 +293,7 @@ export function RdoLocalList({
   isImporting,
   onOpen,
   onRefresh,
+  createButtonRef,
 }: RdoLocalListProps) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const [obraFilter, setObraFilter] = useState("");
@@ -428,6 +430,7 @@ export function RdoLocalList({
 
         <div className="rdo-command-actions">
           <button
+            ref={createButtonRef}
             type="button"
             className="secondary-button"
             onClick={onCreate}

@@ -16,6 +16,7 @@ import {
 } from "../../features/rdos/rdoLookupApi";
 import { getCortexDb } from "./cortexDb";
 import type {
+  CanonicalOutboxMutationRecord,
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
@@ -34,6 +35,15 @@ import {
   captureOnlineSyncSession,
   type SyncSessionGuard,
 } from "../sync/syncSession";
+import { getSession } from "../../features/auth/authSession";
+import {
+  getSyncState,
+  updateSyncState,
+} from "./syncStateRepository";
+import {
+  commitLocalMutation,
+  type LocalMutationDomainWrite,
+} from "../sync/localMutationCoordinator";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -284,11 +294,22 @@ function attachmentPayload(
 }
 
 function buildMaoObraPayload(item: MaoObraDraft) {
-  const base = removeLocalId(item);
+  const {
+    localId,
+    selected: _selected,
+    sourceRdoId: _sourceRdoId,
+    origin: _origin,
+    availability: _availability,
+    ...base
+  } = item;
+  void _selected;
+  void _sourceRdoId;
+  void _origin;
+  void _availability;
 
   return {
     ...base,
-    id: item.localId,
+    id: localId,
     origemItemId: nullIfEmpty(base.origemItemId),
     colaboradorId: nullIfEmpty(base.colaboradorId),
     horaInicio: nullIfEmpty(base.horaInicio),
@@ -500,7 +521,7 @@ export function buildRdoSyncPayload(
         .filter((item) => !isAlocacaoEmpty(item))
         .map(buildAlocacaoPayload),
     maoObra: draft.maoObra
-      .filter((item) => !isMaoObraEmpty(item))
+      .filter((item) => item.selected && !isMaoObraEmpty(item))
       .map(buildMaoObraPayload),
     equipamentos: draft.equipamentos
       .filter((item) => !isEquipamentoEmpty(item))
@@ -736,7 +757,7 @@ function buildRdoSaveOperationalEvents(
     );
   }
 
-  for (const item of draft.maoObra) {
+  for (const item of draft.maoObra.filter((row) => row.selected)) {
     const colaboradorId = item.colaboradorId.trim();
     if (!colaboradorId && !item.nomeColaborador.trim()) {
       continue;
@@ -1081,12 +1102,6 @@ export function validateRdoDraftForSync(draft: RdoDraft): void {
     throw new Error("A obra é obrigatória.");
   }
 
-  if (!draft.numeroRdo.trim()) {
-    throw new Error(
-      "O número do RDO é obrigatório.",
-    );
-  }
-
   if (!draft.dataRdo.trim()) {
     throw new Error("A data do RDO é obrigatória.");
   }
@@ -1132,6 +1147,26 @@ export function validateRdoDraftForSync(draft: RdoDraft): void {
     }
   });
 
+  const selectedCollaboratorIds = draft.maoObra
+    .filter((item) => item.selected && item.colaboradorId.trim())
+    .map((item) => item.colaboradorId.trim());
+  if (new Set(selectedCollaboratorIds).size !== selectedCollaboratorIds.length) {
+    throw new Error("A equipe do RDO contém colaborador duplicado.");
+  }
+  if (
+    draft.maoObra.some(
+      (item) => item.selected && item.availability === "UNAVAILABLE",
+    )
+  ) {
+    throw new Error("Colaborador indisponível não pode ser selecionado.");
+  }
+  if (
+    draft.apontadorColaboradorId.trim() &&
+    !selectedCollaboratorIds.includes(draft.apontadorColaboradorId.trim())
+  ) {
+    throw new Error("O apontador deve estar selecionado na equipe do RDO.");
+  }
+
   const requiresCaixa = draft.servicosExecutados.some((item) =>
     item.servicoNome.toLowerCase().includes("caixa"),
   );
@@ -1169,27 +1204,14 @@ function validateKmRange(
 
 export async function saveNewRdoDraftAtomically(
   draft: RdoDraft,
+  options: { occurredAt?: string } = {},
 ): Promise<SaveRdoDraftResult> {
   validateRdoDraftForSync(draft);
 
   const database = await getCortexDb();
-  const timestamp = nowUtc();
-  const operationalEvents = buildRdoSaveOperationalEvents(
-    draft,
-    false,
-    timestamp,
-  );
-  const pendingOperationalEvents = (
-    await queryOperationalEvents({
-      rdoId: draft.id,
-      limit: 500,
-    })
-  ).filter((event) => event.syncStatus !== "SYNCED");
+  const timestamp = options.occurredAt ?? nowUtc();
   const localPayload = buildRdoLocalPayload(draft);
-  const syncPayload = buildRdoSyncPayload(draft, [
-    ...pendingOperationalEvents,
-    ...operationalEvents,
-  ]);
+  const syncPayload = buildRdoSyncPayload(draft);
 
   const rdo: LocalRdoRecord = {
     id: draft.id,
@@ -1206,76 +1228,105 @@ export async function saveNewRdoDraftAtomically(
     updatedAt: timestamp,
   };
 
-  const mutation: OutboxMutationRecord = {
-    clientMutationId: crypto.randomUUID(),
-    entidadeTipo: "RDO",
-    entidadeId: draft.id,
-    operacao: "CRIAR_RDO",
-    baseVersao: null,
-    payload: syncPayload,
-    status: "PENDING",
-    tentativas: 0,
-    ultimaTentativaEm: null,
-    ultimoErro: null,
-    conflito: null,
-    blockedReason: rdoCreationContextBlockReason(draft),
-    criadaNoClienteEm: timestamp,
-    updatedAt: timestamp,
-  };
-
-  const transaction = database.transaction(
-    [
-      "rdos",
-      "outbox_mutations",
-      "rdoMaoObra",
-      "rdoEquipamentos",
-      "rdoMateriais",
-      "rdoControlesGeometricos",
-      "operational_events",
-    ],
-    "readwrite",
-  );
-
-  const rdoStore =
-    transaction.objectStore("rdos");
-
-  const outboxStore =
-    transaction.objectStore(
-      "outbox_mutations",
-    );
-  const eventStore =
-    transaction.objectStore("operational_events");
-
-  const existingRdo =
-    await rdoStore.get(draft.id);
-
-  if (existingRdo) {
-    transaction.abort();
-
-    throw new Error(
-      `Já existe um RDO local com o ID ${draft.id}.`,
-    );
+  const session = getSession();
+  if (!session) {
+    throw new Error("Sessão válida obrigatória para criar o RDO local.");
+  }
+  const state = await getSyncState();
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const deviceId =
+    state.usuarioId === session.colaboradorId &&
+    state.deviceId &&
+    uuidPattern.test(state.deviceId)
+      ? state.deviceId
+      : crypto.randomUUID();
+  if (state.deviceId !== deviceId || state.usuarioId !== session.colaboradorId) {
+    await updateSyncState({
+      deviceId,
+      usuarioId: session.colaboradorId,
+      lastPulledCommitSeq: 0,
+      lastAckedCommitSeq: 0,
+    });
   }
 
-  await Promise.all([
-    rdoStore.add(rdo),
-    outboxStore.add(mutation),
-    ...operationalEvents.map((event) =>
-      eventStore.put(event),
-    ),
-    replaceChildRecords(
-      transaction,
-      draft,
-      "PENDING_SYNC",
-      timestamp,
-    ),
-  ]);
+  let dependsOnMutationIds: string[] = [];
+  if (draft.previousRdoId.trim()) {
+    const sourceMutations = await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-entity-id",
+      draft.previousRdoId,
+    );
+    const dependency = sourceMutations
+      .filter(
+        (candidate) =>
+          candidate.entidadeTipo === "RDO" &&
+          candidate.operacao === "CRIAR_RDO" &&
+          candidate.status !== "SYNCED",
+      )
+      .sort((left, right) =>
+        right.criadaNoClienteEm.localeCompare(left.criadaNoClienteEm),
+      )[0];
+    if (dependency) dependsOnMutationIds = [dependency.clientMutationId];
+  }
 
-  await transaction.done;
+  type RdoCreationStore =
+    | "rdos"
+    | "rdoMaoObra"
+    | "rdoEquipamentos"
+    | "rdoMateriais"
+    | "rdoControlesGeometricos";
+  const childWrites: LocalMutationDomainWrite<RdoCreationStore>[] = [
+    ...buildMaoObraRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoMaoObra" as const, value }),
+    ),
+    ...buildEquipamentoRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoEquipamentos" as const, value }),
+    ),
+    ...buildMaterialRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoMateriais" as const, value }),
+    ),
+    ...buildControleGeometricoRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoControlesGeometricos" as const, value }),
+    ),
+  ];
+  const committed = await commitLocalMutation<RdoCreationStore>({
+    deviceId,
+    userId: session.colaboradorId,
+    obraId: draft.obraId,
+    entityType: "RDO",
+    entityId: draft.id,
+    entityName: draft.numeroRdo.trim() || null,
+    operation: "CREATE",
+    transportOperation: "CRIAR_RDO",
+    baseVersion: null,
+    occurredAt: timestamp,
+    previousSnapshot: {},
+    nextSnapshot: syncPayload,
+    principalSnapshot: rdo as unknown as Record<string, unknown>,
+    eventType: "RDO_CRIADO",
+    relatedEntities: [
+      {
+        tipo: "OBRA",
+        id: draft.obraId,
+        nome: entityName(draft.contrato) ?? entityName(draft.cliente),
+      },
+    ],
+    dependsOnMutationIds,
+    write: () => [
+      {
+        store: "rdos",
+        value: rdo,
+        principal: true,
+        insertOnly: true,
+      },
+      ...childWrites,
+    ],
+  });
 
   return {
     rdo,
-    mutation,
+    mutation: committed.mutation,
   };
 }
 
@@ -1555,6 +1606,38 @@ export async function saveExistingRdoDraftAtomically(
     ...operationalEvents,
   ]);
 
+  const preflightRdo = await database.get("rdos", draft.id);
+  const preflightMutations = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-entity-id",
+    draft.id,
+  );
+  const pendingCanonicalCreate = preflightMutations
+    .filter(
+      (candidate): candidate is CanonicalOutboxMutationRecord =>
+        isCanonicalOutboxMutation(candidate) &&
+        candidate.operation === "CREATE" &&
+        candidate.operacao === "CRIAR_RDO" &&
+        ["PENDING", "ERROR"].includes(candidate.status),
+    )
+    .sort((left, right) =>
+      right.occurredAt.localeCompare(left.occurredAt),
+    )[0];
+
+  if (
+    preflightRdo?.versaoEntidade === null &&
+    pendingCanonicalCreate
+  ) {
+    return replacePendingCanonicalRdoCreate({
+      draft,
+      existingRdo: preflightRdo,
+      original: pendingCanonicalCreate,
+      localPayload,
+      pendingOperationalEvents,
+      timestamp,
+    });
+  }
+
   const transaction = database.transaction(
     [
       "rdos",
@@ -1753,6 +1836,118 @@ export async function saveExistingRdoDraftAtomically(
     rdo: updatedRdo,
     mutation,
   };
+}
+
+async function replacePendingCanonicalRdoCreate(input: {
+  draft: RdoDraft;
+  existingRdo: LocalRdoRecord;
+  original: CanonicalOutboxMutationRecord;
+  localPayload: Record<string, unknown>;
+  pendingOperationalEvents: OperationalEventRecord[];
+  timestamp: string;
+}): Promise<SaveRdoDraftResult> {
+  const {
+    draft,
+    existingRdo,
+    original,
+    localPayload,
+    pendingOperationalEvents,
+    timestamp,
+  } = input;
+  const session = getSession();
+  if (!session) {
+    throw new Error("Sessão válida obrigatória para editar o RDO local.");
+  }
+  const replacementPayload = buildRdoSyncPayload(
+    draft,
+    pendingOperationalEvents.filter((event) => event.schemaVersion !== 13),
+  );
+  const updatedRdo: LocalRdoRecord = {
+    ...existingRdo,
+    obraId: draft.obraId,
+    programacaoId: draft.programacaoId || null,
+    numeroRdo: draft.numeroRdo,
+    dataRdo: draft.dataRdo,
+    payload: localPayload,
+    syncStatus: "PENDING_SYNC",
+    updatedAt: timestamp,
+  };
+  const database = await getCortexDb();
+  const childStores = [
+    "rdoMaoObra",
+    "rdoEquipamentos",
+    "rdoMateriais",
+    "rdoControlesGeometricos",
+  ] as const;
+  const existingChildren = await Promise.all(
+    childStores.map(async (store) => ({
+      store,
+      records: await database.getAllFromIndex(store, "by-rdo-id", draft.id),
+    })),
+  );
+  type RdoReplacementStore =
+    | "rdos"
+    | "rdoMaoObra"
+    | "rdoEquipamentos"
+    | "rdoMateriais"
+    | "rdoControlesGeometricos";
+  const writes: LocalMutationDomainWrite<RdoReplacementStore>[] = [
+    {
+      store: "rdos",
+      value: updatedRdo,
+      principal: true,
+    },
+    ...existingChildren.flatMap(({ store, records }) =>
+      records.map(
+        (record) =>
+          ({
+            store,
+            deleteKey: record.id,
+          }) as LocalMutationDomainWrite<RdoReplacementStore>,
+      ),
+    ),
+    ...buildMaoObraRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoMaoObra" as const, value }),
+    ),
+    ...buildEquipamentoRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoEquipamentos" as const, value }),
+    ),
+    ...buildMaterialRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoMateriais" as const, value }),
+    ),
+    ...buildControleGeometricoRecords(draft, "PENDING_SYNC", timestamp).map(
+      (value) => ({ store: "rdoControlesGeometricos" as const, value }),
+    ),
+  ];
+  const committed = await commitLocalMutation<RdoReplacementStore>({
+    deviceId: original.deviceId,
+    userId: session.colaboradorId,
+    obraId: draft.obraId,
+    entityType: "RDO",
+    entityId: draft.id,
+    entityName: draft.numeroRdo.trim() || null,
+    operation: "CREATE",
+    transportOperation: "CRIAR_RDO",
+    baseVersion: null,
+    occurredAt: timestamp,
+    previousSnapshot: original.payload as Record<string, unknown>,
+    nextSnapshot: replacementPayload,
+    principalSnapshot: updatedRdo as unknown as Record<string, unknown>,
+    eventType: "RDO_EDITADO",
+    relatedEntities: [
+      {
+        tipo: "OBRA",
+        id: draft.obraId,
+        nome: entityName(draft.contrato) ?? entityName(draft.cliente),
+      },
+    ],
+    correlationId: original.correlationId,
+    causationId: original.clientMutationId,
+    dependsOnMutationIds: original.dependsOnMutationIds,
+    supersedesMutationId: original.clientMutationId,
+    write: () => writes,
+  });
+  return { rdo: updatedRdo, mutation: committed.mutation };
 }
 
 export async function saveRdoDraftAtomically(
