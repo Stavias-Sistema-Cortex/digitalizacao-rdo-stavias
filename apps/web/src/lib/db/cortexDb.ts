@@ -2,6 +2,7 @@ import {
   openDB,
   type DBSchema,
   type IDBPDatabase,
+  type StoreNames,
 } from "idb";
 
 import type {
@@ -30,10 +31,10 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 13;
+export const CORTEX_DATABASE_VERSION = 14;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
-interface CortexDbSchema extends DBSchema {
+export interface CortexDbSchema extends DBSchema {
   rdos: {
     key: string;
     value: LocalRdoRecord;
@@ -91,6 +92,7 @@ interface CortexDbSchema extends DBSchema {
       "by-status": OutboxMutationRecord["status"];
       "by-created-at": string;
       "by-entity-id": string;
+      "by-next-attempt-at": string;
     };
   };
 
@@ -119,6 +121,8 @@ interface CortexDbSchema extends DBSchema {
       "by-type": OperationalEventRecord["type"];
       "by-sync-status": OperationalEventRecord["syncStatus"];
       "by-occurred-at": string;
+      "by-client-mutation-id": string;
+      "by-result": NonNullable<OperationalEventRecord["result"]>;
     };
   };
 
@@ -229,6 +233,8 @@ interface CortexDbSchema extends DBSchema {
     };
   };
 }
+
+export type CortexStoreName = StoreNames<CortexDbSchema>;
 
 const databasePromises = new Map<
   string,
@@ -395,6 +401,11 @@ export async function getCortexDb(): Promise<
           );
         }
 
+        const outboxStore = transaction.objectStore("outbox_mutations");
+        if (!outboxStore.indexNames.contains("by-next-attempt-at")) {
+          outboxStore.createIndex("by-next-attempt-at", "nextAttemptAt");
+        }
+
         if (
           !database.objectStoreNames.contains("sync_state")
         ) {
@@ -464,6 +475,17 @@ export async function getCortexDb(): Promise<
             "by-occurred-at",
             "occurredAt",
           );
+        }
+
+        const eventStore = transaction.objectStore("operational_events");
+        if (!eventStore.indexNames.contains("by-client-mutation-id")) {
+          eventStore.createIndex(
+            "by-client-mutation-id",
+            "clientMutationId",
+          );
+        }
+        if (!eventStore.indexNames.contains("by-result")) {
+          eventStore.createIndex("by-result", "result");
         }
 
         if (

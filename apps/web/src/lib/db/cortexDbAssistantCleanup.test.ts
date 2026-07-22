@@ -40,10 +40,10 @@ afterEach(async () => {
 });
 
 describe("IndexedDB assistant cleanup", () => {
-  it("creates a fresh v13 database without the legacy assistant store", async () => {
+  it("creates a fresh v14 database without the legacy assistant store", async () => {
     const fresh = await getCortexDb();
 
-    expect(fresh.version).toBe(13);
+    expect(fresh.version).toBe(14);
     expect(fresh.objectStoreNames.contains("stavia_snapshots")).toBe(false);
   });
 
@@ -86,7 +86,7 @@ describe("IndexedDB assistant cleanup", () => {
 
     const upgraded = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(13);
+    expect(CORTEX_DATABASE_VERSION).toBe(14);
     expect(upgraded.objectStoreNames.contains("stavia_snapshots")).toBe(false);
     expect(await upgraded.get("rdos", "rdo-preservado")).toMatchObject({
       id: "rdo-preservado",

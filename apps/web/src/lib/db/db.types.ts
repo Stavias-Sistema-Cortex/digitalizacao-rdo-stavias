@@ -50,7 +50,52 @@ export type OutboxMutationStatus =
   | "SYNCING"
   | "SYNCED"
   | "ERROR"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "REJECTED";
+
+export type CanonicalMutationOperation =
+  | "CREATE"
+  | "UPDATE"
+  | "DELETE"
+  | "TRANSITION";
+
+export type CanonicalMutationResult =
+  | "LOCAL"
+  | "PENDING"
+  | "SYNCING"
+  | "SYNCED"
+  | "CONFLICT"
+  | "REJECTED";
+
+export interface CanonicalMutationEnvelopeV13 {
+  schemaVersion: 13;
+  clientMutationId: string;
+  deviceId: string;
+  userId: string;
+  obraId: string;
+  entityType: string;
+  entityId: string;
+  operation: CanonicalMutationOperation;
+  baseVersion: number | null;
+  changedFields: string[];
+  occurredAt: string;
+  payload: Record<string, unknown>;
+}
+
+export interface MutationFieldPatch {
+  changed: Record<string, unknown>;
+  baseValues: Record<string, unknown>;
+}
+
+export interface MutationTrace {
+  actorId: string;
+  deviceId: string;
+  authorizationScope: string[];
+  correlationId: string;
+  causationId: string | null;
+  ontologyEventId: string;
+  payloadHash: string;
+}
 
 export type SyncEntityType =
   | "RDO"
@@ -117,7 +162,7 @@ export type LocalRdoMaterialRecord = LocalRdoChildRecord;
 export type LocalRdoControleGeometricoRecord =
   LocalRdoChildRecord;
 
-export interface OutboxMutationRecord {
+interface OutboxMutationRecordBase {
   clientMutationId: string;
   entidadeTipo: SyncEntityType;
   entidadeId: string;
@@ -135,6 +180,29 @@ export interface OutboxMutationRecord {
   dependsOnMutationIds?: string[];
   correlationId?: string;
 }
+
+export interface LegacyOutboxMutationRecord
+  extends OutboxMutationRecordBase {
+  schemaVersion?: undefined;
+  nextAttemptAt?: string | null;
+  blockedReason?: string | null;
+}
+
+export interface CanonicalOutboxMutationRecord
+  extends OutboxMutationRecordBase,
+    CanonicalMutationEnvelopeV13 {
+  correlationId: string;
+  causationId: string | null;
+  fieldPatch: MutationFieldPatch;
+  trace: MutationTrace;
+  nextAttemptAt: string | null;
+  blockedReason: string | null;
+}
+
+/** Legacy reads remain supported; every new coordinated write is canonical v13. */
+export type OutboxMutationRecord =
+  | LegacyOutboxMutationRecord
+  | CanonicalOutboxMutationRecord;
 
 export type MensagemSyncStatus =
   | "LOCAL"
@@ -244,6 +312,29 @@ export interface OperationalEventRecord {
   payload: Record<string, unknown>;
   syncStatus: OperationalEventSyncStatus;
   schemaVersion: number;
+  clientMutationId?: string;
+  deviceId?: string;
+  correlationId?: string;
+  causationId?: string | null;
+  previousState?: Record<string, unknown>;
+  newState?: Record<string, unknown>;
+  result?: CanonicalMutationResult;
+  errorCategory?: string | null;
+  entityVersion?: number | null;
+}
+
+export interface CanonicalOperationalEventRecord
+  extends OperationalEventRecord {
+  schemaVersion: 13;
+  clientMutationId: string;
+  deviceId: string;
+  correlationId: string;
+  causationId: string | null;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  result: CanonicalMutationResult;
+  errorCategory: string | null;
+  entityVersion: number | null;
 }
 
 export type AttachmentType = "FOTO" | "VIDEO";
