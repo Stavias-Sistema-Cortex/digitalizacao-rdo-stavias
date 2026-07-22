@@ -25,7 +25,7 @@ export async function refreshConversationHistory(
   if (guard) assertSyncSession(guard);
   const messages = await getMessageHistoryApi(conversationId, 100);
   if (guard) assertSyncSession(guard);
-  await storeServerMessages(messages);
+  await storeServerMessages(messages, guard);
   if (guard) assertSyncSession(guard);
 }
 
@@ -39,9 +39,11 @@ export async function refreshMessagingAfterPull(
   if (guard) assertSyncSession(guard);
   const conversations = await listConversationsApi(100);
   if (guard) assertSyncSession(guard);
-  await storeServerConversations(conversations, {
-    authoritative: true,
-  });
+  await storeServerConversations(
+    conversations,
+    { authoritative: true },
+    guard,
+  );
   if (guard) assertSyncSession(guard);
   const authorized = new Set(
     conversations.map((conversation) => conversation.id),

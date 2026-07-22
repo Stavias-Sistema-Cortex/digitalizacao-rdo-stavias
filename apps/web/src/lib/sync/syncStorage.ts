@@ -803,19 +803,28 @@ export async function recoverInterruptedMutations(
   await guardedTransaction.complete();
 }
 
-export async function repairMissingObraReferencesForSync(): Promise<number> {
+export async function repairMissingObraReferencesForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
   const obras = await database.getAll("obras");
+  assertSyncSession(guard);
 
   if (obras.length === 0) {
     return 0;
   }
 
   const timestamp = nowUtc();
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      RDO_SYNC_TRANSACTION_STORES,
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
@@ -893,18 +902,26 @@ export async function repairMissingObraReferencesForSync(): Promise<number> {
     repaired += 1;
   }
 
-  await transaction.done;
+  await guardedTransaction.complete();
 
   return repaired;
 }
 
-export async function repairMissingMaoObraReferencesForSync(): Promise<number> {
+export async function repairMissingMaoObraReferencesForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
   const timestamp = nowUtc();
-  const transaction = database.transaction(
-    RDO_SYNC_TRANSACTION_STORES,
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      RDO_SYNC_TRANSACTION_STORES,
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
@@ -958,7 +975,7 @@ export async function repairMissingMaoObraReferencesForSync(): Promise<number> {
     repaired += 1;
   }
 
-  await transaction.done;
+  await guardedTransaction.complete();
 
   return repaired;
 }

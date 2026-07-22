@@ -23,6 +23,8 @@ import {
   reconcileCanonicalConflict,
   recoverCanonicalConflictReconciliations,
   recoverInterruptedMutations,
+  repairMissingMaoObraReferencesForSync,
+  repairMissingObraReferencesForSync,
 } from "./syncStorage";
 
 const OBRA_ID = "00000000-0000-4000-8000-000000000101";
@@ -32,6 +34,7 @@ const MUTATION_1 = "00000000-0000-4000-8000-000000000104";
 const EVENT_1 = "00000000-0000-4000-8000-000000000105";
 const MUTATION_2 = "00000000-0000-4000-8000-000000000106";
 const EVENT_2 = "00000000-0000-4000-8000-000000000107";
+const FOREIGN_OBRA_ID = "00000000-0000-4000-8000-000000000108";
 
 let userId = "";
 let databaseName = "";
@@ -410,5 +413,146 @@ describe("atomic canonical push results", () => {
       lastSafeCode: "SERVER_TRANSIENT",
       nextAttemptAt: expect.any(String),
     });
+  });
+
+  it("rolls back obra-reference preflight repair on same-scope session rotation", async () => {
+    const database = await getCortexDb();
+    const localRdo = {
+      ...record("A"),
+      obraId: FOREIGN_OBRA_ID,
+      payload: {
+        obraId: FOREIGN_OBRA_ID,
+        contrato: "CTR-101",
+      },
+    };
+    const mutation = {
+      clientMutationId: MUTATION_1,
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: localRdo.payload,
+      status: "PENDING" as const,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: null,
+      conflito: null,
+      criadaNoClienteEm: "2026-07-22T12:00:00.000Z",
+      updatedAt: "2026-07-22T12:00:00.000Z",
+    };
+    await database.put("obras", {
+      id: OBRA_ID,
+      codigoContrato: "CTR-101",
+      nome: "Obra 101",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "ATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      updatedAt: "2026-07-22T12:00:00.000Z",
+    });
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+    const guard = captureOnlineSyncSession();
+    const originalSession = getSession()!;
+    const originalPut = IDBObjectStore.prototype.put;
+    let rotated = false;
+    const putSpy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (!rotated) {
+          rotated = true;
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        }
+        return key === undefined
+          ? originalPut.call(this, value)
+          : originalPut.call(this, value, key);
+      });
+
+    await expect(
+      repairMissingObraReferencesForSync(guard),
+    ).rejects.toBeDefined();
+
+    putSpy.mockRestore();
+    setSession(originalSession);
+    expect(await database.get("outbox_mutations", MUTATION_1)).toEqual(mutation);
+    expect(await database.get("rdos", RDO_ID)).toEqual(localRdo);
+  });
+
+  it("rolls back workforce-reference preflight repair on same-scope session rotation", async () => {
+    const database = await getCortexDb();
+    const payload = {
+      maoObra: [
+        {
+          colaboradorId: "legacy-collaborator",
+          nomeColaborador: "Ana",
+        },
+      ],
+    };
+    const localRdo = { ...record("A"), payload };
+    const mutation = {
+      clientMutationId: MUTATION_1,
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload,
+      status: "PENDING" as const,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro:
+        "rdo_mao_obra colaborador foreign key fk_rdo_mao_obra_colaborador",
+      conflito: null,
+      criadaNoClienteEm: "2026-07-22T12:00:00.000Z",
+      updatedAt: "2026-07-22T12:00:00.000Z",
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+    const guard = captureOnlineSyncSession();
+    const originalSession = getSession()!;
+    const originalPut = IDBObjectStore.prototype.put;
+    let rotated = false;
+    const putSpy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (!rotated) {
+          rotated = true;
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        }
+        return key === undefined
+          ? originalPut.call(this, value)
+          : originalPut.call(this, value, key);
+      });
+
+    await expect(
+      repairMissingMaoObraReferencesForSync(guard),
+    ).rejects.toBeDefined();
+
+    putSpy.mockRestore();
+    setSession(originalSession);
+    expect(await database.get("outbox_mutations", MUTATION_1)).toEqual(mutation);
+    expect(await database.get("rdos", RDO_ID)).toEqual(localRdo);
   });
 });

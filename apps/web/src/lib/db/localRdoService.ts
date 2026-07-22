@@ -23,6 +23,12 @@ import {
   queryOperationalEvents,
 } from "./operationalEventRepository";
 import { isCanonicalOutboxMutation } from "../sync/mutationEnvelope";
+import { guardSyncTransaction } from "../sync/guardedSyncTransaction";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "../sync/syncSession";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -1131,21 +1137,29 @@ export async function saveNewRdoDraftAtomically(
   };
 }
 
-export async function repairRdoCreateMutationsForSync(): Promise<number> {
+export async function repairRdoCreateMutationsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
   const timestamp = nowUtc();
-  const transaction = database.transaction(
-    [
-      "rdos",
-      "outbox_mutations",
-      "rdoMaoObra",
-      "rdoEquipamentos",
-      "rdoMateriais",
-      "rdoControlesGeometricos",
-      "operational_events",
-    ],
-    "readwrite",
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      [
+        "rdos",
+        "outbox_mutations",
+        "rdoMaoObra",
+        "rdoEquipamentos",
+        "rdoMateriais",
+        "rdoControlesGeometricos",
+        "operational_events",
+      ],
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
 
   const outboxStore =
     transaction.objectStore(
@@ -1231,7 +1245,7 @@ export async function repairRdoCreateMutationsForSync(): Promise<number> {
     repaired += 1;
   }
 
-  await transaction.done;
+  await guardedTransaction.complete();
 
   return repaired;
 }

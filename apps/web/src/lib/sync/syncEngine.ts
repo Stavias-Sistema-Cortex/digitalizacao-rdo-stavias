@@ -44,11 +44,11 @@ async function executeSync(
   try {
     await recoverInterruptedMutations(guard);
     assertSyncSession(guard);
-    await repairMissingObraReferencesForSync();
+    await repairMissingObraReferencesForSync(guard);
     assertSyncSession(guard);
-    await repairMissingMaoObraReferencesForSync();
+    await repairMissingMaoObraReferencesForSync(guard);
     assertSyncSession(guard);
-    await repairRdoCreateMutationsForSync();
+    await repairRdoCreateMutationsForSync(guard);
     assertSyncSession(guard);
 
     const deviceId = await ensureRegisteredDevice(guard);

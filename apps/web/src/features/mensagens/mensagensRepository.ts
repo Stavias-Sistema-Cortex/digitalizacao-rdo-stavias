@@ -17,6 +17,11 @@ import {
   buildConversationPreviews,
   type ConversationPreview,
 } from "./mensagensView";
+import { guardSyncTransaction } from "../../lib/sync/guardedSyncTransaction";
+import {
+  assertSyncSession,
+  type SyncSessionGuard,
+} from "../../lib/sync/syncSession";
 
 export const MESSAGES_CHANGED_EVENT =
   "cortex-messages-changed";
@@ -189,9 +194,12 @@ export async function searchLocalMessages(
 export async function storeServerConversations(
   conversations: ConversationApi[],
   options: { authoritative?: boolean } = {},
+  guard?: SyncSessionGuard,
 ): Promise<void> {
+  if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
-  const transaction = database.transaction(
+  if (guard) assertSyncSession(guard);
+  const rawTransaction = database.transaction(
     [
       "mensagem_conversas",
       "mensagens",
@@ -200,6 +208,10 @@ export async function storeServerConversations(
     ],
     "readwrite",
   );
+  const guardedTransaction = guard
+    ? guardSyncTransaction(rawTransaction, guard)
+    : null;
+  const transaction = guardedTransaction?.transaction ?? rawTransaction;
   const conversationStore = transaction.objectStore(
     "mensagem_conversas",
   );
@@ -255,18 +267,29 @@ export async function storeServerConversations(
       await conversationStore.delete(local.id);
     }
   }
-  await transaction.done;
+  if (guardedTransaction) {
+    await guardedTransaction.complete();
+  } else {
+    await transaction.done;
+  }
   emitMessagesChanged();
 }
 
 export async function storeServerMessages(
   messages: MessageApi[],
+  guard?: SyncSessionGuard,
 ): Promise<void> {
+  if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
-  const transaction = database.transaction(
+  if (guard) assertSyncSession(guard);
+  const rawTransaction = database.transaction(
     ["mensagens", "mensagem_anexos"],
     "readwrite",
   );
+  const guardedTransaction = guard
+    ? guardSyncTransaction(rawTransaction, guard)
+    : null;
+  const transaction = guardedTransaction?.transaction ?? rawTransaction;
   const messageStore = transaction.objectStore("mensagens");
   const attachmentStore = transaction.objectStore("mensagem_anexos");
   const timestamp = new Date().toISOString();
@@ -331,7 +354,11 @@ export async function storeServerMessages(
       });
     }
   }
-  await transaction.done;
+  if (guardedTransaction) {
+    await guardedTransaction.complete();
+  } else {
+    await transaction.done;
+  }
   emitMessagesChanged();
 }
 

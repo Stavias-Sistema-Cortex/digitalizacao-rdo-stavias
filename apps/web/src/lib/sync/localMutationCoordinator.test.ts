@@ -3,7 +3,11 @@ import "fake-indexeddb/auto";
 import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, setSession } from "../../features/auth/authSession";
+import {
+  clearSession,
+  getSession,
+  setSession,
+} from "../../features/auth/authSession";
 import { closeCortexDb, getCortexDb } from "../db/cortexDb";
 import type { LocalRdoRecord } from "../db/db.types";
 import { databaseNameForScope } from "../db/localDataNamespace";
@@ -18,6 +22,7 @@ import {
   buildCanonicalMutation,
   mutationPayloadHash,
 } from "./mutationEnvelope";
+import { captureOnlineSyncSession } from "./syncSession";
 
 const OBRA_ID = "00000000-0000-4000-8000-000000000001";
 const FOREIGN_OBRA_ID = "00000000-0000-4000-8000-000000000006";
@@ -499,5 +504,61 @@ describe("canonical local mutation coordinator", () => {
     expect(
       await database.get("outbox_mutations", result.mutation.clientMutationId),
     ).toEqual(result.mutation);
+  });
+
+  it("rolls back legacy RDO-create preflight repair on same-scope session rotation", async () => {
+    const database = await getCortexDb();
+    const localRdo = rdo();
+    const mutation = {
+      clientMutationId: "00000000-0000-4000-8000-000000000008",
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: { stale: true },
+      status: "PENDING" as const,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: "payload legado",
+      conflito: null,
+      criadaNoClienteEm: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+    const guard = captureOnlineSyncSession();
+    const originalSession = getSession()!;
+    const originalPut = IDBObjectStore.prototype.put;
+    let rotated = false;
+    const putSpy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (!rotated) {
+          rotated = true;
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        }
+        return key === undefined
+          ? originalPut.call(this, value)
+          : originalPut.call(this, value, key);
+      });
+
+    await expect(
+      repairRdoCreateMutationsForSync(guard),
+    ).rejects.toBeDefined();
+
+    putSpy.mockRestore();
+    setSession(originalSession);
+    expect(await database.get("outbox_mutations", mutation.clientMutationId))
+      .toEqual(mutation);
+    expect(await database.get("rdos", RDO_ID)).toEqual(localRdo);
   });
 });

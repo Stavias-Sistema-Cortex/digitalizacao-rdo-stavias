@@ -47,4 +47,23 @@ describe("messaging hydration session boundary", () => {
     expect(mocks.storeConversations).not.toHaveBeenCalled();
     expect(mocks.storeMessages).not.toHaveBeenCalled();
   });
+
+  it("passes the active guard into every authoritative repository write", async () => {
+    const guard = {
+      fingerprint: "session-a",
+      userId: "user",
+    };
+    const conversations = [{ id: "conversation" }];
+    mocks.list.mockResolvedValueOnce(conversations);
+    mocks.history.mockResolvedValueOnce([]);
+
+    await refreshMessagingAfterPull(["conversation"], guard);
+
+    expect(mocks.storeConversations).toHaveBeenCalledWith(
+      conversations,
+      { authoritative: true },
+      guard,
+    );
+    expect(mocks.storeMessages).toHaveBeenCalledWith([], guard);
+  });
 });

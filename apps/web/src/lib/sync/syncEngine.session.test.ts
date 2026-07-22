@@ -113,4 +113,15 @@ describe("session-scoped sync single flight", () => {
       mocks.push.mock.invocationCallOrder[0],
     );
   });
+
+  it("passes the captured session guard to every preflight repair", async () => {
+    await syncNow();
+
+    const expectedGuard = expect.objectContaining({
+      fingerprint: "session-a",
+    });
+    expect(mocks.repairObra).toHaveBeenCalledWith(expectedGuard);
+    expect(mocks.repairMaoObra).toHaveBeenCalledWith(expectedGuard);
+    expect(mocks.repairRdo).toHaveBeenCalledWith(expectedGuard);
+  });
 });
