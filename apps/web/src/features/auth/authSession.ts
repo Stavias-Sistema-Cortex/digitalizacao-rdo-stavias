@@ -1,7 +1,9 @@
-import { clearUserScopedLocalStorage } from "../../lib/db/localDataScope";
-
 const LEGACY_SESSION_KEY = "cortex.auth.sessao";
 const LEGACY_FILTER_KEY = "cortex.auth.cpfFilter";
+const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [
+  "cortex:stavia:chat:operacional",
+  "cortex:stavia:last-context",
+] as const;
 const AUTH_BROADCAST_CHANNEL = "cortex-auth-session-v1";
 const LOGOUT_MESSAGE = "LOGOUT";
 const UUID_PATTERN =
@@ -79,9 +81,19 @@ export function clearSession(): void {
 function clearSessionLocally(): void {
   onlineSession = null;
   offlineSession = null;
-  clearUserScopedLocalStorage();
+  clearRetiredPrivateLocalStorage();
   scheduleExpiry();
   dispatchSessionChanged();
+}
+
+function clearRetiredPrivateLocalStorage(): void {
+  const target = typeof window === "undefined" ? null : window.localStorage;
+  if (!target) {
+    return;
+  }
+  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {
+    target.removeItem(key);
+  }
 }
 
 export function requireDataScope(): {

@@ -128,7 +128,8 @@ export const CORPORATE_ASSET_ALLOWLIST = new Set([
   "apps/web/src/assets/stavias-s-tile.png",
 ]);
 
-const LOCAL_STORAGE_CLEANUP_PATH = "apps/web/src/lib/db/localDataScope.ts";
+const LOCAL_STORAGE_CLEANUP_PATH =
+  "apps/web/src/features/auth/authSession.ts";
 const DATABASE_MIGRATION_PATH = "apps/web/src/lib/db/cortexDb.ts";
 const VERIFIER_PATHS = new Set([
   "apps/web/scripts/verify-stavia-boundary.mjs",
@@ -417,7 +418,7 @@ export function inspectLegacySource(files) {
     violations.push(`${LOCAL_STORAGE_CLEANUP_PATH}: active legacy storage access`);
   }
   if (
-    !/export\s+function\s+clearUserScopedLocalStorage\s*\(\s*\)\s*(?::\s*void\s*)?\{/.test(
+    !/function\s+clearRetiredPrivateLocalStorage\s*\(\s*\)\s*(?::\s*void\s*)?\{/.test(
       localCleanup,
     ) ||
     !/typeof\s+window\s*===\s*["']undefined["']\s*\?\s*null\s*:\s*window\.localStorage/.test(
@@ -425,7 +426,12 @@ export function inspectLegacySource(files) {
     )
   ) {
     violations.push(
-      `${LOCAL_STORAGE_CLEANUP_PATH}: cleanup API must be zero-argument and browser-local`,
+      `${LOCAL_STORAGE_CLEANUP_PATH}: private cleanup must be zero-argument and browser-local`,
+    );
+  }
+  if (occurrenceCount(localCleanup, "clearRetiredPrivateLocalStorage") !== 2) {
+    violations.push(
+      `${LOCAL_STORAGE_CLEANUP_PATH}: private cleanup must have one declaration and one caller`,
     );
   }
   if (keyCollectionName) {
@@ -453,20 +459,7 @@ export function inspectLegacySource(files) {
         `${file.path}: cleanup module may not be loaded through namespace, dynamic, or CommonJS access`,
       );
     }
-    const remainingReferences = file.content
-      .replace(
-        /import\s*\{\s*clearUserScopedLocalStorage\s*\}\s*from\s*["'][^"']*localDataScope(?:\.[cm]?[jt]sx?)?["']\s*;?/g,
-        "[approved-cleanup-import]",
-      )
-      .replace(
-        /\bclearUserScopedLocalStorage\s*\(\s*\)/g,
-        "[approved-zero-argument-cleanup-call]",
-      );
-    if (/\bclearUserScopedLocalStorage\b/.test(remainingReferences)) {
-      violations.push(
-        `${file.path}: cleanup function may only be imported by name and called without arguments`,
-      );
-    }
+    const remainingReferences = file.content;
     if (/localDataScope|clearUserScoped/i.test(remainingReferences)) {
       violations.push(
         `${file.path}: cleanup module and symbol may not be referenced through computed or facade access`,
@@ -521,12 +514,6 @@ export function inspectLegacySource(files) {
 
 function maskVerifiedLegacySource(file) {
   let content = file.content;
-  if (file.path === "apps/web/package.json") {
-    content = content.replace(
-      '"verify:assistant-boundary"',
-      '"verify:retired-runtime-boundary"',
-    );
-  }
   if (file.path === LOCAL_STORAGE_CLEANUP_PATH) {
     for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
       content = content.replace(key, "[legacy-local-cleanup]");
@@ -544,6 +531,48 @@ function maskVerifiedLegacySource(file) {
 
 const VERIFIED_DIST_BUILD_SUFFIX =
   /&&\s*node scripts\/verify-stavia-boundary\.mjs --dist\s*$/;
+const EXPECTED_PACKAGE_SCRIPTS = new Map([
+  ["dev", "vite"],
+  [
+    "dev:local",
+    "CORTEX_API_TARGET=http://127.0.0.1:8080 vite --host 127.0.0.1 --port 5173",
+  ],
+  [
+    "dev:compose",
+    "CORTEX_API_TARGET=http://127.0.0.1:8081 vite --host 127.0.0.1 --port 5173",
+  ],
+  [
+    "build",
+    "tsc -b && vite build && node scripts/verify-stavia-boundary.mjs --dist",
+  ],
+  [
+    "build:local",
+    "tsc -b && VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8080/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+  ],
+  [
+    "build:compose",
+    "tsc -b && VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8081/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+  ],
+  ["lint", "eslint ."],
+  [
+    "verify:mensagens-geometry",
+    "node scripts/verify-mensagens-geometry.mjs",
+  ],
+  [
+    "verify:retired-runtime-boundary",
+    "node scripts/verify-stavia-boundary.mjs",
+  ],
+  ["test", "vitest run"],
+  ["preview", "vite preview"],
+  [
+    "preview:local",
+    "CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host 127.0.0.1 --port 4173",
+  ],
+  [
+    "preview:compose",
+    "CORTEX_API_TARGET=http://127.0.0.1:8081 vite preview --host 127.0.0.1 --port 4173",
+  ],
+]);
 
 function tokenizeShellCommands(command) {
   const commands = [];
@@ -638,6 +667,18 @@ function invokesViteBuild(command, seen = new Set()) {
 
 export function inspectPackageBuildScripts(scripts) {
   const violations = [];
+  for (const name of new Set([
+    ...EXPECTED_PACKAGE_SCRIPTS.keys(),
+    ...Object.keys(scripts),
+  ])) {
+    const expected = EXPECTED_PACKAGE_SCRIPTS.get(name);
+    const actual = scripts[name];
+    if (actual !== expected) {
+      violations.push(
+        `apps/web/package.json#${name}: script must match the reviewed runtime command exactly`,
+      );
+    }
+  }
   for (const [name, command] of Object.entries(scripts)) {
     const isBuildEntry = /^build(?::|$)/.test(name);
     const hasViteBuild = invokesViteBuild(command);
@@ -765,12 +806,28 @@ export function verifyDist(distRoot = path.join(WEB_ROOT, "dist")) {
       violations.push(`${key}: expected exactly one compiled cleanup occurrence`);
     }
   }
-  const firstKey = combined.indexOf(LEGACY_LOCAL_STORAGE_KEYS[0]);
-  const cleanupWindow = combined.slice(Math.max(0, firstKey - 80), firstKey + 420);
+  const cleanupFile = textFiles.find((file) =>
+    LEGACY_LOCAL_STORAGE_KEYS.every((key) => file.content.includes(key)),
+  );
+  const compiledKeyDeclaration = cleanupFile?.content.match(
+    /(?:^|[,;]\s*|\b(?:const|let|var)\s+)([A-Za-z_$][\w$]*)\s*=\s*\[\s*[`"']cortex:stavia:chat:operacional[`"']\s*,\s*[`"']cortex:stavia:last-context[`"']\s*\]/,
+  );
+  const compiledKeyCollection = compiledKeyDeclaration?.[1] ?? "";
+  const compiledRemovalLoop = compiledKeyCollection
+    ? new RegExp(
+        `for\\s*\\(\\s*(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s+of\\s+${compiledKeyCollection}\\s*\\)\\s*([A-Za-z_$][\\w$]*)\\.removeItem\\(\\s*\\1\\s*\\)`,
+      )
+    : null;
+  const compiledActiveLoop = compiledKeyCollection
+    ? new RegExp(
+        `for\\s*\\(\\s*(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s+of\\s+${compiledKeyCollection}\\s*\\)\\s*([A-Za-z_$][\\w$]*)\\.(?:getItem|setItem)\\(`,
+      )
+    : null;
   if (
-    !cleanupWindow.includes(LEGACY_LOCAL_STORAGE_KEYS[1]) ||
-    !cleanupWindow.includes(".removeItem(") ||
-    /\.(?:getItem|setItem)\(/.test(cleanupWindow)
+    !cleanupFile ||
+    !compiledRemovalLoop?.test(cleanupFile.content) ||
+    compiledActiveLoop?.test(cleanupFile.content) ||
+    !cleanupFile.content.includes("window.localStorage")
   ) {
     violations.push("compiled localStorage cleanup is not deletion-only");
   }

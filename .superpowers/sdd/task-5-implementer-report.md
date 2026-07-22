@@ -62,8 +62,9 @@ actions and real data.
 - `db.types.ts`: active import of `features/stavia/stavia.types` through
   `StaviaSnapshotRecord`.
 - `cortexDb.ts`: schema typing and v12 creation of `stavia_snapshots`.
-- `localDataScope.ts` and auth tests: two historical localStorage keys containing
-  potentially private assistant data. These are retained only for deletion.
+- `localDataScope.ts` and auth tests originally held two historical localStorage
+  keys containing potentially private assistant data. The importable module was
+  removed; the literals now exist only inside private logout deletion code.
 
 ### Assets, environment, scripts, and old build
 
@@ -106,8 +107,10 @@ All failures were the intended contract failures, not test harness errors.
   `stavia_snapshots` store is detected through a narrowly cast legacy database
   view and deleted. It is absent from the active `DBSchema` and cannot be
   created, read, written, or transacted by current code.
-- Retained exactly two historical localStorage key names in
-  `localDataScope.ts`. The runtime only loops over them with `removeItem`; it
+- Retained exactly two historical localStorage key names inside the private
+  auth-session logout implementation. The old importable `localDataScope.ts`
+  module and its isolated test were deleted; `authSession.test.ts` exercises
+  the real logout path. The private runtime loop only uses `removeItem` and
   contains no `getItem`/`setItem` path for those keys.
 
 ## Boundary coverage
@@ -157,8 +160,9 @@ unchanged but appends assistant copy on an adjacent expression.
 
 Legacy identifiers are now audited across the complete scanned source set
 before they are masked for assistant-token inspection. Each localStorage key
-must occur exactly once in `localDataScope.ts`, whose only storage capability is
-`removeItem`; `stavia_snapshots` must occur exactly once as the migration
+must occur exactly once in `authSession.ts`, whose private cleanup has one
+declaration, one call, and only the real browser `removeItem` capability;
+`stavia_snapshots` must occur exactly once as the migration
 constant in `cortexDb.ts`, with exactly the constant declaration,
 `objectStoreNames.contains`, and `deleteObjectStore` uses. Regression fixtures
 prove a second occurrence, `getItem`, or active `objectStore` access is rejected.
@@ -169,7 +173,10 @@ or empty `dist`, and `npm run build` now runs
 Vitest covers the missing-dist failure and package-script ordering; the real
 build below exercised the generated JS, CSS, HTML, manifest, service worker,
 assets, legacy deletion-only code, and chunk paths without recursive build/test
-invocation.
+invocation. The compiled cleanup check identifies the fixed key collection and
+its `removeItem` loop structurally instead of relying on a fixed character
+window; a regression fixture separates them beyond the old limit and still
+requires deletion-only output.
 
 The source classifier now covers every Vite text source extension used by the
 project (`css`, `json`, `ts`, `tsx`, `js`, `jsx`, `mjs`, `mts`, `cjs`, and
@@ -179,27 +186,21 @@ scanned. Source assets are also included for path policy even when their binary
 content is not read.
 
 The historical localStorage literals are constrained to a private, fixed
-`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration. The exported cleanup function
-is zero-argument and selects only the browser's real `window.localStorage`; it
-no longer accepts an injected structural remover that could capture the private
-keys. The executable verifier requires the fixed declaration and
-`target.removeItem(key)` loop, rejects an exported collection, rejects any
-additional consumer of its symbol, and permits consumers only as an exact named
-import followed by a zero-argument call. Export aliases, function aliases, and
-callback arguments fail the gate. Namespace, dynamic, and CommonJS loading of
-the cleanup module are rejected as well. After the sole exact named import and
-zero-argument call are masked, any remaining `localDataScope` or
-`clearUserScoped` fragment fails, covering template literals, `.js` dynamic
-imports, concatenated CommonJS paths, re-export facades, and computed-property
-aliases. A second conservative normalization decodes JavaScript Unicode/hex
-escapes and removes string/template/concatenation punctuation before checking
-the complete module and symbol names, so split strings and escaped identifiers
-cannot evade the policy. SSR retains the explicit no-op path.
+`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration in `authSession.ts`. The private
+`clearRetiredPrivateLocalStorage` function is zero-argument, selects only the
+browser's real `window.localStorage`, and has exactly one logout caller. There
+is no exported cleanup API or cleanup module to import, alias, re-export, or
+load dynamically. The verifier still normalizes Unicode/hex escapes and
+string/template concatenation to reject attempts to recreate the retired
+module or symbol, while the real auth-session test proves the two keys are
+removed. SSR retains the explicit no-op path.
 
 All `build`/`build:*` package scripts and every raw Vite build invocation now
 must end in the mandatory
 `node scripts/verify-stavia-boundary.mjs --dist` gate. The executable package
-inspector recognizes options before the Vite command, including
+inspector first requires the complete package-script map to match the reviewed
+commands exactly; adding or mutating any script fails until the policy is
+deliberately updated. It also recognizes options before the Vite command, including
 `vite --mode production build`, `vite --config vite.config.ts build`, and a
 line-broken command. Its shell tokenizer preserves quoted metacharacters, so
 `vite --define 'process.env.X="a;b"' build` cannot escape by looking like two
@@ -246,8 +247,8 @@ gate. Authenticated runtime browser proof remains Task 6.
 - Targeted migration/responsive tests:
   `2 files / 21 tests passed`.
 - Boundary after production build: `1 file / 4 tests passed`.
-- Occurrence-policy focused suite: `2 files / 15 tests passed`.
-- Full web suite after occurrence hardening: `52 files / 243 tests passed`.
+- Occurrence-policy focused suite: `2 files / 23 tests passed`.
+- Full web suite after occurrence hardening: `51 files / 243 tests passed`.
 - Lint: `npm --prefix apps/web run lint` exited 0.
 - TypeScript/Vite/PWA builds plus mandatory dist verifier:
   `build`, `build:local`, and `build:compose` each exited 0, generated 89

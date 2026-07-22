@@ -12,7 +12,7 @@
     "build:compose": "tsc -b && VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8081/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
     "lint": "eslint .",
     "verify:mensagens-geometry": "node scripts/verify-mensagens-geometry.mjs",
-    "verify:assistant-boundary": "node scripts/verify-stavia-boundary.mjs",
+    "verify:retired-runtime-boundary": "node scripts/verify-stavia-boundary.mjs",
     "test": "vitest run",
     "preview": "vite preview",
     "preview:local": "CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host 127.0.0.1 --port 4173",

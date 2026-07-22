@@ -37,8 +37,8 @@ const LEGACY_SNAPSHOT_STORE = "stavia_snapshots";
 function validCleanupFixtures(): Array<{ path: string; content: string }> {
   return [
     {
-      path: "apps/web/src/lib/db/localDataScope.ts",
-      content: `const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n  "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n  "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n] as const;\nexport function clearUserScopedLocalStorage() {\n  const target = typeof window === "undefined" ? null : window.localStorage;\n  if (!target) return;\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}`,
+      path: "apps/web/src/features/auth/authSession.ts",
+      content: `const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n  "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n  "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n] as const;\nfunction clearRetiredPrivateLocalStorage() {\n  const target = typeof window === "undefined" ? null : window.localStorage;\n  if (!target) return;\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}\nclearRetiredPrivateLocalStorage();`,
     },
     {
       path: "apps/web/src/lib/db/cortexDb.ts",
@@ -485,6 +485,9 @@ describe("StavIA runtime boundary", () => {
   });
 
   it("rejects cleanup callers that can capture private legacy keys", () => {
+    expect(existsSync(path.join(WEB_ROOT, "src/lib/db/localDataScope.ts"))).toBe(
+      false,
+    );
     expect(
       inspectSourceBoundary([
         ...validCleanupFixtures(),
@@ -551,7 +554,7 @@ describe("StavIA runtime boundary", () => {
   it("keeps legacy assistant identifiers deletion-only", () => {
     const localCleanupPath = path.join(
       WEB_ROOT,
-      "src/lib/db/localDataScope.ts",
+      "src/features/auth/authSession.ts",
     );
     const localCleanup = readFileSync(localCleanupPath, "utf8");
     for (const key of LEGACY_LOCAL_STORAGE_KEYS) {
@@ -590,6 +593,27 @@ describe("StavIA runtime boundary", () => {
     }
 
     expect(() => verifyDist(distRoot)).not.toThrow();
+  });
+
+  it("accepts compiled deletion-only cleanup regardless of minifier distance", () => {
+    const distRoot = mkdtempSync(
+      path.join(tmpdir(), "cortex-stavia-dist-boundary-"),
+    );
+    const compiledGap = "let unrelated=0;".repeat(40);
+    const compiledCleanup = [
+      `var retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
+      compiledGap,
+      "function clearRetired(){let storage=typeof window>\"u\"?null:window.localStorage;if(storage)for(let key of retiredKeys)storage.removeItem(key)}",
+      `const legacyStore="${LEGACY_SNAPSHOT_STORE}";`,
+      "function migrate(database){database.objectStoreNames.contains(legacyStore)&&database.deleteObjectStore(legacyStore)}",
+    ].join("");
+
+    try {
+      writeFileSync(path.join(distRoot, "index.js"), compiledCleanup);
+      expect(() => verifyDist(distRoot)).not.toThrow();
+    } finally {
+      rmSync(distRoot, { recursive: true, force: true });
+    }
   });
 
   it("makes every Vite build script run the explicit dist verifier", () => {
