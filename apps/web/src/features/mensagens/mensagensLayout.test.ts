@@ -50,6 +50,26 @@ describe("layout da aba Mensagens", () => {
     expect(css).not.toContain("color: rgb(255 255 255");
   });
 
+  /*
+   * O painel único é decidido por container query. Se o botão voltar ficar
+   * preso a uma media query de viewport, existe uma faixa (viewport larga,
+   * frame estreito por causa da sidebar redimensionável) em que a lista some
+   * e não há como voltar para ela.
+   */
+  it("revela o botão voltar pela mesma consulta que decide o painel único", () => {
+    const escopoDoBotao = css.slice(0, css.indexOf(".mensagens-mobile-back {\n    display: inline-grid"));
+    const ultimaAbertura = Math.max(
+      escopoDoBotao.lastIndexOf("@container (max-width: 639px)"),
+      escopoDoBotao.lastIndexOf("@media"),
+    );
+    expect(escopoDoBotao.slice(ultimaAbertura)).toContain("@container (max-width: 639px)");
+  });
+
+  it("não deixa cromo de gaveta na faixa de painel único", () => {
+    const faixaUnica = css.slice(css.indexOf("@container (max-width: 639px)"));
+    expect(faixaUnica).toContain(".mensagens-workspace .mensagens-drawer-backdrop");
+  });
+
   it("distingue a bolha que ainda não saiu do aparelho", () => {
     expect(rule(".mensagem-bubble--pendente")).toContain("border-style: dashed;");
     expect(rule(".mensagem-bubble--pendente")).toContain("background: #fff;");

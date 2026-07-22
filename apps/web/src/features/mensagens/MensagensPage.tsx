@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -81,6 +82,8 @@ export function MensagensPage() {
     () => localStorage.getItem(INFO_COLLAPSED_KEY) === "1",
   );
   const [now, setNow] = useState(() => new Date());
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [wideFrame, setWideFrame] = useState(false);
   const { snapshot } = useSyncStatus();
 
   const loadLocal = useCallback(async () => {
@@ -176,6 +179,18 @@ export function MensagensPage() {
   const body = selectedId ? drafts[selectedId] ?? "" : "";
   const timeline = useMemo(() => buildMessageTimeline(messages), [messages]);
   const isGroup = selected ? selected.tipo !== "DIRETA" : false;
+
+  /* Espelha o @container (min-width: 1040px) para o handler do botão de
+     contexto. Viewport não serve: a sidebar do shell é redimensionável. */
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setWideFrame(entry.contentRect.width >= 1040);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // As legendas de run são relativas; sem este tique elas congelam.
   useEffect(() => {
@@ -299,22 +314,30 @@ export function MensagensPage() {
     setMobilePane("thread");
   }
 
+  function clearSearch() {
+    setSearch("");
+    setSearchResults(null);
+  }
+
   function openContext() {
     setContextOpen(true);
     setMobilePane("context");
   }
 
   /**
-   * O mesmo botão serve às duas larguras: acima de 1040px de frame ele recolhe
-   * a coluna em fluxo (a gaveta está invisível), abaixo ele abre a gaveta (a
-   * coluna recolhida está invisível).
+   * Acima de 1040px de frame o contexto é coluna em fluxo e o botão recolhe ou
+   * mostra essa coluna; abaixo disso ele abre a gaveta. Conflacionar os dois
+   * fazia o botão "Ver contexto" esconder justamente o painel que abre.
    */
   function toggleInfo() {
-    setInfoCollapsed((current) => {
-      const next = !current;
-      localStorage.setItem(INFO_COLLAPSED_KEY, next ? "1" : "0");
-      return next;
-    });
+    if (wideFrame) {
+      setInfoCollapsed((current) => {
+        const next = !current;
+        localStorage.setItem(INFO_COLLAPSED_KEY, next ? "1" : "0");
+        return next;
+      });
+      return;
+    }
     openContext();
   }
 
@@ -346,7 +369,7 @@ export function MensagensPage() {
           </div>
         ) : null}
 
-        <div className="mensagens-frame">
+        <div className="mensagens-frame" ref={frameRef}>
         <section
           className={`mensagens-workspace mensagens-workspace--${mobilePane}${
             contextOpen ? " mensagens-workspace--drawer-open" : ""
@@ -365,7 +388,7 @@ export function MensagensPage() {
             searchResults={searchResults}
             onSearchChange={setSearch}
             onSearchSubmit={handleSearch}
-            onCloseSearch={() => setSearchResults(null)}
+            onCloseSearch={clearSearch}
             onSelect={chooseConversation}
             onChooseSearchResult={chooseSearchResult}
           />
@@ -382,6 +405,7 @@ export function MensagensPage() {
             currentUserId={session?.colaboradorId ?? ""}
             isGroup={isGroup}
             now={now}
+            infoVisible={wideFrame ? !infoCollapsed : contextOpen}
             onBack={() => setMobilePane("list")}
             onOpenInfo={toggleInfo}
             onOpenAttachment={openAttachment}

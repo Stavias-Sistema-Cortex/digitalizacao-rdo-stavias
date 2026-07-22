@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import type {
   ConversaLocalRecord,
@@ -34,6 +34,7 @@ export interface MessageThreadProps {
   currentUserId: string;
   isGroup: boolean;
   now: Date;
+  infoVisible: boolean;
   composer: ReactNode;
   onBack: () => void;
   onOpenInfo: () => void;
@@ -42,6 +43,18 @@ export interface MessageThreadProps {
 }
 
 export function MessageThread(props: MessageThreadProps) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const conversationId = props.conversation?.id ?? null;
+  const messageCount = props.timeline.length;
+
+  /* A lista rola por dentro de uma altura fixa, então ela abre no topo:
+     sem isto a conversa aparece na mensagem mais antiga. */
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [conversationId, messageCount]);
+
   if (!props.conversation) {
     return (
       <section className="mensagens-thread" aria-live="polite">
@@ -77,13 +90,16 @@ export function MessageThread(props: MessageThreadProps) {
           type="button"
           className="mensagens-info-btn"
           onClick={props.onOpenInfo}
-          aria-label="Ver contexto da conversa"
+          aria-label={
+            props.infoVisible ? "Ocultar contexto da conversa" : "Ver contexto da conversa"
+          }
+          aria-expanded={props.infoVisible}
         >
           <IconInfo />
         </button>
       </header>
 
-      <ol className="mensagens-list">
+      <ol className="mensagens-list" ref={listRef}>
         {!props.hasMessages ? (
           <li className="mensagens-empty">Nenhuma mensagem nesta conversa.</li>
         ) : (

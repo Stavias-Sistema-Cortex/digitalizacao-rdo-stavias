@@ -15,6 +15,7 @@ export interface MessageComposerProps {
 
 export function MessageComposer(props: MessageComposerProps) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -25,10 +26,22 @@ export function MessageComposer(props: MessageComposerProps) {
   }, [props.value]);
 
   useEffect(() => {
-    if (props.files.length === 0 && fileInput.current) {
-      fileInput.current.value = "";
-    }
+    if (props.files.length > 0) return;
+    // Sem zerar o value, escolher o mesmo arquivo de novo não dispara change.
+    if (fileInput.current) fileInput.current.value = "";
+    if (imageInput.current) imageInput.current.value = "";
   }, [props.files.length]);
+
+  /** Cada botão é um gesto de anexar: o segundo soma, não substitui o primeiro. */
+  function adicionar(escolhidos: FileList | null) {
+    const novos = Array.from(escolhidos ?? []);
+    if (novos.length === 0) return;
+    const jaTem = new Set(props.files.map((f) => `${f.name}:${f.size}:${f.lastModified}`));
+    props.onFilesChange([
+      ...props.files,
+      ...novos.filter((f) => !jaTem.has(`${f.name}:${f.size}:${f.lastModified}`)),
+    ]);
+  }
 
   return (
     <form className="mensagens-composer" onSubmit={props.onSubmit}>
@@ -65,10 +78,11 @@ export function MessageComposer(props: MessageComposerProps) {
         />
         <label className="mensagens-attach" aria-label="Anexar foto">
           <input
+            ref={imageInput}
             type="file"
             accept="image/*"
             multiple
-            onChange={(event) => props.onFilesChange(Array.from(event.target.files ?? []))}
+            onChange={(event) => adicionar(event.target.files)}
           />
           <IconImage />
         </label>
@@ -77,7 +91,7 @@ export function MessageComposer(props: MessageComposerProps) {
             ref={fileInput}
             type="file"
             multiple
-            onChange={(event) => props.onFilesChange(Array.from(event.target.files ?? []))}
+            onChange={(event) => adicionar(event.target.files)}
           />
           <IconPaperclip />
         </label>
