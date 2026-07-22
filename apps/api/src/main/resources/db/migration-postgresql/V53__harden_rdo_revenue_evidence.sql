@@ -188,7 +188,7 @@ BEGIN
         WHERE execution.price_version_id = price.id
           AND execution.revenue_coverage_code = 'ACCEPTED_EXACT'
           AND execution.revenue_evidence_id IS NOT NULL
-          AND execution.data_execucao > NEW.vigencia_cancelamento
+          AND execution.data_execucao >= NEW.vigencia_cancelamento
     ) THEN
         RAISE EXCEPTION USING
             ERRCODE = 'P0001',

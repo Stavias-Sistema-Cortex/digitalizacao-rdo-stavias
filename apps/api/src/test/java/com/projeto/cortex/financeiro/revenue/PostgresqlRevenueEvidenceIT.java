@@ -485,7 +485,7 @@ class PostgresqlRevenueEvidenceIT {
 
         assertThatThrownBy(() -> cancelPrice(
                 fixture.priceId(), fixture.obraId(), fixture.actorId(),
-                RDO_DATE.minusDays(1)
+                RDO_DATE
         )).isInstanceOf(DataAccessException.class)
                 .hasMessageContaining("SERVICE_PRICE_CANCELLATION_ACCEPTED_EVIDENCE");
         assertThat(jdbc.queryForObject("""
@@ -606,7 +606,7 @@ class PostgresqlRevenueEvidenceIT {
             Future<?> cancellation = executor.submit(() -> {
                 assertThatThrownBy(() -> cancelPrice(
                         fixture.priceId(), fixture.obraId(), fixture.actorId(),
-                        RDO_DATE.minusDays(1)
+                        RDO_DATE
                 )).isInstanceOf(DataAccessException.class)
                         .hasMessageContaining(
                                 "SERVICE_PRICE_CANCELLATION_ACCEPTED_EVIDENCE"
@@ -642,7 +642,7 @@ class PostgresqlRevenueEvidenceIT {
                     transactions.executeWithoutResult(ignored -> {
                         cancelPrice(
                                 fixture.priceId(), fixture.obraId(), fixture.actorId(),
-                                RDO_DATE.minusDays(1)
+                                RDO_DATE
                         );
                         cancellationInserted.countDown();
                         awaitLatch(allowCancellationCommit);
