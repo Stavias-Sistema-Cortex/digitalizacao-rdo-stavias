@@ -913,7 +913,7 @@ export function verifyDist(distRoot = path.join(WEB_ROOT, "dist")) {
     const name = declaration?.[1] ?? "";
     if (
       !name ||
-      occurrenceCount(storeFile.content, name) !== 3 ||
+      identifierOccurrenceCount(storeFile.content, name) !== 3 ||
       !storeFile.content.includes(`objectStoreNames.contains(${name})`) ||
       !storeFile.content.includes(`deleteObjectStore(${name})`) ||
       new RegExp(

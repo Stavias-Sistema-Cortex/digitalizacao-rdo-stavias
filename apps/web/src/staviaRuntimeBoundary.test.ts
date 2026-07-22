@@ -617,6 +617,48 @@ describe("StavIA runtime boundary", () => {
     }
   });
 
+  it("ignores a short store identifier when it is only a substring of other symbols", () => {
+    const distRoot = mkdtempSync(
+      path.join(tmpdir(), "cortex-stavia-dist-short-identifier-"),
+    );
+    const compiledCleanup = [
+      "function clearRetired(){",
+      `let retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
+      "let storage=window.localStorage;for(let key of retiredKeys)storage.removeItem(key)}",
+      `const a="${LEGACY_SNAPSHOT_STORE}";`,
+      "function migrate(database){const metadata=database.name;database.objectStoreNames.contains(a)&&database.deleteObjectStore(a);return metadata}",
+    ].join("");
+
+    try {
+      writeFileSync(path.join(distRoot, "index.js"), compiledCleanup);
+      expect(() => verifyDist(distRoot)).not.toThrow();
+    } finally {
+      rmSync(distRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a compiled store identifier used outside contains and deleteObjectStore", () => {
+    const distRoot = mkdtempSync(
+      path.join(tmpdir(), "cortex-stavia-dist-active-store-use-"),
+    );
+    const compiledCleanup = [
+      "function clearRetired(){",
+      `let retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
+      "let storage=window.localStorage;for(let key of retiredKeys)storage.removeItem(key)}",
+      `const a="${LEGACY_SNAPSHOT_STORE}";`,
+      "function migrate(database){database.objectStoreNames.contains(a)&&database.deleteObjectStore(a);console.info(a)}",
+    ].join("");
+
+    try {
+      writeFileSync(path.join(distRoot, "index.js"), compiledCleanup);
+      expect(() => verifyDist(distRoot)).toThrow(
+        /compiled store migration is not deletion-only/,
+      );
+    } finally {
+      rmSync(distRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a second compiled consumer of the retired key collection", () => {
     const distRoot = mkdtempSync(
       path.join(tmpdir(), "cortex-stavia-dist-active-read-"),
