@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
 
 import { createEmptyRdo } from "../../features/rdos/createEmptyRdo";
-import type { LocalRdoRecord } from "./db.types";
+import type { LocalRdoRecord, OutboxMutationRecord } from "./db.types";
 import {
   buildRdoSyncPayloadFromLocalRecord,
+  canCoalesceLegacyRdoMutation,
   rdoDraftFromLocalRecord,
   validateRdoDraftForSync,
 } from "./localRdoService";
+
+const legacyCreateMutation = {
+  clientMutationId: "legacy-1",
+  entidadeTipo: "RDO",
+  entidadeId: "rdo-1",
+  operacao: "CRIAR_RDO",
+  baseVersao: null,
+  payload: {},
+  status: "PENDING",
+  tentativas: 0,
+  ultimaTentativaEm: null,
+  ultimoErro: null,
+  conflito: null,
+  criadaNoClienteEm: "2026-07-21T12:00:00.000Z",
+  updatedAt: "2026-07-21T12:00:00.000Z",
+} as OutboxMutationRecord;
 
 function validDraft() {
   const draft = createEmptyRdo();
@@ -38,6 +55,20 @@ describe("validateRdoDraftForSync", () => {
     expect(() =>
       validateRdoDraftForSync(validDraft()),
     ).not.toThrow();
+  });
+});
+
+describe("legacy RDO mutation coalescing boundary", () => {
+  it("coalesces legacy rows but never rewrites a canonical envelope", () => {
+    expect(
+      canCoalesceLegacyRdoMutation(legacyCreateMutation, "CRIAR_RDO"),
+    ).toBe(true);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        { ...legacyCreateMutation, schemaVersion: 13 } as OutboxMutationRecord,
+        "CRIAR_RDO",
+      ),
+    ).toBe(false);
   });
 });
 

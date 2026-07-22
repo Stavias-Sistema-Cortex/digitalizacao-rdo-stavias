@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { CanonicalOutboxMutationRecord } from "../db/db.types";
+import { mutationPayloadHash } from "./mutationEnvelope";
 import { toPushMutationRequest } from "./sync.types";
 
-function canonicalMutation(): CanonicalOutboxMutationRecord {
+async function canonicalMutation(): Promise<CanonicalOutboxMutationRecord> {
   const instant = "2026-07-21T12:00:00.000Z";
+  const payload = { id: "00000000-0000-4000-8000-000000000005" };
   return {
     schemaVersion: 13,
     clientMutationId: "00000000-0000-4000-8000-000000000001",
@@ -17,7 +19,7 @@ function canonicalMutation(): CanonicalOutboxMutationRecord {
     baseVersion: null,
     changedFields: ["id"],
     occurredAt: instant,
-    payload: { id: "00000000-0000-4000-8000-000000000005" },
+    payload,
     entidadeTipo: "RDO",
     entidadeId: "00000000-0000-4000-8000-000000000005",
     operacao: "CRIAR_RDO",
@@ -41,7 +43,7 @@ function canonicalMutation(): CanonicalOutboxMutationRecord {
       correlationId: "00000000-0000-4000-8000-000000000001",
       causationId: null,
       ontologyEventId: "00000000-0000-4000-8000-000000000006",
-      payloadHash: "0".repeat(64),
+      payloadHash: await mutationPayloadHash(payload),
     },
     nextAttemptAt: null,
     blockedReason: null,
@@ -49,26 +51,36 @@ function canonicalMutation(): CanonicalOutboxMutationRecord {
 }
 
 describe("toPushMutationRequest canonical boundary", () => {
-  it("serializes a coherent canonical mutation", () => {
-    expect(toPushMutationRequest(canonicalMutation())).toMatchObject({
+  it("serializes a coherent canonical mutation", async () => {
+    await expect(toPushMutationRequest(await canonicalMutation())).resolves.toMatchObject({
       entidadeTipo: "RDO",
       operacao: "CRIAR_RDO",
       baseVersao: null,
     });
   });
 
-  it("fails closed when canonical aliases diverge", () => {
-    expect(() =>
+  it("fails closed when canonical aliases diverge", async () => {
+    await expect(
       toPushMutationRequest({
-        ...canonicalMutation(),
+        ...await canonicalMutation(),
         operacao: "ATUALIZAR_RDO_RASCUNHO",
       }),
-    ).toThrow(/operation aliases are incoherent/i);
-    expect(() =>
+    ).rejects.toThrow(/operation aliases are incoherent/i);
+    await expect(
       toPushMutationRequest({
-        ...canonicalMutation(),
+        ...await canonicalMutation(),
         entidadeId: "00000000-0000-4000-8000-000000000007",
       }),
-    ).toThrow(/transport aliases are incoherent/i);
+    ).rejects.toThrow(/transport aliases are incoherent/i);
+  });
+
+  it("fails closed when the canonical payload no longer matches its SHA-256", async () => {
+    const mutation = await canonicalMutation();
+    await expect(
+      toPushMutationRequest({
+        ...mutation,
+        payload: { ...mutation.payload, tampered: true },
+      }),
+    ).rejects.toThrow(/payload hash is incoherent/i);
   });
 });

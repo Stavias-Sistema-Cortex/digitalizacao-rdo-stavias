@@ -32,6 +32,10 @@ export async function pushOutbox(
     };
   }
 
+  const pushMutations = await Promise.all(
+    pendingMutations.map(toPushMutationRequest),
+  );
+
   for (const mutation of pendingMutations) {
     await markMutationAsSyncing(mutation);
   }
@@ -39,9 +43,7 @@ export async function pushOutbox(
   try {
     const response = await pushMutationsApi({
       dispositivoId: deviceId,
-      mutacoes: pendingMutations.map(
-        toPushMutationRequest,
-      ),
+      mutacoes: pushMutations,
     });
 
     const resultsById = new Map<

@@ -192,6 +192,16 @@ export function assertCanonicalTransportCoherence(
   canonicalMutationJson(mutation.payload);
 }
 
+export async function assertCanonicalPayloadHash(
+  mutation: CanonicalOutboxMutationRecord,
+): Promise<void> {
+  assertCanonicalTransportCoherence(mutation);
+  const currentHash = await mutationPayloadHash(mutation.payload);
+  if (currentHash !== mutation.trace.payloadHash) {
+    throw new TypeError("Canonical mutation payload hash is incoherent.");
+  }
+}
+
 export async function buildCanonicalMutation(
   input: BuildCanonicalMutationInput,
 ): Promise<BuiltCanonicalMutation> {

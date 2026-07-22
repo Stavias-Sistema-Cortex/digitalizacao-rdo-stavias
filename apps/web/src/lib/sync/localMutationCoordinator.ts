@@ -1,4 +1,8 @@
-import { getSession, type AuthProfile } from "../../features/auth/authSession";
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  getSession,
+  type AuthProfile,
+} from "../../features/auth/authSession";
 import {
   getCortexDb,
   type CortexDbSchema,
@@ -131,6 +135,22 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
     ]),
   ];
   const transaction = database.transaction(storeNames, "readwrite");
+  let sessionInvalidated = false;
+  const abortOnSessionChange = () => {
+    try {
+      assertSessionUnchanged(authorizedSession, prepared.envelope);
+    } catch {
+      sessionInvalidated = true;
+      try {
+        transaction.abort();
+      } catch {
+        // The transaction may already have completed or aborted.
+      }
+    }
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, abortOnSessionChange);
+  }
 
   try {
     for (const write of prepared.writes) {
@@ -148,6 +168,7 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
       .add(event)
       .catch(() => undefined);
     await transaction.done;
+    assertSessionUnchanged(authorizedSession, prepared.envelope);
   } catch (error) {
     try {
       transaction.abort();
@@ -155,7 +176,20 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
       // A failed IndexedDB request may already have aborted the transaction.
     }
     await transaction.done.catch(() => undefined);
+    if (sessionInvalidated) {
+      throw new Error(
+        "A sessão mudou durante o registro da mutação local.",
+        { cause: error },
+      );
+    }
     throw error;
+  } finally {
+    if (typeof window !== "undefined") {
+      window.removeEventListener(
+        AUTH_SESSION_CHANGED_EVENT,
+        abortOnSessionChange,
+      );
+    }
   }
 
   if (typeof window !== "undefined") {
@@ -211,7 +245,11 @@ function prepareCoordinatorInput<TStore extends LocalDomainStore>(
       ? undefined
       : [...command.dependsOnMutationIds],
   };
-  const writes = prepareWrites(command.write, envelope.nextSnapshot);
+  const writes = prepareWrites(
+    command.write,
+    envelope.nextSnapshot,
+    envelope.entityId,
+  );
 
   return {
     envelope,
@@ -226,6 +264,7 @@ function prepareCoordinatorInput<TStore extends LocalDomainStore>(
 function prepareWrites<TStore extends LocalDomainStore>(
   writer: LocalMutationCommand<TStore>["write"],
   nextSnapshot: Record<string, unknown>,
+  entityId: string,
 ): LocalMutationDomainWrite<TStore>[] {
   const result: unknown = writer();
   if (isThenable(result)) {
@@ -255,8 +294,23 @@ function prepareWrites<TStore extends LocalDomainStore>(
   if (principals.length !== 1) {
     throw new TypeError("Local mutation write plan requires one principal write.");
   }
+  const principal = principals[0];
+  if (writes.some((write) => write !== principal && write.store === principal.store)) {
+    throw new TypeError(
+      "Principal domain store may contain only the principal write.",
+    );
+  }
   if (
-    canonicalMutationJson(principals[0].value) !==
+    principal.value === null ||
+    typeof principal.value !== "object" ||
+    Array.isArray(principal.value) ||
+    !("id" in principal.value) ||
+    principal.value.id !== entityId
+  ) {
+    throw new TypeError("Principal domain write id must equal entityId.");
+  }
+  if (
+    canonicalMutationJson(principal.value) !==
       canonicalMutationJson(nextSnapshot)
   ) {
     throw new TypeError("Principal domain write must equal nextSnapshot.");

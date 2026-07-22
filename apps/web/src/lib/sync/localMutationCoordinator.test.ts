@@ -7,6 +7,7 @@ import { clearSession, setSession } from "../../features/auth/authSession";
 import { closeCortexDb, getCortexDb } from "../db/cortexDb";
 import type { LocalRdoRecord } from "../db/db.types";
 import { databaseNameForScope } from "../db/localDataNamespace";
+import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import {
   LOCAL_MUTATION_QUEUED_EVENT,
   commitLocalMutation,
@@ -323,6 +324,29 @@ describe("canonical local mutation coordinator", () => {
     expect(await database.get("rdos", RDO_ID)).toBeUndefined();
   });
 
+  it("binds entityId to the principal record and forbids a second write in its store", async () => {
+    await expect(
+      commitLocalMutation({
+        ...command(),
+        entityId: FOREIGN_OBRA_ID,
+      }),
+    ).rejects.toThrow(/write id must equal entityId/i);
+    await expect(
+      commitLocalMutation({
+        ...command(),
+        write: () => [
+          ...writePlan(rdo()),
+          {
+            store: "rdos",
+            value: { ...rdo(), numeroRdo: "SOBRESCRITO" },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/principal domain store/i);
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+  });
+
   it("clones the declarative domain write before hashing", async () => {
     const record = rdo();
     const input = command(record);
@@ -404,5 +428,39 @@ describe("canonical local mutation coordinator", () => {
     setSession(betaSession());
     const database = await getCortexDb();
     expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+  });
+
+  it("aborts the IndexedDB transaction when the active session changes during its writes", async () => {
+    const originalPut = IDBObjectStore.prototype.put;
+    let switched = false;
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey,
+    ) {
+      if (!switched) {
+        switched = true;
+        setSession(betaSession(crypto.randomUUID()));
+      }
+      return key === undefined
+        ? originalPut.call(this, value)
+        : originalPut.call(this, value, key);
+    });
+
+    await expect(commitLocalMutation(command())).rejects.toThrow(/sessão mudou/i);
+    setSession(betaSession());
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await database.getAll("operational_events")).toHaveLength(0);
+  });
+
+  it("keeps canonical RDO creates byte-for-byte intact in the legacy pre-push repair", async () => {
+    const result = await commitLocalMutation(command());
+    expect(await repairRdoCreateMutationsForSync()).toBe(0);
+    const database = await getCortexDb();
+    expect(
+      await database.get("outbox_mutations", result.mutation.clientMutationId),
+    ).toEqual(result.mutation);
   });
 });

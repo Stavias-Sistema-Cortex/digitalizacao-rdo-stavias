@@ -22,6 +22,7 @@ import {
   buildOperationalEvent,
   queryOperationalEvents,
 } from "./operationalEventRepository";
+import { isCanonicalOutboxMutation } from "../sync/mutationEnvelope";
 
 export interface SaveRdoDraftResult {
   rdo: LocalRdoRecord;
@@ -33,6 +34,19 @@ type RdoChildStoreName =
   | "rdoEquipamentos"
   | "rdoMateriais"
   | "rdoControlesGeometricos";
+
+type RdoCoalescibleOperation =
+  | "CRIAR_RDO"
+  | "ATUALIZAR_RDO_RASCUNHO";
+
+export function canCoalesceLegacyRdoMutation(
+  mutation: OutboxMutationRecord,
+  operation: RdoCoalescibleOperation,
+): boolean {
+  return !isCanonicalOutboxMutation(mutation) &&
+    mutation.operacao === operation &&
+    mutation.status !== "SYNCED";
+}
 
 interface RdoChildStoreWriter {
   index: (name: "by-rdo-id") => {
@@ -1151,6 +1165,9 @@ export async function repairRdoCreateMutationsForSync(): Promise<number> {
   let repaired = 0;
 
   for (const mutation of candidates) {
+    if (isCanonicalOutboxMutation(mutation)) {
+      continue;
+    }
     if (
       mutation.entidadeTipo !== "RDO" ||
       mutation.operacao !== "CRIAR_RDO"
@@ -1304,9 +1321,10 @@ export async function saveExistingRdoDraftAtomically(
   const existingCreateMutation =
     entityMutations
       .filter(
-        (candidate) =>
-          candidate.operacao === "CRIAR_RDO" &&
-          candidate.status !== "SYNCED",
+        (candidate) => canCoalesceLegacyRdoMutation(
+          candidate,
+          "CRIAR_RDO",
+        ),
       )
       .sort((left, right) =>
         right.criadaNoClienteEm.localeCompare(
@@ -1354,10 +1372,10 @@ export async function saveExistingRdoDraftAtomically(
     const existingUpdateMutation =
       entityMutations
         .filter(
-          (candidate) =>
-            candidate.operacao ===
-              "ATUALIZAR_RDO_RASCUNHO" &&
-            candidate.status !== "SYNCED",
+          (candidate) => canCoalesceLegacyRdoMutation(
+            candidate,
+            "ATUALIZAR_RDO_RASCUNHO",
+          ),
         )
         .sort((left, right) =>
           right.criadaNoClienteEm.localeCompare(

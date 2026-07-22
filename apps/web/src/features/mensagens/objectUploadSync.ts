@@ -5,6 +5,10 @@ import {
 } from "../../lib/api/apiClient";
 import { getCortexDb } from "../../lib/db/cortexDb";
 import type { OutboxMutationRecord } from "../../lib/db/db.types";
+import {
+  assertCanonicalPayloadHash,
+  isCanonicalOutboxMutation,
+} from "../../lib/sync/mutationEnvelope";
 import { emitMessagesChanged } from "./mensagensRepository";
 
 interface StoredObjectUploadResponse {
@@ -65,6 +69,9 @@ export async function processObjectUploads(
 async function processOneUpload(
   mutation: OutboxMutationRecord,
 ): Promise<void> {
+  if (isCanonicalOutboxMutation(mutation)) {
+    await assertCanonicalPayloadHash(mutation);
+  }
   const database = await getCortexDb();
   const attachment = await database.getFromIndex(
     "mensagem_anexos",
@@ -193,6 +200,9 @@ async function applyUploadedObject(
 
   for (const dependent of await outbox.getAll()) {
     if (!dependent.dependsOnMutationIds?.includes(uploadMutationId)) {
+      continue;
+    }
+    if (isCanonicalOutboxMutation(dependent)) {
       continue;
     }
     await outbox.put({

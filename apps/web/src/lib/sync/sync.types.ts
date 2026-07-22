@@ -4,7 +4,7 @@ import type {
   SyncOperation,
 } from "../db/db.types";
 import {
-  assertCanonicalTransportCoherence,
+  assertCanonicalPayloadHash,
   isCanonicalOutboxMutation,
 } from "./mutationEnvelope";
 
@@ -102,11 +102,11 @@ export interface SyncRunSummary {
   acknowledgedCommitSeq: number;
 }
 
-export function toPushMutationRequest(
+export async function toPushMutationRequest(
   mutation: OutboxMutationRecord,
-): SyncPushMutationRequest {
+): Promise<SyncPushMutationRequest> {
   if (isCanonicalOutboxMutation(mutation)) {
-    assertCanonicalTransportCoherence(mutation);
+    await assertCanonicalPayloadHash(mutation);
   }
   return {
     clientMutationId: mutation.clientMutationId,
