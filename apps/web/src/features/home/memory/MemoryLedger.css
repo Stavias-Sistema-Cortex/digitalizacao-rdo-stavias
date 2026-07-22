@@ -9,6 +9,7 @@
   gap: 12px;
   width: 100%;
   min-width: 0;
+  container-type: inline-size;
   color: var(--memory-asphalt);
 }
 
@@ -18,6 +19,7 @@
 .memory-register {
   border: 1px solid var(--color-border);
   background: var(--memory-chalk);
+  min-width: 0;
 }
 
 .memory-ledger__header {
@@ -134,8 +136,10 @@
 
 .memory-query {
   display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(420px, 1.2fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   padding: 12px;
 }
 
@@ -146,6 +150,7 @@
   color: var(--color-muted);
   font-size: 0.66rem;
   font-weight: 700;
+  min-width: 0;
 }
 
 .memory-query input,
@@ -191,8 +196,9 @@
 
 .memory-query__filters fieldset {
   display: grid;
-  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 9px;
+  min-width: 0;
   margin: 10px 0;
   padding: 0;
   border: 0;
@@ -355,6 +361,7 @@
 
 .memory-entry__evidence div {
   display: flex;
+  max-width: 100%;
   min-width: 0;
   gap: 5px;
 }
@@ -373,6 +380,8 @@
 
 .memory-entry__evidence dd {
   color: #33443c;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .memory-entry__action {
@@ -440,6 +449,60 @@
 
   .memory-entry {
     grid-template-columns: 14px 1fr;
+  }
+
+  .memory-entry__commit {
+    grid-column: 2;
+    padding-bottom: 0;
+    border-right: 0;
+  }
+
+  .memory-entry__body {
+    grid-column: 2;
+    padding-top: 8px;
+  }
+
+  .memory-entry__rail {
+    grid-row: 1 / 3;
+  }
+}
+
+@container (max-width: 720px) {
+  .memory-query {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .memory-query__filters fieldset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .memory-coverage {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+
+  .memory-coverage dl {
+    grid-column: 2;
+    flex-wrap: wrap;
+  }
+}
+
+@container (max-width: 480px) {
+  .memory-ledger__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .memory-query__filters fieldset {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .memory-coverage dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .memory-entry {
+    grid-template-columns: 14px minmax(0, 1fr);
   }
 
   .memory-entry__commit {

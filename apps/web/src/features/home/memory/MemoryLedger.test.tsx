@@ -136,4 +136,29 @@ describe("Memory ledger accessibility and honest states", () => {
     expect(html).toContain("Identidade protegida");
     expect(html).not.toContain("undefined");
   });
+
+  it.each([
+    [
+      "CACHE",
+      "O cache local não pôde ser lido.",
+      "Os registros armazenados podem estar indisponíveis neste dispositivo.",
+    ],
+    [
+      "SERVER",
+      "O servidor não confirmou a atualização.",
+      "Os registros já armazenados continuam disponíveis.",
+    ],
+  ] as const)("renders literal %s error copy", (source, title, detail) => {
+    const html = renderToStaticMarkup(
+      <MemoryLedgerView
+        ledger={model({
+          error: { source, message: "Falha controlada." },
+        })}
+        obras={[]}
+      />,
+    );
+
+    expect(html).toContain(title);
+    expect(html).toContain(detail);
+  });
 });

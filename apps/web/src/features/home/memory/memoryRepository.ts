@@ -152,9 +152,19 @@ export function createMemoryRepository(
           localEventToSearchDocument(request.userId, request.scopeHash, event),
         );
       const merged = new Map<string, MemorySearchDocument>();
+      const serverCommitSequences = new Set(
+        serverDocuments
+          .map((document) => document.commitSequence)
+          .filter((sequence): sequence is number => sequence !== null),
+      );
       for (const document of serverDocuments) merged.set(document.eventId, document);
       for (const document of localDocuments) {
-        if (!merged.has(document.eventId)) merged.set(document.eventId, document);
+        const serverHasCanonicalCommit = document.syncStatus === "UPDATED" &&
+          document.commitSequence !== null &&
+          serverCommitSequences.has(document.commitSequence);
+        if (!serverHasCanonicalCommit && !merged.has(document.eventId)) {
+          merged.set(document.eventId, document);
+        }
       }
       const matches = [...merged.values()]
         .filter((document) => matchesFilters(document, request.filters))

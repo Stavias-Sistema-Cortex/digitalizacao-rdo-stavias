@@ -192,8 +192,17 @@ export function MemoryLedgerView({
 
         {ledger.error ? (
           <div className="memory-notice memory-notice--error" role="alert">
-            <strong>O servidor não confirmou a atualização.</strong>
-            <span>{ledger.error} Os registros já armazenados continuam disponíveis.</span>
+            <strong>
+              {ledger.error.source === "CACHE"
+                ? "O cache local não pôde ser lido."
+                : "O servidor não confirmou a atualização."}
+            </strong>
+            <span>
+              {ledger.error.message}{" "}
+              {ledger.error.source === "CACHE"
+                ? "Os registros armazenados podem estar indisponíveis neste dispositivo."
+                : "Os registros já armazenados continuam disponíveis."}
+            </span>
           </div>
         ) : null}
 

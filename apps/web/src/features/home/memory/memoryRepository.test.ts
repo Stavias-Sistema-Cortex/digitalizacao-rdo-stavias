@@ -327,4 +327,49 @@ describe("Memory repository", () => {
     ]);
     expect(result.localStatuses).toEqual([]);
   });
+
+  it("deduplicates different local/server event IDs by canonical commit", async () => {
+    const database = await getCortexDb();
+    const repository = createMemoryRepository(database);
+    const canonical = page([
+      event(99, "Servidor canônico"),
+    ], "scope-a");
+    await repository.putPage(userId, canonical);
+    await database.put("operational_events", {
+      id: "ontology-event-A",
+      type: "RDO_SINCRONIZADO",
+      principalEntity: { tipo: "RDO", id: "rdo-99", nome: "Ponte local" },
+      principalEntityKey: "RDO:rdo-99",
+      relatedEntities: [],
+      obraId: WORKSITE_ID,
+      rdoId: "rdo-99",
+      colaboradorId: null,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      syncedAt: "2026-07-22T12:00:01.000Z",
+      origin: "SYNC",
+      responsibleUserId: userId,
+      responsibleUserName: null,
+      payload: {},
+      syncStatus: "SYNCED",
+      schemaVersion: 13,
+      result: "SYNCED",
+      serverCommitSequence: 99,
+    });
+
+    const result = await repository.search({
+      userId,
+      scopeHash: "scope-a",
+      filters: {},
+      allowedWorksiteIds: [WORKSITE_ID],
+      limit: 20,
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        eventId: "event-099",
+        commitSequence: 99,
+        sourceKind: "SERVER",
+      }),
+    ]);
+  });
 });
