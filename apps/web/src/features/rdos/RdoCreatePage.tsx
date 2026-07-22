@@ -6,12 +6,17 @@ import {
   useState,
 } from "react";
 
+import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
+import {
+  InstitutionalStatus,
+  type InstitutionalStatusState,
+} from "../../components/institutional/InstitutionalStatus";
+import { getSession, isAlfa } from "../auth/authSession";
 import {
   listRdoAttachments,
   markRdoAttachmentRemoved,
   putRdoAttachment,
 } from "../../lib/db/rdoAttachmentRepository";
-import { addOperationalEvent } from "../../lib/db/operationalEventRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 import type { RdoAttachmentRecord } from "../../lib/db/db.types";
@@ -35,6 +40,7 @@ import type {
   RdoDraft,
   ServicoExecutadoDraft,
 } from "./rdo.types";
+import type { RdoSyncStatus } from "./rdo.types";
 import { processRdoPhoto } from "./rdoPhotoService";
 import {
   buscarAssets,
@@ -179,6 +185,29 @@ function extensionMeters(
   }
 
   return Math.round((endKm - startKm) * 1000 * 1000) / 1000;
+}
+
+function hasText(value: string): boolean {
+  return value.trim().length > 0;
+}
+
+function institutionalState(
+  status: RdoSyncStatus,
+): InstitutionalStatusState | null {
+  switch (status) {
+    case "LOCAL_ONLY":
+      return "LOCAL";
+    case "PENDING_SYNC":
+      return "PENDING";
+    case "SYNCING":
+      return "SYNCING";
+    case "SYNCED":
+      return "SYNCED";
+    case "CONFLICT":
+      return "CONFLICT";
+    case "ERROR":
+      return null;
+  }
 }
 
 interface LookupFieldProps<TItem> {
@@ -415,6 +444,7 @@ export function RdoCreatePage({
     () => initialDraft,
   );
 
+  const canViewRawPayload = isAlfa(getSession());
   const [showJson, setShowJson] = useState(false);
   const [notice, setNotice] = useState(initialNotice ?? "");
   const [photoError, setPhotoError] = useState("");
@@ -439,8 +469,11 @@ export function RdoCreatePage({
   } = useRdoLocalPersistence();
 
   const payload = useMemo(
-    () => buildPayload(draft),
-    [draft],
+    () =>
+      canViewRawPayload
+        ? buildPayload(draft)
+        : null,
+    [canViewRawPayload, draft],
   );
 
   const photoCount = draft.attachments.filter(
@@ -454,6 +487,97 @@ export function RdoCreatePage({
     draft.kmInicialInterditado,
     draft.kmFinalInterditado,
   );
+  const rdoSections = useMemo(
+    () => [
+      {
+        id: "rdo-identificacao",
+        label: "Identificação",
+        isComplete:
+          hasText(draft.obraId) &&
+          hasText(draft.numeroRdo) &&
+          hasText(draft.dataRdo),
+      },
+      {
+        id: "rdo-condicoes",
+        label: "Condições do dia",
+        isComplete:
+          Boolean(
+            draft.condicaoManha ||
+              draft.condicaoTarde ||
+              draft.condicaoNoite,
+          ) ||
+          draft.pluviometriaMm !== "" ||
+          hasText(draft.observacoes),
+      },
+      {
+        id: "rdo-fotos",
+        label: "Fotos",
+        isComplete: photoCount > 0,
+      },
+      {
+        id: "rdo-servicos",
+        label: "Serviços",
+        isComplete: draft.servicosExecutados.some((item) =>
+          hasText(item.servicoNome),
+        ),
+      },
+      {
+        id: "rdo-rateio",
+        label: "Rateio",
+        isComplete: draft.alocacoesColaboradores.some(
+          (item) =>
+            hasText(item.colaboradorId) || hasText(item.equipe),
+        ),
+      },
+      {
+        id: "rdo-mao-de-obra",
+        label: "Mão de obra",
+        isComplete: draft.maoObra.some(
+          (item) =>
+            hasText(item.colaboradorId) ||
+            hasText(item.nomeColaborador) ||
+            hasText(item.cargo),
+        ),
+      },
+      {
+        id: "rdo-equipamentos",
+        label: "Equipamentos",
+        isComplete: draft.equipamentos.some(
+          (item) =>
+            hasText(item.assetId) ||
+            hasText(item.prefixo) ||
+            hasText(item.descricao),
+        ),
+      },
+      {
+        id: "rdo-materiais",
+        label: "Materiais",
+        isComplete: draft.materiais.some((item) =>
+          hasText(item.materialNome),
+        ),
+      },
+      {
+        id: "rdo-controle-geometrico",
+        label: "Controle geométrico",
+        isComplete: draft.controlesGeometricos.some(
+          (item) =>
+            hasText(item.subtrecho) ||
+            hasText(item.numero) ||
+            hasText(item.kmInicial) ||
+            hasText(item.kmFinal),
+        ),
+      },
+    ],
+    [draft, photoCount],
+  );
+  const completeSectionCount = rdoSections.filter(
+    (section) => section.isComplete,
+  ).length;
+  const localStatusState = institutionalState(draft.syncStatus);
+  const hasLocalCopy =
+    isExisting ||
+    draft.syncStatus !== "LOCAL_ONLY" ||
+    persistenceMessage.startsWith("RDO salvo");
 
   useEffect(() => {
     let cancelled = false;
@@ -709,12 +833,11 @@ export function RdoCreatePage({
       const previewUpdates: Record<string, string> = {};
 
       for (const file of selectedFiles) {
-        const { attachment, wasCompressed } =
-          await processRdoPhoto({
-            file,
-            rdoId: draft.id,
-            obraId: draft.obraId || null,
-          });
+        const { attachment } = await processRdoPhoto({
+          file,
+          rdoId: draft.id,
+          obraId: draft.obraId || null,
+        });
 
         await putRdoAttachment(attachment);
 
@@ -725,71 +848,6 @@ export function RdoCreatePage({
         previewUpdates[attachment.id] = previewUrl;
 
         added.push(attachmentToDraft(attachment));
-
-        await addOperationalEvent({
-          type: "FOTO_ADICIONADA",
-          principalEntity: {
-            tipo: "RDO_FOTO",
-            id: attachment.id,
-            nome: attachment.nome,
-          },
-          relatedEntities: [
-            {
-              tipo: "RDO",
-              id: draft.id,
-              nome: draft.numeroRdo
-                ? `RDO ${draft.numeroRdo}`
-                : "RDO local",
-            },
-            {
-              tipo: "OBRA",
-              id: draft.obraId,
-              nome: draft.contrato || draft.cliente || null,
-            },
-          ].filter((entity) => entity.id.trim()),
-          obraId: draft.obraId || null,
-          rdoId: draft.id,
-          payload: {
-            nomeOriginal: attachment.nomeOriginal,
-            mimeType: attachment.mimeType,
-            tamanhoOriginalBytes:
-              attachment.tamanhoOriginalBytes,
-            tamanhoComprimidoBytes:
-              attachment.tamanhoComprimidoBytes,
-            syncStatus: attachment.syncStatus,
-          },
-        });
-
-        if (wasCompressed) {
-          await addOperationalEvent({
-            type: "FOTO_COMPRIMIDA",
-            principalEntity: {
-              tipo: "RDO_FOTO",
-              id: attachment.id,
-              nome: attachment.nome,
-            },
-            relatedEntities: [
-              {
-                tipo: "RDO",
-                id: draft.id,
-                nome: draft.numeroRdo
-                  ? `RDO ${draft.numeroRdo}`
-                  : "RDO local",
-              },
-            ],
-            obraId: draft.obraId || null,
-            rdoId: draft.id,
-            payload: {
-              tamanhoOriginalBytes:
-                attachment.tamanhoOriginalBytes,
-              tamanhoComprimidoBytes:
-                attachment.tamanhoComprimidoBytes,
-              reducaoBytes:
-                attachment.tamanhoOriginalBytes -
-                attachment.tamanhoComprimidoBytes,
-            },
-          });
-        }
       }
 
       setPhotoPreviews((current) => ({
@@ -836,32 +894,6 @@ export function RdoCreatePage({
         ),
       }));
 
-      await addOperationalEvent({
-        type: "FOTO_REMOVIDA",
-        principalEntity: {
-          tipo: "RDO_FOTO",
-          id: attachmentId,
-          nome:
-            draft.attachments.find(
-              (attachment) => attachment.id === attachmentId,
-            )?.nome ?? null,
-        },
-        relatedEntities: [
-          {
-            tipo: "RDO",
-            id: draft.id,
-            nome: draft.numeroRdo
-              ? `RDO ${draft.numeroRdo}`
-              : "RDO local",
-          },
-        ],
-        obraId: draft.obraId || null,
-        rdoId: draft.id,
-        occurredAt: timestamp,
-        payload: {
-          attachmentId,
-        },
-      });
     } catch (error: unknown) {
       setPhotoError(
         error instanceof Error
@@ -893,34 +925,22 @@ export function RdoCreatePage({
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell rdo-create-workspace">
       <datalist id="rdo-unidades">
         {UNIDADES_RDO.map((unidade) => (
           <option key={unidade} value={unidade} />
         ))}
       </datalist>
 
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">
-            Córtex · Operação de campo
-          </p>
-
-          <h1>
-            {isExisting
-              ? "Editar Relatório Diário de Obra"
-              : "Novo Relatório Diário de Obra"}
-          </h1>
-
-          <span className="brand-tick" aria-hidden="true" />
-
-          <p className="subtitle">
-            Registre e continue editando o relatório mesmo
-            sem conexão com a internet.
-          </p>
-        </div>
-
-        <div className="workspace-actions">
+      <InstitutionalPageHeader
+        eyebrow="Operação de campo · Documento diário"
+        title={
+          isExisting
+            ? "Editar Relatório Diário de Obra"
+            : "Novo Relatório Diário de Obra"
+        }
+        description="Registro operacional editável sem conexão, com persistência local e confirmação do servidor identificadas separadamente."
+        actions={(
           <button
             type="button"
             className="secondary-button"
@@ -929,26 +949,102 @@ export function RdoCreatePage({
           >
             Voltar aos RDOs locais
           </button>
+        )}
+      />
 
-          <div className="status-panel">
-            <span className="status-label">
-              Status local
-            </span>
-
-            <strong
-              className={`status-badge status-badge--${draft.syncStatus.toLowerCase()}`}
-            >
-              {formatLocalSyncStatus(
-                draft.syncStatus,
-              )}
+      <div className="rdo-document-layout">
+        <aside
+          className="rdo-document-index"
+          aria-label="Índice do RDO"
+        >
+          <div className="rdo-document-index__heading">
+            <span>Preenchimento</span>
+            <strong className="tabular-nums">
+              {completeSectionCount}/{rdoSections.length}
             </strong>
-
-            <span className="status-id">
-              ID: {draft.id.slice(0, 8)}
-            </span>
           </div>
+
+          <nav>
+            <ol>
+              {rdoSections.map((section, index) => (
+                <li key={section.id}>
+                  <a href={`#${section.id}`}>
+                    <span className="tabular-nums">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span>{section.label}</span>
+                    <strong
+                      data-complete={section.isComplete}
+                      aria-label={
+                        section.isComplete
+                          ? "Seção preenchida"
+                          : "Seção pendente"
+                      }
+                    >
+                      {section.isComplete ? "OK" : "—"}
+                    </strong>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        </aside>
+
+        <div className="rdo-document-surface">
+          <section
+            className="rdo-document-status"
+            aria-label="Persistência do RDO"
+          >
+        <div className="rdo-document-status__identity">
+          <span>Registro local</span>
+          <strong className="tabular-nums">
+            {draft.numeroRdo || `ID ${draft.id.slice(0, 8)}`}
+          </strong>
         </div>
-      </header>
+        <dl>
+          <div>
+            <dt>Estado do registro</dt>
+            <dd>
+              {localStatusState ? (
+                <InstitutionalStatus
+                  state={localStatusState}
+                  label={formatLocalSyncStatus(draft.syncStatus)}
+                />
+              ) : (
+                <span
+                  className="institutional-status rdo-status-error"
+                  data-state="ERROR"
+                  role="status"
+                >
+                  {formatLocalSyncStatus(draft.syncStatus)}
+                </span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Autossalvamento</dt>
+            <dd>Não habilitado</dd>
+          </div>
+          <div>
+            <dt>Cópia local</dt>
+            <dd>
+              {isSaving
+                ? "Salvando neste dispositivo"
+                : hasLocalCopy
+                  ? "Salva neste dispositivo"
+                  : "Ainda não salva"}
+            </dd>
+          </div>
+          <div>
+            <dt>Confirmação do servidor</dt>
+            <dd>
+              {draft.syncStatus === "SYNCED"
+                ? "Confirmada"
+                : "Ainda não confirmada"}
+            </dd>
+          </div>
+        </dl>
+          </section>
 
       {notice && (
         <div className="notice">
@@ -968,7 +1064,7 @@ export function RdoCreatePage({
         </div>
       )}
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-identificacao">
         <div className="section-heading">
           <div>
             <h2>Identificação</h2>
@@ -1297,7 +1393,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-condicoes">
         <div className="section-heading">
           <div>
             <h2>Condições do dia</h2>
@@ -1395,7 +1491,7 @@ export function RdoCreatePage({
         </label>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-fotos">
         <div className="section-heading collection-heading">
           <div>
             <h2>Fotos do RDO</h2>
@@ -1497,7 +1593,7 @@ export function RdoCreatePage({
         )}
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-servicos">
         <CollectionHeader
           title="Serviços executados"
           description="Serviços, quantidades, item contratual e custo realizado."
@@ -1786,7 +1882,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-rateio">
         <CollectionHeader
           title="Rateio de colaboradores"
           description="Horas, percentual e origem da alocação operacional."
@@ -2131,7 +2227,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-mao-de-obra">
         <CollectionHeader
           title="Mão de obra"
           description="Colaboradores e equipes envolvidos no serviço."
@@ -2344,7 +2440,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-equipamentos">
         <CollectionHeader
           title="Equipamentos"
           description="Equipamentos utilizados durante a execução."
@@ -2578,7 +2674,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-materiais">
         <CollectionHeader
           title="Materiais"
           description="Materiais previstos, usinados e aplicados."
@@ -2780,7 +2876,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      <section className="form-card">
+          <section className="form-card" id="rdo-controle-geometrico">
         <CollectionHeader
           title="Controle geométrico"
           description="Medições e dimensões dos trechos executados."
@@ -3122,7 +3218,7 @@ export function RdoCreatePage({
         </div>
       </section>
 
-      {showJson && (
+      {canViewRawPayload && showJson && (
         <section className="form-card json-preview">
           <div className="section-heading">
             <div>
@@ -3145,7 +3241,7 @@ export function RdoCreatePage({
         </section>
       )}
 
-      <footer className="action-bar">
+          <footer className="action-bar">
         <button
           type="button"
           className="button secondary"
@@ -3157,20 +3253,22 @@ export function RdoCreatePage({
             : "Limpar"}
         </button>
 
-        <button
-          type="button"
-          className="button secondary"
-          onClick={() =>
-            setShowJson(
-              (current) => !current,
-            )
-          }
-          disabled={isSaving || isSyncing}
-        >
-          {showJson
-            ? "Ocultar JSON"
-            : "Visualizar JSON"}
-        </button>
+        {canViewRawPayload && (
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() =>
+              setShowJson(
+                (current) => !current,
+              )
+            }
+            disabled={isSaving || isSyncing}
+          >
+            {showJson
+              ? "Ocultar JSON"
+              : "Visualizar JSON"}
+          </button>
+        )}
 
         <button
           type="button"
@@ -3193,7 +3291,9 @@ export function RdoCreatePage({
             ? "Salvando..."
             : "Salvar localmente"}
         </button>
-      </footer>
+          </footer>
+        </div>
+      </div>
     </main>
   );
 }

@@ -8,6 +8,7 @@ import {
   listOutboxMutations,
   putOutboxMutation,
 } from "../../lib/db/outboxRepository";
+import { listOperationalEvents } from "../../lib/db/operationalEventRepository";
 import {
   listPendingFinancePurchases,
   queueFinancePurchase,
@@ -27,9 +28,10 @@ describe("financeiro offline repository", () => {
     });
   });
 
-  it("salva a compra otimista na mesma outbox idempotente da sincronização", async () => {
+  it("grava a compra offline com envelope canônico e evento operacional atômico", async () => {
     const queued = await queueFinancePurchase({
       obraId: "00000000-0000-4000-8000-000000000001",
+      solicitacaoId: undefined,
       fornecedorId: "fornecedor-1",
       centroCustoId: "centro-1",
       categoriaId: "categoria-1",
@@ -49,6 +51,7 @@ describe("financeiro offline repository", () => {
     });
 
     const outbox = await listOutboxMutations();
+    const events = await listOperationalEvents();
     const pending = await listPendingFinancePurchases(
       "00000000-0000-4000-8000-000000000001",
     );
@@ -60,7 +63,34 @@ describe("financeiro offline repository", () => {
       operacao: "CRIAR_COMPRA",
       status: "PENDING",
       baseVersao: null,
+      contractVersion: 13,
+      transport: "SYNC_PUSH",
+      dependsOnMutationIds: [],
+      payload: expect.objectContaining({
+        solicitacaoId: null,
+      }),
+      trace: expect.objectContaining({
+        actorId: expect.any(String),
+        deviceId: expect.any(String),
+        authorizationScope: ["00000000-0000-4000-8000-000000000001"],
+        correlationId: queued.clientMutationId,
+        ontologyEventId: expect.any(String),
+        payloadHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      }),
     });
+    expect(events).toContainEqual(expect.objectContaining({
+      contractVersion: 13,
+      clientMutationId: queued.clientMutationId,
+      type: "COMPRA_CRIADA",
+      principalEntity: {
+        tipo: "COMPRA",
+        id: queued.id,
+        nome: "PED-2026-14",
+      },
+      obraId: "00000000-0000-4000-8000-000000000001",
+      result: "PENDING",
+      syncStatus: "PENDING_SYNC",
+    }));
     expect(pending[0]).toMatchObject({
       id: queued.id,
       clientMutationId: queued.clientMutationId,

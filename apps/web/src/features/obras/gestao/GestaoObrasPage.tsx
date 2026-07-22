@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import { Link } from "react-router-dom";
 
 import {
   alterarPapelColaborador,
@@ -13,6 +14,7 @@ import {
   type VinculoApi,
 } from "./gestaoObrasApi";
 import { NovaObraForm } from "./NovaObraForm";
+import { memoryHref } from "../../home/memory/memoryLocation";
 import "./gestaoObras.css";
 
 function mensagemErro(erro: unknown): string {
@@ -378,21 +380,20 @@ export function GestaoObrasPage() {
               </ul>
 
               {vinculosRevogados.length > 0 && (
-                <>
+                <section className="gestao-obras-memory-summary">
                   <h3 className="gestao-obras-subtitulo">
-                    Histórico de revogações
+                    Vínculos encerrados
                   </h3>
-                  <ul className="gestao-obras-vinculos historico">
-                    {vinculosRevogados.map((v) => (
-                      <li key={v.id}>
-                        <span>{v.colaboradorNome ?? v.colaboradorId}</span>
-                        <span className="gestao-obras-item-meta">
-                          revogado
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </>
+                  <p>
+                    {vinculosRevogados.length} {vinculosRevogados.length === 1
+                      ? "vínculo encerrado"
+                      : "vínculos encerrados"}. A trilha auditável está
+                    centralizada em Home → Memória.
+                  </p>
+                  <Link to={memoryHref({ obraId: obraSelecionada.id })}>
+                    Abrir Memória
+                  </Link>
+                </section>
               )}
             </>
           )}

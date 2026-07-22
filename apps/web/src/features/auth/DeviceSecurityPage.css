@@ -5,6 +5,10 @@
 .device-security-card {
   width: min(720px, 100%);
   padding: clamp(22px, 4vw, 34px);
+  border: 2px solid var(--color-ink);
+  border-radius: 4px;
+  background: var(--color-surface);
+  box-shadow: none;
 }
 
 .device-security-card__header {
@@ -21,25 +25,24 @@
 
 .device-security-card__kicker {
   margin: 0;
-  color: var(--color-muted);
+  color: var(--color-brand-teal);
   font-size: 0.73rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .device-security-status {
   flex: none;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: #f1f5f3;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid #8f9792;
   color: #52645b;
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .device-security-status.is-ready {
-  background: #e4f3ec;
+  border-left-color: #12604d;
   color: #12604d;
 }
 
@@ -53,7 +56,8 @@
 .device-security-details div {
   padding: 14px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
+  background: #f7f9f7;
 }
 
 .device-security-details dt {
@@ -63,7 +67,7 @@
 
 .device-security-details dd {
   margin: 4px 0 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .device-security-register {
@@ -75,22 +79,27 @@
 .device-security-error {
   margin: 16px 0 0;
   padding: 12px 14px;
-  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  border-radius: 2px;
   font-size: 0.84rem;
+  font-weight: 500;
   line-height: 1.5;
 }
 
 .device-security-notice {
+  border-color: #d5b000;
   background: #fff8d8;
   color: #66520a;
 }
 
 .device-security-success {
+  border-color: #80b39d;
   background: #e4f3ec;
   color: #125944;
 }
 
 .device-security-error {
+  border-color: #c96b62;
   background: #fff0ed;
   color: #9f2d23;
 }

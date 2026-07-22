@@ -6,6 +6,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { Link } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { getSession } from "../auth/authSession";
@@ -44,6 +45,7 @@ import {
   setLastAccessedObraId,
 } from "../home/lastAccessedObra";
 import type { ChartPeriod } from "../home/progressSeries";
+import { memoryHref } from "../home/memory/memoryLocation";
 import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   equipesDaObra,
@@ -73,21 +75,6 @@ type PrioridadeFilter = "TODAS" | TarefaPrioridade;
 
 function equipeKey(value: string): string {
   return value.trim().toLocaleLowerCase("pt-BR");
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) {
-    return "";
-  }
-
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-  }).format(date);
 }
 
 function formatMonthYear(month: string): string {
@@ -970,18 +957,22 @@ export function TarefasPage() {
                               </p>
                             )}
                             <p className="tarefa-meta">
-                              Criada por{" "}
-                              {tarefa.criadaPor || "—"} em{" "}
-                              {formatDate(
-                                tarefa.createdAt,
-                              )}
                               {tarefa.responsavelEquipe
-                                ? ` · Responsável: ${tarefa.responsavelEquipe}`
+                                ? `Responsável: ${tarefa.responsavelEquipe} · `
                                 : ""}
-                              {tarefa.concluida &&
-                              tarefa.concluidaEm
-                                ? ` · Concluída em ${formatDate(tarefa.concluidaEm)}`
-                                : ""}
+                              {tarefa.concluida
+                                ? "Situação: concluída"
+                                : "Situação: pendente"}
+                              {" · "}
+                              <Link
+                                to={memoryHref({
+                                  obraId: tarefa.obraId,
+                                  entityType: "TAREFA",
+                                  entityId: tarefa.id,
+                                })}
+                              >
+                                Memória
+                              </Link>
                             </p>
                           </div>
 

@@ -6,7 +6,7 @@ import {
 } from "./mensagensQueue";
 
 describe("mensagens offline queue", () => {
-  it("keeps the message local and makes finalization depend on every upload", () => {
+  it("keeps only direct object-upload jobs while the domain mutation waits for immutable object references", () => {
     const queued = buildQueuedMessage({
       conversaId: "00000000-0000-4000-8000-000000000010",
       autorId: "00000000-0000-4000-8000-000000000020",
@@ -29,14 +29,12 @@ describe("mensagens offline queue", () => {
     expect(queued.message.syncStatus).toBe("NA_FILA");
     expect(queued.attachments).toHaveLength(2);
     expect(queued.uploadMutations).toHaveLength(2);
-    expect(queued.messageMutation.transport).toBe("SYNC_PUSH");
-    expect(queued.messageMutation.dependsOnMutationIds).toEqual(
-      queued.uploadMutations.map((mutation) => mutation.clientMutationId),
+    expect(queued).not.toHaveProperty("messageMutation");
+    expect(queued.uploadMutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ transport: "OBJECT_UPLOAD" }),
+      ]),
     );
-    expect(queued.messageMutation.payload.anexos).toEqual([
-      { uploadMutationId: queued.uploadMutations[0].clientMutationId },
-      { uploadMutationId: queued.uploadMutations[1].clientMutationId },
-    ]);
   });
 
   it("uses clear Portuguese states for every local lifecycle value", () => {

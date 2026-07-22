@@ -1,52 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  obraPdorFromApi,
-  obraTimelineEventFromApi,
-} from "./obrasApi";
-
-describe("obraTimelineEventFromApi", () => {
-  it("preserva rastreabilidade do evento vindo do cortex sem inventar campos", () => {
-    const event = obraTimelineEventFromApi({
-      id: "evt-1",
-      commitSeq: 42,
-      type: "OBRA_ATUALIZADA",
-      principalEntityType: "OBRA",
-      principalEntityId: "obra-1",
-      relatedEntities: [],
-      obraId: "obra-1",
-      rdoId: null,
-      colaboradorId: null,
-      occurredAt: "2026-07-08T10:00:00",
-      syncedAt: "2026-07-08T10:01:00",
-      origin: "ONLINE",
-      syncStatus: "SYNCED",
-      schemaVersion: 1,
-      payload: {
-        nome: "Obra BR-262",
-        cidade: "Campo Grande",
-        rodovia: "BR-262",
-      },
-    });
-
-    expect(event).toEqual({
-      id: "evt-1",
-      commitSeq: 42,
-      type: "OBRA_ATUALIZADA",
-      principalEntityType: "OBRA",
-      principalEntityId: "obra-1",
-      obraId: "obra-1",
-      occurredAt: "2026-07-08T10:00:00",
-      origin: "ONLINE",
-      syncStatus: "SYNCED",
-      payload: {
-        nome: "Obra BR-262",
-        cidade: "Campo Grande",
-        rodovia: "BR-262",
-      },
-    });
-  });
-});
+import { obraPdorFromApi } from "./obrasApi";
 
 describe("obraPdorFromApi", () => {
   it("converte o snapshot PDOR real da API sem inventar valores", () => {

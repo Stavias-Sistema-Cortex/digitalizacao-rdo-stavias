@@ -19,7 +19,6 @@ export interface QueuedMessagePlan {
   message: MensagemLocalRecord;
   attachments: MensagemAnexoLocalRecord[];
   uploadMutations: OutboxMutationRecord[];
-  messageMutation: OutboxMutationRecord;
 }
 
 const STATUS_LABELS: Record<MensagemSyncStatus, string> = {
@@ -112,39 +111,10 @@ export function buildQueuedMessage(
     updatedAt: now,
   };
 
-  const messageMutation: OutboxMutationRecord = {
-    clientMutationId: messageId,
-    entidadeTipo: "MENSAGEM",
-    entidadeId: messageId,
-    operacao: "CRIAR_MENSAGEM",
-    baseVersao: null,
-    payload: {
-      conversaId: input.conversaId,
-      corpo: normalizedBody || null,
-      criadaNoClienteEm: now,
-      anexos: uploadMutations.map((mutation) => ({
-        uploadMutationId: mutation.clientMutationId,
-      })),
-    },
-    status: "PENDING",
-    tentativas: 0,
-    ultimaTentativaEm: null,
-    ultimoErro: null,
-    conflito: null,
-    criadaNoClienteEm: now,
-    updatedAt: now,
-    transport: "SYNC_PUSH",
-    dependsOnMutationIds: uploadMutations.map(
-      (mutation) => mutation.clientMutationId,
-    ),
-    correlationId: messageId,
-  };
-
   return {
     message,
     attachments,
     uploadMutations,
-    messageMutation,
   };
 }
 

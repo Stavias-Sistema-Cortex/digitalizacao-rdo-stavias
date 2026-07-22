@@ -191,21 +191,9 @@ async function applyUploadedObject(
     updatedAt: timestamp,
   });
 
-  for (const dependent of await outbox.getAll()) {
-    if (!dependent.dependsOnMutationIds?.includes(uploadMutationId)) {
-      continue;
-    }
-    await outbox.put({
-      ...dependent,
-      payload: resolveUploadReference(
-        dependent.payload,
-        uploadMutationId,
-        objectId,
-        sha256,
-      ),
-      updatedAt: timestamp,
-    });
-  }
+  // The upload is transport-only. A canonical message is materialized only
+  // after all attachment references are available, so its payload hash is
+  // never rewritten in place after it has been created.
   await transaction.done;
 }
 

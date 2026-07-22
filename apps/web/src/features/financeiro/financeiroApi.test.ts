@@ -24,6 +24,7 @@ import {
   buscarCompras,
   buscarLancamentos,
   buscarNotasFiscais,
+  buscarRastreioReceita,
   enviarDocumentoFiscal,
   registrarLiquidacao,
   vincularDocumentoNota,
@@ -173,5 +174,53 @@ describe("financeiroApi query contracts", () => {
     expect(mocks.apiFetch.mock.calls[1][0]).toBe(
       "/financeiro/rateios?unidadeId=unit-asset-1",
     );
+  });
+
+  it("consulta o rastreio canônico sem inventar receita indisponível", async () => {
+    const trace = {
+      consolidado: {
+        producao: 12,
+        custo: 400,
+        receitaEstimada: 0,
+        margem: -400,
+        receitaMedida: 0,
+        receitaAprovada: 0,
+        receitaFaturada: 0,
+        receitaRecebida: 0,
+      },
+      obras: [],
+      tiposServico: [{
+        nome: "Terraplenagem",
+        unidade: "m³",
+        totais: {
+          producao: 12,
+          custo: 400,
+          receitaEstimada: 0,
+          margem: -400,
+          receitaMedida: 0,
+          receitaAprovada: 0,
+          receitaFaturada: 0,
+          receitaRecebida: 0,
+        },
+        obras: [],
+        quantidadeRdos: 1,
+        receitaDisponivel: false,
+      }],
+    };
+    mocks.readResponseBody.mockResolvedValue(trace);
+
+    const result = await buscarRastreioReceita({
+      obraId: "obra-1",
+      de: "2026-07-01",
+      ate: "2026-07-31",
+    });
+
+    expect(mocks.apiFetch.mock.calls[0][0]).toBe(
+      "/financeiro/rastreio-receita?obraId=obra-1&de=2026-07-01&ate=2026-07-31",
+    );
+    expect(mocks.apiFetch.mock.calls[0][1]).toMatchObject({
+      cache: "no-store",
+    });
+    expect(result.tiposServico[0].receitaDisponivel).toBe(false);
   });
 });

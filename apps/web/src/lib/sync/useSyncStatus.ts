@@ -13,6 +13,7 @@ export type SyncUiStatus =
   | "PENDING"
   | "SYNCING"
   | "SYNCED"
+  | "REVIEW"
   | "ERROR"
   | "CONFLICT";
 
@@ -23,6 +24,8 @@ export interface SyncStatusSnapshot {
   syncingCount: number;
   errorCount: number;
   conflictCount: number;
+  reviewCount: number;
+  reviewReason: string | null;
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
   isLoading: boolean;
@@ -37,18 +40,21 @@ const INITIAL_STATUS: SyncStatusSnapshot = {
   syncingCount: 0,
   errorCount: 0,
   conflictCount: 0,
+  reviewCount: 0,
+  reviewReason: null,
   lastSyncCompletedAt: null,
   lastSyncError: null,
   isLoading: true,
 };
 
-function determineStatus(input: {
+export function determineSyncUiStatus(input: {
   isOnline: boolean;
   isSyncing: boolean;
   pendingCount: number;
   syncingCount: number;
   errorCount: number;
   conflictCount: number;
+  reviewCount: number;
   lastSyncError: string | null;
 }): SyncUiStatus {
   if (!input.isOnline) {
@@ -57,6 +63,10 @@ function determineStatus(input: {
 
   if (input.conflictCount > 0) {
     return "CONFLICT";
+  }
+
+  if (input.reviewCount > 0) {
+    return "REVIEW";
   }
 
   if (input.errorCount > 0) {
@@ -101,6 +111,18 @@ function firstMutationSyncProblem(
   return `Motivo: ${problem.ultimoErro}`;
 }
 
+function firstMutationReviewReason(
+  mutations: OutboxMutationRecord[],
+): string | null {
+  const review = mutations
+    .filter((mutation) => mutation.status === "REJECTED")
+    .sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt),
+    )[0];
+
+  return review?.blockedReason ?? review?.ultimoErro ?? null;
+}
+
 export function useSyncStatus(): {
   snapshot: SyncStatusSnapshot;
   refresh: () => Promise<void>;
@@ -142,21 +164,30 @@ export function useSyncStatus(): {
             mutation.status === "CONFLICT",
         ).length;
 
+      const reviewCount =
+        mutations.filter(
+          (mutation) =>
+            mutation.status === "REJECTED",
+        ).length;
+
       const isOnline = navigator.onLine;
       const localSyncProblem =
         firstMutationSyncProblem(mutations);
+      const reviewReason =
+        firstMutationReviewReason(mutations);
       const lastSyncError =
         syncState.lastSyncError ??
         localSyncProblem;
 
       setSnapshot({
-        status: determineStatus({
+        status: determineSyncUiStatus({
           isOnline,
           isSyncing: syncState.isSyncing,
           pendingCount,
           syncingCount,
           errorCount,
           conflictCount,
+          reviewCount,
           lastSyncError,
         }),
         isOnline,
@@ -164,6 +195,8 @@ export function useSyncStatus(): {
         syncingCount,
         errorCount,
         conflictCount,
+        reviewCount,
+        reviewReason,
         lastSyncCompletedAt:
           syncState.lastSyncCompletedAt,
         lastSyncError,

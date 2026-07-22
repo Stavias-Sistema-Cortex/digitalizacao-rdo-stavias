@@ -24,17 +24,20 @@
   font-size: 0.75rem;
 }
 
+/* Ação principal em tinta, como "Criar obra": o amarelo fica reservado para
+   marcar o que ainda não foi lido ou não saiu do aparelho. */
 .mensagens-primary {
-  border: 1px solid var(--color-brand-teal);
-  border-radius: var(--radius-sm);
-  padding: 10px 16px;
-  background: var(--color-brand-teal);
-  color: #fff;
-  font-weight: 650;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  padding: 10px 18px;
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font-weight: 500;
 }
 
 .mensagens-primary:hover:not(:disabled) {
-  background: var(--color-brand-teal-strong);
+  background: var(--color-graphite);
+  border-color: var(--color-graphite);
 }
 
 .mensagens-primary:disabled {
@@ -63,20 +66,118 @@
   font-weight: 650;
 }
 
+/*
+ * A sidebar do shell é redimensionável, então largura de viewport não responde
+ * "cabe uma terceira coluna?". O frame é o container consultado; o grid mora
+ * dentro dele porque um elemento não consulta o próprio container.
+ */
+.mensagens-frame {
+  container-type: inline-size;
+}
+
 .mensagens-workspace {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(420px, 1fr) minmax(240px, 285px);
-  min-height: min(760px, calc(100vh - 165px));
+  grid-template-columns: minmax(0, 1fr);
+  /* Sem isto a linha implícita é `auto`: a thread cresce com o histórico e
+     vaza para fora da altura fixa em vez de a lista rolar por dentro. */
+  grid-template-rows: minmax(0, 1fr);
+  /*
+   * O launcher da StavIA é fixo no canto inferior direito (58px + 24px de
+   * folga). Sem descontar essa faixa, em telas por volta de 1100x1000 o rodapé
+   * do composer cai embaixo dele e o botão enviar deixa de receber o clique.
+   */
+  height: min(760px, calc(100vh - 275px));
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--color-surface);
 }
 
+/* Painel único: só o painel escolhido por mobilePane aparece. */
+.mensagens-conversations,
+.mensagens-thread,
+.mensagens-context {
+  display: none;
+}
+
+.mensagens-workspace--list .mensagens-conversations { display: flex; }
+.mensagens-workspace--thread .mensagens-thread { display: grid; }
+.mensagens-workspace--context .mensagens-context { display: flex; }
+
+@container (min-width: 640px) {
+  .mensagens-workspace {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  }
+
+  .mensagens-conversations { display: flex; }
+  .mensagens-thread { display: grid; }
+
+  /* Nesta faixa o contexto é gaveta sobreposta. */
+  .mensagens-context {
+    position: absolute;
+    z-index: 6;
+    display: flex;
+    inset: 0 0 0 auto;
+    width: min(340px, 86%);
+    border-left: 1px solid var(--color-border);
+    box-shadow: -16px 0 44px rgb(18 35 31 / 16%);
+    transform: translateX(102%);
+    transition: transform 0.22s ease;
+    pointer-events: none;
+  }
+
+  .mensagens-workspace--drawer-open .mensagens-context {
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+}
+
+@container (min-width: 1040px) {
+  .mensagens-workspace {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr) 320px;
+  }
+
+  /* Terceira coluna em fluxo: sem gaveta, sem sombra, sem transform. */
+  .mensagens-context {
+    position: static;
+    width: auto;
+    box-shadow: none;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /*
+   * Precisa vencer as regras-base, que aparecem depois neste arquivo;
+   * o descendente eleva a especificidade e torna a ordem irrelevante.
+   */
+  .mensagens-workspace .mensagens-drawer-backdrop,
+  .mensagens-workspace .mensagens-drawer-close {
+    display: none;
+  }
+
+  /* Em fluxo a barra "Contexto" só repetiria o escopo que o bloco de
+     identidade já mostra, e seus botões pertencem à gaveta. */
+  .mensagens-workspace .mensagens-context > header {
+    display: none;
+  }
+
+  .mensagens-workspace--info-hidden {
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  }
+
+  .mensagens-workspace--info-hidden .mensagens-context {
+    display: none;
+  }
+}
+
+/* ---- Conversations pane -------------------------------------------------- */
+
 .mensagens-conversations {
   min-width: 0;
+  flex-direction: column;
   border-right: 1px solid var(--color-border);
-  background: #fafbfa;
+  background: #f8faf9;
 }
 
 .mensagens-pane-heading {
@@ -84,34 +185,87 @@
   align-items: center;
   justify-content: space-between;
   min-height: 49px;
-  padding: 0 15px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--color-border);
 }
 
-.mensagens-pane-heading strong { font-size: 0.78rem; }
+.mensagens-pane-heading strong { font-size: 0.82rem; }
 .mensagens-pane-heading span { color: var(--color-muted); font-size: 0.65rem; }
 
+.mensagens-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Busca declarada: rótulo visível e botão nomeado, no lugar da pílula com lupa.
+   O campo é um controle de formulário do sistema, não um widget de chat. */
 .mensagens-search {
+  display: grid;
+  gap: 6px;
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
 }
 
-.mensagens-search > label,
-.mensagens-composer > label {
-  display: block;
-  margin-bottom: 7px;
-  color: #4f5e57;
-  font-size: 0.76rem;
-  font-weight: 650;
+.mensagens-search > label {
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-.mensagens-search > div {
+.mensagens-search-field {
   display: flex;
-  gap: 7px;
+  align-items: stretch;
+  gap: 6px;
 }
 
-.mensagens-search input,
-.mensagens-composer textarea,
+.mensagens-search-field input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.84rem;
+}
+
+.mensagens-search-field input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.mensagens-search-field button {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-functional),
+    color var(--transition-functional);
+}
+
+.mensagens-search-field button:hover {
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+
+.mensagens-search-field button.mensagens-search-clear {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+
 .mensagens-dialog input,
 .mensagens-dialog select {
   width: 100%;
@@ -121,15 +275,10 @@
   color: var(--color-text);
 }
 
-.mensagens-search input {
-  min-width: 0;
-  padding: 9px 10px;
-}
-
-.mensagens-search button,
 .mensagens-search-results header button {
   border: 1px solid #cbd5cf;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
+  padding: 8px 14px;
   background: #fff;
   color: #2f4e43;
   font-size: 0.8rem;
@@ -156,37 +305,92 @@
 
 .mensagens-conversation-list > li > button {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 13px 15px;
+  padding: 11px 16px;
   border: 0;
-  border-bottom: 1px solid #e6ebe8;
   background: transparent;
   color: inherit;
   text-align: left;
 }
 
-.mensagens-conversation-list > li > button:hover,
-.mensagens-conversation-list > li > button.active {
-  background: #edf4f1;
+.mensagens-conversation-list > li + li > button {
+  border-top: 1px solid #eaefec;
+}
+
+.mensagens-conversation-list > li > button:hover {
+  background: #eef4f1;
 }
 
 .mensagens-conversation-list > li > button.active {
+  background: #e6f0ec;
   box-shadow: inset 3px 0 var(--color-brand-teal);
 }
 
+/* ---- Avatares ------------------------------------------------------------ */
+
+/*
+ * Retrato-padrão: busto recortado pelo disco. O tamanho é do contexto, não do
+ * componente — cada lugar que hospeda um avatar declara `--avatar-size`.
+ */
 .mensagens-avatar {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: 7px;
-  background: #e2ebe7;
-  color: #174e45;
-  font-size: 0.88rem;
-  font-weight: 700;
+  position: relative;
+  display: block;
+  width: var(--avatar-size, 44px);
+  height: var(--avatar-size, 44px);
+  flex: 0 0 auto;
+}
+
+/* O recorte mora aqui, não em `.mensagens-avatar`: o ponto de fila é irmão do
+   disco e some se o clipe subir um nível. */
+.mensagens-avatar-disco {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--avatar-bg);
+  box-shadow: inset 0 0 0 1px rgb(20 60 54 / 9%);
+  color: var(--avatar-fig);
+}
+
+.mensagens-avatar-disco svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * Tintas de canteiro — teal da marca, sálvia, areia, barro e pedra. A silhueta
+ * é a mesma em toda conversa do mesmo tipo; é a tinta, estável por id, que
+ * devolve o reconhecimento de relance que as iniciais davam.
+ *
+ * As cinco ficam entre 4.2:1 e 4.9:1 de figura sobre disco de propósito: com
+ * contrastes soltos, uma conversa qualquer gritava mais alto que as outras só
+ * por causa do sorteio da cor.
+ */
+.mensagens-avatar--t0 { --avatar-bg: #d5e5df; --avatar-fig: #2f6b5f; }
+.mensagens-avatar--t1 { --avatar-bg: #dee7d4; --avatar-fig: #566d3f; }
+.mensagens-avatar--t2 { --avatar-bg: #f0e5c8; --avatar-fig: #7d5f1e; }
+.mensagens-avatar--t3 { --avatar-bg: #eddcd2; --avatar-fig: #855136; }
+.mensagens-avatar--t4 { --avatar-bg: #dfe3e4; --avatar-fig: #5f6b70; }
+
+/* Fila de saída: a conversa carrega mensagem que ainda não subiu. */
+.mensagens-avatar-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #f8faf9;
+  border-radius: 50%;
+  background: var(--color-brand-yellow);
+}
+
+.mensagens-row-body {
+  min-width: 0;
 }
 
 .mensagens-conversation-list strong,
@@ -198,13 +402,13 @@
 }
 
 .mensagens-conversation-list strong {
-  font-size: 0.82rem;
+  font-size: 0.86rem;
 }
 
 .mensagens-conversation-list small,
 .mensagens-conversation-list time {
   color: #748078;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
 }
 
 .mensagens-conversation-list small {
@@ -212,189 +416,344 @@
   font-weight: 450;
 }
 
+.mensagens-conversation-list time {
+  align-self: start;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Thread -------------------------------------------------------------- */
+
+/* `display` fica só nos alternadores de painel acima; defini-lo aqui venceria
+   por ordem de origem e mostraria a thread junto da lista no painel único. */
 .mensagens-thread {
-  display: grid;
   min-width: 0;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #ffffff;
+}
+
+/* Itens de grid nascem com min-width:auto e não encolhem abaixo do
+   min-content: sem isto a thread vaza da própria coluna e o composer
+   (com o botão enviar na ponta) sai da área visível. */
+.mensagens-thread > * {
+  min-width: 0;
 }
 
 .mensagens-thread-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  min-height: 62px;
-  padding: 10px 18px;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--color-border);
+  background: #fff;
 }
 
-.mensagens-thread-header h2 {
+.mensagens-thread-header .mensagens-avatar {
+  --avatar-size: 42px;
+}
+
+.mensagens-thread-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mensagens-thread-heading h2 {
   margin: 0;
+  overflow: hidden;
   font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mensagens-thread-header p,
-.mensagens-context-toggle {
-  margin: 3px 0 0;
+.mensagens-thread-heading p {
+  margin: 2px 0 0;
   color: var(--color-muted);
-  font-size: 0.73rem;
+  font-size: 0.72rem;
 }
 
-.mensagens-context-toggle {
+.mensagens-info-btn {
+  display: grid;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  place-items: center;
   border: 0;
+  border-radius: 50%;
   background: transparent;
+  color: #5a675f;
   cursor: pointer;
+}
+
+.mensagens-info-btn:hover {
+  background: #eef2ef;
+  color: var(--color-brand-teal);
 }
 
 .mensagens-list {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
-  padding: 22px;
-  background: #f5f7f5;
+  padding: 20px 22px 24px;
+  background: #ffffff;
+  scroll-behavior: smooth;
 }
 
-.mensagem-item {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.mensagem-item--mine {
-  justify-content: flex-end;
-}
-
-.mensagem-item article {
-  width: min(620px, 82%);
-  padding: 9px 11px;
-  border: 0;
-  border-radius: 4px 11px 11px;
-  background: #fff;
-}
-
-.mensagem-item--mine article {
-  border-radius: 11px 4px 11px 11px;
-  background: #e4f0ec;
-}
-
-.mensagem-item article > header,
-.mensagem-item article > footer {
+/* Virada de dia como divisória datada, não como pílula centralizada. */
+.mensagens-date-separator {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
+  padding: 18px 0 8px;
 }
 
-.mensagem-item article > header strong {
-  font-size: 0.76rem;
+.mensagens-date-separator::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--color-border);
 }
 
-.mensagem-item article > header.is-continuation {
-  height: 0;
-  overflow: visible;
+.mensagens-date-separator span {
+  color: var(--color-muted);
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-.mensagem-item article > header.is-continuation time {
-  opacity: 0;
+.mensagens-date-separator span::first-letter {
+  text-transform: uppercase;
 }
 
-.mensagem-item time,
-.mensagem-item article > footer,
-.mensagem-item details {
-  color: #6b7971;
-  font-size: 0.67rem;
+/* ---- Registros da correspondência ---------------------------------------- */
+
+/*
+ * A conversa é lida como um livro de ocorrências: uma coluna cronológica de
+ * registros, não bolhas alternadas. A autoria não muda o lado nem a cor —
+ * fica dita no cabeçalho e marcada por uma barra de tinta na lateral.
+ */
+.mensagem-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
 
-.mensagem-item article > p {
-  margin: 5px 0;
-  white-space: pre-wrap;
+.mensagem-item--lead {
+  margin-top: 16px;
+}
+
+.mensagens-list > .mensagem-item:first-of-type {
+  margin-top: 0;
+}
+
+/* Cabeçalho do registro: hora e autor, na régua de rótulos do sistema. */
+.mensagem-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 4px;
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mensagem-caption-nome {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+/* O rótulo é reescrito a cada minuto; dígitos tabulares evitam o tremor. */
+.mensagem-caption time {
+  font-variant-numeric: tabular-nums;
+}
+
+.mensagem-linha {
+  display: flex;
+  max-width: min(72ch, 100%);
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.mensagem-bubble {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 9px 13px;
+  border: 1px solid var(--color-border);
+  border-left-width: 2px;
+  border-radius: 3px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.mensagem-bubble--in {
+  border-left-color: var(--color-border);
+}
+
+/* Autoria marcada por estrutura, não por cor de fundo. */
+.mensagem-bubble--mine {
+  border-left-color: var(--color-ink);
+}
+
+/*
+ * Assinatura da tela: enquanto a mensagem não sai do aparelho o registro fica
+ * marcado a amarelo. O encarregado enxerga de relance a cauda do que não subiu.
+ */
+.mensagem-bubble--pendente {
+  border-style: dashed;
+  border-left-style: solid;
+  border-left-color: var(--color-brand-yellow);
+}
+
+.mensagem-bubble--falhou {
+  border-color: #e0b4ae;
+  border-left-color: #a3312a;
+  background: #fff6f5;
+  color: #6d2a24;
+}
+
+.mensagem-corpo {
+  margin: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
   overflow-wrap: anywhere;
-  font-size: 0.88rem;
-  line-height: 1.48;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .mensagem-deleted {
+  margin: 0;
+  flex: 0 1 auto;
   color: #738078;
+  font-size: 0.88rem;
   font-style: italic;
 }
 
-.mensagem-sync {
-  font-weight: 650;
+.mensagem-bubble--mine .mensagem-deleted {
+  color: #5d7a70;
 }
 
-.mensagem-sync--falhou {
-  color: #af332b;
+.mensagem-meta {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: #5c7d73;
 }
 
-.mensagem-item article > footer button,
-.mensagem-item details summary {
-  border: 0;
-  background: transparent;
-  color: #9c342d;
-  font-size: inherit;
-  font-weight: 650;
+.mensagem-tick {
+  width: 15px;
+  height: 15px;
 }
 
-.mensagem-item details p {
-  margin: 6px 0 0;
-  color: #7b342f;
+.mensagem-bubble--pendente .mensagem-meta {
+  color: #7c9a90;
+}
+
+.mensagem-tick--fail {
+  color: #a3312a;
 }
 
 .mensagem-attachments {
   display: flex;
+  flex: 0 0 100%;
   flex-wrap: wrap;
   gap: 7px;
-  margin: 8px 0;
+  margin: 4px 0 2px;
 }
 
 .mensagem-attachments button {
   display: flex;
+  max-width: 260px;
   align-items: center;
-  gap: 10px;
-  max-width: 320px;
+  gap: 9px;
   padding: 7px 10px;
-  border: 1px solid #c6d6d0;
-  border-radius: 5px;
-  background: #fff;
+  border: 1px solid #d5e2dc;
+  border-radius: 10px;
+  background: #f4f8f6;
   color: #24483e;
   text-align: left;
 }
 
-.mensagem-attachments b {
-  padding: 3px 4px;
-  background: #e5ece8;
-  color: #53645c;
-  font-size: 0.55rem;
-  letter-spacing: 0.04em;
+.mensagem-bubble--mine .mensagem-attachments button {
+  border-color: #bcd8ce;
+  background: rgb(255 255 255 / 70%);
+  color: #24483e;
 }
 
-.mensagens-date-separator {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 0 8px;
-}
-
-.mensagens-date-separator span {
-  color: #79857e;
-  font-size: 0.65rem;
-  text-transform: capitalize;
+.mensagem-attachments svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  opacity: 0.8;
 }
 
 .mensagem-attachments span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.78rem;
 }
 
 .mensagem-attachments small {
   flex-shrink: 0;
   color: #718078;
+  font-size: 0.66rem;
 }
 
-.mensagens-empty,
-.mensagens-thread-empty {
+.mensagem-bubble--mine .mensagem-attachments small {
+  color: #5d7a70;
+}
+
+.mensagem-retry {
+  display: flex;
+  flex: 0 0 100%;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  color: #a3312a;
+  font-size: 0.68rem;
+}
+
+.mensagem-retry button {
+  border: 0;
+  background: transparent;
+  color: #a3312a;
+  font-size: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.mensagem-error {
+  flex: 0 0 100%;
+  margin-top: 4px;
+  font-size: 0.68rem;
+}
+
+.mensagem-error summary {
+  color: #5d7a70;
+  cursor: pointer;
+}
+
+.mensagem-error p {
+  margin: 5px 0 0;
+  color: #4a5851;
+}
+
+.mensagens-empty {
   margin: auto;
   color: var(--color-muted);
   text-align: center;
@@ -403,7 +762,10 @@
 .mensagens-thread-empty {
   grid-row: 1 / -1;
   align-self: center;
+  margin: auto;
   padding: 36px;
+  color: var(--color-muted);
+  text-align: center;
 }
 
 .mensagens-thread-empty h2 {
@@ -417,45 +779,48 @@
   font-size: 0.86rem;
 }
 
+/* ---- Composer ------------------------------------------------------------ */
+
 .mensagens-composer {
-  padding: 10px 14px 12px;
+  padding: 12px 14px 16px;
   border-top: 1px solid var(--color-border);
   background: #fff;
 }
 
-.mensagens-composer textarea {
-  display: block;
-  min-height: 42px;
-  max-height: 150px;
-  padding: 10px 12px;
-  resize: vertical;
-}
-
-.mensagens-composer textarea:focus { min-height: 82px; }
-
-.mensagens-composer > div:last-child {
+/* Barra única de redação, enquadrada como os demais controles do sistema. */
+.mensagens-composer-bar {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 9px;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 4px 4px 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
-.mensagens-composer > div:last-child > span {
-  margin-right: auto;
-  color: var(--color-muted);
-  font-size: 0.7rem;
+.mensagens-composer-bar:focus-within {
+  border-color: var(--color-ink);
 }
 
 .mensagens-attach {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 11px;
-  border: 1px solid #cad4ce;
-  border-radius: var(--radius-sm);
-  color: #315348;
+  display: grid;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: var(--radius-control);
+  color: #4d5b54;
   cursor: pointer;
-  font-size: 0.78rem;
-  font-weight: 650;
+}
+
+.mensagens-attach:hover {
+  background: #eef2ef;
+  color: var(--color-brand-teal);
+}
+
+.mensagens-attach:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
 }
 
 .mensagens-attach input {
@@ -466,21 +831,73 @@
   clip: rect(0 0 0 0);
 }
 
+.mensagens-composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 38px;
+  max-height: 140px;
+  flex: 1 1 auto;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  line-height: 1.4;
+  resize: none;
+}
+
+.mensagens-composer textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.mensagens-send {
+  display: grid;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  cursor: pointer;
+}
+
+.mensagens-send:hover:not(:disabled) {
+  background: var(--color-graphite);
+  border-color: var(--color-graphite);
+}
+
+.mensagens-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.mensagens-composer-hint {
+  display: block;
+  margin: 8px 0 0 14px;
+  color: #a15a2a;
+  font-size: 0.68rem;
+}
+
 .mensagens-file-preview {
   display: flex;
   gap: 7px;
   overflow-x: auto;
-  margin-bottom: 8px;
+  margin-bottom: 9px;
+  padding-left: 8px;
 }
 
 .mensagens-file-preview li {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: #eef2ef;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
   font-size: 0.72rem;
+  white-space: nowrap;
 }
 
 .mensagens-file-preview button {
@@ -488,48 +905,146 @@
   background: transparent;
   color: #a2352d;
   font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.mensagens-spin {
+  animation: mensagens-spin 0.8s linear infinite;
+}
+
+@keyframes mensagens-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Context drawer ------------------------------------------------------ */
+
+.mensagens-drawer-backdrop {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  border: 0;
+  background: rgb(15 30 24 / 26%);
+  cursor: pointer;
 }
 
 .mensagens-context {
   min-width: 0;
+  flex-direction: column;
   overflow-y: auto;
-  border-left: 1px solid var(--color-border);
   background: #fcfdfc;
 }
 
 .mensagens-context > header {
   display: flex;
-  min-height: 62px;
+  min-height: 64px;
   align-items: center;
   gap: 10px;
-  padding: 10px 15px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--color-border);
 }
 
-.mensagens-context > header > div { display: grid; gap: 3px; }
-.mensagens-context > header strong { font-size: 0.8rem; }
+.mensagens-context > header > div { display: grid; flex: 1 1 auto; gap: 3px; }
+.mensagens-context > header strong { font-size: 0.82rem; }
 .mensagens-context > header span { color: var(--color-muted); font-size: 0.66rem; }
 
-.mensagens-context > section {
-  padding: 16px 15px;
+.mensagens-drawer-close {
+  display: grid;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #eef1ef;
+  color: #43514a;
+  cursor: pointer;
+}
+
+.mensagens-drawer-close:hover { background: #e2e7e4; }
+
+.mensagens-info-identity {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 28px 20px 22px;
+  border-bottom: 1px solid #e5eae7;
+  text-align: center;
+}
+
+.mensagens-info-identity .mensagens-avatar {
+  --avatar-size: 84px;
+}
+
+.mensagens-info-identity strong {
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.mensagens-info-identity small {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+}
+
+.mensagens-info-section {
   border-bottom: 1px solid #e5eae7;
 }
 
-.mensagens-context h3 {
-  margin: 0 0 10px;
+.mensagens-info-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
   color: #758079;
   font-size: 0.65rem;
+  font-weight: 650;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+  cursor: pointer;
 }
 
-.mensagens-context section > strong { font-size: 0.8rem; }
-.mensagens-context section > p { margin: 4px 0 0; color: var(--color-muted); font-size: 0.7rem; line-height: 1.5; }
+.mensagens-info-toggle:hover {
+  color: var(--color-brand-teal);
+}
+
+.mensagens-info-toggle svg {
+  flex: 0 0 auto;
+  transition: transform 0.16s ease;
+}
+
+.mensagens-chevron--fechado {
+  transform: rotate(-90deg);
+}
+
+.mensagens-info-body {
+  padding: 0 16px 16px;
+}
+
+.mensagens-info-linha {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 12px;
+}
+
+.mensagens-info-linha:last-child {
+  margin-bottom: 0;
+}
+
+.mensagens-info-linha strong { font-size: 0.78rem; }
+.mensagens-info-linha small { color: var(--color-muted); font-size: 0.68rem; }
+
+.mensagens-info-vazio {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.74rem;
+}
 
 .mensagens-context-people,
 .mensagens-context-documents {
   display: grid;
-  gap: 9px;
+  gap: 11px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -537,60 +1052,57 @@
 
 .mensagens-context-people li {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-.mensagens-context-people li > span {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border-radius: 6px;
-  background: #e6eeea;
-  color: #27564a;
-  font-size: 0.68rem;
-  font-weight: 700;
+.mensagens-context-people .mensagens-avatar {
+  --avatar-size: 34px;
 }
 
 .mensagens-context-people li > div { display: grid; min-width: 0; }
-.mensagens-context-people strong { overflow: hidden; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
-.mensagens-context-people small { color: var(--color-muted); font-size: 0.62rem; }
+.mensagens-context-people strong { overflow: hidden; font-size: 0.74rem; text-overflow: ellipsis; white-space: nowrap; }
+.mensagens-context-people small { color: var(--color-muted); font-size: 0.64rem; }
 
 .mensagens-context-documents button {
   display: grid;
   width: 100%;
   gap: 3px;
-  padding: 8px 9px;
+  padding: 9px 10px;
   border: 1px solid #d9e0dc;
-  border-radius: 5px;
+  border-radius: 8px;
   background: #fff;
   color: #30493f;
   text-align: left;
 }
 
-.mensagens-context-documents strong { overflow: hidden; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
-.mensagens-context-documents small { color: var(--color-muted); font-size: 0.6rem; }
+.mensagens-context-documents strong { overflow: hidden; font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
+.mensagens-context-documents small { color: var(--color-muted); font-size: 0.62rem; }
 
 .mensagens-mobile-back { display: none; }
+
+/* ---- Search results ------------------------------------------------------ */
 
 .mensagens-search-results > header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 15px;
+  padding: 12px 16px;
   font-size: 0.78rem;
 }
 
 .mensagens-search-results header button {
-  padding: 5px 8px;
+  padding: 5px 12px;
 }
 
 .mensagens-search-results li > button {
-  display: block;
+  display: grid;
   width: 100%;
-  padding: 12px 15px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  padding: 12px 16px;
   border: 0;
   border-top: 1px solid #e4e9e6;
   background: transparent;
@@ -599,20 +1111,33 @@
 }
 
 .mensagens-search-results li > button:hover {
-  background: #edf4f1;
+  background: #eef4f1;
 }
 
-.mensagens-search-results strong,
-.mensagens-search-results span,
-.mensagens-search-results small {
+.mensagens-search-results .mensagens-avatar {
+  --avatar-size: 34px;
+}
+
+/*
+ * O corpo é o escopo destes seletores de elemento. Soltos em
+ * `.mensagens-search-results span` eles também pegavam o disco do avatar, que é
+ * span, e o achatavam com o line-clamp do trecho.
+ */
+.mensagens-search-result-body {
+  display: block;
+  min-width: 0;
+}
+
+.mensagens-search-result-body strong,
+.mensagens-search-result-body small {
   display: block;
 }
 
-.mensagens-search-results strong {
+.mensagens-search-result-body strong {
   font-size: 0.75rem;
 }
 
-.mensagens-search-results span {
+.mensagens-search-result-body > span {
   display: -webkit-box;
   margin: 3px 0;
   overflow: hidden;
@@ -622,10 +1147,12 @@
   -webkit-line-clamp: 2;
 }
 
-.mensagens-search-results small {
+.mensagens-search-result-body small {
   color: var(--color-muted);
   font-size: 0.66rem;
 }
+
+/* ---- New conversation dialog --------------------------------------------- */
 
 .mensagens-dialog-backdrop {
   position: fixed;
@@ -658,6 +1185,14 @@
 .mensagens-dialog h2 {
   margin: 0;
   font-size: 1.2rem;
+}
+
+.mensagens-dialog .eyebrow {
+  margin: 0 0 2px;
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .mensagens-dialog > header > button {
@@ -699,9 +1234,9 @@
 
 .mensagens-directory-search button,
 .mensagens-dialog form > footer > button:first-child {
-  padding: 9px 12px;
+  padding: 9px 14px;
   border: 1px solid #cbd5cf;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: #fff;
   color: #315047;
   font-weight: 650;
@@ -763,37 +1298,49 @@
   gap: 8px;
 }
 
+/* ---- Responsive ---------------------------------------------------------- */
+
 @media (max-width: 900px) {
   .mensagens-page {
     width: min(100% - 20px, 760px);
   }
 
-  .mensagens-workspace {
-    grid-template-columns: minmax(0, 1fr);
+  .mensagem-bubble {
+    max-width: 88%;
   }
+}
 
-  .mensagens-conversations,
-  .mensagens-thread,
-  .mensagens-context { display: none; }
-
-  .mensagens-workspace--list .mensagens-conversations { display: block; }
-  .mensagens-workspace--thread .mensagens-thread { display: grid; }
-  .mensagens-workspace--context .mensagens-context { display: block; }
-
+/*
+ * O botão voltar pertence ao painel único, então tem de seguir a MESMA consulta
+ * que decide o painel único. Preso a uma media query de viewport ele sumia numa
+ * faixa em que o layout já era de painel único (viewport larga, frame estreito
+ * por causa da sidebar redimensionável) e a pessoa ficava sem saída da thread.
+ */
+@container (max-width: 639px) {
   .mensagens-mobile-back {
-    display: inline-flex;
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
     padding: 0;
     border: 0;
+    border-radius: 50%;
     background: transparent;
     color: var(--color-brand-teal);
-    font-size: 0.7rem;
-    font-weight: 650;
   }
 
-  .mensagens-context { border-left: 0; }
+  .mensagens-context > header .mensagens-mobile-back {
+    background: #eef1ef;
+  }
 
-  .mensagem-item article {
-    width: 92%;
+  .mensagens-context {
+    border-left: 0;
+  }
+
+  /* A gaveta não existe nesta faixa: o contexto é painel em fluxo. */
+  .mensagens-workspace .mensagens-drawer-backdrop,
+  .mensagens-workspace .mensagens-drawer-close {
+    display: none;
   }
 }
 
@@ -813,12 +1360,17 @@
     margin-inline: 10px;
   }
 
+  /*
+   * Só cromo aqui. Quantas colunas o workspace tem é decisão do @container, e
+   * um `grid-template-columns` nesta media query vence por ordem: entre 640 e
+   * 700px de viewport o container já tinha ligado os dois painéis, e a coluna
+   * única empilhava lista e thread dentro da altura fixa.
+   */
   .mensagens-workspace {
-    min-height: calc(100vh - 220px);
+    height: calc(100vh - 220px);
     border-right: 0;
     border-left: 0;
     border-radius: 0;
-    grid-template-columns: 1fr;
   }
 
   .mensagens-conversations {
@@ -827,40 +1379,126 @@
     border-right: 0;
   }
 
+  /* Idem: a altura é do workspace. Um mínimo maior que ele estoura a moldura
+     na mesma faixa em que os dois painéis convivem. */
   .mensagens-thread {
-    min-height: 560px;
-  }
-
-  .mensagens-thread-header > span {
-    display: none;
+    min-height: 0;
   }
 
   .mensagens-list {
-    padding: 14px 10px;
+    padding: 14px 12px 18px;
   }
 
-  .mensagem-item article {
-    width: 94%;
+  .mensagem-bubble {
+    max-width: 90%;
   }
 
   .mensagens-composer {
-    padding: 12px 10px;
+    padding: 10px 10px 12px;
   }
 
-  .mensagens-composer > div:last-child {
-    flex-wrap: wrap;
-  }
-
-  .mensagens-composer > div:last-child > span {
-    width: 100%;
-    order: -1;
-  }
-
-  .mensagens-composer .mensagens-primary {
-    margin-left: auto;
+  .mensagens-file-preview {
+    padding-left: 8px;
   }
 
   .mensagens-directory-search {
     grid-template-columns: 1fr;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mensagens-context { transition: none; }
+  .mensagens-list { scroll-behavior: auto; }
+  .mensagens-spin { animation: none; }
+}
+
+/* Cortex 2.1 · correspondência operacional */
+.mensagens-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-ink);
+}
+
+.mensagens-header h1,
+.mensagens-thread-header h2,
+.mensagens-thread-empty h2,
+.mensagens-dialog h2 {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.mensagens-primary,
+.mensagens-alert,
+.mensagens-search input,
+.mensagens-search button,
+.mensagens-search-results header button,
+.mensagens-composer textarea,
+.mensagens-attach,
+.mensagens-dialog input,
+.mensagens-dialog select,
+.mensagens-dialog fieldset,
+.mensagens-directory-search button,
+.mensagens-dialog form > footer > button:first-child {
+  border-radius: var(--radius-control);
+}
+
+.mensagens-workspace,
+.mensagens-dialog {
+  border-radius: var(--radius-container);
+}
+
+.mensagens-workspace { border-color: #bfc7c2; }
+.mensagens-conversations,
+.mensagens-context { background: #f7f8f6; }
+
+.mensagens-pane-heading,
+.mensagens-search,
+.mensagens-thread-header,
+.mensagens-composer,
+.mensagens-context > header,
+.mensagens-context > section {
+  border-color: #c8cfca;
+}
+
+.mensagens-conversation-list > li > button {
+  transition:
+    background-color var(--transition-functional),
+    color var(--transition-functional);
+}
+
+.mensagens-conversation-list > li > button.active {
+  background: #fff;
+  box-shadow: inset 3px 0 var(--color-ink);
+}
+
+/* O retrato tem tinta própria por conversa (ver "Tintas de canteiro"); aqui só
+   a geometria é institucionalizada, senão todos virariam o mesmo disco cinza. */
+.mensagens-context-people li > span {
+  border-radius: var(--radius-control);
+  background: #dfe5e1;
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.mensagens-primary,
+.mensagens-alert button,
+.mensagens-search > label,
+.mensagens-composer > label,
+.mensagens-search button,
+.mensagens-search-results header button,
+.mensagem-sync,
+.mensagem-item article > footer button,
+.mensagem-item details summary,
+.mensagens-attach,
+.mensagens-dialog form > label,
+.mensagens-directory-search label,
+.mensagens-directory-search button,
+.mensagens-dialog form > footer > button:first-child,
+.mensagens-dialog legend {
+  font-weight: 500;
+}
+
+.mensagem-attachments button,
+.mensagens-file-preview li,
+.mensagens-context-documents button {
+  border-radius: var(--radius-control);
 }

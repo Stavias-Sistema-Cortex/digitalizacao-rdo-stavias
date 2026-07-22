@@ -1,5 +1,7 @@
 import { consultarStavia } from "./staviaApi";
 import {
+  answerOperationalMemoryRoute,
+  isOperationalMemoryQuestion,
   responderComSnapshotStavia,
   type StaviaLocalContext,
 } from "./staviaLocalEngine";
@@ -65,6 +67,10 @@ export async function answerStaviaPanelQuestion({
   loadSnapshot = getBestAvailableStaviaSnapshot,
   consultar = consultarStavia,
 }: AnswerStaviaPanelQuestionParams): Promise<StaviaConsultaResponse> {
+  if (isOperationalMemoryQuestion(questionText)) {
+    return answerOperationalMemoryRoute();
+  }
+
   let loadedSnapshot: StaviaSnapshot | null = null;
 
   try {

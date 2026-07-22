@@ -3,24 +3,176 @@ import type {
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
+  MensagemAnexoLocalRecord,
+  MensagemLocalRecord,
   ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
+  TarefaRecord,
 } from "../db/db.types";
 import {
   mergeObraRecords,
   obraRecordFromPayload,
   snapshotRecordFromPayload,
 } from "../db/homeRecordMappers";
+import {
+  BLOCKED_DEPENDENCY_REVIEW_REASON,
+  CYCLIC_DEPENDENCY_REVIEW_REASON,
+  isCanonicalOutboxMutation,
+  isOutboxMutationBlocked,
+  isOutboxMutationInActiveDispatchState,
+  LEGACY_TRACE_REVIEW_REASON,
+  MISSING_DEPENDENCY_REVIEW_REASON,
+} from "../db/outboxContract";
 import type {
   SyncPullEvent,
   SyncPushMutationResult,
 } from "./sync.types";
+import type { AutomaticSyncRetryMetadata } from "./automaticSyncScheduler";
+import { analyzeOutboxDependencies } from "./outboxDependencies";
 
 function nowUtc(): string {
   return new Date().toISOString();
+}
+
+export function automaticSyncRetryMetadataFromMutations(
+  mutations: OutboxMutationRecord[],
+): AutomaticSyncRetryMetadata {
+  const scheduled = mutations
+    .filter(
+      (mutation) =>
+        mutation.status === "PENDING" &&
+        typeof mutation.nextAttemptAt === "string" &&
+        Number.isFinite(Date.parse(mutation.nextAttemptAt)),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(left.nextAttemptAt as string) -
+        Date.parse(right.nextAttemptAt as string),
+    );
+
+  if (scheduled.length === 0) {
+    return {
+      attempt: 0,
+      nextAttemptAt: null,
+    };
+  }
+
+  return {
+    attempt: scheduled.reduce(
+      (highest, mutation) =>
+        Math.max(
+          highest,
+          Number.isFinite(mutation.tentativas)
+            ? Math.max(0, Math.floor(mutation.tentativas))
+            : 0,
+        ),
+      0,
+    ),
+    nextAttemptAt: scheduled[0].nextAttemptAt ?? null,
+  };
+}
+
+export function mutationAfterAutomaticSyncRetryScheduled(
+  mutation: OutboxMutationRecord,
+  metadata: AutomaticSyncRetryMetadata,
+  timestamp: string,
+): OutboxMutationRecord {
+  return {
+    ...mutation,
+    tentativas: Math.max(
+      mutation.tentativas,
+      Math.max(0, Math.floor(metadata.attempt)),
+    ),
+    nextAttemptAt: metadata.nextAttemptAt,
+    updatedAt: timestamp,
+  };
+}
+
+export function mutationAfterAutomaticSyncRetryCleared(
+  mutation: OutboxMutationRecord,
+  timestamp: string,
+): OutboxMutationRecord {
+  return {
+    ...mutation,
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    nextAttemptAt: null,
+    updatedAt: timestamp,
+  };
+}
+
+export async function loadAutomaticSyncRetryMetadata(): Promise<AutomaticSyncRetryMetadata> {
+  const database = await getCortexDb();
+  const pending = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-status",
+    "PENDING",
+  );
+
+  return automaticSyncRetryMetadataFromMutations(pending);
+}
+
+export async function persistAutomaticSyncRetryMetadata(
+  metadata: AutomaticSyncRetryMetadata,
+): Promise<void> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    "outbox_mutations",
+    "readwrite",
+  );
+  const store = transaction.objectStore("outbox_mutations");
+  const pending = await store
+    .index("by-status")
+    .getAll("PENDING");
+  const timestamp = nowUtc();
+
+  await Promise.all(
+    pending.map((mutation) =>
+      store.put(
+        mutationAfterAutomaticSyncRetryScheduled(
+          mutation,
+          metadata,
+          timestamp,
+        ),
+      ),
+    ),
+  );
+
+  await transaction.done;
+}
+
+export async function clearAutomaticSyncRetryMetadata(): Promise<void> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    "outbox_mutations",
+    "readwrite",
+  );
+  const store = transaction.objectStore("outbox_mutations");
+  const pending = await store
+    .index("by-status")
+    .getAll("PENDING");
+  const timestamp = nowUtc();
+  const scheduled = pending.filter(
+    (mutation) =>
+      mutation.nextAttemptAt !== null &&
+      mutation.nextAttemptAt !== undefined,
+  );
+
+  await Promise.all(
+    scheduled.map((mutation) =>
+      store.put(
+        mutationAfterAutomaticSyncRetryCleared(
+          mutation,
+          timestamp,
+        ),
+      ),
+    ),
+  );
+
+  await transaction.done;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -255,7 +407,9 @@ interface RdoChildSyncTransaction {
 }
 
 interface OperationalEventStoreUpdater {
-  index: (name: "by-rdo-id") => {
+  index: (
+    name: "by-rdo-id" | "by-client-mutation-id",
+  ) => {
     getAll: (
       query: string,
     ) => Promise<OperationalEventRecord[]>;
@@ -269,6 +423,12 @@ interface OperationalEventSyncTransaction {
   objectStore: (
     name: "operational_events",
   ) => OperationalEventStoreUpdater;
+}
+
+interface OutboxEntityMutationStore {
+  index: (name: "by-entity-id") => {
+    getAll: (query: string) => Promise<OutboxMutationRecord[]>;
+  };
 }
 
 interface RdoAttachmentStoreUpdater {
@@ -288,6 +448,56 @@ interface RdoAttachmentSyncTransaction {
   ) => RdoAttachmentStoreUpdater;
 }
 
+interface LocalReviewOutboxStore {
+  get: (
+    clientMutationId: string,
+  ) => Promise<OutboxMutationRecord | undefined>;
+  getAll: () => Promise<OutboxMutationRecord[]>;
+  put: (value: OutboxMutationRecord) => Promise<IDBValidKey>;
+}
+
+interface LocalReviewRdoStore {
+  get: (rdoId: string) => Promise<LocalRdoRecord | undefined>;
+  put: (value: LocalRdoRecord) => Promise<IDBValidKey>;
+}
+
+interface LocalReviewEventStore {
+  index: (name: "by-client-mutation-id" | "by-rdo-id") => {
+    getAll: (query: string) => Promise<OperationalEventRecord[]>;
+  };
+  put: (value: OperationalEventRecord) => Promise<IDBValidKey>;
+}
+
+interface LocalReviewMessageStore {
+  get: (messageId: string) => Promise<MensagemLocalRecord | undefined>;
+  put: (value: MensagemLocalRecord) => Promise<IDBValidKey>;
+}
+
+interface LocalReviewAttachmentStore {
+  get: (
+    attachmentId: string,
+  ) => Promise<MensagemAnexoLocalRecord | undefined>;
+  put: (value: MensagemAnexoLocalRecord) => Promise<IDBValidKey>;
+}
+
+interface LocalReviewTaskStore {
+  get: (taskId: string) => Promise<TarefaRecord | undefined>;
+  put: (value: TarefaRecord) => Promise<IDBValidKey>;
+}
+
+interface LocalReviewTransaction {
+  done: Promise<void>;
+  abort: () => void;
+  objectStore(name: RdoChildStoreName): RdoChildStoreUpdater;
+  objectStore(name: "rdo_attachments"): RdoAttachmentStoreUpdater;
+  objectStore(name: "operational_events"): LocalReviewEventStore;
+  objectStore(name: "outbox_mutations"): LocalReviewOutboxStore;
+  objectStore(name: "rdos"): LocalReviewRdoStore;
+  objectStore(name: "tarefas"): LocalReviewTaskStore;
+  objectStore(name: "mensagens"): LocalReviewMessageStore;
+  objectStore(name: "mensagem_anexos"): LocalReviewAttachmentStore;
+}
+
 const RDO_CHILD_STORE_NAMES = [
   "rdoMaoObra",
   "rdoEquipamentos",
@@ -298,6 +508,7 @@ const RDO_CHILD_STORE_NAMES = [
 const RDO_SYNC_TRANSACTION_STORES = [
   "outbox_mutations",
   "rdos",
+  "tarefas",
   "operational_events",
   "rdo_attachments",
   "mensagens",
@@ -336,10 +547,15 @@ async function updateRdoOperationalEventsSyncStatus(
   rdoId: string,
   syncStatus: OperationalEventRecord["syncStatus"],
   timestamp: string,
+  clientMutationId?: string,
 ): Promise<void> {
   const store = transaction.objectStore("operational_events");
 
-  const records = await store.index("by-rdo-id").getAll(rdoId);
+  const records = clientMutationId
+    ? await store
+        .index("by-client-mutation-id")
+        .getAll(clientMutationId)
+    : await store.index("by-rdo-id").getAll(rdoId);
 
   await Promise.all(
     records
@@ -353,6 +569,64 @@ async function updateRdoOperationalEventsSyncStatus(
         }),
       ),
   );
+}
+
+function rdoSyncStatusFromMutations(
+  mutations: OutboxMutationRecord[],
+): LocalSyncStatus {
+  if (mutations.some((mutation) => mutation.status === "CONFLICT")) {
+    return "CONFLICT";
+  }
+  if (mutations.some(
+    (mutation) =>
+      mutation.status === "REJECTED" ||
+      mutation.status === "ERROR",
+  )) {
+    return "ERROR";
+  }
+  if (mutations.some((mutation) => mutation.status === "SYNCING")) {
+    return "SYNCING";
+  }
+  if (mutations.some((mutation) => mutation.status === "PENDING")) {
+    return "PENDING_SYNC";
+  }
+
+  return "SYNCED";
+}
+
+async function rdoSyncStatusFromOutbox(
+  store: OutboxEntityMutationStore,
+  rdoId: string,
+): Promise<LocalSyncStatus> {
+  return rdoSyncStatusFromMutations(
+    await store.index("by-entity-id").getAll(rdoId),
+  );
+}
+
+async function tarefaSyncStatusFromOutbox(
+  store: OutboxEntityMutationStore,
+  tarefaId: string,
+): Promise<LocalSyncStatus> {
+  return rdoSyncStatusFromMutations(
+    (await store.index("by-entity-id").getAll(tarefaId))
+      .filter((mutation) => mutation.entidadeTipo === "TAREFA"),
+  );
+}
+
+function attachmentSyncStatusForRdo(
+  syncStatus: LocalSyncStatus,
+): RdoAttachmentRecord["syncStatus"] {
+  if (syncStatus === "SYNCED") {
+    return "SYNCED";
+  }
+  if (syncStatus === "SYNCING") {
+    return "SYNCING";
+  }
+  if (syncStatus === "PENDING_SYNC" || syncStatus === "LOCAL_ONLY") {
+    return "PENDING_SYNC";
+  }
+
+  return "SYNC_FAILED";
 }
 
 function operationalEntityAfterObraReferenceRepair(
@@ -553,6 +827,7 @@ export async function recoverInterruptedMutations(): Promise<void> {
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
 
   const syncingMutations =
     await outboxStore.index("by-status").getAll("SYNCING");
@@ -571,23 +846,28 @@ export async function recoverInterruptedMutations(): Promise<void> {
     const rdo = await rdoStore.get(mutation.entidadeId);
 
     if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
       await rdoStore.put({
         ...rdo,
-        syncStatus: "PENDING_SYNC",
+        syncStatus,
         updatedAt: nowUtc(),
       });
 
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "PENDING_SYNC",
+        syncStatus,
         nowUtc(),
       );
       await updateRdoOperationalEventsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "PENDING_SYNC",
+        attachmentSyncStatusForRdo(syncStatus),
         nowUtc(),
+        mutation.clientMutationId,
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
@@ -595,6 +875,20 @@ export async function recoverInterruptedMutations(): Promise<void> {
         "PENDING_SYNC",
         nowUtc(),
       );
+    }
+
+    if (mutation.entidadeTipo === "TAREFA") {
+      const task = await taskStore.get(mutation.entidadeId);
+      if (task) {
+        await taskStore.put({
+          ...task,
+          syncStatus: await tarefaSyncStatusFromOutbox(
+            outboxStore,
+            mutation.entidadeId,
+          ),
+          updatedAt: nowUtc(),
+        });
+      }
     }
 
     if (mutation.entidadeTipo === "MENSAGEM") {
@@ -786,6 +1080,7 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
 
   const erroredMutations =
     await outboxStore.index("by-status").getAll("ERROR");
@@ -801,23 +1096,28 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
     const rdo = await rdoStore.get(mutation.entidadeId);
 
     if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
       await rdoStore.put({
         ...rdo,
-        syncStatus: "PENDING_SYNC",
+        syncStatus,
         updatedAt: timestamp,
       });
 
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "PENDING_SYNC",
+        syncStatus,
         timestamp,
       );
       await updateRdoOperationalEventsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "PENDING_SYNC",
+        attachmentSyncStatusForRdo(syncStatus),
         timestamp,
+        mutation.clientMutationId,
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
@@ -825,6 +1125,20 @@ export async function queueErroredMutationsForRetry(): Promise<number> {
         "PENDING_SYNC",
         timestamp,
       );
+    }
+
+    if (mutation.entidadeTipo === "TAREFA") {
+      const task = await taskStore.get(mutation.entidadeId);
+      if (task) {
+        await taskStore.put({
+          ...task,
+          syncStatus: await tarefaSyncStatusFromOutbox(
+            outboxStore,
+            mutation.entidadeId,
+          ),
+          updatedAt: timestamp,
+        });
+      }
     }
 
     if (mutation.entidadeTipo === "MENSAGEM") {
@@ -852,6 +1166,10 @@ export function mutationAfterObraReferenceRepair(
   timestamp: string,
   clientMutationId = crypto.randomUUID(),
 ): OutboxMutationRecord | null {
+  if (isCanonicalOutboxMutation(mutation)) {
+    return null;
+  }
+
   if (
     mutation.entidadeTipo !== "RDO" ||
     (mutation.status !== "ERROR" && mutation.status !== "PENDING")
@@ -908,6 +1226,10 @@ export function mutationAfterMaoObraReferenceRepair(
   timestamp: string,
   clientMutationId = crypto.randomUUID(),
 ): OutboxMutationRecord | null {
+  if (isCanonicalOutboxMutation(mutation)) {
+    return null;
+  }
+
   if (
     mutation.entidadeTipo !== "RDO" ||
     (mutation.status !== "ERROR" && mutation.status !== "PENDING") ||
@@ -999,6 +1321,7 @@ export function mutationAfterErroredRetry(
   timestamp: string,
 ): OutboxMutationRecord {
   const serverMissingRdo =
+    !isCanonicalOutboxMutation(mutation) &&
     mutation.status === "ERROR" &&
     mutation.operacao === "ATUALIZAR_RDO_RASCUNHO" &&
     mutation.baseVersao === 0 &&
@@ -1036,7 +1359,10 @@ export function mutationAfterResolvableConflict(
   timestamp: string,
   clientMutationId = crypto.randomUUID(),
 ): OutboxMutationRecord | null {
-  if (mutation.status !== "CONFLICT") {
+  if (
+    mutation.status !== "CONFLICT" ||
+    isCanonicalOutboxMutation(mutation)
+  ) {
     return null;
   }
 
@@ -1101,9 +1427,13 @@ export async function queueResolvableConflictsForRetry(): Promise<number> {
     const rdo = await rdoStore.get(mutation.entidadeId);
 
     if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
       await rdoStore.put({
         ...rdo,
-        syncStatus: "PENDING_SYNC",
+        syncStatus,
         versaoEntidade: retryMutation.baseVersao,
         updatedAt: timestamp,
       });
@@ -1111,19 +1441,13 @@ export async function queueResolvableConflictsForRetry(): Promise<number> {
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "PENDING_SYNC",
-        timestamp,
-      );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "PENDING_SYNC",
+        syncStatus,
         timestamp,
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "PENDING_SYNC",
+        attachmentSyncStatusForRdo(syncStatus),
         timestamp,
       );
     }
@@ -1134,6 +1458,314 @@ export async function queueResolvableConflictsForRetry(): Promise<number> {
   await transaction.done;
 
   return queued;
+}
+
+type LocalOutboxBlockCategory =
+  | "NONCANONICAL_ENVELOPE"
+  | "BLOCKED_DEPENDENCY"
+  | "MISSING_DEPENDENCY"
+  | "CYCLIC_DEPENDENCY";
+
+interface LocalOutboxBlock {
+  reason: string;
+  category: LocalOutboxBlockCategory;
+}
+
+async function markMutationForLocalReview(
+  transaction: LocalReviewTransaction,
+  mutation: OutboxMutationRecord,
+  block: LocalOutboxBlock,
+  timestamp: string,
+): Promise<void> {
+  const outboxStore = transaction.objectStore("outbox_mutations");
+  const eventStore = transaction.objectStore("operational_events");
+  const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
+  const messageStore = transaction.objectStore("mensagens");
+  const attachmentStore = transaction.objectStore("mensagem_anexos");
+
+  await outboxStore.put({
+    ...mutation,
+    status: "REJECTED",
+    blockedReason: block.reason,
+    ultimoErro: block.reason,
+    updatedAt: timestamp,
+  });
+
+  const correlatedEvents = await eventStore
+    .index("by-client-mutation-id")
+    .getAll(mutation.clientMutationId);
+  const eventsToReject = new Map(
+    correlatedEvents.map((event) => [event.id, event]),
+  );
+
+  const rdo = mutation.entidadeTipo === "RDO"
+    ? await rdoStore.get(mutation.entidadeId)
+    : undefined;
+
+  if (rdo) {
+    await rdoStore.put({
+      ...rdo,
+      syncStatus: "ERROR",
+      updatedAt: timestamp,
+    });
+    await updateRdoChildrenSyncStatus(
+      transaction,
+      mutation.entidadeId,
+      "ERROR",
+      timestamp,
+    );
+    await updateRdoAttachmentsSyncStatus(
+      transaction,
+      mutation.entidadeId,
+      "SYNC_FAILED",
+      timestamp,
+    );
+
+    const uncorrelatedRdoEvents = await eventStore
+      .index("by-rdo-id")
+      .getAll(mutation.entidadeId);
+    for (const event of uncorrelatedRdoEvents) {
+      if (
+        event.syncStatus !== "SYNCED" &&
+        (!event.clientMutationId ||
+          event.clientMutationId === mutation.clientMutationId)
+      ) {
+        eventsToReject.set(event.id, event);
+      }
+    }
+  }
+
+  if (mutation.entidadeTipo === "TAREFA") {
+    const task = await taskStore.get(mutation.entidadeId);
+    if (task) {
+      await taskStore.put({
+        ...task,
+        syncStatus: "ERROR",
+        updatedAt: timestamp,
+      });
+    }
+  }
+
+  await Promise.all(
+    [...eventsToReject.values()].map((event) =>
+      eventStore.put({
+        ...event,
+        syncStatus: "SYNC_FAILED",
+        result: "REJECTED",
+        errorCategory: block.category,
+      }),
+    ),
+  );
+
+  if (mutation.entidadeTipo === "MENSAGEM") {
+    const message = await messageStore.get(mutation.entidadeId);
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "FALHOU",
+        ultimoErro: block.reason,
+        updatedAt: timestamp,
+      });
+    }
+  }
+
+  if (mutation.entidadeTipo === "MENSAGEM_ANEXO") {
+    const attachment = await attachmentStore.get(mutation.entidadeId);
+    if (attachment) {
+      await attachmentStore.put({
+        ...attachment,
+        syncStatus: "FALHOU",
+        ultimoErro: block.reason,
+        updatedAt: timestamp,
+      });
+      const message = await messageStore.get(attachment.mensagemId);
+      if (message && message.syncStatus !== "SINCRONIZADO") {
+        await messageStore.put({
+          ...message,
+          syncStatus: "FALHOU",
+          ultimoErro: block.reason,
+          updatedAt: timestamp,
+        });
+      }
+    }
+  }
+}
+
+function localReviewBlocks(
+  mutations: OutboxMutationRecord[],
+): Map<string, LocalOutboxBlock> {
+  const blocks = new Map<string, LocalOutboxBlock>();
+  const active = (mutation: OutboxMutationRecord): boolean =>
+    isOutboxMutationInActiveDispatchState(mutation);
+  const isDirectObjectUpload = (mutation: OutboxMutationRecord): boolean =>
+    mutation.transport === "OBJECT_UPLOAD";
+
+  for (const mutation of mutations) {
+    // Object uploads have a dedicated transport worker and are deliberately
+    // not Sync-Push envelopes. Their dependent domain mutation is still
+    // required to be canonical, but the upload job itself must remain
+    // dispatchable by processObjectUploads().
+    if (
+      !isDirectObjectUpload(mutation) &&
+      !isCanonicalOutboxMutation(mutation) &&
+      active(mutation)
+    ) {
+      blocks.set(mutation.clientMutationId, {
+        reason: isOutboxMutationBlocked(mutation)
+          ? mutation.blockedReason as string
+          : LEGACY_TRACE_REVIEW_REASON,
+        category: "NONCANONICAL_ENVELOPE",
+      });
+    }
+  }
+
+  const dependencyAnalysis = analyzeOutboxDependencies(mutations);
+  for (const mutationId of dependencyAnalysis.cycles) {
+    const mutation = mutations.find(
+      (candidate) => candidate.clientMutationId === mutationId,
+    );
+    if (mutation && active(mutation) && !blocks.has(mutationId)) {
+      blocks.set(mutationId, {
+        reason: CYCLIC_DEPENDENCY_REVIEW_REASON,
+        category: "CYCLIC_DEPENDENCY",
+      });
+    }
+  }
+  for (const missing of dependencyAnalysis.missingDependencies) {
+    const mutation = mutations.find(
+      (candidate) => candidate.clientMutationId === missing.mutationId,
+    );
+    if (
+      mutation &&
+      active(mutation) &&
+      !blocks.has(missing.mutationId)
+    ) {
+      blocks.set(missing.mutationId, {
+        reason: MISSING_DEPENDENCY_REVIEW_REASON,
+        category: "MISSING_DEPENDENCY",
+      });
+    }
+  }
+
+  const byId = new Map(
+    mutations.map((mutation) => [
+      mutation.clientMutationId,
+      mutation,
+    ]),
+  );
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const mutation of mutations) {
+      if (!active(mutation) || blocks.has(mutation.clientMutationId)) {
+        continue;
+      }
+      const dependencyBlocksDispatch = (mutation.dependsOnMutationIds ?? [])
+        .some((dependencyId) => {
+          const dependency = byId.get(dependencyId);
+          return (
+            blocks.has(dependencyId) ||
+            dependency?.status === "REJECTED" ||
+            dependency?.status === "CONFLICT"
+          );
+        });
+      if (!dependencyBlocksDispatch) {
+        continue;
+      }
+      blocks.set(mutation.clientMutationId, {
+        reason: BLOCKED_DEPENDENCY_REVIEW_REASON,
+        category: "BLOCKED_DEPENDENCY",
+      });
+      changed = true;
+    }
+  }
+
+  return blocks;
+}
+
+/**
+ * Idempotently materializes local review state before any queue inspection.
+ * It never fabricates provenance or alters the persisted domain payload.
+ */
+export async function classifyLegacyOutboxMutationsForReview(): Promise<
+  number
+> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    RDO_SYNC_TRANSACTION_STORES,
+    "readwrite",
+  ) as unknown as LocalReviewTransaction;
+  const outboxStore = transaction.objectStore("outbox_mutations");
+  const mutations = await outboxStore.getAll();
+  const blocks = localReviewBlocks(mutations);
+  const passiveLegacyMutations = mutations.filter(
+    (mutation) =>
+      mutation.transport !== "OBJECT_UPLOAD" &&
+      !isCanonicalOutboxMutation(mutation) &&
+      !isOutboxMutationInActiveDispatchState(mutation) &&
+      (!mutation.blockedReason || !mutation.blockedReason.trim()),
+  );
+  const timestamp = nowUtc();
+
+  for (const mutation of mutations) {
+    const block = blocks.get(mutation.clientMutationId);
+    if (block) {
+      await markMutationForLocalReview(
+        transaction,
+        mutation,
+        block,
+        timestamp,
+      );
+    }
+  }
+
+  await Promise.all(
+    passiveLegacyMutations.map((mutation) =>
+      outboxStore.put({
+        ...mutation,
+        blockedReason: LEGACY_TRACE_REVIEW_REASON,
+        updatedAt: timestamp,
+      }),
+    ),
+  );
+
+  await transaction.done;
+  return blocks.size + passiveLegacyMutations.length;
+}
+
+export async function rejectNonCanonicalMutation(
+  clientMutationId: string,
+  blockedReason = LEGACY_TRACE_REVIEW_REASON,
+): Promise<void> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    RDO_SYNC_TRANSACTION_STORES,
+    "readwrite",
+  ) as unknown as LocalReviewTransaction;
+  const outboxStore = transaction.objectStore("outbox_mutations");
+  const mutation = await outboxStore.get(clientMutationId);
+
+  if (!mutation) {
+    transaction.abort();
+    throw new Error(
+      `Mutacao ${clientMutationId} nao encontrada para bloqueio.`,
+    );
+  }
+
+  if (isOutboxMutationInActiveDispatchState(mutation)) {
+    await markMutationForLocalReview(
+      transaction,
+      mutation,
+      {
+        reason: blockedReason,
+        category: "NONCANONICAL_ENVELOPE",
+      },
+      nowUtc(),
+    );
+  }
+
+  await transaction.done;
 }
 
 export async function markMutationAsSyncing(
@@ -1149,6 +1781,7 @@ export async function markMutationAsSyncing(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
 
   const currentMutation = await outboxStore.get(
     mutation.clientMutationId,
@@ -1183,24 +1816,29 @@ export async function markMutationAsSyncing(
 
   if (rdo) {
     const timestamp = nowUtc();
+    const syncStatus = await rdoSyncStatusFromOutbox(
+      outboxStore,
+      currentMutation.entidadeId,
+    );
 
     await rdoStore.put({
       ...rdo,
-      syncStatus: "SYNCING",
+      syncStatus,
       updatedAt: timestamp,
     });
 
     await updateRdoChildrenSyncStatus(
       transaction,
       currentMutation.entidadeId,
-      "SYNCING",
+      syncStatus,
       timestamp,
     );
     await updateRdoOperationalEventsSyncStatus(
       transaction,
       currentMutation.entidadeId,
-      "SYNCING",
+      attachmentSyncStatusForRdo(syncStatus),
       timestamp,
+      currentMutation.clientMutationId,
     );
     await updateRdoAttachmentsSyncStatus(
       transaction,
@@ -1208,6 +1846,20 @@ export async function markMutationAsSyncing(
       "SYNCING",
       timestamp,
     );
+  }
+
+  if (currentMutation.entidadeTipo === "TAREFA") {
+    const task = await taskStore.get(currentMutation.entidadeId);
+    if (task) {
+      await taskStore.put({
+        ...task,
+        syncStatus: await tarefaSyncStatusFromOutbox(
+          outboxStore,
+          currentMutation.entidadeId,
+        ),
+        updatedAt: nowUtc(),
+      });
+    }
   }
 
   if (currentMutation.entidadeTipo === "MENSAGEM") {
@@ -1256,6 +1908,27 @@ export function rdoAfterConflict(
   };
 }
 
+function serverRejectionCategory(
+  result: SyncPushMutationResult,
+): string | null {
+  const rejection = result.resultado?.rejeicao;
+
+  if (
+    rejection === null ||
+    typeof rejection !== "object" ||
+    Array.isArray(rejection)
+  ) {
+    return null;
+  }
+
+  const category = (rejection as Record<string, unknown>)
+    .categoria;
+
+  return typeof category === "string" && category.length > 0
+    ? category
+    : null;
+}
+
 export async function applyPushResultAtomically(
   result: SyncPushMutationResult,
 ): Promise<void> {
@@ -1269,7 +1942,9 @@ export async function applyPushResultAtomically(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
   const messageStore = transaction.objectStore("mensagens");
+  const eventStore = transaction.objectStore("operational_events");
 
   const mutation = await outboxStore.get(
     result.clientMutationId,
@@ -1288,9 +1963,19 @@ export async function applyPushResultAtomically(
     mutation.entidadeTipo === "MENSAGEM"
       ? await messageStore.get(mutation.entidadeId)
       : undefined;
+  const task =
+    mutation.entidadeTipo === "TAREFA"
+      ? await taskStore.get(mutation.entidadeId)
+      : undefined;
   const timestamp = nowUtc();
+  const correlatedEvents = await eventStore
+    .index("by-client-mutation-id")
+    .getAll(mutation.clientMutationId);
 
-  if (result.status === "APLICADA") {
+  if (
+    result.status === "APLICADA" ||
+    result.status === "CONCILIADA"
+  ) {
     await outboxStore.put({
       ...mutation,
       status: "SYNCED",
@@ -1299,7 +1984,26 @@ export async function applyPushResultAtomically(
       updatedAt: timestamp,
     });
 
+    await Promise.all(
+      correlatedEvents.map((event) =>
+        eventStore.put({
+          ...event,
+          syncStatus: "SYNCED",
+          syncedAt: timestamp,
+          result:
+            result.status === "CONCILIADA"
+              ? "CONCILIADA"
+              : "SYNCED",
+          errorCategory: null,
+        }),
+      ),
+    );
+
     if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
       const resultVersion =
         result.resultado &&
         typeof result.resultado.versaoEntidade === "number"
@@ -1308,7 +2012,7 @@ export async function applyPushResultAtomically(
 
       await rdoStore.put({
         ...rdo,
-        syncStatus: "SYNCED",
+        syncStatus,
         versaoEntidade: resultVersion,
         updatedAt: timestamp,
       });
@@ -1316,21 +2020,32 @@ export async function applyPushResultAtomically(
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "SYNCED",
-        timestamp,
-      );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "SYNCED",
+        syncStatus,
         timestamp,
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "SYNCED",
+        attachmentSyncStatusForRdo(syncStatus),
         timestamp,
       );
+    }
+
+    if (task) {
+      const resultVersion =
+        result.resultado &&
+        typeof result.resultado.versaoEntidade === "number"
+          ? result.resultado.versaoEntidade
+          : task.versaoEntidade;
+      await taskStore.put({
+        ...task,
+        syncStatus: await tarefaSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        versaoEntidade: resultVersion,
+        updatedAt: timestamp,
+      });
     }
 
     if (message) {
@@ -1364,29 +2079,60 @@ export async function applyPushResultAtomically(
       updatedAt: timestamp,
     });
 
+    await Promise.all(
+      correlatedEvents.map((event) =>
+        eventStore.put({
+          ...event,
+          syncStatus: "SYNC_FAILED",
+          result: "CONFLICT",
+          errorCategory: null,
+        }),
+      ),
+    );
+
     if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
       await rdoStore.put(
-        rdoAfterConflict(rdo, result, timestamp),
+        {
+          ...rdoAfterConflict(rdo, result, timestamp),
+          syncStatus,
+        },
       );
 
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "CONFLICT",
-        timestamp,
-      );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "SYNC_FAILED",
+        syncStatus,
         timestamp,
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "SYNC_FAILED",
+        attachmentSyncStatusForRdo(syncStatus),
         timestamp,
       );
+    }
+    if (task) {
+      const conflictVersion =
+        result.conflito && typeof result.conflito === "object"
+          ? (result.conflito as Record<string, unknown>).versaoAtual
+          : null;
+      await taskStore.put({
+        ...task,
+        syncStatus: await tarefaSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        versaoEntidade:
+          typeof conflictVersion === "number" &&
+          Number.isFinite(conflictVersion)
+            ? conflictVersion
+            : task.versaoEntidade,
+        updatedAt: timestamp,
+      });
     }
     if (message) {
       await messageStore.put({
@@ -1394,6 +2140,70 @@ export async function applyPushResultAtomically(
         syncStatus: "FALHOU",
         ultimoErro:
           result.erro ?? "Conflito informado pelo servidor.",
+        updatedAt: timestamp,
+      });
+    }
+  } else if (result.status === "REJEITADA") {
+    await outboxStore.put({
+      ...mutation,
+      status: "REJECTED",
+      ultimoErro:
+        result.erro ?? "Mutacao rejeitada pelo servidor.",
+      conflito: result.conflito ?? null,
+      updatedAt: timestamp,
+    });
+
+    await Promise.all(
+      correlatedEvents.map((event) =>
+        eventStore.put({
+          ...event,
+          syncStatus: "SYNC_FAILED",
+          result: "REJECTED",
+          errorCategory: serverRejectionCategory(result),
+        }),
+      ),
+    );
+
+    if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
+      await rdoStore.put({
+        ...rdo,
+        syncStatus,
+        updatedAt: timestamp,
+      });
+
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        syncStatus,
+        timestamp,
+      );
+      await updateRdoAttachmentsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        attachmentSyncStatusForRdo(syncStatus),
+        timestamp,
+      );
+    }
+    if (task) {
+      await taskStore.put({
+        ...task,
+        syncStatus: await tarefaSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        updatedAt: timestamp,
+      });
+    }
+    if (message) {
+      await messageStore.put({
+        ...message,
+        syncStatus: "FALHOU",
+        ultimoErro:
+          result.erro ?? "Mutacao rejeitada pelo servidor.",
         updatedAt: timestamp,
       });
     }
@@ -1407,31 +2217,50 @@ export async function applyPushResultAtomically(
       updatedAt: timestamp,
     });
 
+    await Promise.all(
+      correlatedEvents.map((event) =>
+        eventStore.put({
+          ...event,
+          syncStatus: "SYNC_FAILED",
+          result: "PENDING",
+          errorCategory: null,
+        }),
+      ),
+    );
+
     if (rdo) {
+      const syncStatus = await rdoSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
       await rdoStore.put({
         ...rdo,
-        syncStatus: "ERROR",
+        syncStatus,
         updatedAt: timestamp,
       });
 
       await updateRdoChildrenSyncStatus(
         transaction,
         mutation.entidadeId,
-        "ERROR",
-        timestamp,
-      );
-      await updateRdoOperationalEventsSyncStatus(
-        transaction,
-        mutation.entidadeId,
-        "SYNC_FAILED",
+        syncStatus,
         timestamp,
       );
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,
-        "SYNC_FAILED",
+        attachmentSyncStatusForRdo(syncStatus),
         timestamp,
       );
+    }
+    if (task) {
+      await taskStore.put({
+        ...task,
+        syncStatus: await tarefaSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        updatedAt: timestamp,
+      });
     }
     if (message) {
       await messageStore.put({
@@ -1461,11 +2290,12 @@ export async function returnMutationToPending(
   const outboxStore =
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
   const messageStore = transaction.objectStore("mensagens");
 
   const mutation = await outboxStore.get(clientMutationId);
 
-  if (!mutation) {
+  if (!mutation || mutation.status !== "SYNCING") {
     await transaction.done;
     return;
   }
@@ -1482,23 +2312,28 @@ export async function returnMutationToPending(
   const rdo = await rdoStore.get(mutation.entidadeId);
 
   if (rdo) {
+    const syncStatus = await rdoSyncStatusFromOutbox(
+      outboxStore,
+      mutation.entidadeId,
+    );
     await rdoStore.put({
       ...rdo,
-      syncStatus: "PENDING_SYNC",
+      syncStatus,
       updatedAt: timestamp,
     });
 
     await updateRdoChildrenSyncStatus(
       transaction,
       mutation.entidadeId,
-      "PENDING_SYNC",
+      syncStatus,
       timestamp,
     );
     await updateRdoOperationalEventsSyncStatus(
       transaction,
       mutation.entidadeId,
-      "PENDING_SYNC",
+      attachmentSyncStatusForRdo(syncStatus),
       timestamp,
+      mutation.clientMutationId,
     );
     await updateRdoAttachmentsSyncStatus(
       transaction,
@@ -1506,6 +2341,20 @@ export async function returnMutationToPending(
       "PENDING_SYNC",
       timestamp,
     );
+  }
+
+  if (mutation.entidadeTipo === "TAREFA") {
+    const task = await taskStore.get(mutation.entidadeId);
+    if (task) {
+      await taskStore.put({
+        ...task,
+        syncStatus: await tarefaSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        updatedAt: timestamp,
+      });
+    }
   }
 
   if (mutation.entidadeTipo === "MENSAGEM") {
@@ -1547,6 +2396,86 @@ function applySafeRdoEvent(
   return updated;
 }
 
+function nullableTextValue(value: unknown): string | null {
+  const text = textValue(value);
+  return text || null;
+}
+
+function taskPriorityFromPayload(
+  value: unknown,
+): TarefaRecord["prioridade"] | null {
+  const parsed = typeof value === "number"
+    ? value
+    : Number(textValue(value));
+
+  return parsed === 1 || parsed === 2 || parsed === 3
+    ? parsed
+    : null;
+}
+
+function taskRecordFromSyncPayload(
+  payload: Record<string, unknown>,
+  event: SyncPullEvent,
+  timestamp: string,
+): TarefaRecord | null {
+  const id = textValue(payload.id) || textValue(event.entidadeId);
+  const obraId = textValue(payload.obraId);
+  const titulo = textValue(payload.titulo);
+  const prioridade = taskPriorityFromPayload(payload.prioridade);
+
+  if (!id || !obraId || !titulo || prioridade === null) {
+    return null;
+  }
+
+  const payloadVersion = payload.versaoEntidade;
+  const version = typeof event.versaoEntidade === "number"
+    ? event.versaoEntidade
+    : typeof payloadVersion === "number"
+      ? payloadVersion
+      : null;
+
+  return {
+    id,
+    obraId,
+    equipe: textValue(payload.equipe),
+    titulo,
+    observacoes: textValue(payload.observacoes),
+    criadaPor: textValue(payload.criadaPor),
+    criadaPorColaboradorId: nullableTextValue(
+      payload.criadaPorColaboradorId,
+    ),
+    responsavelEquipe: textValue(payload.responsavelEquipe),
+    responsavelColaboradorId: nullableTextValue(
+      payload.responsavelColaboradorId,
+    ),
+    prioridade,
+    concluida: payload.concluida === true,
+    concluidaEm: nullableTextValue(payload.concluidaEm),
+    createdAt: textValue(payload.createdAt) || timestamp,
+    updatedAt: textValue(payload.updatedAt) || timestamp,
+    versaoEntidade: version,
+    syncStatus: "SYNCED",
+    deletadaEm: nullableTextValue(payload.deletadaEm),
+  };
+}
+
+function shouldApplyPulledTask(
+  existing: TarefaRecord,
+  incoming: TarefaRecord,
+): boolean {
+  if (
+    existing.syncStatus !== undefined &&
+    existing.syncStatus !== "SYNCED"
+  ) {
+    return false;
+  }
+
+  const existingVersion = existing.versaoEntidade ?? 0;
+  const incomingVersion = incoming.versaoEntidade ?? 0;
+
+  return incomingVersion >= existingVersion;
+}
+
 export async function applyPulledEventsAtomically(
   events: SyncPullEvent[],
   nextCommitSeq: number,
@@ -1557,6 +2486,7 @@ export async function applyPulledEventsAtomically(
     [
       "processed_events",
       "rdos",
+      "tarefas",
       "sync_state",
       "obras",
       "previsao_snapshots",
@@ -1567,6 +2497,7 @@ export async function applyPulledEventsAtomically(
   const processedStore =
     transaction.objectStore("processed_events");
   const rdoStore = transaction.objectStore("rdos");
+  const taskStore = transaction.objectStore("tarefas");
   const syncStateStore =
     transaction.objectStore("sync_state");
 
@@ -1625,6 +2556,25 @@ export async function applyPulledEventsAtomically(
         await rdoStore.put(
           applySafeRdoEvent(localRdo, event),
         );
+      }
+    }
+
+    if (
+      event.entidadeTipo === "TAREFA" &&
+      event.payload
+    ) {
+      const incoming = taskRecordFromSyncPayload(
+        event.payload,
+        event,
+        nowUtc(),
+      );
+
+      if (incoming) {
+        const existing = await taskStore.get(incoming.id);
+
+        if (!existing || shouldApplyPulledTask(existing, incoming)) {
+          await taskStore.put(incoming);
+        }
       }
     }
 

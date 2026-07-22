@@ -20,6 +20,10 @@ import {
   saveStaviaSnapshot,
 } from "./staviaSnapshotStorage";
 import { answerStaviaPanelQuestion } from "./staviaPanelAnswer";
+import {
+  mustResetStaviaChatHistory,
+  STAVIA_CHAT_MEMORY_POLICY_VERSION,
+} from "./staviaChatMemoryPolicy";
 import type {
   StaviaConfidence,
   StaviaConsultaResponse,
@@ -63,6 +67,8 @@ interface StaviaContextOption {
 }
 
 const CHAT_STORAGE_KEY = "cortex:stavia:chat:operacional";
+const CHAT_MEMORY_POLICY_KEY =
+  "cortex:stavia:chat:memory-policy";
 const LAST_CONTEXT_KEY = "cortex:stavia:last-context";
 const LAUNCHER_DRAG_THRESHOLD = 6;
 
@@ -84,6 +90,19 @@ function createLocalId(): string {
 
 function loadChatMessages(): StaviaChatMessage[] {
   try {
+    if (
+      mustResetStaviaChatHistory(
+        window.localStorage.getItem(CHAT_MEMORY_POLICY_KEY),
+      )
+    ) {
+      window.localStorage.removeItem(CHAT_STORAGE_KEY);
+      window.localStorage.setItem(
+        CHAT_MEMORY_POLICY_KEY,
+        STAVIA_CHAT_MEMORY_POLICY_VERSION,
+      );
+      return [];
+    }
+
     const raw = window.localStorage.getItem(CHAT_STORAGE_KEY);
     if (!raw) {
       return [];
@@ -110,6 +129,11 @@ function loadChatMessages(): StaviaChatMessage[] {
 
 function persistChatMessages(messages: StaviaChatMessage[]) {
   try {
+    window.localStorage.setItem(
+      CHAT_MEMORY_POLICY_KEY,
+      STAVIA_CHAT_MEMORY_POLICY_VERSION,
+    );
+
     if (messages.length === 0) {
       window.localStorage.removeItem(CHAT_STORAGE_KEY);
       return;
