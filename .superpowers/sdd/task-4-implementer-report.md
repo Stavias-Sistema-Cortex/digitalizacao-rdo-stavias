@@ -8,11 +8,16 @@
 - Branch: `feat/cortex.v3-delivery`.
 - Original implementation commit: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
 - Review-fix base: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
+- Re-review boundary-coverage fix base:
+  `00d1800d7e9b822674d9816675bc129914234a77`.
 - Archive lineage recorded by the plan: `b9b619e`.
 - This review fix does not change frontend runtime, offline behavior, RDO
   behavior, Financeiro behavior, skills, plans, or Task 5+ implementation.
   Two pre-existing backend test names/comments were made assistant-neutral;
   their assertions and product behavior are unchanged.
+- The re-review coverage fix changes only
+  `StaviaRuntimeBoundaryTest.java` and this report. It does not change V45.1,
+  readiness, archive, frontend, or any later task.
 
 ## Review findings addressed
 
@@ -69,17 +74,29 @@ Checksums retained:
 - MySQL V22:
   `c87f7dbcff6084f34581cb854eab29826ad03c35708732480d22b81808410467`;
 - PostgreSQL V44:
-  `7dbea9ba9027e06c458b7fe7fd3ea1181bff56b457973590eaddff60754a86eb`.
+  `7dbea9ba9027e06c458b7fe7fd3ea1181bff56b457973590eaddff60754a86eb`;
+- frozen V44 required-table inventory:
+  `2df45000bc0664b8754afbc12aee0a3ea28feb160efdd3b7636c697511ea0cfa`;
+- PostgreSQL V45.1, unchanged by the re-review fix:
+  `fbdf0bb82a2218e14dca5bbdf06e149165eea037abd231b9eb29c9f2913f80fc`.
 
 ### Boundary contract and allowlist
 
-`StaviaRuntimeBoundaryTest` now inspects both paths and content across:
+`StaviaRuntimeBoundaryTest` now discovers and inspects both paths and content
+across:
 
 - `apps/api/src/main/**` and `apps/api/src/test/**`, including resources;
 - `apps/api/pom.xml`;
-- `.env.example`, both compose examples, and `scripts/**`;
+- every repository `.env*`, `Dockerfile*`, `compose*`, and `docker-compose*`;
+- root `scripts/**`;
 - `target/classes/**`;
 - application entries inside every direct `target/*.jar`.
+
+Discovery uses `Files.walk` plus path/name patterns rather than a hand-written
+file list. Archive, `.git`, target/build/dist/coverage, dependency, and Gradle
+output trees are excluded. Regression tests explicitly require
+`.env.postgresql.example`, `apps/api/Dockerfile`, and the active PostgreSQL V44
+resource contract to be present in the collected files.
 
 It rejects assistant-named directories/resources, package/classes, routes,
 environment/configuration keys, scripts, and compiled/JAR content. It resolves
@@ -92,8 +109,15 @@ The explicit, documented source allowlist is limited to:
 - immutable MySQL V22;
 - immutable PostgreSQL V44;
 - forward-only retirement migration V45.1;
-- frozen V44 required-table inventory;
-- the V44-only structural resource contract.
+- frozen V44 required-table inventory.
+
+`PostgresqlBaselineResourceContractTest.java` is no longer file-allowlisted.
+Its one necessary V44 historical occurrence is accepted only when all of these
+remain exact: file path, token `stavia_contexto_obra`, occurrence count `1`,
+line `118`, and the complete `assertObjectStorageBoundary(...)` fragment. Only
+that token is neutralized for inspection; the rest of the file is still scanned
+for forbidden paths/content. A regression appends a second assistant token and
+requires an `[assistant content]` violation.
 
 The boundary test source itself is excluded because its required class/file
 name contains the retired assistant spelling. The archive is outside all
@@ -102,6 +126,43 @@ migration resources above; no assistant fixture, Java package, route, or
 configuration is allowed.
 
 ## TDD evidence
+
+### Re-review boundary-coverage RED
+
+1. The current two-test boundary passed before the coverage change.
+2. A behavior-preserving extraction exposed the collected source/launcher
+   files; the same two tests remained green.
+3. The three discovery regressions then produced 5 tests, 3 assertion failures,
+   0 errors: `.env.postgresql.example`, `apps/api/Dockerfile`, and
+   `PostgresqlBaselineResourceContractTest.java` were each absent from the
+   collected files.
+4. The minimal historical-exception contract was added before implementation.
+   The final RED run produced 7 tests, 4 assertion failures, 0 errors: the same
+   three discovery failures plus the still-unhandled legitimate V44 occurrence.
+   The synthetic second-occurrence rejection already passed.
+
+### Re-review boundary-coverage GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 7 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 740 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 740 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 exercised both the isolated V44 baseline and the current
+     V44/V45/V45.1 chain.
+4. After `verify` produced the 95,933,770-byte Spring Boot JAR, the boundary was
+   run from `/tmp` with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 7 tests, 0 failures/errors/skips; the JAR application entries were scanned.
+5. Recomputed SHA-256 values for V18, V22, V44, the frozen V44 inventory, and
+   V45.1 match the values recorded above. `git diff --check` exits `0`.
+
+The PostgreSQL/Flyway support warning described below remains unchanged.
 
 ### Expanded boundary RED
 

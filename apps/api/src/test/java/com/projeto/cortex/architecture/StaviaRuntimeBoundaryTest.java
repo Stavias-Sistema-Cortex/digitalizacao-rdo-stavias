@@ -25,11 +25,26 @@ class StaviaRuntimeBoundaryTest {
             "apps/api/src/test/java/com/projeto/cortex/architecture/"
                     + "Sta" + "via" + "RuntimeBoundaryTest.java"
     );
+    private static final Path POSTGRESQL_BASELINE_CONTRACT = Path.of(
+            "apps/api/src/test/java/com/projeto/cortex/config/"
+                    + "PostgresqlBaselineResourceContractTest.java"
+    );
+    private static final String POSTGRESQL_BASELINE_HISTORICAL_TOKEN =
+            "stavia_contexto_obra";
+    private static final int POSTGRESQL_BASELINE_HISTORICAL_LINE = 118;
+    private static final String POSTGRESQL_BASELINE_HISTORICAL_FRAGMENT =
+            "assertObjectStorageBoundary(sql, \"" + POSTGRESQL_BASELINE_HISTORICAL_TOKEN
+                    + "\", \"storage_key varchar(512)\");";
+    private static final Set<String> EXCLUDED_DISCOVERY_DIRECTORIES = Set.of(
+            ".git", ".gradle", "archive", "build", "coverage", "dist",
+            "node_modules", "target"
+    );
 
     /**
-     * Immutable compatibility inputs. V18/V22 are the already-applied MySQL
-     * history; V44 and its two baseline contracts prove the frozen PostgreSQL
-     * target-44 schema. Retirement belongs exclusively in a forward migration.
+     * Immutable file-level compatibility inputs. V18/V22 are the already-applied
+     * MySQL history; V44 and its frozen inventory prove the target-44 schema.
+     * Retirement belongs exclusively in the forward V45.1 migration. The active
+     * V44 Java contract is scanned with the exact occurrence exception below.
      */
     private static final Map<Path, String> HISTORICAL_ALLOWLIST = Map.of(
             Path.of("apps/api/src/main/resources/db/migration/"
@@ -45,10 +60,7 @@ class StaviaRuntimeBoundaryTest {
                     + "V45_1__retire_stavia_runtime.sql"),
             "forward-only PostgreSQL retirement migration V45.1",
             Path.of("apps/api/src/test/resources/postgresql/v44-required-tables.txt"),
-            "frozen V44 table inventory",
-            Path.of("apps/api/src/test/java/com/projeto/cortex/config/"
-                    + "PostgresqlBaselineResourceContractTest.java"),
-            "V44-only structural contract"
+            "frozen V44 table inventory"
     );
     private static final Set<String> COMPILED_HISTORICAL_ALLOWLIST = Set.of(
             "db/migration/V18__create_stavia_worksite_context.sql",
@@ -61,30 +73,150 @@ class StaviaRuntimeBoundaryTest {
     void activeBackendSourcesResourcesAndLaunchersContainNoAssistantRuntime()
             throws IOException {
         Path repository = repositoryRoot();
-        List<Path> surfaces = List.of(
-                repository.resolve("apps/api/src/main"),
-                repository.resolve("apps/api/src/test"),
-                repository.resolve("apps/api/pom.xml"),
-                repository.resolve(".env.example"),
-                repository.resolve("compose.local.yml"),
-                repository.resolve("compose.production.example.yml"),
-                repository.resolve("scripts")
-        );
-
         List<String> violations = new ArrayList<>();
-        for (Path surface : surfaces) {
-            for (Path file : filesUnder(surface)) {
-                Path relative = repository.relativize(file);
-                if (relative.equals(THIS_TEST) || HISTORICAL_ALLOWLIST.containsKey(relative)) {
-                    continue;
-                }
-                inspect(relative.toString(), Files.readAllBytes(file), violations);
-            }
+        for (Path file : activeSourceAndLauncherFiles(repository)) {
+            Path relative = repository.relativize(file);
+            inspectSourceFile(relative, Files.readAllBytes(file), violations);
         }
 
         assertThat(violations)
                 .as("assistant paths/content outside archive and the documented immutable allowlist")
                 .isEmpty();
+    }
+
+    @Test
+    void discoversEveryBackendEnvironmentSurface() throws IOException {
+        assertThat(activeRelativeSourceAndLauncherFiles())
+                .contains(Path.of(".env.postgresql.example"));
+    }
+
+    @Test
+    void discoversEveryBackendContainerSurface() throws IOException {
+        assertThat(activeRelativeSourceAndLauncherFiles())
+                .contains(Path.of("apps/api/Dockerfile"));
+    }
+
+    @Test
+    void discoversActiveHistoricalContractWithoutExemptingItsWholeFile()
+            throws IOException {
+        assertThat(activeRelativeSourceAndLauncherFiles())
+                .contains(POSTGRESQL_BASELINE_CONTRACT);
+    }
+
+    @Test
+    void allowsOnlyTheVerifiedHistoricalOccurrenceInTheActiveBaselineContract()
+            throws IOException {
+        Path repository = repositoryRoot();
+        List<String> violations = new ArrayList<>();
+
+        inspectSourceFile(POSTGRESQL_BASELINE_CONTRACT,
+                Files.readAllBytes(repository.resolve(POSTGRESQL_BASELINE_CONTRACT)),
+                violations);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void rejectsAnyAdditionalAssistantOccurrenceInTheActiveBaselineContract()
+            throws IOException {
+        Path repository = repositoryRoot();
+        byte[] current = Files.readAllBytes(repository.resolve(POSTGRESQL_BASELINE_CONTRACT));
+        byte[] extra = (new String(current, StandardCharsets.UTF_8)
+                + System.lineSeparator() + "// stavia_new_runtime").getBytes(StandardCharsets.UTF_8);
+        List<String> violations = new ArrayList<>();
+
+        inspectSourceFile(POSTGRESQL_BASELINE_CONTRACT, extra, violations);
+
+        assertThat(violations)
+                .containsExactly(POSTGRESQL_BASELINE_CONTRACT + " [assistant content]");
+    }
+
+    private static List<Path> activeRelativeSourceAndLauncherFiles() throws IOException {
+        Path repository = repositoryRoot();
+        return activeSourceAndLauncherFiles(repository).stream()
+                .map(repository::relativize)
+                .toList();
+    }
+
+    private static List<Path> activeSourceAndLauncherFiles(Path repository) throws IOException {
+        try (Stream<Path> paths = Files.walk(repository)) {
+            return paths.filter(Files::isRegularFile)
+                    .filter(file -> {
+                        Path relative = repository.relativize(file);
+                        return !isExcludedDiscoveryPath(relative)
+                                && isActiveSourceOrLauncherSurface(relative)
+                                && !relative.equals(THIS_TEST)
+                                && !HISTORICAL_ALLOWLIST.containsKey(relative);
+                    })
+                    .sorted()
+                    .toList();
+        }
+    }
+
+    private static boolean isExcludedDiscoveryPath(Path relative) {
+        for (Path segment : relative) {
+            if (EXCLUDED_DISCOVERY_DIRECTORIES.contains(segment.toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isActiveSourceOrLauncherSurface(Path relative) {
+        String fileName = relative.getFileName().toString();
+        return relative.startsWith(Path.of("apps/api/src/main"))
+                || relative.startsWith(Path.of("apps/api/src/test"))
+                || relative.equals(Path.of("apps/api/pom.xml"))
+                || relative.startsWith(Path.of("scripts"))
+                || fileName.startsWith(".env")
+                || fileName.startsWith("Dockerfile")
+                || fileName.startsWith("compose")
+                || fileName.startsWith("docker-compose");
+    }
+
+    private static void inspectSourceFile(
+            Path relative, byte[] bytes, List<String> violations) {
+        if (relative.equals(POSTGRESQL_BASELINE_CONTRACT)) {
+            inspectPostgresqlBaselineContract(relative, bytes, violations);
+            return;
+        }
+        inspect(relative.toString(), bytes, violations);
+    }
+
+    private static void inspectPostgresqlBaselineContract(
+            Path relative, byte[] bytes, List<String> violations) {
+        String content = new String(bytes, StandardCharsets.UTF_8);
+        String[] lines = content.split("\\R", -1);
+        int tokenOccurrences = literalOccurrences(
+                content, POSTGRESQL_BASELINE_HISTORICAL_TOKEN);
+        boolean exactLine = lines.length >= POSTGRESQL_BASELINE_HISTORICAL_LINE
+                && lines[POSTGRESQL_BASELINE_HISTORICAL_LINE - 1].trim()
+                        .equals(POSTGRESQL_BASELINE_HISTORICAL_FRAGMENT);
+
+        if (tokenOccurrences != 1 || !exactLine) {
+            violations.add(relative + " [historical exception mismatch: expected exactly one \""
+                    + POSTGRESQL_BASELINE_HISTORICAL_TOKEN + "\" at line "
+                    + POSTGRESQL_BASELINE_HISTORICAL_LINE + " as \""
+                    + POSTGRESQL_BASELINE_HISTORICAL_FRAGMENT + "\"]");
+            inspect(relative.toString(), bytes, violations);
+            return;
+        }
+
+        int tokenStart = content.indexOf(POSTGRESQL_BASELINE_HISTORICAL_TOKEN);
+        String inspectedContent = content.substring(0, tokenStart)
+                + "historical_contexto_obra"
+                + content.substring(tokenStart + POSTGRESQL_BASELINE_HISTORICAL_TOKEN.length());
+        inspect(relative.toString(), inspectedContent.getBytes(StandardCharsets.UTF_8), violations);
+    }
+
+    private static int literalOccurrences(String content, String token) {
+        int count = 0;
+        for (int index = content.indexOf(token);
+                index >= 0;
+                index = content.indexOf(token, index + token.length())) {
+            count++;
+        }
+        return count;
     }
 
     @Test
