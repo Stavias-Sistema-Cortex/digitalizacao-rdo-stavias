@@ -100,42 +100,36 @@ describe("staviaLocalEngine · tarefas", () => {
     }),
   ]);
 
-  it("responde quem criou tarefas mesmo com caixa e acento diferentes", () => {
+  it("encaminha a autoria de criação de tarefa para Home > Memória", () => {
     const response = ask(
       snapshot,
       "JOAO lucas criou alguma tarefa?",
     );
 
     expect(response).not.toBeNull();
-    expect(response?.intent).toBe("TAREFAS");
-    expect(response?.answer.answer).toContain(
-      "Sinalizar desvio noturno",
-    );
-    expect(response?.answer.answer).toContain(
-      "Aferir usina",
-    );
-    expect(response?.answer.answer).not.toContain(
-      "Organizar canteiro",
-    );
-    // Quando foram criadas: a data precisa aparecer.
-    expect(response?.answer.answer).toMatch(
-      /criada em \d{2}\/\d{2}\/\d{4}/,
-    );
-    expect(response?.answer.sources).toHaveLength(2);
+    expect(response?.intent).toBe("TIMELINE_OPERACIONAL");
+    expect(response?.answer.answer).toContain("Home → Memória");
+    expect(response?.answer.answer).not.toContain("Sinalizar desvio noturno");
   });
 
-  it("funciona para qualquer colaboradora, sem acento na pergunta", () => {
+  it("encaminha a data de conclusão de tarefa para Home > Memória", () => {
     const response = ask(
       snapshot,
-      "maria jose criou tarefas?",
+      "Quando a tarefa Aferir usina foi concluída?",
     );
 
-    expect(response?.answer.answer).toContain(
-      "Organizar canteiro",
+    expect(response?.intent).toBe("TIMELINE_OPERACIONAL");
+    expect(response?.answer.answer).toContain("Home → Memória");
+  });
+
+  it("encaminha o campo data de conclusão para Home > Memória", () => {
+    const response = ask(
+      snapshot,
+      "Qual a data de conclusão da tarefa Aferir usina?",
     );
-    expect(response?.answer.answer).not.toContain(
-      "Aferir usina",
-    );
+
+    expect(response?.intent).toBe("TIMELINE_OPERACIONAL");
+    expect(response?.answer.answer).toContain("Home → Memória");
   });
 
   it("filtra por responsável da equipe", () => {
@@ -150,10 +144,23 @@ describe("staviaLocalEngine · tarefas", () => {
     );
   });
 
+  it("não usa a autoria como filtro fora de Home > Memória", () => {
+    const response = ask(
+      snapshot,
+      "quais tarefas de joao lucas?",
+    );
+
+    expect(response?.answer.answer).toContain("Não encontrei tarefas");
+    expect(response?.answer.answer).not.toContain(
+      "Sinalizar desvio noturno",
+    );
+    expect(response?.answer.answer).not.toContain("Aferir usina");
+  });
+
   it("filtra tarefas concluídas", () => {
     const response = ask(
       snapshot,
-      "quais tarefas do joao lucas foram concluidas?",
+      "quais tarefas foram concluidas?",
     );
 
     expect(response?.answer.answer).toContain(
@@ -169,6 +176,20 @@ describe("staviaLocalEngine · tarefas", () => {
 
     expect(response?.answer.answer).toContain(
       "3 tarefa(s)",
+    );
+    expect(response?.answer.answer).toContain("pendente");
+    expect(response?.answer.answer).toContain("concluída");
+    expect(response?.answer.answer).not.toContain("João Lucas");
+    expect(response?.answer.answer).not.toMatch(/criada em/i);
+    expect(response?.answer.answer).not.toMatch(/concluída em/i);
+    expect(response?.answer.sources[0]?.attributes).not.toHaveProperty(
+      "criadaPor",
+    );
+    expect(response?.answer.sources[0]?.attributes).not.toHaveProperty(
+      "criadaEm",
+    );
+    expect(response?.answer.sources[0]?.attributes).not.toHaveProperty(
+      "concluidaEm",
     );
   });
 
@@ -221,10 +242,10 @@ describe("staviaLocalEngine · tarefas", () => {
     );
   });
 
-  it("diz claramente quando a pessoa não tem tarefas", () => {
+  it("mantém a consulta de responsabilidades no estado atual", () => {
     const response = ask(
       snapshot,
-      "fulano beltrano criou alguma tarefa?",
+      "quais tarefas estão sob responsabilidade de ninguém?",
     );
 
     expect(response?.answer.answer).toContain(

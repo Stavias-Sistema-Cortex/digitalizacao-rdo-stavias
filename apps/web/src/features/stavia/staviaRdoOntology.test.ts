@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   answerWithRdoOntology,
+  isMemoryOnlyOntologyAttribute,
   loadRdoOntology,
   matchesOntologyAttribute,
 } from "./staviaRdoOntology";
@@ -683,32 +684,24 @@ describe("staviaRdoOntology", () => {
         + "(RDO 123 de 01/07/2026).",
     );
 
-    expect(answer("Qual a origem do evento 2?")).toBe(
-      "Origem de Evento 2 (RDO_EDITADO): ONLINE "
-        + "(RDO 123 de 01/07/2026).",
-    );
   });
 
-  it("responde células de evento operacional pelo ordinal visual", () => {
-    expect(answer("Qual a origem do evento 1?")).toBe(
-      "Origem de Evento 1 (FOTO_ADICIONADA): OFFLINE "
-        + "(RDO 123 de 01/07/2026).",
-    );
-
-    expect(answer("Qual o status do evento 1?")).toBe(
-      "Status de sincronização de Evento 1 (FOTO_ADICIONADA): PENDING_SYNC "
-        + "(RDO 123 de 01/07/2026).",
-    );
-
-    expect(answer("Quem registrou o evento 1?")).toBe(
-      "Usuário responsável de Evento 1 (FOTO_ADICIONADA): João Silva "
-        + "(RDO 123 de 01/07/2026).",
-    );
-
-    expect(answer("Qual a versao do schema do evento 1?")).toBe(
-      "Versão do schema de Evento 1 (FOTO_ADICIONADA): 1 "
-        + "(RDO 123 de 01/07/2026).",
-    );
+  it("reserva as células de evento operacional para Home > Memória", () => {
+    for (const pergunta of [
+      "Qual a origem do evento 1?",
+      "Qual o status do evento 1?",
+      "Quem registrou o evento 1?",
+      "Qual a versao do schema do evento 1?",
+    ]) {
+      expect(
+        answerWithRdoOntology({
+          ontology,
+          pergunta,
+          rdos,
+          operationalEvents,
+        }),
+      ).toBeNull();
+    }
   });
 
   it("mantém cobertura declarativa dos campos do snapshot RDO", () => {
@@ -934,11 +927,15 @@ describe("staviaRdoOntology", () => {
     // Entidades fora do escopo "rdo" (ex.: pdor) são atendidas pelos
     // caminhos dedicados do motor, não pelo caminho genérico da ontologia.
     const genericEntities = ontology.entities.filter(
-      (entity) => (entity.scope ?? "rdo") === "rdo",
+      (entity) =>
+        (entity.scope ?? "rdo") === "rdo" &&
+        entity.name !== "operationalEvent",
     );
 
     for (const entity of genericEntities) {
-      for (const attribute of entity.attributes) {
+      for (const attribute of entity.attributes.filter(
+        (attribute) => !isMemoryOnlyOntologyAttribute(attribute),
+      )) {
         const pergunta = questionFor(entity.name, attribute.label);
 
         expect(
@@ -963,6 +960,35 @@ describe("staviaRdoOntology", () => {
       }
     }
   }, 15_000);
+
+  it("não expõe eventos operacionais pelo resolvedor genérico", () => {
+    const response = answerWithRdoOntology({
+      ontology,
+      pergunta: "Qual o tipo do evento 1?",
+      rdos,
+      operationalEvents,
+    });
+
+    expect(matchesOntologyAttribute(ontology, "Qual o tipo do evento 1?")).toBe(false);
+    expect(response).toBeNull();
+  });
+
+  it("reserva campos temporais de mutação do RDO para Home > Memória", () => {
+    const pergunta = "Qual a data de criação do RDO 123?";
+    const response = answerWithRdoOntology({
+      ontology,
+      pergunta,
+      rdos,
+      operationalEvents,
+    });
+    const fullRecord = responseFor("Mostre todos os dados do RDO 123");
+
+    expect(matchesOntologyAttribute(ontology, pergunta)).toBe(false);
+    expect(response).toBeNull();
+    expect(fullRecord.answer.answer).not.toContain("Criado em");
+    expect(fullRecord.answer.answer).not.toContain("Enviado em");
+    expect(fullRecord.answer.answer).not.toContain("Aprovado em");
+  });
 
   it("só ativa o caminho genérico com alias de atributo", () => {
     expect(

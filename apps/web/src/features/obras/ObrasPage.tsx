@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import type {
-  ObraLocalRecord,
-  OperationalEventRecord,
-} from "../../lib/db/db.types";
+import type { ObraLocalRecord } from "../../lib/db/db.types";
 import {
   filterObrasByChip,
   filterObrasByRodovia,
@@ -13,26 +11,14 @@ import {
   type ObraStatusChip,
 } from "../home/homeFilters";
 import { useHomeData } from "../home/useHomeData";
+import { memoryHref } from "../home/memory/memoryLocation";
 import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import { getSession, isAlfa } from "../auth/authSession";
 import {
   buscarPdorAtual,
-  buscarTimelineObra,
   type ObraPdor,
-  type ObraTimelineEvent,
 } from "./obrasApi";
 import { NovaObraForm } from "./gestao/NovaObraForm";
-
-const TRACE_KEYS = [
-  "codigoContrato",
-  "nome",
-  "cliente",
-  "cidade",
-  "uf",
-  "rodovia",
-  "status",
-  "observacoes",
-];
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -109,44 +95,6 @@ function riskClass(risco: string | null): string {
   return "obras-pdor-risk";
 }
 
-function payloadSummary(
-  payload: Record<string, unknown>,
-): string {
-  return TRACE_KEYS
-    .map((key) => {
-      const value = payload[key];
-
-      if (
-        value === null ||
-        value === undefined ||
-        value === ""
-      ) {
-        return null;
-      }
-
-      return `${key}: ${String(value)}`;
-    })
-    .filter((value): value is string => Boolean(value))
-    .join(" · ");
-}
-
-function localEventToTrace(
-  event: OperationalEventRecord,
-): ObraTimelineEvent {
-  return {
-    id: event.id,
-    commitSeq: null,
-    type: event.type,
-    principalEntityType: event.principalEntity.tipo,
-    principalEntityId: event.principalEntity.id,
-    obraId: event.obraId,
-    occurredAt: event.occurredAt,
-    origin: event.origin,
-    syncStatus: event.syncStatus,
-    payload: event.payload,
-  };
-}
-
 function obraSubtitle(obra: ObraLocalRecord): string {
   return [
     obra.codigoContrato,
@@ -164,7 +112,6 @@ export function ObrasPage() {
     focusedObra,
     focusedObraId,
     setFocusedObraId,
-    events,
     isLoading,
     reload,
   } = useHomeData();
@@ -172,13 +119,6 @@ export function ObrasPage() {
     useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
   const [rodoviaFilter, setRodoviaFilter] = useState("");
-  const [timeline, setTimeline] = useState<
-    ObraTimelineEvent[]
-  >([]);
-  const [timelineError, setTimelineError] =
-    useState<string | null>(null);
-  const [isTimelineLoading, setIsTimelineLoading] =
-    useState(false);
   const [pdor, setPdor] = useState<ObraPdor | null>(null);
   const [pdorError, setPdorError] =
     useState<string | null>(null);
@@ -186,8 +126,7 @@ export function ObrasPage() {
     useState(false);
   const [showCreateWorksite, setShowCreateWorksite] =
     useState(false);
-  const { openStavia, setStaviaContext } =
-    useStaviaLauncher();
+  const { setStaviaContext } = useStaviaLauncher();
   const canCreateWorksite = isAlfa(getSession());
 
   useEffect(() => {
@@ -223,55 +162,6 @@ export function ObrasPage() {
       ),
     [obras, chip, ufFilter, rodoviaFilter],
   );
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!focusedObraId) {
-      queueMicrotask(() => {
-        if (!cancelled) {
-          setTimeline([]);
-          setTimelineError(null);
-          setIsTimelineLoading(false);
-        }
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    queueMicrotask(() => {
-      if (!cancelled) {
-        setIsTimelineLoading(true);
-        setTimelineError(null);
-      }
-    });
-
-    buscarTimelineObra(focusedObraId)
-      .then((items) => {
-        if (!cancelled) {
-          setTimeline(items);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setTimeline([]);
-          setTimelineError(
-            error instanceof Error
-              ? error.message
-              : "Timeline indisponivel.",
-          );
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsTimelineLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [focusedObraId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,19 +211,6 @@ export function ObrasPage() {
       cancelled = true;
     };
   }, [focusedObraId]);
-
-  const localTrace = useMemo(
-    () => events.map(localEventToTrace),
-    [events],
-  );
-  const traceEvents =
-    timeline.length > 0 ? timeline : localTrace;
-  const traceSource =
-    timeline.length > 0
-      ? "Cortex online"
-      : localTrace.length > 0
-        ? "Cortex local"
-        : "Sem eventos";
 
   return (
     <CortexShell
@@ -454,17 +331,17 @@ export function ObrasPage() {
                     <h2>{focusedObra.nome}</h2>
                     <p>{obraSubtitle(focusedObra) || "-"}</p>
                   </div>
-                  <button
-                    type="button"
-                    className="obras-stavia-button"
-                    onClick={() =>
-                      openStavia({
-                        obraId: focusedObra?.id ?? "",
-                      })
-                    }
-                  >
-                    StavIA
-                  </button>
+                  <div className="obras-detail-actions">
+                    <Link
+                      to={memoryHref({
+                        obraId: focusedObra.id,
+                        entityType: "OBRA",
+                        entityId: focusedObra.id,
+                      })}
+                    >
+                      Ver na Memória
+                    </Link>
+                  </div>
                 </div>
 
                 <dl className="obras-facts">
@@ -616,63 +493,6 @@ export function ObrasPage() {
                   )}
                 </section>
 
-                <section className="obras-trace">
-                  <div className="obras-trace-header">
-                    <div>
-                      <h3>Rastreabilidade Cortex</h3>
-                      <span>{traceSource}</span>
-                    </div>
-                    <span className="obras-trace-status">
-                      {isTimelineLoading
-                        ? "consultando"
-                        : timelineError
-                          ? "local"
-                          : "sincronizado"}
-                    </span>
-                  </div>
-
-                  {timelineError ? (
-                    <p className="obras-trace-note">
-                      {timelineError}
-                    </p>
-                  ) : null}
-
-                  {traceEvents.length === 0 ? (
-                    <p className="obras-empty">
-                      Nenhum evento operacional registrado.
-                    </p>
-                  ) : (
-                    <ol className="obras-trace-list">
-                      {traceEvents.map((event) => (
-                        <li key={event.id}>
-                          <div>
-                            <strong>{event.type}</strong>
-                            <span>
-                              {formatDateTime(
-                                event.occurredAt,
-                              ) || "-"}
-                            </span>
-                          </div>
-                          <p>
-                            {payloadSummary(event.payload) ||
-                              event.principalEntityId}
-                          </p>
-                          <small>
-                            {[
-                              event.origin,
-                              event.syncStatus,
-                              event.commitSeq === null
-                                ? null
-                                : `commit ${event.commitSeq}`,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </small>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </section>
               </>
             ) : (
               <p className="obras-empty">

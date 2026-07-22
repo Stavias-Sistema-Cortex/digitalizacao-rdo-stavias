@@ -1,8 +1,20 @@
 import type {
+  MutationFieldPatch,
   OutboxMutationRecord,
   SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
+import {
+  isCanonicalOutboxMutation,
+  LEGACY_TRACE_REVIEW_REASON,
+} from "../db/outboxContract";
+
+/** @deprecated Use LEGACY_TRACE_REVIEW_REASON from outboxContract. */
+export const NONCANONICAL_MUTATION_BLOCKED_REASON =
+  LEGACY_TRACE_REVIEW_REASON;
+
+/** @deprecated Use isCanonicalOutboxMutation from outboxContract. */
+export const isCanonicalPushMutation = isCanonicalOutboxMutation;
 
 export interface RegisterDeviceRequest {
   id: string;
@@ -27,6 +39,13 @@ export interface SyncPushMutationRequest {
   payload: Record<string, unknown>;
   criadaNoClienteEm: string;
   correlacaoId: string;
+  fieldPatch: MutationFieldPatch;
+  actorId: string;
+  authorizationScope: string[];
+  ontologyEventId: string;
+  payloadHash: string;
+  causationId: string | null;
+  dependsOnMutationIds: string[];
 }
 
 export interface SyncPushRequest {
@@ -36,8 +55,10 @@ export interface SyncPushRequest {
 
 export type ServerMutationStatus =
   | "APLICADA"
-  | "ERRO"
-  | "DESCARTADA";
+  | "CONCILIADA"
+  | "DESCARTADA"
+  | "REJEITADA"
+  | "ERRO";
 
 export interface SyncMutationEntityResult
   extends Record<string, unknown> {
@@ -93,6 +114,7 @@ export interface SyncRunSummary {
   pushed: number;
   applied: number;
   errors: number;
+  retryableErrors: number;
   conflicts: number;
   pulled: number;
   acknowledgedCommitSeq: number;
@@ -101,6 +123,12 @@ export interface SyncRunSummary {
 export function toPushMutationRequest(
   mutation: OutboxMutationRecord,
 ): SyncPushMutationRequest {
+  if (!isCanonicalPushMutation(mutation)) {
+    throw new TypeError(
+      `Mutacao ${mutation.clientMutationId} bloqueada: envelope canonico v13 incompleto.`,
+    );
+  }
+
   return {
     clientMutationId: mutation.clientMutationId,
     entidadeTipo: mutation.entidadeTipo,
@@ -110,6 +138,13 @@ export function toPushMutationRequest(
     payload: mutation.payload,
     criadaNoClienteEm: mutation.criadaNoClienteEm,
     correlacaoId:
-      mutation.correlationId ?? mutation.clientMutationId,
+      mutation.correlationId,
+    fieldPatch: mutation.fieldPatch,
+    actorId: mutation.trace.actorId,
+    authorizationScope: mutation.trace.authorizationScope,
+    ontologyEventId: mutation.trace.ontologyEventId,
+    payloadHash: mutation.trace.payloadHash,
+    causationId: mutation.trace.causationId,
+    dependsOnMutationIds: mutation.dependsOnMutationIds,
   };
 }

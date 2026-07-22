@@ -180,7 +180,7 @@
   gap: 5px;
   font-size: 0.72rem;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   padding: 2px 9px;
   color: #45514c;
   border: 1px solid rgb(24 33 29 / 15%);
@@ -416,7 +416,7 @@
 
 @media (max-width: 620px) {
   .tarefas-page {
-    padding-top: 84px;
+    padding-top: 24px;
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
 }
@@ -435,7 +435,7 @@
 }
 
 .tarefas-card,
-.tarefa-sugestoes { border-radius: var(--radius-container); }
+.tarefa-sugestoes { border-radius: var(--radius-control); }
 
 .tarefas-equipe-tabs {
   gap: 18px;
@@ -460,7 +460,7 @@
   background: transparent;
   color: var(--color-ink);
   font-weight: 500;
-  box-shadow: inset 0 -3px var(--color-brand-yellow);
+  box-shadow: none;
 }
 
 .tarefas-nova-equipe input,
@@ -495,3 +495,66 @@
 .tarefa-prio-botao,
 .tarefa-form-enviar,
 .tarefa-prio { font-weight: 500; }
+
+/* Cortex 2.1 · controles de compromisso com moldura integral */
+.tarefas-card {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+}
+
+.tarefas-obra-tabs .chip {
+  min-height: 36px;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.tarefas-obra-tabs .chip--active {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+}
+
+.tarefas-equipe-tab {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.tarefas-equipe-tab--active {
+  border: 1px solid var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+  box-shadow: none;
+}
+
+.tarefas-nova-equipe button {
+  border: 1px solid var(--color-ink);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.tarefa-prio {
+  border-radius: var(--radius-control);
+}
+
+.tarefa-sugestoes {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}
+
+.tarefa-form-enviar {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+
+.tarefa-form-enviar:hover:not(:disabled) {
+  background: var(--color-brand-green);
+  border-color: var(--color-brand-green);
+}

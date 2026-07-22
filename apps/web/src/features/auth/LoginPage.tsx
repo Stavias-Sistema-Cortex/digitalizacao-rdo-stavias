@@ -6,7 +6,7 @@ import {
   type SubmitEvent,
 } from "react";
 
-import staviasTile from "../../assets/stavias-s-tile.png";
+import cortexLogo from "../../assets/login/cortex-logo.png";
 import {
   formatCpf,
   validateLoginForm,
@@ -97,12 +97,11 @@ export function LoginPage() {
         <div className="login__identity">
           <div className="login__brand">
             <img
-              className="login__mark"
-              src={staviasTile}
-              alt="Stavias"
+              className="login__brand-lockup"
+              src={cortexLogo}
+              alt="Stavias Córtex"
               draggable={false}
             />
-            <span>Stavias</span>
           </div>
 
           <div className="login__identity-copy">

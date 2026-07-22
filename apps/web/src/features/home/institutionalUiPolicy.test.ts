@@ -7,6 +7,18 @@ describe("Cortex 2.1 institutional UI policy", () => {
     resolve(process.cwd(), "src/index.css"),
     "utf8",
   );
+  const financeApi = readFileSync(
+    resolve(process.cwd(), "src/features/financeiro/financeiroApi.ts"),
+    "utf8",
+  );
+  const financePurchases = readFileSync(
+    resolve(process.cwd(), "src/features/financeiro/FinancePurchasesPanel.tsx"),
+    "utf8",
+  );
+  const financePage = readFileSync(
+    resolve(process.cwd(), "src/features/financeiro/FinanceiroPage.tsx"),
+    "utf8",
+  );
   const obrasPage = readFileSync(
     resolve(process.cwd(), "src/features/obras/ObrasPage.tsx"),
     "utf8",
@@ -48,13 +60,19 @@ describe("Cortex 2.1 institutional UI policy", () => {
     );
   });
 
-  /*
-   * As políticas de Memória (memoryHref, FinancePurchasesPanel) e de receita
-   * rastreável (FinanceRevenueTracePage) ficaram em cortex-2-1; nada disso
-   * existe em develop, então as asserções correspondentes não vieram junto.
-   * O launcher local da StavIA em Obras também segue aqui, porque o link
-   * "Ver na Memória" que o substituiria depende de memoryHref.
-   */
+  it("keeps ontology event listings exclusive to Home > Memória", () => {
+    expect(financeApi).not.toContain("/ontology/timeline");
+    expect(financePurchases).not.toContain("buscarAuditoriaFinanceira");
+    expect(financePurchases).toContain("memoryHref");
+  });
+
+  it("keeps Financeiro focused on traceable operational revenue", () => {
+    expect(financePage).toContain('label: "Rastreio de receita"');
+    expect(financePage).toContain("FinanceRevenueTracePage");
+    expect(financePage).not.toContain('label: "Compras"');
+    expect(financePage).not.toContain('label: "Notas fiscais"');
+    expect(financePage).not.toContain('label: "Pagamentos e cobranças"');
+  });
 
   it("restores the vertical selection bar without a yellow sidebar frame", () => {
     expect(css).toMatch(
@@ -82,6 +100,12 @@ describe("Cortex 2.1 institutional UI policy", () => {
       /\.home-obra-card\s*\{[^}]*border:\s*2px solid var\(--color-ink\)/s,
     );
     expect(css).not.toContain(".brand-tick");
+  });
+
+  it("keeps global StavIA context but removes the local Obras launcher", () => {
+    expect(obrasPage).toContain("setStaviaContext");
+    expect(obrasPage).not.toContain("openStavia");
+    expect(obrasPage).not.toContain("obras-stavia-button");
   });
 
   it("uses the approved Obras status and fact treatment", () => {

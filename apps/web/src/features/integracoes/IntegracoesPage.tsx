@@ -53,6 +53,8 @@ function statusLabel(status: string) {
   switch (status) {
     case "SUCCESS":
       return "Sucesso";
+    case "PARTIAL":
+      return "Parcial";
     case "FAILED":
       return "Falha";
     case "RUNNING":
@@ -139,7 +141,9 @@ export function IntegracoesPage({
 
       await load();
 
-      if (result.status === "SUCCESS") {
+      if (
+        result.status === "SUCCESS" || result.status === "PARTIAL"
+      ) {
         setMessage(result.mensagem);
       } else {
         setError(result.mensagem);
@@ -328,7 +332,7 @@ export function IntegracoesPage({
           <dl>
             <div>
               <dt>Estado</dt>
-              <dd>{selected.estado}</dd>
+              <dd>{statusLabel(selected.estado)}</dd>
             </div>
             <div>
               <dt>Última sincronização</dt>

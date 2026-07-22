@@ -1,4 +1,4 @@
-import type { TeamDto, TeamHistoryEventDto } from "./teamApi";
+import type { TeamDto } from "./teamApi";
 
 export interface TeamFilters {
   search: string;
@@ -32,19 +32,4 @@ export function filterTeams(teams: TeamDto[], filters: TeamFilters): TeamDto[] {
     }
     return true;
   });
-}
-
-const EVENT_LABELS: Record<string, string> = {
-  EQUIPE_CRIADA: "Equipe criada",
-  EQUIPE_ATUALIZADA: "Equipe atualizada",
-  EQUIPE_ARQUIVADA: "Equipe arquivada",
-  MEMBRO_EQUIPE_ADICIONADO: "Membro adicionado",
-  MEMBRO_EQUIPE_ATUALIZADO: "Participação atualizada",
-  MEMBRO_EQUIPE_ENCERRADO: "Participação encerrada",
-  EQUIPE_OBRA_ASSOCIADA: "Obra associada",
-  EQUIPE_OBRA_DESASSOCIADA: "Obra desassociada",
-};
-
-export function teamHistoryLabel(event: TeamHistoryEventDto): string {
-  return EVENT_LABELS[event.eventType] ?? event.eventType.replaceAll("_", " ").toLocaleLowerCase("pt-BR");
 }

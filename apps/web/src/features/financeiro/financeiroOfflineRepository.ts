@@ -3,7 +3,13 @@ import {
   listOutboxMutations,
   putOutboxMutation,
 } from "../../lib/db/outboxRepository";
-import type { OutboxMutationRecord } from "../../lib/db/db.types";
+import {
+  getSyncState,
+  updateSyncState,
+} from "../../lib/db/syncStateRepository";
+import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
+import type { MutationActor } from "../../lib/sync/mutationEnvelope";
+import { getSession } from "../auth/authSession";
 import type {
   FinancePurchase,
   FinancePurchaseDraft,
@@ -18,38 +24,78 @@ function nowUtc(): string {
   return new Date().toISOString();
 }
 
+async function financeMutationActor(
+  draft: FinancePurchaseDraft,
+): Promise<MutationActor> {
+  const session = getSession();
+  if (!session) {
+    throw new Error(
+      "Abra uma sessão protegida antes de registrar uma compra local.",
+    );
+  }
+  if (!session.escopoGlobal && !session.obraIds.includes(draft.obraId)) {
+    throw new Error(
+      "A sessão atual não possui acesso à obra desta compra.",
+    );
+  }
+
+  const syncState = await getSyncState();
+  const deviceId =
+    syncState.usuarioId === session.colaboradorId && syncState.deviceId
+      ? syncState.deviceId
+      : crypto.randomUUID();
+  if (
+    syncState.usuarioId !== session.colaboradorId ||
+    syncState.deviceId !== deviceId
+  ) {
+    await updateSyncState({
+      usuarioId: session.colaboradorId,
+      deviceId,
+    });
+  }
+
+  return {
+    actorId: session.colaboradorId,
+    actorName: session.nome,
+    deviceId,
+    authorizationScope: [draft.obraId],
+  };
+}
+
 export async function queueFinancePurchase(
   draft: FinancePurchaseDraft,
 ): Promise<QueuedFinancePurchase> {
   const id = crypto.randomUUID();
-  const clientMutationId = crypto.randomUUID();
   const timestamp = nowUtc();
   const payload = {
     id,
-    clientMutationId,
-    solicitacaoId: draft.solicitacaoId ?? null,
     ...draft,
-    baseVersao: null,
+    solicitacaoId: draft.solicitacaoId ?? null,
   };
-  const mutation: OutboxMutationRecord = {
-    clientMutationId,
-    entidadeTipo: "COMPRA",
-    entidadeId: id,
-    operacao: "CRIAR_COMPRA",
-    baseVersao: null,
-    payload,
-    status: "PENDING",
-    tentativas: 0,
-    ultimaTentativaEm: null,
-    ultimoErro: null,
-    conflito: null,
-    criadaNoClienteEm: timestamp,
-    updatedAt: timestamp,
-    transport: "SYNC_PUSH",
-    correlationId: clientMutationId,
-  };
-  await putOutboxMutation(mutation);
-  return { id, clientMutationId };
+  const actor = await financeMutationActor(draft);
+  const { mutation } = await commitLocalMutation({
+    stores: [],
+    entity: {
+      type: "COMPRA",
+      id,
+      name: draft.numeroPedido || draft.descricao,
+      obraId: draft.obraId,
+      colaboradorId: actor.actorId,
+      relatedEntities: [
+        { tipo: "OBRA", id: draft.obraId },
+      ],
+    },
+    eventType: "COMPRA_CRIADA",
+    operation: "CRIAR_COMPRA",
+    baseVersion: null,
+    previousState: {},
+    newState: payload,
+    actor,
+    createdAt: timestamp,
+    write: () => undefined,
+  });
+
+  return { id, clientMutationId: mutation.clientMutationId };
 }
 
 export async function listPendingFinancePurchases(

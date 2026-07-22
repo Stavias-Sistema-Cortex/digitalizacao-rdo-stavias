@@ -1,3 +1,5 @@
+import type { OperationalFeatureCollection } from "../../features/obras/map/mapGeometry";
+
 export type LocalSyncStatus =
   | "LOCAL_ONLY"
   | "PENDING_SYNC"
@@ -25,7 +27,9 @@ export type OperationalEventType =
   | "TAREFA_CRIADA"
   | "TAREFA_CONCLUIDA"
   | "TAREFA_REABERTA"
-  | "TAREFA_EXCLUIDA";
+  | "TAREFA_EXCLUIDA"
+  | "MENSAGEM_CRIADA"
+  | "COMPRA_CRIADA";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -50,10 +54,36 @@ export type OutboxMutationStatus =
   | "SYNCING"
   | "SYNCED"
   | "ERROR"
-  | "CONFLICT";
+  | "CONFLICT"
+  | "REJECTED";
+
+export type CanonicalMutationResult =
+  | "LOCAL"
+  | "PENDING"
+  | "SYNCING"
+  | "SYNCED"
+  | "CONCILIADA"
+  | "CONFLICT"
+  | "REJECTED";
+
+export interface MutationFieldPatch {
+  changed: Record<string, unknown>;
+  baseValues: Record<string, unknown>;
+}
+
+export interface MutationTrace {
+  actorId: string;
+  deviceId: string;
+  authorizationScope: string[];
+  correlationId: string;
+  causationId: string | null;
+  ontologyEventId: string;
+  payloadHash: string;
+}
 
 export type SyncEntityType =
   | "RDO"
+  | "TAREFA"
   | "CONVERSA"
   | "MENSAGEM"
   | "MENSAGEM_ANEXO"
@@ -64,6 +94,10 @@ export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
   | "ENVIAR_RDO"
+  | "CRIAR_TAREFA"
+  | "CONCLUIR_TAREFA"
+  | "REABRIR_TAREFA"
+  | "EXCLUIR_TAREFA"
   | "CRIAR_CONVERSA"
   | "ADICIONAR_PARTICIPANTE_CONVERSA"
   | "REMOVER_PARTICIPANTE_CONVERSA"
@@ -117,7 +151,7 @@ export type LocalRdoMaterialRecord = LocalRdoChildRecord;
 export type LocalRdoControleGeometricoRecord =
   LocalRdoChildRecord;
 
-export interface OutboxMutationRecord {
+interface OutboxMutationRecordBase {
   clientMutationId: string;
   entidadeTipo: SyncEntityType;
   entidadeId: string;
@@ -135,6 +169,32 @@ export interface OutboxMutationRecord {
   dependsOnMutationIds?: string[];
   correlationId?: string;
 }
+
+export interface LegacyOutboxMutationRecord
+  extends OutboxMutationRecordBase {
+  contractVersion?: 12;
+  fieldPatch?: MutationFieldPatch;
+  trace?: MutationTrace;
+  nextAttemptAt?: string | null;
+  blockedReason?: string | null;
+}
+
+export interface CanonicalOutboxMutationRecord
+  extends OutboxMutationRecordBase {
+  contractVersion: 13;
+  correlationId: string;
+  fieldPatch: MutationFieldPatch;
+  trace: MutationTrace;
+  nextAttemptAt: string | null;
+  blockedReason: string | null;
+}
+
+export type StoredOutboxMutationRecord =
+  | LegacyOutboxMutationRecord
+  | CanonicalOutboxMutationRecord;
+
+/** Stored v12/v13 read boundary. Canonical writers use CanonicalOutboxMutationRecord. */
+export type OutboxMutationRecord = StoredOutboxMutationRecord;
 
 export type MensagemSyncStatus =
   | "LOCAL"
@@ -227,7 +287,7 @@ export interface ProcessedEventRecord {
   aplicadoEm: string;
 }
 
-export interface OperationalEventRecord {
+interface OperationalEventRecordBase {
   id: string;
   type: OperationalEventType;
   principalEntity: OperationalEntityRef;
@@ -245,6 +305,41 @@ export interface OperationalEventRecord {
   syncStatus: OperationalEventSyncStatus;
   schemaVersion: number;
 }
+
+export interface LegacyOperationalEventRecord
+  extends OperationalEventRecordBase {
+  contractVersion?: 12;
+  clientMutationId?: string;
+  deviceId?: string;
+  correlationId?: string;
+  causationId?: string | null;
+  previousState?: Record<string, unknown>;
+  newState?: Record<string, unknown>;
+  result?: CanonicalMutationResult;
+  errorCategory?: string | null;
+  entityVersion?: number | null;
+}
+
+export interface CanonicalOperationalEventRecord
+  extends OperationalEventRecordBase {
+  contractVersion: 13;
+  clientMutationId: string;
+  deviceId: string;
+  correlationId: string;
+  causationId: string | null;
+  previousState: Record<string, unknown>;
+  newState: Record<string, unknown>;
+  result: CanonicalMutationResult;
+  errorCategory: string | null;
+  entityVersion: number | null;
+}
+
+export type StoredOperationalEventRecord =
+  | LegacyOperationalEventRecord
+  | CanonicalOperationalEventRecord;
+
+/** Stored v12/v13 read boundary. Canonical writers use CanonicalOperationalEventRecord. */
+export type OperationalEventRecord = StoredOperationalEventRecord;
 
 export type AttachmentType = "FOTO" | "VIDEO";
 
@@ -303,6 +398,14 @@ export interface ObraLocalRecord {
   updatedAt: string;
 }
 
+export interface ObraGeometryLocalRecord {
+  obraId: string;
+  geometry: OperationalFeatureCollection;
+  entityVersion: number | null;
+  syncStatus: CanonicalMutationResult;
+  updatedAt: string;
+}
+
 export type TarefaPrioridade = 1 | 2 | 3;
 
 export interface TarefaRecord {
@@ -320,6 +423,12 @@ export interface TarefaRecord {
   concluidaEm: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Versão confirmada pelo servidor; nula enquanto a criação está offline. */
+  versaoEntidade?: number | null;
+  /** Estado de transporte local, sem substituir a situação operacional. */
+  syncStatus?: LocalSyncStatus;
+  /** Tombstone local para que uma exclusão offline também possa sincronizar. */
+  deletadaEm?: string | null;
 }
 
 export interface ColaboradorLocalRecord {

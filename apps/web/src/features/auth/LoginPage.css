@@ -30,7 +30,7 @@
   min-height: min(680px, calc(100dvh - 150px));
   border: 1px solid rgb(255 255 255 / 30%);
   border-radius: var(--radius-control);
-  background: rgb(17 19 18 / 20%);
+  background: #113330;
   overflow: hidden;
 }
 
@@ -43,29 +43,19 @@
 }
 
 .login__brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
   padding-bottom: 24px;
   border-bottom: 1px solid rgb(255 255 255 / 28%);
 }
 
-.login__mark {
+.login__brand-lockup {
   display: block;
-  width: 54px;
-  height: 54px;
-  border-radius: var(--radius-control);
+  width: 100%;
+  max-width: 440px;
+  height: auto;
   pointer-events: none;
+  -webkit-user-drag: none;
   -webkit-user-select: none;
   user-select: none;
-}
-
-.login__brand span {
-  color: #fff;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
 }
 
 .login__classification,
@@ -107,7 +97,7 @@
   padding: 14px 16px;
   border: 1px solid rgb(255 255 255 / 25%);
   border-radius: var(--radius-control);
-  background: rgb(0 0 0 / 14%);
+  background: #0e2a28;
   color: rgb(255 255 255 / 72%);
   font-size: 0.76rem;
   line-height: 1.55;
@@ -316,20 +306,28 @@
   line-height: 1.6;
 }
 
-/* Acesso PostgreSQL: painel institucional isolado do fluxo legado. */
+.login__footer {
+  margin: 22px 0 0;
+  color: rgb(255 255 255 / 58%);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
 .postgresql-access {
+  display: grid;
+  place-items: center;
   grid-template-rows: 1fr;
 }
 
 .postgresql-access__stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 430px);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
   width: min(980px, 100%);
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: var(--radius-control);
+  background: #10312f;
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 24%);
-  border-radius: 10px;
-  background: rgb(18 62 57 / 94%);
-  box-shadow: 0 30px 70px -30px rgb(3 20 18 / 90%);
 }
 
 .postgresql-access__identity {
@@ -341,7 +339,7 @@
 
 .postgresql-access__eyebrow {
   margin: 0 0 14px;
-  color: var(--yellow);
+  color: var(--login-yellow);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.13em;
@@ -350,7 +348,7 @@
 
 .postgresql-access__identity h1 {
   margin: 0;
-  color: var(--text-strong);
+  color: #fff;
   font-size: clamp(2rem, 4vw, 3.3rem);
   font-weight: 600;
   letter-spacing: -0.04em;
@@ -360,7 +358,7 @@
 .postgresql-access__identity > p:last-child {
   max-width: 480px;
   margin: 20px 0 0;
-  color: var(--text-soft);
+  color: rgb(255 255 255 / 76%);
   font-size: 0.9rem;
   line-height: 1.7;
 }
@@ -369,22 +367,14 @@
   display: flex;
   align-items: center;
   padding: clamp(32px, 5vw, 50px);
+  border: 1px solid #d9ddda;
+  border-radius: var(--radius-control);
   background: #fff;
 }
 
 .postgresql-access__panel > * {
   width: 100%;
 }
-
-.login__footer {
-  margin: 22px 0 0;
-  color: rgb(255 255 255 / 58%);
-  font-size: 0.7rem;
-  letter-spacing: 0.02em;
-  text-align: center;
-}
-
-/* ---------- Animações ---------- */
 
 @keyframes login-spin {
   to {
@@ -415,6 +405,10 @@
     padding: 30px 26px;
   }
 
+  .login__brand-lockup {
+    max-width: 100%;
+  }
+
   .login__identity-copy h1 {
     font-size: clamp(2rem, 11vw, 3.25rem);
   }
@@ -434,6 +428,15 @@
   .login-field {
     min-width: 0;
   }
+
+  .postgresql-access__stage {
+    grid-template-columns: 1fr;
+  }
+
+  .postgresql-access__identity,
+  .postgresql-access__panel {
+    padding: 32px 26px;
+  }
 }
 
 @media (max-width: 420px) {
@@ -451,19 +454,10 @@
   .login__card {
     padding-inline: 20px;
   }
-
-  .postgresql-access__stage {
-    grid-template-columns: 1fr;
-  }
-
-  .postgresql-access__identity,
-  .postgresql-access__panel {
-    padding: 32px 26px;
-  }
 }
 
 .cortex-login button:focus-visible {
-  outline: 3px solid var(--login-yellow);
+  outline: 3px solid var(--login-ink);
   outline-offset: 2px;
 }
 

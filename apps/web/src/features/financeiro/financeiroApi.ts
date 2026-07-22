@@ -7,7 +7,6 @@ import {
 import { financeQueryParams } from "./financeiroFilters";
 import { ensureRegisteredDevice } from "../../lib/sync/registerDevice";
 import type {
-  FinanceAuditEvent,
   FinanceAllocation,
   FinanceAllocationHistoryEntry,
   FinanceAllocationItem,
@@ -25,6 +24,7 @@ import type {
   FinanceLedgerEntry,
   FinanceLedgerDraft,
   FinanceOverview,
+  FinanceOperationalResult,
   FinancePurchase,
   FinancePurchaseDraft,
   FinanceReportRow,
@@ -34,6 +34,50 @@ import type {
   FinanceControlUnit,
   FinanceControlUnitType,
 } from "./financeiro.types";
+
+export interface FinanceRevenueTotals {
+  producao: number;
+  custo: number;
+  receitaEstimada: number;
+  margem: number;
+  receitaMedida: number;
+  receitaAprovada: number;
+  receitaFaturada: number;
+  receitaRecebida: number;
+}
+
+export interface FinanceRevenueTrace {
+  consolidado: FinanceRevenueTotals;
+  obras: { id: string; nome: string; totais: FinanceRevenueTotals }[];
+  tiposServico: {
+    nome: string;
+    unidade: string;
+    totais: FinanceRevenueTotals;
+    obras: {
+      obraId: string;
+      obraNome: string;
+      itemContratualId: string | null;
+      codigoItemContratual: string | null;
+      totais: FinanceRevenueTotals;
+      quantidadeRdos: number;
+      rdoIds: string[];
+      receitaDisponivel: boolean;
+    }[];
+    quantidadeRdos: number;
+    receitaDisponivel: boolean;
+  }[];
+}
+
+export interface FinancePdorSnapshot {
+  id: string;
+  dataReferencia: string;
+  dataExecucao: string;
+  statusExecucaoLabel: string;
+  receitaPrevistaFinal: number | null;
+  receitaEstimadaAcumulada: number | null;
+  producaoPlanejada: number | null;
+  producaoRealizada: number | null;
+}
 
 async function readJson<T>(response: Response): Promise<T> {
   const body = await readResponseBody(response);
@@ -483,6 +527,41 @@ export async function buscarVisaoGeral(
   )));
 }
 
+export async function buscarRastreioReceita(
+  filters: Pick<FinanceFilters, "obraId" | "de" | "ate">,
+): Promise<FinanceRevenueTrace> {
+  const params = new URLSearchParams();
+  if (filters.obraId) params.set("obraId", filters.obraId);
+  if (filters.de) params.set("de", filters.de);
+  if (filters.ate) params.set("ate", filters.ate);
+  return readJson(await apiFetch(
+    endpoint("/financeiro/rastreio-receita", params),
+    { cache: "no-store" },
+  ));
+}
+
+export async function buscarPdorAtual(
+  obraId: string,
+): Promise<FinancePdorSnapshot | null> {
+  const response = await apiFetch(
+    `/obras/${encodeURIComponent(obraId)}/previsao-financeira/atual`,
+  );
+  if (response.status === 404) return null;
+  return readJson(response);
+}
+
+export async function buscarResultadoOperacional(
+  filters: FinanceFilters,
+): Promise<FinanceOperationalResult> {
+  const params = new URLSearchParams({ obraId: filters.obraId });
+  if (filters.de) params.set("de", filters.de);
+  if (filters.ate) params.set("ate", filters.ate);
+  return readJson(await apiFetch(endpoint(
+    "/financeiro/resultado-operacional",
+    params,
+  )));
+}
+
 export async function buscarRelatorio(
   filters: FinanceFilters,
   agruparPor: string,
@@ -587,32 +666,4 @@ export async function enviarCobranca(
     `/financeiro/cobrancas/${encodeURIComponent(chargeId)}/enviar`,
     new URLSearchParams({ obraId }),
   ), jsonRequest("POST", null)));
-}
-
-interface TimelineEventApi {
-  id: string;
-  type: string;
-  occurredAt: string | null;
-  origin: string | null;
-  payload: unknown;
-}
-
-export async function buscarAuditoriaFinanceira(
-  entityType: string,
-  entityId: string,
-): Promise<FinanceAuditEvent[]> {
-  const events = await readJson<TimelineEventApi[]>(await apiFetch(endpoint(
-    "/ontology/timeline",
-    new URLSearchParams({ entityType, entityId, limit: "50" }),
-  )));
-  return events.map((event) => ({
-    id: event.id,
-    type: event.type,
-    occurredAt: event.occurredAt,
-    origin: event.origin,
-    payload: event.payload && typeof event.payload === "object" &&
-      !Array.isArray(event.payload)
-      ? event.payload as Record<string, unknown>
-      : {},
-  }));
 }

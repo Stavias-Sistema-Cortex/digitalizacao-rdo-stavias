@@ -10,7 +10,6 @@ import {
 import {
   AUTH_SESSION_CHANGED_EVENT,
   getSession,
-  hasOnlineSession,
   isAlfa,
   setSession,
 } from "./features/auth/authSession";
@@ -144,7 +143,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     useState<OfflineVaultMetadata | null>(null);
   const [vaultChecked, setVaultChecked] = useState(false);
 
-  useAutomaticSync(hasOnlineSession());
+  useAutomaticSync(session !== null);
 
   useEffect(() => {
     function refreshSession() {

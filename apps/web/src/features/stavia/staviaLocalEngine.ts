@@ -742,6 +742,141 @@ function detectIntent(question: string): LocalIntent {
   return "DESCONHECIDA";
 }
 
+/**
+ * Eventos são o registro auditável de uma mutação na ontologia. Para não
+ * espalhar versões parciais dessa trilha por interfaces diferentes, o painel
+ * StavIA sempre encaminha perguntas sobre eventos para a única superfície que
+ * apresenta o histórico completo: Home > Memória.
+ */
+export function isOperationalMemoryQuestion(question: string): boolean {
+  if (detectIntent(question) === "TIMELINE_OPERACIONAL") {
+    return true;
+  }
+
+  const normalized = normalizeText(question);
+
+  const referencesOperationalEntity = hasAny(normalized, [
+    "tarefa",
+    "tarefas",
+    "rdo",
+    "rdos",
+    "foto",
+    "fotos",
+    "anexo",
+    "anexos",
+    "obra",
+    "obras",
+    "equipe",
+    "equipes",
+    "vinculo",
+    "vinculos",
+  ]);
+  const referencesLifecycleMutation = hasAny(normalized, [
+    "criou",
+    "criado",
+    "criada",
+    "criados",
+    "criadas",
+    "adicionou",
+    "adicionado",
+    "adicionada",
+    "adicionados",
+    "adicionadas",
+    "excluiu",
+    "excluido",
+    "excluida",
+    "excluidos",
+    "excluidas",
+    "removeu",
+    "removido",
+    "removida",
+    "removidos",
+    "removidas",
+    "reabriu",
+    "reaberto",
+    "reaberta",
+    "reabertos",
+    "reabertas",
+    "concluiu",
+    "finalizou",
+    "alterou",
+    "mudou",
+  ]);
+  const asksLifecycleTrace =
+    referencesOperationalEntity &&
+    hasAny(normalized, [
+      "concluido",
+      "concluida",
+      "concluidos",
+      "concluidas",
+      "finalizado",
+      "finalizada",
+      "finalizados",
+      "finalizadas",
+      "conclusao",
+      "finalizacao",
+      "criacao",
+      "adicao",
+      "exclusao",
+      "remocao",
+      "reabertura",
+      "alteracao",
+      "mudanca",
+      "modificacao",
+    ]) &&
+    hasAny(normalized, [
+      "quem",
+      "quando",
+      "data",
+      "por quem",
+      "concluida em",
+      "concluido em",
+      "finalizada em",
+      "finalizado em",
+    ]);
+
+  return (
+    (referencesOperationalEntity && referencesLifecycleMutation) ||
+    asksLifecycleTrace ||
+    hasAny(normalized, [
+    "evento",
+    "eventos",
+    "rastro ontologico",
+    "rastro ontológico",
+    "alteracao ontologica",
+    "alteração ontológica",
+    "alteracoes ontologicas",
+    "alterações ontológicas",
+    "mudanca ontologica",
+    "mudança ontológica",
+    "mudancas ontologicas",
+    "mudanças ontológicas",
+    "modificacao ontologica",
+    "modificação ontológica",
+    "modificacoes ontologicas",
+    "modificações ontológicas",
+    "auditoria ontologica",
+    "auditoria ontológica",
+    "memoria operacional",
+    "memória operacional",
+    ])
+  );
+}
+
+export function answerOperationalMemoryRoute(): StaviaConsultaResponse {
+  return answer(
+    "A trilha completa de alterações ontológicas fica centralizada em Home → Memória. Consulte-a para ver quem criou, alterou, concluiu ou excluiu cada registro, com data, escopo e estado de sincronização.",
+    "TIMELINE_OPERACIONAL",
+    {
+      confidence: "ALTA",
+      metadata: {
+        origemResposta: "MEMORIA_OPERACIONAL_CENTRALIZADA",
+        destino: "HOME_MEMORIA",
+      },
+    },
+  );
+}
+
 function fieldScore(
   normalizedQuestion: string,
   value: string | null | undefined,
@@ -2847,13 +2982,6 @@ function answerOccurrences(
   );
 }
 
-function readableEventType(type: string | null | undefined): string {
-  return (type ?? "EVENTO")
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/^./, (first) => first.toUpperCase());
-}
-
 // Palavras da própria pergunta sobre tarefas que nunca são
 // nome de pessoa ou de equipe.
 const TAREFA_QUESTION_WORDS = new Set([
@@ -2992,12 +3120,7 @@ function tarefaBullet(tarefa: StaviaSnapshotTarefa): string {
   const parts = [
     `equipe ${text(tarefa.equipe) || "não informada"}`,
     `prioridade ${tarefaPrioridadeLabel(tarefa.prioridade)}`,
-    `criada em ${formatDateTime(tarefa.createdAt)}${
-      tarefa.criadaPor ? ` por ${tarefa.criadaPor}` : ""
-    }`,
-    tarefa.concluida
-      ? `concluída em ${formatDateTime(tarefa.concluidaEm)}`
-      : "pendente",
+    tarefa.concluida ? "concluída" : "pendente",
   ];
 
   if (tarefa.responsavelEquipe) {
@@ -3016,16 +3139,13 @@ function sourceForTarefa(
     summary: `${text(tarefa.titulo) || "Tarefa"} · equipe ${
       text(tarefa.equipe) || "não informada"
     }`,
-    updatedAt: tarefa.updatedAt,
+    updatedAt: null,
     validated: true,
     attributes: {
       obraId: tarefa.obraId,
       equipe: tarefa.equipe,
       prioridade: tarefa.prioridade,
-      criadaPor: tarefa.criadaPor,
-      criadaEm: tarefa.createdAt,
       concluida: tarefa.concluida,
-      concluidaEm: tarefa.concluidaEm,
       responsavelEquipe: tarefa.responsavelEquipe,
     },
   };
@@ -3049,18 +3169,6 @@ function answerTarefas(
     );
   }
 
-  const soCriador = hasAny(normalized, [
-    "criou",
-    "criada",
-    "criadas",
-    "criado",
-    "abriu",
-    "registrou",
-  ]);
-  const soResponsavel =
-    !soCriador &&
-    hasAny(normalized, ["responsavel", "responsaveis"]);
-
   const candidates = tarefaCandidateTokens(pergunta);
 
   let selecionadas = tarefas;
@@ -3069,19 +3177,12 @@ function answerTarefas(
   if (candidates.length > 0) {
     const scored = tarefas
       .map((tarefa) => {
-        const criadorScore = soResponsavel
-          ? 0
-          : nameMatchCount(tarefa.criadaPor, candidates);
-        const responsavelScore = soCriador
-          ? 0
-          : nameMatchCount(
-              tarefa.responsavelEquipe,
-              candidates,
-            );
-
         return {
           tarefa,
-          score: Math.max(criadorScore, responsavelScore),
+          score: nameMatchCount(
+            tarefa.responsavelEquipe,
+            candidates,
+          ),
         };
       })
       .filter((entry) => entry.score > 0);
@@ -3096,17 +3197,10 @@ function answerTarefas(
 
       const pessoas = unique(
         selecionadas.map((tarefa) =>
-          soResponsavel
-            ? tarefa.responsavelEquipe
-            : (tarefa.criadaPor ??
-              tarefa.responsavelEquipe),
+          tarefa.responsavelEquipe,
         ),
       );
-      recorte = soCriador
-        ? `criada(s) por ${pessoas.join(", ")}`
-        : soResponsavel
-          ? `sob responsabilidade de ${pessoas.join(", ")}`
-          : `relacionada(s) a ${pessoas.join(", ")}`;
+      recorte = `sob responsabilidade de ${pessoas.join(", ")}`;
     } else {
       const porEquipe = tarefas.filter(
         (tarefa) =>
@@ -3221,61 +3315,8 @@ function answerTarefas(
   );
 }
 
-function answerOperationalTimeline(
-  snapshot: StaviaSnapshot,
-  resolved: ResolvedContext,
-): StaviaConsultaResponse {
-  const rdos = selectedRdos(resolved);
-  const rdoIds = new Set(rdos.map((rdo) => rdo.id));
-  const obraId = resolved.obra?.id ?? rdos[0]?.obraId ?? null;
-
-  const events = (snapshot.operationalEvents ?? [])
-    .filter((event) => {
-      if (rdoIds.size > 0 && event.rdoId && rdoIds.has(event.rdoId)) {
-        return true;
-      }
-
-      if (obraId && event.obraId === obraId) {
-        return true;
-      }
-
-      return false;
-    })
-    .sort((left, right) =>
-      (right.occurredAt ?? "").localeCompare(
-        left.occurredAt ?? "",
-      ),
-    )
-    .slice(0, 10);
-
-  if (events.length === 0) {
-    return answer(
-      "Não encontrei eventos ontológicos salvos para este contexto.",
-      "TIMELINE_OPERACIONAL",
-      {
-        confidence: "MEDIA",
-      },
-    );
-  }
-
-  return answer(
-    `Timeline operacional:\n\n${bulletList(
-      events.map((event) => {
-        const when = formatDateTime(event.occurredAt);
-        const status = event.syncStatus
-          ? ` · ${event.syncStatus}`
-          : "";
-        return `${when}: ${readableEventType(event.type)}${status}`;
-      }),
-    )}`,
-    "TIMELINE_OPERACIONAL",
-    {
-      metadata: {
-        origemResposta: "SNAPSHOT_LOCAL_STAVIA",
-        totalEventos: events.length,
-      },
-    },
-  );
+function answerOperationalTimeline(): StaviaConsultaResponse {
+  return answerOperationalMemoryRoute();
 }
 
 function answerRdoPhotos(
@@ -3394,6 +3435,10 @@ export function responderComSnapshotStavia({
 
   const ontology = loadRdoOntology(snapshot);
 
+  if (isOperationalMemoryQuestion(pergunta)) {
+    return answerOperationalMemoryRoute();
+  }
+
   if (
     matchesOntologyAttribute(ontology, pergunta) &&
     (
@@ -3485,7 +3530,7 @@ export function responderComSnapshotStavia({
     case "OCORRENCIAS":
       return answerOccurrences(snapshot, resolved);
     case "TIMELINE_OPERACIONAL":
-      return answerOperationalTimeline(snapshot, resolved);
+      return answerOperationalTimeline();
     case "FOTOS_RDO":
       return answerRdoPhotos(resolved);
     case "EVIDENCIAS":

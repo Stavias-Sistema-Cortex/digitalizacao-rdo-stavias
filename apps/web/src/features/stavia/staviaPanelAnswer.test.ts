@@ -5,6 +5,7 @@ import {
   buildStaviaPanelLocalContext,
 } from "./staviaPanelAnswer";
 import {
+  isMemoryOnlyOntologyAttribute,
   loadRdoOntology,
   type RdoOntologyEntityJson,
   type RdoOntologyJson,
@@ -208,6 +209,33 @@ function fakeApiResponse(answer: string): StaviaConsultaResponse {
 }
 
 describe("staviaPanelAnswer", () => {
+  it("não consulta a API para detalhes ontológicos centralizados em Home > Memória", async () => {
+    let apiCalls = 0;
+
+    const response = await answerStaviaPanelQuestion({
+      snapshot: null,
+      questionText: "Quem registrou o evento 1?",
+      contextHint: "",
+      activeObraId: "obra-1",
+      activeRdoId: "rdo-ativo",
+      lastContext: { obraId: null, rdoId: null },
+      isOnline: true,
+      loadSnapshot: async () => null,
+      consultar: async () => {
+        apiCalls += 1;
+        return fakeApiResponse("Resposta da API não deveria ser usada.");
+      },
+    });
+
+    expect(apiCalls).toBe(0);
+    expect(response.intent).toBe("TIMELINE_OPERACIONAL");
+    expect(response.answer.answer).toContain("Home → Memória");
+    expect(response.answer.metadata).toMatchObject({
+      origemResposta: "MEMORIA_OPERACIONAL_CENTRALIZADA",
+      destino: "HOME_MEMORIA",
+    });
+  });
+
   it("usa o RDO ativo do painel no snapshot local antes de chamar API", async () => {
     let apiCalls = 0;
 
@@ -369,14 +397,18 @@ describe("staviaPanelAnswer", () => {
     let checkedCells = 0;
     let apiCalls = 0;
 
-    // O pdor (escopo "obra") é coberto pelo tópico dedicado do painel,
-    // não pelo caminho genérico da ontologia exercitado aqui.
+    // O pdor (escopo "obra") é coberto pelo tópico dedicado do painel.
+    // Eventos operacionais permanecem concentrados em Home > Memória.
     const genericEntities = ontology.entities.filter(
-      (entity) => (entity.scope ?? "rdo") === "rdo",
+      (entity) =>
+        (entity.scope ?? "rdo") === "rdo" &&
+        entity.name !== "operationalEvent",
     );
 
     for (const entity of genericEntities) {
-      for (const attribute of entity.attributes) {
+      for (const attribute of entity.attributes.filter(
+        (attribute) => !isMemoryOnlyOntologyAttribute(attribute),
+      )) {
         checkedCells += 1;
         const pergunta = panelCoverageQuestion(entity, attribute.label);
         const response = await answerStaviaPanelQuestion({
@@ -421,7 +453,7 @@ describe("staviaPanelAnswer", () => {
     }
 
     expect(apiCalls).toBe(0);
-    expect(checkedCells).toBeGreaterThan(150);
+    expect(checkedCells).toBeGreaterThan(120);
   });
 });
 
