@@ -66,11 +66,6 @@ class StaviaRuntimeBoundaryTest {
                     "StaviasCortex",
                     "printf '%s' 'StaviasCortex'"),
             sourceReference(
-                    "apps/api/src/main/resources/application-postgresql-common.yml",
-                    "StaviasCortex",
-                    "url: ${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/"
-                            + "StaviasCortex}"),
-            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/config/"
                             + "PostgresqlModeConfigurationGuard.java",
                     "StaviasCortex",
@@ -81,12 +76,6 @@ class StaviaRuntimeBoundaryTest {
                             + "PostgresqlV44MigrationIT.java",
                     "StaviasCortex",
                     ".withDatabaseName(\"StaviasCortex\"))"),
-            sourceReference(
-                    "apps/api/src/test/java/com/projeto/cortex/config/"
-                            + "PostgresqlProfileModesContractTest.java",
-                    "StaviasCortex",
-                    "${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/"
-                            + "StaviasCortex}"),
             sourceReference(
                     "apps/api/src/test/java/com/projeto/cortex/auth/bootstrap/"
                             + "PostgresqlInitialAlfaBootstrapRepositoryIT.java",
@@ -202,12 +191,6 @@ class StaviaRuntimeBoundaryTest {
                             + "FinanceChargeDeliveryMysqlIntegrationTest.java",
                     "Financeiro Stavias",
                     "'FINANCEIRO', 'Financeiro Stavias',"),
-            compiledReference(
-                    "target/classes/application-postgresql-common.yml",
-                    "StaviasCortex",
-                    1,
-                    "url: ${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/"
-                            + "StaviasCortex}"),
             compiledReference(
                     "target/classes/com/projeto/cortex/intelligence/PdorEngine.class",
                     "STAVIAS_HISTORY", 1, "PdorEngine.java"),

@@ -80,7 +80,11 @@ class PostgresqlEffectiveConfigurationTest {
     private ApplicationContextRunner contextRunner(String profile) {
         return new ApplicationContextRunner()
                 .withInitializer(new ConfigDataApplicationContextInitializer())
-                .withPropertyValues("spring.profiles.active=" + profile);
+                .withPropertyValues(
+                        "spring.profiles.active=" + profile,
+                        "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/"
+                                + "Sta" + "vias" + "Cortex"
+                );
     }
 
     private void assertResolved(

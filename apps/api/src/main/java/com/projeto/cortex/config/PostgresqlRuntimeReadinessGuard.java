@@ -152,10 +152,10 @@ public final class PostgresqlRuntimeReadinessGuard implements
                             + "somente após a liberação operacional."
             );
         }
-        if (!surfaceRegistry.hasReleasedOperationalSurface()) {
+        if (!surfaceRegistry.hasCompleteRuntimeSurfaceSet()) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL bloqueado: nenhuma superfície operacional PostgreSQL segura "
-                            + "foi explicitamente liberada."
+                    "Runtime PostgreSQL bloqueado: o conjunto completo e exato de superfícies "
+                            + "operacionais PostgreSQL não foi liberado."
             );
         }
 

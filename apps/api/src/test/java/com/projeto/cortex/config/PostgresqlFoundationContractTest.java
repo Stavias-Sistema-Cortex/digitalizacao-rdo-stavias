@@ -46,7 +46,9 @@ class PostgresqlFoundationContractTest {
 
         assertTrue(profile.contains("on-profile: postgresql"));
         assertTrue(commonProfile.contains("on-profile: postgresql-common"));
-        assertTrue(commonProfile.contains("${CORTEX_POSTGRES_URL:"));
+        assertTrue(commonProfile.contains("${CORTEX_POSTGRES_URL}"));
+        assertFalse(commonProfile.contains("${CORTEX_POSTGRES_URL:"),
+                "the canonical PostgreSQL URL must be supplied explicitly");
         assertTrue(commonProfile.contains("${CORTEX_POSTGRES_USER:joaolucas}"));
         assertTrue(commonProfile.contains("${CORTEX_POSTGRES_PASSWORD:}"));
         assertFalse(commonProfile.contains("CORTEX_DB_URL"),

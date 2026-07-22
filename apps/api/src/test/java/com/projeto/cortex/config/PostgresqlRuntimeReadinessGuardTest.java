@@ -54,7 +54,46 @@ class PostgresqlRuntimeReadinessGuardTest {
         assertThatThrownBy(() -> guard(mock(JdbcTemplate.class), true, emptyRegistry)
                 .verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("superfície operacional PostgreSQL segura");
+                .hasMessageContaining("conjunto completo e exato");
+    }
+
+    @Test
+    void registryPublishesTheExactImmutableFiveSurfaceContract() {
+        PostgresqlRuntimeSurfaceRegistry registry =
+                new PostgresqlRuntimeSurfaceRegistry();
+
+        assertThat(registry.releasedSurfaces()).containsExactlyInAnyOrder(
+                "authentication",
+                "finance",
+                "memory-ontology",
+                "rdo",
+                "sync"
+        );
+        assertThatThrownBy(() -> registry.releasedSurfaces().add("unexpected"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void refusesIncompleteOrUnexpectedSurfaceSetsBeforeDatabaseWork() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        PostgresqlRuntimeSurfaceRegistry incomplete =
+                new PostgresqlRuntimeSurfaceRegistry(Set.of(
+                        "authentication", "finance", "memory-ontology", "rdo"
+                ));
+        PostgresqlRuntimeSurfaceRegistry unexpected =
+                new PostgresqlRuntimeSurfaceRegistry(Set.of(
+                        "authentication", "finance", "memory-ontology", "rdo",
+                        "sync", "unexpected"
+                ));
+
+        assertThatThrownBy(() -> guard(jdbcTemplate, true, incomplete)
+                .verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("conjunto completo e exato");
+        assertThatThrownBy(() -> guard(jdbcTemplate, true, unexpected)
+                .verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("conjunto completo e exato");
     }
 
     @Test
@@ -109,6 +148,6 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     private PostgresqlRuntimeSurfaceRegistry released() {
-        return new PostgresqlRuntimeSurfaceRegistry(Set.of("test-postgresql-safe-slice"));
+        return new PostgresqlRuntimeSurfaceRegistry();
     }
 }
