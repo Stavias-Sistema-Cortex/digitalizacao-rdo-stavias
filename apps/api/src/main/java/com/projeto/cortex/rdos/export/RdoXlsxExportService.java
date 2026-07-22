@@ -17,6 +17,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import org.apache.poi.ooxml.POIXMLProperties;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.openxml4j.opc.PackagePart;
+import org.apache.poi.openxml4j.opc.PackageRelationship;
+import org.apache.poi.openxml4j.opc.PackageRelationshipTypes;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
@@ -26,6 +32,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.xmlbeans.XmlCursor;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -39,6 +46,8 @@ public class RdoXlsxExportService {
             "2a97db997d939b738146bad7c39428e38e159a6160f23afdf3297500fb2b8f87";
     private static final String FRONT_SHEET = "v.1 RDO frente";
     private static final String BACK_SHEET = "v.1 RDO verso";
+    private static final String SOURCE_PATH_NAMESPACE =
+            "http://schemas.microsoft.com/office/spreadsheetml/2010/11/ac";
     private static final int MAX_WORKFORCE_GROUPS = 26;
     private static final int MAX_EQUIPMENT = 32;
     private static final int MAX_WORKED_ROWS = 21;
@@ -47,17 +56,26 @@ public class RdoXlsxExportService {
     private static final int MAX_CELL_TEXT_LENGTH = 32_767;
 
     private final RdoQueryService queryService;
+    private final RdoExportWorksiteReader worksiteReader;
     private final RdoExportTextSanitizer sanitizer =
             new RdoExportTextSanitizer();
 
-    public RdoXlsxExportService(RdoQueryService queryService) {
+    public RdoXlsxExportService(
+            RdoQueryService queryService,
+            RdoExportWorksiteReader worksiteReader
+    ) {
         this.queryService = queryService;
+        this.worksiteReader = worksiteReader;
     }
 
     public ExportedRdo export(String rdoId) {
         RdoResponse rdo = queryService.buscarPorId(rdoId);
+        RdoExportWorksiteReader.Worksite worksite =
+                worksiteReader.read(rdo.obraId());
         ExportRows rows = buildRows(rdo);
         validateCoverage(rows);
+        validateDomainValues(rdo, rows);
+        validatePrintableText(rdo, worksite, rows);
 
         byte[] template = loadVerifiedTemplate();
         try (Workbook genericWorkbook = WorkbookFactory.create(
@@ -70,7 +88,8 @@ public class RdoXlsxExportService {
             }
             validateTemplateContract(workbook);
             removeExecutableContent(workbook);
-            populate(workbook, rdo, rows);
+            populate(workbook, rdo, worksite, rows);
+            stripPackageMetadata(workbook);
             assertNoExecutableContent(workbook);
 
             try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -80,7 +99,7 @@ public class RdoXlsxExportService {
                         sanitizer.filename(rdo.numeroRdo(), rdo.id())
                 );
             }
-        } catch (IOException exception) {
+        } catch (IOException | InvalidFormatException exception) {
             throw new IllegalStateException(
                     "Não foi possível gerar o XLSX do RDO.",
                     exception
@@ -140,6 +159,134 @@ public class RdoXlsxExportService {
                 "controles geométricos",
                 rows.geometry().size(),
                 MAX_GEOMETRY_ROWS
+        );
+    }
+
+    private void validateDomainValues(RdoResponse rdo, ExportRows rows) {
+        validateWeather(rdo.condicaoManha());
+        validateWeather(rdo.condicaoTarde());
+        validateWeather(rdo.condicaoNoite());
+        for (RdoResponse.EquipamentoItem item : rows.equipment()) {
+            equipmentOwnership(item.tipoVinculo());
+        }
+    }
+
+    private void validateWeather(String value) {
+        String normalized = normalize(value);
+        if (normalized.isBlank()) {
+            return;
+        }
+        switch (normalized) {
+            case "BOM", "NUBLADO", "CHUVA", "IMPOSSIBILITADO",
+                    "NAO_APLICAVEL" -> {
+                return;
+            }
+            default -> throw invalidWeather(value);
+        }
+    }
+
+    private ResponseStatusException invalidWeather(String value) {
+        return new ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "condição climática não reconhecida: " + value
+                        + ". Nenhuma condição 'Bom' foi inventada."
+        );
+    }
+
+    private void validatePrintableText(
+            RdoResponse rdo,
+            RdoExportWorksiteReader.Worksite worksite,
+            ExportRows rows
+    ) {
+        printable("nome da obra", worksite.name(), 56);
+        printable("código da obra", worksite.code(), 18);
+        printable("número do RDO", firstNonBlank(rdo.numeroRdo(), rdo.id()), 20);
+        printable("rodovia", rdo.rodovia(), 18);
+        printable("dia da semana", firstNonBlank(
+                rdo.diaSemana(),
+                weekday(rdo.dataRdo())
+        ), 16);
+        printable("km inicial programado", rdo.kmInicialProgramado(), 12);
+        printable("km final programado", rdo.kmFinalProgramado(), 12);
+        printable("km inicial interditado", rdo.kmInicialInterditado(), 12);
+        printable("km final interditado", rdo.kmFinalInterditado(), 12);
+        printable("nome do apontador", selectedApontadorName(rdo), 40);
+        printable("nome do encarregado", rdo.encarregadoObra(), 40);
+        printable("nome da fiscalização", rdo.fiscalizacaoCampo(), 40);
+
+        for (WorkforceGroup group : rows.workforce()) {
+            printable("cargo", group.role(), 18);
+        }
+        for (RdoResponse.EquipamentoItem item : rows.equipment()) {
+            printable("descrição do equipamento", item.descricao(), 24);
+            printable("prefixo do equipamento", item.prefixo(), 8);
+        }
+        for (RdoResponse.MaterialItem item : copy(rdo.materiais())) {
+            printable("material", item.materialNome(), 24);
+            printable("unidade do material", item.unidade(), 5);
+            printable("nota fiscal", item.notaFiscal(), 24);
+        }
+        for (MaterialRow row : rows.materials()) {
+            printable("descrição da linha de material", row.description(), 28);
+        }
+        for (WorkedRow row : rows.worked()) {
+            printable("início do trecho", row.start(), 20);
+            printable("fim do trecho", row.end(), 20);
+            printable("número do trecho", row.number(), 12);
+            printable("pista", row.roadway(), 16);
+            printable("faixa", row.lane(), 16);
+            printable("ordem de serviço", row.serviceOrder(), 30);
+            printable("atividade executada", row.activity(), 80);
+        }
+        for (RdoResponse.ControleGeometricoItem control : rows.geometry()) {
+            printable("subtrecho do controle geométrico", control.subtrecho(), 32);
+        }
+        printableObservations(allObservations(rdo));
+    }
+
+    private void printable(String section, String value, int maxCodePoints) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String sanitized = safeText(value);
+        int length = sanitized.codePointCount(0, sanitized.length());
+        if (sanitized.contains("\n")
+                || sanitized.contains("\r")
+                || length > maxCodePoints) {
+            throw printOverflow(
+                    section,
+                    "limite de " + maxCodePoints + " caracteres em uma linha"
+            );
+        }
+    }
+
+    private void printableObservations(String observations) {
+        if (observations == null || observations.isBlank()) {
+            return;
+        }
+        List<String> lines = observations.lines().toList();
+        if (lines.size() > 6) {
+            throw printOverflow(
+                    "observações gerais",
+                    "limite de 6 linhas"
+            );
+        }
+        for (String line : lines) {
+            int length = line.codePointCount(0, line.length());
+            if (length > 100) {
+                throw printOverflow(
+                        "observações gerais",
+                        "limite de 100 caracteres por linha"
+                );
+            }
+        }
+    }
+
+    private ResponseStatusException printOverflow(String section, String limit) {
+        return new ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "O conteúdo de " + section + " não permanece legível no RDO ("
+                        + limit + "); nenhum conteúdo foi truncado."
         );
     }
 
@@ -206,6 +353,73 @@ public class RdoXlsxExportService {
         }
     }
 
+    private void stripPackageMetadata(XSSFWorkbook workbook)
+            throws InvalidFormatException {
+        POIXMLProperties properties = workbook.getProperties();
+        POIXMLProperties.CoreProperties core = properties.getCoreProperties();
+        core.setCreator("");
+        core.setLastModifiedByUser("");
+        core.setTitle("");
+        core.setSubjectProperty("");
+        core.setDescription("");
+        core.setKeywords("");
+        core.setCategory("");
+        core.setContentStatus("");
+        core.setContentType("");
+        core.setIdentifier("");
+        core.setVersion("");
+        core.setRevision("");
+        core.setCreated(Optional.empty());
+        core.setModified(Optional.empty());
+        core.setLastPrinted(Optional.empty());
+
+        POIXMLProperties.ExtendedProperties extended =
+                properties.getExtendedProperties();
+        extended.setTemplate("");
+        extended.setManager("");
+        extended.setCompany("");
+        extended.setHyperlinkBase("");
+
+        try (XmlCursor cursor = workbook.getCTWorkbook().newCursor()) {
+            while (cursor.hasNextToken()) {
+                cursor.toNextToken();
+                if (cursor.isStart()
+                        && "absPath".equals(cursor.getName().getLocalPart())
+                        && SOURCE_PATH_NAMESPACE.equals(
+                                cursor.getName().getNamespaceURI()
+                        )) {
+                    cursor.removeXml();
+                }
+            }
+        }
+
+        var custom = properties.getCustomProperties()
+                .getUnderlyingProperties();
+        while (custom.sizeOfPropertyArray() > 0) {
+            custom.removeProperty(0);
+        }
+
+        List<String> customXmlRelationshipIds = new ArrayList<>();
+        for (PackageRelationship relationship : workbook.getPackagePart()
+                .getRelationshipsByType(PackageRelationshipTypes.CUSTOM_XML)) {
+            customXmlRelationshipIds.add(relationship.getId());
+        }
+        for (String relationshipId : customXmlRelationshipIds) {
+            workbook.getPackagePart().removeRelationship(relationshipId);
+        }
+
+        List<PackagePart> customXmlParts = workbook.getPackage()
+                .getParts()
+                .stream()
+                .filter(part -> part.getPartName()
+                        .getName()
+                        .startsWith("/customXml/"))
+                .toList();
+        for (PackagePart part : customXmlParts) {
+            workbook.getPackage().removePart(part);
+        }
+    }
+
     private void assertNoExecutableContent(XSSFWorkbook workbook) {
         if (workbook.isMacroEnabled()
                 || !workbook.getExternalLinksTable().isEmpty()) {
@@ -230,12 +444,13 @@ public class RdoXlsxExportService {
     private void populate(
             XSSFWorkbook workbook,
             RdoResponse rdo,
+            RdoExportWorksiteReader.Worksite worksite,
             ExportRows rows
     ) {
         Sheet front = workbook.getSheet(FRONT_SHEET);
         Sheet back = workbook.getSheet(BACK_SHEET);
         clearOperationalFixtures(front, back);
-        populateHeader(workbook, front, back, rdo);
+        populateHeader(workbook, front, back, rdo, worksite);
         populateConditions(workbook, front, rdo);
         populateWorkforce(workbook, front, rows.workforce());
         populateEquipment(workbook, front, rows.equipment());
@@ -267,7 +482,8 @@ public class RdoXlsxExportService {
             Workbook workbook,
             Sheet front,
             Sheet back,
-            RdoResponse rdo
+            RdoResponse rdo,
+            RdoExportWorksiteReader.Worksite worksite
     ) {
         mergeIfMissing(front, "B6:P6");
         mergeIfMissing(front, "Q6:U6");
@@ -277,9 +493,9 @@ public class RdoXlsxExportService {
         mergeIfMissing(back, "AB4:AD4");
         String traceableRdo = firstNonBlank(rdo.numeroRdo(), rdo.id());
         text(front, "B1", "RELATÓRIO DIÁRIO DE OBRA (RDO) — " + traceableRdo);
-        text(back, "B2", "RELATÓRIO DIÁRIO DE OBRA (RDO) — " + traceableRdo);
-        text(front, "B6", firstNonBlank(rdo.contrato(), rdo.cliente()));
-        text(front, "Q6", rdo.obraId());
+        text(back, "B2", "RELATÓRIO DIÁRIO DE OBRA (RDO)");
+        text(front, "B6", worksite.name());
+        text(front, "Q6", worksite.code());
         text(front, "V6", rdo.rodovia());
         date(workbook, front, "AA6", rdo.dataRdo());
         text(front, "AF6", firstNonBlank(rdo.diaSemana(), weekday(rdo.dataRdo())));
@@ -312,9 +528,16 @@ public class RdoXlsxExportService {
         if (normalized.isBlank()) {
             return;
         }
-        String column = normalized.contains("CHUVA")
-                ? "G"
-                : normalized.contains("IMPROD") ? "J" : "D";
+        String column = switch (normalized) {
+            case "BOM" -> "D";
+            case "CHUVA" -> "G";
+            case "IMPOSSIBILITADO" -> "J";
+            case "NAO_APLICAVEL", "NUBLADO" -> null;
+            default -> throw invalidWeather(condition);
+        };
+        if (column == null) {
+            return;
+        }
         text(sheet, column + oneBasedRow, "X");
     }
 
@@ -358,7 +581,8 @@ public class RdoXlsxExportService {
             int row = 36 + index / 2;
             text(sheet, (right ? "T" : "B") + row, item.descricao());
             text(sheet, (right ? "AH" : "O") + row, item.prefixo());
-            boolean subcontracted = isSubcontracted(item.tipoVinculo());
+            boolean subcontracted = equipmentOwnership(item.tipoVinculo())
+                    == EquipmentOwnership.NON_OWNED;
             String quantityCell = subcontracted
                     ? (right ? "AE" : "L") + row
                     : (right ? "AB" : "I") + row;
@@ -382,6 +606,16 @@ public class RdoXlsxExportService {
         for (int index = 0; index < rows.size(); index++) {
             WorkedRow value = rows.get(index);
             int row = 60 + index;
+            mergeIfMissing(sheet, "B" + row + ":D" + row);
+            mergeIfMissing(sheet, "E" + row + ":G" + row);
+            mergeIfMissing(sheet, "H" + row + ":I" + row);
+            mergeIfMissing(sheet, "J" + row + ":K" + row);
+            mergeIfMissing(sheet, "L" + row + ":M" + row);
+            mergeIfMissing(sheet, "N" + row + ":O" + row);
+            mergeIfMissing(sheet, "P" + row + ":Q" + row);
+            mergeIfMissing(sheet, "R" + row + ":S" + row);
+            mergeIfMissing(sheet, "T" + row + ":W" + row);
+            mergeIfMissing(sheet, "X" + row + ":AJ" + row);
             text(sheet, "B" + row, value.start());
             text(sheet, "E" + row, value.end());
             text(sheet, "H" + row, value.number());
@@ -428,6 +662,36 @@ public class RdoXlsxExportService {
                 default -> throw new IllegalStateException("Bloco de material inválido.");
             };
             MaterialRow value = rows.get(index);
+            String descriptionEndColumn = switch (block) {
+                case 0 -> "D";
+                case 1 -> "N";
+                case 2 -> "X";
+                default -> throw new IllegalStateException("Bloco de material inválido.");
+            };
+            String quantityEndColumn = switch (block) {
+                case 0 -> "F";
+                case 1 -> "P";
+                case 2 -> "Z";
+                default -> throw new IllegalStateException("Bloco de material inválido.");
+            };
+            String invoiceEndColumn = switch (block) {
+                case 0 -> "J";
+                case 1 -> "T";
+                case 2 -> "AD";
+                default -> throw new IllegalStateException("Bloco de material inválido.");
+            };
+            mergeIfMissing(
+                    sheet,
+                    descriptionColumn + row + ":" + descriptionEndColumn + row
+            );
+            mergeIfMissing(
+                    sheet,
+                    quantityColumn + row + ":" + quantityEndColumn + row
+            );
+            mergeIfMissing(
+                    sheet,
+                    invoiceColumn + row + ":" + invoiceEndColumn + row
+            );
             text(sheet, descriptionColumn + row, value.description());
             number(workbook, sheet, quantityColumn + row, value.quantity());
             text(sheet, unitColumn + row, value.unit());
@@ -443,6 +707,15 @@ public class RdoXlsxExportService {
         for (int index = 0; index < controls.size(); index++) {
             RdoResponse.ControleGeometricoItem value = controls.get(index);
             int row = 26 + index;
+            mergeIfMissing(sheet, "B" + row + ":E" + row);
+            mergeIfMissing(sheet, "F" + row + ":H" + row);
+            mergeIfMissing(sheet, "I" + row + ":K" + row);
+            mergeIfMissing(sheet, "L" + row + ":N" + row);
+            mergeIfMissing(sheet, "O" + row + ":Q" + row);
+            mergeIfMissing(sheet, "R" + row + ":T" + row);
+            mergeIfMissing(sheet, "U" + row + ":W" + row);
+            mergeIfMissing(sheet, "X" + row + ":Z" + row);
+            mergeIfMissing(sheet, "AA" + row + ":AD" + row);
             text(sheet, "B" + row, value.subtrecho());
             number(workbook, sheet, "F" + row, value.comprimentoM());
             number(workbook, sheet, "I" + row, value.larguraM());
@@ -466,6 +739,7 @@ public class RdoXlsxExportService {
         CellStyle style = workbook.createCellStyle();
         style.cloneStyleFrom(observations.getCellStyle());
         style.setWrapText(true);
+        style.setShrinkToFit(false);
         style.setVerticalAlignment(
                 org.apache.poi.ss.usermodel.VerticalAlignment.TOP
         );
@@ -489,6 +763,9 @@ public class RdoXlsxExportService {
             entries.add("Continuidade da equipe: mão de obra importada do RDO "
                     + safeText(rdo.previousRdoId()));
         }
+        addCloudObservation(entries, "manhã", rdo.condicaoManha());
+        addCloudObservation(entries, "tarde", rdo.condicaoTarde());
+        addCloudObservation(entries, "noite", rdo.condicaoNoite());
         addObservation(entries, "RDO", rdo.observacoes());
         for (RdoResponse.MaoObraItem item : copy(rdo.maoObra())) {
             addObservation(entries, "Mão de obra " + safeText(item.cargo()), item.observacoes());
@@ -525,6 +802,16 @@ public class RdoXlsxExportService {
         return result;
     }
 
+    private void addCloudObservation(
+            List<String> entries,
+            String period,
+            String condition
+    ) {
+        if ("NUBLADO".equals(normalize(condition))) {
+            entries.add("Clima " + period + ": Nublado");
+        }
+    }
+
     private void addObservation(List<String> entries, String label, String value) {
         if (value == null || value.isBlank()) {
             return;
@@ -553,11 +840,11 @@ public class RdoXlsxExportService {
     ) {
         requireDescription(material.materialNome(), "material");
         int initialSize = rows.size();
-        addMaterialRow(rows, material, "Usinado", material.quantidadeUsinada());
-        addMaterialRow(rows, material, "Aplicado", material.quantidadeAplicada());
-        addMaterialRow(rows, material, "Sobra", material.quantidadeSobra());
+        addMaterialRow(rows, material, "U", material.quantidadeUsinada());
+        addMaterialRow(rows, material, "A", material.quantidadeAplicada());
+        addMaterialRow(rows, material, "S", material.quantidadeSobra());
         if (rows.size() == initialSize) {
-            addMaterialRow(rows, material, "Previsto", material.quantidadePrevista());
+            addMaterialRow(rows, material, "P", material.quantidadePrevista());
         }
         if (rows.size() == initialSize) {
             rows.add(new MaterialRow(
@@ -579,7 +866,7 @@ public class RdoXlsxExportService {
             return;
         }
         rows.add(new MaterialRow(
-                material.materialNome().trim() + " — " + measure,
+                material.materialNome().trim() + " (" + measure + ")",
                 quantity,
                 material.unidade(),
                 material.notaFiscal()
@@ -617,6 +904,18 @@ public class RdoXlsxExportService {
         String normalized = normalize(value);
         return normalized.contains("SUBCONTRAT")
                 || normalized.contains("TERCEIR");
+    }
+
+    private EquipmentOwnership equipmentOwnership(String value) {
+        return switch (normalize(value)) {
+            case "PROPRIO" -> EquipmentOwnership.OWNED;
+            case "LOCADO", "TERCEIRIZADO" -> EquipmentOwnership.NON_OWNED;
+            default -> throw new ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "vínculo de equipamento não reconhecido: " + value
+                            + ". Nenhuma categoria foi inventada."
+            );
+        };
     }
 
     private void requireDescription(String value, String section) {
@@ -658,7 +957,13 @@ public class RdoXlsxExportService {
         if (value == null || value.isBlank()) {
             return;
         }
-        cell(sheet, address).setCellValue(safeText(value));
+        Cell target = cell(sheet, address);
+        target.setCellValue(safeText(value));
+        CellStyle style = sheet.getWorkbook().createCellStyle();
+        style.cloneStyleFrom(target.getCellStyle());
+        style.setShrinkToFit(true);
+        style.setWrapText(false);
+        target.setCellStyle(style);
     }
 
     private void number(
@@ -780,6 +1085,11 @@ public class RdoXlsxExportService {
     ) {
     }
 
+    private enum EquipmentOwnership {
+        OWNED,
+        NON_OWNED
+    }
+
     private record MaterialRow(
             String description,
             BigDecimal quantity,
@@ -836,9 +1146,7 @@ public class RdoXlsxExportService {
                             ? "" : " " + value.unidade());
             String activity = joinNonBlank(
                     value.servicoNome(),
-                    quantity.isBlank() ? null : "Quantidade: " + quantity,
-                    value.localizacao(),
-                    value.observacoes()
+                    quantity.isBlank() ? null : "Quantidade: " + quantity
             );
             return new WorkedRow(
                     value.trechoInicial(),

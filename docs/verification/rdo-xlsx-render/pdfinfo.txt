@@ -1,0 +1,17 @@
+Creator:         Calc
+Producer:        LibreOfficeDev 26.8.0.0.alpha0 (AARCH64)
+CreationDate:    Wed Jul 22 11:50:14 2026 -03
+Custom Metadata: no
+Metadata Stream: yes
+Tagged:          yes
+UserProperties:  no
+Suspects:        no
+Form:            none
+JavaScript:      no
+Pages:           2
+Encrypted:       no
+Page size:       595.304 x 841.89 pts (A4)
+Page rot:        0
+File size:       85465 bytes
+Optimized:       no
+PDF version:     1.7
