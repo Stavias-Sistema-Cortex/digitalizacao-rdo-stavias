@@ -26,13 +26,13 @@ class RdoResponseContractTest {
                         "serviceId",
                         "priceVersionId",
                         "revenueCoverageCode",
-                        "unitPriceSnapshot",
-                        "currency",
-                        "revenueAmount",
                         "revenueEvidenceId",
                         "revenueEventId",
                         "acceptedAt",
                         "observacoes"
+                )
+                .doesNotContain(
+                        "unitPriceSnapshot", "currency", "revenueAmount"
                 );
         assertThat(recordComponentNames(RdoCreateRequest.ServicoExecutadoItem.class))
                 .contains("serviceId", "priceVersionId")

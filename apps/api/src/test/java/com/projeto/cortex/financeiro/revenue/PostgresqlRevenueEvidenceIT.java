@@ -20,6 +20,8 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -84,9 +86,13 @@ class PostgresqlRevenueEvidenceIT {
 
         assertThat(first.serviceId()).isEqualTo(fixture.serviceId());
         assertThat(first.priceVersionId()).isEqualTo(fixture.priceId());
-        assertThat(first.unitPriceSnapshot()).isEqualByComparingTo("10.0000");
-        assertThat(first.currency()).isEqualTo("BRL");
-        assertThat(first.revenueAmount()).isEqualByComparingTo("3.33");
+        assertThat(jdbc.queryForMap("""
+                SELECT unit_price_snapshot, currency, revenue_amount
+                FROM execucao_servico_rdo WHERE id = ?
+                """, executionId))
+                .containsEntry("unit_price_snapshot", new BigDecimal("10.0000"))
+                .containsEntry("currency", "BRL")
+                .containsEntry("revenue_amount", new BigDecimal("3.33"));
         assertThat(first.revenueCoverageCode()).isEqualTo("ACCEPTED_EXACT");
         assertThat(first.revenueEvidenceId()).isNotBlank();
         assertThat(first.revenueEventId()).isNotBlank();
@@ -102,8 +108,12 @@ class PostgresqlRevenueEvidenceIT {
         ).getFirst();
 
         assertThat(replay.revenueEvidenceId()).isEqualTo(first.revenueEvidenceId());
-        assertThat(replay.unitPriceSnapshot()).isEqualByComparingTo("10.0000");
-        assertThat(replay.revenueAmount()).isEqualByComparingTo("3.33");
+        assertThat(jdbc.queryForMap("""
+                SELECT unit_price_snapshot, revenue_amount
+                FROM execucao_servico_rdo WHERE id = ?
+                """, executionId))
+                .containsEntry("unit_price_snapshot", new BigDecimal("10.0000"))
+                .containsEntry("revenue_amount", new BigDecimal("3.33"));
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM execucao_servico_rdo WHERE id = ?",
                 Integer.class, executionId
@@ -162,8 +172,6 @@ class PostgresqlRevenueEvidenceIT {
                 ))
         ).getFirst();
         assertThat(registered.revenueEvidenceId()).isNull();
-        assertThat(registered.unitPriceSnapshot()).isNull();
-        assertThat(registered.revenueAmount()).isEqualByComparingTo("0.00");
         assertThat(registered.revenueCoverageCode()).isEqualTo("UNPRICED_REGISTERED");
         assertThat(jdbc.queryForMap(
                 """
@@ -171,6 +179,10 @@ class PostgresqlRevenueEvidenceIT {
                 FROM execucao_servico_rdo WHERE id = ?
                 """, registeredId
         )).allSatisfy((column, value) -> assertThat(value).isNull());
+        assertThat(jdbc.queryForObject(
+                "SELECT revenue_amount FROM execucao_servico_rdo WHERE id = ?",
+                BigDecimal.class, registeredId
+        )).isEqualByComparingTo("0.00");
 
         RdoResponse.ServicoExecutadoItem edited = replace(
                 fixture.rdoId(), fixture.obraId(), List.of(item(
@@ -199,8 +211,11 @@ class PostgresqlRevenueEvidenceIT {
             RdoResponse.ServicoExecutadoItem persisted = replace(
                     fixture.rdoId(), fixture.obraId(), List.of(zero)
             ).getFirst();
-            assertThat(persisted.revenueAmount()).isEqualByComparingTo("0.00");
             assertThat(persisted.revenueEvidenceId()).isNull();
+            assertThat(jdbc.queryForObject(
+                    "SELECT revenue_amount FROM execucao_servico_rdo WHERE id = ?",
+                    BigDecimal.class, zero.id()
+            )).isEqualByComparingTo("0.00");
             replace(fixture.rdoId(), fixture.obraId(), List.of());
         }
     }
@@ -362,6 +377,304 @@ class PostgresqlRevenueEvidenceIT {
     }
 
     @Test
+    void databaseRejectsAcceptedSnapshotAndRevenueTamperingAtomically() {
+        Fixture fixture = fixture("DB-ARITHMETIC");
+        String snapshotTamper = id();
+        String revenueTamper = id();
+
+        assertThatThrownBy(() -> insertAcceptedExecution(
+                fixture, snapshotTamper, "1.000", "9.0000", "9.00"
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("RDO_REVENUE_SNAPSHOT_MISMATCH");
+        assertThat(executionCount(snapshotTamper)).isZero();
+
+        assertThatThrownBy(() -> insertAcceptedExecution(
+                fixture, revenueTamper, "1.000", "10.0000", "9.99"
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("RDO_REVENUE_AMOUNT_MISMATCH");
+        assertThat(executionCount(revenueTamper)).isZero();
+    }
+
+    @Test
+    void databaseEnforcesHalfUpRevenueRounding() {
+        Fixture fixture = fixture("DB-ROUNDING", "1.0050");
+        String wrongRounding = id();
+        String exactRounding = id();
+
+        assertThatThrownBy(() -> insertAcceptedExecution(
+                fixture, wrongRounding, "1.000", "1.0050", "1.00"
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("RDO_REVENUE_AMOUNT_MISMATCH");
+        assertThat(executionCount(wrongRounding)).isZero();
+
+        insertAcceptedExecution(
+                fixture, exactRounding, "1.000", "1.0050", "1.01"
+        );
+        assertThat(jdbc.queryForObject(
+                "SELECT revenue_amount FROM execucao_servico_rdo WHERE id = ?",
+                BigDecimal.class, exactRounding
+        )).isEqualByComparingTo("1.01");
+    }
+
+    @Test
+    void databaseRejectsPriceFieldsOnUnpricedExecution() {
+        Fixture fixture = fixture("DB-UNPRICED");
+        String executionId = id();
+
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, service_id,
+                    price_version_id, quantidade_executada, unidade_medida,
+                    data_execucao, status_validacao, estado_receita,
+                    retrabalho, producao_rejeitada, fonte, chave_execucao,
+                    unit_price_snapshot, currency, revenue_amount,
+                    revenue_coverage_code, revenue_evidence_id,
+                    revenue_event_id, accepted_at
+                ) VALUES (?, ?, ?, 'Unpriced tamper', ?, ?, 1, 'M2', ?,
+                          'REGISTRADA', 'PRODUCAO_REGISTRADA', FALSE, FALSE,
+                          'SQL_TEST', ?, NULL, 'BRL', 0,
+                          'UNPRICED_REGISTERED', NULL, NULL, NULL)
+                """, executionId, fixture.rdoId(), fixture.obraId(),
+                fixture.serviceId(), fixture.priceId(), RDO_DATE,
+                executionKey(executionId)))
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("RDO_UNPRICED_FIELDS_FORBIDDEN");
+        assertThat(executionCount(executionId)).isZero();
+    }
+
+    @Test
+    void acceptedEvidenceBlocksRetroactiveSupersessionButAllowsFutureSuccessor()
+            throws Exception {
+        Fixture fixture = fixture("SUPERSESSION-GUARD");
+        String executionId = id();
+        RdoResponse.ServicoExecutadoItem accepted = replace(
+                fixture.rdoId(), fixture.obraId(), List.of(item(
+                        executionId, fixture.serviceId(), fixture.priceId(),
+                        "2", "M2", "VALIDADA", false, false, null
+                ))
+        ).getFirst();
+
+        assertThatThrownBy(() -> insertPrice(
+                fixture.obraId(), fixture.serviceId(), fixture.actorId(),
+                "M2", "BRL", "12.0000", RDO_DATE, null,
+                2, fixture.priceId()
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("SERVICE_PRICE_SUPERSESSION_ACCEPTED_EVIDENCE");
+
+        String future = insertPrice(
+                fixture.obraId(), fixture.serviceId(), fixture.actorId(),
+                "M2", "BRL", "12.0000", RDO_DATE.plusDays(1), null,
+                2, fixture.priceId()
+        );
+        assertThat(future).isNotBlank();
+        assertThat(jdbc.queryForObject(
+                "SELECT unit_price_snapshot FROM execucao_servico_rdo WHERE id = ?",
+                BigDecimal.class, executionId
+        )).isEqualByComparingTo("10.0000");
+        assertThat(accepted.revenueEvidenceId()).isNotBlank();
+    }
+
+    @Test
+    void acceptedEvidenceBlocksRetroactiveCancellation() throws Exception {
+        Fixture fixture = fixture("CANCELLATION-GUARD");
+        String executionId = id();
+        replace(fixture.rdoId(), fixture.obraId(), List.of(item(
+                executionId, fixture.serviceId(), fixture.priceId(),
+                "1", "M2", "VALIDADA", false, false, null
+        )));
+
+        assertThatThrownBy(() -> cancelPrice(
+                fixture.priceId(), fixture.obraId(), fixture.actorId(),
+                RDO_DATE.minusDays(1)
+        )).isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("SERVICE_PRICE_CANCELLATION_ACCEPTED_EVIDENCE");
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM service_price_version_cancellation
+                WHERE price_version_id = ?
+                """, Integer.class, fixture.priceId())).isZero();
+    }
+
+    @Test
+    void acceptedCommitWinsRaceAndRejectsWaitingSupersession() throws Exception {
+        Fixture fixture = fixture("RACE-ACCEPT-SUPERSEDE");
+        String executionId = id();
+        CountDownLatch acceptedInserted = new CountDownLatch(1);
+        CountDownLatch allowAcceptedCommit = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> accepted = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> {
+                        insertAcceptedExecution(
+                                fixture, executionId, "1.000", "10.0000", "10.00"
+                        );
+                        acceptedInserted.countDown();
+                        awaitLatch(allowAcceptedCommit);
+                    })
+            );
+            awaitLatch(acceptedInserted);
+
+            Future<?> supersession = executor.submit(() -> {
+                assertThatThrownBy(() -> insertPrice(
+                        fixture.obraId(), fixture.serviceId(), fixture.actorId(),
+                        "M2", "BRL", "12.0000", RDO_DATE, null,
+                        2, fixture.priceId()
+                )).isInstanceOf(DataAccessException.class)
+                        .hasMessageContaining(
+                                "SERVICE_PRICE_SUPERSESSION_ACCEPTED_EVIDENCE"
+                        );
+            });
+
+            try {
+                assertBlockedOnAdvisoryLock(supersession);
+            } finally {
+                allowAcceptedCommit.countDown();
+            }
+            accepted.get(10, TimeUnit.SECONDS);
+            supersession.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(executionCount(executionId)).isOne();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM service_price_version WHERE supersedes_id = ?",
+                Integer.class, fixture.priceId()
+        )).isZero();
+    }
+
+    @Test
+    void supersessionCommitWinsRaceAndRejectsWaitingAcceptance() throws Exception {
+        Fixture fixture = fixture("RACE-SUPERSEDE-ACCEPT");
+        String executionId = id();
+        CountDownLatch successorInserted = new CountDownLatch(1);
+        CountDownLatch allowSuccessorCommit = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> supersession = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> {
+                        insertPrice(
+                                fixture.obraId(), fixture.serviceId(), fixture.actorId(),
+                                "M2", "BRL", "12.0000", RDO_DATE, null,
+                                2, fixture.priceId()
+                        );
+                        successorInserted.countDown();
+                        awaitLatch(allowSuccessorCommit);
+                    })
+            );
+            awaitLatch(successorInserted);
+
+            Future<?> acceptance = executor.submit(() -> {
+                assertThatThrownBy(() -> insertAcceptedExecution(
+                        fixture, executionId, "1.000", "10.0000", "10.00"
+                )).isInstanceOf(DataAccessException.class)
+                        .hasMessageContaining("RDO_REVENUE_PRICE_STALE");
+            });
+
+            try {
+                assertBlockedOnAdvisoryLock(acceptance);
+            } finally {
+                allowSuccessorCommit.countDown();
+            }
+            supersession.get(10, TimeUnit.SECONDS);
+            acceptance.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(executionCount(executionId)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM service_price_version WHERE supersedes_id = ?",
+                Integer.class, fixture.priceId()
+        )).isOne();
+    }
+
+    @Test
+    void acceptedCommitWinsRaceAndRejectsWaitingCancellation() throws Exception {
+        Fixture fixture = fixture("RACE-ACCEPT-CANCEL");
+        String executionId = id();
+        CountDownLatch acceptedInserted = new CountDownLatch(1);
+        CountDownLatch allowAcceptedCommit = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> accepted = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> {
+                        insertAcceptedExecution(
+                                fixture, executionId, "1.000", "10.0000", "10.00"
+                        );
+                        acceptedInserted.countDown();
+                        awaitLatch(allowAcceptedCommit);
+                    })
+            );
+            awaitLatch(acceptedInserted);
+
+            Future<?> cancellation = executor.submit(() -> {
+                assertThatThrownBy(() -> cancelPrice(
+                        fixture.priceId(), fixture.obraId(), fixture.actorId(),
+                        RDO_DATE.minusDays(1)
+                )).isInstanceOf(DataAccessException.class)
+                        .hasMessageContaining(
+                                "SERVICE_PRICE_CANCELLATION_ACCEPTED_EVIDENCE"
+                        );
+            });
+
+            try {
+                assertBlockedOnAdvisoryLock(cancellation);
+            } finally {
+                allowAcceptedCommit.countDown();
+            }
+            accepted.get(10, TimeUnit.SECONDS);
+            cancellation.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(executionCount(executionId)).isOne();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM service_price_version_cancellation "
+                        + "WHERE price_version_id = ?",
+                Integer.class, fixture.priceId()
+        )).isZero();
+    }
+
+    @Test
+    void cancellationCommitWinsRaceAndRejectsWaitingAcceptance() throws Exception {
+        Fixture fixture = fixture("RACE-CANCEL-ACCEPT");
+        String executionId = id();
+        CountDownLatch cancellationInserted = new CountDownLatch(1);
+        CountDownLatch allowCancellationCommit = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> cancellation = executor.submit(() ->
+                    transactions.executeWithoutResult(ignored -> {
+                        cancelPrice(
+                                fixture.priceId(), fixture.obraId(), fixture.actorId(),
+                                RDO_DATE.minusDays(1)
+                        );
+                        cancellationInserted.countDown();
+                        awaitLatch(allowCancellationCommit);
+                    })
+            );
+            awaitLatch(cancellationInserted);
+
+            Future<?> acceptance = executor.submit(() -> {
+                assertThatThrownBy(() -> insertAcceptedExecution(
+                        fixture, executionId, "1.000", "10.0000", "10.00"
+                )).isInstanceOf(DataAccessException.class)
+                        .hasMessageContaining("RDO_REVENUE_PRICE_STALE");
+            });
+
+            try {
+                assertBlockedOnAdvisoryLock(acceptance);
+            } finally {
+                allowCancellationCommit.countDown();
+            }
+            cancellation.get(10, TimeUnit.SECONDS);
+            acceptance.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(executionCount(executionId)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM service_price_version_cancellation "
+                        + "WHERE price_version_id = ?",
+                Integer.class, fixture.priceId()
+        )).isOne();
+    }
+
+    @Test
     void contextReturnsRealCatalogPriceChoicesExactCoverageAndRevision() {
         Fixture fixture = fixture("CONTEXT");
 
@@ -375,8 +688,8 @@ class PostgresqlRevenueEvidenceIT {
                         .singleElement()
                         .satisfies(price -> {
                             assertThat(price.id()).isEqualTo(fixture.priceId());
-                            assertThat(price.unitPrice()).isEqualByComparingTo("10.0000");
-                            assertThat(price.currency()).isEqualTo("BRL");
+                            assertThat(price.unit()).isEqualTo("M2");
+                            assertThat(price.version()).isEqualTo(1);
                         }));
         assertThat(context.coverage().serviceCatalog().status()).isEqualTo("COMPLETE");
         assertThat(context.coverage().priceCatalog().status()).isEqualTo("COMPLETE");
@@ -431,9 +744,6 @@ class PostgresqlRevenueEvidenceIT {
         assertThat(imported).isNotNull();
         assertThat(imported.serviceId()).isNull();
         assertThat(imported.priceVersionId()).isNull();
-        assertThat(imported.unitPriceSnapshot()).isNull();
-        assertThat(imported.currency()).isNull();
-        assertThat(imported.revenueAmount()).isEqualByComparingTo("0.00");
         assertThat(imported.revenueCoverageCode())
                 .isEqualTo("HISTORICAL_UNPRICED");
         assertThat(imported.revenueEvidenceId()).isNull();
@@ -490,6 +800,10 @@ class PostgresqlRevenueEvidenceIT {
     }
 
     private static Fixture fixture(String suffix) {
+        return fixture(suffix, "10.0000");
+    }
+
+    private static Fixture fixture(String suffix, String unitPrice) {
         String obraId = id();
         String actorId = id();
         String rdoId = id();
@@ -515,10 +829,67 @@ class PostgresqlRevenueEvidenceIT {
                         + serviceId.substring(0, 8).toUpperCase(java.util.Locale.ROOT),
                 "Service " + suffix, obraId, actorId);
         String priceId = insertPrice(
-                obraId, serviceId, actorId, "M2", "BRL", "10.0000",
+                obraId, serviceId, actorId, "M2", "BRL", unitPrice,
                 RDO_DATE.minusDays(10), null, 1, null
         );
         return new Fixture(obraId, actorId, rdoId, serviceId, priceId);
+    }
+
+    private static void insertAcceptedExecution(
+            Fixture fixture,
+            String executionId,
+            String quantity,
+            String snapshot,
+            String revenue
+    ) {
+        jdbc.update("""
+                INSERT INTO execucao_servico_rdo (
+                    id, rdo_id, obra_id, servico_nome, service_id,
+                    price_version_id, quantidade_executada, unidade_medida,
+                    data_execucao, status_validacao, estado_receita,
+                    retrabalho, producao_rejeitada, fonte, chave_execucao,
+                    unit_price_snapshot, currency, revenue_amount,
+                    revenue_coverage_code, revenue_evidence_id,
+                    revenue_event_id, accepted_at
+                ) VALUES (?, ?, ?, 'Accepted SQL execution', ?, ?, ?, 'M2', ?,
+                          'VALIDADA', 'RECEITA_MEDIDA', FALSE, FALSE,
+                          'SQL_TEST', ?, ?, 'BRL', ?, 'ACCEPTED_EXACT',
+                          ?, ?, now())
+                """, executionId, fixture.rdoId(), fixture.obraId(),
+                fixture.serviceId(), fixture.priceId(), new BigDecimal(quantity),
+                RDO_DATE, executionKey(executionId), new BigDecimal(snapshot),
+                new BigDecimal(revenue), id(), id());
+    }
+
+    private static int executionCount(String executionId) {
+        return jdbc.queryForObject(
+                "SELECT count(*) FROM execucao_servico_rdo WHERE id = ?",
+                Integer.class, executionId
+        );
+    }
+
+    private static void assertBlockedOnAdvisoryLock(Future<?> future) {
+        assertThatThrownBy(() -> future.get(300, TimeUnit.MILLISECONDS))
+                .isInstanceOf(TimeoutException.class);
+    }
+
+    private static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(
+                        "Timed out waiting for concurrent test latch"
+                );
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                    "Interrupted while waiting for concurrent test latch", exception
+            );
+        }
+    }
+
+    private static String executionKey(String executionId) {
+        return executionId.replace("-", "").repeat(2);
     }
 
     private static void insertHistoricalImport(String importId, String rdoId) {

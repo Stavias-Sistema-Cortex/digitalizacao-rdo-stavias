@@ -241,7 +241,7 @@ public class RdoOperationalDetailService {
                 nuloSeVazio(command.finalSegment()),
                 nuloSeVazio(command.location()), turn, "REGISTRADA",
                 "PRODUCAO_REGISTRADA", "HISTORICAL_UNPRICED",
-                null, null, BigDecimal.ZERO.setScale(2), null, null, null,
+                null, null, null,
                 false, false, command.observations()
         );
     }
@@ -369,9 +369,6 @@ public class RdoOperationalDetailService {
                     status_validacao,
                     estado_receita,
                     revenue_coverage_code,
-                    unit_price_snapshot,
-                    currency,
-                    revenue_amount,
                     revenue_evidence_id,
                     revenue_event_id,
                     accepted_at,
@@ -398,9 +395,6 @@ public class RdoOperationalDetailService {
                         rs.getString("status_validacao"),
                         rs.getString("estado_receita"),
                         rs.getString("revenue_coverage_code"),
-                        rs.getBigDecimal("unit_price_snapshot"),
-                        rs.getString("currency"),
-                        rs.getBigDecimal("revenue_amount"),
                         rs.getString("revenue_evidence_id"),
                         rs.getString("revenue_event_id"),
                         rs.getTimestamp("accepted_at") == null
@@ -786,8 +780,7 @@ public class RdoOperationalDetailService {
                 execution.unit(), execution.initialSegment(), execution.finalSegment(),
                 execution.location(), execution.turn(), execution.validationStatus(),
                 execution.revenueState(), execution.coverageCode(),
-                execution.unitPriceSnapshot(), execution.currency(),
-                execution.revenueAmount(), execution.evidenceId(), execution.eventId(),
+                execution.evidenceId(), execution.eventId(),
                 execution.acceptedAt(), execution.rework(),
                 execution.productionRejected(), execution.observations()
         );
@@ -971,9 +964,6 @@ public class RdoOperationalDetailService {
                     prepared.validationStatus(),
                     prepared.revenueState(),
                     prepared.coverageCode(),
-                    prepared.unitPriceSnapshot(),
-                    price == null ? null : price.currency(),
-                    prepared.revenueAmount(),
                     prepared.evidenceId(),
                     prepared.eventId(),
                     acceptedAt,

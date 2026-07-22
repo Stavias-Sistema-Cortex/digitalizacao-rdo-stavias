@@ -139,9 +139,6 @@ public record RdoResponse(
             String statusValidacao,
             String estadoReceita,
             String revenueCoverageCode,
-            BigDecimal unitPriceSnapshot,
-            String currency,
-            BigDecimal revenueAmount,
             String revenueEvidenceId,
             String revenueEventId,
             Instant acceptedAt,
@@ -149,31 +146,6 @@ public record RdoResponse(
             boolean producaoRejeitada,
             String observacoes
     ) {
-        public ServicoExecutadoItem(
-                String id,
-                String servicoNome,
-                String itemContratualId,
-                BigDecimal quantidadeExecutada,
-                String unidade,
-                String trechoInicial,
-                String trechoFinal,
-                String localizacao,
-                String turno,
-                String statusValidacao,
-                String estadoReceita,
-                BigDecimal ignoredLegacyRevenue,
-                boolean retrabalho,
-                boolean producaoRejeitada,
-                String observacoes
-        ) {
-            this(
-                    id, null, null, servicoNome, itemContratualId,
-                    quantidadeExecutada, unidade, trechoInicial, trechoFinal,
-                    localizacao, turno, statusValidacao, estadoReceita,
-                    "HISTORICAL_UNPRICED", null, null, BigDecimal.ZERO.setScale(2),
-                    null, null, null, retrabalho, producaoRejeitada, observacoes
-            );
-        }
     }
 
     public record AlocacaoColaboradorItem(

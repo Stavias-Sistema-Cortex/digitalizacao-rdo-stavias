@@ -733,9 +733,11 @@ class RdoXlsxExportServiceTest {
                 )),
                 List.of(control("cg-1")),
                 List.of(new RdoResponse.ServicoExecutadoItem(
-                        "svc-1", "Fresagem", "item-1", new BigDecimal("125.50"),
+                        "svc-1", null, null, "Fresagem", "item-1",
+                        new BigDecimal("125.50"),
                         "m²", "10+000", "10+500", "Faixa direita", "DIURNO",
-                        "VALIDADO", "ESTIMADA", new BigDecimal("1000"),
+                        "VALIDADO", "ESTIMADA", "HISTORICAL_UNPRICED",
+                        null, null, null,
                         false, false, "Sem intercorrências"
                 )),
                 List.of(),
@@ -980,9 +982,10 @@ class RdoXlsxExportServiceTest {
             String observations
     ) {
         return new RdoResponse.ServicoExecutadoItem(
-                "svc-boundary", name, "item-boundary", BigDecimal.ONE,
+                "svc-boundary", null, null, name, "item-boundary", BigDecimal.ONE,
                 "m²", "10+000", "10+001", null, "DIURNO", "VALIDADO",
-                "ESTIMADA", BigDecimal.ONE, false, false, observations
+                "ESTIMADA", "HISTORICAL_UNPRICED", null, null, null,
+                false, false, observations
         );
     }
 

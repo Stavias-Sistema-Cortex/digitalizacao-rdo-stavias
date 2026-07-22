@@ -134,9 +134,7 @@ public record RdoContextResponse(
             String id,
             String serviceId,
             String unit,
-            String currency,
             int version,
-            BigDecimal unitPrice,
             LocalDate validFrom,
             LocalDate effectiveValidTo
     ) {

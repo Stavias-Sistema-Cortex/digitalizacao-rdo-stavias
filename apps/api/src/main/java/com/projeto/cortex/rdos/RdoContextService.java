@@ -525,8 +525,8 @@ public class RdoContextService {
                 new LinkedHashMap<>();
         jdbcTemplate.query(
                 """
-                SELECT price.id, price.service_id, price.unidade, price.moeda,
-                       price.versao, price.valor_unitario, price.vigencia_inicio,
+                SELECT price.id, price.service_id, price.unidade,
+                       price.versao, price.vigencia_inicio,
                        cortex_price_effective_valid_to(price.id) AS effective_valid_to
                 FROM service_price_version price
                 JOIN catalogo_servico service ON service.id = price.service_id
@@ -546,8 +546,7 @@ public class RdoContextService {
                             rs.getString("service_id"), ignored -> new ArrayList<>()
                     ).add(new RdoContextResponse.ServicePriceChoice(
                             rs.getString("id"), rs.getString("service_id"),
-                            rs.getString("unidade"), rs.getString("moeda"),
-                            rs.getInt("versao"), rs.getBigDecimal("valor_unitario"),
+                            rs.getString("unidade"), rs.getInt("versao"),
                             rs.getDate("vigencia_inicio").toLocalDate(),
                             rs.getDate("effective_valid_to") == null
                                     ? null
