@@ -27,11 +27,13 @@ import type {
   LocalTeamHistoryRecord,
   LocalTeamRecord,
   LocalTeamWorksiteRecord,
+  MemoryCacheMetadataRecord,
+  MemorySearchDocumentRecord,
 } from "./db.types";
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 14;
+export const CORTEX_DATABASE_VERSION = 15;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -230,6 +232,24 @@ export interface CortexDbSchema extends DBSchema {
     value: LocalTeamWorksiteRecord;
     indexes: {
       "by-team-id": string;
+    };
+  };
+
+  memory_search_documents: {
+    key: string;
+    value: MemorySearchDocumentRecord;
+    indexes: {
+      "by-user-scope": [string, string];
+      "by-user-scope-commit": [string, string, number];
+    };
+  };
+
+  memory_cache_metadata: {
+    key: string;
+    value: MemoryCacheMetadataRecord;
+    indexes: {
+      "by-user": string;
+      "by-cached-at": string;
     };
   };
 }
@@ -694,6 +714,30 @@ export async function getCortexDb(): Promise<
             { keyPath: "id" },
           );
           worksitesStore.createIndex("by-team-id", "equipeId");
+        }
+
+        if (!database.objectStoreNames.contains("memory_search_documents")) {
+          const memoryStore = database.createObjectStore(
+            "memory_search_documents",
+            { keyPath: "key" },
+          );
+          memoryStore.createIndex(
+            "by-user-scope",
+            ["userId", "scopeHash"],
+          );
+          memoryStore.createIndex(
+            "by-user-scope-commit",
+            ["userId", "scopeHash", "commitSequence"],
+          );
+        }
+
+        if (!database.objectStoreNames.contains("memory_cache_metadata")) {
+          const metadataStore = database.createObjectStore(
+            "memory_cache_metadata",
+            { keyPath: "key" },
+          );
+          metadataStore.createIndex("by-user", "userId");
+          metadataStore.createIndex("by-cached-at", "cachedAt");
         }
 
       },

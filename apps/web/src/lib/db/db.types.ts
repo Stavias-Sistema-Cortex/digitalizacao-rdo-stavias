@@ -495,6 +495,49 @@ export interface LocalTeamWorksiteRecord {
   atualizadoEm: string;
 }
 
+export interface MemorySearchDocumentRecord {
+  key: string;
+  userId: string;
+  scopeHash: string;
+  eventId: string;
+  commitSequence: number | null;
+  normalizedText: string;
+  structuralKeys: {
+    eventType: string;
+    entityType: string;
+    entityId: string | null;
+    worksiteId: string | null;
+    rdoId: string | null;
+    origin: string | null;
+    result: string | null;
+  };
+  syncStatus: "UPDATED" | "LOCAL_PENDING" | "SYNCING" | "CONFLICT" | "REJECTED";
+  sourceKind: "SERVER" | "LOCAL";
+  occurredAt: string;
+  eventType: string;
+  source: string | null;
+  principalName: string | null;
+  worksiteName: string | null;
+  rdoNumber: string | null;
+  serviceName: string | null;
+  errorCategory: string | null;
+}
+
+export interface MemoryCacheMetadataRecord {
+  key: string;
+  userId: string;
+  scopeHash: string;
+  highWaterMark: number;
+  authorizedEventCount: number;
+  cachedEventCount: number;
+  oldestCommitSequence: number | null;
+  newestCommitSequence: number;
+  coverageMode: string;
+  serverCoverageComplete: boolean;
+  complete: boolean;
+  cachedAt: string;
+}
+
 export interface PrevisaoSnapshotRecord {
   id: string;
   obraId: string;

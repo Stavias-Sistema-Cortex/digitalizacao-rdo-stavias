@@ -1815,11 +1815,72 @@ textarea:focus {
 
 /* --- Home --- */
 .home-dashboard {
-  padding: 56px clamp(20px, 3vw, 44px) 120px;
+  width: 100%;
+  padding: 56px clamp(16px, 2vw, 32px) 120px;
   display: flex;
   flex-direction: column;
   gap: 18px;
   min-width: 0;
+}
+
+.home-page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.home-page-heading span {
+  color: var(--color-brand-teal);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home-page-heading h1 {
+  margin-top: 2px;
+  font-size: clamp(1.45rem, 2vw, 2rem);
+}
+
+.home-page-heading p {
+  max-width: 430px;
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.home-subnav {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.home-subnav [role="tablist"] {
+  display: flex;
+  gap: 2px;
+}
+
+.home-subnav [role="tab"] {
+  min-height: 38px;
+  padding: 0 15px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.home-subnav [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--color-brand-yellow);
+  color: var(--color-brand-teal-strong);
+}
+
+.home-overview {
+  display: grid;
+  gap: 18px;
 }
 
 .home-topbar {
@@ -1831,9 +1892,22 @@ textarea:focus {
   border-bottom: 1px solid var(--color-border);
 }
 
-.home-topbar h1 {
+.home-topbar h1,
+.home-topbar h2 {
   margin: 0 8px 0 0;
   font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.home-memory-card p {
+  min-height: 36px;
+  margin: 0 0 8px;
+  color: var(--color-muted);
+  line-height: 1.5;
+}
+
+.home-memory-card a {
+  color: var(--color-brand-teal-strong);
   font-weight: 700;
 }
 
@@ -2509,6 +2583,15 @@ textarea:focus {
 @media (max-width: 620px) {
   .home-dashboard {
     padding: 24px 14px 96px;
+  }
+
+  .home-page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .home-page-heading p {
+    text-align: left;
   }
 
   .home-uf-filter,
