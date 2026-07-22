@@ -2,6 +2,8 @@ package com.projeto.cortex.ontology;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -43,8 +45,19 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
     @MockBean
     private OperationalMemoryQueryService service;
 
+    @MockBean
+    private FinancialAccessService financialAccessService;
+
     @BeforeEach
     void emptyPage() {
+        when(financialAccessService.allowedObraIds(
+                any(),
+                eq(FinancialPermission.FINANCEIRO_VISUALIZAR)
+        )).thenReturn(Set.of());
+        when(financialAccessService.allowedUnitIds(
+                any(),
+                eq(FinancialPermission.FINANCEIRO_VISUALIZAR)
+        )).thenReturn(java.util.Optional.of(Set.of()));
         when(service.search(any(), any(), any(), any()))
                 .thenReturn(new OperationalMemoryPageResponse(
                         List.of(),
@@ -57,6 +70,41 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         ),
                         Instant.parse("2026-07-22T12:00:00Z")
                 ));
+    }
+
+    @Test
+    void propagatesRealFinancialCapabilityScopesIntoMemoryAuthorization()
+            throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        when(jdbcTemplate.queryForList(
+                contains("vinculo_colaborador_obra"),
+                eq(String.class),
+                eq("beta")
+        )).thenReturn(List.of(WORKSITE_A));
+        when(financialAccessService.allowedObraIds(
+                "beta",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(Set.of(WORKSITE_A));
+        when(financialAccessService.allowedUnitIds(
+                "beta",
+                FinancialPermission.FINANCEIRO_VISUALIZAR
+        )).thenReturn(java.util.Optional.of(Set.of("unit-a")));
+
+        mockMvc.perform(get("/api/ontology/memory")
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isOk());
+
+        verify(service).search(
+                eq(OperationalMemoryScope.beta(
+                        "beta",
+                        Set.of(WORKSITE_A),
+                        Set.of(WORKSITE_A),
+                        Set.of("unit-a")
+                )),
+                eq(OperationalMemoryFilter.empty()),
+                eq(50),
+                eq(null)
+        );
     }
 
     @Test
@@ -144,8 +192,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         .param("from", "2026-07-21T10:00:00Z")
                         .param("to", "2026-07-21T12:00:00Z")
                         .param("limit", "500")
-                        .param("beforeCommitSequence", "77")
-                        .param("beforeEventId", "event-77")
+                        .param("cursor", "v1.current.opaque.signature")
                         .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
                 .andExpect(status().isOk());
 
@@ -165,7 +212,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         Instant.parse("2026-07-21T12:00:00Z")
                 )),
                 eq(100),
-                eq(new OperationalMemoryCursor(77L, "event-77"))
+                eq(new OperationalMemoryCursor("v1.current.opaque.signature"))
         );
     }
 
@@ -178,7 +225,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         .param("beforeCommitSequence", "77")
                         .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "alfa"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("MEMORY_CURSOR_INVALID"));
+                .andExpect(jsonPath("$.code").value("MEMORY_CURSOR_REQUIRES_TOKEN"));
         mockMvc.perform(get("/api/ontology/memory")
                         .param("from", "2026-07-21T12:00:00Z")
                         .param("to", "2026-07-21T10:00:00Z")
@@ -201,8 +248,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                 .thenThrow(new OperationalMemoryCursorScopeException());
 
         mockMvc.perform(get("/api/ontology/memory")
-                        .param("beforeCommitSequence", "101")
-                        .param("beforeEventId", "foreign-event")
+                        .param("cursor", "v1.current.foreign.signature")
                         .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "alfa"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("MEMORY_CURSOR_SCOPE_MISMATCH"))

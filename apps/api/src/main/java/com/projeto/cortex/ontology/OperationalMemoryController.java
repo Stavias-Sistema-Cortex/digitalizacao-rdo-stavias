@@ -1,6 +1,8 @@
 package com.projeto.cortex.ontology;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.Set;
@@ -24,13 +26,16 @@ public class OperationalMemoryController {
 
     private final OperationalMemoryQueryService service;
     private final CurrentUserService currentUserService;
+    private final FinancialAccessService financialAccessService;
 
     public OperationalMemoryController(
             OperationalMemoryQueryService service,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            FinancialAccessService financialAccessService
     ) {
         this.service = service;
         this.currentUserService = currentUserService;
+        this.financialAccessService = financialAccessService;
     }
 
     @GetMapping("/api/ontology/memory")
@@ -51,6 +56,7 @@ public class OperationalMemoryController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             Instant to,
             @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String cursor,
             @RequestParam(required = false) Long beforeCommitSequence,
             @RequestParam(required = false) String beforeEventId
     ) {
@@ -67,6 +73,7 @@ public class OperationalMemoryController {
                 result,
                 from,
                 to,
+                cursor,
                 beforeCommitSequence,
                 beforeEventId
         );
@@ -74,7 +81,18 @@ public class OperationalMemoryController {
 
         Optional<Set<String>> allowedWorksites = currentUserService.allowedObraIds(userId);
         OperationalMemoryScope scope = allowedWorksites
-                .map(ids -> OperationalMemoryScope.beta(userId, ids))
+                .map(ids -> OperationalMemoryScope.beta(
+                        userId,
+                        ids,
+                        financialAccessService.allowedObraIds(
+                                userId,
+                                FinancialPermission.FINANCEIRO_VISUALIZAR
+                        ),
+                        financialAccessService.allowedUnitIds(
+                                userId,
+                                FinancialPermission.FINANCEIRO_VISUALIZAR
+                        ).orElse(Set.of())
+                ))
                 .orElseGet(() -> OperationalMemoryScope.alfa(userId));
         OperationalMemoryFilter filter = new OperationalMemoryFilter(
                 q,
@@ -89,10 +107,10 @@ public class OperationalMemoryController {
                 from,
                 to
         );
-        OperationalMemoryCursor cursor = beforeCommitSequence == null
+        OperationalMemoryCursor pageCursor = !hasText(cursor)
                 ? null
-                : new OperationalMemoryCursor(beforeCommitSequence, beforeEventId);
-        return service.search(scope, filter, boundedLimit(limit), cursor);
+                : new OperationalMemoryCursor(cursor);
+        return service.search(scope, filter, boundedLimit(limit), pageCursor);
     }
 
     @ExceptionHandler(MemoryRequestException.class)
@@ -137,6 +155,7 @@ public class OperationalMemoryController {
             String result,
             Instant from,
             Instant to,
+            String cursor,
             Long beforeCommitSequence,
             String beforeEventId
     ) {
@@ -150,11 +169,14 @@ public class OperationalMemoryController {
         validateLength(rdoId, MAX_IDENTIFIER_LENGTH, "MEMORY_IDENTIFIER_LIMIT");
         validateLength(actorId, MAX_IDENTIFIER_LENGTH, "MEMORY_IDENTIFIER_LIMIT");
         validateLength(beforeEventId, MAX_IDENTIFIER_LENGTH, "MEMORY_CURSOR_INVALID");
+        validateLength(cursor, 2_048, "MEMORY_CURSOR_INVALID");
         if (hasText(entityType) != hasText(entityId)) {
             throw badRequest("MEMORY_ENTITY_FILTER_INVALID");
         }
-        if ((beforeCommitSequence == null) != !hasText(beforeEventId)
-                || (beforeCommitSequence != null && beforeCommitSequence < 0)) {
+        if (beforeCommitSequence != null || hasText(beforeEventId)) {
+            throw badRequest("MEMORY_CURSOR_REQUIRES_TOKEN");
+        }
+        if (hasText(cursor) && cursor.length() > 2_048) {
             throw badRequest("MEMORY_CURSOR_INVALID");
         }
         if (from != null && to != null && from.isAfter(to)) {

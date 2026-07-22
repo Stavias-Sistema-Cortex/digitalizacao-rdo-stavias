@@ -28,7 +28,7 @@ class PostgresqlActivationReadinessTest {
         verify(jdbc).queryForObject("SELECT 1", Integer.class);
         verify(jdbc).queryForObject(
                 org.mockito.ArgumentMatchers.argThat(
-                        sql -> sql.contains("version = '45.1'")
+                        sql -> sql.contains("version = '47'")
                 ),
                 eq(Integer.class)
         );
@@ -46,6 +46,6 @@ class PostgresqlActivationReadinessTest {
 
         assertThatThrownBy(readiness::verifyRuntimeReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V45.1");
+                .hasMessageContaining("V47");
     }
 }

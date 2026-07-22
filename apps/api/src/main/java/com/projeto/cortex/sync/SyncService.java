@@ -183,44 +183,6 @@ public class SyncService {
         );
     }
 
-    // Catálogos globais não-pessoais que o cliente offline precisa e que podem
-    // ser entregues a qualquer usuário. Dados pessoais/confidenciais (colaborador,
-    // frequência) NÃO entram nesta lista — só chegam via obra vinculada.
-    private static final List<String> EVENTOS_REFERENCIA_GLOBAL =
-            List.of("ATIVO", "EQUIPAMENTO", "SERVICO");
-
-    private static final List<String> EVENTOS_FINANCEIROS = List.of(
-            "ITEM_CONTRATUAL",
-            "PREVISAO_FINANCEIRA",
-            "PDOR",
-            "CENTRO_CUSTO",
-            "FORNECEDOR",
-            "SOLICITACAO_COMPRA",
-            "COMPRA",
-            "PEDIDO_COMPRA",
-            "REGRA_APROVACAO",
-            "DECISAO_APROVACAO",
-            "NOTA_FISCAL",
-            "LANCAMENTO",
-            "LIQUIDACAO",
-            "LANCAMENTO_FINANCEIRO",
-            "PAGAMENTO",
-            "COBRANCA_EMAIL",
-            "UNIDADE_FINANCEIRA",
-            "RATEIO_FINANCEIRO",
-            "COMPRA_ITEM",
-            "DOCUMENTO_FISCAL"
-    );
-
-    private static final List<String> EVENTOS_FINANCEIROS_ALFA =
-            List.of("PERMISSAO_FINANCEIRA");
-
-    private static final List<String> EVENTOS_MENSAGENS = List.of(
-            "CONVERSA",
-            "MENSAGEM",
-            "MENSAGEM_ANEXO"
-    );
-
     /** Filtro de escopo do pull: condição SQL adicional e seus parâmetros. */
     record FiltroPull(String condicaoSql, List<Object> parametros) {
     }
@@ -262,123 +224,14 @@ public class SyncService {
             Set<String> unidadesFinanceirasAutorizadas,
             String currentUserId
     ) {
-        if (obrasAutorizadas.isEmpty()) {
-            return new FiltroPull("", List.of());
-        }
-
-        Set<String> obras = obrasAutorizadas.get();
-        List<Object> parametros = new ArrayList<>();
-        StringBuilder escopo = new StringBuilder();
-
-        if (!obras.isEmpty()) {
-            escopo.append("obra_id IN (")
-                    .append(placeholders(obras.size()))
-                    .append(")");
-            parametros.addAll(obras);
-        }
-
-        if (escopo.length() > 0) {
-            escopo.append(" OR ");
-        }
-        escopo.append("(obra_id IS NULL AND tipo_entidade IN (")
-                .append(placeholders(EVENTOS_REFERENCIA_GLOBAL.size()))
-                .append("))");
-        parametros.addAll(EVENTOS_REFERENCIA_GLOBAL);
-
-        List<Object> scopedParameters = new ArrayList<>();
-        String tiposRestritos = placeholders(
-                EVENTOS_FINANCEIROS.size()
-                        + EVENTOS_FINANCEIROS_ALFA.size()
-                        + EVENTOS_MENSAGENS.size()
-        );
-        scopedParameters.addAll(EVENTOS_FINANCEIROS);
-        scopedParameters.addAll(EVENTOS_FINANCEIROS_ALFA);
-        scopedParameters.addAll(EVENTOS_MENSAGENS);
-        scopedParameters.addAll(parametros);
-
-        StringBuilder condition = new StringBuilder(
-                " AND ((tipo_entidade NOT IN (" + tiposRestritos + ") AND ("
-                        + escopo + "))"
-        );
-
-        Set<String> financialScope = obrasFinanceirasAutorizadas == null
-                ? Set.of()
-                : obrasFinanceirasAutorizadas;
-        if (!financialScope.isEmpty()) {
-            condition.append(" OR (tipo_entidade IN (")
-                    .append(placeholders(EVENTOS_FINANCEIROS.size()))
-                    .append(") AND obra_id IN (")
-                    .append(placeholders(financialScope.size()))
-                    .append("))");
-            scopedParameters.addAll(EVENTOS_FINANCEIROS);
-            scopedParameters.addAll(financialScope);
-        }
-        Set<String> unitScope = unidadesFinanceirasAutorizadas == null
-                ? Set.of()
-                : unidadesFinanceirasAutorizadas;
-        if (!unitScope.isEmpty()) {
-            condition.append(" OR (tipo_entidade IN (")
-                    .append(placeholders(EVENTOS_FINANCEIROS.size()))
-                    .append(") AND ((tipo_entidade = 'UNIDADE_FINANCEIRA' ")
-                    .append("AND entidade_id IN (")
-                    .append(placeholders(unitScope.size()))
-                    .append(")) OR EXISTS (")
-                    .append("SELECT 1 FROM cortex_relacao relacao ")
-                    .append("WHERE relacao.origem_tipo = tipo_entidade ")
-                    .append("AND relacao.origem_id = entidade_id ")
-                    .append("AND relacao.destino_tipo = 'UNIDADE_FINANCEIRA' ")
-                    .append("AND relacao.destino_id IN (")
-                    .append(placeholders(unitScope.size()))
-                    .append(") AND relacao.ativa = TRUE)))");
-            scopedParameters.addAll(EVENTOS_FINANCEIROS);
-            scopedParameters.addAll(unitScope);
-            scopedParameters.addAll(unitScope);
-        }
-        if (currentUserId != null && !currentUserId.isBlank()) {
-            condition.append(" OR (tipo_entidade IN (")
-                    .append(placeholders(EVENTOS_MENSAGENS.size()))
-                    .append(") AND EXISTS (")
-                    .append("SELECT 1 ")
-                    .append("FROM cortex_evento_visibilidade cev ")
-                    .append("JOIN conversa cv ON cv.id = cev.escopo_id ")
-                    .append("JOIN conversa_participante cp ")
-                    .append("ON cp.conversa_id = cv.id ")
-                    .append("AND cp.colaborador_id = ? ")
-                    .append("AND cp.status = 'ATIVO' ")
-                    .append("AND cp.removido_em IS NULL ")
-                    .append("AND cp.deletado_em IS NULL ")
-                    .append("WHERE cev.evento_id = cortex_evento_operacional.id ")
-                    .append("AND cev.escopo_tipo = 'CONVERSATION_PARTICIPANT' ")
-                    .append("AND cv.status = 'ATIVA' ")
-                    .append("AND cv.deletado_em IS NULL ")
-                    .append("AND (cv.tipo IN ('DIRETA', 'GRUPO') ")
-                    .append("OR (cv.tipo = 'OBRA' AND EXISTS (")
-                    .append("SELECT 1 FROM vinculo_colaborador_obra v ")
-                    .append("WHERE v.obra_id = cv.obra_id ")
-                    .append("AND v.colaborador_id = ? AND v.status = 'ATIVO')) ")
-                    .append("OR (cv.tipo = 'EQUIPE' AND EXISTS (")
-                    .append("SELECT 1 FROM equipe e ")
-                    .append("JOIN equipe_membro em ON em.equipe_id = e.id ")
-                    .append("JOIN vinculo_colaborador_obra v ON v.obra_id = e.obra_id ")
-                    .append("WHERE e.id = cv.equipe_id AND e.obra_id = cv.obra_id ")
-                    .append("AND e.status = 'ATIVA' AND e.deletado_em IS NULL ")
-                    .append("AND em.colaborador_id = ? AND em.status = 'ATIVO' ")
-                    .append("AND em.removido_em IS NULL AND em.deletado_em IS NULL ")
-                    .append("AND v.colaborador_id = ? AND v.status = 'ATIVO')))" )
-                    .append("))");
-            scopedParameters.addAll(EVENTOS_MENSAGENS);
-            scopedParameters.add(currentUserId);
-            scopedParameters.add(currentUserId);
-            scopedParameters.add(currentUserId);
-            scopedParameters.add(currentUserId);
-        }
-        condition.append(")");
-
-        return new FiltroPull(condition.toString(), scopedParameters);
-    }
-
-    private static String placeholders(int count) {
-        return String.join(",", Collections.nCopies(count, "?"));
+        OperationalEventVisibilityPolicy.SqlPredicate predicate =
+                OperationalEventVisibilityPolicy.forSync(
+                        obrasAutorizadas,
+                        obrasFinanceirasAutorizadas,
+                        unidadesFinanceirasAutorizadas,
+                        currentUserId
+                );
+        return new FiltroPull(predicate.sql(), predicate.parameters());
     }
 
     public SyncDeviceResponse registrarDispositivo(SyncDeviceRequest request) {

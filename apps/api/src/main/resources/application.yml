@@ -118,6 +118,16 @@ cortex:
         initial-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_INITIAL_DELAY_MS:30000}
         fixed-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_FIXED_DELAY_MS:60000}
 
+  ontology:
+    memory:
+      cursor-hmac:
+        current-key-id: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID:}
+        current-key-file: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:}
+        current-key-inline: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY:}
+        previous-key-id: ${CORTEX_MEMORY_CURSOR_HMAC_PREVIOUS_KEY_ID:}
+        previous-key-file: ${CORTEX_MEMORY_CURSOR_HMAC_PREVIOUS_KEY_FILE:}
+        previous-key-inline: ${CORTEX_MEMORY_CURSOR_HMAC_PREVIOUS_KEY:}
+
   storage:
     provider: ${CORTEX_STORAGE_PROVIDER:}
     max-size-bytes: ${CORTEX_STORAGE_MAX_SIZE_BYTES:26214400}

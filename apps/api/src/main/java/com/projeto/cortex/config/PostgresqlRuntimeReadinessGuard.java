@@ -23,7 +23,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "45.1";
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "47";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)

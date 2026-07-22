@@ -18,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import com.projeto.cortex.sync.OperationalEventVisibilityPolicy;
 
 @Service
 public class OperationalMemoryQueryService {
@@ -36,9 +37,14 @@ public class OperationalMemoryQueryService {
     );
 
     private final JdbcTemplate jdbcTemplate;
+    private final OperationalMemoryCursorSigner cursorSigner;
 
-    public OperationalMemoryQueryService(JdbcTemplate jdbcTemplate) {
+    public OperationalMemoryQueryService(
+            JdbcTemplate jdbcTemplate,
+            OperationalMemoryCursorSigner cursorSigner
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.cursorSigner = cursorSigner;
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -54,14 +60,27 @@ public class OperationalMemoryQueryService {
         validateDirectRequest(filter);
 
         int limit = boundedLimit(requestedLimit);
-        CoverageSnapshot snapshot = coverage(scope);
-        requireCursorInScope(scope, cursor, snapshot.newestCommitSequence());
+        String scopeFingerprint = scopeHash(scope);
+        String filterFingerprint = filterHash(filter);
+        PagePosition position = cursor == null
+                ? null
+                : pagePosition(cursorSigner.verify(
+                        cursor.token(), scopeFingerprint, filterFingerprint
+                ));
+        CoverageSnapshot snapshot = coverage(
+                scope,
+                position == null ? null : position.highWaterMark()
+        );
+        long highWaterMark = position == null
+                ? snapshot.newestCommitSequence()
+                : position.highWaterMark();
+        requireCursorInScope(scope, position, highWaterMark);
         QuerySpec query = buildSearchQuery(
                 scope,
                 filter,
                 limit,
-                cursor,
-                snapshot.newestCommitSequence()
+                position,
+                highWaterMark
         );
         List<OperationalMemoryEventResponse> rows = jdbcTemplate.query(
                 query.sql(),
@@ -73,18 +92,21 @@ public class OperationalMemoryQueryService {
                 rows.subList(0, Math.min(limit, rows.size()))
         );
         OperationalMemoryCursor nextCursor = hasMore && !items.isEmpty()
-                ? new OperationalMemoryCursor(
+                ? new OperationalMemoryCursor(cursorSigner.sign(
+                        highWaterMark,
                         items.getLast().commitSequence(),
-                        items.getLast().eventId()
-                )
+                        items.getLast().eventId(),
+                        scopeFingerprint,
+                        filterFingerprint
+                ))
                 : null;
 
         return new OperationalMemoryPageResponse(
                 items,
                 nextCursor,
                 hasMore,
-                snapshot.newestCommitSequence(),
-                scopeHash(scope),
+                highWaterMark,
+                scopeFingerprint,
                 new OperationalMemoryCoverage(
                         "FULL_HISTORY",
                         true,
@@ -100,7 +122,7 @@ public class OperationalMemoryQueryService {
             OperationalMemoryScope scope,
             OperationalMemoryFilter filter,
             int limit,
-            OperationalMemoryCursor cursor,
+            PagePosition cursor,
             long highWaterMark
     ) {
         boolean hasSearch = hasText(filter.query());
@@ -262,7 +284,10 @@ public class OperationalMemoryQueryService {
         return new QuerySpec(sql.toString(), List.copyOf(parameters));
     }
 
-    private CoverageSnapshot coverage(OperationalMemoryScope scope) {
+    private CoverageSnapshot coverage(
+            OperationalMemoryScope scope,
+            Long highWaterMark
+    ) {
         StringBuilder sql = new StringBuilder("""
                 SELECT
                     COUNT(*) AS authorized_event_count,
@@ -272,6 +297,10 @@ public class OperationalMemoryQueryService {
                 WHERE 1 = 1
                 """);
         List<Object> parameters = new ArrayList<>();
+        if (highWaterMark != null) {
+            sql.append(" AND e.commit_seq <= ?");
+            parameters.add(highWaterMark);
+        }
         appendScopePredicate(sql, parameters, scope, "e");
         return jdbcTemplate.query(
                 sql.toString(),
@@ -290,7 +319,7 @@ public class OperationalMemoryQueryService {
 
     private void requireCursorInScope(
             OperationalMemoryScope scope,
-            OperationalMemoryCursor cursor,
+            PagePosition cursor,
             long highWaterMark
     ) {
         if (cursor == null) {
@@ -326,20 +355,17 @@ public class OperationalMemoryQueryService {
             OperationalMemoryScope scope,
             String alias
     ) {
-        if (scope.global()) {
-            return;
-        }
-        TreeSet<String> worksiteIds = new TreeSet<>(scope.allowedWorksiteIds());
-        sql.append(" AND (");
-        if (!worksiteIds.isEmpty()) {
-            sql.append(alias).append(".obra_id IN (")
-                    .append(String.join(", ", worksiteIds.stream().map(ignored -> "?").toList()))
-                    .append(") OR ");
-            parameters.addAll(worksiteIds);
-        }
-        sql.append("(").append(alias).append(".obra_id IS NULL AND ")
-                .append(alias).append(".usuario_id = ?))");
-        parameters.add(scope.userId());
+        OperationalEventVisibilityPolicy.SqlPredicate predicate =
+                OperationalEventVisibilityPolicy.forMemory(
+                        scope.global(),
+                        scope.allowedWorksiteIds(),
+                        scope.financialWorksiteIds(),
+                        scope.financialUnitIds(),
+                        scope.userId(),
+                        alias
+                );
+        sql.append(predicate.sql());
+        parameters.addAll(predicate.parameters());
     }
 
     private void appendFilters(
@@ -438,7 +464,48 @@ public class OperationalMemoryQueryService {
         String canonical = "operational-memory-scope-v1\n"
                 + scope.userId() + "\n"
                 + scope.global() + "\n"
-                + String.join("\n", new TreeSet<>(scope.allowedWorksiteIds()));
+                + String.join("\n", new TreeSet<>(scope.allowedWorksiteIds())) + "\n"
+                + String.join("\n", new TreeSet<>(scope.financialWorksiteIds())) + "\n"
+                + String.join("\n", new TreeSet<>(scope.financialUnitIds())) + "\n"
+                + conversationVisibilityFingerprint(scope);
+        return sha256(canonical);
+    }
+
+    private String conversationVisibilityFingerprint(OperationalMemoryScope scope) {
+        if (scope.global()) {
+            return "GLOBAL";
+        }
+        OperationalEventVisibilityPolicy.SqlPredicate predicate =
+                OperationalEventVisibilityPolicy.activeConversationVisibility(
+                        "cv",
+                        scope.userId()
+                );
+        List<String> conversationIds = jdbcTemplate.queryForList(
+                "SELECT cv.id FROM conversa cv WHERE 1 = 1"
+                        + predicate.sql()
+                        + " ORDER BY cv.id",
+                String.class,
+                predicate.parameters().toArray()
+        );
+        return String.join("\n", conversationIds);
+    }
+
+    private String filterHash(OperationalMemoryFilter filter) {
+        return sha256("operational-memory-filter-v1\n"
+                + String.valueOf(filter.query()) + "\n"
+                + String.valueOf(filter.entityType()) + "\n"
+                + String.valueOf(filter.entityId()) + "\n"
+                + String.valueOf(filter.worksiteId()) + "\n"
+                + String.valueOf(filter.rdoId()) + "\n"
+                + String.valueOf(filter.actorId()) + "\n"
+                + String.valueOf(filter.eventType()) + "\n"
+                + String.valueOf(filter.origin()) + "\n"
+                + String.valueOf(filter.result()) + "\n"
+                + String.valueOf(filter.from()) + "\n"
+                + String.valueOf(filter.to()));
+    }
+
+    private String sha256(String canonical) {
         try {
             return HexFormat.of().formatHex(
                     MessageDigest.getInstance("SHA-256")
@@ -484,6 +551,23 @@ public class OperationalMemoryQueryService {
     }
 
     record QuerySpec(String sql, List<Object> parameters) {
+    }
+
+    private PagePosition pagePosition(
+            OperationalMemoryCursorSigner.VerifiedCursor cursor
+    ) {
+        return new PagePosition(
+                cursor.highWaterMark(),
+                cursor.commitSequence(),
+                cursor.eventId()
+        );
+    }
+
+    private record PagePosition(
+            long highWaterMark,
+            long commitSequence,
+            String eventId
+    ) {
     }
 
     private record CoverageSnapshot(

@@ -1,6 +1,7 @@
 package com.projeto.cortex.ontology;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 import java.util.TimeZone;
@@ -32,6 +33,14 @@ class OperationalMemoryQueryServiceIT {
 
     private static JdbcTemplate jdbc;
     private static OperationalMemoryQueryService service;
+    private static final OperationalMemoryCursorSigner CURSOR_SIGNER =
+            new OperationalMemoryCursorSigner(new OperationalMemoryCursorKeyring(
+                    "it",
+                    "operational-memory-query-it-secret-material"
+                            .getBytes(StandardCharsets.UTF_8),
+                    null,
+                    null
+            ));
 
     @BeforeAll
     static void migrateAndSeed() {
@@ -44,7 +53,7 @@ class OperationalMemoryQueryServiceIT {
                 DATABASE.getJdbcUrl(), DATABASE.getUsername(), DATABASE.getPassword()
         );
         jdbc = new JdbcTemplate(dataSource);
-        service = new OperationalMemoryQueryService(jdbc);
+        service = new OperationalMemoryQueryService(jdbc, CURSOR_SIGNER);
         seed();
     }
 
@@ -135,12 +144,10 @@ class OperationalMemoryQueryServiceIT {
         );
         assertThat(first.items()).extracting(OperationalMemoryEventResponse::commitSequence)
                 .containsExactly(105L, 104L);
-        assertThat(first.nextCursor()).isEqualTo(
-                new OperationalMemoryCursor(104L, eventId(104))
-        );
+        assertThat(first.nextCursor().token()).startsWith("v1.it.");
         assertThat(first.highWaterMark()).isEqualTo(105L);
         assertThat(first.coverage().complete()).isTrue();
-        assertThat(first.coverage().authorizedEventCount()).isEqualTo(6L);
+        assertThat(first.coverage().authorizedEventCount()).isEqualTo(7L);
 
         OperationalMemoryPageResponse second = service.search(
                 scope,
@@ -157,6 +164,121 @@ class OperationalMemoryQueryServiceIT {
                                 .toList()
                 );
         assertThat(second.scopeHash()).isEqualTo(first.scopeHash());
+    }
+
+    @Test
+    void preservesTheInitialHighWaterWhenACommitArrivesBetweenPages() {
+        OperationalMemoryScope scope = OperationalMemoryScope.beta(
+                ACTOR_A,
+                Set.of(WORKSITE_A)
+        );
+        OperationalMemoryPageResponse first = service.search(
+                scope,
+                OperationalMemoryFilter.empty(),
+                2,
+                null
+        );
+        try {
+            insertEvent(106, WORKSITE_A, null, "OBRA", WORKSITE_A,
+                    "OBRA_ATUALIZADA", ACTOR_A, "ONLINE", "{}", "10:06:00");
+            jdbc.update(
+                    "UPDATE cortex_evento_commit_sequence SET ultima_commit_seq = 106 WHERE id = 1"
+            );
+
+            OperationalMemoryPageResponse second = service.search(
+                    scope,
+                    OperationalMemoryFilter.empty(),
+                    2,
+                    first.nextCursor()
+            );
+
+            assertThat(first.highWaterMark()).isEqualTo(105L);
+            assertThat(second.highWaterMark()).isEqualTo(105L);
+            assertThat(second.coverage().newestCommitSequence()).isEqualTo(105L);
+            assertThat(second.coverage().authorizedEventCount())
+                    .isEqualTo(first.coverage().authorizedEventCount());
+            assertThat(second.items())
+                    .extracting(OperationalMemoryEventResponse::eventId)
+                    .doesNotContain(eventId(106));
+        } finally {
+            jdbc.update("DELETE FROM cortex_evento_operacional WHERE id = ?", eventId(106));
+            jdbc.update(
+                    "UPDATE cortex_evento_commit_sequence SET ultima_commit_seq = 105 WHERE id = 1"
+            );
+        }
+    }
+
+    @Test
+    void requiresFinanceCapabilityAndConversationParticipationWithinOneWorksite() {
+        OperationalMemoryScope ordinaryActor = OperationalMemoryScope.beta(
+                ACTOR_B,
+                Set.of(WORKSITE_A),
+                Set.of(),
+                Set.of()
+        );
+        OperationalMemoryScope authorizedActor = OperationalMemoryScope.beta(
+                ACTOR_A,
+                Set.of(WORKSITE_A),
+                Set.of(WORKSITE_A),
+                Set.of()
+        );
+
+        OperationalMemoryPageResponse ordinary = service.search(
+                ordinaryActor,
+                OperationalMemoryFilter.empty(),
+                100,
+                null
+        );
+        assertThat(ordinary.items())
+                .extracting(OperationalMemoryEventResponse::eventId)
+                .doesNotContain(eventId(97), eventId(96));
+
+        OperationalMemoryPageResponse authorized = service.search(
+                authorizedActor,
+                OperationalMemoryFilter.empty(),
+                100,
+                null
+        );
+        assertThat(authorized.items())
+                .extracting(OperationalMemoryEventResponse::eventId)
+                .contains(eventId(97), eventId(96));
+    }
+
+    @Test
+    void conversationRevocationChangesTheOpaqueScopeFingerprint() {
+        OperationalMemoryScope scope = OperationalMemoryScope.beta(
+                ACTOR_A,
+                Set.of(WORKSITE_A),
+                Set.of(WORKSITE_A),
+                Set.of()
+        );
+        OperationalMemoryPageResponse before = service.search(
+                scope, OperationalMemoryFilter.empty(), 100, null
+        );
+        try {
+            jdbc.update("""
+                    UPDATE conversa_participante
+                    SET status = 'REMOVIDO', removido_em = CURRENT_TIMESTAMP
+                    WHERE conversa_id = '40000000-0000-0000-0000-00000000000a'
+                      AND colaborador_id = ?
+                    """, ACTOR_A);
+
+            OperationalMemoryPageResponse after = service.search(
+                    scope, OperationalMemoryFilter.empty(), 100, null
+            );
+
+            assertThat(after.scopeHash()).isNotEqualTo(before.scopeHash());
+            assertThat(after.items())
+                    .extracting(OperationalMemoryEventResponse::eventId)
+                    .doesNotContain(eventId(96));
+        } finally {
+            jdbc.update("""
+                    UPDATE conversa_participante
+                    SET status = 'ATIVO', removido_em = NULL
+                    WHERE conversa_id = '40000000-0000-0000-0000-00000000000a'
+                      AND colaborador_id = ?
+                    """, ACTOR_A);
+        }
     }
 
     @Test
@@ -240,9 +362,9 @@ class OperationalMemoryQueryServiceIT {
                 scope,
                 OperationalMemoryFilter.empty(),
                 20,
-                new OperationalMemoryCursor(101L, eventId(101))
+                new OperationalMemoryCursor("tampered")
         )).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new OperationalMemoryCursor(100L, "x".repeat(161)))
+        assertThatThrownBy(() -> new OperationalMemoryCursor("x".repeat(2_049)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -311,6 +433,7 @@ class OperationalMemoryQueryServiceIT {
                             upgradeDatabase.getPassword()
                     )
                     .locations("classpath:db/migration-postgresql")
+                    .target("47")
                     .load()
                     .migrate();
 
@@ -395,6 +518,36 @@ class OperationalMemoryQueryServiceIT {
         insertEvent(98, null, null, "SYSTEM", "foreign-global",
                 "SESSAO_OFFLINE_REGISTRADA", ACTOR_B, "OFFLINE", "{}", "09:58:00");
         jdbc.update("UPDATE cortex_evento_commit_sequence SET ultima_commit_seq = 105 WHERE id = 1");
+        jdbc.update("""
+                INSERT INTO vinculo_colaborador_obra (
+                    id, obra_id, colaborador_id, status, papel_na_obra
+                ) VALUES (?, ?, ?, 'ATIVO', 'OPERACIONAL')
+                """, "30000000-0000-0000-0000-00000000000b", WORKSITE_A, ACTOR_B);
+        jdbc.update("""
+                INSERT INTO conversa (id, tipo, obra_id, status, criado_por)
+                VALUES ('40000000-0000-0000-0000-00000000000a', 'OBRA', ?, 'ATIVA', ?)
+                """, WORKSITE_A, ACTOR_A);
+        jdbc.update("""
+                INSERT INTO conversa_participante (
+                    id, conversa_id, colaborador_id, status, adicionado_por
+                ) VALUES (
+                    '50000000-0000-0000-0000-00000000000a',
+                    '40000000-0000-0000-0000-00000000000a', ?, 'ATIVO', ?
+                )
+                """, ACTOR_A, ACTOR_A);
+        insertEvent(97, WORKSITE_A, null, "PDOR", "pdor-a",
+                "PDOR_ATUALIZADO", ACTOR_A, "ONLINE", "{}", "09:57:00");
+        insertEvent(96, WORKSITE_A, null, "MENSAGEM", "message-a",
+                "MENSAGEM_CRIADA", ACTOR_A, "ONLINE", "{}", "09:56:00");
+        jdbc.update("""
+                INSERT INTO cortex_evento_visibilidade (
+                    id, evento_id, escopo_tipo, escopo_id, capacidade
+                ) VALUES (
+                    '60000000-0000-0000-0000-00000000000a', ?,
+                    'CONVERSATION_PARTICIPANT',
+                    '40000000-0000-0000-0000-00000000000a', ''
+                )
+                """, eventId(96));
     }
 
     private static void insertActor(String id, String name) {

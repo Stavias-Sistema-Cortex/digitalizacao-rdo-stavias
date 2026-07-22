@@ -6,7 +6,9 @@ import java.util.TreeSet;
 public record OperationalMemoryScope(
         String userId,
         boolean global,
-        Set<String> allowedWorksiteIds
+        Set<String> allowedWorksiteIds,
+        Set<String> financialWorksiteIds,
+        Set<String> financialUnitIds
 ) {
     public OperationalMemoryScope {
         if (userId == null || userId.isBlank()) {
@@ -21,7 +23,11 @@ public record OperationalMemoryScope(
                     .forEach(normalized::add);
         }
         allowedWorksiteIds = Set.copyOf(normalized);
-        if (global && !allowedWorksiteIds.isEmpty()) {
+        financialWorksiteIds = normalized(financialWorksiteIds);
+        financialUnitIds = normalized(financialUnitIds);
+        if (global && (!allowedWorksiteIds.isEmpty()
+                || !financialWorksiteIds.isEmpty()
+                || !financialUnitIds.isEmpty())) {
             throw new IllegalArgumentException(
                     "A global Operational Memory scope cannot contain worksites."
             );
@@ -29,14 +35,40 @@ public record OperationalMemoryScope(
     }
 
     public static OperationalMemoryScope alfa(String userId) {
-        return new OperationalMemoryScope(userId, true, Set.of());
+        return new OperationalMemoryScope(userId, true, Set.of(), Set.of(), Set.of());
     }
 
     public static OperationalMemoryScope beta(String userId, Set<String> allowedWorksiteIds) {
-        return new OperationalMemoryScope(userId, false, allowedWorksiteIds);
+        return beta(userId, allowedWorksiteIds, Set.of(), Set.of());
+    }
+
+    public static OperationalMemoryScope beta(
+            String userId,
+            Set<String> allowedWorksiteIds,
+            Set<String> financialWorksiteIds,
+            Set<String> financialUnitIds
+    ) {
+        return new OperationalMemoryScope(
+                userId,
+                false,
+                allowedWorksiteIds,
+                financialWorksiteIds,
+                financialUnitIds
+        );
     }
 
     public String label() {
         return global ? "GLOBAL" : "AUTHORIZED_WORKSITES";
+    }
+
+    private static Set<String> normalized(Set<String> values) {
+        TreeSet<String> normalized = new TreeSet<>();
+        if (values != null) {
+            values.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .map(String::trim)
+                    .forEach(normalized::add);
+        }
+        return Set.copyOf(normalized);
     }
 }

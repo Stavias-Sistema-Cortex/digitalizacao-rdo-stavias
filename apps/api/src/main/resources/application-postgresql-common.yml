@@ -12,4 +12,4 @@ spring:
 
 cortex:
   postgresql:
-    required-schema-version: 45.1
+    required-schema-version: 47

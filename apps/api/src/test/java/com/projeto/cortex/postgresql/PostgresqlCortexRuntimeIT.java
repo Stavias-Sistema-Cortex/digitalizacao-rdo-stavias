@@ -49,6 +49,7 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
     private static final Path OTP_KEY_FILE = secretFile('a');
     private static final Path CPF_KEY_FILE = secretFile('b');
     private static final Path SMTP_PASSWORD_FILE = secretFile('c');
+    private static final Path MEMORY_CURSOR_KEY_FILE = secretFile('d');
     private static final OfflineKeyFiles OFFLINE_KEYS = offlineKeyFiles();
 
     @DynamicPropertySource
@@ -71,6 +72,14 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         properties.add("cortex.storage.s3.bucket", () -> "runtime-it");
         properties.add("cortex.storage.s3.region", () -> "us-east-1");
         properties.add("cortex.auth.offline-grant.key-id", () -> "runtime-it");
+        properties.add(
+                "cortex.ontology.memory.cursor-hmac.current-key-id",
+                () -> "runtime-it"
+        );
+        properties.add(
+                "cortex.ontology.memory.cursor-hmac.current-key-file",
+                MEMORY_CURSOR_KEY_FILE::toString
+        );
         properties.add(
                 "cortex.auth.offline-grant.private-key-file",
                 OFFLINE_KEYS.privateKey()::toString
