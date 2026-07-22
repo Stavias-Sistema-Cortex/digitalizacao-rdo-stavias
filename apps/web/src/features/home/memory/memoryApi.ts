@@ -51,6 +51,15 @@ export interface MemoryServerCoverage {
   authorizedEventCount: number;
   oldestCommitSequence: number | null;
   newestCommitSequence: number;
+  graph: MemoryGraphCoverage;
+}
+
+export interface MemoryGraphCoverage {
+  checkpointCommitSequence: number;
+  targetCommitSequence: number;
+  lagEventCount: number;
+  fresh: boolean;
+  lastSafeError: string | null;
 }
 
 export interface MemoryPage {
@@ -117,11 +126,35 @@ function parseMemoryPage(value: unknown): MemoryPage {
   const scopeHash = text(page.scopeHash, "Escopo da Memória inválido.");
   const serverTime = text(page.serverTime, "Horário da Memória inválido.");
   const coverageValue = object(page.coverage, "Cobertura da Memória inválida.");
+  const graphValue = object(
+    coverageValue.graph,
+    "Cobertura do grafo ontológico inválida.",
+  );
   const nextCursor = page.nextCursor === null || page.nextCursor === undefined
     ? null
     : parseCursor(page.nextCursor);
   if (!Array.isArray(page.items) || typeof page.hasMore !== "boolean") {
     throw new Error("Página da Memória inválida.");
+  }
+  const graph: MemoryGraphCoverage = {
+    checkpointCommitSequence: integer(
+      graphValue.checkpointCommitSequence,
+      "Checkpoint do grafo inválido.",
+    ),
+    targetCommitSequence: integer(
+      graphValue.targetCommitSequence,
+      "Alvo do grafo inválido.",
+    ),
+    lagEventCount: integer(
+      graphValue.lagEventCount,
+      "Atraso do grafo inválido.",
+    ),
+    fresh: boolean(graphValue.fresh, "Atualidade do grafo inválida."),
+    lastSafeError: nullableSafeCode(graphValue.lastSafeError),
+  };
+  if (graph.fresh !== (graph.lagEventCount === 0)
+      || graph.targetCommitSequence !== highWaterMark) {
+    throw new Error("Cobertura do grafo ontológico incoerente.");
   }
   const coverage: MemoryServerCoverage = {
     mode: text(coverageValue.mode, "Modo de cobertura inválido."),
@@ -135,6 +168,7 @@ function parseMemoryPage(value: unknown): MemoryPage {
       coverageValue.newestCommitSequence,
       "Último commit inválido.",
     ),
+    graph,
   };
   return {
     items: page.items.map(parseMemoryEvent),
@@ -194,6 +228,15 @@ function text(value: unknown, message: string): string {
 
 function nullableText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function nullableSafeCode(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const code = text(value, "Código seguro do grafo inválido.");
+  if (!/^[A-Z][A-Z0-9_]{0,119}$/.test(code)) {
+    throw new Error("Código seguro do grafo inválido.");
+  }
+  return code;
 }
 
 function integer(value: unknown, message: string): number {

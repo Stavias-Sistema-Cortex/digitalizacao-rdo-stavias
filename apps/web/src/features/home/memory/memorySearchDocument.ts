@@ -1,5 +1,5 @@
 import type { OperationalEventRecord } from "../../../lib/db/db.types";
-import type { MemoryServerEvent } from "./memoryApi";
+import type { MemoryGraphCoverage, MemoryServerEvent } from "./memoryApi";
 
 const PROTECTED_ENTITY_TYPES = new Set([
   "ACTOR",
@@ -59,6 +59,7 @@ export interface MemoryCacheMetadata {
   newestCommitSequence: number;
   coverageMode: string;
   serverCoverageComplete: boolean;
+  graph?: MemoryGraphCoverage;
   complete: boolean;
   cachedAt: string;
 }
@@ -204,32 +205,33 @@ export function memoryCoverage(input: {
   const partialDetail = input.metadata?.complete
     ? ""
     : " Cobertura histórica parcial.";
+  const graphDetail = graphLagDetail(input.metadata?.graph);
   if (statuses.has("CONFLICT")) {
     return coverage(
       "CONFLICT",
       "Conflito",
-      `Há alterações locais com valores divergentes para revisar.${partialDetail}`,
+      `Há alterações locais com valores divergentes para revisar.${partialDetail}${graphDetail}`,
     );
   }
   if (statuses.has("REJECTED")) {
     return coverage(
       "REJECTED",
       "Rejeitado",
-      `Há alterações recusadas com evidência preservada neste dispositivo.${partialDetail}`,
+      `Há alterações recusadas com evidência preservada neste dispositivo.${partialDetail}${graphDetail}`,
     );
   }
   if (statuses.has("SYNCING")) {
     return coverage(
       "SYNCING",
       "Sincronizando",
-      `Alterações locais estão sendo confirmadas no registro central.${partialDetail}`,
+      `Alterações locais estão sendo confirmadas no registro central.${partialDetail}${graphDetail}`,
     );
   }
   if (statuses.has("LOCAL_PENDING")) {
     return coverage(
       "LOCAL_PENDING",
       "Local pendente",
-      `Há alterações preservadas neste dispositivo aguardando confirmação.${partialDetail}`,
+      `Há alterações preservadas neste dispositivo aguardando confirmação.${partialDetail}${graphDetail}`,
     );
   }
   if (!input.metadata?.complete) {
@@ -237,8 +239,15 @@ export function memoryCoverage(input: {
       "PARTIAL",
       "Parcial",
       input.online
-        ? "O cache ainda não cobre todo o histórico autorizado."
-        : "Sem conexão: somente a parte já armazenada do histórico está disponível.",
+        ? `O cache ainda não cobre todo o histórico autorizado.${graphDetail}`
+        : `Sem conexão: somente a parte já armazenada do histórico está disponível.${graphDetail}`,
+    );
+  }
+  if (graphDetail) {
+    return coverage(
+      "PARTIAL",
+      "Parcial",
+      `O histórico autorizado está no cache.${graphDetail}`,
     );
   }
   return coverage(
@@ -246,6 +255,15 @@ export function memoryCoverage(input: {
     "Atualizado",
     `${input.online ? "Histórico autorizado" : "Cache integral"} confirmado até o commit ${input.metadata.highWaterMark}.`,
   );
+}
+
+function graphLagDetail(graph: MemoryGraphCoverage | undefined): string {
+  if (!graph || graph.fresh || graph.lagEventCount === 0) return "";
+  const events = graph.lagEventCount === 1 ? "evento" : "eventos";
+  const safeError = graph.lastSafeError
+    ? ` Código seguro: ${graph.lastSafeError}.`
+    : "";
+  return ` O grafo ontológico está ${graph.lagEventCount} ${events} atrás do commit ${graph.targetCommitSequence}; projeção até o commit ${graph.checkpointCommitSequence}.${safeError}`;
 }
 
 export function memoryStatusLabel(

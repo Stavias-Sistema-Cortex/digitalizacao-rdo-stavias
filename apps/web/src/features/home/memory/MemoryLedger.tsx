@@ -68,6 +68,12 @@ export function MemoryLedgerView({
                 : "Somente eventos locais"}
             </dd>
           </div>
+          {ledger.metadata?.graph ? (
+            <div>
+              <dt>Grafo ontológico</dt>
+              <dd>{graphCoverageLabel(ledger.metadata.graph)}</dd>
+            </div>
+          ) : null}
         </dl>
       </section>
 
@@ -235,6 +241,16 @@ export function MemoryLedgerView({
       </section>
     </div>
   );
+}
+
+function graphCoverageLabel(
+  graph: NonNullable<MemoryLedgerViewModel["metadata"]>["graph"],
+): string {
+  if (!graph) return "Não confirmado";
+  const lag = graph.lagEventCount === 0
+    ? "em dia"
+    : `${graph.lagEventCount} ${graph.lagEventCount === 1 ? "pendente" : "pendentes"}`;
+  return `${graph.checkpointCommitSequence} / ${graph.targetCommitSequence} · ${lag}`;
 }
 
 function MemoryRow({ item }: { item: MemorySearchDocument }) {

@@ -19,6 +19,9 @@ import {
   type SyncSessionGuard,
 } from "./syncSession";
 import type { SyncRunSummary } from "./sync.types";
+import { announceSyncCompleted } from "./syncEvents";
+
+export { SYNC_COMPLETED_EVENT } from "./syncEvents";
 
 const activeSyncPromises = new Map<
   string,
@@ -79,7 +82,7 @@ async function executeSync(
     }, guard);
     assertSyncSession(guard);
 
-    return {
+    const summary = {
       deviceId,
       pushed: uploadSummary.pushed + pushSummary.pushed,
       applied: uploadSummary.applied + pushSummary.applied,
@@ -89,6 +92,8 @@ async function executeSync(
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,
     };
+    announceSyncCompleted();
+    return summary;
   } catch (error: unknown) {
     // Never write the old run's status into a newly active session database.
     try {

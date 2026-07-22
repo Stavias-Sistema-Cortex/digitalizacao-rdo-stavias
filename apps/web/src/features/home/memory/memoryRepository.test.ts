@@ -55,6 +55,13 @@ function page(items: MemoryServerEvent[], scopeHash = "scope-a"): MemoryPage {
       authorizedEventCount: 150,
       oldestCommitSequence: 1,
       newestCommitSequence: 150,
+      graph: {
+        checkpointCommitSequence: 147,
+        targetCommitSequence: 150,
+        lagEventCount: 3,
+        fresh: false,
+        lastSafeError: null,
+      },
     },
     serverTime: "2026-07-22T10:00:00.000Z",
   };
@@ -113,6 +120,18 @@ describe("Memory v15 migration", () => {
 });
 
 describe("Memory repository", () => {
+  it("persists graph checkpoint evidence with the authorized cache metadata", async () => {
+    const repository = createMemoryRepository(await getCortexDb());
+    const serverPage = page([event(150)]);
+
+    await repository.putPage(userId, serverPage);
+    await repository.markComplete(userId, serverPage);
+
+    expect(await repository.latestMetadata(userId)).toMatchObject({
+      graph: serverPage.coverage.graph,
+    });
+  });
+
   it("searches all cached history beyond the first rendered page", async () => {
     const repository = createMemoryRepository(await getCortexDb());
     const events = Array.from({ length: 150 }, (_, index) =>

@@ -179,6 +179,13 @@ describe("memoryCoverage", () => {
           newestCommitSequence: 90,
           coverageMode: "FULL_HISTORY",
           serverCoverageComplete: true,
+          graph: {
+            checkpointCommitSequence: 87,
+            targetCommitSequence: 90,
+            lagEventCount: 3,
+            fresh: false,
+            lastSafeError: null,
+          },
           complete: false,
           cachedAt: "2026-07-22T10:00:00.000Z",
         },
@@ -201,6 +208,13 @@ describe("memoryCoverage", () => {
           newestCommitSequence: 90,
           coverageMode: "FULL_HISTORY",
           serverCoverageComplete: true,
+          graph: {
+            checkpointCommitSequence: 90,
+            targetCommitSequence: 90,
+            lagEventCount: 0,
+            fresh: true,
+            lastSafeError: null,
+          },
           complete: true,
           cachedAt: "2026-07-22T10:00:00.000Z",
         },
@@ -220,6 +234,71 @@ describe("memoryCoverage", () => {
       code: "CONFLICT",
       label: "Conflito",
       detail: expect.stringMatching(/cobertura.*parcial/i),
+    });
+  });
+
+  it("labels a complete event cache as partial while graph projection lags", () => {
+    expect(
+      memoryCoverage({
+        online: true,
+        metadata: {
+          userId: USER_ID,
+          scopeHash: SCOPE_HASH,
+          highWaterMark: 90,
+          authorizedEventCount: 90,
+          cachedEventCount: 90,
+          oldestCommitSequence: 1,
+          newestCommitSequence: 90,
+          coverageMode: "FULL_HISTORY",
+          serverCoverageComplete: true,
+          graph: {
+            checkpointCommitSequence: 87,
+            targetCommitSequence: 90,
+            lagEventCount: 3,
+            fresh: false,
+            lastSafeError: "GRAPH_PROJECTION_FAILED",
+          },
+          complete: true,
+          cachedAt: "2026-07-22T10:00:00.000Z",
+        },
+        localStatuses: [],
+      }),
+    ).toMatchObject({
+      code: "PARTIAL",
+      label: "Parcial",
+      detail: expect.stringMatching(/3 eventos.*commit 90.*GRAPH_PROJECTION_FAILED/i),
+    });
+  });
+
+  it("keeps conflict priority and appends the graph lag warning", () => {
+    expect(
+      memoryCoverage({
+        online: true,
+        metadata: {
+          userId: USER_ID,
+          scopeHash: SCOPE_HASH,
+          highWaterMark: 90,
+          authorizedEventCount: 90,
+          cachedEventCount: 90,
+          oldestCommitSequence: 1,
+          newestCommitSequence: 90,
+          coverageMode: "FULL_HISTORY",
+          serverCoverageComplete: true,
+          graph: {
+            checkpointCommitSequence: 87,
+            targetCommitSequence: 90,
+            lagEventCount: 3,
+            fresh: false,
+            lastSafeError: null,
+          },
+          complete: true,
+          cachedAt: "2026-07-22T10:00:00.000Z",
+        },
+        localStatuses: ["CONFLICT"],
+      }),
+    ).toMatchObject({
+      code: "CONFLICT",
+      detail: expect.stringMatching(/divergentes.*grafo.*3 eventos/i),
     });
   });
 });

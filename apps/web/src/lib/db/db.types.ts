@@ -534,6 +534,13 @@ export interface MemoryCacheMetadataRecord {
   newestCommitSequence: number;
   coverageMode: string;
   serverCoverageComplete: boolean;
+  graph?: {
+    checkpointCommitSequence: number;
+    targetCommitSequence: number;
+    lagEventCount: number;
+    fresh: boolean;
+    lastSafeError: string | null;
+  };
   complete: boolean;
   cachedAt: string;
 }

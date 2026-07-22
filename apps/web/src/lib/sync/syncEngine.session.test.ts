@@ -65,8 +65,9 @@ vi.mock("../../features/mensagens/mensagensHydration", () => ({
 }));
 vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: mocks.ack }));
 vi.stubGlobal("navigator", { onLine: true });
+vi.stubGlobal("window", new EventTarget());
 
-import { syncNow } from "./syncEngine";
+import { SYNC_COMPLETED_EVENT, syncNow } from "./syncEngine";
 
 describe("session-scoped sync single flight", () => {
   beforeEach(() => {
@@ -123,5 +124,36 @@ describe("session-scoped sync single flight", () => {
     expect(mocks.repairObra).toHaveBeenCalledWith(expectedGuard);
     expect(mocks.repairMaoObra).toHaveBeenCalledWith(expectedGuard);
     expect(mocks.repairRdo).toHaveBeenCalledWith(expectedGuard);
+  });
+
+  it("announces completion once only after the guarded durable state is written", async () => {
+    const listener = vi.fn();
+    window.addEventListener(SYNC_COMPLETED_EVENT, listener);
+
+    await syncNow();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(mocks.ack.mock.invocationCallOrder[0]).toBeLessThan(
+      listener.mock.invocationCallOrder[0],
+    );
+    expect(mocks.updateSyncState.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      listener.mock.invocationCallOrder[0],
+    );
+    window.removeEventListener(SYNC_COMPLETED_EVENT, listener);
+  });
+
+  it("does not announce completion when the guarded session rotates", async () => {
+    const listener = vi.fn();
+    window.addEventListener(SYNC_COMPLETED_EVENT, listener);
+    mocks.recover.mockImplementationOnce(async () => {
+      mocks.currentFingerprint = "session-b";
+    });
+
+    await expect(syncNow()).rejects.toThrow(
+      "A sessão mudou durante a sincronização.",
+    );
+
+    expect(listener).not.toHaveBeenCalled();
+    window.removeEventListener(SYNC_COMPLETED_EVENT, listener);
   });
 });

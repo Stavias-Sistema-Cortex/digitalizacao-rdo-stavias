@@ -65,6 +65,7 @@ export function createMemoryRepository(
         newestCommitSequence: page.coverage.newestCommitSequence,
         coverageMode: page.coverage.mode,
         serverCoverageComplete: page.coverage.complete,
+        graph: page.coverage.graph,
         complete: false,
         cachedAt: page.serverTime,
       });
@@ -111,6 +112,7 @@ export function createMemoryRepository(
         newestCommitSequence: page.coverage.newestCommitSequence,
         coverageMode: page.coverage.mode,
         serverCoverageComplete: page.coverage.complete,
+        graph: page.coverage.graph,
         complete:
           !page.hasMore &&
           page.coverage.complete &&

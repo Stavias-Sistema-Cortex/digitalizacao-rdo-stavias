@@ -47,6 +47,13 @@ function page(input: {
       authorizedEventCount: 3,
       oldestCommitSequence: 1,
       newestCommitSequence: highWaterMark,
+      graph: {
+        checkpointCommitSequence: highWaterMark,
+        targetCommitSequence: highWaterMark,
+        lagEventCount: 0,
+        fresh: true,
+        lastSafeError: null,
+      },
     },
     serverTime: "2026-07-22T10:00:02Z",
   };
@@ -63,6 +70,13 @@ function metadata(): MemoryCacheMetadata {
     newestCommitSequence: 3,
     coverageMode: "FULL_HISTORY",
     serverCoverageComplete: true,
+    graph: {
+      checkpointCommitSequence: 3,
+      targetCommitSequence: 3,
+      lagEventCount: 0,
+      fresh: true,
+      lastSafeError: null,
+    },
     complete: true,
     cachedAt: "2026-07-22T10:00:02Z",
   };
@@ -72,6 +86,13 @@ describe("authorized Memory cache hydration", () => {
   it("follows only signed cursors and marks coverage complete after every page", async () => {
     const first = page({ ids: [3, 2], token: "signed-next", hasMore: true });
     const last = page({ ids: [1], hasMore: false });
+    first.coverage.graph = {
+      checkpointCommitSequence: 2,
+      targetCommitSequence: 3,
+      lagEventCount: 1,
+      fresh: false,
+      lastSafeError: null,
+    };
     const fetchPage = vi.fn()
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce(last);
@@ -99,6 +120,7 @@ describe("authorized Memory cache hydration", () => {
         scopeHash: "scope-a",
         highWaterMark: 3,
         hasMore: false,
+        coverage: expect.objectContaining({ graph: last.coverage.graph }),
       }),
     );
   });

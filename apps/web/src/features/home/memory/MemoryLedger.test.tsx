@@ -96,6 +96,39 @@ describe("Memory ledger accessibility and honest states", () => {
     expect(html).toContain("event-1");
   });
 
+  it("renders compact graph checkpoint, target and lag in the coverage strip", () => {
+    const html = renderToStaticMarkup(
+      <MemoryLedgerView
+        ledger={model({
+          metadata: {
+            userId: "u",
+            scopeHash: "s",
+            highWaterMark: 50,
+            authorizedEventCount: 50,
+            cachedEventCount: 50,
+            oldestCommitSequence: 1,
+            newestCommitSequence: 50,
+            coverageMode: "FULL_HISTORY",
+            serverCoverageComplete: true,
+            graph: {
+              checkpointCommitSequence: 47,
+              targetCommitSequence: 50,
+              lagEventCount: 3,
+              fresh: false,
+              lastSafeError: null,
+            },
+            complete: true,
+            cachedAt: "2026-07-22T10:00:00.000Z",
+          },
+        })}
+        obras={[]}
+      />,
+    );
+
+    expect(html).toContain("Grafo ontológico");
+    expect(html).toContain("47 / 50 · 3 pendentes");
+  });
+
   it("renders a redacted PII principal as protected identity", () => {
     const html = renderToStaticMarkup(
       <MemoryLedgerView

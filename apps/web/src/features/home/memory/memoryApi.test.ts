@@ -70,6 +70,13 @@ describe("Memory API client", () => {
             authorizedEventCount: 12,
             oldestCommitSequence: 1,
             newestCommitSequence: 12,
+            graph: {
+              checkpointCommitSequence: 10,
+              targetCommitSequence: 12,
+              lagEventCount: 2,
+              fresh: false,
+              lastSafeError: "GRAPH_PROJECTION_FAILED",
+            },
           },
           serverTime: "2026-07-22T10:00:00Z",
         }),
@@ -86,7 +93,17 @@ describe("Memory API client", () => {
       hasMore: true,
       highWaterMark: 12,
       scopeHash: "scope-a",
-      coverage: { complete: true, authorizedEventCount: 12 },
+      coverage: {
+        complete: true,
+        authorizedEventCount: 12,
+        graph: {
+          checkpointCommitSequence: 10,
+          targetCommitSequence: 12,
+          lagEventCount: 2,
+          fresh: false,
+          lastSafeError: "GRAPH_PROJECTION_FAILED",
+        },
+      },
     });
   });
 
@@ -132,6 +149,13 @@ describe("Memory API client", () => {
           authorizedEventCount: 1,
           oldestCommitSequence: 1,
           newestCommitSequence: 1,
+          graph: {
+            checkpointCommitSequence: 1,
+            targetCommitSequence: 1,
+            lagEventCount: 0,
+            fresh: true,
+            lastSafeError: null,
+          },
         },
         serverTime: "2026-07-22T10:00:00Z",
       }), { status: 200 }),
@@ -139,5 +163,34 @@ describe("Memory API client", () => {
 
     const response = await fetchMemoryPage({});
     expect(response.items[0].principalEntityId).toBeNull();
+  });
+
+  it("rejects incoherent graph coverage instead of presenting stale data as fresh", async () => {
+    mocks.apiFetch.mockResolvedValue(
+      new Response(JSON.stringify({
+        items: [],
+        nextCursor: null,
+        hasMore: false,
+        highWaterMark: 2,
+        scopeHash: "scope-graph",
+        coverage: {
+          mode: "FULL_HISTORY",
+          complete: true,
+          authorizedEventCount: 2,
+          oldestCommitSequence: 1,
+          newestCommitSequence: 2,
+          graph: {
+            checkpointCommitSequence: 1,
+            targetCommitSequence: 2,
+            lagEventCount: 1,
+            fresh: true,
+            lastSafeError: null,
+          },
+        },
+        serverTime: "2026-07-22T10:00:00Z",
+      }), { status: 200 }),
+    );
+
+    await expect(fetchMemoryPage({})).rejects.toThrow(/grafo.*incoerente/i);
   });
 });

@@ -20,10 +20,14 @@ import {
   type MemoryCoverageView,
   type MemorySearchDocument,
 } from "./memorySearchDocument";
+import {
+  bindMemoryReconnectRefresh,
+  createMemoryRefreshState,
+  runCoalescedMemoryRefresh,
+} from "./memoryReconnect";
 
 const PAGE_SIZE = 50;
 const SERVER_PAGE_SIZE = 100;
-const MEMORY_REFRESH_REQUEST_EVENT = "cortex:memory-refresh-requested";
 
 interface HydrateAuthorizedMemoryCacheOptions {
   userId: string;
@@ -100,6 +104,10 @@ export async function hydrateAuthorizedMemoryCache({
   assertSession();
   const metadata = await markComplete(userId, {
     ...firstPage,
+    coverage: {
+      ...firstPage.coverage,
+      graph: finalPage.coverage.graph,
+    },
     hasMore: finalPage.hasMore,
     nextCursor: finalPage.nextCursor,
     serverTime: finalPage.serverTime,
@@ -222,8 +230,7 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<MemoryLedgerError | null>(null);
   const mounted = useRef(true);
-  const refreshInFlight = useRef(false);
-  const refreshQueued = useRef(false);
+  const refreshState = useRef(createMemoryRefreshState());
 
   const readLedger = useCallback(async () => {
     const session = getSession();
@@ -254,75 +261,65 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
   }, [readLedger]);
 
   const synchronizeCache = useCallback(async (): Promise<void> => {
-    const session = getSession();
-    if (!session || !navigator.onLine || !hasOnlineSession()) {
-      await readLedgerRef.current();
-      return;
-    }
-    const guard = captureMemorySessionGuard();
-    if (refreshInFlight.current) {
-      refreshQueued.current = true;
-      return;
-    }
-    refreshInFlight.current = true;
-    commitIfMemorySessionCurrent(guard, () => {
-      setIsRefreshing(true);
-      setError(null);
-    });
-    try {
-      const database = await getCortexDb();
-      assertMemorySessionGuard(guard);
-      const repository = createMemoryRepository(database);
-      const previous = await repository.latestMetadata(session.colaboradorId);
-      assertMemorySessionGuard(guard);
-      await hydrateAuthorizedMemoryCache({
-        userId: session.colaboradorId,
-        previousMetadata: previous,
-        fetchPage: fetchMemoryPage,
-        putPage: repository.putPage,
-        markComplete: repository.markComplete,
-        resetAuthorizedCache: repository.resetAuthorizedCache,
-        onCacheReset: () => {
-          if (!mounted.current) return;
-          commitIfMemorySessionCurrent(guard, () => {
-            setItems([]);
-            setTotalMatches(0);
-            setMetadata(null);
-            setCoverage(memoryCoverage({
-              online: true,
-              metadata: null,
-              localStatuses: [],
-            }));
-          });
-        },
-        assertSession: () => assertMemorySessionGuard(guard),
+    await runCoalescedMemoryRefresh(refreshState.current, async () => {
+      if (!mounted.current) return;
+      const session = getSession();
+      if (!session || !navigator.onLine || !hasOnlineSession()) {
+        await readLedgerRef.current();
+        return;
+      }
+      const guard = captureMemorySessionGuard();
+      commitIfMemorySessionCurrent(guard, () => {
+        setIsRefreshing(true);
+        setError(null);
       });
-      assertMemorySessionGuard(guard);
-    } catch (cause: unknown) {
-      if (mounted.current) {
-        commitIfMemorySessionCurrent(guard, () => {
-          setError({
-            source: "SERVER",
-            message: cause instanceof Error
-              ? cause.message
-              : "Não foi possível atualizar o registro central.",
+      try {
+        const database = await getCortexDb();
+        assertMemorySessionGuard(guard);
+        const repository = createMemoryRepository(database);
+        const previous = await repository.latestMetadata(session.colaboradorId);
+        assertMemorySessionGuard(guard);
+        await hydrateAuthorizedMemoryCache({
+          userId: session.colaboradorId,
+          previousMetadata: previous,
+          fetchPage: fetchMemoryPage,
+          putPage: repository.putPage,
+          markComplete: repository.markComplete,
+          resetAuthorizedCache: repository.resetAuthorizedCache,
+          onCacheReset: () => {
+            if (!mounted.current) return;
+            commitIfMemorySessionCurrent(guard, () => {
+              setItems([]);
+              setTotalMatches(0);
+              setMetadata(null);
+              setCoverage(memoryCoverage({
+                online: true,
+                metadata: null,
+                localStatuses: [],
+              }));
+            });
+          },
+          assertSession: () => assertMemorySessionGuard(guard),
+        });
+        assertMemorySessionGuard(guard);
+      } catch (cause: unknown) {
+        if (mounted.current) {
+          commitIfMemorySessionCurrent(guard, () => {
+            setError({
+              source: "SERVER",
+              message: cause instanceof Error
+                ? cause.message
+                : "Não foi possível atualizar o registro central.",
+            });
           });
-        });
+        }
+      } finally {
+        if (mounted.current) {
+          commitIfMemorySessionCurrent(guard, () => setIsRefreshing(false));
+        }
+        await readLedgerRef.current();
       }
-    } finally {
-      const repeat = refreshQueued.current;
-      refreshQueued.current = false;
-      refreshInFlight.current = false;
-      if (mounted.current) {
-        commitIfMemorySessionCurrent(guard, () => setIsRefreshing(false));
-      }
-      await readLedgerRef.current();
-      if (repeat && mounted.current) {
-        queueMicrotask(() => {
-          window.dispatchEvent(new Event(MEMORY_REFRESH_REQUEST_EVENT));
-        });
-      }
-    }
+    });
   }, []);
 
   useEffect(() => {
@@ -362,9 +359,8 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
     };
     window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, localRefresh);
     window.addEventListener("offline", localRefresh);
-    window.addEventListener("online", onlineRefresh);
+    const disposeReconnect = bindMemoryReconnectRefresh(window, onlineRefresh);
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, authorizationRefresh);
-    window.addEventListener(MEMORY_REFRESH_REQUEST_EVENT, onlineRefresh);
     const localInterval = window.setInterval(localRefresh, 5_000);
     const serverInterval = window.setInterval(() => {
       if (document.visibilityState === "visible") onlineRefresh();
@@ -372,9 +368,8 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
     return () => {
       window.removeEventListener(LOCAL_MUTATION_QUEUED_EVENT, localRefresh);
       window.removeEventListener("offline", localRefresh);
-      window.removeEventListener("online", onlineRefresh);
+      disposeReconnect();
       window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, authorizationRefresh);
-      window.removeEventListener(MEMORY_REFRESH_REQUEST_EVENT, onlineRefresh);
       window.clearInterval(localInterval);
       window.clearInterval(serverInterval);
     };
