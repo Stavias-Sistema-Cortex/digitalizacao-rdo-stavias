@@ -10,6 +10,7 @@ import {
   commitIfMemorySessionCurrent,
   isMemorySessionGuardCurrent,
 } from "./memorySessionGuard";
+import { runMemoryLedgerRead } from "./useMemoryLedger";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
 const WORKSITE_A = "00000000-0000-4000-8000-000000000002";
@@ -47,6 +48,49 @@ describe("Memory session guard", () => {
 
     expect(await suspendedRead).toBe(false);
     expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("does not commit old items, metadata, coverage, errors or completion after a suspended database read", async () => {
+    setSession(profile());
+    const session = captureMemorySessionGuard().session;
+    const guard = captureMemorySessionGuard();
+    let release: ((database: never) => void) | undefined;
+    const database = {} as never;
+    const repositoryFactory = vi.fn(() => ({
+      latestMetadata: vi.fn().mockResolvedValue({ scopeHash: "old-scope" }),
+      search: vi.fn().mockResolvedValue({
+        items: [{ eventId: "old-item" }],
+        totalMatches: 1,
+        localStatuses: [],
+      }),
+    })) as never;
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    const onDone = vi.fn();
+    const read = runMemoryLedgerRead({
+      guard,
+      session,
+      filters: {},
+      visibleLimit: 50,
+      online: false,
+      isMounted: () => true,
+      onSuccess,
+      onError,
+      onDone,
+      openDatabase: () => new Promise((resolve) => {
+        release = resolve;
+      }),
+      repositoryFactory,
+    });
+
+    setSession(profile({ obraIds: [WORKSITE_B] }));
+    release?.(database);
+    await read;
+
+    expect(repositoryFactory).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
   });
 
   it.each([

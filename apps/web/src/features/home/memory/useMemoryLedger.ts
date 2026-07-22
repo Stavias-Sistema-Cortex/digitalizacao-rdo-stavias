@@ -113,6 +113,86 @@ export interface MemoryLedgerError {
   message: string;
 }
 
+export interface MemoryLedgerReadSnapshot {
+  items: MemorySearchDocument[];
+  totalMatches: number;
+  metadata: MemoryCacheMetadata | null;
+  coverage: MemoryCoverageView;
+}
+
+interface RunMemoryLedgerReadOptions {
+  guard: ReturnType<typeof captureMemorySessionGuard>;
+  session: NonNullable<ReturnType<typeof getSession>>;
+  filters: MemoryFilters;
+  visibleLimit: number;
+  online: boolean;
+  isMounted: () => boolean;
+  onSuccess: (snapshot: MemoryLedgerReadSnapshot) => void;
+  onError: (error: MemoryLedgerError) => void;
+  onDone: () => void;
+  openDatabase?: typeof getCortexDb;
+  repositoryFactory?: typeof createMemoryRepository;
+}
+
+export async function runMemoryLedgerRead({
+  guard,
+  session,
+  filters,
+  visibleLimit,
+  online,
+  isMounted,
+  onSuccess,
+  onError,
+  onDone,
+  openDatabase = getCortexDb,
+  repositoryFactory = createMemoryRepository,
+}: RunMemoryLedgerReadOptions): Promise<void> {
+  try {
+    const database = await openDatabase();
+    assertMemorySessionGuard(guard);
+    const repository = repositoryFactory(database);
+    const currentMetadata = await repository.latestMetadata(session.colaboradorId);
+    assertMemorySessionGuard(guard);
+    const scopeHash = currentMetadata?.scopeHash ?? localScopeMarker(session);
+    const result = await repository.search({
+      userId: session.colaboradorId,
+      scopeHash,
+      filters,
+      allowedWorksiteIds: session.escopoGlobal ? null : session.obraIds,
+      limit: visibleLimit,
+    });
+    assertMemorySessionGuard(guard);
+    if (!isMounted()) return;
+    commitIfMemorySessionCurrent(guard, () => {
+      onSuccess({
+        items: result.items,
+        totalMatches: result.totalMatches,
+        metadata: currentMetadata,
+        coverage: memoryCoverage({
+          online,
+          metadata: currentMetadata,
+          localStatuses: result.localStatuses,
+        }),
+      });
+    });
+  } catch (cause: unknown) {
+    if (isMounted()) {
+      commitIfMemorySessionCurrent(guard, () => {
+        onError({
+          source: "CACHE",
+          message: cause instanceof Error
+            ? `Não foi possível ler o cache da Memória: ${cause.message}`
+            : "Não foi possível ler o cache da Memória.",
+        });
+      });
+    }
+  } finally {
+    if (isMounted()) {
+      commitIfMemorySessionCurrent(guard, onDone);
+    }
+  }
+}
+
 export interface MemoryLedgerViewModel {
   items: MemorySearchDocument[];
   totalMatches: number;
@@ -149,48 +229,23 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
     const session = getSession();
     if (!session) return;
     const guard = captureMemorySessionGuard();
-    try {
-      const database = await getCortexDb();
-      assertMemorySessionGuard(guard);
-      const repository = createMemoryRepository(database);
-      const currentMetadata = await repository.latestMetadata(session.colaboradorId);
-      assertMemorySessionGuard(guard);
-      const scopeHash = currentMetadata?.scopeHash ?? localScopeMarker(session);
-      const result = await repository.search({
-        userId: session.colaboradorId,
-        scopeHash,
-        filters,
-        allowedWorksiteIds: session.escopoGlobal ? null : session.obraIds,
-        limit: visibleLimit,
-      });
-      assertMemorySessionGuard(guard);
-      if (!mounted.current) return;
-      commitIfMemorySessionCurrent(guard, () => {
-        setItems(result.items);
-        setTotalMatches(result.totalMatches);
-        setMetadata(currentMetadata);
-        setCoverage(memoryCoverage({
-          online: navigator.onLine && hasOnlineSession(),
-          metadata: currentMetadata,
-          localStatuses: result.localStatuses,
-        }));
-      });
-    } catch (cause: unknown) {
-      if (mounted.current) {
-        commitIfMemorySessionCurrent(guard, () => {
-          setError({
-            source: "CACHE",
-            message: cause instanceof Error
-              ? `Não foi possível ler o cache da Memória: ${cause.message}`
-              : "Não foi possível ler o cache da Memória.",
-          });
-        });
-      }
-    } finally {
-      if (mounted.current) {
-        commitIfMemorySessionCurrent(guard, () => setIsLoading(false));
-      }
-    }
+    await runMemoryLedgerRead({
+      guard,
+      session,
+      filters,
+      visibleLimit,
+      online: navigator.onLine && hasOnlineSession(),
+      isMounted: () => mounted.current,
+      onSuccess(snapshot) {
+        setItems(snapshot.items);
+        setTotalMatches(snapshot.totalMatches);
+        setMetadata(snapshot.metadata);
+        setCoverage(snapshot.coverage);
+        setError((current) => current?.source === "CACHE" ? null : current);
+      },
+      onError: setError,
+      onDone: () => setIsLoading(false),
+    });
   }, [filters, visibleLimit]);
 
   const readLedgerRef = useRef(readLedger);
