@@ -85,7 +85,7 @@ const CORPORATE_SOURCE_RULES = new Map([
     "apps/web/src/index.css",
     [
       ["Amarelo Stavias", 1],
-      ["tile da Stavias", 1],
+      ["Modo compacto: só o tile da Stavias e os ícones dos botões.", 1],
     ],
   ],
   [
@@ -196,13 +196,67 @@ function findCorporateTokens(text) {
   }));
 }
 
+function isIdentifierCharacter(character) {
+  return typeof character === "string" && /[\p{L}\p{N}_$]/u.test(character);
+}
+
+function isCompleteApprovedOccurrence(content, index, fragment) {
+  const startsWithIdentifier = isIdentifierCharacter(fragment[0]);
+  const endsWithIdentifier = isIdentifierCharacter(fragment.at(-1));
+  if (
+    startsWithIdentifier &&
+    index > 0 &&
+    isIdentifierCharacter(content[index - 1])
+  ) {
+    return false;
+  }
+  if (!endsWithIdentifier) {
+    return true;
+  }
+
+  const afterIndex = index + fragment.length;
+  if (isIdentifierCharacter(content[afterIndex])) {
+    return false;
+  }
+  if (!/\s/.test(fragment)) {
+    return true;
+  }
+  let nextNonSpace = afterIndex;
+  while (/\s/.test(content[nextNonSpace] ?? "")) {
+    nextNonSpace += 1;
+  }
+  return !isIdentifierCharacter(content[nextNonSpace]);
+}
+
+function maskCompleteCorporateFragments(content, fragments) {
+  let masked = content;
+  for (const fragment of [...fragments].sort(
+    (left, right) => right.length - left.length,
+  )) {
+    let searchFrom = 0;
+    while (searchFrom < masked.length) {
+      const index = masked.indexOf(fragment, searchFrom);
+      if (index < 0) {
+        break;
+      }
+      if (isCompleteApprovedOccurrence(masked, index, fragment)) {
+        masked =
+          masked.slice(0, index) +
+          "#".repeat(fragment.length) +
+          masked.slice(index + fragment.length);
+      }
+      searchFrom = index + fragment.length;
+    }
+  }
+  return masked;
+}
+
 function maskAllowedCorporateSource(pathname, content, violations) {
   const rules = CORPORATE_SOURCE_RULES.get(pathname);
   if (!rules) {
     return content;
   }
 
-  let masked = content;
   for (const [fragment, expectedCount] of rules) {
     const actualCount = occurrenceCount(content, fragment);
     if (actualCount !== expectedCount) {
@@ -210,9 +264,11 @@ function maskAllowedCorporateSource(pathname, content, violations) {
         `${pathname}: corporate fragment ${JSON.stringify(fragment)} expected ${expectedCount}, found ${actualCount}`,
       );
     }
-    masked = masked.replaceAll(fragment, "[approved-corporate-brand]");
   }
-  return masked;
+  return maskCompleteCorporateFragments(
+    content,
+    rules.map(([fragment]) => fragment),
+  );
 }
 
 const CORPORATE_DIST_FRAGMENTS = [
@@ -239,13 +295,7 @@ const CORPORATE_DIST_FRAGMENTS = [
 ];
 
 function maskAllowedCorporateDist(content) {
-  return [...CORPORATE_DIST_FRAGMENTS]
-    .sort((left, right) => right.length - left.length)
-    .reduce(
-      (masked, fragment) =>
-        masked.replaceAll(fragment, "[approved-corporate-brand]"),
-      content,
-    );
+  return maskCompleteCorporateFragments(content, CORPORATE_DIST_FRAGMENTS);
 }
 
 export function inspectDistCorporateContent(content) {
@@ -389,6 +439,15 @@ export function inspectLegacySource(files) {
     if (file.path === LOCAL_STORAGE_CLEANUP_PATH) {
       continue;
     }
+    if (
+      /(?:import\s*\*\s+as\s+[A-Za-z_$][\w$]*\s+from|import\s*\(|require\s*\()\s*["'][^"']*localDataScope(?:\.ts)?["']/.test(
+        file.content,
+      )
+    ) {
+      violations.push(
+        `${file.path}: cleanup module may not be loaded through namespace, dynamic, or CommonJS access`,
+      );
+    }
     const remainingReferences = file.content
       .replace(
         /import\s*\{\s*clearUserScopedLocalStorage\s*\}\s*from\s*["'][^"']+["']\s*;?/g,
@@ -455,15 +514,100 @@ function maskVerifiedLegacySource(file) {
 
 const VERIFIED_DIST_BUILD_SUFFIX =
   /&&\s*node scripts\/verify-stavia-boundary\.mjs --dist\s*$/;
-const VITE_BUILD_INVOCATION =
-  /\bvite\b(?:(?!&&|\|\||[;&|]).)*\bbuild\b/s;
+
+function tokenizeShellCommands(command) {
+  const commands = [];
+  let tokens = [];
+  let token = "";
+  let tokenStarted = false;
+  let quote = null;
+
+  const flushToken = () => {
+    if (tokenStarted) {
+      tokens.push(token);
+      token = "";
+      tokenStarted = false;
+    }
+  };
+  const flushCommand = () => {
+    flushToken();
+    if (tokens.length > 0) {
+      commands.push(tokens);
+      tokens = [];
+    }
+  };
+
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      } else if (
+        quote === '"' &&
+        character === "\\" &&
+        index + 1 < command.length
+      ) {
+        index += 1;
+        token += command[index];
+      } else {
+        token += character;
+      }
+      tokenStarted = true;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      tokenStarted = true;
+      continue;
+    }
+    if (character === "\\" && index + 1 < command.length) {
+      index += 1;
+      if (command[index] !== "\n") {
+        token += command[index];
+        tokenStarted = true;
+      }
+      continue;
+    }
+    if (/\s/.test(character)) {
+      flushToken();
+      continue;
+    }
+    if (character === ";" || character === "&" || character === "|") {
+      flushCommand();
+      continue;
+    }
+    token += character;
+    tokenStarted = true;
+  }
+  flushCommand();
+  return commands;
+}
+
+function tokenSequenceInvokesViteBuild(tokens) {
+    const viteIndex = tokens.findIndex((tokenValue) =>
+      /(?:^|\/)vite(?:\.cmd)?$/.test(tokenValue),
+    );
+    return viteIndex >= 0 && tokens.slice(viteIndex + 1).includes("build");
+}
+
+function invokesViteBuild(command) {
+  return tokenizeShellCommands(command).some(
+    (tokens) =>
+      tokenSequenceInvokesViteBuild(tokens) ||
+      tokens.some(
+        (tokenValue) =>
+          /\s/.test(tokenValue) &&
+          tokenizeShellCommands(tokenValue).some(tokenSequenceInvokesViteBuild),
+      ),
+  );
+}
 
 export function inspectPackageBuildScripts(scripts) {
   const violations = [];
   for (const [name, command] of Object.entries(scripts)) {
     const isBuildEntry = /^build(?::|$)/.test(name);
-    const invokesViteBuild = VITE_BUILD_INVOCATION.test(command);
-    if (!isBuildEntry && !invokesViteBuild) {
+    const hasViteBuild = invokesViteBuild(command);
+    if (!isBuildEntry && !hasViteBuild) {
       continue;
     }
     if (!VERIFIED_DIST_BUILD_SUFFIX.test(command)) {

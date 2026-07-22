@@ -148,7 +148,10 @@ future role words, including `StaviasAgent`, `StaviasCopilot`,
 `useStaviasCortexLauncher`, and `Stavias Runtime Provider`. Generated text uses
 the same principle with exact artifact-safe fragments, while generated paths
 retain their exact asset allowlist. Unapproved source, asset, and compiled
-occurrences are rejected.
+occurrences are rejected. Approved fragments are masked only as complete
+identifiers or phrases: prefix/suffix extensions such as
+`AgentMaisStaviasCard`, `MaisStaviasCardAgent`, `Portal StaviasAgent`, and
+`Stavias Córtex Assistant` remain visible to the fail-closed scan.
 
 Legacy identifiers are now audited across the complete scanned source set
 before they are masked for assistant-token inspection. Each localStorage key
@@ -181,14 +184,19 @@ keys. The executable verifier requires the fixed declaration and
 `target.removeItem(key)` loop, rejects an exported collection, rejects any
 additional consumer of its symbol, and permits consumers only as an exact named
 import followed by a zero-argument call. Export aliases, function aliases, and
-callback arguments fail the gate. SSR retains the explicit no-op path.
+callback arguments fail the gate. Namespace, dynamic, and CommonJS loading of
+the cleanup module are rejected as well, preventing computed-property aliases.
+SSR retains the explicit no-op path.
 
 All `build`/`build:*` package scripts and every raw Vite build invocation now
 must end in the mandatory
 `node scripts/verify-stavia-boundary.mjs --dist` gate. The executable package
 inspector recognizes options before the Vite command, including
 `vite --mode production build`, `vite --config vite.config.ts build`, and a
-line-broken command; appending anything after the verifier is also rejected.
+line-broken command. Its shell tokenizer preserves quoted metacharacters, so
+`vite --define 'process.env.X="a;b"' build` cannot escape by looking like two
+commands; nested `sh -c 'vite ... build'` is also inspected. Appending anything
+after the verifier is rejected.
 
 ## Responsive geometry evidence
 
@@ -225,8 +233,8 @@ gate. Authenticated runtime browser proof remains Task 6.
 - Targeted migration/responsive tests:
   `2 files / 21 tests passed`.
 - Boundary after production build: `1 file / 4 tests passed`.
-- Occurrence-policy focused suite: `2 files / 14 tests passed`.
-- Full web suite after occurrence hardening: `52 files / 242 tests passed`.
+- Occurrence-policy focused suite: `2 files / 15 tests passed`.
+- Full web suite after occurrence hardening: `52 files / 243 tests passed`.
 - Lint: `npm --prefix apps/web run lint` exited 0.
 - TypeScript/Vite/PWA builds plus mandatory dist verifier:
   `build`, `build:local`, and `build:compose` each exited 0, generated 89

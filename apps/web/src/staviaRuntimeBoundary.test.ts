@@ -261,6 +261,7 @@ describe("StavIA runtime boundary", () => {
         },
       ]),
     ).not.toEqual([]);
+
   });
 
   it("rejects unapproved plural corporate roles in generated text", () => {
@@ -279,9 +280,59 @@ describe("StavIA runtime boundary", () => {
     }
     expect(
       inspectDistCorporateContent(
-        "Portal Stavias https://www.stavias.com.br Mais Stavias",
+        "Portal Stavias, https://www.stavias.com.br; Mais Stavias.",
       ),
     ).toEqual([]);
+    for (const extendedApprovedFragment of [
+      "AgentPortal Stavias",
+      "Portal StaviasAgent",
+      "Entrar no Stavias Córtex Assistant",
+    ]) {
+      expect(
+        inspectDistCorporateContent(extendedApprovedFragment),
+        extendedApprovedFragment,
+      ).not.toEqual([]);
+    }
+  });
+
+  it("rejects source identifiers and copy that extend approved fragments", () => {
+    const originalHomePage = readFileSync(
+      path.join(WEB_ROOT, "src/features/home/HomePage.tsx"),
+      "utf8",
+    );
+    const activationPage = readFileSync(
+      path.join(WEB_ROOT, "src/features/auth/ActivationPage.tsx"),
+      "utf8",
+    ).replace("Stavias Córtex", "Stavias Córtex Assistant");
+
+    for (const extendedIdentifier of [
+      "MaisStaviasCardAgent",
+      "AgentMaisStaviasCard",
+    ]) {
+      expect(
+        inspectSourceBoundary([
+          ...validCleanupFixtures(),
+          {
+            path: "apps/web/src/features/home/HomePage.tsx",
+            content: originalHomePage.replaceAll(
+              "MaisStaviasCard",
+              extendedIdentifier,
+            ),
+          },
+        ]),
+        extendedIdentifier,
+      ).not.toEqual([]);
+    }
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/features/auth/ActivationPage.tsx",
+          content: activationPage,
+        },
+      ]),
+    ).not.toEqual([]);
+
   });
 
   it("does not hide a second or active use of a legacy identifier", () => {
@@ -358,6 +409,16 @@ describe("StavIA runtime boundary", () => {
         {
           path: "apps/web/src/active-regression.ts",
           content: `import { clearUserScopedLocalStorage as cleanup } from "./lib/db/localDataScope"; cleanup();`,
+        },
+      ]),
+    ).not.toEqual([]);
+
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/active-regression.ts",
+          content: `import * as scope from "./lib/db/localDataScope"; const cleanup = scope["clearUserScoped" + "LocalStorage"]; cleanup();`,
         },
       ]),
     ).not.toEqual([]);
@@ -449,6 +510,9 @@ describe("StavIA runtime boundary", () => {
       "vite --mode production build",
       "vite --config vite.config.ts build",
       "vite --mode production\nbuild",
+      `vite --define 'process.env.X="a;b"' build`,
+      `vite --define "process.env.X=a|b" build`,
+      `sh -c 'vite --mode production build'`,
     ]) {
       expect(
         inspectPackageBuildScripts({ unsafe: unsafeCommand }),
