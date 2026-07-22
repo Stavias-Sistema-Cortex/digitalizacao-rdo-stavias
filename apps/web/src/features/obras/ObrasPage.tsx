@@ -448,7 +448,7 @@ export function ObrasPage() {
               <>
                 <div className="obras-detail-header">
                   <div>
-                    <span className="home-obra-pill">
+                    <span className="obras-status-marker">
                       {focusedObra.status}
                     </span>
                     <h2>{focusedObra.nome}</h2>

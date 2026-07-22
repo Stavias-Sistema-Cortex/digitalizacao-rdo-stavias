@@ -1,5 +1,8 @@
 .integracoes-table-card {
   overflow-x: auto;
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
 }
 
 .integracoes-table {
@@ -18,9 +21,11 @@
 }
 
 .integracoes-table th {
-  color: var(--color-muted);
+  border-bottom-color: var(--color-ink);
+  color: var(--color-ink);
   font-size: 0.72rem;
-  letter-spacing: 0;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -33,6 +38,18 @@
 .integracoes-actions .secondary-button {
   min-height: 36px;
   padding: 0 10px;
+  border-radius: var(--radius-control);
+}
+
+.integracoes-table td {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.integracoes-report {
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
 }
 
 .integracoes-report dl {
@@ -51,8 +68,9 @@
 
 .integracoes-report dd {
   margin: 0;
-  color: #25372d;
-  font-weight: 750;
+  color: var(--color-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 

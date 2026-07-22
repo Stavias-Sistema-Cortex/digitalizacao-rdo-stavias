@@ -443,6 +443,7 @@ export function MensagensPage() {
             conversation={selected}
             title={selected ? conversationName(selected, session?.colaboradorId) : ""}
             scope={selected ? conversationScope(selected) : ""}
+            currentUserId={session?.colaboradorId ?? ""}
             messages={messages}
             now={now}
             isOnline={snapshot.isOnline}

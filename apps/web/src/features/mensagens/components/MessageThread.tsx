@@ -6,15 +6,14 @@ import type {
   MensagemSyncStatus,
 } from "../../../lib/db/db.types";
 import {
-  conversationInitials,
   formatClock,
   formatFileSize,
   formatRelativeTime,
-  initials,
 } from "../mensagensFormat";
 import { mensagemStatusLabel } from "../mensagensQueue";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import type { MessageTimelineEntry } from "../mensagensView";
+import { ConversationAvatar } from "./Avatar";
 import {
   IconCheckDouble,
   IconChevronLeft,
@@ -59,8 +58,11 @@ export function MessageThread(props: MessageThreadProps) {
     return (
       <section className="mensagens-thread" aria-live="polite">
         <div className="mensagens-thread-empty">
-          <h2>Selecione uma conversa</h2>
-          <p>O histórico autorizado será carregado deste dispositivo.</p>
+          <h2>Abra uma conversa</h2>
+          <p>
+            O histórico autorizado fica neste aparelho: dá para ler e responder
+            mesmo sem sinal.
+          </p>
         </div>
       </section>
     );
@@ -77,9 +79,10 @@ export function MessageThread(props: MessageThreadProps) {
         >
           <IconChevronLeft />
         </button>
-        <span className="mensagens-thread-avatar" aria-hidden="true">
-          {conversationInitials(props.title)}
-        </span>
+        <ConversationAvatar
+          conversation={props.conversation}
+          currentUserId={props.currentUserId}
+        />
         <div className="mensagens-thread-heading">
           <h2>{props.title}</h2>
           <p>
@@ -163,28 +166,22 @@ function MessageItem({
     >
       {startsRun ? (
         <p className="mensagem-caption">
-          {!mine && showAuthorName ? (
-            <span className="mensagem-caption-nome">{message.autorNome}</span>
-          ) : null}
+          {/* A hora abre o registro, como em livro de ocorrências; o tempo
+              relativo continua disponível na dica do próprio horário. */}
           <time
             dateTime={message.criadaNoClienteEm}
-            title={formatClock(message.criadaNoClienteEm)}
+            title={formatRelativeTime(message.criadaNoClienteEm, now)}
           >
-            {formatRelativeTime(message.criadaNoClienteEm, now)}
+            {formatClock(message.criadaNoClienteEm)}
           </time>
+          {mine ? (
+            <span className="mensagem-caption-nome">Você</span>
+          ) : showAuthorName ? (
+            <span className="mensagem-caption-nome">{message.autorNome}</span>
+          ) : null}
         </p>
       ) : null}
       <div className="mensagem-linha">
-        {mine ? null : (
-          <span
-            className={`mensagem-avatar-mini${
-              startsRun ? "" : " mensagem-avatar-mini--vazio"
-            }`}
-            aria-hidden="true"
-          >
-            {startsRun ? initials(message.autorNome) : ""}
-          </span>
-        )}
         <div className={bubbleClass}>
           {message.status === "EXCLUIDA" ? (
             <p className="mensagem-deleted">Mensagem excluída</p>

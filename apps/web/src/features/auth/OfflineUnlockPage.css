@@ -10,9 +10,8 @@
 .offline-unlock__card {
   width: min(100%, 460px);
   padding: 36px;
-  border: 1px solid #d7ded8;
-  border-top: 4px solid #e8c900;
-  border-radius: 18px;
+  border: 2px solid #e8c900;
+  border-radius: var(--radius-container);
   background: #ffffff;
   box-shadow: 0 16px 44px rgb(25 54 39 / 10%);
 }

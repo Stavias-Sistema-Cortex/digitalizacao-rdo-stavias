@@ -56,36 +56,6 @@ export function formatFileSize(bytes: number): string {
     : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** Pessoas: primeira letra do primeiro e do último nome. */
-export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
-    return "?";
-  }
-  const first = parts[0][0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return `${first}${last}`.toLocaleUpperCase("pt-BR");
-}
-
-/**
- * Títulos de conversa: as duas primeiras palavras que começam com letra.
- * A regra de pessoas erraria aqui — "Obra Rodovia … Trecho 3" viraria "O3".
- */
-export function conversationInitials(title: string): string {
-  const words = title
-    .trim()
-    .split(/\s+/)
-    .filter((word) => /^\p{L}/u.test(word));
-  if (words.length === 0) {
-    return "?";
-  }
-  return words
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join("")
-    .toLocaleUpperCase("pt-BR");
-}
-
 export function messageFrom(cause: unknown): string {
   return cause instanceof Error
     ? cause.message
