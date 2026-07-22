@@ -377,6 +377,13 @@
   background: #ffffff;
 }
 
+/* Itens de grid nascem com min-width:auto e não encolhem abaixo do
+   min-content: sem isto a thread vaza da própria coluna e o composer
+   (com o botão enviar na ponta) sai da área visível. */
+.mensagens-thread > * {
+  min-width: 0;
+}
+
 .mensagens-thread-header {
   display: flex;
   align-items: center;
@@ -1259,6 +1266,18 @@
     width: min(100% - 20px, 760px);
   }
 
+  .mensagem-bubble {
+    max-width: 88%;
+  }
+}
+
+/*
+ * O botão voltar pertence ao painel único, então tem de seguir a MESMA consulta
+ * que decide o painel único. Preso a uma media query de viewport ele sumia numa
+ * faixa em que o layout já era de painel único (viewport larga, frame estreito
+ * por causa da sidebar redimensionável) e a pessoa ficava sem saída da thread.
+ */
+@container (max-width: 639px) {
   .mensagens-mobile-back {
     display: inline-grid;
     place-items: center;
@@ -1275,10 +1294,14 @@
     background: #eef1ef;
   }
 
-  .mensagens-context { border-left: 0; }
+  .mensagens-context {
+    border-left: 0;
+  }
 
-  .mensagem-bubble {
-    max-width: 88%;
+  /* A gaveta não existe nesta faixa: o contexto é painel em fluxo. */
+  .mensagens-workspace .mensagens-drawer-backdrop,
+  .mensagens-workspace .mensagens-drawer-close {
+    display: none;
   }
 }
 
