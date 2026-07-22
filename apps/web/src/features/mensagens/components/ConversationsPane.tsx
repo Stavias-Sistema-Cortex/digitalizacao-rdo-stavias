@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 
 import type { ConversaLocalRecord } from "../../../lib/db/db.types";
-import { conversationInitials, formatRelativeTime } from "../mensagensFormat";
+import { formatRelativeTime } from "../mensagensFormat";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import {
   conversationName,
@@ -10,6 +10,7 @@ import {
   previewLabel,
   type ConversationPreview,
 } from "../mensagensView";
+import { ConversationAvatar, PersonAvatar } from "./Avatar";
 import { IconClose, IconSearch } from "./icons";
 
 export interface ConversationsPaneProps {
@@ -108,14 +109,11 @@ function ConversationList(props: {
             className={conversation.id === props.selectedId ? "active" : ""}
             onClick={() => props.onSelect(conversation.id)}
           >
-            <span className="mensagens-avatar" aria-hidden="true">
-              {conversationInitials(
-                conversationName(conversation, props.currentUserId),
-              )}
-              {hasPendingMessage(props.previews[conversation.id]) ? (
-                <i className="mensagens-avatar-dot" />
-              ) : null}
-            </span>
+            <ConversationAvatar
+              conversation={conversation}
+              currentUserId={props.currentUserId}
+              pendente={hasPendingMessage(props.previews[conversation.id])}
+            />
             <span className="mensagens-row-body">
               <strong>{conversationName(conversation, props.currentUserId)}</strong>
               <small>
@@ -155,12 +153,15 @@ function SearchResults(props: {
         {props.results.map((message) => (
           <li key={message.id}>
             <button type="button" onClick={() => props.onChoose(message)}>
-              <strong>{message.autorNome}</strong>
-              <span>{message.corpo || "Mensagem com anexo"}</span>
-              <small>
-                {props.conversations.find((item) => item.id === message.conversaId)?.titulo ||
-                  formatMessageTime(message.criadaNoClienteEm)}
-              </small>
+              <PersonAvatar colaboradorId={message.autorId} />
+              <span className="mensagens-search-result-body">
+                <strong>{message.autorNome}</strong>
+                <span>{message.corpo || "Mensagem com anexo"}</span>
+                <small>
+                  {props.conversations.find((item) => item.id === message.conversaId)?.titulo ||
+                    formatMessageTime(message.criadaNoClienteEm)}
+                </small>
+              </span>
             </button>
           </li>
         ))}

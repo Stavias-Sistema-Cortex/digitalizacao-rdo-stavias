@@ -5,20 +5,17 @@ import type {
   MensagemAnexoLocalRecord,
   ObraLocalRecord,
 } from "../../../lib/db/db.types";
-import {
-  conversationInitials,
-  formatFileSize,
-  formatRelativeTime,
-  initials,
-} from "../mensagensFormat";
+import { formatFileSize, formatRelativeTime } from "../mensagensFormat";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import { activeParticipant } from "../mensagensView";
+import { ConversationAvatar, PersonAvatar } from "./Avatar";
 import { IconChevronDown, IconChevronLeft, IconClose } from "./icons";
 
 export interface ConversationInfoPaneProps {
   conversation: ConversaLocalRecord | null;
   title: string;
   scope: string;
+  currentUserId: string;
   messages: MensagemComAnexos[];
   worksites: ObraLocalRecord[];
   now: Date;
@@ -68,9 +65,10 @@ export function ConversationInfoPane(props: ConversationInfoPaneProps) {
       </header>
 
       <div className="mensagens-info-identity">
-        <span className="mensagens-info-avatar" aria-hidden="true">
-          {conversationInitials(props.title)}
-        </span>
+        <ConversationAvatar
+          conversation={conversation}
+          currentUserId={props.currentUserId}
+        />
         <strong>{props.title}</strong>
         <small>{props.scope}</small>
       </div>
@@ -99,7 +97,7 @@ export function ConversationInfoPane(props: ConversationInfoPaneProps) {
         <ul className="mensagens-context-people">
           {participants.map((participant) => (
             <li key={participant.colaboradorId}>
-              <span aria-hidden="true">{initials(participant.nome)}</span>
+              <PersonAvatar colaboradorId={participant.colaboradorId} />
               <div>
                 <strong>{participant.nome}</strong>
                 <small>

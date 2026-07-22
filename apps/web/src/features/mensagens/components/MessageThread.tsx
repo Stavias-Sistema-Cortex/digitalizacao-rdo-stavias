@@ -6,15 +6,14 @@ import type {
   MensagemSyncStatus,
 } from "../../../lib/db/db.types";
 import {
-  conversationInitials,
   formatClock,
   formatFileSize,
   formatRelativeTime,
-  initials,
 } from "../mensagensFormat";
 import { mensagemStatusLabel } from "../mensagensQueue";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import type { MessageTimelineEntry } from "../mensagensView";
+import { ConversationAvatar, PersonAvatar } from "./Avatar";
 import {
   IconCheckDouble,
   IconChevronLeft,
@@ -59,8 +58,11 @@ export function MessageThread(props: MessageThreadProps) {
     return (
       <section className="mensagens-thread" aria-live="polite">
         <div className="mensagens-thread-empty">
-          <h2>Selecione uma conversa</h2>
-          <p>O histórico autorizado será carregado deste dispositivo.</p>
+          <h2>Abra uma conversa</h2>
+          <p>
+            O histórico autorizado fica neste aparelho: dá para ler e responder
+            mesmo sem sinal.
+          </p>
         </div>
       </section>
     );
@@ -77,9 +79,10 @@ export function MessageThread(props: MessageThreadProps) {
         >
           <IconChevronLeft />
         </button>
-        <span className="mensagens-thread-avatar" aria-hidden="true">
-          {conversationInitials(props.title)}
-        </span>
+        <ConversationAvatar
+          conversation={props.conversation}
+          currentUserId={props.currentUserId}
+        />
         <div className="mensagens-thread-heading">
           <h2>{props.title}</h2>
           <p>
@@ -175,15 +178,11 @@ function MessageItem({
         </p>
       ) : null}
       <div className="mensagem-linha">
-        {mine ? null : (
-          <span
-            className={`mensagem-avatar-mini${
-              startsRun ? "" : " mensagem-avatar-mini--vazio"
-            }`}
-            aria-hidden="true"
-          >
-            {startsRun ? initials(message.autorNome) : ""}
-          </span>
+        {/* Fora do início do run entra só o vão: a coluna precisa alinhar. */}
+        {mine ? null : startsRun ? (
+          <PersonAvatar colaboradorId={message.autorId} />
+        ) : (
+          <span className="mensagem-avatar-vao" aria-hidden="true" />
         )}
         <div className={bubbleClass}>
           {message.status === "EXCLUIDA" ? (
