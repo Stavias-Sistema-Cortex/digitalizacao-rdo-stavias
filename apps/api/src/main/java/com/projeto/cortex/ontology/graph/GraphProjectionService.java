@@ -25,19 +25,30 @@ public final class GraphProjectionService {
         try {
             repository.upsert(projector.project(event));
         } catch (RuntimeException failure) {
+            String safeCode = failure instanceof
+                    PostgresqlOntologyGraphRepository.GraphProjectionSourceOrderException ordered
+                    ? ordered.safeCode()
+                    : FAILURE_CODE;
             try {
-                repository.markProjectionFailure(event.commitSequence(), FAILURE_CODE);
+                repository.markProjectionFailure(event.commitSequence(), safeCode);
             } catch (RuntimeException failureRecordingError) {
                 failure.addSuppressed(failureRecordingError);
             }
-            throw new GraphProjectionException(failure);
+            throw new GraphProjectionException(safeCode, failure);
         }
     }
 
     public static final class GraphProjectionException extends RuntimeException {
 
-        private GraphProjectionException(RuntimeException cause) {
+        private final String safeCode;
+
+        private GraphProjectionException(String safeCode, RuntimeException cause) {
             super("Graph projection failed.", cause);
+            this.safeCode = safeCode;
+        }
+
+        public String safeCode() {
+            return safeCode;
         }
     }
 }

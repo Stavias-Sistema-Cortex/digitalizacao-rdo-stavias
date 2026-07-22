@@ -40,9 +40,13 @@ class PostgresqlOntologyGraphQueryServiceIT {
                     new ObjectMapper(),
                     new DataSourceTransactionManager(jdbc.getDataSource())
             );
-            repository.upsert(new OperationalGraphProjector().project(
+            GraphProjectionBatch initialBatch = new OperationalGraphProjector().project(
                     OperationalGraphProjectorTest.executedServiceEvent(42L)
-            ));
+            );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, initialBatch.commitSequence(), initialBatch.commitId()
+            );
+            repository.upsert(initialBatch);
             OntologyGraphQueryService queryService = new OntologyGraphQueryService(
                     jdbc,
                     new ObjectMapper()
@@ -164,9 +168,15 @@ class PostgresqlOntologyGraphQueryServiceIT {
                     new DataSourceTransactionManager(jdbc.getDataSource())
             );
             OperationalGraphProjector projector = new OperationalGraphProjector();
-            projectedSharedActorTopology().stream()
+            List<GraphProjectionBatch> topology = projectedSharedActorTopology().stream()
                     .map(projector::project)
-                    .forEach(repository::upsert);
+                    .toList();
+            topology.forEach(batch ->
+                    OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                            jdbc, batch.commitSequence(), batch.commitId()
+                    )
+            );
+            topology.forEach(repository::upsert);
             OntologyGraphQueryService queryService = queryService(jdbc);
 
             String rdoA = entityId(jdbc, "rdo-a");

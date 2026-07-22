@@ -5,6 +5,13 @@ public record OperationalMemoryCoverage(
         boolean complete,
         long authorizedEventCount,
         Long oldestCommitSequence,
-        long newestCommitSequence
+        long newestCommitSequence,
+        OperationalMemoryGraphCoverage graph
 ) {
+
+    public OperationalMemoryCoverage {
+        if (graph == null) {
+            throw new IllegalArgumentException("Memory graph coverage is required.");
+        }
+    }
 }

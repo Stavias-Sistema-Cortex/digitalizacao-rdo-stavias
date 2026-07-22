@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -27,6 +28,9 @@ public class OperationalMemoryQueryService {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 100;
     private static final int MAX_SEARCH_LENGTH = 200;
+    private static final Pattern SAFE_GRAPH_ERROR = Pattern.compile(
+            "[A-Z][A-Z0-9_]{0,119}"
+    );
     private static final Set<String> PII_ENTITY_TYPES = Set.of(
             "ACTOR",
             "COLABORADOR",
@@ -75,6 +79,7 @@ public class OperationalMemoryQueryService {
         long highWaterMark = position == null
                 ? snapshot.newestCommitSequence()
                 : position.highWaterMark();
+        OperationalMemoryGraphCoverage graphCoverage = graphCoverage(highWaterMark);
         requireCursorInScope(scope, position, highWaterMark);
         QuerySpec query = buildSearchQuery(
                 scope,
@@ -113,7 +118,8 @@ public class OperationalMemoryQueryService {
                         true,
                         snapshot.authorizedEventCount(),
                         snapshot.oldestCommitSequence(),
-                        snapshot.newestCommitSequence()
+                        snapshot.newestCommitSequence(),
+                        graphCoverage
                 ),
                 Instant.now()
         );
@@ -316,6 +322,55 @@ public class OperationalMemoryQueryService {
                 },
                 parameters.toArray()
         );
+    }
+
+    private OperationalMemoryGraphCoverage graphCoverage(long targetCommitSequence) {
+        return jdbcTemplate.query(
+                """
+                WITH checkpoint AS (
+                    SELECT
+                        COALESCE(MAX(last_commit_sequence), 0) AS commit_sequence,
+                        MAX(last_error_code) AS last_error_code
+                    FROM graph_projection_checkpoint
+                    WHERE projector_name = 'operational-graph-v1'
+                )
+                SELECT
+                    checkpoint.commit_sequence,
+                    checkpoint.last_error_code,
+                    COUNT(event.commit_seq) AS lag_event_count
+                FROM checkpoint
+                LEFT JOIN cortex_evento_operacional event
+                  ON event.commit_seq > checkpoint.commit_sequence
+                 AND event.commit_seq <= ?
+                GROUP BY checkpoint.commit_sequence, checkpoint.last_error_code
+                """,
+                resultSet -> {
+                    if (!resultSet.next()) {
+                        throw new IllegalStateException(
+                                "Memory graph coverage query returned no row."
+                        );
+                    }
+                    long checkpoint = resultSet.getLong("commit_sequence");
+                    long lag = resultSet.getLong("lag_event_count");
+                    return new OperationalMemoryGraphCoverage(
+                            checkpoint,
+                            targetCommitSequence,
+                            lag,
+                            lag == 0,
+                            safeGraphError(resultSet.getString("last_error_code"))
+                    );
+                },
+                targetCommitSequence
+        );
+    }
+
+    private String safeGraphError(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return SAFE_GRAPH_ERROR.matcher(value).matches()
+                ? value
+                : "GRAPH_PROJECTION_FAILED";
     }
 
     private void requireCursorInScope(

@@ -66,7 +66,10 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         0L,
                         "scope-hash",
                         new OperationalMemoryCoverage(
-                                "FULL_HISTORY", true, 0L, null, 0L
+                                "FULL_HISTORY", true, 0L, null, 0L,
+                                new OperationalMemoryGraphCoverage(
+                                        0L, 0L, 0L, true, null
+                                )
                         ),
                         Instant.parse("2026-07-22T12:00:00Z")
                 ));

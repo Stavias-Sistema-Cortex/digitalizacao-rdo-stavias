@@ -36,6 +36,9 @@ public class PostgresqlOntologyGraphRepository implements OntologyGraphRepositor
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.transactions.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        );
         this.failureTransactions = new TransactionTemplate(transactionManager);
         this.failureTransactions.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_REQUIRES_NEW
@@ -58,6 +61,7 @@ public class PostgresqlOntologyGraphRepository implements OntologyGraphRepositor
             if (batch.commitSequence() <= checkpoint) {
                 return;
             }
+            requireNextCanonicalCommit(checkpoint, batch);
 
             batch.entities().forEach(this::upsertEntity);
             batch.relations().forEach(this::upsertRelation);
@@ -115,6 +119,43 @@ public class PostgresqlOntologyGraphRepository implements OntologyGraphRepositor
                 ) VALUES (?, 0, now())
                 ON CONFLICT (projector_name) DO NOTHING
                 """, PROJECTOR_NAME);
+    }
+
+    private void requireNextCanonicalCommit(
+            long checkpoint,
+            GraphProjectionBatch batch
+    ) {
+        CanonicalCommit next = jdbc.query(
+                """
+                SELECT commit_seq, id
+                FROM cortex_evento_operacional
+                WHERE commit_seq > ?
+                ORDER BY commit_seq
+                LIMIT 1
+                """,
+                resultSet -> resultSet.next()
+                        ? new CanonicalCommit(
+                                resultSet.getLong("commit_seq"),
+                                resultSet.getString("id")
+                        )
+                        : null,
+                checkpoint
+        );
+        if (next == null) {
+            throw new GraphProjectionSourceOrderException(
+                    "GRAPH_PROJECTION_SOURCE_MISSING"
+            );
+        }
+        if (next.commitSequence() != batch.commitSequence()) {
+            throw new GraphProjectionSourceOrderException(
+                    "GRAPH_PROJECTION_ORDER_GAP"
+            );
+        }
+        if (!next.commitId().equals(batch.commitId())) {
+            throw new GraphProjectionSourceOrderException(
+                    "GRAPH_PROJECTION_SOURCE_MISMATCH"
+            );
+        }
     }
 
     private void upsertEntity(GraphEntity entity) {
@@ -301,5 +342,22 @@ public class PostgresqlOntologyGraphRepository implements OntologyGraphRepositor
             return DEFAULT_FAILURE_CODE;
         }
         return value;
+    }
+
+    private record CanonicalCommit(long commitSequence, String commitId) {
+    }
+
+    static final class GraphProjectionSourceOrderException extends RuntimeException {
+
+        private final String safeCode;
+
+        private GraphProjectionSourceOrderException(String safeCode) {
+            super("Graph projection source order is invalid.");
+            this.safeCode = safeCode;
+        }
+
+        String safeCode() {
+            return safeCode;
+        }
     }
 }

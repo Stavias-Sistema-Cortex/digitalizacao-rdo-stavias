@@ -26,6 +26,20 @@ public class OperationalGraphProjector {
     public GraphProjectionBatch project(CommittedOperationalEvent event) {
         Objects.requireNonNull(event, "Committed operational event is required.");
 
+        event = new CommittedOperationalEvent(
+                event.commitSequence(),
+                event.commitId(),
+                event.type(),
+                event.principalEntity(),
+                event.relatedEntities(),
+                event.occurredAt(),
+                OperationalGraphPayloadPolicy.project(
+                        event.type(),
+                        event.principalEntity().type(),
+                        event.payload()
+                )
+        );
+
         EntityDescriptor principal = descriptor(event.principalEntity());
         List<EntityDescriptor> related = event.relatedEntities().stream()
                 .map(this::descriptor)
@@ -283,10 +297,12 @@ public class OperationalGraphProjector {
     private static String[] nameKeys(String type) {
         return switch (type) {
             case "WORKSITE" -> new String[]{"worksiteName", "obraName", "name"};
-            case "RDO" -> new String[]{"rdoNumber", "number", "name"};
+            case "RDO" -> new String[]{"rdoNumber", "numeroRdo", "number", "name"};
             case "COLLABORATOR" -> new String[]{"collaboratorName", "name"};
             case "ASSET" -> new String[]{"assetName", "name"};
-            case "SERVICE" -> new String[]{"serviceName", "name"};
+            case "SERVICE" -> new String[]{
+                    "serviceName", "servicoNome", "nomeServico", "name"
+            };
             default -> new String[]{"name"};
         };
     }

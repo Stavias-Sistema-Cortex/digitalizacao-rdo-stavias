@@ -1,6 +1,8 @@
 package com.projeto.cortex.ontology.graph;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record GraphEvent(
@@ -23,7 +25,9 @@ public record GraphEvent(
         requireText(description, "Graph event description is required.");
         requireInstant(occurredAt, "Graph event occurrence time is required.");
         requireInstant(createdAt, "Graph event creation time is required.");
-        payload = payload == null ? Map.of() : Map.copyOf(payload);
+        payload = payload == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(payload));
     }
 
     private static void requireText(String value, String message) {

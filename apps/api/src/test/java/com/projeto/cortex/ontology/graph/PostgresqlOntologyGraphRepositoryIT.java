@@ -26,6 +26,9 @@ class PostgresqlOntologyGraphRepositoryIT {
             GraphProjectionBatch batch = new OperationalGraphProjector().project(
                     OperationalGraphProjectorTest.executedServiceEvent(42L)
             );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, batch.commitSequence(), batch.commitId()
+            );
 
             repository.upsert(batch);
             Map<String, Integer> firstCounts = graphCounts(jdbc);
@@ -86,6 +89,9 @@ class PostgresqlOntologyGraphRepositoryIT {
                     List.of(),
                     List.of()
             );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, invalidBatch.commitSequence(), invalidBatch.commitId()
+            );
 
             assertThatThrownBy(() -> repository.upsert(invalidBatch))
                     .isInstanceOf(RuntimeException.class);
@@ -122,7 +128,7 @@ class PostgresqlOntologyGraphRepositoryIT {
             OperationalGraphProjector projector = new OperationalGraphProjector();
             Instant occurredAt = Instant.parse("2026-07-21T11:00:00Z");
 
-            repository.upsert(projector.project(new CommittedOperationalEvent(
+            GraphProjectionBatch first = projector.project(new CommittedOperationalEvent(
                     10L,
                     "event-rdo-created",
                     "RDO_CREATED",
@@ -135,10 +141,18 @@ class PostgresqlOntologyGraphRepositoryIT {
                             "status", "ACTIVE",
                             "worksiteId", "obra-1"
                     )
-            )));
-            repository.upsert(projector.project(
-                    OperationalGraphProjectorTest.executedServiceEvent(11L)
             ));
+            GraphProjectionBatch second = projector.project(
+                    OperationalGraphProjectorTest.executedServiceEvent(11L)
+            );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, first.commitSequence(), first.commitId()
+            );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, second.commitSequence(), second.commitId()
+            );
+            repository.upsert(first);
+            repository.upsert(second);
 
             assertThat(jdbc.queryForMap("""
                     SELECT canonical_name, description, status
@@ -163,9 +177,13 @@ class PostgresqlOntologyGraphRepositoryIT {
             JdbcTemplate jdbc = migratedJdbc(database);
             PostgresqlOntologyGraphRepository repository = repository(jdbc);
 
-            repository.upsert(new OperationalGraphProjector().project(
+            GraphProjectionBatch batch = new OperationalGraphProjector().project(
                     OperationalGraphProjectorTest.executedServiceEvent(44L)
-            ));
+            );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, batch.commitSequence(), batch.commitId()
+            );
+            repository.upsert(batch);
             repository.markProjectionFailure(43L, "OLDER_PROJECTION_FAILED");
 
             assertThat(jdbc.queryForMap("""
@@ -176,6 +194,49 @@ class PostgresqlOntologyGraphRepositoryIT {
                     .containsEntry("last_commit_sequence", 44L)
                     .containsEntry("last_commit_id", "event-44")
                     .containsEntry("last_error_code", null);
+        }
+    }
+
+    @Test
+    void refusesToSkipTheSmallestCanonicalSourceCommitEvenWhenSparse() {
+        try (PostgreSQLContainer<?> database = database()) {
+            database.start();
+            JdbcTemplate jdbc = migratedJdbc(database);
+            PostgresqlOntologyGraphRepository repository = repository(jdbc);
+            OperationalGraphProjector projector = new OperationalGraphProjector();
+            GraphProjectionBatch first = projector.project(
+                    OperationalGraphProjectorTest.executedServiceEvent(10L)
+            );
+            GraphProjectionBatch later = projector.project(
+                    OperationalGraphProjectorTest.executedServiceEvent(30L)
+            );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, first.commitSequence(), first.commitId()
+            );
+            OntologyGraphPostgresqlTestSupport.insertCanonicalSource(
+                    jdbc, later.commitSequence(), later.commitId()
+            );
+            GraphProjectionService service = new GraphProjectionService(
+                    projector,
+                    repository
+            );
+
+            assertThatThrownBy(() -> service.project(
+                    OperationalGraphProjectorTest.executedServiceEvent(30L)
+            )).isInstanceOfSatisfying(
+                    GraphProjectionService.GraphProjectionException.class,
+                    error -> assertThat(error.safeCode())
+                            .isEqualTo("GRAPH_PROJECTION_ORDER_GAP")
+            );
+            assertThat(repository.currentCheckpoint()).hasValue(0L);
+
+            repository.upsert(first);
+            repository.upsert(later);
+            assertThat(repository.currentCheckpoint()).hasValue(30L);
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM ontology_events",
+                    Integer.class
+            )).isEqualTo(2);
         }
     }
 

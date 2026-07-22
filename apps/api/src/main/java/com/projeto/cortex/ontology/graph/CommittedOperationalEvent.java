@@ -1,6 +1,8 @@
 package com.projeto.cortex.ontology.graph;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,7 +29,9 @@ public record CommittedOperationalEvent(
             throw new IllegalArgumentException("Operational event occurrence time is required.");
         }
         relatedEntities = relatedEntities == null ? List.of() : List.copyOf(relatedEntities);
-        payload = payload == null ? Map.of() : Map.copyOf(payload);
+        payload = payload == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(payload));
     }
 
     public record EntityRef(String type, String id) {
