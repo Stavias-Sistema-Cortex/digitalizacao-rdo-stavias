@@ -128,6 +128,16 @@ describe("buildRdoSyncPayload V48 boundary", () => {
   });
 });
 
+describe("RDO creation-context sync gate", () => {
+  it("aceita contexto resolvido sem apontador marcado", async () => {
+    const { rdoCreationContextBlockReason } = await import("./localRdoService");
+    const draft = validDraft();
+    draft.apontadorColaboradorId = "";
+
+    expect(rdoCreationContextBlockReason(draft)).toBeNull();
+  });
+});
+
 describe("legacy RDO mutation coalescing boundary", () => {
   it("coalesces legacy rows but never rewrites a canonical envelope", () => {
     expect(

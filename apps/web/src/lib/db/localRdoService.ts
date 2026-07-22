@@ -99,8 +99,7 @@ export function rdoCreationContextBlockReason(
 ): "RDO_CREATION_CONTEXT_REQUIRED" | null {
   return draft.creationContextVersion !== null &&
     Number.isSafeInteger(draft.creationContextVersion) &&
-    draft.creationContextVersion > 0 &&
-    draft.apontadorColaboradorId.trim() !== ""
+    draft.creationContextVersion > 0
     ? null
     : "RDO_CREATION_CONTEXT_REQUIRED";
 }
