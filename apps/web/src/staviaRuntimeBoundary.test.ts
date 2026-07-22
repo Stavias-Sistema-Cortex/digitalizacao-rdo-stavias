@@ -17,6 +17,8 @@ import {
   CORPORATE_ASSET_ALLOWLIST,
   CORPORATE_SOURCE_ALLOWLIST,
   findAssistantTokens,
+  inspectDistCorporateContent,
+  inspectPackageBuildScripts,
   inspectSourceBoundary,
   isViteRuntimeSourceFile,
   verifyDist,
@@ -36,7 +38,7 @@ function validCleanupFixtures(): Array<{ path: string; content: string }> {
   return [
     {
       path: "apps/web/src/lib/db/localDataScope.ts",
-      content: `const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n  "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n  "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n] as const;\nexport function clear(target) {\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}`,
+      content: `const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n  "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n  "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n] as const;\nexport function clearUserScopedLocalStorage() {\n  const target = typeof window === "undefined" ? null : window.localStorage;\n  if (!target) return;\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}`,
     },
     {
       path: "apps/web/src/lib/db/cortexDb.ts",
@@ -187,16 +189,26 @@ describe("StavIA runtime boundary", () => {
       "StaviasAssistantContext",
       "StaviasApiClient",
       "StaviasChatControl",
+      "StaviasAgent",
+      "StaviasCopilot",
+      "StaviasResponse",
+      "StaviasAIChat",
+      "StaviasRuntimeProvider",
+      "useStaviasCortexLauncher",
+      "Stavias Runtime Provider",
     ];
 
     for (const assistantRole of assistantRoleFixtures) {
-      expect(assistantTokens(assistantRole), assistantRole).not.toEqual([]);
+      const homePage = readFileSync(
+        path.join(WEB_ROOT, "src/features/home/HomePage.tsx"),
+        "utf8",
+      );
       expect(
         inspectSourceBoundary([
           ...validCleanupFixtures(),
           {
             path: "apps/web/src/features/home/HomePage.tsx",
-            content: assistantRole,
+            content: `${homePage}\nconst adversarialRole = "${assistantRole}";`,
           },
         ]),
         assistantRole,
@@ -205,16 +217,24 @@ describe("StavIA runtime boundary", () => {
   });
 
   it("keeps corporate Stavias occurrences scoped to approved roles and paths", () => {
+    const homePage = readFileSync(
+      path.join(WEB_ROOT, "src/features/home/HomePage.tsx"),
+      "utf8",
+    );
+    const moreStavias = readFileSync(
+      path.join(WEB_ROOT, "src/features/home/MaisStaviasCard.tsx"),
+      "utf8",
+    );
     expect(
       inspectSourceBoundary([
         ...validCleanupFixtures(),
         {
           path: "apps/web/src/features/home/HomePage.tsx",
-          content: `import { MaisStaviasCard } from "./MaisStaviasCard";`,
+          content: homePage,
         },
         {
           path: "apps/web/src/features/home/MaisStaviasCard.tsx",
-          content: `export function MaisStaviasCard() { return "https://www.stavias.com.br"; }`,
+          content: moreStavias,
         },
         {
           path: "apps/web/public/stavias-cortex-logo.png",
@@ -241,6 +261,27 @@ describe("StavIA runtime boundary", () => {
         },
       ]),
     ).not.toEqual([]);
+  });
+
+  it("rejects unapproved plural corporate roles in generated text", () => {
+    for (const assistantRole of [
+      "StaviasAgent",
+      "StaviasCopilot",
+      "StaviasResponse",
+      "StaviasAIChat",
+      "Stavias Runtime Provider",
+      "useStaviasCortexLauncher",
+    ]) {
+      expect(
+        inspectDistCorporateContent(`const role = "${assistantRole}";`),
+        assistantRole,
+      ).not.toEqual([]);
+    }
+    expect(
+      inspectDistCorporateContent(
+        "Portal Stavias https://www.stavias.com.br Mais Stavias",
+      ),
+    ).toEqual([]);
   });
 
   it("does not hide a second or active use of a legacy identifier", () => {
@@ -295,6 +336,28 @@ describe("StavIA runtime boundary", () => {
         {
           path: "apps/web/src/active-regression.ts",
           content: `import { LEGACY_PRIVATE_LOCAL_STORAGE_KEYS as keys } from "./lib/db/localDataScope"; localStorage.getItem(keys[0]);`,
+        },
+      ]),
+    ).not.toEqual([]);
+  });
+
+  it("rejects cleanup callers that can capture private legacy keys", () => {
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/active-regression.ts",
+          content: `import { clearUserScopedLocalStorage } from "./lib/db/localDataScope"; clearUserScopedLocalStorage({ removeItem(key) { localStorage.getItem(key); } });`,
+        },
+      ]),
+    ).not.toEqual([]);
+
+    expect(
+      inspectSourceBoundary([
+        ...validCleanupFixtures(),
+        {
+          path: "apps/web/src/active-regression.ts",
+          content: `import { clearUserScopedLocalStorage as cleanup } from "./lib/db/localDataScope"; cleanup();`,
         },
       ]),
     ).not.toEqual([]);
@@ -380,16 +443,24 @@ describe("StavIA runtime boundary", () => {
     const packageJson = JSON.parse(
       readFileSync(path.join(WEB_ROOT, "package.json"), "utf8"),
     ) as { scripts?: Record<string, string> };
-    const viteBuildScripts = Object.entries(packageJson.scripts ?? {}).filter(
-      ([, command]) => /\bvite build\b/.test(command),
-    );
-
-    expect(viteBuildScripts.length).toBeGreaterThan(0);
-    for (const [name, command] of viteBuildScripts) {
-      expect(command, name).toMatch(
-        /vite build\s*&&\s*node scripts\/verify-stavia-boundary\.mjs --dist$/,
-      );
+    expect(inspectPackageBuildScripts(packageJson.scripts ?? {})).toEqual([]);
+    for (const unsafeCommand of [
+      "vite build",
+      "vite --mode production build",
+      "vite --config vite.config.ts build",
+      "vite --mode production\nbuild",
+    ]) {
+      expect(
+        inspectPackageBuildScripts({ unsafe: unsafeCommand }),
+        unsafeCommand,
+      ).not.toEqual([]);
     }
+    expect(
+      inspectPackageBuildScripts({
+        "build:unsafe":
+          "vite --mode production build && node scripts/verify-stavia-boundary.mjs --dist && echo bypass",
+      }),
+    ).not.toEqual([]);
     expect(
       existsSync(
         path.join(WEB_ROOT, "scripts/verify-stavia-boundary.mjs"),

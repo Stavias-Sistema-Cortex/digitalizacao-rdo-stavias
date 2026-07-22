@@ -17,24 +17,90 @@ export const LEGACY_LOCAL_STORAGE_KEYS = [
 ];
 export const LEGACY_SNAPSHOT_STORE = "stavia_snapshots";
 
-export const CORPORATE_SOURCE_ALLOWLIST = new Set([
-  "apps/web/index.html",
-  "apps/web/vite.config.ts",
-  "apps/web/src/components/shell/CortexShell.tsx",
-  "apps/web/src/features/auth/ActivationPage.tsx",
-  "apps/web/src/features/auth/LoginPage.css",
-  "apps/web/src/features/auth/LoginPage.tsx",
-  "apps/web/src/features/auth/OfflineUnlockPage.tsx",
-  "apps/web/src/features/home/HomePage.tsx",
-  "apps/web/src/features/home/MaisStaviasCard.tsx",
-  "apps/web/src/features/rdos/RdoLocalList.tsx",
-  "apps/web/src/index.css",
-  "compose.production.example.yml",
-  ".env.postgresql.example",
-  "scripts/dev/migrate-postgres-cortex.sh",
-  "scripts/dev/postgres-cortex-common.sh",
-  "scripts/smoke-deploy.sh",
+const CORPORATE_SOURCE_RULES = new Map([
+  ["apps/web/index.html", [["Córtex Stavias", 1]]],
+  ["apps/web/vite.config.ts", [["Córtex Stavias", 1]]],
+  [
+    "apps/web/src/components/shell/CortexShell.tsx",
+    [
+      ["staviasTile", 2],
+      ["../../assets/stavias-s-tile.png", 1],
+      ["/stavias-cortex-logo.png", 1],
+      ["Stavias Córtex", 2],
+    ],
+  ],
+  [
+    "apps/web/src/features/auth/ActivationPage.tsx",
+    [["Stavias Córtex", 2]],
+  ],
+  [
+    "apps/web/src/features/auth/LoginPage.css",
+    [
+      ["Tela de login do Sistema Córtex (Stavias).", 1],
+      ["O amarelo Stavias fica reservado à ação e aos acentos.", 1],
+    ],
+  ],
+  [
+    "apps/web/src/features/auth/LoginPage.tsx",
+    [
+      ["staviasTile", 2],
+      ["../../assets/login/stavias-canteiro.png", 1],
+      ["../../assets/stavias-s-tile.png", 1],
+      ["Stavias Córtex", 1],
+      ["alt=\"Stavias\"", 1],
+      ["© 2026 Stavias — Sistema Córtex", 1],
+    ],
+  ],
+  [
+    "apps/web/src/features/auth/OfflineUnlockPage.tsx",
+    [
+      ["staviasTile", 2],
+      ["../../assets/stavias-s-tile.png", 1],
+      ["alt=\"Stavias\"", 1],
+    ],
+  ],
+  [
+    "apps/web/src/features/home/HomePage.tsx",
+    [["MaisStaviasCard", 3]],
+  ],
+  [
+    "apps/web/src/features/home/MaisStaviasCard.tsx",
+    [
+      ["Links externos das plataformas Stavias", 1],
+      ["STAVIAS_LINKS", 2],
+      ["Portal Stavias", 1],
+      ["https://www.stavias.com.br", 1],
+      ["Stavias Academy", 1],
+      ["https://academy.stavias.com.br", 1],
+      ["https://suporte.stavias.com.br", 1],
+      ["MaisStaviasCard", 1],
+      ["Mais Stavias", 1],
+    ],
+  ],
+  [
+    "apps/web/src/features/rdos/RdoLocalList.tsx",
+    [["Stavias · Sistema Córtex", 1]],
+  ],
+  [
+    "apps/web/src/index.css",
+    [
+      ["Amarelo Stavias", 1],
+      ["tile da Stavias", 1],
+    ],
+  ],
+  [
+    "compose.production.example.yml",
+    [
+      ["Stavias Córtex", 1],
+      ["authenticated Stavias From mailbox", 1],
+    ],
+  ],
+  [".env.postgresql.example", [["StaviasCortex", 1]]],
+  ["scripts/dev/migrate-postgres-cortex.sh", [["StaviasCortex", 1]]],
+  ["scripts/dev/postgres-cortex-common.sh", [["StaviasCortex", 1]]],
+  ["scripts/smoke-deploy.sh", [["Córtex Stavias", 1]]],
 ]);
+export const CORPORATE_SOURCE_ALLOWLIST = new Set(CORPORATE_SOURCE_RULES.keys());
 export const CORPORATE_ASSET_ALLOWLIST = new Set([
   "apps/web/public/stavias-cortex-logo.png",
   "apps/web/src/assets/login/stavias-canteiro.png",
@@ -128,6 +194,71 @@ function findCorporateTokens(text) {
     index: match.index ?? 0,
     token: match[0],
   }));
+}
+
+function maskAllowedCorporateSource(pathname, content, violations) {
+  const rules = CORPORATE_SOURCE_RULES.get(pathname);
+  if (!rules) {
+    return content;
+  }
+
+  let masked = content;
+  for (const [fragment, expectedCount] of rules) {
+    const actualCount = occurrenceCount(content, fragment);
+    if (actualCount !== expectedCount) {
+      violations.push(
+        `${pathname}: corporate fragment ${JSON.stringify(fragment)} expected ${expectedCount}, found ${actualCount}`,
+      );
+    }
+    masked = masked.replaceAll(fragment, "[approved-corporate-brand]");
+  }
+  return masked;
+}
+
+const CORPORATE_DIST_FRAGMENTS = [
+  "Córtex Stavias",
+  "Stavias · Sistema Córtex",
+  "Portal Stavias",
+  "https://www.stavias.com.br",
+  "Stavias Academy",
+  "https://academy.stavias.com.br",
+  "https://suporte.stavias.com.br",
+  "Mais Stavias",
+  "/assets/stavias-canteiro-",
+  "/assets/stavias-s-tile-",
+  "/stavias-cortex-logo.png",
+  "stavias-cortex-logo.png",
+  "assets/stavias-canteiro-",
+  "assets/stavias-s-tile-",
+  "assets/stavias-logo-",
+  "Entrar no Stavias Córtex",
+  "alt:`Stavias Córtex`",
+  "alt:`Stavias`",
+  "© 2026 Stavias — Sistema Córtex",
+  "Stavias Córtex · Ambiente institucional restrito",
+];
+
+function maskAllowedCorporateDist(content) {
+  return [...CORPORATE_DIST_FRAGMENTS]
+    .sort((left, right) => right.length - left.length)
+    .reduce(
+      (masked, fragment) =>
+        masked.replaceAll(fragment, "[approved-corporate-brand]"),
+      content,
+    );
+}
+
+export function inspectDistCorporateContent(content) {
+  const masked = maskAllowedCorporateDist(content);
+  return [
+    ...findAssistantTokens(masked).map(
+      (match) => `forbidden content token ${match.token}`,
+    ),
+    ...findCorporateTokens(masked).map(
+      (match) =>
+        `corporate Stavias occurrence is not an approved artifact fragment (${match.token})`,
+    ),
+  ];
 }
 
 export function isViteRuntimeSourceFile(file) {
@@ -230,6 +361,18 @@ export function inspectLegacySource(files) {
   if (/\b(?:getItem|setItem)\s*\(/.test(localCleanup)) {
     violations.push(`${LOCAL_STORAGE_CLEANUP_PATH}: active legacy storage access`);
   }
+  if (
+    !/export\s+function\s+clearUserScopedLocalStorage\s*\(\s*\)\s*(?::\s*void\s*)?\{/.test(
+      localCleanup,
+    ) ||
+    !/typeof\s+window\s*===\s*["']undefined["']\s*\?\s*null\s*:\s*window\.localStorage/.test(
+      localCleanup,
+    )
+  ) {
+    violations.push(
+      `${LOCAL_STORAGE_CLEANUP_PATH}: cleanup API must be zero-argument and browser-local`,
+    );
+  }
   if (keyCollectionName) {
     for (const file of runtimeFiles) {
       if (
@@ -240,6 +383,25 @@ export function inspectLegacySource(files) {
           `${file.path}: imports or aliases the private legacy key collection`,
         );
       }
+    }
+  }
+  for (const file of runtimeFiles) {
+    if (file.path === LOCAL_STORAGE_CLEANUP_PATH) {
+      continue;
+    }
+    const remainingReferences = file.content
+      .replace(
+        /import\s*\{\s*clearUserScopedLocalStorage\s*\}\s*from\s*["'][^"']+["']\s*;?/g,
+        "[approved-cleanup-import]",
+      )
+      .replace(
+        /\bclearUserScopedLocalStorage\s*\(\s*\)/g,
+        "[approved-zero-argument-cleanup-call]",
+      );
+    if (/\bclearUserScopedLocalStorage\b/.test(remainingReferences)) {
+      violations.push(
+        `${file.path}: cleanup function may only be imported by name and called without arguments`,
+      );
     }
   }
 
@@ -291,8 +453,45 @@ function maskVerifiedLegacySource(file) {
   return content;
 }
 
+const VERIFIED_DIST_BUILD_SUFFIX =
+  /&&\s*node scripts\/verify-stavia-boundary\.mjs --dist\s*$/;
+const VITE_BUILD_INVOCATION =
+  /\bvite\b(?:(?!&&|\|\||[;&|]).)*\bbuild\b/s;
+
+export function inspectPackageBuildScripts(scripts) {
+  const violations = [];
+  for (const [name, command] of Object.entries(scripts)) {
+    const isBuildEntry = /^build(?::|$)/.test(name);
+    const invokesViteBuild = VITE_BUILD_INVOCATION.test(command);
+    if (!isBuildEntry && !invokesViteBuild) {
+      continue;
+    }
+    if (!VERIFIED_DIST_BUILD_SUFFIX.test(command)) {
+      violations.push(
+        `apps/web/package.json#${name}: build must end with the source/dist boundary verifier`,
+      );
+    }
+  }
+  return violations;
+}
+
 export function inspectSourceBoundary(files) {
   const violations = inspectLegacySource(files);
+  const packageFile = files.find(
+    (file) => file.path === "apps/web/package.json",
+  );
+  if (packageFile) {
+    try {
+      const packageJson = JSON.parse(packageFile.content);
+      violations.push(
+        ...inspectPackageBuildScripts(packageJson.scripts ?? {}),
+      );
+    } catch (error) {
+      violations.push(
+        `apps/web/package.json: cannot validate build scripts (${error instanceof Error ? error.message : error})`,
+      );
+    }
+  }
   for (const file of files) {
     if (VERIFIER_PATHS.has(file.path)) {
       continue;
@@ -318,12 +517,14 @@ export function inspectSourceBoundary(files) {
     for (const match of findAssistantTokens(content)) {
       violations.push(`${file.path}: forbidden content token ${match.token}`);
     }
-    if (
-      findCorporateTokens(content).length > 0 &&
-      !CORPORATE_SOURCE_ALLOWLIST.has(file.path)
-    ) {
+    const corporateMasked = maskAllowedCorporateSource(
+      file.path,
+      content,
+      violations,
+    );
+    for (const match of findCorporateTokens(corporateMasked)) {
       violations.push(
-        `${file.path}: corporate Stavias content is not explicitly allowlisted`,
+        `${file.path}: corporate Stavias occurrence is not explicitly allowlisted (${match.token})`,
       );
     }
   }
@@ -420,8 +621,8 @@ export function verifyDist(distRoot = path.join(WEB_ROOT, "dist")) {
       content = content.replace(key, "[legacy-local-cleanup]");
     }
     content = content.replace(LEGACY_SNAPSHOT_STORE, "[legacy-store-cleanup]");
-    for (const match of findAssistantTokens(content)) {
-      violations.push(`${file.path}: forbidden content token ${match.token}`);
+    for (const violation of inspectDistCorporateContent(content)) {
+      violations.push(`${file.path}: ${violation}`);
     }
   }
 

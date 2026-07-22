@@ -6,9 +6,13 @@ export const CORPORATE_ASSET_ALLOWLIST: ReadonlySet<string>;
 export function findAssistantTokens(
   text: string,
 ): Array<{ index: number; token: string }>;
+export function inspectDistCorporateContent(content: string): string[];
 export function isViteRuntimeSourceFile(file: string): boolean;
 export function inspectLegacySource(
   files: Array<{ path: string; content: string }>,
+): string[];
+export function inspectPackageBuildScripts(
+  scripts: Record<string, string>,
 ): string[];
 export function inspectSourceBoundary(
   files: Array<{ path: string; content: string }>,

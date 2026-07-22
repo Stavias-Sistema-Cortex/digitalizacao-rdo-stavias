@@ -7,6 +7,7 @@
 - Base commit: `d8d8136b3718b76dc106b59a76778dddc9858107`.
 - Reviewer-fix pass base: `ed99db38bf31345d54fc9df9bfdb15822fc04e25`.
 - Boundary-hardening pass base: `30ac327c5dd0feec1fd8c8a925c64e17278eb0a4`.
+- Occurrence-policy pass base: `152d81bf270587b49a80bdf6ca9b1e14c23c2b23`.
 - Worktree: `/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery`.
 - No backend, Task 6, offline mutation, RDO domain, or Financeiro domain code was
   changed. RDO changes are limited to removing assistant callbacks and controls.
@@ -137,13 +138,17 @@ paths, content, endpoints, environment names, and UI copy, including
 variants. Plain plural `Stavias` branding is then evaluated by the exact
 corporate policy below.
 
-The boundary-hardening pass makes that corporate exception role-specific.
-Ordinary corporate occurrences are accepted only in the executable verifier's
-exact source/asset allowlists. Assistant-role families such as
-`StaviasLauncherProvider`, `useStavias`, `useStaviasLauncher`,
-`StaviasAssistantContext`, `StaviasApiClient`, and `StaviasChatControl` remain
-forbidden even inside an allowlisted corporate source and in compiled output.
-Unapproved corporate source, asset, and generated artifact paths are rejected.
+The occurrence-policy pass removes the former role blacklist/file-level
+exception. Every legitimate corporate occurrence is now an exact fragment with
+an exact count in its specific source path: company copy, domains, asset names,
+`MaisStaviasCard`, and `STAVIAS_LINKS`. After those fragments are masked, any
+remaining plural occurrence is rejected. This fails closed for both known and
+future role words, including `StaviasAgent`, `StaviasCopilot`,
+`StaviasResponse`, `StaviasAIChat`, `StaviasRuntimeProvider`,
+`useStaviasCortexLauncher`, and `Stavias Runtime Provider`. Generated text uses
+the same principle with exact artifact-safe fragments, while generated paths
+retain their exact asset allowlist. Unapproved source, asset, and compiled
+occurrences are rejected.
 
 Legacy identifiers are now audited across the complete scanned source set
 before they are masked for assistant-token inspection. Each localStorage key
@@ -169,15 +174,21 @@ scanned. Source assets are also included for path policy even when their binary
 content is not read.
 
 The historical localStorage literals are constrained to a private, fixed
-`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration. The executable verifier
-requires exactly the declaration and the `target.removeItem(key)` loop, rejects
-an exported collection, rejects any additional consumer of its symbol, and
-rejects imported/aliased active reads. This closes the prior cross-file alias
-bypass while retaining the one-way privacy cleanup.
+`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration. The exported cleanup function
+is zero-argument and selects only the browser's real `window.localStorage`; it
+no longer accepts an injected structural remover that could capture the private
+keys. The executable verifier requires the fixed declaration and
+`target.removeItem(key)` loop, rejects an exported collection, rejects any
+additional consumer of its symbol, and permits consumers only as an exact named
+import followed by a zero-argument call. Export aliases, function aliases, and
+callback arguments fail the gate. SSR retains the explicit no-op path.
 
-All package scripts containing `vite build` now end in the same mandatory
-`node scripts/verify-stavia-boundary.mjs --dist` gate. The regression enumerates
-the package scripts instead of checking only the default build.
+All `build`/`build:*` package scripts and every raw Vite build invocation now
+must end in the mandatory
+`node scripts/verify-stavia-boundary.mjs --dist` gate. The executable package
+inspector recognizes options before the Vite command, including
+`vite --mode production build`, `vite --config vite.config.ts build`, and a
+line-broken command; appending anything after the verifier is also rejected.
 
 ## Responsive geometry evidence
 
@@ -214,8 +225,8 @@ gate. Authenticated runtime browser proof remains Task 6.
 - Targeted migration/responsive tests:
   `2 files / 21 tests passed`.
 - Boundary after production build: `1 file / 4 tests passed`.
-- Boundary-hardening focused suite: `3 files / 14 tests passed`.
-- Full web suite after boundary hardening: `52 files / 240 tests passed`.
+- Occurrence-policy focused suite: `2 files / 14 tests passed`.
+- Full web suite after occurrence hardening: `52 files / 242 tests passed`.
 - Lint: `npm --prefix apps/web run lint` exited 0.
 - TypeScript/Vite/PWA builds plus mandatory dist verifier:
   `build`, `build:local`, and `build:compose` each exited 0, generated 89

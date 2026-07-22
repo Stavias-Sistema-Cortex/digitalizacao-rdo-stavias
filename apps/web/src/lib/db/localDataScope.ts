@@ -3,18 +3,12 @@ const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [
   "cortex:stavia:last-context",
 ] as const;
 
-type LocalStorageRemover = Pick<Storage, "removeItem">;
-
 /**
  * Remove somente chaves históricas do assistente que podem conter conteúdo
  * operacional privado. Elas nunca são lidas nem recriadas pelo runtime atual.
  */
-export function clearUserScopedLocalStorage(
-  storage?: LocalStorageRemover,
-): void {
-  const target =
-    storage ??
-    (typeof window === "undefined" ? null : window.localStorage);
+export function clearUserScopedLocalStorage(): void {
+  const target = typeof window === "undefined" ? null : window.localStorage;
 
   if (!target) {
     return;
