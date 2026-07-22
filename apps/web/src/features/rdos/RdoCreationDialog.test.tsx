@@ -9,6 +9,7 @@ import { RdoCreationDialog } from "./RdoCreationDialog";
 import { createEmptyRdo } from "./createEmptyRdo";
 import { RDO_CONTEXT_OFFLINE_MISSING } from "./rdoCreationContext";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
 
 const mocks = vi.hoisted(() => ({
   listCached: vi.fn(),
@@ -252,5 +253,25 @@ describe("diálogo obra-first de RDO", () => {
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(returnFocusRef.current).toHaveFocus();
+  });
+
+  it("fecha e descarta contexto em memória quando a sessão muda", async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderDialog();
+    await user.click(await screen.findByRole("radio", { name: /Conservação/i }));
+    await user.type(screen.getByLabelText("Data do RDO"), "2026-07-22");
+    expect(await screen.findByText("Cache local")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Criar rascunho" })).toBeEnabled();
+
+    window.dispatchEvent(new Event(AUTH_SESSION_CHANGED_EVENT));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.queryByText("Cache local")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Criar rascunho" }),
+      ).toBeDisabled();
+    });
+    expect(mocks.createDraft).not.toHaveBeenCalled();
   });
 });

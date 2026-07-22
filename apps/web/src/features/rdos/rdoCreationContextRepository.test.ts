@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 
 import { deleteDB, openDB } from "idb";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearSession, setSession } from "../auth/authSession";
 import {
@@ -18,9 +18,11 @@ import {
   listCachedAuthorizedRdoWorksites,
   putRdoCreationContext,
   replaceCachedAuthorizedRdoWorksites,
+  refreshAuthorizedRdoWorksites,
   requireRdoCreationContext,
 } from "./rdoCreationContextRepository";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import * as rdoLookupApi from "./rdoLookupApi";
 
 const WORKSITE_A = "00000000-0000-4000-8000-000000000001";
 const WORKSITE_B = "00000000-0000-4000-8000-000000000002";
@@ -249,5 +251,79 @@ describe("cache autorizado obra-data", () => {
     await expect(
       requireRdoCreationContext(WORKSITE_A, "2026-07-21", false),
     ).rejects.toThrow(RDO_CONTEXT_OFFLINE_MISSING);
+  });
+
+  it("rejeita e não grava obras se a sessão girar durante o refresh remoto", async () => {
+    let resolveRemote!: (value: never[]) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    vi.spyOn(
+      rdoLookupApi,
+      "buscarObrasAutorizadasParaRdo",
+    ).mockImplementation(() => {
+      markStarted();
+      return new Promise<never[]>((resolve) => {
+        resolveRemote = resolve;
+      });
+    });
+    const operation = refreshAuthorizedRdoWorksites();
+    await started;
+
+    const secondOwner = crypto.randomUUID();
+    databaseNames.add(
+      await databaseNameForScope(secondOwner, `BETA:${WORKSITE_A}`),
+    );
+    setSession(session(secondOwner));
+    resolveRemote([]);
+
+    await expect(operation).rejects.toThrow(
+      "A sessão mudou durante a leitura do contexto do RDO.",
+    );
+    expect(await listCachedAuthorizedRdoWorksites()).toEqual([]);
+    await closeCortexDb();
+    setSession(session(ownerId));
+    expect(await listCachedAuthorizedRdoWorksites()).toEqual([]);
+  });
+
+  it("rejeita e não atribui contexto ao segundo usuário após rotação da sessão", async () => {
+    let resolveRemote!: (value: RdoCreationContextLookup) => void;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const remote = vi.fn(() => {
+      markStarted();
+      return new Promise<RdoCreationContextLookup>((resolve) => {
+        resolveRemote = resolve;
+      });
+    });
+    const operation = requireRdoCreationContext(
+      WORKSITE_A,
+      "2026-07-22",
+      true,
+      remote,
+    );
+    await started;
+
+    const secondOwner = crypto.randomUUID();
+    databaseNames.add(
+      await databaseNameForScope(secondOwner, `BETA:${WORKSITE_A}`),
+    );
+    setSession(session(secondOwner));
+    resolveRemote(fixture());
+
+    await expect(operation).rejects.toThrow(
+      "A sessão mudou durante a leitura do contexto do RDO.",
+    );
+    expect(
+      await getCachedRdoCreationContext(WORKSITE_A, "2026-07-22"),
+    ).toBeUndefined();
+    await closeCortexDb();
+    setSession(session(ownerId));
+    expect(
+      await getCachedRdoCreationContext(WORKSITE_A, "2026-07-22"),
+    ).toBeUndefined();
   });
 });

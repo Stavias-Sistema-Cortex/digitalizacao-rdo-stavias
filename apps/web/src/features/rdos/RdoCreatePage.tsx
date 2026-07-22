@@ -53,9 +53,10 @@ import {
 } from "./rdoCalculations";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
-import { getCachedRdoCreationContext } from "./rdoCreationContextRepository";
+import { requireRdoCreationContext } from "./rdoCreationContextRepository";
 import { RdoWorkforceEditor } from "./RdoWorkforceEditor";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import { RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE } from "./rdoCreationContext";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
@@ -360,6 +361,8 @@ export function RdoCreatePage({
   );
   const [activeCreationContext, setActiveCreationContext] =
     useState<RdoCreationContextLookup | null>(creationContext ?? null);
+  const [workforceCatalogMessage, setWorkforceCatalogMessage] =
+    useState("");
 
   const [showJson, setShowJson] = useState(false);
   const [notice, setNotice] = useState(initialNotice ?? "");
@@ -446,15 +449,29 @@ export function RdoCreatePage({
         cancelled = true;
       };
     }
-    void getCachedRdoCreationContext(
+    const online = typeof navigator !== "undefined" && navigator.onLine;
+    void requireRdoCreationContext(
       initialDraft.obraId,
       initialDraft.dataRdo,
+      online,
     )
-      .then((cached) => {
-        if (!cancelled) setActiveCreationContext(cached?.context ?? null);
+      .then((resolved) => {
+        if (!cancelled) {
+          setActiveCreationContext(resolved.context);
+          setWorkforceCatalogMessage("");
+        }
       })
-      .catch(() => {
-        if (!cancelled) setActiveCreationContext(null);
+      .catch((unknownError: unknown) => {
+        if (!cancelled) {
+          setActiveCreationContext(null);
+          setWorkforceCatalogMessage(
+            online
+              ? unknownError instanceof Error
+                ? unknownError.message
+                : "Não foi possível carregar os colaboradores autorizados desta obra."
+              : RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE,
+          );
+        }
       });
     return () => {
       cancelled = true;
@@ -2090,6 +2107,7 @@ export function RdoCreatePage({
       <RdoWorkforceEditor
         draft={draft}
         collaborators={activeCreationContext?.colaboradores ?? []}
+        catalogUnavailableMessage={workforceCatalogMessage || undefined}
         sourceRdoNumber={
           activeCreationContext?.previousRdo?.numeroRdo ?? null
         }

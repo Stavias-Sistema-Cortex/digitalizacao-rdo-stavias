@@ -63,6 +63,10 @@ export function RdoWorkspacePage() {
     useState(false);
   const [isCreationDialogOpen, setIsCreationDialogOpen] =
     useState(false);
+  const [pendingImport, setPendingImport] = useState<{
+    draft: RdoDraft;
+    notice: string;
+  } | null>(null);
 
   const [loadError, setLoadError] =
     useState("");
@@ -108,6 +112,7 @@ export function RdoWorkspacePage() {
   }, [loadRecords]);
 
   function handleCreate() {
+    setPendingImport(null);
     setIsCreationDialogOpen(true);
   }
 
@@ -138,15 +143,24 @@ export function RdoWorkspacePage() {
         session?.nome ?? "",
       );
 
-      setMode({
-        type: "FORM",
-        draft: imported.draft,
-        isExisting: false,
-        initialNotice: [
-          imported.summary,
-          ...imported.warnings,
-        ].join(" "),
-      });
+      const notice = [
+        imported.summary,
+        ...imported.warnings,
+      ].join(" ");
+      if (
+        !imported.draft.obraId ||
+        imported.draft.creationContextVersion === null
+      ) {
+        setPendingImport({ draft: imported.draft, notice });
+        setIsCreationDialogOpen(true);
+      } else {
+        setMode({
+          type: "FORM",
+          draft: imported.draft,
+          isExisting: false,
+          initialNotice: notice,
+        });
+      }
     } catch (error: unknown) {
       setLoadError(
         error instanceof Error
@@ -220,7 +234,11 @@ export function RdoWorkspacePage() {
       {isCreationDialogOpen ? (
         <RdoCreationDialog
           returnFocusRef={createButtonRef}
-          onClose={() => setIsCreationDialogOpen(false)}
+          initialDraft={pendingImport?.draft}
+          onClose={() => {
+            setIsCreationDialogOpen(false);
+            setPendingImport(null);
+          }}
           onCreated={(draft, creationContext) => {
             setIsCreationDialogOpen(false);
             setMode({
@@ -228,9 +246,15 @@ export function RdoWorkspacePage() {
               draft,
               isExisting: true,
               initialNotice:
-                "Rascunho local persistido e incluído na fila de sincronização.",
+                [
+                  pendingImport?.notice,
+                  "Rascunho local persistido e incluído na fila de sincronização.",
+                ]
+                  .filter(Boolean)
+                  .join(" "),
               creationContext,
             });
+            setPendingImport(null);
           }}
         />
       ) : null}

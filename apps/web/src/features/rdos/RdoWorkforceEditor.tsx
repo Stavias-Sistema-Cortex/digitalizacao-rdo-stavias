@@ -1,5 +1,6 @@
 import {
   useMemo,
+  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -19,6 +20,7 @@ import "./RdoWorkforceEditor.css";
 interface RdoWorkforceEditorProps {
   draft: RdoDraft;
   collaborators: readonly RdoContextCollaborator[];
+  catalogUnavailableMessage?: string;
   sourceRdoNumber: string | null;
   onChange: (draft: RdoDraft) => void;
 }
@@ -26,10 +28,15 @@ interface RdoWorkforceEditorProps {
 export function RdoWorkforceEditor({
   draft,
   collaborators,
+  catalogUnavailableMessage,
   sourceRdoNumber,
   onChange,
 }: RdoWorkforceEditorProps) {
   const [additionId, setAdditionId] = useState("");
+  const [collaboratorQuery, setCollaboratorQuery] = useState("");
+  const [isCatalogOpen, setIsCatalogOpen] = useState(false);
+  const [activeCatalogIndex, setActiveCatalogIndex] = useState(0);
+  const catalogListId = useId();
   const checkboxRefs = useRef<Array<HTMLInputElement | null>>([]);
   const existingIds = useMemo(
     () => new Set(draft.maoObra.map((row) => row.colaboradorId)),
@@ -38,6 +45,28 @@ export function RdoWorkforceEditor({
   const additions = collaborators.filter(
     (collaborator) => !existingIds.has(collaborator.id),
   );
+  const filteredAdditions = useMemo(() => {
+    const normalizedQuery = collaboratorQuery
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .trim()
+      .toLocaleLowerCase("pt-BR");
+    if (!normalizedQuery) return additions;
+    return additions.filter((collaborator) =>
+      [
+        collaborator.nome,
+        collaborator.codigoColaborador,
+        collaborator.papelNaObra,
+        collaborator.nomePerfil,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLocaleLowerCase("pt-BR")
+        .includes(normalizedQuery),
+    );
+  }, [additions, collaboratorQuery]);
   const selected = draft.maoObra.filter(
     (row) => row.selected && row.availability !== "UNAVAILABLE",
   );
@@ -63,6 +92,39 @@ export function RdoWorkforceEditor({
     checkboxRefs.current[next]?.focus();
   }
 
+  function addCollaborator(collaboratorId: string) {
+    if (!collaboratorId) return;
+    onChange(addAuthorizedWorker(draft, collaboratorId, collaborators));
+    setAdditionId("");
+    setCollaboratorQuery("");
+    setIsCatalogOpen(false);
+    setActiveCatalogIndex(0);
+  }
+
+  function handleCatalogKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (filteredAdditions.length === 0) return;
+      setIsCatalogOpen(true);
+      setActiveCatalogIndex((current) => {
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        return (current + direction + filteredAdditions.length) %
+          filteredAdditions.length;
+      });
+      return;
+    }
+    if (event.key === "Enter" && isCatalogOpen) {
+      const collaborator = filteredAdditions[activeCatalogIndex];
+      if (!collaborator) return;
+      event.preventDefault();
+      addCollaborator(collaborator.id);
+      return;
+    }
+    if (event.key === "Escape") {
+      setIsCatalogOpen(false);
+    }
+  }
+
   return (
     <section
       className="form-card rdo-workforce-editor"
@@ -80,30 +142,85 @@ export function RdoWorkforceEditor({
       </div>
 
       <div className="rdo-workforce-controls">
-        <label>
-          Adicionar colaborador autorizado
-          <select
-            value={additionId}
-            onChange={(event) => setAdditionId(event.target.value)}
-          >
-            <option value="">Selecione</option>
-            {additions.map((collaborator) => (
-              <option key={collaborator.id} value={collaborator.id}>
-                {collaborator.nome || collaborator.codigoColaborador}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="rdo-workforce-catalog-picker">
+          <label htmlFor={`${catalogListId}-input`}>
+            Buscar colaborador autorizado
+          </label>
+          <input
+            id={`${catalogListId}-input`}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={isCatalogOpen}
+            aria-controls={catalogListId}
+            aria-activedescendant={
+              isCatalogOpen && filteredAdditions[activeCatalogIndex]
+                ? `${catalogListId}-${filteredAdditions[activeCatalogIndex].id}`
+                : undefined
+            }
+            value={collaboratorQuery}
+            placeholder="Nome, código ou papel na obra"
+            disabled={Boolean(catalogUnavailableMessage)}
+            onFocus={() => setIsCatalogOpen(true)}
+            onChange={(event) => {
+              setCollaboratorQuery(event.target.value);
+              setAdditionId("");
+              setActiveCatalogIndex(0);
+              setIsCatalogOpen(true);
+            }}
+            onKeyDown={handleCatalogKeyDown}
+          />
+          {isCatalogOpen ? (
+            <div
+              id={catalogListId}
+              className="rdo-workforce-catalog-results"
+              role="listbox"
+              aria-label="Colaboradores encontrados"
+            >
+              {filteredAdditions.length === 0 ? (
+                <p>Nenhum colaborador autorizado encontrado.</p>
+              ) : (
+                filteredAdditions.map((collaborator, index) => {
+                  const title = collaborator.nome?.trim() ||
+                    collaborator.codigoColaborador?.trim() ||
+                    "Colaborador sem nome";
+                  const details = [
+                    collaborator.codigoColaborador,
+                    collaborator.papelNaObra,
+                    collaborator.nomePerfil,
+                  ].filter(Boolean).join(" · ");
+                  return (
+                    <button
+                      key={collaborator.id}
+                      id={`${catalogListId}-${collaborator.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={additionId === collaborator.id}
+                      className={
+                        index === activeCatalogIndex
+                          ? "rdo-workforce-catalog-option is-active"
+                          : "rdo-workforce-catalog-option"
+                      }
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setAdditionId(collaborator.id);
+                        setCollaboratorQuery(title);
+                        setIsCatalogOpen(false);
+                      }}
+                    >
+                      <strong>{title}</strong>
+                      <span>{details}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          ) : null}
+        </div>
         <button
           type="button"
           className="add-button"
-          disabled={!additionId}
-          onClick={() => {
-            onChange(
-              addAuthorizedWorker(draft, additionId, collaborators),
-            );
-            setAdditionId("");
-          }}
+          disabled={!additionId || Boolean(catalogUnavailableMessage)}
+          onClick={() => addCollaborator(additionId)}
         >
           Adicionar à equipe
         </button>
@@ -124,6 +241,12 @@ export function RdoWorkforceEditor({
           </select>
         </label>
       </div>
+
+      {catalogUnavailableMessage ? (
+        <p className="rdo-workforce-catalog-unavailable" role="status">
+          {catalogUnavailableMessage}
+        </p>
+      ) : null}
 
       {draft.maoObra.length === 0 ? (
         <p className="rdo-workforce-empty">

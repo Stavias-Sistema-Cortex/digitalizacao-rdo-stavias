@@ -14,9 +14,10 @@ import { updateSyncState } from "../../lib/db/syncStateRepository";
 import {
   rdoDraftFromLocalRecord,
   saveExistingRdoDraftAtomically,
+  saveNewRdoDraftAtomically,
 } from "../../lib/db/localRdoService";
 import { canonicalMutationJson } from "../../lib/sync/mutationEnvelope";
-import { createEmptyMaoObra } from "./createEmptyRdo";
+import { createEmptyMaoObra, createEmptyRdo } from "./createEmptyRdo";
 import {
   createAndPersistRdoDraft,
 } from "./rdoDraftCreation";
@@ -306,6 +307,116 @@ describe("transação inicial do novo RDO", () => {
           selected: true,
         }),
       ],
+    });
+  });
+
+  it("vincula draft importado ao contexto sem alterar células operacionais importadas", async () => {
+    const imported = createEmptyRdo();
+    imported.id = RDO_ID;
+    imported.dataRdo = "2026-07-22";
+    imported.numeroRdo = "RDO-PLANILHA-77";
+    imported.contrato = "CONTRATO-LIDO-DO-XLSX";
+    imported.observacoes = "Ocorrência preservada do arquivo";
+    imported.kmInicialProgramado = "12,300";
+    imported.equipamentos = [
+      {
+        localId: "00000000-0000-4000-8000-000000000050",
+        assetId: "",
+        prefixo: "EQ-PLANILHA",
+        descricao: "Vibroacabadora importada",
+        tipoEquipamento: "",
+        tipoVinculo: "",
+        quantidade: 1,
+        horaInicio: "07:00",
+        horaFim: "17:00",
+        observacoes: "linha 14",
+      },
+    ];
+
+    const created = await createAndPersistRdoDraft(context(), {
+      baseDraft: imported,
+      occurredAt: "2026-07-22T12:02:00.000Z",
+    });
+
+    expect(created.draft).toMatchObject({
+      id: RDO_ID,
+      obraId: OBRA_ID,
+      dataRdo: "2026-07-22",
+      creationContextVersion: 7,
+      numeroRdo: "RDO-PLANILHA-77",
+      contrato: "CONTRATO-LIDO-DO-XLSX",
+      observacoes: "Ocorrência preservada do arquivo",
+      kmInicialProgramado: "12,300",
+      equipamentos: [
+        expect.objectContaining({
+          prefixo: "EQ-PLANILHA",
+          descricao: "Vibroacabadora importada",
+          observacoes: "linha 14",
+        }),
+      ],
+    });
+    expect(created.mutation.payload).toMatchObject({
+      obraId: OBRA_ID,
+      creationContextVersion: 7,
+      observacoes: "Ocorrência preservada do arquivo",
+    });
+  });
+
+  it("nunca cria envelope push-ready sem receipt de contexto", async () => {
+    const draft = createEmptyRdo();
+    draft.id = RDO_ID;
+    draft.obraId = OBRA_ID;
+    draft.dataRdo = "2026-07-22";
+    draft.creationContextVersion = null;
+
+    await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+      "Contexto versionado da obra é obrigatório para criar o RDO.",
+    );
+    const database = await getCortexDb();
+    expect(
+      await database.getAllFromIndex("outbox_mutations", "by-entity-id", RDO_ID),
+    ).toEqual([]);
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+  });
+
+  it("mantém editável um RDO legado já versionado no servidor sem receipt", async () => {
+    const database = await getCortexDb();
+    const draft = createEmptyRdo();
+    draft.id = RDO_ID;
+    draft.obraId = OBRA_ID;
+    draft.numeroRdo = "RDO-LEGADO-7";
+    draft.dataRdo = "2026-07-20";
+    draft.creationContextVersion = null;
+    draft.observacoes = "Evidência legada atualizada";
+    await database.put("rdos", {
+      id: RDO_ID,
+      obraId: OBRA_ID,
+      programacaoId: null,
+      numeroRdo: "RDO-LEGADO-7",
+      dataRdo: "2026-07-20",
+      statusRdo: "RASCUNHO",
+      syncStatus: "SYNCED",
+      versaoEntidade: 7,
+      payload: { observacoes: "criado antes do receipt v48" },
+      createdAt: "2026-07-20T12:00:00.000Z",
+      updatedAt: "2026-07-20T12:00:00.000Z",
+    });
+
+    const updated = await saveExistingRdoDraftAtomically(draft);
+
+    expect(updated.mutation).toMatchObject({
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersao: 7,
+      blockedReason: null,
+      status: "PENDING",
+    });
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      versaoEntidade: 7,
+      syncStatus: "PENDING_SYNC",
+      payload: expect.objectContaining({
+        creationContextVersion: null,
+        observacoes: "Evidência legada atualizada",
+      }),
     });
   });
 });

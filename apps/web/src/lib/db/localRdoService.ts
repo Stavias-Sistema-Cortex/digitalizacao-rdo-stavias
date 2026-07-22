@@ -1207,6 +1207,11 @@ export async function saveNewRdoDraftAtomically(
   options: { occurredAt?: string } = {},
 ): Promise<SaveRdoDraftResult> {
   validateRdoDraftForSync(draft);
+  if (rdoCreationContextBlockReason(draft)) {
+    throw new Error(
+      "Contexto versionado da obra é obrigatório para criar o RDO.",
+    );
+  }
 
   const database = await getCortexDb();
   const timestamp = options.occurredAt ?? nowUtc();

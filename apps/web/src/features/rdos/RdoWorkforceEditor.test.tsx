@@ -94,11 +94,18 @@ describe("editor da equipe carregada", () => {
         onChange={onChange}
       />,
     );
-    const addition = screen.getByLabelText("Adicionar colaborador autorizado");
-    expect(within(addition).queryByRole("option", { name: /Ana/ }))
+    const addition = screen.getByRole("combobox", {
+      name: "Buscar colaborador autorizado",
+    });
+    await user.type(addition, "003");
+    const results = screen.getByRole("listbox", {
+      name: "Colaboradores encontrados",
+    });
+    expect(within(results).getByRole("option", { name: /Carla.*003.*OPERACIONAL/ }))
+      .toBeVisible();
+    expect(within(results).queryByRole("option", { name: /Ana/ }))
       .not.toBeInTheDocument();
-    await user.selectOptions(addition, "worker-c");
-    await user.click(screen.getByRole("button", { name: "Adicionar à equipe" }));
+    await user.keyboard("{Enter}");
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         maoObra: expect.arrayContaining([
@@ -106,6 +113,46 @@ describe("editor da equipe carregada", () => {
         ]),
       }),
     );
+  });
+
+  it("busca por nome, código e papel, navega por teclado e deduplica a equipe", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [draft().maoObra[0]] }}
+        collaborators={catalog}
+        sourceRdoNumber={null}
+        onChange={onChange}
+      />,
+    );
+    const search = screen.getByRole("combobox", {
+      name: "Buscar colaborador autorizado",
+    });
+
+    await user.type(search, "operacional");
+    let results = screen.getByRole("listbox", { name: "Colaboradores encontrados" });
+    expect(within(results).getByRole("option", { name: /Bruno.*002/ })).toBeVisible();
+    expect(within(results).getByRole("option", { name: /Carla.*003/ })).toBeVisible();
+    expect(within(results).queryByRole("option", { name: /Ana/ })).not.toBeInTheDocument();
+
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maoObra: expect.arrayContaining([
+          expect.objectContaining({ colaboradorId: "worker-c" }),
+        ]),
+      }),
+    );
+
+    await user.clear(search);
+    await user.type(search, "Bruno");
+    results = screen.getByRole("listbox", { name: "Colaboradores encontrados" });
+    expect(within(results).getByRole("option", { name: /Bruno/ })).toBeVisible();
+    await user.clear(search);
+    await user.type(search, "002");
+    results = screen.getByRole("listbox", { name: "Colaboradores encontrados" });
+    expect(within(results).getByRole("option", { name: /Bruno/ })).toBeVisible();
   });
 
   it("mantém apontador nulo, trocável e derivado apenas da equipe selecionada", async () => {

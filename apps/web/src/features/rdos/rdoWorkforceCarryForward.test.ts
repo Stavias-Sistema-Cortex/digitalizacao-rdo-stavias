@@ -16,14 +16,14 @@ const catalog: RdoContextCollaborator[] = [
 ];
 
 function previous(
-  collaboratorId: string,
+  collaboratorId: string | null,
   overrides: Partial<RdoPreviousWorkforceItem> = {},
 ): RdoPreviousWorkforceItem {
   return {
-    sourceItemId: `item-${collaboratorId}`,
+    sourceItemId: `item-${collaboratorId ?? "unknown"}`,
     sourceRdoId: source,
     collaboratorId,
-    nameSnapshot: collaboratorId,
+    nameSnapshot: collaboratorId ?? "Identidade histórica indisponível",
     roleSnapshot: "Operador",
     linkType: "PROPRIO",
     quantity: 1,
@@ -58,6 +58,29 @@ describe("carry-forward determinístico da equipe", () => {
       colaboradorId: "historical",
       sourceRdoId: source,
       origemItemId: "item-historical",
+      selected: false,
+      availability: "UNAVAILABLE",
+    });
+  });
+
+  it("retém evidência histórica com collaboratorId nulo sem crash ou seleção", () => {
+    const [row] = carryForwardWorkforce(
+      [
+        previous(null, {
+          sourceItemId: "legacy-item-without-identity",
+          nameSnapshot: "Trabalhador do RDO legado",
+        }),
+      ],
+      catalog,
+      () => "retained-null-evidence",
+    );
+
+    expect(row).toMatchObject({
+      localId: "retained-null-evidence",
+      origemItemId: "legacy-item-without-identity",
+      sourceRdoId: source,
+      colaboradorId: "",
+      nomeColaborador: "Trabalhador do RDO legado",
       selected: false,
       availability: "UNAVAILABLE",
     });

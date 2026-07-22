@@ -86,7 +86,7 @@ export interface RdoCreationContextLookup {
 export interface RdoPreviousWorkforceItem {
   sourceItemId: string;
   sourceRdoId: string;
-  collaboratorId: string;
+  collaboratorId: string | null;
   nameSnapshot: string | null;
   roleSnapshot: string | null;
   linkType: string | null;

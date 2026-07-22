@@ -63,12 +63,30 @@ try {
     await verifyScenario(scenario, protocol);
   }
   protocol.close();
-  browser.kill("SIGTERM");
+  await stopBrowser(browser);
   browserProcess = undefined;
   process.stdout.write(`Memory geometry verified: ${SCENARIOS.length} scenarios\n`);
 } finally {
-  browserProcess?.kill("SIGTERM");
-  rmSync(temporaryDirectory, { recursive: true, force: true });
+  await stopBrowser(browserProcess);
+  rmSync(temporaryDirectory, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
+}
+
+async function stopBrowser(browser) {
+  if (!browser || browser.exitCode !== null) return;
+  const exited = new Promise((resolve) => {
+    browser.once("exit", resolve);
+  });
+  browser.kill("SIGTERM");
+  await Promise.race([exited, delay(2_000)]);
+  if (browser.exitCode === null) {
+    browser.kill("SIGKILL");
+    await Promise.race([exited, delay(1_000)]);
+  }
 }
 
 async function verifyScenario({ viewport, sidebar }, protocol) {

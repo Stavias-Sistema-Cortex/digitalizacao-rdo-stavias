@@ -5,9 +5,17 @@ export interface MissingOutboxDependency {
   dependencyId: string;
 }
 
+export interface InvalidOutboxDependencyAlias {
+  mutationId: string;
+  dependencyId: string;
+  aliasId: string;
+  reason: "ENTITY_MISMATCH";
+}
+
 export interface OutboxDependencyAnalysis {
   cycles: string[];
   missingDependencies: MissingOutboxDependency[];
+  invalidAliases: InvalidOutboxDependencyAlias[];
 }
 
 function dependencyIds(mutation: OutboxMutationRecord): string[] {
@@ -30,6 +38,96 @@ function isSyncPush(mutation: OutboxMutationRecord): boolean {
   return !mutation.transport || mutation.transport === "SYNC_PUSH";
 }
 
+function supersededById(mutation: OutboxMutationRecord): string | null {
+  if (mutation.status !== "REJECTED") return null;
+  const blockedReason = mutation.blockedReason;
+  if (typeof blockedReason !== "string") return null;
+  const match = /^SUPERSEDED_BY:([^\s:]+)$/.exec(blockedReason.trim());
+  return match?.[1] ?? null;
+}
+
+function sameLogicalEntity(
+  left: OutboxMutationRecord,
+  right: OutboxMutationRecord,
+): boolean {
+  return left.entidadeTipo === right.entidadeTipo &&
+    left.entidadeId === right.entidadeId;
+}
+
+interface DependencyResolution {
+  satisfied: boolean;
+  missingId: string | null;
+  cycle: string[];
+  invalidAliasId: string | null;
+}
+
+function resolveDependency(
+  byId: ReadonlyMap<string, OutboxMutationRecord>,
+  dependencyId: string,
+): DependencyResolution {
+  const path: string[] = [];
+  const visited = new Map<string, number>();
+  let currentId = dependencyId;
+
+  while (true) {
+    const cycleAt = visited.get(currentId);
+    if (cycleAt !== undefined) {
+      return {
+        satisfied: false,
+        missingId: null,
+        cycle: path.slice(cycleAt),
+        invalidAliasId: null,
+      };
+    }
+    visited.set(currentId, path.length);
+    path.push(currentId);
+    const current = byId.get(currentId);
+    if (!current) {
+      return {
+        satisfied: false,
+        missingId: currentId,
+        cycle: [],
+        invalidAliasId: null,
+      };
+    }
+    if (current.status === "SYNCED") {
+      return {
+        satisfied: true,
+        missingId: null,
+        cycle: [],
+        invalidAliasId: null,
+      };
+    }
+    const replacementId = supersededById(current);
+    if (!replacementId) {
+      return {
+        satisfied: false,
+        missingId: null,
+        cycle: [],
+        invalidAliasId: null,
+      };
+    }
+    const replacement = byId.get(replacementId);
+    if (!replacement) {
+      return {
+        satisfied: false,
+        missingId: replacementId,
+        cycle: [],
+        invalidAliasId: null,
+      };
+    }
+    if (!sameLogicalEntity(current, replacement)) {
+      return {
+        satisfied: false,
+        missingId: null,
+        cycle: [],
+        invalidAliasId: currentId,
+      };
+    }
+    currentId = replacementId;
+  }
+}
+
 export function analyzeOutboxDependencies(
   mutations: OutboxMutationRecord[],
 ): OutboxDependencyAnalysis {
@@ -40,13 +138,25 @@ export function analyzeOutboxDependencies(
     ]),
   );
   const missingDependencies: MissingOutboxDependency[] = [];
+  const invalidAliases: InvalidOutboxDependencyAlias[] = [];
+  const cycles = new Set<string>();
 
   for (const mutation of mutations) {
     for (const dependencyId of dependencyIds(mutation)) {
-      if (!byId.has(dependencyId)) {
+      const resolution = resolveDependency(byId, dependencyId);
+      if (resolution.missingId) {
         missingDependencies.push({
           mutationId: mutation.clientMutationId,
+          dependencyId: resolution.missingId,
+        });
+      }
+      for (const cycleId of resolution.cycle) cycles.add(cycleId);
+      if (resolution.invalidAliasId) {
+        invalidAliases.push({
+          mutationId: mutation.clientMutationId,
           dependencyId,
+          aliasId: resolution.invalidAliasId,
+          reason: "ENTITY_MISMATCH",
         });
       }
     }
@@ -54,7 +164,6 @@ export function analyzeOutboxDependencies(
 
   const state = new Map<string, "VISITING" | "VISITED">();
   const stack: string[] = [];
-  const cycles = new Set<string>();
 
   function visit(mutationId: string): void {
     const currentState = state.get(mutationId);
@@ -75,7 +184,11 @@ export function analyzeOutboxDependencies(
     }
     state.set(mutationId, "VISITING");
     stack.push(mutationId);
-    for (const dependencyId of dependencyIds(mutation)) {
+    const aliasId = supersededById(mutation);
+    for (const dependencyId of [
+      ...dependencyIds(mutation),
+      ...(aliasId ? [aliasId] : []),
+    ]) {
       visit(dependencyId);
     }
     stack.pop();
@@ -91,6 +204,11 @@ export function analyzeOutboxDependencies(
     missingDependencies: missingDependencies.sort((left, right) =>
       `${left.mutationId}:${left.dependencyId}`.localeCompare(
         `${right.mutationId}:${right.dependencyId}`,
+      ),
+    ),
+    invalidAliases: invalidAliases.sort((left, right) =>
+      `${left.mutationId}:${left.dependencyId}:${left.aliasId}`.localeCompare(
+        `${right.mutationId}:${right.dependencyId}:${right.aliasId}`,
       ),
     ),
   };
@@ -134,7 +252,7 @@ export function selectReadyOutboxMutations(
       }
 
       return dependencyIds(mutation).every(
-        (dependencyId) => byId.get(dependencyId)?.status === "SYNCED",
+        (dependencyId) => resolveDependency(byId, dependencyId).satisfied,
       );
     })
     .sort((left, right) =>

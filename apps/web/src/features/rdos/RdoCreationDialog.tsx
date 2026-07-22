@@ -23,11 +23,13 @@ import {
 import { createAndPersistRdoDraft } from "./rdoDraftCreation";
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import { AUTH_SESSION_CHANGED_EVENT } from "../auth/authSession";
 
 import "./RdoCreationDialog.css";
 
 interface RdoCreationDialogProps {
   returnFocusRef: RefObject<HTMLElement | null>;
+  initialDraft?: RdoDraft;
   onClose: () => void;
   onCreated: (
     draft: RdoDraft,
@@ -58,6 +60,7 @@ function focusableElements(element: HTMLElement): HTMLElement[] {
 
 export function RdoCreationDialog({
   returnFocusRef,
+  initialDraft,
   onClose,
   onCreated,
 }: RdoCreationDialogProps) {
@@ -68,7 +71,9 @@ export function RdoCreationDialog({
   const [worksites, setWorksites] = useState<ObraLocalRecord[]>([]);
   const [query, setQuery] = useState("");
   const [selectedWorksiteId, setSelectedWorksiteId] = useState("");
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState(
+    initialDraft?.dataRdo ?? "",
+  );
   const [contextResult, setContextResult] =
     useState<ResolvedRdoCreationContext | null>(null);
   const [isLoadingWorksites, setIsLoadingWorksites] = useState(true);
@@ -113,6 +118,31 @@ export function RdoCreationDialog({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const discardForSessionChange = () => {
+      requestIdRef.current += 1;
+      setWorksites([]);
+      setSelectedWorksiteId("");
+      setSelectedDate("");
+      setContextResult(null);
+      setError("");
+      setIsLoadingWorksites(false);
+      setIsLoadingContext(false);
+      setIsCreating(false);
+      onClose();
+    };
+    window.addEventListener(
+      AUTH_SESSION_CHANGED_EVENT,
+      discardForSessionChange,
+    );
+    return () => {
+      window.removeEventListener(
+        AUTH_SESSION_CHANGED_EVENT,
+        discardForSessionChange,
+      );
+    };
+  }, [onClose]);
 
   useEffect(() => {
     if (!selectedWorksiteId || !selectedDate) return;
@@ -178,6 +208,9 @@ export function RdoCreationDialog({
       normalize(worksiteLabel(worksite)).includes(needle),
     );
   }, [query, worksites]);
+  const selectedWorksite = worksites.find(
+    (worksite) => worksite.id === selectedWorksiteId,
+  );
 
   const presentation = contextResult
     ? contextPresentation(contextResult.context)
@@ -224,7 +257,11 @@ export function RdoCreationDialog({
     setIsCreating(true);
     setError("");
     try {
-      const created = await createAndPersistRdoDraft(contextResult.context);
+      const created = initialDraft
+        ? await createAndPersistRdoDraft(contextResult.context, {
+            baseDraft: initialDraft,
+          })
+        : await createAndPersistRdoDraft(contextResult.context);
       onCreated(created.draft, contextResult.context);
     } catch (unknownError) {
       setError(
@@ -250,8 +287,14 @@ export function RdoCreationDialog({
         <header className="rdo-creation-header">
           <div>
             <p className="rdo-creation-kicker">Córtex · RDO</p>
-            <h2 id={titleId}>Criar RDO</h2>
-            <p>Selecione a obra que dará origem ao relatório.</p>
+            <h2 id={titleId}>
+              {initialDraft ? "Vincular RDO importado" : "Criar RDO"}
+            </h2>
+            <p>
+              {initialDraft
+                ? "Selecione a obra autorizada sem alterar os dados importados."
+                : "Selecione a obra que dará origem ao relatório."}
+            </p>
           </div>
           <button
             type="button"
@@ -275,6 +318,27 @@ export function RdoCreationDialog({
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
+            <div
+              className="rdo-selected-worksite"
+              aria-live="polite"
+              data-selected={Boolean(selectedWorksite)}
+            >
+              <span>Obra selecionada</span>
+              <strong>
+                {selectedWorksite
+                  ? selectedWorksite.nome || selectedWorksite.codigoContrato
+                  : "Nenhuma obra selecionada"}
+              </strong>
+              {selectedWorksite ? (
+                <small>
+                  {[
+                    selectedWorksite.codigoContrato,
+                    selectedWorksite.cidade,
+                    selectedWorksite.uf,
+                  ].filter(Boolean).join(" · ")}
+                </small>
+              ) : null}
+            </div>
             <div className="rdo-creation-worksite-list">
               {isLoadingWorksites ? (
                 <p className="rdo-creation-empty">Carregando obras autorizadas…</p>

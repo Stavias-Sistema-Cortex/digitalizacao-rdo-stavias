@@ -101,8 +101,8 @@ afterEach(async () => {
   clearSession();
 });
 
-describe("Memory v15 migration", () => {
-  it("preserves v14 data and adds only the scoped Memory stores", async () => {
+describe("Memory v15 plus RDO context v16 migration", () => {
+  it("preserves v14 data while adding the scoped Memory and RDO context stores", async () => {
     const legacy = await openDB(databaseName, 14, {
       upgrade(database) {
         database.createObjectStore("rdos", { keyPath: "id" });
@@ -115,8 +115,8 @@ describe("Memory v15 migration", () => {
 
     const upgraded = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(15);
-    expect(upgraded.version).toBe(15);
+    expect(CORTEX_DATABASE_VERSION).toBe(16);
+    expect(upgraded.version).toBe(16);
     expect(await upgraded.get("rdos", "rdo-preservado")).toMatchObject({
       numeroRdo: "17",
     });
@@ -126,6 +126,7 @@ describe("Memory v15 migration", () => {
         "untouched_queue",
         "memory_search_documents",
         "memory_cache_metadata",
+        "rdo_creation_contexts",
       ]),
     );
     expect(await untyped.get("untouched_queue", "fila-1")).toMatchObject({

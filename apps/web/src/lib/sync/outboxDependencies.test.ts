@@ -10,11 +10,12 @@ function mutation(
   id: string,
   status: OutboxMutationRecord["status"],
   dependencies: string[] = [],
+  entityId = id,
 ): OutboxMutationRecord {
   return {
     clientMutationId: id,
     entidadeTipo: "MENSAGEM",
-    entidadeId: id,
+    entidadeId: entityId,
     operacao: "CRIAR_MENSAGEM",
     baseVersao: null,
     payload: {},
@@ -29,6 +30,17 @@ function mutation(
     dependsOnMutationIds: dependencies,
     correlationId: "conversation-1",
   };
+}
+
+function superseded(
+  id: string,
+  replacementId: string,
+  entityId: string,
+): OutboxMutationRecord {
+  const original = mutation(id, "REJECTED", [], entityId);
+  original.blockedReason = `SUPERSEDED_BY:${replacementId}`;
+  original.lastSafeCode = "SUPERSEDED_BY_LOCAL_EDIT";
+  return original;
 }
 
 describe("selectReadyOutboxMutations", () => {
@@ -86,6 +98,77 @@ describe("selectReadyOutboxMutations", () => {
       "CANONICAL_UPLOAD_REFERENCE_REQUIRES_REPLACEMENT";
 
     expect(selectReadyOutboxMutations([blocked, upload], 100)).toEqual([]);
+  });
+
+  it("resolves an immutable superseded dependency only after its same-entity replacement syncs", () => {
+    const original = superseded("create-a-1", "create-a-2", "rdo-a");
+    const replacement = mutation("create-a-2", "PENDING", [], "rdo-a");
+    replacement.entidadeTipo = "RDO";
+    replacement.operacao = "CRIAR_RDO";
+    original.entidadeTipo = "RDO";
+    original.operacao = "CRIAR_RDO";
+    const dependent = mutation("create-b", "PENDING", [original.clientMutationId], "rdo-b");
+    dependent.entidadeTipo = "RDO";
+    dependent.operacao = "CRIAR_RDO";
+    const immutableDependent = JSON.stringify(dependent);
+
+    expect(selectReadyOutboxMutations([original, replacement, dependent], 100))
+      .toEqual([replacement]);
+
+    replacement.status = "SYNCED";
+    expect(selectReadyOutboxMutations([original, replacement, dependent], 100))
+      .toEqual([dependent]);
+    expect(JSON.stringify(dependent)).toBe(immutableDependent);
+  });
+
+  it("follows repeated replacements without depending on terminal aliases", () => {
+    const first = superseded("create-a-1", "create-a-2", "rdo-a");
+    const second = superseded("create-a-2", "create-a-3", "rdo-a");
+    const terminal = mutation("create-a-3", "SYNCED", [], "rdo-a");
+    for (const item of [first, second, terminal]) {
+      item.entidadeTipo = "RDO";
+      item.operacao = "CRIAR_RDO";
+    }
+    const dependent = mutation("create-b", "PENDING", [first.clientMutationId], "rdo-b");
+
+    expect(selectReadyOutboxMutations([first, second, terminal, dependent], 100))
+      .toEqual([dependent]);
+  });
+
+  it("blocks missing, cyclic, cross-entity, and non-terminal alias corruption", () => {
+    const missing = superseded("missing-1", "gone", "rdo-a");
+    const cycleA = superseded("cycle-a", "cycle-b", "rdo-cycle");
+    const cycleB = superseded("cycle-b", "cycle-a", "rdo-cycle");
+    const cross = superseded("cross-1", "cross-2", "rdo-a");
+    const crossTarget = mutation("cross-2", "SYNCED", [], "rdo-other");
+    const nonTerminal = mutation("pending-alias", "PENDING", [], "rdo-a");
+    nonTerminal.blockedReason = "SUPERSEDED_BY:cross-2";
+    const dependents = [
+      mutation("depends-missing", "PENDING", ["missing-1"]),
+      mutation("depends-cycle", "PENDING", ["cycle-a"]),
+      mutation("depends-cross", "PENDING", ["cross-1"]),
+      mutation("depends-pending-alias", "PENDING", ["pending-alias"]),
+    ];
+    const all = [
+      missing,
+      cycleA,
+      cycleB,
+      cross,
+      crossTarget,
+      nonTerminal,
+      ...dependents,
+    ];
+
+    expect(selectReadyOutboxMutations(all, 100)).toEqual([]);
+    expect(analyzeOutboxDependencies(all)).toMatchObject({
+      cycles: expect.arrayContaining(["cycle-a", "cycle-b"]),
+      missingDependencies: expect.arrayContaining([
+        { mutationId: "depends-missing", dependencyId: "gone" },
+      ]),
+      invalidAliases: expect.arrayContaining([
+        expect.objectContaining({ mutationId: "depends-cross" }),
+      ]),
+    });
   });
 });
 

@@ -10,6 +10,8 @@ import {
 
 export const RDO_CONTEXT_OFFLINE_MISSING =
   "Contexto desta obra ainda não está disponível offline.";
+export const RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE =
+  "Colaboradores autorizados desta obra não estão disponíveis offline.";
 
 export type RdoContextTruthStatus =
   | "FRESH"

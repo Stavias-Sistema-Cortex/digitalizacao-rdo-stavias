@@ -13,7 +13,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   width: min(940px, 100%);
-  max-height: min(720px, calc(100vh - 40px));
+  height: min(720px, calc(100vh - 40px));
   overflow: hidden;
   border: 1px solid #171b19;
   border-radius: 4px;
@@ -77,18 +77,60 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 290px);
   min-height: 0;
+  overflow: hidden;
 }
 
 .rdo-creation-worksites {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   padding: 18px 20px;
+  overflow: hidden;
+}
+
+.rdo-selected-worksite {
+  min-width: 0;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid #d8dfda;
+  background: #f8faf8;
+}
+
+.rdo-selected-worksite[data-selected="true"] {
+  border-color: #171b19;
+  box-shadow: inset 4px 0 #f2c800;
+}
+
+.rdo-selected-worksite span,
+.rdo-selected-worksite strong,
+.rdo-selected-worksite small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.rdo-selected-worksite span {
+  color: #5e6863;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rdo-selected-worksite strong {
+  margin-top: 2px;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.rdo-selected-worksite small {
+  margin-top: 2px;
+  color: #4c5650;
+  font-size: 0.66rem;
 }
 
 .rdo-creation-worksite-list {
-  min-height: 140px;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   margin-top: 12px;
@@ -147,6 +189,7 @@
   border-left: 1px solid #d8dfda;
   box-shadow: inset 5px 0 #f2c800;
   background: #f4f6f4;
+  overflow: hidden;
 }
 
 .rdo-provenance-rail h3 {
@@ -242,27 +285,63 @@
 @container (max-width: 620px) {
   .rdo-creation-body {
     grid-template-columns: minmax(0, 1fr);
-    overflow-y: auto;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .rdo-creation-worksite-list {
-    max-height: 240px;
+    max-height: none;
   }
 
   .rdo-provenance-rail {
     border-top: 1px solid #d8dfda;
     border-left: 0;
+    padding: 10px 14px 10px 18px;
+  }
+
+  .rdo-provenance-rail > p {
+    margin: 6px 0 0;
+  }
+
+  .rdo-provenance-rail dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 10px;
+    margin-top: 6px;
+  }
+
+  .rdo-provenance-rail dl > div {
+    min-width: 0;
+    padding: 5px 0;
   }
 
   .rdo-creation-footer {
     align-items: stretch;
     flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px;
   }
 
   .rdo-creation-footer > label,
   .rdo-creation-actions,
   .rdo-creation-actions button {
     width: 100%;
+  }
+
+  .rdo-creation-header {
+    padding: 12px 14px;
+  }
+
+  .rdo-creation-header h2 {
+    font-size: 1.15rem;
+  }
+
+  .rdo-creation-header p {
+    margin-top: 3px;
+    font-size: 0.74rem;
+  }
+
+  .rdo-creation-worksites {
+    padding: 10px 14px;
   }
 }
 
@@ -273,7 +352,7 @@
   }
 
   .rdo-creation-dialog {
-    max-height: calc(100vh - 20px);
+    height: calc(100vh - 20px);
   }
 }
 

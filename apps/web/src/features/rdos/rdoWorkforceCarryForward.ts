@@ -31,11 +31,16 @@ export function carryForwardWorkforce(
   const rows: MaoObraDraft[] = [];
 
   for (const item of previousWorkers) {
-    const collaboratorId = item.collaboratorId.trim();
-    if (!collaboratorId || seen.has(collaboratorId)) continue;
-    seen.add(collaboratorId);
+    const collaboratorId = item.collaboratorId?.trim() ?? "";
+    const identityKey = collaboratorId
+      ? `collaborator:${collaboratorId}`
+      : `evidence:${item.sourceRdoId}:${item.sourceItemId}`;
+    if (seen.has(identityKey)) continue;
+    seen.add(identityKey);
 
-    const current = authorized.get(collaboratorId);
+    const current = collaboratorId
+      ? authorized.get(collaboratorId)
+      : undefined;
     const available = Boolean(current) &&
       item.availability?.toUpperCase() !== "UNAVAILABLE";
     rows.push({

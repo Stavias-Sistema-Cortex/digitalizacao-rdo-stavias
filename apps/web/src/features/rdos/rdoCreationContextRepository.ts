@@ -3,7 +3,11 @@ import type {
   ObraLocalRecord,
   RdoCreationContextCacheRecord,
 } from "../../lib/db/db.types";
-import { getSession } from "../auth/authSession";
+import {
+  AUTH_SESSION_CHANGED_EVENT,
+  getSession,
+  type AuthProfile,
+} from "../auth/authSession";
 import { RDO_CONTEXT_OFFLINE_MISSING } from "./rdoCreationContext";
 import {
   buscarContextoDeCriacaoRdo,
@@ -26,8 +30,99 @@ function activeSession() {
   return session;
 }
 
-function assertWorksiteScope(obraId: string): ReturnType<typeof activeSession> {
+interface RdoContextSessionGuard {
+  session: AuthProfile;
+  fingerprint: string;
+}
+
+function sessionFingerprint(session: AuthProfile): string {
+  return JSON.stringify({
+    colaboradorId: session.colaboradorId,
+    papelAcesso: session.papelAcesso,
+    escopoGlobal: session.escopoGlobal,
+    obraIds: [...session.obraIds].sort(),
+    expiraEm: session.expiraEm,
+  });
+}
+
+function captureContextSession(): RdoContextSessionGuard {
   const session = activeSession();
+  return { session, fingerprint: sessionFingerprint(session) };
+}
+
+function assertContextSession(guard: RdoContextSessionGuard): void {
+  const current = getSession();
+  if (
+    current === null ||
+    current !== guard.session ||
+    sessionFingerprint(current) !== guard.fingerprint
+  ) {
+    throw new Error("A sessão mudou durante a leitura do contexto do RDO.");
+  }
+}
+
+function guardContextTransaction(
+  transaction: { abort(): void; readonly done: Promise<unknown> },
+  guard: RdoContextSessionGuard,
+) {
+  let invalidated = false;
+  const abortOnSessionChange = () => {
+    try {
+      assertContextSession(guard);
+    } catch {
+      invalidated = true;
+      try {
+        transaction.abort();
+      } catch {
+        // A transação pode já ter terminado.
+      }
+    }
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, abortOnSessionChange);
+  }
+  const dispose = () => {
+    if (typeof window !== "undefined") {
+      window.removeEventListener(
+        AUTH_SESSION_CHANGED_EVENT,
+        abortOnSessionChange,
+      );
+    }
+  };
+  void transaction.done.then(dispose, dispose);
+  return {
+    async complete() {
+      try {
+        abortOnSessionChange();
+        if (invalidated) {
+          await transaction.done.catch(() => undefined);
+          throw new Error(
+            "A sessão mudou durante a leitura do contexto do RDO.",
+          );
+        }
+        await transaction.done;
+        assertContextSession(guard);
+      } catch (error: unknown) {
+        if (invalidated) {
+          throw new Error(
+            "A sessão mudou durante a leitura do contexto do RDO.",
+            { cause: error },
+          );
+        }
+        throw error;
+      } finally {
+        dispose();
+      }
+    },
+  };
+}
+
+function assertWorksiteScope(
+  obraId: string,
+  guard: RdoContextSessionGuard = captureContextSession(),
+): AuthProfile {
+  assertContextSession(guard);
+  const session = guard.session;
   if (!session.escopoGlobal && !session.obraIds.includes(obraId)) {
     throw new Error("Obra fora do escopo da sessão.");
   }
@@ -69,9 +164,12 @@ function worksiteRecord(
 export async function listCachedAuthorizedRdoWorksites(): Promise<
   ObraLocalRecord[]
 > {
-  const session = activeSession();
+  const guard = captureContextSession();
+  const session = guard.session;
   const database = await getCortexDb();
+  assertContextSession(guard);
   const worksites = await database.getAll("obras");
+  assertContextSession(guard);
   return worksites
     .filter(
       (item) => session.escopoGlobal || session.obraIds.includes(item.id),
@@ -87,8 +185,10 @@ export async function listCachedAuthorizedRdoWorksites(): Promise<
 export async function replaceCachedAuthorizedRdoWorksites(
   values: readonly RdoAuthorizedWorksiteLookup[],
   cachedAt = new Date().toISOString(),
+  guard: RdoContextSessionGuard = captureContextSession(),
 ): Promise<ObraLocalRecord[]> {
-  const session = activeSession();
+  assertContextSession(guard);
+  const session = guard.session;
   const allowed = values
     .filter(
       (item) =>
@@ -97,7 +197,9 @@ export async function replaceCachedAuthorizedRdoWorksites(
     )
     .map((item) => worksiteRecord(item, cachedAt));
   const database = await getCortexDb();
+  assertContextSession(guard);
   const transaction = database.transaction("obras", "readwrite");
+  const guarded = guardContextTransaction(transaction, guard);
   const store = transaction.objectStore("obras");
   const incoming = new Set(allowed.map((item) => item.id));
   const existing = await store.getAll();
@@ -110,22 +212,29 @@ export async function replaceCachedAuthorizedRdoWorksites(
     }
   }
   for (const item of allowed) await store.put(item);
-  await transaction.done;
+  await guarded.complete();
   return allowed;
 }
 
 export async function refreshAuthorizedRdoWorksites(): Promise<
   ObraLocalRecord[]
 > {
+  const guard = captureContextSession();
   const remote = await buscarObrasAutorizadasParaRdo();
-  return replaceCachedAuthorizedRdoWorksites(remote);
+  assertContextSession(guard);
+  return replaceCachedAuthorizedRdoWorksites(
+    remote,
+    new Date().toISOString(),
+    guard,
+  );
 }
 
 function contextRecord(
   context: RdoCreationContextLookup,
   cachedAt: string,
+  guard: RdoContextSessionGuard,
 ): RdoCreationContextCacheRecord {
-  const session = assertWorksiteScope(context.obra.id);
+  const session = assertWorksiteScope(context.obra.id, guard);
   if (
     context.provenance.worksiteId !== context.obra.id ||
     context.provenance.selectedDate !== context.data ||
@@ -151,10 +260,15 @@ function contextRecord(
 export async function putRdoCreationContext(
   context: RdoCreationContextLookup,
   cachedAt = new Date().toISOString(),
+  guard: RdoContextSessionGuard = captureContextSession(),
 ): Promise<RdoCreationContextCacheRecord> {
-  const record = contextRecord(context, cachedAt);
+  const record = contextRecord(context, cachedAt, guard);
   const database = await getCortexDb();
-  await database.put("rdo_creation_contexts", record);
+  assertContextSession(guard);
+  const transaction = database.transaction("rdo_creation_contexts", "readwrite");
+  const guarded = guardContextTransaction(transaction, guard);
+  await transaction.objectStore("rdo_creation_contexts").put(record);
+  await guarded.complete();
   return record;
 }
 
@@ -167,13 +281,16 @@ export async function getCachedRdoCreationContext(
     })
   | undefined
 > {
-  const session = assertWorksiteScope(obraId);
+  const guard = captureContextSession();
+  const session = assertWorksiteScope(obraId, guard);
   const database = await getCortexDb();
+  assertContextSession(guard);
   const record = await database.get("rdo_creation_contexts", [
     session.colaboradorId,
     obraId,
     selectedDate,
   ]);
+  assertContextSession(guard);
   if (!record || record.ownerId !== session.colaboradorId) return undefined;
   return {
     ...record,
@@ -188,7 +305,10 @@ export async function requireRdoCreationContext(
   fetchRemote: typeof buscarContextoDeCriacaoRdo =
     buscarContextoDeCriacaoRdo,
 ): Promise<ResolvedRdoCreationContext> {
+  const guard = captureContextSession();
+  assertWorksiteScope(obraId, guard);
   const cached = await getCachedRdoCreationContext(obraId, selectedDate);
+  assertContextSession(guard);
   if (!online) {
     if (!cached) throw new Error(RDO_CONTEXT_OFFLINE_MISSING);
     return {
@@ -200,9 +320,15 @@ export async function requireRdoCreationContext(
 
   try {
     const context = await fetchRemote(obraId, selectedDate);
-    const stored = await putRdoCreationContext(context);
+    assertContextSession(guard);
+    const stored = await putRdoCreationContext(
+      context,
+      new Date().toISOString(),
+      guard,
+    );
     return { source: "SERVER", cachedAt: stored.cachedAt, context };
   } catch (error) {
+    assertContextSession(guard);
     if (cached) {
       return {
         source: "CACHE",
