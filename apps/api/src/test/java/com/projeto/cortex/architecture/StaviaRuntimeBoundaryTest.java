@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,10 +15,14 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class StaviaRuntimeBoundaryTest {
+
+    @TempDir
+    Path temporaryRepository;
 
     private static final String ASSISTANT_NAME = "Stav" + "IA";
     private static final Pattern ASSISTANT_REFERENCE = Pattern.compile(
@@ -252,9 +257,11 @@ class StaviaRuntimeBoundaryTest {
     private static final String POSTGRESQL_BASELINE_HISTORICAL_FRAGMENT =
             "assertObjectStorageBoundary(sql, \"" + POSTGRESQL_BASELINE_HISTORICAL_TOKEN
                     + "\", \"storage_key varchar(512)\");";
-    private static final Set<String> EXCLUDED_DISCOVERY_DIRECTORIES = Set.of(
-            ".git", ".gradle", "archive", "build", "coverage", "dist",
-            "node_modules", "target"
+    private static final Set<String> REPOSITORY_DISCOVERY_EXCLUSION_ROOTS = Set.of(
+            ".git", ".gradle", "archive", "node_modules"
+    );
+    private static final Set<String> APPLICATION_DISCOVERY_EXCLUSION_ROOTS = Set.of(
+            "build", "coverage", "dist", "node_modules", "target"
     );
 
     /**
@@ -318,6 +325,70 @@ class StaviaRuntimeBoundaryTest {
             throws IOException {
         assertThat(activeRelativeSourceAndLauncherFiles())
                 .contains(POSTGRESQL_BASELINE_CONTRACT);
+    }
+
+    @ParameterizedTest(name = "scans active path with output-like segment {0}")
+    @ValueSource(strings = {
+            "apps/api/src/main/java/target/StaviaRuntime.java",
+            "apps/api/src/main/java/build/StaviaRuntime.java",
+            "apps/api/src/main/resources/archive/stavia/config.yml",
+            "apps/api/src/main/resources/dist/stavia/config.yml",
+            "apps/api/src/test/java/coverage/StaviaRuntimeTest.java",
+            "apps/api/src/test/resources/node_modules/stavia/config.yml",
+            "scripts/target/smoke-stavia.sh",
+            "scripts/build/smoke-stavia.sh",
+            "scripts/archive/smoke-stavia.sh",
+            "scripts/dist/smoke-stavia.sh",
+            "scripts/coverage/smoke-stavia.sh",
+            "scripts/node_modules/smoke-stavia.sh"
+    })
+    void scansAndReportsActivePathsWithOutputLikeSegments(String fixture) throws IOException {
+        Path relative = Path.of(fixture);
+        Path candidate = temporaryRepository.resolve(relative);
+        Files.createDirectories(candidate.getParent());
+        Files.writeString(candidate, "retired stavia runtime", StandardCharsets.UTF_8);
+
+        assertThat(activeSourceAndLauncherFiles(temporaryRepository)).contains(candidate);
+
+        List<String> violations = new ArrayList<>();
+        inspectSourceFile(relative, Files.readAllBytes(candidate), violations);
+        assertThat(violations).contains(relative + " [assistant content]");
+    }
+
+    @ParameterizedTest(name = "excludes anchored discovery root {0}")
+    @ValueSource(strings = {
+            ".git/objects/fixture",
+            "archive/stavia/config.yml",
+            "node_modules/example/index.js",
+            "apps/api/target/classes/StaviaRuntime.class",
+            "apps/api/build/generated/StaviaRuntime.java",
+            "apps/api/dist/config.yml",
+            "apps/api/coverage/report.json",
+            "apps/api/node_modules/example/index.js"
+    })
+    void excludesAnchoredRepositoryAndApplicationRoots(String fixture) throws IOException {
+        Files.createDirectories(temporaryRepository.resolve("apps/api"));
+        Set<Path> excludedRoots = excludedDiscoveryRoots(temporaryRepository);
+
+        assertThat(isExcludedDiscoveryPath(
+                temporaryRepository.resolve(fixture), excludedRoots)).isTrue();
+    }
+
+    @ParameterizedTest(name = "does not exclude similarly named non-root {0}")
+    @ValueSource(strings = {
+            "archive-copy/stavia/config.yml",
+            "apps/api/targeted/StaviaRuntime.java",
+            "apps/api/build-tools/StaviaRuntime.java",
+            "apps/api/distribution/config.yml",
+            "apps/api/coverage-notes/report.md",
+            "apps/api/node_modules-cache/example/index.js"
+    })
+    void doesNotExcludeSimilarlyNamedNonRoots(String fixture) throws IOException {
+        Files.createDirectories(temporaryRepository.resolve("apps/api"));
+        Set<Path> excludedRoots = excludedDiscoveryRoots(temporaryRepository);
+
+        assertThat(isExcludedDiscoveryPath(
+                temporaryRepository.resolve(fixture), excludedRoots)).isFalse();
     }
 
     @Test
@@ -495,11 +566,12 @@ class StaviaRuntimeBoundaryTest {
     }
 
     private static List<Path> activeSourceAndLauncherFiles(Path repository) throws IOException {
+        Set<Path> excludedRoots = excludedDiscoveryRoots(repository);
         try (Stream<Path> paths = Files.walk(repository)) {
             return paths.filter(Files::isRegularFile)
                     .filter(file -> {
                         Path relative = repository.relativize(file);
-                        return !isExcludedDiscoveryPath(relative)
+                        return !isExcludedDiscoveryPath(file, excludedRoots)
                                 && isActiveSourceOrLauncherSurface(relative)
                                 && !relative.equals(THIS_TEST)
                                 && !HISTORICAL_ALLOWLIST.containsKey(relative);
@@ -509,13 +581,32 @@ class StaviaRuntimeBoundaryTest {
         }
     }
 
-    private static boolean isExcludedDiscoveryPath(Path relative) {
-        for (Path segment : relative) {
-            if (EXCLUDED_DISCOVERY_DIRECTORIES.contains(segment.toString())) {
-                return true;
+    private static Set<Path> excludedDiscoveryRoots(Path repository) throws IOException {
+        Path normalizedRepository = repository.toAbsolutePath().normalize();
+        Set<Path> excludedRoots = new HashSet<>();
+        REPOSITORY_DISCOVERY_EXCLUSION_ROOTS.stream()
+                .map(normalizedRepository::resolve)
+                .map(Path::normalize)
+                .forEach(excludedRoots::add);
+
+        Path applicationsRoot = normalizedRepository.resolve("apps");
+        if (Files.isDirectory(applicationsRoot)) {
+            try (Stream<Path> applications = Files.list(applicationsRoot)) {
+                applications.filter(Files::isDirectory)
+                        .map(Path::toAbsolutePath)
+                        .map(Path::normalize)
+                        .forEach(application -> APPLICATION_DISCOVERY_EXCLUSION_ROOTS.stream()
+                                .map(application::resolve)
+                                .map(Path::normalize)
+                                .forEach(excludedRoots::add));
             }
         }
-        return false;
+        return Set.copyOf(excludedRoots);
+    }
+
+    private static boolean isExcludedDiscoveryPath(Path candidate, Set<Path> excludedRoots) {
+        Path normalizedCandidate = candidate.toAbsolutePath().normalize();
+        return excludedRoots.stream().anyMatch(normalizedCandidate::startsWith);
     }
 
     private static boolean isActiveSourceOrLauncherSurface(Path relative) {

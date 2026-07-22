@@ -14,6 +14,8 @@
   `4417a7a40ae5673b576a4d0fcd420714e3a2e7da`.
 - Final allowlist-scope review-fix base:
   `e501cf7fd796906ef04da623c9b2c089d321ba1d`.
+- Final discovery-root review-fix base:
+  `a5beb3911f0faa4f6b9b2d67fdf0e5fd8c888732`.
 - Archive lineage recorded by the plan: `b9b619e`.
 - This review fix does not change frontend runtime, offline behavior, RDO
   behavior, Financeiro behavior, skills, plans, or Task 5+ implementation.
@@ -28,6 +30,10 @@
 - The final allowlist-scope fix has the same two-file boundary. It narrows the
   common brand exception and adds exact compatibility contexts; no production,
   migration, archive, discovery, or scanner surface was removed or changed.
+- The final discovery-root fix also changes only
+  `StaviaRuntimeBoundaryTest.java` and this report. Matchers, global and scoped
+  allowlists, historical exceptions, compiled/JAR inspection, V45.1, readiness,
+  archive content, and production code are unchanged.
 
 ## Review findings addressed
 
@@ -178,7 +184,67 @@ configuration is allowed.
   fails. Dollar-joined exact-brand and case variants are exercised through all
   three synthetic surfaces.
 
+### Final anchored discovery-root closure
+
+- Removed the segment-wide exclusion for `.git`, `.gradle`, `archive`,
+  `build`, `coverage`, `dist`, `node_modules`, and `target`. A directory with
+  one of those names no longer hides an otherwise active Maven or launcher
+  path merely because it appears at an arbitrary depth.
+- Discovery now builds an immutable set of absolute, normalized roots. The
+  repository roots are `/.git`, `/.gradle`, `/archive`, and `/node_modules`;
+  each direct, existing module below `/apps/*` contributes anchored `target`,
+  `build`, `dist`, `coverage`, and `node_modules` roots. A candidate is excluded
+  only when its absolute normalized path `startsWith` one of those roots.
+- Twelve positive regressions create real temporary files beneath
+  `src/main/java`, `src/main/resources`, `src/test/java`,
+  `src/test/resources`, and `scripts` using the misleading directory names.
+  Each file must be discovered and its assistant content must be reported.
+- Eight negative regressions preserve exclusion of repository and module output
+  roots. Six boundary regressions prove similarly prefixed names such as
+  `targeted`, `build-tools`, and `node_modules-cache` are not excluded.
+
 ## TDD evidence
+
+### Final anchored discovery-root RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 58 tests, 12 assertion failures, 0 errors, 0 skipped.
+- Every new positive regression was absent from the discovered file list:
+  representative paths included
+  `apps/api/src/main/java/target/StaviaRuntime.java`,
+  `apps/api/src/main/resources/archive/stavia/config.yml`, and corresponding
+  `build`, `dist`, `coverage`, and `node_modules` cases below Maven-active and
+  `scripts` surfaces.
+- The anchored-root and similarly named non-root regressions already passed,
+  confirming the RED isolated only the segment-wide false-negative behavior.
+
+### Final anchored discovery-root GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 58 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 791 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 791 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 exercised isolated V44 and current V44/V45/V45.1 chains.
+4. After `verify` produced the 95,933,770-byte Spring Boot JAR, the boundary
+   ran from `/tmp` with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 58 tests, 0 failures/errors/skips; `target/classes` and application JAR
+     entries were scanned.
+5. The generated JAR SHA-256 is
+   `3016839a019e64ac8178661aeea71148dcffe9dbf303a5d0e7cc1728fc4936d1`.
+
+The pre-existing Flyway warning about PostgreSQL 18.4 being newer than its
+declared tested support through PostgreSQL 16 remains unchanged.
 
 ### Final allowlist-scope RED
 
