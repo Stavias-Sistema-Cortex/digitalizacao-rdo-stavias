@@ -15,6 +15,8 @@ public record RdoContextResponse(
         List<ProgramacaoContexto> programacoes,
         List<ColaboradorContexto> colaboradores,
         List<EquipamentoContexto> equipamentos,
+        ContextCoverage coverage,
+        ContextFreshness freshness,
         CreationProvenance provenance
 ) {
 
@@ -99,11 +101,38 @@ public record RdoContextResponse(
     }
 
     public record CreationProvenance(
+            long receiptVersion,
             long sourceVersion,
             String worksiteId,
             LocalDate selectedDate,
             String previousRdoId,
             Instant generatedAt
+    ) {
+    }
+
+    public record CoverageSection(
+            String status,
+            long total,
+            long returned,
+            boolean complete
+    ) {
+    }
+
+    public record ContextCoverage(
+            CoverageSection previousWorkforce,
+            CoverageSection programacoes,
+            CoverageSection colaboradores,
+            CoverageSection equipamentos,
+            CoverageSection serviceCatalog,
+            CoverageSection priceCatalog
+    ) {
+    }
+
+    public record ContextFreshness(
+            String status,
+            long sourceVersion,
+            Instant generatedAt,
+            Instant staleAfter
     ) {
     }
 }

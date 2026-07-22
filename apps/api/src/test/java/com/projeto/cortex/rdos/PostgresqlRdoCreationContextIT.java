@@ -183,7 +183,82 @@ class PostgresqlRdoCreationContextIT {
                 .containsExactly(assetA);
         assertThat(response.nextNumberSuggestion()).isEqualTo("RDO-1000");
         assertThat(response.provenance().sourceVersion()).isPositive();
+        assertThat(response.provenance().receiptVersion()).isPositive();
         assertThat(response.provenance().previousRdoId()).isEqualTo(anterior);
+    }
+
+    @Test
+    void snapshotNaoTruncaColecoesEDeclaraCoberturaFreshnessECatalogosAusentes() {
+        String obraId = id();
+        inserirObra(obraId, "COBERTURA");
+        for (int index = 0; index < 301; index += 1) {
+            String collaborator = inserirColaborador("Pessoa %03d".formatted(index), null, null);
+            vincular(collaborator, obraId, "OPERACIONAL", "ATIVO");
+            String asset = inserirAsset("EQ-%03d".formatted(index));
+            tornarAssetElegivel(asset, obraId);
+        }
+
+        RdoContextResponse response = new RdoContextService(jdbc)
+                .buscarContexto(obraId, SELECTED_DATE);
+
+        assertThat(response.colaboradores()).hasSize(301);
+        assertThat(response.equipamentos()).hasSize(301);
+        assertThat(response.coverage().colaboradores())
+                .extracting(
+                        RdoContextResponse.CoverageSection::status,
+                        RdoContextResponse.CoverageSection::total,
+                        RdoContextResponse.CoverageSection::returned,
+                        RdoContextResponse.CoverageSection::complete
+                ).containsExactly("COMPLETE", 301L, 301L, true);
+        assertThat(response.coverage().equipamentos().status()).isEqualTo("COMPLETE");
+        assertThat(response.coverage().serviceCatalog().status()).isEqualTo("NOT_CONFIGURED");
+        assertThat(response.coverage().priceCatalog().status()).isEqualTo("NOT_CONFIGURED");
+        assertThat(response.freshness().status()).isEqualTo("FRESH");
+        assertThat(response.freshness().staleAfter())
+                .isAfter(response.freshness().generatedAt());
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo_creation_context_snapshot WHERE receipt_version = ?",
+                Integer.class,
+                response.provenance().receiptVersion()
+        )).isOne();
+    }
+
+    @Test
+    void recusaReceiptForjadoMasAceitaSnapshotDuravelQueFicouStale() throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "RECEIPT");
+        String collaborator = inserirColaborador("Equipe", null, null);
+        vincular(collaborator, obraId, "APONTADOR", "ATIVO");
+        RdoContextResponse snapshot = new RdoContextService(jdbc)
+                .buscarContexto(obraId, SELECTED_DATE);
+        RdoCreateRequest base = request(
+                id(), obraId, id(), 1L, null, collaborator, id(), null
+        );
+        ObjectNode staleJson = mapper.valueToTree(base);
+        staleJson.put("creationContextVersion", snapshot.provenance().receiptVersion());
+        RdoCreateRequest stale = mapper.treeToValue(staleJson, RdoCreateRequest.class);
+
+        jdbc.update("UPDATE obra SET atualizado_em = now() + interval '1 second' WHERE id = ?", obraId);
+        RdoResponse created = transactions.execute(
+                status -> service(collaborator).criarRascunho(stale)
+        );
+        assertThat(created.id()).isEqualTo(stale.id());
+
+        ObjectNode forgedJson = mapper.valueToTree(request(
+                id(), obraId, id(), 1L, null, collaborator, id(), null
+        ));
+        forgedJson.put("creationContextVersion", Long.MAX_VALUE - 17);
+        RdoCreateRequest forged = mapper.treeToValue(forgedJson, RdoCreateRequest.class);
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service(collaborator).criarRascunho(forged)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("contexto")
+                .hasMessageContaining("válido");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo WHERE id = ?",
+                Integer.class,
+                forged.id()
+        )).isZero();
     }
 
     @Test
@@ -758,6 +833,12 @@ class PostgresqlRdoCreationContextIT {
             String workforceItemId,
             String originItemId
     ) throws Exception {
+        RdoContextResponse context = new RdoContextService(jdbc)
+                .buscarContexto(obraId, SELECTED_DATE);
+        String requestPreviousRdoId = previousRdoId;
+        if (requestPreviousRdoId == null && context.previousRdo() != null) {
+            requestPreviousRdoId = context.previousRdo().id();
+        }
         return mapper.readValue("""
                 {
                   "id":"%s",
@@ -779,8 +860,8 @@ class PostgresqlRdoCreationContextIT {
                 """.formatted(
                 rdoId,
                 obraId,
-                previousRdoId == null ? "null" : "\"" + previousRdoId + "\"",
-                contextVersion,
+                requestPreviousRdoId == null ? "null" : "\"" + requestPreviousRdoId + "\"",
+                context.provenance().receiptVersion(),
                 mutationId,
                 colaboradorId,
                 workforceItemId,

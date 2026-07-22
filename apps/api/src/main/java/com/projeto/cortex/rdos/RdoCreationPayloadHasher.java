@@ -20,7 +20,11 @@ final class RdoCreationPayloadHasher {
     }
 
     String hash(RdoCreateRequest request) {
-        String canonical = canonicalJson(objectMapper.valueToTree(request));
+        return hashValue(request);
+    }
+
+    String hashValue(Object value) {
+        String canonical = canonicalJson(objectMapper.valueToTree(value));
         return HexFormat.of().formatHex(
                 sha256().digest(canonical.getBytes(StandardCharsets.UTF_8))
         );

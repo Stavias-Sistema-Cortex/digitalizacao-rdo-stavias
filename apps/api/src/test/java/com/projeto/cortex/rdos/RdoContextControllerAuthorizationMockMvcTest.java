@@ -90,8 +90,27 @@ class RdoContextControllerAuthorizationMockMvcTest {
                         "col-a", "001", "Ana", "OPERACIONAL", "APONTADOR"
                 )),
                 List.of(),
+                new RdoContextResponse.ContextCoverage(
+                        new RdoContextResponse.CoverageSection("COMPLETE", 0, 0, true),
+                        new RdoContextResponse.CoverageSection("COMPLETE", 0, 0, true),
+                        new RdoContextResponse.CoverageSection("COMPLETE", 1, 1, true),
+                        new RdoContextResponse.CoverageSection("COMPLETE", 0, 0, true),
+                        new RdoContextResponse.CoverageSection("NOT_CONFIGURED", 0, 0, false),
+                        new RdoContextResponse.CoverageSection("NOT_CONFIGURED", 0, 0, false)
+                ),
+                new RdoContextResponse.ContextFreshness(
+                        "FRESH",
+                        11L,
+                        Instant.parse("2026-07-22T12:00:00Z"),
+                        Instant.parse("2026-07-22T12:15:00Z")
+                ),
                 new RdoContextResponse.CreationProvenance(
-                        11L, "obra-a", data, null, Instant.parse("2026-07-22T12:00:00Z")
+                        17L,
+                        11L,
+                        "obra-a",
+                        data,
+                        null,
+                        Instant.parse("2026-07-22T12:00:00Z")
                 )
         ));
 

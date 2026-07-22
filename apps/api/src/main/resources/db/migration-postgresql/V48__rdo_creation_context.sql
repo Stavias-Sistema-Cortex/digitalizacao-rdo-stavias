@@ -121,3 +121,24 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_rdo_equipamento_obra_scope
 BEFORE INSERT OR UPDATE OF rdo_id, obra_id ON rdo_equipamento
 FOR EACH ROW EXECUTE FUNCTION enforce_rdo_equipamento_obra_scope();
+
+CREATE TABLE rdo_creation_context_snapshot (
+    receipt_version bigint PRIMARY KEY,
+    snapshot_id varchar(36) NOT NULL UNIQUE,
+    obra_id varchar(36) NOT NULL REFERENCES obra(id) ON DELETE RESTRICT,
+    selected_date date NOT NULL,
+    previous_rdo_id varchar(36),
+    source_version bigint NOT NULL,
+    payload_hash varchar(64) NOT NULL,
+    coverage_json jsonb NOT NULL,
+    generated_at timestamp with time zone NOT NULL,
+    stale_after timestamp with time zone NOT NULL,
+    CONSTRAINT chk_rdo_context_receipt_positive CHECK (receipt_version > 0),
+    CONSTRAINT chk_rdo_context_snapshot_hash CHECK (payload_hash ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT fk_rdo_context_previous_same_obra
+        FOREIGN KEY (previous_rdo_id, obra_id)
+        REFERENCES rdo(id, obra_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_rdo_context_snapshot_scope
+    ON rdo_creation_context_snapshot (obra_id, selected_date, generated_at DESC);

@@ -641,30 +641,27 @@ public class RdoService {
             );
         }
         String previousRdoId = nuloSeVazio(request.previousRdoId());
-        if (previousRdoId == null) {
-            return;
-        }
         Integer valid = jdbcTemplate.queryForObject(
                 """
                 SELECT CASE WHEN EXISTS (
                     SELECT 1
-                    FROM rdo
-                    WHERE id = ?
-                      AND obra_id = ?
-                      AND data_rdo < ?
-                      AND status <> 'CANCELADO'
-                      AND cancelado_em IS NULL
+                    FROM rdo_creation_context_snapshot snapshot
+                    WHERE snapshot.receipt_version = ?
+                      AND snapshot.obra_id = ?
+                      AND snapshot.selected_date = ?
+                      AND snapshot.previous_rdo_id IS NOT DISTINCT FROM ?
                 ) THEN 1 ELSE 0 END
                 """,
                 Integer.class,
-                previousRdoId,
+                request.creationContextVersion(),
                 obraId,
-                request.dataRdo()
+                request.dataRdo(),
+                previousRdoId
         );
         if (valid == null || valid != 1) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "O RDO de origem não é elegível para esta obra e data."
+                    "O receipt de contexto não é válido para esta obra, data e RDO de origem."
             );
         }
     }

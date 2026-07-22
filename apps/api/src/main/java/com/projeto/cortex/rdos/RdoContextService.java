@@ -1,5 +1,8 @@
 package com.projeto.cortex.rdos;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,18 +14,31 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class RdoContextService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+    private final RdoCreationPayloadHasher payloadHasher;
 
     public RdoContextService(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+        this(jdbcTemplate, new ObjectMapper().findAndRegisterModules());
     }
 
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Autowired
+    public RdoContextService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+        this.payloadHasher = new RdoCreationPayloadHasher(objectMapper);
+    }
+
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public RdoContextResponse buscarContexto(String obraId, LocalDate data) {
         if (obraId == null || obraId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "obraId é obrigatório.");
@@ -49,6 +65,37 @@ public class RdoContextService {
                 listarEquipamentosAtivosDaObra(obraId);
 
         long sourceVersion = calcularSourceVersion(obraId);
+        Instant generatedAt = Instant.now();
+        Instant staleAfter = generatedAt.plus(15, ChronoUnit.MINUTES);
+        RdoContextResponse.ContextCoverage coverage = new RdoContextResponse.ContextCoverage(
+                complete(previousWorkforce.size()),
+                complete(programacoes.size()),
+                complete(colaboradores.size()),
+                complete(equipamentos.size()),
+                notConfigured(),
+                notConfigured()
+        );
+        Map<String, Object> snapshotPayload = new LinkedHashMap<>();
+        snapshotPayload.put("obra", obra);
+        snapshotPayload.put("data", data);
+        snapshotPayload.put("nextNumberSuggestion", sugerirProximoNumero(obraId));
+        snapshotPayload.put("previousRdo", previousRdo);
+        snapshotPayload.put("previousWorkforce", previousWorkforce);
+        snapshotPayload.put("programacoes", programacoes);
+        snapshotPayload.put("colaboradores", colaboradores);
+        snapshotPayload.put("equipamentos", equipamentos);
+        snapshotPayload.put("coverage", coverage);
+        snapshotPayload.put("sourceVersion", sourceVersion);
+        long receiptVersion = persistirSnapshot(
+                obraId,
+                data,
+                previousRdo == null ? null : previousRdo.id(),
+                sourceVersion,
+                payloadHasher.hashValue(snapshotPayload),
+                coverage,
+                generatedAt,
+                staleAfter
+        );
 
         return new RdoContextResponse(
                 obra,
@@ -59,14 +106,73 @@ public class RdoContextService {
                 programacoes,
                 colaboradores,
                 equipamentos,
+                coverage,
+                new RdoContextResponse.ContextFreshness(
+                        "FRESH", sourceVersion, generatedAt, staleAfter
+                ),
                 new RdoContextResponse.CreationProvenance(
+                        receiptVersion,
                         sourceVersion,
                         obraId,
                         data,
                         previousRdo == null ? null : previousRdo.id(),
-                        Instant.now()
+                        generatedAt
                 )
         );
+    }
+
+    private RdoContextResponse.CoverageSection complete(long count) {
+        return new RdoContextResponse.CoverageSection("COMPLETE", count, count, true);
+    }
+
+    private RdoContextResponse.CoverageSection notConfigured() {
+        return new RdoContextResponse.CoverageSection("NOT_CONFIGURED", 0, 0, false);
+    }
+
+    private long persistirSnapshot(
+            String obraId,
+            LocalDate data,
+            String previousRdoId,
+            long sourceVersion,
+            String payloadHash,
+            RdoContextResponse.ContextCoverage coverage,
+            Instant generatedAt,
+            Instant staleAfter
+    ) {
+        for (int attempt = 0; attempt < 4; attempt += 1) {
+            UUID snapshotId = UUID.randomUUID();
+            long receiptVersion = snapshotId.getMostSignificantBits() & Long.MAX_VALUE;
+            if (receiptVersion == 0) {
+                continue;
+            }
+            try {
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO rdo_creation_context_snapshot (
+                            receipt_version, snapshot_id, obra_id, selected_date,
+                            previous_rdo_id, source_version, payload_hash,
+                            coverage_json, generated_at, stale_after
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+                        """,
+                        receiptVersion,
+                        snapshotId.toString(),
+                        obraId,
+                        data,
+                        previousRdoId,
+                        sourceVersion,
+                        payloadHash,
+                        objectMapper.writeValueAsString(coverage),
+                        java.sql.Timestamp.from(generatedAt),
+                        java.sql.Timestamp.from(staleAfter)
+                );
+                return receiptVersion;
+            } catch (org.springframework.dao.DuplicateKeyException collision) {
+                // Cryptographically random receipt collision: retry with a new UUID.
+            } catch (JsonProcessingException exception) {
+                throw new IllegalStateException("Não foi possível serializar a cobertura do contexto.", exception);
+            }
+        }
+        throw new IllegalStateException("Não foi possível alocar um receipt de contexto único.");
     }
 
     private RdoContextResponse.ObraContexto buscarObra(String obraId) {
@@ -283,7 +389,6 @@ public class RdoContextService {
                 WHERE link.obra_id = ?
                   AND link.status = 'ATIVO'
                 ORDER BY collaborator.nome, collaborator.id
-                LIMIT 300
                 """,
                 (rs, rowNum) -> new RdoContextResponse.ColaboradorContexto(
                         rs.getString("id"),
@@ -356,16 +461,21 @@ public class RdoContextService {
                             JOIN rdo ON rdo.id = item.rdo_id
                             WHERE rdo.obra_id = ?
                             UNION ALL
+                            SELECT atualizado_em
+                            FROM asset_obra_eligibilidade
+                            WHERE obra_id = ?
+                            UNION ALL
                             SELECT asset.updated_at
                             FROM asset
-                            JOIN rdo_equipamento item ON item.asset_id = asset.id
-                            JOIN rdo ON rdo.id = item.rdo_id
-                            WHERE rdo.obra_id = ?
+                            JOIN asset_obra_eligibilidade eligibility
+                              ON eligibility.asset_id = asset.id
+                            WHERE eligibility.obra_id = ?
                         ) revisions
                     ), 1)
                 )
                 """,
                 Long.class,
+                obraId,
                 obraId,
                 obraId,
                 obraId,
@@ -403,7 +513,6 @@ public class RdoContextService {
                   AND asset.active = TRUE
                   AND asset.deleted_at IS NULL
                 ORDER BY asset.external_code, asset.name, asset.id
-                LIMIT 300
                 """,
                 (rs, rowNum) -> new RdoContextResponse.EquipamentoContexto(
                         rs.getString("id"),
