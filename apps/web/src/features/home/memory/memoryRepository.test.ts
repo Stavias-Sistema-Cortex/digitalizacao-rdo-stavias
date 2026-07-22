@@ -1,9 +1,13 @@
 import "fake-indexeddb/auto";
 
 import { deleteDB, openDB, type IDBPDatabase } from "idb";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, setSession } from "../../auth/authSession";
+import {
+  clearSession,
+  setSession,
+  type AuthProfile,
+} from "../../auth/authSession";
 import {
   closeCortexDb,
   CORTEX_DATABASE_VERSION,
@@ -12,10 +16,19 @@ import {
 import { databaseNameForScope } from "../../../lib/db/localDataNamespace";
 import type { MemoryPage, MemoryServerEvent } from "./memoryApi";
 import { createMemoryRepository } from "./memoryRepository";
+import {
+  captureMemorySessionGuard,
+  type MemorySessionGuard,
+} from "./memorySessionGuard";
+import { serverEventToSearchDocument } from "./memorySearchDocument";
 
 const WORKSITE_ID = "00000000-0000-4000-8000-000000000002";
 let userId = "";
 let databaseName = "";
+let currentProfile: AuthProfile;
+let guard: MemorySessionGuard;
+
+vi.stubGlobal("window", new EventTarget());
 
 function event(index: number, text = `Evento ${index}`): MemoryServerEvent {
   return {
@@ -69,14 +82,16 @@ function page(items: MemoryServerEvent[], scopeHash = "scope-a"): MemoryPage {
 
 beforeEach(async () => {
   userId = crypto.randomUUID();
-  setSession({
+  currentProfile = {
     colaboradorId: userId,
     nome: "Encarregado",
     papelAcesso: "BETA",
     escopoGlobal: false,
     obraIds: [WORKSITE_ID],
     expiraEm: new Date(Date.now() + 60_000).toISOString(),
-  });
+  };
+  setSession(currentProfile);
+  guard = captureMemorySessionGuard();
   databaseName = await databaseNameForScope(userId, `BETA:${WORKSITE_ID}`);
 });
 
@@ -120,12 +135,53 @@ describe("Memory v15 migration", () => {
 });
 
 describe("Memory repository", () => {
+  it("aborts putPage when an identical same-user same-scope session replaces its guard", async () => {
+    const database = await getCortexDb();
+    const repository = createMemoryRepository(database);
+    const write = repository.putPage(guard, page([event(1)]));
+
+    setSession({ ...currentProfile, obraIds: [...currentProfile.obraIds] });
+
+    await expect(write).rejects.toThrow(/autorização mudou/i);
+    expect(await database.count("memory_search_documents")).toBe(0);
+    expect(await database.count("memory_cache_metadata")).toBe(0);
+  });
+
+  it("aborts resetAuthorizedCache before a rotated guard can delete its scope", async () => {
+    const database = await getCortexDb();
+    const repository = createMemoryRepository(database);
+    await repository.putPage(guard, page([event(1)]));
+    const reset = repository.resetAuthorizedCache(guard);
+
+    setSession({ ...currentProfile, obraIds: [...currentProfile.obraIds] });
+
+    await expect(reset).rejects.toThrow(/autorização mudou/i);
+    expect(await database.count("memory_search_documents")).toBe(1);
+    expect(await database.count("memory_cache_metadata")).toBe(1);
+  });
+
+  it("aborts markComplete before a rotated guard can publish stale completeness", async () => {
+    const database = await getCortexDb();
+    const repository = createMemoryRepository(database);
+    const serverPage = page([event(1)]);
+    await repository.putPage(guard, serverPage);
+    const completion = repository.markComplete(guard, serverPage);
+
+    setSession({ ...currentProfile, obraIds: [...currentProfile.obraIds] });
+
+    await expect(completion).rejects.toThrow(/autorização mudou/i);
+    expect(await database.get(
+      "memory_cache_metadata",
+      `${userId}:scope-a`,
+    )).toMatchObject({ complete: false });
+  });
+
   it("persists graph checkpoint evidence with the authorized cache metadata", async () => {
     const repository = createMemoryRepository(await getCortexDb());
     const serverPage = page([event(150)]);
 
-    await repository.putPage(userId, serverPage);
-    await repository.markComplete(userId, serverPage);
+    await repository.putPage(guard, serverPage);
+    await repository.markComplete(guard, serverPage);
 
     expect(await repository.latestMetadata(userId)).toMatchObject({
       graph: serverPage.coverage.graph,
@@ -137,8 +193,8 @@ describe("Memory repository", () => {
     const events = Array.from({ length: 150 }, (_, index) =>
       event(index + 1, index === 136 ? "Compactação profunda" : undefined),
     );
-    await repository.putPage(userId, page(events));
-    await repository.markComplete(userId, page(events));
+    await repository.putPage(guard, page(events));
+    await repository.markComplete(guard, page(events));
 
     const result = await repository.search({
       userId,
@@ -152,11 +208,16 @@ describe("Memory repository", () => {
 
   it("isolates cached documents by both user and authorization scope", async () => {
     const repository = createMemoryRepository(await getCortexDb());
-    await repository.putPage(userId, page([event(1, "Escopo correto")], "scope-a"));
-    await repository.putPage(userId, page([event(2, "Escopo anterior")], "scope-b"));
-    await repository.putPage(
-      "00000000-0000-4000-8000-000000000099",
-      page([event(3, "Outro usuário")], "scope-a"),
+    const database = await getCortexDb();
+    await repository.putPage(guard, page([event(1, "Escopo correto")], "scope-a"));
+    await repository.putPage(guard, page([event(2, "Escopo anterior")], "scope-b"));
+    await database.put(
+      "memory_search_documents",
+      serverEventToSearchDocument(
+        "00000000-0000-4000-8000-000000000099",
+        "scope-a",
+        event(3, "Outro usuário"),
+      ),
     );
 
     const result = await repository.search({
@@ -170,13 +231,17 @@ describe("Memory repository", () => {
   });
 
   it("purges every stale scope for the current user without touching another user", async () => {
-    const repository = createMemoryRepository(await getCortexDb());
+    const database = await getCortexDb();
+    const repository = createMemoryRepository(database);
     const otherUser = "00000000-0000-4000-8000-000000000099";
-    await repository.putPage(userId, page([event(1)], "scope-a"));
-    await repository.putPage(userId, page([event(2)], "scope-b"));
-    await repository.putPage(otherUser, page([event(3)], "scope-a"));
+    await repository.putPage(guard, page([event(1)], "scope-a"));
+    await repository.putPage(guard, page([event(2)], "scope-b"));
+    await database.put(
+      "memory_search_documents",
+      serverEventToSearchDocument(otherUser, "scope-a", event(3)),
+    );
 
-    await repository.resetAuthorizedCache(userId);
+    await repository.resetAuthorizedCache(guard);
 
     expect((await repository.search({
       userId,
@@ -195,13 +260,13 @@ describe("Memory repository", () => {
   it("never marks a cache with stale extra rows as complete", async () => {
     const repository = createMemoryRepository(await getCortexDb());
     const stalePage = page([event(1), event(2)], "scope-a");
-    await repository.putPage(userId, stalePage);
+    await repository.putPage(guard, stalePage);
     const serverNowAuthorizesOne = {
       ...stalePage,
       coverage: { ...stalePage.coverage, authorizedEventCount: 1 },
     };
 
-    const result = await repository.markComplete(userId, serverNowAuthorizesOne);
+    const result = await repository.markComplete(guard, serverNowAuthorizesOne);
 
     expect(result).toMatchObject({ cachedEventCount: 2, complete: false });
   });
@@ -209,7 +274,7 @@ describe("Memory repository", () => {
   it("merges authorized local evidence and deduplicates a confirmed event", async () => {
     const database = await getCortexDb();
     const repository = createMemoryRepository(database);
-    await repository.putPage(userId, page([event(5, "Confirmado")], "scope-a"));
+    await repository.putPage(guard, page([event(5, "Confirmado")], "scope-a"));
     await database.put("operational_events", {
       id: "event-005",
       type: "RDO_EDITADO",
@@ -353,7 +418,7 @@ describe("Memory repository", () => {
     const canonical = page([
       event(99, "Servidor canônico"),
     ], "scope-a");
-    await repository.putPage(userId, canonical);
+    await repository.putPage(guard, canonical);
     await database.put("operational_events", {
       id: "ontology-event-A",
       type: "RDO_SINCRONIZADO",

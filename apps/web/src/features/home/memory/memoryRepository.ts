@@ -2,6 +2,7 @@ import type { IDBPDatabase } from "idb";
 
 import type { CortexDbSchema } from "../../../lib/db/cortexDb";
 import type { OperationalEventRecord } from "../../../lib/db/db.types";
+import { AUTH_SESSION_CHANGED_EVENT } from "../../auth/authSession";
 import type { MemoryFilters, MemoryPage } from "./memoryApi";
 import {
   localEventToSearchDocument,
@@ -10,6 +11,11 @@ import {
   type MemoryCacheMetadata,
   type MemorySearchDocument,
 } from "./memorySearchDocument";
+import {
+  assertMemorySessionGuard,
+  isMemorySessionGuardCurrent,
+  type MemorySessionGuard,
+} from "./memorySessionGuard";
 
 export interface MemorySearchRequest {
   userId: string;
@@ -27,9 +33,12 @@ export interface MemorySearchResult {
 }
 
 export interface MemoryRepository {
-  putPage(userId: string, page: MemoryPage): Promise<void>;
-  resetAuthorizedCache(userId: string): Promise<void>;
-  markComplete(userId: string, page: MemoryPage): Promise<MemoryCacheMetadata>;
+  putPage(guard: MemorySessionGuard, page: MemoryPage): Promise<void>;
+  resetAuthorizedCache(guard: MemorySessionGuard): Promise<void>;
+  markComplete(
+    guard: MemorySessionGuard,
+    page: MemoryPage,
+  ): Promise<MemoryCacheMetadata>;
   latestMetadata(userId: string): Promise<MemoryCacheMetadata | null>;
   search(request: MemorySearchRequest): Promise<MemorySearchResult>;
 }
@@ -38,90 +47,99 @@ export function createMemoryRepository(
   database: IDBPDatabase<CortexDbSchema>,
 ): MemoryRepository {
   return {
-    async putPage(userId, page) {
+    async putPage(guard, page) {
+      assertMemorySessionGuard(guard);
+      const userId = guard.session.colaboradorId;
       const transaction = database.transaction(
         ["memory_search_documents", "memory_cache_metadata"],
         "readwrite",
       );
-      const documentStore = transaction.objectStore("memory_search_documents");
-      await Promise.all(
-        page.items.map((event) =>
-          documentStore.put(
-            serverEventToSearchDocument(userId, page.scopeHash, event),
+      await runGuardedMemoryWrite(transaction, guard, async () => {
+        const documentStore = transaction.objectStore("memory_search_documents");
+        await Promise.all(
+          page.items.map((event) =>
+            documentStore.put(
+              serverEventToSearchDocument(userId, page.scopeHash, event),
+            ),
           ),
-        ),
-      );
-      const cachedEventCount = await documentStore.index("by-user-scope").count(
-        [userId, page.scopeHash],
-      );
-      await transaction.objectStore("memory_cache_metadata").put({
-        key: metadataKey(userId, page.scopeHash),
-        userId,
-        scopeHash: page.scopeHash,
-        highWaterMark: page.highWaterMark,
-        authorizedEventCount: page.coverage.authorizedEventCount,
-        cachedEventCount,
-        oldestCommitSequence: page.coverage.oldestCommitSequence,
-        newestCommitSequence: page.coverage.newestCommitSequence,
-        coverageMode: page.coverage.mode,
-        serverCoverageComplete: page.coverage.complete,
-        graph: page.coverage.graph,
-        complete: false,
-        cachedAt: page.serverTime,
+        );
+        const cachedEventCount = await documentStore.index("by-user-scope").count(
+          [userId, page.scopeHash],
+        );
+        await transaction.objectStore("memory_cache_metadata").put({
+          key: metadataKey(userId, page.scopeHash),
+          userId,
+          scopeHash: page.scopeHash,
+          highWaterMark: page.highWaterMark,
+          authorizedEventCount: page.coverage.authorizedEventCount,
+          cachedEventCount,
+          oldestCommitSequence: page.coverage.oldestCommitSequence,
+          newestCommitSequence: page.coverage.newestCommitSequence,
+          coverageMode: page.coverage.mode,
+          serverCoverageComplete: page.coverage.complete,
+          graph: page.coverage.graph,
+          complete: false,
+          cachedAt: page.serverTime,
+        });
       });
-      await transaction.done;
     },
 
-    async resetAuthorizedCache(userId) {
+    async resetAuthorizedCache(guard) {
+      assertMemorySessionGuard(guard);
+      const userId = guard.session.colaboradorId;
       const transaction = database.transaction(
         ["memory_search_documents", "memory_cache_metadata"],
         "readwrite",
       );
-      const documentStore = transaction.objectStore("memory_search_documents");
-      const metadataStore = transaction.objectStore("memory_cache_metadata");
-      const [documents, metadata] = await Promise.all([
-        documentStore.getAll(),
-        metadataStore.index("by-user").getAll(userId),
-      ]);
-      await Promise.all([
-        ...documents
-          .filter((document) => document.userId === userId)
-          .map((document) => documentStore.delete(document.key)),
-        ...metadata.map((entry) => metadataStore.delete(entry.key)),
-      ]);
-      await transaction.done;
+      await runGuardedMemoryWrite(transaction, guard, async () => {
+        const documentStore = transaction.objectStore("memory_search_documents");
+        const metadataStore = transaction.objectStore("memory_cache_metadata");
+        const [documents, metadata] = await Promise.all([
+          documentStore.getAll(),
+          metadataStore.index("by-user").getAll(userId),
+        ]);
+        await Promise.all([
+          ...documents
+            .filter((document) => document.userId === userId)
+            .map((document) => documentStore.delete(document.key)),
+          ...metadata.map((entry) => metadataStore.delete(entry.key)),
+        ]);
+      });
     },
 
-    async markComplete(userId, page) {
+    async markComplete(guard, page) {
+      assertMemorySessionGuard(guard);
+      const userId = guard.session.colaboradorId;
       const transaction = database.transaction(
         ["memory_search_documents", "memory_cache_metadata"],
         "readwrite",
       );
-      const cachedEventCount = await transaction
-        .objectStore("memory_search_documents")
-        .index("by-user-scope")
-        .count([userId, page.scopeHash]);
-      const metadata: MemoryCacheMetadata & { key: string } = {
-        key: metadataKey(userId, page.scopeHash),
-        userId,
-        scopeHash: page.scopeHash,
-        highWaterMark: page.highWaterMark,
-        authorizedEventCount: page.coverage.authorizedEventCount,
-        cachedEventCount,
-        oldestCommitSequence: page.coverage.oldestCommitSequence,
-        newestCommitSequence: page.coverage.newestCommitSequence,
-        coverageMode: page.coverage.mode,
-        serverCoverageComplete: page.coverage.complete,
-        graph: page.coverage.graph,
-        complete:
-          !page.hasMore &&
-          page.coverage.complete &&
-          cachedEventCount === page.coverage.authorizedEventCount,
-        cachedAt: page.serverTime,
-      };
-      await transaction.objectStore("memory_cache_metadata").put(metadata);
-      await transaction.done;
-      return metadata;
+      return runGuardedMemoryWrite(transaction, guard, async () => {
+        const cachedEventCount = await transaction
+          .objectStore("memory_search_documents")
+          .index("by-user-scope")
+          .count([userId, page.scopeHash]);
+        const metadata: MemoryCacheMetadata & { key: string } = {
+          key: metadataKey(userId, page.scopeHash),
+          userId,
+          scopeHash: page.scopeHash,
+          highWaterMark: page.highWaterMark,
+          authorizedEventCount: page.coverage.authorizedEventCount,
+          cachedEventCount,
+          oldestCommitSequence: page.coverage.oldestCommitSequence,
+          newestCommitSequence: page.coverage.newestCommitSequence,
+          coverageMode: page.coverage.mode,
+          serverCoverageComplete: page.coverage.complete,
+          graph: page.coverage.graph,
+          complete:
+            !page.hasMore &&
+            page.coverage.complete &&
+            cachedEventCount === page.coverage.authorizedEventCount,
+          cachedAt: page.serverTime,
+        };
+        await transaction.objectStore("memory_cache_metadata").put(metadata);
+        return metadata;
+      });
     },
 
     async latestMetadata(userId) {
@@ -181,6 +199,63 @@ export function createMemoryRepository(
       };
     },
   };
+}
+
+interface AbortableMemoryTransaction {
+  readonly done: Promise<unknown>;
+  abort(): void;
+}
+
+async function runGuardedMemoryWrite<T>(
+  transaction: AbortableMemoryTransaction,
+  guard: MemorySessionGuard,
+  write: () => Promise<T>,
+): Promise<T> {
+  let authorizationChanged = false;
+  const abortIfAuthorizationChanged = () => {
+    if (isMemorySessionGuardCurrent(guard)) return;
+    authorizationChanged = true;
+    abortTransaction(transaction);
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener(
+      AUTH_SESSION_CHANGED_EVENT,
+      abortIfAuthorizationChanged,
+    );
+  }
+  try {
+    const result = await write();
+    abortIfAuthorizationChanged();
+    if (authorizationChanged) {
+      await transaction.done.catch(() => undefined);
+      assertMemorySessionGuard(guard);
+    }
+    await transaction.done;
+    assertMemorySessionGuard(guard);
+    return result;
+  } catch (cause: unknown) {
+    abortTransaction(transaction);
+    await transaction.done.catch(() => undefined);
+    if (authorizationChanged || !isMemorySessionGuardCurrent(guard)) {
+      assertMemorySessionGuard(guard);
+    }
+    throw cause;
+  } finally {
+    if (typeof window !== "undefined") {
+      window.removeEventListener(
+        AUTH_SESSION_CHANGED_EVENT,
+        abortIfAuthorizationChanged,
+      );
+    }
+  }
+}
+
+function abortTransaction(transaction: AbortableMemoryTransaction): void {
+  try {
+    transaction.abort();
+  } catch {
+    // Transaction already completed or aborted.
+  }
 }
 
 function authorizedLocalEvent(

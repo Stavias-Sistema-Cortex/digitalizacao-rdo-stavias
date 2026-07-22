@@ -13,6 +13,7 @@ import {
   assertMemorySessionGuard,
   captureMemorySessionGuard,
   commitIfMemorySessionCurrent,
+  type MemorySessionGuard,
 } from "./memorySessionGuard";
 import {
   memoryCoverage,
@@ -30,21 +31,21 @@ const PAGE_SIZE = 50;
 const SERVER_PAGE_SIZE = 100;
 
 interface HydrateAuthorizedMemoryCacheOptions {
-  userId: string;
+  guard: MemorySessionGuard;
   previousMetadata: MemoryCacheMetadata | null;
   fetchPage: typeof fetchMemoryPage;
-  putPage: (userId: string, page: MemoryPage) => Promise<void>;
+  putPage: (guard: MemorySessionGuard, page: MemoryPage) => Promise<void>;
   markComplete: (
-    userId: string,
+    guard: MemorySessionGuard,
     page: MemoryPage,
   ) => Promise<MemoryCacheMetadata>;
-  resetAuthorizedCache: (userId: string) => Promise<void>;
+  resetAuthorizedCache: (guard: MemorySessionGuard) => Promise<void>;
   onCacheReset?: () => void;
   assertSession: () => void;
 }
 
 export async function hydrateAuthorizedMemoryCache({
-  userId,
+  guard,
   previousMetadata,
   fetchPage: loadPage,
   putPage,
@@ -67,10 +68,10 @@ export async function hydrateAuthorizedMemoryCache({
     finalPage = page;
     if (page === firstPage && !canReuseCache(previousMetadata, page)) {
       onCacheReset?.();
-      await resetAuthorizedCache(userId);
+      await resetAuthorizedCache(guard);
       assertSession();
     }
-    await putPage(userId, page);
+    await putPage(guard, page);
     assertSession();
 
     const crossedExistingHighWater =
@@ -102,7 +103,7 @@ export async function hydrateAuthorizedMemoryCache({
     throw new Error("A Memória não retornou cobertura.");
   }
   assertSession();
-  const metadata = await markComplete(userId, {
+  const metadata = await markComplete(guard, {
     ...firstPage,
     coverage: {
       ...firstPage.coverage,
@@ -280,7 +281,7 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
         const previous = await repository.latestMetadata(session.colaboradorId);
         assertMemorySessionGuard(guard);
         await hydrateAuthorizedMemoryCache({
-          userId: session.colaboradorId,
+          guard,
           previousMetadata: previous,
           fetchPage: fetchMemoryPage,
           putPage: repository.putPage,

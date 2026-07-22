@@ -2,9 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryPage } from "./memoryApi";
 import type { MemoryCacheMetadata } from "./memorySearchDocument";
+import type { MemorySessionGuard } from "./memorySessionGuard";
 import { hydrateAuthorizedMemoryCache } from "./useMemoryLedger";
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
+const SESSION_GUARD: MemorySessionGuard = {
+  session: {
+    colaboradorId: USER_ID,
+    nome: "Encarregado",
+    papelAcesso: "BETA",
+    escopoGlobal: false,
+    obraIds: ["00000000-0000-4000-8000-000000000002"],
+    expiraEm: "2099-07-22T10:00:00Z",
+  },
+  fingerprint: "memory-hydration-test",
+};
 
 function page(input: {
   ids: number[];
@@ -100,7 +112,7 @@ describe("authorized Memory cache hydration", () => {
     const markComplete = vi.fn().mockResolvedValue(metadata());
 
     await hydrateAuthorizedMemoryCache({
-      userId: USER_ID,
+      guard: SESSION_GUARD,
       previousMetadata: null,
       fetchPage,
       putPage,
@@ -115,7 +127,7 @@ describe("authorized Memory cache hydration", () => {
     });
     expect(putPage).toHaveBeenCalledTimes(2);
     expect(markComplete).toHaveBeenCalledWith(
-      USER_ID,
+      SESSION_GUARD,
       expect.objectContaining({
         scopeHash: "scope-a",
         highWaterMark: 3,
@@ -137,7 +149,7 @@ describe("authorized Memory cache hydration", () => {
 
     await expect(
       hydrateAuthorizedMemoryCache({
-        userId: USER_ID,
+        guard: SESSION_GUARD,
         previousMetadata: null,
         fetchPage: vi.fn()
           .mockResolvedValueOnce(first)
@@ -159,7 +171,7 @@ describe("authorized Memory cache hydration", () => {
     const markComplete = vi.fn().mockResolvedValue(metadata());
 
     await hydrateAuthorizedMemoryCache({
-      userId: USER_ID,
+      guard: SESSION_GUARD,
       previousMetadata: metadata(),
       fetchPage,
       putPage: vi.fn().mockResolvedValue(undefined),
@@ -170,7 +182,7 @@ describe("authorized Memory cache hydration", () => {
 
     expect(fetchPage).toHaveBeenCalledTimes(1);
     expect(markComplete).toHaveBeenCalledWith(
-      USER_ID,
+      SESSION_GUARD,
       expect.objectContaining({ hasMore: false, nextCursor: null }),
     );
   });
@@ -193,7 +205,7 @@ describe("authorized Memory cache hydration", () => {
     });
 
     await hydrateAuthorizedMemoryCache({
-      userId: USER_ID,
+      guard: SESSION_GUARD,
       previousMetadata: previous,
       fetchPage: vi.fn().mockResolvedValue(revoked),
       putPage,
@@ -202,7 +214,7 @@ describe("authorized Memory cache hydration", () => {
       assertSession: vi.fn(),
     });
 
-    expect(resetAuthorizedCache).toHaveBeenCalledWith(USER_ID);
+    expect(resetAuthorizedCache).toHaveBeenCalledWith(SESSION_GUARD);
     expect(resetAuthorizedCache.mock.invocationCallOrder[0]).toBeLessThan(
       putPage.mock.invocationCallOrder[0],
     );
@@ -219,7 +231,7 @@ describe("authorized Memory cache hydration", () => {
     const resetAuthorizedCache = vi.fn().mockResolvedValue(undefined);
 
     await hydrateAuthorizedMemoryCache({
-      userId: USER_ID,
+      guard: SESSION_GUARD,
       previousMetadata: metadata(),
       fetchPage: vi.fn().mockResolvedValue(advanced),
       putPage: vi.fn().mockResolvedValue(undefined),
@@ -234,6 +246,6 @@ describe("authorized Memory cache hydration", () => {
       assertSession: vi.fn(),
     });
 
-    expect(resetAuthorizedCache).toHaveBeenCalledWith(USER_ID);
+    expect(resetAuthorizedCache).toHaveBeenCalledWith(SESSION_GUARD);
   });
 });
