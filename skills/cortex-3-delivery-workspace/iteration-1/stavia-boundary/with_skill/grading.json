@@ -1,0 +1,76 @@
+{
+  "expectations": [
+    {
+      "text": "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+      "passed": false,
+      "evidence": "The review correctly contradicts continuity (\"a capacidade foi removida\" and \"com o fixture atual ela é diretamente refutada\"), but it labels the asserted runtime removal \"INDIRECT\" and concludes that removal can be PROVEN only after further artifacts and commands. It therefore does not classify removal itself as evidenced as this assertion requires."
+    },
+    {
+      "text": "Identifies that deleting StaviaReasoningService removes the only synchronizeOperationalData trigger",
+      "passed": true,
+      "evidence": "The review states: \"synchronizeOperationalData(obraId) era chamado somente por StaviaReasoningService, criando uma dependência de projeção/sincronização perdida pela exclusão\". This directly matches the fixture's sole-caller fact."
+    },
+    {
+      "text": "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+      "passed": true,
+      "evidence": "Its correction sequence first requires extracting pure graph contracts and then an independent operational projector with \"checkpoint, upserts determinísticos/idempotentes\"; archival is explicitly deferred to step 5."
+    },
+    {
+      "text": "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+      "passed": true,
+      "evidence": "The branding row distinguishes \"Stavias (marca)\" from \"StavIA (assistente)\", says retained `stavias-*` logos are not prohibited assistant references, and later requires removing assistant wiring while preserving STAVIAS branding."
+    },
+    {
+      "text": "Requires executable-boundary checks and PostgreSQL projection or replay integration evidence instead of accepting narrow green tests",
+      "passed": true,
+      "evidence": "The review says `RdoServiceTest` and the web build are too narrow, and requires source/build boundary scans plus PostgreSQL replay/integration evidence for deterministic IDs, no duplicate rows, and checkpoint behavior."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.8
+  },
+  "claims": [
+    {
+      "claim": "The ontology endpoint and StaviaOntologyService were removed with the deleted package.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture explicitly says `/api/ontology/entities` and `StaviaOntologyService` were inside the deleted package; the review accurately relies on that fact."
+    },
+    {
+      "claim": "Deleting StaviaReasoningService removes the only operational-data synchronization trigger.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture says `synchronizeOperationalData(obraId)` was called only by `StaviaReasoningService`, exactly as the review reports."
+    },
+    {
+      "claim": "The cited RDO test and frontend build cannot prove ontology availability, graph projection, or PostgreSQL persistence.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The fixture lists only `mvn test -Dtest=RdoServiceTest` and a frontend build, and explicitly says no projector, checkpoint, archive, or PostgreSQL integration test exists."
+    },
+    {
+      "claim": "A retained `stavias-*` logo is not by itself a prohibited StavIA assistant runtime reference.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture separates retained company logo files from deletion of the StavIA web and backend runtime; the review preserves that distinction."
+    },
+    {
+      "claim": "`GET /api/ontology/entities` will fail at runtime after deletion.",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The review presents this as a concrete risk. The fixture supports that its endpoint and service were in the deleted package, but no executable artifact or runtime transcript is available to verify the resulting runtime behavior."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+        "reason": "The word 'evidenced' is ambiguous: the fixture evidences stated deletions, whereas an executable StavIA boundary is not independently proven. Specify whether the assertion requires acknowledging the claimed patch evidence or independently proving the compiled/runtime boundary."
+      }
+    ],
+    "overall": "The remaining assertions are discriminating and test the key boundary, projector, branding, and integration-evidence requirements."
+  }
+}

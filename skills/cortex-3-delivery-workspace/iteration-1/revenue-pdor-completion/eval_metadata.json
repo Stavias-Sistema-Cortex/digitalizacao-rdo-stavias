@@ -1,0 +1,12 @@
+{
+  "eval_id": 3,
+  "eval_name": "revenue-pdor-completion",
+  "prompt": "Faça uma auditoria de conclusão usando evals/files/revenue-pdor-fixture.md. Os testes listados estão verdes e o time quer marcar Financeiro/PDOR como concluído. Gere completion-audit.md com cada alegação classificada como PROVEN, CONTRADICTED, INCOMPLETE, INDIRECT ou MISSING e indique a evidência necessária.",
+  "assertions": [
+    "Classifies all five supplied claims individually with one of the requested evidence statuses",
+    "Rejects historical revenue correctness because execution reads a mutable current price instead of an immutable price-version snapshot",
+    "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+    "Marks ontology centrality and offline PostgreSQL completion missing, incomplete, contradicted, or indirect because no direct evidence exists",
+    "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion"
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "expectations": [
+    {
+      "text": "Classifies all five supplied claims individually with one of the requested evidence statuses",
+      "passed": true,
+      "evidence": "The audit table has one row for each of the five fixture claims. Its classifications are INDIRECT, INDIRECT, MISSING, INCOMPLETE, and INCOMPLETE, all of which are requested statuses."
+    },
+    {
+      "text": "Rejects historical revenue correctness because execution reads a mutable current price instead of an immutable price-version snapshot",
+      "passed": true,
+      "evidence": "For the revenue claim, the audit states that it \"reads the mutable current price rather than a price version or snapshot\" and requires a regression proving price edits do not silently rewrite historical revenue. The fixture confirms that edits update the existing row in place and execution rows store neither a price-version ID nor a price snapshot."
+    },
+    {
+      "text": "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+      "passed": false,
+      "evidence": "The audit classifies \"PDOR no longer depends on subjective cost\" as MISSING, not CONTRADICTED. It notes only that `PdorResult` contains `projectedCost`; it does not use the remaining `projectedCost` and `margin` fields to issue the required contradicted verdict."
+    },
+    {
+      "text": "Marks ontology centrality and offline PostgreSQL completion missing, incomplete, contradicted, or indirect because no direct evidence exists",
+      "passed": true,
+      "evidence": "The audit marks both claims INCOMPLETE. For ontology it cites the absence of graph relation/evidence IDs and successful traversal/write/query evidence; for offline PostgreSQL it cites the fixture's absence of PostgreSQL integration, IndexedDB, reconnect, and browser testing."
+    },
+    {
+      "text": "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion",
+      "passed": false,
+      "evidence": "The audit requires graph trace IDs, PostgreSQL integration, browser/e2e offline testing, and reconnect verification. However, it does not explicitly require IndexedDB, and its references to \"multi-line/aggregation semantics\" and \"component-level provenance\" do not explicitly require component revenue rows."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 2,
+    "total": 5,
+    "pass_rate": 0.6
+  },
+  "claims": [
+    {
+      "claim": "Price edits update the existing `item_contratual` row in place, so the fixture establishes a persistence-side edit effect.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture explicitly says that price edits update the existing `item_contratual` row in place."
+    },
+    {
+      "claim": "The supplied formula test verifies `10 x 125 = 1250`, but does not prove an approved RDO-to-revenue aggregation.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The fixture supplies `RevenueCalculatorTest` for `10 × 125 = 1250` and gives no evidence that `Execution.quantity()` is an approved RDO-derived quantity or that totals aggregate RDO lines."
+    },
+    {
+      "claim": "No claim is proven at the requested product level from this fixture.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "Every audit-table classification is non-PROVEN, and the fixture supplies only a narrow formula test, an HTTP 200 controller test, and explicit gaps for the remaining product evidence."
+    },
+    {
+      "claim": "The fixture does not establish that PDOR's projected cost is subjective or manual.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture shows `projectedCost` and `margin` fields but supplies no source, calculation rule, or manual-input path for projected cost."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+        "reason": "The presence of `projectedCost` and `margin` proves that cost remains in the result, but it does not by itself prove the cost is subjective. Add fixture evidence of a subjective/manual cost source, or permit an INCOMPLETE verdict when the source is absent."
+      },
+      {
+        "assertion": "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion",
+        "reason": "Make the required artifacts explicit and independently checkable: component revenue rows, concrete graph evidence IDs, IndexedDB persistence, reconnect behavior, PostgreSQL integration, and browser evidence. Otherwise a generic offline e2e-test request may satisfy the assertion without naming all required evidence."
+      }
+    ],
+    "overall": "The assertions cover the key completion gaps, but the PDOR-cost assertion conflates the presence of a cost field with proof that its source is subjective, and the final evidence assertion bundles several artifacts that should be checked explicitly."
+  }
+}
