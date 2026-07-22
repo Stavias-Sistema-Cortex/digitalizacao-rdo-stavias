@@ -1,0 +1,74 @@
+# Runtime Foundation Task 3 Implementer Report
+
+## Scope and commits
+
+- Task: Runtime Foundation Task 3 — move ontology graph API out of StavIA.
+- Worktree: `/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery`.
+- Branch: `feat/cortex.v3-delivery`.
+- Base: `da2224ed40e9d41495a01d4e11d97928e075b09e`.
+- Head: `HEAD` (the Task 3 commit containing this report).
+- Planned subject: `refactor(ontology): expose graph independently of StavIA`.
+- Ported source commits: none; behavior was ported from the current worktree controller/service contracts.
+
+## Files
+
+- Added `apps/api/src/main/java/com/projeto/cortex/ontology/graph/OntologyGraphController.java`.
+- Added `apps/api/src/main/java/com/projeto/cortex/ontology/graph/OntologyGraphQueryService.java`.
+- Added `apps/api/src/test/java/com/projeto/cortex/ontology/graph/OntologyGraphAuthorizationMockMvcTest.java`.
+- Added `apps/api/src/test/java/com/projeto/cortex/ontology/graph/PostgresqlOntologyGraphQueryServiceIT.java` for real PostgreSQL/jsonb proof.
+- Deleted `apps/api/src/main/java/com/projeto/cortex/intelligence/stavia/ontology/api/OntologyController.java` only after the new controller target was green.
+- Deleted the legacy `OntologyControllerAuthorizationMockMvcTest`; its Alfa/Beta compatibility coverage was ported and expanded in the new graph-package MockMvc test so the removed production class is no longer referenced.
+- Added this report.
+- No migration, frontend, plan, skill, Task 4+, or unrelated runtime file was changed.
+
+## TDD evidence
+
+### RED
+
+1. `mvn -f apps/api/pom.xml -Dtest=OntologyGraphAuthorizationMockMvcTest test`
+   - Exit: `1`.
+   - Expected failure: test compilation could not resolve `OntologyGraphController` and `OntologyGraphQueryService` (two missing symbols).
+2. `mvn -f apps/api/pom.xml -Ppostgresql-it -Dit.test=PostgresqlOntologyGraphQueryServiceIT verify`
+   - Exit: `1`.
+   - Expected PostgreSQL behavior failure after V44→V45 migration: `resolveWorksiteId` returned an empty `Optional` for the projected `WORKSITE`; expected `obra-1`.
+   - The same run completed 1014 Surefire tests with 0 failures/errors and 57 skipped before the failing IT.
+3. `mvn -f apps/api/pom.xml -Dtest=OntologyGraphAuthorizationMockMvcTest test`
+   - Exit: `1`.
+   - Expected bounded-filter failure: a 121-character `type` filter returned HTTP 200; the new test required HTTP 400 with `ONTOLOGY_FILTER_LIMIT`.
+
+### GREEN
+
+1. `mvn -f apps/api/pom.xml -Dtest=OntologyGraphAuthorizationMockMvcTest,OperationalTimelineControllerAuthorizationMockMvcTest test`
+   - Exit: `0`.
+   - Result: 15 tests, 0 failures, 0 errors, 0 skipped.
+2. `mvn -f apps/api/pom.xml test`
+   - Exit: `0`.
+   - Result: 1015 tests, 0 failures, 0 errors, 57 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it -Dtest=OntologyGraphAuthorizationMockMvcTest -Dit.test=PostgresqlOntologyGraphQueryServiceIT verify`
+   - Exit: `0`.
+   - Surefire: 11 tests, 0 failures, 0 errors, 0 skipped.
+   - Failsafe: 1 test, 0 failures, 0 errors, 0 skipped.
+   - PostgreSQL image `postgres:18` reported server 18.4; Flyway validated and applied V44 then V45 to an empty `StaviasCortex` database.
+   - Real queries proved jsonb worksite resolution, depth-2 relations, and scoped entities/events/states/evidences.
+4. `git diff --check`
+   - Exit: `0`.
+5. Prohibited-pattern scan over the new runtime/test files
+   - No assistant package/type import, MySQL JSON function, `ON DUPLICATE KEY`, JSON fixture/fallback, or removed controller remained.
+
+## Decisions
+
+- The API now owns independent top-level endpoints `/api/ontology/entities`, `/relations`, `/events`, `/states`, and `/evidences`; existing `/api/ontology/search` and nested `/entities/{id}/...` paths remain as compatibility aliases.
+- Response records live in the independent graph package and retain public JSON names such as `entityType`, `relationType`, `eventType`, `stateType`, and `evidenceType`; they import no assistant DTO/model.
+- Unscoped graph lists remain Alfa-only for compatibility. A scoped Beta must supply an authorized `obraId` or entity scope.
+- Every detail is scoped before its payload query. Every returned entity is re-resolved to a worksite; relation source/target and event principal/related entities are all checked; state/evidence entity IDs are checked before serialization.
+- Worksite resolution recognizes `OBRA` and projected `WORKSITE`, PostgreSQL `metadata_json ->> 'obraId'` / `->> 'worksiteId'`, and a fixed whitelist of authoritative graph relations. Recursive resolution is cycle-safe and capped at depth 3.
+- Forbidden/unauthorized/not-found errors return only a stable code. HTTP 403 bodies never include the authorization message or confirm object existence.
+- Page size defaults to 50 and rejects values above 100. Page, search, type-filter, identifier, and traversal depth are bounded; depth rejects values outside 1–3. The read-only query transaction has a five-second timeout.
+- SQL values use JDBC placeholders throughout. Dynamic SQL fragments are fixed internal column aliases/clauses only; production query SQL uses PostgreSQL recursive CTEs, arrays, and jsonb operators with no MySQL fallback.
+- The old controller was kept while the new MockMvc target first reached green, then removed. Its legacy test was removed only after equivalent Alfa/Beta assertions were present in the new test.
+
+## Risks and follow-up context
+
+- Flyway 10.10.0 still emits the previously recorded warning that PostgreSQL 18.4 is newer than its declared tested maximum (PostgreSQL 16). V44→V45 and all Task 3 PostgreSQL queries passed; dependency validation remains assigned to the later completion/security slice.
+- The new query service intentionally contains PostgreSQL-only SQL. Activating the complete mutable PostgreSQL application runtime remains Runtime Foundation Task 6; no MySQL dialect branch or fallback was added here.
+- Query authorization is defense in depth: SQL scopes rows by worksite and the controller independently resolves and checks every returned graph object. This adds bounded recursive work per page; page size, depth, and transaction timeout cap the exposure, while production query-plan measurement remains appropriate in the later runtime-proof slice.
