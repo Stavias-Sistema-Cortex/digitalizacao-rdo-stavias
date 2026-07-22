@@ -3,7 +3,10 @@ package com.projeto.cortex.rdos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +27,7 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -115,9 +119,9 @@ class PostgresqlRdoCreationContextIT {
                     .buscarContexto(obraId, SELECTED_DATE)
                     .nextNumberSuggestion()).isEqualTo("RDO-0042");
             assertThat(upgradeJdbc.queryForObject(
-                    "SELECT max(version) FROM flyway_schema_history WHERE success",
-                    String.class
-            )).isEqualTo("48");
+                    "SELECT count(*) FROM flyway_schema_history WHERE success AND version = '48'",
+                    Integer.class
+            )).isOne();
         }
     }
 
@@ -430,6 +434,117 @@ class PostgresqlRdoCreationContextIT {
     }
 
     @Test
+    void elegibilidadeDeAssetEAutoritativaNoSnapshotECriacaoSemPublicarOntologia()
+            throws Exception {
+        String obraA = id();
+        String obraB = id();
+        inserirObra(obraA, "ASSET-A");
+        inserirObra(obraB, "ASSET-B");
+        String colaborador = inserirColaborador("Apontador", null, null);
+        vincular(colaborador, obraA, "APONTADOR", "ATIVO");
+        String assetA = inserirAsset("EQ-AUTORITATIVO");
+        tornarAssetElegivel(assetA, obraA);
+
+        assertThat(new RdoContextService(jdbc).buscarContexto(obraA, SELECTED_DATE)
+                .equipamentos())
+                .extracting(RdoContextResponse.EquipamentoContexto::id)
+                .containsExactly(assetA);
+        assertThat(new RdoContextService(jdbc).buscarContexto(obraB, SELECTED_DATE)
+                .equipamentos()).isEmpty();
+
+        ObjectNode crossScopeJson = mapper.valueToTree(request(
+                id(), obraA, id(), 1L, null, colaborador, id(), null
+        ));
+        crossScopeJson.putArray("equipamentos").addObject()
+                .put("assetId", inserirAsset("EQ-SEM-VINCULO"))
+                .put("descricao", "Equipamento de outra obra");
+        RdoCreateRequest crossScope = mapper.treeToValue(
+                crossScopeJson,
+                RdoCreateRequest.class
+        );
+        RdoMemoryPublisher memory = mock(RdoMemoryPublisher.class);
+
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service(colaborador, memory).criarRascunho(crossScope)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("equipamento")
+                .hasMessageContaining("obra");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo WHERE id = ?",
+                Integer.class,
+                crossScope.id()
+        )).isZero();
+        verify(memory, never()).registrarRdoCriado(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void bancoRecusaAssetDeOutraObraMesmoSemPassarPeloServico() {
+        String obraA = id();
+        String obraB = id();
+        inserirObra(obraA, "DB-ASSET-A");
+        inserirObra(obraB, "DB-ASSET-B");
+        String assetA = inserirAsset("EQ-DB-A");
+        tornarAssetElegivel(assetA, obraA);
+        String rdoB = id();
+        inserirRdo(rdoB, obraB, "RDO-0001", SELECTED_DATE, "RASCUNHO",
+                LocalDateTime.now(), LocalDateTime.now());
+
+        assertThatThrownBy(() -> inserirEquipamentoSemElegibilidade(id(), rdoB, assetA))
+                .isInstanceOf(DataAccessException.class);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo_equipamento WHERE rdo_id = ?",
+                Integer.class,
+                rdoB
+        )).isZero();
+    }
+
+    @Test
+    void atualizacaoRecusaTrocaParaAssetForaDaObraSemAlterarFilhosOuOntologia()
+            throws Exception {
+        String obraA = id();
+        String obraB = id();
+        inserirObra(obraA, "UPDATE-ASSET-A");
+        inserirObra(obraB, "UPDATE-ASSET-B");
+        String colaborador = inserirColaborador("Equipe", null, null);
+        vincular(colaborador, obraA, "APONTADOR", "ATIVO");
+        String assetA = inserirAsset("EQ-UPDATE-A");
+        String assetB = inserirAsset("EQ-UPDATE-B");
+        tornarAssetElegivel(assetA, obraA);
+        tornarAssetElegivel(assetB, obraB);
+        ObjectNode createJson = mapper.valueToTree(request(
+                id(), obraA, id(), 1L, null, colaborador, id(), null
+        ));
+        createJson.putArray("equipamentos").addObject()
+                .put("assetId", assetA)
+                .put("descricao", "Equipamento elegível");
+        RdoCreateRequest create = mapper.treeToValue(createJson, RdoCreateRequest.class);
+        transactions.execute(status -> service(colaborador).criarRascunho(create));
+
+        ObjectNode updateJson = createJson.deepCopy();
+        ((ObjectNode) updateJson.withArray("equipamentos").get(0))
+                .put("assetId", assetB);
+        RdoCreateRequest invalidUpdate = mapper.treeToValue(
+                updateJson,
+                RdoCreateRequest.class
+        );
+        RdoMemoryPublisher memory = mock(RdoMemoryPublisher.class);
+
+        assertThatThrownBy(() -> transactions.execute(
+                status -> draftService(memory).atualizarRascunho(create.id(), invalidUpdate)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("equipamento")
+                .hasMessageContaining("obra");
+        assertThat(jdbc.queryForList(
+                "SELECT asset_id FROM rdo_equipamento WHERE rdo_id = ?",
+                String.class,
+                create.id()
+        )).containsExactly(assetA);
+        verify(memory, never()).registrarRdoEditado(
+                any(), any(), any(), any(), any(), anyLong(), anyLong(), any()
+        );
+    }
+
+    @Test
     void atualizacaoPreservaIdsDaEquipeEImpedeTrocaDeObra() throws Exception {
         String obraA = id();
         String obraB = id();
@@ -578,6 +693,10 @@ class PostgresqlRdoCreationContextIT {
     }
 
     private RdoService service(String ownerId) {
+        return service(ownerId, mock(RdoMemoryPublisher.class));
+    }
+
+    private RdoService service(String ownerId, RdoMemoryPublisher memoryPublisher) {
         RdoOperationalDetailService details = mock(RdoOperationalDetailService.class);
         when(details.substituirDetalhes(
                 any(), any(), any(), any(), any(), any(), any()
@@ -592,7 +711,8 @@ class PostgresqlRdoCreationContextIT {
                 jdbc,
                 mapper,
                 currentUserService,
-                mock(RdoMemoryPublisher.class),
+                new RdoAssetEligibilityService(jdbc),
+                memoryPublisher,
                 details,
                 attachments,
                 mock(RdoOperationalEventService.class),
@@ -606,6 +726,10 @@ class PostgresqlRdoCreationContextIT {
     }
 
     private RdoDraftUpdateService draftService() {
+        return draftService(mock(RdoMemoryPublisher.class));
+    }
+
+    private RdoDraftUpdateService draftService(RdoMemoryPublisher memoryPublisher) {
         RdoOperationalDetailService details = mock(RdoOperationalDetailService.class);
         RdoAttachmentService attachments = mock(RdoAttachmentService.class);
         when(details.listarServicos(any())).thenReturn(List.of());
@@ -614,7 +738,8 @@ class PostgresqlRdoCreationContextIT {
         return new RdoDraftUpdateService(
                 jdbc,
                 new RdoQueryService(jdbc, details, attachments),
-                mock(RdoMemoryPublisher.class),
+                new RdoAssetEligibilityService(jdbc),
+                memoryPublisher,
                 new RdoChangeAuditService(jdbc),
                 details,
                 attachments,
@@ -737,11 +862,33 @@ class PostgresqlRdoCreationContextIT {
     }
 
     private void inserirEquipamento(String itemId, String rdoId, String assetId) {
+        String obraId = jdbc.queryForObject(
+                "SELECT obra_id FROM rdo WHERE id = ?",
+                String.class,
+                rdoId
+        );
+        tornarAssetElegivel(assetId, obraId);
+        inserirEquipamentoSemElegibilidade(itemId, rdoId, assetId);
+    }
+
+    private void inserirEquipamentoSemElegibilidade(
+            String itemId,
+            String rdoId,
+            String assetId
+    ) {
         jdbc.update("""
                 INSERT INTO rdo_equipamento (
                     id, rdo_id, asset_id, prefixo, descricao
                 ) VALUES (?, ?, ?, 'EQ', 'Equipamento')
                 """, itemId, rdoId, assetId);
+    }
+
+    private void tornarAssetElegivel(String assetId, String obraId) {
+        jdbc.update("""
+                INSERT INTO asset_obra_eligibilidade (
+                    asset_id, obra_id, status, origem
+                ) VALUES (?, ?, 'ATIVO', 'TESTE')
+                """, assetId, obraId);
     }
 
     private static String id() {

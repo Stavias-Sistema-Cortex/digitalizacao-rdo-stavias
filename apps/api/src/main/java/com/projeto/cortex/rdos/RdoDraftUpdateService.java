@@ -23,6 +23,7 @@ public class RdoDraftUpdateService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RdoQueryService queryService;
+    private final RdoAssetEligibilityService assetEligibilityService;
     private final RdoMemoryPublisher memoryPublisher;
     private final RdoChangeAuditService auditService;
     private final RdoOperationalDetailService operationalDetailService;
@@ -33,6 +34,7 @@ public class RdoDraftUpdateService {
     public RdoDraftUpdateService(
             JdbcTemplate jdbcTemplate,
             RdoQueryService queryService,
+            RdoAssetEligibilityService assetEligibilityService,
             RdoMemoryPublisher memoryPublisher,
             RdoChangeAuditService auditService,
             RdoOperationalDetailService operationalDetailService,
@@ -42,6 +44,7 @@ public class RdoDraftUpdateService {
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
+        this.assetEligibilityService = assetEligibilityService;
         this.memoryPublisher = memoryPublisher;
         this.auditService = auditService;
         this.operationalDetailService = operationalDetailService;
@@ -123,6 +126,10 @@ public class RdoDraftUpdateService {
                 request.obraId(),
                 request.maoObra(),
                 request.apontadorColaboradorId()
+        );
+        assetEligibilityService.requireEligible(
+                request.obraId(),
+                request.equipamentos()
         );
 
         String updateSql = """

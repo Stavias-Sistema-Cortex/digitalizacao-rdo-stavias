@@ -704,10 +704,27 @@ public class RdoImportacaoHistoricaService {
             String prefixo = text(item, "prefixo");
             String descricao = text(item, "descricao");
             String tipoEquipamento = text(item, "tipoEquipamento");
+            String assetId = nuloSeVazio(text(item, "assetId"));
             BigDecimal quantidade = valorOuUm(decimal(item, "quantidade"));
 
             if (isBlank(prefixo) && isBlank(descricao) && isBlank(tipoEquipamento)) {
                 continue;
+            }
+
+            if (assetId != null) {
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO asset_obra_eligibilidade (
+                            asset_id, obra_id, status, origem
+                        )
+                        SELECT ?, obra_id, 'ATIVO', 'IMPORTACAO_HISTORICA'
+                        FROM rdo
+                        WHERE id = ?
+                        ON CONFLICT (asset_id, obra_id) DO NOTHING
+                        """,
+                        assetId,
+                        rdoId
+                );
             }
 
             jdbcTemplate.update(
@@ -728,7 +745,7 @@ public class RdoImportacaoHistoricaService {
                     """,
                     UUID.randomUUID().toString(),
                     rdoId,
-                    nuloSeVazio(text(item, "assetId")),
+                    assetId,
                     prefixo,
                     descricao,
                     tipoEquipamento,

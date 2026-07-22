@@ -27,6 +27,7 @@ public class RdoService {
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserService currentUserService;
     private final RdoCreationPayloadHasher creationPayloadHasher;
+    private final RdoAssetEligibilityService assetEligibilityService;
     private final RdoMemoryPublisher memoryPublisher;
     private final RdoOperationalDetailService operationalDetailService;
     private final RdoAttachmentService attachmentService;
@@ -38,6 +39,7 @@ public class RdoService {
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             CurrentUserService currentUserService,
+            RdoAssetEligibilityService assetEligibilityService,
             RdoMemoryPublisher memoryPublisher,
             RdoOperationalDetailService operationalDetailService,
             RdoAttachmentService attachmentService,
@@ -48,6 +50,7 @@ public class RdoService {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
         this.creationPayloadHasher = new RdoCreationPayloadHasher(objectMapper);
+        this.assetEligibilityService = assetEligibilityService;
         this.memoryPublisher = memoryPublisher;
         this.operationalDetailService = operationalDetailService;
         this.attachmentService = attachmentService;
@@ -106,6 +109,7 @@ public class RdoService {
 
         validarProveniencia(request, obraId);
         String apontadorNome = validarEquipeEApontador(request, obraId);
+        assetEligibilityService.requireEligible(obraId, request.equipamentos());
         NumberAllocation number = alocarNumero(obraId);
         String status = "RASCUNHO";
         String diaSemana = diaSemanaPt(request.dataRdo());

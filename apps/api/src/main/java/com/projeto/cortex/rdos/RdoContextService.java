@@ -396,10 +396,10 @@ public class RdoContextService {
                     asset.external_code,
                     asset.name,
                     asset.category
-                FROM rdo_equipamento item
-                JOIN rdo ON rdo.id = item.rdo_id
-                JOIN asset ON asset.id = item.asset_id
-                WHERE rdo.obra_id = ?
+                FROM asset_obra_eligibilidade eligibility
+                JOIN asset ON asset.id = eligibility.asset_id
+                WHERE eligibility.obra_id = ?
+                  AND eligibility.status = 'ATIVO'
                   AND asset.active = TRUE
                   AND asset.deleted_at IS NULL
                 ORDER BY asset.external_code, asset.name, asset.id
