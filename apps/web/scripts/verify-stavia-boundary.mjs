@@ -198,6 +198,68 @@ function occurrenceCount(text, value) {
   return text.split(value).length - 1;
 }
 
+function identifierOccurrenceCount(text, identifier) {
+  const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    text.match(
+      new RegExp(
+        `(?<![A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`,
+        "g",
+      ),
+    )?.length ?? 0
+  );
+}
+
+function findMatchingBrace(content, openingBrace) {
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  for (let index = openingBrace; index < content.length; index += 1) {
+    const character = content[index];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+function compiledEnclosingFunction(content, contentIndex) {
+  let functionIndex = content.lastIndexOf("function", contentIndex);
+  while (functionIndex >= 0) {
+    const header = content.slice(functionIndex).match(
+      /^function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{/,
+    );
+    if (header) {
+      const openingBrace = functionIndex + header[0].lastIndexOf("{");
+      const closingBrace = findMatchingBrace(content, openingBrace);
+      if (openingBrace < contentIndex && closingBrace > contentIndex) {
+        return content.slice(openingBrace + 1, closingBrace);
+      }
+    }
+    functionIndex = content.lastIndexOf("function", functionIndex - 1);
+  }
+  return "";
+}
+
 function normalizeStaticReferenceText(text) {
   const decoded = text
     .replace(/\\u\{([0-9a-f]+)\}/gi, (_, value) =>
@@ -809,7 +871,13 @@ export function verifyDist(distRoot = path.join(WEB_ROOT, "dist")) {
   const cleanupFile = textFiles.find((file) =>
     LEGACY_LOCAL_STORAGE_KEYS.every((key) => file.content.includes(key)),
   );
-  const compiledKeyDeclaration = cleanupFile?.content.match(
+  const compiledKeyIndex = cleanupFile?.content.indexOf(
+    LEGACY_LOCAL_STORAGE_KEYS[0],
+  ) ?? -1;
+  const compiledCleanupFunction = cleanupFile
+    ? compiledEnclosingFunction(cleanupFile.content, compiledKeyIndex)
+    : "";
+  const compiledKeyDeclaration = compiledCleanupFunction.match(
     /(?:^|[,;]\s*|\b(?:const|let|var)\s+)([A-Za-z_$][\w$]*)\s*=\s*\[\s*[`"']cortex:stavia:chat:operacional[`"']\s*,\s*[`"']cortex:stavia:last-context[`"']\s*\]/,
   );
   const compiledKeyCollection = compiledKeyDeclaration?.[1] ?? "";
@@ -818,16 +886,16 @@ export function verifyDist(distRoot = path.join(WEB_ROOT, "dist")) {
         `for\\s*\\(\\s*(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s+of\\s+${compiledKeyCollection}\\s*\\)\\s*([A-Za-z_$][\\w$]*)\\.removeItem\\(\\s*\\1\\s*\\)`,
       )
     : null;
-  const compiledActiveLoop = compiledKeyCollection
-    ? new RegExp(
-        `for\\s*\\(\\s*(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s+of\\s+${compiledKeyCollection}\\s*\\)\\s*([A-Za-z_$][\\w$]*)\\.(?:getItem|setItem)\\(`,
-      )
-    : null;
   if (
     !cleanupFile ||
-    !compiledRemovalLoop?.test(cleanupFile.content) ||
-    compiledActiveLoop?.test(cleanupFile.content) ||
-    !cleanupFile.content.includes("window.localStorage")
+    !compiledCleanupFunction ||
+    identifierOccurrenceCount(
+      compiledCleanupFunction,
+      compiledKeyCollection,
+    ) !== 2 ||
+    !compiledRemovalLoop?.test(compiledCleanupFunction) ||
+    /\.(?:getItem|setItem)\(/.test(compiledCleanupFunction) ||
+    !compiledCleanupFunction.includes("window.localStorage")
   ) {
     violations.push("compiled localStorage cleanup is not deletion-only");
   }

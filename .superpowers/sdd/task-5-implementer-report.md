@@ -175,8 +175,11 @@ build below exercised the generated JS, CSS, HTML, manifest, service worker,
 assets, legacy deletion-only code, and chunk paths without recursive build/test
 invocation. The compiled cleanup check identifies the fixed key collection and
 its `removeItem` loop structurally instead of relying on a fixed character
-window; a regression fixture separates them beyond the old limit and still
-requires deletion-only output.
+window. The collection is declared inside the private cleanup function, and the
+compiled verifier requires exactly two identifier occurrences in that function:
+its declaration and the audited removal loop. Regression fixtures separate the
+declaration and loop beyond the old limit and reject any second consumer,
+including a braced `localStorage.getItem` loop.
 
 The source classifier now covers every Vite text source extension used by the
 project (`css`, `json`, `ts`, `tsx`, `js`, `jsx`, `mjs`, `mts`, `cjs`, and
@@ -186,14 +189,14 @@ scanned. Source assets are also included for path policy even when their binary
 content is not read.
 
 The historical localStorage literals are constrained to a private, fixed
-`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration in `authSession.ts`. The private
-`clearRetiredPrivateLocalStorage` function is zero-argument, selects only the
-browser's real `window.localStorage`, and has exactly one logout caller. There
-is no exported cleanup API or cleanup module to import, alias, re-export, or
-load dynamically. The verifier still normalizes Unicode/hex escapes and
-string/template concatenation to reject attempts to recreate the retired
-module or symbol, while the real auth-session test proves the two keys are
-removed. SSR retains the explicit no-op path.
+`LEGACY_PRIVATE_LOCAL_STORAGE_KEYS` declaration inside the private
+`clearRetiredPrivateLocalStorage` function in `authSession.ts`. That function is
+zero-argument, selects only the browser's real `window.localStorage`, and has
+exactly one logout caller. There is no exported cleanup API or cleanup module to
+import, alias, re-export, or load dynamically. The verifier still normalizes
+Unicode/hex escapes and string/template concatenation to reject attempts to
+recreate the retired module or symbol, while the real auth-session test proves
+the two keys are removed. SSR retains the explicit no-op path.
 
 All `build`/`build:*` package scripts and every raw Vite build invocation now
 must end in the mandatory
@@ -247,8 +250,8 @@ gate. Authenticated runtime browser proof remains Task 6.
 - Targeted migration/responsive tests:
   `2 files / 21 tests passed`.
 - Boundary after production build: `1 file / 4 tests passed`.
-- Occurrence-policy focused suite: `2 files / 23 tests passed`.
-- Full web suite after occurrence hardening: `51 files / 243 tests passed`.
+- Occurrence-policy focused suite: `2 files / 25 tests passed`.
+- Full web suite after occurrence hardening: `51 files / 244 tests passed`.
 - Lint: `npm --prefix apps/web run lint` exited 0.
 - TypeScript/Vite/PWA builds plus mandatory dist verifier:
   `build`, `build:local`, and `build:compose` each exited 0, generated 89

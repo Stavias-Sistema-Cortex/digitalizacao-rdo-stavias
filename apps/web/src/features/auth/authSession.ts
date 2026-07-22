@@ -1,9 +1,5 @@
 const LEGACY_SESSION_KEY = "cortex.auth.sessao";
 const LEGACY_FILTER_KEY = "cortex.auth.cpfFilter";
-const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [
-  "cortex:stavia:chat:operacional",
-  "cortex:stavia:last-context",
-] as const;
 const AUTH_BROADCAST_CHANNEL = "cortex-auth-session-v1";
 const LOGOUT_MESSAGE = "LOGOUT";
 const UUID_PATTERN =
@@ -87,6 +83,10 @@ function clearSessionLocally(): void {
 }
 
 function clearRetiredPrivateLocalStorage(): void {
+  const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [
+    "cortex:stavia:chat:operacional",
+    "cortex:stavia:last-context",
+  ] as const;
   const target = typeof window === "undefined" ? null : window.localStorage;
   if (!target) {
     return;

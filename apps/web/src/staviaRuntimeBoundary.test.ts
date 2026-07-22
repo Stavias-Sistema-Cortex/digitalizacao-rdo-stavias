@@ -38,7 +38,7 @@ function validCleanupFixtures(): Array<{ path: string; content: string }> {
   return [
     {
       path: "apps/web/src/features/auth/authSession.ts",
-      content: `const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n  "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n  "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n] as const;\nfunction clearRetiredPrivateLocalStorage() {\n  const target = typeof window === "undefined" ? null : window.localStorage;\n  if (!target) return;\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}\nclearRetiredPrivateLocalStorage();`,
+      content: `function clearRetiredPrivateLocalStorage() {\n  const LEGACY_PRIVATE_LOCAL_STORAGE_KEYS = [\n    "${LEGACY_LOCAL_STORAGE_KEYS[0]}",\n    "${LEGACY_LOCAL_STORAGE_KEYS[1]}",\n  ] as const;\n  const target = typeof window === "undefined" ? null : window.localStorage;\n  if (!target) return;\n  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {\n    target.removeItem(key);\n  }\n}\nclearRetiredPrivateLocalStorage();`,
     },
     {
       path: "apps/web/src/lib/db/cortexDb.ts",
@@ -599,11 +599,12 @@ describe("StavIA runtime boundary", () => {
     const distRoot = mkdtempSync(
       path.join(tmpdir(), "cortex-stavia-dist-boundary-"),
     );
-    const compiledGap = "let unrelated=0;".repeat(40);
+    const compiledGap = "unrelated+=0;".repeat(40);
     const compiledCleanup = [
-      `var retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
+      "function clearRetired(){let unrelated=0;",
+      `let retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
       compiledGap,
-      "function clearRetired(){let storage=typeof window>\"u\"?null:window.localStorage;if(storage)for(let key of retiredKeys)storage.removeItem(key)}",
+      "let storage=typeof window>\"u\"?null:window.localStorage;if(storage)for(let key of retiredKeys)storage.removeItem(key)}",
       `const legacyStore="${LEGACY_SNAPSHOT_STORE}";`,
       "function migrate(database){database.objectStoreNames.contains(legacyStore)&&database.deleteObjectStore(legacyStore)}",
     ].join("");
@@ -611,6 +612,27 @@ describe("StavIA runtime boundary", () => {
     try {
       writeFileSync(path.join(distRoot, "index.js"), compiledCleanup);
       expect(() => verifyDist(distRoot)).not.toThrow();
+    } finally {
+      rmSync(distRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a second compiled consumer of the retired key collection", () => {
+    const distRoot = mkdtempSync(
+      path.join(tmpdir(), "cortex-stavia-dist-active-read-"),
+    );
+    const compiledCleanup = [
+      "function clearRetired(){",
+      `let retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
+      "let storage=window.localStorage;for(let key of retiredKeys)storage.removeItem(key);",
+      "for(let key of retiredKeys){window.localStorage.getItem(key)}}",
+      `const legacyStore="${LEGACY_SNAPSHOT_STORE}";`,
+      "function migrate(database){database.objectStoreNames.contains(legacyStore)&&database.deleteObjectStore(legacyStore)}",
+    ].join("");
+
+    try {
+      writeFileSync(path.join(distRoot, "index.js"), compiledCleanup);
+      expect(() => verifyDist(distRoot)).toThrow(/deletion-only/);
     } finally {
       rmSync(distRoot, { recursive: true, force: true });
     }
