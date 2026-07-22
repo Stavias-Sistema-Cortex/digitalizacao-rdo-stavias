@@ -67,3 +67,51 @@
 - Flyway emitted its existing compatibility warning: PostgreSQL 18.4 is newer than the Flyway version's declared tested maximum (PostgreSQL 16). The migration and ITs still completed successfully; dependency validation/upgrade remains an environment risk for the later completion slice.
 - Historical clean-start ITs named specifically for V44 still encode “only one V44 migration” and a 116-table inventory. They were intentionally not changed because this brief owns only the six Task 2 product/test files; the targeted V45 IT proves the additive chain. A future unrestricted PostgreSQL-IT sweep must either pin those baseline-only tests to Flyway target 44 or evolve their assertions in the owning PostgreSQL-runtime task.
 - This task adds the projector/service/repository boundary but does not wire canonical event consumption; that belongs to the later offline ontology/runtime activation tasks.
+
+## Review correction — Important findings
+
+### Scope
+
+- Correction base: `18e5a9efe8aeb303f72d643d9271db9bb1c6f8ed`.
+- Planned correction subject: `fix(ontology): preserve graph projection ordering`.
+- V1–V44 remained unchanged. No frontend, plan, skill, or later-task file was modified.
+- PostgreSQL V44-only tests now set Flyway target 44 explicitly; the current clean-start flow applies V44+V45 and asserts the 117-table inventory.
+- Entity persistence now tracks which optional attributes were supplied by the event, strips those internal presence markers before storage, and merges only supplied scalar/metadata fields.
+- Projection-failure persistence locks the checkpoint and records an error only while the stored checkpoint is older than the failed commit sequence.
+
+### RED
+
+1. `JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn -f apps/api/pom.xml -Ppostgresql-it '-Dit.test=PostgresqlBaselineMigrationIT,PostgresqlV44MigrationIT,PostgresqlCleanStartFlowIT' verify`
+   - Exit: `1`.
+   - Surefire: 1007 tests, 0 failures, 0 errors, 57 skipped.
+   - Failsafe: 3 tests, 3 expected failures.
+   - `PostgresqlBaselineMigrationIT`, `PostgresqlV44MigrationIT`, and `PostgresqlCleanStartFlowIT` each observed the unexpected V45 row after V44.
+2. After adding the two focused persistence regressions:
+   `JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn -f apps/api/pom.xml -Ppostgresql-it '-Dit.test=PostgresqlOntologyGraphRepositoryIT#sparseReferenceDoesNotDowngradePreviouslyProjectedEntityAttributes+olderFailureCannotRestoreAnErrorAfterANewerCheckpointSucceeded' verify`
+   - Exit: `1`.
+   - Surefire: 1007 tests, 0 failures, 0 errors, 57 skipped.
+   - Failsafe: 2 tests, 2 expected failures.
+   - Sparse reference failure: `RDO-007` became `rdo-7`, with description/status erased.
+   - Ordering failure: `markProjectionFailure(43, ...)` restored an error after checkpoint 44 had succeeded.
+
+The first local wrapper attempt used `./mvnw` from the repository root and exited 127 because this worktree's wrapper is under `apps/api`; it was a harness-path error and is not counted as a RED. All evidence commands above use the installed Maven entrypoint already used by the Task 2 report.
+
+### GREEN
+
+1. `JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn -f apps/api/pom.xml -Ppostgresql-it '-Dit.test=PostgresqlBaselineMigrationIT,PostgresqlV44MigrationIT,PostgresqlCleanStartFlowIT,PostgresqlOntologyGraphRepositoryIT' verify`
+   - Exit: `0`.
+   - Surefire: 1007 tests, 0 failures, 0 errors, 57 skipped.
+   - Failsafe: 7 tests, 0 failures, 0 errors, 0 skipped.
+   - Both isolated baseline paths stopped at V44; the current chain reached V45/117 tables; all four graph repository ITs passed.
+2. `JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 1007 tests, 0 failures, 0 errors, 57 skipped.
+   - Unrestricted Failsafe profile: 18 tests, 0 failures, 0 errors, 0 skipped.
+3. `git diff --check`
+   - Exit: `0`.
+
+### Minor Flyway assessment
+
+- `mvn -f apps/api/pom.xml dependency:tree -Dincludes=org.flywaydb -Dscope=runtime` confirmed Flyway `10.10.0` for core, MySQL, and PostgreSQL modules.
+- PostgreSQL 18.4 verification remains green but still emits the existing declared-support warning (tested maximum PostgreSQL 16).
+- No dependency upgrade was made: reaching declared PostgreSQL 18 support is not a small patch to the current Spring Boot-managed Flyway line and would require a broader dependency/runtime validation outside these three Important corrections.

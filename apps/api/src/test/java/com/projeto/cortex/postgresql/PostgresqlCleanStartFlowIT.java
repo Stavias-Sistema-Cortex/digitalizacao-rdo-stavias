@@ -49,7 +49,14 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         try (PostgreSQLContainer<?> database = database()) {
             database.start();
             JdbcTemplate jdbc = migratedJdbc(database);
-            assertV44WasApplied(database);
+            assertCurrentMigrationChainWasApplied(database);
+            assertThat(jdbc.queryForObject("""
+                    SELECT count(*)
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_type = 'BASE TABLE'
+                      AND table_name <> 'flyway_schema_history'
+                    """, Integer.class)).isEqualTo(117);
             assertThat(jdbc.queryForObject(
                     "SELECT count(*) FROM colaborador", Integer.class
             )).isZero();
@@ -122,7 +129,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         }
     }
 
-    private void assertV44WasApplied(PostgreSQLContainer<?> database)
+    private void assertCurrentMigrationChainWasApplied(PostgreSQLContainer<?> database)
             throws Exception {
         try (Connection connection = DriverManager.getConnection(
                 database.getJdbcUrl(), database.getUsername(), database.getPassword()
@@ -135,6 +142,9 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                              """)) {
             assertThat(rows.next()).isTrue();
             assertThat(rows.getString("version")).isEqualTo("44");
+            assertThat(rows.getBoolean("success")).isTrue();
+            assertThat(rows.next()).isTrue();
+            assertThat(rows.getString("version")).isEqualTo("45");
             assertThat(rows.getBoolean("success")).isTrue();
             assertThat(rows.next()).isFalse();
         }

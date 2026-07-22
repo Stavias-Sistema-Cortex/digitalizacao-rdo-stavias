@@ -3,6 +3,8 @@ package com.projeto.cortex.ontology.graph;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.OptionalLong;
 import java.util.regex.Pattern;
 import org.springframework.context.annotation.Profile;
@@ -87,15 +89,23 @@ public final class PostgresqlOntologyGraphRepository implements OntologyGraphRep
     @Override
     public void markProjectionFailure(long commitSequence, String safeCode) {
         String boundedCode = boundedSafeCode(safeCode);
-        failureTransactions.executeWithoutResult(status -> jdbc.update("""
-                INSERT INTO graph_projection_checkpoint (
-                    projector_name, last_commit_sequence, last_commit_id,
-                    last_error_code, updated_at
-                ) VALUES (?, 0, NULL, ?, now())
-                ON CONFLICT (projector_name) DO UPDATE
-                SET last_error_code = EXCLUDED.last_error_code,
-                    updated_at = now()
-                """, PROJECTOR_NAME, boundedCode));
+        failureTransactions.executeWithoutResult(status -> {
+            ensureCheckpoint();
+            Long checkpoint = jdbc.queryForObject("""
+                    SELECT last_commit_sequence
+                    FROM graph_projection_checkpoint
+                    WHERE projector_name = ?
+                    FOR UPDATE
+                    """, Long.class, PROJECTOR_NAME);
+            if (checkpoint != null && checkpoint < commitSequence) {
+                jdbc.update("""
+                        UPDATE graph_projection_checkpoint
+                        SET last_error_code = ?,
+                            updated_at = now()
+                        WHERE projector_name = ?
+                        """, boundedCode, PROJECTOR_NAME);
+            }
+        });
     }
 
     private void ensureCheckpoint() {
@@ -108,6 +118,15 @@ public final class PostgresqlOntologyGraphRepository implements OntologyGraphRep
     }
 
     private void upsertEntity(GraphEntity entity) {
+        boolean canonicalNameProvided = entity.metadata().containsKey(
+                OperationalGraphProjector.PROVIDED_CANONICAL_NAME
+        );
+        boolean descriptionProvided = entity.metadata().containsKey(
+                OperationalGraphProjector.PROVIDED_DESCRIPTION
+        );
+        boolean statusProvided = entity.metadata().containsKey(
+                OperationalGraphProjector.PROVIDED_STATUS
+        );
         jdbc.update("""
                 INSERT INTO ontology_entities (
                     id, entity_type, external_ref_type, external_ref_id,
@@ -118,10 +137,19 @@ public final class PostgresqlOntologyGraphRepository implements OntologyGraphRep
                     entity_type = EXCLUDED.entity_type,
                     external_ref_type = EXCLUDED.external_ref_type,
                     external_ref_id = EXCLUDED.external_ref_id,
-                    canonical_name = EXCLUDED.canonical_name,
-                    description = EXCLUDED.description,
-                    status = EXCLUDED.status,
-                    metadata_json = EXCLUDED.metadata_json,
+                    canonical_name = CASE WHEN ?
+                        THEN EXCLUDED.canonical_name
+                        ELSE ontology_entities.canonical_name
+                    END,
+                    description = CASE WHEN ?
+                        THEN EXCLUDED.description
+                        ELSE ontology_entities.description
+                    END,
+                    status = CASE WHEN ?
+                        THEN EXCLUDED.status
+                        ELSE ontology_entities.status
+                    END,
+                    metadata_json = ontology_entities.metadata_json || EXCLUDED.metadata_json,
                     updated_at = EXCLUDED.updated_at
                 """,
                 entity.id(),
@@ -131,10 +159,21 @@ public final class PostgresqlOntologyGraphRepository implements OntologyGraphRep
                 entity.canonicalName(),
                 entity.description(),
                 entity.status(),
-                json(entity.metadata()),
+                json(persistedEntityMetadata(entity.metadata())),
                 Timestamp.from(entity.createdAt()),
-                Timestamp.from(entity.updatedAt())
+                Timestamp.from(entity.updatedAt()),
+                canonicalNameProvided,
+                descriptionProvided,
+                statusProvided
         );
+    }
+
+    private static Map<String, Object> persistedEntityMetadata(Map<String, Object> metadata) {
+        Map<String, Object> persisted = new LinkedHashMap<>(metadata);
+        persisted.remove(OperationalGraphProjector.PROVIDED_CANONICAL_NAME);
+        persisted.remove(OperationalGraphProjector.PROVIDED_DESCRIPTION);
+        persisted.remove(OperationalGraphProjector.PROVIDED_STATUS);
+        return persisted;
     }
 
     private void upsertRelation(GraphRelation relation) {

@@ -19,6 +19,9 @@ public class OperationalGraphProjector {
 
     private static final String ID_NAMESPACE = "cortex:operational-graph:v1";
     private static final String CANONICAL_EVENT_SOURCE = "CANONICAL_OPERATIONAL_EVENT";
+    static final String PROVIDED_CANONICAL_NAME = "_projectionProvidedCanonicalName";
+    static final String PROVIDED_DESCRIPTION = "_projectionProvidedDescription";
+    static final String PROVIDED_STATUS = "_projectionProvidedStatus";
 
     public GraphProjectionBatch project(CommittedOperationalEvent event) {
         Objects.requireNonNull(event, "Committed operational event is required.");
@@ -63,17 +66,27 @@ public class OperationalGraphProjector {
             CommittedOperationalEvent event,
             boolean principal
     ) {
-        String canonicalName = principal
+        String providedCanonicalName = principal
                 ? firstText(event.payload(), nameKeys(descriptor.type()))
                 : null;
-        if (canonicalName == null) {
-            canonicalName = descriptor.externalId();
-        }
+        String canonicalName = Objects.requireNonNullElse(
+                providedCanonicalName,
+                descriptor.externalId()
+        );
         String description = principal ? text(event.payload().get("description")) : null;
         String status = principal ? text(event.payload().get("status")) : null;
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("authoritativeExternalId", descriptor.externalId());
         copyIfPresent(event.payload(), metadata, "worksiteId", "obraId");
+        if (providedCanonicalName != null) {
+            metadata.put(PROVIDED_CANONICAL_NAME, true);
+        }
+        if (description != null) {
+            metadata.put(PROVIDED_DESCRIPTION, true);
+        }
+        if (status != null) {
+            metadata.put(PROVIDED_STATUS, true);
+        }
 
         return new GraphEntity(
                 descriptor.id(),

@@ -57,6 +57,7 @@ class PostgresqlV44MigrationIT {
                 "CORTEX_POSTGRES_URL",
                 "CORTEX_POSTGRES_USER",
                 "CORTEX_POSTGRES_PASSWORD",
+                "spring.flyway.target",
                 "spring.profiles.active"
         };
 
@@ -73,6 +74,7 @@ class PostgresqlV44MigrationIT {
             System.setProperty("CORTEX_POSTGRES_URL", database.getJdbcUrl());
             System.setProperty("CORTEX_POSTGRES_USER", database.getUsername());
             System.setProperty("CORTEX_POSTGRES_PASSWORD", database.getPassword());
+            System.setProperty("spring.flyway.target", "44");
             System.clearProperty("spring.profiles.active");
             return properties;
         }

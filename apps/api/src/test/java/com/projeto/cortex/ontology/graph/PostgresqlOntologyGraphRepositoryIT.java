@@ -113,6 +113,72 @@ class PostgresqlOntologyGraphRepositoryIT {
         }
     }
 
+    @Test
+    void sparseReferenceDoesNotDowngradePreviouslyProjectedEntityAttributes() {
+        try (PostgreSQLContainer<?> database = database()) {
+            database.start();
+            JdbcTemplate jdbc = migratedJdbc(database);
+            PostgresqlOntologyGraphRepository repository = repository(jdbc);
+            OperationalGraphProjector projector = new OperationalGraphProjector();
+            Instant occurredAt = Instant.parse("2026-07-21T11:00:00Z");
+
+            repository.upsert(projector.project(new CommittedOperationalEvent(
+                    10L,
+                    "event-rdo-created",
+                    "RDO_CREATED",
+                    new CommittedOperationalEvent.EntityRef("RDO", "rdo-7"),
+                    List.of(new CommittedOperationalEvent.EntityRef("WORKSITE", "obra-1")),
+                    occurredAt,
+                    Map.of(
+                            "number", "RDO-007",
+                            "description", "RDO authoritative description",
+                            "status", "ACTIVE",
+                            "worksiteId", "obra-1"
+                    )
+            )));
+            repository.upsert(projector.project(
+                    OperationalGraphProjectorTest.executedServiceEvent(11L)
+            ));
+
+            assertThat(jdbc.queryForMap("""
+                    SELECT canonical_name, description, status
+                    FROM ontology_entities
+                    WHERE external_ref_type = 'rdo' AND external_ref_id = 'rdo-7'
+                    """))
+                    .containsEntry("canonical_name", "RDO-007")
+                    .containsEntry("description", "RDO authoritative description")
+                    .containsEntry("status", "ACTIVE");
+            assertThat(jdbc.queryForObject("""
+                    SELECT metadata_json ->> 'worksiteId'
+                    FROM ontology_entities
+                    WHERE external_ref_type = 'rdo' AND external_ref_id = 'rdo-7'
+                    """, String.class)).isEqualTo("obra-1");
+        }
+    }
+
+    @Test
+    void olderFailureCannotRestoreAnErrorAfterANewerCheckpointSucceeded() {
+        try (PostgreSQLContainer<?> database = database()) {
+            database.start();
+            JdbcTemplate jdbc = migratedJdbc(database);
+            PostgresqlOntologyGraphRepository repository = repository(jdbc);
+
+            repository.upsert(new OperationalGraphProjector().project(
+                    OperationalGraphProjectorTest.executedServiceEvent(44L)
+            ));
+            repository.markProjectionFailure(43L, "OLDER_PROJECTION_FAILED");
+
+            assertThat(jdbc.queryForMap("""
+                    SELECT last_commit_sequence, last_commit_id, last_error_code
+                    FROM graph_projection_checkpoint
+                    WHERE projector_name = 'operational-graph-v1'
+                    """))
+                    .containsEntry("last_commit_sequence", 44L)
+                    .containsEntry("last_commit_id", "event-44")
+                    .containsEntry("last_error_code", null);
+        }
+    }
+
     private static PostgreSQLContainer<?> database() {
         return new PostgreSQLContainer<>("postgres:18")
                 .withDatabaseName("StaviasCortex");
