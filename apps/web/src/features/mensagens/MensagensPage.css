@@ -24,18 +24,20 @@
   font-size: 0.75rem;
 }
 
+/* Ação principal em tinta, como "Criar obra": o amarelo fica reservado para
+   marcar o que ainda não foi lido ou não saiu do aparelho. */
 .mensagens-primary {
-  border: 1px solid #fed203;
-  border-radius: 999px;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
   padding: 10px 18px;
-  background: #fed203;
-  color: #143c36;
-  font-weight: 650;
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font-weight: 500;
 }
 
 .mensagens-primary:hover:not(:disabled) {
-  background: #f2c800;
-  border-color: #f2c800;
+  background: var(--color-graphite);
+  border-color: var(--color-graphite);
 }
 
 .mensagens-primary:disabled {
@@ -199,49 +201,69 @@
   white-space: nowrap;
 }
 
+/* Busca declarada: rótulo visível e botão nomeado, no lugar da pílula com lupa.
+   O campo é um controle de formulário do sistema, não um widget de chat. */
 .mensagens-search {
+  display: grid;
+  gap: 6px;
   padding: 12px;
   border-bottom: 1px solid var(--color-border);
 }
 
-.mensagens-search-field {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid #cfd8d2;
-  border-radius: 999px;
-  background: #fff;
-  color: #5f6d66;
+.mensagens-search > label {
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-.mensagens-search-field:focus-within {
-  border-color: var(--color-focus);
+.mensagens-search-field {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .mensagens-search-field input {
   min-width: 0;
   flex: 1 1 auto;
-  padding: 9px 0;
-  border: 0;
-  background: transparent;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: 0.84rem;
 }
 
-.mensagens-search-field input:focus {
-  outline: none;
+.mensagens-search-field input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
 }
 
 .mensagens-search-field button {
-  display: grid;
   flex: 0 0 auto;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #7d8a83;
+  padding: 8px 12px;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.78rem;
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background-color var(--transition-functional),
+    color var(--transition-functional);
+}
+
+.mensagens-search-field button:hover {
+  background: var(--color-ink);
+  color: var(--color-surface);
+}
+
+.mensagens-search-field button.mensagens-search-clear {
+  display: grid;
+  place-items: center;
+  padding: 8px;
 }
 
 .mensagens-dialog input,
@@ -328,7 +350,7 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   background: var(--avatar-bg);
   box-shadow: inset 0 0 0 1px rgb(20 60 54 / 9%);
   color: var(--avatar-fig);
@@ -364,7 +386,7 @@
   height: 11px;
   border: 2px solid #f8faf9;
   border-radius: 50%;
-  background: #e2a11c;
+  background: var(--color-brand-yellow);
 }
 
 .mensagens-row-body {
@@ -481,37 +503,44 @@
   scroll-behavior: smooth;
 }
 
+/* Virada de dia como divisória datada, não como pílula centralizada. */
 .mensagens-date-separator {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 14px 0 10px;
+  gap: 10px;
+  padding: 18px 0 8px;
+}
+
+.mensagens-date-separator::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--color-border);
 }
 
 .mensagens-date-separator span {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: #eef2ef;
-  color: #5f6d66;
+  color: var(--color-muted);
   font-size: 0.66rem;
-  font-weight: 550;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .mensagens-date-separator span::first-letter {
   text-transform: uppercase;
 }
 
-/* ---- Message bubbles ----------------------------------------------------- */
+/* ---- Registros da correspondência ---------------------------------------- */
 
+/*
+ * A conversa é lida como um livro de ocorrências: uma coluna cronológica de
+ * registros, não bolhas alternadas. A autoria não muda o lado nem a cor —
+ * fica dita no cabeçalho e marcada por uma barra de tinta na lateral.
+ */
 .mensagem-item {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-}
-
-.mensagem-item--mine {
-  align-items: flex-end;
+  align-items: stretch;
 }
 
 .mensagem-item--lead {
@@ -522,23 +551,22 @@
   margin-top: 0;
 }
 
-/* Legenda do run: nome (só em grupo) e tempo relativo, fora da bolha. */
+/* Cabeçalho do registro: hora e autor, na régua de rótulos do sistema. */
 .mensagem-caption {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  margin: 0 0 5px;
-  color: #7d8a83;
+  gap: 10px;
+  margin: 0 0 4px;
+  color: var(--color-muted);
   font-size: 0.68rem;
-}
-
-.mensagem-item:not(.mensagem-item--mine) .mensagem-caption {
-  padding-left: 42px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .mensagem-caption-nome {
-  color: #2b4a41;
-  font-weight: 650;
+  color: var(--color-ink);
+  font-weight: 600;
 }
 
 /* O rótulo é reescrito a cada minuto; dígitos tabulares evitam o tremor. */
@@ -548,58 +576,50 @@
 
 .mensagem-linha {
   display: flex;
-  max-width: min(560px, 82%);
-  align-items: flex-end;
+  max-width: min(72ch, 100%);
+  align-items: flex-start;
   gap: 10px;
-}
-
-.mensagem-linha .mensagens-avatar {
-  --avatar-size: 32px;
-}
-
-/* Reserva a coluna do avatar nas mensagens seguidas do mesmo autor. */
-.mensagem-avatar-vao {
-  flex: 0 0 auto;
-  width: 32px;
 }
 
 .mensagem-bubble {
   position: relative;
   display: flex;
   min-width: 0;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: flex-end;
   column-gap: 8px;
   row-gap: 2px;
   padding: 9px 13px;
-  border-radius: 14px;
-}
-
-.mensagem-bubble--in {
-  border: 1px solid #e6ebe8;
-  background: #f4f6f5;
+  border: 1px solid var(--color-border);
+  border-left-width: 2px;
+  border-radius: 3px;
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
+.mensagem-bubble--in {
+  border-left-color: var(--color-border);
+}
+
+/* Autoria marcada por estrutura, não por cor de fundo. */
 .mensagem-bubble--mine {
-  border: 1px solid #cbe2da;
-  background: #d9ece6;
-  color: #123f39;
+  border-left-color: var(--color-ink);
 }
 
 /*
- * Assinatura da tela: enquanto a mensagem não sai do aparelho a bolha fica
- * vazada. O encarregado enxerga de relance a cauda do que ainda não subiu.
+ * Assinatura da tela: enquanto a mensagem não sai do aparelho o registro fica
+ * marcado a amarelo. O encarregado enxerga de relance a cauda do que não subiu.
  */
 .mensagem-bubble--pendente {
   border-style: dashed;
-  border-color: #a9c9bf;
-  background: #fff;
-  color: #2a4a42;
+  border-left-style: solid;
+  border-left-color: var(--color-brand-yellow);
 }
 
 .mensagem-bubble--falhou {
   border-color: #e0b4ae;
+  border-left-color: #a3312a;
   background: #fff6f5;
   color: #6d2a24;
 }
@@ -767,19 +787,19 @@
   background: #fff;
 }
 
-/* Barra única: campo e ações dentro da mesma cápsula, como na referência. */
+/* Barra única de redação, enquadrada como os demais controles do sistema. */
 .mensagens-composer-bar {
   display: flex;
   align-items: flex-end;
   gap: 4px;
   padding: 4px 4px 4px 6px;
-  border: 1px solid #d7ddd8;
-  border-radius: 24px;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
 }
 
 .mensagens-composer-bar:focus-within {
-  border-color: #b9c4be;
+  border-color: var(--color-ink);
 }
 
 .mensagens-attach {
@@ -788,7 +808,7 @@
   width: 38px;
   height: 38px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: var(--radius-control);
   color: #4d5b54;
   cursor: pointer;
 }
@@ -836,15 +856,16 @@
   width: 38px;
   height: 38px;
   place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: #fed203;
-  color: #143c36;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-ink);
+  color: var(--color-surface);
   cursor: pointer;
 }
 
 .mensagens-send:hover:not(:disabled) {
-  background: #f2c800;
+  background: var(--color-graphite);
+  border-color: var(--color-graphite);
 }
 
 .mensagens-send:disabled {
@@ -872,8 +893,9 @@
   align-items: center;
   gap: 7px;
   padding: 5px 10px;
-  border-radius: 999px;
-  background: #eef2ef;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
   font-size: 0.72rem;
   white-space: nowrap;
 }
@@ -1448,23 +1470,13 @@
   box-shadow: inset 3px 0 var(--color-ink);
 }
 
-.mensagens-avatar,
+/* O retrato tem tinta própria por conversa (ver "Tintas de canteiro"); aqui só
+   a geometria é institucionalizada, senão todos virariam o mesmo disco cinza. */
 .mensagens-context-people li > span {
   border-radius: var(--radius-control);
   background: #dfe5e1;
   color: var(--color-ink);
   font-weight: 600;
-}
-
-.mensagem-item article,
-.mensagem-item--mine article {
-  border-radius: var(--radius-container);
-}
-
-.mensagem-item article { border-top-left-radius: 2px; }
-.mensagem-item--mine article {
-  border-top-right-radius: 2px;
-  border-top-left-radius: var(--radius-container);
 }
 
 .mensagens-primary,

@@ -77,8 +77,19 @@ describe("layout da aba Mensagens", () => {
    */
   it("recorta o busto no disco, não no elemento que hospeda o ponto", () => {
     expect(rule(".mensagens-avatar-disco")).toContain("overflow: hidden;");
-    expect(rule(".mensagens-avatar-disco")).toContain("border-radius: 50%;");
+    expect(rule(".mensagens-avatar-disco")).toContain(
+      "border-radius: var(--radius-control);",
+    );
     expect(rule(".mensagens-avatar")).not.toContain("overflow: hidden;");
+  });
+
+  /* A tinta por conversa é o que devolve o reconhecimento de relance; a camada
+     2.1 institucionaliza só a geometria e não pode achatar todos num cinza. */
+  it("preserva a tinta por conversa sob a camada institucional", () => {
+    expect(css).toContain("--avatar-bg: #d5e5df;");
+    expect(css).not.toMatch(
+      /\.mensagens-avatar,\s*\n\.mensagens-context-people li > span \{[^}]*background: #dfe5e1;/,
+    );
   });
 
   /* Os seletores de elemento da busca pegavam também o span do avatar. */
@@ -109,8 +120,24 @@ describe("layout da aba Mensagens", () => {
     expect(naFaixa(".mensagens-thread")).not.toContain("min-height: 560px");
   });
 
-  it("distingue a bolha que ainda não saiu do aparelho", () => {
+  it("distingue o registro que ainda não saiu do aparelho", () => {
     expect(rule(".mensagem-bubble--pendente")).toContain("border-style: dashed;");
-    expect(rule(".mensagem-bubble--pendente")).toContain("background: #fff;");
+    expect(rule(".mensagem-bubble--pendente")).toContain(
+      "border-left-color: var(--color-brand-yellow);",
+    );
+  });
+
+  /*
+   * O recorte 2.1 lê a conversa como livro de ocorrências: coluna cronológica
+   * única. Se a autoria voltar a mudar o lado ou o fundo, viram bolhas de chat.
+   */
+  it("mantém os registros numa coluna única, sem bolhas alternadas", () => {
+    expect(rule(".mensagem-item")).toContain("align-items: stretch;");
+    expect(css).not.toContain(".mensagem-item--mine {");
+    expect(rule(".mensagem-bubble")).toContain("border-radius: 3px;");
+    expect(rule(".mensagem-bubble--mine")).toContain(
+      "border-left-color: var(--color-ink);",
+    );
+    expect(rule(".mensagem-bubble--mine")).not.toContain("background:");
   });
 });

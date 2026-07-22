@@ -13,7 +13,7 @@ import {
 import { mensagemStatusLabel } from "../mensagensQueue";
 import type { MensagemComAnexos } from "../mensagensRepository";
 import type { MessageTimelineEntry } from "../mensagensView";
-import { ConversationAvatar, PersonAvatar } from "./Avatar";
+import { ConversationAvatar } from "./Avatar";
 import {
   IconCheckDouble,
   IconChevronLeft,
@@ -166,24 +166,22 @@ function MessageItem({
     >
       {startsRun ? (
         <p className="mensagem-caption">
-          {!mine && showAuthorName ? (
-            <span className="mensagem-caption-nome">{message.autorNome}</span>
-          ) : null}
+          {/* A hora abre o registro, como em livro de ocorrências; o tempo
+              relativo continua disponível na dica do próprio horário. */}
           <time
             dateTime={message.criadaNoClienteEm}
-            title={formatClock(message.criadaNoClienteEm)}
+            title={formatRelativeTime(message.criadaNoClienteEm, now)}
           >
-            {formatRelativeTime(message.criadaNoClienteEm, now)}
+            {formatClock(message.criadaNoClienteEm)}
           </time>
+          {mine ? (
+            <span className="mensagem-caption-nome">Você</span>
+          ) : showAuthorName ? (
+            <span className="mensagem-caption-nome">{message.autorNome}</span>
+          ) : null}
         </p>
       ) : null}
       <div className="mensagem-linha">
-        {/* Fora do início do run entra só o vão: a coluna precisa alinhar. */}
-        {mine ? null : startsRun ? (
-          <PersonAvatar colaboradorId={message.autorId} />
-        ) : (
-          <span className="mensagem-avatar-vao" aria-hidden="true" />
-        )}
         <div className={bubbleClass}>
           {message.status === "EXCLUIDA" ? (
             <p className="mensagem-deleted">Mensagem excluída</p>
