@@ -99,6 +99,35 @@ class OntologyGraphAuthorizationMockMvcTest {
     }
 
     @Test
+    void lowerAndAdjacentPaginationAndDepthBoundariesAreRejected() throws Exception {
+        mockMvc.perform(get("/api/ontology/entities/{id}/relations", LOCAL_ENTITY_ID)
+                        .param("depth", "0")
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ONTOLOGY_DEPTH_LIMIT"));
+        mockMvc.perform(get("/api/ontology/entities/{id}/relations", LOCAL_ENTITY_ID)
+                        .param("depth", "4")
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ONTOLOGY_DEPTH_LIMIT"));
+        mockMvc.perform(get("/api/ontology/entities")
+                        .param("obraId", WORKSITE_A)
+                        .param("size", "0")
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ONTOLOGY_PAGE_SIZE_INVALID"));
+        mockMvc.perform(get("/api/ontology/entities")
+                        .param("obraId", WORKSITE_A)
+                        .param("page", "-1")
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ONTOLOGY_PAGE_INVALID"));
+
+        verify(queryService, never()).listRelationsScoped(any(), any(), any(), anyInt(), anyInt(), anyInt());
+        verify(queryService, never()).listEntitiesScoped(any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
     void pageSizeAboveOneHundredIsRejected() throws Exception {
         mockMvc.perform(get("/api/ontology/entities")
                         .param("obraId", WORKSITE_A)

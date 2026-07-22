@@ -141,7 +141,8 @@ class OperationalGraphProjectorTest {
                         "acceptedQuantity", "12.500",
                         "unitPrice", "18.40",
                         "revenue", "230.00",
-                        "unit", "M2"
+                        "unit", "M2",
+                        "worksiteId", "obra-1"
                 )
         );
     }

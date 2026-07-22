@@ -1,17 +1,27 @@
 package com.projeto.cortex.ontology.graph;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.CurrentUserService;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class PostgresqlOntologyGraphQueryServiceIT {
 
@@ -80,7 +90,7 @@ class PostgresqlOntologyGraphQueryServiceIT {
     }
 
     @Test
-    void resolvesEveryReachableWorksiteAtEqualDepthThroughCyclesAndDepthThree() {
+    void resolvesDirectedMembershipsAndDepthThreeWithoutFollowingNonProvenanceCycles() {
         try (PostgreSQLContainer<?> database = new PostgreSQLContainer<>("postgres:18")
                 .withDatabaseName("StaviasCortex")) {
             database.start();
@@ -89,15 +99,16 @@ class PostgresqlOntologyGraphQueryServiceIT {
             seedSharedTopology(jdbc);
 
             Map<String, Set<String>> resolved = queryService.resolveWorksiteIds(Set.of(
-                    "shared", "local", "orphan"
+                    "shared", "local", "orphan", "service-depth-three"
             ));
 
             assertThat(resolved).containsEntry(
                     "shared",
-                    Set.of(WORKSITE_A, WORKSITE_B, WORKSITE_C)
+                    Set.of(WORKSITE_A, WORKSITE_B)
             );
             assertThat(resolved).containsEntry("local", Set.of(WORKSITE_A));
             assertThat(resolved).containsEntry("orphan", Set.of());
+            assertThat(resolved).containsEntry("service-depth-three", Set.of(WORKSITE_C));
         }
     }
 
@@ -140,8 +151,139 @@ class PostgresqlOntologyGraphQueryServiceIT {
         }
     }
 
+    @Test
+    void keepsExclusiveRdoScopeWhenProjectedActorsAndAssetsAreSharedAcrossWorksites()
+            throws Exception {
+        try (PostgreSQLContainer<?> database = new PostgreSQLContainer<>("postgres:18")
+                .withDatabaseName("StaviasCortex")) {
+            database.start();
+            JdbcTemplate jdbc = migratedJdbc(database);
+            PostgresqlOntologyGraphRepository repository = new PostgresqlOntologyGraphRepository(
+                    jdbc,
+                    new ObjectMapper(),
+                    new DataSourceTransactionManager(jdbc.getDataSource())
+            );
+            OperationalGraphProjector projector = new OperationalGraphProjector();
+            projectedSharedActorTopology().stream()
+                    .map(projector::project)
+                    .forEach(repository::upsert);
+            OntologyGraphQueryService queryService = queryService(jdbc);
+
+            String rdoA = entityId(jdbc, "rdo-a");
+            String rdoB = entityId(jdbc, "rdo-b");
+            String collaborator = entityId(jdbc, "collaborator-shared");
+            String asset = entityId(jdbc, "asset-shared");
+
+            assertThat(queryService.resolveWorksiteIds(Set.of(rdoA, rdoB, collaborator, asset)))
+                    .containsEntry(rdoA, Set.of(WORKSITE_A))
+                    .containsEntry(rdoB, Set.of(WORKSITE_B))
+                    .containsEntry(collaborator, Set.of(WORKSITE_A, WORKSITE_B))
+                    .containsEntry(asset, Set.of(WORKSITE_A, WORKSITE_B));
+            assertThat(queryService.listEntitiesScoped(
+                    Set.of(WORKSITE_A), "RDO", null, 0, 100
+            )).extracting(GraphEntity::externalRefId)
+                    .containsExactly("rdo-a");
+            assertThat(queryService.listRelationsScoped(
+                    Set.of(WORKSITE_A), collaborator, "PARTICIPATES_IN", 1, 0, 100
+            )).extracting(GraphRelation::targetEntityId)
+                    .containsExactly(rdoA);
+            assertThat(queryService.listRelationsScoped(
+                    Set.of(WORKSITE_A), asset, "USED_IN", 1, 0, 100
+            )).extracting(GraphRelation::targetEntityId)
+                    .containsExactly(rdoA);
+
+            CurrentUserService currentUserService = mock(CurrentUserService.class);
+            when(currentUserService.requireUserId()).thenReturn("beta-a");
+            when(currentUserService.allowedObraIds("beta-a"))
+                    .thenReturn(Optional.of(Set.of(WORKSITE_A)));
+            MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
+                    new OntologyGraphController(queryService, currentUserService)
+            ).build();
+            mockMvc.perform(get("/api/ontology/entities/{id}", rdoB)
+                            .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta-a"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("ONTOLOGY_ACCESS_DENIED"))
+                    .andExpect(jsonPath("$.message").doesNotExist());
+        }
+    }
+
     private static OntologyGraphQueryService queryService(JdbcTemplate jdbc) {
         return new OntologyGraphQueryService(jdbc, new ObjectMapper());
+    }
+
+    private static List<CommittedOperationalEvent> projectedSharedActorTopology() {
+        return List.of(
+                projectedRdo(1L, "rdo-a", WORKSITE_A),
+                projectedParticipation(2L, "rdo-a", WORKSITE_A),
+                projectedAssetUse(3L, "rdo-a", WORKSITE_A),
+                projectedRdo(4L, "rdo-b", WORKSITE_B),
+                projectedParticipation(5L, "rdo-b", WORKSITE_B),
+                projectedAssetUse(6L, "rdo-b", WORKSITE_B)
+        );
+    }
+
+    private static CommittedOperationalEvent projectedRdo(
+            long sequence,
+            String rdoId,
+            String worksiteId
+    ) {
+        return projectedEvent(
+                sequence,
+                "RDO_CREATED",
+                ref("RDO", rdoId),
+                List.of(ref("WORKSITE", worksiteId)),
+                Map.of("worksiteId", worksiteId, "number", rdoId)
+        );
+    }
+
+    private static CommittedOperationalEvent projectedParticipation(
+            long sequence,
+            String rdoId,
+            String worksiteId
+    ) {
+        return projectedEvent(
+                sequence,
+                "RDO_WORKFORCE_PARTICIPATION_RECORDED",
+                ref("COLLABORATOR", "collaborator-shared"),
+                List.of(ref("RDO", rdoId), ref("WORKSITE", worksiteId)),
+                Map.of("worksiteId", worksiteId, "collaboratorName", "Compartilhado")
+        );
+    }
+
+    private static CommittedOperationalEvent projectedAssetUse(
+            long sequence,
+            String rdoId,
+            String worksiteId
+    ) {
+        return projectedEvent(
+                sequence,
+                "RDO_ASSET_USED",
+                ref("ASSET", "asset-shared"),
+                List.of(ref("RDO", rdoId), ref("WORKSITE", worksiteId)),
+                Map.of("worksiteId", worksiteId, "assetName", "Compartilhado")
+        );
+    }
+
+    private static CommittedOperationalEvent projectedEvent(
+            long sequence,
+            String type,
+            CommittedOperationalEvent.EntityRef principal,
+            List<CommittedOperationalEvent.EntityRef> related,
+            Map<String, Object> payload
+    ) {
+        return new CommittedOperationalEvent(
+                sequence,
+                "projected-event-" + sequence,
+                type,
+                principal,
+                related,
+                Instant.parse("2026-07-21T12:00:00Z").plusSeconds(sequence),
+                payload
+        );
+    }
+
+    private static CommittedOperationalEvent.EntityRef ref(String type, String id) {
+        return new CommittedOperationalEvent.EntityRef(type, id);
     }
 
     private static void seedSharedTopology(JdbcTemplate jdbc) {
@@ -155,6 +297,9 @@ class PostgresqlOntologyGraphQueryServiceIT {
         entity(jdbc, "cycle-1", "ACTIVITY", "cycle-1", "{}", "Ciclo 1");
         entity(jdbc, "cycle-2", "ACTIVITY", "cycle-2", "{}", "Ciclo 2");
         entity(jdbc, "literal-search", "RDO", "literal-search", jsonWorksite(WORKSITE_A), "Literal %_\\");
+        entity(jdbc, "service-depth-three", "SERVICE", "service-depth-three", "{}", "Serviço");
+        entity(jdbc, "execution-depth-two", "RDO_EXECUTION", "execution-depth-two", "{}", "Execução");
+        entity(jdbc, "rdo-depth-one", "RDO", "rdo-depth-one", "{}", "RDO profundo");
 
         relation(jdbc, "scope-a", "shared", "BELONGS_TO_WORKSITE", "worksite-a", 1);
         relation(jdbc, "scope-b", "shared", "BELONGS_TO_WORKSITE", "worksite-b", 1);
@@ -162,6 +307,9 @@ class PostgresqlOntologyGraphQueryServiceIT {
         relation(jdbc, "cycle-edge-2", "cycle-1", "HAS_ACTIVITY", "cycle-2", 1);
         relation(jdbc, "cycle-edge-3", "cycle-2", "HAS_ACTIVITY", "shared", 1);
         relation(jdbc, "scope-c", "cycle-2", "BELONGS_TO_WORKSITE", "worksite-c", 1);
+        relation(jdbc, "depth-service", "execution-depth-two", "EXECUTES_SERVICE", "service-depth-three", 1);
+        relation(jdbc, "depth-execution", "execution-depth-two", "RECORDED_IN", "rdo-depth-one", 1);
+        relation(jdbc, "depth-rdo", "rdo-depth-one", "BELONGS_TO_WORKSITE", "worksite-c", 1);
     }
 
     private static void seedScopedObjects(JdbcTemplate jdbc) {

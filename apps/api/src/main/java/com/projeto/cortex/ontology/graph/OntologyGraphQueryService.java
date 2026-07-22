@@ -30,10 +30,28 @@ public class OntologyGraphQueryService {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
-    private static final String AUTHORITATIVE_RELATIONS = """
-            'BELONGS_TO_WORKSITE', 'HAS_RDO', 'HAS_ACTIVITY',
-            'HAS_COLLABORATOR', 'HAS_ASSET', 'RECORDED_IN',
-            'PARTICIPATES_IN', 'USED_IN', 'EXECUTES_SERVICE', 'PRICED_BY', 'PRICES'
+    /**
+     * Relations followed from source to target while resolving the source's worksite scope.
+     *
+     * <p>The projector models an RDO as belonging to a worksite, a collaborator/asset as
+     * participating in an RDO, and an execution as recorded in an RDO. Those dependents inherit
+     * the target scope. The inverse direction is deliberately forbidden: an exclusive RDO must
+     * never inherit another worksite by walking back through a shared collaborator or asset.
+     */
+    private static final String FORWARD_SCOPE_RELATIONS = """
+            'BELONGS_TO_WORKSITE', 'PARTICIPATES_IN', 'USED_IN', 'RECORDED_IN'
+            """;
+
+    /**
+     * Relations followed from target to source while resolving the target's worksite scope.
+     *
+     * <p>Services and price versions may be shared and therefore accumulate the scopes of the
+     * executions that use them. USES_ASSET is the container-to-member spelling of USED_IN and is
+     * therefore resolved in the opposite direction. Generic HAS_* relations are intentionally
+     * absent: the operational projector does not emit them as worksite provenance.
+     */
+    private static final String REVERSE_SCOPE_RELATIONS = """
+            'EXECUTES_SERVICE', 'PRICED_BY', 'PRICES', 'USES_ASSET'
             """;
 
     private final JdbcTemplate jdbc;
@@ -71,16 +89,7 @@ public class OntologyGraphQueryService {
                            scope.depth + 1,
                            scope.path || related.id
                     FROM entity_scope scope
-                    JOIN ontology_relations relation
-                      ON (relation.source_entity_id = scope.entity_id
-                          OR relation.target_entity_id = scope.entity_id)
-                     AND relation.relation_type IN (%s)
-                    JOIN ontology_entities related
-                      ON related.id = CASE
-                          WHEN relation.source_entity_id = scope.entity_id
-                              THEN relation.target_entity_id
-                          ELSE relation.source_entity_id
-                      END
+                    %s
                     WHERE scope.depth < 3
                       AND NOT related.id = ANY(scope.path)
                 )
@@ -92,7 +101,7 @@ public class OntologyGraphQueryService {
                 worksiteExpression("entity"),
                 placeholders,
                 worksiteExpression("related"),
-                AUTHORITATIVE_RELATIONS
+                scopeTraversalJoins("scope", "relation", "related")
         );
         jdbc.query(sql, resultSet -> {
             while (resultSet.next()) {
@@ -404,16 +413,7 @@ public class OntologyGraphQueryService {
                                scope.depth + 1,
                                scope.path || related.id
                         FROM scoped_worksite scope
-                        JOIN ontology_relations scope_relation
-                          ON (scope_relation.source_entity_id = scope.entity_id
-                              OR scope_relation.target_entity_id = scope.entity_id)
-                         AND scope_relation.relation_type IN (%s)
-                        JOIN ontology_entities related
-                          ON related.id = CASE
-                              WHEN scope_relation.source_entity_id = scope.entity_id
-                                  THEN scope_relation.target_entity_id
-                              ELSE scope_relation.source_entity_id
-                          END
+                        %s
                         WHERE scope.depth < 3
                           AND NOT related.id = ANY(scope.path)
                     )
@@ -423,10 +423,40 @@ public class OntologyGraphQueryService {
                 )
                 """.formatted(
                 entityIdExpression,
-                AUTHORITATIVE_RELATIONS,
+                scopeTraversalJoins("scope", "scope_relation", "related"),
                 placeholders(normalizedWorksiteIds.size())
         ));
         params.addAll(normalizedWorksiteIds);
+    }
+
+    /** One direction/type policy shared by batch authorization and pre-pagination SQL scope. */
+    private String scopeTraversalJoins(
+            String scopeAlias,
+            String relationAlias,
+            String relatedAlias
+    ) {
+        return """
+                JOIN ontology_relations %2$s
+                  ON (
+                       (%2$s.source_entity_id = %1$s.entity_id
+                        AND UPPER(%2$s.relation_type) IN (%4$s))
+                       OR
+                       (%2$s.target_entity_id = %1$s.entity_id
+                        AND UPPER(%2$s.relation_type) IN (%5$s))
+                  )
+                JOIN ontology_entities %3$s
+                  ON %3$s.id = CASE
+                      WHEN %2$s.source_entity_id = %1$s.entity_id
+                          THEN %2$s.target_entity_id
+                      ELSE %2$s.source_entity_id
+                  END
+                """.formatted(
+                scopeAlias,
+                relationAlias,
+                relatedAlias,
+                FORWARD_SCOPE_RELATIONS,
+                REVERSE_SCOPE_RELATIONS
+        );
     }
 
     private void addEntityAndTypeFilters(
