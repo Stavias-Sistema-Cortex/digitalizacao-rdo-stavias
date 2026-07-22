@@ -50,7 +50,8 @@ function mapMaoObra(value: unknown): MaoObraDraft[] {
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
+      origemItemId: asString(item.origemItemId),
       colaboradorId: asString(item.colaboradorId),
       nomeColaborador: asString(item.nomeColaborador),
       cargo: asString(item.cargo),
@@ -266,6 +267,16 @@ export function localRecordToDraft(
     id: record.id,
     obraId: record.obraId,
     programacaoId: record.programacaoId ?? "",
+    previousRdoId: asString(payload.previousRdoId),
+    creationContextVersion:
+      typeof payload.creationContextVersion === "number" &&
+      Number.isSafeInteger(payload.creationContextVersion) &&
+      payload.creationContextVersion > 0
+        ? payload.creationContextVersion
+        : null,
+    apontadorColaboradorId: asString(
+      payload.apontadorColaboradorId,
+    ),
     numeroRdo: record.numeroRdo,
     dataRdo: record.dataRdo,
     cliente: asString(payload.cliente),

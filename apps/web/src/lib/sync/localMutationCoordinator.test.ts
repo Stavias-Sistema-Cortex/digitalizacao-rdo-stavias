@@ -506,6 +506,97 @@ describe("canonical local mutation coordinator", () => {
     ).toEqual(result.mutation);
   });
 
+  it("keeps a pre-V48 RDO create pending with a literal context block instead of terminal error", async () => {
+    const database = await getCortexDb();
+    const localRdo = rdo();
+    const mutation = {
+      clientMutationId: "00000000-0000-4000-8000-000000000018",
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: { stale: true },
+      status: "ERROR" as const,
+      tentativas: 3,
+      ultimaTentativaEm: OCCURRED_AT,
+      ultimoErro: "payload legado",
+      conflito: null,
+      criadaNoClienteEm: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+
+    expect(await repairRdoCreateMutationsForSync()).toBe(1);
+
+    expect(
+      await database.get("outbox_mutations", mutation.clientMutationId),
+    ).toMatchObject({
+      clientMutationId: mutation.clientMutationId,
+      status: "PENDING",
+      blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
+      ultimoErro: null,
+    });
+    expect(await database.getAll("outbox_mutations")).toHaveLength(1);
+  });
+
+  it("enriches and unblocks a pre-V48 queue when the local RDO has a complete context receipt", async () => {
+    const database = await getCortexDb();
+    const localRdo = {
+      ...rdo(),
+      payload: {
+        previousRdoId: "00000000-0000-4000-8000-000000000021",
+        creationContextVersion: 48,
+        apontadorColaboradorId: userId,
+        maoObra: [{
+          id: "00000000-0000-4000-8000-000000000022",
+          colaboradorId: userId,
+          nomeColaborador: "Operador de campo",
+          cargo: "Apontador",
+          tipoVinculo: "CONTRATADO",
+          quantidade: 1,
+          origemItemId: "00000000-0000-4000-8000-000000000023",
+        }],
+      },
+    };
+    const mutation = {
+      clientMutationId: "00000000-0000-4000-8000-000000000028",
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: { stale: true },
+      status: "PENDING" as const,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: null,
+      conflito: null,
+      blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
+      criadaNoClienteEm: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+
+    expect(await repairRdoCreateMutationsForSync()).toBe(1);
+
+    expect(
+      await database.get("outbox_mutations", mutation.clientMutationId),
+    ).toMatchObject({
+      status: "PENDING",
+      blockedReason: null,
+      payload: {
+        previousRdoId: "00000000-0000-4000-8000-000000000021",
+        creationContextVersion: 48,
+        apontadorColaboradorId: userId,
+        maoObra: [{
+          id: "00000000-0000-4000-8000-000000000022",
+          origemItemId: "00000000-0000-4000-8000-000000000023",
+        }],
+      },
+    });
+  });
+
   it("rolls back legacy RDO-create preflight repair on same-scope session rotation", async () => {
     const database = await getCortexDb();
     const localRdo = rdo();

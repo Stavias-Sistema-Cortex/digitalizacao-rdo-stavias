@@ -10,6 +10,16 @@ export interface RdoPersistenceState {
   error: string;
 }
 
+export function rdoLocalSaveMessage(
+  blockedReason: string | null | undefined,
+): string {
+  if (blockedReason === "RDO_CREATION_CONTEXT_REQUIRED") {
+    return "RDO salvo neste dispositivo. A sincronização aguarda o contexto da obra; reconecte para atualizar os dados de origem.";
+  }
+
+  return "RDO salvo apenas neste dispositivo. Pendente de sincronização.";
+}
+
 export function useRdoLocalPersistence() {
   const [state, setState] =
     useState<RdoPersistenceState>({
@@ -30,13 +40,14 @@ export function useRdoLocalPersistence() {
     });
 
     try {
-      await saveRdoDraftAtomically(draft);
+      const result = await saveRdoDraftAtomically(draft);
 
       setState({
         isSaving: false,
         isSyncing: false,
-        message:
-          "RDO salvo apenas neste dispositivo. Pendente de sincronização.",
+        message: rdoLocalSaveMessage(
+          result.mutation.blockedReason,
+        ),
         error: "",
       });
     } catch (error: unknown) {

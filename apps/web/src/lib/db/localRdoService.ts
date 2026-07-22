@@ -94,6 +94,17 @@ function nullIfEmpty(value: string): string | null {
   return value.trim() === "" ? null : value;
 }
 
+export function rdoCreationContextBlockReason(
+  draft: RdoDraft,
+): "RDO_CREATION_CONTEXT_REQUIRED" | null {
+  return draft.creationContextVersion !== null &&
+    Number.isSafeInteger(draft.creationContextVersion) &&
+    draft.creationContextVersion > 0 &&
+    draft.apontadorColaboradorId.trim() !== ""
+    ? null
+    : "RDO_CREATION_CONTEXT_REQUIRED";
+}
+
 function entityName(value: string | null | undefined): string | null {
   if (!value || !value.trim()) {
     return null;
@@ -166,6 +177,8 @@ function buildMaoObraPayload(item: MaoObraDraft) {
 
   return {
     ...base,
+    id: item.localId,
+    origemItemId: nullIfEmpty(base.origemItemId),
     colaboradorId: nullIfEmpty(base.colaboradorId),
     horaInicio: nullIfEmpty(base.horaInicio),
     horaFim: nullIfEmpty(base.horaFim),
@@ -313,7 +326,7 @@ function isControleEmpty(
   );
 }
 
-function buildRdoSyncPayload(
+export function buildRdoSyncPayload(
   draft: RdoDraft,
   operationalEvents: OperationalEventRecord[] = [],
 ): Record<string, unknown> {
@@ -323,6 +336,11 @@ function buildRdoSyncPayload(
     id: draft.id,
     obraId: draft.obraId,
     programacaoId: draft.programacaoId || null,
+    previousRdoId: nullIfEmpty(draft.previousRdoId),
+    creationContextVersion: draft.creationContextVersion,
+    apontadorColaboradorId: nullIfEmpty(
+      draft.apontadorColaboradorId,
+    ),
     numeroRdo: draft.numeroRdo,
     dataRdo: draft.dataRdo,
     cliente: nullIfEmpty(draft.cliente),
@@ -423,6 +441,9 @@ function buildRdoLocalPayload(
     id: draft.id,
     obraId: draft.obraId,
     programacaoId: draft.programacaoId || null,
+    previousRdoId: draft.previousRdoId,
+    creationContextVersion: draft.creationContextVersion,
+    apontadorColaboradorId: draft.apontadorColaboradorId,
     numeroRdo: draft.numeroRdo,
     dataRdo: draft.dataRdo,
     cliente: draft.cliente,
@@ -1077,6 +1098,7 @@ export async function saveNewRdoDraftAtomically(
     ultimaTentativaEm: null,
     ultimoErro: null,
     conflito: null,
+    blockedReason: rdoCreationContextBlockReason(draft),
     criadaNoClienteEm: timestamp,
     updatedAt: timestamp,
   };
@@ -1198,36 +1220,22 @@ export async function repairRdoCreateMutationsForSync(
     }
 
     const draft = rdoDraftFromLocalRecord(rdo);
+    const blockedReason = rdoCreationContextBlockReason(draft);
 
     const repairedMutation: OutboxMutationRecord = {
       ...mutation,
-      clientMutationId:
-        mutation.status === "ERROR"
-          ? crypto.randomUUID()
-          : mutation.clientMutationId,
       payload: buildRdoSyncPayload(draft),
       status: "PENDING",
-      tentativas:
-        mutation.status === "ERROR"
-          ? 0
-          : mutation.tentativas,
-      ultimaTentativaEm:
-        mutation.status === "ERROR"
-          ? null
-          : mutation.ultimaTentativaEm,
+      tentativas: mutation.status === "ERROR" ? 0 : mutation.tentativas,
+      ultimaTentativaEm: null,
       ultimoErro: null,
       conflito: null,
+      blockedReason,
+      nextAttemptAt: null,
       updatedAt: timestamp,
     };
 
-    if (mutation.status === "ERROR") {
-      await outboxStore.delete(
-        mutation.clientMutationId,
-      );
-      await outboxStore.add(repairedMutation);
-    } else {
-      await outboxStore.put(repairedMutation);
-    }
+    await outboxStore.put(repairedMutation);
 
     await rdoStore.put({
       ...rdo,
@@ -1365,6 +1373,8 @@ export async function saveExistingRdoDraftAtomically(
       ultimaTentativaEm: null,
       ultimoErro: null,
       conflito: null,
+      blockedReason: rdoCreationContextBlockReason(draft),
+      nextAttemptAt: null,
       updatedAt: timestamp,
     };
   } else {
@@ -1408,6 +1418,8 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
+        blockedReason: rdoCreationContextBlockReason(draft),
+        nextAttemptAt: null,
         updatedAt: timestamp,
       };
     } else {
@@ -1426,6 +1438,8 @@ export async function saveExistingRdoDraftAtomically(
         ultimaTentativaEm: null,
         ultimoErro: null,
         conflito: null,
+        blockedReason: rdoCreationContextBlockReason(draft),
+        nextAttemptAt: null,
         criadaNoClienteEm: timestamp,
         updatedAt: timestamp,
       };

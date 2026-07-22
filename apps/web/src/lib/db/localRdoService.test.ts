@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createEmptyRdo } from "../../features/rdos/createEmptyRdo";
 import type { LocalRdoRecord, OutboxMutationRecord } from "./db.types";
 import {
+  buildRdoSyncPayload,
   buildRdoSyncPayloadFromLocalRecord,
   canCoalesceLegacyRdoMutation,
   rdoDraftFromLocalRecord,
@@ -32,6 +33,17 @@ function validDraft() {
   draft.obraId = "obra-1";
   draft.numeroRdo = "RDO-001";
   draft.dataRdo = "2026-07-03";
+  draft.previousRdoId = "rdo-anterior-1";
+  draft.creationContextVersion = 48;
+  draft.apontadorColaboradorId = "colaborador-1";
+  draft.maoObra[0] = {
+    ...draft.maoObra[0],
+    localId: "mao-obra-stable-1",
+    colaboradorId: "colaborador-1",
+    nomeColaborador: "Maria Operadora",
+    cargo: "Operadora",
+    origemItemId: "mao-obra-anterior-1",
+  };
   draft.servicosExecutados[0] = {
     ...draft.servicosExecutados[0],
     servicoNome: "Aplicação de CBUQ",
@@ -55,6 +67,64 @@ describe("validateRdoDraftForSync", () => {
     expect(() =>
       validateRdoDraftForSync(validDraft()),
     ).not.toThrow();
+  });
+});
+
+describe("buildRdoSyncPayload V48 boundary", () => {
+  it("preserva proveniencia e identidade estavel da mao de obra no payload de producao", () => {
+    const payload = buildRdoSyncPayload(validDraft());
+
+    expect(payload).toMatchObject({
+      previousRdoId: "rdo-anterior-1",
+      creationContextVersion: 48,
+      apontadorColaboradorId: "colaborador-1",
+      maoObra: [
+        {
+          id: "mao-obra-stable-1",
+          colaboradorId: "colaborador-1",
+          origemItemId: "mao-obra-anterior-1",
+        },
+      ],
+    });
+    expect(payload.maoObra).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ localId: expect.anything() }),
+      ]),
+    );
+  });
+
+  it("reconstrói IDs estáveis tanto de payload local quanto de resposta canônica", () => {
+    const draft = validDraft();
+    const rdo: LocalRdoRecord = {
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: draft.numeroRdo,
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "PENDING_SYNC",
+      versaoEntidade: null,
+      createdAt: "2026-07-03T12:00:00.000Z",
+      updatedAt: "2026-07-03T12:00:00.000Z",
+      payload: {
+        ...draft,
+        maoObra: [{
+          ...draft.maoObra[0],
+          localId: undefined,
+          id: "mao-obra-server-1",
+        }],
+      },
+    };
+
+    expect(buildRdoSyncPayloadFromLocalRecord(rdo)).toMatchObject({
+      previousRdoId: "rdo-anterior-1",
+      creationContextVersion: 48,
+      apontadorColaboradorId: "colaborador-1",
+      maoObra: [{
+        id: "mao-obra-server-1",
+        origemItemId: "mao-obra-anterior-1",
+      }],
+    });
   });
 });
 

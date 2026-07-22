@@ -20,6 +20,7 @@ export type CondicaoClimatica =
 
 export interface MaoObraDraft {
   localId: string;
+  origemItemId: string;
   colaboradorId: string;
   nomeColaborador: string;
   cargo: string;
@@ -147,6 +148,9 @@ export interface RdoDraft {
   id: string;
   obraId: string;
   programacaoId: string;
+  previousRdoId: string;
+  creationContextVersion: number | null;
+  apontadorColaboradorId: string;
   numeroRdo: string;
   dataRdo: string;
   cliente: string;

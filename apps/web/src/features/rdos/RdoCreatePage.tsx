@@ -14,6 +14,7 @@ import {
 import { addOperationalEvent } from "../../lib/db/operationalEventRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
+import { buildRdoSyncPayload } from "../../lib/db/localRdoService";
 import type { RdoAttachmentRecord } from "../../lib/db/db.types";
 import {
   createEmptyAlocacaoColaborador,
@@ -65,66 +66,6 @@ interface RdoCreatePageProps {
 
 function parseNumericInput(value: string): NumericInput {
   return value === "" ? "" : Number(value);
-}
-
-function removeLocalId<T extends { localId: string }>(
-  item: T,
-): Omit<T, "localId"> {
-  const { localId, ...payload } = item;
-
-  void localId;
-
-  return payload;
-}
-
-function buildPayload(draft: RdoDraft) {
-  return {
-    id: draft.id,
-    obraId: draft.obraId,
-    programacaoId: draft.programacaoId || null,
-    numeroRdo: draft.numeroRdo,
-    dataRdo: draft.dataRdo,
-    cliente: draft.cliente || null,
-    contrato: draft.contrato || null,
-    rodovia: draft.rodovia || null,
-    cidade: draft.cidade || null,
-    uf: draft.uf || null,
-    kmInicialProgramado:
-      draft.kmInicialProgramado || null,
-    kmFinalProgramado:
-      draft.kmFinalProgramado || null,
-    kmInicialInterditado:
-      draft.kmInicialInterditado || null,
-    kmFinalInterditado:
-      draft.kmFinalInterditado || null,
-    turno: draft.turno,
-    horaInicio: draft.horaInicio || null,
-    horaFim: draft.horaFim || null,
-    condicaoManha: draft.condicaoManha || null,
-    condicaoTarde: draft.condicaoTarde || null,
-    condicaoNoite: draft.condicaoNoite || null,
-    pluviometriaMm:
-      draft.pluviometriaMm === ""
-        ? null
-        : draft.pluviometriaMm,
-    observacoes: draft.observacoes,
-    preenchidoPor: draft.preenchidoPor || null,
-    apontadorRdo: draft.apontadorRdo || null,
-    encarregadoObra: draft.encarregadoObra || null,
-    fiscalizacaoCampo:
-      draft.fiscalizacaoCampo || null,
-    servicosExecutados:
-      draft.servicosExecutados.map(removeLocalId),
-    alocacoesColaboradores:
-      draft.alocacoesColaboradores.map(removeLocalId),
-    maoObra: draft.maoObra.map(removeLocalId),
-    equipamentos:
-      draft.equipamentos.map(removeLocalId),
-    materiais: draft.materiais.map(removeLocalId),
-    controlesGeometricos:
-      draft.controlesGeometricos.map(removeLocalId),
-    attachments: draft.attachments,
-  };
 }
 
 function attachmentToDraft(
@@ -439,7 +380,7 @@ export function RdoCreatePage({
   } = useRdoLocalPersistence();
 
   const payload = useMemo(
-    () => buildPayload(draft),
+    () => buildRdoSyncPayload(draft),
     [draft],
   );
 

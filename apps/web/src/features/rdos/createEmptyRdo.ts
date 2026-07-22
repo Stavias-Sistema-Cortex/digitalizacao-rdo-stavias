@@ -24,6 +24,7 @@ function currentLocalDate(): string {
 export function createEmptyMaoObra(): MaoObraDraft {
   return {
     localId: createLocalId(),
+    origemItemId: "",
     colaboradorId: "",
     nomeColaborador: "",
     cargo: "",
@@ -132,6 +133,9 @@ export function createEmptyRdo(): RdoDraft {
     id: crypto.randomUUID(),
     obraId: "",
     programacaoId: "",
+    previousRdoId: "",
+    creationContextVersion: null,
+    apontadorColaboradorId: "",
     numeroRdo: "",
     dataRdo: currentLocalDate(),
     cliente: "",
