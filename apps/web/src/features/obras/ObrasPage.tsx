@@ -186,7 +186,8 @@ export function ObrasPage() {
     useState(false);
   const [showCreateWorksite, setShowCreateWorksite] =
     useState(false);
-  const { setStaviaContext } = useStaviaLauncher();
+  const { openStavia, setStaviaContext } =
+    useStaviaLauncher();
   const canCreateWorksite = isAlfa(getSession());
 
   useEffect(() => {
