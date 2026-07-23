@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import type {
   ObraLocalRecord,
   OperationalEventRecord,
@@ -334,13 +335,12 @@ export function ObrasPage() {
       onRefresh={reload}
       isRefreshing={isLoading}
     >
-      <main className="obras-page">
-        <header className="obras-topbar">
-          <div>
-            <p className="eyebrow">Ontologia operacional</p>
-            <h1>Obras</h1>
-          </div>
-          {canCreateWorksite ? (
+      <OperationalWorkspace
+        className="obras-page"
+        eyebrow="Ontologia · Escopo operacional"
+        title="Obras"
+        description="Contratos, localização, produção, previsão de receita e rastro de eventos em uma única visão."
+        actions={canCreateWorksite ? (
             <button
               type="button"
               className="obras-create-action"
@@ -349,6 +349,13 @@ export function ObrasPage() {
               Criar obra
             </button>
           ) : null}
+        status={{
+          code: isLoading ? "SYNCING" : navigator.onLine ? "SYNCED" : "LOCAL",
+          label: isLoading ? "Atualizando obras" : `${filteredObras.length} obras visíveis`,
+          detail: focusedObra ? `Foco: ${focusedObra.nome}` : "Nenhuma obra selecionada",
+        }}
+      >
+        <section className="obras-filter-bar" aria-label="Filtros de obras">
           <div
             className="home-chips"
             role="group"
@@ -400,7 +407,7 @@ export function ObrasPage() {
               ))}
             </select>
           </div>
-        </header>
+        </section>
 
         <section className="obras-workspace">
           <aside
@@ -707,7 +714,7 @@ export function ObrasPage() {
             </section>
           </div>
         ) : null}
-      </main>
+      </OperationalWorkspace>
     </CortexShell>
   );
 }

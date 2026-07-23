@@ -64,6 +64,8 @@ export function createEmptyMaterial(): MaterialDraft {
 export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
   return {
     localId: createLocalId(),
+    serviceId: "",
+    priceVersionId: "",
     servicoNome: "",
     itemContratualId: "",
     quantidadeExecutada: "",

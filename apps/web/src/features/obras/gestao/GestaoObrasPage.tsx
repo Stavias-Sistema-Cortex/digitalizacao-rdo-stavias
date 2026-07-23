@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 
+import { OperationalWorkspace } from "../../../components/workspace/OperationalWorkspace";
+
 import {
   alterarPapelColaborador,
   listarColaboradores,
@@ -234,13 +236,16 @@ export function GestaoObrasPage() {
   const vinculosRevogados = vinculos.filter((v) => v.status !== "ATIVO");
 
   return (
-    <div className="gestao-obras">
-      <header className="gestao-obras-header">
-        <div>
-          <h1>Gestão de Obras</h1>
-          <p className="gestao-obras-escopo">Escopo global (Alfa)</p>
-        </div>
-      </header>
+    <OperationalWorkspace
+      className="gestao-obras"
+      eyebrow="Administração Alfa · Escopo global"
+      title="Gestão de obras"
+      description="Cadastro, vínculos de acesso e papéis preservados com identidade e justificativa."
+      status={{
+        code: carregandoObras ? "SYNCING" : obrasErro ? "REJECTED" : "SYNCED",
+        label: carregandoObras ? "Carregando obras" : `${obras.length} obras no escopo global`,
+      }}
+    >
 
       {aviso && <p className="gestao-obras-aviso">{aviso}</p>}
 
@@ -487,6 +492,6 @@ export function GestaoObrasPage() {
           </ul>
         )}
       </section>
-    </div>
+    </OperationalWorkspace>
   );
 }

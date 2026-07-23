@@ -115,7 +115,7 @@ afterEach(async () => {
   databaseNames.clear();
 });
 
-describe("IndexedDB v16 para criação de RDO", () => {
+describe("IndexedDB v17 para criação de RDO", () => {
   it("preserva outbox e Memória ao migrar v15 e cria o cache de contexto", async () => {
     const name = await databaseNameForScope(ownerId, `BETA:${WORKSITE_A}`);
     const legacy = await openDB(name, 15, {
@@ -154,7 +154,7 @@ describe("IndexedDB v16 para criação de RDO", () => {
 
     const database = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(16);
+    expect(CORTEX_DATABASE_VERSION).toBe(17);
     expect(database.objectStoreNames.contains("rdo_creation_contexts")).toBe(true);
     expect(await database.get("outbox_mutations", "pending-v15")).toMatchObject({
       status: "PENDING",

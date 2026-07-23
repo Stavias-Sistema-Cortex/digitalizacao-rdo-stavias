@@ -269,7 +269,7 @@ public class PdorSnapshotRepository {
                 (rs, rowNum) -> map(rs),
                 obraId,
                 size,
-                page * size
+                Math.multiplyExact((long) page, size)
         );
     }
 

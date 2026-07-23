@@ -4,6 +4,8 @@ import {
   useState,
 } from "react";
 
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
+
 import {
   listarIntegracoes,
   sincronizarIntegracao,
@@ -158,22 +160,13 @@ export function IntegracoesPage({
   }
 
   return (
-    <main className="page-shell integracoes-page">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">
-            Córtex · Administração
-          </p>
-
-          <h1>Integrações</h1>
-
-          <p className="subtitle">
-            Academy e Zeladoria sincronizadas para
-            o espelho operacional do Córtex.
-          </p>
-        </div>
-
-        <div className="workspace-actions">
+    <OperationalWorkspace
+      className="integracoes-page"
+      eyebrow="Administração · Transporte de dados"
+      title="Integrações"
+      description="Fontes autorizadas, execução real e estado de sincronização do espelho operacional."
+      actions={(
+        <>
           <button
             type="button"
             className="secondary-button"
@@ -192,8 +185,17 @@ export function IntegracoesPage({
           >
             Voltar aos RDOs
           </button>
-        </div>
-      </header>
+        </>
+      )}
+      status={{
+        code: isLoading ? "SYNCING" : error ? "REJECTED" : "SYNCED",
+        label: isLoading
+          ? "Consultando integrações"
+          : error
+            ? "Consulta indisponível"
+            : `${integracoes.length} fontes autorizadas`,
+      }}
+    >
 
       {message && (
         <div className="notice">
@@ -365,6 +367,6 @@ export function IntegracoesPage({
           </dl>
         </section>
       )}
-    </main>
+    </OperationalWorkspace>
   );
 }

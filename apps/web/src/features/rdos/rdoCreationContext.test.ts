@@ -92,6 +92,7 @@ function context(
       },
     ],
     equipamentos: [],
+    serviceCatalog: [],
     coverage: {
       previousWorkforce: complete(2),
       programacoes: complete(0),

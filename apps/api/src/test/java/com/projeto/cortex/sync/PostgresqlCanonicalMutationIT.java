@@ -197,6 +197,80 @@ class PostgresqlCanonicalMutationIT {
     }
 
     @Test
+    void causalDependencyMustBeAppliedBySameOwnerAndWorksiteBeforeRetry()
+            throws Exception {
+        Setup setup = setup(false);
+        SyncPushRequest.MutacaoCliente dependency = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "dependency"
+        );
+        SyncPushRequest.MutacaoCliente dependent = withDependencies(
+                canonicalMutation(
+                        setup,
+                        setup.deviceOne(),
+                        UUID.randomUUID().toString(),
+                        UUID.randomUUID().toString(),
+                        "dependent"
+                ),
+                List.of(dependency.clientMutationId())
+        );
+
+        SyncPushResponse blocked = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(dependent))
+        );
+        SyncPushResponse prerequisite = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(dependency))
+        );
+        SyncPushResponse retried = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(dependent))
+        );
+
+        assertThat(blocked.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("ERRO");
+            assertThat(result.erro()).contains("dependências causais");
+        });
+        assertThat(prerequisite.resultados().getFirst().status()).isEqualTo("APLICADA");
+        assertThat(retried.resultados().getFirst().status()).isEqualTo("APLICADA");
+        assertThat(setup.domainWrites()).hasValue(2);
+    }
+
+    @Test
+    void appliedReplayRevalidatesCurrentWorksiteScopeWithoutRewritingReceipt()
+            throws Exception {
+        Setup setup = setup(false);
+        SyncPushRequest.MutacaoCliente mutation = canonicalMutation(
+                setup,
+                setup.deviceOne(),
+                UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(),
+                "scope-revocation"
+        );
+        SyncPushResponse applied = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(mutation))
+        );
+        when(setup.currentUser().allowedObraIds(setup.ownerId()))
+                .thenReturn(Optional.of(Set.of()));
+
+        SyncPushResponse revokedReplay = setup.service().push(
+                new SyncPushRequest(setup.deviceOne(), List.of(mutation))
+        );
+
+        assertThat(applied.resultados().getFirst().status()).isEqualTo("APLICADA");
+        assertRejected(revokedReplay, "WORKSITE_SCOPE");
+        assertThat(jdbc.queryForObject(
+                "SELECT status FROM sync_mutacao_cliente "
+                        + "WHERE proprietario_id = ? AND client_mutation_id = ?",
+                String.class,
+                setup.ownerId(),
+                mutation.clientMutationId()
+        )).isEqualTo("APLICADA");
+        assertThat(setup.domainWrites()).hasValue(1);
+    }
+
+    @Test
     void failedLegacyRetryPreservesOriginalHashAndRejectsChangedReplay() {
         Setup setup = setup(true);
         String clientId = "legacy-" + UUID.randomUUID();
@@ -545,6 +619,7 @@ class PostgresqlCanonicalMutationIT {
                 obraId,
                 deviceOne,
                 deviceTwo,
+                currentUser,
                 service,
                 attempts,
                 domainWrites,
@@ -675,6 +750,23 @@ class PostgresqlCanonicalMutationIT {
         );
     }
 
+    private SyncPushRequest.MutacaoCliente withDependencies(
+            SyncPushRequest.MutacaoCliente original,
+            List<String> dependencies
+    ) {
+        return new SyncPushRequest.MutacaoCliente(
+                original.clientMutationId(), original.entidadeTipo(),
+                original.entidadeId(), original.operacao(), original.baseVersao(),
+                original.payload(), original.criadaNoClienteEm(),
+                original.correlacaoId(), original.schemaVersion(),
+                original.deviceId(), original.userId(), original.obraId(),
+                original.entityType(), original.entityId(), original.operation(),
+                original.baseVersion(), original.changedFields(),
+                original.occurredAt(), original.trace(), original.fieldPatch(),
+                original.relatedEntities(), dependencies
+        );
+    }
+
     private void assertRejected(SyncPushResponse response, String category) {
         assertThat(response.resultados()).singleElement().satisfies(result -> {
             assertThat(result.status()).isEqualTo("REJEITADA");
@@ -762,6 +854,7 @@ class PostgresqlCanonicalMutationIT {
             String obraId,
             String deviceOne,
             String deviceTwo,
+            CurrentUserService currentUser,
             SyncService service,
             AtomicInteger attempts,
             AtomicInteger domainWrites,

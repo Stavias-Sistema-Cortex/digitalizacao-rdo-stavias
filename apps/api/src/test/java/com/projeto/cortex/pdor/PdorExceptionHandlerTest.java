@@ -1,12 +1,24 @@
 package com.projeto.cortex.pdor;
 
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraController;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PdorExceptionHandlerTest {
+
+    @Test
+    void safeAdviceAlsoCoversTheLegacyForecastController() {
+        RestControllerAdvice advice = PdorExceptionHandler.class
+                .getAnnotation(RestControllerAdvice.class);
+
+        assertThat(advice).isNotNull();
+        assertThat(advice.assignableTypes())
+                .contains(PdorController.class, PrevisaoFinanceiraController.class);
+    }
 
     @Test
     void calculationFailureReturnsCorrelationIdWithoutLeakingInternalCause() {

@@ -1,6 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { HomeOverview } from "./HomeOverview";
 import { HomeSubnav } from "./HomeSubnav";
 import { homeTabFromSearch } from "./homeTab";
@@ -22,14 +23,21 @@ export function HomePage() {
       onRefresh={data.reload}
       isRefreshing={data.isLoading}
     >
-      <main className="home-dashboard">
-        <header className="home-page-heading">
-          <div>
-            <span>Córtex operacional</span>
-            <h1>Visão do empreendimento</h1>
-          </div>
-          <p>Operação atual e registro rastreável no mesmo espaço de trabalho.</p>
-        </header>
+      <OperationalWorkspace
+        className="home-dashboard"
+        eyebrow="Córtex operacional"
+        title="Visão do empreendimento"
+        description="Operação atual e registro rastreável no mesmo espaço de trabalho."
+        status={data.isLoading
+          ? { code: "SYNCING", label: "Atualizando o banco local" }
+          : data.dataUpdatedAt
+            ? {
+                code: "LOCAL",
+                label: "Dados disponíveis neste dispositivo",
+                detail: `Última atualização registrada em ${data.dataUpdatedAt}`,
+              }
+            : { code: "LOCAL", label: "Nenhum dado local disponível" }}
+      >
         <HomeSubnav />
         <section
           id={`home-panel-${activeTab}`}
@@ -45,7 +53,7 @@ export function HomePage() {
               />
             )}
         </section>
-      </main>
+      </OperationalWorkspace>
     </CortexShell>
   );
 }

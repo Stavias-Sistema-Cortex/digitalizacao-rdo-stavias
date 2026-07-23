@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  buscarCapacidadesFinanceiras,
   buscarCategoriasFinanceiras,
   buscarCentrosCusto,
   buscarCobrancas,
@@ -13,6 +12,7 @@ import {
   buscarStatusFinanceiros,
   buscarVisaoGeral,
 } from "./financeiroApi";
+import { resolveFinanceCapabilities } from "./financeCapabilitiesResolver";
 import {
   listPendingFinancePurchases,
   mergeFinancePurchases,
@@ -35,6 +35,9 @@ import { filterFinanceRows } from "./financeiroFilters";
 
 export type FinanceSection =
   | "visao-geral"
+  | "receita"
+  | "servicos-precos"
+  | "pdor"
   | "compras"
   | "notas-fiscais"
   | "pagamentos"
@@ -86,6 +89,9 @@ export function useFinanceiroData(
   useEffect(() => {
     let cancelled = false;
     if (!filters.obraId) {
+      queueMicrotask(() => {
+        if (!cancelled) setCapabilities(null);
+      });
       return () => {
         cancelled = true;
       };
@@ -94,8 +100,9 @@ export function useFinanceiroData(
     async function load() {
       setLoading(true);
       setError("");
+      setCapabilities(null);
       try {
-        const grants = await buscarCapacidadesFinanceiras(filters.obraId);
+        const grants = await resolveFinanceCapabilities(filters.obraId);
         if (cancelled) return;
         setCapabilities(grants);
         if (!grants.permissoes.includes("FINANCEIRO_VISUALIZAR")) {
@@ -109,6 +116,14 @@ export function useFinanceiroData(
           setLedger([]);
           setCharges([]);
           setReport([]);
+          return;
+        }
+
+        if (["receita", "servicos-precos", "pdor"].includes(section)) {
+          setSuppliers([]);
+          setCostCenters([]);
+          setCategories([]);
+          setStatuses([]);
           return;
         }
 

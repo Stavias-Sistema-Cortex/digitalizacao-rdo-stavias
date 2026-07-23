@@ -70,6 +70,20 @@ public record PdorSnapshot(
         boolean stale,
         boolean current
 ) {
+    public PdorSnapshot {
+        evidenceIds = evidenceIds == null
+                ? List.of()
+                : List.copyOf(evidenceIds);
+        assumptions = assumptions == null
+                ? JsonNodeFactory.instance.objectNode()
+                : assumptions.deepCopy();
+    }
+
+    @Override
+    public JsonNode assumptions() {
+        return assumptions.deepCopy();
+    }
+
     PdorSnapshot withExplainability(
             String dataVersion,
             PdorExplainability explainability,

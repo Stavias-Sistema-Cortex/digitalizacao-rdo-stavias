@@ -1,5 +1,6 @@
 package com.projeto.cortex.pdor;
 
+import com.projeto.cortex.financeiro.PrevisaoFinanceiraController;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -9,7 +10,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 
-@RestControllerAdvice(assignableTypes = PdorController.class)
+@RestControllerAdvice(assignableTypes = {
+        PdorController.class,
+        PrevisaoFinanceiraController.class
+})
 public class PdorExceptionHandler {
 
     @ExceptionHandler(PdorCalculationException.class)
@@ -60,7 +64,9 @@ public class PdorExceptionHandler {
                         HttpStatus.BAD_REQUEST.value(),
                         HttpStatus.BAD_REQUEST.getReasonPhrase(),
                         mensagemArgumento(exception),
-                        request.getRequestURI()
+                        request.getRequestURI(),
+                        "PDOR_INVALID_REQUEST",
+                        null
                 ));
     }
 
@@ -72,6 +78,10 @@ public class PdorExceptionHandler {
         if (message.startsWith("No enum constant")) {
             return "tipoDisparo inválido. Use MANUAL, EVENT, SCHEDULED ou API.";
         }
-        return message;
+        if (message.equals("page não pode ser negativo.")
+                || message.equals("size deve estar entre 1 e 100.")) {
+            return message;
+        }
+        return "Parâmetro inválido.";
     }
 }

@@ -133,6 +133,145 @@ class SyncMutationTraceValidationTest {
     }
 
     @Test
+    void rejectsDuplicateAndSelfDependenciesBeforeHandler() throws Exception {
+        Fixture fixture = fixture();
+        Harness harness = harness(fixture);
+        SyncPushRequest.MutacaoCliente original = fixture.mutation();
+        String dependency = UUID.randomUUID().toString();
+
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withDependencies(original, List.of(dependency, dependency)),
+                "DUPLICATE_DEPENDENCY_ID"
+        );
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withDependencies(
+                        original,
+                        List.of(original.clientMutationId())
+                ),
+                "SELF_DEPENDENCY"
+        );
+
+        verify(harness.handler(), never()).apply(any(), any());
+    }
+
+    @Test
+    void keepsCanonicalMutationRetryableUntilAllDependenciesAreApplied()
+            throws Exception {
+        Fixture fixture = fixture();
+        Harness harness = harness(fixture);
+        SyncPushRequest.MutacaoCliente original = fixture.mutation();
+        SyncPushRequest.MutacaoCliente dependent = fixture.withDependencies(
+                original,
+                List.of(UUID.randomUUID().toString())
+        );
+        when(harness.jdbc().queryForObject(
+                contains("FROM rdo"),
+                eq(String.class),
+                eq(fixture.relatedId())
+        )).thenReturn(fixture.obraId());
+        when(harness.jdbc().queryForObject(
+                contains("FROM sync_mutacao_cliente"),
+                eq(Integer.class),
+                any(Object[].class)
+        )).thenReturn(0);
+
+        SyncPushResponse response = harness.service().push(
+                new SyncPushRequest(fixture.deviceId(), List.of(dependent))
+        );
+
+        assertThat(response.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("ERRO");
+            assertThat(result.erro()).contains("dependências causais");
+        });
+        verify(harness.handler(), never()).apply(any(), any());
+    }
+
+    @Test
+    void acceptsGlobalServiceReferenceWhenCreatingPriceForAnotherAuthorizedWorksite()
+            throws Exception {
+        String actorId = UUID.randomUUID().toString();
+        String deviceId = UUID.randomUUID().toString();
+        String obraId = UUID.randomUUID().toString();
+        String serviceAuthorizingWorksite = UUID.randomUUID().toString();
+        String priceId = UUID.randomUUID().toString();
+        String serviceId = UUID.randomUUID().toString();
+        String correlationId = UUID.randomUUID().toString();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", priceId);
+        payload.put("obraId", obraId);
+        payload.put("serviceId", serviceId);
+
+        SyncPushRequest.MutacaoCliente mutation = new SyncPushRequest.MutacaoCliente(
+                UUID.randomUUID().toString(),
+                "SERVICE_PRICE_VERSION",
+                priceId,
+                "CRIAR_PRECO_SERVICO",
+                null,
+                payload,
+                LocalDateTime.parse("2026-07-21T12:00:00"),
+                correlationId,
+                13,
+                deviceId,
+                actorId,
+                obraId,
+                "SERVICE_PRICE_VERSION",
+                priceId,
+                "CREATE",
+                null,
+                List.of("id", "obraId", "serviceId"),
+                OCCURRED_AT,
+                new SyncPushRequest.MutationTrace(
+                        actorId,
+                        deviceId,
+                        List.of(obraId),
+                        correlationId,
+                        null,
+                        UUID.randomUUID().toString(),
+                        sha256("{\"id\":\"" + priceId
+                                + "\",\"obraId\":\"" + obraId
+                                + "\",\"serviceId\":\"" + serviceId + "\"}")
+                ),
+                new SyncPushRequest.FieldPatch(payload, mapper.createObjectNode()),
+                List.of(new SyncPushRequest.RelatedEntity(
+                        "SERVICE", serviceId, "Serviço global"
+                )),
+                List.of()
+        );
+
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        SyncOperationHandler handler = mock(SyncOperationHandler.class);
+        when(handler.entityType()).thenReturn("SERVICE_PRICE_VERSION");
+        when(handler.operations()).thenReturn(Set.of("CRIAR_PRECO_SERVICO"));
+        when(currentUser.requireUserId()).thenReturn(actorId);
+        when(currentUser.allowedObraIds(actorId)).thenReturn(Optional.of(Set.of(obraId)));
+        when(jdbc.queryForObject(
+                anyString(), eq(Integer.class), eq(deviceId), eq(actorId)
+        )).thenReturn(1);
+        when(jdbc.queryForObject(
+                contains("FROM catalogo_servico"), eq(String.class), eq(serviceId)
+        )).thenReturn(serviceAuthorizingWorksite);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                immediateTransactions(),
+                new SyncOperationRegistry(List.of(handler)),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+
+        service.push(new SyncPushRequest(deviceId, List.of(mutation)));
+
+        verify(handler).apply(eq(mutation), any());
+    }
+
+    @Test
     void legacyEightFieldRequestRemainsSupported() {
         SyncPushRequest.MutacaoCliente legacy = new SyncPushRequest.MutacaoCliente(
                 "legacy-client-id",
@@ -304,6 +443,25 @@ class SyncMutationTraceValidationTest {
 
         private SyncPushRequest.MutacaoCliente withPayloadHash(String value) {
             return copy(actorId, deviceId, "CRIAR_RDO", value);
+        }
+
+        private SyncPushRequest.MutacaoCliente withDependencies(
+                SyncPushRequest.MutacaoCliente original,
+                List<String> dependencies
+        ) {
+            return new SyncPushRequest.MutacaoCliente(
+                    original.clientMutationId(), original.entidadeTipo(),
+                    original.entidadeId(), original.operacao(),
+                    original.baseVersao(), original.payload(),
+                    original.criadaNoClienteEm(), original.correlacaoId(),
+                    original.schemaVersion(), original.deviceId(),
+                    original.userId(), original.obraId(), original.entityType(),
+                    original.entityId(), original.operation(),
+                    original.baseVersion(), original.changedFields(),
+                    original.occurredAt(), original.trace(),
+                    original.fieldPatch(), original.relatedEntities(),
+                    dependencies
+            );
         }
 
         private SyncPushRequest.MutacaoCliente copy(

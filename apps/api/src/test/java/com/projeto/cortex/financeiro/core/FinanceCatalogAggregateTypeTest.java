@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,6 +32,7 @@ class FinanceCatalogAggregateTypeTest {
         FinanceCatalogService service = new FinanceCatalogService(
                 jdbc,
                 mock(CurrentUserService.class),
+                mock(FinancialAccessService.class),
                 mock(FinanceOntologyProjector.class)
         );
 

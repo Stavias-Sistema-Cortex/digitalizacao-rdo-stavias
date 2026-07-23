@@ -58,6 +58,7 @@ export interface RdoCreationContextLookup {
   programacoes: RdoContextSchedule[];
   colaboradores: RdoContextCollaborator[];
   equipamentos: RdoContextEquipment[];
+  serviceCatalog: RdoContextServiceCatalog[];
   coverage: {
     previousWorkforce: RdoContextCoverageSection;
     programacoes: RdoContextCoverageSection;
@@ -81,6 +82,23 @@ export interface RdoCreationContextLookup {
     generatedAt: string;
   };
   [key: string]: unknown;
+}
+
+export interface RdoContextServicePriceChoice {
+  id: string;
+  serviceId: string;
+  unit: string;
+  version: number;
+  validFrom: string;
+  effectiveValidTo: string | null;
+}
+
+export interface RdoContextServiceCatalog {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  priceChoices: RdoContextServicePriceChoice[];
 }
 
 export interface RdoPreviousWorkforceItem {

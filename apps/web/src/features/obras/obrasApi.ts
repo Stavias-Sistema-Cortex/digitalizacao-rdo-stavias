@@ -128,6 +128,14 @@ export interface ObraPdorApi {
   evidencias?: unknown;
   iniciadoPor?: string | null;
   tipoIniciador?: string | null;
+  algorithmVersion?: string | null;
+  evidenceIds?: unknown;
+  evidenceHighWaterMark?: number | null;
+  coverageCode?: string | null;
+  assumptions?: unknown;
+  executedAtUtc?: string | null;
+  stale?: boolean;
+  current?: boolean;
   erroExecucao: string | null;
 }
 
@@ -193,6 +201,14 @@ export interface ObraPdor {
   evidencias: ObraPdorEvidence[];
   iniciadoPor: string | null;
   tipoIniciador: string | null;
+  algorithmVersion: string | null;
+  evidenceIds: string[];
+  evidenceHighWaterMark: number | null;
+  coverageCode: string | null;
+  assumptions: Record<string, unknown>;
+  executedAtUtc: string | null;
+  stale: boolean;
+  current: boolean;
   erroExecucao: string | null;
 }
 
@@ -244,6 +260,13 @@ function warningsFromApi(value: unknown): string[] {
   return value.filter(
     (item): item is string => typeof item === "string" && item !== "",
   );
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string =>
+        typeof item === "string" && item.trim().length > 0)
+    : [];
 }
 
 function stringField(
@@ -366,6 +389,18 @@ export function obraPdorFromApi(api: ObraPdorApi): ObraPdor {
     evidencias: evidencesFromApi(api.evidencias),
     iniciadoPor: api.iniciadoPor ?? null,
     tipoIniciador: api.tipoIniciador ?? null,
+    algorithmVersion: api.algorithmVersion ?? null,
+    evidenceIds: stringArray(api.evidenceIds),
+    evidenceHighWaterMark:
+      typeof api.evidenceHighWaterMark === "number" &&
+      Number.isSafeInteger(api.evidenceHighWaterMark)
+        ? api.evidenceHighWaterMark
+        : null,
+    coverageCode: api.coverageCode ?? null,
+    assumptions: objectPayload(api.assumptions),
+    executedAtUtc: api.executedAtUtc ?? null,
+    stale: api.stale === true,
+    current: api.current === true,
     erroExecucao: api.erroExecucao,
   };
 }

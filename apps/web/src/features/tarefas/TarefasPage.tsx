@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { getSession } from "../auth/authSession";
 import {
   listObrasLocais,
@@ -733,9 +734,17 @@ export function TarefasPage() {
       onRefresh={reload}
       isRefreshing={isLoading}
     >
-      <main className="tarefas-page">
-        <header className="tarefas-topbar">
-          <h1>Tarefas</h1>
+      <OperationalWorkspace
+        className="tarefas-page"
+        eyebrow="Operação · Coordenação de campo"
+        title="Tarefas"
+        description="Pendências, responsáveis e conclusão rastreável por obra e equipe."
+        status={isLoading
+          ? { code: "SYNCING", label: "Carregando tarefas locais" }
+          : loadError
+            ? { code: "CONFLICT", label: "Falha ao ler as tarefas" }
+            : { code: "LOCAL", label: "Dados disponíveis neste dispositivo" }}
+        actions={(
           <div className="home-uf-filter">
             <span>Filtrar por:</span>
             <select
@@ -778,7 +787,8 @@ export function TarefasPage() {
               ))}
             </select>
           </div>
-        </header>
+        )}
+      >
 
         {obras.length > 0 ? (
           <nav
@@ -1190,7 +1200,7 @@ export function TarefasPage() {
             </aside>
           </div>
         )}
-      </main>
+      </OperationalWorkspace>
     </CortexShell>
   );
 }

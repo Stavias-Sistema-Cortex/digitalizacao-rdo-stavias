@@ -7,6 +7,7 @@ import {
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import type {
   ColaboradorLocalRecord,
   ObraLocalRecord,
@@ -508,12 +509,26 @@ export function EquipesPage() {
       onRefresh={() => setReloadTick((value) => value + 1)}
       isRefreshing={isLoading || detailLoading}
     >
-      <main className={`teams-page ${selectedTeamId ? "teams-page--detail-open" : ""}`}>
+      <OperationalWorkspace
+        className="teams-workspace"
+        eyebrow="Ontologia · Estrutura operacional"
+        title="Equipes"
+        description="Pessoas, funções, vigências e relações com obras preservadas por identidade e evento."
+        actions={alfa ? (
+          <button type="button" onClick={openCreateTeam}>Criar equipe</button>
+        ) : null}
+        status={{
+          code: isLoading ? "SYNCING" : error ? "REJECTED" : navigator.onLine ? "SYNCED" : "LOCAL",
+          label: isLoading
+            ? "Carregando equipes"
+            : error
+              ? "Catálogo indisponível"
+              : `${visibleTeams.length} equipes visíveis`,
+          detail: navigator.onLine ? "Dados locais com atualização automática" : "Dados preservados neste dispositivo",
+        }}
+      >
+      <div className={`teams-page ${selectedTeamId ? "teams-page--detail-open" : ""}`}>
         <aside className="teams-catalog">
-          <header className="teams-catalog-header">
-            <div><p>Estrutura operacional</p><h1>Equipes</h1></div>
-            {alfa && <button type="button" onClick={openCreateTeam} aria-label="Criar equipe">+</button>}
-          </header>
           <div className="teams-filters">
             <label className="teams-search"><img src="/icons8/search.png" alt="" /><input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Buscar equipe ou membro" /></label>
             <div>
@@ -569,7 +584,8 @@ export function EquipesPage() {
             </div>
           </>}
         </section>
-      </main>
+      </div>
+      </OperationalWorkspace>
 
       {selectedMember && !memberModalMode && <div className="teams-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedMember(null); }}><aside className="teams-member-drawer" aria-label="Detalhes do membro"><header><div className="teams-member-avatar">{participantInitials(selectedMember.colaboradorNome)}</div><button type="button" onClick={() => setSelectedMember(null)}>×</button></header><h2>{selectedMember.colaboradorNome}</h2><p>{selectedMember.funcaoNome}</p><dl><div><dt>Acesso</dt><dd>{selectedMember.papelAcesso ?? "Não informado"}</dd></div><div><dt>Status</dt><dd>{selectedMember.status === "ATIVO" ? "Participação ativa" : "Participação encerrada"}</dd></div><div><dt>Período</dt><dd>{formatDate(selectedMember.inicioEm)} — {formatDate(selectedMember.fimEm)}</dd></div><div><dt>Responsável</dt><dd>{selectedMember.responsavel ? "Sim" : "Não"}</dd></div><div><dt>ID do colaborador</dt><dd><code>{selectedMember.colaboradorId}</code></dd></div><div><dt>ID da participação</dt><dd><code>{selectedMember.id}</code></dd></div></dl>{alfa && selectedMember.status === "ATIVO" && <footer><button type="button" onClick={() => openEditMember(selectedMember)}>Editar participação</button><button type="button" className="is-danger" onClick={() => { setMemberForm((current) => ({ ...current, inicio: today(), motivo: "" })); setMemberModalMode("END"); }}>Encerrar participação</button></footer>}</aside></div>}
 

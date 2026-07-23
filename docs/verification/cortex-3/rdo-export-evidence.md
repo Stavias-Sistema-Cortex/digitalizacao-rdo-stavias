@@ -4,7 +4,7 @@ Data da verificação: 22/07/2026.
 
 ## Contrato verificado
 
-- O template versionado do front-end e o template do servidor têm SHA-256 `2a97db997d939b738146bad7c39428e38e159a6160f23afdf3297500fb2b8f87`.
+- O arquivo `RDO.xlsx` anexado pelo usuário, o template versionado do front-end e o template do servidor são idênticos byte a byte e têm SHA-256 `2a97db997d939b738146bad7c39428e38e159a6160f23afdf3297500fb2b8f87`.
 - O RDO sincronizado e versionado usa somente o endpoint autenticado do servidor. Um `401`, `403` ou erro de resposta não aciona fallback silencioso.
 - O RDO local, pendente ou sem versão do servidor usa somente o snapshot canônico do IndexedDB e o template precacheado pelo service worker.
 - A exportação fica desabilitada com um motivo literal enquanto obra, identificação ou qualquer um dos cinco segmentos canônicos estiver incompleto.
@@ -85,12 +85,12 @@ Renders versionados:
 
 ## Verificação offline/PWA
 
-`npm --prefix apps/web run build` gerou 93 entradas de precache. `dist/sw.js` contém explicitamente:
+`npm --prefix apps/web run build` gerou 95 entradas de precache. `dist/sw.js` contém explicitamente:
 
 ```text
 assets/RDO-v1-CHRAOGWD.xlsx
-assets/exportRdoWorkbook-BGlstg2D.js
-assets/rdoWorkbookMapping-wTLJn48Y.js
+assets/exportRdoWorkbook-B1N50ppy.js
+assets/rdoWorkbookMapping-C5sqrHIe.js
 assets/xlsx-CKkngM-o.js
 ```
 
@@ -108,7 +108,7 @@ npm --prefix apps/web run lint
 PASS, zero erro
 
 npm --prefix apps/web run build
-PASS; verificação da fronteira StavIA aprovada; PWA com 93 entradas
+PASS; verificação da fronteira StavIA aprovada; PWA com 95 entradas
 
 mvn -f apps/api/pom.xml -Dtest=RdoXlsxExportServiceTest test
 11 testes do exportador aprovados

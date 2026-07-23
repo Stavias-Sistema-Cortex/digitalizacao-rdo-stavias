@@ -19,6 +19,40 @@ import org.junit.jupiter.api.Test;
 class PostgresqlServiceCatalogOntologyPublisherTest {
 
     @Test
+    void publishesServiceWorksiteInStateForOfflinePull() {
+        CortexOperationalMemoryService memory = mock(CortexOperationalMemoryService.class);
+        PostgresqlServiceCatalogOntologyPublisher publisher =
+                new PostgresqlServiceCatalogOntologyPublisher(memory);
+        ServiceCatalogEntry service = new ServiceCatalogEntry(
+                "service-1", "PAV.CBUQ", "Pavimentação CBUQ", null,
+                "ACTIVE", Instant.parse("2026-07-22T12:00:00Z")
+        );
+
+        publisher.serviceCreated(
+                service, "obra-1", "actor-private", "mutation-sensitive"
+        );
+
+        verify(memory).registrarEventoAuditado(
+                eq(PostgresqlServiceCatalogOntologyPublisher.eventId(
+                        "SERVICE_CREATED", "actor-private", "mutation-sensitive"
+                )),
+                eq("SERVICE"), eq("service-1"), eq("SERVICE_CREATED"),
+                eq("CORTEX_FINANCEIRO"), eq("obra-1"), isNull(),
+                eq("actor-private"), anyList(), eq("ONLINE"), eq("SYNCED"),
+                any(), any(), eq(1),
+                org.mockito.ArgumentMatchers.argThat(state ->
+                        "obra-1".equals(state.get("worksiteId"))
+                ),
+                eq("actor-private"), isNull(), eq("mutation-sensitive"),
+                isNull(), anyMap(),
+                org.mockito.ArgumentMatchers.argThat(state ->
+                        "obra-1".equals(state.get("worksiteId"))
+                ),
+                eq("SUCESSO"), isNull()
+        );
+    }
+
+    @Test
     void publishesSupersessionStatesAndReplacementToPredecessorRelation() {
         CortexOperationalMemoryService memory = mock(CortexOperationalMemoryService.class);
         PostgresqlServiceCatalogOntologyPublisher publisher =

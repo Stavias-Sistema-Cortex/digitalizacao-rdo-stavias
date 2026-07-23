@@ -62,18 +62,24 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  --color-text: #18231f;
+  --color-ink: #111312;
+  --color-graphite: #292d2b;
+  --color-text: var(--color-ink);
   --color-brand-teal: #124e4a;
   --color-brand-teal-strong: #0d3f3c;
+  --color-brand-green: #123a37;
   --color-brand-yellow: #f2c800;
-  --color-canvas: #f4f6f4;
+  --color-canvas: #f1f3f0;
   --color-surface: #ffffff;
-  --color-border: #d8dfda;
-  --color-muted: #68756e;
+  --color-border: #cfd4d0;
+  --color-muted: #66706b;
   --color-focus: #2f6f68;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+  --radius-control: 4px;
+  --radius-container: 4px;
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-container);
+  --radius-lg: var(--radius-container);
+  --transition-functional: 160ms ease;
   --shadow-overlay: 0 18px 44px rgb(24 35 31 / 16%);
 }
 
@@ -85,6 +91,9 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font-weight: 400;
 }
 
 button,
@@ -96,6 +105,16 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--color-ink);
+  font-weight: 600;
 }
 
 button:focus-visible,
@@ -122,6 +141,31 @@ textarea:focus-visible,
   padding: 64px 0 120px;
 }
 
+.institutional-page {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0 96px;
+}
+
+.institutional-page__layout {
+  display: grid;
+  gap: 24px;
+}
+
+.institutional-frame {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+}
+
+.institutional-frame--strong {
+  border: 2px solid var(--color-ink);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -131,10 +175,10 @@ textarea:focus-visible,
 
 .eyebrow {
   margin: 0 0 8px;
-  color: #2b6f66;
+  color: var(--color-muted);
   font-size: 0.78rem;
-  font-weight: 750;
-  letter-spacing: 0.04em;
+  font-weight: 500;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
@@ -154,6 +198,7 @@ h1 {
   font-size: clamp(1.9rem, 3.2vw, 2.75rem);
   line-height: 1.08;
   letter-spacing: 0;
+  font-weight: 600;
 }
 
 .subtitle {
@@ -238,21 +283,21 @@ h1 {
 .secondary-button {
   min-height: 48px;
   padding: 0 20px;
-  border-radius: 999px;
-  font-weight: 750;
+  border-radius: var(--radius-control);
+  font-weight: 500;
   transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    transform 140ms ease;
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
-/* Amarelo Stavias = ação principal, como no "Entrar" do login. */
+/* A ação primária do Córtex é operacional: preta, compacta e sem ornamento. */
 .primary-button,
 .button.primary {
-  border: 1px solid #d6b000;
+  border: 1px solid var(--color-ink);
   border-radius: var(--radius-sm);
-  background: var(--color-brand-yellow);
-  color: #123b37;
+  background: var(--color-ink);
+  color: #fff;
   box-shadow: none;
 }
 
@@ -267,8 +312,10 @@ h1 {
 
 .primary-button:hover,
 .button.primary:hover {
-  background: #ffdc35;
-  transform: translateY(-1px);
+  border-color: var(--color-brand-green);
+  background: var(--color-brand-green);
+  color: #fff;
+  transform: none;
 }
 
 .secondary-button:hover,
@@ -323,17 +370,9 @@ h1 {
   line-height: 1.5;
 }
 
-/* Marcador moderno de seção: o traço de pista amarelo antes do título. */
+/* A hierarquia vem da grade e da tipografia, sem marcadores decorativos. */
 .section-heading h2::before {
-  content: "";
-  display: inline-block;
-  width: 20px;
-  height: 3px;
-  margin-right: 12px;
-  border-radius: 999px;
-  background: #fed203;
-  vertical-align: middle;
-  transform: translateY(-2px);
+  content: none;
 }
 
 .collection-heading {
@@ -617,6 +656,10 @@ textarea:focus {
   transition: grid-template-columns 220ms ease;
 }
 
+.cortex-shell-content {
+  min-width: 0;
+}
+
 /* Durante o arrasto: sem transição (borracha) e sem seleção de texto. */
 .cortex-shell.is-resizing {
   transition: none;
@@ -641,7 +684,12 @@ textarea:focus {
   padding: 25px 40px 10px;
   border: 0;
   border-radius: 0;
-  background: var(--color-brand-teal);
+  background: linear-gradient(
+    155deg,
+    #111312 0%,
+    #123a37 46%,
+    var(--color-brand-teal) 100%
+  );
   color: #eef7ef;
 }
 
@@ -657,16 +705,20 @@ textarea:focus {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid #cbd5cf;
-  border-radius: 999px;
-  background: #17504d;
+  border: 1px solid rgb(255 255 255 / 34%);
+  border-radius: var(--radius-control);
+  background: #123a37;
   color: #eef7ef;
-  box-shadow: 0 6px 18px rgb(8 36 34 / 30%);
-  transition: background 140ms ease;
+  box-shadow: none;
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
 .sidebar-toggle:hover {
-  background: #1d5f5b;
+  border-color: rgb(255 255 255 / 52%);
+  background: rgb(255 255 255 / 10%);
 }
 
 .sidebar-toggle svg {
@@ -695,7 +747,7 @@ textarea:focus {
 .sidebar-resizer:hover,
 .sidebar-resizer:focus-visible,
 .cortex-shell.is-resizing .sidebar-resizer {
-  background: rgb(254 210 3 / 55%);
+  background: rgb(255 255 255 / 24%);
 }
 
 .cortex-shell--collapsed .sidebar-resizer {
@@ -707,7 +759,7 @@ textarea:focus {
   flex-direction: column;
   align-items: center;
   padding-bottom: 12px;
-  border-bottom: 3px solid #fed203;
+  border-bottom: 1px solid rgb(255 255 255 / 28%);
   overflow: hidden;
 }
 
@@ -730,7 +782,7 @@ textarea:focus {
   display: none;
   width: 44px;
   height: auto;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   pointer-events: none;
   -webkit-user-select: none;
   user-select: none;
@@ -792,16 +844,17 @@ textarea:focus {
   width: 100%;
   min-height: 44px;
   padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   background: transparent;
   color: #eef7ef;
   font-size: 0.92rem;
   font-weight: 500;
   text-align: left;
   transition:
-    background 0.16s ease,
-    color 0.16s ease;
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
 .sidebar-nav-item img,
@@ -818,12 +871,14 @@ textarea:focus {
 }
 
 .sidebar-nav-item:hover {
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 34%);
+  background: rgb(255 255 255 / 6%);
 }
 
 .sidebar-nav-item.active {
+  border-color: transparent;
   background: rgb(255 255 255 / 10%);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* Item ativo: barra amarela de pista na lateral. */
@@ -834,8 +889,7 @@ textarea:focus {
   bottom: 20%;
   left: 0;
   width: 3px;
-  border-radius: 999px;
-  background: #fed203;
+  background: var(--color-brand-yellow);
 }
 
 .sidebar-footer button {
@@ -845,18 +899,22 @@ textarea:focus {
   gap: 10px;
   min-height: 40px;
   padding: 0 6px;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: #eef7ef;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
-  border-radius: 8px;
-  transition: background 0.16s ease;
+  border-radius: var(--radius-control);
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional),
+    color var(--transition-functional);
 }
 
 .sidebar-footer button:hover {
-  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 34%);
+  background: rgb(255 255 255 / 6%);
 }
 
 .sidebar-footer button:disabled {
@@ -1555,6 +1613,124 @@ textarea:focus {
 
   .button {
     width: 100%;
+  }
+}
+
+/* Córtex 3 · chrome institucional preto e compacto. */
+.cortex-sidebar {
+  gap: 18px;
+  padding: 20px 24px 12px;
+  background: #101112;
+}
+
+.sidebar-toggle {
+  border-color: #4d5250;
+  background: #101112;
+}
+
+.sidebar-brand {
+  border-bottom-color: #424745;
+}
+
+.sidebar-nav,
+.sidebar-footer {
+  gap: 5px;
+}
+
+.sidebar-nav-item,
+.sidebar-footer button {
+  min-height: 40px;
+  border-radius: 0;
+}
+
+.sidebar-nav-item.active {
+  border-color: #fff;
+  background: #fff;
+  color: #101112;
+}
+
+.sidebar-nav-item.active::before {
+  content: none;
+}
+
+.sidebar-nav-item.active img {
+  filter: brightness(0);
+  opacity: 0.88;
+}
+
+.avatar-button {
+  border-color: #101112;
+  border-radius: 0;
+  background: #101112;
+  color: #fff;
+}
+
+.workspace-header__actions > :is(button, a),
+.workspace-status-rail__actions > :is(button, a) {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid #101112;
+  border-radius: 0;
+  background: #101112;
+  color: #fff;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.operational-workspace.obras-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(16px, 2vw, 28px);
+}
+
+.obras-filter-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.obras-filter-bar .home-uf-filter {
+  margin-left: auto;
+}
+
+.obras-list,
+.obras-detail,
+.obras-pdor,
+.obras-pdor-grid .obras-pdor-main {
+  border-width: 1px;
+  border-radius: 0;
+}
+
+.obras-list-item,
+.obras-facts div,
+.obras-pdor-grid div,
+.obras-pdor-insufficient,
+.obras-pdor-drivers li,
+.obras-trace-list li,
+.obras-pdor-risk,
+.obras-trace-status {
+  border-radius: 0;
+}
+
+@media (max-width: 760px) {
+  .obras-filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .obras-filter-bar .home-uf-filter {
+    margin-left: 0;
   }
 }
 
@@ -2642,5 +2818,171 @@ textarea:focus {
   .obras-page {
     padding-top: 84px;
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Camada final Cortex 3: chrome compacto, preto e sem espaços reservados. */
+.floating-controls {
+  position: relative;
+  top: auto;
+  right: auto;
+  z-index: 10;
+  justify-content: flex-end;
+  min-width: 0;
+  padding: 12px 16px 0;
+}
+
+.avatar-button {
+  border: 1px solid #0a4f49;
+  border-radius: var(--radius-control);
+  font-weight: 500;
+}
+
+.profile-menu {
+  border-radius: var(--radius-container);
+  box-shadow: none;
+}
+
+.profile-menu-name,
+.profile-menu-scope,
+.profile-menu-logout,
+.profile-menu-security {
+  font-weight: 500;
+}
+
+.profile-menu-scope,
+.profile-menu-logout,
+.profile-menu-security {
+  border-radius: var(--radius-control);
+}
+
+.profile-menu-logout,
+.profile-menu-security {
+  border: 1px solid var(--color-border);
+}
+
+.profile-menu-logout {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+}
+
+.home-dashboard {
+  padding: 32px clamp(18px, 2.4vw, 36px) 72px;
+}
+
+.home-page-heading,
+.home-topbar,
+.obras-topbar {
+  border-bottom-color: var(--color-ink);
+}
+
+.home-page-heading span {
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.home-subnav [role="tab"] {
+  border-radius: 0;
+  font-weight: 500;
+}
+
+.home-subnav [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--color-ink);
+  color: var(--color-ink);
+}
+
+.chip--active {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+  font-weight: 500;
+}
+
+.home-obra-card,
+.home-card,
+.obras-list,
+.obras-detail,
+.obras-pdor {
+  border-radius: var(--radius-container);
+  box-shadow: none;
+}
+
+.home-obra-card,
+.obras-detail,
+.obras-pdor {
+  border: 2px solid var(--color-ink);
+}
+
+.home-obra-selector select,
+.home-uf-filter select,
+.obras-create-action,
+.obras-detail-actions > a {
+  border-radius: var(--radius-control);
+}
+
+.home-card h3,
+.home-obra-header h2,
+.obras-list-title,
+.obras-facts dd,
+.obras-pdor-grid dd,
+.obras-pdor-drivers strong {
+  font-weight: 600;
+}
+
+.home-card--brand,
+.obras-create-action {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+}
+
+.obras-page {
+  width: calc(100% - 32px);
+  max-width: none;
+  padding: 32px 0 72px;
+}
+
+.obras-list-item,
+.obras-facts div,
+.obras-pdor-grid div,
+.obras-pdor-insufficient,
+.obras-pdor-drivers li,
+.obras-trace-list li {
+  border-radius: 3px;
+}
+
+.obras-list-item.active {
+  border: 1px solid var(--color-ink);
+  background: #fff;
+  color: var(--color-ink);
+}
+
+.obras-pdor-risk,
+.obras-trace-status {
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+
+.obras-pdor-insufficient {
+  border: 2px solid #c59f18;
+  border-left-width: 2px;
+}
+
+.obras-pdor-grid .obras-pdor-main {
+  border: 2px solid var(--color-ink);
+}
+
+@media (max-width: 620px) {
+  .floating-controls {
+    top: auto;
+    right: auto;
+    padding: 10px 12px 0;
+  }
+
+  .home-dashboard,
+  .rdo-dashboard,
+  .obras-page {
+    padding-top: 24px;
   }
 }

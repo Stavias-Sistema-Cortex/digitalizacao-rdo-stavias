@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
 import { getSession, isAlfa } from "../auth/authSession";
 import {
@@ -32,12 +33,19 @@ import { FinanceReportsPanel } from "./FinanceReportsPanel";
 import { FinanceAllocationsPanel } from "./FinanceAllocationsPanel";
 import { FinanceGeneralScopePanel } from "./FinanceGeneralScopePanel";
 import { FinanceManualFilters } from "./FinanceManualFilters";
+import { FinanceRevenueTracePage } from "./FinanceRevenueTracePage";
+import { ServicePriceCatalogPage } from "./ServicePriceCatalogPage";
+import { buscarPdorAtual, type ObraPdor } from "../obras/obrasApi";
+import { PdorPanel } from "../obras/PdorPanel";
 import "./FinanceiroPage.css";
 
 type FinanceScopeType = "GERAL" | Exclude<FinanceControlUnitType, "CORPORATIVO">;
 
 const SECTIONS: { id: FinanceSection; label: string }[] = [
   { id: "visao-geral", label: "Visão geral" },
+  { id: "receita", label: "Receita realizada" },
+  { id: "servicos-precos", label: "Serviços e preços" },
+  { id: "pdor", label: "PDOR" },
   { id: "compras", label: "Compras" },
   { id: "notas-fiscais", label: "Notas fiscais" },
   { id: "pagamentos", label: "Pagamentos e cobranças" },
@@ -75,6 +83,9 @@ export function FinanceiroPage() {
   const [unitCapabilities, setUnitCapabilities] =
     useState<FinanceCapabilities | null>(null);
   const [reportGroup, setReportGroup] = useState("CENTRO_CUSTO");
+  const [pdor, setPdor] = useState<ObraPdor | null>(null);
+  const [pdorLoading, setPdorLoading] = useState(false);
+  const [pdorError, setPdorError] = useState<string | null>(null);
   const section = sectionFromParams(searchParams);
   const scopeType = scopeFromParams(searchParams);
   const selectedUnitId = searchParams.get("unidade")?.trim() ?? "";
@@ -83,6 +94,33 @@ export function FinanceiroPage() {
     [searchParams],
   );
   const data = useFinanceiroData(filters, section, reportGroup);
+
+  useEffect(() => {
+    if (section !== "pdor" || !filters.obraId) {
+      return;
+    }
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setPdorLoading(true);
+      setPdorError(null);
+      void buscarPdorAtual(filters.obraId)
+        .then((snapshot) => {
+          if (!cancelled) setPdor(snapshot);
+        })
+        .catch((reason: unknown) => {
+          if (!cancelled) {
+            setPdorError(reason instanceof Error
+              ? reason.message
+              : "Não foi possível carregar o PDOR desta obra.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setPdorLoading(false);
+        });
+    });
+    return () => { cancelled = true; };
+  }, [filters.obraId, section]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,16 +249,17 @@ export function FinanceiroPage() {
       onRefresh={data.reload}
       isRefreshing={data.loading}
     >
-      <main className="finance-page">
-        <header className="finance-page-header">
-          <div>
-            <p className="finance-kicker">Operação</p>
-            <h1>Financeiro</h1>
-            <p>
-              Compras, notas fiscais, rateios, pagamentos e cobranças da operação.
-            </p>
-          </div>
-        </header>
+      <OperationalWorkspace
+        className="finance-page"
+        eyebrow="Operação · Evidência financeira"
+        title="Financeiro"
+        description="Serviços e preços versionados, receita comprovada pelos RDOs, PDOR e movimentos financeiros da operação."
+        tabs={SECTIONS.map((item) => ({
+          ...item,
+          active: section === item.id,
+        }))}
+        onTabChange={(id) => applyParams(filters, id as FinanceSection)}
+      >
 
         {unitError ? (
           <div className="finance-error-state" role="alert">{unitError}</div>
@@ -256,20 +295,7 @@ export function FinanceiroPage() {
           )}
         </section>
 
-        <nav className="finance-section-nav" aria-label="Áreas do financeiro">
-          {SECTIONS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={section === item.id ? "is-active" : ""}
-              onClick={() => applyParams(filters, item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        {filters.obraId && (
+        {filters.obraId && !["receita", "servicos-precos", "pdor"].includes(section) && (
           <>
           <FinanceFiltersBar
             filters={filters}
@@ -360,6 +386,27 @@ export function FinanceiroPage() {
             ) : null}
             {data.loading ? <div className="finance-progress" role="status"><span />Atualizando dados reais…</div> : null}
             {canView && section === "visao-geral" && <FinanceOverviewPanel overview={data.overview} ledger={data.ledger} />}
+            {canView && section === "receita" && (
+              <>
+                <section className="finance-revenue-period" aria-label="Período da receita">
+                  <label>De<input type="date" value={filters.de} onChange={(event) => patchFilters({ de: event.target.value })} /></label>
+                  <label>Até<input type="date" value={filters.ate} onChange={(event) => patchFilters({ ate: event.target.value })} /></label>
+                  <p>O total reflete somente as evidências aceitas visíveis neste período.</p>
+                </section>
+                <FinanceRevenueTracePage obraId={filters.obraId} de={filters.de} ate={filters.ate} />
+              </>
+            )}
+            {canView && section === "servicos-precos" && (
+              <ServicePriceCatalogPage
+                obraId={filters.obraId}
+                permissions={permissions}
+              />
+            )}
+            {canView && section === "pdor" && (
+              <section className="finance-pdor-section">
+                <PdorPanel pdor={pdor} loading={pdorLoading} error={pdorError} />
+              </section>
+            )}
             {canView && section === "compras" && (
               <FinancePurchasesPanel
                 obraId={filters.obraId}
@@ -427,7 +474,7 @@ export function FinanceiroPage() {
             )}
           </>
         )}
-      </main>
+      </OperationalWorkspace>
     </CortexShell>
   );
 }

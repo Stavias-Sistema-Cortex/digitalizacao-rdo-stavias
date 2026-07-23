@@ -30,11 +30,14 @@ import type {
   LocalTeamWorksiteRecord,
   MemoryCacheMetadataRecord,
   MemorySearchDocumentRecord,
+  ServiceCatalogLocalRecord,
+  ServicePriceVersionLocalRecord,
+  FinanceCapabilitiesCacheRecord,
 } from "./db.types";
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 16;
+export const CORTEX_DATABASE_VERSION = 17;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -260,6 +263,35 @@ export interface CortexDbSchema extends DBSchema {
     value: MemoryCacheMetadataRecord;
     indexes: {
       "by-user": string;
+      "by-cached-at": string;
+    };
+  };
+
+  service_catalog: {
+    key: string;
+    value: ServiceCatalogLocalRecord;
+    indexes: {
+      "by-code": string;
+      "by-name": string;
+      "by-sync-status": ServiceCatalogLocalRecord["syncStatus"];
+    };
+  };
+
+  service_price_versions: {
+    key: string;
+    value: ServicePriceVersionLocalRecord;
+    indexes: {
+      "by-worksite": string;
+      "by-worksite-service": [string, string];
+      "by-sync-status": ServicePriceVersionLocalRecord["syncStatus"];
+    };
+  };
+
+  finance_capabilities: {
+    key: [string, string];
+    value: FinanceCapabilitiesCacheRecord;
+    indexes: {
+      "by-owner": string;
       "by-cached-at": string;
     };
   };
@@ -766,6 +798,38 @@ export async function getCortexDb(): Promise<
           );
           metadataStore.createIndex("by-user", "userId");
           metadataStore.createIndex("by-cached-at", "cachedAt");
+        }
+
+        if (!database.objectStoreNames.contains("service_catalog")) {
+          const catalogStore = database.createObjectStore(
+            "service_catalog",
+            { keyPath: "id" },
+          );
+          catalogStore.createIndex("by-code", "code", { unique: true });
+          catalogStore.createIndex("by-name", "name");
+          catalogStore.createIndex("by-sync-status", "syncStatus");
+        }
+
+        if (!database.objectStoreNames.contains("service_price_versions")) {
+          const priceStore = database.createObjectStore(
+            "service_price_versions",
+            { keyPath: "id" },
+          );
+          priceStore.createIndex("by-worksite", "obraId");
+          priceStore.createIndex(
+            "by-worksite-service",
+            ["obraId", "serviceId"],
+          );
+          priceStore.createIndex("by-sync-status", "syncStatus");
+        }
+
+        if (!database.objectStoreNames.contains("finance_capabilities")) {
+          const capabilitiesStore = database.createObjectStore(
+            "finance_capabilities",
+            { keyPath: "key" },
+          );
+          capabilitiesStore.createIndex("by-owner", "ownerId");
+          capabilitiesStore.createIndex("by-cached-at", "cachedAt");
         }
 
       },

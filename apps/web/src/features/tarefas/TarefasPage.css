@@ -416,7 +416,106 @@
 
 @media (max-width: 620px) {
   .tarefas-page {
-    padding-top: 84px;
+    padding-top: 24px;
     padding-bottom: calc(120px + env(safe-area-inset-bottom));
   }
+}
+
+/* Quadro operacional: geometria contida e ações primárias em preto. */
+.tarefas-topbar {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-ink);
+}
+
+.tarefas-topbar h1,
+.tarefa-form h3,
+.tarefas-eficiencia h3 {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.tarefas-card {
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+}
+
+.tarefas-obra-tabs .chip {
+  min-height: 36px;
+  border: 1px solid var(--color-ink);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.tarefas-obra-tabs .chip--active,
+.tarefas-equipe-tab--active {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.tarefas-equipe-tabs {
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tarefas-equipe-tab {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.tarefas-nova-equipe input,
+.tarefas-nova-equipe button,
+.tarefa-excluir,
+.tarefa-form input,
+.tarefa-form textarea,
+.tarefa-prio-botao,
+.tarefa-sugestoes,
+.tarefa-sugestoes button,
+.tarefa-form-enviar {
+  border-radius: var(--radius-control);
+}
+
+.tarefas-nova-equipe button {
+  border: 1px solid var(--color-ink);
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.tarefa-item {
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  transition:
+    background-color var(--transition-functional),
+    border-color var(--transition-functional);
+}
+
+.tarefa-item:hover {
+  border-color: #aeb8b1;
+  background: #fcfdfc;
+}
+
+.tarefa-sugestoes {
+  border: 1px solid var(--color-ink);
+  box-shadow: none;
+}
+
+.tarefa-form-enviar {
+  border: 1px solid var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-surface);
+  font-weight: 500;
+}
+
+.tarefa-form-enviar:hover:not(:disabled) {
+  border-color: var(--color-brand-green);
+  background: var(--color-brand-green);
 }

@@ -26,6 +26,7 @@ import { RdoCreationDialog } from "./RdoCreationDialog";
 import { RdoLocalList } from "./RdoLocalList";
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import "./RdoWorkspacePage.css";
 import {
   colaboradorStorageKey,
   setLastAccessedObraId,

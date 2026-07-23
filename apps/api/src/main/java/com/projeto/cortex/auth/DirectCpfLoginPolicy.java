@@ -14,21 +14,21 @@ public final class DirectCpfLoginPolicy {
     static final String DISABLED_MESSAGE =
             "Login direto por CPF indisponível.";
 
-    private final boolean postgresqlMode;
+    private final boolean disabled;
 
     @Autowired
     public DirectCpfLoginPolicy(Environment environment) {
         this(environment != null && environment.acceptsProfiles(
-                Profiles.of("postgresql-common")
+                Profiles.of("postgresql-common", "production")
         ));
     }
 
-    DirectCpfLoginPolicy(boolean postgresqlMode) {
-        this.postgresqlMode = postgresqlMode;
+    DirectCpfLoginPolicy(boolean disabled) {
+        this.disabled = disabled;
     }
 
     public void requireEnabled() {
-        if (postgresqlMode) {
+        if (disabled) {
             throw new ResponseStatusException(
                     HttpStatus.GONE,
                     DISABLED_MESSAGE

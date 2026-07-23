@@ -172,6 +172,8 @@ function mapServicosExecutados(
     return {
       ...empty,
       localId: asString(item.localId) || asString(item.id, empty.localId),
+      serviceId: asString(item.serviceId),
+      priceVersionId: asString(item.priceVersionId),
       servicoNome: asString(item.servicoNome),
       itemContratualId: asString(item.itemContratualId),
       quantidadeExecutada: asNumericInput(

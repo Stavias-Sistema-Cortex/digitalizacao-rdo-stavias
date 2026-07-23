@@ -47,12 +47,8 @@ const CORPORATE_SOURCE_LINES = new Map([
   [
     "apps/web/src/features/auth/LoginPage.tsx",
     [
-      "import canteiroBackdrop from \"../../assets/login/stavias-canteiro.png\";",
-      "import staviasTile from \"../../assets/stavias-s-tile.png\";",
-      "<h1 className=\"visually-hidden\">Entrar no Stavias Córtex</h1>",
-      "src={staviasTile}",
-      "alt=\"Stavias\"",
-      "<p className=\"login__footer\">© 2026 Stavias — Sistema Córtex</p>",
+      "alt=\"Stavias Córtex\"",
+      "© 2026 Stavias · Sistema Córtex · Ambiente operacional restrito",
     ],
   ],
   [
@@ -86,13 +82,8 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
-    "apps/web/src/features/rdos/RdoLocalList.tsx",
-    ["<p className=\"eyebrow\">Stavias · Sistema Córtex</p>"],
-  ],
-  [
     "apps/web/src/index.css",
     [
-      "/* Amarelo Stavias = ação principal, como no \"Entrar\" do login. */",
       "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",
     ],
   ],
@@ -353,6 +344,7 @@ const CORPORATE_DIST_PATTERNS = [
   /(?<![\p{L}\p{N}_$])alt:`Stavias`/gu,
   /(?<![\p{L}\p{N}_$])alt:`Stavias Córtex`/gu,
   /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias — Sistema Córtex`/gu,
+  /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias · Sistema Córtex · Ambiente operacional restrito`/gu,
   /(?<![\p{L}\p{N}_$])children:`Stavias Córtex · Ambiente institucional restrito`/gu,
 ];
 
@@ -908,7 +900,7 @@ export function verifyDist(distRoot = path.join(WEB_ROOT, "dist")) {
   );
   if (storeFile) {
     const declaration = storeFile.content.match(
-      /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[`"']stavia_snapshots[`"']/,
+      /(?:^|[,;]\s*|\b(?:const|let|var)\s+)([A-Za-z_$][\w$]*)\s*=\s*[`"']stavia_snapshots[`"']/,
     );
     const name = declaration?.[1] ?? "";
     if (

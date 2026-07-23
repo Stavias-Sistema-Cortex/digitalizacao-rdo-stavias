@@ -77,6 +77,7 @@ function context(partial = false): RdoCreationContextLookup {
     programacoes: [],
     colaboradores: [],
     equipamentos: [],
+    serviceCatalog: [],
     coverage: {
       previousWorkforce: complete(),
       programacoes: complete(),

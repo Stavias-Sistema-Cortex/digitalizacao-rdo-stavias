@@ -51,9 +51,9 @@
 
 .programacao-import__warnings span {
   padding: 10px 12px;
-  border: 1px solid rgba(217, 119, 6, 0.25);
-  border-radius: 8px;
-  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid #c59f18;
+  border-radius: 3px;
+  background: #fffbeb;
   color: #92400e;
   font-size: 0.82rem;
 }
@@ -185,9 +185,10 @@
 .programacao-match {
   display: inline-block;
   padding: 4px 8px;
-  border-radius: 999px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .programacao-match--ok {

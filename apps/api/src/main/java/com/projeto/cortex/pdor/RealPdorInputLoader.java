@@ -56,14 +56,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 : 0;
         SyncStats sync = buscarSyncStats(obra.getId());
         FinanceStats finance = buscarFinanceStats(obra.getId(), referenceDate);
-        ServiceQuantityStats rawServiceQuantity =
-                buscarServiceQuantityStats(obra.getId(), referenceDate);
-        ServiceQuantityStats serviceQuantity = new ServiceQuantityStats(
-                rawServiceQuantity.itemCount(),
-                rawServiceQuantity.contractUnitCount(),
-                rawServiceQuantity.totalPlanned(),
-                rawServiceQuantity.executionCount(),
-                rawServiceQuantity.executionUnitCount(),
+        ServiceQuantityStats serviceQuantity = buscarServiceQuantityStats(
+                obra.getId(),
+                referenceDate,
                 finance.acceptedQuantity()
         );
         TeamStats team = buscarTeamStats(obra.getId(), referenceDate);
@@ -1302,8 +1297,15 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 obraId
         );
 
-        List<AcceptedRevenueRow> acceptedRows = jdbcTemplate.query(
+        FinanceEvidenceSnapshot evidenceSnapshot = jdbcTemplate.query(
                 """
+                WITH evidence_snapshot AS (
+                    SELECT COALESCE((
+                        SELECT ultima_commit_seq
+                        FROM cortex_evento_commit_sequence
+                        WHERE id = 1
+                    ), 0)::bigint AS high_water_mark
+                ), accepted_evidence AS (
                 SELECT execution.revenue_evidence_id,
                        execution.revenue_amount,
                        execution.quantidade_executada,
@@ -1369,6 +1371,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                          'id', execution.revenue_evidence_id
                      )
                  )
+                CROSS JOIN evidence_snapshot snapshot
                 WHERE execution.obra_id = ?
                   AND execution.data_execucao <= ?
                   AND execution.revenue_coverage_code = 'ACCEPTED_EXACT'
@@ -1378,26 +1381,42 @@ public class RealPdorInputLoader implements PdorInputLoader {
                   AND execution.cancelada = FALSE
                   AND execution.producao_rejeitada = FALSE
                   AND execution.retrabalho = FALSE
-                ORDER BY execution.revenue_evidence_id
+                  AND event.commit_seq <= snapshot.high_water_mark
+                )
+                SELECT snapshot.high_water_mark,
+                       accepted.revenue_evidence_id,
+                       accepted.revenue_amount,
+                       accepted.quantidade_executada,
+                       accepted.commit_seq
+                FROM evidence_snapshot snapshot
+                LEFT JOIN accepted_evidence accepted ON TRUE
+                ORDER BY accepted.revenue_evidence_id
                 """,
-                (rs, rowNumber) -> new AcceptedRevenueRow(
-                        rs.getString("revenue_evidence_id"),
-                        rs.getBigDecimal("revenue_amount"),
-                        rs.getBigDecimal("quantidade_executada"),
-                        rs.getLong("commit_seq")
-                ),
+                rs -> {
+                    long highWaterMark = 0L;
+                    List<AcceptedRevenueRow> rows = new ArrayList<>();
+                    while (rs.next()) {
+                        highWaterMark = rs.getLong("high_water_mark");
+                        String evidenceId = rs.getString("revenue_evidence_id");
+                        if (evidenceId != null) {
+                            rows.add(new AcceptedRevenueRow(
+                                    evidenceId,
+                                    rs.getBigDecimal("revenue_amount"),
+                                    rs.getBigDecimal("quantidade_executada"),
+                                    rs.getLong("commit_seq")
+                            ));
+                        }
+                    }
+                    return new FinanceEvidenceSnapshot(
+                            highWaterMark,
+                            List.copyOf(rows)
+                    );
+                },
                 obraId,
                 referenceDate
         );
-        Long highWaterMark = jdbcTemplate.queryForObject(
-                """
-                SELECT ultima_commit_seq
-                FROM cortex_evento_commit_sequence
-                WHERE id = 1
-                """,
-                Long.class
-        );
-        long resolvedHighWaterMark = highWaterMark == null ? 0L : highWaterMark;
+        List<AcceptedRevenueRow> acceptedRows = evidenceSnapshot.acceptedRows();
+        long resolvedHighWaterMark = evidenceSnapshot.highWaterMark();
         long acceptedEvidenceMaxCommit = acceptedRows.stream()
                 .mapToLong(AcceptedRevenueRow::commitSequence)
                 .max()
@@ -1439,7 +1458,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
 
     private ServiceQuantityStats buscarServiceQuantityStats(
             String obraId,
-            LocalDate referenceDate
+            LocalDate referenceDate,
+            BigDecimal acceptedQuantity
     ) {
         return jdbcTemplate.queryForObject(
                 """
@@ -1475,22 +1495,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         WHERE obra_id = ?
                           AND data_execucao <= ?
                           AND cancelada = FALSE
-                    ) AS execution_unit_count,
-                    (
-                        SELECT SUM(CASE
-                                WHEN producao_rejeitada = FALSE
-                                 AND retrabalho = FALSE
-                                 AND status_validacao = 'VALIDADA'
-                                 AND revenue_coverage_code = 'ACCEPTED_EXACT'
-                                 AND revenue_evidence_id IS NOT NULL
-                                    THEN quantidade_executada
-                                ELSE 0
-                            END)
-                        FROM execucao_servico_rdo
-                        WHERE obra_id = ?
-                          AND data_execucao <= ?
-                          AND cancelada = FALSE
-                    ) AS actual_executed
+                    ) AS execution_unit_count
                 """,
                 (rs, rowNumber) -> new ServiceQuantityStats(
                         rs.getInt("item_count"),
@@ -1498,13 +1503,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         rs.getBigDecimal("total_planned"),
                         rs.getInt("execution_count"),
                         rs.getInt("execution_unit_count"),
-                        valueOrZero(rs.getBigDecimal("actual_executed"))
+                        valueOrZero(acceptedQuantity)
                 ),
                 obraId,
                 obraId,
                 obraId,
-                obraId,
-                referenceDate,
                 obraId,
                 referenceDate,
                 obraId,
@@ -1795,6 +1798,12 @@ public class RealPdorInputLoader implements PdorInputLoader {
             BigDecimal revenue,
             BigDecimal acceptedQuantity,
             long commitSequence
+    ) {
+    }
+
+    private record FinanceEvidenceSnapshot(
+            long highWaterMark,
+            List<AcceptedRevenueRow> acceptedRows
     ) {
     }
 

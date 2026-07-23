@@ -433,9 +433,14 @@ export function CortexShell({
         </div>
       </aside>
 
-      <div className="floating-controls">
-        <SyncStatusBanner />
-        <div className="profile-menu-anchor">
+      <div className="cortex-shell-content">
+        <div
+          className="floating-controls"
+          role="group"
+          aria-label="Controles globais"
+        >
+          <SyncStatusBanner />
+          <div className="profile-menu-anchor">
           <button
             type="button"
             className="avatar-button"
@@ -443,13 +448,17 @@ export function CortexShell({
               setIsProfileMenuOpen((open) => !open)
             }
             aria-expanded={isProfileMenuOpen}
-            aria-haspopup="menu"
+            aria-haspopup="dialog"
             title={session?.nome ?? "Perfil"}
           >
             {sessionInitials(session?.nome ?? null)}
           </button>
           {isProfileMenuOpen && (
-            <div className="profile-menu" role="menu">
+            <div
+              className="profile-menu"
+              role="dialog"
+              aria-label="Opções do perfil"
+            >
               <p className="profile-menu-name">
                 {session?.nome ?? "Colaborador"}
               </p>
@@ -461,7 +470,6 @@ export function CortexShell({
               <button
                 type="button"
                 className="profile-menu-security"
-                role="menuitem"
                 onClick={() => {
                   setIsProfileMenuOpen(false);
                   navigate("/seguranca");
@@ -472,7 +480,6 @@ export function CortexShell({
               <button
                 type="button"
                 className="profile-menu-logout"
-                role="menuitem"
                 onClick={() => {
                   void handleLogout();
                 }}
@@ -487,10 +494,11 @@ export function CortexShell({
               ) : null}
             </div>
           )}
+          </div>
         </div>
-      </div>
 
-      {children}
+        {children}
+      </div>
     </div>
   );
 }

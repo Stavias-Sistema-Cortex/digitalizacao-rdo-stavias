@@ -617,6 +617,26 @@ describe("StavIA runtime boundary", () => {
     }
   });
 
+  it("accepts the retired store in a minified comma declaration", () => {
+    const distRoot = mkdtempSync(
+      path.join(tmpdir(), "cortex-stavia-dist-comma-declaration-"),
+    );
+    const compiledCleanup = [
+      "function clearRetired(){",
+      `let retiredKeys=["${LEGACY_LOCAL_STORAGE_KEYS[0]}","${LEGACY_LOCAL_STORAGE_KEYS[1]}"];`,
+      "let storage=window.localStorage;for(let key of retiredKeys)storage.removeItem(key)}",
+      `var unrelated=1,legacyStore="${LEGACY_SNAPSHOT_STORE}",other=2;`,
+      "function migrate(database){database.objectStoreNames.contains(legacyStore)&&database.deleteObjectStore(legacyStore)}",
+    ].join("");
+
+    try {
+      writeFileSync(path.join(distRoot, "index.js"), compiledCleanup);
+      expect(() => verifyDist(distRoot)).not.toThrow();
+    } finally {
+      rmSync(distRoot, { recursive: true, force: true });
+    }
+  });
+
   it("ignores a short store identifier when it is only a substring of other symbols", () => {
     const distRoot = mkdtempSync(
       path.join(tmpdir(), "cortex-stavia-dist-short-identifier-"),

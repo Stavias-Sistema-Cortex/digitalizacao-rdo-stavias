@@ -10,6 +10,8 @@ import type {
   OutboxMutationRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
+  ServiceCatalogLocalRecord,
+  ServicePriceVersionLocalRecord,
 } from "../db/db.types";
 import {
   mergeObraRecords,
@@ -467,8 +469,52 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "rdo_attachments",
   "mensagens",
   "mensagem_anexos",
+  "service_catalog",
+  "service_price_versions",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
+
+interface CatalogRecordStore<T> {
+  get: (key: string) => Promise<T | undefined>;
+  put: (value: T) => Promise<IDBValidKey>;
+}
+
+interface CatalogSyncTransaction {
+  objectStore(name: "service_catalog"): CatalogRecordStore<ServiceCatalogLocalRecord>;
+  objectStore(name: "service_price_versions"): CatalogRecordStore<ServicePriceVersionLocalRecord>;
+}
+
+async function updateCatalogMutationSyncStatus(
+  transaction: CatalogSyncTransaction,
+  mutation: OutboxMutationRecord,
+  syncStatus: LocalSyncStatus,
+  timestamp: string,
+  lastError: string | null,
+  entityVersion?: number | null,
+): Promise<void> {
+  if (mutation.entidadeTipo === "SERVICE") {
+    const store = transaction.objectStore("service_catalog");
+    const service = await store.get(mutation.entidadeId);
+    if (service) {
+      await store.put({ ...service, syncStatus, updatedAt: timestamp, lastError });
+    }
+  }
+  if (mutation.entidadeTipo === "SERVICE_PRICE_VERSION") {
+    const store = transaction.objectStore("service_price_versions");
+    const price = await store.get(mutation.entidadeId);
+    if (price) {
+      await store.put({
+        ...price,
+        syncStatus,
+        entityVersion: typeof entityVersion === "number"
+          ? entityVersion
+          : price.entityVersion,
+        updatedAt: timestamp,
+        lastError,
+      });
+    }
+  }
+}
 
 async function updateRdoChildrenSyncStatus(
   transaction: RdoChildSyncTransaction,
@@ -764,6 +810,13 @@ export async function recoverInterruptedMutations(
     };
 
     await outboxStore.put(updatedMutation);
+    await updateCatalogMutationSyncStatus(
+      transaction,
+      mutation,
+      "PENDING_SYNC",
+      timestamp,
+      updatedMutation.ultimoErro,
+    );
     if (isCanonicalOutboxMutation(mutation)) {
       const event = await exactCanonicalEvent(
         transaction,
@@ -1430,6 +1483,13 @@ export async function markMutationAsSyncing(
     ultimoErro: null,
     updatedAt: timestamp,
   });
+  await updateCatalogMutationSyncStatus(
+    transaction,
+    currentMutation,
+    "SYNCING",
+    timestamp,
+    null,
+  );
 
   if (isCanonicalOutboxMutation(currentMutation)) {
     const event = await exactCanonicalEvent(
@@ -1580,6 +1640,14 @@ export async function applyPushResultAtomically(
       blockedReason: null,
       updatedAt: timestamp,
     });
+    await updateCatalogMutationSyncStatus(
+      transaction,
+      mutation,
+      "SYNCED",
+      timestamp,
+      null,
+      resultVersion,
+    );
 
     if (canonicalEvent) {
       await putCanonicalEvent(transaction, {
@@ -1681,6 +1749,14 @@ export async function applyPushResultAtomically(
       conflito: conflict,
       updatedAt: timestamp,
     });
+    await updateCatalogMutationSyncStatus(
+      transaction,
+      mutation,
+      "CONFLICT",
+      timestamp,
+      result.erro ?? "Conflito informado pelo servidor.",
+      resultVersion,
+    );
 
     if (canonicalEvent) {
       await putCanonicalEvent(transaction, {
@@ -1746,6 +1822,14 @@ export async function applyPushResultAtomically(
             updatedAt: timestamp,
           };
     await outboxStore.put(updatedMutation);
+    await updateCatalogMutationSyncStatus(
+      transaction,
+      mutation,
+      disposition.retryable ? "PENDING_SYNC" : "ERROR",
+      timestamp,
+      messageText,
+      resultVersion,
+    );
 
     if (canonicalEvent) {
       await putCanonicalEvent(transaction, {
@@ -1922,6 +2006,8 @@ export async function reconcileCanonicalConflict(
         "mensagens",
         "mensagem_conversas",
         "mensagem_anexos",
+        "service_catalog",
+        "service_price_versions",
       ],
       "readwrite",
     ),
@@ -2149,6 +2235,8 @@ export async function resolveCanonicalUploadReplacements(
             "mensagens",
             "mensagem_conversas",
             "mensagem_anexos",
+            "service_catalog",
+            "service_price_versions",
           ],
           "readwrite",
         ),
@@ -2273,16 +2361,36 @@ function replacementDomainSnapshot(
       updatedAt: occurredAt,
     };
   }
+  if (mutation.entityType === "SERVICE") {
+    return {
+      ...merged,
+      syncStatus: "PENDING_SYNC",
+      updatedAt: occurredAt,
+      lastError: null,
+    };
+  }
+  if (mutation.entityType === "SERVICE_PRICE_VERSION") {
+    return {
+      ...merged,
+      entityVersion: serverVersion,
+      syncStatus: "PENDING_SYNC",
+      updatedAt: occurredAt,
+      lastError: null,
+    };
+  }
   return { ...merged };
 }
 
 function principalStoreFor(
   entityType: string,
-): "rdos" | "mensagens" | "mensagem_conversas" | "mensagem_anexos" {
+): "rdos" | "mensagens" | "mensagem_conversas" | "mensagem_anexos" |
+  "service_catalog" | "service_price_versions" {
   if (entityType === "RDO") return "rdos";
   if (entityType === "MENSAGEM") return "mensagens";
   if (entityType === "CONVERSA") return "mensagem_conversas";
   if (entityType === "MENSAGEM_ANEXO") return "mensagem_anexos";
+  if (entityType === "SERVICE") return "service_catalog";
+  if (entityType === "SERVICE_PRICE_VERSION") return "service_price_versions";
   throw new Error(
     `entityType ${entityType} não possui snapshot local reconciliável.`,
   );

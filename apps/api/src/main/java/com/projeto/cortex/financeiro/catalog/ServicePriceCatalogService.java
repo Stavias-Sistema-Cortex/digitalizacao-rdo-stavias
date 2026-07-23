@@ -73,7 +73,9 @@ public class ServicePriceCatalogService {
             return replayService(replay.orElseThrow(), hash);
         }
 
-        String id = UUID.randomUUID().toString();
+        String id = normalized.id() == null
+                ? UUID.randomUUID().toString()
+                : normalized.id();
         ServiceCatalogEntry created;
         try {
             created = repository.createService(new CreateServiceRecord(
@@ -121,7 +123,10 @@ public class ServicePriceCatalogService {
         ServicePriceVersion created;
         try {
             created = repository.createPrice(new CreatePriceRecord(
-                    UUID.randomUUID().toString(), worksite, serviceIdNormalized,
+                    normalized.id() == null
+                            ? UUID.randomUUID().toString()
+                            : normalized.id(),
+                    worksite, serviceIdNormalized,
                     actor, normalized.clientMutationId(), hash,
                     normalized.unit(), normalized.currency(), normalized.unitPrice(),
                     normalized.validFrom(), normalized.validTo(), normalized.source(),
@@ -167,7 +172,10 @@ public class ServicePriceCatalogService {
         ServicePriceVersion replacement;
         try {
             replacement = repository.supersedePrice(new CreatePriceRecord(
-                    UUID.randomUUID().toString(), worksite, previous.serviceId(), actor,
+                    normalized.id() == null
+                            ? UUID.randomUUID().toString()
+                            : normalized.id(),
+                    worksite, previous.serviceId(), actor,
                     normalized.clientMutationId(), hash, previous.unit(),
                     previous.currency(), normalized.unitPrice(), normalized.validFrom(),
                     normalized.validTo(), normalized.source(), previous.id(), clock.instant()
@@ -262,6 +270,7 @@ public class ServicePriceCatalogService {
         CreateServiceCommand normalized = normalize(command);
         return hash(Map.of(
                 "operation", "SERVICE_CREATED",
+                "id", nullText(normalized.id()),
                 "obraId", uuid(obraId, "obraId"),
                 "code", normalized.code(),
                 "name", normalized.name(),
@@ -277,6 +286,7 @@ public class ServicePriceCatalogService {
         CreateServicePriceCommand normalized = normalize(command);
         return hash(Map.of(
                 "operation", "SERVICE_PRICE_VERSION_CREATED",
+                "id", nullText(normalized.id()),
                 "obraId", uuid(obraId, "obraId"),
                 "serviceId", uuid(serviceId, "serviceId"),
                 "unit", normalized.unit(),
@@ -295,6 +305,7 @@ public class ServicePriceCatalogService {
     ) {
         return hash(Map.of(
                 "operation", "SERVICE_PRICE_VERSION_SUPERSEDED",
+                "id", nullText(command.id()),
                 "obraId", obraId,
                 "previousId", previousId,
                 "unitPrice", command.unitPrice().toPlainString(),
@@ -362,6 +373,7 @@ public class ServicePriceCatalogService {
             throw FinanceValidation.badRequest("codigo de serviço inválido.");
         }
         return new CreateServiceCommand(
+                FinanceValidation.optionalUuid(command.id(), "id"),
                 mutation,
                 code,
                 FinanceValidation.requiredText(command.name(), "nome", 160),
@@ -388,6 +400,7 @@ public class ServicePriceCatalogService {
             );
         }
         return new CreateServicePriceCommand(
+                FinanceValidation.optionalUuid(command.id(), "id"),
                 FinanceValidation.mutationId(command.clientMutationId()),
                 unit,
                 FinanceValidation.currency(command.currency()),
@@ -417,6 +430,7 @@ public class ServicePriceCatalogService {
             );
         }
         return new SupersedeServicePriceCommand(
+                FinanceValidation.optionalUuid(command.id(), "id"),
                 FinanceValidation.mutationId(command.clientMutationId()),
                 price(command.unitPrice()),
                 from,

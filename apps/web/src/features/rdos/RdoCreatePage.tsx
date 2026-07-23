@@ -6,6 +6,12 @@ import {
   useState,
 } from "react";
 
+import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
+import {
+  InstitutionalStatus,
+  type InstitutionalStatusState,
+} from "../../components/institutional/InstitutionalStatus";
+
 import {
   listRdoAttachments,
   markRdoAttachmentRemoved,
@@ -43,6 +49,7 @@ import {
 } from "./rdoLookupApi";
 import {
   formatRdoServiceType,
+  isRdoPriceCatalogSelectable,
   searchRdoServiceTypes,
   type RdoServiceType,
 } from "./rdoServiceTypes";
@@ -65,6 +72,25 @@ interface RdoCreatePageProps {
   creationContext?: RdoCreationContextLookup;
   onBackToList: () => void;
   onSaved: (savedObraId: string) => void;
+}
+
+function institutionalStatusState(
+  status: RdoDraft["syncStatus"],
+): InstitutionalStatusState {
+  switch (status) {
+    case "LOCAL_ONLY":
+      return "LOCAL";
+    case "PENDING_SYNC":
+      return "PENDING";
+    case "SYNCING":
+      return "SYNCING";
+    case "SYNCED":
+      return "SYNCED";
+    case "CONFLICT":
+      return "CONFLICT";
+    case "ERROR":
+      return "REJECTED";
+  }
 }
 
 function parseNumericInput(value: string): NumericInput {
@@ -136,6 +162,8 @@ interface LookupFieldProps<TItem> {
   getKey: (item: TItem) => string;
   getTitle: (item: TItem) => string;
   getSubtitle: (item: TItem) => string;
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 function LookupField<TItem>({
@@ -149,6 +177,8 @@ function LookupField<TItem>({
   getKey,
   getTitle,
   getSubtitle,
+  disabled = false,
+  disabledMessage = "",
 }: LookupFieldProps<TItem>) {
   const inputId = useId();
   const [isOpen, setIsOpen] = useState(false);
@@ -231,6 +261,7 @@ function LookupField<TItem>({
           autoComplete="off"
           aria-expanded={isOpen}
           aria-controls={`${inputId}-options`}
+          disabled={disabled}
           onFocus={handleFocus}
           onBlur={handleBlur}
           onChange={(event) => {
@@ -240,7 +271,7 @@ function LookupField<TItem>({
           }}
         />
 
-        {isOpen ? (
+        {isOpen && !disabled ? (
           <div
             id={`${inputId}-options`}
             className="lookup-panel"
@@ -289,6 +320,9 @@ function LookupField<TItem>({
           </div>
         ) : null}
       </div>
+      {disabled && disabledMessage ? (
+        <span className="lookup-state">{disabledMessage}</span>
+      ) : null}
     </div>
   );
 }
@@ -325,12 +359,6 @@ function getAssetSubtitle(asset: AssetLookup) {
   return asset.category || asset.id;
 }
 
-function buscarTiposServico(
-  query: string,
-): Promise<RdoServiceType[]> {
-  return Promise.resolve(searchRdoServiceTypes(query));
-}
-
 function getTipoServicoTitle(serviceType: RdoServiceType) {
   return serviceType.displayName;
 }
@@ -338,10 +366,8 @@ function getTipoServicoTitle(serviceType: RdoServiceType) {
 function getTipoServicoSubtitle(serviceType: RdoServiceType) {
   return (
     [
-      serviceType.parentCode && serviceType.parentName
-        ? `${serviceType.parentCode} - ${serviceType.parentName}`
-        : null,
-      `Nivel ${serviceType.level}`,
+      serviceType.description,
+      `${serviceType.priceChoices.length} ${serviceType.priceChoices.length === 1 ? "preço vigente" : "preços vigentes"}`,
     ]
       .filter(Boolean)
       .join(" · ")
@@ -391,6 +417,16 @@ export function RdoCreatePage({
     () => buildRdoSyncPayload(draft),
     [draft],
   );
+  const serviceCatalog = activeCreationContext?.serviceCatalog ?? [];
+  const priceCatalogSelectable = isRdoPriceCatalogSelectable(
+    activeCreationContext?.coverage.serviceCatalog,
+    activeCreationContext?.coverage.priceCatalog,
+  );
+  const priceCoverageMessage = priceCatalogSelectable
+    ? ""
+    : "Catálogo parcial ou indisponível. Sincronize o contexto antes de selecionar um preço.";
+  const buscarTiposServico = (query: string): Promise<RdoServiceType[]> =>
+    Promise.resolve(searchRdoServiceTypes(serviceCatalog, query));
 
   const photoCount = draft.attachments.filter(
     (attachment) => attachment.removedAt === null,
@@ -868,36 +904,33 @@ export function RdoCreatePage({
   }
 
   return (
-    <main className="page-shell">
+    <main className="page-shell rdo-create-workspace">
       <datalist id="rdo-unidades">
         {UNIDADES_RDO.map((unidade) => (
           <option key={unidade} value={unidade} />
         ))}
       </datalist>
 
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">
-            Córtex · Operação de campo
-          </p>
-
-
-          <h1>
-            {isExisting
-              ? "Editar Relatório Diário de Obra"
-              : "Novo Relatório Diário de Obra"}
-          </h1>
-
-          <span className="brand-tick" aria-hidden="true" />
-
-          <p className="subtitle">
-            Registre e cont
-            inue editando o relatório mesmo
-            sem conexão com a internet.
-          </p>
-        </div>
-
-        <div className="workspace-actions">
+      <InstitutionalPageHeader
+        eyebrow="Operação de campo · Documento diário"
+        title={
+          isExisting
+            ? "Editar Relatório Diário de Obra"
+            : "Novo Relatório Diário de Obra"
+        }
+        description="Registro operacional editável sem conexão, com persistência local e confirmação do servidor identificadas separadamente."
+        actions={(
+          <div className="workspace-actions">
+            <div className="rdo-header-status">
+              <span className="status-label">Registro local</span>
+              <InstitutionalStatus
+                state={institutionalStatusState(draft.syncStatus)}
+                label={formatLocalSyncStatus(draft.syncStatus)}
+              />
+              <span className="status-id tabular-nums">
+                ID {draft.id.slice(0, 8)}
+              </span>
+            </div>
           <button
             type="button"
             className="secondary-button"
@@ -906,26 +939,9 @@ export function RdoCreatePage({
           >
             Voltar aos RDOs locais
           </button>
-
-          <div className="status-panel">
-            <span className="status-label">
-              Status local
-            </span>
-
-            <strong
-              className={`status-badge status-badge--${draft.syncStatus.toLowerCase()}`}
-            >
-              {formatLocalSyncStatus(
-                draft.syncStatus,
-              )}
-            </strong>
-
-            <span className="status-id">
-              ID: {draft.id.slice(0, 8)}
-            </span>
           </div>
-        </div>
-      </header>
+        )}
+      />
 
       {notice && (
         <div className="notice">
@@ -1517,10 +1533,14 @@ export function RdoCreatePage({
                   placeholder="Pesquise por codigo, frente ou servico"
                   emptyMessage="Nenhum tipo de servico encontrado."
                   search={buscarTiposServico}
+                  disabled={!priceCatalogSelectable}
+                  disabledMessage={priceCoverageMessage}
                   onQueryChange={(value) =>
                     updateServicoExecutado(
                       item.localId,
                       {
+                        serviceId: "",
+                        priceVersionId: "",
                         servicoNome: value,
                       },
                     )
@@ -1529,8 +1549,16 @@ export function RdoCreatePage({
                     updateServicoExecutado(
                       item.localId,
                       {
+                        serviceId: serviceType.catalogId,
+                        priceVersionId: serviceType.priceChoices.length === 1
+                          ? serviceType.priceChoices[0].id
+                          : "",
                         servicoNome:
                           formatRdoServiceType(serviceType),
+                        unidade: item.unidade ||
+                          (serviceType.priceChoices.length === 1
+                            ? serviceType.priceChoices[0].unit
+                            : ""),
                       },
                     )
                   }
@@ -1538,6 +1566,38 @@ export function RdoCreatePage({
                   getTitle={getTipoServicoTitle}
                   getSubtitle={getTipoServicoSubtitle}
                 />
+
+                <label>
+                  Preço versionado
+                  <select
+                    value={item.priceVersionId}
+                    disabled={!priceCatalogSelectable || !item.serviceId}
+                    onChange={(event) => {
+                      const selectedService = serviceCatalog.find(
+                        (service) => service.id === item.serviceId,
+                      );
+                      const selectedPrice = selectedService?.priceChoices.find(
+                        (price) => price.id === event.target.value,
+                      );
+                      updateServicoExecutado(item.localId, {
+                        priceVersionId: event.target.value,
+                        unidade: item.unidade || selectedPrice?.unit || "",
+                      });
+                    }}
+                  >
+                    <option value="">
+                      {item.serviceId ? "Selecione a versão exata" : "Selecione primeiro o serviço"}
+                    </option>
+                    {serviceCatalog
+                      .find((service) => service.id === item.serviceId)
+                      ?.priceChoices.map((price) => (
+                        <option key={price.id} value={price.id}>
+                          {price.unit} · versão {price.version} · {price.validFrom}
+                          {price.effectiveValidTo ? ` até ${price.effectiveValidTo}` : " em diante"}
+                        </option>
+                      ))}
+                  </select>
+                </label>
 
                 <label>
                   Item contratual ID
@@ -1859,6 +1919,8 @@ export function RdoCreatePage({
                   placeholder="Pesquise por codigo, frente ou servico"
                   emptyMessage="Nenhum tipo de servico encontrado."
                   search={buscarTiposServico}
+                  disabled={!priceCatalogSelectable}
+                  disabledMessage={priceCoverageMessage}
                   onQueryChange={(value) =>
                     updateAlocacaoColaborador(
                       item.localId,

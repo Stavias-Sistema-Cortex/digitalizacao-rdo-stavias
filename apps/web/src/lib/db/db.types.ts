@@ -25,7 +25,11 @@ export type OperationalEventType =
   | "TAREFA_CRIADA"
   | "TAREFA_CONCLUIDA"
   | "TAREFA_REABERTA"
-  | "TAREFA_EXCLUIDA";
+  | "TAREFA_EXCLUIDA"
+  | "SERVICE_CREATED"
+  | "SERVICE_PRICE_VERSION_PUBLISHED"
+  | "SERVICE_PRICE_VERSION_SUPERSEDED"
+  | "SERVICE_PRICE_VERSION_CANCELLED";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -103,7 +107,9 @@ export type SyncEntityType =
   | "MENSAGEM"
   | "MENSAGEM_ANEXO"
   | "SOLICITACAO_COMPRA"
-  | "COMPRA";
+  | "COMPRA"
+  | "SERVICE"
+  | "SERVICE_PRICE_VERSION";
 
 export type SyncOperation =
   | "CRIAR_RDO"
@@ -123,7 +129,11 @@ export type SyncOperation =
   | "ATUALIZAR_COMPRA"
   | "ALTERAR_STATUS_COMPRA"
   | "DECIDIR_APROVACAO_COMPRA"
-  | "ARQUIVAR_COMPRA";
+  | "ARQUIVAR_COMPRA"
+  | "CRIAR_SERVICO_CATALOGO"
+  | "CRIAR_PRECO_SERVICO"
+  | "SUBSTITUIR_PRECO_SERVICO"
+  | "CANCELAR_PRECO_SERVICO";
 
 export type OutboxTransport =
   | "SYNC_PUSH"
@@ -141,6 +151,48 @@ export interface LocalRdoRecord {
   payload: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ServiceCatalogLocalRecord {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: string;
+  syncStatus: LocalSyncStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastError: string | null;
+}
+
+export interface ServicePriceVersionLocalRecord {
+  id: string;
+  obraId: string;
+  serviceId: string;
+  unit: string;
+  currency: string;
+  version: number;
+  unitPrice: string;
+  validFrom: string;
+  validTo: string | null;
+  source: string | null;
+  supersedesId: string | null;
+  status: string;
+  effectiveValidTo: string | null;
+  entityVersion: number;
+  syncStatus: LocalSyncStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastError: string | null;
+}
+
+export interface FinanceCapabilitiesCacheRecord {
+  key: [string, string];
+  ownerId: string;
+  obraId: string;
+  permissions: string[];
+  cachedAt: string;
+  sessionExpiresAt: string;
 }
 
 export interface LocalRdoChildRecord {

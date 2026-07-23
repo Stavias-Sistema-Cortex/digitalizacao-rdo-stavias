@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+import { stripSourceMapReferencesPlugin } from "./securityDeliveryPolicy";
+
 const cortexApiTarget =
   process.env.CORTEX_API_TARGET ??
   "http://127.0.0.1:8080";
@@ -13,7 +15,44 @@ const apiProxy = {
   },
 };
 
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* https: wss:",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+].join("; ");
+
+const securityHeaders = {
+  "Content-Security-Policy": contentSecurityPolicy,
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(self)",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+};
+
+// O React Refresh injeta um preâmbulo inline apenas no servidor de
+// desenvolvimento. A política de produção/preview permanece sem unsafe-inline.
+const developmentSecurityHeaders = {
+  ...securityHeaders,
+  "Content-Security-Policy": contentSecurityPolicy.replace(
+    "script-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+  ),
+};
+
 export default defineConfig({
+  build: {
+    sourcemap: false,
+  },
+
   test: {
     environment: "node",
     setupFiles: ["./src/test/setup.ts"],
@@ -21,6 +60,7 @@ export default defineConfig({
 
   plugins: [
     react(),
+    stripSourceMapReferencesPlugin(),
 
     VitePWA({
       registerType: "autoUpdate",
@@ -152,6 +192,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    headers: developmentSecurityHeaders,
 
     proxy: apiProxy,
   },
@@ -160,6 +201,7 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 4173,
     strictPort: true,
+    headers: securityHeaders,
     proxy: apiProxy,
   },
 });

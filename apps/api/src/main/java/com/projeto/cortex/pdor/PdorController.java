@@ -14,6 +14,8 @@ import java.time.LocalDate;
 @RestController
 public class PdorController {
 
+    private static final long MAX_HISTORY_OFFSET = 1_000_000L;
+
     private final PdorApplicationService service;
     private final FinancialAccessService financialAccessService;
 
@@ -61,10 +63,24 @@ public class PdorController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
+        validateHistoryPage(page, size);
         financialAccessService.requirePermission(
                 obraId,
                 FinancialPermission.FINANCEIRO_VISUALIZAR
         );
         return service.buscarHistorico(obraId, page, size);
+    }
+
+    private void validateHistoryPage(int page, int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("page não pode ser negativo.");
+        }
+        if (size < 1 || size > 100) {
+            throw new IllegalArgumentException("size deve estar entre 1 e 100.");
+        }
+        long offset = Math.multiplyExact((long) page, size);
+        if (offset > MAX_HISTORY_OFFSET) {
+            throw new IllegalArgumentException("page excede o limite permitido.");
+        }
     }
 }

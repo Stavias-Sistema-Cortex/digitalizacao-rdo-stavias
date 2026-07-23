@@ -427,6 +427,7 @@ class PdorApplicationServiceTest {
 
         assertThat(payload).containsKeys(
                 "modelVersion",
+                "algorithmVersion",
                 "assumptionsVersion",
                 "inputs",
                 "inputAvailability",
@@ -434,6 +435,8 @@ class PdorApplicationServiceTest {
         );
         assertThat(payload).doesNotContainKeys("executadoEm", "criadoEm", "timestamp");
         assertThat(payload.get("modelVersion")).isEqualTo(PdorEngine.MODEL_VERSION);
+        assertThat(payload.get("algorithmVersion"))
+                .isEqualTo(PdorApplicationService.REVENUE_ALGORITHM_VERSION);
         assertThat(payload.get("assumptionsVersion"))
                 .isEqualTo(PdorEngine.ASSUMPTIONS_VERSION);
     }

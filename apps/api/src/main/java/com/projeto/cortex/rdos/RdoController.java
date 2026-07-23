@@ -11,12 +11,18 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.util.List;
 
 @RestController
 public class RdoController {
+
+    private static final int MAX_WORKFORCE_ROWS = 26;
+    private static final int MAX_SERVICE_ROWS = 21;
+    private static final int MAX_MATERIAL_ROWS = 30;
+    private static final int MAX_ATTACHMENT_ROWS = 5;
 
     private final RdoService service;
     private final RdoQueryService queryService;
@@ -44,6 +50,7 @@ public class RdoController {
         currentUserService.requireWorksiteAccess(
                 request == null ? null : request.obraId()
         );
+        requirePrintableCollectionLimits(request);
         return service.criarRascunho(request);
     }
 
@@ -69,10 +76,11 @@ public class RdoController {
             @PathVariable String id,
             @RequestBody RdoCreateRequest request
     ) {
-        currentUserService.requireRdoAccess(id);
-        currentUserService.requireWorksiteAccess(
+        currentUserService.requireRdoWorksiteAccess(
+                id,
                 request == null ? null : request.obraId()
         );
+        requirePrintableCollectionLimits(request);
         return draftUpdateService.atualizarRascunho(id, request);
     }
 
@@ -80,5 +88,27 @@ public class RdoController {
     public RdoResponse enviar(@PathVariable String id) {
         currentUserService.requireRdoAccess(id);
         return workflowService.enviar(id);
+    }
+
+    private void requirePrintableCollectionLimits(RdoCreateRequest request) {
+        if (request == null) {
+            return;
+        }
+        requireLimit(request.maoObra(), MAX_WORKFORCE_ROWS, "maoObra");
+        requireLimit(
+                request.servicosExecutados(), MAX_SERVICE_ROWS,
+                "servicosExecutados"
+        );
+        requireLimit(request.materiais(), MAX_MATERIAL_ROWS, "materiais");
+        requireLimit(request.attachments(), MAX_ATTACHMENT_ROWS, "attachments");
+    }
+
+    private void requireLimit(List<?> values, int limit, String field) {
+        if (values != null && values.size() > limit) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    field + " excede o limite permitido."
+            );
+        }
     }
 }

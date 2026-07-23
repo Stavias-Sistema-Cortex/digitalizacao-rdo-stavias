@@ -35,6 +35,7 @@ public class PostgresqlServicePriceCatalogRepository
                    price.moeda,
                    price.versao,
                    price.valor_unitario,
+                   price.fonte,
                    price.vigencia_inicio,
                    price.vigencia_fim,
                    price.supersedes_id,
@@ -44,7 +45,13 @@ public class PostgresqlServicePriceCatalogRepository
                        ELSE 'ACTIVE'
                    END AS effective_status,
                    cortex_price_effective_valid_to(price.id) AS effective_valid_to,
-                   price.criado_em
+                   price.criado_em,
+                   COALESCE((
+                       SELECT state.versao_entidade
+                       FROM cortex_estado_entidade state
+                       WHERE state.tipo_entidade = 'SERVICE_PRICE_VERSION'
+                         AND state.entidade_id = price.id
+                   ), 0) AS entity_version
             FROM service_price_version price
             LEFT JOIN service_price_version successor
               ON successor.supersedes_id = price.id
@@ -59,6 +66,7 @@ public class PostgresqlServicePriceCatalogRepository
                    price.moeda,
                    price.versao,
                    price.valor_unitario,
+                   price.fonte,
                    price.vigencia_inicio,
                    price.vigencia_fim,
                    price.supersedes_id,
@@ -81,7 +89,13 @@ public class PostgresqlServicePriceCatalogRepository
                            )
                        )
                    END AS effective_valid_to,
-                   price.criado_em
+                   price.criado_em,
+                   COALESCE((
+                       SELECT state.versao_entidade
+                       FROM cortex_estado_entidade state
+                       WHERE state.tipo_entidade = 'SERVICE_PRICE_VERSION'
+                         AND state.entidade_id = price.id
+                   ), 0) AS entity_version
             FROM service_price_version price
             LEFT JOIN service_price_version successor
               ON successor.supersedes_id = price.id
@@ -615,7 +629,9 @@ public class PostgresqlServicePriceCatalogRepository
                 resultSet.getString("supersedes_id"),
                 resultSet.getString("effective_status"),
                 resultSet.getObject("effective_valid_to", LocalDate.class),
-                resultSet.getTimestamp("criado_em").toInstant()
+                resultSet.getTimestamp("criado_em").toInstant(),
+                resultSet.getString("fonte"),
+                resultSet.getLong("entity_version")
         );
     }
 

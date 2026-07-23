@@ -479,6 +479,8 @@ function buildServicoExecutadoPayload(
 ) {
   return {
     id: item.localId,
+    serviceId: nullIfEmpty(item.serviceId),
+    priceVersionId: nullIfEmpty(item.priceVersionId),
     servicoNome: item.servicoNome,
     itemContratualId: nullIfEmpty(
       item.itemContratualId,
@@ -522,6 +524,8 @@ function buildServicoExecutadoLocalPayload(
 ): ServicoExecutadoDraft {
   return {
     localId: item.localId,
+    serviceId: item.serviceId,
+    priceVersionId: item.priceVersionId,
     servicoNome: item.servicoNome,
     itemContratualId: item.itemContratualId,
     quantidadeExecutada: item.quantidadeExecutada,

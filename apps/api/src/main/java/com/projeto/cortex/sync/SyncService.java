@@ -41,6 +41,7 @@ public class SyncService {
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 500;
     private static final int MAX_MUTACOES_POR_PUSH = 100;
+    private static final int MAX_DEPENDENCIAS_POR_MUTACAO = 64;
     private static final int CANONICAL_SCHEMA_VERSION = 13;
     private static final Set<String> CANONICAL_ENTITY_TYPES = Set.of(
             "RDO",
@@ -48,7 +49,9 @@ public class SyncService {
             "MENSAGEM",
             "MENSAGEM_ANEXO",
             "SOLICITACAO_COMPRA",
-            "COMPRA"
+            "COMPRA",
+            "SERVICE",
+            "SERVICE_PRICE_VERSION"
     );
     private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
             Map.entry("CRIAR_RDO", "CREATE"),
@@ -68,7 +71,11 @@ public class SyncService {
             Map.entry("ATUALIZAR_COMPRA", "UPDATE"),
             Map.entry("ALTERAR_STATUS_COMPRA", "TRANSITION"),
             Map.entry("DECIDIR_APROVACAO_COMPRA", "TRANSITION"),
-            Map.entry("ARQUIVAR_COMPRA", "TRANSITION")
+            Map.entry("ARQUIVAR_COMPRA", "TRANSITION"),
+            Map.entry("CRIAR_SERVICO_CATALOGO", "CREATE"),
+            Map.entry("CRIAR_PRECO_SERVICO", "CREATE"),
+            Map.entry("SUBSTITUIR_PRECO_SERVICO", "CREATE"),
+            Map.entry("CANCELAR_PRECO_SERVICO", "TRANSITION")
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -428,12 +435,15 @@ public class SyncService {
                 if (!requestMatchesExisting(dispositivoId, currentUserId, mutacao)) {
                     return idempotencyMismatch(mutacao);
                 }
+                SyncPushResponse.ResultadoMutacao replayScopeFailure =
+                        validarReplayContraEscopoAtual(
+                                currentUserId,
+                                mutacao
+                        );
+                if (replayScopeFailure != null) {
+                    return replayScopeFailure;
+                }
                 if ("ERRO".equals(existente.status())) {
-                    validarRastroCanonicoParaAplicacao(
-                            dispositivoId,
-                            currentUserId,
-                            mutacao
-                    );
                     return transactionTemplate.execute(
                             status -> reprocessarMutacaoComErro(dispositivoId, mutacao)
                     );
@@ -455,9 +465,15 @@ public class SyncService {
                     mutacao.clientMutationId(),
                     isCanonical(mutacao)
             );
-            return requestMatchesExisting(dispositivoId, currentUserId, mutacao)
-                    ? existing
-                    : idempotencyMismatch(mutacao);
+            if (!requestMatchesExisting(dispositivoId, currentUserId, mutacao)) {
+                return idempotencyMismatch(mutacao);
+            }
+            SyncPushResponse.ResultadoMutacao replayScopeFailure =
+                    validarReplayContraEscopoAtual(
+                            currentUserId,
+                            mutacao
+                    );
+            return replayScopeFailure == null ? existing : replayScopeFailure;
         } catch (SyncBaseVersionConflictException exception) {
             return registrarConflitoEmNovaTransacao(dispositivoId, mutacao, exception);
         } catch (SyncTraceRejectionException exception) {
@@ -485,6 +501,13 @@ public class SyncService {
                             erro,
                             "VALIDATION_OR_AUTHORIZATION"
                     );
+        } catch (SyncDependencyUnavailableException exception) {
+            return registrarErroEmNovaTransacao(
+                    dispositivoId,
+                    mutacao,
+                    exception.getMessage(),
+                    "DEPENDENCY_NOT_APPLIED"
+            );
         } catch (RuntimeException exception) {
             String erro = exception.getClass().getSimpleName() + ": " + primeiroNaoVazio(
                     exception.getMessage(),
@@ -519,6 +542,7 @@ public class SyncService {
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         inserirMutacaoPendente(dispositivoId, mutacao);
+        validarDependenciasAplicadas(mutacao);
         return aplicarMutacaoRegistrada(dispositivoId, mutacao);
     }
 
@@ -526,8 +550,100 @@ public class SyncService {
             String dispositivoId,
             SyncPushRequest.MutacaoCliente mutacao
     ) {
+        validarDependenciasAplicadas(mutacao);
         reabrirMutacaoComErro(dispositivoId, mutacao);
         return aplicarMutacaoRegistrada(dispositivoId, mutacao);
+    }
+
+    /**
+     * An idempotent replay is still an authorized read of the stored result.
+     * Re-evaluate the current worksite scope without mutating the immutable
+     * receipt when access has since been revoked or the check is unavailable.
+     */
+    private SyncPushResponse.ResultadoMutacao validarReplayContraEscopoAtual(
+            String currentUserId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (!isCanonical(mutacao)) {
+            return null;
+        }
+        try {
+            // The receipt is owner-scoped and may be read from any currently
+            // registered device of that owner. Its immutable envelope/device
+            // coherence was already bound by envelope_hash; only current
+            // identity and worksite authorization must be re-evaluated here.
+            if (!currentUserId.equals(mutacao.userId())) {
+                throw rejection(
+                        "USER_MISMATCH",
+                        "userId não corresponde ao usuário autenticado."
+                );
+            }
+            validarEscopoAutorizado(currentUserId, mutacao);
+            return null;
+        } catch (SyncTraceRejectionException exception) {
+            return rejectedResult(
+                    mutacao,
+                    exception.getMessage(),
+                    rejectionResult(exception.category, exception.getMessage())
+            );
+        } catch (ResponseStatusException exception) {
+            String message = primeiroNaoVazio(
+                    exception.getReason(),
+                    "Replay fora do escopo autenticado."
+            );
+            return rejectedResult(
+                    mutacao,
+                    message,
+                    rejectionResult("REPLAY_AUTHORIZATION", message)
+            );
+        } catch (RuntimeException exception) {
+            return new SyncPushResponse.ResultadoMutacao(
+                    mutacao.clientMutationId(),
+                    "ERRO",
+                    mutacao.entidadeTipo(),
+                    mutacao.entidadeId(),
+                    mutacao.operacao(),
+                    null,
+                    objectMapper.createObjectNode(),
+                    objectMapper.createObjectNode(),
+                    "Não foi possível revalidar o escopo atual do replay."
+            );
+        }
+    }
+
+    private void validarDependenciasAplicadas(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (!isCanonical(mutacao) || mutacao.dependsOnMutationIds().isEmpty()) {
+            return;
+        }
+        List<String> dependencies = mutacao.dependsOnMutationIds();
+        String placeholders = String.join(
+                ", ",
+                Collections.nCopies(dependencies.size(), "?")
+        );
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(currentUserService.requireUserId());
+        parameters.add(mutacao.obraId());
+        parameters.addAll(dependencies);
+        Integer applied = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ?
+                  AND obra_id = ?
+                  AND schema_version = 13
+                  AND status = 'APLICADA'
+                  AND client_mutation_id IN (%s)
+                """.formatted(placeholders),
+                Integer.class,
+                parameters.toArray()
+        );
+        if (applied == null || applied != dependencies.size()) {
+            throw new SyncDependencyUnavailableException(
+                    "Uma ou mais dependências causais ainda não foram aplicadas."
+            );
+        }
     }
 
     private SyncPushResponse.ResultadoMutacao aplicarMutacaoRegistrada(
@@ -1472,8 +1588,27 @@ public class SyncService {
         if (mutacao.dependsOnMutationIds() == null) {
             throw rejection("MALFORMED_DEPENDENCIES", "dependsOnMutationIds é obrigatório.");
         }
+        if (mutacao.dependsOnMutationIds().size() > MAX_DEPENDENCIAS_POR_MUTACAO) {
+            throw rejection(
+                    "TOO_MANY_DEPENDENCIES",
+                    "dependsOnMutationIds excede o limite permitido."
+            );
+        }
+        if (mutacao.dependsOnMutationIds().stream().distinct().count()
+                != mutacao.dependsOnMutationIds().size()) {
+            throw rejection(
+                    "DUPLICATE_DEPENDENCY_ID",
+                    "dependsOnMutationIds não pode conter duplicatas."
+            );
+        }
         for (String dependency : mutacao.dependsOnMutationIds()) {
             requireCanonicalUuid(dependency, "MALFORMED_DEPENDENCY_ID");
+            if (dependency.equals(mutacao.clientMutationId())) {
+                throw rejection(
+                        "SELF_DEPENDENCY",
+                        "Uma mutação não pode depender de si mesma."
+                );
+            }
         }
     }
 
@@ -1589,6 +1724,13 @@ public class SyncService {
     ) {
         for (SyncPushRequest.RelatedEntity related : mutacao.relatedEntities()) {
             String relatedWorksite = entityWorksite(related.tipo(), related.id());
+            // O catálogo de serviços é uma referência corporativa global. A obra
+            // armazenada nele registra quem autorizou sua criação; não limita em
+            // quais obras o serviço pode receber uma versão de preço. Ainda
+            // resolvemos a entidade acima para rejeitar referências inexistentes.
+            if ("SERVICE".equals(related.tipo())) {
+                continue;
+            }
             if (!mutacao.obraId().equals(relatedWorksite)) {
                 throw rejection("RELATED_ENTITY_SCOPE", "Entidade relacionada pertence a outra obra.");
             }
@@ -1611,6 +1753,10 @@ public class SyncService {
             case "SOLICITACAO_COMPRA" ->
                     "SELECT obra_id FROM finance_solicitacao_compra WHERE id = ?";
             case "COMPRA" -> "SELECT obra_id FROM finance_compra WHERE id = ?";
+            case "SERVICE" ->
+                    "SELECT obra_autorizadora_id FROM catalogo_servico WHERE id = ?";
+            case "SERVICE_PRICE_VERSION" ->
+                    "SELECT obra_id FROM service_price_version WHERE id = ?";
             default -> throw rejection(
                     "UNSUPPORTED_ENTITY_TYPE",
                     "Tipo de entidade não suportado pelo escopo canônico."
@@ -1967,6 +2113,12 @@ public class SyncService {
         private SyncTraceRejectionException(String category, String message) {
             super(message);
             this.category = category;
+        }
+    }
+
+    private static class SyncDependencyUnavailableException extends RuntimeException {
+        private SyncDependencyUnavailableException(String message) {
+            super(message);
         }
     }
 }

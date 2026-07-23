@@ -6,6 +6,7 @@ import {
   type Ref,
 } from "react";
 
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { ProgramacaoSemanalImport } from "../programacoes/ProgramacaoSemanalImport";
 import type {
   LocalRdoRecord,
@@ -558,23 +559,29 @@ export function RdoLocalList({
   };
 
   return (
-    <main className="rdo-dashboard">
-      <section className="rdo-command-band">
-        <div>
-          <p className="eyebrow">Stavias · Sistema Córtex</p>
-          <h1>Relatórios Diários de Obra</h1>
-          <span className="brand-tick" aria-hidden="true" />
-          <p className="subtitle">
-            RDOs locais, eventos ontológicos, fotos e status de
-            sincronização em uma única visão operacional.
-          </p>
-        </div>
-
+    <OperationalWorkspace
+      className="rdo-dashboard"
+      eyebrow="Operação de campo · Documentos"
+      title="Relatórios Diários de Obra"
+      description="Registros locais de execução, equipe, materiais, medições e evidências de campo."
+      status={isLoading
+        ? { code: "SYNCING", label: "Carregando registros locais" }
+        : error
+          ? { code: "CONFLICT", label: "Falha ao ler os registros locais" }
+          : metrics.pendentes > 0
+            ? {
+                code: "PENDING",
+                label: `${metrics.pendentes} ${metrics.pendentes === 1 ? "RDO pendente" : "RDOs pendentes"}`,
+              }
+            : records.length > 0
+              ? { code: "SYNCED", label: "RDOs locais sem pendências" }
+              : { code: "LOCAL", label: "Nenhum RDO local" }}
+      actions={(
         <div className="rdo-command-actions">
           <button
             ref={createButtonRef}
             type="button"
-            className="secondary-button"
+            className="primary-button"
             onClick={onCreate}
           >
             Novo RDO
@@ -601,7 +608,8 @@ export function RdoLocalList({
             }}
           />
         </div>
-      </section>
+      )}
+    >
 
       <section className="rdo-filter-grid">
         <label>
@@ -680,20 +688,41 @@ export function RdoLocalList({
       {error && <div className="notice notice-error">{error}</div>}
       {isLoading && <div className="notice">Carregando RDOs locais...</div>}
 
-      <section className="rdo-metric-grid">
-        <MetricCard label="Trechos" value={metrics.trechos} />
-        <MetricCard
-          label="Metros concluídos"
-          value={`${Math.round(metrics.metros).toLocaleString("pt-BR")} m`}
-        />
-        <MetricCard label="Em execução" value={metrics.emExecucao} />
-        <MetricCard
-          label="Equipe e equipamentos"
-          value={`${metrics.pessoas}/${metrics.equipamentos}`}
-        />
-        <MetricCard label="Pendentes de sync" value={metrics.pendentes} />
-        <MetricCard label="Com foto" value={metrics.comFoto} />
-        <MetricCard label="Com ocorrência" value={metrics.comOcorrencia} />
+      <section
+        className="rdo-register-summary institutional-frame"
+        aria-label="Resumo dos documentos filtrados"
+      >
+        <h2>Resumo do registro</h2>
+        <dl>
+          <div>
+            <dt>Trechos</dt>
+            <dd>{metrics.trechos}</dd>
+          </div>
+          <div>
+            <dt>Metros concluídos</dt>
+            <dd>{Math.round(metrics.metros).toLocaleString("pt-BR")} m</dd>
+          </div>
+          <div>
+            <dt>Em execução</dt>
+            <dd>{metrics.emExecucao}</dd>
+          </div>
+          <div>
+            <dt>Equipe / equipamentos</dt>
+            <dd>{metrics.pessoas}/{metrics.equipamentos}</dd>
+          </div>
+          <div>
+            <dt>Pendentes de sync</dt>
+            <dd>{metrics.pendentes}</dd>
+          </div>
+          <div>
+            <dt>Com foto</dt>
+            <dd>{metrics.comFoto}</dd>
+          </div>
+          <div>
+            <dt>Com ocorrência</dt>
+            <dd>{metrics.comOcorrencia}</dd>
+          </div>
+        </dl>
       </section>
 
       <ProgramacaoSemanalImport onRdoCreated={onRefresh} />
@@ -905,7 +934,7 @@ export function RdoLocalList({
           onOpenRdo={(record) => onOpen(record)}
         />
       ) : null}
-    </main>
+    </OperationalWorkspace>
   );
 }
 

@@ -193,12 +193,30 @@ export function PdorPanel({ pdor, loading, error }: PdorPanelProps) {
             <summary>Proveniência, versões e evidências</summary>
             <dl>
               <div><dt>Modelo</dt><dd>{pdor.versaoModelo ?? "-"}</dd></div>
+              <div><dt>Algoritmo da receita</dt><dd>{pdor.algorithmVersion ?? "-"}</dd></div>
               <div><dt>Premissas</dt><dd>{pdor.versaoPremissas ?? "-"}</dd></div>
               <div><dt>Dados</dt><dd>{pdor.versaoDados ?? "-"}</dd></div>
+              <div><dt>Cobertura</dt><dd>{pdor.coverageCode ?? "-"}</dd></div>
+              <div><dt>High-water ontológico</dt><dd>{pdor.evidenceHighWaterMark ?? "-"}</dd></div>
+              <div><dt>Execução UTC</dt><dd>{pdor.executedAtUtc ?? "-"}</dd></div>
+              <div><dt>Estado</dt><dd>{pdor.stale ? "Histórico · obsoleto" : pdor.current ? "Atual" : "Histórico"}</dd></div>
               <div><dt>Iniciador</dt><dd>{pdor.iniciadoPor ?? "Não registrado"}</dd></div>
               <div><dt>Features avaliadas</dt><dd>{pdor.featuresUtilizadas.length}</dd></div>
-              <div><dt>Evidências relacionadas</dt><dd>{pdor.evidencias.length}</dd></div>
+              <div><dt>Evidências de receita</dt><dd>{pdor.evidenceIds.length}</dd></div>
             </dl>
+            {Object.keys(pdor.assumptions).length > 0 ? (
+              <pre className="obras-pdor-assumptions">{JSON.stringify(pdor.assumptions, null, 2)}</pre>
+            ) : null}
+            {pdor.evidenceIds.length > 0 ? (
+              <ul className="obras-pdor-evidence-list">
+                {pdor.evidenceIds.slice(0, 12).map((evidenceId) => (
+                  <li key={evidenceId}>
+                    <strong>REVENUE_EVIDENCE</strong>
+                    <code>{evidenceId}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {pdor.evidencias.length > 0 ? (
               <ul className="obras-pdor-evidence-list">
                 {pdor.evidencias.slice(0, 8).map((evidence) => (

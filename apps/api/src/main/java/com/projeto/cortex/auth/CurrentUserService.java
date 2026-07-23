@@ -109,6 +109,32 @@ public class CurrentUserService implements AuthSessionProfileResolver {
 
     public void requireRdoAccess(String rdoId) {
         String normalizedRdoId = requireId(rdoId, "rdoId");
+        String obraId = findRdoWorksite(normalizedRdoId);
+
+        requireWorksiteAccess(obraId);
+    }
+
+    /**
+     * Authorizes an RDO write against the server-owned worksite reference.
+     * Access to both worksites is not enough: a client cannot move an existing
+     * RDO by supplying another worksite identifier in the payload.
+     */
+    public void requireRdoWorksiteAccess(String rdoId, String requestedObraId) {
+        String normalizedRdoId = requireId(rdoId, "rdoId");
+        String normalizedRequestedObraId = requireId(requestedObraId, "obraId");
+        String persistedObraId = findRdoWorksite(normalizedRdoId);
+
+        if (!persistedObraId.equals(normalizedRequestedObraId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A obra informada não pertence ao RDO."
+            );
+        }
+
+        requireWorksiteAccess(persistedObraId);
+    }
+
+    private String findRdoWorksite(String normalizedRdoId) {
         String obraId = jdbcTemplate.query(
                 """
                 SELECT obra_id
@@ -126,8 +152,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                     "RDO não encontrado."
             );
         }
-
-        requireWorksiteAccess(obraId);
+        return obraId.strip();
     }
 
     /**

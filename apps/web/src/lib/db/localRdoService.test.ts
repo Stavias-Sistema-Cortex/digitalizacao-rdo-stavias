@@ -56,6 +56,8 @@ function validDraft() {
   draft.servicosExecutados = [{
     ...createEmptyServicoExecutado(),
     localId: "servico-stable-1",
+    serviceId: "service-catalog-1",
+    priceVersionId: "price-version-7",
     servicoNome: "Aplicação de CBUQ",
     quantidadeExecutada: 0,
   }];
@@ -118,7 +120,11 @@ describe("buildRdoSyncPayload V48 boundary", () => {
       equipamentos: [{ id: "equipamento-stable-1" }],
       materiais: [{ id: "material-stable-1" }],
       controlesGeometricos: [{ id: "controle-stable-1" }],
-      servicosExecutados: [{ id: "servico-stable-1" }],
+      servicosExecutados: [{
+        id: "servico-stable-1",
+        serviceId: "service-catalog-1",
+        priceVersionId: "price-version-7",
+      }],
       alocacoesColaboradores: [{ id: "alocacao-stable-1" }],
     });
     expect(payload.maoObra).not.toEqual(

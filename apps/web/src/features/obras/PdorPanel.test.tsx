@@ -44,6 +44,14 @@ describe("PdorPanel", () => {
       iniciadoPor: "usuario-1",
       tipoIniciador: "USER",
       erroExecucao: null,
+      algorithmVersion: "PDOR-REVENUE-1",
+      evidenceIds: ["evidence-1"],
+      evidenceHighWaterMark: 812,
+      coverageCode: "COMPLETE_ACCEPTED_EXACT",
+      assumptions: { iterations: 10_000 },
+      executedAtUtc: "2026-07-08T12:00:00Z",
+      stale: false,
+      current: true,
     };
 
     const html = renderToStaticMarkup(
@@ -56,5 +64,9 @@ describe("PdorPanel", () => {
     expect(html).toContain("Revisar fatores de risco");
     expect(html).toContain("PDOR-ASSUMPTIONS-0.2.0");
     expect(html).toContain("rdo-1");
+    expect(html).toContain("PDOR-REVENUE-1");
+    expect(html).toContain("COMPLETE_ACCEPTED_EXACT");
+    expect(html).toContain("812");
+    expect(html).toContain("evidence-1");
   });
 });

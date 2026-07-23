@@ -50,6 +50,10 @@ const OPERATIONAL_EVENT_TYPES = [
   "TAREFA_CONCLUIDA",
   "TAREFA_REABERTA",
   "TAREFA_EXCLUIDA",
+  "SERVICE_CREATED",
+  "SERVICE_PRICE_VERSION_PUBLISHED",
+  "SERVICE_PRICE_VERSION_SUPERSEDED",
+  "SERVICE_PRICE_VERSION_CANCELLED",
 ] as const satisfies readonly OperationalEventType[];
 
 type CanonicalWriteStore = "outbox_mutations" | "operational_events";
@@ -60,6 +64,8 @@ const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
   CONVERSA: "mensagem_conversas",
   MENSAGEM: "mensagens",
   MENSAGEM_ANEXO: "mensagem_anexos",
+  SERVICE: "service_catalog",
+  SERVICE_PRICE_VERSION: "service_price_versions",
 } as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
 type LocalMutationDomainPut<TStore extends LocalDomainStore> = {

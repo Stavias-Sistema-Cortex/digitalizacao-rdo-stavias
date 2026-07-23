@@ -39,6 +39,7 @@ import java.util.UUID;
 public class PdorApplicationService {
 
     private static final String FONTE = "PDOR";
+    static final String REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-1";
     private static final Logger LOGGER =
             LoggerFactory.getLogger(PdorApplicationService.class);
 
@@ -171,6 +172,13 @@ public class PdorApplicationService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "size deve estar entre 1 e 100."
+            );
+        }
+        long offset = Math.multiplyExact((long) page, size);
+        if (offset > 1_000_000L) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "page excede o limite permitido."
             );
         }
 
@@ -587,7 +595,7 @@ public class PdorApplicationService {
         Instant executedAtUtc = snapshot.executedAt()
                 .toInstant(ZoneOffset.UTC);
         return snapshot.withRevenueMetadata(
-                PdorEngine.MODEL_VERSION,
+                REVENUE_ALGORITHM_VERSION,
                 inputs.revenueEvidenceIds(),
                 inputs.evidenceHighWaterMark(),
                 inputs.revenueCoverageCode(),
@@ -721,6 +729,7 @@ public class PdorApplicationService {
         payload.put("obraId", inputs.obraId());
         payload.put("referenceDate", inputs.referenceDate());
         payload.put("modelVersion", PdorEngine.MODEL_VERSION);
+        payload.put("algorithmVersion", REVENUE_ALGORITHM_VERSION);
         payload.put("assumptionsVersion", PdorEngine.ASSUMPTIONS_VERSION);
         payload.put("inputs", inputs.inputs());
         payload.put("inputAvailability", inputAvailability(inputs));

@@ -18,6 +18,18 @@ function rule(css: string, selector: string): string {
   return css.slice(start, end + 2);
 }
 
+function lastRule(css: string, selector: string): string {
+  const start = css.lastIndexOf(`${selector} {`);
+  if (start < 0) {
+    throw new Error(`Regra CSS ausente: ${selector}`);
+  }
+  const end = css.indexOf("\n}", start);
+  if (end < 0) {
+    throw new Error(`Regra CSS sem fechamento: ${selector}`);
+  }
+  return css.slice(start, end + 2);
+}
+
 const globalCss = readCss("./index.css");
 const syncCss = readCss("./components/SyncStatusBanner.css");
 const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
@@ -38,13 +50,21 @@ const authenticatedCss = [
 ].join("\n");
 
 describe("polimento visual da plataforma autenticada", () => {
-  it("centraliza a paleta e a escala de raios aprovadas", () => {
-    expect(rule(globalCss, ":root")).toContain("--color-text: #18231f;");
+  it("centraliza a paleta preta e a escala quadrada aprovadas", () => {
+    expect(rule(globalCss, ":root")).toContain("--color-ink: #111312;");
+    expect(rule(globalCss, ":root")).toContain(
+      "--color-text: var(--color-ink);",
+    );
     expect(rule(globalCss, ":root")).toContain("--color-brand-teal: #124e4a;");
     expect(rule(globalCss, ":root")).toContain("--color-brand-yellow: #f2c800;");
-    expect(rule(globalCss, ":root")).toContain("--radius-sm: 8px;");
-    expect(rule(globalCss, ":root")).toContain("--radius-md: 12px;");
-    expect(rule(globalCss, ":root")).toContain("--radius-lg: 16px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-control: 4px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-container: 4px;");
+    expect(rule(globalCss, ":root")).toContain(
+      "--radius-sm: var(--radius-control);",
+    );
+    expect(rule(globalCss, ":root")).toContain(
+      "--radius-lg: var(--radius-container);",
+    );
   });
 
   it("remove receitas de vidro da interface autenticada", () => {
@@ -52,11 +72,11 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(authenticatedCss).not.toContain("backdrop-filter");
   });
 
-  it("usa uma sidebar plana e métricas operacionais discretas", () => {
-    expect(rule(globalCss, ".cortex-sidebar")).toContain(
-      "background: var(--color-brand-teal);",
+  it("usa uma sidebar preta e métricas operacionais discretas", () => {
+    expect(lastRule(globalCss, ".cortex-sidebar")).toContain(
+      "background: #101112;",
     );
-    expect(rule(globalCss, ".cortex-sidebar")).not.toContain("radial-gradient");
+    expect(lastRule(globalCss, ".cortex-sidebar")).not.toContain("gradient");
     expect(rule(globalCss, ".metric-card")).toContain(
       "background: var(--color-surface);",
     );
@@ -165,8 +185,11 @@ describe("polimento visual da plataforma autenticada", () => {
     );
     expect(rule(syncCss, ".sync-chip__button")).toContain("width: 40px;");
     expect(rule(syncCss, ".sync-chip__button")).toContain("height: 40px;");
-    expect(rule(globalCss, ".avatar-button")).toContain("width: 40px;");
-    expect(rule(globalCss, ".avatar-button")).toContain("height: 40px;");
+    expect(globalCss).toContain(".avatar-button {\n  width: 40px;");
+    expect(globalCss).toContain("height: 40px;");
+    expect(globalCss).toContain(
+      ".avatar-button {\n  border-color: #101112;\n  border-radius: 0;\n  background: #101112;",
+    );
     expect(rule(globalCss, "\n.sidebar-footer button")).toContain(
       "min-height: 40px;",
     );
@@ -224,20 +247,20 @@ describe("polimento visual da plataforma autenticada", () => {
       globalCss.lastIndexOf("@media (max-width: 620px)"),
     );
     const floatingControls = rule(narrowCss, ".floating-controls");
-    expect(floatingControls).toContain("top: 12px;");
-    expect(floatingControls).toContain("right: 12px;");
+    expect(floatingControls).toContain("top: auto;");
+    expect(floatingControls).toContain("right: auto;");
     expect(
       rule(
         narrowCss,
         ".home-dashboard,\n  .rdo-dashboard,\n  .obras-page",
       ),
-    ).toContain("padding-top: 84px;");
+    ).toContain("padding-top: 24px;");
 
     const tarefasNarrowCss = tarefasCss.slice(
       tarefasCss.lastIndexOf("@media (max-width: 620px)"),
     );
     expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
-      "padding-top: 84px;",
+      "padding-top: 24px;",
     );
     expect(rule(tarefasNarrowCss, ".tarefas-page")).toContain(
       "padding-bottom: calc(120px + env(safe-area-inset-bottom));",
@@ -274,35 +297,30 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("evita overflow dos fluxos operacionais em telas estreitas", () => {
-    const narrowCss = globalCss.slice(
-      globalCss.lastIndexOf("@media (max-width: 620px)"),
+    expect(globalCss).toContain(
+      ".home-dashboard {\n    padding: 24px 14px 96px;",
     );
-
-    expect(rule(narrowCss, ".home-dashboard")).toContain(
-      "padding: 24px 14px 96px;",
+    expect(globalCss).toContain(
+      [
+        "  .home-uf-filter,",
+        "  .home-uf-filter select,",
+        "  .home-obra-selector,",
+        "  .home-obra-selector select {",
+        "    width: 100%;",
+        "    max-width: none;",
+      ].join("\n"),
     );
-    expect(
-      rule(
-        narrowCss,
-        [
-          ".home-uf-filter,",
-          "  .home-uf-filter select,",
-          "  .home-obra-selector,",
-          "  .home-obra-selector select",
-        ].join("\n"),
-      ),
-    ).toContain("max-width: none;");
-    expect(rule(narrowCss, ".home-obra-chart")).toContain("min-width: 0;");
-    expect(
-      rule(
-        narrowCss,
-        [
-          ".rdo-command-actions,",
-          "  .rdo-command-actions button,",
-          "  .action-bar .button",
-        ].join("\n"),
-      ),
-    ).toContain("width: 100%;");
+    expect(globalCss).toContain(
+      ".home-obra-chart {\n    min-width: 0;\n    width: 100%;",
+    );
+    expect(globalCss).toContain(
+      [
+        "  .rdo-command-actions,",
+        "  .rdo-command-actions button,",
+        "  .action-bar .button {",
+        "    width: 100%;",
+      ].join("\n"),
+    );
 
     const obrasResponsive = globalCss.slice(
       globalCss.lastIndexOf("@media (max-width: 900px)"),

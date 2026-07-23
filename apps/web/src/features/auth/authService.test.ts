@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearSession: vi.fn(),
@@ -37,8 +37,22 @@ const profile = {
 };
 
 describe("authService", () => {
+  const storage = new Map<string, string>();
+
   beforeEach(() => {
     vi.clearAllMocks();
+    storage.clear();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+      clear: () => storage.clear(),
+    });
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("purga credenciais legadas antes de consultar a sessão online", async () => {
@@ -63,11 +77,12 @@ describe("authService", () => {
     expect(mocks.setSession).toHaveBeenCalledWith(profile);
   });
 
-  it("não limpa a memória quando a rede impede revogar a sessão", async () => {
+  it("bloqueia a sessão local mesmo quando a rede impede a revogação", async () => {
     mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
     await expect(encerrarSessao()).rejects.toThrow("offline");
-    expect(mocks.clearSession).not.toHaveBeenCalled();
+    expect(mocks.clearSession).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("cortex.auth.logoutPending")).toBe("1");
   });
 
   it("limpa a memória após revogação ou sessão já expirada", async () => {
@@ -77,5 +92,16 @@ describe("authService", () => {
     await encerrarSessao();
 
     expect(mocks.clearSession).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem("cortex.auth.logoutPending")).toBeNull();
+  });
+
+  it("não restaura o cookie enquanto uma revogação pendente estiver offline", async () => {
+    localStorage.setItem("cortex.auth.logoutPending", "1");
+    mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
+
+    await expect(initializeAuthSession()).resolves.toBeNull();
+
+    expect(mocks.clearSession).toHaveBeenCalledOnce();
+    expect(mocks.fetchSession).not.toHaveBeenCalled();
   });
 });

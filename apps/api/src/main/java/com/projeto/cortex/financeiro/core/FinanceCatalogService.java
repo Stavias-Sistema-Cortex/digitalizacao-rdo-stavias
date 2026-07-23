@@ -3,6 +3,8 @@ package com.projeto.cortex.financeiro.core;
 import static com.projeto.cortex.financeiro.core.FinanceDtos.*;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -23,15 +25,18 @@ public class FinanceCatalogService {
 
     private final JdbcTemplate jdbc;
     private final CurrentUserService currentUser;
+    private final FinancialAccessService financialAccess;
     private final FinanceOntologyProjector ontology;
 
     public FinanceCatalogService(
             JdbcTemplate jdbc,
             CurrentUserService currentUser,
+            FinancialAccessService financialAccess,
             FinanceOntologyProjector ontology
     ) {
         this.jdbc = jdbc;
         this.currentUser = currentUser;
+        this.financialAccess = financialAccess;
         this.ontology = ontology;
     }
 
@@ -418,6 +423,9 @@ public class FinanceCatalogService {
     ) {
         requireActor(audit);
         String scope = FinanceValidation.uuid(obraId, "obraId");
+        financialAccess.requirePermission(
+                scope, FinancialPermission.FINANCEIRO_ADMINISTRAR
+        );
         if (request == null || request.vigenteDe() == null
                 || request.etapas() == null || request.etapas().isEmpty()) {
             throw FinanceValidation.badRequest(
@@ -431,8 +439,25 @@ public class FinanceCatalogService {
         String id = request.id() == null || request.id().isBlank()
                 ? UUID.randomUUID().toString()
                 : FinanceValidation.uuid(request.id(), "id");
+        String existingWorksite = jdbc.query(
+                "SELECT obra_id FROM finance_regra_aprovacao WHERE id = ? FOR UPDATE",
+                rs -> rs.next() ? rs.getString(1) : null,
+                id
+        );
+        if (existingWorksite != null) {
+            financialAccess.requirePermission(
+                    existingWorksite,
+                    FinancialPermission.FINANCEIRO_ADMINISTRAR
+            );
+            if (!scope.equals(existingWorksite)) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "A regra de aprovação pertence a outra obra."
+                );
+            }
+        }
         try {
-            jdbc.update(
+            int changed = jdbc.update(
                     """
                     INSERT INTO finance_regra_aprovacao (
                         id, obra_id, centro_custo_id, categoria_id, nome,
@@ -449,6 +474,7 @@ public class FinanceCatalogService {
                         vigente_ate = EXCLUDED.vigente_ate, ativo = TRUE,
                         arquivado_em = NULL, atualizado_por = EXCLUDED.criado_por,
                         versao_linha = finance_regra_aprovacao.versao_linha + 1
+                    WHERE finance_regra_aprovacao.obra_id = EXCLUDED.obra_id
                     """,
                     id,
                     scope,
@@ -463,6 +489,12 @@ public class FinanceCatalogService {
                     request.vigenteAte(),
                     audit.actorId()
             );
+            if (changed != 1) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "A regra de aprovação pertence a outra obra."
+                );
+            }
             jdbc.update(
                     "DELETE FROM finance_regra_aprovacao_etapa WHERE regra_id = ?",
                     id

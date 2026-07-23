@@ -94,6 +94,8 @@ export interface ControleGeometricoDraft {
 
 export interface ServicoExecutadoDraft {
   localId: string;
+  serviceId: string;
+  priceVersionId: string;
   servicoNome: string;
   itemContratualId: string;
   quantidadeExecutada: NumericInput;

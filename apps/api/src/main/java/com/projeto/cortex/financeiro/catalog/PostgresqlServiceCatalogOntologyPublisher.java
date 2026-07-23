@@ -41,6 +41,7 @@ public class PostgresqlServiceCatalogOntologyPublisher
         state.put("serviceId", service.id());
         state.put("serviceCode", service.code());
         state.put("serviceName", service.name());
+        state.put("worksiteId", obraId);
         state.put("status", service.status());
         publish(
                 "SERVICE_CREATED", "SERVICE", service.id(), obraId, actorId,
