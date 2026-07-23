@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -55,7 +57,15 @@ public record PdorResultadoResponse(
         JsonNode comparacaoAnterior,
         JsonNode evidencias,
         String iniciadoPor,
-        String tipoIniciador
+        String tipoIniciador,
+        String algorithmVersion,
+        List<String> evidenceIds,
+        Long evidenceHighWaterMark,
+        String coverageCode,
+        JsonNode assumptions,
+        Instant executedAtUtc,
+        boolean stale,
+        boolean current
 ) {
     public static PdorResultadoResponse from(
             PdorSnapshot snapshot,
@@ -115,7 +125,15 @@ public record PdorResultadoResponse(
                 snapshot.previousComparison(),
                 snapshot.evidence(),
                 snapshot.initiatedBy(),
-                snapshot.initiatorType()
+                snapshot.initiatorType(),
+                snapshot.algorithmVersion(),
+                snapshot.evidenceIds(),
+                snapshot.evidenceHighWaterMark(),
+                snapshot.coverageCode(),
+                snapshot.assumptions(),
+                snapshot.executedAtUtc(),
+                snapshot.stale(),
+                snapshot.current()
         );
     }
 

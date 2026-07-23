@@ -12,6 +12,24 @@ import java.time.LocalDateTime;
 @RestControllerAdvice(assignableTypes = PdorController.class)
 public class PdorExceptionHandler {
 
+    @ExceptionHandler(PdorCalculationException.class)
+    public ResponseEntity<PdorErrorResponse> handleCalculationFailure(
+            PdorCalculationException exception,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new PdorErrorResponse(
+                        LocalDateTime.now(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                        HttpStatus.INTERNAL_SERVER_ERROR.getReasonPhrase(),
+                        "Não foi possível calcular o PDOR. Use o identificador de correlação para suporte.",
+                        request.getRequestURI(),
+                        PdorCalculationException.CODE,
+                        exception.correlationId()
+                ));
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<PdorErrorResponse> handleResponseStatus(
             ResponseStatusException exception,

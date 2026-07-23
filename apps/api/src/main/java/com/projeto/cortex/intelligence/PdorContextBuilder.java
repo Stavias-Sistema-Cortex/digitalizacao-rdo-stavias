@@ -379,7 +379,7 @@ public final class PdorContextBuilder {
 
     /**
      * Representa dados brutos obtidos de RDOs, programação,
-     * custos, equipamentos, ocorrências e sincronização.
+     * receita, equipamentos, ocorrências e sincronização.
      */
     public record PdorSourceSnapshot(
         String obraId,

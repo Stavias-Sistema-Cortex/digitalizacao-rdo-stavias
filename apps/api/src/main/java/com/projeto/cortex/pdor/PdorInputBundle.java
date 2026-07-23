@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 
 public record PdorInputBundle(
         String obraId,
@@ -20,7 +21,10 @@ public record PdorInputBundle(
         List<String> missingRequiredFields,
         SourceValues sourceValues,
         PdorEngine.HistoricalSeries historicalSeries,
-        List<PdorEvidenceReference> evidenceReferences
+        List<PdorEvidenceReference> evidenceReferences,
+        List<String> revenueEvidenceIds,
+        long evidenceHighWaterMark,
+        String revenueCoverageCode
 ) {
     public PdorInputBundle {
         inputs = Collections.unmodifiableMap(new LinkedHashMap<>(inputs));
@@ -33,6 +37,37 @@ public record PdorInputBundle(
         evidenceReferences = evidenceReferences == null
                 ? List.of()
                 : List.copyOf(evidenceReferences);
+        revenueEvidenceIds = revenueEvidenceIds == null
+                ? List.of()
+                : List.copyOf(new TreeSet<>(revenueEvidenceIds));
+        if (evidenceHighWaterMark < 0) {
+            throw new IllegalArgumentException(
+                    "evidenceHighWaterMark não pode ser negativo."
+            );
+        }
+        revenueCoverageCode = revenueCoverageCode == null
+                || revenueCoverageCode.isBlank()
+                ? "NO_ACCEPTED_EVIDENCE"
+                : revenueCoverageCode;
+    }
+
+    public PdorInputBundle(
+            String obraId,
+            String codigoObra,
+            LocalDate referenceDate,
+            Map<String, Object> inputs,
+            Map<String, PdorInputOrigin> origins,
+            List<String> warnings,
+            List<String> missingRequiredFields,
+            SourceValues sourceValues,
+            PdorEngine.HistoricalSeries historicalSeries,
+            List<PdorEvidenceReference> evidenceReferences
+    ) {
+        this(
+                obraId, codigoObra, referenceDate, inputs, origins, warnings,
+                missingRequiredFields, sourceValues, historicalSeries,
+                evidenceReferences, List.of(), 0L, "NO_ACCEPTED_EVIDENCE"
+        );
     }
 
     public PdorInputBundle(

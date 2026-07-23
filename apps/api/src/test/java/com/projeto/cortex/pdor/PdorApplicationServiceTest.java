@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.projeto.cortex.intelligence.PdorEngine;
+import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
 import com.projeto.cortex.obras.ObraRepository;
@@ -25,6 +26,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -221,6 +223,45 @@ class PdorApplicationServiceTest {
         assertThat(response.warnings().toString()).contains("Orçamento total aprovado ausente");
         assertThat(response.origemDados().get("contractValue").get("availability").asText())
                 .isEqualTo("ABSENT");
+    }
+
+    @Test
+    void calculationFailureMarksPreviousSnapshotStaleAndReturnsCorrelationOnly() {
+        PdorResultadoResponse previous =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        inputLoader.bundle = validBundle(obra, "390000.00");
+
+        PdorEngine failingEngine = mock(PdorEngine.class);
+        when(failingEngine.calculate(any(), any()))
+                .thenThrow(new IllegalStateException("jdbc:postgresql://secret-host"));
+        PdorApplicationService failingService = new PdorApplicationService(
+                obraRepository,
+                inputLoader,
+                snapshotRepository,
+                objectMapper,
+                memoryService,
+                new PdorContextBuilder(),
+                failingEngine
+        );
+
+        PdorCalculationException failure = catchThrowableOfType(
+                () -> failingService.calcular(
+                        "CW38386", null, PdorTriggerType.API, null
+                ),
+                PdorCalculationException.class
+        );
+
+        assertThat(failure.correlationId())
+                .isEqualTo(snapshotRepository.lastFailureCorrelationId)
+                .matches("[0-9a-f-]{36}");
+        assertThat(failure.getMessage()).isEqualTo("PDOR_CALCULATION_FAILED");
+        assertThat(snapshotRepository.size()).isEqualTo(1);
+        PdorSnapshot stored = snapshotRepository.findById(previous.id())
+                .orElseThrow();
+        assertThat(stored.stale()).isTrue();
+        assertThat(stored.current()).isFalse();
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .isEmpty();
     }
 
     @Test
@@ -651,6 +692,7 @@ class PdorApplicationServiceTest {
         private final Map<String, PdorSnapshot> byIdempotencyKey = new LinkedHashMap<>();
         private final LocalDateTime baseTime = LocalDateTime.of(2026, 6, 22, 10, 0);
         private boolean duplicateNextInsert;
+        private String lastFailureCorrelationId;
 
         private InMemorySnapshotRepository(ObjectMapper objectMapper) {
             super(null, objectMapper);
@@ -671,6 +713,52 @@ class PdorApplicationServiceTest {
         }
 
         @Override
+        public void replaceCurrent(PdorSnapshot snapshot)
+                throws DuplicateKeyException {
+            snapshots.replaceAll(existing -> existing.current()
+                    ? existing.withRevenueMetadata(
+                            existing.algorithmVersion(),
+                            existing.evidenceIds(),
+                            existing.evidenceHighWaterMark(),
+                            existing.coverageCode(),
+                            existing.assumptions(),
+                            existing.executedAtUtc(),
+                            true,
+                            false
+                    )
+                    : existing);
+            rebuildIndex();
+            insert(snapshot);
+        }
+
+        @Override
+        public void recordFailureAndMarkCurrentStale(
+                String correlationId,
+                String obraId,
+                String previousSnapshotId,
+                Long evidenceHighWaterMark,
+                PdorTriggerType triggerType,
+                String initiatedBy,
+                java.time.Instant attemptedAtUtc
+        ) {
+            lastFailureCorrelationId = correlationId;
+            snapshots.replaceAll(existing -> existing.obraId().equals(obraId)
+                    && existing.current()
+                    ? existing.withRevenueMetadata(
+                            existing.algorithmVersion(),
+                            existing.evidenceIds(),
+                            existing.evidenceHighWaterMark(),
+                            existing.coverageCode(),
+                            existing.assumptions(),
+                            existing.executedAtUtc(),
+                            true,
+                            false
+                    )
+                    : existing);
+            rebuildIndex();
+        }
+
+        @Override
         public Optional<PdorSnapshot> findByIdempotencyKey(String idempotencyKey) {
             return Optional.ofNullable(byIdempotencyKey.get(idempotencyKey));
         }
@@ -678,6 +766,14 @@ class PdorApplicationServiceTest {
         @Override
         public Optional<PdorSnapshot> findLatestByObraId(String obraId) {
             return sortedByLatest(obraId).stream().findFirst();
+        }
+
+        @Override
+        public Optional<PdorSnapshot> findCurrentByObraId(String obraId) {
+            return snapshots.stream()
+                    .filter(snapshot -> snapshot.obraId().equals(obraId))
+                    .filter(PdorSnapshot::current)
+                    .findFirst();
         }
 
         @Override
@@ -710,6 +806,12 @@ class PdorApplicationServiceTest {
             byIdempotencyKey.put(snapshot.idempotencyKey(), snapshot);
         }
 
+        private void rebuildIndex() {
+            byIdempotencyKey.clear();
+            snapshots.forEach(snapshot ->
+                    byIdempotencyKey.put(snapshot.idempotencyKey(), snapshot));
+        }
+
         private List<PdorSnapshot> sortedByLatest(String obraId) {
             return snapshots.stream()
                     .filter(snapshot -> snapshot.obraId().equals(obraId))
@@ -723,7 +825,7 @@ class PdorApplicationServiceTest {
 
         private PdorSnapshot withSequentialTime(PdorSnapshot snapshot) {
             LocalDateTime time = baseTime.plusSeconds(snapshots.size());
-            return new PdorSnapshot(
+            PdorSnapshot stored = new PdorSnapshot(
                     snapshot.id(),
                     snapshot.obraId(),
                     snapshot.codigoObra(),
@@ -774,6 +876,16 @@ class PdorApplicationServiceTest {
                     snapshot.evidence(),
                     snapshot.initiatedBy(),
                     snapshot.initiatorType()
+            );
+            return stored.withRevenueMetadata(
+                    snapshot.algorithmVersion(),
+                    snapshot.evidenceIds(),
+                    snapshot.evidenceHighWaterMark(),
+                    snapshot.coverageCode(),
+                    snapshot.assumptions(),
+                    time.toInstant(java.time.ZoneOffset.UTC),
+                    snapshot.stale(),
+                    snapshot.current()
             );
         }
     }

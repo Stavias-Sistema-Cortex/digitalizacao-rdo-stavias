@@ -4,6 +4,8 @@ import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,6 +37,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
     }
 
     @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PdorInputBundle load(Obra obra, LocalDate requestedReferenceDate) {
         ProgramacaoStats programacao = buscarProgramacaoStats(obra.getId());
         RdoStats rdo = buscarRdoStats(obra.getId(), requestedReferenceDate);
@@ -53,8 +56,16 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 : 0;
         SyncStats sync = buscarSyncStats(obra.getId());
         FinanceStats finance = buscarFinanceStats(obra.getId(), referenceDate);
-        ServiceQuantityStats serviceQuantity =
+        ServiceQuantityStats rawServiceQuantity =
                 buscarServiceQuantityStats(obra.getId(), referenceDate);
+        ServiceQuantityStats serviceQuantity = new ServiceQuantityStats(
+                rawServiceQuantity.itemCount(),
+                rawServiceQuantity.contractUnitCount(),
+                rawServiceQuantity.totalPlanned(),
+                rawServiceQuantity.executionCount(),
+                rawServiceQuantity.executionUnitCount(),
+                finance.acceptedQuantity()
+        );
         TeamStats team = buscarTeamStats(obra.getId(), referenceDate);
         int activeGeospatialFeatureCount =
                 buscarActiveGeospatialFeatureCount(obra.getId(), referenceDate);
@@ -104,10 +115,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Receita medida acumulada",
                 measuredRevenueAvailability,
                 finance.hasRevenueData() ? finance.measuredRevenue() : null,
-                "execucao_servico_rdo.receita_operacional_estimativa",
+                "execucao_servico_rdo.revenue_amount + cortex_evento_operacional.commit_seq",
                 finance.hasRevenueData()
-                        ? "Soma da receita operacional das execuções registradas ou validadas, sem produção rejeitada."
-                        : "Não há receita operacional registrada em execuções de serviço válidas.",
+                        ? "Soma exata de evidências ACCEPTED_EXACT validadas contra o evento ontológico canônico."
+                        : "Não há evidência de receita aceita com identidade e evento canônicos válidos.",
                 true
         );
         if (!finance.hasRevenueData()) {
@@ -128,10 +139,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Receita validada acumulada",
                 validatedRevenueAvailability,
                 finance.hasRevenueData() ? finance.validatedRevenue() : null,
-                "execucao_servico_rdo.receita_operacional_estimativa",
+                "execucao_servico_rdo.revenue_amount + cortex_evento_operacional.commit_seq",
                 finance.hasRevenueData()
-                        ? "Parcela da receita medida já validada pela fiscalização."
-                        : "Não há receita validada em execuções de serviço da obra.",
+                        ? "Receita aceita em execuções VALIDADA, sem rejeição, retrabalho ou cancelamento."
+                        : "Não há receita aceita validada para a obra.",
                 true
         );
         if (!finance.hasRevenueData()) {
@@ -140,9 +151,61 @@ public class RealPdorInputLoader implements PdorInputLoader {
             );
         }
 
+        put(
+                inputs,
+                origins,
+                missing,
+                "acceptedRevenueEvidenceCount",
+                "Evidências de receita aceitas",
+                PdorDataAvailability.DIRECT,
+                finance.acceptedRows(),
+                "execucao_servico_rdo.revenue_evidence_id",
+                "Quantidade de evidências aceitas que passaram pela validação canônica completa.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "eligibleRevenueExecutionCount",
+                "Execuções elegíveis para receita",
+                PdorDataAvailability.DIRECT,
+                finance.eligibleRows(),
+                "execucao_servico_rdo.revenue_coverage_code",
+                "Execuções validadas e não rejeitadas usadas para medir cobertura de preço.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "evidenceHighWaterMark",
+                "Marca d'água da ontologia",
+                PdorDataAvailability.DIRECT,
+                finance.evidenceHighWaterMark(),
+                "cortex_evento_commit_sequence.ultima_commit_seq",
+                "Sequência canônica observada atomicamente durante a leitura das evidências.",
+                false
+        );
+        put(
+                inputs,
+                origins,
+                missing,
+                "revenueCoverageCode",
+                "Cobertura da receita",
+                PdorDataAvailability.DERIVED,
+                finance.coverageCode(),
+                "execucao_servico_rdo.revenue_coverage_code",
+                "Cobertura calculada entre execuções elegíveis e evidências ACCEPTED_EXACT válidas.",
+                false
+        );
+
         BigDecimal totalPlanned = quantity == null ? null : quantity.totalPlanned();
         BigDecimal plannedUntilReference = quantity == null ? null : quantity.plannedUntilReference();
         BigDecimal actualExecuted = quantity == null ? null : quantity.actualExecuted();
+        BigDecimal remainingContracted = totalPlanned == null
+                ? null
+                : totalPlanned.subtract(valueOrZero(actualExecuted)).max(BigDecimal.ZERO);
 
         if (quantity != null && "ITEM_CONTRATUAL".equals(quantity.metric())) {
             warnings.add(
@@ -171,6 +234,21 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         ? "Não há quantidade planejada positiva em extensão, área ou volume."
                         : "Quantidade planejada agregada por obra.",
                 true
+        );
+
+        put(
+                inputs,
+                origins,
+                missing,
+                "remainingContractedQuantity",
+                "Quantidade contratada remanescente",
+                remainingContracted == null
+                        ? PdorDataAvailability.ABSENT
+                        : PdorDataAvailability.DERIVED,
+                remainingContracted,
+                "item_contratual.quantidade_contratada - execucao_servico_rdo.quantidade_executada",
+                "Saldo factual após subtrair somente execuções com receita aceita.",
+                false
         );
 
         put(
@@ -617,7 +695,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         productivityLossWeekly,
                         materialOverconsumptionWeekly
                 ),
-                buscarEvidencias(obra.getId(), referenceDate)
+                buscarEvidencias(obra.getId(), referenceDate),
+                finance.evidenceIds(),
+                finance.evidenceHighWaterMark(),
+                finance.coverageCode()
         );
     }
 
@@ -1191,65 +1272,168 @@ public class RealPdorInputLoader implements PdorInputLoader {
             String obraId,
             LocalDate referenceDate
     ) {
-        return jdbcTemplate.queryForObject(
+        ContractRevenueScope scope = jdbcTemplate.queryForObject(
                 """
                 SELECT
-                    (
-                        SELECT COUNT(*)
-                        FROM item_contratual
-                        WHERE obra_id = ?
-                          AND status = 'ATIVO'
-                    ) AS item_count,
-                    (
-                        SELECT SUM(valor_total)
-                        FROM item_contratual
-                        WHERE obra_id = ?
-                          AND status = 'ATIVO'
+                    COUNT(*) FILTER (WHERE item.status = 'ATIVO') AS item_count,
+                    SUM(item.valor_total) FILTER (
+                        WHERE item.status = 'ATIVO'
                     ) AS contract_value,
                     (
                         SELECT COUNT(*)
-                        FROM execucao_servico_rdo
-                        WHERE obra_id = ?
-                          AND data_execucao <= ?
-                          AND cancelada = FALSE
-                          AND producao_rejeitada = FALSE
-                          AND status_validacao IN ('REGISTRADA', 'VALIDADA')
-                          AND receita_operacional_estimativa IS NOT NULL
-                    ) AS revenue_rows,
-                    (
-                        SELECT SUM(receita_operacional_estimativa)
-                        FROM execucao_servico_rdo
-                        WHERE obra_id = ?
-                          AND data_execucao <= ?
-                          AND cancelada = FALSE
-                          AND producao_rejeitada = FALSE
-                          AND status_validacao IN ('REGISTRADA', 'VALIDADA')
-                    ) AS measured_revenue,
-                    (
-                        SELECT SUM(receita_operacional_estimativa)
-                        FROM execucao_servico_rdo
-                        WHERE obra_id = ?
-                          AND data_execucao <= ?
-                          AND cancelada = FALSE
-                          AND producao_rejeitada = FALSE
-                          AND status_validacao = 'VALIDADA'
-                    ) AS validated_revenue
+                        FROM execucao_servico_rdo execution
+                        WHERE execution.obra_id = ?
+                          AND execution.data_execucao <= ?
+                          AND execution.cancelada = FALSE
+                          AND execution.producao_rejeitada = FALSE
+                          AND execution.retrabalho = FALSE
+                          AND execution.status_validacao = 'VALIDADA'
+                    ) AS eligible_rows
+                FROM item_contratual item
+                WHERE item.obra_id = ?
                 """,
-                (rs, rowNumber) -> new FinanceStats(
+                (rs, rowNumber) -> new ContractRevenueScope(
                         rs.getInt("item_count"),
                         rs.getBigDecimal("contract_value"),
-                        rs.getInt("revenue_rows"),
-                        valueOrZero(rs.getBigDecimal("measured_revenue")),
-                        valueOrZero(rs.getBigDecimal("validated_revenue"))
+                        rs.getInt("eligible_rows")
                 ),
                 obraId,
-                obraId,
-                obraId,
                 referenceDate,
-                obraId,
-                referenceDate,
+                obraId
+        );
+
+        List<AcceptedRevenueRow> acceptedRows = jdbcTemplate.query(
+                """
+                SELECT execution.revenue_evidence_id,
+                       execution.revenue_amount,
+                       execution.quantidade_executada,
+                       event.commit_seq
+                FROM execucao_servico_rdo execution
+                JOIN cortex_evento_operacional event
+                  ON event.id = execution.revenue_event_id
+                 AND event.tipo_entidade = 'RDO_EXECUTION'
+                 AND event.tipo_evento = 'RDO_SERVICE_EXECUTED'
+                 AND event.entidade_id = execution.id
+                 AND event.obra_id = execution.obra_id
+                 AND event.rdo_id = execution.rdo_id
+                 AND event.payload_json ->> 'schemaVersion' = '1'
+                 AND event.payload_json ->> 'status' = 'ACCEPTED'
+                 AND event.payload_json ->> 'rdoId' = execution.rdo_id
+                 AND event.payload_json ->> 'obraId' = execution.obra_id
+                 AND event.payload_json ->> 'serviceId' = execution.service_id
+                 AND event.payload_json ->> 'priceVersionId' = execution.price_version_id
+                 AND event.payload_json ->> 'revenueEvidenceId' = execution.revenue_evidence_id
+                 AND event.payload_json ->> 'unit' = execution.unidade_medida
+                 AND event.payload_json ->> 'currency' = execution.currency
+                 AND CASE
+                     WHEN event.payload_json ->> 'acceptedQuantity'
+                          ~ '^[0-9]+([.][0-9]+)?$'
+                     THEN (event.payload_json ->> 'acceptedQuantity')::numeric
+                          = execution.quantidade_executada
+                     ELSE FALSE
+                 END
+                 AND CASE
+                     WHEN event.payload_json ->> 'unitPrice'
+                          ~ '^[0-9]+([.][0-9]+)?$'
+                     THEN (event.payload_json ->> 'unitPrice')::numeric
+                          = execution.unit_price_snapshot
+                     ELSE FALSE
+                 END
+                 AND CASE
+                     WHEN event.payload_json ->> 'revenue'
+                          ~ '^[0-9]+([.][0-9]+)?$'
+                     THEN (event.payload_json ->> 'revenue')::numeric
+                          = execution.revenue_amount
+                     ELSE FALSE
+                 END
+                 AND jsonb_typeof(event.entidades_relacionadas_json) = 'array'
+                 AND jsonb_array_length(event.entidades_relacionadas_json) = 5
+                 AND event.entidades_relacionadas_json @> jsonb_build_array(
+                     jsonb_build_object('tipo', 'RDO', 'id', execution.rdo_id)
+                 )
+                 AND event.entidades_relacionadas_json @> jsonb_build_array(
+                     jsonb_build_object('tipo', 'WORKSITE', 'id', execution.obra_id)
+                 )
+                 AND event.entidades_relacionadas_json @> jsonb_build_array(
+                     jsonb_build_object('tipo', 'SERVICE', 'id', execution.service_id)
+                 )
+                 AND event.entidades_relacionadas_json @> jsonb_build_array(
+                     jsonb_build_object(
+                         'tipo', 'SERVICE_PRICE_VERSION',
+                         'id', execution.price_version_id
+                     )
+                 )
+                 AND event.entidades_relacionadas_json @> jsonb_build_array(
+                     jsonb_build_object(
+                         'tipo', 'REVENUE_EVIDENCE',
+                         'id', execution.revenue_evidence_id
+                     )
+                 )
+                WHERE execution.obra_id = ?
+                  AND execution.data_execucao <= ?
+                  AND execution.revenue_coverage_code = 'ACCEPTED_EXACT'
+                  AND execution.revenue_evidence_id IS NOT NULL
+                  AND execution.revenue_event_id IS NOT NULL
+                  AND execution.status_validacao = 'VALIDADA'
+                  AND execution.cancelada = FALSE
+                  AND execution.producao_rejeitada = FALSE
+                  AND execution.retrabalho = FALSE
+                ORDER BY execution.revenue_evidence_id
+                """,
+                (rs, rowNumber) -> new AcceptedRevenueRow(
+                        rs.getString("revenue_evidence_id"),
+                        rs.getBigDecimal("revenue_amount"),
+                        rs.getBigDecimal("quantidade_executada"),
+                        rs.getLong("commit_seq")
+                ),
                 obraId,
                 referenceDate
+        );
+        Long highWaterMark = jdbcTemplate.queryForObject(
+                """
+                SELECT ultima_commit_seq
+                FROM cortex_evento_commit_sequence
+                WHERE id = 1
+                """,
+                Long.class
+        );
+        long resolvedHighWaterMark = highWaterMark == null ? 0L : highWaterMark;
+        long acceptedEvidenceMaxCommit = acceptedRows.stream()
+                .mapToLong(AcceptedRevenueRow::commitSequence)
+                .max()
+                .orElse(0L);
+        if (acceptedEvidenceMaxCommit > resolvedHighWaterMark) {
+            throw new IllegalStateException("PDOR_EVIDENCE_HIGH_WATER_INVALID");
+        }
+        BigDecimal acceptedRevenue = acceptedRows.stream()
+                .map(AcceptedRevenueRow::revenue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal acceptedQuantity = acceptedRows.stream()
+                .map(AcceptedRevenueRow::acceptedQuantity)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<String> evidenceIds = acceptedRows.stream()
+                .map(AcceptedRevenueRow::evidenceId)
+                .distinct()
+                .sorted()
+                .toList();
+        int eligibleRows = scope == null ? 0 : scope.eligibleRows();
+        String coverageCode = acceptedRows.isEmpty()
+                ? "NO_ACCEPTED_EVIDENCE"
+                : acceptedRows.size() == eligibleRows
+                        ? "COMPLETE_ACCEPTED_EXACT"
+                        : "PARTIAL_ACCEPTED_EXACT";
+
+        return new FinanceStats(
+                scope == null ? 0 : scope.itemCount(),
+                scope == null ? null : scope.contractValue(),
+                acceptedRows.size(),
+                eligibleRows,
+                acceptedRevenue,
+                acceptedRevenue,
+                acceptedQuantity,
+                evidenceIds,
+                resolvedHighWaterMark,
+                coverageCode
         );
     }
 
@@ -1295,7 +1479,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     (
                         SELECT SUM(CASE
                                 WHEN producao_rejeitada = FALSE
-                                 AND status_validacao IN ('REGISTRADA', 'VALIDADA')
+                                 AND retrabalho = FALSE
+                                 AND status_validacao = 'VALIDADA'
+                                 AND revenue_coverage_code = 'ACCEPTED_EXACT'
+                                 AND revenue_evidence_id IS NOT NULL
                                     THEN quantidade_executada
                                 ELSE 0
                             END)
@@ -1576,9 +1763,14 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private record FinanceStats(
             int itemCount,
             BigDecimal contractValue,
-            int revenueRows,
+            int acceptedRows,
+            int eligibleRows,
             BigDecimal measuredRevenue,
-            BigDecimal validatedRevenue
+            BigDecimal validatedRevenue,
+            BigDecimal acceptedQuantity,
+            List<String> evidenceIds,
+            long evidenceHighWaterMark,
+            String coverageCode
     ) {
         private boolean hasContractData() {
             return itemCount > 0
@@ -1587,8 +1779,23 @@ public class RealPdorInputLoader implements PdorInputLoader {
         }
 
         private boolean hasRevenueData() {
-            return revenueRows > 0;
+            return acceptedRows > 0;
         }
+    }
+
+    private record ContractRevenueScope(
+            int itemCount,
+            BigDecimal contractValue,
+            int eligibleRows
+    ) {
+    }
+
+    private record AcceptedRevenueRow(
+            String evidenceId,
+            BigDecimal revenue,
+            BigDecimal acceptedQuantity,
+            long commitSequence
+    ) {
     }
 
     private record ServiceQuantityStats(
