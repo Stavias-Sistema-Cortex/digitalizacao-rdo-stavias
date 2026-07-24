@@ -113,9 +113,10 @@ describe("passkeyApi", () => {
     expect(mocks.apiFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("autentica com assertion discoverable e mantém perfil só em memória", async () => {
+  it("vincula o CPF somente às opções discoverable da passkey", async () => {
     const get = vi.fn().mockResolvedValue(assertionCredential());
     vi.stubGlobal("navigator", { credentials: { get } });
+    const cpf = "529.982.247-25";
     const profile = {
       colaboradorId: "00000000-0000-4000-8000-000000000001",
       nome: "Colaborador Sintético",
@@ -126,14 +127,18 @@ describe("passkeyApi", () => {
     };
     mockResponses(authenticationOptions(), profile);
 
-    await expect(authenticateWithPasskey()).resolves.toEqual(profile);
+    await expect(authenticateWithPasskey(cpf)).resolves.toEqual(profile);
     expect(mocks.setSession).toHaveBeenCalledWith(profile);
     expect(mocks.apiFetch.mock.calls[0][0]).toBe(
       "/auth/passkeys/authentication/options",
     );
+    expect(mocks.apiFetch.mock.calls[0][1].body).toBe(
+      JSON.stringify({ cpf }),
+    );
     expect(mocks.apiFetch.mock.calls[1][0]).toBe(
       "/auth/passkeys/authentication/verify",
     );
+    expect(mocks.apiFetch.mock.calls[1][1].body).not.toContain(cpf);
   });
 
   it("renova o grant e só substitui o cofre após concluir", async () => {

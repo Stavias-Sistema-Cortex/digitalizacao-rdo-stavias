@@ -12,12 +12,11 @@ import {
   validateLoginForm,
   type LoginFieldErrors,
 } from "./loginValidation";
-import { autenticarPorCpf } from "./authService";
 import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
 
-type SubmitStatus = "idle" | "cpf" | "passkey";
+type SubmitStatus = "idle" | "passkey";
 
 export function LoginPage() {
   const cpfId = useId();
@@ -62,29 +61,14 @@ export function LoginPage() {
       return;
     }
 
-    setStatus("cpf");
+    setStatus("passkey");
     try {
-      await autenticarPorCpf(cpf);
+      await authenticateWithPasskey(cpf);
       window.location.assign("/");
     } catch (error: unknown) {
       setStatus("idle");
       setAuthError(errorMessage(error));
       cpfRef.current?.focus();
-    }
-  }
-
-  async function handlePasskeyLogin(): Promise<void> {
-    if (loading || !online) {
-      return;
-    }
-    setStatus("passkey");
-    setAuthError("");
-    try {
-      await authenticateWithPasskey();
-      window.location.assign("/");
-    } catch (error: unknown) {
-      setAuthError(errorMessage(error));
-      setStatus("idle");
     }
   }
 
@@ -124,7 +108,7 @@ export function LoginPage() {
             <p className="login__eyebrow">Área restrita</p>
             <h2>Entrar no sistema</h2>
             <p className="login__subtitle">
-              Informe o CPF vinculado ao seu cadastro no Academy.
+              CPF identifica o colaborador; sua passkey confirma o acesso.
             </p>
           </header>
 
@@ -185,25 +169,14 @@ export function LoginPage() {
               className="login__submit"
               disabled={loading || !online}
             >
-              {status === "cpf" ? (
+              {status === "passkey" ? (
                 <span className="login__submit-loading">
                   <span className="login__spinner" aria-hidden="true" />
-                  Entrando...
+                  Confirmando...
                 </span>
               ) : (
-                "Entrar"
+                "Confirmar com passkey"
               )}
-            </button>
-
-            <button
-              type="button"
-              className="login__passkey"
-              onClick={() => {
-                void handlePasskeyLogin();
-              }}
-              disabled={loading || !online}
-            >
-              {status === "passkey" ? "Confirmando..." : "Usar passkey"}
             </button>
 
             {authError ? (

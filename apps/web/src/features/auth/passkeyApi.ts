@@ -89,12 +89,15 @@ export async function registerPasskey(): Promise<PasskeyRegistrationResult> {
   }
 }
 
-export async function authenticateWithPasskey(): Promise<AuthProfile> {
+export async function authenticateWithPasskey(
+  cpf: string,
+): Promise<AuthProfile> {
   if (!navigator.credentials?.get) {
     throw new Error("Este navegador não permite usar passkeys.");
   }
   const started = await requestOptions(
     "/auth/passkeys/authentication/options",
+    { cpf },
   );
   const publicKey = decodeRequestOptions(started.publicKey);
   if (publicKey.rpId !== started.rpId) {
@@ -131,8 +134,11 @@ export async function renewOfflineAccess(
   return "READY";
 }
 
-async function requestOptions(path: string): Promise<WebAuthnOptionsResponse> {
-  const response = await postJson(path, null);
+async function requestOptions(
+  path: string,
+  body: unknown = null,
+): Promise<WebAuthnOptionsResponse> {
+  const response = await postJson(path, body);
   const source = record(response, "Opções da passkey inválidas.");
   const challengeId = requiredString(source.challengeId);
   const rpId = requiredString(source.rpId);

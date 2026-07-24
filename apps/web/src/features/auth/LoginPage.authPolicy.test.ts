@@ -87,7 +87,7 @@ describe("LoginPage auth policy", () => {
     );
   });
 
-  it("usa CPF direto e mantém a passkey como ação minimalista", () => {
+  it("identifica pelo CPF e confirma o acesso com uma única ação de passkey", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
       "utf8",
@@ -97,11 +97,15 @@ describe("LoginPage auth policy", () => {
     expect(source).not.toContain("filtroOfflinePronto");
     expect(source).not.toContain("login offline está habilitado");
     expect(source).not.toContain("cpfMascarado");
-    expect(source).toContain("autenticarPorCpf");
+    expect(source).not.toContain("autenticarPorCpf");
     expect(source).toContain("O login exige conexão com o Córtex.");
-    expect(source).toContain('"Entrar"');
-    expect(source).toContain("Usar passkey");
-    expect(source).toContain("authenticateWithPasskey");
+    expect(source).toContain("authenticateWithPasskey(cpf)");
+    expect(source.match(/authenticateWithPasskey\(cpf\)/g)).toHaveLength(1);
+    expect(source).toContain('"Confirmar com passkey"');
+    expect(source).not.toContain("Usar passkey");
+    expect(source).toContain(
+      "CPF identifica o colaborador; sua passkey confirma o acesso.",
+    );
     const forbiddenPublicLoginTerms = [
       "Enviar c\u00f3digo",
       "C\u00f3digo de acesso",

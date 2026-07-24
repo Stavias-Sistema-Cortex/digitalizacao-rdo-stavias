@@ -11,10 +11,8 @@ import {
   AUTH_SESSION_CHANGED_EVENT,
   getSession,
   isAlfa,
-  setSession,
 } from "./features/auth/authSession";
 import { resolveCortexAuthMode } from "./features/auth/cortexAuthMode";
-import { EmailOtpAccessForm } from "./features/auth/EmailOtpAccessForm";
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
@@ -109,31 +107,6 @@ type AppProps = {
   initialAuthUnavailable?: boolean;
 };
 
-function PostgresqlAccessPage() {
-  return (
-    <main className="cortex-login postgresql-access">
-      <section className="postgresql-access__stage" aria-labelledby="postgresql-access-title">
-        <div className="postgresql-access__identity">
-          <p className="postgresql-access__eyebrow">Sistema Córtex</p>
-          <h1 id="postgresql-access-title">Acesso institucional</h1>
-          <p>
-            Confirme sua identidade pelo e-mail institucional. O Córtex usa
-            sessão opaca em cookie e não recebe senha ou CPF nesta etapa.
-          </p>
-        </div>
-        <div className="postgresql-access__panel">
-          <EmailOtpAccessForm
-            purpose="runtime"
-            onVerified={(profile) => {
-              setSession(profile);
-            }}
-          />
-        </div>
-      </section>
-    </main>
-  );
-}
-
 function App({ initialAuthUnavailable = false }: AppProps) {
   const [session, setSession] =
     useState(() => getSession());
@@ -199,7 +172,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
   // Sem sessão online, somente um grant assinado aberto por PRF libera o cache.
   if (!session) {
     if (resolveCortexAuthMode() === "postgresql") {
-      return <PostgresqlAccessPage />;
+      return <LoginPage />;
     }
     if (!vaultChecked) {
       return (
