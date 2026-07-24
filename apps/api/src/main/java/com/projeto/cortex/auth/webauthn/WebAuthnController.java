@@ -2,6 +2,8 @@ package com.projeto.cortex.auth.webauthn;
 
 import com.projeto.cortex.auth.AuthSessionResponse;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
+import com.projeto.cortex.auth.identity.CpfLookupDigestService;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.session.AuthCookieService;
@@ -27,6 +29,7 @@ public class WebAuthnController {
     private final AuthSessionProfileResolver sessionProfiles;
     private final ClientAddressResolver clientAddresses;
     private final WebAuthnRateLimiter rateLimiter;
+    private final CpfLookupDigestService cpfDigests;
 
     public WebAuthnController(
             WebAuthnService webAuthn,
@@ -35,7 +38,8 @@ public class WebAuthnController {
             AuthCookieService cookies,
             AuthSessionProfileResolver sessionProfiles,
             ClientAddressResolver clientAddresses,
-            WebAuthnRateLimiter rateLimiter
+            WebAuthnRateLimiter rateLimiter,
+            CpfLookupDigestService cpfDigests
     ) {
         this.webAuthn = webAuthn;
         this.currentUser = currentUser;
@@ -44,6 +48,7 @@ public class WebAuthnController {
         this.sessionProfiles = sessionProfiles;
         this.clientAddresses = clientAddresses;
         this.rateLimiter = rateLimiter;
+        this.cpfDigests = cpfDigests;
     }
 
     @PostMapping("/api/auth/passkeys/registration/options")
@@ -79,10 +84,12 @@ public class WebAuthnController {
                 WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
                 request
         );
+        String cpf = authenticationRequest == null
+                ? null
+                : authenticationRequest.cpf();
+        requireIdentifierAllowed(cpfDigests.challengeLookup(cpf));
         return webAuthn.startCpfBoundAuthentication(
-                authenticationRequest == null
-                        ? null
-                        : authenticationRequest.cpf()
+                cpf
         );
     }
 
@@ -125,6 +132,17 @@ public class WebAuthnController {
             return;
         }
         if (!rateLimiter.allow(action, clientAddresses.resolve(request))) {
+            throw new ResponseStatusException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "Muitas tentativas de autenticação. Tente novamente mais tarde."
+            );
+        }
+    }
+
+    private void requireIdentifierAllowed(
+            AuthChallengeLookupMaterial material
+    ) {
+        if (!rateLimiter.allowIdentifier(material)) {
             throw new ResponseStatusException(
                     HttpStatus.TOO_MANY_REQUESTS,
                     "Muitas tentativas de autenticação. Tente novamente mais tarde."

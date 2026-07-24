@@ -46,7 +46,7 @@ class PostgresqlAuthSessionRepositoryIT
     }
 
     @Test
-    void doesNotResolveAnOpaqueSessionForAnAtivaIdentityWithoutAuthenticationEmail() {
+    void resolvesAnOpaqueSessionForAnAtivaIdentityWithoutAuthenticationEmail() {
         try (PostgreSQLContainer<?> database = database()) {
             database.start();
             JdbcTemplate jdbc = migratedJdbc(database);
@@ -65,7 +65,7 @@ class PostgresqlAuthSessionRepositoryIT
                     new PostgresqlAuthSessionRepository(jdbc);
             sessions.create(sessionId, collaboratorId, tokenHash, digest('b'), 300);
 
-            assertThat(sessions.findActiveByTokenHash(tokenHash)).isEmpty();
+            assertThat(sessions.findActiveByTokenHash(tokenHash)).isPresent();
         }
     }
 }

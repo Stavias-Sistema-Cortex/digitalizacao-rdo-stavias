@@ -68,14 +68,12 @@ public final class AuthPublicEndpointPolicy {
         if (!"POST".equalsIgnoreCase(method)) {
             return false;
         }
-        if (isPostgresqlWebMode()) {
-            if (isEmailOtpPath(path)) {
-                return true;
-            }
-            // In normal PostgreSQL mode the controller must return its
-            // explicit 410 policy before any legacy CPF normalization. The
-            // activation gate runs first and masks this same path with 503.
-            return normalPostgresqlWebMode && "/api/auth/login".equals(path);
+        if (activationPostgresqlWebMode) {
+            return isEmailOtpPath(path);
+        }
+        if (normalPostgresqlWebMode) {
+            return "/api/auth/passkeys/authentication/options".equals(path)
+                    || "/api/auth/passkeys/authentication/verify".equals(path);
         }
         if ("/api/auth/login".equals(path)
                 || "/api/auth/passkeys/authentication/options".equals(path)
@@ -90,10 +88,6 @@ public final class AuthPublicEndpointPolicy {
                 && SAFE_METHODS.contains(request.getMethod().toUpperCase(
                         java.util.Locale.ROOT
                 ));
-    }
-
-    private boolean isPostgresqlWebMode() {
-        return normalPostgresqlWebMode || activationPostgresqlWebMode;
     }
 
     private boolean isEmailOtpPath(String path) {

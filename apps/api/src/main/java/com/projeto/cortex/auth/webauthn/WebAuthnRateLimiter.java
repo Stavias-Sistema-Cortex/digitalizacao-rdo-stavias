@@ -1,5 +1,6 @@
 package com.projeto.cortex.auth.webauthn;
 
+import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
 import com.projeto.cortex.auth.otp.OtpCryptography;
 import com.projeto.cortex.auth.otp.AuthRateLimitStore;
 import java.util.List;
@@ -61,6 +62,26 @@ public class WebAuthnRateLimiter {
         return buckets.consume(
                 List.of(globalBucket),
                 policy.globalMaxRequests(),
+                policy.windowSeconds()
+        );
+    }
+
+    public boolean allowIdentifier(AuthChallengeLookupMaterial material) {
+        if (material == null) {
+            return false;
+        }
+        List<String> identifierBuckets = material.candidates().stream()
+                .map(candidate -> cryptography.bucketDigest(
+                        "identifier",
+                        "webauthn:authentication-options:"
+                                + candidate.keyId()
+                                + ":"
+                                + candidate.value()
+                ))
+                .toList();
+        return buckets.consume(
+                identifierBuckets,
+                policy.maxRequests(),
                 policy.windowSeconds()
         );
     }

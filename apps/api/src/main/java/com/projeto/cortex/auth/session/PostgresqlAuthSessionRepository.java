@@ -57,7 +57,6 @@ public class PostgresqlAuthSessionRepository implements AuthSessionRepository {
                     AND colaborador.deletado_em IS NULL
                     AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                     AND identity.status = 'ATIVA'
-                    AND identity.email_autenticacao IS NOT NULL
                 """, (resultSet, rowNumber) -> MysqlAuthSessionRepository.resolved(resultSet), tokenHash);
         if (sessions.size() > 1) {
             throw new IllegalStateException("Token de sessão ambíguo.");

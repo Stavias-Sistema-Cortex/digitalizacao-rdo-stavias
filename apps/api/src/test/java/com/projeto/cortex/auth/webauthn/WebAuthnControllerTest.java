@@ -3,6 +3,7 @@ package com.projeto.cortex.auth.webauthn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -17,6 +18,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.AuthSessionResponse;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
+import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
+import com.projeto.cortex.auth.identity.CpfLookupDigest;
+import com.projeto.cortex.auth.identity.CpfLookupDigestService;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.session.AuthCookieService;
@@ -24,10 +28,12 @@ import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,6 +60,16 @@ class WebAuthnControllerTest {
             mock(ClientAddressResolver.class);
     private final WebAuthnRateLimiter rateLimiter =
             mock(WebAuthnRateLimiter.class);
+    private final CpfLookupDigestService cpfDigests =
+            mock(CpfLookupDigestService.class);
+    private final AuthChallengeLookupMaterial lookupMaterial =
+            new AuthChallengeLookupMaterial(
+                    List.of(new CpfLookupDigest(
+                            "synthetic-current",
+                            "a".repeat(64)
+                    )),
+                    "b".repeat(64)
+            );
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -65,10 +81,13 @@ class WebAuthnControllerTest {
                 cookies,
                 sessionProfiles,
                 clientAddresses,
-                rateLimiter
+                rateLimiter,
+                cpfDigests
         )).build();
         when(clientAddresses.resolve(any())).thenReturn("127.0.0.1");
         when(rateLimiter.allow(any(), eq("127.0.0.1"))).thenReturn(true);
+        when(cpfDigests.challengeLookup(any())).thenReturn(lookupMaterial);
+        when(rateLimiter.allowIdentifier(lookupMaterial)).thenReturn(true);
         when(currentUser.allowedObraIds(any())).thenReturn(Optional.of(Set.of(
                 "40000000-0000-0000-0000-000000000004"
         )));
@@ -123,11 +142,16 @@ class WebAuthnControllerTest {
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.challengeId").value(CHALLENGE_ID));
 
-        verify(rateLimiter).allow(
+        InOrder ordering = inOrder(rateLimiter, cpfDigests, webAuthn);
+        ordering.verify(rateLimiter).allow(
                 WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
                 "127.0.0.1"
         );
-        verify(webAuthn).startCpfBoundAuthentication("529.982.247-25");
+        ordering.verify(cpfDigests).challengeLookup("529.982.247-25");
+        ordering.verify(rateLimiter).allowIdentifier(lookupMaterial);
+        ordering.verify(webAuthn).startCpfBoundAuthentication(
+                "529.982.247-25"
+        );
     }
 
     @Test
@@ -243,6 +267,30 @@ class WebAuthnControllerTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("Cache-Control", "no-store"));
 
+        verifyNoInteractions(webAuthn);
+    }
+
+    @Test
+    void identifierLimitRejectsAfterProtectedCpfLookupBeforeChallengePersistence()
+            throws Exception {
+        when(rateLimiter.allowIdentifier(lookupMaterial)).thenReturn(false);
+
+        mockMvc.perform(post(
+                        "/api/auth/passkeys/authentication/options"
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cpf":"529.982.247-25"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        InOrder ordering = inOrder(rateLimiter, cpfDigests);
+        ordering.verify(rateLimiter).allow(
+                WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
+                "127.0.0.1"
+        );
+        ordering.verify(cpfDigests).challengeLookup("529.982.247-25");
+        ordering.verify(rateLimiter).allowIdentifier(lookupMaterial);
         verifyNoInteractions(webAuthn);
     }
 }
