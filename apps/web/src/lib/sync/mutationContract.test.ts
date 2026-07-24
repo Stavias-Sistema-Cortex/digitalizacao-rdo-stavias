@@ -11,87 +11,84 @@ import {
 } from "../db/cortexDb";
 import { databaseNameForScope } from "../db/localDataNamespace";
 
-const SCOPE_MATERIAL =
-  "BETA:00000000-0000-4000-8000-000000000001";
+const OBRA_ID = "00000000-0000-4000-8000-000000000001";
+let databaseName = "";
+
+beforeEach(async () => {
+  const userId = crypto.randomUUID();
+  setSession({
+    colaboradorId: userId,
+    nome: "Operador de campo",
+    papelAcesso: "BETA",
+    escopoGlobal: false,
+    obraIds: [OBRA_ID],
+    expiraEm: new Date(Date.now() + 60_000).toISOString(),
+  });
+  databaseName = await databaseNameForScope(userId, `BETA:${OBRA_ID}`);
+
+  const legacy = await openDB(databaseName, 13, {
+    upgrade(database) {
+      const outbox = database.createObjectStore("outbox_mutations", {
+        keyPath: "clientMutationId",
+      });
+      outbox.createIndex("by-status", "status");
+      outbox.createIndex("by-created-at", "criadaNoClienteEm");
+      outbox.createIndex("by-entity-id", "entidadeId");
+
+      const events = database.createObjectStore("operational_events", {
+        keyPath: "id",
+      });
+      events.createIndex("by-principal-entity", "principalEntityKey");
+      events.createIndex("by-rdo-id", "rdoId");
+      events.createIndex("by-obra-id", "obraId");
+      events.createIndex("by-colaborador-id", "colaboradorId");
+      events.createIndex("by-type", "type");
+      events.createIndex("by-sync-status", "syncStatus");
+      events.createIndex("by-occurred-at", "occurredAt");
+    },
+  });
+  await legacy.put("outbox_mutations", {
+    clientMutationId: "queued-before-v14",
+    entidadeTipo: "RDO",
+    entidadeId: "rdo-existing",
+    operacao: "CRIAR_RDO",
+    baseVersao: null,
+    payload: { preserved: true },
+    status: "PENDING",
+    tentativas: 0,
+    ultimaTentativaEm: null,
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: "2026-07-21T12:00:00.000Z",
+    updatedAt: "2026-07-21T12:00:00.000Z",
+  });
+  legacy.close();
+});
+
+afterEach(async () => {
+  await closeCortexDb();
+  if (databaseName) await deleteDB(databaseName);
+  clearSession();
+});
 
 describe("canonical mutation IndexedDB contract", () => {
-  let databaseName = "";
+  it("upgrades v13 to v19, adds revenue caches and trace indexes, and preserves queued data", async () => {
+    const database = await getCortexDb();
 
-  beforeEach(async () => {
-    const ownerId = crypto.randomUUID();
-    setSession({
-      colaboradorId: ownerId,
-      nome: "Operador de campo",
-      papelAcesso: "BETA",
-      escopoGlobal: false,
-      obraIds: ["00000000-0000-4000-8000-000000000001"],
-      expiraEm: new Date(Date.now() + 60_000).toISOString(),
-    });
-    databaseName = await databaseNameForScope(ownerId, SCOPE_MATERIAL);
-
-    const legacyDatabase = await openDB(databaseName, 12, {
-      upgrade(database) {
-        const outbox = database.createObjectStore("outbox_mutations", {
-          keyPath: "clientMutationId",
-        });
-        outbox.createIndex("by-status", "status");
-        outbox.createIndex("by-created-at", "criadaNoClienteEm");
-        outbox.createIndex("by-entity-id", "entidadeId");
-
-        const events = database.createObjectStore("operational_events", {
-          keyPath: "id",
-        });
-        events.createIndex("by-principal-entity", "principalEntityKey");
-        events.createIndex("by-rdo-id", "rdoId");
-        events.createIndex("by-obra-id", "obraId");
-        events.createIndex("by-colaborador-id", "colaboradorId");
-        events.createIndex("by-type", "type");
-        events.createIndex("by-sync-status", "syncStatus");
-        events.createIndex("by-occurred-at", "occurredAt");
-      },
-    });
-    await legacyDatabase.put("outbox_mutations", {
-      clientMutationId: "queued-before-v13",
-      entidadeId: "rdo-1",
-      status: "PENDING",
-      criadaNoClienteEm: "2026-07-17T00:00:00.000Z",
-      payload: { preserved: true },
-    });
-    legacyDatabase.close();
-  });
-
-  afterEach(async () => {
-    await closeCortexDb();
-    if (databaseName) {
-      await deleteDB(databaseName);
-    }
-    clearSession();
-  });
-
-  it("opens schema v13 with trace indexes and preserves queued data", async () => {
-    const db = await getCortexDb();
-    expect(CORTEX_DATABASE_VERSION).toBe(13);
-    expect(db.version).toBe(13);
-    expect([...db.transaction("outbox_mutations").store.indexNames]).toContain(
-      "by-next-attempt-at",
-    );
-    expect([...db.transaction("operational_events").store.indexNames]).toEqual(
+    expect(CORTEX_DATABASE_VERSION).toBe(19);
+    expect(database.version).toBe(19);
+    expect(
+      [...database.transaction("outbox_mutations").store.indexNames],
+    ).toContain("by-next-attempt-at");
+    expect(
+      [...database.transaction("operational_events").store.indexNames],
+    ).toEqual(
       expect.arrayContaining(["by-client-mutation-id", "by-result"]),
     );
-    expect([...db.objectStoreNames]).toContain("obra_geometries");
-    const geometryStore = db.transaction("obra_geometries").store;
-    expect(geometryStore.keyPath).toBe("obraId");
-    expect([...geometryStore.indexNames]).toEqual(
-      expect.arrayContaining(["by-updated-at", "by-sync-status"]),
-    );
     expect(
-      await db.get("outbox_mutations", "queued-before-v13"),
-    ).toEqual({
-      clientMutationId: "queued-before-v13",
-      entidadeId: "rdo-1",
-      status: "PENDING",
-      criadaNoClienteEm: "2026-07-17T00:00:00.000Z",
-      payload: { preserved: true },
-    });
+      await database.get("outbox_mutations", "queued-before-v14"),
+    ).toMatchObject({ payload: { preserved: true }, status: "PENDING" });
+    expect(database.objectStoreNames.contains("stavia_snapshots")).toBe(false);
+    expect(database.objectStoreNames.contains("obra_geometries")).toBe(false);
   });
 });

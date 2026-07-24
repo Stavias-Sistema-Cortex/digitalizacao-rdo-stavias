@@ -62,10 +62,18 @@ public class OperationalTimelineService {
             sql.append("""
                      AND (
                         (tipo_entidade = ? AND entidade_id = ?)
-                        OR JSON_SEARCH(entidades_relacionadas_json, 'one', ?) IS NOT NULL
+                        OR EXISTS (
+                            SELECT 1
+                            FROM jsonb_array_elements(
+                                COALESCE(entidades_relacionadas_json, '[]'::jsonb)
+                            ) AS related
+                            WHERE related = to_jsonb(?::text)
+                               OR related ->> 'id' = ?
+                        )
                      )
                     """);
             params.add(normalizedType);
+            params.add(normalizedId);
             params.add(normalizedId);
             params.add(normalizedId);
 

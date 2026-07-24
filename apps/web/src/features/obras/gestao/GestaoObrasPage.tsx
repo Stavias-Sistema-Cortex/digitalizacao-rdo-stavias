@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+
+import { OperationalWorkspace } from "../../../components/workspace/OperationalWorkspace";
 
 import {
   alterarPapelColaborador,
@@ -14,7 +15,6 @@ import {
   type VinculoApi,
 } from "./gestaoObrasApi";
 import { NovaObraForm } from "./NovaObraForm";
-import { memoryHref } from "../../home/memory/memoryLocation";
 import "./gestaoObras.css";
 
 function mensagemErro(erro: unknown): string {
@@ -236,13 +236,16 @@ export function GestaoObrasPage() {
   const vinculosRevogados = vinculos.filter((v) => v.status !== "ATIVO");
 
   return (
-    <div className="gestao-obras">
-      <header className="gestao-obras-header">
-        <div>
-          <h1>Gestão de Obras</h1>
-          <p className="gestao-obras-escopo">Escopo global (Alfa)</p>
-        </div>
-      </header>
+    <OperationalWorkspace
+      className="gestao-obras"
+      eyebrow="Administração Alfa · Escopo global"
+      title="Gestão de obras"
+      description="Cadastro, vínculos de acesso e papéis preservados com identidade e justificativa."
+      status={{
+        code: carregandoObras ? "SYNCING" : obrasErro ? "REJECTED" : "SYNCED",
+        label: carregandoObras ? "Carregando obras" : `${obras.length} obras no escopo global`,
+      }}
+    >
 
       {aviso && <p className="gestao-obras-aviso">{aviso}</p>}
 
@@ -380,20 +383,21 @@ export function GestaoObrasPage() {
               </ul>
 
               {vinculosRevogados.length > 0 && (
-                <section className="gestao-obras-memory-summary">
+                <>
                   <h3 className="gestao-obras-subtitulo">
-                    Vínculos encerrados
+                    Histórico de revogações
                   </h3>
-                  <p>
-                    {vinculosRevogados.length} {vinculosRevogados.length === 1
-                      ? "vínculo encerrado"
-                      : "vínculos encerrados"}. A trilha auditável está
-                    centralizada em Home → Memória.
-                  </p>
-                  <Link to={memoryHref({ obraId: obraSelecionada.id })}>
-                    Abrir Memória
-                  </Link>
-                </section>
+                  <ul className="gestao-obras-vinculos historico">
+                    {vinculosRevogados.map((v) => (
+                      <li key={v.id}>
+                        <span>{v.colaboradorNome ?? v.colaboradorId}</span>
+                        <span className="gestao-obras-item-meta">
+                          revogado
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
             </>
           )}
@@ -488,6 +492,6 @@ export function GestaoObrasPage() {
           </ul>
         )}
       </section>
-    </div>
+    </OperationalWorkspace>
   );
 }

@@ -42,7 +42,89 @@ public class AdminRoleService {
         );
         PapelAcesso newRole = requireRole(request);
         String justification = requireJustification(request);
+        RoleChangeExecution execution = executeGovernedChange(
+                normalizedActorId,
+                normalizedCollaboratorId,
+                newRole,
+                justification,
+                null,
+                false
+        );
+        return new AdminRoleChangeResponse(
+                normalizedCollaboratorId,
+                execution.before().name(),
+                execution.before().role().name(),
+                newRole.name(),
+                execution.revokedSessions(),
+                execution.commitSeq(),
+                execution.changedAt()
+        );
+    }
 
+    @Transactional
+    public AdminRoleVersionedChangeResponse changeRoleVersioned(
+            String actorId,
+            String collaboratorId,
+            AdminRoleVersionedChangeRequest request
+    ) {
+        if (request == null) {
+            throw status(
+                    HttpStatus.BAD_REQUEST,
+                    "Dados da mudança de acesso são obrigatórios."
+            );
+        }
+        String normalizedActorId = requireUuid(actorId, "administrador");
+        String normalizedCollaboratorId = requireUuid(
+                collaboratorId,
+                "colaborador"
+        );
+        PapelAcesso expectedRole = PapelAcesso
+                .fromPersistedExact(request.papelAtual())
+                .orElseThrow(() -> status(
+                        HttpStatus.BAD_REQUEST,
+                        "papelAtual precisa ser ALFA ou BETA."
+                ));
+        PapelAcesso newRole = PapelAcesso
+                .fromPersistedExact(request.papelNovo())
+                .orElseThrow(() -> status(
+                        HttpStatus.BAD_REQUEST,
+                        "papelNovo precisa ser ALFA ou BETA."
+                ));
+        if (request.baseVersao() == null || request.baseVersao() < 0) {
+            throw status(
+                    HttpStatus.BAD_REQUEST,
+                    "baseVersao é obrigatória e não pode ser negativa."
+            );
+        }
+        String justification = requireJustification(new AdminRoleChangeRequest(
+                request.papelNovo(),
+                request.justificativa()
+        ));
+        RoleChangeExecution execution = executeGovernedChange(
+                normalizedActorId,
+                normalizedCollaboratorId,
+                newRole,
+                justification,
+                new ExpectedState(expectedRole, request.baseVersao()),
+                true
+        );
+        return new AdminRoleVersionedChangeResponse(
+                execution.after().id(),
+                execution.after().name(),
+                execution.after().role().name(),
+                execution.after().rowVersion(),
+                execution.after().updatedAt()
+        );
+    }
+
+    private RoleChangeExecution executeGovernedChange(
+            String normalizedActorId,
+            String normalizedCollaboratorId,
+            PapelAcesso newRole,
+            String justification,
+            ExpectedState expectedState,
+            boolean preserveLegacySelfDemotionGuard
+    ) {
         repository.lockGovernanceRows();
         RoleAccount actor = repository.findActiveAccount(normalizedActorId)
                 .orElseThrow(() -> status(
@@ -62,7 +144,30 @@ public class AdminRoleService {
                         HttpStatus.NOT_FOUND,
                         "Colaborador ativo não encontrado."
                 ));
+        if (expectedState != null
+                && (target.role() != expectedState.role()
+                || target.rowVersion() != expectedState.rowVersion())) {
+            throw versionConflict();
+        }
+        if (preserveLegacySelfDemotionGuard
+                && actor.id().equals(target.id())
+                && target.role() == PapelAcesso.ALFA
+                && newRole == PapelAcesso.BETA) {
+            throw status(
+                    HttpStatus.CONFLICT,
+                    "Um usuário Alfa não pode remover o próprio acesso administrativo."
+            );
+        }
         if (target.role() == newRole) {
+            if (expectedState != null) {
+                return new RoleChangeExecution(
+                        target,
+                        target,
+                        0,
+                        0L,
+                        target.updatedAt()
+                );
+            }
             throw status(
                     HttpStatus.CONFLICT,
                     "O colaborador já possui o papel informado."
@@ -93,7 +198,16 @@ public class AdminRoleService {
                     justification
             );
         }
-        repository.updateRole(normalizedCollaboratorId, newRole);
+        if (expectedState == null) {
+            repository.updateRole(normalizedCollaboratorId, newRole);
+        } else if (!repository.updateRoleIfCurrent(
+                normalizedCollaboratorId,
+                target.role(),
+                target.rowVersion(),
+                newRole
+        )) {
+            throw versionConflict();
+        }
         repository.insertHistory(
                 normalizedCollaboratorId,
                 target.role(),
@@ -115,14 +229,36 @@ public class AdminRoleService {
                 justification,
                 revokedSessions
         );
-        return new AdminRoleChangeResponse(
-                normalizedCollaboratorId,
-                target.name(),
-                target.role().name(),
-                newRole.name(),
+        RoleAccount after = expectedState == null
+                ? new RoleAccount(
+                        target.id(),
+                        target.name(),
+                        newRole,
+                        target.rowVersion() + 1L,
+                        LocalDateTime.now()
+                )
+                : repository.findActiveAccount(normalizedCollaboratorId)
+                        .filter(account ->
+                                account.role() == newRole
+                                        && account.rowVersion()
+                                        == target.rowVersion() + 1L
+                        )
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Estado persistido do papel divergiu após a alteração."
+                        ));
+        return new RoleChangeExecution(
+                target,
+                after,
                 revokedSessions,
                 commitSeq,
                 LocalDateTime.now()
+        );
+    }
+
+    private ResponseStatusException versionConflict() {
+        return status(
+                HttpStatus.CONFLICT,
+                "Conflito de versão ou papel de acesso do colaborador."
         );
     }
 
@@ -241,5 +377,17 @@ public class AdminRoleService {
 
     private ResponseStatusException status(HttpStatus status, String reason) {
         return new ResponseStatusException(status, reason);
+    }
+
+    private record ExpectedState(PapelAcesso role, long rowVersion) {
+    }
+
+    private record RoleChangeExecution(
+            RoleAccount before,
+            RoleAccount after,
+            int revokedSessions,
+            long commitSeq,
+            LocalDateTime changedAt
+    ) {
     }
 }

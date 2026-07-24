@@ -1,5 +1,10 @@
-import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 
 import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
 import {
@@ -18,6 +23,14 @@ import type {
 } from "../../lib/db/db.types";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 import { useSyncStatus } from "../../lib/sync/useSyncStatus";
+import {
+  listCachedAuthorizedRdoWorksites,
+} from "./rdoCreationContextRepository";
+import {
+  localRdoExportAvailability,
+  rdoWorkbookSnapshotFromLocalRecord,
+  type RdoExportAvailability,
+} from "./export/rdoWorkbookMapping";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -29,13 +42,10 @@ interface RdoLocalListProps {
   onImportRdoFile: (file: File) => void;
   isImporting: boolean;
   onOpen: (record: LocalRdoRecord) => void;
-  onDiscardRejected: (record: LocalRdoRecord) => void;
-  discardingRdoId: string | null;
+  onDiscardRejected?: (record: LocalRdoRecord) => void;
+  discardingRdoId?: string | null;
   onRefresh: () => void;
-  onOpenStavia: (context?: {
-    obraId?: string;
-    rdoId?: string;
-  }) => void;
+  createButtonRef?: Ref<HTMLButtonElement>;
 }
 
 type PeriodFilter = "TODOS" | "HOJE" | "7_DIAS" | "30_DIAS";
@@ -267,6 +277,7 @@ function institutionalState(
 ): InstitutionalStatusState | null {
   switch (status) {
     case "LOCAL_ONLY":
+    case "LOCAL_PENDING":
       return "LOCAL";
     case "PENDING_SYNC":
       return "PENDING";
@@ -311,9 +322,9 @@ export function RdoLocalList({
   isImporting,
   onOpen,
   onDiscardRejected,
-  discardingRdoId,
+  discardingRdoId = null,
   onRefresh,
-  onOpenStavia,
+  createButtonRef,
 }: RdoLocalListProps) {
   const { snapshot } = useSyncStatus();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -325,6 +336,151 @@ export function RdoLocalList({
   const [collaboratorFilter, setCollaboratorFilter] = useState("");
   const [trechoFilter, setTrechoFilter] = useState("");
   const [profile, setProfile] = useState<ProfileTarget | null>(null);
+  const worksiteRequestKey = useMemo(
+    () =>
+      [...new Set(records.map((record) => record.obraId))]
+        .sort()
+        .join("|"),
+    [records],
+  );
+  const [worksiteLoad, setWorksiteLoad] = useState<{
+    key: string;
+    worksites: Map<
+      string,
+      {
+        id: string;
+        nome: string;
+        codigoContrato: string;
+      }
+    >;
+    error: string;
+  }>({ key: "", worksites: new Map(), error: "" });
+  const isLoadingWorksites = worksiteLoad.key !== worksiteRequestKey;
+  const cachedWorksites = worksiteLoad.worksites;
+  const worksiteError = isLoadingWorksites ? "" : worksiteLoad.error;
+  const [exportingRdoId, setExportingRdoId] = useState<string | null>(
+    null,
+  );
+  const [exportNotice, setExportNotice] = useState<{
+    rdoId: string;
+    message: string;
+    isError: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void listCachedAuthorizedRdoWorksites()
+      .then((worksites) => {
+        if (!active) return;
+        setWorksiteLoad({
+          key: worksiteRequestKey,
+          worksites: new Map(
+            worksites.map((worksite) => [
+              worksite.id,
+              {
+                id: worksite.id,
+                nome: worksite.nome,
+                codigoContrato: worksite.codigoContrato,
+              },
+            ]),
+          ),
+          error: "",
+        });
+      })
+      .catch((caught: unknown) => {
+        if (!active) return;
+        setWorksiteLoad({
+          key: worksiteRequestKey,
+          worksites: new Map(),
+          error:
+            caught instanceof Error
+              ? caught.message
+              : "Não foi possível validar as obras disponíveis offline.",
+        });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [worksiteRequestKey]);
+
+  const exportAvailabilityByRdo = useMemo(() => {
+    const statuses = new Map<string, RdoExportAvailability>();
+    for (const record of records) {
+      if (isLoadingWorksites) {
+        statuses.set(record.id, {
+          ready: false,
+          code: null,
+          message: "Verificando o snapshot local…",
+        });
+      } else if (worksiteError) {
+        statuses.set(record.id, {
+          ready: false,
+          code: null,
+          message: `Obra offline indisponível: ${worksiteError}`,
+        });
+      } else {
+        statuses.set(
+          record.id,
+          localRdoExportAvailability(
+            record,
+            cachedWorksites.get(record.obraId),
+          ),
+        );
+      }
+    }
+    return statuses;
+  }, [cachedWorksites, isLoadingWorksites, records, worksiteError]);
+
+  async function handleExport(record: LocalRdoRecord) {
+    const availability = exportAvailabilityByRdo.get(record.id);
+    if (!availability?.ready || exportingRdoId) return;
+
+    setExportingRdoId(record.id);
+    setExportNotice(null);
+    try {
+      const snapshot = rdoWorkbookSnapshotFromLocalRecord(
+        record,
+        cachedWorksites.get(record.obraId),
+      );
+      const {
+        downloadAuthoritativeRdoWorkbook,
+        downloadRdoWorkbook,
+      } = await import("./export/exportRdoWorkbook");
+      const useAuthoritativeServer =
+        typeof navigator !== "undefined" &&
+        navigator.onLine &&
+        record.syncStatus === "SYNCED" &&
+        record.versaoEntidade !== null;
+
+      if (useAuthoritativeServer) {
+        await downloadAuthoritativeRdoWorkbook(snapshot);
+      } else {
+        await downloadRdoWorkbook(snapshot);
+      }
+
+      setExportNotice({
+        rdoId: record.id,
+        message: useAuthoritativeServer
+          ? "XLSX autorizado pelo servidor baixado."
+          : record.syncStatus === "SYNCED"
+            ? "XLSX gerado com a cópia local disponível offline."
+            : "XLSX local gerado; o RDO ainda está pendente de sincronização.",
+        isError: false,
+      });
+    } catch (caught: unknown) {
+      setExportNotice({
+        rdoId: record.id,
+        message:
+          caught instanceof Error
+            ? caught.message
+            : "Não foi possível exportar o RDO.",
+        isError: true,
+      });
+    } finally {
+      setExportingRdoId(null);
+    }
+  }
 
   const attachmentsByRdo = useMemo(() => {
     const grouped = new Map<string, RdoAttachmentRecord[]>();
@@ -440,15 +596,9 @@ export function RdoLocalList({
         actions={(
           <div className="rdo-command-actions">
             <button
+              ref={createButtonRef}
               type="button"
-              className="secondary-button"
-              onClick={() => onOpenStavia()}
-            >
-              Abrir StavIA
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
+              className="primary-button"
               onClick={onCreate}
             >
               Novo RDO
@@ -632,6 +782,13 @@ export function RdoLocalList({
               .sort((left, right) =>
                 right.occurredAt.localeCompare(left.occurredAt),
               )[0];
+            const exportAvailability =
+              exportAvailabilityByRdo.get(record.id);
+            const isExporting = exportingRdoId === record.id;
+            const recordExportNotice =
+              exportNotice?.rdoId === record.id
+                ? exportNotice
+                : null;
 
             return (
               <article className="rdo-operational-card" key={record.id}>
@@ -718,6 +875,34 @@ export function RdoLocalList({
                 </div>
 
                 <div className="rdo-card-actions">
+                  <div className="rdo-export-action">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => void handleExport(record)}
+                      disabled={!exportAvailability?.ready || isExporting}
+                      title={exportAvailability?.message}
+                    >
+                      {isExporting ? "Gerando XLSX…" : "Exportar XLSX"}
+                    </button>
+                    <small
+                      className={
+                        recordExportNotice?.isError
+                          ? "rdo-export-state rdo-export-state--error"
+                          : "rdo-export-state"
+                      }
+                      aria-live="polite"
+                    >
+                      {recordExportNotice?.message ??
+                        (exportAvailability?.ready
+                          ? record.syncStatus === "SYNCED" &&
+                            record.versaoEntidade !== null
+                            ? "Servidor autoritativo · cópia local pronta offline"
+                            : "Dados locais pendentes · exportação offline"
+                          : exportAvailability?.message ??
+                            "Exportação indisponível")}
+                    </small>
+                  </div>
                   <button
                     type="button"
                     className="secondary-button"
@@ -728,19 +913,8 @@ export function RdoLocalList({
                       ? "RDO enviado"
                       : "Continuar RDO"}
                   </button>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() =>
-                      onOpenStavia({
-                        obraId: record.obraId,
-                        rdoId: record.id,
-                      })
-                    }
-                  >
-                    Perguntar à StavIA
-                  </button>
-                  {record.syncStatus === "ERROR" ? (
+                  {record.syncStatus === "ERROR" &&
+                  onDiscardRejected ? (
                     <button
                       type="button"
                       className="secondary-button rdo-discard-button"
@@ -758,9 +932,9 @@ export function RdoLocalList({
                       entityId={record.id}
                     />
                   ) : (
-                    <Link
+                    <a
                       className="rdo-memory-link"
-                      to={memoryHref({
+                      href={memoryHref({
                         obraId: record.obraId,
                         rdoId: record.id,
                         entityType: "RDO",
@@ -768,7 +942,7 @@ export function RdoLocalList({
                       })}
                     >
                       Abrir ficha na Memória
-                    </Link>
+                    </a>
                   )}
                 </div>
               </article>
@@ -784,7 +958,7 @@ export function RdoLocalList({
               Consulte autores, estados e commits de todos os RDOs no
               registro ontológico centralizado.
             </p>
-            <Link to={memoryHref()}>Abrir Memória</Link>
+            <a href={memoryHref()}>Abrir Memória</a>
           </section>
         </aside>
       </section>
@@ -909,8 +1083,8 @@ function ProfileDrawer({
           {relatedEvents.length} registro{relatedEvents.length === 1 ? "" : "s"}
           {" "}localmente conhecido{relatedEvents.length === 1 ? "" : "s"}.
         </p>
-        <Link
-          to={memoryHref({
+        <a
+          href={memoryHref({
             obraId: profile.type === "OBRA" ? profile.id : undefined,
             rdoId: profile.type === "RDO" ? profile.id : undefined,
             entityType: profile.type,
@@ -918,7 +1092,7 @@ function ProfileDrawer({
           })}
         >
           Ver alterações na Memória
-        </Link>
+        </a>
       </section>
     </aside>
   );

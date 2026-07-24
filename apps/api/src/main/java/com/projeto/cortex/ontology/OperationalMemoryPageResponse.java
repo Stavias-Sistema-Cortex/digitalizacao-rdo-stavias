@@ -4,10 +4,15 @@ import java.time.Instant;
 import java.util.List;
 
 public record OperationalMemoryPageResponse(
-        List<OperationalMemoryEventResponse> events,
-        Long nextBeforeCommitSeq,
+        List<OperationalMemoryEventResponse> items,
+        OperationalMemoryCursor nextCursor,
         boolean hasMore,
-        String scope,
+        long highWaterMark,
+        String scopeHash,
+        OperationalMemoryCoverage coverage,
         Instant serverTime
 ) {
+    public OperationalMemoryPageResponse {
+        items = items == null ? List.of() : List.copyOf(items);
+    }
 }

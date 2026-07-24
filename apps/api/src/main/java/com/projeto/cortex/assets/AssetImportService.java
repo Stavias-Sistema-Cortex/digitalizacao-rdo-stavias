@@ -70,19 +70,23 @@ public class AssetImportService {
                         ?,
                         ?,
                         ?,
-                        1,
+                        TRUE,
                         ?,
                         0
                     )
-                    ON DUPLICATE KEY UPDATE
-                        external_code = VALUES(external_code),
-                        name = VALUES(name),
-                        category = VALUES(category),
-                        active = 1,
+                    ON CONFLICT (source_database, source_table, source_pk) DO UPDATE SET
+                        external_code = EXCLUDED.external_code,
+                        name = EXCLUDED.name,
+                        category = EXCLUDED.category,
+                        active = TRUE,
                         deleted_at = NULL,
                         last_seen_at = CURRENT_TIMESTAMP(6),
-                        row_version = IF(COALESCE(source_hash, '') <> VALUES(source_hash), row_version + 1, row_version),
-                        source_hash = VALUES(source_hash)
+                        row_version = CASE
+                            WHEN COALESCE(asset.source_hash, '') <> EXCLUDED.source_hash
+                            THEN asset.row_version + 1
+                            ELSE asset.row_version
+                        END,
+                        source_hash = EXCLUDED.source_hash
                     """;
 
             for (ZeladoriaSourceAdapter.AtivoZeladoriaRecord sourceAsset
@@ -336,7 +340,7 @@ public class AssetImportService {
                     CURRENT_TIMESTAMP(6),
                     NULL
                 )
-                ON DUPLICATE KEY UPDATE
+                ON CONFLICT (connector_name, source_database, source_table) DO UPDATE SET
                     last_full_scan_at = CURRENT_TIMESTAMP(6),
                     last_success_at = CURRENT_TIMESTAMP(6),
                     last_error_message = NULL
@@ -370,9 +374,9 @@ public class AssetImportService {
                         CURRENT_TIMESTAMP(6),
                         ?
                     )
-                    ON DUPLICATE KEY UPDATE
+                    ON CONFLICT (connector_name, source_database, source_table) DO UPDATE SET
                         last_error_at = CURRENT_TIMESTAMP(6),
-                        last_error_message = VALUES(last_error_message)
+                        last_error_message = EXCLUDED.last_error_message
                     """;
 
             cortexJdbcTemplate.update(

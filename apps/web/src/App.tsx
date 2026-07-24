@@ -21,8 +21,7 @@ import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
 import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
-import { StaviaLauncherProvider } from "./features/stavia/StaviaLauncherProvider";
-import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
+import { useAppAutomaticSync } from "./appAutomaticSync";
 
 const HomePage = lazy(() =>
   import("./features/home/HomePage").then((module) => ({
@@ -143,7 +142,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     useState<OfflineVaultMetadata | null>(null);
   const [vaultChecked, setVaultChecked] = useState(false);
 
-  useAutomaticSync(session !== null);
+  useAppAutomaticSync(session);
 
   useEffect(() => {
     function refreshSession() {
@@ -222,42 +221,40 @@ function App({ initialAuthUnavailable = false }: AppProps) {
 
   return (
     <BrowserRouter>
-      <StaviaLauncherProvider>
-        <Suspense
-          fallback={
-            <main className="auth-bootstrap-status" role="status">
-              Abrindo módulo…
-            </main>
-          }
-        >
-          <Routes>
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/obras" element={<ObrasPage />} />
-            <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
-            <Route path="/rdos" element={<RdoWorkspacePage />} />
-            <Route path="/tarefas" element={<TarefasPage />} />
-            <Route path="/equipes" element={<EquipesPage />} />
-            <Route path="/financeiro" element={<FinanceiroPage />} />
-            <Route path="/mensagens" element={<MensagensPage />} />
-            <Route
-              path="/seguranca"
-              element={
-                <CortexShell active={null}>
-                  <DeviceSecurityPage />
-                </CortexShell>
-              }
-            />
-            <Route
-              path="/integracoes"
-              element={<IntegracoesRoute />}
-            />
-            <Route
-              path="*"
-              element={<Navigate to="/home" replace />}
-            />
-          </Routes>
-        </Suspense>
-      </StaviaLauncherProvider>
+      <Suspense
+        fallback={
+          <main className="auth-bootstrap-status" role="status">
+            Abrindo módulo…
+          </main>
+        }
+      >
+        <Routes>
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/obras" element={<ObrasPage />} />
+          <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
+          <Route path="/rdos" element={<RdoWorkspacePage />} />
+          <Route path="/tarefas" element={<TarefasPage />} />
+          <Route path="/equipes" element={<EquipesPage />} />
+          <Route path="/financeiro" element={<FinanceiroPage />} />
+          <Route path="/mensagens" element={<MensagensPage />} />
+          <Route
+            path="/seguranca"
+            element={
+              <CortexShell active={null}>
+                <DeviceSecurityPage />
+              </CortexShell>
+            }
+          />
+          <Route
+            path="/integracoes"
+            element={<IntegracoesRoute />}
+          />
+          <Route
+            path="*"
+            element={<Navigate to="/home" replace />}
+          />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

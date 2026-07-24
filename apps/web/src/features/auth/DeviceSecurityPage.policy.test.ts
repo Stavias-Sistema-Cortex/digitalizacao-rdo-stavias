@@ -19,4 +19,18 @@ describe("DeviceSecurityPage policy", () => {
     expect(source).not.toContain("CPF");
     expect(source).not.toContain("PIN");
   });
+
+  it("adota o cabeçalho operacional compartilhado sem faixa superior separada", () => {
+    const source = readFileSync(
+      new URL("./DeviceSecurityPage.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      'import { CortexPageHeader } from "../../components/header/CortexPageHeader";',
+    );
+    expect(source).toContain("<CortexPageHeader");
+    expect(source).toContain('eyebrow="Córtex · Conta"');
+    expect(source).not.toContain('<header className="topbar">');
+  });
 });

@@ -4,12 +4,17 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -36,6 +41,60 @@ public class SyncService {
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 500;
     private static final int MAX_MUTACOES_POR_PUSH = 100;
+    private static final int MAX_DEPENDENCIAS_POR_MUTACAO = 64;
+    private static final int CANONICAL_SCHEMA_VERSION = 13;
+    private static final Set<String> CANONICAL_ENTITY_TYPES = Set.of(
+            "RDO",
+            "TAREFA",
+            "CONVERSA",
+            "MENSAGEM",
+            "MENSAGEM_ANEXO",
+            "SOLICITACAO_COMPRA",
+            "COMPRA",
+            "SERVICE",
+            "SERVICE_PRICE_VERSION"
+    );
+    private static final Set<String> CANONICAL_RELATED_ENTITY_TYPES = Set.of(
+            "OBRA",
+            "RDO",
+            "TAREFA",
+            "CONVERSA",
+            "MENSAGEM",
+            "MENSAGEM_ANEXO",
+            "SOLICITACAO_COMPRA",
+            "COMPRA",
+            "SERVICE",
+            "SERVICE_PRICE_VERSION"
+    );
+    private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
+            Map.entry("CRIAR_RDO", "CREATE"),
+            Map.entry("ATUALIZAR_RDO_RASCUNHO", "UPDATE"),
+            Map.entry("ENVIAR_RDO", "TRANSITION"),
+            Map.entry("CRIAR_TAREFA", "CREATE"),
+            Map.entry("ATUALIZAR_TAREFA", "UPDATE"),
+            Map.entry("CONCLUIR_TAREFA", "TRANSITION"),
+            Map.entry("REABRIR_TAREFA", "TRANSITION"),
+            Map.entry("EXCLUIR_TAREFA", "DELETE"),
+            Map.entry("CRIAR_CONVERSA", "CREATE"),
+            Map.entry("ADICIONAR_PARTICIPANTE_CONVERSA", "UPDATE"),
+            Map.entry("REMOVER_PARTICIPANTE_CONVERSA", "UPDATE"),
+            Map.entry("CRIAR_MENSAGEM", "CREATE"),
+            Map.entry("EDITAR_MENSAGEM", "UPDATE"),
+            Map.entry("EXCLUIR_MENSAGEM", "DELETE"),
+            Map.entry("ADICIONAR_MENSAGEM_ANEXO", "CREATE"),
+            Map.entry("CRIAR_SOLICITACAO_COMPRA", "CREATE"),
+            Map.entry("ATUALIZAR_SOLICITACAO_COMPRA", "UPDATE"),
+            Map.entry("ARQUIVAR_SOLICITACAO_COMPRA", "TRANSITION"),
+            Map.entry("CRIAR_COMPRA", "CREATE"),
+            Map.entry("ATUALIZAR_COMPRA", "UPDATE"),
+            Map.entry("ALTERAR_STATUS_COMPRA", "TRANSITION"),
+            Map.entry("DECIDIR_APROVACAO_COMPRA", "TRANSITION"),
+            Map.entry("ARQUIVAR_COMPRA", "TRANSITION"),
+            Map.entry("CRIAR_SERVICO_CATALOGO", "CREATE"),
+            Map.entry("CRIAR_PRECO_SERVICO", "CREATE"),
+            Map.entry("SUBSTITUIR_PRECO_SERVICO", "CREATE"),
+            Map.entry("CANCELAR_PRECO_SERVICO", "TRANSITION")
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -149,44 +208,6 @@ public class SyncService {
         );
     }
 
-    // Catálogos globais não-pessoais que o cliente offline precisa e que podem
-    // ser entregues a qualquer usuário. Dados pessoais/confidenciais (colaborador,
-    // frequência) NÃO entram nesta lista — só chegam via obra vinculada.
-    private static final List<String> EVENTOS_REFERENCIA_GLOBAL =
-            List.of("ATIVO", "EQUIPAMENTO", "SERVICO");
-
-    private static final List<String> EVENTOS_FINANCEIROS = List.of(
-            "ITEM_CONTRATUAL",
-            "PREVISAO_FINANCEIRA",
-            "PDOR",
-            "CENTRO_CUSTO",
-            "FORNECEDOR",
-            "SOLICITACAO_COMPRA",
-            "COMPRA",
-            "PEDIDO_COMPRA",
-            "REGRA_APROVACAO",
-            "DECISAO_APROVACAO",
-            "NOTA_FISCAL",
-            "LANCAMENTO",
-            "LIQUIDACAO",
-            "LANCAMENTO_FINANCEIRO",
-            "PAGAMENTO",
-            "COBRANCA_EMAIL",
-            "UNIDADE_FINANCEIRA",
-            "RATEIO_FINANCEIRO",
-            "COMPRA_ITEM",
-            "DOCUMENTO_FISCAL"
-    );
-
-    private static final List<String> EVENTOS_FINANCEIROS_ALFA =
-            List.of("PERMISSAO_FINANCEIRA");
-
-    private static final List<String> EVENTOS_MENSAGENS = List.of(
-            "CONVERSA",
-            "MENSAGEM",
-            "MENSAGEM_ANEXO"
-    );
-
     /** Filtro de escopo do pull: condição SQL adicional e seus parâmetros. */
     record FiltroPull(String condicaoSql, List<Object> parametros) {
     }
@@ -228,123 +249,14 @@ public class SyncService {
             Set<String> unidadesFinanceirasAutorizadas,
             String currentUserId
     ) {
-        if (obrasAutorizadas.isEmpty()) {
-            return new FiltroPull("", List.of());
-        }
-
-        Set<String> obras = obrasAutorizadas.get();
-        List<Object> parametros = new ArrayList<>();
-        StringBuilder escopo = new StringBuilder();
-
-        if (!obras.isEmpty()) {
-            escopo.append("obra_id IN (")
-                    .append(placeholders(obras.size()))
-                    .append(")");
-            parametros.addAll(obras);
-        }
-
-        if (escopo.length() > 0) {
-            escopo.append(" OR ");
-        }
-        escopo.append("(obra_id IS NULL AND tipo_entidade IN (")
-                .append(placeholders(EVENTOS_REFERENCIA_GLOBAL.size()))
-                .append("))");
-        parametros.addAll(EVENTOS_REFERENCIA_GLOBAL);
-
-        List<Object> scopedParameters = new ArrayList<>();
-        String tiposRestritos = placeholders(
-                EVENTOS_FINANCEIROS.size()
-                        + EVENTOS_FINANCEIROS_ALFA.size()
-                        + EVENTOS_MENSAGENS.size()
-        );
-        scopedParameters.addAll(EVENTOS_FINANCEIROS);
-        scopedParameters.addAll(EVENTOS_FINANCEIROS_ALFA);
-        scopedParameters.addAll(EVENTOS_MENSAGENS);
-        scopedParameters.addAll(parametros);
-
-        StringBuilder condition = new StringBuilder(
-                " AND ((tipo_entidade NOT IN (" + tiposRestritos + ") AND ("
-                        + escopo + "))"
-        );
-
-        Set<String> financialScope = obrasFinanceirasAutorizadas == null
-                ? Set.of()
-                : obrasFinanceirasAutorizadas;
-        if (!financialScope.isEmpty()) {
-            condition.append(" OR (tipo_entidade IN (")
-                    .append(placeholders(EVENTOS_FINANCEIROS.size()))
-                    .append(") AND obra_id IN (")
-                    .append(placeholders(financialScope.size()))
-                    .append("))");
-            scopedParameters.addAll(EVENTOS_FINANCEIROS);
-            scopedParameters.addAll(financialScope);
-        }
-        Set<String> unitScope = unidadesFinanceirasAutorizadas == null
-                ? Set.of()
-                : unidadesFinanceirasAutorizadas;
-        if (!unitScope.isEmpty()) {
-            condition.append(" OR (tipo_entidade IN (")
-                    .append(placeholders(EVENTOS_FINANCEIROS.size()))
-                    .append(") AND ((tipo_entidade = 'UNIDADE_FINANCEIRA' ")
-                    .append("AND entidade_id IN (")
-                    .append(placeholders(unitScope.size()))
-                    .append(")) OR EXISTS (")
-                    .append("SELECT 1 FROM cortex_relacao relacao ")
-                    .append("WHERE relacao.origem_tipo = tipo_entidade ")
-                    .append("AND relacao.origem_id = entidade_id ")
-                    .append("AND relacao.destino_tipo = 'UNIDADE_FINANCEIRA' ")
-                    .append("AND relacao.destino_id IN (")
-                    .append(placeholders(unitScope.size()))
-                    .append(") AND relacao.ativa = 1)))");
-            scopedParameters.addAll(EVENTOS_FINANCEIROS);
-            scopedParameters.addAll(unitScope);
-            scopedParameters.addAll(unitScope);
-        }
-        if (currentUserId != null && !currentUserId.isBlank()) {
-            condition.append(" OR (tipo_entidade IN (")
-                    .append(placeholders(EVENTOS_MENSAGENS.size()))
-                    .append(") AND EXISTS (")
-                    .append("SELECT 1 ")
-                    .append("FROM cortex_evento_visibilidade cev ")
-                    .append("JOIN conversa cv ON cv.id = cev.escopo_id ")
-                    .append("JOIN conversa_participante cp ")
-                    .append("ON cp.conversa_id = cv.id ")
-                    .append("AND cp.colaborador_id = ? ")
-                    .append("AND cp.status = 'ATIVO' ")
-                    .append("AND cp.removido_em IS NULL ")
-                    .append("AND cp.deletado_em IS NULL ")
-                    .append("WHERE cev.evento_id = cortex_evento_operacional.id ")
-                    .append("AND cev.escopo_tipo = 'CONVERSATION_PARTICIPANT' ")
-                    .append("AND cv.status = 'ATIVA' ")
-                    .append("AND cv.deletado_em IS NULL ")
-                    .append("AND (cv.tipo IN ('DIRETA', 'GRUPO') ")
-                    .append("OR (cv.tipo = 'OBRA' AND EXISTS (")
-                    .append("SELECT 1 FROM vinculo_colaborador_obra v ")
-                    .append("WHERE v.obra_id = cv.obra_id ")
-                    .append("AND v.colaborador_id = ? AND v.status = 'ATIVO')) ")
-                    .append("OR (cv.tipo = 'EQUIPE' AND EXISTS (")
-                    .append("SELECT 1 FROM equipe e ")
-                    .append("JOIN equipe_membro em ON em.equipe_id = e.id ")
-                    .append("JOIN vinculo_colaborador_obra v ON v.obra_id = e.obra_id ")
-                    .append("WHERE e.id = cv.equipe_id AND e.obra_id = cv.obra_id ")
-                    .append("AND e.status = 'ATIVA' AND e.deletado_em IS NULL ")
-                    .append("AND em.colaborador_id = ? AND em.status = 'ATIVO' ")
-                    .append("AND em.removido_em IS NULL AND em.deletado_em IS NULL ")
-                    .append("AND v.colaborador_id = ? AND v.status = 'ATIVO')))" )
-                    .append("))");
-            scopedParameters.addAll(EVENTOS_MENSAGENS);
-            scopedParameters.add(currentUserId);
-            scopedParameters.add(currentUserId);
-            scopedParameters.add(currentUserId);
-            scopedParameters.add(currentUserId);
-        }
-        condition.append(")");
-
-        return new FiltroPull(condition.toString(), scopedParameters);
-    }
-
-    private static String placeholders(int count) {
-        return String.join(",", Collections.nCopies(count, "?"));
+        OperationalEventVisibilityPolicy.SqlPredicate predicate =
+                OperationalEventVisibilityPolicy.forSync(
+                        obrasAutorizadas,
+                        obrasFinanceirasAutorizadas,
+                        unidadesFinanceirasAutorizadas,
+                        currentUserId
+                );
+        return new FiltroPull(predicate.sql(), predicate.parameters());
     }
 
     public SyncDeviceResponse registrarDispositivo(SyncDeviceRequest request) {
@@ -371,12 +283,12 @@ public class SyncService {
                     tipo,
                     usuario_id,
                     ativo
-                ) VALUES (?, ?, ?, ?, 1)
-                ON DUPLICATE KEY UPDATE
-                    nome = VALUES(nome),
-                    tipo = VALUES(tipo),
-                    usuario_id = VALUES(usuario_id),
-                    ativo = 1,
+                ) VALUES (?, ?, ?, ?, TRUE)
+                ON CONFLICT (id) DO UPDATE SET
+                    nome = EXCLUDED.nome,
+                    tipo = EXCLUDED.tipo,
+                    usuario_id = EXCLUDED.usuario_id,
+                    ativo = TRUE,
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     desativado_em = NULL
                 """,
@@ -393,7 +305,7 @@ public class SyncService {
                     ultimo_evento_recebido_seq,
                     ultimo_evento_recebido_commit_seq
                 ) VALUES (?, 0, 0)
-                ON DUPLICATE KEY UPDATE
+                ON CONFLICT (dispositivo_id) DO UPDATE SET
                     atualizado_em = CURRENT_TIMESTAMP(6)
                 """,
                 id
@@ -436,10 +348,10 @@ public class SyncService {
                     ultimo_evento_recebido_commit_seq,
                     ultimo_pull_em
                 ) VALUES (?, 0, ?, CURRENT_TIMESTAMP(6))
-                ON DUPLICATE KEY UPDATE
+                ON CONFLICT (dispositivo_id) DO UPDATE SET
                     ultimo_evento_recebido_commit_seq = GREATEST(
-                        ultimo_evento_recebido_commit_seq,
-                        VALUES(ultimo_evento_recebido_commit_seq)
+                        sync_estado_dispositivo.ultimo_evento_recebido_commit_seq,
+                        EXCLUDED.ultimo_evento_recebido_commit_seq
                     ),
                     ultimo_pull_em = CURRENT_TIMESTAMP(6)
                 """,
@@ -489,7 +401,11 @@ public class SyncService {
         List<SyncPushResponse.ResultadoMutacao> resultados = new ArrayList<>();
 
         for (SyncPushRequest.MutacaoCliente mutacao : mutacoes) {
-            resultados.add(processarMutacaoComSeguranca(request.dispositivoId(), mutacao));
+            resultados.add(processarMutacaoComSeguranca(
+                    request.dispositivoId(),
+                    currentUserId,
+                    mutacao
+            ));
         }
 
         jdbcTemplate.update(
@@ -521,20 +437,29 @@ public class SyncService {
 
     private SyncPushResponse.ResultadoMutacao processarMutacaoComSeguranca(
             String dispositivoId,
+            String currentUserId,
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         try {
-            validarRastroCanonico(dispositivoId, mutacao);
             validarMutacao(mutacao);
 
             SyncPushResponse.ResultadoMutacao existente = buscarResultadoMutacaoExistenteOuNull(
                     dispositivoId,
-                    mutacao.clientMutationId()
+                    currentUserId,
+                    mutacao
             );
 
             if (existente != null) {
-                if (!payloadHashMatchesExisting(dispositivoId, mutacao)) {
+                if (!requestMatchesExisting(dispositivoId, currentUserId, mutacao)) {
                     return idempotencyMismatch(mutacao);
+                }
+                SyncPushResponse.ResultadoMutacao replayScopeFailure =
+                        validarReplayContraEscopoAtual(
+                                currentUserId,
+                                mutacao
+                        );
+                if (replayScopeFailure != null) {
+                    return replayScopeFailure;
                 }
                 if ("ERRO".equals(existente.status())) {
                     return transactionTemplate.execute(
@@ -544,9 +469,29 @@ public class SyncService {
                 return existente;
             }
 
+            validarRastroCanonicoParaAplicacao(
+                    dispositivoId,
+                    currentUserId,
+                    mutacao
+            );
+
             return transactionTemplate.execute(status -> processarMutacaoAplicavel(dispositivoId, mutacao));
         } catch (DuplicateKeyException exception) {
-            return buscarResultadoMutacaoExistente(dispositivoId, mutacao.clientMutationId());
+            SyncPushResponse.ResultadoMutacao existing = buscarResultadoMutacaoExistente(
+                    dispositivoId,
+                    currentUserId,
+                    mutacao.clientMutationId(),
+                    isCanonical(mutacao)
+            );
+            if (!requestMatchesExisting(dispositivoId, currentUserId, mutacao)) {
+                return idempotencyMismatch(mutacao);
+            }
+            SyncPushResponse.ResultadoMutacao replayScopeFailure =
+                    validarReplayContraEscopoAtual(
+                            currentUserId,
+                            mutacao
+                    );
+            return replayScopeFailure == null ? existing : replayScopeFailure;
         } catch (SyncBaseVersionConflictException exception) {
             return registrarConflitoEmNovaTransacao(dispositivoId, mutacao, exception);
         } catch (SyncTraceRejectionException exception) {
@@ -561,17 +506,45 @@ public class SyncService {
                     ? "Mutação rejeitada pelo backend."
                     : exception.getReason();
 
-            return registrarRejeicaoEmNovaTransacao(
+            return isCanonical(mutacao)
+                    ? registrarRejeicaoEmNovaTransacao(
+                            dispositivoId,
+                            mutacao,
+                            erro,
+                            "VALIDATION_OR_AUTHORIZATION"
+                    )
+                    : registrarErroEmNovaTransacao(
+                            dispositivoId,
+                            mutacao,
+                            erro,
+                            "VALIDATION_OR_AUTHORIZATION"
+                    );
+        } catch (SyncDependencyUnavailableException exception) {
+            return registrarErroEmNovaTransacao(
                     dispositivoId,
                     mutacao,
-                    erro,
-                    "VALIDATION_OR_AUTHORIZATION"
+                    exception.getMessage(),
+                    "DEPENDENCY_NOT_APPLIED"
             );
         } catch (RuntimeException exception) {
             String erro = exception.getClass().getSimpleName() + ": " + primeiroNaoVazio(
                     exception.getMessage(),
                     "Erro inesperado ao processar mutação."
             );
+
+            if (isCanonical(mutacao)
+                    && !canonicalReceiptPersistable(
+                            dispositivoId,
+                            currentUserId,
+                            mutacao
+                    )) {
+                return registrarRejeicaoEmNovaTransacao(
+                        dispositivoId,
+                        mutacao,
+                        erro,
+                        "MALFORMED_CANONICAL_PROVENANCE"
+                );
+            }
 
             return registrarErroEmNovaTransacao(
                     dispositivoId,
@@ -587,6 +560,7 @@ public class SyncService {
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         inserirMutacaoPendente(dispositivoId, mutacao);
+        validarDependenciasAplicadas(mutacao);
         return aplicarMutacaoRegistrada(dispositivoId, mutacao);
     }
 
@@ -594,8 +568,100 @@ public class SyncService {
             String dispositivoId,
             SyncPushRequest.MutacaoCliente mutacao
     ) {
+        validarDependenciasAplicadas(mutacao);
         reabrirMutacaoComErro(dispositivoId, mutacao);
         return aplicarMutacaoRegistrada(dispositivoId, mutacao);
+    }
+
+    /**
+     * An idempotent replay is still an authorized read of the stored result.
+     * Re-evaluate the current worksite scope without mutating the immutable
+     * receipt when access has since been revoked or the check is unavailable.
+     */
+    private SyncPushResponse.ResultadoMutacao validarReplayContraEscopoAtual(
+            String currentUserId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (!isCanonical(mutacao)) {
+            return null;
+        }
+        try {
+            // The receipt is owner-scoped and may be read from any currently
+            // registered device of that owner. Its immutable envelope/device
+            // coherence was already bound by envelope_hash; only current
+            // identity and worksite authorization must be re-evaluated here.
+            if (!currentUserId.equals(mutacao.userId())) {
+                throw rejection(
+                        "USER_MISMATCH",
+                        "userId não corresponde ao usuário autenticado."
+                );
+            }
+            validarEscopoAutorizado(currentUserId, mutacao);
+            return null;
+        } catch (SyncTraceRejectionException exception) {
+            return rejectedResult(
+                    mutacao,
+                    exception.getMessage(),
+                    rejectionResult(exception.category, exception.getMessage())
+            );
+        } catch (ResponseStatusException exception) {
+            String message = primeiroNaoVazio(
+                    exception.getReason(),
+                    "Replay fora do escopo autenticado."
+            );
+            return rejectedResult(
+                    mutacao,
+                    message,
+                    rejectionResult("REPLAY_AUTHORIZATION", message)
+            );
+        } catch (RuntimeException exception) {
+            return new SyncPushResponse.ResultadoMutacao(
+                    mutacao.clientMutationId(),
+                    "ERRO",
+                    mutacao.entidadeTipo(),
+                    mutacao.entidadeId(),
+                    mutacao.operacao(),
+                    null,
+                    objectMapper.createObjectNode(),
+                    objectMapper.createObjectNode(),
+                    "Não foi possível revalidar o escopo atual do replay."
+            );
+        }
+    }
+
+    private void validarDependenciasAplicadas(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (!isCanonical(mutacao) || mutacao.dependsOnMutationIds().isEmpty()) {
+            return;
+        }
+        List<String> dependencies = mutacao.dependsOnMutationIds();
+        String placeholders = String.join(
+                ", ",
+                Collections.nCopies(dependencies.size(), "?")
+        );
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(currentUserService.requireUserId());
+        parameters.add(mutacao.obraId());
+        parameters.addAll(dependencies);
+        Integer applied = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ?
+                  AND obra_id = ?
+                  AND schema_version = 13
+                  AND status = 'APLICADA'
+                  AND client_mutation_id IN (%s)
+                """.formatted(placeholders),
+                Integer.class,
+                parameters.toArray()
+        );
+        if (applied == null || applied != dependencies.size()) {
+            throw new SyncDependencyUnavailableException(
+                    "Uma ou mais dependências causais ainda não foram aplicadas."
+            );
+        }
     }
 
     private SyncPushResponse.ResultadoMutacao aplicarMutacaoRegistrada(
@@ -614,7 +680,7 @@ public class SyncService {
                         dispositivoId
                 )
         );
-        requireAppliedContract(handler, applied);
+        requireAppliedContract(handler, mutacao, applied);
         long commitSeq = commitSeqEntidade(
                 applied.entityType(),
                 applied.entityId()
@@ -623,6 +689,15 @@ public class SyncService {
                 applied.entityType(),
                 applied.entityId()
         );
+        if (isCanonical(mutacao)) {
+            vincularEventoCanonico(
+                    commitSeq,
+                    dispositivoId,
+                    mutacao,
+                    versaoEntidade,
+                    applied
+            );
+        }
 
         ObjectNode resultado = applied.result() != null
                 && applied.result().isObject()
@@ -638,20 +713,24 @@ public class SyncService {
                     entidade_tipo = ?,
                     entidade_id = ?,
                     evento_servidor_commit_seq = ?,
-                    resultado_json = ?,
+                    resultado_json = ?::jsonb,
                     erro = NULL,
                     erro_categoria = NULL,
                     conflito_json = NULL,
                     aplicada_em = CURRENT_TIMESTAMP(6)
-                WHERE dispositivo_id = ?
-                  AND client_mutation_id = ?
+                WHERE client_mutation_id = ?
+                  AND (
+                    (schema_version = 13 AND proprietario_id = ?)
+                    OR (schema_version < 13 AND dispositivo_id = ?)
+                  )
                 """,
                 applied.entityType(),
                 applied.entityId(),
                 commitSeq,
                 toJson(resultado),
-                dispositivoId,
-                mutacao.clientMutationId()
+                mutacao.clientMutationId(),
+                currentUserService.requireUserId(),
+                dispositivoId
         );
 
         return new SyncPushResponse.ResultadoMutacao(
@@ -675,19 +754,6 @@ public class SyncService {
                 """
                 UPDATE sync_mutacao_cliente
                 SET
-                    entidade_tipo = ?,
-                    entidade_id = ?,
-                    operacao = ?,
-                    base_versao = ?,
-                    payload_json = ?,
-                    payload_hash = ?,
-                    correlacao_id = ?,
-                    escopo_autorizacao_json = ?,
-                    field_patch_json = ?,
-                    base_values_json = ?,
-                    evento_cliente_id = ?,
-                    causacao_id = ?,
-                    dependencias_json = ?,
                     status = 'PENDENTE',
                     erro = NULL,
                     erro_categoria = NULL,
@@ -696,25 +762,16 @@ public class SyncService {
                     evento_servidor_commit_seq = NULL,
                     recebida_em = CURRENT_TIMESTAMP(6),
                     aplicada_em = NULL
-                WHERE dispositivo_id = ?
-                  AND client_mutation_id = ?
+                WHERE client_mutation_id = ?
+                  AND (
+                    (schema_version = 13 AND proprietario_id = ?)
+                    OR (schema_version < 13 AND dispositivo_id = ?)
+                  )
                   AND status = 'ERRO'
                 """,
-                primeiroNaoVazio(mutacao.entidadeTipo(), "RDO"),
-                mutacao.entidadeId(),
-                operacaoSeguraParaBanco(mutacao.operacao()),
-                mutacao.baseVersao(),
-                toJson(mutacao.payload()),
-                canonicalPayloadHash(mutacao),
-                correlationId(mutacao),
-                authorizationScopeJson(mutacao),
-                fieldPatchJson(mutacao),
-                baseValuesJson(mutacao),
-                validUuidOrNull(mutacao.ontologyEventId()),
-                safeTraceIdOrNull(mutacao.causationId()),
-                dependenciesJson(mutacao),
-                dispositivoId,
-                mutacao.clientMutationId()
+                mutacao.clientMutationId(),
+                currentUserService.requireUserId(),
+                dispositivoId
         );
 
         if (updated == 0) {
@@ -829,6 +886,17 @@ public class SyncService {
             );
         }
 
+        // Malformed canonical provenance is intentionally not copied into the
+        // durable ledger. The safe category remains in the response, while a
+        // valid canonical rejection is persisted for deterministic replay.
+        if (isCanonical(mutacao) && !canonicalReceiptPersistable(
+                dispositivoId,
+                currentUserService.requireUserId(),
+                mutacao
+        )) {
+            return rejectedResult(mutacao, erro, resultado);
+        }
+
         return transactionTemplate.execute(status -> {
             registrarMutacaoFinalizada(
                     dispositivoId,
@@ -840,19 +908,26 @@ public class SyncService {
                     null,
                     errorCategory
             );
-
-            return new SyncPushResponse.ResultadoMutacao(
-                    mutacao.clientMutationId(),
-                    "REJEITADA",
-                    mutacao.entidadeTipo(),
-                    mutacao.entidadeId(),
-                    mutacao.operacao(),
-                    null,
-                    resultado,
-                    objectMapper.createObjectNode(),
-                    erro
-            );
+            return rejectedResult(mutacao, erro, resultado);
         });
+    }
+
+    private SyncPushResponse.ResultadoMutacao rejectedResult(
+            SyncPushRequest.MutacaoCliente mutacao,
+            String erro,
+            ObjectNode resultado
+    ) {
+        return new SyncPushResponse.ResultadoMutacao(
+                mutacao.clientMutationId(),
+                "REJEITADA",
+                mutacao.entidadeTipo(),
+                mutacao.entidadeId(),
+                mutacao.operacao(),
+                null,
+                resultado,
+                objectMapper.createObjectNode(),
+                erro
+        );
     }
 
     private ObjectNode rejectionResult(String category, String message) {
@@ -874,6 +949,19 @@ public class SyncService {
             Long eventoServidorCommitSeq,
             String errorCategory
     ) {
+        if (isCanonical(mutacao)) {
+            registrarMutacaoCanonicaFinalizada(
+                    dispositivoId,
+                    mutacao,
+                    status,
+                    erro,
+                    resultado,
+                    conflito,
+                    eventoServidorCommitSeq,
+                    errorCategory
+            );
+            return;
+        }
         jdbcTemplate.update(
                 """
                 INSERT INTO sync_mutacao_cliente (
@@ -888,12 +976,6 @@ public class SyncService {
                     base_versao,
                     payload_json,
                     payload_hash,
-                    escopo_autorizacao_json,
-                    field_patch_json,
-                    base_values_json,
-                    evento_cliente_id,
-                    causacao_id,
-                    dependencias_json,
                     status,
                     erro,
                     resultado_json,
@@ -905,17 +987,16 @@ public class SyncService {
                 ) VALUES (
                     ?, ?,
                     (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?,
                     CURRENT_TIMESTAMP(6)
                 )
-                ON DUPLICATE KEY UPDATE
-                    status = VALUES(status),
-                    erro = VALUES(erro),
-                    erro_categoria = VALUES(erro_categoria),
-                    resultado_json = VALUES(resultado_json),
-                    conflito_json = VALUES(conflito_json),
-                    evento_servidor_commit_seq = VALUES(evento_servidor_commit_seq),
+                ON CONFLICT (dispositivo_id, client_mutation_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    erro = EXCLUDED.erro,
+                    erro_categoria = EXCLUDED.erro_categoria,
+                    resultado_json = EXCLUDED.resultado_json,
+                    conflito_json = EXCLUDED.conflito_json,
+                    evento_servidor_commit_seq = EXCLUDED.evento_servidor_commit_seq,
                     aplicada_em = CURRENT_TIMESTAMP(6)
                 """,
                 UUID.randomUUID().toString(),
@@ -928,13 +1009,7 @@ public class SyncService {
                 operacaoSeguraParaBanco(mutacao.operacao()),
                 mutacao.baseVersao(),
                 toJson(mutacao.payload()),
-                persistedPayloadHash(mutacao),
-                authorizationScopeJson(mutacao),
-                fieldPatchJson(mutacao),
-                baseValuesJson(mutacao),
-                validUuidOrNull(mutacao.ontologyEventId()),
-                safeTraceIdOrNull(mutacao.causationId()),
-                dependenciesJson(mutacao),
+                payloadHash(mutacao),
                 status,
                 erro,
                 toJson(resultado),
@@ -946,6 +1021,10 @@ public class SyncService {
     }
 
     private void inserirMutacaoPendente(String dispositivoId, SyncPushRequest.MutacaoCliente mutacao) {
+        if (isCanonical(mutacao)) {
+            inserirMutacaoCanonicaPendente(dispositivoId, mutacao);
+            return;
+        }
         jdbcTemplate.update(
                 """
                 INSERT INTO sync_mutacao_cliente (
@@ -960,19 +1039,12 @@ public class SyncService {
                     base_versao,
                     payload_json,
                     payload_hash,
-                    escopo_autorizacao_json,
-                    field_patch_json,
-                    base_values_json,
-                    evento_cliente_id,
-                    causacao_id,
-                    dependencias_json,
                     status,
                     criada_no_cliente_em
                 ) VALUES (
                     ?, ?,
                     (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    'PENDENTE', ?
+                    ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 'PENDENTE', ?
                 )
                 """,
                 UUID.randomUUID().toString(),
@@ -985,14 +1057,130 @@ public class SyncService {
                 operacaoSeguraParaBanco(mutacao.operacao()),
                 mutacao.baseVersao(),
                 toJson(mutacao.payload()),
-                canonicalPayloadHash(mutacao),
-                authorizationScopeJson(mutacao),
-                fieldPatchJson(mutacao),
-                baseValuesJson(mutacao),
-                validUuidOrNull(mutacao.ontologyEventId()),
-                safeTraceIdOrNull(mutacao.causationId()),
-                dependenciesJson(mutacao),
+                payloadHash(mutacao),
                 mutacao.criadaNoClienteEm()
+        );
+    }
+
+    private void inserirMutacaoCanonicaPendente(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO sync_mutacao_cliente (
+                    id, dispositivo_id, proprietario_id, client_mutation_id,
+                    correlacao_id, entidade_tipo, entidade_id, operacao,
+                    base_versao, payload_json, payload_hash, schema_version,
+                    obra_id, operacao_canonica, changed_fields_json,
+                    entidades_relacionadas_json, ocorrido_em, envelope_hash,
+                    escopo_autorizacao_json, field_patch_json, base_values_json,
+                    evento_cliente_id, causacao_id, dependencias_json,
+                    status, criada_no_cliente_em
+                ) VALUES (
+                    ?, ?, (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
+                    ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 13, ?, ?, ?::jsonb,
+                    ?::jsonb, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?,
+                    ?::jsonb, 'PENDENTE', ?
+                )
+                """,
+                UUID.randomUUID().toString(),
+                dispositivoId,
+                dispositivoId,
+                mutacao.clientMutationId(),
+                mutacao.trace().correlationId(),
+                mutacao.entityType(),
+                mutacao.entityId(),
+                mutacao.operacao(),
+                mutacao.baseVersion(),
+                toJson(mutacao.payload()),
+                persistedPayloadHash(mutacao),
+                mutacao.obraId(),
+                mutacao.operation(),
+                toJson(objectMapper.valueToTree(mutacao.changedFields())),
+                toJson(objectMapper.valueToTree(mutacao.relatedEntities())),
+                Timestamp.from(Instant.parse(mutacao.occurredAt())),
+                envelopeHash(mutacao),
+                toJson(objectMapper.valueToTree(mutacao.trace().authorizationScope())),
+                toJson(mutacao.fieldPatch().changed()),
+                toJson(mutacao.fieldPatch().baseValues()),
+                mutacao.trace().ontologyEventId(),
+                mutacao.trace().causationId(),
+                toJson(objectMapper.valueToTree(mutacao.dependsOnMutationIds())),
+                canonicalOccurredAtLocal(mutacao)
+        );
+    }
+
+    private void registrarMutacaoCanonicaFinalizada(
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutacao,
+            String status,
+            String erro,
+            JsonNode resultado,
+            JsonNode conflito,
+            Long eventoServidorCommitSeq,
+            String errorCategory
+    ) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO sync_mutacao_cliente (
+                    id, dispositivo_id, proprietario_id, client_mutation_id,
+                    correlacao_id, entidade_tipo, entidade_id, operacao,
+                    base_versao, payload_json, payload_hash, schema_version,
+                    obra_id, operacao_canonica, changed_fields_json,
+                    entidades_relacionadas_json, ocorrido_em, envelope_hash,
+                    escopo_autorizacao_json, field_patch_json, base_values_json,
+                    evento_cliente_id, causacao_id, dependencias_json, status,
+                    erro, resultado_json, conflito_json, erro_categoria,
+                    evento_servidor_commit_seq, criada_no_cliente_em, aplicada_em
+                ) VALUES (
+                    ?, ?, (SELECT usuario_id FROM sync_dispositivo WHERE id = ?),
+                    ?, ?, ?, ?, ?, ?, ?::jsonb, ?, 13, ?, ?, ?::jsonb,
+                    ?::jsonb, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?,
+                    ?::jsonb, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?,
+                    CURRENT_TIMESTAMP(6)
+                )
+                ON CONFLICT (proprietario_id, client_mutation_id)
+                    WHERE schema_version = 13 AND proprietario_id IS NOT NULL
+                DO UPDATE SET
+                    status = EXCLUDED.status,
+                    erro = EXCLUDED.erro,
+                    erro_categoria = EXCLUDED.erro_categoria,
+                    resultado_json = EXCLUDED.resultado_json,
+                    conflito_json = EXCLUDED.conflito_json,
+                    evento_servidor_commit_seq = EXCLUDED.evento_servidor_commit_seq,
+                    aplicada_em = CURRENT_TIMESTAMP(6)
+                """,
+                UUID.randomUUID().toString(),
+                dispositivoId,
+                dispositivoId,
+                mutacao.clientMutationId(),
+                mutacao.trace().correlationId(),
+                mutacao.entityType(),
+                mutacao.entityId(),
+                mutacao.operacao(),
+                mutacao.baseVersion(),
+                toJson(mutacao.payload()),
+                persistedPayloadHash(mutacao),
+                mutacao.obraId(),
+                mutacao.operation(),
+                toJson(objectMapper.valueToTree(mutacao.changedFields())),
+                toJson(objectMapper.valueToTree(mutacao.relatedEntities())),
+                Timestamp.from(Instant.parse(mutacao.occurredAt())),
+                envelopeHash(mutacao),
+                toJson(objectMapper.valueToTree(mutacao.trace().authorizationScope())),
+                toJson(mutacao.fieldPatch().changed()),
+                toJson(mutacao.fieldPatch().baseValues()),
+                mutacao.trace().ontologyEventId(),
+                mutacao.trace().causationId(),
+                toJson(objectMapper.valueToTree(mutacao.dependsOnMutationIds())),
+                status,
+                erro,
+                toJson(resultado),
+                toJson(conflito),
+                errorCategory,
+                eventoServidorCommitSeq,
+                canonicalOccurredAtLocal(mutacao)
         );
     }
 
@@ -1072,59 +1260,89 @@ public class SyncService {
 
     private SyncPushResponse.ResultadoMutacao buscarResultadoMutacaoExistenteOuNull(
             String dispositivoId,
-            String clientMutationId
+            String currentUserId,
+            SyncPushRequest.MutacaoCliente mutation
     ) {
         try {
-            return buscarResultadoMutacaoExistente(dispositivoId, clientMutationId);
+            return buscarResultadoMutacaoExistente(
+                    dispositivoId,
+                    currentUserId,
+                    mutation.clientMutationId(),
+                    isCanonical(mutation)
+            );
         } catch (EmptyResultDataAccessException exception) {
             return null;
         }
     }
 
-    private boolean payloadHashMatchesExisting(
+    private boolean requestMatchesExisting(
             String dispositivoId,
+            String currentUserId,
             SyncPushRequest.MutacaoCliente mutation
     ) {
+        boolean canonical = isCanonical(mutation);
         String storedHash = jdbcTemplate.queryForObject(
-                """
-                SELECT payload_hash
-                FROM sync_mutacao_cliente
-                WHERE dispositivo_id = ?
-                  AND client_mutation_id = ?
+                canonical
+                        ? """
+                          SELECT envelope_hash
+                          FROM sync_mutacao_cliente
+                          WHERE proprietario_id = ?
+                            AND client_mutation_id = ?
+                            AND schema_version = 13
+                          """
+                        : """
+                          SELECT payload_hash
+                          FROM sync_mutacao_cliente
+                          WHERE dispositivo_id = ?
+                            AND client_mutation_id = ?
+                            AND schema_version < 13
                 """,
                 String.class,
-                dispositivoId,
+                canonical ? currentUserId : dispositivoId,
                 mutation.clientMutationId()
         );
-        return storedHash == null || storedHash.equals(canonicalPayloadHash(mutation));
+        String requestHash = canonical
+                ? envelopeHash(mutation)
+                : payloadHash(mutation);
+        if (canonical) {
+            return storedHash != null && storedHash.equals(requestHash);
+        }
+        return storedHash == null || storedHash.equals(requestHash);
     }
 
     private SyncPushResponse.ResultadoMutacao idempotencyMismatch(
             SyncPushRequest.MutacaoCliente mutation
     ) {
-        ObjectNode rejection = rejectionResult(
-                "IDEMPOTENCY_MISMATCH",
-                "clientMutationId já foi usado com outro conteúdo."
-        );
+        if (isCanonical(mutation)) {
+            return rejectedResult(
+                    mutation,
+                    "clientMutationId já foi usado com outro conteúdo ou rastro.",
+                    rejectionResult(
+                            "IDEMPOTENCY_MISMATCH",
+                            "clientMutationId já foi usado com outro conteúdo ou rastro."
+                    )
+            );
+        }
         return new SyncPushResponse.ResultadoMutacao(
-                mutation.clientMutationId(),
-                "REJEITADA",
-                mutation.entidadeTipo(),
-                mutation.entidadeId(),
-                mutation.operacao(),
-                null,
-                rejection,
-                objectMapper.createObjectNode(),
-                "clientMutationId já foi usado com outro conteúdo."
-        );
+                    mutation.clientMutationId(),
+                    "ERRO",
+                    mutation.entidadeTipo(),
+                    mutation.entidadeId(),
+                    mutation.operacao(),
+                    null,
+                    objectMapper.createObjectNode(),
+                    objectMapper.createObjectNode(),
+                    "clientMutationId já foi usado com outro conteúdo."
+            );
     }
 
     private SyncPushResponse.ResultadoMutacao buscarResultadoMutacaoExistente(
             String dispositivoId,
-            String clientMutationId
+            String currentUserId,
+            String clientMutationId,
+            boolean canonical
     ) {
-        return jdbcTemplate.queryForObject(
-                """
+        String sql = """
                 SELECT
                     client_mutation_id,
                     status,
@@ -1136,9 +1354,15 @@ public class SyncService {
                     conflito_json,
                     erro
                 FROM sync_mutacao_cliente
-                WHERE dispositivo_id = ?
+                WHERE %s = ?
                   AND client_mutation_id = ?
-                """,
+                  AND schema_version %s 13
+                """.formatted(
+                canonical ? "proprietario_id" : "dispositivo_id",
+                canonical ? "=" : "<"
+        );
+        return jdbcTemplate.queryForObject(
+                sql,
                 (rs, rowNum) -> new SyncPushResponse.ResultadoMutacao(
                         rs.getString("client_mutation_id"),
                         rs.getString("status"),
@@ -1152,7 +1376,7 @@ public class SyncService {
                         parseJson(rs.getString("conflito_json")),
                         rs.getString("erro")
                 ),
-                dispositivoId,
+                canonical ? currentUserId : dispositivoId,
                 clientMutationId
         );
     }
@@ -1229,7 +1453,7 @@ public class SyncService {
                 FROM sync_dispositivo
                 WHERE id = ?
                   AND usuario_id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                 """,
                 Integer.class,
                 dispositivoId.trim(),
@@ -1280,107 +1504,342 @@ public class SyncService {
         }
     }
 
-    private void validarRastroCanonico(
+    private void validarRastroCanonicoParaAplicacao(
             String dispositivoId,
+            String currentUserId,
             SyncPushRequest.MutacaoCliente mutacao
     ) {
-        if (mutacao == null) {
-            throw rejection("MALFORMED_MUTATION", "Mutação nula.");
+        if (!isCanonical(mutacao)) {
+            return;
         }
-        if (!uuidCanonico(mutacao.actorId())) {
-            throw rejection("MALFORMED_ACTOR_ID", "actorId deve ser um UUID canônico.");
+        validarProvenienciaCanonicaParaPersistencia(
+                dispositivoId,
+                currentUserId,
+                mutacao
+        );
+        validarPrincipalNoEscopo(mutacao);
+        validarEntidadesRelacionadasNoEscopo(mutacao);
+    }
+
+    private void validarProvenienciaCanonicaParaPersistencia(
+            String dispositivoId,
+            String currentUserId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (mutacao.schemaVersion() != CANONICAL_SCHEMA_VERSION) {
+            throw rejection("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion deve ser 13.");
         }
-        if (!uuidCanonico(mutacao.ontologyEventId())) {
+        requireCanonicalUuid(mutacao.clientMutationId(), "MALFORMED_CLIENT_MUTATION_ID");
+        requireCanonicalUuid(mutacao.deviceId(), "MALFORMED_DEVICE_ID");
+        requireCanonicalUuid(mutacao.userId(), "MALFORMED_USER_ID");
+        requireCanonicalUuid(mutacao.obraId(), "MALFORMED_WORKSITE_ID");
+        requireCanonicalUuid(mutacao.entityId(), "MALFORMED_ENTITY_ID");
+        requireCanonicalInstant(mutacao.occurredAt());
+
+        if (!currentUserId.equals(mutacao.userId())) {
+            throw rejection("USER_MISMATCH", "userId não corresponde ao usuário autenticado.");
+        }
+        if (!dispositivoId.equals(mutacao.deviceId())) {
+            throw rejection("DEVICE_MISMATCH", "deviceId não corresponde ao dispositivo do push.");
+        }
+        if (!CANONICAL_ENTITY_TYPES.contains(mutacao.entityType())) {
+            throw rejection("UNSUPPORTED_ENTITY_TYPE", "entityType canônico não suportado.");
+        }
+        if (!mutacao.entityType().equals(mutacao.entidadeTipo())
+                || !mutacao.entityId().equals(mutacao.entidadeId())) {
+            throw rejection("ENTITY_ALIAS_MISMATCH", "Aliases de entidade divergem do envelope.");
+        }
+
+        String expectedOperation = CANONICAL_OPERATION_BY_TRANSPORT.get(mutacao.operacao());
+        if (expectedOperation == null || !expectedOperation.equals(mutacao.operation())) {
             throw rejection(
-                    "MALFORMED_ONTOLOGY_EVENT_ID",
-                    "ontologyEventId deve ser um UUID canônico."
+                    "OPERATION_ALIAS_MISMATCH",
+                    "operacao não corresponde à operação canônica."
             );
         }
-        if (mutacao.fieldPatch() == null
+        if (!java.util.Objects.equals(mutacao.baseVersion(), mutacao.baseVersao())) {
+            throw rejection("BASE_VERSION_ALIAS_MISMATCH", "Aliases de baseVersion divergem.");
+        }
+        if ("CREATE".equals(mutacao.operation()) && mutacao.baseVersion() != null) {
+            throw rejection("INVALID_BASE_VERSION", "CREATE exige baseVersion nula.");
+        }
+        if (!"CREATE".equals(mutacao.operation())
+                && (mutacao.baseVersion() == null || mutacao.baseVersion() < 0)) {
+            throw rejection("INVALID_BASE_VERSION", "A operação exige baseVersion não negativa.");
+        }
+        if (mutacao.payload() == null || !mutacao.payload().isObject()) {
+            throw rejection("MALFORMED_PAYLOAD", "payload canônico deve ser um objeto JSON.");
+        }
+
+        validarTrace(mutacao);
+        validarChangedFields(mutacao);
+        validarEscopoAutorizado(currentUserId, mutacao);
+        validarIdentidadePrincipalNaCriacao(mutacao);
+        validarEstruturaEntidadesRelacionadas(mutacao);
+    }
+
+    private void validarTrace(SyncPushRequest.MutacaoCliente mutacao) {
+        SyncPushRequest.MutationTrace trace = mutacao.trace();
+        if (trace == null) {
+            throw rejection("MALFORMED_TRACE", "trace é obrigatório para schemaVersion 13.");
+        }
+        requireCanonicalUuid(trace.actorId(), "MALFORMED_ACTOR_ID");
+        requireCanonicalUuid(trace.deviceId(), "MALFORMED_TRACE_DEVICE_ID");
+        requireCanonicalUuid(trace.ontologyEventId(), "MALFORMED_ONTOLOGY_EVENT_ID");
+        requireCanonicalUuid(trace.correlationId(), "MALFORMED_CORRELATION_ID");
+        if (trace.causationId() != null) {
+            requireCanonicalUuid(trace.causationId(), "MALFORMED_CAUSATION_ID");
+        }
+        if (!mutacao.userId().equals(trace.actorId())) {
+            throw rejection("ACTOR_MISMATCH", "actorId diverge de userId.");
+        }
+        if (!mutacao.deviceId().equals(trace.deviceId())) {
+            throw rejection("DEVICE_TRACE_MISMATCH", "trace.deviceId diverge de deviceId.");
+        }
+        if (!trace.correlationId().equals(mutacao.correlacaoId())) {
+            throw rejection("CORRELATION_ALIAS_MISMATCH", "correlacaoId diverge do trace.");
+        }
+        if (trace.payloadHash() == null
+                || !trace.payloadHash().matches("[0-9a-f]{64}")
+                || !trace.payloadHash().equals(canonicalPayloadHash(mutacao))) {
+            throw rejection("PAYLOAD_HASH_MISMATCH", "payloadHash não corresponde ao payload.");
+        }
+        if (mutacao.dependsOnMutationIds() == null) {
+            throw rejection("MALFORMED_DEPENDENCIES", "dependsOnMutationIds é obrigatório.");
+        }
+        if (mutacao.dependsOnMutationIds().size() > MAX_DEPENDENCIAS_POR_MUTACAO) {
+            throw rejection(
+                    "TOO_MANY_DEPENDENCIES",
+                    "dependsOnMutationIds excede o limite permitido."
+            );
+        }
+        if (mutacao.dependsOnMutationIds().stream().distinct().count()
+                != mutacao.dependsOnMutationIds().size()) {
+            throw rejection(
+                    "DUPLICATE_DEPENDENCY_ID",
+                    "dependsOnMutationIds não pode conter duplicatas."
+            );
+        }
+        for (String dependency : mutacao.dependsOnMutationIds()) {
+            requireCanonicalUuid(dependency, "MALFORMED_DEPENDENCY_ID");
+            if (dependency.equals(mutacao.clientMutationId())) {
+                throw rejection(
+                        "SELF_DEPENDENCY",
+                        "Uma mutação não pode depender de si mesma."
+                );
+            }
+        }
+    }
+
+    private void validarChangedFields(SyncPushRequest.MutacaoCliente mutacao) {
+        if (mutacao.changedFields() == null || mutacao.fieldPatch() == null
                 || mutacao.fieldPatch().changed() == null
                 || !mutacao.fieldPatch().changed().isObject()
                 || mutacao.fieldPatch().baseValues() == null
                 || !mutacao.fieldPatch().baseValues().isObject()) {
-            throw rejection(
-                    "MALFORMED_FIELD_PATCH",
-                    "fieldPatch.changed e fieldPatch.baseValues devem ser objetos JSON."
-            );
+            throw rejection("MALFORMED_CHANGED_FIELDS", "changedFields e fieldPatch são obrigatórios.");
         }
-        validarTraceIds(mutacao);
-
-        String authenticatedOwner = currentUserService.requireUserId();
-        if (!mutacao.actorId().equals(authenticatedOwner)) {
-            throw rejection(
-                    "ACTOR_MISMATCH",
-                    "actorId não corresponde ao proprietário autenticado."
-            );
+        if (mutacao.changedFields().stream()
+                .anyMatch(field -> field == null || field.isBlank())) {
+            throw rejection("MALFORMED_CHANGED_FIELDS", "changedFields deve ser único e ordenado.");
         }
-
-        String expectedHash = canonicalPayloadHash(mutacao);
-        if (mutacao.payloadHash() == null
-                || !mutacao.payloadHash().matches("[0-9a-fA-F]{64}")
-                || !mutacao.payloadHash().equalsIgnoreCase(expectedHash)) {
-            throw rejection(
-                    "PAYLOAD_HASH_MISMATCH",
-                    "payloadHash não corresponde ao payload canônico recebido."
-            );
+        List<String> sorted = mutacao.changedFields().stream().distinct().sorted().toList();
+        if (!sorted.equals(mutacao.changedFields())) {
+            throw rejection("MALFORMED_CHANGED_FIELDS", "changedFields deve ser único e ordenado.");
         }
-
-        if (mutacao.authorizationScope() == null
-                || mutacao.authorizationScope().isEmpty()
-                || mutacao.authorizationScope().stream().anyMatch(scope -> !uuidCanonico(scope))) {
-            throw rejection(
-                    "UNSUPPORTED_AUTHORIZATION_SCOPE",
-                    "authorizationScope deve conter identificadores de obra canônicos."
-            );
+        Set<String> patchFields = new java.util.TreeSet<>();
+        mutacao.fieldPatch().changed().fieldNames().forEachRemaining(patchFields::add);
+        mutacao.fieldPatch().baseValues().fieldNames().forEachRemaining(patchFields::add);
+        if (!new ArrayList<>(patchFields).equals(sorted)) {
+            throw rejection("CHANGED_FIELDS_MISMATCH", "fieldPatch diverge de changedFields.");
         }
-
-        Optional<Set<String>> allowedScopes = currentUserService.allowedObraIds(
-                authenticatedOwner
-        );
-        if (allowedScopes.isPresent()
-                && !allowedScopes.get().containsAll(mutacao.authorizationScope())) {
-            throw rejection(
-                    "UNSUPPORTED_AUTHORIZATION_SCOPE",
-                    "authorizationScope contém obra fora do escopo autenticado."
-            );
-        }
-
-        // The request-level device is the canonical device identifier for every
-        // mutation in this push. Ownership/active-state was checked by push()
-        // before this method and is never taken from client trace metadata.
-        if (dispositivoId == null || dispositivoId.isBlank()) {
-            throw rejection("UNREGISTERED_DEVICE", "Dispositivo não registrado.");
+        for (String field : sorted) {
+            boolean payloadHasField = mutacao.payload().has(field);
+            boolean patchHasField = mutacao.fieldPatch().changed().has(field);
+            if (payloadHasField != patchHasField
+                    || (payloadHasField
+                            && !canonicalJson(mutacao.payload().get(field)).equals(
+                                    canonicalJson(mutacao.fieldPatch().changed().get(field))
+                            ))) {
+                throw rejection(
+                        "CHANGED_FIELD_VALUE_MISMATCH",
+                        "fieldPatch.changed diverge dos valores aplicados no payload."
+                );
+            }
         }
     }
 
-    private void validarTraceIds(SyncPushRequest.MutacaoCliente mutacao) {
-        if (mutacao.causationId() != null
-                && !mutacao.causationId().isBlank()
-                && !identificadorClienteSeguro(mutacao.causationId())) {
-            throw rejection("MALFORMED_CAUSATION_ID", "causationId é inválido.");
+    private void validarEscopoAutorizado(
+            String currentUserId,
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        List<String> scope = mutacao.trace().authorizationScope();
+        Optional<Set<String>> allowed = currentUserService.allowedObraIds(currentUserId);
+        if (allowed.isEmpty()) {
+            if (scope == null || !scope.equals(List.of("ALFA:GLOBAL"))) {
+                throw rejection("AUTHORIZATION_SCOPE_MISMATCH", "Escopo ALFA inválido.");
+            }
+            return;
         }
-        if (mutacao.dependsOnMutationIds() == null
-                || mutacao.dependsOnMutationIds().stream()
-                .anyMatch(id -> !identificadorClienteSeguro(id))) {
+        if (scope == null || scope.isEmpty() || !scope.contains(mutacao.obraId())) {
+            throw rejection("AUTHORIZATION_SCOPE_MISMATCH", "Escopo não contém obraId.");
+        }
+        for (String obraId : scope) {
+            requireCanonicalUuid(obraId, "MALFORMED_AUTHORIZATION_SCOPE");
+        }
+        if (!allowed.get().containsAll(scope) || !allowed.get().contains(mutacao.obraId())) {
+            throw rejection("WORKSITE_SCOPE", "obraId está fora do escopo autenticado.");
+        }
+    }
+
+    private void validarPrincipalNoEscopo(SyncPushRequest.MutacaoCliente mutacao) {
+        if ("CREATE".equals(mutacao.operation())) {
+            return;
+        }
+        String storedWorksite = entityWorksite(mutacao.entityType(), mutacao.entityId());
+        if (!mutacao.obraId().equals(storedWorksite)) {
+            throw rejection("PRINCIPAL_ENTITY_SCOPE", "Entidade principal pertence a outra obra.");
+        }
+    }
+
+    private void validarIdentidadePrincipalNaCriacao(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (!"CREATE".equals(mutacao.operation())) {
+            return;
+        }
+        String payloadWorksite = mutacao.payload().path("obraId").asText(null);
+        if (!mutacao.obraId().equals(payloadWorksite)) {
+            throw rejection("PRINCIPAL_ENTITY_SCOPE", "payload.obraId diverge do envelope.");
+        }
+        JsonNode payloadEntityId = mutacao.payload().get("id");
+        if (payloadEntityId != null
+                && !payloadEntityId.isNull()
+                && (!payloadEntityId.isTextual()
+                        || !mutacao.entityId().equals(payloadEntityId.textValue()))) {
             throw rejection(
-                    "MALFORMED_DEPENDENCY_ID",
-                    "dependsOnMutationIds contém identificador inválido."
+                    "PRINCIPAL_ENTITY_ID_MISMATCH",
+                    "payload.id diverge da entidade principal do envelope."
             );
+        }
+    }
+
+    private void validarEstruturaEntidadesRelacionadas(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (mutacao.relatedEntities() == null) {
+            throw rejection("MALFORMED_RELATED_ENTITIES", "relatedEntities é obrigatório.");
+        }
+        for (SyncPushRequest.RelatedEntity related : mutacao.relatedEntities()) {
+            if (related == null
+                    || !CANONICAL_RELATED_ENTITY_TYPES.contains(related.tipo())) {
+                throw rejection("UNSUPPORTED_RELATED_ENTITY_TYPE", "Tipo relacionado não suportado.");
+            }
+            requireCanonicalUuid(related.id(), "MALFORMED_RELATED_ENTITY_ID");
+        }
+    }
+
+    private void validarEntidadesRelacionadasNoEscopo(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        for (SyncPushRequest.RelatedEntity related : mutacao.relatedEntities()) {
+            String relatedWorksite = entityWorksite(related.tipo(), related.id());
+            // O catálogo de serviços é uma referência corporativa global. A obra
+            // armazenada nele registra quem autorizou sua criação; não limita em
+            // quais obras o serviço pode receber uma versão de preço. Ainda
+            // resolvemos a entidade acima para rejeitar referências inexistentes.
+            if ("SERVICE".equals(related.tipo())) {
+                continue;
+            }
+            if (!mutacao.obraId().equals(relatedWorksite)) {
+                throw rejection("RELATED_ENTITY_SCOPE", "Entidade relacionada pertence a outra obra.");
+            }
+        }
+    }
+
+    private String entityWorksite(String entityType, String entityId) {
+        String sql = switch (entityType) {
+            case "OBRA" -> "SELECT id FROM obra WHERE id = ?";
+            case "RDO" -> "SELECT obra_id FROM rdo WHERE id = ?";
+            case "TAREFA" -> "SELECT obra_id FROM tarefa WHERE id = ?";
+            case "CONVERSA" -> "SELECT obra_id FROM conversa WHERE id = ?";
+            case "MENSAGEM" -> """
+                    SELECT c.obra_id FROM mensagem m
+                    JOIN conversa c ON c.id = m.conversa_id WHERE m.id = ?
+                    """;
+            case "MENSAGEM_ANEXO" -> """
+                    SELECT c.obra_id FROM mensagem_anexo a
+                    JOIN mensagem m ON m.id = a.mensagem_id
+                    JOIN conversa c ON c.id = m.conversa_id WHERE a.id = ?
+                    """;
+            case "SOLICITACAO_COMPRA" ->
+                    "SELECT obra_id FROM finance_solicitacao_compra WHERE id = ?";
+            case "COMPRA" -> "SELECT obra_id FROM finance_compra WHERE id = ?";
+            case "SERVICE" ->
+                    "SELECT obra_autorizadora_id FROM catalogo_servico WHERE id = ?";
+            case "SERVICE_PRICE_VERSION" ->
+                    "SELECT obra_id FROM service_price_version WHERE id = ?";
+            default -> throw rejection(
+                    "UNSUPPORTED_ENTITY_TYPE",
+                    "Tipo de entidade não suportado pelo escopo canônico."
+            );
+        };
+        try {
+            String obraId = jdbcTemplate.queryForObject(sql, String.class, entityId);
+            if (obraId == null || obraId.isBlank()) {
+                throw rejection("ENTITY_NOT_WORKSITE_SCOPED", "Entidade não possui obra.");
+            }
+            return obraId;
+        } catch (EmptyResultDataAccessException exception) {
+            throw rejection("ENTITY_NOT_FOUND", "Entidade canônica não encontrada.");
         }
     }
 
     private void requireAppliedContract(
             SyncOperationHandler handler,
+            SyncPushRequest.MutacaoCliente mutation,
             AppliedSyncMutation applied
     ) {
         if (applied == null
                 || !handler.entityType().equals(applied.entityType())
                 || applied.entityId() == null
-                || applied.entityId().isBlank()) {
+                || applied.entityId().isBlank()
+                || (isCanonical(mutation)
+                        && (!mutation.entityType().equals(applied.entityType())
+                                || !mutation.entityId().equals(applied.entityId())))) {
             throw new IllegalStateException(
                     "Handler de sync retornou uma aplicação inválida."
             );
+        }
+        validarEventoAutoritativo(applied.authoritativeEvent());
+    }
+
+    private void validarEventoAutoritativo(
+            AppliedSyncMutation.AuthoritativeEvent event
+    ) {
+        if (event == null) {
+            return;
+        }
+        if (event.eventType() == null
+                || !event.eventType().matches("[A-Z][A-Z0-9_]{0,79}")) {
+            throw new IllegalStateException(
+                    "Handler de sync retornou tipo de evento autoritativo inválido."
+            );
+        }
+        Set<String> identities = new java.util.HashSet<>();
+        for (AppliedSyncMutation.AuthoritativeRelatedEntity related
+                : event.relatedEntities()) {
+            if (related == null
+                    || related.entityType() == null
+                    || !related.entityType().matches("[A-Z][A-Z0-9_]{0,79}")
+                    || !uuidCanonico(related.entityId())
+                    || !identities.add(
+                            related.entityType() + "\0" + related.entityId()
+                    )) {
+                throw new IllegalStateException(
+                        "Handler de sync retornou relações autoritativas inválidas."
+                );
+            }
         }
     }
 
@@ -1465,10 +1924,98 @@ public class SyncService {
                 && value.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,119}");
     }
 
+    private boolean isCanonical(SyncPushRequest.MutacaoCliente mutation) {
+        return mutation != null && mutation.schemaVersion() != null;
+    }
+
+    private boolean canonicalReceiptPersistable(
+            String dispositivoId,
+            String currentUserId,
+            SyncPushRequest.MutacaoCliente mutation
+    ) {
+        try {
+            validarProvenienciaCanonicaParaPersistencia(
+                    dispositivoId,
+                    currentUserId,
+                    mutation
+            );
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private void requireCanonicalUuid(String value, String category) {
+        if (!uuidCanonico(value)) {
+            throw rejection(category, "Identificador canônico inválido.");
+        }
+    }
+
+    private boolean uuidCanonico(String value) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            return UUID.fromString(value).toString().equals(value);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private void requireCanonicalInstant(String value) {
+        if (value == null
+                || !value.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z")) {
+            throw rejection("MALFORMED_OCCURRED_AT", "occurredAt deve ser UTC ISO canônico.");
+        }
+        try {
+            Instant.parse(value);
+        } catch (RuntimeException exception) {
+            throw rejection("MALFORMED_OCCURRED_AT", "occurredAt deve ser UTC ISO canônico.");
+        }
+    }
+
+    private LocalDateTime canonicalOccurredAtLocal(
+            SyncPushRequest.MutacaoCliente mutation
+    ) {
+        return LocalDateTime.ofInstant(Instant.parse(mutation.occurredAt()), ZoneOffset.UTC);
+    }
+
+    private String persistedPayloadHash(SyncPushRequest.MutacaoCliente mutation) {
+        return mutation.trace() == null ? null : mutation.trace().payloadHash();
+    }
+
     private String canonicalPayloadHash(SyncPushRequest.MutacaoCliente mutation) {
-        String material = canonicalJson(mutation.payload());
+        String canonical = canonicalJson(mutation.payload());
         return HexFormat.of().formatHex(
-                sha256().digest(material.getBytes(StandardCharsets.UTF_8))
+                sha256().digest(canonical.getBytes(StandardCharsets.UTF_8))
+        );
+    }
+
+    private String envelopeHash(SyncPushRequest.MutacaoCliente mutation) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", mutation.schemaVersion());
+        material.put("clientMutationId", mutation.clientMutationId());
+        material.put("deviceId", mutation.deviceId());
+        material.put("userId", mutation.userId());
+        material.put("obraId", mutation.obraId());
+        material.put("entityType", mutation.entityType());
+        material.put("entityId", mutation.entityId());
+        material.put("operation", mutation.operation());
+        material.put("baseVersion", mutation.baseVersion());
+        material.put("changedFields", mutation.changedFields());
+        material.put("occurredAt", mutation.occurredAt());
+        material.put("payload", mutation.payload());
+        material.put("entidadeTipo", mutation.entidadeTipo());
+        material.put("entidadeId", mutation.entidadeId());
+        material.put("operacao", mutation.operacao());
+        material.put("baseVersao", mutation.baseVersao());
+        material.put("trace", mutation.trace());
+        material.put("fieldPatch", mutation.fieldPatch());
+        material.put("relatedEntities", mutation.relatedEntities());
+        material.put("dependsOnMutationIds", mutation.dependsOnMutationIds());
+        String canonical = canonicalJson(objectMapper.valueToTree(material));
+        return HexFormat.of().formatHex(
+                sha256().digest(canonical.getBytes(StandardCharsets.UTF_8))
         );
     }
 
@@ -1503,12 +2050,10 @@ public class SyncService {
         if (normalized.signum() == 0) {
             return "0";
         }
-
         int exponent = normalized.precision() - normalized.scale() - 1;
         if (exponent > -7 && exponent < 21) {
             return normalized.toPlainString();
         }
-
         String digits = normalized.unscaledValue().abs().toString();
         String fraction = digits.length() == 1
                 ? digits
@@ -1518,63 +2063,95 @@ public class SyncService {
         return sign + fraction + "e" + exponentSign + exponent;
     }
 
-    private String persistedPayloadHash(SyncPushRequest.MutacaoCliente mutation) {
-        if (mutation.payloadHash() != null
-                && mutation.payloadHash().matches("[0-9a-fA-F]{64}")) {
-            return mutation.payloadHash().toLowerCase(Locale.ROOT);
+    private void vincularEventoCanonico(
+            long commitSeq,
+            String dispositivoId,
+            SyncPushRequest.MutacaoCliente mutation,
+            long entityVersion,
+            AppliedSyncMutation applied
+    ) {
+        AppliedSyncMutation.AuthoritativeEvent authoritativeEvent =
+                applied.authoritativeEvent();
+        String authoritativeAssignment = authoritativeEvent == null
+                ? ""
+                : "entidades_relacionadas_json = ?::jsonb,";
+        String authoritativePredicate = authoritativeEvent == null
+                ? ""
+                : """
+                   AND tipo_entidade = ?
+                   AND entidade_id = ?
+                   AND tipo_evento = ?
+                  """;
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(mutation.userId());
+        parameters.add(dispositivoId);
+        parameters.add(mutation.trace().correlationId());
+        parameters.add(mutation.trace().causationId());
+        if (authoritativeEvent != null) {
+            parameters.add(authoritativeRelationsJson(authoritativeEvent));
         }
-        return null;
-    }
-
-    private String authorizationScopeJson(SyncPushRequest.MutacaoCliente mutation) {
-        return toJson(objectMapper.valueToTree(
-                mutation.authorizationScope() == null
-                        ? List.of()
-                        : mutation.authorizationScope()
-        ));
-    }
-
-    private String fieldPatchJson(SyncPushRequest.MutacaoCliente mutation) {
-        return toJson(mutation.fieldPatch() == null
-                ? objectMapper.createObjectNode()
-                : mutation.fieldPatch().changed());
-    }
-
-    private String baseValuesJson(SyncPushRequest.MutacaoCliente mutation) {
-        return toJson(mutation.fieldPatch() == null
-                ? objectMapper.createObjectNode()
-                : mutation.fieldPatch().baseValues());
-    }
-
-    private String dependenciesJson(SyncPushRequest.MutacaoCliente mutation) {
-        return toJson(objectMapper.valueToTree(
-                mutation.dependsOnMutationIds() == null
-                        ? List.of()
-                        : mutation.dependsOnMutationIds()
-        ));
-    }
-
-    private String validUuidOrNull(String value) {
-        return uuidCanonico(value) ? value : null;
-    }
-
-    private String safeTraceIdOrNull(String value) {
-        return identificadorClienteSeguro(value) ? value.strip() : null;
-    }
-
-    private boolean uuidCanonico(String value) {
-        if (value == null) {
-            return false;
+        parameters.add(entityVersion);
+        parameters.add(mutation.clientMutationId());
+        parameters.add(mutation.trace().ontologyEventId());
+        parameters.add(canonicalOccurredAtLocal(mutation));
+        parameters.add(commitSeq);
+        if (authoritativeEvent != null) {
+            parameters.add(applied.entityType());
+            parameters.add(applied.entityId());
+            parameters.add(authoritativeEvent.eventType());
         }
-        try {
-            return UUID.fromString(value).toString().equals(value);
-        } catch (IllegalArgumentException exception) {
-            return false;
+
+        int updated = jdbcTemplate.update(
+                ("""
+                UPDATE cortex_evento_operacional
+                SET usuario_id = ?,
+                    dispositivo_id = ?,
+                    correlacao_id = ?,
+                    causacao_id = ?,
+                    %s
+                    resultado = 'SUCESSO',
+                    erro_categoria = NULL,
+                    versao_entidade = ?,
+                    schema_version = 13,
+                    client_mutation_id = ?,
+                    evento_cliente_id = ?,
+                    ocorrido_em = ?
+                WHERE commit_seq = ?
+                %s
+                """).formatted(
+                        authoritativeAssignment,
+                        authoritativePredicate
+                ),
+                parameters.toArray()
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("Evento do domínio não pôde ser vinculado ao rastro v13.");
         }
     }
 
-    private SyncTraceRejectionException rejection(String category, String message) {
-        return new SyncTraceRejectionException(category, message);
+    private String authoritativeRelationsJson(
+            AppliedSyncMutation.AuthoritativeEvent event
+    ) {
+        List<Map<String, String>> related = event.relatedEntities().stream()
+                .map(item -> Map.of(
+                        "tipo", item.entityType(),
+                        "id", item.entityId()
+                ))
+                .toList();
+        return toJson(objectMapper.valueToTree(related));
+    }
+
+    private String payloadHash(SyncPushRequest.MutacaoCliente mutation) {
+        String material = primeiroNaoVazio(mutation.entidadeTipo(), "")
+                + "\n" + primeiroNaoVazio(mutation.entidadeId(), "")
+                + "\n" + primeiroNaoVazio(mutation.operacao(), "")
+                + "\n" + (mutation.baseVersao() == null
+                        ? ""
+                        : mutation.baseVersao())
+                + "\n" + toJson(mutation.payload());
+        return HexFormat.of().formatHex(
+                sha256().digest(material.getBytes(StandardCharsets.UTF_8))
+        );
     }
 
     private MessageDigest sha256() {
@@ -1613,12 +2190,22 @@ public class SyncService {
         }
     }
 
+    private SyncTraceRejectionException rejection(String category, String message) {
+        return new SyncTraceRejectionException(category, message);
+    }
+
     private static class SyncTraceRejectionException extends RuntimeException {
         private final String category;
 
         private SyncTraceRejectionException(String category, String message) {
             super(message);
             this.category = category;
+        }
+    }
+
+    private static class SyncDependencyUnavailableException extends RuntimeException {
+        private SyncDependencyUnavailableException(String message) {
+            super(message);
         }
     }
 }

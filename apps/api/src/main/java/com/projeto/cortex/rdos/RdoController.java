@@ -44,6 +44,7 @@ public class RdoController {
         currentUserService.requireWorksiteAccess(
                 request == null ? null : request.obraId()
         );
+        RdoPrintableCollectionLimits.requireWithinTemplateCapacity(request);
         return service.criarRascunho(request);
     }
 
@@ -69,10 +70,11 @@ public class RdoController {
             @PathVariable String id,
             @RequestBody RdoCreateRequest request
     ) {
-        currentUserService.requireRdoAccess(id);
-        currentUserService.requireWorksiteAccess(
+        currentUserService.requireRdoWorksiteAccess(
+                id,
                 request == null ? null : request.obraId()
         );
+        RdoPrintableCollectionLimits.requireWithinTemplateCapacity(request);
         return draftUpdateService.atualizarRascunho(id, request);
     }
 
@@ -81,4 +83,5 @@ public class RdoController {
         currentUserService.requireRdoAccess(id);
         return workflowService.enviar(id);
     }
+
 }

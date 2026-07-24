@@ -12,10 +12,12 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,10 +39,8 @@ class CortexOperationalMemoryServiceTest {
                 eq(Long.class),
                 eq("evento-1")
         )).thenThrow(new EmptyResultDataAccessException(1));
-        when(jdbcTemplate.update(contains("UPDATE cortex_evento_commit_sequence")))
-                .thenReturn(1);
         when(jdbcTemplate.queryForObject(
-                eq("SELECT LAST_INSERT_ID()"),
+                contains("RETURNING ultima_commit_seq"),
                 eq(Long.class)
         )).thenReturn(7L);
         when(jdbcTemplate.queryForObject(
@@ -67,6 +67,18 @@ class CortexOperationalMemoryServiceTest {
         );
 
         assertThat(commitSeq).isEqualTo(7);
+        ArgumentCaptor<Object[]> eventInsertParameters =
+                ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).update(
+                argThat(sql -> sql.contains("INSERT INTO cortex_evento_operacional")
+                        && sql.contains("ocorrido_em")),
+                eventInsertParameters.capture()
+        );
+        assertThat(eventInsertParameters.getValue()).contains(now);
+        verify(jdbcTemplate, never()).update(
+                contains("UPDATE cortex_evento_operacional"),
+                any(Object[].class)
+        );
         verify(jdbcTemplate).update(
                 contains("INSERT INTO cortex_estado_entidade"),
                 eq("EQUIPE"),
@@ -91,10 +103,8 @@ class CortexOperationalMemoryServiceTest {
                 eq(Long.class),
                 eq("evento-offline")
         )).thenThrow(new EmptyResultDataAccessException(1));
-        when(jdbcTemplate.update(contains("UPDATE cortex_evento_commit_sequence")))
-                .thenReturn(1);
         when(jdbcTemplate.queryForObject(
-                eq("SELECT LAST_INSERT_ID()"),
+                contains("RETURNING ultima_commit_seq"),
                 eq(Long.class)
         )).thenReturn(8L);
         when(jdbcTemplate.queryForObject(
@@ -141,7 +151,8 @@ class CortexOperationalMemoryServiceTest {
                 "OFFLINE",
                 "SYNCED"
         );
-        assertThat(String.valueOf(insertParameters.getValue()[22]))
+        Object[] parameters = insertParameters.getValue();
+        assertThat(String.valueOf(parameters[parameters.length - 1]))
                 .contains("\"correlationId\":\"mutation-1\"")
                 .contains("\"deviceId\":\"device-1\"");
         assertThat(OperationalEventTraceContext.current()).isEmpty();

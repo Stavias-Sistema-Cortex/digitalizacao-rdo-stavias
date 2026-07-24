@@ -2,6 +2,7 @@ import { clearSession } from "../../features/auth/authSession";
 import { apiUrl } from "./apiEndpoint";
 import {
   ApiError,
+  ApiTransportError,
   apiError,
   responseErrorMessage,
   responseField,
@@ -13,6 +14,7 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
 export {
   ApiError,
+  ApiTransportError,
   apiError,
   apiUrl,
   responseErrorMessage,
@@ -62,10 +64,18 @@ async function rawFetch(
     });
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(timeoutErrorMessage, { cause: error });
+      throw new ApiTransportError(
+        timeoutErrorMessage,
+        "TIMEOUT",
+        { cause: error },
+      );
     }
     if (error instanceof TypeError) {
-      throw new Error(connectionErrorMessage, { cause: error });
+      throw new ApiTransportError(
+        connectionErrorMessage,
+        "CONNECTION",
+        { cause: error },
+      );
     }
     throw error;
   } finally {

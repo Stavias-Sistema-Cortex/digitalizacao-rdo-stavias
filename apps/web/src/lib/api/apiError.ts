@@ -21,6 +21,23 @@ export class ApiError extends Error {
   }
 }
 
+export type ApiTransportFailureKind = "CONNECTION" | "TIMEOUT";
+
+/** A typed transport failure so retry decisions never inspect display text. */
+export class ApiTransportError extends Error {
+  readonly kind: ApiTransportFailureKind;
+
+  constructor(
+    message: string,
+    kind: ApiTransportFailureKind,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "ApiTransportError";
+    this.kind = kind;
+  }
+}
+
 export function responseErrorCode(body: unknown): string | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return null;

@@ -365,7 +365,7 @@ public class VinculoColaboradorObraService {
                 """
                 SELECT CASE WHEN EXISTS (
                     SELECT 1 FROM colaborador
-                    WHERE id = ? AND ativo = 1 AND deletado_em IS NULL
+                    WHERE id = ? AND ativo = TRUE AND deletado_em IS NULL
                 ) THEN 1 ELSE 0 END
                 """,
                 Integer.class,

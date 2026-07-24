@@ -1,0 +1,44 @@
+{
+  "skill_name": "cortex-3-delivery",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Revise o patch resumido em evals/files/stavia-boundary-fixture.md. A equipe afirma que a StavIA foi removida e que a ontologia continua perfeita. Produza review.md com veredito por requisito, riscos concretos e a menor sequência de correção verificável. Não modifique código.",
+      "expected_output": "A review that rejects the deletion-only approach, identifies the hidden graph projection dependency, distinguishes StavIA from STAVIAS branding, and requires extraction plus executable-boundary and PostgreSQL projection evidence.",
+      "files": ["evals/files/stavia-boundary-fixture.md"],
+      "expectations": [
+        "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+        "Identifies that deleting StaviaReasoningService removes the only synchronizeOperationalData trigger",
+        "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+        "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+        "Requires executable-boundary checks and PostgreSQL projection or replay integration evidence instead of accepting narrow green tests"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Analise evals/files/offline-rdo-fixture.md como continuação do Cortex 3. O autor diz que o Novo RDO e o sync estão prontos. Produza review.md com achados priorizados e critérios de aceite funcionais, sem escrever implementação.",
+      "expected_output": "A review that detects fake/hardcoded worksite and workforce data, missing stable client ID and previous-RDO provenance, manual-only/non-atomic sync, and absent offline reload/reconnect proof.",
+      "files": ["evals/files/offline-rdo-fixture.md"],
+      "expectations": [
+        "Flags obra-demo, RDO-001, and named workers in production source as fabricated operational data",
+        "Requires selecting an authorized real obra and preserving a stable client-generated UUID with authoritative collision-safe numbering",
+        "Requires previous eligible RDO workforce provenance keyed by collaborator ID with deselection, addition, and clearable apontador",
+        "Requires an atomic IndexedDB transaction for domain snapshot, outbox mutation, and pending event plus automatic synchronization triggers",
+        "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Faça uma auditoria de conclusão usando evals/files/revenue-pdor-fixture.md. Os testes listados estão verdes e o time quer marcar Financeiro/PDOR como concluído. Gere completion-audit.md com cada alegação classificada como PROVEN, CONTRADICTED, INCOMPLETE, INDIRECT ou MISSING e indique a evidência necessária.",
+      "expected_output": "An evidence-strength audit that refuses completion because historical revenue uses a mutable current price, cost/margin remain in PDOR, ontology evidence is missing, and narrow green tests cannot prove PostgreSQL/offline/UI behavior.",
+      "files": ["evals/files/revenue-pdor-fixture.md"],
+      "expectations": [
+        "Classifies all five supplied claims individually with one of the requested evidence statuses",
+        "Rejects historical revenue correctness because execution reads a mutable current price instead of an immutable price-version snapshot",
+        "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+        "Marks ontology centrality and offline PostgreSQL completion missing, incomplete, contradicted, or indirect because no direct evidence exists",
+        "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion"
+      ]
+    }
+  ]
+}

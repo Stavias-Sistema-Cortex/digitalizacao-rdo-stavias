@@ -353,3 +353,46 @@
     grid-column: auto;
   }
 }
+
+.operational-workspace.gestao-obras {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(16px, 2vw, 28px);
+}
+
+.gestao-obras-coluna,
+.gestao-papeis,
+.gestao-obras-aviso,
+.gestao-obras-item,
+.gestao-obras :is(input, select, textarea, button),
+.gestao-papeis-atual {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.gestao-obras button,
+.gestao-papeis .gestao-papeis-salvar {
+  border: 1px solid var(--color-ink);
+  background: var(--color-ink);
+  color: #fff;
+}
+
+.gestao-obras-item {
+  border: 1px solid transparent;
+  background: #fff;
+  color: var(--color-ink);
+}
+
+.gestao-obras-item.ativo {
+  border-color: var(--color-ink);
+  background: #fff;
+  box-shadow: none;
+}
+
+.gestao-papeis-atual,
+.gestao-papeis-atual.is-alfa {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-ink);
+}

@@ -31,7 +31,7 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
                 INSERT INTO auth_session (
                     id, colaborador_id, token_hash, csrf_hash, expira_em
                 ) VALUES (?, ?, ?, ?,
-                    TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)))
+                    CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second'))
                 """, sessionId, collaboratorId, tokenHash, csrfHash, ttlSeconds);
         if (inserted != 1) {
             throw new IllegalStateException("Sessão não persistida.");
@@ -56,7 +56,7 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
                 WHERE session.token_hash = ?
                     AND session.revogado_em IS NULL
                     AND session.expira_em > CURRENT_TIMESTAMP(6)
-                    AND colaborador.ativo = 1
+                    AND colaborador.ativo = TRUE
                     AND colaborador.deletado_em IS NULL
                     AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                 """, (resultSet, rowNumber) -> resolved(resultSet), tokenHash);

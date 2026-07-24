@@ -6,11 +6,7 @@ export type CortexAuthEnvironment = {
   readonly VITE_CORTEX_AUTH_MODE?: string;
 };
 
-/**
- * PostgreSQL access must be deliberately selected in a production bundle.
- * Development keeps the established legacy login unless the new mode is
- * explicitly requested, so local maintenance workflows are not changed.
- */
+/** Cortex 3 defaults to PostgreSQL locally and requires an explicit release mode. */
 export function resolveCortexAuthMode(
   environment: CortexAuthEnvironment = import.meta.env,
 ): CortexAuthMode {
@@ -20,7 +16,7 @@ export function resolveCortexAuthMode(
   }
 
   if (!environment.PROD) {
-    return "legacy";
+    return "postgresql";
   }
 
   throw new Error(

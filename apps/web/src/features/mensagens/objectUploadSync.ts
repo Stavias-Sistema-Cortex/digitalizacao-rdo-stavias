@@ -1,10 +1,22 @@
 import {
   apiFetch,
+  apiError,
   readResponseBody,
-  responseErrorMessage,
 } from "../../lib/api/apiClient";
 import { getCortexDb } from "../../lib/db/cortexDb";
 import type { OutboxMutationRecord } from "../../lib/db/db.types";
+import {
+  assertCanonicalPayloadHash,
+  isCanonicalOutboxMutation,
+} from "../../lib/sync/mutationEnvelope";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "../../lib/sync/syncSession";
+import { mutationAfterRetryScheduled } from "../../lib/sync/automaticSyncRetryStorage";
+import { classifyAutomaticRequestFailure } from "../../lib/sync/automaticRequestFailure";
+import { guardSyncTransaction } from "../../lib/sync/guardedSyncTransaction";
 import { emitMessagesChanged } from "./mensagensRepository";
 
 interface StoredObjectUploadResponse {
@@ -25,15 +37,24 @@ export interface ObjectUploadSummary {
   errors: number;
 }
 
+export const CANONICAL_UPLOAD_REFERENCE_BLOCKED =
+  "CANONICAL_UPLOAD_REFERENCE_REQUIRES_REPLACEMENT";
+
 export async function processObjectUploads(
   limit = 20,
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<ObjectUploadSummary> {
+  assertSyncSession(guard);
   const database = await getCortexDb();
+  assertSyncSession(guard);
   const candidates = (await database.getAll("outbox_mutations"))
     .filter(
       (mutation) =>
         mutation.status === "PENDING" &&
-        mutation.transport === "OBJECT_UPLOAD",
+        mutation.transport === "OBJECT_UPLOAD" &&
+        (!mutation.nextAttemptAt ||
+          !Number.isFinite(Date.parse(mutation.nextAttemptAt)) ||
+          Date.parse(mutation.nextAttemptAt) <= Date.now()),
     )
     .sort((left, right) =>
       left.criadaNoClienteEm.localeCompare(right.criadaNoClienteEm),
@@ -44,15 +65,18 @@ export async function processObjectUploads(
   let errors = 0;
   for (const mutation of candidates) {
     try {
-      await processOneUpload(mutation);
+      await processOneUpload(mutation, database, guard);
       applied += 1;
     } catch (error: unknown) {
+      // A session switch must never turn into a write in the new namespace.
+      assertSyncSession(guard);
       errors += 1;
+      const failure = classifyAutomaticRequestFailure(error);
       await markUploadFailed(
+        database,
         mutation,
-        error instanceof Error
-          ? error.message
-          : "Falha desconhecida ao enviar o anexo.",
+        failure,
+        guard,
       );
     }
   }
@@ -64,8 +88,13 @@ export async function processObjectUploads(
 
 async function processOneUpload(
   mutation: OutboxMutationRecord,
+  database: Awaited<ReturnType<typeof getCortexDb>>,
+  guard: SyncSessionGuard,
 ): Promise<void> {
-  const database = await getCortexDb();
+  assertSyncSession(guard);
+  if (isCanonicalOutboxMutation(mutation)) {
+    await assertCanonicalPayloadHash(mutation);
+  }
   const attachment = await database.getFromIndex(
     "mensagem_anexos",
     "by-upload-mutation-id",
@@ -79,10 +108,14 @@ async function processOneUpload(
     attachment.conversaId,
   );
   const timestamp = new Date().toISOString();
-  const starting = database.transaction(
-    ["outbox_mutations", "mensagem_anexos", "mensagens"],
-    "readwrite",
+  const guardedStarting = guardSyncTransaction(
+    database.transaction(
+      ["outbox_mutations", "mensagem_anexos", "mensagens"],
+      "readwrite",
+    ),
+    guard,
   );
+  const starting = guardedStarting.transaction;
   const current = await starting
     .objectStore("outbox_mutations")
     .get(mutation.clientMutationId);
@@ -115,7 +148,7 @@ async function processOneUpload(
       updatedAt: timestamp,
     });
   }
-  await starting.done;
+  await guardedStarting.complete();
 
   const form = new FormData();
   form.append(
@@ -137,9 +170,11 @@ async function processOneUpload(
     timeoutErrorMessage:
       "O envio do anexo demorou demais. O arquivo continua salvo neste dispositivo.",
   });
+  assertSyncSession(guard);
   const body = await readResponseBody(response);
+  assertSyncSession(guard);
   if (!response.ok) {
-    throw new Error(responseErrorMessage(body, response.status));
+    throw apiError(body, response.status);
   }
   const uploaded = body as StoredObjectUploadResponse;
   verifyUploadIntegrity(
@@ -148,22 +183,30 @@ async function processOneUpload(
     attachment.tamanhoBytes,
   );
   await applyUploadedObject(
+    database,
     mutation.clientMutationId,
     uploaded.id,
     uploaded.sha256,
+    guard,
   );
 }
 
 async function applyUploadedObject(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
   uploadMutationId: string,
   objectId: string,
   sha256: string,
+  guard: SyncSessionGuard,
 ): Promise<void> {
-  const database = await getCortexDb();
-  const transaction = database.transaction(
-    ["outbox_mutations", "mensagem_anexos"],
-    "readwrite",
+  assertSyncSession(guard);
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      ["outbox_mutations", "mensagem_anexos"],
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
   const outbox = transaction.objectStore("outbox_mutations");
   const attachments = transaction.objectStore("mensagem_anexos");
   const mutation = await outbox.get(uploadMutationId);
@@ -191,33 +234,90 @@ async function applyUploadedObject(
     updatedAt: timestamp,
   });
 
-  // The upload is transport-only. A canonical message is materialized only
-  // after all attachment references are available, so its payload hash is
-  // never rewritten in place after it has been created.
-  await transaction.done;
+  for (const dependent of await outbox.getAll()) {
+    if (!dependent.dependsOnMutationIds?.includes(uploadMutationId)) {
+      continue;
+    }
+    await outbox.put(
+      dependentAfterUploadResolution(
+        dependent,
+        uploadMutationId,
+        objectId,
+        sha256,
+        timestamp,
+      ),
+    );
+  }
+  await guardedTransaction.complete();
+}
+
+export function dependentAfterUploadResolution(
+  dependent: OutboxMutationRecord,
+  uploadMutationId: string,
+  objectId: string,
+  sha256: string,
+  timestamp: string,
+): OutboxMutationRecord {
+  if (isCanonicalOutboxMutation(dependent)) {
+    return {
+      ...dependent,
+      blockedReason: CANONICAL_UPLOAD_REFERENCE_BLOCKED,
+      ultimoErro:
+        "O anexo foi enviado; a mutação canônica aguarda um envelope substituto rastreável.",
+      updatedAt: timestamp,
+    };
+  }
+  return {
+    ...dependent,
+    payload: resolveUploadReference(
+      dependent.payload,
+      uploadMutationId,
+      objectId,
+      sha256,
+    ),
+    updatedAt: timestamp,
+  };
 }
 
 async function markUploadFailed(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
   mutation: OutboxMutationRecord,
-  message: string,
+  failure: ReturnType<typeof classifyAutomaticRequestFailure>,
+  guard: SyncSessionGuard,
 ): Promise<void> {
-  const database = await getCortexDb();
-  const transaction = database.transaction(
-    ["outbox_mutations", "mensagem_anexos", "mensagens"],
-    "readwrite",
+  assertSyncSession(guard);
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(
+      ["outbox_mutations", "mensagem_anexos", "mensagens"],
+      "readwrite",
+    ),
+    guard,
   );
+  const transaction = guardedTransaction.transaction;
   const timestamp = new Date().toISOString();
   const outboxStore = transaction.objectStore("outbox_mutations");
   const attachmentStore = transaction.objectStore("mensagem_anexos");
   const messageStore = transaction.objectStore("mensagens");
   const current = await outboxStore.get(mutation.clientMutationId);
   if (current) {
-    await outboxStore.put({
-      ...current,
-      status: "ERROR",
-      ultimoErro: message,
-      updatedAt: timestamp,
-    });
+    await outboxStore.put(
+      failure.retryable
+        ? mutationAfterRetryScheduled(current, {
+            safeCode: failure.safeCode,
+            message: failure.message,
+            now: Date.parse(timestamp),
+          })
+        : {
+            ...current,
+            status: "REJECTED",
+            retryAttempt: current.retryAttempt ?? 0,
+            nextAttemptAt: null,
+            lastSafeCode: failure.safeCode,
+            blockedReason: failure.safeCode,
+            ultimoErro: failure.message,
+            updatedAt: timestamp,
+          },
+    );
   }
   const attachment = await attachmentStore
     .index("by-upload-mutation-id")
@@ -225,21 +325,21 @@ async function markUploadFailed(
   if (attachment) {
     await attachmentStore.put({
       ...attachment,
-      syncStatus: "FALHOU",
-      ultimoErro: message,
+      syncStatus: failure.retryable ? "NA_FILA" : "FALHOU",
+      ultimoErro: failure.message,
       updatedAt: timestamp,
     });
     const localMessage = await messageStore.get(attachment.mensagemId);
     if (localMessage) {
       await messageStore.put({
         ...localMessage,
-        syncStatus: "FALHOU",
-        ultimoErro: message,
+        syncStatus: failure.retryable ? "NA_FILA" : "FALHOU",
+        ultimoErro: failure.message,
         updatedAt: timestamp,
       });
     }
   }
-  await transaction.done;
+  await guardedTransaction.complete();
 }
 
 export function resolveUploadReference(

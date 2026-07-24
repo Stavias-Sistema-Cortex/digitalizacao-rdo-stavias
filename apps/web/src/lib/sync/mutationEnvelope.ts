@@ -1,120 +1,256 @@
 import type {
+  CanonicalMutationEnvelopeV13,
+  CanonicalMutationOperation,
   CanonicalOutboxMutationRecord,
   MutationFieldPatch,
+  OperationalEntityRef,
+  OutboxMutationRecord,
   OutboxTransport,
   SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
 
-export interface MutationActor {
-  actorId: string;
-  actorName: string;
+export type {
+  CanonicalMutationEnvelopeV13,
+  CanonicalMutationOperation,
+} from "../db/db.types";
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+const CANONICAL_OPERATIONS = [
+  "CREATE",
+  "UPDATE",
+  "DELETE",
+  "TRANSITION",
+] as const satisfies readonly CanonicalMutationOperation[];
+
+const TRANSPORTS = [
+  "SYNC_PUSH",
+  "OBJECT_UPLOAD",
+] as const satisfies readonly OutboxTransport[];
+
+const SYNC_ENTITY_TYPES = [
+  "RDO",
+  "TAREFA",
+  "CONVERSA",
+  "MENSAGEM",
+  "MENSAGEM_ANEXO",
+  "SOLICITACAO_COMPRA",
+  "COMPRA",
+  "SERVICE",
+  "SERVICE_PRICE_VERSION",
+] as const satisfies readonly SyncEntityType[];
+
+const TRANSPORT_OPERATION_TO_CANONICAL = {
+  CRIAR_RDO: "CREATE",
+  ATUALIZAR_RDO_RASCUNHO: "UPDATE",
+  ENVIAR_RDO: "TRANSITION",
+  CRIAR_TAREFA: "CREATE",
+  ATUALIZAR_TAREFA: "UPDATE",
+  CONCLUIR_TAREFA: "TRANSITION",
+  REABRIR_TAREFA: "TRANSITION",
+  EXCLUIR_TAREFA: "DELETE",
+  CRIAR_CONVERSA: "CREATE",
+  ADICIONAR_PARTICIPANTE_CONVERSA: "UPDATE",
+  REMOVER_PARTICIPANTE_CONVERSA: "UPDATE",
+  CRIAR_MENSAGEM: "CREATE",
+  EDITAR_MENSAGEM: "UPDATE",
+  EXCLUIR_MENSAGEM: "DELETE",
+  ADICIONAR_MENSAGEM_ANEXO: "CREATE",
+  CRIAR_SOLICITACAO_COMPRA: "CREATE",
+  ATUALIZAR_SOLICITACAO_COMPRA: "UPDATE",
+  ARQUIVAR_SOLICITACAO_COMPRA: "TRANSITION",
+  CRIAR_COMPRA: "CREATE",
+  ATUALIZAR_COMPRA: "UPDATE",
+  ALTERAR_STATUS_COMPRA: "TRANSITION",
+  DECIDIR_APROVACAO_COMPRA: "TRANSITION",
+  ARQUIVAR_COMPRA: "TRANSITION",
+  CRIAR_SERVICO_CATALOGO: "CREATE",
+  CRIAR_PRECO_SERVICO: "CREATE",
+  SUBSTITUIR_PRECO_SERVICO: "CREATE",
+  CANCELAR_PRECO_SERVICO: "TRANSITION",
+} as const satisfies Record<SyncOperation, CanonicalMutationOperation>;
+
+export interface BuildCanonicalMutationInput {
+  clientMutationId?: string;
+  ontologyEventId?: string;
   deviceId: string;
-  authorizationScope: readonly string[];
-}
-
-export interface MutationEntity {
-  type: SyncEntityType;
-  id: string;
-}
-
-export interface BuildMutationEnvelopeInput {
-  entity: MutationEntity;
-  operation: SyncOperation;
+  userId: string;
+  obraId: string;
+  entityType: string;
+  entityId: string;
+  operation: CanonicalMutationOperation;
+  transportOperation: SyncOperation;
   baseVersion: number | null;
-  previousState: Record<string, unknown>;
-  newState: Record<string, unknown>;
-  actor: MutationActor;
+  /** Optional assertion. The coordinator always stores the derived exact delta. */
+  changedFields?: readonly string[];
+  occurredAt?: string;
+  previousSnapshot: Record<string, unknown>;
+  nextSnapshot: Record<string, unknown>;
+  authorizationScope: readonly string[];
   correlationId?: string;
   causationId?: string | null;
-  createdAt?: string;
   transport?: OutboxTransport;
   dependsOnMutationIds?: readonly string[];
+  relatedEntities?: readonly OperationalEntityRef[];
 }
 
-export interface BuiltMutationEnvelopeSnapshots {
+export interface BuiltCanonicalMutation {
   mutation: CanonicalOutboxMutationRecord;
-  previousState: Record<string, unknown>;
-  newState: Record<string, unknown>;
-  actor: MutationActor;
+  previousSnapshot: Record<string, unknown>;
+  nextSnapshot: Record<string, unknown>;
 }
 
-interface PreparedMutationEnvelope {
-  entity: MutationEntity;
-  operation: SyncOperation;
-  baseVersion: number | null;
-  previousState: Record<string, unknown>;
-  newState: Record<string, unknown>;
-  newStateJson: string;
-  actor: MutationActor;
-  clientMutationId: string;
+interface PreparedCanonicalMutation {
+  envelope: CanonicalMutationEnvelopeV13;
   ontologyEventId: string;
+  transportOperation: SyncOperation;
+  previousSnapshot: Record<string, unknown>;
+  nextSnapshot: Record<string, unknown>;
+  authorizationScope: string[];
   correlationId: string;
   causationId: string | null;
-  createdAt: string;
   transport: OutboxTransport;
   dependsOnMutationIds: string[];
+  relatedEntities: OperationalEntityRef[];
   fieldPatch: MutationFieldPatch;
+  canonicalPayload: string;
 }
 
-export async function mutationPayloadHash(
-  value: unknown,
-): Promise<string> {
-  const canonicalPayload = canonicalJson(value);
-
-  return hashCanonicalJson(canonicalPayload);
+export async function mutationPayloadHash(value: unknown): Promise<string> {
+  return hashCanonicalJson(canonicalMutationJson(value));
 }
 
-async function hashCanonicalJson(
-  canonicalPayload: string,
-): Promise<string> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(canonicalPayload),
-    ),
-  );
+/** Stable JSON used for provenance comparisons before any asynchronous work. */
+export function canonicalMutationJson(value: unknown): string {
+  const seen = new Set<object>();
 
-  return Array.from(digest, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  function normalize(candidate: unknown, path: string): unknown {
+    if (
+      candidate === null ||
+      typeof candidate === "string" ||
+      typeof candidate === "boolean"
+    ) {
+      return candidate;
+    }
+    if (typeof candidate === "number") {
+      if (!Number.isFinite(candidate)) {
+        throw new TypeError(`${path} contains a non-finite number.`);
+      }
+      return candidate;
+    }
+    if (typeof candidate !== "object") {
+      throw new TypeError(`${path} contains a non-JSON value.`);
+    }
+    if (seen.has(candidate)) {
+      throw new TypeError(`${path} contains a circular reference.`);
+    }
+
+    seen.add(candidate);
+    try {
+      if (Array.isArray(candidate)) {
+        return Array.from({ length: candidate.length }, (_unused, index) => {
+          if (!(index in candidate)) {
+            throw new TypeError(`${path}[${index}] is sparse.`);
+          }
+          return normalize(candidate[index], `${path}[${index}]`);
+        });
+      }
+      const prototype = Object.getPrototypeOf(candidate);
+      if (prototype !== Object.prototype && prototype !== null) {
+        throw new TypeError(`${path} contains a non-JSON object.`);
+      }
+      const record = candidate as Record<string, unknown>;
+      const normalized: Record<string, unknown> = {};
+      for (const key of Object.keys(record).sort()) {
+        normalized[key] = normalize(record[key], `${path}.${key}`);
+      }
+      return normalized;
+    } finally {
+      seen.delete(candidate);
+    }
+  }
+
+  return JSON.stringify(normalize(value, "payload"));
 }
 
-export async function buildMutationEnvelope(
-  input: BuildMutationEnvelopeInput,
-): Promise<CanonicalOutboxMutationRecord> {
-  return (await buildMutationEnvelopeWithSnapshots(input)).mutation;
+export function isCanonicalOutboxMutation(
+  mutation: OutboxMutationRecord,
+): mutation is CanonicalOutboxMutationRecord {
+  return mutation.schemaVersion === 13;
 }
 
-export async function buildMutationEnvelopeWithSnapshots(
-  input: BuildMutationEnvelopeInput,
-): Promise<BuiltMutationEnvelopeSnapshots> {
-  const prepared = prepareMutationEnvelope(input);
-  const payloadHash = await hashCanonicalJson(prepared.newStateJson);
+export function assertCanonicalTransportCoherence(
+  mutation: CanonicalOutboxMutationRecord,
+): void {
+  const entityType = syncEntityType(mutation.entityType);
+  if (
+    mutation.entidadeTipo !== entityType ||
+    mutation.entidadeId !== mutation.entityId ||
+    mutation.baseVersao !== mutation.baseVersion ||
+    mutation.criadaNoClienteEm !== mutation.occurredAt
+  ) {
+    throw new TypeError("Canonical mutation transport aliases are incoherent.");
+  }
+  const expectedOperation = canonicalOperationForTransport(mutation.operacao);
+  if (mutation.operation !== expectedOperation) {
+    throw new TypeError("Canonical mutation operation aliases are incoherent.");
+  }
+  canonicalOperation(mutation.operation);
+  uuid(mutation.clientMutationId, "clientMutationId");
+  uuid(mutation.deviceId, "deviceId");
+  uuid(mutation.userId, "userId");
+  uuid(mutation.obraId, "obraId");
+  uuid(mutation.entityId, "entityId");
+  utcInstant(mutation.occurredAt, "occurredAt");
+  canonicalMutationJson(mutation.payload);
+}
+
+export async function assertCanonicalPayloadHash(
+  mutation: CanonicalOutboxMutationRecord,
+): Promise<void> {
+  assertCanonicalTransportCoherence(mutation);
+  const currentHash = await mutationPayloadHash(mutation.payload);
+  if (currentHash !== mutation.trace.payloadHash) {
+    throw new TypeError("Canonical mutation payload hash is incoherent.");
+  }
+}
+
+export async function buildCanonicalMutation(
+  input: BuildCanonicalMutationInput,
+): Promise<BuiltCanonicalMutation> {
+  // Preparation is deliberately synchronous: callers cannot mutate provenance
+  // while the SHA-256 promise is pending.
+  const prepared = prepareCanonicalMutation(input);
+  const payloadHash = await hashCanonicalJson(prepared.canonicalPayload);
+  const { envelope } = prepared;
 
   const mutation: CanonicalOutboxMutationRecord = {
-    contractVersion: 13,
-    clientMutationId: prepared.clientMutationId,
-    entidadeTipo: prepared.entity.type,
-    entidadeId: prepared.entity.id,
-    operacao: prepared.operation,
-    baseVersao: prepared.baseVersion,
-    payload: prepared.newState,
+    ...envelope,
+    payload: { ...envelope.payload },
+    changedFields: [...envelope.changedFields],
+    entidadeTipo: syncEntityType(envelope.entityType),
+    entidadeId: envelope.entityId,
+    operacao: prepared.transportOperation,
+    baseVersao: envelope.baseVersion,
     status: "PENDING",
     tentativas: 0,
     ultimaTentativaEm: null,
     ultimoErro: null,
     conflito: null,
-    criadaNoClienteEm: prepared.createdAt,
-    updatedAt: prepared.createdAt,
+    criadaNoClienteEm: envelope.occurredAt,
+    updatedAt: envelope.occurredAt,
     transport: prepared.transport,
     dependsOnMutationIds: prepared.dependsOnMutationIds,
     correlationId: prepared.correlationId,
+    causationId: prepared.causationId,
     fieldPatch: prepared.fieldPatch,
+    relatedEntities: prepared.relatedEntities,
     trace: {
-      actorId: prepared.actor.actorId,
-      deviceId: prepared.actor.deviceId,
-      authorizationScope: [...prepared.actor.authorizationScope],
+      actorId: envelope.userId,
+      deviceId: envelope.deviceId,
+      authorizationScope: prepared.authorizationScope,
       correlationId: prepared.correlationId,
       causationId: prepared.causationId,
       ontologyEventId: prepared.ontologyEventId,
@@ -122,260 +258,287 @@ export async function buildMutationEnvelopeWithSnapshots(
     },
     nextAttemptAt: null,
     blockedReason: null,
+    retryAttempt: 0,
+    lastSafeCode: null,
   };
 
+  assertCanonicalTransportCoherence(mutation);
   return {
     mutation,
-    previousState: prepared.previousState,
-    newState: prepared.newState,
-    actor: prepared.actor,
+    previousSnapshot: prepared.previousSnapshot,
+    nextSnapshot: prepared.nextSnapshot,
   };
 }
 
-function prepareMutationEnvelope(
-  input: BuildMutationEnvelopeInput,
-): PreparedMutationEnvelope {
-  const entity: MutationEntity = {
-    type: input.entity.type,
-    id: input.entity.id,
-  };
-  const operation = input.operation;
-  const baseVersion = input.baseVersion;
-  const actorId = input.actor.actorId;
-  const actorName = input.actor.actorName;
-  const deviceId = input.actor.deviceId;
-  const authorizationScope = snapshotRequiredTextArray(
-    input.actor.authorizationScope,
-    "actor.authorizationScope",
+function prepareCanonicalMutation(
+  input: BuildCanonicalMutationInput,
+): PreparedCanonicalMutation {
+  const clientMutationId = uuid(
+    input.clientMutationId ?? crypto.randomUUID(),
+    "clientMutationId",
   );
-  const correlationIdInput = input.correlationId;
-  const causationIdInput = input.causationId;
-  const createdAtInput = input.createdAt;
-  const transport = input.transport ?? "SYNC_PUSH";
-  const dependsOnMutationIds = snapshotRequiredTextArray(
+  const ontologyEventId = uuid(
+    input.ontologyEventId ?? crypto.randomUUID(),
+    "ontologyEventId",
+  );
+  const deviceId = uuid(input.deviceId, "deviceId");
+  const userId = uuid(input.userId, "userId");
+  const obraId = uuid(input.obraId, "obraId");
+  const entityType = syncEntityType(requiredText(input.entityType, "entityType"));
+  const entityId = uuid(input.entityId, "entityId");
+  const operation = canonicalOperation(input.operation);
+  const transportOperation = syncOperation(input.transportOperation);
+  if (canonicalOperationForTransport(transportOperation) !== operation) {
+    throw new TypeError(
+      `transportOperation ${transportOperation} does not represent ${operation}.`,
+    );
+  }
+  const occurredAt = utcInstant(
+    input.occurredAt ?? new Date().toISOString(),
+    "occurredAt",
+  );
+  const authorizationScope = authorizationScopeFor(
+    input.authorizationScope,
+    obraId,
+  );
+  const dependsOnMutationIds = uuidArray(
     input.dependsOnMutationIds ?? [],
     "dependsOnMutationIds",
   );
-  const previousStateJson = canonicalJson(input.previousState);
-  const newStateJson = canonicalJson(input.newState);
-
-  validateRequiredText(entity.type, "entity.type");
-  validateRequiredText(entity.id, "entity.id");
-  validateRequiredText(operation, "operation");
-  validateRequiredText(actorId, "actor.actorId");
-  validateRequiredText(actorName, "actor.actorName");
-  validateRequiredText(deviceId, "actor.deviceId");
-  if (
-    authorizationScope.length === 0 &&
-    !allowsConversationScopedTrace(entity.type)
-  ) {
-    throw new TypeError("actor.authorizationScope is required.");
-  }
-  if (baseVersion !== null && !Number.isFinite(baseVersion)) {
-    throw new TypeError("baseVersion must be finite or null.");
-  }
-  if (correlationIdInput !== undefined) {
-    validateRequiredText(correlationIdInput, "correlationId");
-  }
-  if (causationIdInput !== undefined && causationIdInput !== null) {
-    validateRequiredText(causationIdInput, "causationId");
-  }
-  if (createdAtInput !== undefined) {
-    validateRequiredText(createdAtInput, "createdAt");
-  }
-  validateRequiredText(transport, "transport");
-
-  const previousState = recordSnapshot(
-    previousStateJson,
-    "previousState",
+  const correlationId = uuid(
+    input.correlationId ?? clientMutationId,
+    "correlationId",
   );
-  const newState = recordSnapshot(newStateJson, "newState");
-  const actor: MutationActor = {
-    actorId,
-    actorName,
-    deviceId,
-    authorizationScope,
-  };
-  const clientMutationId = crypto.randomUUID();
-  const ontologyEventId = crypto.randomUUID();
-  const correlationId = correlationIdInput ?? clientMutationId;
-  const causationId = causationIdInput ?? null;
-  const createdAt = createdAtInput ?? new Date().toISOString();
+  const causationId = input.causationId === null || input.causationId === undefined
+    ? null
+    : uuid(input.causationId, "causationId");
+  const transport = outboxTransport(input.transport ?? "SYNC_PUSH");
+  const relatedEntities = (input.relatedEntities ?? []).map((entity, index) => ({
+    tipo: requiredText(entity.tipo, `relatedEntities[${index}].tipo`),
+    id: uuid(entity.id, `relatedEntities[${index}].id`),
+    nome: entity.nome == null
+      ? null
+      : requiredText(entity.nome, `relatedEntities[${index}].nome`),
+  }));
+
+  if (operation === "CREATE" && input.baseVersion !== null) {
+    throw new TypeError("CREATE requires baseVersion null.");
+  }
+  if (
+    operation !== "CREATE" &&
+    (!Number.isSafeInteger(input.baseVersion) || (input.baseVersion ?? -1) < 0)
+  ) {
+    throw new TypeError(`${operation} requires a non-negative baseVersion.`);
+  }
+
+  const previousJson = canonicalMutationJson(input.previousSnapshot);
+  const nextJson = canonicalMutationJson(input.nextSnapshot);
+  const previousSnapshot = recordFromCanonicalJson(
+    previousJson,
+    "previousSnapshot",
+  );
+  const nextSnapshot = recordFromCanonicalJson(nextJson, "nextSnapshot");
+  const changedFields = changedFieldsBetween(previousSnapshot, nextSnapshot);
+  if (input.changedFields !== undefined) {
+    const asserted = textArray(input.changedFields, "changedFields");
+    if (canonicalMutationJson(asserted) !== canonicalMutationJson(changedFields)) {
+      throw new TypeError("changedFields must equal the exact snapshot delta.");
+    }
+  }
 
   return {
-    entity,
-    operation,
-    baseVersion,
-    previousState,
-    newState,
-    newStateJson,
-    actor,
-    clientMutationId,
+    envelope: {
+      schemaVersion: 13,
+      clientMutationId,
+      deviceId,
+      userId,
+      obraId,
+      entityType,
+      entityId,
+      operation,
+      baseVersion: input.baseVersion,
+      changedFields,
+      occurredAt,
+      payload: nextSnapshot,
+    },
     ontologyEventId,
+    transportOperation,
+    previousSnapshot,
+    nextSnapshot,
+    authorizationScope,
     correlationId,
     causationId,
-    createdAt,
     transport,
-    dependsOnMutationIds: [...new Set(dependsOnMutationIds)],
-    fieldPatch: buildFieldPatch(previousState, newState),
+    dependsOnMutationIds,
+    relatedEntities,
+    fieldPatch: fieldPatch(previousSnapshot, nextSnapshot, changedFields),
+    canonicalPayload: nextJson,
   };
 }
 
-function allowsConversationScopedTrace(
-  entityType: SyncEntityType,
-): boolean {
-  return (
-    entityType === "MENSAGEM" ||
-    entityType === "MENSAGEM_ANEXO"
-  );
+function changedFieldsBetween(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+): string[] {
+  const keys = [...new Set([...Object.keys(previous), ...Object.keys(next)])]
+    .sort();
+  return keys.filter((field) => {
+    const previousHas = Object.prototype.hasOwnProperty.call(previous, field);
+    const nextHas = Object.prototype.hasOwnProperty.call(next, field);
+    return previousHas !== nextHas ||
+      canonicalMutationJson(previous[field]) !== canonicalMutationJson(next[field]);
+  });
 }
 
-function recordSnapshot(
-  canonicalValue: string,
-  field: string,
-): Record<string, unknown> {
-  const snapshot: unknown = JSON.parse(canonicalValue);
-  if (
-    snapshot === null ||
-    typeof snapshot !== "object" ||
-    Array.isArray(snapshot)
-  ) {
-    throw new TypeError(`${field} must be a JSON object.`);
-  }
-
-  return snapshot as Record<string, unknown>;
-}
-
-function buildFieldPatch(
-  previousState: Record<string, unknown>,
-  newState: Record<string, unknown>,
+function fieldPatch(
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+  changedFields: readonly string[],
 ): MutationFieldPatch {
   const changed: Record<string, unknown> = {};
   const baseValues: Record<string, unknown> = {};
 
-  for (const key of Object.keys(newState).sort()) {
-    const hasBaseValue = Object.prototype.hasOwnProperty.call(
-      previousState,
-      key,
-    );
-    if (
-      hasBaseValue &&
-      canonicalJson(previousState[key]) === canonicalJson(newState[key])
-    ) {
-      continue;
+  for (const field of changedFields) {
+    if (Object.prototype.hasOwnProperty.call(next, field)) {
+      changed[field] = next[field];
     }
-
-    changed[key] = newState[key];
-    if (hasBaseValue) {
-      baseValues[key] = previousState[key];
+    if (Object.prototype.hasOwnProperty.call(previous, field)) {
+      baseValues[field] = previous[field];
     }
   }
 
   return { changed, baseValues };
 }
 
-function canonicalJson(value: unknown): string {
-  return canonicalJsonAt(value, "$", new WeakSet<object>());
+function uuid(value: unknown, field: string): string {
+  const text = requiredText(value, field);
+  if (!UUID_PATTERN.test(text)) {
+    throw new TypeError(`${field} must be a canonical UUID.`);
+  }
+  return text;
 }
 
-function canonicalJsonAt(
-  value: unknown,
-  path: string,
-  ancestors: WeakSet<object>,
-): string {
-  if (value === null) {
-    return "null";
+function utcInstant(value: unknown, field: string): string {
+  const text = requiredText(value, field);
+  if (!text.endsWith("Z") || !Number.isFinite(Date.parse(text))) {
+    throw new TypeError(`${field} must be a UTC ISO instant.`);
   }
-
-  switch (typeof value) {
-    case "string":
-    case "boolean":
-      return JSON.stringify(value);
-    case "number":
-      if (!Number.isFinite(value)) {
-        throw new TypeError(
-          `Canonical JSON rejects non-finite number at ${path}.`,
-        );
-      }
-      return JSON.stringify(value);
-    case "undefined":
-      throw new TypeError(`Canonical JSON rejects undefined at ${path}.`);
-    case "function":
-      throw new TypeError(`Canonical JSON rejects functions at ${path}.`);
-    case "bigint":
-    case "symbol":
-      throw new TypeError(
-        `Canonical JSON rejects ${typeof value} at ${path}.`,
-      );
-    case "object":
-      break;
+  if (new Date(text).toISOString() !== text) {
+    throw new TypeError(`${field} must be a canonical UTC ISO instant.`);
   }
-
-  if (ancestors.has(value)) {
-    throw new TypeError(`Canonical JSON rejects cycles at ${path}.`);
-  }
-  ancestors.add(value);
-
-  try {
-    if (Array.isArray(value)) {
-      const items: string[] = [];
-      for (let index = 0; index < value.length; index += 1) {
-        items.push(
-          canonicalJsonAt(value[index], `${path}[${index}]`, ancestors),
-        );
-      }
-      return `[${items.join(",")}]`;
-    }
-
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError(
-        `Canonical JSON rejects non-plain object at ${path}.`,
-      );
-    }
-    if (Object.getOwnPropertySymbols(value).length > 0) {
-      throw new TypeError(
-        `Canonical JSON rejects symbol keys at ${path}.`,
-      );
-    }
-
-    const record = value as Record<string, unknown>;
-    const entries = Object.keys(record)
-      .sort()
-      .map((key) =>
-        `${JSON.stringify(key)}:${canonicalJsonAt(
-          record[key],
-          `${path}.${key}`,
-          ancestors,
-        )}`,
-      );
-    return `{${entries.join(",")}}`;
-  } finally {
-    ancestors.delete(value);
-  }
+  return text;
 }
 
-function snapshotRequiredTextArray(
+function canonicalOperation(value: unknown): CanonicalMutationOperation {
+  const text = requiredText(value, "operation");
+  if (!CANONICAL_OPERATIONS.includes(text as CanonicalMutationOperation)) {
+    throw new TypeError(`operation ${text} is not supported.`);
+  }
+  return text as CanonicalMutationOperation;
+}
+
+function syncOperation(value: unknown): SyncOperation {
+  const text = requiredText(value, "transportOperation");
+  if (!(text in TRANSPORT_OPERATION_TO_CANONICAL)) {
+    throw new TypeError(`transportOperation ${text} is not supported.`);
+  }
+  return text as SyncOperation;
+}
+
+function canonicalOperationForTransport(
+  value: SyncOperation,
+): CanonicalMutationOperation {
+  return TRANSPORT_OPERATION_TO_CANONICAL[value];
+}
+
+function outboxTransport(value: unknown): OutboxTransport {
+  const text = requiredText(value, "transport");
+  if (!TRANSPORTS.includes(text as OutboxTransport)) {
+    throw new TypeError(`transport ${text} is not supported.`);
+  }
+  return text as OutboxTransport;
+}
+
+function requiredText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError(`${field} must be a nonblank string.`);
+  }
+  return value;
+}
+
+function syncEntityType(value: string): SyncEntityType {
+  if (!SYNC_ENTITY_TYPES.includes(value as SyncEntityType)) {
+    throw new TypeError(
+      `entityType ${value} does not have a registered sync transport.`,
+    );
+  }
+  return value as SyncEntityType;
+}
+
+function authorizationScopeFor(
+  values: readonly string[],
+  obraId: string,
+): string[] {
+  const scope = uniqueSortedTextArray(values, "authorizationScope", true);
+  if (scope.length === 1 && scope[0] === "ALFA:GLOBAL") {
+    return scope;
+  }
+  const obraIds = scope.map((value, index) =>
+    uuid(value, `authorizationScope[${index}]`)
+  );
+  if (!obraIds.includes(obraId)) {
+    throw new TypeError("authorizationScope must include obraId.");
+  }
+  return obraIds;
+}
+
+function uuidArray(values: readonly string[], field: string): string[] {
+  if (!Array.isArray(values)) {
+    throw new TypeError(`${field} must be an array.`);
+  }
+  return [...new Set(values.map((value, index) => uuid(value, `${field}[${index}]`)))]
+    .sort();
+}
+
+function textArray(values: readonly string[], field: string): string[] {
+  if (!Array.isArray(values)) {
+    throw new TypeError(`${field} must be an array.`);
+  }
+  return values.map((value, index) =>
+    requiredText(value, `${field}[${index}]`)
+  );
+}
+
+function uniqueSortedTextArray(
   values: readonly string[],
   field: string,
+  requireValue = false,
 ): string[] {
-  const snapshot: string[] = [];
-
-  for (let index = 0; index < values.length; index += 1) {
-    const value: unknown = values[index];
-    if (typeof value !== "string" || !value.trim()) {
-      throw new TypeError(
-        `${field}[${index}] must be a nonblank string.`,
-      );
-    }
-    snapshot.push(value);
-  }
-
-  return snapshot;
-}
-
-function validateRequiredText(value: unknown, field: string): void {
-  if (typeof value !== "string" || !value.trim()) {
+  if (!Array.isArray(values) || (requireValue && values.length === 0)) {
     throw new TypeError(`${field} is required.`);
   }
+  return [...new Set(values.map((value, index) =>
+    requiredText(value, `${field}[${index}]`)
+  ))].sort();
+}
+
+function recordFromCanonicalJson(
+  value: string,
+  field: string,
+): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value);
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new TypeError(`${field} must be a JSON object.`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function hashCanonicalJson(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

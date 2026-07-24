@@ -104,11 +104,11 @@ public class FrequenciaService {
                     hora_fim,
                     origem
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    minutos_previstos = VALUES(minutos_previstos),
-                    hora_inicio = VALUES(hora_inicio),
-                    hora_fim = VALUES(hora_fim),
-                    origem = VALUES(origem),
+                ON CONFLICT (colaborador_id, data_jornada) DO UPDATE SET
+                    minutos_previstos = EXCLUDED.minutos_previstos,
+                    hora_inicio = EXCLUDED.hora_inicio,
+                    hora_fim = EXCLUDED.hora_fim,
+                    origem = EXCLUDED.origem,
                     atualizado_em = CURRENT_TIMESTAMP(6)
                 """,
                 id,
@@ -576,12 +576,12 @@ public class FrequenciaService {
                     minutos_ajuste,
                     minutos_saldo_atual
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
-                    minutos_saldo_anterior = VALUES(minutos_saldo_anterior),
-                    minutos_credito = VALUES(minutos_credito),
-                    minutos_debito = VALUES(minutos_debito),
-                    minutos_ajuste = VALUES(minutos_ajuste),
-                    minutos_saldo_atual = VALUES(minutos_saldo_atual),
+                ON CONFLICT (colaborador_id, periodo_inicio, periodo_fim) DO UPDATE SET
+                    minutos_saldo_anterior = EXCLUDED.minutos_saldo_anterior,
+                    minutos_credito = EXCLUDED.minutos_credito,
+                    minutos_debito = EXCLUDED.minutos_debito,
+                    minutos_ajuste = EXCLUDED.minutos_ajuste,
+                    minutos_saldo_atual = EXCLUDED.minutos_saldo_atual,
                     calculado_em = CURRENT_TIMESTAMP(6)
                 """,
                 saldoId,

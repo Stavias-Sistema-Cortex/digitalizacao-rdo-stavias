@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** PostgreSQL native repository for opaque, revocable authentication sessions. */
 @Repository
 @Profile("postgresql-common")
-public final class PostgresqlAuthSessionRepository implements AuthSessionRepository {
+public class PostgresqlAuthSessionRepository implements AuthSessionRepository {
 
     private final JdbcTemplate jdbcTemplate;
 

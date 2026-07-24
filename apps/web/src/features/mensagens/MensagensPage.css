@@ -1,7 +1,11 @@
 .mensagens-page {
-  width: min(1540px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 64px 0 96px;
+  --mensagens-gutter: clamp(16px, 2.2vw, 32px);
+
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  background: var(--color-canvas);
 }
 
 .mensagens-header {
@@ -51,6 +55,7 @@
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+  margin-inline: var(--mensagens-gutter);
   padding: 11px 14px;
   border: 1px solid #e6b9b5;
   border-radius: var(--radius-sm);
@@ -73,6 +78,7 @@
  */
 .mensagens-frame {
   container-type: inline-size;
+  margin-inline: var(--mensagens-gutter);
 }
 
 .mensagens-workspace {
@@ -82,12 +88,7 @@
   /* Sem isto a linha implícita é `auto`: a thread cresce com o histórico e
      vaza para fora da altura fixa em vez de a lista rolar por dentro. */
   grid-template-rows: minmax(0, 1fr);
-  /*
-   * O launcher da StavIA é fixo no canto inferior direito (58px + 24px de
-   * folga). Sem descontar essa faixa, em telas por volta de 1100x1000 o rodapé
-   * do composer cai embaixo dele e o botão enviar deixa de receber o clique.
-   */
-  height: min(760px, calc(100vh - 275px));
+  height: min(760px, calc(100vh - 193px));
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 12px;
@@ -1347,7 +1348,7 @@
 @media (max-width: 700px) {
   .mensagens-page {
     width: 100%;
-    padding: 56px 0 88px;
+    padding: 0;
   }
 
   .mensagens-header {

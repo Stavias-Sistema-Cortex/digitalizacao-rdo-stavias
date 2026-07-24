@@ -1,6 +1,7 @@
 package com.projeto.cortex.storage;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -12,12 +13,20 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import org.xml.sax.SAXException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 public final class StoredObjectContentInspector {
 
     private static final int SNIFF_BYTES = 8_192;
+    private static final int MAX_ZIP_ENTRIES = 2_048;
+    private static final int MAX_RELATIONSHIP_BYTES = 1_048_576;
     private static final Set<String> ZIP_DOCUMENT_TYPES = Set.of(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -95,6 +104,7 @@ public final class StoredObjectContentInspector {
         }
         if (ZIP_DOCUMENT_TYPES.contains(declared)
                 && "application/zip".equals(detected)) {
+            validateOfficePackage(source, declared);
             detected = declared;
         }
         requireAllowed(declared, detected);
@@ -118,6 +128,134 @@ public final class StoredObjectContentInspector {
             throw unsupported(
                     "O tipo declarado não corresponde ao conteúdo do arquivo."
             );
+        }
+    }
+
+    private void validateOfficePackage(
+            ReopenableInput source,
+            String declaredMediaType
+    ) {
+        String requiredPart = switch (declaredMediaType) {
+            case "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ->
+                    "word/document.xml";
+            case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ->
+                    "xl/workbook.xml";
+            case "application/vnd.openxmlformats-officedocument.presentationml.presentation" ->
+                    "ppt/presentation.xml";
+            default -> throw unsupported("Pacote Office inválido.");
+        };
+        long maxUncompressed = Math.min(
+                256L * 1024L * 1024L,
+                maxSizeBytes > Long.MAX_VALUE / 10L
+                        ? Long.MAX_VALUE
+                        : maxSizeBytes * 10L
+        );
+        int entries = 0;
+        long totalUncompressed = 0L;
+        boolean contentTypes = false;
+        boolean rootRelationships = false;
+        boolean requiredDocumentPart = false;
+        byte[] buffer = new byte[8_192];
+
+        try (InputStream raw = source.open();
+                ZipInputStream zip = new ZipInputStream(raw)) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                entries++;
+                if (entries > MAX_ZIP_ENTRIES) {
+                    throw unsupported("Pacote Office contém itens demais.");
+                }
+                String name = entry.getName().replace('\\', '/');
+                String lower = name.toLowerCase(Locale.ROOT);
+                if (name.isBlank() || name.startsWith("/")
+                        || name.contains("../") || name.equals("..")
+                        || lower.endsWith("vbaproject.bin")
+                        || lower.contains("/externallinks/")
+                        || lower.contains("/embeddings/")
+                        || lower.contains("oleobject")) {
+                    throw unsupported("Pacote Office contém conteúdo inseguro.");
+                }
+                contentTypes |= "[Content_Types].xml".equals(name);
+                rootRelationships |= "_rels/.rels".equals(name);
+                requiredDocumentPart |= requiredPart.equals(name);
+                if (entry.isDirectory()) {
+                    zip.closeEntry();
+                    continue;
+                }
+
+                ByteArrayOutputStream relationship = lower.endsWith(".rels")
+                        ? new ByteArrayOutputStream()
+                        : null;
+                int read;
+                while ((read = zip.read(buffer)) >= 0) {
+                    if (read == 0) continue;
+                    totalUncompressed += read;
+                    if (totalUncompressed > maxUncompressed) {
+                        throw tooLarge();
+                    }
+                    if (relationship != null) {
+                        if (relationship.size() + read > MAX_RELATIONSHIP_BYTES) {
+                            throw unsupported("Relacionamentos Office excedem o limite permitido.");
+                        }
+                        relationship.write(buffer, 0, read);
+                    }
+                }
+                if (relationship != null) {
+                    if (hasExternalRelationship(relationship.toByteArray())) {
+                        throw unsupported("Relacionamentos Office externos não são permitidos.");
+                    }
+                }
+                zip.closeEntry();
+            }
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw unsupported("Pacote Office inválido.");
+        }
+        if (!contentTypes || !rootRelationships || !requiredDocumentPart) {
+            throw unsupported("A estrutura do pacote Office é inválida.");
+        }
+    }
+
+    private boolean hasExternalRelationship(byte[] xml) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            factory.setFeature(
+                    "http://apache.org/xml/features/disallow-doctype-decl",
+                    true
+            );
+            factory.setFeature(
+                    "http://xml.org/sax/features/external-general-entities",
+                    false
+            );
+            factory.setFeature(
+                    "http://xml.org/sax/features/external-parameter-entities",
+                    false
+            );
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            var document = factory.newDocumentBuilder().parse(
+                    new ByteArrayInputStream(xml)
+            );
+            var relationships = document.getElementsByTagNameNS(
+                    "*", "Relationship"
+            );
+            for (int index = 0; index < relationships.getLength(); index++) {
+                var element = relationships.item(index);
+                var targetMode = element.getAttributes().getNamedItem("TargetMode");
+                if (targetMode != null
+                        && "external".equalsIgnoreCase(
+                                targetMode.getNodeValue().strip()
+                        )) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (ParserConfigurationException | SAXException | IOException exception) {
+            throw unsupported("Relacionamentos Office inválidos.");
         }
     }
 

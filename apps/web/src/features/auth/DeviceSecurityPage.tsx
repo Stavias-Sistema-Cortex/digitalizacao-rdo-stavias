@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { CortexPageHeader } from "../../components/header/CortexPageHeader";
 import { getSession, hasOnlineSession } from "./authSession";
 import type { OfflineVaultMetadata } from "./offlineVault.types";
 import { loadOfflineVaultMetadataForOwner } from "./offlineVaultRepository";
@@ -86,93 +87,91 @@ export function DeviceSecurityPage() {
 
   return (
     <main className="page-shell device-security-page">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Córtex · Conta</p>
-          <h1>Segurança do dispositivo</h1>
-          <p className="subtitle">
-            Use uma passkey para entrar com biometria ou bloqueio do dispositivo e proteger o acesso offline.
-          </p>
-        </div>
-      </header>
+      <CortexPageHeader
+        eyebrow="Córtex · Conta"
+        title="Segurança do dispositivo"
+        description="Use uma passkey para entrar com biometria ou bloqueio do dispositivo e proteger o acesso offline."
+      />
 
-      <section className="surface-card device-security-card" aria-labelledby="passkey-title">
-        <div className="device-security-card__header">
-          <div>
-            <p className="device-security-card__kicker">Passkey</p>
-            <h2 id="passkey-title">Este dispositivo</h2>
+      <div className="device-security-content">
+        <section className="surface-card device-security-card" aria-labelledby="passkey-title">
+          <div className="device-security-card__header">
+            <div>
+              <p className="device-security-card__kicker">Passkey</p>
+              <h2 id="passkey-title">Este dispositivo</h2>
+            </div>
+            <span className={vault ? "device-security-status is-ready" : "device-security-status"}>
+              {!vaultChecked ? "Verificando" : vault ? "Offline protegido" : "Não configurado"}
+            </span>
           </div>
-          <span className={vault ? "device-security-status is-ready" : "device-security-status"}>
-            {!vaultChecked ? "Verificando" : vault ? "Offline protegido" : "Não configurado"}
-          </span>
-        </div>
 
-        <p>
-          O segredo usado para abrir os dados offline permanece no autenticador do dispositivo. O Córtex não envia nem armazena esse segredo.
-        </p>
-
-        {vault ? (
-          <dl className="device-security-details">
-            <div>
-              <dt>Proteção offline</dt>
-              <dd>Ativa neste navegador</dd>
-            </div>
-            <div>
-              <dt>Última atualização</dt>
-              <dd>{formatDateTime(vault.atualizadoEm)}</dd>
-            </div>
-          </dl>
-        ) : null}
-
-        <button
-          type="button"
-          className="primary-button device-security-register"
-          onClick={() => {
-            void handleRegistration();
-          }}
-          disabled={registering || !onlineSession}
-        >
-          {registering
-            ? "Confirmando no dispositivo..."
-            : vault
-              ? "Atualizar acesso offline"
-              : "Registrar passkey neste dispositivo"}
-        </button>
-
-        {!onlineSession ? (
-          <p className="device-security-notice" role="status">
-            Entre com uma sessão online válida para registrar uma passkey.
+          <p>
+            O segredo usado para abrir os dados offline permanece no autenticador do dispositivo. O Córtex não envia nem armazena esse segredo.
           </p>
-        ) : null}
 
-        {state.kind === "ready" && state.result.offlineVault === "READY" ? (
-          <p className="device-security-success" role="status">
-            Passkey registrada. O acesso offline protegido está pronto neste navegador.
-          </p>
-        ) : null}
+          {vault ? (
+            <dl className="device-security-details">
+              <div>
+                <dt>Proteção offline</dt>
+                <dd>Ativa neste navegador</dd>
+              </div>
+              <div>
+                <dt>Última atualização</dt>
+                <dd>{formatDateTime(vault.atualizadoEm)}</dd>
+              </div>
+            </dl>
+          ) : null}
 
-        {state.kind === "ready" && state.result.offlineVault === "PRF_UNAVAILABLE" ? (
-          <p className="device-security-notice" role="status">
-            A passkey foi registrada para entrada online, mas este navegador não oferece PRF. O modo offline não foi habilitado e não existe método alternativo menos seguro.
-          </p>
-        ) : null}
+          <button
+            type="button"
+            className="primary-button device-security-register"
+            onClick={() => {
+              void handleRegistration();
+            }}
+            disabled={registering || !onlineSession}
+          >
+            {registering
+              ? "Confirmando no dispositivo..."
+              : vault
+                ? "Atualizar acesso offline"
+                : "Registrar passkey neste dispositivo"}
+          </button>
 
-        {state.kind === "renewed" ? (
-          <p className="device-security-success" role="status">
-            Acesso offline atualizado com o escopo e a validade atuais.
-          </p>
-        ) : null}
+          {!onlineSession ? (
+            <p className="device-security-notice" role="status">
+              Entre com uma sessão online válida para registrar uma passkey.
+            </p>
+          ) : null}
 
-        {state.kind === "unsupported" ? (
-          <p className="device-security-notice" role="status">
-            Este navegador não disponibilizou PRF para atualizar o cofre. O acesso online continua disponível e o cofre anterior foi preservado.
-          </p>
-        ) : null}
+          {state.kind === "ready" && state.result.offlineVault === "READY" ? (
+            <p className="device-security-success" role="status">
+              Passkey registrada. O acesso offline protegido está pronto neste navegador.
+            </p>
+          ) : null}
 
-        {state.kind === "error" ? (
-          <p className="device-security-error" role="alert">{state.message}</p>
-        ) : null}
-      </section>
+          {state.kind === "ready" && state.result.offlineVault === "PRF_UNAVAILABLE" ? (
+            <p className="device-security-notice" role="status">
+              A passkey foi registrada para entrada online, mas este navegador não oferece PRF. O modo offline não foi habilitado e não existe método alternativo menos seguro.
+            </p>
+          ) : null}
+
+          {state.kind === "renewed" ? (
+            <p className="device-security-success" role="status">
+              Acesso offline atualizado com o escopo e a validade atuais.
+            </p>
+          ) : null}
+
+          {state.kind === "unsupported" ? (
+            <p className="device-security-notice" role="status">
+              Este navegador não disponibilizou PRF para atualizar o cofre. O acesso online continua disponível e o cofre anterior foi preservado.
+            </p>
+          ) : null}
+
+          {state.kind === "error" ? (
+            <p className="device-security-error" role="alert">{state.message}</p>
+          ) : null}
+        </section>
+      </div>
     </main>
   );
 }

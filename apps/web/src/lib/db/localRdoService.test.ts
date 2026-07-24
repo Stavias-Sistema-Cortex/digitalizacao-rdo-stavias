@@ -1,22 +1,39 @@
-import "fake-indexeddb/auto";
+import { describe, expect, it } from "vitest";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { createEmptyRdo } from "../../features/rdos/createEmptyRdo";
 import {
-  clearSession,
-  setSession,
-} from "../../features/auth/authSession";
-import { closeCortexDb, getCortexDb } from "./cortexDb";
-import type { LocalRdoRecord } from "./db.types";
+  createEmptyAlocacaoColaborador,
+  createEmptyControleGeometrico,
+  createEmptyEquipamento,
+  createEmptyMaoObra,
+  createEmptyMaterial,
+  createEmptyRdo,
+  createEmptyServicoExecutado,
+} from "../../features/rdos/createEmptyRdo";
+import type { LocalRdoRecord, OutboxMutationRecord } from "./db.types";
 import {
+  buildRdoSyncPayload,
   buildRdoSyncPayloadFromLocalRecord,
-  repairRdoCreateMutationsForSync,
+  canCoalesceLegacyRdoMutation,
   rdoDraftFromLocalRecord,
-  saveExistingRdoDraftAtomically,
-  saveNewRdoDraftAtomically,
+  rdoUpdateCreationContextBlockReason,
   validateRdoDraftForSync,
 } from "./localRdoService";
+
+const legacyCreateMutation = {
+  clientMutationId: "legacy-1",
+  entidadeTipo: "RDO",
+  entidadeId: "rdo-1",
+  operacao: "CRIAR_RDO",
+  baseVersao: null,
+  payload: {},
+  status: "PENDING",
+  tentativas: 0,
+  ultimaTentativaEm: null,
+  ultimoErro: null,
+  conflito: null,
+  criadaNoClienteEm: "2026-07-21T12:00:00.000Z",
+  updatedAt: "2026-07-21T12:00:00.000Z",
+} as OutboxMutationRecord;
 
 function validDraft() {
   const draft = createEmptyRdo();
@@ -25,11 +42,45 @@ function validDraft() {
   draft.obraId = "obra-1";
   draft.numeroRdo = "RDO-001";
   draft.dataRdo = "2026-07-03";
-  draft.servicosExecutados[0] = {
-    ...draft.servicosExecutados[0],
+  draft.previousRdoId = "rdo-anterior-1";
+  draft.creationContextVersion = 48;
+  draft.apontadorColaboradorId = "colaborador-1";
+  draft.maoObra = [{
+    ...createEmptyMaoObra(),
+    localId: "mao-obra-stable-1",
+    colaboradorId: "colaborador-1",
+    nomeColaborador: "Maria Operadora",
+    cargo: "Operadora",
+    origemItemId: "mao-obra-anterior-1",
+  }];
+  draft.servicosExecutados = [{
+    ...createEmptyServicoExecutado(),
+    localId: "servico-stable-1",
+    serviceId: "service-catalog-1",
+    priceVersionId: "price-version-7",
     servicoNome: "Aplicação de CBUQ",
     quantidadeExecutada: 0,
-  };
+  }];
+  draft.equipamentos = [{
+    ...createEmptyEquipamento(),
+    localId: "equipamento-stable-1",
+    descricao: "Vibroacabadora",
+  }];
+  draft.materiais = [{
+    ...createEmptyMaterial(),
+    localId: "material-stable-1",
+    materialNome: "CBUQ",
+  }];
+  draft.controlesGeometricos = [{
+    ...createEmptyControleGeometrico(),
+    localId: "controle-stable-1",
+    subtrecho: "km 10 ao 11",
+  }];
+  draft.alocacoesColaboradores = [{
+    ...createEmptyAlocacaoColaborador(),
+    localId: "alocacao-stable-1",
+    colaboradorId: "colaborador-1",
+  }];
 
   return draft;
 }
@@ -48,6 +99,155 @@ describe("validateRdoDraftForSync", () => {
     expect(() =>
       validateRdoDraftForSync(validDraft()),
     ).not.toThrow();
+  });
+});
+
+describe("buildRdoSyncPayload V48 boundary", () => {
+  it("preserva proveniencia e identidade estavel de todos os filhos no payload", () => {
+    const payload = buildRdoSyncPayload(validDraft());
+
+    expect(payload).toMatchObject({
+      previousRdoId: "rdo-anterior-1",
+      creationContextVersion: 48,
+      apontadorColaboradorId: "colaborador-1",
+      maoObra: [
+        {
+          id: "mao-obra-stable-1",
+          colaboradorId: "colaborador-1",
+          origemItemId: "mao-obra-anterior-1",
+        },
+      ],
+      equipamentos: [{ id: "equipamento-stable-1" }],
+      materiais: [{ id: "material-stable-1" }],
+      controlesGeometricos: [{ id: "controle-stable-1" }],
+      servicosExecutados: [{
+        id: "servico-stable-1",
+        serviceId: "service-catalog-1",
+        priceVersionId: "price-version-7",
+      }],
+      alocacoesColaboradores: [{ id: "alocacao-stable-1" }],
+    });
+    expect(payload.maoObra).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ localId: expect.anything() }),
+      ]),
+    );
+  });
+
+  it("reconstrói IDs estáveis tanto de payload local quanto de resposta canônica", () => {
+    const draft = validDraft();
+    const rdo: LocalRdoRecord = {
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: draft.numeroRdo,
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "PENDING_SYNC",
+      versaoEntidade: null,
+      createdAt: "2026-07-03T12:00:00.000Z",
+      updatedAt: "2026-07-03T12:00:00.000Z",
+      payload: {
+        ...draft,
+        maoObra: [{
+          ...draft.maoObra[0],
+          localId: undefined,
+          id: "mao-obra-server-1",
+        }],
+      },
+    };
+
+    expect(buildRdoSyncPayloadFromLocalRecord(rdo)).toMatchObject({
+      previousRdoId: "rdo-anterior-1",
+      creationContextVersion: 48,
+      apontadorColaboradorId: "colaborador-1",
+      maoObra: [{
+        id: "mao-obra-server-1",
+        origemItemId: "mao-obra-anterior-1",
+      }],
+    });
+  });
+});
+
+describe("RDO creation-context sync gate", () => {
+  it("aceita contexto resolvido sem apontador marcado", async () => {
+    const { rdoCreationContextBlockReason } = await import("./localRdoService");
+    const draft = validDraft();
+    draft.apontadorColaboradorId = "";
+
+    expect(rdoCreationContextBlockReason(draft)).toBeNull();
+  });
+
+  it("permite null apenas ao atualizar um RDO persistido anterior à V48", () => {
+    const draft = validDraft();
+    draft.creationContextVersion = null;
+    const legacyPersisted: LocalRdoRecord = {
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: draft.numeroRdo,
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "SYNCED",
+      versaoEntidade: 7,
+      payload: { observacoes: "criado antes da V48" },
+      createdAt: "2026-07-03T12:00:00.000Z",
+      updatedAt: "2026-07-03T12:00:00.000Z",
+    };
+
+    expect(rdoUpdateCreationContextBlockReason(draft, legacyPersisted))
+      .toBeNull();
+    expect(rdoUpdateCreationContextBlockReason(draft, {
+      ...legacyPersisted,
+      payload: { creationContextVersion: -1 },
+    })).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+    expect(rdoUpdateCreationContextBlockReason(draft, {
+      ...legacyPersisted,
+      versaoEntidade: null,
+    })).toBe("RDO_CREATION_CONTEXT_REQUIRED");
+  });
+});
+
+describe("legacy RDO mutation coalescing boundary", () => {
+  it("coalesces only retryable legacy rows and never rewrites in-flight or canonical envelopes", () => {
+    expect(
+      canCoalesceLegacyRdoMutation(legacyCreateMutation, "CRIAR_RDO"),
+    ).toBe(true);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        { ...legacyCreateMutation, status: "ERROR" },
+        "CRIAR_RDO",
+      ),
+    ).toBe(true);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        {
+          ...legacyCreateMutation,
+          status: "ERROR",
+          blockedReason:
+            "NON_APPLIED_SUPERSEDED_BY:00000000-0000-4000-8000-000000000099",
+        },
+        "CRIAR_RDO",
+      ),
+    ).toBe(false);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        { ...legacyCreateMutation, status: "SYNCING" },
+        "CRIAR_RDO",
+      ),
+    ).toBe(false);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        { ...legacyCreateMutation, status: "CONFLICT" },
+        "CRIAR_RDO",
+      ),
+    ).toBe(false);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        { ...legacyCreateMutation, schemaVersion: 13 } as OutboxMutationRecord,
+        "CRIAR_RDO",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -188,246 +388,5 @@ describe("rdoDraftFromLocalRecord", () => {
     expect(() =>
       buildRdoSyncPayloadFromLocalRecord(rdo),
     ).not.toThrow();
-  });
-});
-
-describe("saveNewRdoDraftAtomically", () => {
-  let actorId: string;
-  const obraId = "00000000-0000-4000-8000-000000000082";
-
-  beforeEach(() => {
-    vi.stubGlobal("BroadcastChannel", undefined);
-    actorId = crypto.randomUUID();
-    setSession({
-      colaboradorId: actorId,
-      nome: "Operador de campo",
-      papelAcesso: "BETA",
-      escopoGlobal: false,
-      obraIds: [obraId],
-      expiraEm: new Date(Date.now() + 60_000).toISOString(),
-    });
-  });
-
-  afterEach(async () => {
-    await closeCortexDb();
-    clearSession();
-    vi.unstubAllGlobals();
-  });
-
-  it("persiste projeção, envelope canônico e evento correlacionado no mesmo salvamento", async () => {
-    const draft = validDraft();
-    draft.id = "00000000-0000-4000-8000-000000000083";
-    draft.obraId = obraId;
-
-    const saved = await saveNewRdoDraftAtomically(draft);
-    const database = await getCortexDb();
-    const event = await database.get(
-      "operational_events",
-      saved.mutation.trace?.ontologyEventId ?? "missing-event",
-    );
-
-    expect(saved.mutation).toMatchObject({
-      contractVersion: 13,
-      entidadeTipo: "RDO",
-      entidadeId: draft.id,
-      operacao: "CRIAR_RDO",
-      correlationId: saved.mutation.clientMutationId,
-      trace: {
-        actorId,
-        authorizationScope: [obraId],
-        correlationId: saved.mutation.clientMutationId,
-      },
-    });
-    expect(saved.mutation.trace?.payloadHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(await database.getAll("outbox_mutations")).toHaveLength(1);
-    expect(await database.getAll("operational_events")).toHaveLength(1);
-    expect(event).toMatchObject({
-      contractVersion: 13,
-      clientMutationId: saved.mutation.clientMutationId,
-      correlationId: saved.mutation.correlationId,
-      result: "PENDING",
-    });
-  });
-
-  it("carrega o ciclo de vida das fotos no mesmo envelope canônico do RDO", async () => {
-    const draft = validDraft();
-    draft.id = "00000000-0000-4000-8000-000000000086";
-    draft.obraId = obraId;
-    draft.attachments = [
-      {
-        id: "00000000-0000-4000-8000-000000000087",
-        rdoId: draft.id,
-        obraId,
-        tipo: "FOTO",
-        nome: "frente-de-servico.jpg",
-        nomeOriginal: "frente-de-servico.jpg",
-        mimeType: "image/jpeg",
-        tamanhoOriginalBytes: 1_200,
-        tamanhoComprimidoBytes: 900,
-        tamanhoBytes: 900,
-        syncStatus: "PENDING_SYNC",
-        createdAt: "2026-07-03T10:00:00.000Z",
-        updatedAt: "2026-07-03T10:01:00.000Z",
-        removedAt: null,
-        metadata: {},
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000088",
-        rdoId: draft.id,
-        obraId,
-        tipo: "FOTO",
-        nome: "trecho-removido.jpg",
-        nomeOriginal: "trecho-removido.jpg",
-        mimeType: "image/jpeg",
-        tamanhoOriginalBytes: 700,
-        tamanhoComprimidoBytes: 700,
-        tamanhoBytes: 700,
-        syncStatus: "PENDING_SYNC",
-        createdAt: "2026-07-03T09:00:00.000Z",
-        updatedAt: "2026-07-03T09:30:00.000Z",
-        removedAt: "2026-07-03T09:30:00.000Z",
-        metadata: {},
-      },
-    ];
-
-    const saved = await saveNewRdoDraftAtomically(draft);
-    const operationalEvents = (
-      saved.mutation.payload.operationalEvents as Array<{
-        id: string;
-        type: string;
-        principalEntity: { id: string };
-        occurredAt: string;
-      }>
-    );
-
-    expect(operationalEvents).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: "FOTO_ADICIONADA",
-        principalEntity: expect.objectContaining({
-          id: "00000000-0000-4000-8000-000000000087",
-        }),
-        occurredAt: "2026-07-03T10:00:00.000Z",
-      }),
-      expect.objectContaining({
-        type: "FOTO_COMPRIMIDA",
-        principalEntity: expect.objectContaining({
-          id: "00000000-0000-4000-8000-000000000087",
-        }),
-      }),
-      expect.objectContaining({
-        type: "FOTO_REMOVIDA",
-        principalEntity: expect.objectContaining({
-          id: "00000000-0000-4000-8000-000000000088",
-        }),
-        occurredAt: "2026-07-03T09:30:00.000Z",
-      }),
-    ]));
-
-    expect(
-      operationalEvents.filter((event) =>
-        event.type.startsWith("FOTO_"),
-      ).every((event) => event.id.trim().length > 0),
-    ).toBe(true);
-  });
-
-  it("mantém os IDs dos eventos de foto ao revisar um RDO ainda pendente", async () => {
-    const draft = validDraft();
-    draft.id = "00000000-0000-4000-8000-000000000089";
-    draft.obraId = obraId;
-    draft.attachments = [
-      {
-        id: "00000000-0000-4000-8000-000000000090",
-        rdoId: draft.id,
-        obraId,
-        tipo: "FOTO",
-        nome: "frente-revisada.jpg",
-        nomeOriginal: "frente-revisada.jpg",
-        mimeType: "image/jpeg",
-        tamanhoOriginalBytes: 1_400,
-        tamanhoComprimidoBytes: 950,
-        tamanhoBytes: 950,
-        syncStatus: "PENDING_SYNC",
-        createdAt: "2026-07-03T10:00:00.000Z",
-        updatedAt: "2026-07-03T10:01:00.000Z",
-        removedAt: null,
-        metadata: {},
-      },
-    ];
-
-    const first = await saveNewRdoDraftAtomically(draft);
-    const revision = await saveExistingRdoDraftAtomically({
-      ...draft,
-      numeroRdo: "RDO-001-REV-FOTO",
-    });
-    const photoEventIds = (payload: Record<string, unknown>) =>
-      (payload.operationalEvents as Array<{ id: string; type: string }>)
-        .filter((event) => event.type.startsWith("FOTO_"))
-        .map((event) => ({ id: event.id, type: event.type }));
-
-    expect(photoEventIds(revision.mutation.payload)).toEqual(
-      photoEventIds(first.mutation.payload),
-    );
-    expect(revision.mutation.trace?.causationId).toBe(
-      first.mutation.clientMutationId,
-    );
-  });
-
-  it("substitui uma criação ainda pendente por um novo evento canônico, sem reescrever sua linhagem", async () => {
-    const draft = validDraft();
-    draft.id = "00000000-0000-4000-8000-000000000084";
-    draft.obraId = obraId;
-
-    const first = await saveNewRdoDraftAtomically(draft);
-    const revisedDraft = {
-      ...draft,
-      numeroRdo: "RDO-001-REV-2",
-    };
-    const revision = await saveExistingRdoDraftAtomically(revisedDraft);
-    const database = await getCortexDb();
-    const mutations = await database.getAll("outbox_mutations");
-    const prior = await database.get(
-      "outbox_mutations",
-      first.mutation.clientMutationId,
-    );
-    const revisionEvent = await database.get(
-      "operational_events",
-      revision.mutation.trace?.ontologyEventId ?? "missing-event",
-    );
-
-    expect(mutations).toHaveLength(2);
-    expect(prior).toMatchObject({
-      status: "REJECTED",
-      clientMutationId: first.mutation.clientMutationId,
-    });
-    expect(revision.mutation).toMatchObject({
-      contractVersion: 13,
-      operacao: "CRIAR_RDO",
-      trace: {
-        causationId: first.mutation.clientMutationId,
-      },
-    });
-    expect(revisionEvent).toMatchObject({
-      contractVersion: 13,
-      clientMutationId: revision.mutation.clientMutationId,
-      causationId: first.mutation.clientMutationId,
-      result: "PENDING",
-    });
-  });
-
-  it("não repara uma criação canônica reescrevendo payload, hash ou correlação", async () => {
-    const draft = validDraft();
-    draft.id = "00000000-0000-4000-8000-000000000085";
-    draft.obraId = obraId;
-
-    const saved = await saveNewRdoDraftAtomically(draft);
-    const repaired = await repairRdoCreateMutationsForSync();
-    const database = await getCortexDb();
-    const after = await database.get(
-      "outbox_mutations",
-      saved.mutation.clientMutationId,
-    );
-
-    expect(repaired).toBe(0);
-    expect(after).toEqual(saved.mutation);
   });
 });

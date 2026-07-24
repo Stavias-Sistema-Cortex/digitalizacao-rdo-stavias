@@ -12,23 +12,19 @@ function createLocalId(): string {
   return crypto.randomUUID();
 }
 
-function currentLocalDate(): string {
-  const now = new Date();
-  const localDate = new Date(
-    now.getTime() - now.getTimezoneOffset() * 60_000,
-  );
-
-  return localDate.toISOString().slice(0, 10);
-}
-
 export function createEmptyMaoObra(): MaoObraDraft {
   return {
     localId: createLocalId(),
+    origemItemId: "",
+    sourceRdoId: "",
+    origin: "MANUAL",
+    availability: "UNKNOWN",
+    selected: true,
     colaboradorId: "",
     nomeColaborador: "",
     cargo: "",
-    tipoVinculo: "CONTRATADO",
-    quantidade: 1,
+    tipoVinculo: "",
+    quantidade: "",
     horaInicio: "",
     horaFim: "",
     observacoes: "",
@@ -42,8 +38,8 @@ export function createEmptyEquipamento(): EquipamentoDraft {
     prefixo: "",
     descricao: "",
     tipoEquipamento: "",
-    tipoVinculo: "PROPRIO",
-    quantidade: 1,
+    tipoVinculo: "",
+    quantidade: "",
     horaInicio: "",
     horaFim: "",
     observacoes: "",
@@ -68,6 +64,8 @@ export function createEmptyMaterial(): MaterialDraft {
 export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
   return {
     localId: createLocalId(),
+    serviceId: "",
+    priceVersionId: "",
     servicoNome: "",
     itemContratualId: "",
     quantidadeExecutada: "",
@@ -76,8 +74,7 @@ export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
     trechoFinal: "",
     localizacao: "",
     turno: "",
-    statusValidacao: "REGISTRADA",
-    custoRealizado: "",
+    statusValidacao: "",
     retrabalho: false,
     producaoRejeitada: false,
     observacoes: "",
@@ -90,16 +87,15 @@ export function createEmptyAlocacaoColaborador(): AlocacaoColaboradorDraft {
     colaboradorId: "",
     equipe: "",
     servicoNome: "",
-    horaInicio: "07:00",
-    horaFim: "17:00",
-    percentualDia: 1,
+    horaInicio: "",
+    horaFim: "",
+    percentualDia: "",
     turno: "",
     funcao: "",
     centroCusto: "",
-    tipoAlocacao: "TRABALHO",
-    fonte: "RDO",
-    status: "REGISTRADA",
-    custoHora: "",
+    tipoAlocacao: "",
+    fonte: "",
+    status: "",
     observacoes: "",
   };
 }
@@ -132,8 +128,11 @@ export function createEmptyRdo(): RdoDraft {
     id: crypto.randomUUID(),
     obraId: "",
     programacaoId: "",
+    previousRdoId: "",
+    creationContextVersion: null,
+    apontadorColaboradorId: "",
     numeroRdo: "",
-    dataRdo: currentLocalDate(),
+    dataRdo: "",
     cliente: "",
     contrato: "",
     rodovia: "",
@@ -143,27 +142,26 @@ export function createEmptyRdo(): RdoDraft {
     kmFinalProgramado: "",
     kmInicialInterditado: "",
     kmFinalInterditado: "",
-    turno: "DIURNO",
-    horaInicio: "07:00",
-    horaFim: "17:00",
+    turno: "",
+    horaInicio: "",
+    horaFim: "",
     condicaoManha: "",
     condicaoTarde: "",
-    condicaoNoite: "NAO_APLICAVEL",
-    pluviometriaMm: 0,
+    condicaoNoite: "",
+    pluviometriaMm: "",
     observacoes: "",
     preenchidoPor: "",
     apontadorRdo: "",
     encarregadoObra: "",
     fiscalizacaoCampo: "",
-    servicosExecutados: [createEmptyServicoExecutado()],
-    alocacoesColaboradores: [
-      createEmptyAlocacaoColaborador(),
-    ],
-    maoObra: [createEmptyMaoObra()],
-    equipamentos: [createEmptyEquipamento()],
-    materiais: [createEmptyMaterial()],
-    controlesGeometricos: [createEmptyControleGeometrico()],
+    servicosExecutados: [],
+    alocacoesColaboradores: [],
+    maoObra: [],
+    equipamentos: [],
+    materiais: [],
+    controlesGeometricos: [],
     attachments: [],
+    importEvidence: null,
     syncStatus: "LOCAL_ONLY",
   };
 }

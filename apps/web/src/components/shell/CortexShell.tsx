@@ -19,6 +19,7 @@ import {
   clampSidebarWidth,
   readStoredSidebarWidth,
 } from "./sidebarWidth";
+import { CortexShellChromeProvider } from "./CortexShellChromeContext";
 
 const SIDEBAR_COLLAPSED_KEY = "cortex.ui.sidebarRecolhida";
 
@@ -184,21 +185,86 @@ export function CortexShell({
     }
   }
 
-  return (
+  const headerControls = (
     <div
-      className={[
-        "cortex-shell",
-        isSidebarCollapsed ? "cortex-shell--collapsed" : "",
-        isResizingSidebar ? "is-resizing" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={
-        {
-          "--sidebar-width": `${sidebarWidth}px`,
-        } as CSSProperties
-      }
+      role="group"
+      aria-label="Controles globais"
     >
+      <SyncStatusBanner />
+      <div className="profile-menu-anchor">
+      <button
+        type="button"
+        className="avatar-button"
+        onClick={() =>
+          setIsProfileMenuOpen((open) => !open)
+        }
+        aria-expanded={isProfileMenuOpen}
+        aria-haspopup="dialog"
+        title={session?.nome ?? "Perfil"}
+      >
+        {sessionInitials(session?.nome ?? null)}
+      </button>
+      {isProfileMenuOpen && (
+        <div
+          className="profile-menu"
+          role="dialog"
+          aria-label="Opções do perfil"
+        >
+          <p className="profile-menu-name">
+            {session?.nome ?? "Colaborador"}
+          </p>
+          <p className="profile-menu-scope">
+            {alfa
+              ? "Escopo global (Alfa)"
+              : "Escopo das obras vinculadas (Beta)"}
+          </p>
+          <button
+            type="button"
+            className="profile-menu-security"
+            onClick={() => {
+              setIsProfileMenuOpen(false);
+              navigate("/seguranca");
+            }}
+          >
+            Segurança do dispositivo
+          </button>
+          <button
+            type="button"
+            className="profile-menu-logout"
+            onClick={() => {
+              void handleLogout();
+            }}
+            disabled={isLoggingOut}
+          >
+            {isLoggingOut ? "Saindo..." : "Sair"}
+          </button>
+          {logoutError ? (
+            <p className="profile-menu-error" role="alert">
+              {logoutError}
+            </p>
+          ) : null}
+        </div>
+      )}
+      </div>
+    </div>
+  );
+
+  return (
+    <CortexShellChromeProvider headerControls={headerControls}>
+      <div
+        className={[
+          "cortex-shell",
+          isSidebarCollapsed ? "cortex-shell--collapsed" : "",
+          isResizingSidebar ? "is-resizing" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={
+          {
+            "--sidebar-width": `${sidebarWidth}px`,
+          } as CSSProperties
+        }
+      >
       <aside className="cortex-sidebar">
         <button
           type="button"
@@ -434,71 +500,9 @@ export function CortexShell({
       </aside>
 
       <div className="cortex-shell-content">
-        <div
-          className="floating-controls"
-          role="group"
-          aria-label="Controles globais"
-        >
-          <SyncStatusBanner />
-          <div className="profile-menu-anchor">
-            <button
-              type="button"
-              className="avatar-button"
-              onClick={() =>
-                setIsProfileMenuOpen((open) => !open)
-              }
-              aria-expanded={isProfileMenuOpen}
-              aria-haspopup="dialog"
-              title={session?.nome ?? "Perfil"}
-            >
-              {sessionInitials(session?.nome ?? null)}
-            </button>
-            {isProfileMenuOpen && (
-              <div
-                className="profile-menu"
-                role="dialog"
-                aria-label="Opções do perfil"
-              >
-                <p className="profile-menu-name">
-                  {session?.nome ?? "Colaborador"}
-                </p>
-                <p className="profile-menu-scope">
-                  {alfa
-                    ? "Escopo global (Alfa)"
-                    : "Escopo das obras vinculadas (Beta)"}
-                </p>
-                <button
-                  type="button"
-                  className="profile-menu-security"
-                  onClick={() => {
-                    setIsProfileMenuOpen(false);
-                    navigate("/seguranca");
-                  }}
-                >
-                  Segurança do dispositivo
-                </button>
-                <button
-                  type="button"
-                  className="profile-menu-logout"
-                  onClick={() => {
-                    void handleLogout();
-                  }}
-                  disabled={isLoggingOut}
-                >
-                  {isLoggingOut ? "Saindo..." : "Sair"}
-                </button>
-                {logoutError ? (
-                  <p className="profile-menu-error" role="alert">
-                    {logoutError}
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-
         {children}
       </div>
-    </div>
+      </div>
+    </CortexShellChromeProvider>
   );
 }

@@ -1,15 +1,16 @@
 # Córtex — checklist de deploy
 
 Esta é a trava operacional do artefato atual: API Java 21, PWA, autenticação
-OTP/passkey, Mensagens, armazenamento compartilhado, Financeiro, cobranças por
-e-mail e StavIA. Marque um item somente com evidência da mesma revisão que será
-publicada.
+OTP/passkey, Mensagens, armazenamento compartilhado, RDO, Financeiro orientado
+à receita, Memória e grafo ontológico. Marque um item somente com evidência da
+mesma revisão que será publicada.
 
 ## 1. Banco e migrações
 
 - [ ] Backup restaurável do banco atual foi criado e testado.
-- [ ] Um MySQL vazio aplicou Flyway V1–V33 sem `repair` ou edição de migration.
-- [ ] Uma cópia representativa do banco atual atualizou até V33.
+- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V59 sem `repair` ou edição de
+  migration.
+- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V59.
 - [ ] O usuário da API tem somente os privilégios necessários no schema.
 - [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
   `email_verificado_em` preenchido.
@@ -58,15 +59,18 @@ estado; `/api/health` mede somente o processo.
 
 - [ ] ALFA acessa todas as obras sem grants artificiais.
 - [ ] BETA sem vínculo recebe 403; BETA vinculado, mas sem a capability financeira
-  exata, também recebe 403 e não recebe valores em Home, sync, export ou StavIA.
-- [ ] Compra offline reconecta uma única vez pelo mesmo `clientMutationId`.
-- [ ] Nota, anexo, pagamento/recebimento, relatório e CSV usam dados persistidos
-  e o mesmo escopo da consulta.
-- [ ] Cobrança manual/agendada/automática exige preview aprovado, remetente
-  configurado e produz no máximo um envio por chave idempotente.
-- [ ] Uma falha SMTP fica registrada com motivo sanitizado e retry limitado.
-- [ ] StavIA retorna IDs/frescor de evidência e declara indisponibilidade quando
-  o fato existe somente no dispositivo local.
+  exata, também recebe 403 e não recebe valores em Home, sync, export, Memória
+  ou grafo.
+- [ ] Criação e atualização offline reconectam uma única vez pelo mesmo
+  `clientMutationId`.
+- [ ] RDO, anexos, rastreio de receita, preços e PDOR usam dados persistidos e
+  o mesmo escopo autorizado da consulta.
+- [ ] A navegação e as rotas ativas do Financeiro expõem somente `Rastreio de
+  receita`, `Serviços e preços` e `PDOR`; custo, margem, compras, rateios, notas,
+  pagamentos, cobranças e outros módulos legados permanecem inacessíveis.
+- [ ] Memória e grafo retornam somente eventos/arestas autorizados, com
+  cobertura e frescor explícitos; fatos apenas locais não são apresentados como
+  confirmados pelo servidor.
 
 ## 6. Build e testes da revisão
 
@@ -87,7 +91,8 @@ git diff --check
 ```
 
 - [ ] Maven completo passou em JDK 21.
-- [ ] MySQL de integração passou com migrations V1–V33.
+- [ ] PostgreSQL 18 descartável passou com migrations V44–V59 e os fluxos
+  Cortex 3.0.
 - [ ] Vitest, lint e build PWA passaram.
 - [ ] As duas imagens Docker buildaram e executam como configuradas.
 - [ ] Desktop, tablet e mobile foram verificados sem overflow ou console error.
@@ -101,15 +106,13 @@ git diff --check
 3. Execute `CORTEX_BASE_URL=https://host ./scripts/smoke-deploy.sh`.
 4. Com uma sessão QA real, repita passando `CORTEX_SMOKE_COOKIE_JAR` e
    `CORTEX_SMOKE_OBRA_ID` para validar o escopo financeiro.
-5. Monitore login, 401/403, sync, fila de cobrança, SMTP, latência e storage.
+5. Monitore login, 401/403, sync, rastreio de receita, PDOR, latência e storage.
 
 ## 8. Rollback
 
 - Preserve a imagem anterior e o backup pré-migração.
 - Não altere nem apague migrations aplicadas. Rollback de aplicação só é seguro
-  se a versão anterior tolerar as tabelas aditivas V31–V33.
-- Pause o scheduler de cobrança antes de rollback operacional para evitar dois
-  consumidores de versões diferentes.
+  se a versão anterior tolerar as tabelas aditivas V45–V59.
 - Nunca use `flyway repair` para mascarar checksum divergente.
 
 ## Limite de evidência externa

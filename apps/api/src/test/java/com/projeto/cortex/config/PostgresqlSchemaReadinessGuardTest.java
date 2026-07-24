@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -17,6 +18,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PostgresqlSchemaReadinessGuardTest {
+
+    @Test
+    void configuredGuardRequiresTheCompleteV59Chain() throws Exception {
+        var field = PostgresqlSchemaReadinessGuard.class.getDeclaredField(
+                "CLEAN_START_REQUIRED_SCHEMA_VERSION"
+        );
+        field.setAccessible(true);
+
+        assertThat(field.get(null)).isEqualTo("59");
+    }
 
     @Test
     void isScopedToPostgresqlCommonAndAnExplicitSchemaGate() {
@@ -43,33 +54,39 @@ class PostgresqlSchemaReadinessGuardTest {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class)))
                 .thenThrow(new DataAccessResourceFailureException("flyway_schema_history ausente"));
 
-        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(jdbcTemplate, 44);
+        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
+                jdbcTemplate, "59"
+        );
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("baseline V44 equivalente")
+                .hasMessageContaining("cadeia de migrações até V59")
                 .hasCauseInstanceOf(DataAccessResourceFailureException.class);
     }
 
     @Test
-    void refusesSuccessfulV45WhenTheExplicitV44RowIsAbsent() {
+    void refusesWhenTheExplicitV59RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
-        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(jdbcTemplate, 44);
+        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
+                jdbcTemplate, "59"
+        );
 
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("baseline V44 equivalente");
-        verify(jdbcTemplate).queryForObject(contains("version = '44'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V59");
+        verify(jdbcTemplate).queryForObject(contains("version = '59'"), eq(Integer.class));
     }
 
     @Test
-    void acceptsACompletedNumericV44Baseline() {
+    void acceptsACompletedV59MigrationChain() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1);
 
-        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(jdbcTemplate, 44);
+        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard(
+                jdbcTemplate, "59"
+        );
 
         assertThatCode(guard::verifyReadiness).doesNotThrowAnyException();
     }

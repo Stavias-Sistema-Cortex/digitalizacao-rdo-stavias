@@ -1,0 +1,49 @@
+{
+  "command": "cd apps/web && RDO_GEOMETRY_JSON=1 node scripts/verify-rdo-creation-geometry.mjs",
+  "browser": "Microsoft Edge headless via Chrome DevTools Protocol",
+  "prefersReducedMotion": "reduce",
+  "scenarios": [
+    {
+      "viewport": { "width": 1440, "height": 900 },
+      "page": { "clientWidth": 1440, "scrollWidth": 1440, "clientHeight": 900, "scrollHeight": 900 },
+      "dialog": { "left": 250, "right": 1190, "top": 90, "bottom": 810, "width": 940, "height": 720 },
+      "list": { "clientHeight": 328, "scrollHeight": 934 },
+      "dialogInsideViewport": true,
+      "visible": { "title": true, "selectedWorksite": true, "date": true, "cancel": true, "create": true },
+      "scrollable": ["rdo-creation-worksite-list"],
+      "listActuallyScrolls": true,
+      "bodyIsClipped": true,
+      "overlaps": [],
+      "animationName": "none",
+      "globalControlInteractiveOverlap": false
+    },
+    {
+      "viewport": { "width": 1280, "height": 720 },
+      "page": { "clientWidth": 1280, "scrollWidth": 1280, "clientHeight": 720, "scrollHeight": 720 },
+      "dialog": { "left": 170, "right": 1110, "top": 20, "bottom": 700, "width": 940, "height": 680 },
+      "list": { "clientHeight": 288, "scrollHeight": 934 },
+      "dialogInsideViewport": true,
+      "visible": { "title": true, "selectedWorksite": true, "date": true, "cancel": true, "create": true },
+      "scrollable": ["rdo-creation-worksite-list"],
+      "listActuallyScrolls": true,
+      "bodyIsClipped": true,
+      "overlaps": [],
+      "animationName": "none",
+      "globalControlInteractiveOverlap": false
+    },
+    {
+      "viewport": { "width": 390, "height": 844 },
+      "page": { "clientWidth": 390, "scrollWidth": 390, "clientHeight": 844, "scrollHeight": 844 },
+      "dialog": { "left": 10, "right": 380, "top": 10, "bottom": 834, "width": 370, "height": 824 },
+      "list": { "clientHeight": 292, "scrollHeight": 964 },
+      "dialogInsideViewport": true,
+      "visible": { "title": true, "selectedWorksite": true, "date": true, "cancel": true, "create": true },
+      "scrollable": ["rdo-creation-worksite-list"],
+      "listActuallyScrolls": true,
+      "bodyIsClipped": true,
+      "overlaps": [],
+      "animationName": "none",
+      "globalControlInteractiveOverlap": false
+    }
+  ]
+}

@@ -56,8 +56,8 @@ class OfflineGrantSubjectRepositoryTest {
                 eq(collaboratorId.toString())
         );
         assertThat(sql.getValue().replaceAll("\\s+", " "))
-                .contains("UTC_TIMESTAMP(6) AS database_now")
-                .contains("colaborador.ativo = 1")
+                .contains("CURRENT_TIMESTAMP(6) AS database_now")
+                .contains("colaborador.ativo = TRUE")
                 .contains("colaborador.deletado_em IS NULL");
     }
 }

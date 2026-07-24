@@ -8,7 +8,6 @@ import {
   updateSyncState,
 } from "../../lib/db/syncStateRepository";
 import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
-import type { MutationActor } from "../../lib/sync/mutationEnvelope";
 import { getSession } from "../auth/authSession";
 import type {
   FinancePurchase,
@@ -20,20 +19,29 @@ export interface QueuedFinancePurchase {
   clientMutationId: string;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 function nowUtc(): string {
   return new Date().toISOString();
 }
 
-async function financeMutationActor(
-  draft: FinancePurchaseDraft,
-): Promise<MutationActor> {
+async function financeMutationIdentity(obraId: string): Promise<{
+  obraId: string;
+  userId: string;
+  deviceId: string;
+}> {
+  const worksiteId = obraId.trim().toLowerCase();
+  if (!UUID_PATTERN.test(worksiteId)) {
+    throw new Error("A obra da compra deve possuir um ID canônico.");
+  }
   const session = getSession();
   if (!session) {
     throw new Error(
       "Abra uma sessão protegida antes de registrar uma compra local.",
     );
   }
-  if (!session.escopoGlobal && !session.obraIds.includes(draft.obraId)) {
+  if (!session.escopoGlobal && !session.obraIds.includes(worksiteId)) {
     throw new Error(
       "A sessão atual não possui acesso à obra desta compra.",
     );
@@ -41,7 +49,9 @@ async function financeMutationActor(
 
   const syncState = await getSyncState();
   const deviceId =
-    syncState.usuarioId === session.colaboradorId && syncState.deviceId
+    syncState.usuarioId === session.colaboradorId &&
+      syncState.deviceId &&
+      UUID_PATTERN.test(syncState.deviceId)
       ? syncState.deviceId
       : crypto.randomUUID();
   if (
@@ -51,14 +61,14 @@ async function financeMutationActor(
     await updateSyncState({
       usuarioId: session.colaboradorId,
       deviceId,
+      lastPulledCommitSeq: 0,
+      lastAckedCommitSeq: 0,
     });
   }
-
   return {
-    actorId: session.colaboradorId,
-    actorName: session.nome,
+    obraId: worksiteId,
+    userId: session.colaboradorId,
     deviceId,
-    authorizationScope: [draft.obraId],
   };
 }
 
@@ -67,35 +77,36 @@ export async function queueFinancePurchase(
 ): Promise<QueuedFinancePurchase> {
   const id = crypto.randomUUID();
   const timestamp = nowUtc();
+  const identity = await financeMutationIdentity(draft.obraId);
   const payload = {
     id,
     ...draft,
+    obraId: identity.obraId,
     solicitacaoId: draft.solicitacaoId ?? null,
   };
-  const actor = await financeMutationActor(draft);
-  const { mutation } = await commitLocalMutation({
-    stores: [],
-    entity: {
-      type: "COMPRA",
-      id,
-      name: draft.numeroPedido || draft.descricao,
-      obraId: draft.obraId,
-      colaboradorId: actor.actorId,
-      relatedEntities: [
-        { tipo: "OBRA", id: draft.obraId },
-      ],
-    },
-    eventType: "COMPRA_CRIADA",
-    operation: "CRIAR_COMPRA",
+  const committed = await commitLocalMutation({
+    ...identity,
+    entityType: "COMPRA",
+    entityId: id,
+    entityName: draft.numeroPedido || draft.descricao,
+    operation: "CREATE",
+    transportOperation: "CRIAR_COMPRA",
     baseVersion: null,
-    previousState: {},
-    newState: payload,
-    actor,
-    createdAt: timestamp,
-    write: () => undefined,
+    occurredAt: timestamp,
+    previousSnapshot: {},
+    nextSnapshot: payload,
+    eventType: "COMPRA_CRIADA",
+    relatedEntities: [
+      { tipo: "OBRA", id: identity.obraId },
+    ],
+    colaboradorId: identity.userId,
+    write: () => [],
   });
 
-  return { id, clientMutationId: mutation.clientMutationId };
+  return {
+    id,
+    clientMutationId: committed.mutation.clientMutationId,
+  };
 }
 
 export async function listPendingFinancePurchases(

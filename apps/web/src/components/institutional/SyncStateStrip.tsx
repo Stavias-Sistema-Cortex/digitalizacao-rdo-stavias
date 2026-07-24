@@ -104,21 +104,6 @@ export function SyncStateFacts({
           </dd>
         )}
       </div>
-      <div>
-        <dt>Revisões</dt>
-        {isChecking ? (
-          <dd
-            className="tabular-nums"
-            aria-label="Ainda verificando"
-          >
-            —
-          </dd>
-        ) : (
-          <dd className="tabular-nums">
-            {snapshot.reviewCount}
-          </dd>
-        )}
-      </div>
       <div className="institutional-sync-state__last-sync">
         <dt>Última sincronização</dt>
         {isChecking ? (
@@ -151,7 +136,6 @@ export function SyncStateStrip({
   ]
     .filter(Boolean)
     .join(" ");
-  const reviewCount = snapshot.reviewCount;
   const isChecking = snapshot.isLoading && !presentationError;
   const isError =
     !isChecking &&
@@ -196,14 +180,15 @@ export function SyncStateStrip({
       ) : isReview ? (
         <p
           className="institutional-sync-state__error"
-          data-sync-review-count={reviewCount}
+          data-sync-review-count={snapshot.reviewCount}
           data-sync-status="REVIEW"
           role="status"
         >
           <span>Revisão necessária</span>
           <span className="tabular-nums">
-            {reviewCount} registro{reviewCount === 1 ? "" : "s"} exige
-            {reviewCount === 1 ? "" : "m"} revisão
+            {snapshot.reviewCount} registro
+            {snapshot.reviewCount === 1 ? "" : "s"} exige
+            {snapshot.reviewCount === 1 ? "" : "m"} revisão
           </span>
           {snapshot.reviewReason ? (
             <span>{snapshot.reviewReason}</span>

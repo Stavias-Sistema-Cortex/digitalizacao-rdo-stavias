@@ -74,11 +74,14 @@ class FinancePurchaseServiceMysqlIntegrationTest {
                 )
         );
         FinanceOntologyProjector ontology = new FinanceOntologyProjector(memory);
+        FinancialAccessService serviceAccess = org.mockito.Mockito.mock(
+                FinancialAccessService.class
+        );
         FinanceCatalogService catalog = new FinanceCatalogService(
-                jdbc, currentUser, ontology
+                jdbc, currentUser, serviceAccess, ontology
         );
         FinancePurchaseService purchases = new FinancePurchaseService(
-                jdbc, currentUser, ontology, mapper
+                jdbc, currentUser, serviceAccess, ontology, mapper
         );
         FinanceAuditContext audit = FinanceAuditContext.online(
                 actorId, "finance-integration"
@@ -225,6 +228,29 @@ class FinancePurchaseServiceMysqlIntegrationTest {
                 purchases.savePurchase(request, audit)
         );
         assertThat(replay.id()).isEqualTo(created.id());
+        FinanceDtos.PurchaseRequest changedReplay = new FinanceDtos.PurchaseRequest(
+                request.id(), request.clientMutationId(), request.solicitacaoId(),
+                request.obraId(), request.centroCustoId(), request.categoriaId(),
+                request.fornecedorId(), request.responsavelCompraId(),
+                request.statusId(), request.numeroPedido(), request.descricao(),
+                request.prioridade(), request.moeda(), request.valorPrevisto(),
+                request.valorAprovado(), request.valorContratado(),
+                BigDecimal.ONE, request.pedidoEmitidoEm(),
+                request.entregaPrevistaEm(), request.itens(), request.baseVersao()
+        );
+        assertThatThrownBy(() -> transactions.execute(status ->
+                purchases.savePurchase(changedReplay, audit)
+        )).isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status ->
+                purchases.archivePurchase(
+                        purchaseId,
+                        created.versao(),
+                        request.clientMutationId(),
+                        audit
+                )
+        )).isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
         assertThat(purchases.listPurchases(new FinancePurchaseService.FinanceFilter(
                 obraId, null, null, actorId, supplier.id(), draft.id(),
                 category.id(), center.id(), "ALTA", "Brita", 20, 0
@@ -242,6 +268,16 @@ class FinancePurchaseServiceMysqlIntegrationTest {
         );
         assertThat(waiting.statusAlterado()).isFalse();
         assertThat(waiting.aprovacaoStatus()).isEqualTo("PENDENTE");
+        assertThatThrownBy(() -> transactions.execute(status ->
+                purchases.decidePurchase(
+                        purchaseId,
+                        new FinanceDtos.ApprovalDecisionRequest(
+                                "APROVAR", "Conferido", request.clientMutationId()
+                        ),
+                        audit
+                )
+        )).isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
 
         FinanceDtos.ApprovalDecisionResponse decision = transactions.execute(status ->
                 purchases.decidePurchase(
@@ -262,6 +298,17 @@ class FinancePurchaseServiceMysqlIntegrationTest {
                 ));
         assertThat(decision.statusAprovacao()).isEqualTo("APROVADA");
         assertThat(replayedDecision).isEqualTo(decision);
+        assertThatThrownBy(() -> transactions.execute(status ->
+                purchases.decidePurchase(
+                        purchaseId,
+                        new FinanceDtos.ApprovalDecisionRequest(
+                                "APROVAR", "Justificativa alterada",
+                                "decision-client-1"
+                        ),
+                        audit
+                )
+        )).isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("outro conteúdo");
         assertThatThrownBy(() -> transactions.execute(status ->
                 purchases.decidePurchase(
                         purchaseId,
@@ -405,6 +452,7 @@ class FinancePurchaseServiceMysqlIntegrationTest {
         FinanceCatalogService catalog = new FinanceCatalogService(
                 jdbc,
                 currentUser,
+                org.mockito.Mockito.mock(FinancialAccessService.class),
                 new FinanceOntologyProjector(memory)
         );
         FinanceDtos.SupplierRequest supplier = new FinanceDtos.SupplierRequest(

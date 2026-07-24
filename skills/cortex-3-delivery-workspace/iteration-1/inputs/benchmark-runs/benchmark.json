@@ -1,0 +1,328 @@
+{
+  "metadata": {
+    "skill_name": "cortex-3-delivery",
+    "skill_path": "/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery/skills/cortex-3-delivery/SKILL.md",
+    "executor_model": "gpt-5.6-terra",
+    "analyzer_model": "gpt-5.6-terra",
+    "timestamp": "2026-07-22T00:29:55Z",
+    "evals_run": [
+      1,
+      2,
+      3
+    ],
+    "runs_per_configuration": 1,
+    "timing_available": false,
+    "token_metrics_available": false
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.8,
+        "passed": 4,
+        "failed": 1,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+          "passed": false,
+          "evidence": "The review correctly contradicts continuity (\"a capacidade foi removida\" and \"com o fixture atual ela \u00e9 diretamente refutada\"), but it labels the asserted runtime removal \"INDIRECT\" and concludes that removal can be PROVEN only after further artifacts and commands. It therefore does not classify removal itself as evidenced as this assertion requires."
+        },
+        {
+          "text": "Identifies that deleting StaviaReasoningService removes the only synchronizeOperationalData trigger",
+          "passed": true,
+          "evidence": "The review states: \"synchronizeOperationalData(obraId) era chamado somente por StaviaReasoningService, criando uma depend\u00eancia de proje\u00e7\u00e3o/sincroniza\u00e7\u00e3o perdida pela exclus\u00e3o\". This directly matches the fixture's sole-caller fact."
+        },
+        {
+          "text": "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+          "passed": true,
+          "evidence": "Its correction sequence first requires extracting pure graph contracts and then an independent operational projector with \"checkpoint, upserts determin\u00edsticos/idempotentes\"; archival is explicitly deferred to step 5."
+        },
+        {
+          "text": "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+          "passed": true,
+          "evidence": "The branding row distinguishes \"Stavias (marca)\" from \"StavIA (assistente)\", says retained `stavias-*` logos are not prohibited assistant references, and later requires removing assistant wiring while preserving STAVIAS branding."
+        },
+        {
+          "text": "Requires executable-boundary checks and PostgreSQL projection or replay integration evidence instead of accepting narrow green tests",
+          "passed": true,
+          "evidence": "The review says `RdoServiceTest` and the web build are too narrow, and requires source/build boundary scans plus PostgreSQL replay/integration evidence for deterministic IDs, no duplicate rows, and checkpoint behavior."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Flags obra-demo, RDO-001, and named workers in production source as fabricated operational data",
+          "passed": true,
+          "evidence": "review.md, P0 at lines 9-11, explicitly identifies `obra-demo`, `RDO-001`, Jo\u00e3o, and Carlos as hard-coded production data and calls them fictional operational data."
+        },
+        {
+          "text": "Requires selecting an authorized real obra and preserving a stable client-generated UUID with authoritative collision-safe numbering",
+          "passed": true,
+          "evidence": "Acceptance criteria 1-2 (review.md lines 48-49) require selecting an authorized real obra and generating a client UUID once; criterion 4 (line 51) requires authoritative distinct numbers for concurrent creations without changing the UUID."
+        },
+        {
+          "text": "Requires previous eligible RDO workforce provenance keyed by collaborator ID with deselection, addition, and clearable apontador",
+          "passed": true,
+          "evidence": "Acceptance criterion 3 (review.md line 50) requires the latest eligible prior RDO, provenance by `colaboradorId`, initially selected authorized workers, visible deselected unavailable workers, add/remove selection, and an apontador that can be changed or cleared."
+        },
+        {
+          "text": "Requires an atomic IndexedDB transaction for domain snapshot, outbox mutation, and pending event plus automatic synchronization triggers",
+          "passed": true,
+          "evidence": "Acceptance criterion 2 (review.md line 49) requires one IndexedDB transaction storing the draft snapshot, versioned canonical mutation, and correlated pending event; criterion 5 (line 52) requires automatic triggers after login, successful local write, network return, and focus."
+        },
+        {
+          "text": "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates",
+          "passed": true,
+          "evidence": "Acceptance criteria 2, 5, and 6 (review.md lines 49, 52-53) require offline reload preservation, persisted literal status, automatic reconnect without pressing sync, and repeated reload/reconnect tests proving a single creation/event with no duplicates."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 5,
+        "failed": 0,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Classifies all five supplied claims individually with one of the requested evidence statuses",
+          "passed": true,
+          "evidence": "The Requirement matrix has one row for each of claims 1 through 5 and assigns CONTRADICTED to claims 1\u20134 and MISSING to claim 5. Both are requested evidence-status terms."
+        },
+        {
+          "text": "Rejects historical revenue correctness because execution reads a mutable current price instead of an immutable price-version snapshot",
+          "passed": true,
+          "evidence": "Claim 2 is classified CONTRADICTED. Its fixture-grounded rationale states that executions do not retain a price-version ID or price snapshot and that a later price edit can rewrite the economic meaning of historical execution."
+        },
+        {
+          "text": "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+          "passed": true,
+          "evidence": "Claim 3 is classified CONTRADICTED and explicitly cites the fixture's PdorResult fields projectedCost and margin as prohibited semantics."
+        },
+        {
+          "text": "Marks ontology centrality and offline PostgreSQL completion missing, incomplete, contradicted, or indirect because no direct evidence exists",
+          "passed": true,
+          "evidence": "Claim 4 is classified CONTRADICTED because the fixture supplies no graph relation or evidence IDs. Claim 5 is classified MISSING because the fixture explicitly supplies no PostgreSQL integration, IndexedDB, reconnect, or browser test."
+        },
+        {
+          "text": "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion",
+          "passed": true,
+          "evidence": "The evidence-needed columns require a trace response whose total is the sum of visible rows, scoped graph/ledger responses containing graph IDs, PostgreSQL integration verification, IndexedDB offline-reload and automatic reconnect tests, and browser/runtime proof. The Scope check separately identifies the absent component evidence rows."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+          "passed": true,
+          "evidence": "The review records the patch deletions as support for removal (\"The claimed patch deletes the frontend feature, launcher imports, and the backend ... package\") while concluding it is \"Partially supported, not proven\". It separately gives the ontology verdict \"Not proven; contradicted by the stated deletion\" and cites deletion of both the endpoint and service."
+        },
+        {
+          "text": "Identifies that deleting StaviaReasoningService removes the only synchronizeOperationalData trigger",
+          "passed": true,
+          "evidence": "The ontology verdict states: \"synchronizeOperationalData(obraId) had only one caller, StaviaReasoningService, which was also deleted.\" The concrete-risks section correctly connects that deletion to operational RDO data no longer entering the ontology."
+        },
+        {
+          "text": "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+          "passed": false,
+          "evidence": "The correction sequence asks to \"move or replace\" the service, endpoint, and trigger with a non-StavIA owner, and requests recovery testing for a \"required checkpoint or archive\". It does not require extraction of graph contracts, nor specify an independent idempotent checkpointed projector, nor make that work a prerequisite before archival."
+        },
+        {
+          "text": "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+          "passed": false,
+          "evidence": "The review treats remaining stavias-* files as potentially \"misleading product surface or stale references\" and says each should be removed or deliberately retained with rationale. It never states that the logo assets are legitimate STAVIAS brand assets distinct from the prohibited StavIA assistant runtime, so the requested boundary is not clearly established."
+        },
+        {
+          "text": "Requires executable-boundary checks and PostgreSQL projection or replay integration evidence instead of accepting narrow green tests",
+          "passed": true,
+          "evidence": "The review rejects the narrow green commands as insufficient, explaining they do not prove entity retrieval, persistence, ingestion, recovery, or PostgreSQL behavior. It requires repository-wide reference checks, runtime boot/contract evidence, a PostgreSQL integration test that runs the replacement projection and asserts API retrieval, and a restart/recovery assertion."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 2,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.4,
+        "passed": 2,
+        "failed": 3,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Flags obra-demo, RDO-001, and named workers in production source as fabricated operational data",
+          "passed": true,
+          "evidence": "The review's P0 finding states that `handleCreate` assigns `obra-demo`, `RDO-001`, and two named workers directly in production code, and calls this a data-integrity failure."
+        },
+        {
+          "text": "Requires selecting an authorized real obra and preserving a stable client-generated UUID with authoritative collision-safe numbering",
+          "passed": false,
+          "evidence": "Acceptance criterion 1 requires a selectable persisted worksite and criterion 2 requires authoritative numbering with concurrent/offline behavior, but the review never requires a stable client-generated UUID. Its later reference to local and remote identity convergence does not specify client-generated identity or stability across retries."
+        },
+        {
+          "text": "Requires previous eligible RDO workforce provenance keyed by collaborator ID with deselection, addition, and clearable apontador",
+          "passed": false,
+          "evidence": "The review requires prior-RDO provenance and tests for predecessor/no-predecessor cases, but it does not require workforce provenance keyed by collaborator ID, nor the deselection, addition, or clearable apontador interactions."
+        },
+        {
+          "text": "Requires an atomic IndexedDB transaction for domain snapshot, outbox mutation, and pending event plus automatic synchronization triggers",
+          "passed": false,
+          "evidence": "Acceptance criterion 3 calls for one durable local transaction containing the new RDO and pending sync mutation, and criterion 7 requires automatic triggers. It does not specifically require IndexedDB, a domain snapshot, or a pending event in that atomic transaction."
+        },
+        {
+          "text": "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates",
+          "passed": true,
+          "evidence": "Criteria 3 and 6 require browser-level offline persistence through reload and an offline-create-reload-reconnect scenario in which the same RDO reaches the server exactly once and local/remote identity and status converge. Criterion 7 requires distinct pending, syncing, synced, failed, and conflict states plus automatic lifecycle/connectivity resumption."
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 3,
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.6,
+        "passed": 3,
+        "failed": 2,
+        "total": 5,
+        "time_seconds": 0.0,
+        "tokens": 0,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Classifies all five supplied claims individually with one of the requested evidence statuses",
+          "passed": true,
+          "evidence": "The audit table has one row for each of the five fixture claims. Its classifications are INDIRECT, INDIRECT, MISSING, INCOMPLETE, and INCOMPLETE, all of which are requested statuses."
+        },
+        {
+          "text": "Rejects historical revenue correctness because execution reads a mutable current price instead of an immutable price-version snapshot",
+          "passed": true,
+          "evidence": "For the revenue claim, the audit states that it \"reads the mutable current price rather than a price version or snapshot\" and requires a regression proving price edits do not silently rewrite historical revenue. The fixture confirms that edits update the existing row in place and execution rows store neither a price-version ID nor a price snapshot."
+        },
+        {
+          "text": "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+          "passed": false,
+          "evidence": "The audit classifies \"PDOR no longer depends on subjective cost\" as MISSING, not CONTRADICTED. It notes only that `PdorResult` contains `projectedCost`; it does not use the remaining `projectedCost` and `margin` fields to issue the required contradicted verdict."
+        },
+        {
+          "text": "Marks ontology centrality and offline PostgreSQL completion missing, incomplete, contradicted, or indirect because no direct evidence exists",
+          "passed": true,
+          "evidence": "The audit marks both claims INCOMPLETE. For ontology it cites the absence of graph relation/evidence IDs and successful traversal/write/query evidence; for offline PostgreSQL it cites the fixture's absence of PostgreSQL integration, IndexedDB, reconnect, and browser testing."
+        },
+        {
+          "text": "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion",
+          "passed": false,
+          "evidence": "The audit requires graph trace IDs, PostgreSQL integration, browser/e2e offline testing, and reconnect verification. However, it does not explicitly require IndexedDB, and its references to \"multi-line/aggregation semantics\" and \"component-level provenance\" do not explicitly require component revenue rows."
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 0.9333,
+        "stddev": 0.1155,
+        "min": 0.8,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.5333,
+        "stddev": 0.1155,
+        "min": 0.4,
+        "max": 0.6
+      },
+      "time_seconds": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "tokens": {
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0,
+        "max": 0
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.40",
+      "time_seconds": "+0.0",
+      "tokens": "+0"
+    }
+  },
+  "notes": [
+    "Timing and token counts were not exposed by the evaluation executor; zero values in the aggregate schema mean unavailable, not observed zero usage.",
+    "Each of the three eval cases ran once with the skill and once without it."
+  ]
+}

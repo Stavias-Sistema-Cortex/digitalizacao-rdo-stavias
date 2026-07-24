@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   arquivarCompra,
+  buscarAuditoriaFinanceira,
   salvarCompra,
 } from "./financeiroApi";
 import {
@@ -11,6 +11,7 @@ import {
 } from "./financeiroOfflineRepository";
 import { syncNow } from "../../lib/sync/syncEngine";
 import type {
+  FinanceAuditEvent,
   FinanceCategory,
   FinanceCostCenter,
   FinancePurchase,
@@ -27,7 +28,6 @@ import {
   statusTone,
 } from "./financeiroView";
 import { FinanceDrawer } from "./FinanceDrawer";
-import { memoryHref } from "../home/memory/memoryLocation";
 
 interface FinancePurchasesPanelProps {
   obraId: string;
@@ -419,9 +419,25 @@ function PurchaseDetail({
   onClose: () => void;
   onArchived: () => void;
 }) {
+  const [events, setEvents] = useState<FinanceAuditEvent[]>([]);
   const [error, setError] = useState("");
   const [archiving, setArchiving] = useState(false);
   const [retrying, setRetrying] = useState(false);
+
+  useEffect(() => {
+    if (purchase.syncStatus) return;
+    let cancelled = false;
+    buscarAuditoriaFinanceira("COMPRA", purchase.id)
+      .then((rows) => {
+        if (!cancelled) setEvents(rows);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "Auditoria indisponível.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [purchase]);
 
   async function archive() {
     if (!window.confirm("Arquivar esta compra? O histórico será preservado.")) return;
@@ -471,20 +487,23 @@ function PurchaseDetail({
             </button>
           ) : null}
         </div>
-      ) : null}
-      <section className="finance-audit finance-memory-reference">
-        <div>
-          <h3>Memória operacional</h3>
-          <p>Criação, alterações e arquivamento desta compra ficam no registro ontológico central.</p>
-        </div>
-        <Link to={memoryHref({
-          obraId: purchase.obraId,
-          entityType: "COMPRA",
-          entityId: purchase.id,
-        })}>
-          Ver na Memória
-        </Link>
-      </section>
+      ) : (
+        <section className="finance-audit">
+          <h3>Rastreabilidade</h3>
+          {events.length === 0 ? (
+            <p>Nenhum evento de auditoria retornado para esta compra.</p>
+          ) : (
+            <ol>
+              {events.map((event) => (
+                <li key={event.id}>
+                  <strong>{event.type.replaceAll("_", " ")}</strong>
+                  <span>{formatDateTime(event.occurredAt)} · {event.origin || "Origem não informada"}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
       {error ? <p className="finance-form-error" role="alert">{error}</p> : null}
       {canArchive && (
         <button

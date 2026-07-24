@@ -64,8 +64,8 @@ describe("buildMonthlySeries", () => {
       "2026-06",
     ]);
     expect(points[1].fisicoPct).toBe(48);
-    expect(points[1].custoPct).toBe(44.4);
     expect(points[1].pdorPct).toBe(12);
+    expect(points[1]).not.toHaveProperty("custoPct");
   });
 
   it("pdor fica nulo sem valor contratual", () => {
@@ -89,7 +89,6 @@ describe("filterByPeriod", () => {
   ].map((month) => ({
     month,
     fisicoPct: 1,
-    custoPct: 1,
     pdorPct: 1,
   }));
 

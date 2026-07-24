@@ -10,28 +10,34 @@ if [ ! -f "$COMPOSE_FILE" ]; then
 fi
 
 source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 
-if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
-  echo "Missing CORTEX_DB_PASSWORD."
+cortex_require_postgres_url
+cortex_require_text CORTEX_POSTGRES_USER
+cortex_require_secret_file CORTEX_POSTGRES_PASSWORD_FILE
+
+canonical_database="$(cortex_postgres_database_name)"
+if [[ ! "${CORTEX_POSTGRES_DOCKER_URL:-}" =~ ^jdbc:postgresql://([^/:?]+)(:([0-9]+))?/${canonical_database}(\?.*)?$ ]]; then
+  echo "CORTEX_POSTGRES_DOCKER_URL must target the Docker-reachable canonical database." >&2
   exit 1
 fi
 
-if [ -z "${CORTEX_MYSQL_ROOT_PASSWORD:-}" ]; then
-  echo "Missing CORTEX_MYSQL_ROOT_PASSWORD."
+if [[ "${CORTEX_POSTGRES_RUNTIME_READY:-false}" != "true" ]]; then
+  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V59 and a real ALFA bootstrap." >&2
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
-  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
-  exit 1
-fi
+cortex_require_text CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID
+cortex_require_secret_file CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE
+cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE
+cortex_require_text CORTEX_AUTH_OFFLINE_GRANT_KEY_ID
+cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE
+cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE
+cortex_require_text CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID
+cortex_require_secret_file CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE
+cortex_require_text VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256
 
-if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
-  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY for the local compose stack."
-  exit 1
-fi
-
-docker compose -f "$COMPOSE_FILE" up --build -d
+docker compose -f "$COMPOSE_FILE" up --build -d --remove-orphans
 
 echo ""
 echo "Córtex local stack is running."
@@ -45,11 +51,11 @@ echo ""
 echo "PWA:"
 echo "  http://localhost:5173"
 echo ""
-echo "Useful commands:"
-echo "  curl -s http://localhost:8081/api/health | jq"
+echo "Canonical database:"
+echo "  PostgreSQL only (no local MySQL primary)"
+echo ""
+echo "Readiness:"
 echo "  curl -s http://localhost:8081/api/readiness | jq"
-echo "  curl -s \"http://localhost:8081/api/assets?query=CBA\" | jq"
-echo "  curl -i -X POST http://localhost:8081/api/assets/import/zld"
 echo ""
 echo "To view API logs:"
 echo "  docker compose -f compose.local.yml logs -f cortex-api"

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { SyncStateStrip } from "../../components/institutional/SyncStateStrip";
@@ -11,18 +11,18 @@ import {
   type ObraStatusChip,
 } from "./homeFilters";
 import { FinanceHomeCard } from "./FinanceHomeCard";
-import { MaisStaviasCard } from "./MaisStaviasCard";
-import { MemorySummaryCard } from "./MemorySummaryCard";
 import { MensagensCard } from "./MensagensCard";
 import { ObraFocusCard } from "./ObraFocusCard";
 import { TimeCard } from "./TimeCard";
 import type { HomeData } from "./useHomeData";
 
-interface HomeOverviewProps {
+export function HomeOverview({
+  data,
+  moreCard,
+}: {
   data: HomeData;
-}
-
-export function HomeOverview({ data }: HomeOverviewProps) {
+  moreCard: ReactNode;
+}) {
   const {
     obras,
     focusedObra,
@@ -40,128 +40,53 @@ export function HomeOverview({ data }: HomeOverviewProps) {
 
   const ufs = useMemo(
     () => [...new Set(obras.map((obra) => obra.uf))]
-      .filter((uf): uf is string => Boolean(uf)),
+      .filter((value): value is string => Boolean(value)),
     [obras],
   );
   const rodovias = useMemo(
     () => [...new Set(obras.map((obra) => obra.rodovia))]
-      .filter((rodovia): rodovia is string => Boolean(rodovia)),
+      .filter((value): value is string => Boolean(value)),
     [obras],
   );
   const obraOptions = useMemo(
     () => filterObrasByRodovia(
-      filterObrasByUf(
-        filterObrasByChip(obras, chip),
-        ufFilter,
-      ),
+      filterObrasByUf(filterObrasByChip(obras, chip), ufFilter),
       rodoviaFilter,
     ),
-    [obras, chip, ufFilter, rodoviaFilter],
+    [obras, chip, rodoviaFilter, ufFilter],
   );
   const selectorOptions = useMemo(() => {
-    if (!focusedObra) {
+    if (!focusedObra || obraOptions.some((obra) => obra.id === focusedObra.id)) {
       return obraOptions;
     }
-    return obraOptions.some((option) => option.id === focusedObra.id)
-      ? obraOptions
-      : [focusedObra, ...obraOptions];
-  }, [obraOptions, focusedObra]);
-  const exceptionEvents = useMemo(
-    () => events.filter((event) => event.syncStatus !== "SYNCED"),
-    [events],
-  );
-  const memorySearch = useMemo(() => {
-    const params = new URLSearchParams({ tab: "memory" });
-    if (focusedObra?.id) {
-      params.set("obraId", focusedObra.id);
+    return [focusedObra, ...obraOptions];
+  }, [focusedObra, obraOptions]);
+  const deviceQueueCount =
+    snapshot.pendingCount + snapshot.syncingCount;
+  const focusedWorksiteQueueCount = events.filter(
+    (event) => event.syncStatus !== "SYNCED",
+  ).length;
+  const localUpdateLabel = useMemo(() => {
+    if (!dataUpdatedAt) {
+      return "Não registrada";
     }
-    return params.toString();
-  }, [focusedObra]);
-  const pendingCount = snapshot.pendingCount + snapshot.syncingCount;
-  const freshness = formatFreshness(dataUpdatedAt);
-  const exceptionSummary = exceptionEvents.length === 1
-    ? "alteração local aguarda"
-    : "alterações locais aguardam";
+
+    const date = new Date(dataUpdatedAt);
+    if (Number.isNaN(date.getTime())) {
+      return "Registro local disponível";
+    }
+
+    return new Intl.DateTimeFormat("pt-BR", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(date);
+  }, [dataUpdatedAt]);
 
   return (
     <div className="home-overview">
-      <section
-        className="home-exception-register"
-        aria-labelledby="home-exceptions-heading"
-      >
-        <header className="home-exception-register__heading">
-          <div>
-            <span className="home-section-index">Leitura prioritária</span>
-            <h2 id="home-exceptions-heading">Exceções operacionais</h2>
-            <p>
-              Pendências, revisões, conflitos e atualização local antecedem a
-              leitura consolidada do empreendimento. Os totais de
-              sincronização são deste dispositivo. Os detalhes de cada
-              alteração permanecem concentrados na Memória.
-            </p>
-          </div>
-          <p className="home-exception-register__sync-caption">
-            Última sincronização, fila local e conflitos permanecem explícitos.
-          </p>
-        </header>
-
-        <dl className="home-exception-register__facts">
-          <div>
-            <dt>Conflitos no dispositivo</dt>
-            <dd>{snapshot.isLoading ? "—" : snapshot.conflictCount}</dd>
-          </div>
-          <div>
-            <dt>Falhas no dispositivo</dt>
-            <dd>{snapshot.isLoading ? "—" : snapshot.errorCount}</dd>
-          </div>
-          <div>
-            <dt>Revisões necessárias</dt>
-            <dd>{snapshot.isLoading ? "—" : snapshot.reviewCount}</dd>
-          </div>
-          <div>
-            <dt>Na fila do dispositivo</dt>
-            <dd>{snapshot.isLoading ? "—" : pendingCount}</dd>
-          </div>
-          <div>
-            <dt>Atualização local</dt>
-            <dd>
-              {dataUpdatedAt && freshness ? (
-                <time dateTime={dataUpdatedAt}>{freshness}</time>
-              ) : (
-                "Não registrada"
-              )}
-            </dd>
-          </div>
-        </dl>
-
-        <SyncStateStrip
-          className="home-exception-register__sync"
-          snapshot={snapshot}
-        />
-
-        {exceptionEvents.length === 0 ? (
-          <p className="home-exception-register__empty">
-            Nenhum evento local fora do estado sincronizado nesta obra.
-          </p>
-        ) : (
-          <p className="home-exception-register__empty">
-            {exceptionEvents.length} {exceptionSummary} tratamento ou confirmação.
-            {" "}
-            <Link to={`/home?${memorySearch}`}>Consultar Memória</Link>
-          </p>
-        )}
-      </section>
-
       <header className="home-topbar">
-        <div>
-          <span className="home-section-index">Recorte da operação</span>
-          <h2>Obras relacionadas</h2>
-        </div>
-        <div
-          className="home-chips"
-          role="group"
-          aria-label="Filtrar obras por status"
-        >
+        <h2>Obras relacionadas</h2>
+        <div className="home-chips" role="group" aria-label="Filtrar obras por status">
           {OBRA_STATUS_CHIPS.map((option) => (
             <button
               key={option.value}
@@ -174,7 +99,7 @@ export function HomeOverview({ data }: HomeOverviewProps) {
           ))}
         </div>
         <div className="home-uf-filter">
-          <span>Escopo</span>
+          <span>Filtrar por:</span>
           <select
             value={ufFilter}
             aria-label="Filtrar por UF"
@@ -196,6 +121,61 @@ export function HomeOverview({ data }: HomeOverviewProps) {
         </div>
       </header>
 
+      <section
+        aria-label="Exceções de sincronização"
+        className="home-exception-register"
+      >
+        <header className="home-exception-register__heading">
+          <div>
+            <span>Persistência neste dispositivo</span>
+            <h2>Estado operacional</h2>
+          </div>
+          <p>
+            Atualização local
+            {dataUpdatedAt ? (
+              <>
+                {" · "}
+                <time dateTime={dataUpdatedAt}>{localUpdateLabel}</time>
+              </>
+            ) : (
+              ` · ${localUpdateLabel}`
+            )}
+          </p>
+        </header>
+
+        <SyncStateStrip
+          snapshot={snapshot}
+          className="home-exception-register__sync"
+        />
+
+        <dl className="home-exception-register__facts">
+          <div>
+            <dt>Na fila do dispositivo</dt>
+            <dd>{snapshot.isLoading ? "—" : deviceQueueCount}</dd>
+          </div>
+          <div>
+            <dt>Conflitos no dispositivo</dt>
+            <dd>{snapshot.isLoading ? "—" : snapshot.conflictCount}</dd>
+          </div>
+          <div>
+            <dt>Falhas no dispositivo</dt>
+            <dd>{snapshot.isLoading ? "—" : snapshot.errorCount}</dd>
+          </div>
+          <div>
+            <dt>Revisões necessárias</dt>
+            <dd>{snapshot.isLoading ? "—" : snapshot.reviewCount}</dd>
+          </div>
+          <div>
+            <dt>Aguardando confirmação nesta obra</dt>
+            <dd>{focusedWorksiteQueueCount}</dd>
+          </div>
+        </dl>
+
+        <Link to="/home?tab=memory">
+          Consultar Memória
+        </Link>
+      </section>
+
       {focusedObra ? (
         <ObraFocusCard
           obra={focusedObra}
@@ -206,52 +186,32 @@ export function HomeOverview({ data }: HomeOverviewProps) {
           latestRdo={latestRdo}
         />
       ) : (
-        <section className="home-obra-card home-worksite-command home-obra-card--empty">
+        <section className="home-obra-card home-obra-card--empty">
           {isLoading ? (
             <p>Carregando obras…</p>
           ) : obras.length === 0 ? (
-            <p>
-              Nenhuma obra disponível. Conecte-se uma vez para carregar o
-              escopo operacional autorizado.
-            </p>
+            <p>Nenhuma obra disponível. Conecte-se uma vez para carregar seu escopo.</p>
           ) : (
-            <p>Escolha uma obra para iniciar a leitura operacional.</p>
+            <p>Escolha uma obra para começar.</p>
           )}
         </section>
       )}
 
-      <section
-        className="home-command-summaries"
-        aria-label="Resumos operacionais"
-      >
+      <div className="home-cards-grid">
         {focusedObra ? <FinanceHomeCard obraId={focusedObra.id} /> : null}
-        <MemorySummaryCard
-          events={events}
-          obraId={focusedObra?.id ?? null}
-        />
-        <TimeCard latestRdo={latestRdo} />
-      </section>
-
-      <aside className="home-secondary-links" aria-label="Acessos secundários">
         <MensagensCard />
-        <MaisStaviasCard />
-      </aside>
+        <article className="home-card home-memory-card">
+          <h3>Memória operacional</h3>
+          <p>
+            {events.length > 0
+              ? `${events.length} eventos locais vinculados à obra selecionada.`
+              : "Nenhum evento local vinculado à obra selecionada."}
+          </p>
+          <Link to="/home?tab=memory">Abrir registro completo</Link>
+        </article>
+        <TimeCard latestRdo={latestRdo} />
+        {moreCard}
+      </div>
     </div>
   );
-}
-
-function formatFreshness(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(date);
 }

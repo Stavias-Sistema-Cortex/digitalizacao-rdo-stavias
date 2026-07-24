@@ -6,7 +6,9 @@
 
 **Architecture:** This index sequences six independently testable plans against the approved design. Each slice lands on `feat/cortex.v3`, starts from current `develop`, reuses Cortex 2.1 code selectively, and must keep the repository green before the next slice begins.
 
-**Tech Stack:** Java 21, Spring Boot 3.3.5, JDBC, Flyway, PostgreSQL/Testcontainers, React 19, TypeScript 6, Vite 8, Vitest 4, IndexedDB/idb 8, Apache POI 5.3, SheetJS-compatible `@e965/xlsx`.
+**Tech Stack:** Java 21, Spring Boot 3.5.16, JDBC, Flyway,
+PostgreSQL/Testcontainers, React 19, TypeScript 6, Vite 8, Vitest 4,
+IndexedDB/idb 8, Apache POI 5.5.1, SheetJS-compatible `@e965/xlsx`.
 
 ## Global Constraints
 
@@ -14,7 +16,9 @@
 - StavIA assistant code is absent from compiled frontend/backend runtimes; STAVIAS branding remains.
 - No fabricated production data or false synchronization state.
 - Every user mutation is offline-first, idempotent, authorized, versioned, traceable, and synchronized automatically.
-- RDO/PDOR expose no subjective cost or margin; factual accounting remains.
+- The active Financeiro surface contains only revenue trace, service prices,
+  and revenue-only PDOR; cost, margin, and legacy accounting modules are not
+  reachable.
 - Historical migrations remain immutable; Cortex 3 starts at V45.
 - All cross-system instants are UTC `Instant`; date-only domain values remain `LocalDate`.
 - No secret enters frontend code/storage, logs, migrations, exports, or error responses.
@@ -85,4 +89,3 @@ Exit evidence: validated security scan, clean PostgreSQL migration/runtime, offl
 | PostgreSQL StaviasCortex complete | runtime-foundation + security-validation | clean-start and full-flow IT |
 | Front/back/key security | security-validation | validated findings and secret audit |
 | Reusable Cortex 3 skill | skill-creator workflow | skill files, evals, benchmark, review |
-

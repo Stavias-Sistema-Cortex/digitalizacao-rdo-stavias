@@ -1,0 +1,97 @@
+// @vitest-environment jsdom
+
+import "@testing-library/jest-dom/vitest";
+
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  fetchCompleteServiceCatalog: vi.fn(),
+  hydrateServiceCatalog: vi.fn(),
+  listLocalServiceCatalog: vi.fn(),
+  queueCreateService: vi.fn(),
+  queueCreatePrice: vi.fn(),
+  queueSupersedePrice: vi.fn(),
+  queueCancelPrice: vi.fn(),
+}));
+
+vi.mock("./servicePriceApi", () => ({
+  fetchCompleteServiceCatalog: mocks.fetchCompleteServiceCatalog,
+}));
+
+vi.mock("./servicePriceRepository", () => ({
+  hydrateServiceCatalog: mocks.hydrateServiceCatalog,
+  listLocalServiceCatalog: mocks.listLocalServiceCatalog,
+  queueCreateService: mocks.queueCreateService,
+  queueCreatePrice: mocks.queueCreatePrice,
+  queueSupersedePrice: mocks.queueSupersedePrice,
+  queueCancelPrice: mocks.queueCancelPrice,
+}));
+
+import { ServicePriceCatalogPage } from "./ServicePriceCatalogPage";
+
+const OBRA_ID = "00000000-0000-4000-8000-000000000101";
+
+const LOCAL_ROWS = [{
+  service: {
+    id: "00000000-0000-4000-8000-000000000301",
+    code: "PAV.CBUQ",
+    name: "Pavimentação CBUQ",
+    description: null,
+    status: "ACTIVE",
+    syncStatus: "SYNCED",
+    createdAt: "2026-07-22T12:00:00.000Z",
+    updatedAt: "2026-07-22T12:00:00.000Z",
+    lastError: null,
+  },
+  priceVersions: [],
+}];
+
+describe("ServicePriceCatalogPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("navigator", { onLine: false });
+    mocks.listLocalServiceCatalog.mockResolvedValue(LOCAL_ROWS);
+    mocks.queueCreateService.mockResolvedValue({
+      entityId: "00000000-0000-4000-8000-000000000302",
+      clientMutationId: "00000000-0000-4000-8000-000000000501",
+    });
+  });
+
+  it("shows persisted catalog offline and does not infer administration rights", async () => {
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR"]}
+      />,
+    );
+
+    expect(await screen.findByText("Pavimentação CBUQ")).toBeInTheDocument();
+    expect(screen.getByText(/dados locais/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /novo serviço/i })).not
+      .toBeInTheDocument();
+  });
+
+  it("queues a real catalog mutation for an authorized administrator", async () => {
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR", "FINANCEIRO_ADMINISTRAR"]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /novo serviço/i }));
+    fireEvent.change(screen.getByLabelText("Código do serviço"), {
+      target: { value: "PAV.BASE" },
+    });
+    fireEvent.change(screen.getByLabelText("Nome do serviço"), {
+      target: { value: "Base graduada" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /salvar offline/i }));
+
+    await waitFor(() => expect(mocks.queueCreateService).toHaveBeenCalledWith(
+      OBRA_ID,
+      { code: "PAV.BASE", name: "Base graduada", description: "" },
+    ));
+  });
+});

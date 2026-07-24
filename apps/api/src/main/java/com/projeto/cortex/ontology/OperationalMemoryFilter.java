@@ -1,49 +1,45 @@
 package com.projeto.cortex.ontology;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.Locale;
 
 public record OperationalMemoryFilter(
+        String query,
         String entityType,
         String entityId,
-        String obraId,
+        String worksiteId,
         String rdoId,
         String actorId,
         String eventType,
         String origin,
         String result,
-        LocalDateTime from,
-        LocalDateTime to
+        Instant from,
+        Instant to
 ) {
     public OperationalMemoryFilter {
-        entityType = trimToNull(entityType);
+        query = trimToNull(query);
+        entityType = code(entityType);
         entityId = trimToNull(entityId);
-        obraId = trimToNull(obraId);
+        worksiteId = trimToNull(worksiteId);
         rdoId = trimToNull(rdoId);
         actorId = trimToNull(actorId);
-        eventType = trimToNull(eventType);
-        origin = trimToNull(origin);
-        result = trimToNull(result);
+        eventType = code(eventType);
+        origin = code(origin);
+        result = code(result);
     }
 
     public static OperationalMemoryFilter empty() {
         return new OperationalMemoryFilter(
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
+                null, null, null, null, null, null, null, null, null, null, null
         );
     }
 
+    private static String code(String value) {
+        String normalized = trimToNull(value);
+        return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
+    }
+
     private static String trimToNull(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

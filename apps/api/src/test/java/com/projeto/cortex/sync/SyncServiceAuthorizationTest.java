@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -50,6 +51,7 @@ class SyncServiceAuthorizationTest {
     private SyncPushRequest.MutacaoCliente criarRdo(String obraId) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("obraId", obraId);
+        payload.put("clientMutationId", "forged-payload-id");
         return new SyncPushRequest.MutacaoCliente(
                 "cli-mut-1", "RDO", null, "CRIAR_RDO", null,
                 payload, LocalDateTime.now(), "corr-1"
@@ -86,6 +88,8 @@ class SyncServiceAuthorizationTest {
         );
 
         verify(currentUserService).requireWorksiteAccess("obra-vinculada");
-        verify(rdoService).criarRascunho(any(RdoCreateRequest.class));
+        verify(rdoService).criarRascunho(argThat(request ->
+                "cli-mut-1".equals(request.clientMutationId())
+        ));
     }
 }

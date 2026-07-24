@@ -15,7 +15,7 @@ import java.util.List;
  *
  * <p>O catálogo é deliberadamente executável: o gate de build resolve a classe
  * e o método de domínio, carrega o teste declarado e exige evento, versão,
- * projector, autorização, política StavIA, idempotência e rastreabilidade.
+ * projector, autorização, política de evidência, idempotência e rastreabilidade.
  * Uma mutação nova não deve ser adicionada ao produto sem entrar aqui.</p>
  */
 public final class OperationalMutationCatalog {
@@ -31,7 +31,7 @@ public final class OperationalMutationCatalog {
             int payloadSchemaVersion,
             String projector,
             String accessPolicy,
-            String staviaEvidencePolicy,
+            String evidencePolicy,
             String idempotencyContract,
             String traceabilityContract,
             String verificationTest
@@ -146,7 +146,7 @@ public final class OperationalMutationCatalog {
             String eventType,
             String projector,
             String accessPolicy,
-            String staviaEvidencePolicy,
+            String evidencePolicy,
             String idempotencyContract,
             String traceabilityContract,
             String verificationTest
@@ -159,7 +159,7 @@ public final class OperationalMutationCatalog {
                 1,
                 projector,
                 accessPolicy,
-                staviaEvidencePolicy,
+                evidencePolicy,
                 idempotencyContract,
                 traceabilityContract,
                 verificationTest

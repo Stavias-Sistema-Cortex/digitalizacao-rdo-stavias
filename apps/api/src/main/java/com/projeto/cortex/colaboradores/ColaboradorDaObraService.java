@@ -29,7 +29,7 @@ public class ColaboradorDaObraService {
                     c.nome_perfil,
                     c.nome_grupo
                 FROM colaborador c
-                WHERE c.ativo = 1
+                WHERE c.ativo = TRUE
                   AND c.deletado_em IS NULL
                   AND (
                         EXISTS (

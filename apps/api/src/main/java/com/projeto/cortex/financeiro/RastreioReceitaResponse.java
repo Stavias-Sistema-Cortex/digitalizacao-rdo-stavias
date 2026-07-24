@@ -1,47 +1,45 @@
 package com.projeto.cortex.financeiro;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
 public record RastreioReceitaResponse(
-        LocalDate de,
-        LocalDate ate,
-        Totais consolidado,
-        List<Obra> obras,
-        List<TipoServico> tiposServico
+        LocalDate from,
+        LocalDate to,
+        @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+        BigDecimal totalRevenue,
+        int evidenceCount,
+        List<RevenueEvidenceRow> rows
 ) {
-    public record Totais(
-            BigDecimal producao,
-            BigDecimal custo,
-            BigDecimal receitaEstimada,
-            BigDecimal margem,
-            BigDecimal receitaMedida,
-            BigDecimal receitaAprovada,
-            BigDecimal receitaFaturada,
-            BigDecimal receitaRecebida
-    ) { }
 
-    public record Obra(String id, String nome, Totais totais) { }
-
-    public record TipoServico(
-            String nome,
-            String unidade,
-            Totais totais,
-            List<ContribuicaoObra> obras,
-            long quantidadeRdos,
-            boolean receitaDisponivel
-    ) { }
-
-    public record ContribuicaoObra(
-            String obraId,
-            String obraNome,
-            String itemContratualId,
-            String codigoItemContratual,
-            Totais totais,
-            long quantidadeRdos,
-            List<String> rdoIds,
-            boolean receitaDisponivel
-    ) { }
+    public record RevenueEvidenceRow(
+            String worksiteId,
+            String worksiteName,
+            String rdoId,
+            String rdoNumber,
+            String executionId,
+            LocalDate executionDate,
+            String serviceId,
+            String serviceCode,
+            String serviceName,
+            String priceVersionId,
+            int priceVersion,
+            @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+            BigDecimal quantity,
+            String unit,
+            @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+            BigDecimal unitPrice,
+            String currency,
+            @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+            BigDecimal revenue,
+            String coverageCode,
+            String revenueEvidenceId,
+            String revenueEventId,
+            long eventCommitSequence,
+            Instant acceptedAt
+    ) {
+    }
 }
-

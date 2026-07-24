@@ -4,6 +4,37 @@ import {
   responseErrorMessage,
 } from "../../lib/api/apiClient";
 
+export interface ObraTimelineEventApi {
+  id: string;
+  commitSeq: number | null;
+  type: string;
+  principalEntityType: string;
+  principalEntityId: string;
+  relatedEntities: unknown;
+  obraId: string | null;
+  rdoId: string | null;
+  colaboradorId: string | null;
+  occurredAt: string | null;
+  syncedAt: string | null;
+  origin: string | null;
+  syncStatus: string | null;
+  schemaVersion: number | null;
+  payload: unknown;
+}
+
+export interface ObraTimelineEvent {
+  id: string;
+  commitSeq: number | null;
+  type: string;
+  principalEntityType: string;
+  principalEntityId: string;
+  obraId: string | null;
+  occurredAt: string | null;
+  origin: string | null;
+  syncStatus: string | null;
+  payload: Record<string, unknown>;
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = await readResponseBody(response);
 
@@ -16,8 +47,60 @@ async function readJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
+function objectPayload(value: unknown): Record<string, unknown> {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    return value as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+export function obraTimelineEventFromApi(
+  api: ObraTimelineEventApi,
+): ObraTimelineEvent {
+  return {
+    id: api.id,
+    commitSeq: api.commitSeq,
+    type: api.type,
+    principalEntityType: api.principalEntityType,
+    principalEntityId: api.principalEntityId,
+    obraId: api.obraId,
+    occurredAt: api.occurredAt,
+    origin: api.origin,
+    syncStatus: api.syncStatus,
+    payload: objectPayload(api.payload),
+  };
+}
+
+export async function buscarTimelineObra(
+  obraId: string,
+): Promise<ObraTimelineEvent[]> {
+  const params = new URLSearchParams({
+    entityType: "OBRA",
+    entityId: obraId,
+    limit: "50",
+  });
+  const response = await apiFetch(
+    `/ontology/timeline?${params.toString()}`,
+  );
+  const data = await readJson<ObraTimelineEventApi[]>(response);
+
+  return data.map(obraTimelineEventFromApi);
+}
+
 export interface ObraPdorApi {
   id: string;
+  obra?: {
+    id: string;
+    codigoContrato?: string | null;
+    codigoCw?: string | null;
+    codigoInterno?: string | null;
+    nome?: string | null;
+  } | null;
   dataReferencia: string | null;
   dataExecucao: string | null;
   versaoModelo?: string | null;
@@ -52,6 +135,14 @@ export interface ObraPdorApi {
   evidencias?: unknown;
   iniciadoPor?: string | null;
   tipoIniciador?: string | null;
+  algorithmVersion?: string | null;
+  evidenceIds?: unknown;
+  evidenceHighWaterMark?: number | null;
+  coverageCode?: string | null;
+  assumptions?: unknown;
+  executedAtUtc?: string | null;
+  stale?: boolean;
+  current?: boolean;
   erroExecucao: string | null;
 }
 
@@ -85,9 +176,19 @@ export interface ObraPdorComparison {
   changedInputCount: number;
 }
 
+export interface ObraPdorTemporalWindow {
+  inicioProgramacao: string | null;
+  fimProgramacao: string | null;
+  dataReferencia: string | null;
+  janelaEquipamentosDias: number | null;
+  serieHistoricaSemanal: boolean | null;
+}
+
 export interface ObraPdor {
   id: string;
+  obraId: string;
   dataReferencia: string | null;
+  janelaTemporal: ObraPdorTemporalWindow | null;
   dataExecucao: string | null;
   versaoModelo: string | null;
   versaoPremissas: string | null;
@@ -117,6 +218,14 @@ export interface ObraPdor {
   evidencias: ObraPdorEvidence[];
   iniciadoPor: string | null;
   tipoIniciador: string | null;
+  algorithmVersion: string | null;
+  evidenceIds: string[];
+  evidenceHighWaterMark: number | null;
+  coverageCode: string | null;
+  assumptions: Record<string, unknown>;
+  executedAtUtc: string | null;
+  stale: boolean;
+  current: boolean;
   erroExecucao: string | null;
 }
 
@@ -168,6 +277,13 @@ function warningsFromApi(value: unknown): string[] {
   return value.filter(
     (item): item is string => typeof item === "string" && item !== "",
   );
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string =>
+        typeof item === "string" && item.trim().length > 0)
+    : [];
 }
 
 function stringField(
@@ -256,10 +372,56 @@ function evidencesFromApi(value: unknown): ObraPdorEvidence[] {
   });
 }
 
+function temporalWindowFromApi(
+  value: unknown,
+): ObraPdorTemporalWindow | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const window = value as Record<string, unknown>;
+  const requiredFields = [
+    "inicioProgramacao",
+    "fimProgramacao",
+    "dataReferencia",
+    "janelaEquipamentosDias",
+    "serieHistoricaSemanal",
+  ];
+  if (requiredFields.some(
+    (field) => !Object.prototype.hasOwnProperty.call(window, field),
+  )) {
+    return null;
+  }
+  const start = window.inicioProgramacao;
+  const end = window.fimProgramacao;
+  const referenceDate = window.dataReferencia;
+  const equipmentWindow = window.janelaEquipamentosDias;
+  const weeklySeries = window.serieHistoricaSemanal;
+  if (
+    (start !== null && (typeof start !== "string" || !start.trim())) ||
+    (end !== null && (typeof end !== "string" || !end.trim())) ||
+    typeof referenceDate !== "string" ||
+    !referenceDate.trim() ||
+    typeof equipmentWindow !== "number" ||
+    !Number.isSafeInteger(equipmentWindow) ||
+    typeof weeklySeries !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    inicioProgramacao: typeof start === "string" ? start.trim() : null,
+    fimProgramacao: typeof end === "string" ? end.trim() : null,
+    dataReferencia: referenceDate.trim(),
+    janelaEquipamentosDias: equipmentWindow,
+    serieHistoricaSemanal: weeklySeries,
+  };
+}
+
 export function obraPdorFromApi(api: ObraPdorApi): ObraPdor {
   return {
     id: api.id,
+    obraId: api.obra?.id ?? "",
     dataReferencia: api.dataReferencia,
+    janelaTemporal: temporalWindowFromApi(api.janelaTemporal),
     dataExecucao: api.dataExecucao,
     versaoModelo: api.versaoModelo ?? null,
     versaoPremissas: api.versaoPremissas ?? null,
@@ -290,6 +452,18 @@ export function obraPdorFromApi(api: ObraPdorApi): ObraPdor {
     evidencias: evidencesFromApi(api.evidencias),
     iniciadoPor: api.iniciadoPor ?? null,
     tipoIniciador: api.tipoIniciador ?? null,
+    algorithmVersion: api.algorithmVersion ?? null,
+    evidenceIds: stringArray(api.evidenceIds),
+    evidenceHighWaterMark:
+      typeof api.evidenceHighWaterMark === "number" &&
+      Number.isSafeInteger(api.evidenceHighWaterMark)
+        ? api.evidenceHighWaterMark
+        : null,
+    coverageCode: api.coverageCode ?? null,
+    assumptions: objectPayload(api.assumptions),
+    executedAtUtc: api.executedAtUtc ?? null,
+    stale: api.stale === true,
+    current: api.current === true,
     erroExecucao: api.erroExecucao,
   };
 }
@@ -311,5 +485,11 @@ export async function buscarPdorAtual(
   }
 
   const data = await readJson<ObraPdorApi>(response);
-  return obraPdorFromApi(data);
+  const pdor = obraPdorFromApi(data);
+  if (pdor.obraId !== obraId) {
+    throw new Error(
+      "O servidor retornou um PDOR fora da obra financeira solicitada.",
+    );
+  }
+  return pdor;
 }

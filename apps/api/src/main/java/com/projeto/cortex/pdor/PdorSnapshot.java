@@ -1,10 +1,14 @@
 package com.projeto.cortex.pdor;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.Instant;
+import java.util.List;
 
 public record PdorSnapshot(
         String id,
@@ -56,8 +60,30 @@ public record PdorSnapshot(
         JsonNode previousComparison,
         JsonNode evidence,
         String initiatedBy,
-        String initiatorType
+        String initiatorType,
+        String algorithmVersion,
+        List<String> evidenceIds,
+        Long evidenceHighWaterMark,
+        String coverageCode,
+        JsonNode assumptions,
+        Instant executedAtUtc,
+        boolean stale,
+        boolean current
 ) {
+    public PdorSnapshot {
+        evidenceIds = evidenceIds == null
+                ? List.of()
+                : List.copyOf(evidenceIds);
+        assumptions = assumptions == null
+                ? JsonNodeFactory.instance.objectNode()
+                : assumptions.deepCopy();
+    }
+
+    @Override
+    public JsonNode assumptions() {
+        return assumptions.deepCopy();
+    }
+
     PdorSnapshot withExplainability(
             String dataVersion,
             PdorExplainability explainability,
@@ -78,7 +104,118 @@ public record PdorSnapshot(
                 explainability.featuresUsed(), explainability.missingData(),
                 explainability.limitations(), explainability.alerts(),
                 explainability.recommendations(), explainability.previousComparison(),
-                explainability.evidence(), initiator.id(), initiator.type()
+                explainability.evidence(), initiator.id(), initiator.type(),
+                algorithmVersion, evidenceIds, evidenceHighWaterMark,
+                coverageCode, assumptions, executedAtUtc, stale, current
+        );
+    }
+
+    PdorSnapshot withRevenueMetadata(
+            String nextAlgorithmVersion,
+            List<String> nextEvidenceIds,
+            Long nextEvidenceHighWaterMark,
+            String nextCoverageCode,
+            JsonNode nextAssumptions,
+            Instant nextExecutedAtUtc,
+            boolean nextStale,
+            boolean nextCurrent
+    ) {
+        return new PdorSnapshot(
+                id, obraId, codigoObra, executedAt, referenceDate,
+                modelVersion, assumptionsVersion, executionStatus, triggerType,
+                originEventId, idempotencyKey, inputs, inputOrigins, warnings,
+                calculationMode, calibrationStatus, projectPhase, riskLevel,
+                revenueP10, revenueP50, revenueP80, revenueP95,
+                racRci, racRciSpi, racBottomUp, racWeighted, rci, spi,
+                probabilityBelowContract, probabilityBelow95Pct,
+                probabilityBelow90Pct, heuristicRiskScore, confidence,
+                simulationConverged, simulationIterations, drivers,
+                executionError, createdAt, dataVersion,
+                analysisScope, temporalWindow, featuresUsed, missingData,
+                limitations, alerts, recommendations, previousComparison,
+                evidence, initiatedBy, initiatorType,
+                nextAlgorithmVersion, nextEvidenceIds,
+                nextEvidenceHighWaterMark, nextCoverageCode,
+                nextAssumptions, nextExecutedAtUtc, nextStale, nextCurrent
+        );
+    }
+
+    public PdorSnapshot(
+            String id,
+            String obraId,
+            String codigoObra,
+            LocalDateTime executedAt,
+            LocalDate referenceDate,
+            String modelVersion,
+            String assumptionsVersion,
+            PdorExecutionStatus executionStatus,
+            PdorTriggerType triggerType,
+            String originEventId,
+            String idempotencyKey,
+            JsonNode inputs,
+            JsonNode inputOrigins,
+            JsonNode warnings,
+            String calculationMode,
+            String calibrationStatus,
+            String projectPhase,
+            String riskLevel,
+            BigDecimal revenueP10,
+            BigDecimal revenueP50,
+            BigDecimal revenueP80,
+            BigDecimal revenueP95,
+            BigDecimal racRci,
+            BigDecimal racRciSpi,
+            BigDecimal racBottomUp,
+            BigDecimal racWeighted,
+            BigDecimal rci,
+            BigDecimal spi,
+            BigDecimal probabilityBelowContract,
+            BigDecimal probabilityBelow95Pct,
+            BigDecimal probabilityBelow90Pct,
+            BigDecimal heuristicRiskScore,
+            BigDecimal confidence,
+            Boolean simulationConverged,
+            Integer simulationIterations,
+            JsonNode drivers,
+            String executionError,
+            LocalDateTime createdAt,
+            String dataVersion,
+            JsonNode analysisScope,
+            JsonNode temporalWindow,
+            JsonNode featuresUsed,
+            JsonNode missingData,
+            JsonNode limitations,
+            JsonNode alerts,
+            JsonNode recommendations,
+            JsonNode previousComparison,
+            JsonNode evidence,
+            String initiatedBy,
+            String initiatorType
+    ) {
+        this(
+                id, obraId, codigoObra, executedAt, referenceDate,
+                modelVersion, assumptionsVersion, executionStatus, triggerType,
+                originEventId, idempotencyKey, inputs, inputOrigins, warnings,
+                calculationMode, calibrationStatus, projectPhase, riskLevel,
+                revenueP10, revenueP50, revenueP80, revenueP95,
+                racRci, racRciSpi, racBottomUp, racWeighted, rci, spi,
+                probabilityBelowContract, probabilityBelow95Pct,
+                probabilityBelow90Pct, heuristicRiskScore, confidence,
+                simulationConverged, simulationIterations, drivers,
+                executionError, createdAt, dataVersion,
+                analysisScope, temporalWindow, featuresUsed, missingData,
+                limitations, alerts, recommendations, previousComparison,
+                evidence, initiatedBy, initiatorType,
+                modelVersion,
+                List.of(),
+                null,
+                "LEGACY_UNKNOWN",
+                JsonNodeFactory.instance.objectNode(),
+                executedAt == null
+                        ? null
+                        : executedAt.toInstant(ZoneOffset.UTC),
+                true,
+                false
         );
     }
 

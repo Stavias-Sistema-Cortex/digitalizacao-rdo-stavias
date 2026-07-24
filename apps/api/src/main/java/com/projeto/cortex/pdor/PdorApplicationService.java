@@ -13,6 +13,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -20,6 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,10 +39,14 @@ import java.util.UUID;
 public class PdorApplicationService {
 
     private static final String FONTE = "PDOR";
+    static final String REVENUE_ALGORITHM_VERSION = "PDOR-REVENUE-1";
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(PdorApplicationService.class);
 
     private final ObraRepository obraRepository;
     private final PdorInputLoader inputLoader;
     private final PdorSnapshotRepository snapshotRepository;
+    private final PdorSnapshotPublicationService publicationService;
     private final ObjectMapper objectMapper;
     private final PdorContextBuilder contextBuilder;
     private final PdorEngine engine;
@@ -50,6 +59,7 @@ public class PdorApplicationService {
             ObraRepository obraRepository,
             PdorInputLoader inputLoader,
             PdorSnapshotRepository snapshotRepository,
+            PdorSnapshotPublicationService publicationService,
             ObjectMapper objectMapper,
             CortexOperationalMemoryService memoryService,
             PdorExecutionInitiatorResolver initiatorResolver
@@ -58,6 +68,33 @@ public class PdorApplicationService {
                 obraRepository,
                 inputLoader,
                 snapshotRepository,
+                publicationService,
+                objectMapper,
+                memoryService,
+                new PdorContextBuilder(),
+                new PdorEngine(),
+                initiatorResolver
+        );
+    }
+
+    /**
+     * Mantém a construção explícita usada por integrações fora do contexto
+     * Spring; em runtime o construtor autowired usa o publicador transacional
+     * proxied pelo container.
+     */
+    public PdorApplicationService(
+            ObraRepository obraRepository,
+            PdorInputLoader inputLoader,
+            PdorSnapshotRepository snapshotRepository,
+            ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService,
+            PdorExecutionInitiatorResolver initiatorResolver
+    ) {
+        this(
+                obraRepository,
+                inputLoader,
+                snapshotRepository,
+                new PdorSnapshotPublicationService(snapshotRepository),
                 objectMapper,
                 memoryService,
                 new PdorContextBuilder(),
@@ -104,9 +141,34 @@ public class PdorApplicationService {
             PdorEngine engine,
             PdorExecutionInitiatorResolver initiatorResolver
     ) {
+        this(
+                obraRepository,
+                inputLoader,
+                snapshotRepository,
+                new PdorSnapshotPublicationService(snapshotRepository),
+                objectMapper,
+                memoryService,
+                contextBuilder,
+                engine,
+                initiatorResolver
+        );
+    }
+
+    private PdorApplicationService(
+            ObraRepository obraRepository,
+            PdorInputLoader inputLoader,
+            PdorSnapshotRepository snapshotRepository,
+            PdorSnapshotPublicationService publicationService,
+            ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService,
+            PdorContextBuilder contextBuilder,
+            PdorEngine engine,
+            PdorExecutionInitiatorResolver initiatorResolver
+    ) {
         this.obraRepository = obraRepository;
         this.inputLoader = inputLoader;
         this.snapshotRepository = snapshotRepository;
+        this.publicationService = publicationService;
         this.objectMapper = objectMapper.copy()
                 .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
         this.memoryService = memoryService;
@@ -127,7 +189,12 @@ public class PdorApplicationService {
         String idempotencyKey = calculateIdempotencyKey(inputs);
 
         return snapshotRepository.findByIdempotencyKey(idempotencyKey)
-                .map(snapshot -> toResponse(snapshot, obra, true))
+                .map(snapshot -> {
+                    publicationService.repairOntology(
+                            () -> registrarNoGrafo(snapshot, obra)
+                    );
+                    return toResponse(snapshot, obra, true);
+                })
                 .orElseGet(() -> calcularNovoSnapshot(
                         obra,
                         inputs,
@@ -138,14 +205,22 @@ public class PdorApplicationService {
     }
 
     public PdorResultadoResponse buscarAtual(String obraIdentifier) {
-        Obra obra = localizarObra(obraIdentifier);
-        PdorSnapshot snapshot = snapshotRepository.findLatestByObraId(obra.getId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Nenhum snapshot PDOR encontrado para a obra."
-                ));
+        PdorResultadoResponse current = buscarAtualSeExistente(obraIdentifier);
+        if (current == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Nenhum snapshot PDOR encontrado para a obra."
+            );
+        }
+        return current;
+    }
 
-        return toResponse(snapshot, obra, true);
+    public PdorResultadoResponse buscarAtualSeExistente(String obraIdentifier) {
+        Obra obra = localizarObra(obraIdentifier);
+        return snapshotRepository.findCurrentByObraId(obra.getId())
+                .or(() -> snapshotRepository.findLatestByObraId(obra.getId()))
+                .map(snapshot -> toResponse(snapshot, obra, true))
+                .orElse(null);
     }
 
     public PdorHistoricoResponse buscarHistorico(
@@ -163,6 +238,13 @@ public class PdorApplicationService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "size deve estar entre 1 e 100."
+            );
+        }
+        long offset = Math.multiplyExact((long) page, size);
+        if (offset > 1_000_000L) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "page excede o limite permitido."
             );
         }
 
@@ -195,29 +277,36 @@ public class PdorApplicationService {
             String originEventId,
             String idempotencyKey
     ) {
-        PdorSnapshot previous = snapshotRepository.findLatestByObraId(obra.getId())
+        PdorSnapshot previous = snapshotRepository.findCurrentByObraId(obra.getId())
+                .or(() -> snapshotRepository.findLatestByObraId(obra.getId()))
                 .orElse(null);
-        PdorSnapshot baseSnapshot;
-
-        if (!inputs.canCalculate()) {
-            baseSnapshot = buildInsufficientDataSnapshot(
-                    inputs,
-                    triggerType,
-                    originEventId,
-                    idempotencyKey
-            );
-        } else {
-            baseSnapshot = buildCalculationSnapshot(
-                    inputs,
-                    triggerType,
-                    originEventId,
-                    idempotencyKey
-            );
-        }
-
         PdorExecutionInitiator initiator = initiatorResolver == null
                 ? PdorExecutionInitiator.process()
                 : initiatorResolver.resolve();
+        PdorSnapshot baseSnapshot;
+
+        try {
+            if (!inputs.canCalculate()) {
+                baseSnapshot = buildInsufficientDataSnapshot(
+                        inputs,
+                        triggerType,
+                        originEventId,
+                        idempotencyKey
+                );
+            } else {
+                baseSnapshot = buildCalculationSnapshot(
+                        inputs,
+                        triggerType,
+                        originEventId,
+                        idempotencyKey
+                );
+            }
+        } catch (RuntimeException exception) {
+            throw recordCalculationFailure(
+                    obra, inputs, previous, triggerType, initiator, exception
+            );
+        }
+
         PdorSnapshot snapshot = baseSnapshot.withExplainability(
                 calculateDataVersion(inputs),
                 explainabilityBuilder.build(baseSnapshot, inputs, previous),
@@ -225,8 +314,10 @@ public class PdorApplicationService {
         );
 
         try {
-            snapshotRepository.insert(snapshot);
-            registrarNoGrafo(snapshot, obra);
+            publicationService.publish(
+                    snapshot,
+                    () -> registrarNoGrafo(snapshot, obra)
+            );
             return toResponse(snapshot, obra, false);
         } catch (DuplicateKeyException exception) {
             return snapshotRepository.findByIdempotencyKey(idempotencyKey)
@@ -369,28 +460,24 @@ public class PdorApplicationService {
             String originEventId,
             String idempotencyKey
     ) {
-        try {
-            PdorEngine.PdorContext context =
-                    contextBuilder.build(inputs.toSourceSnapshot());
-            PdorEngine.PdorResult result =
-                    engine.calculate(context, inputs.historicalSeries());
+        PdorEngine.PdorContext context =
+                contextBuilder.build(inputs.toSourceSnapshot());
+        PdorEngine.PdorResult result =
+                engine.calculate(context, inputs.historicalSeries());
 
-            return successSnapshot(
-                    inputs,
-                    triggerType,
-                    originEventId,
-                    idempotencyKey,
-                    result
-            );
-        } catch (RuntimeException exception) {
-            return failedSnapshot(
-                    inputs,
-                    triggerType,
-                    originEventId,
-                    idempotencyKey,
-                    "Falha ao executar o motor PDOR: " + exception.getMessage()
-            );
-        }
+        PdorSnapshot snapshot = successSnapshot(
+                inputs,
+                triggerType,
+                originEventId,
+                idempotencyKey,
+                result
+        );
+        return withRevenueMetadata(
+                snapshot,
+                inputs,
+                objectMapper.valueToTree(result.assumptions()),
+                true
+        );
     }
 
     private PdorSnapshot buildInsufficientDataSnapshot(
@@ -407,7 +494,7 @@ public class PdorApplicationService {
         List<String> warnings = new ArrayList<>(inputs.warnings());
         warnings.add(error);
 
-        return baseSnapshot(
+        PdorSnapshot snapshot = baseSnapshot(
                 inputs,
                 triggerType,
                 originEventId,
@@ -438,48 +525,13 @@ public class PdorApplicationService {
                 objectMapper.createArrayNode(),
                 error
         );
-    }
-
-    private PdorSnapshot failedSnapshot(
-            PdorInputBundle inputs,
-            PdorTriggerType triggerType,
-            String originEventId,
-            String idempotencyKey,
-            String error
-    ) {
-        List<String> warnings = new ArrayList<>(inputs.warnings());
-        warnings.add(error);
-
-        return baseSnapshot(
+        return withRevenueMetadata(
+                snapshot,
                 inputs,
-                triggerType,
-                originEventId,
-                idempotencyKey,
-                PdorExecutionStatus.FAILED,
-                warnings,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                objectMapper.createArrayNode(),
-                error
+                objectMapper.valueToTree(Map.of(
+                        "version", PdorEngine.ASSUMPTIONS_VERSION
+                )),
+                false
         );
     }
 
@@ -560,7 +612,7 @@ public class PdorApplicationService {
                 UUID.randomUUID().toString(),
                 inputs.obraId(),
                 inputs.codigoObra(),
-                LocalDateTime.now(),
+                LocalDateTime.now(Clock.systemUTC()),
                 inputs.referenceDate(),
                 PdorEngine.MODEL_VERSION,
                 PdorEngine.ASSUMPTIONS_VERSION,
@@ -594,8 +646,61 @@ public class PdorApplicationService {
                 simulationIterations,
                 drivers == null ? objectMapper.createArrayNode() : drivers,
                 executionError,
-                LocalDateTime.now()
+                LocalDateTime.now(Clock.systemUTC())
         );
+    }
+
+    private PdorSnapshot withRevenueMetadata(
+            PdorSnapshot snapshot,
+            PdorInputBundle inputs,
+            JsonNode assumptions,
+            boolean current
+    ) {
+        Instant executedAtUtc = snapshot.executedAt()
+                .toInstant(ZoneOffset.UTC);
+        return snapshot.withRevenueMetadata(
+                REVENUE_ALGORITHM_VERSION,
+                inputs.revenueEvidenceIds(),
+                inputs.evidenceHighWaterMark(),
+                inputs.revenueCoverageCode(),
+                assumptions,
+                executedAtUtc,
+                !current,
+                current
+        );
+    }
+
+    private PdorCalculationException recordCalculationFailure(
+            Obra obra,
+            PdorInputBundle inputs,
+            PdorSnapshot previous,
+            PdorTriggerType triggerType,
+            PdorExecutionInitiator initiator,
+            RuntimeException exception
+    ) {
+        String correlationId = UUID.randomUUID().toString();
+        PdorTriggerType normalizedTrigger = triggerType == null
+                ? PdorTriggerType.MANUAL
+                : triggerType;
+        try {
+            snapshotRepository.recordFailureAndMarkCurrentStale(
+                    correlationId,
+                    obra.getId(),
+                    previous == null ? null : previous.id(),
+                    inputs.evidenceHighWaterMark(),
+                    normalizedTrigger,
+                    initiator.id(),
+                    Instant.now()
+            );
+        } catch (RuntimeException auditFailure) {
+            exception.addSuppressed(auditFailure);
+        }
+        LOGGER.error(
+                "PDOR calculation failed; correlationId={}, obraId={}, failureCategory=CALCULATION_RUNTIME",
+                correlationId,
+                obra.getId()
+        );
+        return new PdorCalculationException(correlationId, exception);
     }
 
     private Obra localizarObra(String identifier) {
@@ -687,6 +792,7 @@ public class PdorApplicationService {
         payload.put("obraId", inputs.obraId());
         payload.put("referenceDate", inputs.referenceDate());
         payload.put("modelVersion", PdorEngine.MODEL_VERSION);
+        payload.put("algorithmVersion", REVENUE_ALGORITHM_VERSION);
         payload.put("assumptionsVersion", PdorEngine.ASSUMPTIONS_VERSION);
         payload.put("inputs", inputs.inputs());
         payload.put("inputAvailability", inputAvailability(inputs));

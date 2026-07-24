@@ -37,7 +37,7 @@ class OperationalMutationCoverageTest {
             assertThat(definition.payloadSchemaVersion()).isPositive();
             assertThat(definition.projector()).isNotBlank();
             assertThat(definition.accessPolicy()).isNotBlank();
-            assertThat(definition.staviaEvidencePolicy()).isNotBlank();
+            assertThat(definition.evidencePolicy()).isNotBlank();
             assertThat(definition.idempotencyContract()).isNotBlank();
             assertThat(definition.traceabilityContract()).isNotBlank();
             assertThat(definition.implementation().getDeclaredMethods())

@@ -1,11 +1,47 @@
 .rdo-dashboard,
 .rdo-create-workspace {
+  --rdo-workspace-gutter: clamp(16px, 2.2vw, 32px);
+
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
   color: var(--color-ink);
+  background: var(--color-canvas);
+}
+
+.rdo-dashboard > :not(.cortex-page-header),
+.rdo-create-workspace > :not(.cortex-page-header):not(datalist) {
+  margin-inline: var(--rdo-workspace-gutter);
 }
 
 .rdo-dashboard .institutional-page-header,
 .rdo-create-workspace .institutional-page-header {
   margin-bottom: 18px;
+}
+
+.rdo-create-workspace .workspace-actions,
+.rdo-header-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rdo-header-status {
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.rdo-header-status .status-label,
+.rdo-header-status .status-id {
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
 }
 
 .rdo-dashboard .institutional-page-header h1,
@@ -15,6 +51,11 @@
 .rdo-dashboard h3,
 .rdo-create-workspace h3 {
   font-weight: 600;
+}
+
+.rdo-dashboard .section-heading h2::before,
+.rdo-create-workspace .section-heading h2::before {
+  content: none;
 }
 
 .rdo-command-actions .secondary-button,
@@ -63,18 +104,18 @@
 
 .rdo-canonical-sync {
   margin-bottom: 12px;
-  border-color: var(--color-ink);
+  border-color: var(--color-border);
 }
 
 .rdo-filter-grid {
   margin-bottom: 12px;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
 
 .rdo-register-summary {
   margin-bottom: 18px;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
 }
@@ -82,7 +123,7 @@
 .rdo-register-summary h2 {
   margin: 0;
   padding: 11px 14px;
-  border-bottom: 1px solid var(--color-ink);
+  border-bottom: 1px solid var(--color-border);
   font-size: 0.8rem;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -123,7 +164,7 @@
 }
 
 .rdo-operational-card {
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
 
@@ -180,7 +221,7 @@
 
 .rdo-profile-summary {
   overflow: hidden;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
 
@@ -204,7 +245,7 @@
   position: sticky;
   top: 18px;
   overflow: hidden;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
 }
@@ -215,7 +256,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  border-bottom: 1px solid var(--color-ink);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .rdo-document-index__heading span {
@@ -282,7 +323,7 @@
 .rdo-document-surface {
   min-width: 0;
   padding: 18px;
-  border: 2px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-container);
   background: var(--color-surface);
 }
@@ -291,7 +332,7 @@
   display: grid;
   grid-template-columns: minmax(160px, 0.75fr) minmax(0, 2.25fr);
   margin-bottom: 16px;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: #f8f9f7;
 }
@@ -303,7 +344,7 @@
   gap: 4px;
   min-width: 0;
   padding: 13px 14px;
-  border-right: 1px solid var(--color-ink);
+  border-right: 1px solid var(--color-border);
 }
 
 .rdo-document-status__identity span,
@@ -351,7 +392,7 @@
 .rdo-create-workspace .form-card {
   scroll-margin-top: 18px;
   padding: 20px;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
 
@@ -407,7 +448,7 @@
 
 .rdo-create-workspace .action-bar {
   bottom: 12px;
-  border: 1px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
 }
 
@@ -433,9 +474,13 @@
     grid-template-columns: 1fr;
   }
 
+  .rdo-document-status dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .rdo-document-status__identity {
     border-right: 0;
-    border-bottom: 1px solid var(--color-ink);
+    border-bottom: 1px solid var(--color-border);
   }
 }
 
@@ -463,6 +508,21 @@
 }
 
 @media (max-width: 620px) {
+  .rdo-create-workspace .workspace-actions,
+  .rdo-header-status {
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .rdo-create-workspace .workspace-actions {
+    flex-direction: column;
+  }
+
+  .rdo-header-status {
+    align-items: center;
+    justify-content: space-between;
+  }
+
   .rdo-register-summary dl,
   .rdo-document-status dl,
   .rdo-document-index ol {

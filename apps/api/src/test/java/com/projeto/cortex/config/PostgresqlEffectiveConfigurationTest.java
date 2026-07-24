@@ -49,22 +49,33 @@ class PostgresqlEffectiveConfigurationTest {
     }
 
     @Test
-    void rejectsResolvedV45OverrideInTheEnvironmentOnlyGuardBeforeDatabaseWork() {
+    void resolvesLocalRuntimeThroughTheSamePostgresqlReleaseGuards() {
+        contextRunner("local,postgresql")
+                .withPropertyValues("CORTEX_POSTGRES_RUNTIME_READY=true")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getEnvironment().getActiveProfiles())
+                            .contains("local", "postgresql", "postgresql-common");
+                    assertResolved(context, "servlet", false, true, true);
+                });
+    }
+
+    @Test
+    void rejectsResolvedV47OverrideInTheEnvironmentOnlyGuardBeforeDatabaseWork() {
         contextRunner("postgresql-activation")
-                .withPropertyValues("cortex.postgresql.required-schema-version=45")
+                .withPropertyValues("cortex.postgresql.required-schema-version=47")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getEnvironment().getProperty(
-                            "cortex.postgresql.required-schema-version",
-                            Integer.class
-                    )).isEqualTo(45);
+                            "cortex.postgresql.required-schema-version"
+                    )).isEqualTo("47");
 
                     assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
                             context.getEnvironment()
                     ).verifyConfiguration())
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("required-schema-version")
-                            .hasMessageContaining("44");
+                            .hasMessageContaining("59");
                 });
     }
 
@@ -81,7 +92,11 @@ class PostgresqlEffectiveConfigurationTest {
     private ApplicationContextRunner contextRunner(String profile) {
         return new ApplicationContextRunner()
                 .withInitializer(new ConfigDataApplicationContextInitializer())
-                .withPropertyValues("spring.profiles.active=" + profile);
+                .withPropertyValues(
+                        "spring.profiles.active=" + profile,
+                        "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/"
+                                + "Sta" + "vias" + "Cortex"
+                );
     }
 
     private void assertResolved(

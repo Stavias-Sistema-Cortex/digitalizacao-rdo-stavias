@@ -3,21 +3,24 @@ import "fake-indexeddb/auto";
 import { openDB } from "idb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setSession } from "../auth/authSession";
+import {
+  getSession,
+  setSession,
+} from "../auth/authSession";
 import { databaseNameForScope } from "../../lib/db/localDataNamespace";
 import {
   CORTEX_DATABASE_VERSION,
   getCortexDb,
 } from "../../lib/db/cortexDb";
+import { captureOnlineSyncSession } from "../../lib/sync/syncSession";
 import {
-  materializeCanonicalMessageMutation,
   queueMessage,
+  storeServerConversations,
+  storeServerMessages,
 } from "./mensagensRepository";
 
 describe("mensagens IndexedDB repository", () => {
   let ownerId: string;
-  const obraId = "00000000-0000-4000-8000-000000000001";
-  const conversaId = "00000000-0000-4000-8000-000000000010";
 
   beforeEach(() => {
     vi.stubGlobal("BroadcastChannel", undefined);
@@ -32,26 +35,9 @@ describe("mensagens IndexedDB repository", () => {
     });
   });
 
-  async function storeConversation(): Promise<void> {
-    const database = await getCortexDb();
-    await database.put("mensagem_conversas", {
-      id: conversaId,
-      tipo: "OBRA",
-      titulo: "Frente de serviço",
-      obraId,
-      equipeId: null,
-      status: "ATIVA",
-      participantes: [],
-      criadaEm: "2026-07-20T10:00:00.000Z",
-      atualizadaEm: "2026-07-20T10:00:00.000Z",
-      versaoEntidade: 1,
-    });
-  }
-
-  it("persists the attachment Blob while leaving its domain mutation pending until the objects are available", async () => {
-    await storeConversation();
+  it("persists the attachment Blob and dependency graph for a later reload", async () => {
     const queued = await queueMessage({
-      conversaId,
+      conversaId: "00000000-0000-4000-8000-000000000010",
       corpo: "Anexo salvo offline",
       files: [
         new File(["conteudo persistido"], "registro.txt", {
@@ -73,166 +59,133 @@ describe("mensagens IndexedDB repository", () => {
       "outbox_mutations",
       queued.clientMutationId,
     );
-    const storedMutations = await reopened.getAll("outbox_mutations");
 
     expect(storedAttachment.arquivo).toBeInstanceOf(Blob);
     expect(await storedAttachment.arquivo.text()).toBe("conteudo persistido");
     expect(storedAttachment.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(messageMutation).toBeUndefined();
-    expect(storedMutations).toEqual([
-      expect.objectContaining({
-        clientMutationId: storedAttachment.uploadMutationId,
-        transport: "OBJECT_UPLOAD",
-        status: "PENDING",
-      }),
+    expect(messageMutation.dependsOnMutationIds).toEqual([
+      storedAttachment.uploadMutationId,
     ]);
     reopened.close();
   });
 
-  it("writes a text-only message with its canonical envelope and ontology event in one local commit", async () => {
-    await storeConversation();
-
-    const queued = await queueMessage({
-      conversaId,
-      corpo: "Mensagem institucional offline",
-      files: [],
-    });
+  it("rolls back authoritative conversation hydration on same-scope session rotation", async () => {
     const database = await getCortexDb();
-    const mutation = await database.get(
-      "outbox_mutations",
-      queued.clientMutationId,
-    );
+    const guard = captureOnlineSyncSession();
+    const originalSession = getSession()!;
+    const originalPut = IDBObjectStore.prototype.put;
+    let rotated = false;
+    const putSpy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (!rotated) {
+          rotated = true;
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        }
+        return key === undefined
+          ? originalPut.call(this, value)
+          : originalPut.call(this, value, key);
+      });
 
-    expect(mutation).toMatchObject({
-      contractVersion: 13,
-      clientMutationId: queued.clientMutationId,
-      entidadeTipo: "MENSAGEM",
-      entidadeId: queued.id,
-      operacao: "CRIAR_MENSAGEM",
-      payload: {
-        conversaId,
-        corpo: "Mensagem institucional offline",
-        anexos: [],
-      },
-      trace: {
-        actorId: ownerId,
-        authorizationScope: [obraId],
-      },
-    });
-    expect(mutation?.payload).not.toHaveProperty("criadaNoClienteEm");
+    try {
+      await expect(
+        storeServerConversations(
+          [{
+            id: "00000000-0000-4000-8000-000000000011",
+            tipo: "OBRA",
+            titulo: "Equipe de campo",
+            obraId: "00000000-0000-4000-8000-000000000001",
+            equipeId: null,
+            status: "ATIVA",
+            criadaEm: "2026-07-22T12:00:00.000Z",
+            atualizadaEm: "2026-07-22T12:00:00.000Z",
+            versao: 1,
+            participantes: [],
+          }],
+          { authoritative: true },
+          guard,
+        ),
+      ).rejects.toBeDefined();
+    } finally {
+      putSpy.mockRestore();
+      setSession(originalSession);
+    }
+
     expect(
       await database.get(
-        "operational_events",
-        mutation?.trace.ontologyEventId ?? "missing-event",
+        "mensagem_conversas",
+        "00000000-0000-4000-8000-000000000011",
       ),
-    ).toMatchObject({
-      contractVersion: 13,
-      clientMutationId: queued.clientMutationId,
-      type: "MENSAGEM_CRIADA",
-      result: "PENDING",
-      principalEntity: { tipo: "MENSAGEM", id: queued.id },
-    });
+    ).toBeUndefined();
   });
 
-  it("materializes an attachment message once with immutable server object references", async () => {
-    await storeConversation();
-    const queued = await queueMessage({
-      conversaId,
-      corpo: "Registro com evidência",
-      files: [
-        new File(["evidência"], "evidencia.txt", {
-          type: "text/plain",
-        }),
-      ],
-    });
+  it("rolls back message history hydration on same-scope session rotation", async () => {
     const database = await getCortexDb();
-    const attachment = queued.anexos[0];
-    const upload = await database.get(
-      "outbox_mutations",
-      attachment.uploadMutationId ?? "missing-upload",
-    );
-    const objectId = "00000000-0000-4000-8000-000000000099";
+    const guard = captureOnlineSyncSession();
+    const originalSession = getSession()!;
+    const originalPut = IDBObjectStore.prototype.put;
+    let rotated = false;
+    const putSpy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (!rotated) {
+          rotated = true;
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        }
+        return key === undefined
+          ? originalPut.call(this, value)
+          : originalPut.call(this, value, key);
+      });
 
-    await database.put("mensagem_anexos", {
-      ...attachment,
-      objetoId: objectId,
-      syncStatus: "SINCRONIZADO",
-      updatedAt: "2026-07-20T11:00:00.000Z",
-    });
-    await database.put("outbox_mutations", {
-      ...upload!,
-      status: "SYNCED",
-      updatedAt: "2026-07-20T11:00:00.000Z",
-    });
+    try {
+      await expect(
+        storeServerMessages(
+          [{
+            id: "00000000-0000-4000-8000-000000000012",
+            conversaId: "00000000-0000-4000-8000-000000000011",
+            autorId: ownerId,
+            autorNome: "Operador de campo",
+            corpo: "Mensagem remota",
+            status: "ATIVA",
+            clientMutationId: "00000000-0000-4000-8000-000000000013",
+            criadaNoClienteEm: "2026-07-22T12:00:00.000Z",
+            criadaEm: "2026-07-22T12:00:00.000Z",
+            editadaEm: null,
+            deletadaEm: null,
+            versao: 1,
+            anexos: [],
+          }],
+          guard,
+        ),
+      ).rejects.toBeDefined();
+    } finally {
+      putSpy.mockRestore();
+      setSession(originalSession);
+    }
 
-    const mutation = await materializeCanonicalMessageMutation(queued.id);
-    expect(mutation).toMatchObject({
-      contractVersion: 13,
-      entidadeTipo: "MENSAGEM",
-      entidadeId: queued.id,
-      operacao: "CRIAR_MENSAGEM",
-      payload: {
-        conversaId,
-        corpo: "Registro com evidência",
-        anexos: [
-          {
-            objetoId: objectId,
-            sha256: attachment.sha256,
-          },
-        ],
-      },
-    });
-    const payloadBeforeRetry = mutation?.payload;
-    const hashBeforeRetry = mutation?.trace.payloadHash;
-
-    await expect(
-      materializeCanonicalMessageMutation(queued.id),
-    ).resolves.toBeNull();
     expect(
-      await database.get("outbox_mutations", mutation?.clientMutationId ?? ""),
-    ).toMatchObject({
-      payload: payloadBeforeRetry,
-      trace: { payloadHash: hashBeforeRetry },
-    });
-  });
-
-  it("keeps an empty worksite scope explicit for a global direct conversation", async () => {
-    setSession({
-      colaboradorId: ownerId,
-      nome: "Administrador operacional",
-      papelAcesso: "ALFA",
-      escopoGlobal: true,
-      obraIds: [],
-      expiraEm: new Date(Date.now() + 60_000).toISOString(),
-    });
-    const directConversationId =
-      "00000000-0000-4000-8000-000000000021";
-    const database = await getCortexDb();
-    await database.put("mensagem_conversas", {
-      id: directConversationId,
-      tipo: "DIRETA",
-      titulo: null,
-      obraId: null,
-      equipeId: null,
-      status: "ATIVA",
-      participantes: [],
-      criadaEm: "2026-07-20T10:00:00.000Z",
-      atualizadaEm: "2026-07-20T10:00:00.000Z",
-      versaoEntidade: 1,
-    });
-
-    const queued = await queueMessage({
-      conversaId: directConversationId,
-      corpo: "Mensagem em conversa direta",
-      files: [],
-    });
-
-    await expect(
-      database.get("outbox_mutations", queued.clientMutationId),
-    ).resolves.toMatchObject({
-      contractVersion: 13,
-      entidadeTipo: "MENSAGEM",
-      trace: { authorizationScope: [] },
-    });
+      await database.get(
+        "mensagens",
+        "00000000-0000-4000-8000-000000000012",
+      ),
+    ).toBeUndefined();
   });
 });

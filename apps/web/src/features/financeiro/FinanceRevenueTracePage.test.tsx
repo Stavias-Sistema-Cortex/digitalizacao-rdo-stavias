@@ -1,111 +1,57 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { FinanceRevenueTrace } from "./financeiroApi";
-import { FinanceRevenueTraceContent } from "./FinanceRevenueTracePage";
+import { FinanceRevenueTracePage } from "./FinanceRevenueTracePage";
+import type { RevenueTraceRow } from "./servicePriceApi";
 
-const EMPTY_TRACE: FinanceRevenueTrace = {
-  consolidado: {
-    producao: 0,
-    custo: 0,
-    receitaEstimada: 0,
-    margem: 0,
-    receitaMedida: 0,
-    receitaAprovada: 0,
-    receitaFaturada: 0,
-    receitaRecebida: 0,
-  },
-  obras: [],
-  tiposServico: [],
+const ROW: RevenueTraceRow = {
+  worksiteId: "obra-1",
+  worksiteName: "BR-101",
+  rdoId: "rdo-1",
+  rdoNumber: "RDO-014",
+  executionId: "execution-1",
+  executionDate: "2026-07-22",
+  serviceId: "service-1",
+  serviceCode: "PAV.CBUQ",
+  serviceName: "Aplicação de CBUQ",
+  priceVersionId: "price-1",
+  priceVersion: 3,
+  quantity: "10.000",
+  unit: "T",
+  unitPrice: "125.0000",
+  currency: "BRL",
+  revenue: "1250.00",
+  coverageCode: "ACCEPTED_EXACT",
+  revenueEvidenceId: "evidence-1",
+  revenueEventId: "event-1",
+  eventCommitSequence: 812,
+  acceptedAt: "2026-07-22T15:00:00Z",
 };
 
-const TRACE_WITHOUT_CONTRACT_VALUE: FinanceRevenueTrace = {
-  consolidado: {
-    producao: 20,
-    custo: 250,
-    receitaEstimada: 0,
-    margem: -250,
-    receitaMedida: 0,
-    receitaAprovada: 0,
-    receitaFaturada: 0,
-    receitaRecebida: 0,
-  },
-  obras: [{
-    id: "obra-1",
-    nome: "Obra real",
-    totais: {
-      producao: 20,
-      custo: 250,
-      receitaEstimada: 0,
-      margem: -250,
-      receitaMedida: 0,
-      receitaAprovada: 0,
-      receitaFaturada: 0,
-      receitaRecebida: 0,
-    },
-  }],
-  tiposServico: [{
-    nome: "Serviço sem preço contratual",
-    unidade: "m",
-    totais: {
-      producao: 20,
-      custo: 250,
-      receitaEstimada: 0,
-      margem: -250,
-      receitaMedida: 0,
-      receitaAprovada: 0,
-      receitaFaturada: 0,
-      receitaRecebida: 0,
-    },
-    obras: [{
-      obraId: "obra-1",
-      obraNome: "Obra real",
-      itemContratualId: null,
-      codigoItemContratual: null,
-      totais: {
-        producao: 20,
-        custo: 250,
-        receitaEstimada: 0,
-        margem: -250,
-        receitaMedida: 0,
-        receitaAprovada: 0,
-        receitaFaturada: 0,
-        receitaRecebida: 0,
-      },
-      quantidadeRdos: 1,
-      rdoIds: ["rdo-1"],
-      receitaDisponivel: false,
-    }],
-    quantidadeRdos: 1,
-    receitaDisponivel: false,
-  }],
-};
-
-describe("FinanceRevenueTraceContent", () => {
-  it("mostra uma ausência honesta quando não há execução validada para compor receita", () => {
-    const markup = renderToStaticMarkup(
-      <FinanceRevenueTraceContent
-        data={EMPTY_TRACE}
-        onSelectService={() => undefined}
-      />,
+describe("FinanceRevenueTracePage", () => {
+  it("mostra quantidade vezes o preço congelado e soma apenas evidências visíveis", () => {
+    const html = renderToStaticMarkup(
+      <FinanceRevenueTracePage obraId="obra-1" rows={[ROW]} />,
     );
 
-    expect(markup).toContain("Ainda não há receita operacional registrada");
-    expect(markup).toContain("execução de serviço validada");
-    expect(markup).not.toContain("Receita estimada");
-    expect(markup).not.toContain("R$ 0,00");
+    expect(html).toContain("10,000 × R$ 125,0000");
+    expect(html).toContain("R$ 1.250,00");
+    expect(html).toContain("RDO-014");
+    expect(html).toContain("ACEITA EXATA");
+    expect(html).not.toMatch(/margem|custo previsto|receita estimada/i);
   });
 
-  it("não converte receita sem preço contratual em um zero fictício", () => {
-    const markup = renderToStaticMarkup(
-      <FinanceRevenueTraceContent
-        data={TRACE_WITHOUT_CONTRACT_VALUE}
-        onSelectService={() => undefined}
+  it("exibe o total autoritativo do backend sem perder centavos acima de Number.MAX_SAFE_INTEGER", () => {
+    const html = renderToStaticMarkup(
+      <FinanceRevenueTracePage
+        obraId="obra-1"
+        rows={[ROW]}
+        totalRevenue="9007199254740993.99"
       />,
     );
 
-    expect(markup).toContain("Receita indisponível");
-    expect(markup).toContain("preço contratual");
-    expect(markup).not.toContain("Receita estimada</span><strong>R$");
+    expect(html).toContain(
+      "<span>Total confirmado pelo servidor</span><strong>R$ 9.007.199.254.740.993,99</strong>",
+    );
   });
 });

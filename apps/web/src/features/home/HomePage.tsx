@@ -1,12 +1,11 @@
-import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
 import { CortexShell } from "../../components/shell/CortexShell";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { HomeOverview } from "./HomeOverview";
 import { HomeSubnav } from "./HomeSubnav";
 import { homeTabFromSearch } from "./homeTab";
+import { MaisStaviasCard } from "./MaisStaviasCard";
 import { MemoryLedger } from "./memory/MemoryLedger";
 import { useHomeData } from "./useHomeData";
 
@@ -14,11 +13,9 @@ export function HomePage() {
   const data = useHomeData();
   const [search] = useSearchParams();
   const activeTab = homeTabFromSearch(search);
-  const { setStaviaContext } = useStaviaLauncher();
-
-  useEffect(() => {
-    setStaviaContext({ obraId: data.focusedObra?.id ?? "" });
-  }, [data.focusedObra?.id, setStaviaContext]);
+  const moreCard = (
+    <MaisStaviasCard />
+  );
 
   return (
     <CortexShell
@@ -26,29 +23,37 @@ export function HomePage() {
       onRefresh={data.reload}
       isRefreshing={data.isLoading}
     >
-      <main className="home-dashboard">
-        <InstitutionalPageHeader
-          className="home-command-header"
-          eyebrow="Centro operacional"
-          title="Visão do empreendimento"
-          description="Comando operacional de infraestrutura com exceções, recorte de obra e rastreabilidade local explícitos."
-        />
+      <OperationalWorkspace
+        className="home-dashboard"
+        eyebrow="Córtex operacional"
+        title="Visão do empreendimento"
+        description="Operação atual e registro rastreável no mesmo espaço de trabalho."
+        status={data.isLoading
+          ? { code: "SYNCING", label: "Atualizando o banco local" }
+          : data.dataUpdatedAt
+            ? {
+                code: "LOCAL",
+                label: "Dados disponíveis neste dispositivo",
+                detail: `Última atualização registrada em ${data.dataUpdatedAt}`,
+              }
+            : { code: "LOCAL", label: "Nenhum dado local disponível" }}
+      >
         <HomeSubnav />
         <section
           id={`home-panel-${activeTab}`}
           role="tabpanel"
           aria-labelledby={`home-tab-${activeTab}`}
         >
-          {activeTab === "memory" ? (
-            <MemoryLedger
-              key={search.get("event") ?? "memory-ledger"}
-              obras={data.obras}
-            />
-          ) : (
-            <HomeOverview data={data} />
-          )}
+          {activeTab === "memory"
+            ? <MemoryLedger obras={data.obras} />
+            : (
+              <HomeOverview
+                data={data}
+                moreCard={moreCard}
+              />
+            )}
         </section>
-      </main>
+      </OperationalWorkspace>
     </CortexShell>
   );
 }

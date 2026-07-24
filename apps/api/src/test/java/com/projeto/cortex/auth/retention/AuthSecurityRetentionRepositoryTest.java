@@ -50,11 +50,11 @@ class AuthSecurityRetentionRepositoryTest {
         assertThat(sql.getAllValues()).allSatisfy(statement ->
                 assertThat(statement)
                         .contains("CURRENT_TIMESTAMP(6)")
-                        .contains("TIMESTAMPADD(")
-                        .contains("SECOND,")
-                        .contains("-?")
+                        .contains("INTERVAL '1 second'")
+                        .contains("WHERE")
                         .contains("ORDER BY")
                         .contains("LIMIT ?")
+                        .contains("FOR UPDATE SKIP LOCKED")
         );
         assertThat(sql.getAllValues().get(0))
                 .contains("DELETE FROM auth_email_challenge")

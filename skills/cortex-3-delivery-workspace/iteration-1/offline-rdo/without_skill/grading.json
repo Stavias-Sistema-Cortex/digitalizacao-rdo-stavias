@@ -1,0 +1,82 @@
+{
+  "expectations": [
+    {
+      "text": "Flags obra-demo, RDO-001, and named workers in production source as fabricated operational data",
+      "passed": true,
+      "evidence": "The review's P0 finding states that `handleCreate` assigns `obra-demo`, `RDO-001`, and two named workers directly in production code, and calls this a data-integrity failure."
+    },
+    {
+      "text": "Requires selecting an authorized real obra and preserving a stable client-generated UUID with authoritative collision-safe numbering",
+      "passed": false,
+      "evidence": "Acceptance criterion 1 requires a selectable persisted worksite and criterion 2 requires authoritative numbering with concurrent/offline behavior, but the review never requires a stable client-generated UUID. Its later reference to local and remote identity convergence does not specify client-generated identity or stability across retries."
+    },
+    {
+      "text": "Requires previous eligible RDO workforce provenance keyed by collaborator ID with deselection, addition, and clearable apontador",
+      "passed": false,
+      "evidence": "The review requires prior-RDO provenance and tests for predecessor/no-predecessor cases, but it does not require workforce provenance keyed by collaborator ID, nor the deselection, addition, or clearable apontador interactions."
+    },
+    {
+      "text": "Requires an atomic IndexedDB transaction for domain snapshot, outbox mutation, and pending event plus automatic synchronization triggers",
+      "passed": false,
+      "evidence": "Acceptance criterion 3 calls for one durable local transaction containing the new RDO and pending sync mutation, and criterion 7 requires automatic triggers. It does not specifically require IndexedDB, a domain snapshot, or a pending event in that atomic transaction."
+    },
+    {
+      "text": "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates",
+      "passed": true,
+      "evidence": "Criteria 3 and 6 require browser-level offline persistence through reload and an offline-create-reload-reconnect scenario in which the same RDO reaches the server exactly once and local/remote identity and status converge. Criterion 7 requires distinct pending, syncing, synced, failed, and conflict states plus automatic lifecycle/connectivity resumption."
+    }
+  ],
+  "summary": {
+    "passed": 2,
+    "failed": 3,
+    "total": 5,
+    "pass_rate": 0.4
+  },
+  "claims": [
+    {
+      "claim": "The supplied evidence only establishes navigation to the creation route.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture says the sole component test checks that clicking `Novo RDO` navigates to `/rdos/novo`."
+    },
+    {
+      "claim": "Production creation writes fabricated worksite, RDO number, and worker data.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture assigns `obra-demo`, `RDO-001`, and named workers with `colaboradorId: null` in `handleCreate`."
+    },
+    {
+      "claim": "Offline durability is not demonstrated.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The fixture explicitly reports no IndexedDB transaction test and no reload/offline/reconnect test."
+    },
+    {
+      "claim": "There is no previous-RDO workforce provenance.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture explicitly states there is no previous RDO query or provenance."
+    },
+    {
+      "claim": "Synchronization is manual-only and lacks automatic recovery evidence.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture states that sync runs only when the user presses `Sincronizar`; `syncNow` uses `memoryQueue` and then sets `SYNCED`."
+    },
+    {
+      "claim": "The existing routing test is internally disconnected from the shown implementation's post-save route.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture's test targets `/rdos/novo`, while the shown `handleCreate` navigates to `/rdos/${draft.id}` after `saveRdo(draft)`."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates",
+        "reason": "The assertion bundles several independent behaviors. Separate checks for durable status restoration, automatic reconnect triggering, and server-side idempotency would localize failures and make the evaluation more diagnostic."
+      }
+    ],
+    "overall": "The assertions target meaningful offline RDO outcomes. The multi-part assertions for identity, workforce continuity, and atomic persistence are appropriately discriminating but should be split when detailed failure attribution matters."
+  }
+}

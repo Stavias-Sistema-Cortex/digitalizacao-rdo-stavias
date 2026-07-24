@@ -50,7 +50,7 @@ public class RdoMemoryPublisher {
                 obraId,
                 rdoId,
                 null,
-                relatedEntities(obraId, programacaoId),
+                relatedEntities(rdoId, obraId, programacaoId),
                 "ONLINE",
                 "SYNCED",
                 null,
@@ -93,7 +93,7 @@ public class RdoMemoryPublisher {
                 obraId,
                 rdoId,
                 null,
-                relatedEntities(obraId, programacaoId),
+                relatedEntities(rdoId, obraId, programacaoId),
                 "ONLINE",
                 "SYNCED",
                 null,
@@ -135,7 +135,7 @@ public class RdoMemoryPublisher {
                 obraId,
                 rdoId,
                 null,
-                relatedEntities(obraId, programacaoId),
+                relatedEntities(rdoId, obraId, programacaoId),
                 "ONLINE",
                 "SYNCED",
                 null,
@@ -193,7 +193,7 @@ public class RdoMemoryPublisher {
                 obraId,
                 rdoId,
                 null,
-                relatedEntities(obraId, programacaoId),
+                relatedEntities(rdoId, obraId, programacaoId),
                 "ONLINE",
                 "SYNCED",
                 null,
@@ -252,6 +252,30 @@ public class RdoMemoryPublisher {
                 FONTE
         );
 
+        PreviousRdoMemoryData previous = buscarRdoAnteriorOpcional(rdoId);
+        if (previous != null) {
+            memoryService.registrarObjeto(
+                    "RDO",
+                    previous.id(),
+                    previous.numeroRdo(),
+                    previous.numeroRdo() == null || previous.numeroRdo().isBlank()
+                            ? "RDO " + previous.id()
+                            : "RDO " + previous.numeroRdo(),
+                    previous.status(),
+                    FONTE
+            );
+            memoryService.registrarRelacaoAtiva(
+                    "RDO",
+                    rdoId,
+                    "RDO",
+                    previous.id(),
+                    "DERIVADO_DE",
+                    FONTE,
+                    "RDO criado a partir da equipe de um RDO anterior da mesma obra."
+            );
+        }
+
+        reconciliarFilhosRemovidos(rdoId);
         registrarAtributosRdo(rdoId);
         registrarMaoObraRdo(rdoId);
         registrarEquipamentosRdo(rdoId);
@@ -300,7 +324,11 @@ public class RdoMemoryPublisher {
                     status,
                     obra_id,
                     programacao_id,
-                    fonte_criacao
+                    fonte_criacao,
+                    previous_rdo_id,
+                    creation_context_version,
+                    client_mutation_id,
+                    apontador_colaborador_id
                 FROM rdo
                 WHERE id = ?
                 """,
@@ -325,6 +353,10 @@ public class RdoMemoryPublisher {
                     fields.put("obra_id", resultSet.getString("obra_id"));
                     fields.put("programacao_id", resultSet.getString("programacao_id"));
                     fields.put("fonte_criacao", resultSet.getString("fonte_criacao"));
+                    fields.put("previous_rdo_id", resultSet.getString("previous_rdo_id"));
+                    fields.put("creation_context_version", resultSet.getObject("creation_context_version"));
+                    fields.put("client_mutation_id", resultSet.getString("client_mutation_id"));
+                    fields.put("apontador_colaborador_id", resultSet.getString("apontador_colaborador_id"));
 
                     memoryService.registrarEvidencias(
                             "RDO",
@@ -348,7 +380,8 @@ public class RdoMemoryPublisher {
                     nome_colaborador,
                     cargo,
                     tipo_vinculo,
-                    quantidade
+                    quantidade,
+                    origem_item_id
                 FROM rdo_mao_obra
                 WHERE rdo_id = ?
                 """,
@@ -395,12 +428,26 @@ public class RdoMemoryPublisher {
                             );
                         }
 
+                        String originItemId = resultSet.getString("origem_item_id");
+                        if (originItemId != null && !originItemId.isBlank()) {
+                            memoryService.registrarRelacaoAtiva(
+                                    "RDO_MAO_OBRA",
+                                    itemId,
+                                    "RDO_MAO_OBRA",
+                                    originItemId,
+                                    "DERIVADO_DE",
+                                    FONTE,
+                                    "Item de mão de obra preserva sua origem no RDO anterior."
+                            );
+                        }
+
                         Map<String, Object> fields = new LinkedHashMap<>();
                         fields.put("colaborador_id", colaboradorId);
                         fields.put("nome_colaborador", resultSet.getString("nome_colaborador"));
                         fields.put("cargo", resultSet.getString("cargo"));
                         fields.put("tipo_vinculo", resultSet.getString("tipo_vinculo"));
                         fields.put("quantidade", resultSet.getBigDecimal("quantidade"));
+                        fields.put("origem_item_id", originItemId);
 
                         memoryService.registrarEvidencias(
                                 "RDO_MAO_OBRA",
@@ -706,13 +753,94 @@ public class RdoMemoryPublisher {
         );
     }
 
+    private void reconciliarFilhosRemovidos(String rdoId) {
+        inativarFilhosAusentes(
+                rdoId, "RDO_MAO_OBRA", "rdo_mao_obra", "rdo_mao_obra", ""
+        );
+        inativarFilhosAusentes(
+                rdoId, "RDO_EQUIPAMENTO", "rdo_equipamento", "rdo_equipamento", ""
+        );
+        inativarFilhosAusentes(
+                rdoId, "MATERIAL_RDO", "rdo_material", "rdo_material", ""
+        );
+        inativarFilhosAusentes(
+                rdoId, "CONTROLE_GEOMETRICO", "rdo_controle_geometrico",
+                "rdo_controle_geometrico", ""
+        );
+        inativarFilhosAusentes(
+                rdoId, "RDO_FOTO", "rdo_attachment",
+                "rdo_attachment", "AND current_child.removido_em IS NULL"
+        );
+    }
+
+    private void inativarFilhosAusentes(
+            String rdoId,
+            String entityType,
+            String entityTable,
+            String currentTable,
+            String currentPredicate
+    ) {
+        List<MemoryChild> removed = jdbcTemplate.query(
+                """
+                SELECT objeto.entidade_id,
+                       objeto.codigo_externo,
+                       objeto.nome
+                FROM cortex_objeto objeto
+                JOIN cortex_relacao relation
+                  ON relation.destino_tipo = objeto.tipo_entidade
+                 AND relation.destino_id = objeto.entidade_id
+                 AND relation.origem_tipo = 'RDO'
+                 AND relation.origem_id = ?
+                 AND relation.ativa = TRUE
+                WHERE objeto.tipo_entidade = ?
+                  AND objeto.status <> 'INATIVO'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM %s current_child
+                      WHERE current_child.id = objeto.entidade_id
+                        AND current_child.rdo_id = ?
+                        %s
+                  )
+                """.formatted(currentTable, currentPredicate),
+                (rs, rowNumber) -> new MemoryChild(
+                        rs.getString("entidade_id"),
+                        rs.getString("codigo_externo"),
+                        rs.getString("nome")
+                ),
+                rdoId,
+                entityType,
+                rdoId
+        );
+        for (MemoryChild child : removed) {
+            memoryService.registrarObjeto(
+                    entityType,
+                    child.id(),
+                    child.externalCode(),
+                    child.name(),
+                    "INATIVO",
+                    FONTE,
+                    entityTable,
+                    metadataRdo(rdoId)
+            );
+            memoryService.encerrarRelacoesAtivasDaEntidade(entityType, child.id());
+        }
+    }
+
     private Map<String, Object> metadataRdo(String rdoId) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("rdoId", rdoId);
         return metadata;
     }
 
+    private record MemoryChild(
+            String id,
+            String externalCode,
+            String name
+    ) {
+    }
+
     private List<Map<String, Object>> relatedEntities(
+            String rdoId,
             String obraId,
             String programacaoId
     ) {
@@ -724,6 +852,14 @@ public class RdoMemoryPublisher {
             obra.put("tipo", "OBRA");
             obra.put("id", obraId);
             related.add(obra);
+        }
+
+        String previousRdoId = previousRdoId(rdoId);
+        if (previousRdoId != null) {
+            Map<String, Object> previous = new LinkedHashMap<>();
+            previous.put("tipo", "RDO");
+            previous.put("id", previousRdoId);
+            related.add(previous);
         }
 
         if (
@@ -741,6 +877,35 @@ public class RdoMemoryPublisher {
         }
 
         return related;
+    }
+
+    private String previousRdoId(String rdoId) {
+        return jdbcTemplate.query(
+                "SELECT previous_rdo_id FROM rdo WHERE id = ?",
+                rs -> rs.next() ? rs.getString("previous_rdo_id") : null,
+                rdoId
+        );
+    }
+
+    private PreviousRdoMemoryData buscarRdoAnteriorOpcional(String rdoId) {
+        return jdbcTemplate.query(
+                """
+                SELECT previous.id, previous.numero_rdo, previous.status
+                FROM rdo current_rdo
+                JOIN rdo previous
+                  ON previous.id = current_rdo.previous_rdo_id
+                 AND previous.obra_id = current_rdo.obra_id
+                WHERE current_rdo.id = ?
+                """,
+                rs -> rs.next()
+                        ? new PreviousRdoMemoryData(
+                                rs.getString("id"),
+                                rs.getString("numero_rdo"),
+                                rs.getString("status")
+                        )
+                        : null,
+                rdoId
+        );
     }
 
     private String primeiroNaoVazio(String... valores) {
@@ -820,9 +985,9 @@ public class RdoMemoryPublisher {
                         ) AS codigo_externo,
                         CONCAT(
                             'Programação ',
-                            DATE_FORMAT(
+                            TO_CHAR(
                                 data_programacao,
-                                '%d/%m/%Y'
+                                'DD/MM/YYYY'
                             ),
                             CASE
                                 WHEN servico IS NULL
@@ -921,6 +1086,13 @@ public class RdoMemoryPublisher {
             String id,
             String codigoExterno,
             String nome,
+            String status
+    ) {
+    }
+
+    private record PreviousRdoMemoryData(
+            String id,
+            String numeroRdo,
             String status
     ) {
     }

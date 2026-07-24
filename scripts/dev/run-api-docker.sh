@@ -4,43 +4,60 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 
-if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
-  echo "Missing CORTEX_DB_PASSWORD."
-  echo "Set it with:"
-  echo "export CORTEX_DB_PASSWORD='your-local-password'"
-  echo ""
-  echo "Or create a local .env file. Never commit .env."
+canonical_database="$(cortex_postgres_database_name)"
+if [[ ! "${CORTEX_POSTGRES_DOCKER_URL:-}" =~ ^jdbc:postgresql://([^/:?]+)(:([0-9]+))?/${canonical_database}(\?.*)?$ ]]; then
+  echo "CORTEX_POSTGRES_DOCKER_URL must target the Docker-reachable canonical database." >&2
+  exit 1
+fi
+if [[ "${CORTEX_POSTGRES_RUNTIME_READY:-false}" != "true" ]]; then
+  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V59 and a real ALFA bootstrap." >&2
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
-  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
-  exit 1
-fi
-
-if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
-  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY for the local container."
-  exit 1
-fi
+cortex_require_text CORTEX_POSTGRES_USER
+cortex_require_secret_file CORTEX_POSTGRES_PASSWORD_FILE
+cortex_require_text CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID
+cortex_require_secret_file CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE
+cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE
+cortex_require_text CORTEX_AUTH_OFFLINE_GRANT_KEY_ID
+cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE
+cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE
+cortex_require_text CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID
+cortex_require_secret_file CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE
 
 docker build -t cortex-api:local "$ROOT_DIR/apps/api"
 
-docker run --rm -p 8081:8080 \
-  -e CORTEX_DB_URL="${CORTEX_DB_URL:-jdbc:mysql://host.docker.internal:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}" \
-  -e CORTEX_DB_USER="${CORTEX_DB_USER:-cortex_app}" \
-  -e CORTEX_DB_PASSWORD="$CORTEX_DB_PASSWORD" \
-  -e SPRING_PROFILES_ACTIVE=local \
+docker run --rm \
+  --add-host host.docker.internal:host-gateway \
+  -p 127.0.0.1:8081:8080 \
+  --mount "type=bind,src=$CORTEX_POSTGRES_PASSWORD_FILE,dst=/run/secrets/CORTEX_POSTGRES_PASSWORD,readonly" \
+  --mount "type=bind,src=$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE,dst=/run/secrets/cortex_cpf_hmac,readonly" \
+  --mount "type=bind,src=$CORTEX_AUTH_OTP_HMAC_KEY_FILE,dst=/run/secrets/cortex_otp_hmac,readonly" \
+  --mount "type=bind,src=$CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE,dst=/run/secrets/cortex_offline_private,readonly" \
+  --mount "type=bind,src=$CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE,dst=/run/secrets/cortex_offline_public,readonly" \
+  --mount "type=bind,src=$CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE,dst=/run/secrets/cortex_memory_cursor_hmac,readonly" \
+  -e SPRING_PROFILES_ACTIVE=local,postgresql \
+  -e SPRING_CONFIG_IMPORT=configtree:/run/secrets/ \
+  -e CORTEX_POSTGRES_URL="$CORTEX_POSTGRES_DOCKER_URL" \
+  -e CORTEX_POSTGRES_USER="$CORTEX_POSTGRES_USER" \
+  -e CORTEX_POSTGRES_RUNTIME_READY=true \
   -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID="$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID" \
-  -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY="$CORTEX_AUTH_CPF_HMAC_CURRENT_KEY" \
-  -e CORTEX_IMPORT_ENABLED="${CORTEX_IMPORT_ENABLED:-true}" \
-  -e CORTEX_SYNC_ENABLED="${CORTEX_SYNC_ENABLED:-true}" \
-  -e CORTEX_SYNC_INITIAL_DELAY_MS="${CORTEX_SYNC_INITIAL_DELAY_MS:-10000}" \
-  -e CORTEX_SYNC_FIXED_DELAY_MS="${CORTEX_SYNC_FIXED_DELAY_MS:-300000}" \
-  -e CORTEX_ACADEMY_DB_URL="${CORTEX_ACADEMY_DB_URL:-${ACAD_DB_URL:-}}" \
-  -e CORTEX_ACADEMY_DB_USER="${CORTEX_ACADEMY_DB_USER:-${ACAD_DB_USER:-}}" \
-  -e CORTEX_ACADEMY_DB_PASSWORD="${CORTEX_ACADEMY_DB_PASSWORD:-${ACAD_DB_PASSWORD:-}}" \
-  -e CORTEX_ZELADORIA_DB_URL="${CORTEX_ZELADORIA_DB_URL:-${ZLD_DB_URL:-}}" \
-  -e CORTEX_ZELADORIA_DB_USER="${CORTEX_ZELADORIA_DB_USER:-${ZLD_DB_USER:-}}" \
-  -e CORTEX_ZELADORIA_DB_PASSWORD="${CORTEX_ZELADORIA_DB_PASSWORD:-${ZLD_DB_PASSWORD:-}}" \
+  -e CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE=/run/secrets/cortex_cpf_hmac \
+  -e CORTEX_AUTH_OTP_HMAC_KEY_FILE=/run/secrets/cortex_otp_hmac \
+  -e CORTEX_AUTH_OFFLINE_GRANT_KEY_ID="$CORTEX_AUTH_OFFLINE_GRANT_KEY_ID" \
+  -e CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE=/run/secrets/cortex_offline_private \
+  -e CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE=/run/secrets/cortex_offline_public \
+  -e CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID="$CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID" \
+  -e CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE=/run/secrets/cortex_memory_cursor_hmac \
+  -e CORTEX_AUTH_DEV_ADMIN_ENABLED=false \
+  -e CORTEX_AUTH_PROVISIONING_ENABLED=false \
+  -e CORTEX_IMPORT_ENABLED=false \
+  -e CORTEX_SYNC_ENABLED=true \
+  -e CORTEX_EMAIL_PROVIDER="${CORTEX_EMAIL_PROVIDER:-fake}" \
+  -e CORTEX_STORAGE_PROVIDER=local \
+  -e CORTEX_STORAGE_LOCAL_ROOT=/var/lib/cortex/objects \
+  -e CORTEX_STORAGE_LOCAL_PERSISTENT=true \
+  -v cortex_object_data:/var/lib/cortex/objects \
   cortex-api:local

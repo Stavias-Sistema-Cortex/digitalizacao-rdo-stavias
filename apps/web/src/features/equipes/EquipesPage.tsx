@@ -4,9 +4,10 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import type {
   ColaboradorLocalRecord,
   ObraLocalRecord,
@@ -18,13 +19,11 @@ import {
   isAlfa,
 } from "../auth/authSession";
 import { hydrateObrasRelacionadas } from "../home/homeHydration";
-import { memoryHref } from "../home/memory/memoryLocation";
 import {
   createConversationApi,
   listConversationsApi,
 } from "../mensagens/mensagensApi";
 import { storeServerConversations } from "../mensagens/mensagensRepository";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   hidratarColaboradoresAcademy,
   listarColaboradoresConhecidos,
@@ -61,6 +60,7 @@ import {
 } from "./teamLocalRepository";
 import {
   filterTeams,
+  teamHistoryLabel,
   type TeamFilters,
 } from "./teamViewModel";
 import "./EquipesPage.css";
@@ -116,6 +116,23 @@ function formatDate(value: string | null): string {
   }).format(new Date(value));
 }
 
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function changedFields(event: TeamHistoryEventDto): string[] {
+  const fields = event.payload.changedFields;
+  return Array.isArray(fields)
+    ? fields.filter((field): field is string => typeof field === "string")
+    : [];
+}
+
 async function fetchAllScopedTeams(): Promise<TeamDto[]> {
   const first = await fetchTeams({ page: 0, size: 100 });
   const teams = [...first.items];
@@ -132,7 +149,6 @@ export function EquipesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedTeamId = searchParams.get("equipe");
-  const { setStaviaContext } = useStaviaLauncher();
   const [teams, setTeams] = useState<TeamDto[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<TeamDto | null>(null);
   const [roles, setRoles] = useState<OperationalRoleDto[]>([]);
@@ -263,10 +279,6 @@ export function EquipesPage() {
       cancelled = true;
     };
   }, [alfa, hasAuthenticatedConnection, reloadTick, selectedTeamId]);
-
-  useEffect(() => {
-    setStaviaContext({ obraId: selectedTeam?.obraPrincipalId ?? "" });
-  }, [selectedTeam?.obraPrincipalId, setStaviaContext]);
 
   const visibleTeams = useMemo(() => filterTeams(teams, filters), [filters, teams]);
   const activeMembers = selectedTeam?.membros.filter((member) => member.status === "ATIVO") ?? [];
@@ -497,12 +509,26 @@ export function EquipesPage() {
       onRefresh={() => setReloadTick((value) => value + 1)}
       isRefreshing={isLoading || detailLoading}
     >
-      <main className={`teams-page ${selectedTeamId ? "teams-page--detail-open" : ""}`}>
+      <OperationalWorkspace
+        className="teams-workspace"
+        eyebrow="Ontologia · Estrutura operacional"
+        title="Equipes"
+        description="Pessoas, funções, vigências e relações com obras preservadas por identidade e evento."
+        actions={alfa ? (
+          <button type="button" onClick={openCreateTeam}>Criar equipe</button>
+        ) : null}
+        status={{
+          code: isLoading ? "SYNCING" : error ? "REJECTED" : navigator.onLine ? "SYNCED" : "LOCAL",
+          label: isLoading
+            ? "Carregando equipes"
+            : error
+              ? "Catálogo indisponível"
+              : `${visibleTeams.length} equipes visíveis`,
+          detail: navigator.onLine ? "Dados locais com atualização automática" : "Dados preservados neste dispositivo",
+        }}
+      >
+      <div className={`teams-page ${selectedTeamId ? "teams-page--detail-open" : ""}`}>
         <aside className="teams-catalog">
-          <header className="teams-catalog-header">
-            <div><p>Estrutura operacional</p><h1>Equipes</h1></div>
-            {alfa && <button type="button" onClick={openCreateTeam} aria-label="Criar equipe">+</button>}
-          </header>
           <div className="teams-filters">
             <label className="teams-search"><img src="/icons8/search.png" alt="" /><input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Buscar equipe ou membro" /></label>
             <div>
@@ -523,12 +549,12 @@ export function EquipesPage() {
         </aside>
 
         <section className="teams-detail">
-          {!selectedTeamId || !selectedTeam ? <div className="teams-detail-empty"><div><i /><i /><i /></div><h2>Selecione uma equipe</h2><p>Consulte a composição e os vínculos vigentes. A trilha auditável fica em Home → Memória.</p></div> : <>
+          {!selectedTeamId || !selectedTeam ? <div className="teams-detail-empty"><div><i /><i /><i /></div><h2>Selecione uma equipe</h2><p>Consulte pessoas, vigências, vínculos e mudanças rastreadas pela ontologia.</p></div> : <>
             <header className="teams-detail-header">
               <button className="teams-mobile-back" type="button" onClick={() => setSearchParams({})} aria-label="Voltar às equipes">‹</button>
               <div className="teams-title-mark">{participantInitials(selectedTeam.nome)}</div>
               <div><p>{selectedTeam.obraNome}</p><h2>{selectedTeam.nome}</h2><span>ID {selectedTeam.id} · versão {selectedTeam.versaoEntidade}</span></div>
-              <div className="teams-detail-actions"><button type="button" onClick={() => navigate(`/obras?obra=${encodeURIComponent(selectedTeam.obraPrincipalId)}`)}>Ver obra</button><Link to={memoryHref({ obraId: selectedTeam.obraPrincipalId, entityType: "EQUIPE", entityId: selectedTeam.id })}>Memória ({history.length})</Link><button type="button" className="is-primary" onClick={() => void openTeamConversation()}>Abrir conversa</button>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={openEditTeam}>Editar</button>}</div>
+              <div className="teams-detail-actions"><button type="button" onClick={() => navigate(`/obras?obra=${encodeURIComponent(selectedTeam.obraPrincipalId)}`)}>Ver obra</button><button type="button" className="is-primary" onClick={() => void openTeamConversation()}>Abrir conversa</button>{alfa && selectedTeam.status === "ATIVA" && <button type="button" onClick={openEditTeam}>Editar</button>}</div>
             </header>
             {actionError && <div className="teams-action-error" role="alert">{actionError}<button type="button" onClick={() => setActionError(null)}>×</button></div>}
             <div className="teams-detail-scroll">
@@ -536,7 +562,7 @@ export function EquipesPage() {
                 <div><span>Status</span><strong className={`teams-status teams-status--${selectedTeam.status.toLowerCase()}`}>{selectedTeam.status === "ATIVA" ? "Ativa" : "Arquivada"}</strong></div>
                 <div><span>Vigência</span><strong>{formatDate(selectedTeam.inicioValidadeEm)} — {formatDate(selectedTeam.fimValidadeEm)}</strong></div>
                 <div><span>Responsável</span><strong>{activeMembers.find((member) => member.responsavel)?.colaboradorNome ?? "Não definido"}</strong></div>
-                <div><span>Memória</span><strong>{history.length} registro(s) auditáveis</strong></div>
+                <div><span>Última mudança</span><strong>{formatDateTime(selectedTeam.atualizadoEm)}</strong></div>
               </section>
               {selectedTeam.descricao && <p className="teams-description">{selectedTeam.descricao}</p>}
 
@@ -550,13 +576,16 @@ export function EquipesPage() {
                 <div className="teams-relation-list">{worksites.length > 0 ? worksites.map((link) => <article key={link.id}><i /><div><strong>{link.obraNome}</strong><span>{link.status === "ATIVO" ? "Atuação ativa" : "Vínculo encerrado"} · {formatDate(link.inicioEm)} — {formatDate(link.fimEm)}</span><code>{link.id}</code></div></article>) : <article><i /><div><strong>{selectedTeam.obraNome}</strong><span>Obra principal da equipe</span><code>{selectedTeam.obraPrincipalId}</code></div></article>}</div>
               </section>
 
-              {formerMembers.length > 0 && <section className="teams-section"><header><div><p>Memória operacional</p><h3>Participações encerradas</h3></div></header><div className="teams-section-empty"><p>{formerMembers.length} {formerMembers.length === 1 ? "participação encerrada" : "participações encerradas"} registrada(s) para esta equipe.</p><Link to={memoryHref({ obraId: selectedTeam.obraPrincipalId, entityType: "EQUIPE", entityId: selectedTeam.id })}>Abrir Memória</Link></div></section>}
+              {formerMembers.length > 0 && <section className="teams-section"><header><div><p>Memória temporal</p><h3>Histórico de membros</h3></div></header><div className="teams-history-table" role="table"><div role="row"><span>Pessoa</span><span>Função</span><span>Período</span><span>Motivo</span></div>{formerMembers.map((member) => <button type="button" role="row" key={member.id} onClick={() => setSelectedMember(member)}><strong>{member.colaboradorNome}</strong><span>{member.funcaoNome}</span><span>{formatDate(member.inicioEm)} — {formatDate(member.fimEm)}</span><span>{member.motivoEncerramento || "Não informado"}</span></button>)}</div></section>}
+
+              {alfa && <section className="teams-section teams-audit"><header><div><p>Somente Alfa</p><h3>Histórico ontológico</h3></div><span>{history.length} eventos</span></header>{history.length === 0 ? <div className="teams-section-empty">Nenhum evento disponível no cache atual.</div> : <ol>{[...history].reverse().map((event) => <li key={event.eventId}><i /><div><strong>{teamHistoryLabel(event)}</strong><p>{changedFields(event).length ? `Campos: ${changedFields(event).join(", ")}` : "Evento estruturado sem lista de campos alterados."}</p><span>{formatDateTime(event.occurredAt)} · {event.source} · ator {event.collaboratorId ?? "sistema"}</span><code>commit {event.commitSeq} · {event.eventId}</code></div></li>)}</ol>}</section>}
 
               {alfa && selectedTeam.status === "ATIVA" && <div className="teams-danger-zone"><div><strong>Arquivar equipe</strong><p>Encerra vínculos ativos preservando todo o histórico.</p></div><button type="button" onClick={() => { setTeamForm((current) => ({ ...current, motivo: "" })); setTeamModalMode("ARCHIVE"); }}>Arquivar</button></div>}
             </div>
           </>}
         </section>
-      </main>
+      </div>
+      </OperationalWorkspace>
 
       {selectedMember && !memberModalMode && <div className="teams-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedMember(null); }}><aside className="teams-member-drawer" aria-label="Detalhes do membro"><header><div className="teams-member-avatar">{participantInitials(selectedMember.colaboradorNome)}</div><button type="button" onClick={() => setSelectedMember(null)}>×</button></header><h2>{selectedMember.colaboradorNome}</h2><p>{selectedMember.funcaoNome}</p><dl><div><dt>Acesso</dt><dd>{selectedMember.papelAcesso ?? "Não informado"}</dd></div><div><dt>Status</dt><dd>{selectedMember.status === "ATIVO" ? "Participação ativa" : "Participação encerrada"}</dd></div><div><dt>Período</dt><dd>{formatDate(selectedMember.inicioEm)} — {formatDate(selectedMember.fimEm)}</dd></div><div><dt>Responsável</dt><dd>{selectedMember.responsavel ? "Sim" : "Não"}</dd></div><div><dt>ID do colaborador</dt><dd><code>{selectedMember.colaboradorId}</code></dd></div><div><dt>ID da participação</dt><dd><code>{selectedMember.id}</code></dd></div></dl>{alfa && selectedMember.status === "ATIVO" && <footer><button type="button" onClick={() => openEditMember(selectedMember)}>Editar participação</button><button type="button" className="is-danger" onClick={() => { setMemberForm((current) => ({ ...current, inicio: today(), motivo: "" })); setMemberModalMode("END"); }}>Encerrar participação</button></footer>}</aside></div>}
 

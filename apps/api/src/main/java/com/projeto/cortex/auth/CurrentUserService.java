@@ -13,7 +13,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -36,7 +35,6 @@ import org.springframework.web.server.ResponseStatusException;
  * concessão por inferência (alocação operacional ou presença em RDO anterior).
  */
 @Service
-@Profile("!postgresql-common")
 public class CurrentUserService implements AuthSessionProfileResolver {
 
     public static final String REQUEST_ATTRIBUTE_USER_ID =
@@ -111,6 +109,32 @@ public class CurrentUserService implements AuthSessionProfileResolver {
 
     public void requireRdoAccess(String rdoId) {
         String normalizedRdoId = requireId(rdoId, "rdoId");
+        String obraId = findRdoWorksite(normalizedRdoId);
+
+        requireWorksiteAccess(obraId);
+    }
+
+    /**
+     * Authorizes an RDO write against the server-owned worksite reference.
+     * Access to both worksites is not enough: a client cannot move an existing
+     * RDO by supplying another worksite identifier in the payload.
+     */
+    public void requireRdoWorksiteAccess(String rdoId, String requestedObraId) {
+        String normalizedRdoId = requireId(rdoId, "rdoId");
+        String normalizedRequestedObraId = requireId(requestedObraId, "obraId");
+        String persistedObraId = findRdoWorksite(normalizedRdoId);
+
+        if (!persistedObraId.equals(normalizedRequestedObraId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A obra informada não pertence ao RDO."
+            );
+        }
+
+        requireWorksiteAccess(persistedObraId);
+    }
+
+    private String findRdoWorksite(String normalizedRdoId) {
         String obraId = jdbcTemplate.query(
                 """
                 SELECT obra_id
@@ -128,8 +152,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                     "RDO não encontrado."
             );
         }
-
-        requireWorksiteAccess(obraId);
+        return obraId.strip();
     }
 
     /**
@@ -152,7 +175,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                 SELECT papel_acesso
                 FROM colaborador
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 LIMIT 1
                 """,

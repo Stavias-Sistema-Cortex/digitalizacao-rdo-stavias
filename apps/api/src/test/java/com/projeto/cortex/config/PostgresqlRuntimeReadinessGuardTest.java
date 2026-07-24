@@ -19,6 +19,16 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
+    void configuredRuntimeRequiresTheCompleteV59Chain() throws Exception {
+        var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
+                "CLEAN_START_REQUIRED_SCHEMA_VERSION"
+        );
+        field.setAccessible(true);
+
+        assertThat(field.get(null)).isEqualTo("59");
+    }
+
+    @Test
     void executesAsAnEarlyBeanFactoryPreflight() {
         PostgresqlRuntimeReadinessGuard guard = guard(mock(JdbcTemplate.class), true, released());
 
@@ -37,24 +47,64 @@ class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
     void trueFlagStillRefusesTheEmptyCleanStartSurfaceRegistry() {
-        PostgresqlRuntimeSurfaceRegistry emptyRegistry = new PostgresqlRuntimeSurfaceRegistry();
+        PostgresqlRuntimeSurfaceRegistry emptyRegistry =
+                new PostgresqlRuntimeSurfaceRegistry(Set.of());
 
         assertThat(emptyRegistry.releasedSurfaces()).isEmpty();
         assertThatThrownBy(() -> guard(mock(JdbcTemplate.class), true, emptyRegistry)
                 .verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("superfície operacional PostgreSQL segura");
+                .hasMessageContaining("conjunto completo e exato");
     }
 
     @Test
-    void refusesSuccessfulV45WhenTheExplicitV44RowIsAbsent() {
+    void registryPublishesTheExactImmutableFiveSurfaceContract() {
+        PostgresqlRuntimeSurfaceRegistry registry =
+                new PostgresqlRuntimeSurfaceRegistry();
+
+        assertThat(registry.releasedSurfaces()).containsExactlyInAnyOrder(
+                "authentication",
+                "finance",
+                "memory-ontology",
+                "rdo",
+                "sync"
+        );
+        assertThatThrownBy(() -> registry.releasedSurfaces().add("unexpected"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void refusesIncompleteOrUnexpectedSurfaceSetsBeforeDatabaseWork() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        PostgresqlRuntimeSurfaceRegistry incomplete =
+                new PostgresqlRuntimeSurfaceRegistry(Set.of(
+                        "authentication", "finance", "memory-ontology", "rdo"
+                ));
+        PostgresqlRuntimeSurfaceRegistry unexpected =
+                new PostgresqlRuntimeSurfaceRegistry(Set.of(
+                        "authentication", "finance", "memory-ontology", "rdo",
+                        "sync", "unexpected"
+                ));
+
+        assertThatThrownBy(() -> guard(jdbcTemplate, true, incomplete)
+                .verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("conjunto completo e exato");
+        assertThatThrownBy(() -> guard(jdbcTemplate, true, unexpected)
+                .verifyReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("conjunto completo e exato");
+    }
+
+    @Test
+    void refusesWhenTheExplicitV59RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("baseline V44");
-        verify(jdbcTemplate).queryForObject(contains("version = '44'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V59");
+        verify(jdbcTemplate).queryForObject(contains("version = '59'"), eq(Integer.class));
     }
 
     @Test
@@ -69,7 +119,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV44VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV59VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -92,10 +142,12 @@ class PostgresqlRuntimeReadinessGuardTest {
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
-        return new PostgresqlRuntimeReadinessGuard(jdbcTemplate, 44, runtimeReady, registry);
+        return new PostgresqlRuntimeReadinessGuard(
+                jdbcTemplate, "59", runtimeReady, registry
+        );
     }
 
     private PostgresqlRuntimeSurfaceRegistry released() {
-        return new PostgresqlRuntimeSurfaceRegistry(Set.of("test-postgresql-safe-slice"));
+        return new PostgresqlRuntimeSurfaceRegistry();
     }
 }

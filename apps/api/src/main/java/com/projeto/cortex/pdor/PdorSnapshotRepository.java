@@ -5,10 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -56,6 +61,14 @@ public class PdorSnapshotRepository {
                     warnings_json,
                     iniciado_por,
                     tipo_iniciador,
+                    algorithm_version,
+                    evidence_ids_json,
+                    evidence_high_water_mark,
+                    coverage_code,
+                    assumptions_json,
+                    executed_at_utc,
+                    is_stale,
+                    is_current,
                     modo_calculo,
                     calibracao,
                     fase_obra,
@@ -80,10 +93,18 @@ public class PdorSnapshotRepository {
                     drivers_json,
                     erro_execucao
                 ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB),
+                    CAST(? AS JSONB), CAST(? AS JSONB),
+                    ?, ?, ?, CAST(? AS JSONB), ?, ?, CAST(? AS JSONB),
+                    ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, CAST(? AS JSONB), ?
                 )
                 """,
                 snapshot.id(),
@@ -112,6 +133,14 @@ public class PdorSnapshotRepository {
                 toJson(snapshot.warnings()),
                 snapshot.initiatedBy(),
                 snapshot.initiatorType(),
+                snapshot.algorithmVersion(),
+                toJsonValue(snapshot.evidenceIds()),
+                snapshot.evidenceHighWaterMark(),
+                snapshot.coverageCode(),
+                toJson(snapshot.assumptions()),
+                toOffsetDateTime(snapshot.executedAtUtc()),
+                snapshot.stale(),
+                snapshot.current(),
                 snapshot.calculationMode(),
                 snapshot.calibrationStatus(),
                 snapshot.projectPhase(),
@@ -135,6 +164,75 @@ public class PdorSnapshotRepository {
                 snapshot.simulationIterations(),
                 toJson(snapshot.drivers()),
                 snapshot.executionError()
+        );
+    }
+
+    @Transactional
+    public void replaceCurrent(PdorSnapshot snapshot)
+            throws DuplicateKeyException {
+        markCurrentStale(snapshot.obraId());
+        insert(snapshot);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordFailureAndMarkCurrentStale(
+            String correlationId,
+            String obraId,
+            String previousSnapshotId,
+            Long evidenceHighWaterMark,
+            PdorTriggerType triggerType,
+            String initiatedBy,
+            Instant attemptedAtUtc
+    ) {
+        if (previousSnapshotId != null && !previousSnapshotId.isBlank()) {
+            markObservedCurrentStale(previousSnapshotId, obraId);
+        }
+        jdbcTemplate.update(
+                """
+                INSERT INTO pdor_calculation_failure (
+                    correlation_id, obra_id, previous_snapshot_id,
+                    error_code, attempted_at_utc,
+                    evidence_high_water_mark, trigger_type, initiated_by
+                ) VALUES (?, ?, ?, 'PDOR_CALCULATION_FAILED', ?, ?, ?, ?)
+                """,
+                correlationId,
+                obraId,
+                previousSnapshotId,
+                toOffsetDateTime(attemptedAtUtc),
+                evidenceHighWaterMark,
+                triggerType.name(),
+                initiatedBy
+        );
+    }
+
+    private void markObservedCurrentStale(
+            String previousSnapshotId,
+            String obraId
+    ) {
+        jdbcTemplate.update(
+                """
+                UPDATE pdor_snapshot
+                SET is_current = false,
+                    is_stale = true
+                WHERE id = ?
+                  AND obra_id = ?
+                  AND is_current = true
+                """,
+                previousSnapshotId,
+                obraId
+        );
+    }
+
+    public void markCurrentStale(String obraId) {
+        jdbcTemplate.update(
+                """
+                UPDATE pdor_snapshot
+                SET is_current = false,
+                    is_stale = true
+                WHERE obra_id = ?
+                  AND is_current = true
+                """,
+                obraId
         );
     }
 
@@ -164,6 +262,20 @@ public class PdorSnapshotRepository {
         return snapshots.stream().findFirst();
     }
 
+    public Optional<PdorSnapshot> findCurrentByObraId(String obraId) {
+        List<PdorSnapshot> snapshots = jdbcTemplate.query(
+                baseSelect() + """
+                WHERE obra_id = ?
+                  AND is_current = true
+                ORDER BY executado_em DESC, criado_em DESC, id DESC
+                LIMIT 1
+                """,
+                (rs, rowNum) -> map(rs),
+                obraId
+        );
+        return snapshots.stream().findFirst();
+    }
+
     public List<PdorSnapshot> findHistoryByObraId(
             String obraId,
             int page,
@@ -178,7 +290,7 @@ public class PdorSnapshotRepository {
                 (rs, rowNum) -> map(rs),
                 obraId,
                 size,
-                page * size
+                Math.multiplyExact((long) page, size)
         );
     }
 
@@ -225,6 +337,14 @@ public class PdorSnapshotRepository {
                     warnings_json,
                     iniciado_por,
                     tipo_iniciador,
+                    algorithm_version,
+                    evidence_ids_json,
+                    evidence_high_water_mark,
+                    coverage_code,
+                    assumptions_json,
+                    executed_at_utc,
+                    is_stale,
+                    is_current,
                     modo_calculo,
                     calibracao,
                     fase_obra,
@@ -304,7 +424,15 @@ public class PdorSnapshotRepository {
                 parseJson(rs.getString("comparacao_anterior_json")),
                 parseJson(rs.getString("evidencias_json")),
                 rs.getString("iniciado_por"),
-                rs.getString("tipo_iniciador")
+                rs.getString("tipo_iniciador"),
+                rs.getString("algorithm_version"),
+                parseStringList(rs.getString("evidence_ids_json")),
+                nullableLong(rs, "evidence_high_water_mark"),
+                rs.getString("coverage_code"),
+                parseJson(rs.getString("assumptions_json")),
+                toInstant(rs, "executed_at_utc"),
+                rs.getBoolean("is_stale"),
+                rs.getBoolean("is_current")
         );
     }
 
@@ -319,6 +447,28 @@ public class PdorSnapshotRepository {
                     exception
             );
         }
+    }
+
+    private String toJsonValue(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException(
+                    "Não foi possível serializar a evidência do snapshot PDOR.",
+                    exception
+            );
+        }
+    }
+
+    private List<String> parseStringList(String json) {
+        JsonNode node = parseJson(json);
+        if (!node.isArray()) {
+            return List.of();
+        }
+        return java.util.stream.StreamSupport.stream(node.spliterator(), false)
+                .filter(JsonNode::isTextual)
+                .map(JsonNode::textValue)
+                .toList();
     }
 
     private JsonNode parseJson(String json) {
@@ -339,6 +489,15 @@ public class PdorSnapshotRepository {
         return timestamp == null ? null : timestamp.toLocalDateTime();
     }
 
+    private Instant toInstant(ResultSet rs, String column) throws SQLException {
+        OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
+        return value == null ? null : value.toInstant();
+    }
+
+    private OffsetDateTime toOffsetDateTime(Instant value) {
+        return value == null ? null : value.atOffset(ZoneOffset.UTC);
+    }
+
     private Boolean nullableBoolean(ResultSet rs, String column)
             throws SQLException {
         Object value = rs.getObject(column);
@@ -349,5 +508,11 @@ public class PdorSnapshotRepository {
             throws SQLException {
         Object value = rs.getObject(column);
         return value == null ? null : rs.getInt(column);
+    }
+
+    private Long nullableLong(ResultSet rs, String column)
+            throws SQLException {
+        Object value = rs.getObject(column);
+        return value == null ? null : rs.getLong(column);
     }
 }

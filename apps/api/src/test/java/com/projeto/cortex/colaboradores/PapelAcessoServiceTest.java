@@ -1,20 +1,18 @@
 package com.projeto.cortex.colaboradores;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.auth.roles.AdminRoleService;
+import com.projeto.cortex.auth.roles.AdminRoleVersionedChangeRequest;
+import com.projeto.cortex.auth.roles.AdminRoleVersionedChangeResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -23,86 +21,85 @@ import static org.mockito.Mockito.when;
 
 class PapelAcessoServiceTest {
 
-    private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final CurrentUserService currentUserService = mock(CurrentUserService.class);
-    private final PapelAcessoMemoryPublisher memoryPublisher =
-            mock(PapelAcessoMemoryPublisher.class);
+    private final AdminRoleService adminRoleService = mock(AdminRoleService.class);
     private final PapelAcessoService service = new PapelAcessoService(
-            jdbcTemplate,
             currentUserService,
-            memoryPublisher
+            adminRoleService
     );
 
     @Test
-    void alfaChangesRoleWithExplicitConfirmationAndOptimisticVersion() {
+    void confirmedVersionedRequestDelegatesToCanonicalGovernanceAndPreservesResponse() {
         LocalDateTime now = LocalDateTime.of(2026, 7, 15, 13, 0);
-        PapelAcessoUpdateResponse before = new PapelAcessoUpdateResponse(
-                "colab-2", "Bruno", "BETA", 4, now.minusDays(1)
-        );
-        PapelAcessoUpdateResponse after = new PapelAcessoUpdateResponse(
-                "colab-2", "Bruno", "ALFA", 5, now
-        );
+        String actorId = "11111111-1111-4111-8111-111111111111";
+        String targetId = "22222222-2222-4222-8222-222222222222";
         PapelAcessoUpdateRequest request = new PapelAcessoUpdateRequest(
                 "BETA", "ALFA", 4L, "Responsável pela administração regional", true
         );
 
-        when(currentUserService.requireUserId()).thenReturn("alfa-1");
-        when(jdbcTemplate.query(
-                contains("FROM colaborador"),
-                any(RowMapper.class),
-                eq("colab-2")
-        )).thenReturn(List.of(before), List.of(after));
-        when(jdbcTemplate.update(
-                contains("UPDATE colaborador"),
-                any(Object[].class)
-        )).thenReturn(1);
+        when(currentUserService.requireUserId()).thenReturn(actorId);
+        when(adminRoleService.changeRoleVersioned(
+                actorId,
+                targetId,
+                new AdminRoleVersionedChangeRequest(
+                        "BETA",
+                        "ALFA",
+                        4L,
+                        "Responsável pela administração regional"
+                )
+        )).thenReturn(new AdminRoleVersionedChangeResponse(
+                targetId,
+                "Bruno",
+                "ALFA",
+                5L,
+                now
+        ));
 
-        PapelAcessoUpdateResponse response = service.alterar("colab-2", request);
+        PapelAcessoUpdateResponse response = service.alterar(targetId, request);
 
-        assertThat(response).isEqualTo(after);
-        verify(currentUserService).requireAlfa();
-        verify(jdbcTemplate).update(
-                contains("papel_acesso = ?"),
-                eq("ALFA"),
-                eq("colab-2"),
-                eq("BETA"),
-                eq(4L)
-        );
-        verify(memoryPublisher).papelAlterado(
-                before,
-                after,
-                "alfa-1",
-                4L,
-                "Responsável pela administração regional"
+        assertThat(response).isEqualTo(new PapelAcessoUpdateResponse(
+                targetId,
+                "Bruno",
+                "ALFA",
+                5L,
+                now
+        ));
+        verify(adminRoleService).changeRoleVersioned(
+                actorId,
+                targetId,
+                new AdminRoleVersionedChangeRequest(
+                        "BETA",
+                        "ALFA",
+                        4L,
+                        "Responsável pela administração regional"
+                )
         );
     }
 
     @Test
-    void rejectsSelfDemotionBeforeWritingAnything() {
-        LocalDateTime now = LocalDateTime.of(2026, 7, 15, 13, 0);
-        PapelAcessoUpdateResponse current = new PapelAcessoUpdateResponse(
-                "alfa-1", "Ana", "ALFA", 7, now
-        );
+    void preservesCanonicalCapabilityDenialFromGovernanceService() {
+        String actorId = "11111111-1111-4111-8111-111111111111";
+        String targetId = "22222222-2222-4222-8222-222222222222";
         PapelAcessoUpdateRequest request = new PapelAcessoUpdateRequest(
-                "ALFA", "BETA", 7L, "Redução de acesso", true
+                "BETA", "ALFA", 7L, "Promoção aprovada pela direção", true
         );
 
-        when(currentUserService.requireUserId()).thenReturn("alfa-1");
-        when(jdbcTemplate.query(
-                contains("FROM colaborador"),
-                any(RowMapper.class),
-                eq("alfa-1")
-        )).thenReturn(List.of(current));
+        when(currentUserService.requireUserId()).thenReturn(actorId);
+        when(adminRoleService.changeRoleVersioned(
+                eq(actorId),
+                eq(targetId),
+                any()
+        )).thenThrow(new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "A operação exige a capacidade ADMINISTRAR_PAPEIS."
+        ));
 
-        assertThatThrownBy(() -> service.alterar("alfa-1", request))
+        assertThatThrownBy(() -> service.alterar(targetId, request))
                 .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
-                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
                     assertThat(exception.getReason())
-                            .isEqualTo("Um usuário Alfa não pode remover o próprio acesso administrativo.");
+                            .isEqualTo("A operação exige a capacidade ADMINISTRAR_PAPEIS.");
                 });
-
-        verify(jdbcTemplate, never()).update(contains("UPDATE colaborador"), any(Object[].class));
-        verify(memoryPublisher, never()).papelAlterado(any(), any(), any(), anyLong(), any());
     }
 
     @Test
@@ -118,8 +115,6 @@ class PapelAcessoServiceTest {
                             .isEqualTo("A mudança de acesso exige confirmação explícita.");
                 });
 
-        verify(jdbcTemplate, never()).query(
-                any(String.class), any(RowMapper.class), any(Object[].class)
-        );
+        verify(adminRoleService, never()).changeRoleVersioned(any(), any(), any());
     }
 }

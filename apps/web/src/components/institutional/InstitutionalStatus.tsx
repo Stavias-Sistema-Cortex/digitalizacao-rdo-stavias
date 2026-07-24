@@ -8,10 +8,7 @@ export type InstitutionalStatusState =
   | "CONFLICT"
   | "REJECTED";
 
-const statusLabels: Record<
-  InstitutionalStatusState,
-  string
-> = {
+const statusLabels: Record<InstitutionalStatusState, string> = {
   LOCAL: "Local",
   PENDING: "Pendente",
   SYNCING: "Sincronizando",
@@ -26,21 +23,10 @@ export interface InstitutionalStatusProps {
   className?: string;
 }
 
-export function InstitutionalStatus({
-  state,
-  label,
-  className,
-}: InstitutionalStatusProps) {
-  const classNames = [
-    "institutional-status",
-    className,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
+export function InstitutionalStatus({ state, label, className }: InstitutionalStatusProps) {
   return (
     <span
-      className={classNames}
+      className={["institutional-status", className].filter(Boolean).join(" ")}
       data-state={state}
       role="status"
     >

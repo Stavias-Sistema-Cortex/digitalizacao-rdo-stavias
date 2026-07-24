@@ -46,6 +46,7 @@ class PdorSpringContextTest {
     @Configuration(proxyBeanMethods = false)
     @Import({
             PdorApplicationService.class,
+            PdorSnapshotPublicationService.class,
             PdorController.class,
             PdorExceptionHandler.class
     })

@@ -44,8 +44,8 @@ class ObraSeedImportServiceTest {
 
         assertEquals(1, resultado.registrosInseridos());
 
-        // O objeto precisa entrar em cortex_objeto para a StavIA enxergar a obra
-        // no grafo da ontologia (JdbcOntologyReader parte de nós tipo OBRA).
+        // O objeto precisa entrar em cortex_objeto para integrar a obra ao
+        // grafo operacional independente.
         verify(memory).registrarObjeto(
                 eq("OBRA"),
                 any(String.class),

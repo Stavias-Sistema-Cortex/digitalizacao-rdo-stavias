@@ -23,3 +23,4 @@ var/cortex-attachments/
 
 # Local Git worktrees
 .worktrees/
+.superpowers/

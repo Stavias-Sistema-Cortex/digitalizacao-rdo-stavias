@@ -1,8 +1,5 @@
 .integracoes-table-card {
   overflow-x: auto;
-  border: 2px solid var(--color-ink);
-  border-radius: var(--radius-container);
-  background: var(--color-surface);
 }
 
 .integracoes-table {
@@ -21,11 +18,9 @@
 }
 
 .integracoes-table th {
-  border-bottom-color: var(--color-ink);
-  color: var(--color-ink);
+  color: var(--color-muted);
   font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -38,18 +33,6 @@
 .integracoes-actions .secondary-button {
   min-height: 36px;
   padding: 0 10px;
-  border-radius: var(--radius-control);
-}
-
-.integracoes-table td {
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
-.integracoes-report {
-  border: 2px solid var(--color-ink);
-  border-radius: var(--radius-container);
-  background: var(--color-surface);
 }
 
 .integracoes-report dl {
@@ -68,9 +51,8 @@
 
 .integracoes-report dd {
   margin: 0;
-  color: var(--color-ink);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  color: #25372d;
+  font-weight: 750;
   overflow-wrap: anywhere;
 }
 
@@ -78,4 +60,48 @@
   .integracoes-report dl {
     grid-template-columns: 1fr;
   }
+}
+
+.integracoes-table-card,
+.integracoes-report {
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+}
+
+.integracoes-actions .secondary-button {
+  border-radius: var(--radius-control);
+}
+
+.integracoes-table th {
+  border-bottom-color: var(--color-ink);
+  color: var(--color-ink);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.integracoes-table td,
+.integracoes-report dd {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.integracoes-report dd {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.integracoes-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: clamp(16px, 2vw, 28px);
+}
+
+.integracoes-page .integracoes-table-card,
+.integracoes-page .integracoes-report,
+.integracoes-page .secondary-button,
+.integracoes-page .status-badge {
+  border-radius: 0;
+  box-shadow: none;
 }

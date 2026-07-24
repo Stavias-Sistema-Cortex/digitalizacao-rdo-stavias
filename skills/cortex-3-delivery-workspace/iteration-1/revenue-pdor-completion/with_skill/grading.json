@@ -1,0 +1,81 @@
+{
+  "expectations": [
+    {
+      "text": "Classifies all five supplied claims individually with one of the requested evidence statuses",
+      "passed": true,
+      "evidence": "The Requirement matrix has one row for each of claims 1 through 5 and assigns CONTRADICTED to claims 1–4 and MISSING to claim 5. Both are requested evidence-status terms."
+    },
+    {
+      "text": "Rejects historical revenue correctness because execution reads a mutable current price instead of an immutable price-version snapshot",
+      "passed": true,
+      "evidence": "Claim 2 is classified CONTRADICTED. Its fixture-grounded rationale states that executions do not retain a price-version ID or price snapshot and that a later price edit can rewrite the economic meaning of historical execution."
+    },
+    {
+      "text": "Marks the cost-free PDOR claim contradicted because projectedCost and margin remain",
+      "passed": true,
+      "evidence": "Claim 3 is classified CONTRADICTED and explicitly cites the fixture's PdorResult fields projectedCost and margin as prohibited semantics."
+    },
+    {
+      "text": "Marks ontology centrality and offline PostgreSQL completion missing, incomplete, contradicted, or indirect because no direct evidence exists",
+      "passed": true,
+      "evidence": "Claim 4 is classified CONTRADICTED because the fixture supplies no graph relation or evidence IDs. Claim 5 is classified MISSING because the fixture explicitly supplies no PostgreSQL integration, IndexedDB, reconnect, or browser test."
+    },
+    {
+      "text": "Requires component revenue rows, graph evidence IDs, PostgreSQL integration, IndexedDB reconnect, and browser evidence before completion",
+      "passed": true,
+      "evidence": "The evidence-needed columns require a trace response whose total is the sum of visible rows, scoped graph/ledger responses containing graph IDs, PostgreSQL integration verification, IndexedDB offline-reload and automatic reconnect tests, and browser/runtime proof. The Scope check separately identifies the absent component evidence rows."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "claims": [
+    {
+      "claim": "No supplied claim is PROVEN and the slice should not be marked complete.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The fixture provides only arithmetic and HTTP-200 tests, while it explicitly lacks price snapshots, graph/evidence IDs, PostgreSQL integration, IndexedDB, reconnect, browser testing, and visible component evidence rows. The matrix classifies no claim as PROVEN."
+    },
+    {
+      "claim": "RevenueCalculatorTest proves only 10 × 125 = 1250, not immutable historical revenue correctness.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture states exactly that RevenueCalculatorTest asserts 10 × 125 = 1250, and separately states that execution rows do not store a price-version ID or price snapshot."
+    },
+    {
+      "claim": "No graph relation or evidence IDs appear in the response.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "This is explicitly listed in the fixture's supplied evidence."
+    },
+    {
+      "claim": "No PostgreSQL integration, IndexedDB, reconnect, or browser test was run.",
+      "type": "process",
+      "verified": true,
+      "evidence": "This is explicitly listed in the fixture's supplied evidence."
+    },
+    {
+      "claim": "Static inspection finds no V49/V50 migrations, no service_price_version table, and specific current-source implementations that preserve mutable pricing and cost semantics.",
+      "type": "factual",
+      "verified": false,
+      "evidence": "The output asserts these repository-inspection details, but the permitted fixture, metadata, and audit output do not include the cited source files or migration inventory. They cannot be independently verified from the available evidence."
+    },
+    {
+      "claim": "Existing generic memory, ontology, or sync behavior cannot establish the revenue-specific claims.",
+      "type": "quality",
+      "verified": false,
+      "evidence": "The fixture establishes the absence of direct slice evidence, but provides no information about generic memory, ontology, or sync behavior. This broader characterization is unsupported by the permitted artifacts."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "The assertions correctly test the required conclusion, but none checks that the audit distinguishes fixture evidence from unprovided repository-inspection claims. Add an assertion that claims about migrations, source files, and design documents must be either supported by supplied evidence or explicitly labeled unverifiable."
+      }
+    ],
+    "overall": "The assertions discriminate the core completion decision well. They do not guard against unsupported corroborating claims added beyond the fixture."
+  }
+}

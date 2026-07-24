@@ -17,7 +17,7 @@ public final class AuthReadinessIndicator implements InitializingBean, RuntimeRe
             SELECT COUNT(*)
             FROM colaborador c
             JOIN auth_identity ai ON ai.colaborador_id = c.id
-            WHERE c.ativo = 1
+            WHERE c.ativo = TRUE
               AND c.deletado_em IS NULL
               AND c.papel_acesso = 'ALFA'
               AND ai.status = 'ATIVA'

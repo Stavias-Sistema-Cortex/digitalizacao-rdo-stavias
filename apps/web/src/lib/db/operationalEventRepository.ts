@@ -1,9 +1,5 @@
 import { getCortexDb } from "./cortexDb";
 import type {
-  CanonicalOutboxMutationRecord,
-  CanonicalMutationResult,
-  CanonicalOperationalEventRecord,
-  LegacyOperationalEventRecord,
   OperationalEntityRef,
   OperationalEventOrigin,
   OperationalEventRecord,
@@ -11,7 +7,7 @@ import type {
   OperationalEventType,
 } from "./db.types";
 
-export interface LegacyOperationalEventInput {
+export interface OperationalEventInput {
   id?: string;
   type: OperationalEventType;
   principalEntity: OperationalEntityRef;
@@ -27,34 +23,6 @@ export interface LegacyOperationalEventInput {
   payload?: Record<string, unknown>;
   syncStatus?: OperationalEventSyncStatus;
   schemaVersion?: number;
-}
-
-export type OperationalEventInput = LegacyOperationalEventInput;
-
-export interface CanonicalOperationalEventInput
-  extends LegacyOperationalEventInput {
-  clientMutationId: string;
-  deviceId: string;
-  correlationId: string;
-  causationId: string | null;
-  previousState: Record<string, unknown>;
-  newState: Record<string, unknown>;
-  result: CanonicalMutationResult;
-  errorCategory: string | null;
-  entityVersion: number | null;
-}
-
-export interface CanonicalEventFromMutationInput {
-  mutation: CanonicalOutboxMutationRecord;
-  type: OperationalEventType;
-  principalEntity: OperationalEntityRef;
-  relatedEntities: OperationalEntityRef[];
-  obraId: string | null;
-  rdoId: string | null;
-  colaboradorId: string | null;
-  responsibleUserName: string;
-  previousState: Record<string, unknown>;
-  newState: Record<string, unknown>;
 }
 
 export interface OperationalEventFilter {
@@ -74,9 +42,9 @@ export function operationalEntityKey(
   return `${entity.tipo}:${entity.id}`;
 }
 
-export function buildLegacyOperationalEvent(
-  input: LegacyOperationalEventInput,
-): LegacyOperationalEventRecord {
+export function buildOperationalEvent(
+  input: OperationalEventInput,
+): OperationalEventRecord {
   const occurredAt = input.occurredAt ?? new Date().toISOString();
 
   return {
@@ -97,63 +65,6 @@ export function buildLegacyOperationalEvent(
     syncStatus: input.syncStatus ?? "PENDING_SYNC",
     schemaVersion: input.schemaVersion ?? 1,
   };
-}
-
-/**
- * @deprecated Compatibility alias for v12 writers. New mutation flows must use
- * buildCanonicalOperationalEvent.
- */
-export const buildOperationalEvent = buildLegacyOperationalEvent;
-
-export function buildCanonicalOperationalEvent(
-  input: CanonicalOperationalEventInput,
-): CanonicalOperationalEventRecord {
-  return {
-    ...buildLegacyOperationalEvent(input),
-    contractVersion: 13,
-    clientMutationId: input.clientMutationId,
-    deviceId: input.deviceId,
-    correlationId: input.correlationId,
-    causationId: input.causationId,
-    previousState: input.previousState,
-    newState: input.newState,
-    result: input.result,
-    errorCategory: input.errorCategory,
-    entityVersion: input.entityVersion,
-  };
-}
-
-export function buildCanonicalEventFromMutation(
-  input: CanonicalEventFromMutationInput,
-): CanonicalOperationalEventRecord {
-  const { mutation } = input;
-
-  return buildCanonicalOperationalEvent({
-    id: mutation.trace.ontologyEventId,
-    clientMutationId: mutation.clientMutationId,
-    deviceId: mutation.trace.deviceId,
-    correlationId: mutation.trace.correlationId,
-    causationId: mutation.trace.causationId,
-    type: input.type,
-    principalEntity: input.principalEntity,
-    relatedEntities: input.relatedEntities,
-    obraId: input.obraId,
-    rdoId: input.rdoId,
-    colaboradorId: input.colaboradorId,
-    occurredAt: mutation.criadaNoClienteEm,
-    syncedAt: null,
-    origin: "OFFLINE",
-    responsibleUserId: mutation.trace.actorId,
-    responsibleUserName: input.responsibleUserName,
-    payload: mutation.payload,
-    syncStatus: "PENDING_SYNC",
-    schemaVersion: 1,
-    previousState: input.previousState,
-    newState: input.newState,
-    result: "PENDING",
-    errorCategory: null,
-    entityVersion: mutation.baseVersao,
-  });
 }
 
 export async function putOperationalEvent(

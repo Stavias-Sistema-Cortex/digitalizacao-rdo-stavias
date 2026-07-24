@@ -403,7 +403,7 @@ class AuthIdentityRepositoryTest {
         InOrder order = inOrder(jdbc);
         order.verify(jdbc).query(
                 argThat(sql -> sql != null
-                        && sql.contains("colaborador.ativo = 1")
+                        && sql.contains("colaborador.ativo = TRUE")
                         && sql.contains("colaborador.deletado_em IS NULL")
                         && sql.contains("identity.status <> 'BLOQUEADA'")
                         && sql.contains("FOR UPDATE")),
@@ -496,7 +496,7 @@ class AuthIdentityRepositoryTest {
     ) {
         when(jdbc.query(
                 argThat(sql -> sql != null
-                        && sql.contains("colaborador.ativo = 1")
+                        && sql.contains("colaborador.ativo = TRUE")
                         && sql.contains("FOR UPDATE")),
                 any(RowMapper.class),
                 eq(colaboradorId)

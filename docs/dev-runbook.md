@@ -2,32 +2,60 @@
 
 ## Pré-requisitos
 
-- JDK 21 (Java 25 não é o runtime suportado para o gate Maven);
-- Node 22 e npm;
-- Docker Desktop para MySQL/compose;
-- `.env` local ignorado pelo Git, criado a partir de `.env.example`.
+- JDK 21 e Node 22;
+- PostgreSQL 18 acessível com o banco canônico `StaviasCortex`;
+- Docker Desktop apenas se a API/PWA forem executadas em containers;
+- `.env` local ignorado pelo Git, criado a partir de `.env.example`;
+- arquivos locais protegidos para senha PostgreSQL, HMACs e chaves offline.
 
-No mínimo, preencha senhas do MySQL e uma chave CPF HMAC local aleatória. Não
-use CPF, e-mail, senha ou token real em fixture, log ou commit.
+Academy e Zeladoria não são bancos do Córtex. Elas podem ser configuradas
+somente como fontes MySQL externas de leitura e continuam desabilitadas por
+padrão.
 
-## Stack Docker local
+## Preparar o runtime PostgreSQL
+
+Copie o modelo e preencha apenas URLs não secretas, IDs de chave e caminhos de
+arquivos protegidos:
 
 ```bash
 cp .env.example .env
-# edite os valores locais
+```
+
+O runtime normal usa `local,postgresql` e falha fechado sem schema V59, ALFA
+real ativo e o gate explícito. A sequência completa é:
+
+```bash
+./scripts/dev/migrate-postgres-cortex.sh
+# Execute o bootstrap somente com a identidade real autorizada e a fonte
+# Academy somente leitura, conforme o runbook de clean start.
+./scripts/dev/bootstrap-postgres-alfa.sh
+./scripts/dev/start-postgres-activation.sh
+CORTEX_POSTGRES_RUNTIME_READY=true \
+  ./scripts/dev/check-postgres-runtime-release.sh
+```
+
+Não crie ALFA, pessoa, obra, equipe, RDO, serviço, preço ou receita sintéticos
+para fazer o runtime parecer pronto. Consulte
+[cortex-postgresql-clean-start.md](operations/cortex-postgresql-clean-start.md)
+para a transição e o rollback.
+
+## Stack Docker local
+
+Depois de concluir os gates acima e definir
+`CORTEX_POSTGRES_RUNTIME_READY=true`, execute:
+
+```bash
 ./scripts/dev/run-compose.sh
 ```
 
-Serviços:
+O Compose não contém um MySQL primário e não injeta a senha PostgreSQL no
+ambiente do container. `CORTEX_POSTGRES_DOCKER_URL` deve apontar para a mesma
+instância canônica, por exemplo via `host.docker.internal` no macOS.
 
 - PWA: `http://127.0.0.1:5173`
 - API: `http://127.0.0.1:8081`
-- MySQL: `127.0.0.1:3307`
+- health: `http://127.0.0.1:8081/api/health`
 - readiness: `http://127.0.0.1:8081/api/readiness`
-
-O compose usa e-mail fake somente no perfil `local` e um volume persistente
-para anexos. Não há endpoint para ler OTPs fake: testes capturam o gateway por
-injeção; códigos nunca são expostos por uma rota de produção.
 
 ```bash
 docker compose -f compose.local.yml logs -f cortex-api cortex-web
@@ -35,6 +63,8 @@ docker compose -f compose.local.yml logs -f cortex-api cortex-web
 ```
 
 ## Processos locais separados
+
+Com o mesmo `.env` validado:
 
 ```bash
 ./scripts/dev/run-api.sh
@@ -44,27 +74,28 @@ npm ci
 npm run dev:local
 ```
 
-A API local usa porta 8080 e a PWA 5173. `run-api.sh` valida banco e CPF HMAC,
-ativa o perfil `local` e não cria JWT. Autenticação online usa desafio OTP,
-cookie de sessão opaco e CSRF; passkeys usam WebAuthn.
+A API usa a porta 8080 e a PWA usa 5173. O modo de autenticação web é
+`postgresql`; importações e dev-admin permanecem desabilitados, e o sync
+canônico fica ativo.
+
+O perfil local aceita e-mail fake apenas para testes automatizados. Ele não é
+prova de login humano. Para validar OTP real, execute a ativação com SMTP
+autenticado e registre o resultado sem e-mail, OTP, cookie ou identificador
+pessoal.
 
 ## Dados externos e importação
 
-Importação é opt-in. Configure `CORTEX_IMPORT_ENABLED=true` e as variáveis
-`CORTEX_ZELADORIA_DB_*` / `CORTEX_ACADEMY_DB_*` apenas quando o acesso às fontes
-for intencional. Com importação desativada, rotas administrativas respondem
-403. Nunca copie credenciais externas para compose ou documentação.
-
-Scripts úteis em `scripts/dev/` incluem busca de ativos/colaboradores,
-importações explícitas, histórico de sync e `smoke-stavia-sync.sh`. O smoke cria
-MySQL e dados `example.invalid` descartáveis, valida CORS/sessão/sync/StavIA e
-remove tudo ao encerrar.
+`CORTEX_IMPORT_ENABLED=false` é o padrão. Habilite a importação somente em uma
+execução explícita com credenciais read-only por arquivo e autorização do
+operador. Nunca copie credenciais Academy/Zeladoria para Compose, documentação,
+logs ou fixtures.
 
 ## Testes
 
 ```bash
 cd apps/api
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -Ppostgresql-it verify
 
 cd ../web
 npm test -- --run
@@ -72,37 +103,30 @@ npm run lint
 npm run build
 ```
 
-Para habilitar os testes MySQL locais já anotados, exporte somente durante a
-execução:
+Os testes PostgreSQL usam containers descartáveis e não consultam nem alteram
+o banco local do operador.
 
-```bash
-export CORTEX_MYSQL_ROOT_PASSWORD='senha-local-do-container'
-cd apps/api
-JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
-```
+## Offline e sincronização
 
-Cada teste cria e apaga seu próprio schema. Flyway deve aplicar V1–V33 sem
-`repair`.
+- IDs e `clientMutationId` permanecem estáveis no IndexedDB.
+- Recarregar offline não autoriza API; somente um grant assinado abre o cofre
+  local.
+- A reconexão inicia replay automático idempotente. Falhas e conflitos ficam
+  visíveis, nunca são descartados silenciosamente.
+- Para diagnosticar, confirme `/api/health`, `/api/readiness`, sessão,
+  escopo/capability, rota, recibo idempotente e evento ontológico.
 
-## Offline e sync
+## Financeiro
 
-- Mensagens, anexos e compras usam IDs/clientMutationId estáveis no IndexedDB.
-- Recarregar offline não autoriza chamadas à API; o grant offline serve apenas
-  ao cofre local verificado.
-- Na reconexão, acompanhe o estado no indicador de sync. Falhas permanecem
-  visíveis e podem ser repetidas; não são descartadas silenciosamente.
-- Para diagnosticar erro de sync, confirme nesta ordem: `/api/health`,
-  `/api/readiness`, sessão, scope/capability, rota e recibo idempotente.
+A superfície ativa contém somente:
 
-## Financeiro e autorização
+- Rastreio de receita;
+- Serviços e preços versionados;
+- PDOR de receita.
 
-ALFA possui acesso global. BETA exige vínculo ativo com a obra e capability
-financeira exata. O frontend só reflete o resultado de
-`/api/financeiro/capacidades`; a autoridade permanece no backend.
-
-Não semeie fornecedores, notas, totais ou gráficos para “preencher” a tela.
-Estados vazios e “sem vínculo orçamentário” são comportamento correto quando a
-consulta real não oferece dados.
+Receita é calculada a partir da execução aceita no RDO e do preço aplicável
+persistido. Não semeie custos, margens, compras, rateios ou gráficos
+demonstrativos.
 
 ## Antes de commitar
 
@@ -111,6 +135,5 @@ git status --short
 git diff --check
 ```
 
-Não versionar `.env*`, `target/`, `dist/`, `node_modules/`, `.DS_Store`,
-`.neurotrace/`, secrets, dumps ou dados pessoais. Para publicação, siga
-`docs/deploy-checklist.md` e `docs/production-runbook.md`.
+Não versione `.env*`, arquivos de segredo, `target/`, `dist/`,
+`node_modules/`, dumps ou dados pessoais.

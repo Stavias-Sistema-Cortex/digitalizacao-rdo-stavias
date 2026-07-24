@@ -1,11 +1,22 @@
 .device-security-page {
+  width: 100%;
+  min-width: 0;
   min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: var(--color-canvas);
+}
+
+.device-security-content {
+  display: grid;
+  justify-items: start;
+  padding: clamp(18px, 2.4vw, 36px);
 }
 
 .device-security-card {
   width: min(720px, 100%);
   padding: clamp(22px, 4vw, 34px);
-  border: 2px solid var(--color-ink);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   background: var(--color-surface);
   box-shadow: none;

@@ -10,21 +10,12 @@ import {
   type SyncUiStatus,
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
-import { SyncStateFacts } from "./institutional/SyncStateStrip";
-import {
-  shouldClearManualSyncPresentationError,
-  type ManualSyncPresentationError,
-} from "./syncPresentation";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
   title: string;
   description: string;
 }
-
-type SyncChipStatus =
-  | Exclude<SyncUiStatus, "REVIEW">
-  | "CHECKING";
 
 function pluralize(
   count: number,
@@ -143,11 +134,33 @@ function getStatusContent(
   }
 }
 
+function formatLastSync(
+  value: string | null,
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(
+    "pt-BR",
+    {
+      dateStyle: "short",
+      timeStyle: "medium",
+    },
+  ).format(date);
+}
+
 export function SyncStatusBanner() {
   const { snapshot, refresh } =
     useSyncStatus();
   const [manualSyncError, setManualSyncError] =
-    useState<ManualSyncPresentationError | null>(null);
+    useState("");
   const [isManualSyncing, setIsManualSyncing] =
     useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -155,13 +168,10 @@ export function SyncStatusBanner() {
 
   const displayedStatus: SyncUiStatus =
     manualSyncError ? "ERROR" : snapshot.status;
-  const chipStatus: SyncChipStatus = manualSyncError
-    ? "ERROR"
-    : snapshot.isLoading
-      ? "CHECKING"
-      : snapshot.status === "REVIEW"
-        ? "CONFLICT"
-        : snapshot.status;
+  const chipVisualStatus =
+    displayedStatus === "REVIEW"
+      ? "CONFLICT"
+      : displayedStatus;
 
   const content = useMemo(
     () =>
@@ -183,13 +193,17 @@ export function SyncStatusBanner() {
     ],
   );
 
-  const visibleSyncDetail =
-    manualSyncError?.message ??
+  const lastSyncText = formatLastSync(
+    snapshot.lastSyncCompletedAt,
+  );
+
+  const visibleSyncError =
+    manualSyncError ||
     (displayedStatus === "REVIEW"
       ? snapshot.reviewReason
       : displayedStatus === "ERROR" || displayedStatus === "CONFLICT"
-        ? snapshot.lastSyncError
-        : null);
+      ? snapshot.lastSyncError
+      : null);
 
   const attentionCount =
     snapshot.pendingCount +
@@ -199,23 +213,23 @@ export function SyncStatusBanner() {
 
   useEffect(() => {
     if (
-      !manualSyncError ||
-      !shouldClearManualSyncPresentationError(
-        manualSyncError,
-        snapshot,
-      )
+      manualSyncError &&
+      !snapshot.lastSyncError &&
+      snapshot.status !== "ERROR"
     ) {
-      return undefined;
+      const resetId = window.setTimeout(() => {
+        setManualSyncError("");
+      }, 0);
+
+      return () => window.clearTimeout(resetId);
     }
 
-    const clearId = window.setTimeout(() => {
-      setManualSyncError((current) =>
-        current === manualSyncError ? null : current,
-      );
-    }, 0);
-
-    return () => window.clearTimeout(clearId);
-  }, [manualSyncError, snapshot]);
+    return undefined;
+  }, [
+    manualSyncError,
+    snapshot.lastSyncError,
+    snapshot.status,
+  ]);
 
   // Fecha o popover ao clicar fora ou pressionar Escape.
   useEffect(() => {
@@ -250,17 +264,15 @@ export function SyncStatusBanner() {
 
   async function handleSyncNow(): Promise<void> {
     setIsManualSyncing(true);
+    setManualSyncError("");
 
     try {
       await syncNow();
     } catch (error: unknown) {
       setManualSyncError(
-        {
-          message: error instanceof Error
-            ? error.message
-            : "Falha ao sincronizar agora.",
-          occurredAt: new Date().toISOString(),
-        },
+        error instanceof Error
+          ? error.message
+          : "Falha ao sincronizar agora.",
       );
     } finally {
       setIsManualSyncing(false);
@@ -268,110 +280,94 @@ export function SyncStatusBanner() {
     }
   }
 
-  const chipTitle = snapshot.isLoading && !manualSyncError
+  const chipTitle = snapshot.isLoading
     ? "Verificando sincronização"
     : content.title;
 
   return (
     <div
       ref={rootRef}
-      className="sync-status-control"
+      className={`sync-chip sync-chip--${chipVisualStatus.toLowerCase()}`}
     >
-      <span
-        className={`sync-status-summary sync-status-summary--${chipStatus.toLowerCase()}`}
-        aria-hidden="true"
+      <button
+        type="button"
+        className="sync-chip__button"
+        onClick={() => setIsOpen((open) => !open)}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        aria-label={`Sincronização: ${chipTitle}`}
+        title={chipTitle}
       >
+        <svg
+          className="sync-chip__icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+          <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+          <path d="M3 21v-5h5" />
+          <path d="M21 3v5h-5" />
+        </svg>
+        <span className="sync-chip__dot" aria-hidden="true" />
+        {attentionCount > 0 ? (
+          <span className="sync-chip__count" aria-hidden="true">
+            {attentionCount > 9 ? "9+" : attentionCount}
+          </span>
+        ) : null}
+      </button>
+
+      <span className="visually-hidden" role="status" aria-live="polite">
         {chipTitle}
       </span>
-      <div
-        className={`sync-chip sync-chip--${chipStatus.toLowerCase()}`}
-      >
-        <button
-          type="button"
-          className="sync-chip__button"
-          onClick={() => setIsOpen((open) => !open)}
-          aria-expanded={isOpen}
-          aria-haspopup="dialog"
-          aria-label={`Sincronização: ${chipTitle}`}
-          title={chipTitle}
+
+      {isOpen ? (
+        <div
+          className="sync-chip__popover"
+          role="dialog"
+          aria-label="Estado da sincronização"
         >
-          <svg
-            className="sync-chip__icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
-            <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
-            <path d="M3 21v-5h5" />
-            <path d="M21 3v5h-5" />
-          </svg>
-          <span className="sync-chip__dot" aria-hidden="true" />
-          {attentionCount > 0 ? (
-            <span className="sync-chip__count" aria-hidden="true">
-              {attentionCount > 9 ? "9+" : attentionCount}
-            </span>
-          ) : null}
-        </button>
-
-        <span
-          className="visually-hidden"
-          role="status"
-          aria-live="polite"
-        >
-          {chipTitle}
-        </span>
-
-        {isOpen ? (
-          <div
-            className="sync-chip__popover"
-            role="dialog"
-            aria-label="Estado da sincronização"
-          >
-            <div className="sync-chip__header">
-              <span
-                className="sync-chip__header-dot"
-                aria-hidden="true"
-              />
-              <strong>{chipTitle}</strong>
-            </div>
-
-            <p className="sync-chip__description">
-              {snapshot.isLoading
-                ? "Consultando o estado local."
-                : content.description}
-            </p>
-
-            <SyncStateFacts
-              snapshot={snapshot}
-              className="sync-chip__facts"
-            />
-
-            {visibleSyncDetail && (
-              <p className="sync-chip__error">
-                {visibleSyncDetail}
-              </p>
-            )}
-
-            <button
-              type="button"
-              className="sync-chip__action"
-              onClick={() => {
-                void handleSyncNow();
-              }}
-              disabled={isManualSyncing}
-            >
-              {isManualSyncing
-                ? "Sincronizando..."
-                : "Sincronizar agora"}
-            </button>
+          <div className="sync-chip__header">
+            <span className="sync-chip__header-dot" aria-hidden="true" />
+            <strong>{chipTitle}</strong>
           </div>
-        ) : null}
-      </div>
+
+          <p className="sync-chip__description">
+            {snapshot.isLoading
+              ? "Consultando o estado local."
+              : content.description}
+          </p>
+
+          <p className="sync-chip__meta">
+            {lastSyncText
+              ? `Última sincronização: ${lastSyncText}`
+              : "Ainda não sincronizado"}
+          </p>
+
+          {visibleSyncError && (
+            <p className="sync-chip__error">
+              {visibleSyncError}
+            </p>
+          )}
+
+          <button
+            type="button"
+            className="sync-chip__action"
+            onClick={() => {
+              void handleSyncNow();
+            }}
+            disabled={isManualSyncing}
+          >
+            {isManualSyncing
+              ? "Sincronizando..."
+              : "Sincronizar agora"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

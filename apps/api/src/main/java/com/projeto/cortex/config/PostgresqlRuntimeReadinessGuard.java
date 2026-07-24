@@ -23,12 +23,12 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    private static final int CLEAN_START_REQUIRED_SCHEMA_VERSION = 44;
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "59";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
-            WHERE version = '%d'
+            WHERE version = '%s'
               AND success = TRUE
             """;
 
@@ -44,7 +44,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
             """;
 
     private final JdbcTemplate testJdbcTemplate;
-    private final Integer testRequiredSchemaVersion;
+    private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
     private Environment environment;
@@ -58,7 +58,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     PostgresqlRuntimeReadinessGuard(
             JdbcTemplate jdbcTemplate,
-            int requiredSchemaVersion,
+            String requiredSchemaVersion,
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
@@ -142,7 +142,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     private static void verifyReadiness(
             JdbcTemplate jdbcTemplate,
-            int requiredSchemaVersion,
+            String requiredSchemaVersion,
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
@@ -152,10 +152,10 @@ public final class PostgresqlRuntimeReadinessGuard implements
                             + "somente após a liberação operacional."
             );
         }
-        if (!surfaceRegistry.hasReleasedOperationalSurface()) {
+        if (!surfaceRegistry.hasCompleteRuntimeSurfaceSet()) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL bloqueado: nenhuma superfície operacional PostgreSQL segura "
-                            + "foi explicitamente liberada."
+                    "Runtime PostgreSQL bloqueado: o conjunto completo e exato de superfícies "
+                            + "operacionais PostgreSQL não foi liberado."
             );
         }
 
@@ -174,7 +174,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
         if (completedRequiredVersion == null || completedRequiredVersion < 1) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL exige a baseline V" + requiredSchemaVersion + "."
+                    "Runtime PostgreSQL exige a cadeia de migrações até V"
+                            + requiredSchemaVersion + "."
             );
         }
 

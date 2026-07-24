@@ -61,8 +61,11 @@ export function snapshotRecordFromApi(
       textOrNull(api.statusExecucao) ?? "CALCULADO",
     producaoPlanejada: toNumberOrNull(api.producaoPlanejada),
     producaoRealizada: toNumberOrNull(api.producaoRealizada),
-    custoRealizado: toNumberOrNull(api.custoRealizado),
-    custoPrevistoFinal: toNumberOrNull(api.custoPrevistoFinal),
+    // The current financial product is revenue-only. Keep the legacy local
+    // schema fields empty so an old response cannot reintroduce cost data into
+    // the active Home cache.
+    custoRealizado: null,
+    custoPrevistoFinal: null,
     receitaPrevistaFinal: toNumberOrNull(
       api.receitaPrevistaFinal,
     ),

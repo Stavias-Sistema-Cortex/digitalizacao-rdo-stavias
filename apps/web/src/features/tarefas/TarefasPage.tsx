@@ -6,9 +6,9 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { Link } from "react-router-dom";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { getSession } from "../auth/authSession";
 import {
   listObrasLocais,
@@ -45,8 +45,6 @@ import {
   setLastAccessedObraId,
 } from "../home/lastAccessedObra";
 import type { ChartPeriod } from "../home/progressSeries";
-import { memoryHref } from "../home/memory/memoryLocation";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
 import {
   equipesDaObra,
   responsaveisSugeridos,
@@ -75,6 +73,21 @@ type PrioridadeFilter = "TODAS" | TarefaPrioridade;
 
 function equipeKey(value: string): string {
   return value.trim().toLocaleLowerCase("pt-BR");
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) {
+    return "";
+  }
+
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(date);
 }
 
 function formatMonthYear(month: string): string {
@@ -128,8 +141,6 @@ export function TarefasPage() {
     () => colaboradorStorageKey(getSession()),
     [],
   );
-  const { setStaviaContext } = useStaviaLauncher();
-
   const [obras, setObras] = useState<ObraLocalRecord[]>(
     [],
   );
@@ -270,10 +281,6 @@ export function TarefasPage() {
     },
     [storageKey],
   );
-
-  useEffect(() => {
-    setStaviaContext({ obraId: focusedObraId ?? "" });
-  }, [focusedObraId, setStaviaContext]);
 
   useEffect(() => {
     let cancelled = false;
@@ -727,9 +734,17 @@ export function TarefasPage() {
       onRefresh={reload}
       isRefreshing={isLoading}
     >
-      <main className="tarefas-page">
-        <header className="tarefas-topbar">
-          <h1>Tarefas</h1>
+      <OperationalWorkspace
+        className="tarefas-page"
+        eyebrow="Operação · Coordenação de campo"
+        title="Tarefas"
+        description="Pendências, responsáveis e conclusão rastreável por obra e equipe."
+        status={isLoading
+          ? { code: "SYNCING", label: "Carregando tarefas locais" }
+          : loadError
+            ? { code: "CONFLICT", label: "Falha ao ler as tarefas" }
+            : { code: "LOCAL", label: "Dados disponíveis neste dispositivo" }}
+        actions={(
           <div className="home-uf-filter">
             <span>Filtrar por:</span>
             <select
@@ -772,7 +787,8 @@ export function TarefasPage() {
               ))}
             </select>
           </div>
-        </header>
+        )}
+      >
 
         {obras.length > 0 ? (
           <nav
@@ -957,22 +973,18 @@ export function TarefasPage() {
                               </p>
                             )}
                             <p className="tarefa-meta">
+                              Criada por{" "}
+                              {tarefa.criadaPor || "—"} em{" "}
+                              {formatDate(
+                                tarefa.createdAt,
+                              )}
                               {tarefa.responsavelEquipe
-                                ? `Responsável: ${tarefa.responsavelEquipe} · `
+                                ? ` · Responsável: ${tarefa.responsavelEquipe}`
                                 : ""}
-                              {tarefa.concluida
-                                ? "Situação: concluída"
-                                : "Situação: pendente"}
-                              {" · "}
-                              <Link
-                                to={memoryHref({
-                                  obraId: tarefa.obraId,
-                                  entityType: "TAREFA",
-                                  entityId: tarefa.id,
-                                })}
-                              >
-                                Memória
-                              </Link>
+                              {tarefa.concluida &&
+                              tarefa.concluidaEm
+                                ? ` · Concluída em ${formatDate(tarefa.concluidaEm)}`
+                                : ""}
                             </p>
                           </div>
 
@@ -1188,7 +1200,7 @@ export function TarefasPage() {
             </aside>
           </div>
         )}
-      </main>
+      </OperationalWorkspace>
     </CortexShell>
   );
 }

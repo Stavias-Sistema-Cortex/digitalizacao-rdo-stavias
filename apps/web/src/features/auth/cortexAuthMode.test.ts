@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { resolveCortexAuthMode } from "./cortexAuthMode";
 
 describe("resolveCortexAuthMode", () => {
-  it("preserva o modo legado apenas em desenvolvimento sem configuração", () => {
-    expect(resolveCortexAuthMode({ DEV: true })).toBe("legacy");
+  it("usa o acesso PostgreSQL do Cortex 3 em desenvolvimento sem configuração", () => {
+    expect(resolveCortexAuthMode({ DEV: true })).toBe("postgresql");
   });
 
   it("aceita somente os dois modos explícitos", () => {

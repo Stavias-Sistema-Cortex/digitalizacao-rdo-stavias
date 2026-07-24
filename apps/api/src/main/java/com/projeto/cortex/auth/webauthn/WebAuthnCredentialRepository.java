@@ -74,8 +74,8 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                     challenge_hash,
                     request_json,
                     expira_em
-                ) VALUES (?, ?, ?, ?, ?,
-                    TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)))
+                ) VALUES (?, ?, ?, ?, ?::jsonb,
+                    CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second'))
                 """,
                 id,
                 collaboratorId,
@@ -151,7 +151,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 JOIN auth_identity identidade
                   ON identidade.colaborador_id = colaborador.id
                 WHERE colaborador.id = ?
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -183,7 +183,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 WHERE credencial.credential_id_hash = ?
                   AND credencial.credential_id = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -306,7 +306,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                   ON identidade.colaborador_id = colaborador.id
                 WHERE credencial.colaborador_id = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -366,7 +366,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                   AND credencial.credential_id = ?
                   AND credencial.user_handle = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -399,7 +399,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 WHERE credencial.credential_id_hash = ?
                   AND credencial.credential_id = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'

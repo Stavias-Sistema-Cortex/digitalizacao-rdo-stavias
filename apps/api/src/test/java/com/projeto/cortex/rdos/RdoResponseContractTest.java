@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class RdoResponseContractTest {
 
     @Test
-    void shouldExposeAllRdoHeaderFieldsNeededByOfflineAndStavia() {
+    void shouldExposeAllRdoHeaderFieldsNeededByOfflineClients() {
         assertThat(recordComponentNames(RdoResponse.class))
                 .contains(
                         "condicaoManha",
@@ -22,7 +22,21 @@ class RdoResponseContractTest {
     @Test
     void shouldExposeOperationalChildObservationsAndAttachmentMetadata() {
         assertThat(recordComponentNames(RdoResponse.ServicoExecutadoItem.class))
-                .contains("observacoes");
+                .contains(
+                        "serviceId",
+                        "priceVersionId",
+                        "revenueCoverageCode",
+                        "revenueEvidenceId",
+                        "revenueEventId",
+                        "acceptedAt",
+                        "observacoes"
+                )
+                .doesNotContain(
+                        "unitPriceSnapshot", "currency", "revenueAmount"
+                );
+        assertThat(recordComponentNames(RdoCreateRequest.ServicoExecutadoItem.class))
+                .contains("serviceId", "priceVersionId")
+                .doesNotContain("custoRealizado");
         assertThat(recordComponentNames(RdoResponse.AlocacaoColaboradorItem.class))
                 .contains("observacoes");
         assertThat(recordComponentNames(RdoResponse.AttachmentItem.class))

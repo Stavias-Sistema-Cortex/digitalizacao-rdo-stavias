@@ -77,15 +77,28 @@ describe("RDO institutional document workspace", () => {
     expect(workspace).toContain('import "./RdoWorkspacePage.css";');
   });
 
-  it("uses complete rectangular frames without decorative RDO metric pills", () => {
+  it("uses quiet hairline frames without decorative RDO metric pills", () => {
     const statusRule = css.match(
       /\.rdo-document-status\s*\{(?<body>[^}]*)\}/s,
     )?.groups?.body ?? "";
+    const documentSurfaceRule = css.match(
+      /\.rdo-document-surface\s*\{(?<body>[^}]*)\}/s,
+    )?.groups?.body ?? "";
+    const formCardRule = css.match(
+      /\.rdo-create-workspace \.form-card\s*\{(?<body>[^}]*)\}/s,
+    )?.groups?.body ?? "";
 
-    expect(statusRule).toContain("border: 1px solid var(--color-ink);");
+    expect(statusRule).toContain("border: 1px solid var(--color-border);");
     expect(statusRule).toContain(
       "border-radius: var(--radius-control);",
     );
+    expect(documentSurfaceRule).toContain(
+      "border: 1px solid var(--color-border);",
+    );
+    expect(formCardRule).toContain(
+      "border: 1px solid var(--color-border);",
+    );
+    expect(css).not.toContain("border: 2px solid var(--color-ink);");
     expect(localList).not.toContain("MetricCard");
     expect(localList).not.toContain('className="metric-card"');
     expect(css).not.toMatch(/border-radius:\s*999px/);

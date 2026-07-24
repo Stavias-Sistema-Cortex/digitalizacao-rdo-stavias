@@ -1,0 +1,466 @@
+# Runtime Foundation Task 4 Implementer Report
+
+## Scope and commits
+
+- Task: Runtime Foundation Task 4 — archive the StavIA backend and enforce the
+  executable runtime boundary.
+- Worktree: `/Users/joaolucas/digitalizacao-rdo-stavias/.worktrees/cortex-3-delivery`.
+- Branch: `feat/cortex.v3-delivery`.
+- Original implementation commit: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
+- Review-fix base: `3f661e56de63b5abbfc816bc682c137abcc1346e`.
+- Re-review boundary-coverage fix base:
+  `00d1800d7e9b822674d9816675bc129914234a77`.
+- Final brand-matcher review-fix base:
+  `4417a7a40ae5673b576a4d0fcd420714e3a2e7da`.
+- Final allowlist-scope review-fix base:
+  `e501cf7fd796906ef04da623c9b2c089d321ba1d`.
+- Final discovery-root review-fix base:
+  `a5beb3911f0faa4f6b9b2d67fdf0e5fd8c888732`.
+- Archive lineage recorded by the plan: `b9b619e`.
+- This review fix does not change frontend runtime, offline behavior, RDO
+  behavior, Financeiro behavior, skills, plans, or Task 5+ implementation.
+  Two pre-existing backend test names/comments were made assistant-neutral;
+  their assertions and product behavior are unchanged.
+- The re-review coverage fix changes only
+  `StaviaRuntimeBoundaryTest.java` and this report. It does not change V45.1,
+  readiness, archive, frontend, or any later task.
+- The final brand-matcher fix also changes only
+  `StaviaRuntimeBoundaryTest.java` and this report. All discovery scanners,
+  historical exceptions, compiled/JAR inspection, and V45.1 remain unchanged.
+- The final allowlist-scope fix has the same two-file boundary. It narrows the
+  common brand exception and adds exact compatibility contexts; no production,
+  migration, archive, discovery, or scanner surface was removed or changed.
+- The final discovery-root fix also changes only
+  `StaviaRuntimeBoundaryTest.java` and this report. Matchers, global and scoped
+  allowlists, historical exceptions, compiled/JAR inspection, V45.1, readiness,
+  archive content, and production code are unchanged.
+
+## Review findings addressed
+
+### Runtime/configuration residues
+
+- Removed all `CORTEX_STAVIA_*` wiring from `.env.example`,
+  `compose.local.yml`, `compose.production.example.yml`, and
+  `scripts/dev/run-api.sh`.
+- Moved with `git mv`:
+  - `scripts/dev/smoke-stavia-sync.sh` to
+    `archive/stavia/backend/scripts/smoke-stavia-sync.sh`;
+  - `apps/api/src/main/resources/stavia/rdo-ontology.json` to
+    `archive/stavia/backend/resources/stavia/rdo-ontology.json`.
+- Updated `archive/stavia/README.md` so both archive-only surfaces are explicit.
+- Removed residual assistant terminology from active backend source/test
+  material. The only semantic rename is the generic
+  `staviaEvidencePolicy` -> `evidencePolicy`; its values and coverage contract
+  remain unchanged. STAVIAS corporate/product branding and upstream database
+  identifiers such as `StaviasCortex` and `dbstavias_*` remain valid.
+
+### PostgreSQL forward migration
+
+- Added
+  `db/migration-postgresql/V45_1__retire_stavia_runtime.sql`, deliberately
+  below the reserved V46+ range.
+- It drops only, in dependency-safe order:
+  1. `stavia_context_snapshots`;
+  2. `stavia_queries`;
+  3. `stavia_contexto_obra`.
+- The current-chain PostgreSQL test now proves Flyway applies exactly V44,
+  V45, and V45.1 and compares the exact 114-table result against the frozen
+  V44 inventory minus those three tables plus `graph_projection_checkpoint`.
+  This proves the generic `ontology_*`, `operational_*`, and all unrelated
+  tables remain.
+- V44-only tests still target `44`; the historical inventory still represents
+  the exact V44 baseline, including the three legacy tables.
+
+### Current runtime/readiness version
+
+- The shared PostgreSQL profile, mode configuration guard, schema readiness
+  guard, runtime readiness guard, and activation readiness probe now require
+  the completed current chain through V45.1.
+- Readiness SQL checks the successful Flyway `45.1` row. Messages and tests no
+  longer describe V44 as sufficient for the current runtime.
+- The isolated migration-contract tests that deliberately stop Flyway at V44
+  remain unchanged; they continue to prove the immutable baseline independently
+  from current-runtime readiness.
+
+No V1–V44 migration, the V44 inventory, or V45 was modified or moved.
+Checksums retained:
+
+- MySQL V18:
+  `bac9e6ccf530cab35ac00727524e85a6a6161d0b8788f97af5c0e07e922d715b`;
+- MySQL V22:
+  `c87f7dbcff6084f34581cb854eab29826ad03c35708732480d22b81808410467`;
+- PostgreSQL V44:
+  `7dbea9ba9027e06c458b7fe7fd3ea1181bff56b457973590eaddff60754a86eb`;
+- frozen V44 required-table inventory:
+  `2df45000bc0664b8754afbc12aee0a3ea28feb160efdd3b7636c697511ea0cfa`;
+- PostgreSQL V45.1, unchanged by the re-review fix:
+  `fbdf0bb82a2218e14dca5bbdf06e149165eea037abd231b9eb29c9f2913f80fc`.
+
+### Boundary contract and allowlist
+
+`StaviaRuntimeBoundaryTest` now discovers and inspects both paths and content
+across:
+
+- `apps/api/src/main/**` and `apps/api/src/test/**`, including resources;
+- `apps/api/pom.xml`;
+- every repository `.env*`, `Dockerfile*`, `compose*`, and `docker-compose*`;
+- root `scripts/**`;
+- `target/classes/**`;
+- application entries inside every direct `target/*.jar`.
+
+Discovery uses `Files.walk` plus path/name patterns rather than a hand-written
+file list. Archive, `.git`, target/build/dist/coverage, dependency, and Gradle
+output trees are excluded. Regression tests explicitly require
+`.env.postgresql.example`, `apps/api/Dockerfile`, and the active PostgreSQL V44
+resource contract to be present in the collected files.
+
+It rejects assistant-named directories/resources, package/classes, routes,
+environment/configuration keys, scripts, and compiled/JAR content. It resolves
+the repository from Maven's stable `basedir` and therefore also works when
+Maven is invoked with an absolute `-f` from another directory.
+
+The explicit, documented source allowlist is limited to:
+
+- immutable MySQL V18;
+- immutable MySQL V22;
+- immutable PostgreSQL V44;
+- forward-only retirement migration V45.1;
+- frozen V44 required-table inventory.
+
+`PostgresqlBaselineResourceContractTest.java` is no longer file-allowlisted.
+Its one necessary V44 historical occurrence is accepted only when all of these
+remain exact: file path, token `stavia_contexto_obra`, occurrence count `1`,
+line `118`, and the complete `assertObjectStorageBoundary(...)` fragment. Only
+that token is neutralized for inspection; the rest of the file is still scanned
+for forbidden paths/content. A regression appends a second assistant token and
+requires an `[assistant content]` violation.
+
+The boundary test source itself is excluded because its required class/file
+name contains the retired assistant spelling. The archive is outside all
+scanned build/runtime surfaces. Compiled output allows only the four versioned
+migration resources above; no assistant fixture, Java package, route, or
+configuration is allowed.
+
+### Final corporate-brand matcher closure
+
+- Removed the permissive case-insensitive `StavIA(?!s)` suffix exception. The
+  common inspector now rejects every remaining case-insensitive `stavia`
+  occurrence after sanitizing only exact, case-sensitive approved literals.
+- Exact reference sanitization uses Java's `javaJavaIdentifierPart` boundary,
+  including Unicode letters/numbers, underscore, and dollar. An approved
+  literal therefore cannot mask a CamelCase or nested-class identifier such as
+  `StaviaSnapshotService`, `STAVIASRuntime`, `RuntimeSTAVIAS`,
+  `STAVIAS$Runtime`, or `Runtime$STAVIAS`.
+- The exact standalone corporate mark `STAVIAS` and product description
+  `Stavias Sistema Cortex API` are now the only global approvals. Existing
+  upstream/database/product compatibility references are accepted only by
+  exact path, literal count, and exact fragment/context rules.
+- Scoped UTF-8 fragments are compared in the same ISO-8859-1 byte-preserving
+  view used by the class/JAR scanner. This keeps accented source contexts exact
+  without granting those literals a repository-wide exception.
+- Synthetic regressions exercise both retired names through source paths and
+  content, `target/classes` paths and content, and Spring Boot JAR-style entry
+  paths and content. Case and boundary variants are inspected independently so
+  one rejected spelling cannot mask another false negative.
+
+### Final allowlist-scope closure
+
+- Removed `STAVIAS_HISTORY`, `StaviasCortex`, `dbstavias_acad`,
+  `dbstavias_zld`, `Stavias Córtex`, `Stavias From`, `Córtex Stavias`, and
+  `Financeiro Stavias` from the global approved-reference pattern.
+- The retained compatibility inventory contains 42 scoped rules across 38
+  exact normalized paths: 32 source/config rules across 29 paths and 10
+  compiled/resource rules across 9 `target/classes` paths. Compiled rules are
+  reused for a JAR entry only under the exact
+  `cortex-api-0.0.1-SNAPSHOT.jar!/BOOT-INF/classes/` prefix.
+- Every source/config rule requires the exact path, total literal count, and
+  every expected fragment with its exact multiplicity. Every compiled rule
+  requires the exact class/resource path, literal count, and an exact class
+  source-file or resource fragment. A mismatch leaves the reference visible to
+  the common assistant detector.
+- Parameterized regressions reject each of the eight scoped-only literals on an
+  arbitrary source, class, and JAR-like surface. A second parameterized set
+  appends each literal to one established file and proves the extra occurrence
+  fails. Dollar-joined exact-brand and case variants are exercised through all
+  three synthetic surfaces.
+
+### Final anchored discovery-root closure
+
+- Removed the segment-wide exclusion for `.git`, `.gradle`, `archive`,
+  `build`, `coverage`, `dist`, `node_modules`, and `target`. A directory with
+  one of those names no longer hides an otherwise active Maven or launcher
+  path merely because it appears at an arbitrary depth.
+- Discovery now builds an immutable set of absolute, normalized roots. The
+  repository roots are `/.git`, `/.gradle`, `/archive`, and `/node_modules`;
+  each direct, existing module below `/apps/*` contributes anchored `target`,
+  `build`, `dist`, `coverage`, and `node_modules` roots. A candidate is excluded
+  only when its absolute normalized path `startsWith` one of those roots.
+- Twelve positive regressions create real temporary files beneath
+  `src/main/java`, `src/main/resources`, `src/test/java`,
+  `src/test/resources`, and `scripts` using the misleading directory names.
+  Each file must be discovered and its assistant content must be reported.
+- Eight negative regressions preserve exclusion of repository and module output
+  roots. Six boundary regressions prove similarly prefixed names such as
+  `targeted`, `build-tools`, and `node_modules-cache` are not excluded.
+
+## TDD evidence
+
+### Final anchored discovery-root RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 58 tests, 12 assertion failures, 0 errors, 0 skipped.
+- Every new positive regression was absent from the discovered file list:
+  representative paths included
+  `apps/api/src/main/java/target/StaviaRuntime.java`,
+  `apps/api/src/main/resources/archive/stavia/config.yml`, and corresponding
+  `build`, `dist`, `coverage`, and `node_modules` cases below Maven-active and
+  `scripts` surfaces.
+- The anchored-root and similarly named non-root regressions already passed,
+  confirming the RED isolated only the segment-wide false-negative behavior.
+
+### Final anchored discovery-root GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 58 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 791 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 791 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 exercised isolated V44 and current V44/V45/V45.1 chains.
+4. After `verify` produced the 95,933,770-byte Spring Boot JAR, the boundary
+   ran from `/tmp` with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 58 tests, 0 failures/errors/skips; `target/classes` and application JAR
+     entries were scanned.
+5. The generated JAR SHA-256 is
+   `3016839a019e64ac8178661aeea71148dcffe9dbf303a5d0e7cc1728fc4936d1`.
+
+The pre-existing Flyway warning about PostgreSQL 18.4 being newer than its
+declared tested support through PostgreSQL 16 remains unchanged.
+
+### Final allowlist-scope RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 32 tests, 19 assertion failures, 0 errors, 0 skipped.
+- All eight former global literals were accepted on arbitrary source, class,
+  and JAR-like content, producing eight failing parameterized invocations.
+- Appending each literal to one legitimate current file produced eight more
+  failing invocations because duplicate counts were not constrained.
+- `STAVIAS$Runtime`, `Runtime$STAVIAS`, and `STAVIAS$Service` produced the
+  remaining three failures. The mixed-case `Stavias$Service` variants already
+  failed closed under the case-sensitive global sanitizer.
+
+### Final allowlist-scope GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 32 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 765 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 765 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 exercised isolated V44 and current V44/V45/V45.1 chains.
+4. After `verify` produced the 95,933,770-byte Spring Boot JAR, the boundary
+   ran from `/tmp` with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 32 tests, 0 failures/errors/skips; `target/classes` and application JAR
+     entries were scanned.
+5. `git diff --check` exits `0`. The generated JAR SHA-256 is
+   `53e51437fb4fc0cdc1259ffb40db603aa5b4a8ed693bfc1e9985e19ee74ac008`.
+
+The pre-existing Flyway warning about PostgreSQL 18.4 being newer than its
+declared tested support through PostgreSQL 16 remains unchanged.
+
+### Final brand-matcher RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 10 tests, 2 failures, 0 errors, 0 skipped.
+- `rejectsRetiredAssistantNamesAcrossSourceCompiledAndJarLikeSurfaces` expected
+  six path/content violations for `StaviaSnapshotService` and
+  `StaviaSpringContextTest`, but the permissive matcher returned none.
+- `rejectsUnapprovedCorporateBrandCaseAndBoundaryVariants` expected an
+  assistant-content violation for case/boundary variants, but the permissive
+  matcher returned none.
+
+### Final brand-matcher GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 10 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 743 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 743 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 again exercised the isolated V44 baseline and current
+     V44/V45/V45.1 chain.
+4. After `verify` produced the Spring Boot JAR, the boundary ran from `/tmp`
+   with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 10 tests, 0 failures/errors/skips; JAR application entries were scanned.
+
+The pre-existing Flyway warning about PostgreSQL 18.4 being newer than its
+declared tested support through PostgreSQL 16 remains unchanged.
+
+### Re-review boundary-coverage RED
+
+1. The current two-test boundary passed before the coverage change.
+2. A behavior-preserving extraction exposed the collected source/launcher
+   files; the same two tests remained green.
+3. The three discovery regressions then produced 5 tests, 3 assertion failures,
+   0 errors: `.env.postgresql.example`, `apps/api/Dockerfile`, and
+   `PostgresqlBaselineResourceContractTest.java` were each absent from the
+   collected files.
+4. The minimal historical-exception contract was added before implementation.
+   The final RED run produced 7 tests, 4 assertion failures, 0 errors: the same
+   three discovery failures plus the still-unhandled legitimate V44 occurrence.
+   The synthetic second-occurrence rejection already passed.
+
+### Re-review boundary-coverage GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 7 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 740 tests, 0 failures, 0 errors, 53 skipped.
+3. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 740 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures/errors/skips.
+   - PostgreSQL 18.4 exercised both the isolated V44 baseline and the current
+     V44/V45/V45.1 chain.
+4. After `verify` produced the 95,933,770-byte Spring Boot JAR, the boundary was
+   run from `/tmp` with the absolute `pom.xml` path.
+   - Exit: `0`.
+   - 7 tests, 0 failures/errors/skips; the JAR application entries were scanned.
+5. Recomputed SHA-256 values for V18, V22, V44, the frozen V44 inventory, and
+   V45.1 match the values recorded above. `git diff --check` exits `0`.
+
+The PostgreSQL/Flyway support warning described below remains unchanged.
+
+### Expanded boundary RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+
+- Exit: `1`.
+- Result: 2 tests, 2 failures, 0 errors, 0 skipped.
+- The source/config failure listed 14 concrete violations: env, two compose
+  files, `run-api.sh`, assistant smoke script path/content, ontology resource
+  path, two active production references, and active test references.
+- The build-output failure listed the packaged ontology resource and compiled
+  policy references in `target/classes` and the Spring Boot JAR.
+- These were assertion failures against real residues, not harness or compile
+  errors.
+
+### PostgreSQL current-chain RED
+
+Command:
+
+`mvn -f apps/api/pom.xml -Dtest=PostgresqlCleanStartFlowIT test`
+
+- Exit: `1`.
+- Result: 1 test, 1 failure, 0 errors, 0 skipped.
+- Expected reason: Flyway applied `[44, 45]`, while the new contract required
+  `[44, 45, 45.1]`. The migration did not exist yet.
+
+### Runtime/readiness V45.1 RED
+
+Commands:
+
+`mvn -f apps/api/pom.xml -Dtest=PostgresqlFoundationContractTest,PostgresqlProfileModesContractTest,PostgresqlModeConfigurationGuardTest,PostgresqlEffectiveConfigurationTest,PostgresqlSchemaReadinessGuardTest,PostgresqlRuntimeReadinessGuardTest test`
+
+- Exit: `1` after a successful compile.
+- Result: 38 tests, 11 assertion failures, 0 errors. The failures showed the
+  shared profile and three runtime guards still required V44.
+
+`mvn -f apps/api/pom.xml -Dtest=PostgresqlActivationReadinessTest test`
+
+- Exit: `1`.
+- Result: 2 tests, 2 assertion failures, 0 errors. The active activation probe
+  still queried Flyway V44 and reported the V44 baseline as sufficient.
+
+### GREEN
+
+1. `mvn -f apps/api/pom.xml clean -Dtest=StaviaRuntimeBoundaryTest test`
+   - Exit: `0`.
+   - 2 tests, 0 failures/errors/skips.
+2. `mvn -f apps/api/pom.xml -Dtest=PostgresqlCleanStartFlowIT test`
+   - Exit: `0`.
+   - 1 test, 0 failures/errors/skips.
+   - PostgreSQL 18.4 applied V44, V45, and V45.1 and the exact current table
+     inventory passed.
+3. `mvn -f apps/api/pom.xml clean test`
+   - Exit: `0`.
+   - 735 tests, 0 failures, 0 errors, 53 skipped.
+4. `mvn -f apps/api/pom.xml -Ppostgresql-it verify`
+   - Exit: `0`.
+   - Surefire: 735 tests, 0 failures, 0 errors, 53 skipped.
+   - Failsafe: 22 tests, 0 failures, 0 errors, 0 skipped.
+   - Includes isolated target-44 baseline tests and unrestricted current-chain
+     tests through V45.1.
+5. `mvn -f apps/api/pom.xml -Dtest=StaviaRuntimeBoundaryTest test`
+   after the unrestricted verify produced the Spring Boot JAR:
+   - Exit: `0`.
+   - 2 tests, 0 failures/errors/skips; this run inspected the packaged JAR.
+6. The same focused command with the absolute `pom.xml` path from `/tmp`:
+   - Exit: `0`.
+   - 2 tests, 0 failures/errors/skips; this proves stable Maven `basedir`
+     resolution outside both the repository and module working directories.
+7. Runtime/readiness focused GREEN:
+   - 38 tests, 0 failures/errors/skips for the shared profile and three guards.
+   - 2 tests, 0 failures/errors/skips for
+     `PostgresqlActivationReadinessTest`.
+
+Flyway continues to emit the pre-existing warning that PostgreSQL 18.4 is newer
+than the version it declares tested support for (16); no migration or test
+failed because of that warning.
+
+## Static and artifact evidence
+
+- Active env/compose/scripts/application/source scan for `CORTEX_STAVIA`,
+  assistant configuration, `/api/stavia`, and `/stavia/`: no matches.
+- `target/classes/stavia/rdo-ontology.json`: absent.
+- `target/classes/com/projeto/cortex/intelligence/stavia`: absent.
+- JAR entries under either assistant resource/package path: absent.
+- The only assistant-named resources in the JAR are the explicitly allowlisted
+  V18, V22, V44, and V45.1 migrations.
+- Diff against the review-fix base for all MySQL migrations, PostgreSQL V44,
+  PostgreSQL V45, and the V44 inventory: empty.
+- Active source scan for readiness checks that still accept Flyway V44: no
+  matches outside the explicit immutable-boundary documentation.
+- `git diff --check`: exit `0`.
+
+## Residual risk and boundary
+
+- Historical migration resources must remain packaged so Flyway can validate
+  already-applied checksums and migrate supported databases. They are not
+  runtime assistant wiring.
+- The archived smoke script and ontology fixture retain their historical
+  contents by design, but live only below `archive/stavia` and are excluded from
+  Maven and launch surfaces.
+- Frontend assistant removal remains Runtime Foundation Task 5 and is not
+  claimed by this backend fix.

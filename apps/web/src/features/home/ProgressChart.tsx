@@ -12,13 +12,8 @@ const SERIES = [
     color: "#0e857a",
   },
   {
-    key: "custoPct",
-    label: "Custo consumido",
-    color: "#4f7cd1",
-  },
-  {
     key: "pdorPct",
-    label: "PDOR vs contrato",
+    label: "Receita PDOR vs contrato",
     color: "#e8a13d",
   },
 ] as const;

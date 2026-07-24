@@ -4,13 +4,19 @@
 
 A PWA e a API devem ser publicadas na mesma origem HTTPS. O container web serve
 os assets e encaminha `/api/*` para `cortex-api:8080`; isso mantém cookies de
-sessão e CSRF host-only. O banco é MySQL externo. Objetos ficam em bucket S3
-privado ou no volume persistente `cortex_object_data`.
+sessão e CSRF host-only. O banco canônico é PostgreSQL `StaviasCortex`.
+Academy e Zeladoria permanecem somente como fontes MySQL de leitura. Objetos
+ficam em bucket S3 privado ou no volume persistente `cortex_object_data`.
 
 `compose.production.example.yml` é um exemplo de topologia, não contém secrets
-nem cria um banco de produção. Copie os valores de `.env.example` para o secret
-manager do ambiente e aponte as cinco entradas `*_SECRET_FILE` para arquivos
-locais de implantação com permissões restritas.
+nem cria um banco de produção. Parta de `.env.postgresql.example`, mova os
+valores para o secret manager do ambiente e aponte as entradas
+`*_SECRET_FILE` para arquivos locais de implantação com permissões restritas.
+A senha PostgreSQL é montada como `CORTEX_POSTGRES_PASSWORD` sob
+`/run/secrets` e carregada pelo Spring Config Tree; ela não deve ser injetada
+como variável de ambiente. Para S3, use a cadeia padrão do AWS SDK com workload
+identity/role da plataforma ou um arquivo de credenciais montado por override;
+não publique `AWS_SECRET_ACCESS_KEY` no ambiente do container.
 
 ## Preparação de chaves
 
@@ -24,7 +30,8 @@ locais de implantação com permissões restritas.
 
 ## Cutover
 
-1. Restaure uma cópia do banco e ensaie a atualização Flyway.
+1. Restaure uma cópia de `StaviasCortex` e ensaie a atualização Flyway até a
+   versão exigida pela release.
 2. Confirme um ALFA ativo com identidade ATIVA e e-mail já verificado.
 3. Configure SMTP real, storage persistente, origens HTTPS exatas e secrets por
    arquivo.
@@ -46,7 +53,7 @@ Alertar para:
 - falhas de storage e diferença entre metadata e objeto;
 - SMTP timeout/resultado ambíguo (não reenviar manualmente sem verificar o
   provider e a chave idempotente);
-- ausência de evidência/frescor em respostas StavIA.
+- ausência de cobertura/frescor na Memória, no grafo ou no rastreio de receita.
 
 Logs devem carregar correlation ID, entidade e resultado, nunca CPF, OTP,
 cookie, segredo, corpo de mensagem ou anexo.

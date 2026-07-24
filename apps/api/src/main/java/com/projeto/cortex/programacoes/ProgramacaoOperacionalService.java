@@ -173,7 +173,7 @@ public class ProgramacaoOperacionalService {
                 SELECT nome
                 FROM colaborador
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 LIMIT 1
                 """,

@@ -23,7 +23,7 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
         jdbc.queryForList("""
                 SELECT id
                 FROM colaborador
-                WHERE ativo = 1
+                WHERE ativo = TRUE
                   AND deletado_em IS NULL
                   AND papel_acesso = 'ALFA'
                 FOR UPDATE
@@ -32,7 +32,7 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
                 SELECT colaborador_id
                 FROM auth_capacidade_administrativa
                 WHERE capacidade = 'ADMINISTRAR_PAPEIS'
-                  AND ativa = 1
+                  AND ativa = TRUE
                 FOR UPDATE
                 """, String.class);
     }
@@ -40,10 +40,10 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
     @Override
     public Optional<RoleAccount> findActiveAccount(String collaboratorId) {
         List<RoleAccount> accounts = jdbc.query("""
-                SELECT id, nome, papel_acesso
+                SELECT id, nome, papel_acesso, versao_linha, atualizado_em
                 FROM colaborador
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 LIMIT 1
                 """, (resultSet, rowNumber) -> new RoleAccount(
@@ -53,7 +53,11 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
                         resultSet.getString("papel_acesso")
                 ).orElseThrow(() -> new IllegalStateException(
                         "Papel persistido inválido."
-                ))
+                )),
+                resultSet.getLong("versao_linha"),
+                resultSet.getTimestamp("atualizado_em") == null
+                        ? null
+                        : resultSet.getTimestamp("atualizado_em").toLocalDateTime()
         ), collaboratorId);
         return accounts.stream().findFirst();
     }
@@ -65,7 +69,7 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
                 FROM auth_capacidade_administrativa
                 WHERE colaborador_id = ?
                   AND capacidade = ?
-                  AND ativa = 1
+                  AND ativa = TRUE
                 """, Integer.class, collaboratorId, CAPABILITY);
         return count != null && count > 0;
     }
@@ -75,7 +79,7 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
         Long count = jdbc.queryForObject("""
                 SELECT COUNT(*)
                 FROM colaborador
-                WHERE ativo = 1
+                WHERE ativo = TRUE
                   AND deletado_em IS NULL
                   AND papel_acesso = 'ALFA'
                 """, Long.class);
@@ -90,8 +94,8 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
                 INNER JOIN colaborador
                     ON colaborador.id = capacidade.colaborador_id
                 WHERE capacidade.capacidade = ?
-                  AND capacidade.ativa = 1
-                  AND colaborador.ativo = 1
+                  AND capacidade.ativa = TRUE
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso = 'ALFA'
                 """, Long.class, CAPABILITY);
@@ -106,12 +110,37 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
                     atualizado_em = CURRENT_TIMESTAMP(6),
                     versao_linha = versao_linha + 1
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 """, newRole.name(), collaboratorId);
         if (updated != 1) {
             throw new IllegalStateException("Papel do colaborador não atualizado.");
         }
+    }
+
+    @Override
+    public boolean updateRoleIfCurrent(
+            String collaboratorId,
+            PapelAcesso expectedRole,
+            long expectedVersion,
+            PapelAcesso newRole
+    ) {
+        return jdbc.update("""
+                UPDATE colaborador
+                SET papel_acesso = ?,
+                    atualizado_em = CURRENT_TIMESTAMP(6),
+                    versao_linha = versao_linha + 1
+                WHERE id = ?
+                  AND papel_acesso = ?
+                  AND versao_linha = ?
+                  AND ativo = TRUE
+                  AND deletado_em IS NULL
+                """,
+                newRole.name(),
+                collaboratorId,
+                expectedRole.name(),
+                expectedVersion
+        ) == 1;
     }
 
     @Override
@@ -122,14 +151,14 @@ class JdbcAdminRoleRepository implements AdminRoleRepository {
     ) {
         jdbc.update("""
                 UPDATE auth_capacidade_administrativa
-                SET ativa = 0,
+                SET ativa = FALSE,
                     revogada_em = CURRENT_TIMESTAMP(6),
                     revogada_por = ?,
                     justificativa_revogacao = ?,
                     versao_linha = versao_linha + 1
                 WHERE colaborador_id = ?
                   AND capacidade = ?
-                  AND ativa = 1
+                  AND ativa = TRUE
                 """, actorId, justification, collaboratorId, CAPABILITY);
     }
 

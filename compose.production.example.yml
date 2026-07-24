@@ -3,15 +3,27 @@ services:
     build:
       context: ./apps/api
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
     environment:
-      SPRING_PROFILES_ACTIVE: production
-      CORTEX_DB_URL: ${CORTEX_DB_URL:?Set the production MySQL JDBC URL}
-      CORTEX_DB_USER: ${CORTEX_DB_USER:?Set the least-privilege database user}
-      CORTEX_DB_PASSWORD: ${CORTEX_DB_PASSWORD:?Inject the database password from the platform secret manager}
+      SPRING_PROFILES_ACTIVE: production,postgresql
+      # Load the database password from the mounted secret without copying it
+      # into the container environment or command line.
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      CORTEX_POSTGRES_URL: ${CORTEX_POSTGRES_URL:?Set the production PostgreSQL JDBC URL}
+      CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_USER:?Set the least-privilege database user}
+      CORTEX_POSTGRES_RUNTIME_READY: "true"
+      CORTEX_POSTGRES_SCHEMA_READINESS_ENABLED: "true"
 
       CORTEX_CORS_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN:?Set the exact HTTPS public origin}
       CORTEX_AUTH_COOKIE_SECURE: "true"
       CORTEX_AUTH_COOKIE_SAME_SITE: ${CORTEX_AUTH_COOKIE_SAME_SITE:-Lax}
+      CORTEX_AUTH_TRUSTED_PROXY_CIDRS: 172.30.0.0/24
       CORTEX_AUTH_WEBAUTHN_RP_ID: ${CORTEX_AUTH_WEBAUTHN_RP_ID:?Set the public hostname}
       CORTEX_AUTH_WEBAUTHN_RP_NAME: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:-Stavias Córtex}
       CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN}
@@ -23,6 +35,8 @@ services:
       CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE: /run/secrets/cortex_offline_public
       CORTEX_AUTH_DEV_ADMIN_ENABLED: "false"
       CORTEX_AUTH_PROVISIONING_ENABLED: "false"
+      CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID:?Set the deployed memory cursor key id}
+      CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_memory_cursor_hmac
 
       CORTEX_EMAIL_PROVIDER: smtp
       CORTEX_EMAIL_SENDER_PROFILE_KEY: ${CORTEX_EMAIL_SENDER_PROFILE_KEY:?Set the authenticated sender profile key}
@@ -41,8 +55,6 @@ services:
       CORTEX_STORAGE_S3_ENDPOINT: ${CORTEX_STORAGE_S3_ENDPOINT:-}
       CORTEX_STORAGE_S3_PREFIX: ${CORTEX_STORAGE_S3_PREFIX:-production}
       CORTEX_STORAGE_S3_PATH_STYLE: ${CORTEX_STORAGE_S3_PATH_STYLE:-false}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
 
       CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED: ${CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:-true}
       CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE: ${CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE:-25}
@@ -53,16 +65,19 @@ services:
 
       CORTEX_IMPORT_ENABLED: "false"
       CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-false}
-      CORTEX_STAVIA_GENERATOR_MODE: ${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}
-      CORTEX_STAVIA_INTERPRETER_MODE: ${CORTEX_STAVIA_INTERPRETER_MODE:-deterministic}
     secrets:
+      - source: cortex_postgres_password
+        target: CORTEX_POSTGRES_PASSWORD
       - cortex_cpf_hmac
       - cortex_otp_hmac
       - cortex_offline_private
       - cortex_offline_public
+      - cortex_memory_cursor_hmac
       - cortex_smtp_password
     volumes:
       - cortex_object_data:/var/lib/cortex/objects
+    networks:
+      - cortex_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/readiness | grep -q '\"status\":\"READY\"'"]
       interval: 15s
@@ -75,16 +90,30 @@ services:
       context: ./apps/web
       args:
         VITE_CORTEX_API_BASE_URL: /api
+        VITE_CORTEX_AUTH_MODE: postgresql
         VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:?Set the deployed public key fingerprint}
         VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: ${CORTEX_STORAGE_MAX_SIZE_BYTES:-26214400}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run:rw,noexec,nosuid,nodev,size=1m,mode=1777
     depends_on:
       cortex-api:
         condition: service_healthy
     ports:
       - "${CORTEX_WEB_PORT:-8080}:8080"
+    networks:
+      - cortex_internal
 
 secrets:
+  cortex_postgres_password:
+    file: ${CORTEX_POSTGRES_PASSWORD_SECRET_FILE:?Point to the PostgreSQL password file}
   cortex_cpf_hmac:
     file: ${CORTEX_AUTH_CPF_HMAC_SECRET_FILE:?Point to the CPF HMAC secret file}
   cortex_otp_hmac:
@@ -93,8 +122,17 @@ secrets:
     file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_SECRET_FILE:?Point to the PKCS8 private PEM}
   cortex_offline_public:
     file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_SECRET_FILE:?Point to the public PEM}
+  cortex_memory_cursor_hmac:
+    file: ${CORTEX_MEMORY_CURSOR_HMAC_SECRET_FILE:?Point to the memory cursor HMAC secret file}
   cortex_smtp_password:
     file: ${CORTEX_SMTP_PASSWORD_SECRET_FILE:?Point to the SMTP password file}
 
 volumes:
   cortex_object_data:
+
+networks:
+  cortex_internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

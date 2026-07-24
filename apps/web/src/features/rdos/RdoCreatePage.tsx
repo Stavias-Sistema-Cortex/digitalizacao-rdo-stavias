@@ -24,7 +24,6 @@ import {
   createEmptyAlocacaoColaborador,
   createEmptyControleGeometrico,
   createEmptyEquipamento,
-  createEmptyMaoObra,
   createEmptyMaterial,
   createEmptyRdo,
   createEmptyServicoExecutado,
@@ -33,7 +32,6 @@ import type {
   AlocacaoColaboradorDraft,
   ControleGeometricoDraft,
   EquipamentoDraft,
-  MaoObraDraft,
   MaterialDraft,
   NumericInput,
   RdoAttachmentDraft,
@@ -50,6 +48,7 @@ import {
 } from "./rdoLookupApi";
 import {
   formatRdoServiceType,
+  isRdoPriceCatalogSelectable,
   searchRdoServiceTypes,
   type RdoServiceType,
 } from "./rdoServiceTypes";
@@ -60,11 +59,16 @@ import {
 } from "./rdoCalculations";
 import { useRdoLocalPersistence } from "./useRdoLocalPersistence";
 import { UNIDADES_RDO, normalizarUnidade } from "./unidades";
+import { requireRdoCreationContext } from "./rdoCreationContextRepository";
+import { RdoWorkforceEditor } from "./RdoWorkforceEditor";
+import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import { RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE } from "./rdoCreationContext";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
   isExisting: boolean;
   initialNotice?: string;
+  creationContext?: RdoCreationContextLookup;
   onBackToList: () => void;
   onSaved: (savedObraId: string) => void;
 }
@@ -196,6 +200,7 @@ function institutionalState(
 ): InstitutionalStatusState | null {
   switch (status) {
     case "LOCAL_ONLY":
+    case "LOCAL_PENDING":
       return "LOCAL";
     case "PENDING_SYNC":
       return "PENDING";
@@ -221,6 +226,8 @@ interface LookupFieldProps<TItem> {
   getKey: (item: TItem) => string;
   getTitle: (item: TItem) => string;
   getSubtitle: (item: TItem) => string;
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 function LookupField<TItem>({
@@ -234,6 +241,8 @@ function LookupField<TItem>({
   getKey,
   getTitle,
   getSubtitle,
+  disabled = false,
+  disabledMessage = "",
 }: LookupFieldProps<TItem>) {
   const inputId = useId();
   const [isOpen, setIsOpen] = useState(false);
@@ -316,6 +325,7 @@ function LookupField<TItem>({
           autoComplete="off"
           aria-expanded={isOpen}
           aria-controls={`${inputId}-options`}
+          disabled={disabled}
           onFocus={handleFocus}
           onBlur={handleBlur}
           onChange={(event) => {
@@ -325,7 +335,7 @@ function LookupField<TItem>({
           }}
         />
 
-        {isOpen ? (
+        {isOpen && !disabled ? (
           <div
             id={`${inputId}-options`}
             className="lookup-panel"
@@ -374,6 +384,9 @@ function LookupField<TItem>({
           </div>
         ) : null}
       </div>
+      {disabled && disabledMessage ? (
+        <span className="lookup-state">{disabledMessage}</span>
+      ) : null}
     </div>
   );
 }
@@ -410,12 +423,6 @@ function getAssetSubtitle(asset: AssetLookup) {
   return asset.category || asset.id;
 }
 
-function buscarTiposServico(
-  query: string,
-): Promise<RdoServiceType[]> {
-  return Promise.resolve(searchRdoServiceTypes(query));
-}
-
 function getTipoServicoTitle(serviceType: RdoServiceType) {
   return serviceType.displayName;
 }
@@ -423,10 +430,12 @@ function getTipoServicoTitle(serviceType: RdoServiceType) {
 function getTipoServicoSubtitle(serviceType: RdoServiceType) {
   return (
     [
-      serviceType.parentCode && serviceType.parentName
-        ? `${serviceType.parentCode} - ${serviceType.parentName}`
-        : null,
-      `Nivel ${serviceType.level}`,
+      serviceType.description,
+      `${serviceType.priceChoices.length} ${
+        serviceType.priceChoices.length === 1
+          ? "preço vigente"
+          : "preços vigentes"
+      }`,
     ]
       .filter(Boolean)
       .join(" · ")
@@ -437,12 +446,21 @@ export function RdoCreatePage({
   initialDraft,
   isExisting,
   initialNotice,
+  creationContext,
   onBackToList,
   onSaved,
 }: RdoCreatePageProps) {
   const [draft, setDraft] = useState<RdoDraft>(
     () => initialDraft,
   );
+  const [activeCreationContext, setActiveCreationContext] =
+    useState<RdoCreationContextLookup | null>(creationContext ?? null);
+  const [workforceCatalogMessage, setWorkforceCatalogMessage] =
+    useState(
+      initialDraft.syncStatus === "LOCAL_PENDING"
+        ? "Contexto canônico pendente; o RDO permanece local até a validação automática."
+        : "",
+    );
 
   const canViewRawPayload = isAlfa(getSession());
   const [showJson, setShowJson] = useState(false);
@@ -475,6 +493,16 @@ export function RdoCreatePage({
         : null,
     [canViewRawPayload, draft],
   );
+  const serviceCatalog = activeCreationContext?.serviceCatalog ?? [];
+  const priceCatalogSelectable = isRdoPriceCatalogSelectable(
+    activeCreationContext?.coverage.serviceCatalog,
+    activeCreationContext?.coverage.priceCatalog,
+  );
+  const priceCoverageMessage = priceCatalogSelectable
+    ? ""
+    : "Catálogo parcial ou indisponível. Sincronize o contexto antes de selecionar um preço.";
+  const buscarTiposServico = (query: string): Promise<RdoServiceType[]> =>
+    Promise.resolve(searchRdoServiceTypes(serviceCatalog, query));
 
   const photoCount = draft.attachments.filter(
     (attachment) => attachment.removedAt === null,
@@ -624,6 +652,54 @@ export function RdoCreatePage({
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (
+      creationContext ||
+      initialDraft.syncStatus === "LOCAL_PENDING" ||
+      !initialDraft.obraId ||
+      !initialDraft.dataRdo
+    ) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const online = typeof navigator !== "undefined" && navigator.onLine;
+    void requireRdoCreationContext(
+      initialDraft.obraId,
+      initialDraft.dataRdo,
+      online,
+    )
+      .then((resolved) => {
+        if (!cancelled) {
+          setActiveCreationContext(resolved.context);
+          setWorkforceCatalogMessage("");
+        }
+      })
+      .catch((unknownError: unknown) => {
+        if (!cancelled) {
+          setActiveCreationContext(null);
+          setWorkforceCatalogMessage(
+            online
+              ? unknownError instanceof Error
+                ? unknownError.message
+                : "Não foi possível carregar os colaboradores autorizados desta obra."
+              : RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE,
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    creationContext,
+    initialDraft.dataRdo,
+    initialDraft.obraId,
+    initialDraft.syncStatus,
+  ]);
+
   function updateField<K extends keyof RdoDraft>(
     field: K,
     value: RdoDraft[K],
@@ -644,20 +720,6 @@ export function RdoCreatePage({
     }));
 
     setNotice("");
-  }
-
-  function updateMaoObra(
-    localId: string,
-    patch: Partial<MaoObraDraft>,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      maoObra: current.maoObra.map((item) =>
-        item.localId === localId
-          ? { ...item, ...patch }
-          : item,
-      ),
-    }));
   }
 
   function updateEquipamento(
@@ -1081,18 +1143,12 @@ export function RdoCreatePage({
             Obra ID
             <input
               value={draft.obraId}
-              onChange={(event) =>
-                updateField(
-                  "obraId",
-                  event.target.value,
-                )
-              }
-              placeholder="UUID da obra"
+              readOnly
+              aria-readonly="true"
             />
 
             <small>
-              Depois será substituído por seleção carregada
-              da API.
+              Definido automaticamente pela obra selecionada.
             </small>
           </label>
 
@@ -1114,14 +1170,13 @@ export function RdoCreatePage({
             Número do RDO
             <input
               value={draft.numeroRdo}
-              onChange={(event) =>
-                updateField(
-                  "numeroRdo",
-                  event.target.value,
-                )
-              }
-              placeholder="Ex.: RDO-2026-001"
+              readOnly
+              aria-readonly="true"
             />
+
+            <small>
+              Gerado automaticamente pelo contexto canônico do RDO.
+            </small>
           </label>
 
           <label>
@@ -1596,7 +1651,7 @@ export function RdoCreatePage({
           <section className="form-card" id="rdo-servicos">
         <CollectionHeader
           title="Serviços executados"
-          description="Serviços, quantidades, item contratual e custo realizado."
+          description="Serviços, quantidades, preço versionado e item contratual executado."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -1640,10 +1695,14 @@ export function RdoCreatePage({
                   placeholder="Pesquise por codigo, frente ou servico"
                   emptyMessage="Nenhum tipo de servico encontrado."
                   search={buscarTiposServico}
+                  disabled={!priceCatalogSelectable}
+                  disabledMessage={priceCoverageMessage}
                   onQueryChange={(value) =>
                     updateServicoExecutado(
                       item.localId,
                       {
+                        serviceId: "",
+                        priceVersionId: "",
                         servicoNome: value,
                       },
                     )
@@ -1652,8 +1711,18 @@ export function RdoCreatePage({
                     updateServicoExecutado(
                       item.localId,
                       {
+                        serviceId: serviceType.catalogId,
+                        priceVersionId:
+                          serviceType.priceChoices.length === 1
+                            ? serviceType.priceChoices[0].id
+                            : "",
                         servicoNome:
                           formatRdoServiceType(serviceType),
+                        unidade:
+                          item.unidade ||
+                          (serviceType.priceChoices.length === 1
+                            ? serviceType.priceChoices[0].unit
+                            : ""),
                       },
                     )
                   }
@@ -1661,6 +1730,45 @@ export function RdoCreatePage({
                   getTitle={getTipoServicoTitle}
                   getSubtitle={getTipoServicoSubtitle}
                 />
+
+                <label>
+                  Preço versionado
+                  <select
+                    value={item.priceVersionId}
+                    disabled={!priceCatalogSelectable || !item.serviceId}
+                    onChange={(event) => {
+                      const selectedService = serviceCatalog.find(
+                        (service) => service.id === item.serviceId,
+                      );
+                      const selectedPrice =
+                        selectedService?.priceChoices.find(
+                          (price) => price.id === event.target.value,
+                        );
+                      updateServicoExecutado(item.localId, {
+                        priceVersionId: event.target.value,
+                        unidade:
+                          item.unidade || selectedPrice?.unit || "",
+                      });
+                    }}
+                  >
+                    <option value="">
+                      {item.serviceId
+                        ? "Selecione a versão exata"
+                        : "Selecione primeiro o serviço"}
+                    </option>
+                    {serviceCatalog
+                      .find((service) => service.id === item.serviceId)
+                      ?.priceChoices.map((price) => (
+                        <option key={price.id} value={price.id}>
+                          {price.unit} · versão {price.version} ·{" "}
+                          {price.validFrom}
+                          {price.effectiveValidTo
+                            ? ` até ${price.effectiveValidTo}`
+                            : " em diante"}
+                        </option>
+                      ))}
+                  </select>
+                </label>
 
                 <label>
                   Item contratual ID
@@ -1764,19 +1872,6 @@ export function RdoCreatePage({
                     </option>
                   </select>
                 </label>
-
-                <NumericField
-                  label="Custo realizado"
-                  value={item.custoRealizado}
-                  onChange={(value) =>
-                    updateServicoExecutado(
-                      item.localId,
-                      {
-                        custoRealizado: value,
-                      },
-                    )
-                  }
-                />
 
                 <label>
                   Trecho inicial
@@ -2192,18 +2287,6 @@ export function RdoCreatePage({
                   </select>
                 </label>
 
-                <NumericField
-                  label="Custo/hora"
-                  value={item.custoHora}
-                  onChange={(value) =>
-                    updateAlocacaoColaborador(
-                      item.localId,
-                      {
-                        custoHora: value,
-                      },
-                    )
-                  }
-                />
               </div>
 
               <label className="full-width">
@@ -2227,218 +2310,19 @@ export function RdoCreatePage({
         </div>
       </section>
 
-          <section className="form-card" id="rdo-mao-de-obra">
-        <CollectionHeader
-          title="Mão de obra"
-          description="Colaboradores e equipes envolvidos no serviço."
-          onAdd={() =>
-            setDraft((current) => ({
-              ...current,
-              maoObra: [
-                ...current.maoObra,
-                createEmptyMaoObra(),
-              ],
-            }))
+      <div id="rdo-mao-de-obra">
+        <RdoWorkforceEditor
+          draft={draft}
+          collaborators={activeCreationContext?.colaboradores ?? []}
+          catalogUnavailableMessage={
+            workforceCatalogMessage || undefined
           }
+          sourceRdoNumber={
+            activeCreationContext?.previousRdo?.numeroRdo ?? null
+          }
+          onChange={setDraft}
         />
-
-        <div className="collection-list">
-          {draft.maoObra.map((item, index) => (
-            <div
-              className="collection-row"
-              key={item.localId}
-            >
-              <div className="row-title">
-                <strong>
-                  Registro {index + 1}
-                </strong>
-
-                <button
-                  type="button"
-                  className="danger-link"
-                  onClick={() =>
-                    removeCollectionItem(
-                      "maoObra",
-                      item.localId,
-                    )
-                  }
-                >
-                  Remover
-                </button>
-              </div>
-
-              <div className="form-grid">
-                <LookupField
-                  label="Colaborador"
-                  value={
-                    item.nomeColaborador ||
-                    item.colaboradorId
-                  }
-                  placeholder="Digite nome, codigo, email ou equipe"
-                  emptyMessage="Nenhum colaborador encontrado. Confira se a base Academy foi sincronizada."
-                  search={buscarColaboradores}
-                  onQueryChange={(value) =>
-                    updateMaoObra(
-                      item.localId,
-                      {
-                        colaboradorId: "",
-                        nomeColaborador: value,
-                      },
-                    )
-                  }
-                  onSelect={(colaborador) =>
-                    updateMaoObra(
-                      item.localId,
-                      {
-                        colaboradorId: colaborador.id,
-                        nomeColaborador:
-                          colaborador.nome ??
-                          colaborador.codigoColaborador ??
-                          colaborador.id,
-                        cargo:
-                          colaborador.nomePerfil ??
-                          item.cargo,
-                      },
-                    )
-                  }
-                  getKey={(colaborador) => colaborador.id}
-                  getTitle={getColaboradorTitle}
-                  getSubtitle={getColaboradorSubtitle}
-                />
-
-                <label>
-                  Nome
-                  <input
-                    value={item.nomeColaborador}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          nomeColaborador:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Cargo
-                  <input
-                    value={item.cargo}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          cargo:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Vínculo
-                  <select
-                    value={item.tipoVinculo}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          tipoVinculo:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  >
-                    <option value="CONTRATADO">
-                      Contratado
-                    </option>
-                    <option value="PROPRIO">
-                      Próprio
-                    </option>
-                    <option value="TERCEIRIZADO">
-                      Terceirizado
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  Quantidade
-                  <input
-                    type="number"
-                    min="0"
-                    value={item.quantidade}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          quantidade:
-                            parseNumericInput(
-                              event.target.value,
-                            ),
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Início
-                  <input
-                    type="time"
-                    value={item.horaInicio}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          horaInicio:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Fim
-                  <input
-                    type="time"
-                    value={item.horaFim}
-                    onChange={(event) =>
-                      updateMaoObra(
-                        item.localId,
-                        {
-                          horaFim:
-                            event.target.value,
-                        },
-                      )
-                    }
-                  />
-                </label>
-              </div>
-
-              <label className="full-width">
-                Observações da mão de obra
-                <textarea
-                  rows={3}
-                  value={item.observacoes}
-                  onChange={(event) =>
-                    updateMaoObra(
-                      item.localId,
-                      {
-                        observacoes:
-                          event.target.value,
-                      },
-                    )
-                  }
-                />
-              </label>
-            </div>
-          ))}
-        </div>
-      </section>
+      </div>
 
           <section className="form-card" id="rdo-equipamentos">
         <CollectionHeader

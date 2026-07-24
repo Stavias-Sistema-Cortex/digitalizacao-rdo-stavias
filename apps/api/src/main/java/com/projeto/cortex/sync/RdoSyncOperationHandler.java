@@ -3,9 +3,11 @@ package com.projeto.cortex.sync;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
+import com.projeto.cortex.rdos.RdoPrintableCollectionLimits;
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
@@ -88,16 +90,11 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
     }
 
     private RdoResponse create(SyncPushRequest.MutacaoCliente mutation) {
-        RdoCreateRequest request = toValue(
-                mutation.payload(),
-                RdoCreateRequest.class
-        );
+        ObjectNode payload = requireObjectPayload(mutation).deepCopy();
+        payload.put("clientMutationId", mutation.clientMutationId());
+        RdoCreateRequest request = toValue(payload, RdoCreateRequest.class);
         currentUserService.requireWorksiteAccess(request.obraId());
-        if (request.id() != null && !request.id().isBlank()
-                && rdoExists(request.id())) {
-            currentUserService.requireRdoAccess(request.id());
-            return rdoQueryService.buscarPorId(request.id());
-        }
+        RdoPrintableCollectionLimits.requireWithinTemplateCapacity(request);
         return rdoService.criarRascunho(request);
     }
 
@@ -111,6 +108,7 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
                 RdoCreateRequest.class
         );
         currentUserService.requireWorksiteAccess(request.obraId());
+        RdoPrintableCollectionLimits.requireWithinTemplateCapacity(request);
         return rdoDraftUpdateService.atualizarRascunho(entityId, request);
     }
 
@@ -120,13 +118,14 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         return rdoWorkflowService.enviar(entityId);
     }
 
-    private boolean rdoExists(String rdoId) {
-        Integer total = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM rdo WHERE id = ?",
-                Integer.class,
-                rdoId
+    private ObjectNode requireObjectPayload(SyncPushRequest.MutacaoCliente mutation) {
+        if (mutation.payload() instanceof ObjectNode objectPayload) {
+            return objectPayload;
+        }
+        throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "payload de criação de RDO deve ser objeto."
         );
-        return total != null && total > 0;
     }
 
     private String requireEntityId(

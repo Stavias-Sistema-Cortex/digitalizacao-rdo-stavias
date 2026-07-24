@@ -58,7 +58,7 @@ class JdbcAuthSessionRepositoryTest {
                 eq(43_200)
         );
         assertThat(compact(insertSql.getValue()))
-                .contains("TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6))")
+                .contains("CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second')")
                 .doesNotContain("raw");
     }
 
@@ -90,7 +90,7 @@ class JdbcAuthSessionRepositoryTest {
                 .contains("JOIN colaborador")
                 .contains("session.revogado_em IS NULL")
                 .contains("session.expira_em > CURRENT_TIMESTAMP(6)")
-                .contains("colaborador.ativo = 1")
+                .contains("colaborador.ativo = TRUE")
                 .contains("colaborador.deletado_em IS NULL")
                 .contains("colaborador.papel_acesso IN ('ALFA', 'BETA')");
     }

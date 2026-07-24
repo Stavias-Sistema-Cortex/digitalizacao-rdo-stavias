@@ -1,95 +1,81 @@
-import { useEffect, useState } from "react";
+import type { RevenueTraceEvidence } from "./servicePriceApi";
 
-import {
-  buscarPdorAtual,
-  type FinancePdorSnapshot,
-  type FinanceRevenueTrace,
-} from "./financeiroApi";
-import { formatMoney } from "./financeiroView";
+interface FinanceTraceEvidenceDrawerProps {
+  detail: RevenueTraceEvidence | null;
+  loading?: boolean;
+  error?: string;
+  onClose: () => void;
+}
 
-type Service = FinanceRevenueTrace["tiposServico"][number];
+function Identity({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="finance-trace-identity">
+      <dt>{label}</dt>
+      <dd><code>{value}</code></dd>
+    </div>
+  );
+}
 
 export function FinanceTraceEvidenceDrawer({
-  service,
+  detail,
+  loading = false,
+  error = "",
   onClose,
-}: {
-  service: Service | null;
-  onClose: () => void;
-}) {
-  const [evidence, setEvidence] = useState<Record<string, FinancePdorSnapshot | null>>({});
-
-  useEffect(() => {
-    if (!service) {
-      queueMicrotask(() => setEvidence({}));
-      return;
-    }
-    let cancelled = false;
-    void Promise.all(service.obras.map(async (obra) => [
-      obra.obraId,
-      await buscarPdorAtual(obra.obraId).catch(() => null),
-    ] as const)).then((entries) => {
-      if (!cancelled) setEvidence(Object.fromEntries(entries));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [service]);
-
-  if (!service) return null;
+}: FinanceTraceEvidenceDrawerProps) {
+  if (!detail && !loading && !error) return null;
 
   return (
-    <div
-      className="finance-evidence-backdrop"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
-      }}
-    >
+    <div className="finance-trace-drawer-backdrop" onMouseDown={onClose}>
       <aside
-        className="finance-evidence-drawer"
+        className="finance-trace-drawer"
         role="dialog"
         aria-modal="true"
-        aria-label="Evidências da composição da receita"
+        aria-labelledby="finance-trace-title"
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
           <div>
-            <p className="finance-kicker">Ontologia operacional</p>
-            <h2>{service.nome}</h2>
-            <p>{service.unidade} · {service.quantidadeRdos} RDOs de origem</p>
+            <span>Rastro ontológico</span>
+            <h2 id="finance-trace-title">Evidência de receita</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Fechar evidências">×</button>
+          <button type="button" onClick={onClose} aria-label="Fechar evidência">×</button>
         </header>
-        <p className="finance-inline-note">
-          A composição preserva obra, item contratual, RDO, estados de receita e snapshot PDOR.
-          Modificações ontológicas permanecem centralizadas em Home &gt; Memória.
-        </p>
-        <ol>
-          {service.obras.map((obra) => {
-            const pdor = evidence[obra.obraId];
-            const pdorLoaded = Object.hasOwn(evidence, obra.obraId);
-            return (
-              <li key={obra.obraId}>
-                <strong>{obra.obraNome}</strong>
-                <span>
-                  Produção {obra.totais.producao} {service.unidade} · custo {formatMoney(obra.totais.custo, "BRL")} · receita estimada {obra.receitaDisponivel ? formatMoney(obra.totais.receitaEstimada, "BRL") : "indisponível"}
-                </span>
-                <small>
-                  Item contratual: {obra.codigoItemContratual ?? obra.itemContratualId ?? "não vinculado"}
-                </small>
-                <small>RDOs: {obra.rdoIds.join(", ") || "nenhum identificador disponível"}</small>
-                <small>
-                  Estados: medida {formatMoney(obra.totais.receitaMedida, "BRL")}, aprovada {formatMoney(obra.totais.receitaAprovada, "BRL")}, faturada {formatMoney(obra.totais.receitaFaturada, "BRL")}, recebida {formatMoney(obra.totais.receitaRecebida, "BRL")}
-                </small>
-                <small>
-                  PDOR: {!pdorLoaded
-                    ? "carregando evidência…"
-                    : pdor
-                      ? `snapshot ${pdor.dataReferencia} · receita prevista final ${pdor.receitaPrevistaFinal === null ? "indisponível" : formatMoney(pdor.receitaPrevistaFinal, "BRL")}`
-                      : "sem snapshot disponível"}
-                </small>
-              </li>
-            );
-          })}
-        </ol>
+
+        {loading ? <p role="status">Carregando a cadeia registrada…</p> : null}
+        {error ? <p role="alert">{error}</p> : null}
+        {detail ? (
+          <>
+            <p className="finance-trace-drawer__summary">
+              Esta receita existe porque uma execução validada preservou o preço
+              vigente e publicou um evento aceito. Os IDs abaixo são os registros reais.
+            </p>
+            <dl className="finance-trace-identities">
+              <Identity label="RDO" value={detail.row.rdoId} />
+              <Identity label="Execução" value={detail.row.executionId} />
+              <Identity label="Serviço" value={detail.row.serviceId} />
+              <Identity label="Versão do preço" value={detail.row.priceVersionId} />
+              <Identity label="Evidência" value={detail.row.revenueEvidenceId} />
+              <Identity label="Evento" value={detail.row.revenueEventId} />
+            </dl>
+            <section className="finance-trace-relations">
+              <h3>Relações materializadas</h3>
+              {detail.ontologyLinks.length === 0 ? (
+                <p>Nenhuma relação adicional foi retornada.</p>
+              ) : (
+                <ul>
+                  {detail.ontologyLinks.map((link) => (
+                    <li key={`${link.sourceType}:${link.sourceId}:${link.relationType}:${link.targetId}`}>
+                      <code>{link.sourceType}:{link.sourceId}</code>
+                      <strong>{link.relationType}</strong>
+                      <code>{link.targetType}:{link.targetId}</code>
+                      <span>{link.active ? "ativa" : "histórica"}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </>
+        ) : null}
       </aside>
     </div>
   );

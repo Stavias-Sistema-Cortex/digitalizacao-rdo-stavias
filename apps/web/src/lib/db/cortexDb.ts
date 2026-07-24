@@ -16,24 +16,31 @@ import type {
   MensagemAnexoLocalRecord,
   MensagemLocalRecord,
   LocalOperationalRoleRecord,
-  ObraGeometryLocalRecord,
   ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
   PrevisaoSnapshotRecord,
   ProcessedEventRecord,
   RdoAttachmentRecord,
-  StaviaSnapshotRecord,
+  RdoCreationContextCacheRecord,
   SyncStateRecord,
   TarefaRecord,
   LocalTeamHistoryRecord,
   LocalTeamRecord,
   LocalTeamWorksiteRecord,
+  MemoryCacheMetadataRecord,
+  MemorySearchDocumentRecord,
+  ServiceCatalogLocalRecord,
+  ServicePriceVersionLocalRecord,
+  FinanceCapabilitiesCacheRecord,
+  FinancePdorRevenueCacheRecord,
+  FinanceRevenueTraceCacheRecord,
 } from "./db.types";
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 13;
+export const CORTEX_DATABASE_VERSION = 19;
+const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
   rdos: {
@@ -138,14 +145,6 @@ export interface CortexDbSchema extends DBSchema {
     };
   };
 
-  stavia_snapshots: {
-    key: "default";
-    value: StaviaSnapshotRecord;
-    indexes: {
-      "by-updated-at": string;
-    };
-  };
-
   obras: {
     key: string;
     value: ObraLocalRecord;
@@ -155,12 +154,13 @@ export interface CortexDbSchema extends DBSchema {
     };
   };
 
-  obra_geometries: {
-    key: string;
-    value: ObraGeometryLocalRecord;
+  rdo_creation_contexts: {
+    key: [string, string, string];
+    value: RdoCreationContextCacheRecord;
     indexes: {
-      "by-updated-at": string;
-      "by-sync-status": ObraGeometryLocalRecord["syncStatus"];
+      "by-owner": string;
+      "by-obra-date": [string, string];
+      "by-cached-at": string;
     };
   };
 
@@ -250,6 +250,73 @@ export interface CortexDbSchema extends DBSchema {
       "by-team-id": string;
     };
   };
+
+  memory_search_documents: {
+    key: string;
+    value: MemorySearchDocumentRecord;
+    indexes: {
+      "by-user-scope": [string, string];
+      "by-user-scope-commit": [string, string, number];
+    };
+  };
+
+  memory_cache_metadata: {
+    key: string;
+    value: MemoryCacheMetadataRecord;
+    indexes: {
+      "by-user": string;
+      "by-cached-at": string;
+    };
+  };
+
+  service_catalog: {
+    key: string;
+    value: ServiceCatalogLocalRecord;
+    indexes: {
+      "by-code": string;
+      "by-name": string;
+      "by-sync-status": ServiceCatalogLocalRecord["syncStatus"];
+    };
+  };
+
+  service_price_versions: {
+    key: string;
+    value: ServicePriceVersionLocalRecord;
+    indexes: {
+      "by-worksite": string;
+      "by-worksite-service": [string, string];
+      "by-sync-status": ServicePriceVersionLocalRecord["syncStatus"];
+    };
+  };
+
+  finance_capabilities: {
+    key: [string, string];
+    value: FinanceCapabilitiesCacheRecord;
+    indexes: {
+      "by-owner": string;
+      "by-cached-at": string;
+    };
+  };
+
+  finance_revenue_trace_cache: {
+    key: [string, string, string, string, string];
+    value: FinanceRevenueTraceCacheRecord;
+    indexes: {
+      "by-owner": string;
+      "by-owner-worksite": [string, string];
+      "by-fetched-at": string;
+    };
+  };
+
+  finance_pdor_revenue_cache: {
+    key: [string, string, string];
+    value: FinancePdorRevenueCacheRecord;
+    indexes: {
+      "by-owner": string;
+      "by-owner-worksite": [string, string];
+      "by-fetched-at": string;
+    };
+  };
 }
 
 export type CortexStoreName = StoreNames<CortexDbSchema>;
@@ -272,7 +339,12 @@ export async function getCortexDb(): Promise<
     databaseName,
     CORTEX_DATABASE_VERSION,
     {
-      upgrade(database, _oldVersion, _newVersion, transaction) {
+      upgrade(database, oldVersion, _newVersion, transaction) {
+        const legacyDatabase =
+          database as unknown as Pick<
+            IDBDatabase,
+            "objectStoreNames" | "deleteObjectStore"
+          >;
         if (!database.objectStoreNames.contains("rdos")) {
           const rdoStore = database.createObjectStore("rdos", {
             keyPath: "id",
@@ -414,9 +486,9 @@ export async function getCortexDb(): Promise<
           );
         }
 
-        const outbox = transaction.objectStore("outbox_mutations");
-        if (!outbox.indexNames.contains("by-next-attempt-at")) {
-          outbox.createIndex("by-next-attempt-at", "nextAttemptAt");
+        const outboxStore = transaction.objectStore("outbox_mutations");
+        if (!outboxStore.indexNames.contains("by-next-attempt-at")) {
+          outboxStore.createIndex("by-next-attempt-at", "nextAttemptAt");
         }
 
         if (
@@ -490,15 +562,15 @@ export async function getCortexDb(): Promise<
           );
         }
 
-        const events = transaction.objectStore("operational_events");
-        if (!events.indexNames.contains("by-client-mutation-id")) {
-          events.createIndex(
+        const eventStore = transaction.objectStore("operational_events");
+        if (!eventStore.indexNames.contains("by-client-mutation-id")) {
+          eventStore.createIndex(
             "by-client-mutation-id",
             "clientMutationId",
           );
         }
-        if (!events.indexNames.contains("by-result")) {
-          events.createIndex("by-result", "result");
+        if (!eventStore.indexNames.contains("by-result")) {
+          eventStore.createIndex("by-result", "result");
         }
 
         if (
@@ -547,22 +619,10 @@ export async function getCortexDb(): Promise<
         }
 
         if (
-          !database.objectStoreNames.contains(
-            "stavia_snapshots",
-          )
+          oldVersion < 13 &&
+          legacyDatabase.objectStoreNames.contains(LEGACY_ASSISTANT_STORE)
         ) {
-          const staviaSnapshotStore =
-            database.createObjectStore(
-              "stavia_snapshots",
-              {
-                keyPath: "key",
-              },
-            );
-
-          staviaSnapshotStore.createIndex(
-            "by-updated-at",
-            "updatedAt",
-          );
+          legacyDatabase.deleteObjectStore(LEGACY_ASSISTANT_STORE);
         }
 
         if (!database.objectStoreNames.contains("obras")) {
@@ -574,13 +634,21 @@ export async function getCortexDb(): Promise<
           obraStore.createIndex("by-status", "status");
         }
 
-        if (!database.objectStoreNames.contains("obra_geometries")) {
-          const geometries = database.createObjectStore(
-            "obra_geometries",
-            { keyPath: "obraId" },
+        if (
+          !database.objectStoreNames.contains(
+            "rdo_creation_contexts",
+          )
+        ) {
+          const contextStore = database.createObjectStore(
+            "rdo_creation_contexts",
+            { keyPath: ["ownerId", "obraId", "selectedDate"] },
           );
-          geometries.createIndex("by-updated-at", "updatedAt");
-          geometries.createIndex("by-sync-status", "syncStatus");
+          contextStore.createIndex("by-owner", "ownerId");
+          contextStore.createIndex(
+            "by-obra-date",
+            ["obraId", "selectedDate"],
+          );
+          contextStore.createIndex("by-cached-at", "cachedAt");
         }
 
         if (
@@ -728,6 +796,100 @@ export async function getCortexDb(): Promise<
             { keyPath: "id" },
           );
           worksitesStore.createIndex("by-team-id", "equipeId");
+        }
+
+        if (!database.objectStoreNames.contains("memory_search_documents")) {
+          const memoryStore = database.createObjectStore(
+            "memory_search_documents",
+            { keyPath: "key" },
+          );
+          memoryStore.createIndex(
+            "by-user-scope",
+            ["userId", "scopeHash"],
+          );
+          memoryStore.createIndex(
+            "by-user-scope-commit",
+            ["userId", "scopeHash", "commitSequence"],
+          );
+        }
+
+        if (!database.objectStoreNames.contains("memory_cache_metadata")) {
+          const metadataStore = database.createObjectStore(
+            "memory_cache_metadata",
+            { keyPath: "key" },
+          );
+          metadataStore.createIndex("by-user", "userId");
+          metadataStore.createIndex("by-cached-at", "cachedAt");
+        }
+
+        if (!database.objectStoreNames.contains("service_catalog")) {
+          const catalogStore = database.createObjectStore(
+            "service_catalog",
+            { keyPath: "id" },
+          );
+          catalogStore.createIndex("by-code", "code", { unique: true });
+          catalogStore.createIndex("by-name", "name");
+          catalogStore.createIndex("by-sync-status", "syncStatus");
+        }
+
+        if (!database.objectStoreNames.contains("service_price_versions")) {
+          const priceStore = database.createObjectStore(
+            "service_price_versions",
+            { keyPath: "id" },
+          );
+          priceStore.createIndex("by-worksite", "obraId");
+          priceStore.createIndex(
+            "by-worksite-service",
+            ["obraId", "serviceId"],
+          );
+          priceStore.createIndex("by-sync-status", "syncStatus");
+        }
+
+        if (!database.objectStoreNames.contains("finance_capabilities")) {
+          const capabilitiesStore = database.createObjectStore(
+            "finance_capabilities",
+            { keyPath: "key" },
+          );
+          capabilitiesStore.createIndex("by-owner", "ownerId");
+          capabilitiesStore.createIndex("by-cached-at", "cachedAt");
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "finance_revenue_trace_cache",
+          )
+        ) {
+          const revenueTraceStore = database.createObjectStore(
+            "finance_revenue_trace_cache",
+            {
+              keyPath: "key",
+            },
+          );
+          revenueTraceStore.createIndex("by-owner", "ownerId");
+          revenueTraceStore.createIndex(
+            "by-owner-worksite",
+            ["ownerId", "obraId"],
+          );
+          revenueTraceStore.createIndex("by-fetched-at", "fetchedAt");
+        }
+
+        if (
+          !database.objectStoreNames.contains(
+            "finance_pdor_revenue_cache",
+          )
+        ) {
+          const pdorRevenueStore = database.createObjectStore(
+            "finance_pdor_revenue_cache",
+            {
+              keyPath: "key",
+            },
+          );
+          pdorRevenueStore.createIndex("by-owner", "ownerId");
+          pdorRevenueStore.createIndex(
+            "by-owner-worksite",
+            ["ownerId", "obraId"],
+          );
+          pdorRevenueStore.createIndex("by-fetched-at", "fetchedAt");
         }
 
       },

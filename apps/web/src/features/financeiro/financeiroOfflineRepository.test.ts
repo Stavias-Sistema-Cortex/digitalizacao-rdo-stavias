@@ -63,7 +63,7 @@ describe("financeiro offline repository", () => {
       operacao: "CRIAR_COMPRA",
       status: "PENDING",
       baseVersao: null,
-      contractVersion: 13,
+      schemaVersion: 13,
       transport: "SYNC_PUSH",
       dependsOnMutationIds: [],
       payload: expect.objectContaining({
@@ -79,7 +79,7 @@ describe("financeiro offline repository", () => {
       }),
     });
     expect(events).toContainEqual(expect.objectContaining({
-      contractVersion: 13,
+      schemaVersion: 13,
       clientMutationId: queued.clientMutationId,
       type: "COMPRA_CRIADA",
       principalEntity: {

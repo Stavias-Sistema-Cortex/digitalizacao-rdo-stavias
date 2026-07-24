@@ -201,11 +201,9 @@
   align-items: center;
   width: fit-content;
   padding: 4px 7px;
-  border: 1px solid currentColor;
-  border-radius: 3px;
+  border-radius: 999px;
   font-size: 0.59rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-weight: 700;
   text-transform: none;
 }
 
@@ -276,7 +274,6 @@
 }
 
 .teams-detail-actions button,
-.teams-detail-actions a,
 .teams-section header button {
   min-height: 36px;
   padding: 0 11px;
@@ -564,6 +561,55 @@
   color: #2c3b33;
 }
 
+.teams-audit ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.teams-audit li {
+  display: flex;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid #dde3df;
+}
+
+.teams-audit li > i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #3e786d;
+  box-shadow: 0 0 0 1px #3e786d;
+}
+
+.teams-audit li > div {
+  min-width: 0;
+}
+
+.teams-audit strong {
+  color: #2a3a32;
+  font-size: 0.72rem;
+}
+
+.teams-audit p,
+.teams-audit span,
+.teams-audit code {
+  display: block;
+  margin: 3px 0 0;
+  color: #68766e;
+  font-size: 0.63rem;
+}
+
+.teams-audit code {
+  color: #7b8880;
+  font-size: 0.57rem;
+}
+
 .teams-danger-zone {
   display: flex;
   align-items: center;
@@ -704,9 +750,8 @@
   width: min(390px, 100%);
   height: 100%;
   padding: 25px;
-  border-left: 2px solid var(--color-ink);
   background: #fff;
-  box-shadow: none;
+  box-shadow: -18px 0 55px rgb(14 45 38 / 18%);
   overflow-y: auto;
 }
 
@@ -792,10 +837,10 @@
 .teams-modal {
   width: min(560px, 100%);
   max-height: calc(100dvh - 48px);
-  border: 2px solid var(--color-ink);
-  border-radius: 3px;
+  border: 1px solid #ccd7d0;
+  border-radius: 14px;
   background: #fff;
-  box-shadow: none;
+  box-shadow: 0 24px 70px rgb(13 44 39 / 22%);
   overflow-y: auto;
 }
 
@@ -1001,7 +1046,7 @@
 
   .teams-modal {
     max-height: 91dvh;
-    border-radius: var(--radius-control) var(--radius-control) 0 0;
+    border-radius: 14px 14px 0 0;
   }
 }
 
@@ -1037,9 +1082,14 @@
   }
 }
 
-/* Cortex 2.1 · diretório operacional estabelecido */
-.teams-page { background: var(--color-canvas); }
-.teams-catalog { border-right-color: #bcc4bf; }
+/* Diretório operacional: molduras integrais e tipografia institucional. */
+.teams-page {
+  background: var(--color-canvas);
+}
+
+.teams-catalog {
+  border-right-color: #bcc4bf;
+}
 
 .teams-catalog-header {
   border-bottom: 1px solid var(--color-ink);
@@ -1109,17 +1159,17 @@
   color: var(--color-ink);
 }
 
-.teams-list-item.is-active::before {
-  top: 14px;
-  bottom: 14px;
-  border-radius: 0;
-}
-
 .teams-list-marker,
 .teams-title-mark,
-.teams-member-avatar {
-  border-radius: var(--radius-control);
-  font-weight: 600;
+.teams-member-avatar,
+.teams-overview,
+.teams-member-card,
+.teams-section-empty,
+.teams-relation-list article,
+.teams-history-table,
+.teams-danger-zone,
+.teams-empty-state {
+  border-radius: var(--radius-container);
 }
 
 .teams-list-item strong,
@@ -1131,22 +1181,6 @@
   font-weight: 600;
 }
 
-.teams-overview,
-.teams-member-card,
-.teams-section-empty,
-.teams-relation-list article,
-.teams-history-table,
-.teams-danger-zone,
-.teams-empty-state {
-  border-radius: var(--radius-container);
-}
-
-.teams-member-card {
-  transition:
-    background-color var(--transition-functional),
-    border-color var(--transition-functional);
-}
-
 .teams-detail-actions button,
 .teams-detail-actions a,
 .teams-section header button,
@@ -1154,4 +1188,56 @@
 .teams-modal form > footer button,
 .teams-modal label {
   font-weight: 500;
+}
+
+.teams-status {
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  background: transparent;
+}
+
+.teams-member-drawer {
+  border-left: 2px solid var(--color-ink);
+  box-shadow: none;
+}
+
+.teams-workspace {
+  min-height: 100dvh;
+}
+
+.teams-workspace > .operational-workspace__content {
+  min-height: 0;
+}
+
+.teams-workspace .teams-page {
+  height: calc(100dvh - 190px);
+  min-height: 590px;
+  border: 1px solid var(--color-ink);
+  background: #f5f6f5;
+}
+
+.teams-workspace .teams-catalog,
+.teams-workspace .teams-detail,
+.teams-workspace .teams-overview,
+.teams-workspace .teams-member-card,
+.teams-workspace .teams-section-empty,
+.teams-workspace .teams-relation-list article,
+.teams-workspace .teams-history-table,
+.teams-workspace .teams-danger-zone,
+.teams-workspace .teams-empty-state {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 760px) {
+  .teams-workspace .teams-page {
+    height: calc(100dvh - 220px);
+    min-height: 520px;
+  }
+}
+
+.teams-modal {
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-container);
+  box-shadow: none;
 }

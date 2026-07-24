@@ -1002,7 +1002,8 @@ public class FinanceInvoiceService {
                     id, nota_fiscal_id, obra_id, acao, ator_id, origem,
                     dispositivo_id, client_mutation_id, correlacao_id,
                     estado_anterior_json, estado_novo_json, resultado
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCESSO')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb,
+                          'SUCESSO')
                 """,
                 UUID.randomUUID().toString(),
                 invoice.id(), invoice.obraId(), action, audit.actorId(),
@@ -1024,8 +1025,8 @@ public class FinanceInvoiceService {
                     status_anterior_id, status_novo_id, ator_id, origem,
                     dispositivo_id, client_mutation_id, correlacao_id,
                     estado_anterior_json, estado_novo_json, resultado
-                ) VALUES (?, 'NOTA_FISCAL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          'SUCESSO')
+                ) VALUES (?, 'NOTA_FISCAL', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?::jsonb, ?::jsonb, 'SUCESSO')
                 """,
                 UUID.randomUUID().toString(),
                 saved.id(), saved.obraId(),

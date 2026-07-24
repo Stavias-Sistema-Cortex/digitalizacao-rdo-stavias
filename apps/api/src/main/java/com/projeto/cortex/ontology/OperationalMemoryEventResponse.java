@@ -1,33 +1,31 @@
 package com.projeto.cortex.ontology;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
+/**
+ * Safe projection for Memory. Arbitrary payload/state JSON and person/device
+ * identifiers are intentionally absent from this public record.
+ */
 public record OperationalMemoryEventResponse(
-        String id,
-        Long commitSeq,
-        String type,
+        String eventId,
+        long commitSequence,
+        String eventType,
         String source,
         String principalEntityType,
         String principalEntityId,
-        JsonNode relatedEntities,
-        String obraId,
+        String principalName,
+        String worksiteId,
+        String worksiteName,
         String rdoId,
-        String colaboradorId,
-        LocalDateTime occurredAt,
-        LocalDateTime syncedAt,
+        String rdoNumber,
+        String serviceName,
+        Instant occurredAt,
+        Instant synchronizedAt,
         String origin,
         String syncStatus,
-        Integer schemaVersion,
-        String actorId,
-        String actorName,
-        String deviceId,
-        String correlationId,
-        String causationId,
-        JsonNode previousState,
-        JsonNode newState,
+        int schemaVersion,
         String result,
         String errorCategory,
-        JsonNode payload
+        double relevance
 ) {
 }

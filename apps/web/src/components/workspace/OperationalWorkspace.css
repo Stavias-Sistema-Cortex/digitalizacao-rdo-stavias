@@ -1,0 +1,177 @@
+.operational-workspace {
+  --workspace-gutter: clamp(18px, 2.4vw, 36px);
+
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 100%;
+  display: grid;
+  align-content: start;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  color: var(--color-ink);
+  background: var(--color-canvas, #f3f5f2);
+}
+
+.workspace-header {
+  min-inline-size: 0;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-block-end: 14px;
+  border-block-end: 1px solid #101112;
+}
+
+.workspace-header__copy { min-inline-size: 0; }
+
+.workspace-header__eyebrow {
+  margin: 0 0 6px;
+  color: #606664;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.workspace-header h1 {
+  margin: 0;
+  font-size: clamp(1.65rem, 3vw, 2.6rem);
+  letter-spacing: -0.035em;
+}
+
+.workspace-header__description {
+  max-inline-size: 76ch;
+  margin: 8px 0 0;
+  color: #606664;
+  line-height: 1.5;
+}
+
+.workspace-header__actions,
+.workspace-status-rail__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspace-tabs {
+  min-inline-size: 0;
+  display: flex;
+  gap: 2px;
+  margin: 12px var(--workspace-gutter) 0;
+  overflow-x: auto;
+  border: 1px solid #cfd3d1;
+  background: #f2f4f3;
+}
+
+.workspace-tabs button {
+  min-block-size: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-inline-end: 1px solid #cfd3d1;
+  border-radius: 0;
+  color: #313634;
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.workspace-tabs button.is-active {
+  color: #fff;
+  background: #101112;
+}
+
+.workspace-tabs button:focus-visible,
+.workspace-header__actions :is(button, a):focus-visible,
+.workspace-status-rail__actions :is(button, a):focus-visible {
+  outline: 2px solid #101112;
+  outline-offset: 2px;
+}
+
+.workspace-tabs button:disabled {
+  color: #8b908e;
+  cursor: not-allowed;
+}
+
+.workspace-status-rail {
+  min-inline-size: 0;
+  min-block-size: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px var(--workspace-gutter) 0;
+  padding: 8px 10px;
+  border: 1px solid #d7dad8;
+  background: #f7f8f7;
+}
+
+.workspace-status-rail__state {
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4d5350;
+  font-size: 0.78rem;
+}
+
+.workspace-status-rail__state > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-status-rail__marker {
+  inline-size: 8px;
+  block-size: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #707674;
+}
+
+.workspace-status-rail__state[data-status="SYNCED"] .workspace-status-rail__marker {
+  background: #2d6744;
+}
+
+.workspace-status-rail__state[data-status="PENDING"] .workspace-status-rail__marker,
+.workspace-status-rail__state[data-status="LOCAL"] .workspace-status-rail__marker {
+  background: #866900;
+}
+
+.workspace-status-rail__state[data-status="CONFLICT"] .workspace-status-rail__marker,
+.workspace-status-rail__state[data-status="REJECTED"] .workspace-status-rail__marker {
+  background: #9b3232;
+}
+
+.operational-workspace__content {
+  min-inline-size: 0;
+  min-block-size: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px var(--workspace-gutter) clamp(28px, 4vw, 64px);
+}
+
+@media (max-width: 640px) {
+  .operational-workspace {
+    --workspace-gutter: 14px;
+  }
+  .workspace-header { align-items: start; flex-direction: column; gap: 12px; }
+  .workspace-header__actions,
+  .workspace-status-rail__actions { justify-content: flex-start; }
+  .workspace-status-rail { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .operational-workspace *,
+  .operational-workspace *::before,
+  .operational-workspace *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

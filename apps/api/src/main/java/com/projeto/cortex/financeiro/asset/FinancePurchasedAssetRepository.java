@@ -141,7 +141,7 @@ public class FinancePurchasedAssetRepository {
     public Optional<AssetRecord> findActiveAsset(String assetId) {
         return findAsset(
                 """
-                WHERE id = ? AND active = 1 AND deleted_at IS NULL
+                WHERE id = ? AND active = TRUE AND deleted_at IS NULL
                 LIMIT 1
                 """,
                 assetId
@@ -151,7 +151,7 @@ public class FinancePurchasedAssetRepository {
     public Optional<AssetRecord> findActiveAssetByExternalCode(String code) {
         return findAsset(
                 """
-                WHERE external_code = ? AND active = 1 AND deleted_at IS NULL
+                WHERE external_code = ? AND active = TRUE AND deleted_at IS NULL
                 ORDER BY id LIMIT 1
                 """,
                 code

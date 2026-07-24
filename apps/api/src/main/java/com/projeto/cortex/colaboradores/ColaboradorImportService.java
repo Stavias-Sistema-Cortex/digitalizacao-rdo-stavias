@@ -186,33 +186,33 @@ public class ColaboradorImportService {
                     deletado_em
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
-                ON DUPLICATE KEY UPDATE
-                    codigo_colaborador = VALUES(codigo_colaborador),
-                    cpf_mascarado = VALUES(cpf_mascarado),
-                    nome = VALUES(nome),
-                    email = VALUES(email),
-                    id_grupo_origem = VALUES(id_grupo_origem),
-                    nome_grupo = VALUES(nome_grupo),
-                    id_perfil_origem = VALUES(id_perfil_origem),
-                    nome_perfil = VALUES(nome_perfil),
-                    papel_acesso = COALESCE(papel_acesso, 'BETA'),
-                    ativo = VALUES(ativo),
-                    criado_em_origem = VALUES(criado_em_origem),
-                    atualizado_em_origem = VALUES(atualizado_em_origem),
-                    atualizado_em = IF(
-                        NOT (hash_origem <=> VALUES(hash_origem))
-                            OR NOT (cpf_hash <=> VALUES(cpf_hash)),
-                        CURRENT_TIMESTAMP(6),
-                        atualizado_em
-                    ),
-                    versao_linha = IF(
-                        NOT (hash_origem <=> VALUES(hash_origem))
-                            OR NOT (cpf_hash <=> VALUES(cpf_hash)),
-                        versao_linha + 1,
-                        versao_linha
-                    ),
-                    cpf_hash = VALUES(cpf_hash),
-                    hash_origem = VALUES(hash_origem),
+                ON CONFLICT (banco_origem, tabela_origem, pk_origem) DO UPDATE SET
+                    codigo_colaborador = EXCLUDED.codigo_colaborador,
+                    cpf_mascarado = EXCLUDED.cpf_mascarado,
+                    nome = EXCLUDED.nome,
+                    email = EXCLUDED.email,
+                    id_grupo_origem = EXCLUDED.id_grupo_origem,
+                    nome_grupo = EXCLUDED.nome_grupo,
+                    id_perfil_origem = EXCLUDED.id_perfil_origem,
+                    nome_perfil = EXCLUDED.nome_perfil,
+                    papel_acesso = COALESCE(colaborador.papel_acesso, 'BETA'),
+                    ativo = EXCLUDED.ativo,
+                    criado_em_origem = EXCLUDED.criado_em_origem,
+                    atualizado_em_origem = EXCLUDED.atualizado_em_origem,
+                    atualizado_em = CASE
+                        WHEN colaborador.hash_origem IS DISTINCT FROM EXCLUDED.hash_origem
+                            OR colaborador.cpf_hash IS DISTINCT FROM EXCLUDED.cpf_hash
+                        THEN CURRENT_TIMESTAMP(6)
+                        ELSE colaborador.atualizado_em
+                    END,
+                    versao_linha = CASE
+                        WHEN colaborador.hash_origem IS DISTINCT FROM EXCLUDED.hash_origem
+                            OR colaborador.cpf_hash IS DISTINCT FROM EXCLUDED.cpf_hash
+                        THEN colaborador.versao_linha + 1
+                        ELSE colaborador.versao_linha
+                    END,
+                    cpf_hash = EXCLUDED.cpf_hash,
+                    hash_origem = EXCLUDED.hash_origem,
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     deletado_em = NULL
                 """,
@@ -259,7 +259,7 @@ public class ColaboradorImportService {
         int total = jdbcTemplate.update("""
                 UPDATE colaborador
                 SET
-                    ativo = 0,
+                    ativo = FALSE,
                     deletado_em = COALESCE(deletado_em, CURRENT_TIMESTAMP(6)),
                     atualizado_em = CURRENT_TIMESTAMP(6),
                     versao_linha = versao_linha + 1
@@ -389,9 +389,9 @@ public class ColaboradorImportService {
                     last_error_message
                 )
                 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6), NULL, NULL)
-                ON DUPLICATE KEY UPDATE
-                    last_full_scan_at = VALUES(last_full_scan_at),
-                    last_success_at = VALUES(last_success_at),
+                ON CONFLICT (connector_name, source_database, source_table) DO UPDATE SET
+                    last_full_scan_at = EXCLUDED.last_full_scan_at,
+                    last_success_at = EXCLUDED.last_success_at,
                     last_error_at = NULL,
                     last_error_message = NULL
                 """,
@@ -414,9 +414,9 @@ public class ColaboradorImportService {
                         last_error_message
                     )
                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?)
-                    ON DUPLICATE KEY UPDATE
-                        last_error_at = VALUES(last_error_at),
-                        last_error_message = VALUES(last_error_message)
+                    ON CONFLICT (connector_name, source_database, source_table) DO UPDATE SET
+                        last_error_at = EXCLUDED.last_error_at,
+                        last_error_message = EXCLUDED.last_error_message
                     """,
                     stableCheckpointId(),
                     CONNECTOR_NAME,

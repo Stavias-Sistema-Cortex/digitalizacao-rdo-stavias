@@ -1,0 +1,33 @@
+{
+  "equivalent": true,
+  "compared": {
+    "sheetNames": [
+      "v.1 RDO frente",
+      "v.1 RDO verso"
+    ],
+    "valueAndTypeCells": 68,
+    "rowCounts": {
+      "workforce": 1,
+      "equipment": 1,
+      "services": 2,
+      "materials": 3,
+      "geometricControl": 1
+    },
+    "mergedRanges": {
+      "v.1 RDO frente": 149,
+      "v.1 RDO verso": 52
+    },
+    "printAreas": [
+      {
+        "Name": "_xlnm.Print_Area",
+        "Ref": "'v.1 RDO frente'!$A$1:$AJ$80",
+        "Sheet": 0
+      },
+      {
+        "Name": "_xlnm.Print_Area",
+        "Ref": "'v.1 RDO verso'!$A$2:$AH$70",
+        "Sheet": 1
+      }
+    ]
+  }
+}
