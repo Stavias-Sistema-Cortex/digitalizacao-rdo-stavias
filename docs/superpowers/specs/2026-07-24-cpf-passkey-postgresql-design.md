@@ -19,7 +19,9 @@ and recovery.
 - PostgreSQL normal mode renders the same CPF/passkey screen as the legacy
   mode. It does not render `EmailOtpAccessForm` or copy that calls for an
   institutional e-mail.
-- `POST /api/auth/login` remains unavailable in every PostgreSQL web mode.
+- `POST /api/auth/login` remains unavailable in every PostgreSQL web mode and
+  is not a normal PostgreSQL public route. Its controller guard remains only
+  as defense in depth.
 - `postgresql-activation` retains its independently bootstrapped e-mail OTP
   page. It is not a fallback in the normal web application.
 - No bootstrap collaborator, passkey, CPF, Academy data, or local test data
@@ -30,8 +32,8 @@ and recovery.
 ```text
 CPF input
   -> protected CPF lookup (HMAC candidates only)
-  -> active collaborator with at least one active passkey
-  -> WebAuthn assertion options restricted to that collaborator
+  -> active collaborator bound to a server-side WebAuthn challenge
+  -> discoverable WebAuthn assertion
   -> browser passkey assertion
   -> one-use challenge + credential-owner + user-handle verification
   -> opaque session cookie
@@ -40,18 +42,20 @@ CPF input
 1. The browser validates the CPF locally, sends it only in the body of
    `POST /api/auth/passkeys/authentication/options`, and never places it in a
    URL, local storage, session storage, error message, or client log.
-2. The server normalizes and validates the CPF, then resolves it through
-   `AuthIdentityRepository.findActiveByCpf`. That repository uses the
-   configured HMAC lookup material and is explicitly an identifier boundary,
-   not an authentication result.
-3. The server resolves the resulting collaborator as an active WebAuthn
-   identity and refuses the ceremony unless at least one active credential is
-   present. Unknown CPF, inactive identity, malformed CPF, and no passkey
-   receive the same generic unauthorized response. The response must not
-   disclose which condition occurred.
-4. The relying party begins a username-bound assertion for the collaborator
-   UUID. This yields `allowCredentials` for that collaborator rather than a
-   discoverable assertion that could select another person’s credential.
+2. The server uses a dedicated read-only PostgreSQL passkey lookup. It builds
+   fixed-shape HMAC/decoy material from `CpfLookupDigestService` and resolves
+   at most one active, non-deleted ALFA/BETA identity with an active passkey.
+   It must not reuse `AuthIdentityRepository.findActiveByCpf`, which can
+   upgrade protected lookup material before authentication completes.
+3. The server starts an indistinguishable decoy challenge for unknown CPF,
+   inactive identity, malformed CPF, or no active passkey. It persists a
+   canonical collaborator UUID only for a real lookup; a null-bound decoy is
+   unconditionally rejected at verification. This makes options response
+   shape independent of account existence.
+4. The relying party begins a discoverable assertion without returning a
+   collaborator-specific `allowCredentials` list. This avoids disclosing
+   credential inventory or account shape before authentication. The claimed
+   collaborator remains bound only on the server.
 5. The stored WebAuthn authentication challenge persists that collaborator
    UUID. It remains 300 seconds, single-use, and is consumed in its own
    transaction before parsing or signature verification.
@@ -63,21 +67,27 @@ CPF input
 
 ## Security controls
 
-- Direct CPF login remains 410 in PostgreSQL; no branch may issue a session
-  from `AuthService.autenticarPorCpf` under a PostgreSQL profile.
+- Direct CPF login is not publicly routable in normal PostgreSQL; no branch
+  may issue a session from `AuthService.autenticarPorCpf` under a PostgreSQL
+  profile.
 - Both assertion-options and assertion-verify stay behind the existing
-  WebAuthn IP rate limiter and pre-MVC rate-limit filter.
+  WebAuthn IP rate limiter and pre-MVC rate-limit filter. Options bodies are
+  bounded before MVC parsing, and options use a protected identifier bucket
+  derived from HMAC/decoy material.
 - The authentication controller returns `Cache-Control: no-store` for both
   operations.
 - CPF is not echoed, retained in a challenge, added to a session, or written
-  to telemetry. Only the resolved collaborator UUID is stored in the
-  challenge.
-- The public-route allowlist permits the two passkey authentication endpoints
-  in normal PostgreSQL mode. The e-mail OTP routes are allowlisted only in
-  `postgresql-activation` mode.
+  to telemetry. Only a resolved collaborator UUID (or a null decoy owner) is
+  stored in the challenge.
+- The public-route allowlist permits only the two passkey authentication
+  endpoints in normal PostgreSQL mode. The e-mail OTP routes are allowlisted
+  only in `postgresql-activation` mode.
 - CSRF policy, secure opaque-cookie issuance, exact RP ID/origin validation,
   challenge TTL, and existing WebAuthn credential counter updates remain
   unchanged.
+- PostgreSQL session resolution accepts an active `auth_identity` after a
+  passkey proof; it must not additionally require an e-mail field that is
+  irrelevant to this normal passkey-only runtime.
 
 ## UI direction
 
@@ -101,10 +111,11 @@ and the existing responsive card behavior remain mandatory.
 
 ## Verification requirements
 
-1. Backend unit tests prove a valid CPF begins a challenge bound to the
-   resolved collaborator and invokes a username-bound assertion.
-2. Tests prove malformed/unknown/no-passkey inputs return the same generic
-   failure and do not create a challenge or session.
+1. Backend unit tests prove a valid CPF begins a discoverable challenge bound
+   to the resolved collaborator without exposing credential inventory.
+2. Tests prove malformed/unknown/no-passkey inputs receive the same options
+   contract but can only create null-bound decoy challenges that never issue
+   a session.
 3. Tests prove verification rejects an assertion when the challenge owner,
    user handle, verified collaborator, or credential owner differ.
 4. Public-endpoint policy tests prove normal PostgreSQL permits passkey
