@@ -27,6 +27,7 @@ public class WebAuthnService {
 
     private final WebAuthnCredentialRepository repository;
     private final WebAuthnCeremonyEngine engine;
+    private final CpfPasskeyIdentityLookup cpfIdentities;
     private final WebAuthnProperties properties;
     private final SecureRandom secureRandom;
     private final Supplier<String> idSupplier;
@@ -35,11 +36,13 @@ public class WebAuthnService {
     public WebAuthnService(
             WebAuthnCredentialRepository repository,
             WebAuthnCeremonyEngine engine,
+            CpfPasskeyIdentityLookup cpfIdentities,
             WebAuthnProperties properties
     ) {
         this(
                 repository,
                 engine,
+                cpfIdentities,
                 properties,
                 new SecureRandom(),
                 () -> UUID.randomUUID().toString()
@@ -49,12 +52,14 @@ public class WebAuthnService {
     WebAuthnService(
             WebAuthnCredentialRepository repository,
             WebAuthnCeremonyEngine engine,
+            CpfPasskeyIdentityLookup cpfIdentities,
             WebAuthnProperties properties,
             SecureRandom secureRandom,
             Supplier<String> idSupplier
     ) {
         this.repository = Objects.requireNonNull(repository);
         this.engine = Objects.requireNonNull(engine);
+        this.cpfIdentities = Objects.requireNonNull(cpfIdentities);
         this.properties = Objects.requireNonNull(properties);
         this.secureRandom = Objects.requireNonNull(secureRandom);
         this.idSupplier = Objects.requireNonNull(idSupplier);
@@ -133,12 +138,12 @@ public class WebAuthnService {
         );
     }
 
-    public WebAuthnOptionsResponse startAuthentication() {
+    public WebAuthnOptionsResponse startCpfBoundAuthentication(String cpf) {
         StartedWebAuthnCeremony started = engine.startAuthentication();
         String challengeId = nextId();
         repository.createChallenge(
                 challengeId,
-                null,
+                cpfIdentities.resolveOrDecoy(cpf).orElse(null),
                 WebAuthnCeremony.AUTHENTICATION,
                 started.challenge(),
                 started.requestJson(),
@@ -151,7 +156,7 @@ public class WebAuthnService {
         );
     }
 
-    public AuthenticatedIdentity finishAuthentication(
+    public AuthenticatedIdentity finishCpfBoundAuthentication(
             String challengeId,
             JsonNode credentialResponse
     ) {
@@ -159,6 +164,10 @@ public class WebAuthnService {
                 challengeId,
                 WebAuthnCeremony.AUTHENTICATION
         );
+        String challengeOwner = challenge.collaboratorId();
+        if (challengeOwner == null) {
+            throw invalidCredential();
+        }
         requireCredentialShape(credentialResponse);
 
         VerifiedWebAuthnAuthentication verified;
@@ -173,19 +182,22 @@ public class WebAuthnService {
         String handleOwner = WebAuthnUserHandle.toCollaboratorId(
                 verified.userHandle()
         ).orElseThrow(this::invalidCredential);
+        if (!challengeOwner.equals(verified.collaboratorId())
+                || !challengeOwner.equals(handleOwner)) {
+            throw invalidCredential();
+        }
         String persistedOwner = repository.findActiveCredentialOwner(
                 verified.credentialId()
         ).orElseThrow(this::invalidCredential);
-        if (!verified.collaboratorId().equals(handleOwner)
-                || !verified.collaboratorId().equals(persistedOwner)) {
+        if (!challengeOwner.equals(persistedOwner)) {
             throw invalidCredential();
         }
         AuthenticatedIdentity identity = repository.findActiveIdentity(
-                persistedOwner
+                challengeOwner
         ).orElseThrow(this::invalidCredential);
         if (!repository.recordAuthentication(
                 verified.credentialId(),
-                persistedOwner,
+                challengeOwner,
                 verified.signatureCount(),
                 verified.backedUp()
         )) {

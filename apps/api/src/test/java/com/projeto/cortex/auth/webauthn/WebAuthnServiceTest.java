@@ -249,6 +249,208 @@ class WebAuthnServiceTest {
     }
 
     @Test
+    void cpfBoundAuthenticationStoresCanonicalOwnerAndRemainsDiscoverable() {
+        WebAuthnCredentialRepository repository =
+                mock(WebAuthnCredentialRepository.class);
+        WebAuthnCeremonyEngine engine = mock(WebAuthnCeremonyEngine.class);
+        CpfPasskeyIdentityLookup lookup =
+                mock(CpfPasskeyIdentityLookup.class);
+        JsonNode publicKey = JSON.createObjectNode()
+                .put("challenge", "public-challenge");
+        StartedWebAuthnCeremony started = new StartedWebAuthnCeremony(
+                new ByteArray(new byte[]{1, 2, 3}),
+                "{\"request\":true}",
+                publicKey
+        );
+        when(lookup.resolveOrDecoy("529.982.247-25"))
+                .thenReturn(java.util.Optional.of(COLLABORATOR_ID));
+        when(engine.startAuthentication()).thenReturn(started);
+
+        WebAuthnOptionsResponse response = service(
+                repository,
+                engine,
+                lookup
+        ).startCpfBoundAuthentication("529.982.247-25");
+
+        assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
+        assertThat(response.publicKey()).isSameAs(publicKey);
+        assertThat(response.rpId()).isEqualTo("cortex.example.invalid");
+        verify(engine).startAuthentication();
+        verify(repository).createChallenge(
+                CHALLENGE_ID,
+                COLLABORATOR_ID,
+                WebAuthnCeremony.AUTHENTICATION,
+                started.challenge(),
+                started.requestJson(),
+                300
+        );
+    }
+
+    @Test
+    void invalidUnknownInactiveAndNoPasskeyCpfUseSameNullBoundDecoyShape() {
+        for (String cpf : java.util.List.of(
+                "invalid",
+                "111.444.777-35",
+                "529.982.247-25",
+                "390.533.447-05"
+        )) {
+            WebAuthnCredentialRepository repository =
+                    mock(WebAuthnCredentialRepository.class);
+            WebAuthnCeremonyEngine engine =
+                    mock(WebAuthnCeremonyEngine.class);
+            CpfPasskeyIdentityLookup lookup =
+                    mock(CpfPasskeyIdentityLookup.class);
+            JsonNode publicKey = JSON.createObjectNode()
+                    .put("challenge", "public-challenge");
+            StartedWebAuthnCeremony started = new StartedWebAuthnCeremony(
+                    new ByteArray(new byte[]{1, 2, 3}),
+                    "{\"request\":true}",
+                    publicKey
+            );
+            when(lookup.resolveOrDecoy(cpf))
+                    .thenReturn(java.util.Optional.empty());
+            when(engine.startAuthentication()).thenReturn(started);
+
+            WebAuthnOptionsResponse response = service(
+                    repository,
+                    engine,
+                    lookup
+            ).startCpfBoundAuthentication(cpf);
+
+            assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
+            assertThat(response.publicKey()).isSameAs(publicKey);
+            assertThat(response.rpId()).isEqualTo(
+                    "cortex.example.invalid"
+            );
+            verify(engine).startAuthentication();
+            verify(repository).createChallenge(
+                    CHALLENGE_ID,
+                    null,
+                    WebAuthnCeremony.AUTHENTICATION,
+                    started.challenge(),
+                    started.requestJson(),
+                    300
+            );
+        }
+    }
+
+    @Test
+    void nullBoundAuthenticationRejectsBeforeCredentialParsing() {
+        WebAuthnCredentialRepository repository =
+                mock(WebAuthnCredentialRepository.class);
+        WebAuthnCeremonyEngine engine = mock(WebAuthnCeremonyEngine.class);
+        JsonNode credential = JSON.createObjectNode().put("id", "synthetic");
+        StoredWebAuthnChallenge stored = new StoredWebAuthnChallenge(
+                CHALLENGE_ID,
+                null,
+                WebAuthnCeremony.AUTHENTICATION,
+                "{\"request\":true}"
+        );
+        when(repository.consumeChallenge(
+                CHALLENGE_ID,
+                WebAuthnCeremony.AUTHENTICATION
+        )).thenReturn(java.util.Optional.of(stored));
+
+        assertThatThrownBy(() -> service(repository, engine)
+                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Credencial inválida");
+
+        verify(engine, never()).finishAuthentication(any(), any());
+        verify(repository, never()).findActiveIdentity(any());
+        verify(repository, never()).recordAuthentication(
+                any(),
+                any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyBoolean()
+        );
+    }
+
+    @Test
+    void rejectsAssertionWhoseVerifiedCollaboratorDiffersFromBoundOwner() {
+        WebAuthnCredentialRepository repository =
+                mock(WebAuthnCredentialRepository.class);
+        WebAuthnCeremonyEngine engine = mock(WebAuthnCeremonyEngine.class);
+        JsonNode credential = JSON.createObjectNode().put("id", "synthetic");
+        ByteArray credentialId = new ByteArray(new byte[]{7, 8, 9});
+        StoredWebAuthnChallenge stored = new StoredWebAuthnChallenge(
+                CHALLENGE_ID,
+                COLLABORATOR_ID,
+                WebAuthnCeremony.AUTHENTICATION,
+                "{\"request\":true}"
+        );
+        when(repository.consumeChallenge(
+                CHALLENGE_ID,
+                WebAuthnCeremony.AUTHENTICATION
+        )).thenReturn(java.util.Optional.of(stored));
+        when(engine.finishAuthentication(stored.requestJson(), credential))
+                .thenReturn(new VerifiedWebAuthnAuthentication(
+                        OTHER_COLLABORATOR_ID,
+                        WebAuthnUserHandle.fromCollaboratorId(
+                                OTHER_COLLABORATOR_ID
+                        ),
+                        credentialId,
+                        8,
+                        true
+                ));
+
+        assertThatThrownBy(() -> service(repository, engine)
+                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Credencial inválida");
+
+        verify(repository, never()).findActiveIdentity(any());
+        verify(repository, never()).recordAuthentication(
+                any(),
+                any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyBoolean()
+        );
+    }
+
+    @Test
+    void rejectsAssertionWhoseUserHandleDiffersFromBoundOwner() {
+        WebAuthnCredentialRepository repository =
+                mock(WebAuthnCredentialRepository.class);
+        WebAuthnCeremonyEngine engine = mock(WebAuthnCeremonyEngine.class);
+        JsonNode credential = JSON.createObjectNode().put("id", "synthetic");
+        ByteArray credentialId = new ByteArray(new byte[]{7, 8, 9});
+        StoredWebAuthnChallenge stored = new StoredWebAuthnChallenge(
+                CHALLENGE_ID,
+                COLLABORATOR_ID,
+                WebAuthnCeremony.AUTHENTICATION,
+                "{\"request\":true}"
+        );
+        when(repository.consumeChallenge(
+                CHALLENGE_ID,
+                WebAuthnCeremony.AUTHENTICATION
+        )).thenReturn(java.util.Optional.of(stored));
+        when(engine.finishAuthentication(stored.requestJson(), credential))
+                .thenReturn(new VerifiedWebAuthnAuthentication(
+                        COLLABORATOR_ID,
+                        WebAuthnUserHandle.fromCollaboratorId(
+                                OTHER_COLLABORATOR_ID
+                        ),
+                        credentialId,
+                        8,
+                        true
+                ));
+
+        assertThatThrownBy(() -> service(repository, engine)
+                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Credencial inválida");
+
+        verify(repository, never()).findActiveIdentity(any());
+        verify(repository, never()).recordAuthentication(
+                any(),
+                any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyBoolean()
+        );
+    }
+
+    @Test
     void rejectsAssertionWhoseCredentialBelongsToAnotherCollaborator() {
         WebAuthnCredentialRepository repository =
                 mock(WebAuthnCredentialRepository.class);
@@ -260,7 +462,7 @@ class WebAuthnServiceTest {
         );
         StoredWebAuthnChallenge stored = new StoredWebAuthnChallenge(
                 CHALLENGE_ID,
-                null,
+                COLLABORATOR_ID,
                 WebAuthnCeremony.AUTHENTICATION,
                 "{\"request\":true}"
         );
@@ -280,7 +482,7 @@ class WebAuthnServiceTest {
                 .thenReturn(java.util.Optional.of(OTHER_COLLABORATOR_ID));
 
         assertThatThrownBy(() -> service(repository, engine)
-                .finishAuthentication(CHALLENGE_ID, credential))
+                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Credencial inválida");
 
@@ -304,7 +506,7 @@ class WebAuthnServiceTest {
         );
         StoredWebAuthnChallenge stored = new StoredWebAuthnChallenge(
                 CHALLENGE_ID,
-                null,
+                COLLABORATOR_ID,
                 WebAuthnCeremony.AUTHENTICATION,
                 "{\"request\":true}"
         );
@@ -332,7 +534,7 @@ class WebAuthnServiceTest {
                 true
         )).thenReturn(true);
 
-        assertThat(service(repository, engine).finishAuthentication(
+        assertThat(service(repository, engine).finishCpfBoundAuthentication(
                 CHALLENGE_ID,
                 credential
         )).isSameAs(identity);
@@ -376,6 +578,18 @@ class WebAuthnServiceTest {
             WebAuthnCredentialRepository repository,
             WebAuthnCeremonyEngine engine
     ) {
+        return service(
+                repository,
+                engine,
+                mock(CpfPasskeyIdentityLookup.class)
+        );
+    }
+
+    private WebAuthnService service(
+            WebAuthnCredentialRepository repository,
+            WebAuthnCeremonyEngine engine,
+            CpfPasskeyIdentityLookup lookup
+    ) {
         SecureRandom random = mock(SecureRandom.class);
         org.mockito.Mockito.doAnswer(invocation -> {
             byte[] bytes = invocation.getArgument(0);
@@ -387,6 +601,7 @@ class WebAuthnServiceTest {
         return new WebAuthnService(
                 repository,
                 engine,
+                lookup,
                 new WebAuthnProperties(
                         "cortex.example.invalid",
                         "Cortex",

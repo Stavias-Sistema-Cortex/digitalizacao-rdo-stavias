@@ -5,6 +5,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,7 @@ public class WebAuthnController {
     private final CurrentUserService currentUser;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
+    private final AuthSessionProfileResolver sessionProfiles;
     private final ClientAddressResolver clientAddresses;
     private final WebAuthnRateLimiter rateLimiter;
 
@@ -31,6 +33,7 @@ public class WebAuthnController {
             CurrentUserService currentUser,
             AuthSessionService sessions,
             AuthCookieService cookies,
+            AuthSessionProfileResolver sessionProfiles,
             ClientAddressResolver clientAddresses,
             WebAuthnRateLimiter rateLimiter
     ) {
@@ -38,6 +41,7 @@ public class WebAuthnController {
         this.currentUser = currentUser;
         this.sessions = sessions;
         this.cookies = cookies;
+        this.sessionProfiles = sessionProfiles;
         this.clientAddresses = clientAddresses;
         this.rateLimiter = rateLimiter;
     }
@@ -65,6 +69,8 @@ public class WebAuthnController {
 
     @PostMapping("/api/auth/passkeys/authentication/options")
     public WebAuthnOptionsResponse startAuthentication(
+            @RequestBody(required = false)
+            CpfPasskeyAuthenticationRequest authenticationRequest,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
@@ -73,7 +79,11 @@ public class WebAuthnController {
                 WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
                 request
         );
-        return webAuthn.startAuthentication();
+        return webAuthn.startCpfBoundAuthentication(
+                authenticationRequest == null
+                        ? null
+                        : authenticationRequest.cpf()
+        );
     }
 
     @PostMapping("/api/auth/passkeys/authentication/verify")
@@ -87,16 +97,17 @@ public class WebAuthnController {
                 WebAuthnRateLimitAction.AUTHENTICATION_VERIFY,
                 request
         );
-        AuthenticatedIdentity identity = webAuthn.finishAuthentication(
-                result == null ? null : result.challengeId(),
-                result == null ? null : result.credential()
-        );
+        AuthenticatedIdentity identity =
+                webAuthn.finishCpfBoundAuthentication(
+                        result == null ? null : result.challengeId(),
+                        result == null ? null : result.credential()
+                );
+        sessionProfiles.requireEligibleForSessionIssue(identity);
         IssuedAuthSession issued = sessions.issue(identity);
         cookies.write(response, issued);
-        return AuthSessionResponse.from(
+        return sessionProfiles.profileForIssuedSession(
                 identity,
-                issued.expiresAt(),
-                currentUser.allowedObraIds(identity.colaboradorId())
+                issued.expiresAt()
         );
     }
 
