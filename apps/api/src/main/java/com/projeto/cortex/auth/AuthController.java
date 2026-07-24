@@ -43,6 +43,7 @@ public class AuthController {
     private final AuthCookieService cookies;
     private final AuthSessionProfileResolver sessionProfiles;
     private final DirectCpfLoginPolicy directCpfLoginPolicy;
+    private final EmailOtpAuthenticationPolicy emailOtpAuthenticationPolicy;
 
     @Autowired
     public AuthController(
@@ -52,7 +53,8 @@ public class AuthController {
             AuthSessionService sessions,
             AuthCookieService cookies,
             AuthSessionProfileResolver sessionProfiles,
-            DirectCpfLoginPolicy directCpfLoginPolicy
+            DirectCpfLoginPolicy directCpfLoginPolicy,
+            EmailOtpAuthenticationPolicy emailOtpAuthenticationPolicy
     ) {
         this.otpChallenges = otpChallenges;
         this.authService = authService;
@@ -61,6 +63,7 @@ public class AuthController {
         this.cookies = cookies;
         this.sessionProfiles = sessionProfiles;
         this.directCpfLoginPolicy = directCpfLoginPolicy;
+        this.emailOtpAuthenticationPolicy = emailOtpAuthenticationPolicy;
     }
 
     @PostMapping("/api/auth/email/challenges")
@@ -70,6 +73,7 @@ public class AuthController {
             HttpServletRequest servletRequest,
             HttpServletResponse servletResponse
     ) {
+        emailOtpAuthenticationPolicy.requireEnabled();
         servletResponse.setHeader("Cache-Control", "no-store");
         return otpChallenges.request(
                 request == null ? null : request.identifier(),
@@ -83,6 +87,7 @@ public class AuthController {
             @RequestBody(required = false) OtpVerifyRequest request,
             HttpServletResponse response
     ) {
+        emailOtpAuthenticationPolicy.requireEnabled();
         AuthenticatedIdentity identity = otpChallenges.verify(
                 challengeId,
                 request == null ? null : request.code()

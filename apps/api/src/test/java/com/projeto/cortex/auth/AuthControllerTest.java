@@ -65,7 +65,8 @@ class AuthControllerTest {
                 sessions,
                 cookies,
                 currentUsers,
-                new DirectCpfLoginPolicy(false)
+                new DirectCpfLoginPolicy(false),
+                new EmailOtpAuthenticationPolicy(false, false)
         )).build();
         when(currentUsers.profileForIssuedSession(any(), any())).thenAnswer(
                 invocation -> profileFor(
@@ -132,7 +133,8 @@ class AuthControllerTest {
                         sessions,
                         cookies,
                         currentUsers,
-                        new DirectCpfLoginPolicy(true)
+                        new DirectCpfLoginPolicy(true),
+                        new EmailOtpAuthenticationPolicy(true, false)
                 )
         ).build();
 
@@ -179,6 +181,53 @@ class AuthControllerTest {
                 ))
                 .andExpect(jsonPath("$.email").doesNotExist())
                 .andExpect(jsonPath("$.papelAcesso").doesNotExist());
+    }
+
+    @Test
+    void normalPostgresqlRejectsEmailOtpEvenAfterAuthenticationFilter()
+            throws Exception {
+        MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
+                new AuthController(
+                        otp,
+                        Optional.of(authService),
+                        addresses,
+                        sessions,
+                        cookies,
+                        currentUsers,
+                        new DirectCpfLoginPolicy(true),
+                        new EmailOtpAuthenticationPolicy(true, false)
+                )
+        ).build();
+        ResolvedAuthSession authenticated = new ResolvedAuthSession(
+                SESSION_ID,
+                COLLABORATOR_ID,
+                "Pessoa Sintética",
+                PapelAcesso.BETA,
+                EXPIRY,
+                "a".repeat(64)
+        );
+
+        postgresqlMvc.perform(post("/api/auth/email/challenges")
+                        .requestAttr(
+                                AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
+                                authenticated
+                        )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"identifier\":\"11144477735\"}"))
+                .andExpect(status().isGone());
+        postgresqlMvc.perform(post(
+                        "/api/auth/email/challenges/{id}/verify",
+                        CHALLENGE_ID
+                ).requestAttr(
+                        AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
+                        authenticated
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"123456\"}"))
+                .andExpect(status().isGone());
+
+        verifyNoInteractions(otp, addresses);
+        verify(sessions, never()).issue(any());
+        verify(cookies, never()).write(any(), any());
     }
 
     @Test
@@ -247,7 +296,8 @@ class AuthControllerTest {
                         sessions,
                         cookies,
                         new PostgresqlActivationSessionProfileResolver(),
-                        new DirectCpfLoginPolicy(true)
+                        new DirectCpfLoginPolicy(true),
+                        new EmailOtpAuthenticationPolicy(true, true)
                 )
         ).build();
 

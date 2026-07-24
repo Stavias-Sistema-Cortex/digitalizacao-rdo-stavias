@@ -81,6 +81,7 @@ class PostgresqlMinimalLauncherContractTest {
                 "HealthController.class",
                 "ReadinessController.class",
                 "AuthController.class",
+                "EmailOtpAuthenticationPolicy.class",
                 "PostgresqlActivationSessionProfileResolver.class",
                 "AuthFilterConfiguration.class",
                 "PostgresqlActivationGateConfiguration.class",

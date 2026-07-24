@@ -113,6 +113,7 @@ Expected: PASS. `YubicoWebAuthnCeremonyEngineTest` still proves that options omi
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/webauthn/WebAuthnRateLimiterTest.java`
 - Create: `apps/api/src/test/java/com/projeto/cortex/auth/session/AuthPublicEndpointPolicyTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/postgresql/PostgresqlAuthSessionRepositoryIT.java`
+- Create: `apps/api/src/test/java/com/projeto/cortex/auth/postgresql/PostgresqlCpfPasskeyIdentityLookupIT.java`
 
 **Interfaces:**
 - All public passkey POST bodies are bounded and cached before MVC parsing.
@@ -137,6 +138,8 @@ Expected: FAIL because options bodies are not bounded/cached and no protected id
 - [ ] **Step 3: Write failing PostgreSQL policy/session tests**
 
 Create `AuthPublicEndpointPolicyTest` using `MockHttpServletRequest`. Assert normal PostgreSQL exposes exactly the two passkey authentication paths and blocks OTP/direct CPF. Assert activation exposes bounded OTP and blocks passkey. Invert the second `PostgresqlAuthSessionRepositoryIT` assertion so an `ATIVA` identity with `email_autenticacao = NULL` resolves its opaque session.
+
+Create `PostgresqlCpfPasskeyIdentityLookupIT` from `PostgresqlAuthPersistenceTestSupport`. Insert one protected HMAC identity and one unrevoked WebAuthn credential, then assert lookup returns its UUID. Independently assert inactive, `BLOQUEADA`, revoked/no-passkey, and two-owner HMAC states return the decoy/empty result; the test must use only synthetic CPF/HMAC material and never a real secret.
 
 - [ ] **Step 4: Run policy and PostgreSQL regression tests and verify RED**
 
