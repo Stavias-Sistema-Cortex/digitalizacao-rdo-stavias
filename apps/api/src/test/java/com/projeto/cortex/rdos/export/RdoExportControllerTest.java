@@ -39,7 +39,7 @@ class RdoExportControllerTest {
             throws Exception {
         byte[] bytes = "xlsx".getBytes(StandardCharsets.UTF_8);
         when(service.export("rdo-7")).thenReturn(
-                new RdoXlsxExportService.ExportedRdo(
+                new RdoExportFile(
                         bytes,
                         "rdo-RDO-0007.xlsx"
                 )

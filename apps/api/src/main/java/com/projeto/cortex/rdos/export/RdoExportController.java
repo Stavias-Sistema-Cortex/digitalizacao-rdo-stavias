@@ -31,7 +31,7 @@ public class RdoExportController {
     @GetMapping("/api/rdos/{id}/export.xlsx")
     public ResponseEntity<byte[]> export(@PathVariable String id) {
         currentUserService.requireRdoAccess(id);
-        RdoXlsxExportService.ExportedRdo exported = exportService.export(id);
+        RdoExportFile exported = exportService.export(id);
         byte[] content = exported.content();
 
         return ResponseEntity.ok()

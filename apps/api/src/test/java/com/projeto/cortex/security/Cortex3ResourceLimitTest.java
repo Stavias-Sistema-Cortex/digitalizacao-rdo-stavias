@@ -26,6 +26,7 @@ import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
 import com.projeto.cortex.rdos.RdoWorkflowService;
+import com.projeto.cortex.rdos.export.RdoExportAggregateFactory;
 import com.projeto.cortex.rdos.export.RdoExportWorksiteReader;
 import com.projeto.cortex.rdos.export.RdoXlsxExportService;
 import com.projeto.cortex.storage.ReopenableInput;
@@ -138,7 +139,9 @@ class Cortex3ResourceLimitTest {
         when(worksite.read("obra-1")).thenReturn(
                 new RdoExportWorksiteReader.Worksite("Obra Norte", "CW-001")
         );
-        RdoXlsxExportService exporter = new RdoXlsxExportService(query, worksite);
+        RdoXlsxExportService exporter = new RdoXlsxExportService(
+                new RdoExportAggregateFactory(query, worksite)
+        );
 
         when(query.buscarPorId("exact")).thenReturn(rdo(
                 RDO_WORKFORCE_LIMIT, RDO_SERVICE_LIMIT, RDO_MATERIAL_LIMIT,
