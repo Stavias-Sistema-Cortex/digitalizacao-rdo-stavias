@@ -56,9 +56,32 @@ function LocationProbe() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("CortexShell chrome", () => {
+  it("mantém a semântica acessível ao recolher e expandir o menu", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <ShellWithHeaderSlot />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Recolher menu" }));
+    expect(screen.getByRole("button", { name: "Expandir menu" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Expandir menu" }));
+    expect(screen.getByRole("button", { name: "Recolher menu" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
   it("fornece os controles globais apenas pelo slot descendente do cabeçalho", () => {
     render(
       <MemoryRouter>

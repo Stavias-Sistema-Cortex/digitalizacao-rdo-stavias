@@ -31,6 +31,7 @@ function lastRule(css: string, selector: string): string {
 }
 
 const globalCss = readCss("./index.css");
+const headerCss = readCss("./components/header/CortexPageHeader.css");
 const syncCss = readCss("./components/SyncStatusBanner.css");
 const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
 const integracoesCss = readCss("./features/integracoes/IntegracoesPage.css");
@@ -72,11 +73,37 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(authenticatedCss).not.toContain("backdrop-filter");
   });
 
-  it("usa a sidebar preto-verde aprovada e métricas operacionais discretas", () => {
+  it("usa uma única superfície contínua para sidebar e cabeçalhos", () => {
     const sidebar = lastRule(globalCss, ".cortex-sidebar");
-    expect(sidebar).toContain("background: linear-gradient(");
-    expect(sidebar).toContain("#111312 0%");
-    expect(sidebar).toContain("var(--color-brand-teal) 100%");
+    const shell = rule(globalCss, ".cortex-shell");
+    const header = rule(headerCss, ".cortex-page-header");
+    const compatibilityHeader = rule(
+      headerCss,
+      ".cortex-page-header.workspace-header,\n" +
+        ".cortex-page-header.institutional-page-header,\n" +
+        ".cortex-page-header.mensagens-header",
+    );
+
+    expect(shell).toContain("--cortex-shell-chrome-surface:");
+    expect(shell).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(sidebar).toContain("background: transparent;");
+    expect(header).toContain("background: transparent;");
+    expect(compatibilityHeader).toContain("background: transparent;");
+  });
+
+  it("mantém a alavanca de recolher visível e sinalizada", () => {
+    const sidebar = lastRule(globalCss, ".cortex-sidebar");
+    const toggle = lastRule(globalCss, ".sidebar-toggle");
+
+    expect(sidebar).toContain("z-index: 1;");
+    expect(toggle).toContain("width: 44px;");
+    expect(toggle).toContain("height: 48px;");
+    expect(toggle).toContain("right: -22px;");
+    expect(toggle).toContain("background: var(--color-brand-yellow);");
+    expect(toggle).toContain("color: #111312;");
+  });
+
+  it("mantém métricas operacionais discretas", () => {
     expect(rule(globalCss, ".metric-card")).toContain(
       "background: var(--color-surface);",
     );

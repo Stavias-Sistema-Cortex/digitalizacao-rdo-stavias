@@ -8,8 +8,7 @@
   padding: clamp(24px, 3vw, 42px) clamp(20px, 3.5vw, 52px) 22px;
   border: 0;
   border-block-end: 3px solid var(--color-brand-yellow, #f2c800);
-  background:
-    linear-gradient(104deg, #101311 0%, #0b2c29 52%, #124e4a 100%);
+  background: transparent;
   color: #fff;
 }
 
@@ -112,7 +111,7 @@
   padding: clamp(24px, 3vw, 42px) clamp(20px, 3.5vw, 52px) 22px;
   border: 0;
   border-block-end: 3px solid var(--color-brand-yellow, #f2c800);
-  background: linear-gradient(104deg, #101311 0%, #0b2c29 52%, #124e4a 100%);
+  background: transparent;
   color: #fff;
 }
 
