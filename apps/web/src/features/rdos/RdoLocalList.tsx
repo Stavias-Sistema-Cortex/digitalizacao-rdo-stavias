@@ -31,6 +31,7 @@ import {
   rdoWorkbookSnapshotFromLocalRecord,
   type RdoExportAvailability,
 } from "./export/rdoWorkbookMapping";
+import { loadLocalRdoPdfExportAvailability } from "./export/rdoPdfAvailability";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -50,6 +51,16 @@ interface RdoLocalListProps {
 
 type PeriodFilter = "TODOS" | "HOJE" | "7_DIAS" | "30_DIAS";
 type RdoExportFormat = "XLSX" | "PDF";
+type RdoExportNotice = {
+  message: string;
+  isError: boolean;
+};
+type PdfValidationState = {
+  generation: string;
+  retryEpoch: number;
+  statuses: Map<string, RdoExportAvailability>;
+  retryable: boolean;
+};
 
 type ProfileTarget =
   | { type: "OBRA"; id: string; label: string }
@@ -363,16 +374,16 @@ export function RdoLocalList({
     rdoId: string;
     format: RdoExportFormat;
   } | null>(null);
-  const [exportNotice, setExportNotice] = useState<{
-    rdoId: string;
-    format: RdoExportFormat;
-    message: string;
-    isError: boolean;
-  } | null>(null);
-  const [pdfValidatedAvailability, setPdfValidatedAvailability] = useState<{
-    key: string;
-    statuses: Map<string, RdoExportAvailability>;
-  }>({ key: "", statuses: new Map() });
+  const [exportNotices, setExportNotices] = useState<
+    Record<string, Partial<Record<RdoExportFormat, RdoExportNotice>>>
+  >({});
+  const [pdfAvailabilityRetryEpoch, setPdfAvailabilityRetryEpoch] = useState(0);
+  const [pdfValidatedAvailability, setPdfValidatedAvailability] = useState<PdfValidationState>({
+    generation: "",
+    retryEpoch: -1,
+    statuses: new Map(),
+    retryable: false,
+  });
 
   useEffect(() => {
     let active = true;
@@ -439,38 +450,31 @@ export function RdoLocalList({
     return statuses;
   }, [cachedWorksites, isLoadingWorksites, records, worksiteError]);
 
-  const pdfAvailabilityKey = useMemo(
-    () => [
-      ...records.map((record) => `${record.id}:${record.updatedAt}:${record.obraId}`),
-      ...Array.from(cachedWorksites.values(), (obra) =>
-        `${obra.id}:${obra.nome}:${obra.codigoContrato}`,
-      ),
-    ].join("|"),
-    [cachedWorksites, records],
+  const pdfValidationSource = JSON.stringify(
+    {
+      worksiteRequestKey,
+      isLoadingWorksites,
+      worksiteError,
+      records: records.map((record) => ({
+        record,
+        obra: cachedWorksites.get(record.obraId) ?? null,
+      })),
+    },
   );
 
   useEffect(() => {
     let active = true;
-    const pending = new Map<string, RdoExportAvailability>();
-    const recordsReadyForPdf: LocalRdoRecord[] = [];
-
-    for (const record of records) {
-      const availability = exportAvailabilityByRdo.get(record.id);
-      if (!availability?.ready) {
-        pending.set(record.id, availability ?? {
-          ready: false,
-          code: null,
-          message: "Exportação PDF indisponível",
-        });
-      } else {
-        recordsReadyForPdf.push(record);
-        pending.set(record.id, {
-          ready: false,
-          code: null,
-          message: "Verificando a disponibilidade do PDF…",
-        });
-      }
-    }
+    const { records: pdfValidationSnapshot } = JSON.parse(
+      pdfValidationSource,
+    ) as {
+      records: Array<{
+        record: LocalRdoRecord;
+        obra: { id: string; nome: string; codigoContrato: string } | null;
+      }>;
+    };
+    const recordsReadyForPdf = pdfValidationSnapshot.filter(({ record, obra }) =>
+      localRdoExportAvailability(record, obra ?? undefined).ready
+    );
 
     if (recordsReadyForPdf.length === 0) {
       return () => {
@@ -478,37 +482,47 @@ export function RdoLocalList({
       };
     }
 
-    void import("./export/exportRdoPdf")
-      .then(({ localRdoPdfExportAvailability }) => {
+    void loadLocalRdoPdfExportAvailability()
+      .then((localRdoPdfExportAvailability) => {
         if (!active) return;
-        const statuses = new Map(pending);
-        for (const record of recordsReadyForPdf) {
+        const statuses = new Map<string, RdoExportAvailability>();
+        for (const { record, obra } of recordsReadyForPdf) {
           statuses.set(
             record.id,
             localRdoPdfExportAvailability(
               record,
-              cachedWorksites.get(record.obraId),
+              obra ?? undefined,
             ),
           );
         }
-        setPdfValidatedAvailability({ key: pdfAvailabilityKey, statuses });
+        setPdfValidatedAvailability({
+          generation: pdfValidationSource,
+          retryEpoch: pdfAvailabilityRetryEpoch,
+          statuses,
+          retryable: false,
+        });
       })
       .catch((caught: unknown) => {
         if (!active) return;
         const message = caught instanceof Error
           ? caught.message
           : "Não foi possível validar a disponibilidade do PDF offline.";
-        const statuses = new Map(pending);
-        for (const record of recordsReadyForPdf) {
+        const statuses = new Map<string, RdoExportAvailability>();
+        for (const { record } of recordsReadyForPdf) {
           statuses.set(record.id, { ready: false, code: null, message });
         }
-        setPdfValidatedAvailability({ key: pdfAvailabilityKey, statuses });
+        setPdfValidatedAvailability({
+          generation: pdfValidationSource,
+          retryEpoch: pdfAvailabilityRetryEpoch,
+          statuses,
+          retryable: true,
+        });
       });
 
     return () => {
       active = false;
     };
-  }, [cachedWorksites, exportAvailabilityByRdo, pdfAvailabilityKey, records]);
+  }, [pdfAvailabilityRetryEpoch, pdfValidationSource]);
 
   const pdfExportAvailabilityByRdo = useMemo(() => {
     const statuses = new Map<string, RdoExportAvailability>();
@@ -523,7 +537,8 @@ export function RdoLocalList({
       } else {
         statuses.set(
           record.id,
-          pdfValidatedAvailability.key === pdfAvailabilityKey
+          pdfValidatedAvailability.generation === pdfValidationSource &&
+              pdfValidatedAvailability.retryEpoch === pdfAvailabilityRetryEpoch
             ? pdfValidatedAvailability.statuses.get(record.id) ?? {
               ready: false,
               code: null,
@@ -538,7 +553,27 @@ export function RdoLocalList({
       }
     }
     return statuses;
-  }, [exportAvailabilityByRdo, pdfAvailabilityKey, pdfValidatedAvailability, records]);
+  }, [
+    exportAvailabilityByRdo,
+    pdfAvailabilityRetryEpoch,
+    pdfValidatedAvailability,
+    pdfValidationSource,
+    records,
+  ]);
+
+  function rememberExportNotice(
+    rdoId: string,
+    format: RdoExportFormat,
+    notice: RdoExportNotice,
+  ) {
+    setExportNotices((current) => ({
+      ...current,
+      [rdoId]: {
+        ...current[rdoId],
+        [format]: notice,
+      },
+    }));
+  }
 
   async function handleExport(
     record: LocalRdoRecord,
@@ -550,7 +585,6 @@ export function RdoLocalList({
     if (!availability?.ready || exporting) return;
 
     setExporting({ rdoId: record.id, format });
-    setExportNotice(null);
     try {
       const snapshot = rdoWorkbookSnapshotFromLocalRecord(
         record,
@@ -580,9 +614,7 @@ export function RdoLocalList({
         }
       }
 
-      setExportNotice({
-        rdoId: record.id,
-        format,
+      rememberExportNotice(record.id, format, {
         message: useAuthoritativeServer
           ? `${format} autorizado pelo servidor baixado.`
           : record.syncStatus === "SYNCED"
@@ -591,9 +623,7 @@ export function RdoLocalList({
         isError: false,
       });
     } catch (caught: unknown) {
-      setExportNotice({
-        rdoId: record.id,
-        format,
+      rememberExportNotice(record.id, format, {
         message:
           caught instanceof Error
             ? `${format}: ${caught.message}`
@@ -907,6 +937,13 @@ export function RdoLocalList({
               )[0];
             const exportAvailability = exportAvailabilityByRdo.get(record.id);
             const pdfExportAvailability = pdfExportAvailabilityByRdo.get(record.id);
+            const xlsxExportNotice = exportNotices[record.id]?.XLSX;
+            const pdfExportNotice = exportNotices[record.id]?.PDF;
+            const isPdfAvailabilityRetryable =
+              pdfValidatedAvailability.retryable &&
+              pdfValidatedAvailability.generation === pdfValidationSource &&
+              pdfValidatedAvailability.retryEpoch === pdfAvailabilityRetryEpoch &&
+              pdfValidatedAvailability.statuses.has(record.id);
 
             return (
               <article className="rdo-operational-card" key={record.id}>
@@ -1007,16 +1044,14 @@ export function RdoLocalList({
                     </button>
                     <small
                       className={
-                        exportNotice?.rdoId === record.id &&
-                          exportNotice.format === "XLSX" &&
-                          exportNotice.isError
+                        xlsxExportNotice?.isError
                           ? "rdo-export-state rdo-export-state--error"
                           : "rdo-export-state"
                       }
                       aria-live="polite"
                     >
-                      {exportNotice?.rdoId === record.id && exportNotice.format === "XLSX"
-                        ? exportNotice.message
+                      {xlsxExportNotice
+                        ? xlsxExportNotice.message
                         :
                         (exportAvailability?.ready
                           ? record.syncStatus === "SYNCED" &&
@@ -1039,16 +1074,14 @@ export function RdoLocalList({
                     </button>
                     <small
                       className={
-                        exportNotice?.rdoId === record.id &&
-                          exportNotice.format === "PDF" &&
-                          exportNotice.isError
+                        pdfExportNotice?.isError || isPdfAvailabilityRetryable
                           ? "rdo-export-state rdo-export-state--error"
                           : "rdo-export-state"
                       }
                       aria-live="polite"
                     >
-                      {exportNotice?.rdoId === record.id && exportNotice.format === "PDF"
-                        ? exportNotice.message
+                      {pdfExportNotice
+                        ? pdfExportNotice.message
                         :
                         (pdfExportAvailability?.ready
                           ? record.syncStatus === "SYNCED" &&
@@ -1058,6 +1091,18 @@ export function RdoLocalList({
                           : pdfExportAvailability?.message ??
                             "Exportação PDF indisponível")}
                     </small>
+                    {isPdfAvailabilityRetryable ? (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={() =>
+                          setPdfAvailabilityRetryEpoch((epoch) => epoch + 1)
+                        }
+                        disabled={Boolean(exporting)}
+                      >
+                        Tentar validar PDF
+                      </button>
+                    ) : null}
                   </div>
                   <button
                     type="button"

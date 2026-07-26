@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { RdoLocalList } from "./RdoLocalList";
+import { localRdoPdfExportAvailability } from "./export/exportRdoPdf";
 
 const mocks = vi.hoisted(() => ({
   listWorksites: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   downloadServer: vi.fn(),
   downloadPdfLocal: vi.fn(),
   downloadPdfServer: vi.fn(),
+  loadPdfAvailability: vi.fn(),
 }));
 
 vi.mock("./rdoCreationContextRepository", () => ({
@@ -27,6 +29,10 @@ vi.mock("./export/exportRdoPdf", async (importOriginal) => ({
   ...await importOriginal<typeof import("./export/exportRdoPdf")>(),
   downloadRdoPdf: mocks.downloadPdfLocal,
   downloadAuthoritativeRdoPdf: mocks.downloadPdfServer,
+}));
+
+vi.mock("./export/rdoPdfAvailability", () => ({
+  loadLocalRdoPdfExportAvailability: mocks.loadPdfAvailability,
 }));
 
 vi.mock("../programacoes/ProgramacaoSemanalImport", () => ({
@@ -85,8 +91,8 @@ function record(
   };
 }
 
-function renderList(localRecord = record()) {
-  render(
+function list(localRecord = record()) {
+  return (
     <RdoLocalList
       records={[localRecord]}
       events={[]}
@@ -98,8 +104,12 @@ function renderList(localRecord = record()) {
       isImporting={false}
       onOpen={vi.fn()}
       onRefresh={vi.fn()}
-    />,
+    />
   );
+}
+
+function renderList(localRecord = record()) {
+  return render(list(localRecord));
 }
 
 describe("RdoLocalList offline export", () => {
@@ -111,6 +121,8 @@ describe("RdoLocalList offline export", () => {
     mocks.downloadServer.mockReset();
     mocks.downloadPdfLocal.mockReset();
     mocks.downloadPdfServer.mockReset();
+    mocks.loadPdfAvailability.mockReset();
+    mocks.loadPdfAvailability.mockResolvedValue(localRdoPdfExportAvailability);
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,
       value: false,
@@ -279,6 +291,86 @@ describe("RdoLocalList offline export", () => {
     expect(await screen.findByText(
       "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
     )).toBeInTheDocument();
+  });
+
+  it("retries PDF availability after a transient module-load failure", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.loadPdfAvailability
+      .mockRejectedValueOnce(new Error("Falha temporária ao carregar o PDF."))
+      .mockResolvedValueOnce(localRdoPdfExportAvailability);
+    renderList();
+
+    const pdfButton = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(pdfButton).toBeDisabled());
+    expect(await screen.findByText(
+      "Falha temporária ao carregar o PDF.",
+    )).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Tentar validar PDF" }));
+
+    await waitFor(() => expect(pdfButton).toBeEnabled());
+    expect(mocks.loadPdfAvailability).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reuse PDF availability when a record payload changes without metadata", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    const view = renderList();
+
+    const pdfButton = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(pdfButton).toBeEnabled());
+
+    let resolveAvailability: (() => void) | undefined;
+    mocks.loadPdfAvailability.mockImplementationOnce(
+      () => new Promise<typeof localRdoPdfExportAvailability>((resolve) => {
+        resolveAvailability = () => resolve(localRdoPdfExportAvailability);
+      }),
+    );
+    view.rerender(list(record({
+      payload: {
+        ...record().payload,
+        observacoes: "Frente com alerta ⚠",
+      },
+    })));
+
+    expect(pdfButton).toBeDisabled();
+    expect(screen.getByText(
+      "Verificando a disponibilidade do PDF…",
+    )).toBeInTheDocument();
+
+    await waitFor(() => expect(resolveAvailability).toBeTypeOf("function"));
+    (resolveAvailability as () => void)();
+
+    expect(await screen.findByText(
+      "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    )).toBeInTheDocument();
+    expect(pdfButton).toBeDisabled();
+  });
+
+  it("preserves each format notice after independent export failures", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.downloadServer.mockRejectedValue(new Error("Falha XLSX."));
+    mocks.downloadPdfServer.mockRejectedValue(new Error("Falha PDF."));
+    renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
+
+    const xlsxButton = await screen.findByRole("button", { name: "Exportar XLSX" });
+    const pdfButton = screen.getByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(pdfButton).toBeEnabled());
+    fireEvent.click(xlsxButton);
+    expect(await screen.findByText("XLSX: Falha XLSX.")).toBeInTheDocument();
+
+    fireEvent.click(pdfButton);
+    expect(await screen.findByText("PDF: Falha PDF.")).toBeInTheDocument();
+    expect(screen.getByText("XLSX: Falha XLSX.")).toBeInTheDocument();
   });
 
   it("keeps export disabled with the literal missing-worksite reason", async () => {
