@@ -11,7 +11,11 @@ import {
   rdoPdfFilename,
 } from "./exportRdoPdf";
 import { buildRdoPdf } from "./rdoPdfLayout";
-import type { RdoWorkbookSnapshot } from "./rdoWorkbookMapping";
+import {
+  RdoWorkbookExportError,
+  type RdoExportErrorCode,
+  type RdoWorkbookSnapshot,
+} from "./rdoWorkbookMapping";
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -135,6 +139,27 @@ function pdfText(bytes: Uint8Array): string {
   return new TextDecoder("latin1").decode(bytes);
 }
 
+function expectPdfErrorWithoutOutput(
+  value: RdoWorkbookSnapshot,
+  code: RdoExportErrorCode,
+  message?: string,
+): void {
+  let output: Uint8Array | undefined;
+  let error: unknown;
+  try {
+    output = exportRdoPdf(value);
+  } catch (candidate) {
+    error = candidate;
+  }
+
+  expect(error).toBeInstanceOf(RdoWorkbookExportError);
+  expect(error).toMatchObject({
+    code,
+    ...(message ? { message } : {}),
+  });
+  expect(output).toBeUndefined();
+}
+
 describe("local RDO PDF export", () => {
   beforeEach(() => {
     mocks.apiFetch.mockReset();
@@ -206,12 +231,96 @@ describe("local RDO PDF export", () => {
     const value = snapshot();
     value.rdo.observacoes = observations;
 
-    expect(() => exportRdoPdf(value)).toThrowError(
-      expect.objectContaining({
-        code: "RDO_EXPORT_UNSUPPORTED_PDF_GLYPH",
-        message:
-          "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
-      }),
+    expectPdfErrorWithoutOutput(
+      value,
+      "RDO_EXPORT_UNSUPPORTED_PDF_GLYPH",
+      "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    );
+  });
+
+  it.each([
+    [
+      "the apontador signature",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.apontadorRdo = "\nAna Apontadora";
+      },
+    ],
+    [
+      "a workforce role",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.maoObra[0].cargo = "\nApontador";
+      },
+    ],
+    [
+      "an equipment description",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.equipamentos[0].descricao = "\nEscavadeira";
+      },
+    ],
+    [
+      "a material description",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.materiais[0].materialNome = "\nCAP";
+      },
+    ],
+    [
+      "a geometric service order",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.controlesGeometricos[0].ordemServico = "\nOS-7";
+      },
+    ],
+    [
+      "a geometric observation used as worked activity",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.controlesGeometricos[0].atividadeObservacoes = "";
+        value.rdo.controlesGeometricos[0].observacoes =
+          "\nControle aprovado";
+      },
+    ],
+    [
+      "a worked service name",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.servicosExecutados[0].servicoNome = "\nFresagem";
+      },
+    ],
+  ])("rejects a transformed line break in %s before projection", (
+    _label,
+    mutate,
+  ) => {
+    const value = snapshot();
+    mutate(value);
+
+    expectPdfErrorWithoutOutput(
+      value,
+      "RDO_EXPORT_UNSUPPORTED_PDF_GLYPH",
+      "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    );
+  });
+
+  it.each([
+    [
+      "service order",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.controlesGeometricos[0].ordemServico = "W".repeat(30);
+      },
+    ],
+    [
+      "activity",
+      (value: RdoWorkbookSnapshot) => {
+        value.rdo.controlesGeometricos[0].atividadeObservacoes =
+          "W".repeat(80);
+      },
+    ],
+  ])("rejects unreadable minimum-size compression in the %s cell", (
+    _label,
+    mutate,
+  ) => {
+    const value = snapshot();
+    mutate(value);
+
+    expectPdfErrorWithoutOutput(
+      value,
+      "RDO_EXPORT_PRINT_OVERFLOW",
     );
   });
 

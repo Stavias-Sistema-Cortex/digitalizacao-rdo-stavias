@@ -19,8 +19,11 @@ const CONTENT_WIDTH = PAGE_WIDTH - (2 * PAGE_MARGIN);
 const SECTION_HEIGHT = 5;
 const CELL_PADDING = 0.7;
 const SECTION_GRAY = 225;
+const MIN_READABLE_FONT_SIZE = 4;
 const UNSAFE_GLYPH_MESSAGE =
   "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.";
+const UNREADABLE_FITTED_TEXT_MESSAGE =
+  "O conteúdo do RDO não permanece legível na célula fixa do PDF; nenhum conteúdo foi truncado.";
 
 type FontStyle = "normal" | "bold";
 type TextAlignment = "left" | "center" | "right";
@@ -53,26 +56,89 @@ function userText(value: string, allowLineBreaks = false): string {
   return sanitized;
 }
 
-function validateOriginalObservationSources(
-  projection: RdoExportProjection,
+function items<T>(value: T[] | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+export function validateOriginalPdfSources(
+  snapshot: RdoWorkbookSnapshot,
 ): void {
-  const { rdo } = projection.snapshot;
-  assertPdfRenderableText(rdo.previousRdoNumber, false);
-  assertPdfRenderableText(rdo.observacoes, true);
-  for (const item of rdo.maoObra) {
-    assertPdfRenderableText(item.observacoes, true);
+  const { obra, rdo } = snapshot;
+  if (!rdo) return;
+  const workforce = items(rdo.maoObra);
+  const equipment = items(rdo.equipamentos);
+  const materials = items(rdo.materiais);
+  const geometry = items(rdo.controlesGeometricos);
+  const services = items(rdo.servicosExecutados);
+  const singleLineValues = [
+    obra?.nome ?? "",
+    obra?.codigoContrato ?? "",
+    rdo.numeroRdo,
+    rdo.dataRdo,
+    rdo.previousRdoNumber,
+    rdo.rodovia,
+    rdo.turno,
+    rdo.horaInicio,
+    rdo.horaFim,
+    rdo.kmInicialProgramado,
+    rdo.kmFinalProgramado,
+    rdo.kmInicialInterditado,
+    rdo.kmFinalInterditado,
+    rdo.apontadorRdo,
+    rdo.encarregadoObra,
+    rdo.fiscalizacaoCampo,
+    ...workforce.flatMap((item) => [
+      item.nomeColaborador,
+      item.cargo,
+    ]),
+    ...equipment.flatMap((item) => [
+      item.descricao,
+      item.prefixo,
+    ]),
+    ...materials.flatMap((item) => [
+      item.materialNome,
+      item.unidade,
+      item.notaFiscal,
+    ]),
+    ...geometry.flatMap((item) => [
+      item.subtrecho,
+      item.numero,
+      item.estacaInicial,
+      item.estacaFinal,
+      item.kmInicial,
+      item.kmFinal,
+      item.pista,
+      item.faixa,
+      item.ordemServico,
+      item.atividadeObservacoes,
+    ]),
+    ...services.flatMap((item) => [
+      item.servicoNome,
+      item.unidade,
+      item.trechoInicial,
+      item.trechoFinal,
+      item.localizacao,
+    ]),
+  ];
+  for (const value of singleLineValues) {
+    assertPdfRenderableText(value);
   }
-  for (const item of rdo.equipamentos) {
-    assertPdfRenderableText(item.observacoes, true);
+  for (const item of geometry) {
+    if (!item.atividadeObservacoes.trim()) {
+      assertPdfRenderableText(item.observacoes);
+    }
   }
-  for (const item of rdo.materiais) {
-    assertPdfRenderableText(item.observacoes, true);
-  }
-  for (const item of rdo.controlesGeometricos) {
-    assertPdfRenderableText(item.observacoes, true);
-  }
-  for (const item of rdo.servicosExecutados) {
-    assertPdfRenderableText(item.observacoes, true);
+
+  const observationValues = [
+    rdo.observacoes,
+    ...workforce.map((item) => item.observacoes),
+    ...equipment.map((item) => item.observacoes),
+    ...materials.map((item) => item.observacoes),
+    ...geometry.map((item) => item.observacoes),
+    ...services.map((item) => item.observacoes),
+  ];
+  for (const value of observationValues) {
+    assertPdfRenderableText(value, true);
   }
 }
 
@@ -118,7 +184,6 @@ function validateProjectionText(projection: RdoExportProjection): void {
     userText(value);
   }
   userText(projection.observations, true);
-  validateOriginalObservationSources(projection);
 }
 
 function setFont(
@@ -161,6 +226,12 @@ function drawFittedText(
   const size = measuredWidth <= width
     ? maximumSize
     : maximumSize * (width / measuredWidth);
+  if (size < MIN_READABLE_FONT_SIZE) {
+    throw new RdoWorkbookExportError(
+      "RDO_EXPORT_PRINT_OVERFLOW",
+      UNREADABLE_FITTED_TEXT_MESSAGE,
+    );
+  }
   drawText(document, value, x, baseline, style, size);
 }
 
@@ -794,6 +865,7 @@ function renderBack(
 }
 
 export function buildRdoPdf(snapshot: RdoWorkbookSnapshot): jsPDF {
+  validateOriginalPdfSources(snapshot);
   const projection = buildRdoExportProjection(snapshot);
   validateProjectionText(projection);
   const document = new jsPDF({
