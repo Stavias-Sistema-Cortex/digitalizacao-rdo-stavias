@@ -8,7 +8,10 @@
   padding: clamp(24px, 3vw, 42px) clamp(20px, 3.5vw, 52px) 22px;
   border: 0;
   border-block-end: 3px solid var(--color-brand-yellow, #f2c800);
-  background: transparent;
+  background: var(--cortex-shell-chrome-surface);
+  background-attachment: fixed;
+  background-size: 100vw 100dvh;
+  background-position: 0 0;
   color: #fff;
 }
 
@@ -111,7 +114,10 @@
   padding: clamp(24px, 3vw, 42px) clamp(20px, 3.5vw, 52px) 22px;
   border: 0;
   border-block-end: 3px solid var(--color-brand-yellow, #f2c800);
-  background: transparent;
+  background: var(--cortex-shell-chrome-surface);
+  background-attachment: fixed;
+  background-size: 100vw 100dvh;
+  background-position: 0 0;
   color: #fff;
 }
 

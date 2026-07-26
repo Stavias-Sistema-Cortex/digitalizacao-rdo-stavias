@@ -40,6 +40,12 @@ const programacaoCss = readCss(
   "./features/programacoes/ProgramacaoSemanalImport.css",
 );
 const mensagensCss = readCss("./features/mensagens/MensagensPage.css");
+const operationalWorkspaceCss = readCss(
+  "./components/workspace/OperationalWorkspace.css",
+);
+const rdoWorkspaceCss = readCss("./features/rdos/RdoWorkspacePage.css");
+const deviceSecurityCss = readCss("./features/auth/DeviceSecurityPage.css");
+const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
 const authenticatedCss = [
   globalCss,
   syncCss,
@@ -86,9 +92,39 @@ describe("polimento visual da plataforma autenticada", () => {
 
     expect(shell).toContain("--cortex-shell-chrome-surface:");
     expect(shell).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(shell).toContain("background-attachment: fixed;");
+    expect(shell).toContain("background-size: 100vw 100dvh;");
+    expect(shell).toContain("background-position: 0 0;");
     expect(sidebar).toContain("background: transparent;");
-    expect(header).toContain("background: transparent;");
-    expect(compatibilityHeader).toContain("background: transparent;");
+    expect(header).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(header).toContain("background-attachment: fixed;");
+    expect(header).toContain("background-size: 100vw 100dvh;");
+    expect(header).toContain("background-position: 0 0;");
+    expect(compatibilityHeader).toContain(
+      "background: var(--cortex-shell-chrome-surface);",
+    );
+    expect(compatibilityHeader).toContain("background-attachment: fixed;");
+    expect(compatibilityHeader).toContain("background-size: 100vw 100dvh;");
+    expect(compatibilityHeader).toContain("background-position: 0 0;");
+    expect(headerCss).not.toContain("--cortex-shell-chrome-surface:");
+  });
+
+  it("projeta o chrome sobre os canvases legados opacos", () => {
+    expect(rule(operationalWorkspaceCss, ".operational-workspace")).toContain(
+      "background: var(--color-canvas, #f3f5f2);",
+    );
+    expect(
+      rule(rdoWorkspaceCss, ".rdo-dashboard,\n.rdo-create-workspace"),
+    ).toContain("background: var(--color-canvas);");
+    expect(rule(mensagensCss, ".mensagens-page")).toContain(
+      "background: var(--color-canvas);",
+    );
+    expect(rule(deviceSecurityCss, ".device-security-page")).toContain(
+      "background: var(--color-canvas);",
+    );
+    expect(rule(financeiroCss, ".finance-page")).toContain(
+      "background: var(--finance-canvas);",
+    );
   });
 
   it("mantém a alavanca de recolher visível e sinalizada", () => {

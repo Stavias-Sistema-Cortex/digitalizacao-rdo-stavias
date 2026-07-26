@@ -662,6 +662,9 @@ textarea:focus {
   gap: 0;
   min-height: 100dvh;
   background: var(--cortex-shell-chrome-surface);
+  background-attachment: fixed;
+  background-size: 100vw 100dvh;
+  background-position: 0 0;
   transition: grid-template-columns 220ms ease;
 }
 
