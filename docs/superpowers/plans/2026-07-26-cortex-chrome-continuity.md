@@ -31,7 +31,7 @@
 **Interfaces:**
 
 - Consumes: `.cortex-shell`, `.cortex-sidebar`, `.sidebar-toggle`, `.cortex-page-header`, `CortexShell`’s existing `isSidebarCollapsed` state and accessibility labels.
-- Produces: one shell-owned chrome token; transparent sidebar/base/compatibility headers; a behavior-preserving, high-contrast toggle contract.
+- Produces: one shell-owned chrome token; a transparent sidebar; base and compatibility headers that project the inherited token at fixed viewport coordinates; a behavior-preserving, high-contrast toggle contract.
 
 - [ ] **Step 1: Add failing style and behavior assertions.**
 
@@ -65,7 +65,8 @@
     expect(sidebar).toContain("z-index: 1;");
     expect(toggle).toContain("width: 44px;");
     expect(toggle).toContain("height: 48px;");
-    expect(toggle).toContain("right: -22px;");
+    expect(toggle).toContain("left: calc(var(--cortex-sidebar-edge) - 22px);");
+    expect(toggle).toContain("right: auto;");
     expect(toggle).toContain("background: var(--color-brand-yellow);");
     expect(toggle).toContain("color: #111312;");
   });
@@ -106,7 +107,8 @@
 
   ```css
   top: 26px;
-  right: -22px;
+  left: calc(var(--cortex-sidebar-edge) - 22px);
+  right: auto;
   width: 44px;
   height: 48px;
   border: 2px solid var(--color-brand-yellow);
@@ -116,7 +118,7 @@
   box-shadow: 0 8px 18px rgb(0 0 0 / 28%);
   ```
 
-  Keep the icon’s existing rotation. Set it to `20px` by `20px` and retain high-contrast focus. On hover, only brighten the yellow/border and move the button by at most `2px`; add `.sidebar-toggle` to the existing reduced-motion selector if a transition is added. Do not modify JSX unless TypeScript is needed for the existing accessible behavior test.
+  Keep the native toggle as a direct child of the positioned `.cortex-shell`. The shell-relative `left` coordinate lets the handle escape the sidebar’s overflow boundary while preserving its current edge position, click behavior, labels, state, and mobile hiding. Keep the icon’s existing rotation. Set it to `20px` by `20px` and retain high-contrast focus. On hover, only brighten the yellow/border and move the button by at most `2px`; add `.sidebar-toggle` to the existing reduced-motion selector if a transition is added.
 
 - [ ] **Step 4: Run focused tests in their green state.**
 
