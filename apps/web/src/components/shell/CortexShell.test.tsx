@@ -82,6 +82,20 @@ describe("CortexShell chrome", () => {
     );
   });
 
+  it("posiciona a alavanca fora da área rolável da sidebar", () => {
+    render(
+      <MemoryRouter>
+        <ShellWithHeaderSlot />
+      </MemoryRouter>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Recolher menu" });
+    const sidebar = document.querySelector(".cortex-sidebar");
+
+    expect(toggle.parentElement).toHaveClass("cortex-shell");
+    expect(sidebar).not.toContainElement(toggle);
+  });
+
   it("fornece os controles globais apenas pelo slot descendente do cabeçalho", () => {
     render(
       <MemoryRouter>

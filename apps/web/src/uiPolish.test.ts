@@ -93,12 +93,20 @@ describe("polimento visual da plataforma autenticada", () => {
 
   it("mantém a alavanca de recolher visível e sinalizada", () => {
     const sidebar = lastRule(globalCss, ".cortex-sidebar");
+    const shell = rule(globalCss, ".cortex-shell");
+    const collapsedShell = rule(globalCss, ".cortex-shell--collapsed");
     const toggle = lastRule(globalCss, ".sidebar-toggle");
 
     expect(sidebar).toContain("z-index: 1;");
+    expect(shell).toContain("position: relative;");
+    expect(shell).toContain(
+      "--cortex-sidebar-edge: var(--sidebar-width, 248px);",
+    );
+    expect(collapsedShell).toContain("--cortex-sidebar-edge: 84px;");
     expect(toggle).toContain("width: 44px;");
     expect(toggle).toContain("height: 48px;");
-    expect(toggle).toContain("right: -22px;");
+    expect(toggle).toContain("left: calc(var(--cortex-sidebar-edge) - 22px);");
+    expect(toggle).toContain("right: auto;");
     expect(toggle).toContain("background: var(--color-brand-yellow);");
     expect(toggle).toContain("color: #111312;");
   });

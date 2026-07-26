@@ -655,6 +655,8 @@ textarea:focus {
     #0f2d2a 48%,
     #124e4a 100%
   );
+  --cortex-sidebar-edge: var(--sidebar-width, 248px);
+  position: relative;
   display: grid;
   grid-template-columns: var(--sidebar-width, 248px) minmax(0, 1fr);
   gap: 0;
@@ -677,6 +679,7 @@ textarea:focus {
 
 /* Modo compacto: só o tile da Stavias e os ícones dos botões. */
 .cortex-shell--collapsed {
+  --cortex-sidebar-edge: 84px;
   grid-template-columns: 84px minmax(0, 1fr);
 }
 
@@ -1642,7 +1645,8 @@ textarea:focus {
 
 .sidebar-toggle {
   top: 26px;
-  right: -22px;
+  right: auto;
+  left: calc(var(--cortex-sidebar-edge) - 22px);
   width: 44px;
   height: 48px;
   border: 2px solid var(--color-brand-yellow);

@@ -265,7 +265,6 @@ export function CortexShell({
           } as CSSProperties
         }
       >
-      <aside className="cortex-sidebar">
         <button
           type="button"
           className="sidebar-toggle"
@@ -295,6 +294,7 @@ export function CortexShell({
           </svg>
         </button>
 
+      <aside className="cortex-sidebar">
         <div
           className="sidebar-resizer"
           role="separator"
