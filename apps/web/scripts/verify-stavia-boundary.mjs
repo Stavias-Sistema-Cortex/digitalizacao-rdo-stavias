@@ -83,6 +83,12 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
+    "apps/web/src/features/rdos/export/rdoPdfLayout.ts",
+    [
+      "drawText(document, \"STAVIAS\", PAGE_MARGIN, 14, \"bold\", 16);",
+    ],
+  ],
+  [
     "apps/web/src/index.css",
     [
       "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",

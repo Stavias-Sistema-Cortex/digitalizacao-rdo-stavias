@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { createEmptyRdo } from "../createEmptyRdo";
 import {
@@ -32,6 +39,7 @@ function snapshot(): RdoWorkbookSnapshot {
 
 describe("authoritative RDO workbook download", () => {
   beforeEach(() => mocks.apiFetch.mockReset());
+  afterEach(() => vi.restoreAllMocks());
 
   it.each([
     ["HTML", "<html>login</html>", "text/html; charset=utf-8"],
@@ -55,5 +63,35 @@ describe("authoritative RDO workbook download", () => {
 
   it("sanitizes the local filename independently of response headers", () => {
     expect(rdoWorkbookFilename(snapshot())).toBe("rdo-Relatorio-42.xlsx");
+  });
+
+  it("downloads a valid XLSX response with the shared safe anchor behavior", async () => {
+    mocks.apiFetch.mockResolvedValue(new Response("xlsx", {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    }));
+    let downloadedBlob: Blob | undefined;
+    vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      downloadedBlob = blob;
+      return "blob:rdo-xlsx";
+    });
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const clickedAnchor = document.createElement("a");
+    vi.spyOn(document, "createElement").mockReturnValue(clickedAnchor);
+    vi.spyOn(clickedAnchor, "click").mockImplementation(() => undefined);
+
+    await downloadAuthoritativeRdoWorkbook(snapshot());
+
+    expect(downloadedBlob?.type).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(clickedAnchor?.href).toBe("blob:rdo-xlsx");
+    expect(clickedAnchor?.download).toBe("rdo-Relatorio-42.xlsx");
+    expect(clickedAnchor?.rel).toBe("noopener");
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:rdo-xlsx");
   });
 });
