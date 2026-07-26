@@ -1,14 +1,35 @@
 import type { LocalRdoRecord, ObraLocalRecord } from "../../../lib/db/db.types";
-import type { RdoExportAvailability } from "./rdoWorkbookMapping";
+import { buildRdoExportProjection } from "./rdoExportProjection";
+import { validateOriginalPdfSources } from "./rdoPdfValidation";
+import {
+  localRdoExportAvailability,
+  rdoWorkbookSnapshotFromLocalRecord,
+  RdoWorkbookExportError,
+  type RdoExportAvailability,
+} from "./rdoWorkbookMapping";
 
-export type LocalRdoPdfExportAvailability = (
+export function localRdoPdfExportAvailability(
   record: LocalRdoRecord,
   obra?: Pick<ObraLocalRecord, "id" | "nome" | "codigoContrato">,
-) => RdoExportAvailability;
+): RdoExportAvailability {
+  const availability = localRdoExportAvailability(record, obra);
+  if (!availability.ready) {
+    return availability;
+  }
 
-export async function loadLocalRdoPdfExportAvailability(): Promise<
-  LocalRdoPdfExportAvailability
-> {
-  const { localRdoPdfExportAvailability } = await import("./exportRdoPdf");
-  return localRdoPdfExportAvailability;
+  try {
+    const snapshot = rdoWorkbookSnapshotFromLocalRecord(record, obra);
+    validateOriginalPdfSources(snapshot);
+    buildRdoExportProjection(snapshot);
+    return availability;
+  } catch (caught) {
+    if (caught instanceof RdoWorkbookExportError) {
+      return {
+        ready: false,
+        code: caught.code,
+        message: caught.message,
+      };
+    }
+    throw caught;
+  }
 }
