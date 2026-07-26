@@ -182,6 +182,21 @@ class StaviaRuntimeBoundaryTest {
                     "banco_origem = 'dbstavias_acad'",
                     "banco_origem = 'dbstavias_acad'"),
             sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/config/"
+                            + "PostgresqlRuntimeReadinessGuard.java",
+                    "dbstavias_acad",
+                    "AND c.banco_origem = 'dbstavias_acad'"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/config/"
+                            + "PostgresqlRuntimeReadinessGuardTest.java",
+                    "dbstavias_acad",
+                    "contains(\"c.banco_origem = 'dbstavias_acad'\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/integracoes/"
+                            + "AcademyJdbcRuntimeContractTest.java",
+                    "dbstavias_acad",
+                    "\"jdbc:mysql://127.0.0.1:3306/dbstavias_acad\""),
+            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
                     "dbstavias_zld",
                     "SOURCE_DATABASE = \"dbstavias_zld\"",
@@ -487,6 +502,26 @@ class StaviaRuntimeBoundaryTest {
                     .as("unapproved case/boundary variant %s", unapproved)
                     .containsExactly("branding.txt [assistant content]");
         }
+    }
+
+    @Test
+    void permitsOnlyTheDeclaredAcademyCompatibilitySourceReferences() throws IOException {
+        List<String> violations = new ArrayList<>();
+        for (Path relative : List.of(
+                Path.of("apps/api/src/main/java/com/projeto/cortex/config/"
+                        + "PostgresqlRuntimeReadinessGuard.java"),
+                Path.of("apps/api/src/test/java/com/projeto/cortex/config/"
+                        + "PostgresqlRuntimeReadinessGuardTest.java"),
+                Path.of("apps/api/src/test/java/com/projeto/cortex/integracoes/"
+                        + "AcademyJdbcRuntimeContractTest.java"))) {
+            inspectSourceFile(
+                    relative,
+                    Files.readAllBytes(repositoryRoot().resolve(relative)),
+                    violations
+            );
+        }
+
+        assertThat(violations).isEmpty();
     }
 
     @ParameterizedTest(name = "rejects scoped-only reference {0}")
