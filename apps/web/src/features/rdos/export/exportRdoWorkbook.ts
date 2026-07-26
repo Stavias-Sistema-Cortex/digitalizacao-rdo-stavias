@@ -3,7 +3,10 @@ import { unzipSync, zipSync } from "fflate";
 
 import { apiFetch } from "../../../lib/api/apiClient";
 import templateUrl from "./RDO-v1.xlsx?url";
-import { downloadRdoExportBlob } from "./rdoExportDownload";
+import {
+  downloadRdoExportBlob,
+  type RdoExportDownloadOptions,
+} from "./rdoExportDownload";
 import {
   RDO_BACK_SHEET,
   RDO_FRONT_SHEET,
@@ -530,16 +533,18 @@ export function rdoWorkbookFilename(snapshot: RdoWorkbookSnapshot): string {
 
 export async function downloadRdoWorkbook(
   snapshot: RdoWorkbookSnapshot,
+  options: RdoExportDownloadOptions = {},
 ): Promise<void> {
   const bytes = await exportRdoWorkbook(snapshot);
   const blob = new Blob([bytes.slice().buffer], {
     type: RDO_XLSX_MEDIA_TYPE,
   });
-  downloadRdoExportBlob(blob, rdoWorkbookFilename(snapshot));
+  downloadRdoExportBlob(blob, rdoWorkbookFilename(snapshot), options);
 }
 
 export async function downloadAuthoritativeRdoWorkbook(
   snapshot: RdoWorkbookSnapshot,
+  options: RdoExportDownloadOptions = {},
 ): Promise<void> {
   const response = await apiFetch(
     `/rdos/${encodeURIComponent(snapshot.rdo.id)}/export.xlsx`,
@@ -570,5 +575,6 @@ export async function downloadAuthoritativeRdoWorkbook(
   downloadRdoExportBlob(
     await response.blob(),
     rdoWorkbookFilename(snapshot),
+    options,
   );
 }

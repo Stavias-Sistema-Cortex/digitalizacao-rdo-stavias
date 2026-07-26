@@ -1,4 +1,13 @@
-export function downloadRdoExportBlob(blob: Blob, filename: string): void {
+export interface RdoExportDownloadOptions {
+  beforeDownload?: () => void;
+}
+
+export function downloadRdoExportBlob(
+  blob: Blob,
+  filename: string,
+  options: RdoExportDownloadOptions = {},
+): void {
+  options.beforeDownload?.();
   const url = URL.createObjectURL(blob);
   try {
     const anchor = document.createElement("a");

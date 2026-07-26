@@ -518,26 +518,29 @@ export function RdoLocalList({
         navigator.onLine &&
         record.syncStatus === "SYNCED" &&
         record.versaoEntidade !== null;
+      const downloadOptions = {
+        beforeDownload: () => assertRdoExportSessionGuard(guard, record.obraId),
+      };
 
       if (useAuthoritativeServer) {
         if (format === "PDF") {
           const { downloadAuthoritativeRdoPdf } = await import("./export/exportRdoPdf");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadAuthoritativeRdoPdf(snapshot);
+          await downloadAuthoritativeRdoPdf(snapshot, downloadOptions);
         } else {
           const { downloadAuthoritativeRdoWorkbook } = await import("./export/exportRdoWorkbook");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadAuthoritativeRdoWorkbook(snapshot);
+          await downloadAuthoritativeRdoWorkbook(snapshot, downloadOptions);
         }
       } else {
         if (format === "PDF") {
           const { downloadRdoPdf } = await import("./export/exportRdoPdf");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadRdoPdf(snapshot);
+          await downloadRdoPdf(snapshot, downloadOptions);
         } else {
           const { downloadRdoWorkbook } = await import("./export/exportRdoWorkbook");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadRdoWorkbook(snapshot);
+          await downloadRdoWorkbook(snapshot, downloadOptions);
         }
       }
 

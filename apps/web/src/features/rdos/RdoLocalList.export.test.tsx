@@ -7,6 +7,7 @@ import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { clearSession, setSession } from "../auth/authSession";
 import { RdoLocalList } from "./RdoLocalList";
 import { localRdoPdfExportAvailability } from "./export/rdoPdfAvailability";
+import type { RdoExportDownloadOptions } from "./export/rdoExportDownload";
 
 const mocks = vi.hoisted(() => ({
   listWorksites: vi.fn(),
@@ -47,12 +48,12 @@ const WORKSITE_B = "00000000-0000-4000-8000-000000000021";
 
 function session(
   ownerId = OWNER_A,
-  options: { obraIds?: string[]; global?: boolean } = {},
+  options: { obraIds?: string[]; global?: boolean; nome?: string } = {},
 ) {
   const global = options.global ?? true;
   return {
     colaboradorId: ownerId,
-    nome: "Encarregado de teste",
+    nome: options.nome ?? "Encarregado de teste",
     papelAcesso: global ? "ALFA" as const : "BETA" as const,
     escopoGlobal: global,
     obraIds: options.obraIds ?? [],
@@ -243,6 +244,43 @@ describe("RdoLocalList offline export", () => {
     )).toBeInTheDocument();
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
     expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
+  });
+
+  it("keeps a same-scope export valid when only the display name refreshes", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    setSession(session(OWNER_A, { nome: "Nome operacional atualizado" }));
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadLocal).toHaveBeenCalledOnce());
+  });
+
+  it("reasserts the session at the local downloader boundary", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.downloadLocal.mockImplementation(async (
+      _snapshot: unknown,
+      options?: RdoExportDownloadOptions,
+    ) => {
+      setSession(session(OWNER_B));
+      options?.beforeDownload?.();
+    });
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText(
+      "XLSX: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+    expect(mocks.downloadLocal).toHaveBeenCalledOnce();
   });
 
   it("enables a complete canonical snapshot and downloads it locally offline", async () => {

@@ -127,6 +127,8 @@ export function RdoWorkspacePage() {
   }, [loadRecords]);
 
   useEffect(() => {
+    let reloadTimer: number | null = null;
+
     function resetForSession() {
       loadGenerationRef.current += 1;
       setRecords([]);
@@ -138,7 +140,11 @@ export function RdoWorkspacePage() {
       setIsCreationDialogOpen(false);
       setIsImporting(false);
       setLoadError("");
-      window.setTimeout(() => {
+      if (reloadTimer !== null) {
+        window.clearTimeout(reloadTimer);
+      }
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = null;
         void loadRecords();
       }, 0);
     }
@@ -146,6 +152,9 @@ export function RdoWorkspacePage() {
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
     return () => {
       window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+      if (reloadTimer !== null) {
+        window.clearTimeout(reloadTimer);
+      }
     };
   }, [loadRecords]);
 
