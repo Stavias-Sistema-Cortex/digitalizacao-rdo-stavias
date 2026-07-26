@@ -260,6 +260,10 @@ class StaviaRuntimeBoundaryTest {
                             + "PostgresqlInitialAlfaBootstrapRepository.class",
                     "dbstavias_acad", 1, "PostgresqlInitialAlfaBootstrapRepository.java"),
             compiledReference(
+                    "target/classes/com/projeto/cortex/config/"
+                            + "PostgresqlRuntimeReadinessGuard.class",
+                    "dbstavias_acad", 1, "PostgresqlRuntimeReadinessGuard.java"),
+            compiledReference(
                     "target/classes/com/projeto/cortex/assets/AssetImportService.class",
                     "dbstavias_zld", 3, "AssetImportService.java"),
             compiledReference(
@@ -558,6 +562,9 @@ class StaviaRuntimeBoundaryTest {
             "STAVIAS_HISTORY|apps/api/src/main/java/com/projeto/cortex/intelligence/PdorEngine.java",
             "StaviasCortex|.env.postgresql.example",
             "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/colaboradores/AcademyCollaboratorIdentity.java",
+            "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuard.java",
+            "dbstavias_acad|apps/api/src/test/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuardTest.java",
+            "dbstavias_acad|apps/api/src/test/java/com/projeto/cortex/integracoes/AcademyJdbcRuntimeContractTest.java",
             "dbstavias_zld|apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
             "Stavias Córtex|compose.production.example.yml",
             "Stavias From|compose.production.example.yml",
