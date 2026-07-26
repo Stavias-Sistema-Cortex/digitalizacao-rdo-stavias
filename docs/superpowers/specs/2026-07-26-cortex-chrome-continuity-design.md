@@ -33,9 +33,9 @@ No new typeface, user copy, data, route, animation sequence or product state is 
 +------------------------------------------+----------------------------------------------+
 ```
 
-1. `.cortex-shell` owns `--cortex-shell-chrome-surface` and paints it once across the full grid.
-2. `.cortex-sidebar` becomes transparent over that parent surface and gains stacking context only so its handle stays visible over the header edge.
-3. Both the base `.cortex-page-header` and the three compatibility header variants become transparent over the same parent surface. Their spacing, typography and yellow bottom rule remain unchanged.
+1. `.cortex-shell` is the only place that declares `--cortex-shell-chrome-surface`, then paints that token against the fixed viewport coordinate system.
+2. `.cortex-sidebar` remains transparent over that parent surface and gains stacking context only so its handle stays visible over the header edge.
+3. Existing page roots intentionally keep their light operational canvases. Therefore the base `.cortex-page-header` and three compatibility variants paint the inherited shell token against that same fixed viewport coordinate system. They do not declare a second gradient or colors; this projection prevents opaque legacy canvases from breaking the seam. Their spacing, typography and yellow bottom rule remain unchanged.
 4. The collapse control remains a native button with its existing `aria-label`, `title`, `aria-expanded`, keyboard behavior and icon rotation. It becomes a 44 by 48px yellow edge handle, offset 22px into the content edge, with an ink chevron, explicit border, shadow and visible focus outline.
 5. Existing narrow-screen behavior stays intact: the handle remains hidden with the sidebar resizer below 900px; no mobile overlay is introduced.
 
@@ -44,11 +44,11 @@ No new typeface, user copy, data, route, animation sequence or product state is 
 - Do not alter navigation paths, the local-storage persistence key, resizing behavior, header controls, sync controls or any API call.
 - Preserve the existing Portuguese labels `Recolher menu` and `Expandir menu`.
 - Preserve visible yellow keyboard focus and reduced-motion behavior; include the handle itself in the existing reduced-motion rule if its hover transition changes.
-- The continuity must survive any persisted sidebar width because the gradient belongs to the shared shell, not a fixed-width sidebar.
+- The continuity must survive any persisted sidebar width because sidebar and headers use the same inherited token and fixed viewport coordinates, not fixed-width panels.
 
 ## Verification
 
-- Update the CSS contract test to require the shell-owned surface and transparent sidebar/base/compatibility headers.
+- Update the CSS contract test to require the shell-owned token, transparent sidebar, and inherited fixed-coordinate base/compatibility header projections even when page roots keep opaque canvases.
 - Require the high-visibility handle dimensions, signal color, edge offset and focus-safe construction in the CSS contract test.
 - Run the focused visual/style test, the shell component test, TypeScript/Vite build and lint.
 - Review the affected rules for no generic card/frame additions and no hard-coded operational content.
@@ -56,5 +56,5 @@ No new typeface, user copy, data, route, animation sequence or product state is 
 ## Self-review
 
 - No placeholder or unresolved decision remains.
-- The gradient has one owner and therefore cannot create a seam when sidebar width changes.
+- The gradient colors have one owner and use one viewport coordinate system, so opaque page roots cannot create a seam when sidebar width changes.
 - The scope is only chrome CSS and a behavior-preserving accessibility assertion; it does not overlap RDO data, PDF rendering, finance, authorization or synchronization.

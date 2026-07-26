@@ -4,7 +4,7 @@
 
 **Goal:** Make the black-to-green Córtex chrome a seamless shared surface between the left sidebar and every page header, and make the existing sidebar-collapse control unmistakably visible without changing its behavior.
 
-**Architecture:** `.cortex-shell` owns one CSS gradient token spanning its grid. Sidebar and all shared header variants are transparent children of that surface. The existing native collapse button retains its state and labels but becomes a high-contrast edge handle that sits above the adjacent header.
+**Architecture:** `.cortex-shell` is the only CSS gradient-token declaration and anchors it to fixed viewport coordinates. Sidebar is transparent over the shell; headers project the inherited token with the same fixed coordinates because legacy page roots intentionally retain their light content canvases. The existing native collapse button retains its state and labels but becomes a high-contrast edge handle that sits above the adjacent header.
 
 **Tech Stack:** React 19, TypeScript, CSS, Vitest, Testing Library, Vite.
 
@@ -13,7 +13,7 @@
 - Do not modify routes, shell state, the sidebar local-storage key, resize behavior, API calls, sync state, product data or backend code.
 - Preserve the existing `Recolher menu` / `Expandir menu` labels, `aria-expanded`, native button semantics and SVG rotation behavior.
 - Keep the existing yellow header bottom rule and existing mobile breakpoint behavior that hides the toggle/resizer below 900px.
-- Use `--cortex-shell-chrome-surface: linear-gradient(135deg, #101312 0%, #0f2d2a 48%, #124e4a 100%)` as the only chrome gradient owner.
+- Declare `--cortex-shell-chrome-surface: linear-gradient(135deg, #101312 0%, #0f2d2a 48%, #124e4a 100%)` only on `.cortex-shell`; sidebar/header styles may reference the inherited token but must not declare colors or a second gradient.
 - Do not hard-code operational records or add decorative cards, frames, copy, images or background textures.
 - Keep visible focus and reduced-motion support.
 
@@ -52,8 +52,10 @@
     expect(shell).toContain("--cortex-shell-chrome-surface:");
     expect(shell).toContain("background: var(--cortex-shell-chrome-surface);");
     expect(sidebar).toContain("background: transparent;");
-    expect(header).toContain("background: transparent;");
-    expect(compatibilityHeader).toContain("background: transparent;");
+    expect(header).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(header).toContain("background-attachment: fixed;");
+    expect(compatibilityHeader).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(compatibilityHeader).toContain("background-attachment: fixed;");
   });
 
   it("mantém a alavanca de recolher visível e sinalizada", () => {
@@ -93,9 +95,12 @@
     #124e4a 100%
   );
   background: var(--cortex-shell-chrome-surface);
+  background-attachment: fixed;
+  background-size: 100vw 100dvh;
+  background-position: 0 0;
   ```
 
-  In the final `.cortex-sidebar` rule, replace the local gradient with `background: transparent;` and add `z-index: 1;`. In both base and compatibility header rules in `CortexPageHeader.css`, replace their local gradients with `background: transparent;`.
+  In the final `.cortex-sidebar` rule, replace the local gradient with `background: transparent;` and add `z-index: 1;`. In both base and compatibility header rules in `CortexPageHeader.css`, replace their local gradients with `background: var(--cortex-shell-chrome-surface);`, `background-attachment: fixed;`, `background-size: 100vw 100dvh;`, and `background-position: 0 0;`. This is an inherited-token projection over intentionally opaque page canvases, not a local second gradient.
 
   In the final `.sidebar-toggle` rule, use exactly:
 
@@ -139,8 +144,8 @@
 
 ## Acceptance Criteria
 
-- No local sidebar/header gradient remains; the single shell token creates continuity at every sidebar width.
-- Base and compatibility headers reveal the same shell surface, while the yellow bottom rule remains.
+- No local sidebar or header color declaration remains; the one shell token and fixed viewport coordinates create continuity at every sidebar width, including beneath opaque page canvases.
+- Base and compatibility headers project the same inherited shell surface, while the yellow bottom rule remains.
 - The collapse control is 44 by 48px, offset 22px over the content edge, uses the yellow signal and ink icon, and remains above the header edge.
 - Existing toggle semantics, rotation, mobile hide behavior, focus and reduced-motion support remain intact.
 - Focused style/shell tests, build and lint pass.
