@@ -139,7 +139,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                 """
                 SELECT obra_id
                 FROM rdo
-                WHERE id = ?
+                WHERE LOWER(id) = LOWER(?)
                 LIMIT 1
                 """,
                 rs -> rs.next() ? rs.getString("obra_id") : null,
@@ -247,7 +247,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                 """
                 SELECT obra_id
                 FROM vinculo_colaborador_obra
-                WHERE colaborador_id = ?
+                WHERE LOWER(colaborador_id) = LOWER(?)
                   AND status = 'ATIVO'
                 """,
                 String.class,
@@ -302,7 +302,7 @@ public class CurrentUserService implements AuthSessionProfileResolver {
                 SELECT CASE WHEN EXISTS (
                     SELECT 1
                     FROM vinculo_colaborador_obra
-                    WHERE colaborador_id = ?
+                    WHERE LOWER(colaborador_id) = LOWER(?)
                       AND obra_id = ?
                       AND status = 'ATIVO'
                 ) THEN 1 ELSE 0 END
@@ -346,6 +346,6 @@ public class CurrentUserService implements AuthSessionProfileResolver {
     private boolean sameId(String left, String right) {
         return left != null
                 && right != null
-                && left.trim().equals(right.trim());
+                && left.trim().equalsIgnoreCase(right.trim());
     }
 }

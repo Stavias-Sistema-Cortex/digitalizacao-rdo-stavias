@@ -48,6 +48,9 @@ const RESPONSE: RevenueTraceResponse = {
   to: TO,
   totalRevenue: HUGE_TOTAL,
   evidenceCount: 1,
+  nextCursor: null,
+  coverage: "COMPLETE",
+  highWaterMark: 812,
   rows: [{
     worksiteId: WORKSITE_A,
     worksiteName: "BR-101",

@@ -120,6 +120,49 @@ class ServicePriceCatalogServiceTest {
     }
 
     @Test
+    void requiresPositiveContractedQuantityAndBrlBeforePersistence() {
+        when(repository.findService(SERVICE)).thenReturn(Optional.of(serviceEntry()));
+
+        CreateServicePriceCommand valid = new CreateServicePriceCommand(
+                "mutation-contract-valid", "M2", "BRL",
+                new BigDecimal("125.5000"), new BigDecimal("800.000"),
+                LocalDate.of(2026, 1, 1), null, "CONTRATO_MEDIDO"
+        );
+        when(repository.findMutation(ACTOR, "mutation-contract-valid"))
+                .thenReturn(Optional.empty());
+        when(repository.createPrice(any())).thenReturn(priceVersion());
+
+        service.createPrice(OBRA, ACTOR, SERVICE, valid);
+
+        verify(repository).createPrice(
+                org.mockito.ArgumentMatchers.argThat(request ->
+                        request.contractedQuantity()
+                                .compareTo(new BigDecimal("800.000")) == 0
+                )
+        );
+
+        for (CreateServicePriceCommand invalid : java.util.List.of(
+                new CreateServicePriceCommand(
+                        "mutation-contract-zero", "M2", "BRL",
+                        new BigDecimal("125.5000"), BigDecimal.ZERO,
+                        LocalDate.of(2026, 1, 1), null, "CONTRATO_MEDIDO"
+                ),
+                new CreateServicePriceCommand(
+                        "mutation-contract-currency", "M2", "USD",
+                        new BigDecimal("125.5000"), new BigDecimal("800.000"),
+                        LocalDate.of(2026, 1, 1), null, "CONTRATO_MEDIDO"
+                )
+        )) {
+            assertThatThrownBy(() -> service.createPrice(
+                    OBRA, ACTOR, SERVICE, invalid
+            )).isInstanceOf(ResponseStatusException.class)
+                    .satisfies(error -> assertThat(
+                            ((ResponseStatusException) error).getStatusCode()
+                    ).isEqualTo(HttpStatus.BAD_REQUEST));
+        }
+    }
+
+    @Test
     void supersedeCreatesANewImmutableVersionWithoutEditingHistory() {
         ServicePriceVersion previous = priceVersion();
         ServicePriceVersion replacement = new ServicePriceVersion(
@@ -375,6 +418,7 @@ class ServicePriceCatalogServiceTest {
                 "M2",
                 "BRL",
                 new BigDecimal(value),
+                new BigDecimal("800.000"),
                 validFrom,
                 validTo,
                 "CONTRATO_MEDIDO"
@@ -405,6 +449,7 @@ class ServicePriceCatalogServiceTest {
                 "BRL",
                 1,
                 unitPrice,
+                new BigDecimal("800.000"),
                 LocalDate.of(2026, 1, 1),
                 LocalDate.of(2026, 3, 31),
                 null,

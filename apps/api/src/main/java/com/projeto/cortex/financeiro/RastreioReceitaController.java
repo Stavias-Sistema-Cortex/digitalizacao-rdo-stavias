@@ -41,7 +41,9 @@ public class RastreioReceitaController {
             LocalDate de,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
-            LocalDate ate
+            LocalDate ate,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer limit
     ) {
         String userId = currentUser.requireUserId();
         Set<String> scope;
@@ -57,7 +59,7 @@ public class RastreioReceitaController {
                     userId, FinancialPermission.FINANCEIRO_VISUALIZAR
             );
         }
-        return service.buscar(scope, obraId, de, ate);
+        return service.buscar(scope, obraId, de, ate, cursor, limit);
     }
 
     @GetMapping("/{executionId}")

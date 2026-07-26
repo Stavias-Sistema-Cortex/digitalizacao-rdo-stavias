@@ -55,11 +55,17 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 ? buscarRdosAtrasados(obra.getId(), referenceDate)
                 : 0;
         SyncStats sync = buscarSyncStats(obra.getId());
-        FinanceStats finance = buscarFinanceStats(obra.getId(), referenceDate);
+        ContractAuthority contractAuthority = buscarContractAuthority(
+                obra.getId(), referenceDate
+        );
+        FinanceStats finance = buscarFinanceStats(
+                obra.getId(), referenceDate, contractAuthority
+        );
         ServiceQuantityStats serviceQuantity = buscarServiceQuantityStats(
                 obra.getId(),
                 referenceDate,
-                finance.acceptedQuantity()
+                finance.acceptedQuantity(),
+                contractAuthority
         );
         TeamStats team = buscarTeamStats(obra.getId(), referenceDate);
         int activeGeospatialFeatureCount =
@@ -86,15 +92,20 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "Valor contratual da obra",
                 contractAvailability,
                 finance.hasContractData() ? finance.contractValue() : null,
-                "item_contratual.valor_total",
+                finance.contractSource(),
                 finance.hasContractData()
-                        ? "Soma dos valores totais dos itens contratuais ativos da obra."
-                        : "Não há itens contratuais ativos com valor total para formar o valor contratual.",
+                        ? finance.contractDetail()
+                        : "Não há versão de preço BRL vigente com quantidade contratada, nem fallback histórico apto a formar o valor contratual.",
                 true
         );
+        if (finance.legacyContractFallback() && finance.hasContractData()) {
+            warnings.add(
+                    "O PDOR usou item_contratual apenas como fallback histórico porque nenhuma versão vigente do catálogo possui quantidade contratada."
+            );
+        }
         if (!finance.hasContractData()) {
             warnings.add(
-                    "Valor contratual ausente; o PDOR não será calculado sem itens contratuais ativos."
+                    "Valor contratual ausente; o PDOR exige catálogo contratual vigente ou fallback histórico explícito."
             );
         }
 
@@ -202,16 +213,24 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 ? null
                 : totalPlanned.subtract(valueOrZero(actualExecuted)).max(BigDecimal.ZERO);
 
-        if (quantity != null && "ITEM_CONTRATUAL".equals(quantity.metric())) {
+        if (
+                quantity != null
+                        && (
+                            "SERVICE_CATALOG_CONTRACT".equals(quantity.metric())
+                            || "ITEM_CONTRATUAL_LEGACY".equals(quantity.metric())
+                        )
+        ) {
             warnings.add(
-                    "Quantidade física derivada de itens contratuais e execuções de serviço; sem curva temporal, o total contratado foi usado como planejado até a referência."
+                    serviceQuantity.legacyFallback()
+                            ? "Quantidade física derivada do fallback histórico item_contratual e de execuções aceitas; sem curva temporal, o total contratado foi usado como planejado até a referência."
+                            : "Quantidade física derivada das versões vigentes do catálogo e de execuções aceitas; sem curva temporal, o total contratado foi usado como planejado até a referência."
             );
             if (
                     serviceQuantity.contractUnitCount() > 1
                             || serviceQuantity.executionUnitCount() > 1
             ) {
                 warnings.add(
-                        "Há múltiplas unidades de medida nos itens/execuções; o PDOR agregou quantidades apenas para manter rastreabilidade, não como unidade física homogênea."
+                        "Há múltiplas unidades de medida no contrato/execuções; o PDOR agregou quantidades apenas para manter rastreabilidade, não como unidade física homogênea."
                 );
             }
         }
@@ -241,7 +260,10 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         ? PdorDataAvailability.ABSENT
                         : PdorDataAvailability.DERIVED,
                 remainingContracted,
-                "item_contratual.quantidade_contratada - execucao_servico_rdo.quantidade_executada",
+                quantity == null
+                        ? "service_price_version.quantidade_contratada"
+                        : quantity.plannedSource()
+                                + " - execucao_servico_rdo.quantidade_executada",
                 "Saldo factual após subtrair somente execuções com receita aceita.",
                 false
         );
@@ -669,8 +691,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         rdo.rdoCount() > 0,
                         rdo.rdoCount() > 0,
                         sync.hoursSinceLastSync() != null,
-                        // Itens contratuais ativos são o baseline formal do
-                        // contrato: quando existem, o orçamento é validado.
+                        // O catálogo versionado vigente é o baseline formal;
+                        // item_contratual só pode validar fallback histórico.
                         finance.hasContractData(),
                         programacao.recordCount() > 0,
                         totalPlanned != null && actualExecuted != null,
@@ -690,7 +712,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         productivityLossWeekly,
                         materialOverconsumptionWeekly
                 ),
-                buscarEvidencias(obra.getId(), referenceDate),
+                buscarEvidencias(
+                        obra.getId(),
+                        referenceDate,
+                        finance.legacyContractFallback()
+                ),
                 finance.evidenceIds(),
                 finance.evidenceHighWaterMark(),
                 finance.coverageCode()
@@ -787,7 +813,8 @@ public class RealPdorInputLoader implements PdorInputLoader {
 
     private List<PdorEvidenceReference> buscarEvidencias(
             String obraId,
-            LocalDate referenceDate
+            LocalDate referenceDate,
+            boolean legacyContractFallback
     ) {
         List<PdorEvidenceReference> evidence = new ArrayList<>();
         addEvidence(
@@ -814,20 +841,49 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 "RDO", "rdo", "EXECUCAO_REAL",
                 obraId, referenceDate
         );
-        addEvidence(
-                evidence,
-                """
-                SELECT id, criado_em AS observed_at
-                FROM item_contratual
-                WHERE obra_id = ? AND status = 'ATIVO'
-                  AND (vigencia_inicio IS NULL OR vigencia_inicio <= ?)
-                  AND (vigencia_fim IS NULL OR vigencia_fim >= ?)
-                ORDER BY codigo_item, id
-                LIMIT 50
-                """,
-                "ITEM_CONTRATUAL", "item_contratual", "BASE_CONTRATUAL",
-                obraId, referenceDate, referenceDate
-        );
+        if (legacyContractFallback) {
+            addEvidence(
+                    evidence,
+                    """
+                    SELECT id, criado_em AS observed_at
+                    FROM item_contratual
+                    WHERE obra_id = ? AND status = 'ATIVO'
+                      AND (vigencia_inicio IS NULL OR vigencia_inicio <= ?)
+                      AND (vigencia_fim IS NULL OR vigencia_fim >= ?)
+                    ORDER BY codigo_item, id
+                    LIMIT 50
+                    """,
+                    "ITEM_CONTRATUAL",
+                    "item_contratual (fallback histórico)",
+                    "BASE_CONTRATUAL_HISTORICA",
+                    obraId, referenceDate, referenceDate
+            );
+        } else {
+            addEvidence(
+                    evidence,
+                    """
+                    SELECT price.id, price.criado_em AS observed_at
+                    FROM service_price_version price
+                    JOIN catalogo_servico service
+                      ON service.id = price.service_id
+                    WHERE price.obra_id = ?
+                      AND service.status = 'ACTIVE'
+                      AND price.moeda = 'BRL'
+                      AND price.quantidade_contratada > 0
+                      AND price.vigencia_inicio <= ?
+                      AND (
+                          cortex_price_effective_valid_to(price.id) IS NULL
+                          OR cortex_price_effective_valid_to(price.id) >= ?
+                      )
+                    ORDER BY service.codigo, price.versao, price.id
+                    LIMIT 50
+                    """,
+                    "SERVICE_PRICE_VERSION",
+                    "service_price_version",
+                    "BASE_CONTRATUAL_VERSIONADA",
+                    obraId, referenceDate, referenceDate
+            );
+        }
         addEvidence(
                 evidence,
                 """
@@ -1263,38 +1319,101 @@ public class RealPdorInputLoader implements PdorInputLoader {
         );
     }
 
-    private FinanceStats buscarFinanceStats(
+    private ContractAuthority buscarContractAuthority(
             String obraId,
             LocalDate referenceDate
     ) {
-        ContractRevenueScope scope = jdbcTemplate.queryForObject(
+        ContractAuthority catalog = jdbcTemplate.queryForObject(
                 """
-                SELECT
-                    COUNT(*) FILTER (WHERE item.status = 'ATIVO') AS item_count,
-                    SUM(item.valor_total) FILTER (
-                        WHERE item.status = 'ATIVO'
-                    ) AS contract_value,
-                    (
-                        SELECT COUNT(*)
-                        FROM execucao_servico_rdo execution
-                        WHERE execution.obra_id = ?
-                          AND execution.data_execucao <= ?
-                          AND execution.cancelada = FALSE
-                          AND execution.producao_rejeitada = FALSE
-                          AND execution.retrabalho = FALSE
-                          AND execution.status_validacao = 'VALIDADA'
-                    ) AS eligible_rows
-                FROM item_contratual item
-                WHERE item.obra_id = ?
+                SELECT COUNT(*) AS authority_count,
+                       COUNT(DISTINCT price.unidade) AS contract_unit_count,
+                       SUM(price.quantidade_contratada) AS total_planned,
+                       SUM(
+                           price.quantidade_contratada
+                           * price.valor_unitario
+                       ) AS contract_value
+                FROM service_price_version price
+                JOIN catalogo_servico service
+                  ON service.id = price.service_id
+                WHERE price.obra_id = ?
+                  AND service.status = 'ACTIVE'
+                  AND price.moeda = 'BRL'
+                  AND price.quantidade_contratada > 0
+                  AND price.vigencia_inicio <= ?
+                  AND (
+                      cortex_price_effective_valid_to(price.id) IS NULL
+                      OR cortex_price_effective_valid_to(price.id) >= ?
+                  )
                 """,
-                (rs, rowNumber) -> new ContractRevenueScope(
-                        rs.getInt("item_count"),
+                (rs, rowNumber) -> new ContractAuthority(
+                        rs.getInt("authority_count"),
+                        rs.getInt("contract_unit_count"),
+                        rs.getBigDecimal("total_planned"),
                         rs.getBigDecimal("contract_value"),
-                        rs.getInt("eligible_rows")
+                        "service_price_version.quantidade_contratada"
+                                + " × service_price_version.valor_unitario",
+                        "Versões BRL imutáveis e vigentes do catálogo da obra.",
+                        false
                 ),
                 obraId,
                 referenceDate,
-                obraId
+                referenceDate
+        );
+        if (catalog != null && catalog.authorityCount() > 0) {
+            return catalog;
+        }
+        ContractAuthority legacy = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*) AS authority_count,
+                       COUNT(DISTINCT unidade_medida) AS contract_unit_count,
+                       SUM(quantidade_contratada) AS total_planned,
+                       SUM(valor_total) AS contract_value
+                FROM item_contratual
+                WHERE obra_id = ?
+                  AND status = 'ATIVO'
+                  AND (vigencia_inicio IS NULL OR vigencia_inicio <= ?)
+                  AND (vigencia_fim IS NULL OR vigencia_fim >= ?)
+                """,
+                (rs, rowNumber) -> new ContractAuthority(
+                        rs.getInt("authority_count"),
+                        rs.getInt("contract_unit_count"),
+                        rs.getBigDecimal("total_planned"),
+                        rs.getBigDecimal("contract_value"),
+                        "item_contratual.valor_total"
+                                + " (fallback histórico)",
+                        "Soma de itens contratuais históricos ativos usada"
+                                + " somente porque o catálogo vigente não"
+                                + " possui quantidade contratada.",
+                        true
+                ),
+                obraId,
+                referenceDate,
+                referenceDate
+        );
+        return legacy == null
+                ? ContractAuthority.emptyHistoricalFallback()
+                : legacy;
+    }
+
+    private FinanceStats buscarFinanceStats(
+            String obraId,
+            LocalDate referenceDate,
+            ContractAuthority contractAuthority
+    ) {
+        Integer eligibleRowsValue = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM execucao_servico_rdo execution
+                WHERE execution.obra_id = ?
+                  AND execution.data_execucao <= ?
+                  AND execution.cancelada = FALSE
+                  AND execution.producao_rejeitada = FALSE
+                  AND execution.retrabalho = FALSE
+                  AND execution.status_validacao = 'VALIDADA'
+                """,
+                Integer.class,
+                obraId,
+                referenceDate
         );
 
         FinanceEvidenceSnapshot evidenceSnapshot = jdbcTemplate.query(
@@ -1435,7 +1554,7 @@ public class RealPdorInputLoader implements PdorInputLoader {
                 .distinct()
                 .sorted()
                 .toList();
-        int eligibleRows = scope == null ? 0 : scope.eligibleRows();
+        int eligibleRows = eligibleRowsValue == null ? 0 : eligibleRowsValue;
         String coverageCode = acceptedRows.isEmpty()
                 ? "NO_ACCEPTED_EVIDENCE"
                 : acceptedRows.size() == eligibleRows
@@ -1443,8 +1562,11 @@ public class RealPdorInputLoader implements PdorInputLoader {
                         : "PARTIAL_ACCEPTED_EXACT";
 
         return new FinanceStats(
-                scope == null ? 0 : scope.itemCount(),
-                scope == null ? null : scope.contractValue(),
+                contractAuthority.authorityCount(),
+                contractAuthority.contractValue(),
+                contractAuthority.contractSource(),
+                contractAuthority.contractDetail(),
+                contractAuthority.legacyFallback(),
                 acceptedRows.size(),
                 eligibleRows,
                 acceptedRevenue,
@@ -1459,57 +1581,29 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private ServiceQuantityStats buscarServiceQuantityStats(
             String obraId,
             LocalDate referenceDate,
-            BigDecimal acceptedQuantity
+            BigDecimal acceptedQuantity,
+            ContractAuthority contractAuthority
     ) {
         return jdbcTemplate.queryForObject(
                 """
                 SELECT
-                    (
-                        SELECT COUNT(*)
-                        FROM item_contratual
-                        WHERE obra_id = ?
-                          AND status = 'ATIVO'
-                    ) AS item_count,
-                    (
-                        SELECT COUNT(DISTINCT unidade_medida)
-                        FROM item_contratual
-                        WHERE obra_id = ?
-                          AND status = 'ATIVO'
-                    ) AS contract_unit_count,
-                    (
-                        SELECT SUM(quantidade_contratada)
-                        FROM item_contratual
-                        WHERE obra_id = ?
-                          AND status = 'ATIVO'
-                    ) AS total_planned,
-                    (
-                        SELECT COUNT(*)
-                        FROM execucao_servico_rdo
-                        WHERE obra_id = ?
-                          AND data_execucao <= ?
-                          AND cancelada = FALSE
-                    ) AS execution_count,
-                    (
-                        SELECT COUNT(DISTINCT unidade_medida)
-                        FROM execucao_servico_rdo
-                        WHERE obra_id = ?
-                          AND data_execucao <= ?
-                          AND cancelada = FALSE
-                    ) AS execution_unit_count
+                    COUNT(*) AS execution_count,
+                    COUNT(DISTINCT unidade_medida) AS execution_unit_count
+                FROM execucao_servico_rdo
+                WHERE obra_id = ?
+                  AND data_execucao <= ?
+                  AND cancelada = FALSE
                 """,
                 (rs, rowNumber) -> new ServiceQuantityStats(
-                        rs.getInt("item_count"),
-                        rs.getInt("contract_unit_count"),
-                        rs.getBigDecimal("total_planned"),
+                        contractAuthority.authorityCount(),
+                        contractAuthority.contractUnitCount(),
+                        contractAuthority.totalPlanned(),
                         rs.getInt("execution_count"),
                         rs.getInt("execution_unit_count"),
-                        valueOrZero(acceptedQuantity)
+                        valueOrZero(acceptedQuantity),
+                        contractAuthority.plannedSource(),
+                        contractAuthority.legacyFallback()
                 ),
-                obraId,
-                obraId,
-                obraId,
-                obraId,
-                referenceDate,
                 obraId,
                 referenceDate
         );
@@ -1520,6 +1614,24 @@ public class RealPdorInputLoader implements PdorInputLoader {
             RdoStats rdo,
             ServiceQuantityStats serviceQuantity
     ) {
+        if (
+                serviceQuantity != null
+                        && positive(serviceQuantity.totalPlanned())
+                        && positive(serviceQuantity.actualExecuted())
+        ) {
+            return new QuantityChoice(
+                    serviceQuantity.legacyFallback()
+                            ? "ITEM_CONTRATUAL_LEGACY"
+                            : "SERVICE_CATALOG_CONTRACT",
+                    serviceQuantity.plannedSource(),
+                    "execucao_servico_rdo.quantidade_executada"
+                            + " (ACCEPTED_EXACT)",
+                    serviceQuantity.totalPlanned(),
+                    serviceQuantity.totalPlanned(),
+                    serviceQuantity.actualExecuted()
+            );
+        }
+
         if (positive(programacao.totalAreaM2())) {
             return new QuantityChoice(
                     "AREA_M2",
@@ -1550,21 +1662,6 @@ public class RealPdorInputLoader implements PdorInputLoader {
                     programacao.totalExtensionM(),
                     valueOrZero(programacao.extensionUntilReference()),
                     null
-            );
-        }
-
-        if (
-                serviceQuantity != null
-                        && positive(serviceQuantity.totalPlanned())
-                        && serviceQuantity.executionCount() > 0
-        ) {
-            return new QuantityChoice(
-                    "ITEM_CONTRATUAL",
-                    "item_contratual.quantidade_contratada",
-                    "execucao_servico_rdo.quantidade_executada",
-                    serviceQuantity.totalPlanned(),
-                    serviceQuantity.totalPlanned(),
-                    valueOrZero(serviceQuantity.actualExecuted())
             );
         }
 
@@ -1766,6 +1863,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
     private record FinanceStats(
             int itemCount,
             BigDecimal contractValue,
+            String contractSource,
+            String contractDetail,
+            boolean legacyContractFallback,
             int acceptedRows,
             int eligibleRows,
             BigDecimal measuredRevenue,
@@ -1786,11 +1886,30 @@ public class RealPdorInputLoader implements PdorInputLoader {
         }
     }
 
-    private record ContractRevenueScope(
-            int itemCount,
+    private record ContractAuthority(
+            int authorityCount,
+            int contractUnitCount,
+            BigDecimal totalPlanned,
             BigDecimal contractValue,
-            int eligibleRows
+            String contractSource,
+            String contractDetail,
+            boolean legacyFallback
     ) {
+        private String plannedSource() {
+            return legacyFallback
+                    ? "item_contratual.quantidade_contratada"
+                            + " (fallback histórico)"
+                    : "service_price_version.quantidade_contratada";
+        }
+
+        private static ContractAuthority emptyHistoricalFallback() {
+            return new ContractAuthority(
+                    0, 0, null, null,
+                    "item_contratual.valor_total (fallback histórico)",
+                    "Nenhuma base contratual vigente foi encontrada.",
+                    true
+            );
+        }
     }
 
     private record AcceptedRevenueRow(
@@ -1813,7 +1932,9 @@ public class RealPdorInputLoader implements PdorInputLoader {
             BigDecimal totalPlanned,
             int executionCount,
             int executionUnitCount,
-            BigDecimal actualExecuted
+            BigDecimal actualExecuted,
+            String plannedSource,
+            boolean legacyFallback
     ) {
     }
 

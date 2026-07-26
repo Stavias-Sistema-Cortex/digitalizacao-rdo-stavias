@@ -129,7 +129,8 @@ public class ServicePriceCatalogService {
                     worksite, serviceIdNormalized,
                     actor, normalized.clientMutationId(), hash,
                     normalized.unit(), normalized.currency(), normalized.unitPrice(),
-                    normalized.validFrom(), normalized.validTo(), normalized.source(),
+                    normalized.contractedQuantity(), normalized.validFrom(),
+                    normalized.validTo(), normalized.source(),
                     null, clock.instant()
             ));
         } catch (CatalogMutationReplayException concurrentReplay) {
@@ -158,7 +159,9 @@ public class ServicePriceCatalogService {
         String previousId = uuid(priceId, "priceId");
         ServicePriceVersion previous = repository.findPrice(worksite, previousId)
                 .orElseThrow(() -> notFound("SERVICE_PRICE_VERSION_NOT_FOUND"));
-        SupersedeServicePriceCommand normalized = normalize(command, previous.validFrom());
+        SupersedeServicePriceCommand normalized = normalize(
+                command, previous.validFrom(), previous.contractedQuantity()
+        );
         String hash = requestHash(worksite, previousId, normalized);
         Optional<CatalogMutation> replay = repository.findMutation(
                 actor, normalized.clientMutationId()
@@ -177,8 +180,10 @@ public class ServicePriceCatalogService {
                             : normalized.id(),
                     worksite, previous.serviceId(), actor,
                     normalized.clientMutationId(), hash, previous.unit(),
-                    previous.currency(), normalized.unitPrice(), normalized.validFrom(),
-                    normalized.validTo(), normalized.source(), previous.id(), clock.instant()
+                    previous.currency(), normalized.unitPrice(),
+                    normalized.contractedQuantity(), normalized.validFrom(),
+                    normalized.validTo(), normalized.source(), previous.id(),
+                    clock.instant()
             ));
         } catch (CatalogMutationReplayException concurrentReplay) {
             return replayPrice(worksite, concurrentReplay.receipt(), hash);
@@ -284,17 +289,21 @@ public class ServicePriceCatalogService {
             CreateServicePriceCommand command
     ) {
         CreateServicePriceCommand normalized = normalize(command);
-        return hash(Map.of(
-                "operation", "SERVICE_PRICE_VERSION_CREATED",
-                "id", nullText(normalized.id()),
-                "obraId", uuid(obraId, "obraId"),
-                "serviceId", uuid(serviceId, "serviceId"),
-                "unit", normalized.unit(),
-                "currency", normalized.currency(),
-                "unitPrice", normalized.unitPrice().toPlainString(),
-                "validFrom", normalized.validFrom().toString(),
-                "validTo", nullText(normalized.validTo()),
-                "source", normalized.source()
+        return hash(Map.ofEntries(
+                Map.entry("operation", "SERVICE_PRICE_VERSION_CREATED"),
+                Map.entry("id", nullText(normalized.id())),
+                Map.entry("obraId", uuid(obraId, "obraId")),
+                Map.entry("serviceId", uuid(serviceId, "serviceId")),
+                Map.entry("unit", normalized.unit()),
+                Map.entry("currency", normalized.currency()),
+                Map.entry("unitPrice", normalized.unitPrice().toPlainString()),
+                Map.entry(
+                        "contractedQuantity",
+                        normalized.contractedQuantity().toPlainString()
+                ),
+                Map.entry("validFrom", normalized.validFrom().toString()),
+                Map.entry("validTo", nullText(normalized.validTo())),
+                Map.entry("source", normalized.source())
         ));
     }
 
@@ -309,6 +318,8 @@ public class ServicePriceCatalogService {
                 "obraId", obraId,
                 "previousId", previousId,
                 "unitPrice", command.unitPrice().toPlainString(),
+                "contractedQuantity",
+                command.contractedQuantity().toPlainString(),
                 "validFrom", command.validFrom().toString(),
                 "validTo", nullText(command.validTo()),
                 "source", command.source()
@@ -399,12 +410,17 @@ public class ServicePriceCatalogService {
                     "vigenciaFim não pode ser anterior à vigenciaInicio."
             );
         }
+        String currency = FinanceValidation.currency(command.currency());
+        if (!"BRL".equals(currency)) {
+            throw FinanceValidation.badRequest("moeda deve ser BRL.");
+        }
         return new CreateServicePriceCommand(
                 FinanceValidation.optionalUuid(command.id(), "id"),
                 FinanceValidation.mutationId(command.clientMutationId()),
                 unit,
-                FinanceValidation.currency(command.currency()),
+                currency,
                 price(command.unitPrice()),
+                contractedQuantity(command.contractedQuantity()),
                 from,
                 to,
                 source(command.source())
@@ -413,7 +429,8 @@ public class ServicePriceCatalogService {
 
     private static SupersedeServicePriceCommand normalize(
             SupersedeServicePriceCommand command,
-            LocalDate previousFrom
+            LocalDate previousFrom,
+            BigDecimal previousContractedQuantity
     ) {
         if (command == null) {
             throw FinanceValidation.badRequest("Dados da substituição são obrigatórios.");
@@ -433,6 +450,11 @@ public class ServicePriceCatalogService {
                 FinanceValidation.optionalUuid(command.id(), "id"),
                 FinanceValidation.mutationId(command.clientMutationId()),
                 price(command.unitPrice()),
+                contractedQuantity(
+                        command.contractedQuantity() == null
+                                ? previousContractedQuantity
+                                : command.contractedQuantity()
+                ),
                 from,
                 command.validTo(),
                 source(command.source())
@@ -467,6 +489,19 @@ public class ServicePriceCatalogService {
             );
         }
         return validated.setScale(4);
+    }
+
+    private static BigDecimal contractedQuantity(BigDecimal value) {
+        if (value == null
+                || value.signum() <= 0
+                || value.scale() > 3
+                || value.precision() - value.scale() > 15) {
+            throw FinanceValidation.badRequest(
+                    "quantidadeContratada deve ser positiva e ter no máximo "
+                            + "três casas decimais."
+            );
+        }
+        return value.setScale(3);
     }
 
     private void requireWorksite(String worksiteId) {

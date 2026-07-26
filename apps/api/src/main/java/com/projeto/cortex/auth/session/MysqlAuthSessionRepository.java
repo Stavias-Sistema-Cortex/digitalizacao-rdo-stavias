@@ -98,7 +98,7 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
     static void requireUuid(String value, String field) {
         try {
             UUID parsed = UUID.fromString(value);
-            if (!parsed.toString().equals(value)) {
+            if (!parsed.toString().equalsIgnoreCase(value)) {
                 throw invalidInput();
             }
         } catch (RuntimeException exception) {

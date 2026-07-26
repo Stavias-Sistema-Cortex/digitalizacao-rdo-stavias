@@ -238,6 +238,7 @@ export function ServicePriceCatalogPage({
                 unit: readText(form, "unit"),
                 currency: readText(form, "currency"),
                 unitPrice: readText(form, "unitPrice"),
+                contractedQuantity: readText(form, "contractedQuantity"),
                 validFrom: readText(form, "validFrom"),
                 validTo: readText(form, "validTo"),
                 source: readText(form, "source"),
@@ -249,11 +250,16 @@ export function ServicePriceCatalogPage({
           <header><div><span>{selectedRow.service.code}</span><h3>Publicar primeiro preço</h3></div><button type="button" onClick={() => setEditor(null)}>Fechar</button></header>
           <div className="finance-catalog-editor__grid">
             <label>Unidade<input name="unit" required maxLength={30} placeholder="M2, M3, H" /></label>
-            <label>Moeda<input name="currency" required maxLength={3} placeholder="BRL" /></label>
+            <label>Moeda<input name="currency" required value="BRL" readOnly /></label>
             <label>Valor unitário<input name="unitPrice" inputMode="decimal" required /></label>
+            <label>Quantidade contratada<input name="contractedQuantity" inputMode="decimal" required /></label>
             <label>Início da vigência<input name="validFrom" type="date" required /></label>
             <label>Fim da vigência<input name="validTo" type="date" /></label>
-            <label>Fonte do preço<input name="source" required maxLength={80} placeholder="Contrato, medição ou aditivo" /></label>
+            <label>
+              Fonte do preço
+              <input name="source" required maxLength={80} placeholder="CONTRATO_MEDIDO" />
+              <small>Use letras, números e apenas . _ : -</small>
+            </label>
           </div>
           <button type="submit" disabled={saving}>Salvar offline</button>
         </form>
@@ -268,6 +274,7 @@ export function ServicePriceCatalogPage({
             void submit(
               () => queueSupersedePrice(obraId, editor.priceId, {
                 unitPrice: readText(form, "unitPrice"),
+                contractedQuantity: readText(form, "contractedQuantity"),
                 validFrom: readText(form, "validFrom"),
                 validTo: readText(form, "validTo"),
                 source: readText(form, "source"),
@@ -279,9 +286,14 @@ export function ServicePriceCatalogPage({
           <header><div><span>{selectedRow.service.code}</span><h3>Substituir preço ativo</h3></div><button type="button" onClick={() => setEditor(null)}>Fechar</button></header>
           <div className="finance-catalog-editor__grid">
             <label>Novo valor unitário<input name="unitPrice" inputMode="decimal" required /></label>
+            <label>Nova quantidade contratada<input name="contractedQuantity" inputMode="decimal" required /></label>
             <label>Início da nova vigência<input name="validFrom" type="date" required /></label>
             <label>Fim da vigência<input name="validTo" type="date" /></label>
-            <label>Fonte da revisão<input name="source" required maxLength={80} /></label>
+            <label>
+              Fonte da revisão
+              <input name="source" required maxLength={80} placeholder="ADITIVO_01" />
+              <small>Use letras, números e apenas . _ : -</small>
+            </label>
           </div>
           <button type="submit" disabled={saving}>Salvar nova versão offline</button>
         </form>
@@ -342,7 +354,16 @@ export function ServicePriceCatalogPage({
               <div className="finance-price-history">
                 {row.priceVersions.map((price) => (
                   <div key={price.id} className="finance-price-version">
-                    <div><span>Versão {price.version}</span><strong>{formatMoney(price.unitPrice, price.currency)}</strong><small>por {price.unit}</small></div>
+                    <div>
+                      <span>Versão {price.version}</span>
+                      <strong>{formatMoney(price.unitPrice, price.currency)}</strong>
+                      <small>
+                        por {price.unit}
+                        {price.contractedQuantity
+                          ? ` · ${price.contractedQuantity} ${price.unit} contratados`
+                          : " · quantidade contratada histórica indisponível"}
+                      </small>
+                    </div>
                     <div><span>Vigência</span><strong>{price.validFrom}</strong><small>{price.effectiveValidTo ? `até ${price.effectiveValidTo}` : "sem término registrado"}</small></div>
                     <div><span>Estado</span><strong>{price.status}</strong><small>{syncLabel(price.syncStatus)}</small></div>
                     {canAdmin && price.status === "ACTIVE" && price.syncStatus === "SYNCED" ? (

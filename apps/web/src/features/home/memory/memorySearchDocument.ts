@@ -1,4 +1,12 @@
-import type { OperationalEventRecord } from "../../../lib/db/db.types";
+import type {
+  CanonicalOutboxMutationRecord,
+  OperationalEventRecord,
+  OutboxMutationRecord,
+} from "../../../lib/db/db.types";
+import {
+  classifyFieldConflict,
+  remoteSnapshotEvidence,
+} from "../../../lib/sync/fieldConflict";
 import type { MemoryGraphCoverage, MemoryServerEvent } from "./memoryApi";
 
 const PROTECTED_ENTITY_TYPES = new Set([
@@ -24,8 +32,40 @@ export interface MemoryStructuralKeys {
   entityId: string | null;
   worksiteId: string | null;
   rdoId: string | null;
+  actorId: string | null;
+  deviceId: string | null;
   origin: string | null;
   result: string | null;
+}
+
+export interface MemoryTraceMetadata {
+  clientMutationId: string | null;
+  correlationId: string | null;
+  causationId: string | null;
+  entityVersion: number | null;
+}
+
+export type MemoryReviewUnavailableReason =
+  | "REJECTED"
+  | "LOCAL_EVIDENCE_UNAVAILABLE"
+  | "REMOTE_SNAPSHOT_UNAVAILABLE"
+  | "UNSUPPORTED_ENTITY"
+  | "CREATE_CONFLICT_REQUIRES_REVIEW"
+  | "REMOTE_SNAPSHOT_MISMATCH"
+  | "FIELD_CONFLICT";
+
+export interface MemoryReviewEvidence {
+  status: "CONFLICT" | "REJECTED";
+  clientMutationId: string | null;
+  baseVersion: number | null;
+  eventVersion: number | null;
+  remoteVersion: number | null;
+  localStateAvailable: boolean;
+  remoteStateAvailable: boolean;
+  changedFields: string[];
+  conflictFields: string[];
+  canReconcile: boolean;
+  unavailableReason: MemoryReviewUnavailableReason | null;
 }
 
 export interface MemorySearchDocument {
@@ -46,6 +86,8 @@ export interface MemorySearchDocument {
   rdoNumber: string | null;
   serviceName: string | null;
   errorCategory: string | null;
+  trace: MemoryTraceMetadata;
+  review: MemoryReviewEvidence | null;
 }
 
 export interface MemoryCacheMetadata {
@@ -107,9 +149,12 @@ export function serverEventToSearchDocument(
     entityId: principalEntityId,
     worksiteId: event.worksiteId,
     rdoId: event.rdoId,
+    actorId: event.actorId,
+    deviceId: event.deviceId,
     origin: event.origin,
     result: event.result,
   };
+  const syncStatus = serverStatus(event.result);
   return {
     key: documentKey(userId, scopeHash, event.eventId),
     userId,
@@ -134,7 +179,7 @@ export function serverEventToSearchDocument(
       event.errorCategory,
     ]),
     structuralKeys,
-    syncStatus: "UPDATED",
+    syncStatus,
     sourceKind: "SERVER",
     occurredAt: event.occurredAt,
     eventType: event.eventType,
@@ -144,6 +189,13 @@ export function serverEventToSearchDocument(
     rdoNumber: event.rdoNumber,
     serviceName: event.serviceName,
     errorCategory: event.errorCategory,
+    trace: {
+      clientMutationId: event.clientMutationId,
+      correlationId: event.correlationId,
+      causationId: event.causationId,
+      entityVersion: event.entityVersion,
+    },
+    review: serverReview(event, syncStatus),
   };
 }
 
@@ -151,6 +203,7 @@ export function localEventToSearchDocument(
   userId: string,
   scopeHash: string,
   event: OperationalEventRecord,
+  mutation?: OutboxMutationRecord | null,
 ): MemorySearchDocument {
   const protectedIdentity = isProtectedIdentity(event.principalEntity.tipo);
   const principalEntityId = protectedIdentity ? null : event.principalEntity.id;
@@ -180,6 +233,8 @@ export function localEventToSearchDocument(
       entityId: principalEntityId,
       worksiteId: event.obraId,
       rdoId: event.rdoId,
+      actorId: event.responsibleUserId,
+      deviceId: event.deviceId ?? null,
       origin: event.origin,
       result,
     },
@@ -193,6 +248,14 @@ export function localEventToSearchDocument(
     rdoNumber: null,
     serviceName: null,
     errorCategory: event.errorCategory ?? null,
+    trace: {
+      clientMutationId: event.clientMutationId ?? mutation?.clientMutationId ?? null,
+      correlationId: event.correlationId ?? mutation?.correlationId ?? null,
+      causationId: event.causationId ??
+        (isCanonicalMutation(mutation) ? mutation.causationId : null),
+      entityVersion: safeVersion(event.entityVersion),
+    },
+    review: localReview(event, mutation),
   };
 }
 
@@ -294,6 +357,156 @@ function localStatus(event: OperationalEventRecord): MemoryDocumentStatus {
     return "LOCAL_PENDING";
   }
   return event.syncStatus === "SYNCED" ? "UPDATED" : "REJECTED";
+}
+
+function serverStatus(result: string | null): MemoryDocumentStatus {
+  const normalized = result?.trim().toLocaleUpperCase("pt-BR");
+  if (normalized === "CONFLICT" || normalized === "CONFLITO") return "CONFLICT";
+  if (normalized === "REJECTED" || normalized === "REJEITADA") return "REJECTED";
+  return "UPDATED";
+}
+
+function serverReview(
+  event: MemoryServerEvent,
+  status: MemoryDocumentStatus,
+): MemoryReviewEvidence | null {
+  if (status !== "CONFLICT" && status !== "REJECTED") return null;
+  return {
+    status,
+    clientMutationId: event.clientMutationId,
+    baseVersion: null,
+    eventVersion: safeVersion(event.entityVersion),
+    remoteVersion: null,
+    localStateAvailable: false,
+    remoteStateAvailable: false,
+    changedFields: [],
+    conflictFields: [],
+    canReconcile: false,
+    unavailableReason: status === "REJECTED"
+      ? "REJECTED"
+      : "LOCAL_EVIDENCE_UNAVAILABLE",
+  };
+}
+
+function localReview(
+  event: OperationalEventRecord,
+  mutation: OutboxMutationRecord | null | undefined,
+): MemoryReviewEvidence | null {
+  const status = localStatus(event);
+  if (status !== "CONFLICT" && status !== "REJECTED") return null;
+
+  const canonical = isCanonicalMutation(mutation) ? mutation : null;
+  const remote = remoteSnapshotEvidence(mutation?.conflito);
+  const hasLocalStates = isRecord(event.previousState) && isRecord(event.newState);
+  const resolution = canonical && hasLocalStates
+    ? classifyFieldConflict(event.previousState!, event.newState!, remote)
+    : null;
+  const remoteVersion = safeVersion(mutation?.conflito?.versaoAtual);
+  const changedFields = safeFieldNames(canonical?.changedFields ?? []);
+  const conflictFields = safeFieldNames(
+    resolution?.conflicts.map((conflict) => conflict.field) ?? [],
+  );
+  const unavailableReason = reconciliationUnavailableReason({
+    status,
+    mutation: canonical,
+    event,
+    remoteComplete: remote.complete,
+    remoteSnapshot: remote.snapshot,
+    remoteVersion,
+    localStatesAvailable: hasLocalStates,
+    hasFieldConflicts: (resolution?.conflicts.length ?? 0) > 0,
+  });
+
+  return {
+    status,
+    clientMutationId: event.clientMutationId ?? mutation?.clientMutationId ?? null,
+    baseVersion: safeVersion(canonical?.baseVersion ?? mutation?.baseVersao),
+    eventVersion: safeVersion(event.entityVersion),
+    remoteVersion,
+    localStateAvailable: isRecord(event.newState),
+    remoteStateAvailable: remote.complete,
+    changedFields,
+    conflictFields,
+    canReconcile: unavailableReason === null,
+    unavailableReason,
+  };
+}
+
+function reconciliationUnavailableReason(input: {
+  status: "CONFLICT" | "REJECTED";
+  mutation: CanonicalOutboxMutationRecord | null;
+  event: OperationalEventRecord;
+  remoteComplete: boolean;
+  remoteSnapshot: Record<string, unknown> | null;
+  remoteVersion: number | null;
+  localStatesAvailable: boolean;
+  hasFieldConflicts: boolean;
+}): MemoryReviewUnavailableReason | null {
+  if (input.status === "REJECTED") return "REJECTED";
+  if (
+    !input.mutation ||
+    input.mutation.status !== "CONFLICT" ||
+    !input.localStatesAvailable ||
+    input.remoteVersion === null
+  ) {
+    return "LOCAL_EVIDENCE_UNAVAILABLE";
+  }
+  if (!RECONCILIABLE_ENTITY_TYPES.has(input.mutation.entityType)) {
+    return "UNSUPPORTED_ENTITY";
+  }
+  if (input.mutation.operation === "CREATE") {
+    return "CREATE_CONFLICT_REQUIRES_REVIEW";
+  }
+  if (!input.remoteComplete || !input.remoteSnapshot) {
+    return "REMOTE_SNAPSHOT_UNAVAILABLE";
+  }
+  if (
+    input.remoteSnapshot.id !== input.mutation.entityId ||
+    (
+      input.mutation.entityType === "RDO" &&
+      input.remoteSnapshot.obraId !== input.mutation.obraId
+    ) ||
+    input.event.clientMutationId !== input.mutation.clientMutationId
+  ) {
+    return "REMOTE_SNAPSHOT_MISMATCH";
+  }
+  return input.hasFieldConflicts ? "FIELD_CONFLICT" : null;
+}
+
+const RECONCILIABLE_ENTITY_TYPES = new Set([
+  "RDO",
+  "CONVERSA",
+  "MENSAGEM",
+  "MENSAGEM_ANEXO",
+  "SERVICE",
+  "SERVICE_PRICE_VERSION",
+]);
+
+function isCanonicalMutation(
+  mutation: OutboxMutationRecord | null | undefined,
+): mutation is CanonicalOutboxMutationRecord {
+  return mutation?.schemaVersion === 13;
+}
+
+function safeVersion(value: unknown): number | null {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+    ? value as number
+    : null;
+}
+
+function safeFieldNames(fields: readonly string[]): string[] {
+  return [...new Set(fields)]
+    .filter((field) => /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(field))
+    .map((field) =>
+      /cpf|email|senha|password|token|secret|telefone|phone|document/i.test(field)
+        ? "[campo protegido]"
+        : field
+    )
+    .slice(0, 100);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizedParts(parts: readonly (string | null | undefined)[]): string {

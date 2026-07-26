@@ -21,6 +21,10 @@ import {
   captureOnlineSyncSession,
   type SyncSessionGuard,
 } from "./syncSession";
+import {
+  runWithSyncExecutionLease,
+  type SyncExecutionLease,
+} from "./syncExecutionLease";
 import type { SyncRunSummary } from "./sync.types";
 import { announceSyncCompleted } from "./syncEvents";
 
@@ -33,59 +37,60 @@ const activeSyncPromises = new Map<
 
 async function executeSync(
   guard: SyncSessionGuard,
+  lease: SyncExecutionLease,
 ): Promise<SyncRunSummary> {
   if (!navigator.onLine) {
     throw new Error(
       "O dispositivo está offline. O RDO continua salvo localmente.",
     );
   }
-  assertSyncSession(guard);
+  await assertSyncExecution(guard, lease);
   await updateSyncState({
     isSyncing: true,
     lastSyncStartedAt: new Date().toISOString(),
     lastSyncError: null,
   }, guard);
-  assertSyncSession(guard);
+  await assertSyncExecution(guard, lease);
 
   try {
     await recoverInterruptedMutations(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await repairMissingObraReferencesForSync(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await repairMissingMaoObraReferencesForSync(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await hydrateBlockedRdoCreationContextsForSync(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await repairRdoCreateMutationsForSync(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
 
     const deviceId = await ensureRegisteredDevice(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     const uploadSummary = await processObjectUploads(20, guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await resolveCanonicalUploadReplacements(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await recoverCanonicalConflictReconciliations(guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     const pushSummary = await pushOutbox(deviceId, guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     const pullSummary = await pullEvents(deviceId, guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     await refreshMessagingAfterPull(
       pullSummary.messagingConversationIds,
       guard,
     );
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
     const acknowledgedCommitSeq =
       await acknowledgeCurrentCursor(deviceId, guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
 
     await updateSyncState({
       isSyncing: false,
       lastSyncCompletedAt: new Date().toISOString(),
       lastSyncError: null,
     }, guard);
-    assertSyncSession(guard);
+    await assertSyncExecution(guard, lease);
 
     const summary = {
       deviceId,
@@ -102,7 +107,7 @@ async function executeSync(
   } catch (error: unknown) {
     // Never write the old run's status into a newly active session database.
     try {
-      assertSyncSession(guard);
+      await assertSyncExecution(guard, lease);
       const message =
         error instanceof Error
           ? error.message
@@ -112,12 +117,21 @@ async function executeSync(
         lastSyncCompletedAt: new Date().toISOString(),
         lastSyncError: message,
       }, guard);
-      assertSyncSession(guard);
+      await assertSyncExecution(guard, lease);
     } catch {
       // The original session is gone; its next run recovers SYNCING rows.
     }
     throw error;
   }
+}
+
+async function assertSyncExecution(
+  guard: SyncSessionGuard,
+  lease: SyncExecutionLease,
+): Promise<void> {
+  assertSyncSession(guard);
+  await lease.assertOwned();
+  assertSyncSession(guard);
 }
 
 export function syncNow(): Promise<SyncRunSummary> {
@@ -130,7 +144,10 @@ export function syncNow(): Promise<SyncRunSummary> {
   const active = activeSyncPromises.get(guard.fingerprint);
   if (active) return active;
 
-  const promise = executeSync(guard).finally(() => {
+  const promise = runWithSyncExecutionLease(
+    guard,
+    (lease) => executeSync(guard, lease),
+  ).finally(() => {
     if (activeSyncPromises.get(guard.fingerprint) === promise) {
       activeSyncPromises.delete(guard.fingerprint);
     }

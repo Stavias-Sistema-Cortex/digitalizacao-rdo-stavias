@@ -11,8 +11,7 @@ const page = readFileSync(
 describe("Academy partial synchronization presentation", () => {
   it("reports a partial import as an explicit partial result, not a failure", () => {
     expect(page).toContain('case "PARTIAL":\n      return "Parcial";');
-    expect(page).toContain(
-      'result.status === "SUCCESS" || result.status === "PARTIAL"',
-    );
+    expect(page).toContain("Solicitações pendentes");
+    expect(page).toContain("Ela será executada automaticamente após a reconexão.");
   });
 });

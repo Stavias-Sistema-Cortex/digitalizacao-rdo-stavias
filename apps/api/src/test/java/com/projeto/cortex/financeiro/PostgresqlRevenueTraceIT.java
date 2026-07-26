@@ -538,6 +538,11 @@ class PostgresqlRevenueTraceIT {
                 evidenceId, fixture.rdoId(), fixture.obraId(), fixture.serviceId(),
                 fixture.priceId(), evidenceId, quantity, fixture.unitPrice(),
                 revenue);
+        jdbc.update("""
+                UPDATE cortex_evento_commit_sequence
+                SET ultima_commit_seq = GREATEST(ultima_commit_seq, ?)
+                WHERE id = 1
+                """, commitSequence);
         AcceptedExecutionIds ids = new AcceptedExecutionIds(
                 executionId, evidenceId, eventId
         );

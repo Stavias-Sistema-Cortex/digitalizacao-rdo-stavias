@@ -53,6 +53,9 @@ describe("servicePriceApi", () => {
       totalRevenue: "0.00",
       evidenceCount: 0,
       rows: [],
+      nextCursor: null,
+      coverage: "COMPLETE",
+      highWaterMark: 0,
     });
   });
 
@@ -60,8 +63,57 @@ describe("servicePriceApi", () => {
     await fetchRevenueTrace("obra 1", "2026-07-01", "2026-07-31");
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
-      "/financeiro/rastreio-receita?obraId=obra+1&de=2026-07-01&ate=2026-07-31",
+      "/financeiro/rastreio-receita?obraId=obra+1&de=2026-07-01&ate=2026-07-31&limit=500",
     );
+  });
+
+  it("carrega mais de uma página do mesmo snapshot sem truncar o rastreio", async () => {
+    const secondRow = {
+      ...REVENUE_ROW,
+      executionId: "00000000-0000-4000-8000-000000000302",
+      quantity: "2.000",
+      revenue: "2.00",
+      revenueEvidenceId: "00000000-0000-4000-8000-000000000602",
+      revenueEventId: "00000000-0000-4000-8000-000000000702",
+      eventCommitSequence: 2,
+    };
+    mocks.readResponseBody
+      .mockResolvedValueOnce({
+        from: "2026-07-01",
+        to: "2026-07-31",
+        totalRevenue: "1.00",
+        evidenceCount: 1,
+        rows: [REVENUE_ROW],
+        nextCursor: "cursor-2",
+        coverage: "PARTIAL",
+        highWaterMark: 7,
+      })
+      .mockResolvedValueOnce({
+        from: "2026-07-01",
+        to: "2026-07-31",
+        totalRevenue: "2.00",
+        evidenceCount: 1,
+        rows: [secondRow],
+        nextCursor: null,
+        coverage: "COMPLETE",
+        highWaterMark: 7,
+      });
+
+    const result = await fetchRevenueTrace(
+      REVENUE_ROW.worksiteId,
+      "2026-07-01",
+      "2026-07-31",
+    );
+
+    expect(result.rows.map((row) => row.executionId)).toEqual([
+      REVENUE_ROW.executionId,
+      secondRow.executionId,
+    ]);
+    expect(result.totalRevenue).toBe("3.00");
+    expect(result.evidenceCount).toBe(2);
+    expect(result.coverage).toBe("COMPLETE");
+    expect(result.highWaterMark).toBe(7);
+    expect(mocks.apiFetch.mock.calls[1][0]).toContain("cursor=cursor-2");
   });
 
   it("busca catálogo e evidência por IDs codificados", async () => {

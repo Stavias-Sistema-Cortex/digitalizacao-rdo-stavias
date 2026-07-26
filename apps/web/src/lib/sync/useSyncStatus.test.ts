@@ -77,6 +77,7 @@ const idleSyncState: SyncStateRecord = {
   lastSyncStartedAt: null,
   lastSyncCompletedAt: null,
   lastSyncError: null,
+  syncExecutionLease: null,
 };
 
 function rejectedMutation(

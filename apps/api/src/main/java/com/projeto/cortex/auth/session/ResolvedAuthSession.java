@@ -48,11 +48,12 @@ public record ResolvedAuthSession(
 
     private static String canonicalCollaboratorId(String value) {
         try {
-            UUID parsed = UUID.fromString(value);
-            if (!parsed.toString().equals(value)) {
+            String persisted = value.strip();
+            UUID parsed = UUID.fromString(persisted);
+            if (!parsed.toString().equalsIgnoreCase(persisted)) {
                 throw new IllegalArgumentException();
             }
-            return value;
+            return persisted;
         } catch (RuntimeException exception) {
             throw new IllegalArgumentException(
                     "Identificador de colaborador inválido."

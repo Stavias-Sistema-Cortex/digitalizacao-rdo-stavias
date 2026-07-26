@@ -149,6 +149,7 @@ public class ServicePriceVersionSyncOperationHandler
                         text(payload, "unit", true),
                         text(payload, "currency", true),
                         decimal(payload, "unitPrice"),
+                        decimal(payload, "contractedQuantity"),
                         date(payload, "validFrom", true),
                         date(payload, "validTo", false),
                         text(payload, "source", true)
@@ -180,6 +181,7 @@ public class ServicePriceVersionSyncOperationHandler
                         entityId,
                         mutation.clientMutationId(),
                         decimal(payload, "unitPrice"),
+                        decimal(payload, "contractedQuantity"),
                         date(payload, "validFrom", true),
                         date(payload, "validTo", false),
                         text(payload, "source", true)

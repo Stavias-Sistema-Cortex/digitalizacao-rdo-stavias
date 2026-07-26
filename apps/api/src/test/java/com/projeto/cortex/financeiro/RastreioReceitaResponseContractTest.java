@@ -33,7 +33,10 @@ class RastreioReceitaResponseContractTest {
     @Test
     void publicContractExposesMeasuredRevenueWithoutCostMarginOrEstimate() {
         assertThat(componentNames(RastreioReceitaResponse.class))
-                .contains("totalrevenue", "evidencecount", "rows")
+                .contains(
+                        "totalrevenue", "evidencecount", "rows",
+                        "nextcursor", "coverage", "highwatermark"
+                )
                 .noneMatch(this::isLegacyFinancialField);
         assertThat(componentNames(
                 RastreioReceitaResponse.RevenueEvidenceRow.class
@@ -53,7 +56,9 @@ class RastreioReceitaResponseContractTest {
         when(access.allowedObraIds(
                 USER_ID, FinancialPermission.FINANCEIRO_VISUALIZAR
         )).thenReturn(Set.of(OBRA_ID));
-        when(service.buscar(Set.of(OBRA_ID), null, null, null))
+        when(service.buscar(
+                Set.of(OBRA_ID), null, null, null, null, null
+        ))
                 .thenReturn(precisionResponse());
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
                 new RastreioReceitaController(service, access, currentUser)

@@ -777,6 +777,7 @@ function buildRdoLocalPayload(
     obraId: draft.obraId,
     programacaoId: draft.programacaoId || null,
     previousRdoId: draft.previousRdoId,
+    previousRdoNumber: draft.previousRdoNumber,
     creationContextVersion: draft.creationContextVersion,
     apontadorColaboradorId: draft.apontadorColaboradorId,
     numeroRdo: draft.numeroRdo,

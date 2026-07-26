@@ -38,7 +38,7 @@ export interface SyncPushMutationRequest {
   schemaVersion?: 13;
   deviceId?: string;
   userId?: string;
-  obraId?: string;
+  obraId?: string | null;
   entityType?: string;
   entityId?: string;
   operation?: CanonicalMutationOperation;

@@ -191,7 +191,7 @@ class RealPdorInputLoaderMysqlIntegrationTest {
         assertThat(bundle.canCalculate()).isTrue();
         assertThat(bundle.missingRequiredFields()).isEmpty();
         assertThat(bundle.inputs().get("quantityMetric"))
-                .isEqualTo("ITEM_CONTRATUAL");
+                .isEqualTo("ITEM_CONTRATUAL_LEGACY");
 
         assertDecimalInput(bundle, "contractValue", "25000.00");
         assertDecimalInput(bundle, "measuredRevenue", "2500.00");
@@ -208,7 +208,9 @@ class RealPdorInputLoaderMysqlIntegrationTest {
                 .isEqualTo(PdorDataAvailability.DIRECT);
         assertThat(bundle.warnings())
                 .anySatisfy(warning ->
-                        assertThat(warning).contains("itens contratuais e execuções de serviço"));
+                        assertThat(warning).contains(
+                                "fallback histórico item_contratual"
+                        ));
         assertThat(bundle.evidenceReferences())
                 .extracting(PdorEvidenceReference::entityType)
                 .contains("RDO", "ITEM_CONTRATUAL", "EXECUCAO_SERVICO_RDO");

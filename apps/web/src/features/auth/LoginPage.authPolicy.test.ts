@@ -62,6 +62,21 @@ describe("LoginPage auth policy", () => {
     );
   });
 
+  it("defines the login action stack and secondary action only once", () => {
+    const loginCss = readFileSync(
+      new URL("./LoginPage.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(loginCss.match(/\.login__actions\s*\{/g)).toHaveLength(1);
+    expect(
+      loginCss.match(/\.cortex-login \.login__submit-secondary\s*\{/g),
+    ).toHaveLength(1);
+    expect(loginCss).toMatch(
+      /\.login__actions \.login__submit\s*\{[^}]*margin-top:\s*0/s,
+    );
+  });
+
   it("uses a teal focus ring for offline unlock actions", () => {
     const offlineCss = readFileSync(
       new URL("./OfflineUnlockPage.css", import.meta.url),
@@ -87,7 +102,7 @@ describe("LoginPage auth policy", () => {
     );
   });
 
-  it("identifica pelo CPF e confirma o acesso com uma única ação de passkey", () => {
+  it("oferece entrada por CPF e por passkey", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
       "utf8",
@@ -97,15 +112,14 @@ describe("LoginPage auth policy", () => {
     expect(source).not.toContain("filtroOfflinePronto");
     expect(source).not.toContain("login offline está habilitado");
     expect(source).not.toContain("cpfMascarado");
-    expect(source).not.toContain("autenticarPorCpf");
+    expect(source).toContain("autenticarPorCpf");
     expect(source).toContain("O login exige conexão com o Córtex.");
     expect(source).toContain("authenticateWithPasskey(cpf)");
     expect(source.match(/authenticateWithPasskey\(cpf\)/g)).toHaveLength(1);
+    expect(source).toContain('"Entrar com CPF"');
+    expect(source).toContain('"Entrar com passkey"');
     expect(source).toContain('"Confirmar com passkey"');
-    expect(source).not.toContain("Usar passkey");
-    expect(source).toContain(
-      "CPF identifica o colaborador; sua passkey confirma o acesso.",
-    );
+    expect(source).toContain("allowsDirectCpfLogin");
     const forbiddenPublicLoginTerms = [
       "Enviar c\u00f3digo",
       "C\u00f3digo de acesso",

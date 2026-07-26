@@ -130,6 +130,21 @@ class StaviaRuntimeBoundaryTest {
                     "dbstavias_acad",
                     "SOURCE_NAMESPACE = \"dbstavias_acad:usuarios:\""),
             sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/auth/identity/"
+                            + "AuthIdentityRepository.java",
+                    "dbstavias_acad",
+                    "colaborador.banco_origem = 'dbstavias_acad'"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/auth/identity/"
+                            + "AuthIdentityRepositoryTest.java",
+                    "dbstavias_acad",
+                    ".contains(\"colaborador.banco_origem = 'dbstavias_acad'\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/auth/postgresql/"
+                            + "PostgresqlAcademyDirectCpfLoginIT.java",
+                    "dbstavias_acad",
+                    "SET banco_origem = 'dbstavias_acad',"),
+            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/colaboradores/"
                             + "ColaboradorImportService.java",
                     "dbstavias_acad",
@@ -214,6 +229,10 @@ class StaviaRuntimeBoundaryTest {
                             + "AcademyCollaboratorIdentity.class",
                     "dbstavias_acad", 2, "AcademyCollaboratorIdentity.java"),
             compiledReference(
+                    "target/classes/com/projeto/cortex/auth/identity/"
+                            + "AuthIdentityRepository.class",
+                    "dbstavias_acad", 1, "AuthIdentityRepository.java"),
+            compiledReference(
                     "target/classes/com/projeto/cortex/colaboradores/"
                             + "ColaboradorImportService.class",
                     "dbstavias_acad", 2, "ColaboradorImportService.java"),
@@ -248,7 +267,10 @@ class StaviaRuntimeBoundaryTest {
             "assertObjectStorageBoundary(sql, \"" + POSTGRESQL_BASELINE_HISTORICAL_TOKEN
                     + "\", \"storage_key varchar(512)\");";
     private static final Set<String> REPOSITORY_DISCOVERY_EXCLUSION_ROOTS = Set.of(
-            ".git", ".gradle", "archive", "node_modules"
+            ".git", ".gradle", ".worktrees", "archive", "node_modules"
+    );
+    private static final Set<String> LOCAL_ENVIRONMENT_OVERRIDE_FILES = Set.of(
+            ".env", ".env.local"
     );
     private static final Set<String> APPLICATION_DISCOVERY_EXCLUSION_ROOTS = Set.of(
             "build", "coverage", "dist", "node_modules", "target"
@@ -348,6 +370,7 @@ class StaviaRuntimeBoundaryTest {
     @ParameterizedTest(name = "excludes anchored discovery root {0}")
     @ValueSource(strings = {
             ".git/objects/fixture",
+            ".worktrees/retired-checkout/.env.example",
             "archive/stavia/config.yml",
             "node_modules/example/index.js",
             "apps/api/target/classes/StaviaRuntime.class",
@@ -562,6 +585,8 @@ class StaviaRuntimeBoundaryTest {
                     .filter(file -> {
                         Path relative = repository.relativize(file);
                         return !isExcludedDiscoveryPath(file, excludedRoots)
+                                && !LOCAL_ENVIRONMENT_OVERRIDE_FILES.contains(
+                                        relative.getFileName().toString())
                                 && isActiveSourceOrLauncherSurface(relative)
                                 && !relative.equals(THIS_TEST)
                                 && !HISTORICAL_ALLOWLIST.containsKey(relative);

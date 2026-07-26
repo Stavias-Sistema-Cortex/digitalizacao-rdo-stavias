@@ -56,6 +56,7 @@ function remoteCatalog(serviceId: string): ServiceCatalogPage {
         currency: "BRL",
         version: 1,
         unitPrice: "125.5000",
+        contractedQuantity: "800.000",
         validFrom: "2026-07-22",
         validTo: null,
         supersedesId: null,
@@ -102,6 +103,7 @@ describe("offline service and price catalog", () => {
       unit: "m2",
       currency: "brl",
       unitPrice: "125,50",
+      contractedQuantity: "800,000",
       validFrom: "2026-07-22",
       source: "contrato_medido",
     });
@@ -139,9 +141,73 @@ describe("offline service and price catalog", () => {
     });
     expect(rows[0].priceVersions[0]).toMatchObject({
       unitPrice: "125.50",
+      contractedQuantity: "800.000",
       syncStatus: "PENDING_SYNC",
       entityVersion: 0,
     });
+  });
+
+  it("rejects a non-BRL price before creating local or outbox records", async () => {
+    const service = await queueCreateService(OBRA_ID, {
+      code: "PAV.CBUQ",
+      name: "Pavimentação CBUQ",
+    });
+    const database = await getCortexDb();
+    await database.clear("outbox_mutations");
+
+    await expect(queueCreatePrice(OBRA_ID, service.entityId, {
+      unit: "M2",
+      currency: "USD",
+      unitPrice: "125.50",
+      contractedQuantity: "800.000",
+      validFrom: "2026-07-22",
+      source: "CONTRATO_MEDIDO",
+    })).rejects.toThrow(/BRL/i);
+
+    await expect(database.getAll("service_price_versions")).resolves.toEqual([]);
+    await expect(database.getAll("outbox_mutations")).resolves.toEqual([]);
+  });
+
+  it("rejects an invalid source before creating local or outbox records", async () => {
+    const service = await queueCreateService(OBRA_ID, {
+      code: "PAV.CBUQ",
+      name: "Pavimentação CBUQ",
+    });
+    const database = await getCortexDb();
+    await database.clear("outbox_mutations");
+
+    await expect(queueCreatePrice(OBRA_ID, service.entityId, {
+      unit: "M2",
+      currency: "BRL",
+      unitPrice: "125.50",
+      contractedQuantity: "800.000",
+      validFrom: "2026-07-22",
+      source: "Contrato, medição ou aditivo",
+    })).rejects.toThrow(/fonte/i);
+
+    await expect(database.getAll("service_price_versions")).resolves.toEqual([]);
+    await expect(database.getAll("outbox_mutations")).resolves.toEqual([]);
+  });
+
+  it("rejects a non-positive contracted quantity before queueing", async () => {
+    const service = await queueCreateService(OBRA_ID, {
+      code: "PAV.CBUQ",
+      name: "Pavimentação CBUQ",
+    });
+    const database = await getCortexDb();
+    await database.clear("outbox_mutations");
+
+    await expect(queueCreatePrice(OBRA_ID, service.entityId, {
+      unit: "M2",
+      currency: "BRL",
+      unitPrice: "125.50",
+      contractedQuantity: "0",
+      validFrom: "2026-07-22",
+      source: "CONTRATO_MEDIDO",
+    })).rejects.toThrow(/quantidade contratada/i);
+
+    await expect(database.getAll("service_price_versions")).resolves.toEqual([]);
+    await expect(database.getAll("outbox_mutations")).resolves.toEqual([]);
   });
 
   it("hydrates authoritative rows and never invents an entity version", async () => {
@@ -155,6 +221,7 @@ describe("offline service and price catalog", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].service.syncStatus).toBe("SYNCED");
     expect(rows[0].priceVersions[0]).toMatchObject({
+      contractedQuantity: "800.000",
       source: "CONTRATO_MEDIDO",
       entityVersion: 2,
       syncStatus: "SYNCED",
@@ -170,6 +237,7 @@ describe("offline service and price catalog", () => {
       unit: "M2",
       currency: "BRL",
       unitPrice: "125.50",
+      contractedQuantity: "800.000",
       validFrom: "2026-07-22",
       source: "CONTRATO_MEDIDO",
     });

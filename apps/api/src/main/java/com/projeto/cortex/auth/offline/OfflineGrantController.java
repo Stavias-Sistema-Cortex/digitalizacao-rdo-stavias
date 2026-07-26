@@ -28,7 +28,7 @@ public class OfflineGrantController {
         String principal = currentUsers.requireUserId();
         try {
             UUID collaboratorId = UUID.fromString(principal);
-            if (!collaboratorId.toString().equals(principal)) {
+            if (!collaboratorId.toString().equalsIgnoreCase(principal)) {
                 throw new IllegalArgumentException();
             }
             return grants.issue(collaboratorId);

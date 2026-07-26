@@ -187,7 +187,7 @@ Use a verificação automatizada em containers descartáveis e fixtures sintéti
 Ela não deve apagar, migrar, importar nem consultar a base local do
 proprietário por padrão. A evidência mínima de um ensaio descartável é:
 
-1. V44–V59 aplicados exatamente uma vez numa instância PostgreSQL 18 vazia;
+1. V44–V60 aplicados exatamente uma vez numa instância PostgreSQL 18 vazia;
 2. nenhuma linha de negócio copiada, exceto o controle estrutural de sequência;
 3. bootstrap sintético `CREATED`, seguido de `ALREADY_APPLIED` sem duplicatas;
 4. evento de Memória redigido, sem CPF, e-mail completo ou credenciais;
@@ -205,7 +205,7 @@ operação separada. Este runbook não substitui essa decisão.
 
 Antes de liberar qualquer módulo, registre no handoff:
 
-- versão V59 e resultado de validação Flyway;
+- versão V60 e resultado de validação Flyway;
 - perfil executado e launcher correspondente;
 - estado do bootstrap sem dados de identidade;
 - status de health/readiness da ativação;

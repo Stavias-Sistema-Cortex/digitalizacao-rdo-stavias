@@ -174,7 +174,17 @@ public class OperationalMemoryQueryService {
                     e.schema_version,
                     e.resultado,
                     e.erro_categoria,
+                    e.usuario_id AS actor_id,
+                    CASE
+                        WHEN e.usuario_id = ? THEN e.dispositivo_id
+                        ELSE NULL
+                    END AS owned_device_id,
+                    e.client_mutation_id,
+                    e.correlacao_id,
+                    e.causacao_id,
+                    e.versao_entidade,
                 """);
+        parameters.add(scope.userId());
         if (hasSearch) {
             sql.append("""
                     (
@@ -457,6 +467,7 @@ public class OperationalMemoryQueryService {
         appendExact(sql, parameters, "e.obra_id", filter.worksiteId());
         appendExact(sql, parameters, "e.rdo_id", filter.rdoId());
         appendExact(sql, parameters, "e.usuario_id", filter.actorId());
+        appendExact(sql, parameters, "e.dispositivo_id", filter.deviceId());
         appendExact(sql, parameters, "upper(e.tipo_evento)", filter.eventType());
         appendExact(sql, parameters, "upper(e.origem)", filter.origin());
         appendExact(sql, parameters, "upper(e.resultado)", filter.result());
@@ -508,6 +519,12 @@ public class OperationalMemoryQueryService {
                 resultSet.getInt("schema_version"),
                 resultSet.getString("resultado"),
                 resultSet.getString("erro_categoria"),
+                resultSet.getString("actor_id"),
+                resultSet.getString("owned_device_id"),
+                resultSet.getString("client_mutation_id"),
+                resultSet.getString("correlacao_id"),
+                resultSet.getString("causacao_id"),
+                resultSet.getObject("versao_entidade", Long.class),
                 resultSet.getDouble("relevance")
         );
     }
@@ -560,6 +577,7 @@ public class OperationalMemoryQueryService {
         fields.add(filter.worksiteId());
         fields.add(filter.rdoId());
         fields.add(filter.actorId());
+        fields.add(filter.deviceId());
         fields.add(filter.eventType());
         fields.add(filter.origin());
         fields.add(filter.result());

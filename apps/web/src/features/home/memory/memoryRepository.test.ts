@@ -51,6 +51,12 @@ function event(index: number, text = `Evento ${index}`): MemoryServerEvent {
     schemaVersion: 13,
     result: "SYNCED",
     errorCategory: null,
+    actorId: userId,
+    deviceId: "device-primary",
+    clientMutationId: `mutation-${index}`,
+    correlationId: `correlation-${index}`,
+    causationId: null,
+    entityVersion: index,
     relevance: 0,
   };
 }
@@ -80,6 +86,54 @@ function page(items: MemoryServerEvent[], scopeHash = "scope-a"): MemoryPage {
   };
 }
 
+function conflictMutation() {
+  return {
+    clientMutationId: "mutation-conflict",
+    entidadeTipo: "RDO" as const,
+    entidadeId: "rdo-conflict",
+    operacao: "ATUALIZAR_RDO_RASCUNHO" as const,
+    baseVersao: 3,
+    payload: { id: "rdo-conflict", obraId: WORKSITE_ID, titulo: "Local" },
+    status: "CONFLICT" as const,
+    tentativas: 1,
+    ultimaTentativaEm: "2026-07-22T12:00:01.000Z",
+    ultimoErro: "Conflito de versão.",
+    conflito: { versaoAtual: 4 },
+    criadaNoClienteEm: "2026-07-22T12:00:00.000Z",
+    updatedAt: "2026-07-22T12:00:01.000Z",
+    transport: "SYNC_PUSH" as const,
+    schemaVersion: 13 as const,
+    deviceId: "device-primary",
+    userId,
+    obraId: WORKSITE_ID,
+    entityType: "RDO" as const,
+    entityId: "rdo-conflict",
+    operation: "UPDATE" as const,
+    baseVersion: 3,
+    changedFields: ["titulo"],
+    occurredAt: "2026-07-22T12:00:00.000Z",
+    correlationId: "correlation-conflict",
+    causationId: null,
+    fieldPatch: {
+      changed: { titulo: "Local" },
+      baseValues: { titulo: "Base" },
+    },
+    relatedEntities: [],
+    trace: {
+      actorId: userId,
+      deviceId: "device-primary",
+      authorizationScope: [WORKSITE_ID],
+      correlationId: "correlation-conflict",
+      causationId: null,
+      ontologyEventId: "event-conflict",
+      payloadHash: "b".repeat(64),
+    },
+    nextAttemptAt: null,
+    blockedReason: "REMOTE_SNAPSHOT_UNAVAILABLE",
+    lastSafeCode: "VERSION_CONFLICT",
+  };
+}
+
 beforeEach(async () => {
   userId = crypto.randomUUID();
   currentProfile = {
@@ -101,7 +155,7 @@ afterEach(async () => {
   clearSession();
 });
 
-describe("Memory v15, RDO context v17, revenue trace v18 and PDOR revenue v19 migration", () => {
+describe("Memory v15 through sync lease v20 migration", () => {
   it("preserves v14 data while adding the scoped Memory and RDO context stores", async () => {
     const legacy = await openDB(databaseName, 14, {
       upgrade(database) {
@@ -115,8 +169,8 @@ describe("Memory v15, RDO context v17, revenue trace v18 and PDOR revenue v19 mi
 
     const upgraded = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(19);
-    expect(upgraded.version).toBe(19);
+    expect(CORTEX_DATABASE_VERSION).toBe(20);
+    expect(upgraded.version).toBe(20);
     expect(await upgraded.get("rdos", "rdo-preservado")).toMatchObject({
       numeroRdo: "17",
     });
@@ -205,6 +259,91 @@ describe("Memory repository", () => {
     });
 
     expect(result.items.map((item) => item.eventId)).toContain("event-137");
+  });
+
+  it("applies authorized actor and device filters to cached structural metadata", async () => {
+    const repository = createMemoryRepository(await getCortexDb());
+    await repository.putPage(guard, page([
+      event(1),
+      {
+        ...event(2),
+        actorId: "00000000-0000-4000-8000-000000000099",
+        deviceId: "device-other",
+      },
+    ]));
+
+    const result = await repository.search({
+      userId,
+      scopeHash: "scope-a",
+      filters: {
+        actorId: userId,
+        deviceId: "device-primary",
+      },
+      limit: 20,
+    });
+
+    expect(result.items.map((item) => item.eventId)).toEqual(["event-001"]);
+  });
+
+  it("joins terminal local evidence to its canonical outbox review without raw state", async () => {
+    const database = await getCortexDb();
+    const repository = createMemoryRepository(database);
+    await database.put("outbox_mutations", conflictMutation());
+    await database.put("operational_events", {
+      id: "event-conflict",
+      type: "RDO_EDITADO",
+      principalEntity: {
+        tipo: "RDO",
+        id: "rdo-conflict",
+        nome: "RDO em conflito",
+      },
+      principalEntityKey: "RDO:rdo-conflict",
+      relatedEntities: [],
+      obraId: WORKSITE_ID,
+      rdoId: "rdo-conflict",
+      colaboradorId: null,
+      occurredAt: "2026-07-22T12:00:00.000Z",
+      syncedAt: null,
+      origin: "OFFLINE",
+      responsibleUserId: userId,
+      responsibleUserName: "Encarregado",
+      payload: { segredo: "não exportar" },
+      syncStatus: "SYNC_FAILED",
+      schemaVersion: 13,
+      clientMutationId: "mutation-conflict",
+      deviceId: "device-primary",
+      correlationId: "correlation-conflict",
+      causationId: null,
+      previousState: {
+        id: "rdo-conflict",
+        obraId: WORKSITE_ID,
+        titulo: "Base privada",
+      },
+      newState: {
+        id: "rdo-conflict",
+        obraId: WORKSITE_ID,
+        titulo: "Local privado",
+      },
+      result: "CONFLICT",
+      errorCategory: "VERSION_CONFLICT",
+      entityVersion: 3,
+    });
+
+    const result = await repository.search({
+      userId,
+      scopeHash: "scope-a",
+      filters: { actorId: userId, deviceId: "device-primary" },
+      allowedWorksiteIds: [WORKSITE_ID],
+      limit: 20,
+    });
+
+    expect(result.items[0].review).toMatchObject({
+      remoteVersion: 4,
+      canReconcile: false,
+      unavailableReason: "REMOTE_SNAPSHOT_UNAVAILABLE",
+    });
+    expect(JSON.stringify(result.items[0])).not.toContain("privad");
+    expect(JSON.stringify(result.items[0])).not.toContain("não exportar");
   });
 
   it("isolates cached documents by both user and authorization scope", async () => {

@@ -62,6 +62,7 @@ class OperationalMemoryFingerprintTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
     }

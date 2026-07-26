@@ -72,11 +72,11 @@ afterEach(async () => {
 });
 
 describe("canonical mutation IndexedDB contract", () => {
-  it("upgrades v13 to v19, adds revenue caches and trace indexes, and preserves queued data", async () => {
+  it("upgrades v13 to v20, adds revenue caches and trace indexes, and preserves queued data", async () => {
     const database = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(19);
-    expect(database.version).toBe(19);
+    expect(CORTEX_DATABASE_VERSION).toBe(20);
+    expect(database.version).toBe(20);
     expect(
       [...database.transaction("outbox_mutations").store.indexNames],
     ).toContain("by-next-attempt-at");

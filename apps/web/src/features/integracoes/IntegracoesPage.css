@@ -95,7 +95,7 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: clamp(16px, 2vw, 28px);
+  padding: 0;
 }
 
 .integracoes-page .integracoes-table-card,

@@ -254,7 +254,6 @@
     background 150ms ease;
 }
 
-
 .cortex-login .login__submit:active:not(:disabled) {
   transform: translateY(0);
   box-shadow: 0 8px 18px -12px rgb(254 210 3 / 45%);
@@ -625,6 +624,29 @@
   border: 1px solid var(--login-yellow);
   background: var(--login-yellow);
   color: var(--login-ink);
+}
+
+.login__actions {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login__actions .login__submit {
+  margin-top: 0;
+}
+
+.cortex-login .login__submit-secondary {
+  margin-top: 0;
+  border: 1px solid #3b4b47;
+  background: #f5f7f6;
+  color: #12201d;
+}
+
+.cortex-login .login__submit-secondary:hover:not(:disabled) {
+  border-color: #1f302c;
+  background: #ffffff;
 }
 
 .cortex-login .login__submit:hover:not(:disabled) {

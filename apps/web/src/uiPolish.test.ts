@@ -185,11 +185,12 @@ describe("polimento visual da plataforma autenticada", () => {
     );
     expect(rule(syncCss, ".sync-chip__button")).toContain("width: 40px;");
     expect(rule(syncCss, ".sync-chip__button")).toContain("height: 40px;");
-    expect(globalCss).toContain(".avatar-button {\n  width: 40px;");
-    expect(globalCss).toContain("height: 40px;");
-    expect(globalCss).toContain(
-      ".avatar-button {\n  border-color: #101112;\n  border-radius: 0;\n  background: #101112;",
-    );
+    const avatar = rule(globalCss, ".avatar-button");
+    expect(avatar).toContain("width: 40px;");
+    expect(avatar).toContain("height: 40px;");
+    expect(avatar).toContain("border: 1px solid #101112;");
+    expect(avatar).toContain("border-radius: 0;");
+    expect(avatar).toContain("background: #101112;");
     expect(rule(globalCss, "\n.sidebar-footer button")).toContain(
       "min-height: 40px;",
     );
@@ -263,12 +264,12 @@ describe("polimento visual da plataforma autenticada", () => {
 
   });
 
-  it("devolve ao workspace de Mensagens a faixa antes reservada ao launcher", () => {
+  it("keeps Messages in document flow without viewport magic heights", () => {
     const workspace = rule(mensagensCss, ".mensagens-workspace");
-    expect(workspace).toContain(
-      "height: min(760px, calc(100vh - 193px));",
-    );
-    expect(workspace).not.toContain("calc(100vh - 275px)");
+    expect(workspace).toContain("min-height: 32rem;");
+    expect(workspace).toContain("flex: 1 1 auto;");
+    expect(workspace).not.toContain("\n  height:");
+    expect(workspace).not.toContain("calc(100vh");
   });
 
   it("marca a obra selecionada sem alterar as cores semânticas do PDOR", () => {

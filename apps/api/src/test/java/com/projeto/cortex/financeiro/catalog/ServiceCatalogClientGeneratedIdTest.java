@@ -71,12 +71,14 @@ class ServiceCatalogClientGeneratedIdTest {
         ));
         service.createPrice(WORKSITE, ACTOR, SERVICE, new CreateServicePriceCommand(
                 PRICE.toUpperCase(), "mutation-price", "m2", "brl",
-                new BigDecimal("125.0000"), LocalDate.of(2026, 1, 1),
+                new BigDecimal("125.0000"), new BigDecimal("800.000"),
+                LocalDate.of(2026, 1, 1),
                 null, "contrato"
         ));
         service.supersedePrice(WORKSITE, ACTOR, PRICE, new SupersedeServicePriceCommand(
                 REPLACEMENT.toUpperCase(), "mutation-supersede",
-                new BigDecimal("130.0000"), LocalDate.of(2026, 7, 1),
+                new BigDecimal("130.0000"), new BigDecimal("850.000"),
+                LocalDate.of(2026, 7, 1),
                 null, "aditivo"
         ));
 
@@ -125,7 +127,7 @@ class ServiceCatalogClientGeneratedIdTest {
     private ServicePriceVersion price(String id, String supersedesId) {
         return new ServicePriceVersion(
                 id, WORKSITE, SERVICE, "M2", "BRL", supersedesId == null ? 1 : 2,
-                new BigDecimal("125.0000"),
+                new BigDecimal("125.0000"), new BigDecimal("800.000"),
                 supersedesId == null
                         ? LocalDate.of(2026, 1, 1)
                         : LocalDate.of(2026, 7, 1),

@@ -29,17 +29,11 @@ import {
   listarColaboradoresConhecidos,
 } from "../tarefas/colaboradoresAcademy";
 import {
-  addTeamMember,
-  archiveTeam,
-  createTeam,
-  endTeamMember,
   fetchOperationalRoles,
   fetchTeam,
   fetchTeamHistory,
   fetchTeams,
   fetchTeamWorksites,
-  updateTeam,
-  updateTeamMember,
   type OperationalRoleDto,
   type TeamDto,
   type TeamHistoryEventDto,
@@ -53,6 +47,10 @@ import {
   listLocalTeams,
   listLocalTeamWorksites,
   putLocalTeam,
+  queueArchiveTeam,
+  queueCreateTeam,
+  queueTeamLinkChange,
+  queueUpdateTeam,
   replaceLocalOperationalRoles,
   replaceLocalTeamHistory,
   replaceLocalTeams,
@@ -156,6 +154,10 @@ export function EquipesPage() {
   const [history, setHistory] = useState<TeamHistoryEventDto[]>([]);
   const [filters, setFilters] = useState<TeamFilters>(EMPTY_FILTERS);
   const [isLoading, setIsLoading] = useState(true);
+  const [
+    hasConfirmedRemoteHydration,
+    setHasConfirmedRemoteHydration,
+  ] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -186,6 +188,7 @@ export function EquipesPage() {
     let cancelled = false;
     async function loadTeams() {
       setIsLoading(true);
+      setHasConfirmedRemoteHydration(false);
       setError(null);
       const [localTeams, localRoles, localObras] = await Promise.all([
         listLocalTeams(),
@@ -217,6 +220,7 @@ export function EquipesPage() {
           setTeams(remoteTeams);
           setRoles(remoteRoles);
           setObras(await listObrasLocais());
+          setHasConfirmedRemoteHydration(true);
         }
       } catch (loadError: unknown) {
         if (!cancelled && localTeams.length === 0) {
@@ -319,10 +323,6 @@ export function EquipesPage() {
 
   async function submitTeam(event: FormEvent) {
     event.preventDefault();
-    if (!navigator.onLine || !hasAuthenticatedConnection) {
-      setActionError("Alterações administrativas exigem conexão para validação de permissão e concorrência.");
-      return;
-    }
     if (!teamForm.nome.trim() || !teamForm.obraId || !teamForm.inicio) {
       setActionError("Informe nome, obra e início da vigência.");
       return;
@@ -331,23 +331,27 @@ export function EquipesPage() {
     setActionError(null);
     try {
       const saved = teamModalMode === "CREATE"
-        ? await createTeam({
+        ? await queueCreateTeam({
             id: crypto.randomUUID(),
             obraId: teamForm.obraId,
+            obraNome: obras.find((obra) => obra.id === teamForm.obraId)?.nome
+              ?? teamForm.obraId,
             nome: teamForm.nome,
             descricao: teamForm.descricao.trim() || null,
             inicioValidadeEm: localDateTime(teamForm.inicio),
           })
-        : await updateTeam(selectedTeam!.id, {
+        : await queueUpdateTeam(selectedTeam!, {
             nome: teamForm.nome,
             descricao: teamForm.descricao.trim() || null,
-            status: selectedTeam!.status,
             inicioValidadeEm: localDateTime(teamForm.inicio),
             fimValidadeEm: selectedTeam!.fimValidadeEm,
-            baseVersao: selectedTeam!.versaoEntidade,
             motivo: teamForm.motivo,
           });
-      await putLocalTeam(saved);
+      setTeams((current) => [
+        saved,
+        ...current.filter((team) => team.id !== saved.id),
+      ]);
+      setSelectedTeam(saved);
       setTeamModalMode(null);
       setSearchParams({ equipe: saved.id });
       setReloadTick((value) => value + 1);
@@ -366,8 +370,14 @@ export function EquipesPage() {
     }
     setIsSaving(true);
     try {
-      const archived = await archiveTeam(selectedTeam.id, selectedTeam.versaoEntidade, teamForm.motivo);
-      await putLocalTeam(archived);
+      const archived = await queueArchiveTeam(
+        selectedTeam,
+        teamForm.motivo,
+      );
+      setSelectedTeam(archived);
+      setTeams((current) => current.map((team) =>
+        team.id === archived.id ? archived : team
+      ));
       setTeamModalMode(null);
       setReloadTick((value) => value + 1);
     } catch (saveError: unknown) {
@@ -416,27 +426,86 @@ export function EquipesPage() {
     setActionError(null);
     try {
       if (memberModalMode === "ADD") {
-        await addTeamMember(selectedTeam.id, {
-          id: crypto.randomUUID(),
+        const memberId = crypto.randomUUID();
+        const collaborator = collaborators.find(
+          (item) => item.id === memberForm.colaboradorId,
+        );
+        const role = roles.find(
+          (item) => item.id === memberForm.funcaoOperacionalId,
+        );
+        const timestamp = new Date().toISOString();
+        const member: TeamMemberDto = {
+          id: memberId,
+          equipeId: selectedTeam.id,
           colaboradorId: memberForm.colaboradorId,
+          colaboradorNome: collaborator?.nome ?? memberForm.colaboradorId,
+          papelAcesso: null,
           funcaoOperacionalId: memberForm.funcaoOperacionalId,
+          funcaoCodigo: role?.codigo ?? "",
+          funcaoNome: role?.nome ?? memberForm.funcaoOperacionalId,
           responsavel: memberForm.responsavel,
           inicioEm: localDateTime(memberForm.inicio),
-          baseVersao: null,
-          motivo: memberForm.motivo,
-          concederAcessoObra: memberForm.concederAcessoObra,
+          status: "ATIVO",
+          fimEm: null,
+          motivoEncerramento: null,
+          versaoEntidade: 0,
+          criadoEm: timestamp,
+          atualizadoEm: timestamp,
+        };
+        const updated = await queueTeamLinkChange(selectedTeam, {
+          action: "ADICIONAR_MEMBRO",
+          vinculo: {
+            id: memberId,
+            colaboradorId: memberForm.colaboradorId,
+            funcaoOperacionalId: memberForm.funcaoOperacionalId,
+            responsavel: memberForm.responsavel,
+            inicioEm: localDateTime(memberForm.inicio),
+            baseVersao: null,
+            motivo: memberForm.motivo,
+            concederAcessoObra: memberForm.concederAcessoObra,
+          },
+          projectedMembers: [...selectedTeam.membros, member],
+          colaboradorId: memberForm.colaboradorId,
         });
+        setSelectedTeam(updated);
+        setTeams((current) => current.map((team) =>
+          team.id === updated.id ? updated : team
+        ));
       } else {
-        await updateTeamMember(selectedTeam.id, selectedMember!.id, {
-          id: selectedMember!.id,
-          colaboradorId: selectedMember!.colaboradorId,
+        const member = selectedMember!;
+        const role = roles.find(
+          (item) => item.id === memberForm.funcaoOperacionalId,
+        );
+        const projected = {
+          ...member,
           funcaoOperacionalId: memberForm.funcaoOperacionalId,
+          funcaoCodigo: role?.codigo ?? member.funcaoCodigo,
+          funcaoNome: role?.nome ?? member.funcaoNome,
           responsavel: memberForm.responsavel,
           inicioEm: localDateTime(memberForm.inicio),
-          baseVersao: selectedMember!.versaoEntidade,
-          motivo: memberForm.motivo,
-          concederAcessoObra: memberForm.concederAcessoObra,
+          atualizadoEm: new Date().toISOString(),
+        };
+        const updated = await queueTeamLinkChange(selectedTeam, {
+          action: "ATUALIZAR_MEMBRO",
+          vinculo: {
+            id: member.id,
+            colaboradorId: member.colaboradorId,
+            funcaoOperacionalId: memberForm.funcaoOperacionalId,
+            responsavel: memberForm.responsavel,
+            inicioEm: localDateTime(memberForm.inicio),
+            baseVersao: member.versaoEntidade,
+            motivo: memberForm.motivo,
+            concederAcessoObra: memberForm.concederAcessoObra,
+          },
+          projectedMembers: selectedTeam.membros.map((item) =>
+            item.id === member.id ? projected : item
+          ),
+          colaboradorId: member.colaboradorId,
         });
+        setSelectedTeam(updated);
+        setTeams((current) => current.map((team) =>
+          team.id === updated.id ? updated : team
+        ));
       }
       setMemberModalMode(null);
       setReloadTick((value) => value + 1);
@@ -455,13 +524,32 @@ export function EquipesPage() {
     }
     setIsSaving(true);
     try {
-      await endTeamMember(
-        selectedTeam.id,
-        selectedMember.id,
-        selectedMember.versaoEntidade,
-        memberForm.motivo,
-        localDateTime(memberForm.inicio),
-      );
+      const endedAt = localDateTime(memberForm.inicio);
+      const updated = await queueTeamLinkChange(selectedTeam, {
+        action: "ENCERRAR_MEMBRO",
+        vinculoId: selectedMember.id,
+        vinculo: {
+          baseVersao: selectedMember.versaoEntidade,
+          motivo: memberForm.motivo,
+          encerradoEm: endedAt,
+        },
+        projectedMembers: selectedTeam.membros.map((member) =>
+          member.id === selectedMember.id
+            ? {
+                ...member,
+                status: "ENCERRADO",
+                fimEm: endedAt,
+                motivoEncerramento: memberForm.motivo,
+                atualizadoEm: new Date().toISOString(),
+              }
+            : member
+        ),
+        colaboradorId: selectedMember.colaboradorId,
+      });
+      setSelectedTeam(updated);
+      setTeams((current) => current.map((team) =>
+        team.id === updated.id ? updated : team
+      ));
       setMemberModalMode(null);
       setSelectedMember(null);
       setReloadTick((value) => value + 1);
@@ -518,13 +606,21 @@ export function EquipesPage() {
           <button type="button" onClick={openCreateTeam}>Criar equipe</button>
         ) : null}
         status={{
-          code: isLoading ? "SYNCING" : error ? "REJECTED" : navigator.onLine ? "SYNCED" : "LOCAL",
+          code: isLoading
+            ? "SYNCING"
+            : error
+              ? "REJECTED"
+              : hasConfirmedRemoteHydration
+                ? "SYNCED"
+                : "LOCAL",
           label: isLoading
             ? "Carregando equipes"
             : error
               ? "Catálogo indisponível"
               : `${visibleTeams.length} equipes visíveis`,
-          detail: navigator.onLine ? "Dados locais com atualização automática" : "Dados preservados neste dispositivo",
+          detail: hasConfirmedRemoteHydration
+            ? "Catálogo confirmado pelo servidor"
+            : "Dados preservados neste dispositivo",
         }}
       >
       <div className={`teams-page ${selectedTeamId ? "teams-page--detail-open" : ""}`}>

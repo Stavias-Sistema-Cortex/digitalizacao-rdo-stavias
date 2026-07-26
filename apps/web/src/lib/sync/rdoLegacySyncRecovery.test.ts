@@ -330,6 +330,45 @@ describe("legacy RDO context hydration", () => {
   });
 });
 
+describe("authoritative RDO number reconciliation", () => {
+  it("persists the server-assigned number in the local record and payload", async () => {
+    const database = await getCortexDb();
+    const mutation = {
+      ...legacyCreate(),
+      blockedReason: null,
+    };
+    await database.put(
+      "rdos",
+      localRdo({
+        numeroRdo: "RDO-0303",
+        observacoes: "offline",
+      }),
+    );
+    await database.put("outbox_mutations", mutation);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "APLICADA",
+      resultado: {
+        id: RDO_ID,
+        numeroRdo: "RDO-0310",
+        versaoEntidade: 1,
+      },
+    });
+
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      numeroRdo: "RDO-0310",
+      syncStatus: "SYNCED",
+      versaoEntidade: 1,
+      payload: {
+        numeroRdo: "RDO-0310",
+        observacoes: "offline",
+      },
+    });
+  });
+});
+
 describe("legacy RDO event evidence repair", () => {
   it("survives reopen and marks only events carried by the applied mutation", async () => {
     let database = await getCortexDb();

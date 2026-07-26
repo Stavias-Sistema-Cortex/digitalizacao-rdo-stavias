@@ -1,10 +1,9 @@
 .teams-page {
   display: grid;
   grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
-  height: 100vh;
-  height: 100dvh;
-  min-height: 650px;
-  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   background: #f1f4f2;
 }
 
@@ -971,17 +970,9 @@
   }
 }
 
-@media (max-width: 900px) {
-  .teams-page {
-    height: calc(100dvh - 150px);
-    min-height: 600px;
-  }
-}
-
 @media (max-width: 760px) {
   .teams-page {
     display: block;
-    height: calc(100dvh - 150px);
   }
 
   .teams-catalog,
@@ -1206,12 +1197,13 @@
 }
 
 .teams-workspace > .operational-workspace__content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
 }
 
 .teams-workspace .teams-page {
-  height: calc(100dvh - 190px);
-  min-height: 590px;
   border: 1px solid var(--color-ink);
   background: #f5f6f5;
 }
@@ -1227,13 +1219,6 @@
 .teams-workspace .teams-empty-state {
   border-radius: 0;
   box-shadow: none;
-}
-
-@media (max-width: 760px) {
-  .teams-workspace .teams-page {
-    height: calc(100dvh - 220px);
-    min-height: 520px;
-  }
 }
 
 .teams-modal {

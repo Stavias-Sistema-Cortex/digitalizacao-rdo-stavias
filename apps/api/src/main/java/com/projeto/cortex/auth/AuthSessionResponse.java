@@ -30,7 +30,7 @@ public record AuthSessionResponse(
                     "Perfil de sessão inválido."
             );
         }
-        colaboradorId = colaboradorId.strip();
+        colaboradorId = canonicalCollaboratorId(colaboradorId);
         nome = nome.strip();
         papelAcesso = papelAcesso.strip();
         obraIds = canonicalObraIds(obraIds);
@@ -115,5 +115,20 @@ public record AuthSessionResponse(
                 .distinct()
                 .sorted()
                 .toList();
+    }
+
+    private static String canonicalCollaboratorId(String value) {
+        try {
+            String persisted = value.strip();
+            String canonical = UUID.fromString(persisted).toString();
+            if (!canonical.equalsIgnoreCase(persisted)) {
+                throw new IllegalArgumentException();
+            }
+            return canonical;
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(
+                    "Identificador de colaborador inválido."
+            );
+        }
     }
 }

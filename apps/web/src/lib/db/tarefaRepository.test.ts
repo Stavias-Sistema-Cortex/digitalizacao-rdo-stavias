@@ -80,6 +80,7 @@ beforeEach(async () => {
     lastSyncStartedAt: null,
     lastSyncCompletedAt: null,
     lastSyncError: null,
+    syncExecutionLease: null,
   });
 });
 

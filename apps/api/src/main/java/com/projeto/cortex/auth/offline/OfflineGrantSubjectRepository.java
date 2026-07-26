@@ -21,7 +21,7 @@ class OfflineGrantSubjectRepository {
                 SELECT colaborador.nome,
                        CURRENT_TIMESTAMP(6) AS database_now
                 FROM colaborador
-                WHERE colaborador.id = ?
+                WHERE LOWER(colaborador.id) = LOWER(?)
                   AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                 LIMIT 1

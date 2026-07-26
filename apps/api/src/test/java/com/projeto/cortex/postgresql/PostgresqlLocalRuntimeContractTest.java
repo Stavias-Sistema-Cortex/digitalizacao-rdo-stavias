@@ -41,7 +41,7 @@ class PostgresqlLocalRuntimeContractTest {
     }
 
     @Test
-    void localLaunchersEnforceV59RealAlfaAndSecretFiles() throws Exception {
+    void localLaunchersEnforceV60RealAlfaAndSecretFiles() throws Exception {
         String runApi = read("scripts/dev/run-api.sh");
         String runCompose = read("scripts/dev/run-compose.sh");
         String runDocker = read("scripts/dev/run-api-docker.sh");
@@ -97,6 +97,21 @@ class PostgresqlLocalRuntimeContractTest {
         assertThat(webEnvironment)
                 .contains("VITE_CORTEX_AUTH_MODE=postgresql")
                 .doesNotContain("VITE_CORTEX_AUTH_MODE=legacy");
+    }
+
+    @Test
+    void localProfileDoesNotSynthesizeASecondOtpSecret() throws Exception {
+        String application = read("apps/api/src/main/resources/application.yml");
+        String localProfile = read("apps/api/src/main/resources/application-local.yml");
+
+        assertThat(application).contains(
+                "hmac-key-file: ${CORTEX_AUTH_OTP_HMAC_KEY_FILE:}",
+                "hmac-key-inline: ${CORTEX_AUTH_OTP_HMAC_KEY:}"
+        );
+        assertThat(localProfile).doesNotContain(
+                "hmac-key-inline",
+                "random.uuid"
+        );
     }
 
     @Test

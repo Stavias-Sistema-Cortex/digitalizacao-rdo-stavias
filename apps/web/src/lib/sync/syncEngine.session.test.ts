@@ -31,11 +31,28 @@ const mocks = vi.hoisted(() => ({
   pull: vi.fn(async () => ({ pulled: 0, messagingConversationIds: [] })),
   refresh: vi.fn(async () => undefined),
   ack: vi.fn(async () => 0),
+  assertLease: vi.fn(async () => undefined),
+  runWithLease: vi.fn(
+    async (
+      _guard: { fingerprint: string },
+      task: (lease: {
+        ownerToken: string;
+        assertOwned(): Promise<void>;
+      }) => Promise<unknown>,
+    ) =>
+      task({
+        ownerToken: "owner-test",
+        assertOwned: mocks.assertLease,
+      }),
+  ),
 }));
 
 vi.mock("./syncSession", () => ({
   captureOnlineSyncSession: mocks.capture,
   assertSyncSession: mocks.assert,
+}));
+vi.mock("./syncExecutionLease", () => ({
+  runWithSyncExecutionLease: mocks.runWithLease,
 }));
 vi.mock("../../features/auth/authSession", () => ({
   hasOnlineSession: () => true,
@@ -86,7 +103,9 @@ describe("session-scoped sync single flight", () => {
         }),
     );
     const first = syncNow();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(releaseFirst).toBeTypeOf("function");
+    });
     mocks.currentFingerprint = "session-b";
     const second = syncNow();
 
@@ -94,6 +113,19 @@ describe("session-scoped sync single flight", () => {
     releaseFirst();
     await Promise.allSettled([first, second]);
     expect(sharedAcrossSessions).toBe(false);
+  });
+
+  it("does not recover or resend rows when another tab owns the durable lease", async () => {
+    const unavailable = new Error(
+      "A sincronização já está ativa em outra aba.",
+    );
+    mocks.runWithLease.mockRejectedValueOnce(unavailable);
+
+    await expect(syncNow()).rejects.toBe(unavailable);
+
+    expect(mocks.updateSyncState).not.toHaveBeenCalled();
+    expect(mocks.recover).not.toHaveBeenCalled();
+    expect(mocks.push).not.toHaveBeenCalled();
   });
 
   it("fails closed before the next stage when the session changes", async () => {

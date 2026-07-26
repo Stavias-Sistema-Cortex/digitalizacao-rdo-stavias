@@ -59,6 +59,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         payload.put("unit", "M2");
         payload.put("currency", "BRL");
         payload.put("unitPrice", "125.0000");
+        payload.put("contractedQuantity", "800.000");
         payload.put("validFrom", "2026-01-01");
         payload.put("source", "CONTRATO");
 
@@ -78,6 +79,8 @@ class ServicePriceVersionSyncOperationHandlerTest {
         verifyAdmin();
         assertThat(command.getValue().id()).isEqualTo(PRICE);
         assertThat(command.getValue().clientMutationId()).isEqualTo(MUTATION);
+        assertThat(command.getValue().contractedQuantity())
+                .isEqualByComparingTo("800.000");
         assertThat(applied.entityType()).isEqualTo("SERVICE_PRICE_VERSION");
         assertThat(applied.entityId()).isEqualTo(PRICE);
         assertThat(applied.authoritativeEvent().eventType())
@@ -100,6 +103,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         ObjectNode payload = basePayload(PRICE);
         payload.put("previousPriceId", PREVIOUS);
         payload.put("unitPrice", "130.0000");
+        payload.put("contractedQuantity", "850.000");
         payload.put("validFrom", "2026-07-01");
         payload.put("source", "ADITIVO");
 
@@ -120,6 +124,8 @@ class ServicePriceVersionSyncOperationHandlerTest {
         );
         assertThat(command.getValue().id()).isEqualTo(PRICE);
         assertThat(command.getValue().clientMutationId()).isEqualTo(MUTATION);
+        assertThat(command.getValue().contractedQuantity())
+                .isEqualByComparingTo("850.000");
         assertThat(applied.entityId()).isEqualTo(PRICE);
         assertThat(applied.authoritativeEvent().eventType())
                 .isEqualTo("SERVICE_PRICE_VERSION_PUBLISHED");
@@ -183,6 +189,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         payload.put("unit", "M2");
         payload.put("currency", "BRL");
         payload.put("unitPrice", "125.0000");
+        payload.put("contractedQuantity", "800.000");
         payload.put("validFrom", "2026-01-01");
         payload.put("source", "CONTRATO");
 
@@ -326,6 +333,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         payload.put("unit", "M2");
         payload.put("currency", "BRL");
         payload.put("unitPrice", "125.0000");
+        payload.put("contractedQuantity", "800.000");
         payload.put("validFrom", "2026-01-01");
         payload.put("source", "CONTRATO");
         return payload;
@@ -335,6 +343,7 @@ class ServicePriceVersionSyncOperationHandlerTest {
         ObjectNode payload = basePayload(PRICE);
         payload.put("previousPriceId", PREVIOUS);
         payload.put("unitPrice", "130.0000");
+        payload.put("contractedQuantity", "850.000");
         payload.put("validFrom", "2026-07-01");
         payload.put("source", "ADITIVO");
         return payload;
@@ -379,7 +388,8 @@ class ServicePriceVersionSyncOperationHandlerTest {
     private ServicePriceVersion price(String id, String supersedes, String status) {
         return new ServicePriceVersion(
                 id, WORKSITE, SERVICE, "M2", "BRL", supersedes == null ? 1 : 2,
-                new BigDecimal("125.0000"), LocalDate.of(2026, 1, 1),
+                new BigDecimal("125.0000"), new BigDecimal("800.000"),
+                LocalDate.of(2026, 1, 1),
                 null, supersedes, status, null,
                 Instant.parse("2026-07-22T12:00:00Z")
         );

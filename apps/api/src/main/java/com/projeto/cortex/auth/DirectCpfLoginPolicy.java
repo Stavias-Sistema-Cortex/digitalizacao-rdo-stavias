@@ -1,8 +1,8 @@
 package com.projeto.cortex.auth;
 
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
-import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -18,9 +18,8 @@ public final class DirectCpfLoginPolicy {
 
     @Autowired
     public DirectCpfLoginPolicy(Environment environment) {
-        this(environment != null && environment.acceptsProfiles(
-                Profiles.of("postgresql-common", "production")
-        ));
+        this(environment == null
+                || !SecurityRuntimeMode.isLocalOrTestOnly(environment));
     }
 
     DirectCpfLoginPolicy(boolean disabled) {

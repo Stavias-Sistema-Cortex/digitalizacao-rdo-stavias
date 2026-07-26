@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 class AuthPublicEndpointPolicyTest {
@@ -19,7 +20,7 @@ class AuthPublicEndpointPolicyTest {
                     + "00000000-0000-4000-8000-000000000001/verify";
 
     @Test
-    void normalPostgresqlPublishesOnlyPasskeyAuthenticationPosts() {
+    void barePostgresqlPublishesOnlyPasskeyAuthenticationPosts() {
         AuthPublicEndpointPolicy policy =
                 new AuthPublicEndpointPolicy(true, false);
 
@@ -38,6 +39,38 @@ class AuthPublicEndpointPolicyTest {
                 .toList();
 
         assertThat(publicPosts).containsExactly(OPTIONS, VERIFY);
+    }
+
+    @Test
+    void localPostgresqlAlsoPublishesDirectCpfLogin() {
+        AuthPublicEndpointPolicy policy = policy("local", "postgresql");
+
+        assertThat(policy.isPublicAuthenticationRequest(
+                request("POST", "/api/auth/login")
+        )).isTrue();
+        assertThat(policy.isPublicAuthenticationRequest(
+                request("POST", OPTIONS)
+        )).isTrue();
+        assertThat(policy.isPublicAuthenticationRequest(
+                request("POST", VERIFY)
+        )).isTrue();
+    }
+
+    @Test
+    void directCpfLoginFailsClosedOutsideLocalOrTestProfiles() {
+        assertThat(policy().isPublicAuthenticationRequest(
+                request("POST", "/api/auth/login")
+        )).isFalse();
+        for (String profile : List.of(
+                "postgresql",
+                "staging",
+                "prod",
+                "production"
+        )) {
+            assertThat(policy(profile).isPublicAuthenticationRequest(
+                    request("POST", "/api/auth/login")
+            )).as(profile).isFalse();
+        }
     }
 
     @Test
@@ -76,5 +109,11 @@ class AuthPublicEndpointPolicyTest {
                 new MockHttpServletRequest(method, path);
         request.setRequestURI(path);
         return request;
+    }
+
+    private AuthPublicEndpointPolicy policy(String... profiles) {
+        MockEnvironment environment = new MockEnvironment();
+        environment.setActiveProfiles(profiles);
+        return new AuthPublicEndpointPolicy(environment);
     }
 }

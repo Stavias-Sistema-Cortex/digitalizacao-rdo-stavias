@@ -25,6 +25,10 @@ class OperationalMemoryQueryServiceIT {
     private static final String RDO_A = "10000000-0000-0000-0000-00000000000a";
     private static final String ACTOR_A = "20000000-0000-0000-0000-00000000000a";
     private static final String ACTOR_B = "20000000-0000-0000-0000-00000000000b";
+    private static final String DEVICE_A = "30000000-0000-0000-0000-00000000000a";
+    private static final String DEVICE_A_SECONDARY =
+            "30000000-0000-0000-0000-00000000000c";
+    private static final String DEVICE_B = "30000000-0000-0000-0000-00000000000b";
 
     @Container
     private static final PostgreSQLContainer<?> DATABASE =
@@ -309,6 +313,7 @@ class OperationalMemoryQueryServiceIT {
                 WORKSITE_A,
                 RDO_A,
                 ACTOR_A,
+                null,
                 "RDO_EXECUTADO",
                 "OFFLINE",
                 "SUCESSO",
@@ -324,6 +329,38 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
+    void filtersByOneOwnedDeviceWithinTheAlreadyAuthorizedLedger() {
+        OperationalMemoryFilter filter = new OperationalMemoryFilter(
+                null,
+                null,
+                null,
+                null,
+                null,
+                ACTOR_A,
+                DEVICE_A,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        OperationalMemoryPageResponse page = service.search(
+                OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
+                filter,
+                100,
+                null
+        );
+
+        assertThat(page.items())
+                .extracting(OperationalMemoryEventResponse::eventId)
+                .containsExactly(eventId(103), eventId(99));
+        assertThat(page.items())
+                .extracting(OperationalMemoryEventResponse::deviceId)
+                .containsOnly(DEVICE_A);
+    }
+
+    @Test
     void keepsUtcRangeStableWhenTheJvmTimezoneIsNotUtc() {
         TimeZone original = TimeZone.getDefault();
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
@@ -333,6 +370,7 @@ class OperationalMemoryQueryServiceIT {
                     null,
                     null,
                     WORKSITE_A,
+                    null,
                     null,
                     null,
                     null,
@@ -366,7 +404,7 @@ class OperationalMemoryQueryServiceIT {
         assertThatThrownBy(() -> service.search(
                 scope,
                 new OperationalMemoryFilter(
-                        null, null, null, null, null, null, null, null, null,
+                        null, null, null, null, null, null, null, null, null, null,
                         Instant.parse("2026-07-21T12:00:00Z"),
                         Instant.parse("2026-07-21T10:00:00Z")
                 ),
@@ -384,11 +422,11 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
-    void keepsScopeHashOpaqueAndPublicEventProjectionFreeOfRawSensitiveFields() {
+    void exposesOnlyAuthorizedStructuralTraceMetadataWithoutRawSensitiveFields() {
         OperationalMemoryPageResponse page = service.search(
-                OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
+                OperationalMemoryScope.alfa(ACTOR_A),
                 OperationalMemoryFilter.empty(),
-                2,
+                100,
                 null
         );
 
@@ -397,16 +435,39 @@ class OperationalMemoryQueryServiceIT {
                 .doesNotContain(ACTOR_A, WORKSITE_A);
         assertThat(OperationalMemoryEventResponse.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
+                .contains(
+                        "actorId",
+                        "deviceId",
+                        "clientMutationId",
+                        "correlationId",
+                        "causationId",
+                        "entityVersion"
+                )
                 .doesNotContain(
                         "payload",
                         "previousState",
                         "newState",
-                        "actorId",
                         "actorName",
                         "email",
-                        "cpf",
-                        "deviceId"
+                        "cpf"
                 );
+        OperationalMemoryEventResponse own = page.items().stream()
+                .filter(item -> item.eventId().equals(eventId(103)))
+                .findFirst()
+                .orElseThrow();
+        assertThat(own.actorId()).isEqualTo(ACTOR_A);
+        assertThat(own.deviceId()).isEqualTo(DEVICE_A);
+        assertThat(own.clientMutationId()).isEqualTo("mutation-103");
+        assertThat(own.correlationId()).isEqualTo("correlation-103");
+        assertThat(own.causationId()).isEqualTo("cause-103");
+        assertThat(own.entityVersion()).isEqualTo(103L);
+
+        OperationalMemoryEventResponse foreign = page.items().stream()
+                .filter(item -> item.eventId().equals(eventId(101)))
+                .findFirst()
+                .orElseThrow();
+        assertThat(foreign.actorId()).isEqualTo(ACTOR_B);
+        assertThat(foreign.deviceId()).isNull();
     }
 
     @Test
@@ -485,6 +546,7 @@ class OperationalMemoryQueryServiceIT {
                         null,
                         null,
                         null,
+                        null,
                         null
                 ),
                 limit,
@@ -495,6 +557,9 @@ class OperationalMemoryQueryServiceIT {
     private static void seed() {
         insertActor(ACTOR_A, "Pessoa Privada A");
         insertActor(ACTOR_B, "Pessoa Privada B");
+        insertDevice(DEVICE_A, ACTOR_A);
+        insertDevice(DEVICE_A_SECONDARY, ACTOR_A);
+        insertDevice(DEVICE_B, ACTOR_B);
         insertWorksite(WORKSITE_A, "CTR-A", "Obra Drenagem Norte");
         insertWorksite(WORKSITE_B, "CTR-B", "Obra Drenagem Norte Estrangeira");
         jdbc.update("""
@@ -580,6 +645,13 @@ class OperationalMemoryQueryServiceIT {
                 """, id, contract, name);
     }
 
+    private static void insertDevice(String id, String actorId) {
+        jdbc.update("""
+                INSERT INTO sync_dispositivo (id, nome, tipo, usuario_id, ativo)
+                VALUES (?, 'Dispositivo de teste', 'WEB', ?, TRUE)
+                """, id, actorId);
+    }
+
     private static void insertEvent(
             long commitSequence,
             String worksiteId,
@@ -596,10 +668,13 @@ class OperationalMemoryQueryServiceIT {
                 INSERT INTO cortex_evento_operacional (
                     id, commit_seq, tipo_entidade, entidade_id, obra_id, rdo_id,
                     tipo_evento, fonte, origem, sync_status, sincronizado_em,
-                    usuario_id, resultado, schema_version, payload_json, ocorrido_em
+                    usuario_id, dispositivo_id, client_mutation_id,
+                    correlacao_id, causacao_id, versao_entidade,
+                    resultado, schema_version, payload_json, ocorrido_em
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 'IT', ?, 'SYNCED',
-                          ('2026-07-21 ' || ?)::timestamp, ?, 'SUCESSO', 13,
-                          ?::jsonb, ('2026-07-21 ' || ?)::timestamp)
+                          ('2026-07-21 ' || ?)::timestamp, ?, ?, ?, ?, ?, ?,
+                          'SUCESSO', 13, ?::jsonb,
+                          ('2026-07-21 ' || ?)::timestamp)
                 """,
                 eventId(commitSequence),
                 commitSequence,
@@ -611,9 +686,21 @@ class OperationalMemoryQueryServiceIT {
                 origin,
                 time,
                 actorId,
+                deviceFor(actorId, origin),
+                "mutation-" + commitSequence,
+                "correlation-" + commitSequence,
+                "cause-" + commitSequence,
+                commitSequence,
                 payload,
                 time
         );
+    }
+
+    private static String deviceFor(String actorId, String origin) {
+        if (ACTOR_B.equals(actorId)) {
+            return DEVICE_B;
+        }
+        return "OFFLINE".equals(origin) ? DEVICE_A : DEVICE_A_SECONDARY;
     }
 
     private static String eventId(long sequence) {

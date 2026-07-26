@@ -652,17 +652,13 @@ textarea:focus {
   display: grid;
   grid-template-columns: var(--sidebar-width, 248px) minmax(0, 1fr);
   gap: 0;
-  height: 100dvh;
-  min-height: 0;
-  overflow: hidden;
+  min-height: 100dvh;
   transition: grid-template-columns 220ms ease;
 }
 
 .cortex-shell-content {
   min-width: 0;
-  height: 100%;
-  min-height: 0;
-  overflow-y: auto;
+  min-height: 100dvh;
 }
 
 /* Durante o arrasto: sem transição (borracha) e sem seleção de texto. */
@@ -679,12 +675,13 @@ textarea:focus {
 
 /* A sidebar ocupa a lateral inteira: colada nas bordas, do topo ao rodapé. */
 .cortex-sidebar {
-  position: relative;
-  align-self: stretch;
+  position: sticky;
+  top: 0;
+  align-self: start;
   display: flex;
   flex-direction: column;
   gap: 28px;
-  height: 100%;
+  height: 100dvh;
   min-height: 0;
   overflow-y: auto;
   padding: 25px 40px 10px;
@@ -1687,10 +1684,15 @@ textarea:focus {
 }
 
 .avatar-button {
-  border-color: #101112;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #101112;
   border-radius: 0;
   background: #101112;
   color: #fff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .workspace-header__actions > :is(button, a),
@@ -1834,18 +1836,6 @@ textarea:focus {
 /* --- Shell: menu de perfil e badges --- */
 .profile-menu-anchor {
   position: relative;
-}
-
-.avatar-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  background: #0e5e57;
-  color: #fff;
-  font-weight: 700;
-  font-size: 0.8rem;
-  cursor: pointer;
 }
 
 .profile-menu {
@@ -3012,12 +3002,6 @@ textarea:focus {
 }
 
 /* Camada final Cortex 3: chrome compacto sem uma faixa de controles separada. */
-
-.avatar-button {
-  border: 1px solid #0a4f49;
-  border-radius: var(--radius-control);
-  font-weight: 500;
-}
 
 .profile-menu {
   border-radius: var(--radius-container);

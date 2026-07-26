@@ -24,6 +24,12 @@ function number(css, pattern, label) {
   return Number(match[1]);
 }
 
+function requirePattern(css, pattern, label) {
+  if (!pattern.test(css)) {
+    throw new Error(`Mensagens geometry token missing: ${label}`);
+  }
+}
+
 export function readGeometryTokens(
   css,
   shellCss = readFileSync(DEFAULT_SHELL_CSS_PATH, "utf8"),
@@ -43,6 +49,27 @@ export function readGeometryTokens(
   if (!composerBar) {
     throw new Error("Mensagens geometry token missing: composer bar box");
   }
+  const gutter = css.match(
+    /--mensagens-gutter:\s*clamp\((\d+)px,\s*[^,]+,\s*(\d+)px\)/,
+  );
+  if (!gutter) {
+    throw new Error("Mensagens geometry token missing: page gutter");
+  }
+  requirePattern(
+    css,
+    /\.mensagens-page\s*\{[\s\S]*?min-height:\s*100dvh;[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/,
+    "page flex flow",
+  );
+  requirePattern(
+    css,
+    /\.mensagens-frame\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex:\s*1 1 auto;/,
+    "frame flex flow",
+  );
+  requirePattern(
+    css,
+    /\.mensagens-workspace\s*\{[\s\S]*?min-height:\s*(\d+)rem;[\s\S]*?flex:\s*1 1 auto;/,
+    "workspace flex flow",
+  );
   return {
     shellBreakpoint: number(
       shellCss,
@@ -54,31 +81,18 @@ export function readGeometryTokens(
       /grid-template-columns:\s*var\(--sidebar-width,\s*(\d+)px\) minmax\(0, 1fr\)/,
       "shell sidebar width",
     ),
-    desktopPageGutter: number(
-      css,
-      /\.mensagens-page\s*\{[\s\S]*?calc\(100%\s*-\s*(\d+)px\)/,
-      "desktop page gutter",
-    ),
+    pageGutterMinimum: Number(gutter[1]),
+    pageGutterMaximum: Number(gutter[2]),
     twoColumnBreakpoint: Number(twoColumns[1]),
     threeColumnBreakpoint: Number(threeColumns[1]),
     listMin: Number(twoColumns[2]),
     listMax: Number(twoColumns[3]),
     contextWidth: Number(threeColumns[4]),
-    workspaceMaxHeight: number(
+    workspaceMinimumHeight: number(
       css,
-      /height:\s*min\((\d+)px,\s*calc\(100vh\s*-\s*193px\)\)/,
-      "workspace maximum height",
-    ),
-    desktopHeightOffset: number(
-      css,
-      /height:\s*min\(760px,\s*calc\(100vh\s*-\s*(\d+)px\)\)/,
-      "desktop height offset",
-    ),
-    mobileHeightOffset: number(
-      css,
-      /@media \(max-width:\s*700px\)[\s\S]*?\.mensagens-workspace\s*\{[\s\S]*?height:\s*calc\(100vh\s*-\s*(\d+)px\)/,
-      "mobile height offset",
-    ),
+      /\.mensagens-workspace\s*\{[\s\S]*?min-height:\s*(\d+)rem;/,
+      "workspace minimum height",
+    ) * 16,
     composerDesktopPadding: number(
       css,
       /\.mensagens-composer\s*\{\s*padding:\s*12px\s+(\d+)px\s+16px/,
@@ -110,15 +124,11 @@ export function measureMensagensGeometry(viewport, tokens) {
   const contentWidth = mobileShell
     ? viewport.width
     : viewport.width - tokens.sidebarWidth;
-  const frameWidth = viewport.width <= 700
-    ? contentWidth
-    : contentWidth - tokens.desktopPageGutter;
-  const workspaceHeight = viewport.width <= 700
-    ? viewport.height - tokens.mobileHeightOffset
-    : Math.min(
-        tokens.workspaceMaxHeight,
-        viewport.height - tokens.desktopHeightOffset,
-      );
+  const gutter = viewport.width <= 700
+    ? tokens.pageGutterMinimum
+    : tokens.pageGutterMaximum;
+  const frameWidth = contentWidth - gutter * 2;
+  const workspaceHeight = tokens.workspaceMinimumHeight;
 
   let columns;
   if (frameWidth >= tokens.threeColumnBreakpoint) {

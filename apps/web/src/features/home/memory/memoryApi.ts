@@ -10,6 +10,8 @@ export interface MemoryFilters {
   entityId?: string;
   worksiteId?: string;
   rdoId?: string;
+  actorId?: string;
+  deviceId?: string;
   eventType?: string;
   origin?: string;
   result?: string;
@@ -42,6 +44,12 @@ export interface MemoryServerEvent {
   schemaVersion: number;
   result: string | null;
   errorCategory: string | null;
+  actorId: string | null;
+  deviceId: string | null;
+  clientMutationId: string | null;
+  correlationId: string | null;
+  causationId: string | null;
+  entityVersion: number | null;
   relevance: number;
 }
 
@@ -78,6 +86,8 @@ const QUERY_FIELDS: readonly [keyof MemoryFilters, string][] = [
   ["entityId", "entityId"],
   ["worksiteId", "obraId"],
   ["rdoId", "rdoId"],
+  ["actorId", "actorId"],
+  ["deviceId", "deviceId"],
   ["eventType", "eventType"],
   ["origin", "origin"],
   ["result", "result"],
@@ -203,6 +213,12 @@ function parseMemoryEvent(value: unknown): MemoryServerEvent {
     schemaVersion: integer(event.schemaVersion, "Schema do evento inválido."),
     result: nullableText(event.result),
     errorCategory: nullableText(event.errorCategory),
+    actorId: nullableText(event.actorId),
+    deviceId: nullableText(event.deviceId),
+    clientMutationId: nullableText(event.clientMutationId),
+    correlationId: nullableText(event.correlationId),
+    causationId: nullableText(event.causationId),
+    entityVersion: nullableInteger(event.entityVersion),
     relevance: finiteNumber(event.relevance, "Relevância inválida."),
   };
 }

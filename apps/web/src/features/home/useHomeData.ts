@@ -41,6 +41,7 @@ export interface HomeData {
   events: OperationalEventRecord[];
   latestRdo: LocalRdoRecord | null;
   isLoading: boolean;
+  hasConfirmedRemoteHydration: boolean;
   dataUpdatedAt: string | null;
   reload: () => void;
 }
@@ -64,6 +65,10 @@ export function useHomeData(): HomeData {
   const [latestRdo, setLatestRdo] =
     useState<LocalRdoRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [
+    hasConfirmedRemoteHydration,
+    setHasConfirmedRemoteHydration,
+  ] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
 
   const reload = useCallback(() => {
@@ -83,9 +88,12 @@ export function useHomeData(): HomeData {
 
     async function loadObras() {
       setIsLoading(true);
+      setHasConfirmedRemoteHydration(false);
+      let remoteHydrationConfirmed = false;
 
       try {
         await hydrateObrasRelacionadas();
+        remoteHydrationConfirmed = true;
       } catch {
         // Offline ou API indisponível: segue com o banco local.
       }
@@ -100,6 +108,9 @@ export function useHomeData(): HomeData {
         a.updatedAt < b.updatedAt ? 1 : -1,
       );
       setObras(local);
+      setHasConfirmedRemoteHydration(
+        remoteHydrationConfirmed,
+      );
 
       setFocusedObraIdState((current) => {
         if (
@@ -195,6 +206,7 @@ export function useHomeData(): HomeData {
     events: focusedObraId ? events : [],
     latestRdo: focusedObraId ? latestRdo : null,
     isLoading,
+    hasConfirmedRemoteHydration,
     dataUpdatedAt,
     reload,
   };

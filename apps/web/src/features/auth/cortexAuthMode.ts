@@ -23,3 +23,9 @@ export function resolveCortexAuthMode(
     "VITE_CORTEX_AUTH_MODE deve ser definido como legacy ou postgresql em produção.",
   );
 }
+
+export function allowsDirectCpfLogin(
+  environment: CortexAuthEnvironment = import.meta.env,
+): boolean {
+  return environment.DEV === true && environment.PROD !== true;
+}

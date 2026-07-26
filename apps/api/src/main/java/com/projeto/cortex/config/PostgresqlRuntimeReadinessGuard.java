@@ -1,6 +1,7 @@
 package com.projeto.cortex.config;
 
 import com.projeto.cortex.common.RuntimeReadiness;
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -23,7 +24,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "59";
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "60";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
@@ -43,10 +44,25 @@ public final class PostgresqlRuntimeReadinessGuard implements
               AND ai.email_verificado_em IS NOT NULL
             """;
 
+    private static final String LOCAL_DIRECT_CPF_ACTIVE_ALFA_COUNT_SQL = """
+            SELECT COUNT(*)
+            FROM colaborador c
+            JOIN auth_identity ai ON ai.colaborador_id = c.id
+            WHERE c.ativo = TRUE
+              AND c.deletado_em IS NULL
+              AND c.papel_acesso = 'ALFA'
+              AND c.banco_origem = 'dbstavias_acad'
+              AND c.tabela_origem = 'usuarios'
+              AND ai.status = 'ATIVA'
+              AND ai.cpf_lookup_key_id IS NOT NULL
+              AND ai.cpf_lookup_hmac IS NOT NULL
+            """;
+
     private final JdbcTemplate testJdbcTemplate;
     private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
+    private final Boolean testLocalDirectCpfAllowed;
     private Environment environment;
 
     public PostgresqlRuntimeReadinessGuard() {
@@ -54,6 +70,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
         this.testRequiredSchemaVersion = null;
         this.testRuntimeReady = null;
         this.testSurfaceRegistry = null;
+        this.testLocalDirectCpfAllowed = null;
     }
 
     PostgresqlRuntimeReadinessGuard(
@@ -62,10 +79,27 @@ public final class PostgresqlRuntimeReadinessGuard implements
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
+        this(
+                jdbcTemplate,
+                requiredSchemaVersion,
+                runtimeReady,
+                surfaceRegistry,
+                false
+        );
+    }
+
+    PostgresqlRuntimeReadinessGuard(
+            JdbcTemplate jdbcTemplate,
+            String requiredSchemaVersion,
+            boolean runtimeReady,
+            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
+            boolean localDirectCpfAllowed
+    ) {
         this.testJdbcTemplate = jdbcTemplate;
         this.testRequiredSchemaVersion = requiredSchemaVersion;
         this.testRuntimeReady = runtimeReady;
         this.testSurfaceRegistry = surfaceRegistry;
+        this.testLocalDirectCpfAllowed = localDirectCpfAllowed;
     }
 
     @Override
@@ -89,7 +123,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 postgresqlJdbcTemplate(),
                 CLEAN_START_REQUIRED_SCHEMA_VERSION,
                 environment.getProperty("cortex.postgresql.runtime-ready", Boolean.class, false),
-                new PostgresqlRuntimeSurfaceRegistry()
+                new PostgresqlRuntimeSurfaceRegistry(),
+                SecurityRuntimeMode.isLocalOrTestOnly(environment)
         );
     }
 
@@ -106,7 +141,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 testJdbcTemplate,
                 testRequiredSchemaVersion,
                 testRuntimeReady,
-                testSurfaceRegistry
+                testSurfaceRegistry,
+                Boolean.TRUE.equals(testLocalDirectCpfAllowed)
         );
     }
 
@@ -144,7 +180,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
             JdbcTemplate jdbcTemplate,
             String requiredSchemaVersion,
             boolean runtimeReady,
-            PostgresqlRuntimeSurfaceRegistry surfaceRegistry
+            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
+            boolean localDirectCpfAllowed
     ) {
         if (!runtimeReady) {
             throw new IllegalStateException(
@@ -182,7 +219,9 @@ public final class PostgresqlRuntimeReadinessGuard implements
         Integer verifiedActiveAlfas;
         try {
             verifiedActiveAlfas = jdbcTemplate.queryForObject(
-                    VERIFIED_ACTIVE_ALFA_COUNT_SQL,
+                    localDirectCpfAllowed
+                            ? LOCAL_DIRECT_CPF_ACTIVE_ALFA_COUNT_SQL
+                            : VERIFIED_ACTIVE_ALFA_COUNT_SQL,
                     Integer.class
             );
         } catch (DataAccessException exception) {
@@ -193,7 +232,11 @@ public final class PostgresqlRuntimeReadinessGuard implements
         }
         if (verifiedActiveAlfas == null || verifiedActiveAlfas < 1) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL exige ao menos um ALFA ativo, autenticável e com e-mail verificado."
+                    localDirectCpfAllowed
+                            ? "Runtime PostgreSQL local exige ao menos um ALFA ativo "
+                                    + "e autenticável por CPF Academy."
+                            : "Runtime PostgreSQL exige ao menos um ALFA ativo, "
+                                    + "autenticável e com e-mail verificado."
             );
         }
     }

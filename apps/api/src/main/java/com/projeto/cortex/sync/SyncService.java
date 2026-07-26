@@ -52,7 +52,10 @@ public class SyncService {
             "SOLICITACAO_COMPRA",
             "COMPRA",
             "SERVICE",
-            "SERVICE_PRICE_VERSION"
+            "SERVICE_PRICE_VERSION",
+            "EQUIPE",
+            "VINCULO_OBRA",
+            "SOLICITACAO_INTEGRACAO"
     );
     private static final Set<String> CANONICAL_RELATED_ENTITY_TYPES = Set.of(
             "OBRA",
@@ -64,7 +67,11 @@ public class SyncService {
             "SOLICITACAO_COMPRA",
             "COMPRA",
             "SERVICE",
-            "SERVICE_PRICE_VERSION"
+            "SERVICE_PRICE_VERSION",
+            "EQUIPE",
+            "VINCULO_OBRA",
+            "SOLICITACAO_INTEGRACAO",
+            "COLABORADOR"
     );
     private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
             Map.entry("CRIAR_RDO", "CREATE"),
@@ -93,7 +100,14 @@ public class SyncService {
             Map.entry("CRIAR_SERVICO_CATALOGO", "CREATE"),
             Map.entry("CRIAR_PRECO_SERVICO", "CREATE"),
             Map.entry("SUBSTITUIR_PRECO_SERVICO", "CREATE"),
-            Map.entry("CANCELAR_PRECO_SERVICO", "TRANSITION")
+            Map.entry("CANCELAR_PRECO_SERVICO", "TRANSITION"),
+            Map.entry("CRIAR_EQUIPE", "CREATE"),
+            Map.entry("ATUALIZAR_EQUIPE", "UPDATE"),
+            Map.entry("ARQUIVAR_EQUIPE", "TRANSITION"),
+            Map.entry("ALTERAR_VINCULO_EQUIPE", "UPDATE"),
+            Map.entry("VINCULAR_COLABORADOR_OBRA", "CREATE"),
+            Map.entry("REVOGAR_VINCULO_COLABORADOR_OBRA", "DELETE"),
+            Map.entry("SOLICITAR_INTEGRACAO", "CREATE")
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -590,7 +604,7 @@ public class SyncService {
             // registered device of that owner. Its immutable envelope/device
             // coherence was already bound by envelope_hash; only current
             // identity and worksite authorization must be re-evaluated here.
-            if (!currentUserId.equals(mutacao.userId())) {
+            if (!sameUuid(currentUserId, mutacao.userId())) {
                 throw rejection(
                         "USER_MISMATCH",
                         "userId não corresponde ao usuário autenticado."
@@ -1532,11 +1546,20 @@ public class SyncService {
         requireCanonicalUuid(mutacao.clientMutationId(), "MALFORMED_CLIENT_MUTATION_ID");
         requireCanonicalUuid(mutacao.deviceId(), "MALFORMED_DEVICE_ID");
         requireCanonicalUuid(mutacao.userId(), "MALFORMED_USER_ID");
-        requireCanonicalUuid(mutacao.obraId(), "MALFORMED_WORKSITE_ID");
+        if (isGlobalIntegrationMutation(mutacao)) {
+            if (mutacao.obraId() != null) {
+                throw rejection(
+                        "GLOBAL_MUTATION_WORKSITE",
+                        "Solicitação global de integração exige obraId nula."
+                );
+            }
+        } else {
+            requireCanonicalUuid(mutacao.obraId(), "MALFORMED_WORKSITE_ID");
+        }
         requireCanonicalUuid(mutacao.entityId(), "MALFORMED_ENTITY_ID");
         requireCanonicalInstant(mutacao.occurredAt());
 
-        if (!currentUserId.equals(mutacao.userId())) {
+        if (!sameUuid(currentUserId, mutacao.userId())) {
             throw rejection("USER_MISMATCH", "userId não corresponde ao usuário autenticado.");
         }
         if (!dispositivoId.equals(mutacao.deviceId())) {
@@ -1675,6 +1698,17 @@ public class SyncService {
     ) {
         List<String> scope = mutacao.trace().authorizationScope();
         Optional<Set<String>> allowed = currentUserService.allowedObraIds(currentUserId);
+        if (isGlobalIntegrationMutation(mutacao)) {
+            if (allowed.isPresent()
+                    || scope == null
+                    || !scope.equals(List.of("ALFA:GLOBAL"))) {
+                throw rejection(
+                        "AUTHORIZATION_SCOPE_MISMATCH",
+                        "Solicitação global exige sessão Alfa e escopo ALFA:GLOBAL."
+                );
+            }
+            return;
+        }
         if (allowed.isEmpty()) {
             if (scope == null || !scope.equals(List.of("ALFA:GLOBAL"))) {
                 throw rejection("AUTHORIZATION_SCOPE_MISMATCH", "Escopo ALFA inválido.");
@@ -1708,10 +1742,27 @@ public class SyncService {
         if (!"CREATE".equals(mutacao.operation())) {
             return;
         }
+        if (isGlobalIntegrationMutation(mutacao)) {
+            JsonNode payloadWorksite = mutacao.payload().get("obraId");
+            if (payloadWorksite != null && !payloadWorksite.isNull()) {
+                throw rejection(
+                        "PRINCIPAL_ENTITY_SCOPE",
+                        "Solicitação global não pode declarar payload.obraId."
+                );
+            }
+            validarIdentidadePrincipal(mutacao);
+            return;
+        }
         String payloadWorksite = mutacao.payload().path("obraId").asText(null);
         if (!mutacao.obraId().equals(payloadWorksite)) {
             throw rejection("PRINCIPAL_ENTITY_SCOPE", "payload.obraId diverge do envelope.");
         }
+        validarIdentidadePrincipal(mutacao);
+    }
+
+    private void validarIdentidadePrincipal(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
         JsonNode payloadEntityId = mutacao.payload().get("id");
         if (payloadEntityId != null
                 && !payloadEntityId.isNull()
@@ -1743,6 +1794,14 @@ public class SyncService {
             SyncPushRequest.MutacaoCliente mutacao
     ) {
         for (SyncPushRequest.RelatedEntity related : mutacao.relatedEntities()) {
+            if ("COLABORADOR".equals(related.tipo())) {
+                requireCanonicalRelatedEntityExists(
+                        "SELECT id FROM colaborador WHERE id = ?"
+                                + " AND ativo = TRUE AND deletado_em IS NULL",
+                        related.id()
+                );
+                continue;
+            }
             String relatedWorksite = entityWorksite(related.tipo(), related.id());
             // O catálogo de serviços é uma referência corporativa global. A obra
             // armazenada nele registra quem autorizou sua criação; não limita em
@@ -1779,6 +1838,10 @@ public class SyncService {
                     "SELECT obra_autorizadora_id FROM catalogo_servico WHERE id = ?";
             case "SERVICE_PRICE_VERSION" ->
                     "SELECT obra_id FROM service_price_version WHERE id = ?";
+            case "EQUIPE" ->
+                    "SELECT obra_principal_id FROM equipe WHERE id = ?";
+            case "VINCULO_OBRA" ->
+                    "SELECT obra_id FROM vinculo_colaborador_obra WHERE id = ?";
             default -> throw rejection(
                     "UNSUPPORTED_ENTITY_TYPE",
                     "Tipo de entidade não suportado pelo escopo canônico."
@@ -1793,6 +1856,39 @@ public class SyncService {
         } catch (EmptyResultDataAccessException exception) {
             throw rejection("ENTITY_NOT_FOUND", "Entidade canônica não encontrada.");
         }
+    }
+
+    private void requireCanonicalRelatedEntityExists(
+            String sql,
+            String entityId
+    ) {
+        try {
+            String found = jdbcTemplate.queryForObject(
+                    sql,
+                    String.class,
+                    entityId
+            );
+            if (found == null || found.isBlank()) {
+                throw rejection(
+                        "ENTITY_NOT_FOUND",
+                        "Entidade canônica relacionada não encontrada."
+                );
+            }
+        } catch (EmptyResultDataAccessException exception) {
+            throw rejection(
+                    "ENTITY_NOT_FOUND",
+                    "Entidade canônica relacionada não encontrada."
+            );
+        }
+    }
+
+    private boolean isGlobalIntegrationMutation(
+            SyncPushRequest.MutacaoCliente mutation
+    ) {
+        return "SOLICITACAO_INTEGRACAO".equals(mutation.entityType())
+                && "SOLICITACAO_INTEGRACAO".equals(mutation.entidadeTipo())
+                && "SOLICITAR_INTEGRACAO".equals(mutation.operacao())
+                && "CREATE".equals(mutation.operation());
     }
 
     private void requireAppliedContract(
@@ -1962,6 +2058,16 @@ public class SyncService {
         }
     }
 
+    private boolean sameUuid(String left, String right) {
+        try {
+            return left != null
+                    && right != null
+                    && UUID.fromString(left).equals(UUID.fromString(right));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
     private void requireCanonicalInstant(String value) {
         if (value == null
                 || !value.matches("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z")) {
@@ -2083,7 +2189,7 @@ public class SyncService {
                    AND tipo_evento = ?
                   """;
         List<Object> parameters = new ArrayList<>();
-        parameters.add(mutation.userId());
+        parameters.add(currentUserService.requireUserId());
         parameters.add(dispositivoId);
         parameters.add(mutation.trace().correlationId());
         parameters.add(mutation.trace().causationId());

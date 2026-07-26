@@ -40,6 +40,9 @@ const SYNC_ENTITY_TYPES = [
   "COMPRA",
   "SERVICE",
   "SERVICE_PRICE_VERSION",
+  "EQUIPE",
+  "VINCULO_OBRA",
+  "SOLICITACAO_INTEGRACAO",
 ] as const satisfies readonly SyncEntityType[];
 
 const TRANSPORT_OPERATION_TO_CANONICAL = {
@@ -70,6 +73,13 @@ const TRANSPORT_OPERATION_TO_CANONICAL = {
   CRIAR_PRECO_SERVICO: "CREATE",
   SUBSTITUIR_PRECO_SERVICO: "CREATE",
   CANCELAR_PRECO_SERVICO: "TRANSITION",
+  CRIAR_EQUIPE: "CREATE",
+  ATUALIZAR_EQUIPE: "UPDATE",
+  ARQUIVAR_EQUIPE: "TRANSITION",
+  ALTERAR_VINCULO_EQUIPE: "UPDATE",
+  VINCULAR_COLABORADOR_OBRA: "CREATE",
+  REVOGAR_VINCULO_COLABORADOR_OBRA: "DELETE",
+  SOLICITAR_INTEGRACAO: "CREATE",
 } as const satisfies Record<SyncOperation, CanonicalMutationOperation>;
 
 export interface BuildCanonicalMutationInput {
@@ -77,7 +87,7 @@ export interface BuildCanonicalMutationInput {
   ontologyEventId?: string;
   deviceId: string;
   userId: string;
-  obraId: string;
+  obraId: string | null;
   entityType: string;
   entityId: string;
   operation: CanonicalMutationOperation;
@@ -201,7 +211,15 @@ export function assertCanonicalTransportCoherence(
   uuid(mutation.clientMutationId, "clientMutationId");
   uuid(mutation.deviceId, "deviceId");
   uuid(mutation.userId, "userId");
-  uuid(mutation.obraId, "obraId");
+  if (isGlobalIntegrationMutation(mutation)) {
+    if (mutation.obraId !== null) {
+      throw new TypeError(
+        "SOLICITACAO_INTEGRACAO global requires obraId null.",
+      );
+    }
+  } else {
+    uuid(mutation.obraId, "obraId");
+  }
   uuid(mutation.entityId, "entityId");
   utcInstant(mutation.occurredAt, "occurredAt");
   canonicalMutationJson(mutation.payload);
@@ -283,11 +301,21 @@ function prepareCanonicalMutation(
   );
   const deviceId = uuid(input.deviceId, "deviceId");
   const userId = uuid(input.userId, "userId");
-  const obraId = uuid(input.obraId, "obraId");
   const entityType = syncEntityType(requiredText(input.entityType, "entityType"));
+  const obraId = entityType === "SOLICITACAO_INTEGRACAO"
+    ? nullWorksite(input.obraId)
+    : uuid(input.obraId, "obraId");
   const entityId = uuid(input.entityId, "entityId");
   const operation = canonicalOperation(input.operation);
   const transportOperation = syncOperation(input.transportOperation);
+  if (
+    entityType === "SOLICITACAO_INTEGRACAO" &&
+    transportOperation !== "SOLICITAR_INTEGRACAO"
+  ) {
+    throw new TypeError(
+      "SOLICITACAO_INTEGRACAO only accepts SOLICITAR_INTEGRACAO.",
+    );
+  }
   if (canonicalOperationForTransport(transportOperation) !== operation) {
     throw new TypeError(
       `transportOperation ${transportOperation} does not represent ${operation}.`,
@@ -477,9 +505,17 @@ function syncEntityType(value: string): SyncEntityType {
 
 function authorizationScopeFor(
   values: readonly string[],
-  obraId: string,
+  obraId: string | null,
 ): string[] {
   const scope = uniqueSortedTextArray(values, "authorizationScope", true);
+  if (obraId === null) {
+    if (scope.length !== 1 || scope[0] !== "ALFA:GLOBAL") {
+      throw new TypeError(
+        "Global mutations require authorizationScope ALFA:GLOBAL.",
+      );
+    }
+    return scope;
+  }
   if (scope.length === 1 && scope[0] === "ALFA:GLOBAL") {
     return scope;
   }
@@ -490,6 +526,25 @@ function authorizationScopeFor(
     throw new TypeError("authorizationScope must include obraId.");
   }
   return obraIds;
+}
+
+function nullWorksite(value: unknown): null {
+  if (value !== null) {
+    throw new TypeError(
+      "SOLICITACAO_INTEGRACAO global requires obraId null.",
+    );
+  }
+  return null;
+}
+
+function isGlobalIntegrationMutation(
+  mutation: Pick<
+    CanonicalOutboxMutationRecord,
+    "entityType" | "operacao"
+  >,
+): boolean {
+  return mutation.entityType === "SOLICITACAO_INTEGRACAO" &&
+    mutation.operacao === "SOLICITAR_INTEGRACAO";
 }
 
 function uuidArray(values: readonly string[], field: string): string[] {

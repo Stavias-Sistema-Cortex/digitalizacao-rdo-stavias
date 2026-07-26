@@ -15,6 +15,8 @@ public record ServicePriceVersion(
         int version,
         @JsonSerialize(using = ExactDecimalJsonSerializer.class)
         BigDecimal unitPrice,
+        @JsonSerialize(using = ExactDecimalJsonSerializer.class)
+        BigDecimal contractedQuantity,
         LocalDate validFrom,
         LocalDate validTo,
         String supersedesId,
@@ -32,6 +34,7 @@ public record ServicePriceVersion(
             String currency,
             int version,
             BigDecimal unitPrice,
+            BigDecimal contractedQuantity,
             LocalDate validFrom,
             LocalDate validTo,
             String supersedesId,
@@ -41,7 +44,53 @@ public record ServicePriceVersion(
     ) {
         this(
                 id, obraId, serviceId, unit, currency, version, unitPrice,
-                validFrom, validTo, supersedesId, status, effectiveValidTo,
+                contractedQuantity, validFrom, validTo, supersedesId, status,
+                effectiveValidTo, createdAt, null, 0L
+        );
+    }
+
+    public ServicePriceVersion(
+            String id,
+            String obraId,
+            String serviceId,
+            String unit,
+            String currency,
+            int version,
+            BigDecimal unitPrice,
+            LocalDate validFrom,
+            LocalDate validTo,
+            String supersedesId,
+            String status,
+            LocalDate effectiveValidTo,
+            Instant createdAt,
+            String source,
+            long entityVersion
+    ) {
+        this(
+                id, obraId, serviceId, unit, currency, version, unitPrice,
+                null, validFrom, validTo, supersedesId, status, effectiveValidTo,
+                createdAt, source, entityVersion
+        );
+    }
+
+    public ServicePriceVersion(
+            String id,
+            String obraId,
+            String serviceId,
+            String unit,
+            String currency,
+            int version,
+            BigDecimal unitPrice,
+            LocalDate validFrom,
+            LocalDate validTo,
+            String supersedesId,
+            String status,
+            LocalDate effectiveValidTo,
+            Instant createdAt
+    ) {
+        this(
+                id, obraId, serviceId, unit, currency, version, unitPrice,
+                null, validFrom, validTo, supersedesId, status, effectiveValidTo,
                 createdAt, null, 0L
         );
     }

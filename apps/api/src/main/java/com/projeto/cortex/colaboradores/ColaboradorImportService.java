@@ -67,11 +67,13 @@ public class ColaboradorImportService {
                 }
 
                 salvarOuAtualizar(usuario, hashOrigem);
-                authIdentityRepository.upsertAcademyIdentity(
-                        usuario.id(),
-                        usuario.cpfNormalizado(),
-                        usuario.email()
-                );
+                if (usuario.cpfNormalizado() != null) {
+                    authIdentityRepository.upsertAcademyIdentity(
+                            usuario.id(),
+                            usuario.cpfNormalizado(),
+                            usuario.email()
+                    );
+                }
 
                 registrarColaboradorNaMemoria(
                         syncRunId,
@@ -140,7 +142,7 @@ public class ColaboradorImportService {
         int idUsuario = sourceUser.idUsuario();
         String pkOrigem = String.valueOf(idUsuario);
 
-        String cpfNormalizado = CpfNormalizer.requireValid(sourceUser.cpf());
+        String cpfNormalizado = cpfValidoOuNulo(sourceUser.cpf());
         LocalDateTime criadoEmOrigem = sourceUser.criadoEm();
 
         return new UsuarioAcademy(
@@ -148,8 +150,12 @@ public class ColaboradorImportService {
                 pkOrigem,
                 pkOrigem,
                 cpfNormalizado,
-                CpfHasher.hashDeDigitos(cpfNormalizado),
-                CpfHasher.mascarar(cpfNormalizado),
+                cpfNormalizado == null
+                        ? null
+                        : CpfHasher.hashDeDigitos(cpfNormalizado),
+                cpfNormalizado == null
+                        ? null
+                        : CpfHasher.mascarar(cpfNormalizado),
                 sourceUser.nome(),
                 sourceUser.email(),
                 sourceUser.idGrupo(),
@@ -188,7 +194,10 @@ public class ColaboradorImportService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON CONFLICT (banco_origem, tabela_origem, pk_origem) DO UPDATE SET
                     codigo_colaborador = EXCLUDED.codigo_colaborador,
-                    cpf_mascarado = EXCLUDED.cpf_mascarado,
+                    cpf_mascarado = COALESCE(
+                        EXCLUDED.cpf_mascarado,
+                        colaborador.cpf_mascarado
+                    ),
                     nome = EXCLUDED.nome,
                     email = EXCLUDED.email,
                     id_grupo_origem = EXCLUDED.id_grupo_origem,
@@ -211,7 +220,10 @@ public class ColaboradorImportService {
                         THEN colaborador.versao_linha + 1
                         ELSE colaborador.versao_linha
                     END,
-                    cpf_hash = EXCLUDED.cpf_hash,
+                    cpf_hash = COALESCE(
+                        EXCLUDED.cpf_hash,
+                        colaborador.cpf_hash
+                    ),
                     hash_origem = EXCLUDED.hash_origem,
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     deletado_em = NULL
@@ -233,6 +245,14 @@ public class ColaboradorImportService {
                 usuario.criadoEmOrigem(),
                 hashOrigem
         );
+    }
+
+    private String cpfValidoOuNulo(String cpfRaw) {
+        try {
+            return CpfNormalizer.requireValid(cpfRaw);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private String buscarHashExistente(String pkOrigem) {

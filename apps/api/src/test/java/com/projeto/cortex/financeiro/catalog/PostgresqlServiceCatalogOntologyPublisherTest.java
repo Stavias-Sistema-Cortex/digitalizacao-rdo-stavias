@@ -63,13 +63,15 @@ class PostgresqlServiceCatalogOntologyPublisherTest {
         );
         ServicePriceVersion predecessor = new ServicePriceVersion(
                 "price-1", "obra-1", "service-1", "M2", "BRL", 1,
-                new BigDecimal("125.0000"), LocalDate.of(2026, 1, 1),
+                new BigDecimal("125.0000"), new BigDecimal("800.000"),
+                LocalDate.of(2026, 1, 1),
                 null, null, "ACTIVE", null,
                 Instant.parse("2026-07-22T12:00:00Z")
         );
         ServicePriceVersion replacement = new ServicePriceVersion(
                 "price-2", "obra-1", "service-1", "M2", "BRL", 2,
-                new BigDecimal("130.0000"), LocalDate.of(2026, 7, 1),
+                new BigDecimal("130.0000"), new BigDecimal("850.000"),
+                LocalDate.of(2026, 7, 1),
                 null, "price-1", "ACTIVE", null,
                 Instant.parse("2026-07-22T12:01:00Z")
         );
@@ -119,7 +121,8 @@ class PostgresqlServiceCatalogOntologyPublisherTest {
         );
         ServicePriceVersion price = new ServicePriceVersion(
                 "price-1", "obra-1", "service-1", "M2", "BRL", 1,
-                new BigDecimal("125.0000"), LocalDate.of(2026, 1, 1),
+                new BigDecimal("125.0000"), new BigDecimal("800.000"),
+                LocalDate.of(2026, 1, 1),
                 null, null, "ACTIVE", null,
                 Instant.parse("2026-07-22T12:00:00Z")
         );
@@ -154,6 +157,7 @@ class PostgresqlServiceCatalogOntologyPublisherTest {
                 org.mockito.ArgumentMatchers.argThat(payload -> {
                     String serialized = String.valueOf(payload);
                     return serialized.contains("125.0000")
+                            && serialized.contains("800.000")
                             && !serialized.contains("actor-private")
                             && !serialized.contains("mutation-sensitive")
                             && !serialized.toLowerCase().contains("cpf")

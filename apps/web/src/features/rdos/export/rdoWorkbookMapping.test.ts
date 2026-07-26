@@ -33,6 +33,7 @@ function snapshot(): RdoWorkbookSnapshot {
       numeroRdo: "RDO-0042",
       dataRdo: "2026-07-22",
       rodovia: "BR-101",
+      previousRdoNumber: "RDO-0041",
       turno: "DIURNO",
       horaInicio: "07:30",
       horaFim: "17:15",
@@ -417,7 +418,8 @@ describe("RDO workbook mapping", () => {
     expect(back.L26).toMatchObject({ v: 0.04, t: "n" });
     expect(back.B69).toMatchObject({ v: "Ana Apontadora", t: "s" });
     expect(back.L69).toMatchObject({ v: "Enzo Encarregado", t: "s" });
-    expect(back.B63.v).toContain("rdo-41");
+    expect(back.B63.v).toContain("RDO-0041");
+    expect(back.B63.v).not.toContain("rdo-41");
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
@@ -426,6 +428,62 @@ describe("RDO workbook mapping", () => {
       )).toEqual([]);
     }
   }, 15_000);
+
+  it("omits continuity provenance when only the previous internal id is available", () => {
+    const candidate = snapshot();
+    (
+      candidate.rdo as typeof candidate.rdo & {
+        previousRdoNumber: string;
+      }
+    ).previousRdoNumber = "";
+
+    const observationCell = mapRdoWorkbook(candidate).writes.find(
+      (write) => write.field === "observations",
+    )?.cell;
+
+    expect(observationCell).toMatchObject({ kind: "text" });
+    if (observationCell?.kind !== "text") {
+      throw new Error("A célula de observações não foi mapeada como texto.");
+    }
+    expect(observationCell.value).not.toContain("rdo-41");
+    expect(observationCell.value).not.toContain("Continuidade da equipe");
+  });
+
+  it("omits continuity provenance when the alleged previous number is a UUID", () => {
+    const candidate = snapshot();
+    candidate.rdo.previousRdoNumber =
+      "00000000-0000-4000-8000-000000000041";
+
+    const observationCell = mapRdoWorkbook(candidate).writes.find(
+      (write) => write.field === "observations",
+    )?.cell;
+
+    expect(observationCell).toMatchObject({ kind: "text" });
+    if (observationCell?.kind !== "text") {
+      throw new Error("A célula de observações não foi mapeada como texto.");
+    }
+    expect(observationCell.value)
+      .not.toContain("00000000-0000-4000-8000-000000000041");
+    expect(observationCell.value).not.toContain("Continuidade da equipe");
+  });
+
+  it("omits continuity provenance for a version-zero UUID shape", () => {
+    const candidate = snapshot();
+    candidate.rdo.previousRdoNumber =
+      "00000000-0000-0000-0000-000000000041";
+
+    const observationCell = mapRdoWorkbook(candidate).writes.find(
+      (write) => write.field === "observations",
+    )?.cell;
+
+    expect(observationCell).toMatchObject({ kind: "text" });
+    if (observationCell?.kind !== "text") {
+      throw new Error("A célula de observações não foi mapeada como texto.");
+    }
+    expect(observationCell.value)
+      .not.toContain("00000000-0000-0000-0000-000000000041");
+    expect(observationCell.value).not.toContain("Continuidade da equipe");
+  });
 
   it("preserves merged printable regions and both print areas", async () => {
     const bytes = await exportRdoWorkbook(snapshot(), {

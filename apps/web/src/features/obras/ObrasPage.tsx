@@ -166,6 +166,7 @@ export function ObrasPage() {
     setFocusedObraId,
     events,
     isLoading,
+    hasConfirmedRemoteHydration,
     reload,
   } = useHomeData();
   const [chip, setChip] =
@@ -350,9 +351,19 @@ export function ObrasPage() {
             </button>
           ) : null}
         status={{
-          code: isLoading ? "SYNCING" : navigator.onLine ? "SYNCED" : "LOCAL",
+          code: isLoading
+            ? "SYNCING"
+            : hasConfirmedRemoteHydration
+              ? "SYNCED"
+              : "LOCAL",
           label: isLoading ? "Atualizando obras" : `${filteredObras.length} obras visíveis`,
-          detail: focusedObra ? `Foco: ${focusedObra.nome}` : "Nenhuma obra selecionada",
+          detail: hasConfirmedRemoteHydration
+            ? focusedObra
+              ? `Foco: ${focusedObra.nome}`
+              : "Nenhuma obra selecionada"
+            : focusedObra
+              ? `Cache local · Foco: ${focusedObra.nome}`
+              : "Dados preservados neste dispositivo",
         }}
       >
         <section className="obras-filter-bar" aria-label="Filtros de obras">

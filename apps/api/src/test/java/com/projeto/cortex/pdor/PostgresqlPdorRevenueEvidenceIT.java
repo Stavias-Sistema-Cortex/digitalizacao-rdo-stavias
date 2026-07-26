@@ -77,6 +77,8 @@ class PostgresqlPdorRevenueEvidenceIT {
         PdorInputBundle input = new RealPdorInputLoader(jdbc)
                 .load(obra, REFERENCE_DATE);
 
+        assertThat(input.sourceValues().contractValue())
+                .isEqualByComparingTo("12500.00");
         assertThat(input.sourceValues().measuredRevenue())
                 .isEqualByComparingTo("250.00");
         assertThat(input.sourceValues().validatedRevenue())
@@ -85,6 +87,17 @@ class PostgresqlPdorRevenueEvidenceIT {
                 .isEqualTo(2.0d);
         assertThat(input.inputs().get("remainingContractedQuantity"))
                 .isEqualTo(new BigDecimal("98.000"));
+        assertThat(input.inputs().get("quantityMetric"))
+                .isEqualTo("SERVICE_CATALOG_CONTRACT");
+        assertThat(input.origins().get("contractValue").source())
+                .contains("service_price_version.quantidade_contratada")
+                .doesNotContain("fallback");
+        assertThat(input.origins().get("totalPlannedQuantity").source())
+                .isEqualTo("service_price_version.quantidade_contratada");
+        assertThat(input.evidenceReferences())
+                .extracting(PdorEvidenceReference::entityType)
+                .contains("SERVICE_PRICE_VERSION")
+                .doesNotContain("ITEM_CONTRATUAL");
         assertThat(input.revenueEvidenceIds()).containsExactly(valid.evidenceId());
         assertThat(input.evidenceHighWaterMark()).isEqualTo(902L);
         assertThat(input.revenueCoverageCode())
@@ -164,7 +177,6 @@ class PostgresqlPdorRevenueEvidenceIT {
         String rdoId = id();
         String serviceId = id();
         String priceId = id();
-        String itemId = id();
         jdbc.update(
                 "INSERT INTO obra (id, codigo_contrato, nome) VALUES (?, ?, ?)",
                 obra.getId(), obra.getCodigoContrato(), obra.getNome()
@@ -186,20 +198,16 @@ class PostgresqlPdorRevenueEvidenceIT {
         jdbc.update("""
                 INSERT INTO service_price_version (
                     id, obra_id, service_id, unidade, moeda, versao,
-                    valor_unitario, vigencia_inicio, fonte, criado_por
-                ) VALUES (?, ?, ?, 'M2', 'BRL', 1, 125.0000, ?, 'PDOR_IT', ?)
+                    valor_unitario, quantidade_contratada,
+                    vigencia_inicio, fonte, criado_por
+                ) VALUES (
+                    ?, ?, ?, 'M2', 'BRL', 1, 125.0000, 100.000,
+                    ?, 'PDOR_IT', ?
+                )
                 """, priceId, obra.getId(), serviceId,
                 REFERENCE_DATE.minusDays(10), actorId);
-        jdbc.update("""
-                INSERT INTO item_contratual (
-                    id, obra_id, contrato, codigo_item, descricao,
-                    unidade_medida, quantidade_contratada, preco_unitario,
-                    valor_total, status
-                ) VALUES (?, ?, 'PDOR', 'PDOR.SERVICE', 'PDOR service',
-                          'M2', 100, 125, 12500, 'ATIVO')
-                """, itemId, obra.getId());
         return new Fixture(
-                obra.getId(), rdoId, serviceId, priceId, itemId
+                obra.getId(), rdoId, serviceId, priceId
         );
     }
 
@@ -266,12 +274,12 @@ class PostgresqlPdorRevenueEvidenceIT {
                     revenue_amount, revenue_coverage_code,
                     revenue_evidence_id, revenue_event_id, accepted_at,
                     receita_operacional_estimativa, custo_realizado
-                ) VALUES (?, ?, ?, 'PDOR service', ?, ?, ?, ?, 'M2', ?,
+                ) VALUES (?, ?, ?, 'PDOR service', NULL, ?, ?, ?, 'M2', ?,
                           'VALIDADA', 'RECEITA_MEDIDA', FALSE, FALSE, 'PDOR_IT',
                           ?, 125.0000, 'BRL', ?, 'ACCEPTED_EXACT', ?, ?, now(),
                           999999.99, 888888.88)
                 """, executionId, fixture.rdoId(), fixture.obraId(),
-                fixture.itemId(), fixture.serviceId(), fixture.priceId(),
+                fixture.serviceId(), fixture.priceId(),
                 new BigDecimal(quantity), REFERENCE_DATE, key(executionId),
                 new BigDecimal(revenue), evidenceId, eventId);
         return new Accepted(executionId, evidenceId, eventId);
@@ -328,8 +336,7 @@ class PostgresqlPdorRevenueEvidenceIT {
             String obraId,
             String rdoId,
             String serviceId,
-            String priceId,
-            String itemId
+            String priceId
     ) {
     }
 

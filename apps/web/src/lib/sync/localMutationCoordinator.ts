@@ -51,6 +51,13 @@ const OPERATIONAL_EVENT_TYPES = [
   "TAREFA_CONCLUIDA",
   "TAREFA_REABERTA",
   "TAREFA_EXCLUIDA",
+  "EQUIPE_CRIADA",
+  "EQUIPE_ATUALIZADA",
+  "EQUIPE_ARQUIVADA",
+  "EQUIPE_VINCULO_ALTERADO",
+  "VINCULO_OBRA_ATRIBUIDO",
+  "VINCULO_OBRA_REVOGADO",
+  "SOLICITACAO_INTEGRACAO_CRIADA",
   "COMPRA_CRIADA",
   "SERVICE_CREATED",
   "SERVICE_PRICE_VERSION_PUBLISHED",
@@ -69,11 +76,14 @@ const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
   MENSAGEM_ANEXO: "mensagem_anexos",
   SERVICE: "service_catalog",
   SERVICE_PRICE_VERSION: "service_price_versions",
+  EQUIPE: "teams",
 } as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
 const OUTBOX_ONLY_ENTITY_TYPES = new Set<SyncEntityType>([
   "SOLICITACAO_COMPRA",
   "COMPRA",
+  "VINCULO_OBRA",
+  "SOLICITACAO_INTEGRACAO",
 ]);
 
 type LocalMutationDomainPut<TStore extends LocalDomainStore> = {
@@ -101,7 +111,7 @@ export interface LocalMutationCommand<TStore extends LocalDomainStore> {
   ontologyEventId?: string;
   deviceId: string;
   userId: string;
-  obraId: string;
+  obraId: string | null;
   entityType: string;
   entityId: string;
   entityName?: string | null;
@@ -494,7 +504,7 @@ function prepareWrites<TStore extends LocalDomainStore>(
   nextSnapshot: Record<string, unknown>,
   entityId: string,
   entityType: string,
-  obraId: string,
+  obraId: string | null,
 ): LocalMutationDomainWrite<TStore>[] {
   const result: unknown = writer();
   if (isThenable(result)) {
@@ -583,6 +593,15 @@ function prepareWrites<TStore extends LocalDomainStore>(
     );
   }
   if (
+    entityType === "EQUIPE" &&
+    (!("obraPrincipalId" in principalValue) ||
+      principalValue.obraPrincipalId !== obraId)
+  ) {
+    throw new TypeError(
+      "Principal EQUIPE obraPrincipalId must equal envelope obraId.",
+    );
+  }
+  if (
     canonicalMutationJson(principal.value) !==
       canonicalMutationJson(nextSnapshot)
   ) {
@@ -609,7 +628,16 @@ function authorizeActiveSession(
   if (session.colaboradorId !== envelope.userId) {
     throw new Error("A mutação local não pertence à sessão ativa.");
   }
-  if (!session.escopoGlobal && !session.obraIds.includes(envelope.obraId)) {
+  if (envelope.obraId === null) {
+    if (!session.escopoGlobal || session.papelAcesso !== "ALFA") {
+      throw new Error(
+        "A mutação global exige uma sessão Alfa com escopo global.",
+      );
+    }
+  } else if (
+    !session.escopoGlobal &&
+    !session.obraIds.includes(envelope.obraId)
+  ) {
     throw new Error("A obra da mutação não pertence ao escopo da sessão.");
   }
   return {
@@ -618,7 +646,9 @@ function authorizeActiveSession(
     actorName: session.nome,
     authorizationScope: session.escopoGlobal
       ? ["ALFA:GLOBAL"]
-      : [envelope.obraId],
+      : envelope.obraId === null
+        ? []
+        : [envelope.obraId],
   };
 }
 

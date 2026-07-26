@@ -13,12 +13,12 @@ cp .env.example .env
 ./scripts/dev/run-compose.sh
 ```
 
-- PWA: `http://127.0.0.1:5173`
+- PWA: `http://localhost:5173`
 - health da API: `http://127.0.0.1:8081/api/health`
 - readiness com banco: `http://127.0.0.1:8081/api/readiness`
 
 `compose.local.yml` usa somente o runtime PostgreSQL canônico. Ele não cria
-ALFA, obra, RDO ou receita fictícios: migração V59, bootstrap de uma identidade
+ALFA, obra, RDO ou receita fictícios: migrações até V60, bootstrap de uma identidade
 real e o preflight de release devem ser concluídos antes de definir
 `CORTEX_POSTGRES_RUNTIME_READY=true`.
 
