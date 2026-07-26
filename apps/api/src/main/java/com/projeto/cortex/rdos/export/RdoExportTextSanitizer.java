@@ -73,6 +73,19 @@ final class RdoExportTextSanitizer {
     }
 
     String filename(String numeroRdo, String rdoId) {
+        return filename(numeroRdo, rdoId, ".xlsx");
+    }
+
+    String filename(String numeroRdo, String rdoId, String extension) {
+        if (!".xlsx".equals(extension) && !".pdf".equals(extension)) {
+            throw new IllegalArgumentException(
+                    "Extensão de exportação não permitida."
+            );
+        }
+        return "rdo-" + safeBasename(numeroRdo, rdoId) + extension;
+    }
+
+    private String safeBasename(String numeroRdo, String rdoId) {
         String candidate = firstNonBlank(numeroRdo, rdoId, "rdo");
         candidate = Normalizer.normalize(candidate, Normalizer.Form.NFKD)
                 .replaceAll("\\p{M}+", "");
@@ -85,7 +98,7 @@ final class RdoExportTextSanitizer {
         if (candidate.length() > 64) {
             candidate = candidate.substring(0, 64);
         }
-        return "rdo-" + candidate + ".xlsx";
+        return candidate;
     }
 
     private int firstNonWhitespace(String value) {

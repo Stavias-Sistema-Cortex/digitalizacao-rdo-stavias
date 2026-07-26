@@ -35,6 +35,9 @@ class RdoExportControllerAuthorizationMockMvcTest {
     @MockBean
     private RdoXlsxExportService service;
 
+    @MockBean
+    private RdoPdfExportService pdfService;
+
     @Test
     void betaCannotExportRdoFromAnotherWorksite() throws Exception {
         rdoWorksite("rdo-b", "obra-b");
@@ -64,6 +67,37 @@ class RdoExportControllerAuthorizationMockMvcTest {
                 .andExpect(status().isNotFound());
 
         verify(service, never()).export("missing");
+    }
+
+    @Test
+    void betaCannotExportPdfFromAnotherWorksite() throws Exception {
+        rdoWorksite("rdo-pdf-b", "obra-b");
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-b", false);
+
+        mockMvc.perform(get("/api/rdos/rdo-pdf-b/export.pdf")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"
+                        ))
+                .andExpect(status().isForbidden());
+
+        verify(pdfService, never()).export("rdo-pdf-b");
+    }
+
+    @Test
+    void missingPdfRdoReturnsNotFoundBeforePdfServiceReadsAggregate()
+            throws Exception {
+        rdoWorksite("missing-pdf", null);
+
+        mockMvc.perform(get("/api/rdos/missing-pdf/export.pdf")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"
+                        ))
+                .andExpect(status().isNotFound());
+
+        verify(pdfService, never()).export("missing-pdf");
     }
 
     @SuppressWarnings("unchecked")
