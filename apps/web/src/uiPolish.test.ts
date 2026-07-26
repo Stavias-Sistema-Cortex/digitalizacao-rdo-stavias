@@ -96,6 +96,7 @@ describe("polimento visual da plataforma autenticada", () => {
     const shell = rule(globalCss, ".cortex-shell");
     const collapsedShell = rule(globalCss, ".cortex-shell--collapsed");
     const toggle = lastRule(globalCss, ".sidebar-toggle");
+    const toggleFocus = rule(globalCss, ".sidebar-toggle:focus-visible");
 
     expect(sidebar).toContain("z-index: 1;");
     expect(shell).toContain("position: relative;");
@@ -109,6 +110,10 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(toggle).toContain("right: auto;");
     expect(toggle).toContain("background: var(--color-brand-yellow);");
     expect(toggle).toContain("color: #111312;");
+    expect(toggleFocus).toContain(
+      "outline: 3px solid var(--color-brand-yellow);",
+    );
+    expect(toggleFocus).toContain("outline-offset: 3px;");
   });
 
   it("mantém métricas operacionais discretas", () => {

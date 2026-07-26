@@ -1667,6 +1667,11 @@ textarea:focus {
   transform: translateX(2px);
 }
 
+.sidebar-toggle:focus-visible {
+  outline: 3px solid var(--color-brand-yellow);
+  outline-offset: 3px;
+}
+
 .sidebar-brand {
   border-bottom-color: #424745;
 }
