@@ -6,7 +6,7 @@ import {
 } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import { getSession } from "../auth/authSession";
+import { AUTH_SESSION_CHANGED_EVENT, getSession } from "../auth/authSession";
 import {
   listOperationalEvents,
 } from "../../lib/db/operationalEventRepository";
@@ -31,6 +31,10 @@ import {
   colaboradorStorageKey,
   setLastAccessedObraId,
 } from "../home/lastAccessedObra";
+import {
+  captureRdoExportSessionGuard,
+  type RdoExportSessionGuard,
+} from "./rdoExportSessionGuard";
 
 type WorkspaceMode =
   | {
@@ -46,6 +50,7 @@ type WorkspaceMode =
 
 export function RdoWorkspacePage() {
   const createButtonRef = useRef<HTMLButtonElement | null>(null);
+  const loadGenerationRef = useRef(0);
   const [mode, setMode] =
     useState<WorkspaceMode>({
       type: "LIST",
@@ -71,13 +76,17 @@ export function RdoWorkspacePage() {
 
   const [loadError, setLoadError] =
     useState("");
+  const [exportSessionGuard, setExportSessionGuard] =
+    useState<RdoExportSessionGuard | null>(null);
 
   const loadRecords =
     useCallback(async () => {
+      const generation = ++loadGenerationRef.current;
       setIsLoading(true);
       setLoadError("");
 
       try {
+        const guard = captureRdoExportSessionGuard();
         const [
           localRecords,
           localEvents,
@@ -88,17 +97,22 @@ export function RdoWorkspacePage() {
           listAllRdoAttachments(),
         ]);
 
+        if (generation !== loadGenerationRef.current) return;
         setRecords(localRecords);
         setEvents(localEvents);
         setAttachments(localAttachments);
+        setExportSessionGuard(guard);
       } catch (error: unknown) {
+        if (generation !== loadGenerationRef.current) return;
         setLoadError(
           error instanceof Error
             ? error.message
             : "Falha ao carregar os RDOs locais.",
         );
       } finally {
-        setIsLoading(false);
+        if (generation === loadGenerationRef.current) {
+          setIsLoading(false);
+        }
       }
     }, []);
 
@@ -109,6 +123,29 @@ export function RdoWorkspacePage() {
 
     return () => {
       window.clearTimeout(timeoutId);
+    };
+  }, [loadRecords]);
+
+  useEffect(() => {
+    function resetForSession() {
+      loadGenerationRef.current += 1;
+      setRecords([]);
+      setEvents([]);
+      setAttachments([]);
+      setExportSessionGuard(null);
+      setMode({ type: "LIST" });
+      setPendingImport(null);
+      setIsCreationDialogOpen(false);
+      setIsImporting(false);
+      setLoadError("");
+      window.setTimeout(() => {
+        void loadRecords();
+      }, 0);
+    }
+
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
     };
   }, [loadRecords]);
 
@@ -217,6 +254,7 @@ export function RdoWorkspacePage() {
     >
       <RdoLocalList
         records={records}
+        exportSessionGuard={exportSessionGuard}
         events={events}
         attachments={attachments}
         isLoading={isLoading}

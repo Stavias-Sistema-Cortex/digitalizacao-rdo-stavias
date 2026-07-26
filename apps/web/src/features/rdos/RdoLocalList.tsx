@@ -32,11 +32,18 @@ import {
   type RdoExportAvailability,
 } from "./export/rdoWorkbookMapping";
 import { localRdoPdfExportAvailability } from "./export/rdoPdfAvailability";
+import {
+  assertRdoExportSessionGuard,
+  captureRdoExportSessionGuard,
+  RDO_EXPORT_SESSION_CHANGED_MESSAGE,
+  type RdoExportSessionGuard,
+} from "./rdoExportSessionGuard";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
   events: OperationalEventRecord[];
   attachments: RdoAttachmentRecord[];
+  exportSessionGuard?: RdoExportSessionGuard | null;
   isLoading: boolean;
   error: string;
   onCreate: () => void;
@@ -320,6 +327,7 @@ export function RdoLocalList({
   records,
   events,
   attachments,
+  exportSessionGuard,
   isLoading,
   error,
   onCreate,
@@ -333,6 +341,14 @@ export function RdoLocalList({
 }: RdoLocalListProps) {
   const { snapshot } = useSyncStatus();
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const renderedSessionGuardRef = useRef<RdoExportSessionGuard | null>(null);
+  if (renderedSessionGuardRef.current === null) {
+    try {
+      renderedSessionGuardRef.current = captureRdoExportSessionGuard();
+    } catch {
+      // A missing guard remains fail-closed when an export is requested.
+    }
+  }
   const [obraFilter, setObraFilter] = useState("");
   const [periodFilter, setPeriodFilter] =
     useState<PeriodFilter>("TODOS");
@@ -488,6 +504,11 @@ export function RdoLocalList({
 
     setExporting({ rdoId: record.id, format });
     try {
+      const guard = exportSessionGuard ?? renderedSessionGuardRef.current;
+      if (!guard) {
+        throw new Error(RDO_EXPORT_SESSION_CHANGED_MESSAGE);
+      }
+      assertRdoExportSessionGuard(guard, record.obraId);
       const snapshot = rdoWorkbookSnapshotFromLocalRecord(
         record,
         cachedWorksites.get(record.obraId),
@@ -501,17 +522,21 @@ export function RdoLocalList({
       if (useAuthoritativeServer) {
         if (format === "PDF") {
           const { downloadAuthoritativeRdoPdf } = await import("./export/exportRdoPdf");
+          assertRdoExportSessionGuard(guard, record.obraId);
           await downloadAuthoritativeRdoPdf(snapshot);
         } else {
           const { downloadAuthoritativeRdoWorkbook } = await import("./export/exportRdoWorkbook");
+          assertRdoExportSessionGuard(guard, record.obraId);
           await downloadAuthoritativeRdoWorkbook(snapshot);
         }
       } else {
         if (format === "PDF") {
           const { downloadRdoPdf } = await import("./export/exportRdoPdf");
+          assertRdoExportSessionGuard(guard, record.obraId);
           await downloadRdoPdf(snapshot);
         } else {
           const { downloadRdoWorkbook } = await import("./export/exportRdoWorkbook");
+          assertRdoExportSessionGuard(guard, record.obraId);
           await downloadRdoWorkbook(snapshot);
         }
       }
