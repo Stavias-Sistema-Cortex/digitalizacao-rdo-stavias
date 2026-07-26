@@ -340,6 +340,11 @@ describe("StavIA runtime boundary", () => {
         "label:`Portal Stavias`,href:`https://www.stavias.com.br`,children:`Mais Stavias`",
       ),
     ).toEqual([]);
+    expect(
+      inspectDistCorporateContent(
+        "drawText(document,`STAVIAS`,margin,14,`bold`,16)",
+      ),
+    ).toEqual([]);
     for (const extendedApprovedFragment of [
       "AgentPortal Stavias",
       "Portal StaviasAgent",

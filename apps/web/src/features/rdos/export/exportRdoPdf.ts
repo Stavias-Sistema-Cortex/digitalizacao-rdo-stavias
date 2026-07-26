@@ -1,10 +1,44 @@
 import { apiFetch } from "../../../lib/api/apiClient";
 import { downloadRdoExportBlob } from "./rdoExportDownload";
 import { rdoWorkbookFilename } from "./exportRdoWorkbook";
-import { buildRdoPdf } from "./rdoPdfLayout";
-import type { RdoWorkbookSnapshot } from "./rdoWorkbookMapping";
+import { buildRdoPdf, validateOriginalPdfSources } from "./rdoPdfLayout";
+import { buildRdoExportProjection } from "./rdoExportProjection";
+import {
+  localRdoExportAvailability,
+  rdoWorkbookSnapshotFromLocalRecord,
+  RdoWorkbookExportError,
+  type RdoExportAvailability,
+  type RdoWorkbookSnapshot,
+} from "./rdoWorkbookMapping";
+import type { LocalRdoRecord, ObraLocalRecord } from "../../../lib/db/db.types";
 
 export const RDO_PDF_MEDIA_TYPE = "application/pdf";
+
+export function localRdoPdfExportAvailability(
+  record: LocalRdoRecord,
+  obra?: Pick<ObraLocalRecord, "id" | "nome" | "codigoContrato">,
+): RdoExportAvailability {
+  const availability = localRdoExportAvailability(record, obra);
+  if (!availability.ready) {
+    return availability;
+  }
+
+  try {
+    const snapshot = rdoWorkbookSnapshotFromLocalRecord(record, obra);
+    validateOriginalPdfSources(snapshot);
+    buildRdoExportProjection(snapshot);
+    return availability;
+  } catch (caught) {
+    if (caught instanceof RdoWorkbookExportError) {
+      return {
+        ready: false,
+        code: caught.code,
+        message: caught.message,
+      };
+    }
+    throw caught;
+  }
+}
 
 export function exportRdoPdf(snapshot: RdoWorkbookSnapshot): Uint8Array {
   return new Uint8Array(buildRdoPdf(snapshot).output("arraybuffer"));

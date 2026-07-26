@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   listWorksites: vi.fn(),
   downloadLocal: vi.fn(),
   downloadServer: vi.fn(),
+  downloadPdfLocal: vi.fn(),
+  downloadPdfServer: vi.fn(),
 }));
 
 vi.mock("./rdoCreationContextRepository", () => ({
@@ -19,6 +21,12 @@ vi.mock("./rdoCreationContextRepository", () => ({
 vi.mock("./export/exportRdoWorkbook", () => ({
   downloadRdoWorkbook: mocks.downloadLocal,
   downloadAuthoritativeRdoWorkbook: mocks.downloadServer,
+}));
+
+vi.mock("./export/exportRdoPdf", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./export/exportRdoPdf")>(),
+  downloadRdoPdf: mocks.downloadPdfLocal,
+  downloadAuthoritativeRdoPdf: mocks.downloadPdfServer,
 }));
 
 vi.mock("../programacoes/ProgramacaoSemanalImport", () => ({
@@ -101,6 +109,8 @@ describe("RdoLocalList offline export", () => {
     mocks.listWorksites.mockReset();
     mocks.downloadLocal.mockReset();
     mocks.downloadServer.mockReset();
+    mocks.downloadPdfLocal.mockReset();
+    mocks.downloadPdfServer.mockReset();
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,
       value: false,
@@ -120,7 +130,7 @@ describe("RdoLocalList offline export", () => {
     const button = await screen.findByRole("button", { name: "Exportar XLSX" });
     await waitFor(() => expect(button).toBeEnabled());
     expect(screen.getByText(
-      "Dados locais pendentes · exportação offline",
+      "XLSX · Dados locais pendentes · exportação offline",
     )).toBeInTheDocument();
 
     fireEvent.click(button);
@@ -150,6 +160,20 @@ describe("RdoLocalList offline export", () => {
     expect(mocks.downloadServer).not.toHaveBeenCalled();
   });
 
+  it("downloads a complete pending RDO as PDF locally offline", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadPdfLocal).toHaveBeenCalledOnce());
+    expect(mocks.downloadPdfServer).not.toHaveBeenCalled();
+  });
+
   it("uses the authenticated server only for a synced server-versioned RDO", async () => {
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,
@@ -161,12 +185,30 @@ describe("RdoLocalList offline export", () => {
     renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
 
     expect(await screen.findByText(
-      "Servidor autoritativo · cópia local pronta offline",
+      "XLSX · Servidor autoritativo · cópia local pronta offline",
     )).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Exportar XLSX" }));
 
     await waitFor(() => expect(mocks.downloadServer).toHaveBeenCalledOnce());
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
+  it("uses the authenticated server only for a synced server-versioned PDF", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
+
+    const button = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadPdfServer).toHaveBeenCalledOnce());
+    expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
   });
 
   it("does not silently fall back to local export after a server rejection", async () => {
@@ -187,10 +229,56 @@ describe("RdoLocalList offline export", () => {
     fireEvent.click(button);
 
     expect(await screen.findByText(
-      "O servidor recusou a exportação do RDO (403).",
+      "XLSX: O servidor recusou a exportação do RDO (403).",
     )).toBeInTheDocument();
     expect(mocks.downloadServer).toHaveBeenCalledOnce();
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
+  it("does not silently fall back after a PDF server rejection", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.downloadPdfServer.mockRejectedValue(
+      new Error("O servidor recusou a exportação do RDO (403)."),
+    );
+    renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
+
+    const button = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText(
+      "PDF: O servidor recusou a exportação do RDO (403).",
+    )).toBeInTheDocument();
+    expect(mocks.downloadPdfServer).toHaveBeenCalledOnce();
+    expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+    expect(mocks.downloadServer).not.toHaveBeenCalled();
+  });
+
+  it("keeps XLSX available when a PDF glyph cannot be represented safely", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({
+      payload: {
+        ...record().payload,
+        observacoes: "Frente com alerta ⚠",
+      },
+    }));
+
+    const xlsxButton = await screen.findByRole("button", { name: "Exportar XLSX" });
+    const pdfButton = screen.getByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(xlsxButton).toBeEnabled());
+    expect(pdfButton).toBeDisabled();
+    expect(await screen.findByText(
+      "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    )).toBeInTheDocument();
   });
 
   it("keeps export disabled with the literal missing-worksite reason", async () => {
@@ -198,10 +286,12 @@ describe("RdoLocalList offline export", () => {
     renderList();
 
     const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    const pdfButton = screen.getByRole("button", { name: "Exportar PDF" });
     await waitFor(() => expect(button).toBeDisabled());
-    expect(await screen.findByText(
+    expect(pdfButton).toBeDisabled();
+    expect(screen.getAllByText(
       "A obra canônica deste RDO não está completa no armazenamento offline.",
-    )).toBeInTheDocument();
+    )).toHaveLength(2);
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
   });
 });

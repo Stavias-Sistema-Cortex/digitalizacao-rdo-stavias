@@ -405,6 +405,7 @@ const CORPORATE_DIST_PATTERNS = [
   /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias — Sistema Córtex`/gu,
   /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias · Sistema Córtex · Ambiente operacional restrito`/gu,
   /(?<![\p{L}\p{N}_$])children:`Stavias Córtex · Ambiente institucional restrito`/gu,
+  /(?<![\p{L}\p{N}_$])[$\w]+\([\$\w]+,`STAVIAS`,[$\w]+,14,`bold`,16\)/gu,
 ];
 
 function maskAllowedCorporateDist(content) {
