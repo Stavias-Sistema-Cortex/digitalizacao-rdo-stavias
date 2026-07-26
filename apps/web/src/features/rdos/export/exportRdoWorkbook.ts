@@ -4,8 +4,9 @@ import { unzipSync, zipSync } from "fflate";
 import { apiFetch } from "../../../lib/api/apiClient";
 import templateUrl from "./RDO-v1.xlsx?url";
 import {
+  assertRdoExportDownloadPermit,
   downloadRdoExportBlob,
-  type RdoExportDownloadOptions,
+  type RdoExportDownloadPermit,
 } from "./rdoExportDownload";
 import {
   RDO_BACK_SHEET,
@@ -533,19 +534,21 @@ export function rdoWorkbookFilename(snapshot: RdoWorkbookSnapshot): string {
 
 export async function downloadRdoWorkbook(
   snapshot: RdoWorkbookSnapshot,
-  options: RdoExportDownloadOptions = {},
+  permit: RdoExportDownloadPermit,
 ): Promise<void> {
+  assertRdoExportDownloadPermit(permit);
   const bytes = await exportRdoWorkbook(snapshot);
   const blob = new Blob([bytes.slice().buffer], {
     type: RDO_XLSX_MEDIA_TYPE,
   });
-  downloadRdoExportBlob(blob, rdoWorkbookFilename(snapshot), options);
+  downloadRdoExportBlob(blob, rdoWorkbookFilename(snapshot), permit);
 }
 
 export async function downloadAuthoritativeRdoWorkbook(
   snapshot: RdoWorkbookSnapshot,
-  options: RdoExportDownloadOptions = {},
+  permit: RdoExportDownloadPermit,
 ): Promise<void> {
+  assertRdoExportDownloadPermit(permit);
   const response = await apiFetch(
     `/rdos/${encodeURIComponent(snapshot.rdo.id)}/export.xlsx`,
     {
@@ -575,6 +578,6 @@ export async function downloadAuthoritativeRdoWorkbook(
   downloadRdoExportBlob(
     await response.blob(),
     rdoWorkbookFilename(snapshot),
-    options,
+    permit,
   );
 }

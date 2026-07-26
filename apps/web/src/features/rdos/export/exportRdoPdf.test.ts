@@ -16,6 +16,7 @@ import {
   type RdoExportErrorCode,
   type RdoWorkbookSnapshot,
 } from "./rdoWorkbookMapping";
+import type { RdoExportDownloadPermit } from "./rdoExportDownload";
 
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -134,6 +135,46 @@ function snapshot(): RdoWorkbookSnapshot {
     },
   };
 }
+
+const AUTHORIZATION_REQUIRED_MESSAGE =
+  "A autorização atual para exportar o RDO não foi confirmada; o download foi bloqueado.";
+
+function approvedPermit(): RdoExportDownloadPermit {
+  return {
+    assertCurrentAuthorization: () => true,
+  };
+}
+
+function rejectingPermit(): RdoExportDownloadPermit {
+  return {
+    assertCurrentAuthorization: () => {
+      throw new Error("A autorização do RDO foi revogada.");
+    },
+  };
+}
+
+const downloadLocalWithoutPermit = downloadRdoPdf as unknown as (
+  value: RdoWorkbookSnapshot,
+) => Promise<void>;
+const downloadAuthoritativeWithoutPermit =
+  downloadAuthoritativeRdoPdf as unknown as (
+    value: RdoWorkbookSnapshot,
+  ) => Promise<void>;
+
+const directPdfDownloads = [
+  {
+    label: "local PDF",
+    withoutPermit: () => downloadLocalWithoutPermit(snapshot()),
+    withPermit: (permit: RdoExportDownloadPermit) =>
+      downloadRdoPdf(snapshot(), permit),
+  },
+  {
+    label: "authoritative PDF",
+    withoutPermit: () => downloadAuthoritativeWithoutPermit(snapshot()),
+    withPermit: (permit: RdoExportDownloadPermit) =>
+      downloadAuthoritativeRdoPdf(snapshot(), permit),
+  },
+];
 
 function pdfText(bytes: Uint8Array): string {
   return new TextDecoder("latin1").decode(bytes);
@@ -324,6 +365,46 @@ describe("local RDO PDF export", () => {
     );
   });
 
+  it.each(directPdfDownloads)(
+    "fails closed when authorization is omitted from the $label wrapper",
+    async ({ withoutPermit }) => {
+      mocks.apiFetch.mockResolvedValue(new Response("%PDF-authoritative", {
+        status: 200,
+        headers: { "Content-Type": "application/pdf" },
+      }));
+      const createObjectUrl = vi.spyOn(URL, "createObjectURL");
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click");
+
+      await expect(withoutPermit()).rejects.toThrow(
+        AUTHORIZATION_REQUIRED_MESSAGE,
+      );
+
+      expect(mocks.apiFetch).not.toHaveBeenCalled();
+      expect(createObjectUrl).not.toHaveBeenCalled();
+      expect(click).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(directPdfDownloads)(
+    "fails closed when authorization rejects in the $label wrapper",
+    async ({ withPermit }) => {
+      mocks.apiFetch.mockResolvedValue(new Response("%PDF-authoritative", {
+        status: 200,
+        headers: { "Content-Type": "application/pdf" },
+      }));
+      const createObjectUrl = vi.spyOn(URL, "createObjectURL");
+      const click = vi.spyOn(HTMLAnchorElement.prototype, "click");
+
+      await expect(withPermit(rejectingPermit())).rejects.toThrow(
+        "A autorização do RDO foi revogada.",
+      );
+
+      expect(mocks.apiFetch).not.toHaveBeenCalled();
+      expect(createObjectUrl).not.toHaveBeenCalled();
+      expect(click).not.toHaveBeenCalled();
+    },
+  );
+
   it("downloads local bytes only as application/pdf", async () => {
     let downloadedBlob: Blob | undefined;
     const createObjectUrl = vi.spyOn(URL, "createObjectURL")
@@ -336,7 +417,7 @@ describe("local RDO PDF export", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => undefined);
 
-    await downloadRdoPdf(snapshot());
+    await downloadRdoPdf(snapshot(), approvedPermit());
 
     expect(RDO_PDF_MEDIA_TYPE).toBe("application/pdf");
     expect(createObjectUrl).toHaveBeenCalledOnce();
@@ -392,7 +473,7 @@ describe("authoritative RDO PDF download", () => {
     const authoritative = await import("./exportRdoPdf");
 
     await expect(
-      authoritative.downloadAuthoritativeRdoPdf(snapshot()),
+      authoritative.downloadAuthoritativeRdoPdf(snapshot(), approvedPermit()),
     ).rejects.toThrow(expectedMessage);
     expect(localGenerator).not.toHaveBeenCalled();
     expect(readBlob).not.toHaveBeenCalled();
@@ -414,7 +495,7 @@ describe("authoritative RDO PDF download", () => {
       const authoritative = await import("./exportRdoPdf");
 
       await expect(
-        authoritative.downloadAuthoritativeRdoPdf(snapshot()),
+        authoritative.downloadAuthoritativeRdoPdf(snapshot(), approvedPermit()),
       ).rejects.toBe(transportError);
       expect(localGenerator).not.toHaveBeenCalled();
     },
@@ -430,7 +511,7 @@ describe("authoritative RDO PDF download", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => undefined);
 
-    await downloadAuthoritativeRdoPdf(snapshot());
+    await downloadAuthoritativeRdoPdf(snapshot(), approvedPermit());
 
     expect(mocks.apiFetch).toHaveBeenCalledWith(
       "/rdos/rdo-42/export.pdf",

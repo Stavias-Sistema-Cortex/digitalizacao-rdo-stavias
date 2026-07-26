@@ -7,7 +7,7 @@ import type { LocalRdoRecord } from "../../lib/db/db.types";
 import { clearSession, setSession } from "../auth/authSession";
 import { RdoLocalList } from "./RdoLocalList";
 import { localRdoPdfExportAvailability } from "./export/rdoPdfAvailability";
-import type { RdoExportDownloadOptions } from "./export/rdoExportDownload";
+import type { RdoExportDownloadPermit } from "./export/rdoExportDownload";
 
 const mocks = vi.hoisted(() => ({
   listWorksites: vi.fn(),
@@ -266,10 +266,10 @@ describe("RdoLocalList offline export", () => {
     ]);
     mocks.downloadLocal.mockImplementation(async (
       _snapshot: unknown,
-      options?: RdoExportDownloadOptions,
+      permit: RdoExportDownloadPermit,
     ) => {
       setSession(session(OWNER_B));
-      options?.beforeDownload?.();
+      permit.assertCurrentAuthorization();
     });
     renderList();
 

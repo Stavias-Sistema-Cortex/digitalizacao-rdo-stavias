@@ -38,6 +38,7 @@ import {
   RDO_EXPORT_SESSION_CHANGED_MESSAGE,
   type RdoExportSessionGuard,
 } from "./rdoExportSessionGuard";
+import type { RdoExportDownloadPermit } from "./export/rdoExportDownload";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -518,29 +519,32 @@ export function RdoLocalList({
         navigator.onLine &&
         record.syncStatus === "SYNCED" &&
         record.versaoEntidade !== null;
-      const downloadOptions = {
-        beforeDownload: () => assertRdoExportSessionGuard(guard, record.obraId),
+      const downloadPermit: RdoExportDownloadPermit = {
+        assertCurrentAuthorization: () => {
+          assertRdoExportSessionGuard(guard, record.obraId);
+          return true;
+        },
       };
 
       if (useAuthoritativeServer) {
         if (format === "PDF") {
           const { downloadAuthoritativeRdoPdf } = await import("./export/exportRdoPdf");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadAuthoritativeRdoPdf(snapshot, downloadOptions);
+          await downloadAuthoritativeRdoPdf(snapshot, downloadPermit);
         } else {
           const { downloadAuthoritativeRdoWorkbook } = await import("./export/exportRdoWorkbook");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadAuthoritativeRdoWorkbook(snapshot, downloadOptions);
+          await downloadAuthoritativeRdoWorkbook(snapshot, downloadPermit);
         }
       } else {
         if (format === "PDF") {
           const { downloadRdoPdf } = await import("./export/exportRdoPdf");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadRdoPdf(snapshot, downloadOptions);
+          await downloadRdoPdf(snapshot, downloadPermit);
         } else {
           const { downloadRdoWorkbook } = await import("./export/exportRdoWorkbook");
           assertRdoExportSessionGuard(guard, record.obraId);
-          await downloadRdoWorkbook(snapshot, downloadOptions);
+          await downloadRdoWorkbook(snapshot, downloadPermit);
         }
       }
 

@@ -1,14 +1,45 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { downloadRdoExportBlob } from "./rdoExportDownload";
+import {
+  downloadRdoExportBlob,
+  type RdoExportDownloadPermit,
+} from "./rdoExportDownload";
+
+const AUTHORIZATION_REQUIRED_MESSAGE =
+  "A autorização atual para exportar o RDO não foi confirmada; o download foi bloqueado.";
+
+function approvedPermit(): RdoExportDownloadPermit {
+  return {
+    assertCurrentAuthorization: () => true,
+  };
+}
 
 describe("downloadRdoExportBlob", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("checks authorization before allocating a blob URL or clicking a download", () => {
+  it("fails closed when authorization is omitted before allocating a blob URL or clicking a download", () => {
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const createElement = vi.spyOn(document, "createElement");
+    const withoutPermit = downloadRdoExportBlob as unknown as (
+      blob: Blob,
+      filename: string,
+    ) => void;
+
+    expect(() => withoutPermit(
+      new Blob(["rdo"]),
+      "rdo-RDO-0042.xlsx",
+    )).toThrow(AUTHORIZATION_REQUIRED_MESSAGE);
+
+    expect(createObjectUrl).not.toHaveBeenCalled();
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
+    expect(createElement).not.toHaveBeenCalled();
+  });
+
+  it("checks a rejecting authorization before allocating a blob URL or clicking a download", () => {
     const createObjectUrl = vi.spyOn(URL, "createObjectURL");
     const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
     const createElement = vi.spyOn(document, "createElement");
@@ -17,7 +48,7 @@ describe("downloadRdoExportBlob", () => {
       new Blob(["rdo"]),
       "rdo-RDO-0042.xlsx",
       {
-        beforeDownload: () => {
+        assertCurrentAuthorization: () => {
           throw new Error("A sessão mudou durante a exportação local do RDO; o download foi bloqueado.");
         },
       },
@@ -26,5 +57,24 @@ describe("downloadRdoExportBlob", () => {
     expect(createObjectUrl).not.toHaveBeenCalled();
     expect(revokeObjectUrl).not.toHaveBeenCalled();
     expect(createElement).not.toHaveBeenCalled();
+  });
+
+  it("downloads only after a synchronous approved permit", () => {
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:rdo-export");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    downloadRdoExportBlob(
+      new Blob(["rdo"]),
+      "rdo-RDO-0042.xlsx",
+      approvedPermit(),
+    );
+
+    expect(createObjectUrl).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:rdo-export");
   });
 });

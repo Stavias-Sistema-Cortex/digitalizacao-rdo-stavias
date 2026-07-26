@@ -1,7 +1,8 @@
 import { apiFetch } from "../../../lib/api/apiClient";
 import {
+  assertRdoExportDownloadPermit,
   downloadRdoExportBlob,
-  type RdoExportDownloadOptions,
+  type RdoExportDownloadPermit,
 } from "./rdoExportDownload";
 import { rdoWorkbookFilename } from "./exportRdoWorkbook";
 import { buildRdoPdf } from "./rdoPdfLayout";
@@ -23,19 +24,21 @@ export function rdoPdfFilename(snapshot: RdoWorkbookSnapshot): string {
 
 export async function downloadRdoPdf(
   snapshot: RdoWorkbookSnapshot,
-  options: RdoExportDownloadOptions = {},
+  permit: RdoExportDownloadPermit,
 ): Promise<void> {
+  assertRdoExportDownloadPermit(permit);
   const bytes = exportRdoPdf(snapshot);
   const blob = new Blob([bytes.slice().buffer], {
     type: RDO_PDF_MEDIA_TYPE,
   });
-  downloadRdoExportBlob(blob, rdoPdfFilename(snapshot), options);
+  downloadRdoExportBlob(blob, rdoPdfFilename(snapshot), permit);
 }
 
 export async function downloadAuthoritativeRdoPdf(
   snapshot: RdoWorkbookSnapshot,
-  options: RdoExportDownloadOptions = {},
+  permit: RdoExportDownloadPermit,
 ): Promise<void> {
+  assertRdoExportDownloadPermit(permit);
   const response = await apiFetch(
     `/rdos/${encodeURIComponent(snapshot.rdo.id)}/export.pdf`,
     {
@@ -65,6 +68,6 @@ export async function downloadAuthoritativeRdoPdf(
   downloadRdoExportBlob(
     await response.blob(),
     rdoPdfFilename(snapshot),
-    options,
+    permit,
   );
 }
