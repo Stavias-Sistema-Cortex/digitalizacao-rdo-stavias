@@ -4,8 +4,10 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 compose_file="$repo_root/compose.local.yml"
 production_compose_file="$repo_root/compose.production.example.yml"
+postgresql_env_template="$repo_root/.env.postgresql.example"
 api_dockerfile="$repo_root/apps/api/Dockerfile"
 web_dockerfile="$repo_root/apps/web/Dockerfile"
+import_diagnostic="$repo_root/scripts/dev/check-imports.sh"
 
 service_block() {
   local source_file="$1"
@@ -45,6 +47,92 @@ assert_service_hardening() {
   grep -Fq -- '- /tmp:rw,noexec,nosuid,nodev' <<< "$block"
 }
 
+assert_production_compose_renders_from_documented_contract() {
+  command -v docker >/dev/null 2>&1 || {
+    echo "docker compose is required to validate the production contract" >&2
+    exit 1
+  }
+  docker compose version >/dev/null 2>&1 || {
+    echo "docker compose is required to validate the production contract" >&2
+    exit 1
+  }
+
+  local rendered
+  contract_secret_dir="$(mktemp -d "${TMPDIR:-/tmp}/cortex-compose-contract.XXXXXX")"
+  cleanup_contract_secrets() {
+    if [[ -n "${contract_secret_dir:-}" ]]; then
+      for secret_name in \
+        postgres \
+        academy \
+        zeladoria \
+        cpf_hmac \
+        otp_hmac \
+        offline_private \
+        offline_public \
+        memory_cursor_hmac \
+        smtp; do
+        rm -f -- "$contract_secret_dir/$secret_name"
+      done
+      rmdir "$contract_secret_dir" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_contract_secrets EXIT
+
+  for secret_name in \
+    postgres \
+    academy \
+    zeladoria \
+    cpf_hmac \
+    otp_hmac \
+    offline_private \
+    offline_public \
+    memory_cursor_hmac \
+    smtp; do
+    printf 'contract-secret' > "$contract_secret_dir/$secret_name"
+  done
+
+  if ! rendered="$(env \
+    CORTEX_POSTGRES_URL='jdbc:postgresql://postgres.contract.internal:5432/CortexContract' \
+    CORTEX_POSTGRES_USER='cortex_contract' \
+    CORTEX_POSTGRES_PASSWORD_FILE="$contract_secret_dir/postgres" \
+    CORTEX_POSTGRES_RUNTIME_READY='true' \
+    CORTEX_PUBLIC_ORIGIN='https://cortex.example.invalid' \
+    CORTEX_AUTH_WEBAUTHN_RP_ID='cortex.example.invalid' \
+    CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID='cpf-contract-key' \
+    CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/cpf_hmac" \
+    CORTEX_AUTH_OTP_HMAC_KEY_FILE="$contract_secret_dir/otp_hmac" \
+    CORTEX_AUTH_OFFLINE_GRANT_KEY_ID='offline-contract-key' \
+    CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE="$contract_secret_dir/offline_private" \
+    CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE="$contract_secret_dir/offline_public" \
+    CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID='memory-contract-key' \
+    CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/memory_cursor_hmac" \
+    CORTEX_EMAIL_SENDER_PROFILE_KEY='cortex-contract-sender' \
+    CORTEX_SMTP_FROM='noreply@cortex.example.invalid' \
+    CORTEX_SMTP_HOST='smtp.contract.internal' \
+    CORTEX_SMTP_USERNAME='smtp-contract' \
+    CORTEX_SMTP_PASSWORD_FILE="$contract_secret_dir/smtp" \
+    VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256='contract-public-key-fingerprint' \
+    CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy' \
+    CORTEX_ACADEMY_DB_USER='academy_readonly' \
+    CORTEX_ACADEMY_DB_PASSWORD_FILE="$contract_secret_dir/academy" \
+    CORTEX_ZELADORIA_DB_URL='jdbc:mysql://zeladoria.contract.internal:3306/zeladoria' \
+    CORTEX_ZELADORIA_DB_USER='zeladoria_readonly' \
+    CORTEX_ZELADORIA_DB_PASSWORD_FILE="$contract_secret_dir/zeladoria" \
+    docker compose -f "$production_compose_file" config 2>&1)"; then
+    printf '%s\n' "$rendered" >&2
+    exit 1
+  fi
+
+  grep -Fq 'host_ip: 127.0.0.1' <<< "$rendered"
+  grep -Fq 'published: "8080"' <<< "$rendered"
+  grep -Fq 'target: CORTEX_ACADEMY_DB_PASSWORD' <<< "$rendered"
+  grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' <<< "$rendered"
+  if grep -Fq 'contract-secret' <<< "$rendered"; then
+    echo "docker compose config leaked temporary secret contents" >&2
+    exit 1
+  fi
+}
+
 grep -Fq 'CORTEX_AUTH_DEV_ADMIN_ENABLED: "false"' \
   "$compose_file"
 grep -Fq 'SPRING_PROFILES_ACTIVE: local,postgresql' "$compose_file"
@@ -77,14 +165,59 @@ grep -Fq 'SPRING_CONFIG_IMPORT: configtree:/run/secrets/' \
   "$production_compose_file"
 grep -Fq 'target: CORTEX_POSTGRES_PASSWORD' \
   "$production_compose_file"
-grep -Fq 'CORTEX_POSTGRES_PASSWORD_SECRET_FILE' \
+grep -Fq 'CORTEX_POSTGRES_PASSWORD_FILE' \
+  "$production_compose_file"
+grep -Fq 'CORTEX_ACADEMY_DB_URL:' "$production_compose_file"
+grep -Fq 'CORTEX_ACADEMY_DB_USER:' "$production_compose_file"
+grep -Fq 'target: CORTEX_ACADEMY_DB_PASSWORD' "$production_compose_file"
+grep -Fq 'CORTEX_ACADEMY_DB_PASSWORD_FILE' "$production_compose_file"
+grep -Fq 'CORTEX_ZELADORIA_DB_URL:' "$production_compose_file"
+grep -Fq 'CORTEX_ZELADORIA_DB_USER:' "$production_compose_file"
+grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' "$production_compose_file"
+grep -Fq 'CORTEX_ZELADORIA_DB_PASSWORD_FILE' "$production_compose_file"
+grep -Fq '"${CORTEX_WEB_BIND_ADDRESS:-127.0.0.1}:${CORTEX_WEB_PORT:-8080}:8080"' \
   "$production_compose_file"
 
-if grep -Eq '^[[:space:]]+(CORTEX_POSTGRES_PASSWORD|AWS_SECRET_ACCESS_KEY):' \
+for documented_variable in \
+  CORTEX_POSTGRES_PASSWORD_FILE \
+  CORTEX_PUBLIC_ORIGIN \
+  CORTEX_WEB_BIND_ADDRESS \
+  CORTEX_WEB_PORT \
+  CORTEX_AUTH_WEBAUTHN_RP_ID \
+  CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
+  CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID \
+  CORTEX_EMAIL_SENDER_PROFILE_KEY \
+  VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 \
+  CORTEX_ACADEMY_DB_URL \
+  CORTEX_ACADEMY_DB_USER \
+  CORTEX_ACADEMY_DB_PASSWORD_FILE \
+  CORTEX_ZELADORIA_DB_URL \
+  CORTEX_ZELADORIA_DB_USER \
+  CORTEX_ZELADORIA_DB_PASSWORD_FILE; do
+  grep -Eq "^${documented_variable}=" "$postgresql_env_template" || {
+    echo "missing ${documented_variable} from .env.postgresql.example" >&2
+    exit 1
+  }
+done
+
+if grep -Eq '^[[:space:]]+(CORTEX_POSTGRES_PASSWORD|CORTEX_ACADEMY_DB_PASSWORD|CORTEX_ZELADORIA_DB_PASSWORD|AWS_SECRET_ACCESS_KEY):' \
   "$production_compose_file"; then
   echo "production compose exposes a secret through the container environment" >&2
   exit 1
 fi
+
+[[ -x "$import_diagnostic" ]] || {
+  echo "check-imports.sh must remain executable" >&2
+  exit 1
+}
+
+if grep -Eq '(^|[[:space:]])mysql([[:space:]]|$)|cortex_dev|CORTEX_DB_|-p\$?\{?CORTEX_DB_PASSWORD|export[[:space:]]+PGPASSWORD' "$import_diagnostic"; then
+  echo "check-imports.sh still treats MySQL as the Córtex primary database" >&2
+  exit 1
+fi
+
+grep -Fq 'PGPASSFILE' "$import_diagnostic"
+grep -Fq 'CORTEX_POSTGRES_PASSWORD_FILE' "$import_diagnostic"
 
 for hardened_compose_file in "$compose_file" "$production_compose_file"; do
   assert_service_hardening "$hardened_compose_file" cortex-api
@@ -99,4 +232,6 @@ grep -Fq 'USER cortex' "$api_dockerfile"
 grep -Fq 'USER nginx' "$web_dockerfile"
 grep -Fq 'ENTRYPOINT ["nginx"]' "$web_dockerfile"
 
-echo "Local PostgreSQL/loopback, production secret-mount, and container hardening contracts passed."
+assert_production_compose_renders_from_documented_contract
+
+echo "Local PostgreSQL/loopback, production secret-mount, source-read-only wiring, and container hardening contracts passed."

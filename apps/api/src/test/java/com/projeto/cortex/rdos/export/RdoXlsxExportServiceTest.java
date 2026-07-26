@@ -476,6 +476,148 @@ class RdoXlsxExportServiceTest {
     }
 
     @Test
+    void redactsCredentialHeadersBeforeWritingWorkbookCells() throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization: Basic BASIC_SECRET_CANARY",
+                        "BASIC_SECRET_CANARY"
+                },
+                new String[] {
+                        "Proxy-Authorization: Basic PROXY_BASIC_SECRET_CANARY",
+                        "PROXY_BASIC_SECRET_CANARY"
+                },
+                new String[] {
+                        "Authorization: Digest username=\"digest\", "
+                                + "response=\"DIGEST_SECRET_CANARY\"",
+                        "DIGEST_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie: session=COOKIE_SECRET_CANARY",
+                        "COOKIE_SECRET_CANARY"
+                },
+                new String[] {
+                        "Set-Cookie: session=SET_COOKIE_SECRET_CANARY",
+                        "SET_COOKIE_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-credential", "RDO-CREDENTIAL"),
+                    "", "", "", vector[0],
+                    List.of(), List.of(), List.of(), List.of(), List.of()
+            );
+            when(queryService.buscarPorId("rdo-credential")).thenReturn(rdo);
+
+            Map<String, byte[]> packageEntries = zipEntries(
+                    service.export("rdo-credential").content()
+            );
+            String packageText = packageEntries.values().stream()
+                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                    .reduce("", (left, right) -> left + "\n" + right);
+
+            assertThat(packageText).contains("[segredo removido]")
+                    .doesNotContain(vector[1]);
+        }
+    }
+
+    @Test
+    void redactsFoldedCredentialHeadersBeforeWritingWorkbookCells() throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization: Basic\r\n BASIC_FOLDED_SECRET_CANARY",
+                        "BASIC_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Proxy-Authorization: Basic\r\n "
+                                + "PROXY_BASIC_FOLDED_SECRET_CANARY",
+                        "PROXY_BASIC_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Authorization: Digest\r\n "
+                                + "response=\"DIGEST_FOLDED_SECRET_CANARY\"",
+                        "DIGEST_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie: session=one;\r\n COOKIE_FOLDED_SECRET_CANARY",
+                        "COOKIE_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Set-Cookie: session=one;\r\n "
+                                + "SET_COOKIE_FOLDED_SECRET_CANARY",
+                        "SET_COOKIE_FOLDED_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-folded-credential", "RDO-FOLDED"),
+                    "", "", "", vector[0],
+                    List.of(), List.of(), List.of(), List.of(), List.of()
+            );
+            when(queryService.buscarPorId("rdo-folded-credential")).thenReturn(rdo);
+
+            Map<String, byte[]> packageEntries = zipEntries(
+                    service.export("rdo-folded-credential").content()
+            );
+            String packageText = packageEntries.values().stream()
+                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                    .reduce("", (left, right) -> left + "\n" + right);
+
+            assertThat(packageText).contains("[segredo removido]")
+                    .doesNotContain(vector[1]);
+        }
+    }
+
+    @Test
+    void redactsNonBreakingSpaceCredentialHeadersBeforeWritingWorkbookCells()
+            throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization\u00A0: Basic "
+                                + "NBSP_AUTHORIZATION_SECRET_CANARY",
+                        "NBSP_AUTHORIZATION_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie:\u00A0session=NBSP_COOKIE_SECRET_CANARY",
+                        "NBSP_COOKIE_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-nbsp-credential", "RDO-NBSP"),
+                    "", "", "", vector[0],
+                    List.of(), List.of(), List.of(), List.of(), List.of()
+            );
+            when(queryService.buscarPorId("rdo-nbsp-credential")).thenReturn(rdo);
+
+            Map<String, byte[]> packageEntries = zipEntries(
+                    service.export("rdo-nbsp-credential").content()
+            );
+            String packageText = packageEntries.values().stream()
+                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                    .reduce("", (left, right) -> left + "\n" + right);
+
+            assertThat(packageText).contains("[segredo removido]")
+                    .doesNotContain(vector[1]);
+        }
+    }
+
+    @Test
+    void preservesNonCredentialTextAfterABareCookieLabelOnANewLine()
+            throws Exception {
+        RdoResponse rdo = copyRdo(
+                emptyRdo("rdo-cookie-label", "RDO-COOKIE-LABEL"),
+                "", "", "", "Cookie:\r\nTexto operacional preservado",
+                List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(queryService.buscarPorId("rdo-cookie-label")).thenReturn(rdo);
+
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(
+                service.export("rdo-cookie-label").content()
+        ))) {
+            assertThat(stringCell(workbook.getSheetAt(1), "B63"))
+                    .contains("Cookie:", "Texto operacional preservado")
+                    .doesNotContain("[segredo removido]");
+        }
+    }
+
+    @Test
     void rejectsTextThatCannotRemainLegibleInFixedPrintRegions() {
         RdoResponse base = emptyRdo("rdo-text", "RDO-TEXT");
         List<InvalidPrintCase> cases = List.of(

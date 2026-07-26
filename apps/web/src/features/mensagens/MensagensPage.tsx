@@ -6,7 +6,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { CortexPageHeader } from "../../components/header/CortexPageHeader";

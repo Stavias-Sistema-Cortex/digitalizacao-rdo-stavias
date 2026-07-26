@@ -8,11 +8,16 @@ export interface RdoExportDownloadPermit {
 export function assertRdoExportDownloadPermit(
   permit: RdoExportDownloadPermit,
 ): void {
-  if (
-    !permit ||
-    typeof permit.assertCurrentAuthorization !== "function" ||
-    permit.assertCurrentAuthorization() !== true
-  ) {
+  if (!permit || typeof permit.assertCurrentAuthorization !== "function") {
+    throw new Error(RDO_EXPORT_DOWNLOAD_AUTHORIZATION_REQUIRED_MESSAGE);
+  }
+
+  const authorizationResult: unknown = permit.assertCurrentAuthorization();
+  if (authorizationResult !== true) {
+    // The contract is intentionally synchronous. Consume a malformed async
+    // result so a rejecting Promise cannot surface as an unhandled rejection
+    // after the download has already been blocked.
+    void Promise.resolve(authorizationResult).catch(() => undefined);
     throw new Error(RDO_EXPORT_DOWNLOAD_AUTHORIZATION_REQUIRED_MESSAGE);
   }
 }

@@ -29,6 +29,15 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY security-headers.conf /etc/nginx/snippets/cortex-security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
+RUN mkdir -p \
+      /var/cache/nginx/client_temp \
+      /var/cache/nginx/proxy_temp \
+      /var/cache/nginx/fastcgi_temp \
+      /var/cache/nginx/uwsgi_temp \
+      /var/cache/nginx/scgi_temp \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown nginx:nginx /run
+
 USER nginx
 
 EXPOSE 8080

@@ -21,6 +21,7 @@ class PostgresqlLocalRuntimeContractTest {
                 "SPRING_CONFIG_IMPORT: configtree:/run/secrets/",
                 "CORTEX_POSTGRES_DOCKER_URL:",
                 "CORTEX_POSTGRES_RUNTIME_READY:",
+                "only after V60 and a real ALFA bootstrap",
                 "target: CORTEX_POSTGRES_PASSWORD",
                 "CORTEX_AUTH_DEV_ADMIN_ENABLED: \"false\"",
                 "CORTEX_AUTH_PROVISIONING_ENABLED: \"false\"",
@@ -36,6 +37,7 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_DB_",
                 "CORTEX_MYSQL_ROOT_PASSWORD",
                 "VITE_CORTEX_AUTH_MODE: legacy",
+                "only after V59 and a real ALFA bootstrap",
                 "\n      CORTEX_POSTGRES_PASSWORD:"
         );
     }

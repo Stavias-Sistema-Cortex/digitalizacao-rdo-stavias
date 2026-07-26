@@ -59,6 +59,30 @@ describe("downloadRdoExportBlob", () => {
     expect(createElement).not.toHaveBeenCalled();
   });
 
+  it("fails closed and consumes an asynchronously rejected authorization before the blob sink", async () => {
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+    const createElement = vi.spyOn(document, "createElement");
+    const asynchronouslyRejectedPermit = {
+      assertCurrentAuthorization: () => Promise.reject(
+        new Error("A sessão mudou durante a exportação local do RDO; o download foi bloqueado."),
+      ),
+    } as unknown as RdoExportDownloadPermit;
+
+    expect(() => downloadRdoExportBlob(
+      new Blob(["rdo"]),
+      "rdo-RDO-0042.xlsx",
+      asynchronouslyRejectedPermit,
+    )).toThrow(AUTHORIZATION_REQUIRED_MESSAGE);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(createObjectUrl).not.toHaveBeenCalled();
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
+    expect(createElement).not.toHaveBeenCalled();
+  });
+
   it("downloads only after a synchronous approved permit", () => {
     const createObjectUrl = vi.spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:rdo-export");

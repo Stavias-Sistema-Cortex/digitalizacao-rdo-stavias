@@ -10,7 +10,34 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const WEB_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
-const REPOSITORY_ROOT = path.resolve(WEB_ROOT, "../..");
+
+function hasMonorepoWebRoot(repositoryRoot) {
+  const nestedWebRoot = path.join(repositoryRoot, "apps", "web");
+  return (
+    existsSync(path.join(nestedWebRoot, "src")) ||
+    existsSync(path.join(nestedWebRoot, "package.json"))
+  );
+}
+
+function webRootFor(repositoryRoot) {
+  return hasMonorepoWebRoot(repositoryRoot)
+    ? path.join(repositoryRoot, "apps", "web")
+    : repositoryRoot;
+}
+
+function canonicalSourcePath(repositoryRoot, file) {
+  const webRoot = webRootFor(repositoryRoot);
+  const webRelative = path.relative(webRoot, file);
+  if (webRelative && !webRelative.startsWith(`..${path.sep}`) && webRelative !== "..") {
+    return `apps/web/${toPosix(webRelative)}`;
+  }
+  return toPosix(path.relative(repositoryRoot, file));
+}
+
+const MONOREPO_CANDIDATE = path.resolve(WEB_ROOT, "../..");
+const REPOSITORY_ROOT = hasMonorepoWebRoot(MONOREPO_CANDIDATE)
+  ? MONOREPO_CANDIDATE
+  : WEB_ROOT;
 
 export const LEGACY_LOCAL_STORAGE_KEYS = [
   "cortex:stavia:chat:operacional",
@@ -92,13 +119,6 @@ const CORPORATE_SOURCE_LINES = new Map([
     "apps/web/src/index.css",
     [
       "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",
-    ],
-  ],
-  [
-    "compose.production.example.yml",
-    [
-      "CORTEX_AUTH_WEBAUTHN_RP_NAME: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:-Stavias Córtex}",
-      "CORTEX_SMTP_FROM: ${CORTEX_SMTP_FROM:?Set the authenticated Stavias From mailbox}",
     ],
   ],
   [
@@ -443,7 +463,7 @@ export function isViteRuntimeSourceFile(file) {
 }
 
 function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
-  const webRoot = path.join(repositoryRoot, "apps/web");
+  const webRoot = webRootFor(repositoryRoot);
   const source = listFiles(path.join(webRoot, "src"));
   const runtime = source.filter(isViteRuntimeSourceFile);
   const sourceAssets = source.filter(
@@ -877,7 +897,7 @@ export function inspectSourceBoundary(files) {
 
 export function verifySourceBoundary(repositoryRoot = REPOSITORY_ROOT) {
   const files = sourceFiles(repositoryRoot).map((file) => ({
-    path: toPosix(path.relative(repositoryRoot, file)),
+    path: canonicalSourcePath(repositoryRoot, file),
     content: isTextFile(file) ? readFileSync(file, "utf8") : "",
   }));
   const violations = inspectSourceBoundary(files);

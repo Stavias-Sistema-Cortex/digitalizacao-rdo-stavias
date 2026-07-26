@@ -38,7 +38,9 @@ Comece por [docs/deploy-checklist.md](docs/deploy-checklist.md) e
 `compose.production.example.yml` é apenas uma topologia de referência: não cria
 banco nem contém credenciais. Produção falha fechada sem secrets por arquivo,
 origem HTTPS exata, SMTP autenticado, storage durável e um ALFA ativo com e-mail
-verificado.
+verificado. O web container fica em loopback por padrão e deve ser publicado por
+um ingresso HTTPS gerenciado; Academy e Zeladoria recebem somente credenciais
+de leitura para importação, enquanto todo estado do Córtex fica no PostgreSQL.
 
 ## Runtime PostgreSQL canônico
 
@@ -48,3 +50,8 @@ continua fail-closed: exige schema completo, `CORTEX_POSTGRES_RUNTIME_READY=true
 e o conjunto exato de superfícies operacionais registradas. Veja o
 [runbook de clean start PostgreSQL](docs/operations/cortex-postgresql-clean-start.md)
 antes de provisionar, migrar, fazer bootstrap ou ativar esse ambiente.
+
+Para verificar o contrato de deploy sem usar credenciais reais, execute
+`bash scripts/security/test-local-compose-security.sh`. Ele renderiza o Compose
+com secrets temporários, confirma que não há fallback para `CORTEX_DB_*` e que
+as fontes externas não substituem o PostgreSQL canônico.

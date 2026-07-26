@@ -4,7 +4,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";

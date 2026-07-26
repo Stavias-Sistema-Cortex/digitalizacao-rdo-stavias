@@ -241,6 +241,66 @@ describe("local RDO PDF export", () => {
     expect(content).not.toContain("SECRET_CANARY");
   });
 
+  it("redacts credential-bearing headers before emitting a local PDF", () => {
+    const value = snapshot();
+    value.rdo.observacoes = [
+      "Authorization: Basic BASIC_SECRET_CANARY",
+      "Proxy-Authorization: Basic PROXY_BASIC_SECRET_CANARY",
+      "Authorization: Digest username=\"digest\", response=\"DIGEST_SECRET_CANARY\"",
+      "Cookie: session=COOKIE_SECRET_CANARY",
+      "Set-Cookie: session=SET_COOKIE_SECRET_CANARY",
+    ].join("\n");
+
+    const content = pdfText(exportRdoPdf(value));
+
+    expect(content).toContain("[segredo removido]");
+    expect(content).not.toContain("BASIC_SECRET_CANARY");
+    expect(content).not.toContain("PROXY_BASIC_SECRET_CANARY");
+    expect(content).not.toContain("DIGEST_SECRET_CANARY");
+    expect(content).not.toContain("COOKIE_SECRET_CANARY");
+    expect(content).not.toContain("SET_COOKIE_SECRET_CANARY");
+  });
+
+  it.each([
+    ["folded Basic authorization", "Authorization: Basic\r\n BASIC_FOLDED_SECRET_CANARY", "BASIC_FOLDED_SECRET_CANARY"],
+    ["folded Proxy Basic authorization", "Proxy-Authorization: Basic\r\n PROXY_BASIC_FOLDED_SECRET_CANARY", "PROXY_BASIC_FOLDED_SECRET_CANARY"],
+    ["folded Digest authorization", "Authorization: Digest\r\n response=\"DIGEST_FOLDED_SECRET_CANARY\"", "DIGEST_FOLDED_SECRET_CANARY"],
+    ["folded Cookie", "Cookie: session=one;\r\n COOKIE_FOLDED_SECRET_CANARY", "COOKIE_FOLDED_SECRET_CANARY"],
+    ["folded Set-Cookie", "Set-Cookie: session=one;\r\n SET_COOKIE_FOLDED_SECRET_CANARY", "SET_COOKIE_FOLDED_SECRET_CANARY"],
+  ])("redacts %s before emitting a local PDF", (_label, credentialHeader, canary) => {
+    const value = snapshot();
+    value.rdo.observacoes = credentialHeader;
+
+    const content = pdfText(exportRdoPdf(value));
+
+    expect(content).toContain("[segredo removido]");
+    expect(content).not.toContain(canary);
+  });
+
+  it.each([
+    ["NBSP Authorization", "Authorization\u00a0: Basic NBSP_AUTHORIZATION_SECRET_CANARY", "NBSP_AUTHORIZATION_SECRET_CANARY"],
+    ["NBSP Cookie", "Cookie:\u00a0session=NBSP_COOKIE_SECRET_CANARY", "NBSP_COOKIE_SECRET_CANARY"],
+  ])("redacts %s before emitting a local PDF", (_label, credentialHeader, canary) => {
+    const value = snapshot();
+    value.rdo.observacoes = credentialHeader;
+
+    const content = pdfText(exportRdoPdf(value));
+
+    expect(content).toContain("[segredo removido]");
+    expect(content).not.toContain(canary);
+  });
+
+  it("preserves non-credential text after a bare Cookie label on a new line", () => {
+    const value = snapshot();
+    value.rdo.observacoes = "Cookie:\r\nTexto operacional preservado";
+
+    const content = pdfText(exportRdoPdf(value));
+
+    expect(content).toContain("Cookie:");
+    expect(content).toContain("Texto operacional preservado");
+    expect(content).not.toContain("[segredo removido]");
+  });
+
   it("preserves the projection's missing-worksite and overflow failures", () => {
     const missingWorksite = snapshot();
     missingWorksite.obra = undefined;

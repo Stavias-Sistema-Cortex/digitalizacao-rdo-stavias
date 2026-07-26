@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { fetchRevenueCapabilities } from "../financeiro/financeRevenueAccessApi";
 import { fetchRevenueTrace } from "../financeiro/servicePriceApi";

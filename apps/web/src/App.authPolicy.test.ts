@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("App normal authentication policy", () => {
-  it("renders the CPF plus passkey login for an unauthenticated PostgreSQL app", () => {
+  it("keeps the CPF plus passkey login as the unauthenticated fallback", () => {
     const source = readFileSync(
       new URL("./App.tsx", import.meta.url),
       "utf8",
@@ -14,8 +14,13 @@ describe("App normal authentication policy", () => {
     );
     expect(source).not.toContain("EmailOtpAccessForm");
     expect(source).not.toContain("PostgresqlAccessPage");
-    expect(source).toMatch(
-      /if \(resolveCortexAuthMode\(\) === "postgresql"\) \{\s*return <LoginPage\s*\/>;\s*\}/,
+
+    const offlineUnlockDecision = source.indexOf(
+      "if (offlineVault && (!online || initialAuthUnavailable))",
     );
+    const loginFallback = source.indexOf("return <LoginPage />;");
+
+    expect(offlineUnlockDecision).toBeGreaterThan(-1);
+    expect(loginFallback).toBeGreaterThan(offlineUnlockDecision);
   });
 });

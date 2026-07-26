@@ -70,6 +70,39 @@ function writeBoundaryRepository(
   return repositoryRoot;
 }
 
+function writeStandaloneBoundaryWebRoot(
+  runtimePath: string,
+  runtimeContent: string,
+): string {
+  const webRoot = mkdtempSync(
+    path.join(tmpdir(), "cortex-stavia-standalone-web-"),
+  );
+  for (const fixture of validCleanupFixtures()) {
+    const destination = path.join(
+      webRoot,
+      fixture.path.replace(/^apps\/web\//, ""),
+    );
+    mkdirSync(path.dirname(destination), { recursive: true });
+    writeFileSync(destination, fixture.content);
+  }
+  const runtimeDestination = path.join(webRoot, "src", runtimePath);
+  mkdirSync(path.dirname(runtimeDestination), { recursive: true });
+  writeFileSync(runtimeDestination, runtimeContent);
+  const verifierDestination = path.join(
+    webRoot,
+    "scripts/verify-stavia-boundary.mjs",
+  );
+  mkdirSync(path.dirname(verifierDestination), { recursive: true });
+  writeFileSync(
+    verifierDestination,
+    readFileSync(
+      path.join(WEB_ROOT, "scripts/verify-stavia-boundary.mjs"),
+      "utf8",
+    ),
+  );
+  return webRoot;
+}
+
 function relativeToRepository(file: string): string {
   return path.relative(REPOSITORY_ROOT, file).split(path.sep).join("/");
 }
@@ -585,6 +618,24 @@ describe("StavIA runtime boundary", () => {
     expect(existsSync(path.join(WEB_ROOT, "src/features/stavia"))).toBe(false);
 
     expect(() => verifySourceBoundary(REPOSITORY_ROOT)).not.toThrow();
+  });
+
+  it("verifies a standalone web Docker context with canonical source paths", () => {
+    const webRoot = writeStandaloneBoundaryWebRoot(
+      "runtime.ts",
+      "export const runtime = 'cortex';",
+    );
+    try {
+      expect(() =>
+        execFileSync(
+          process.execPath,
+          ["scripts/verify-stavia-boundary.mjs"],
+          { cwd: webRoot, stdio: "pipe" },
+        ),
+      ).not.toThrow();
+    } finally {
+      rmSync(webRoot, { recursive: true, force: true });
+    }
   });
 
   it("allows the corporate STAVIAS brand only in the explicit source and asset allowlists", () => {

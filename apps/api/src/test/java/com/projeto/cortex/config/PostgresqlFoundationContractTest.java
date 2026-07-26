@@ -26,8 +26,8 @@ class PostgresqlFoundationContractTest {
                 "PostgreSQL JDBC must be available for the opt-in profile");
         assertTrue(pom.contains("<artifactId>flyway-database-postgresql</artifactId>"),
                 "Flyway PostgreSQL support must be available for the opt-in profile");
-        assertFalse(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
-                "the canonical runtime must not depend on the retired MySQL driver");
+        assertTrue(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
+                "the separately configured, read-only Academy source needs its JDBC driver");
         assertFalse(pom.contains("<artifactId>flyway-mysql</artifactId>"),
                 "the canonical runtime must not load retired MySQL migrations");
     }

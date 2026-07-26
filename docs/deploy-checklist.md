@@ -1,7 +1,7 @@
 # Córtex — checklist de deploy
 
 Esta é a trava operacional do artefato atual: API Java 21, PWA, autenticação
-OTP/passkey, Mensagens, armazenamento compartilhado, RDO, Financeiro orientado
+CPF/passkey (com OTP somente para ativação verificada), Mensagens, armazenamento compartilhado, RDO, Financeiro orientado
 à receita, Memória e grafo ontológico. Marque um item somente com evidência da
 mesma revisão que será publicada.
 
@@ -12,6 +12,9 @@ mesma revisão que será publicada.
   migration.
 - [ ] Uma cópia representativa de `StaviasCortex` atualizou até V60.
 - [ ] O usuário da API tem somente os privilégios necessários no schema.
+- [ ] `CORTEX_POSTGRES_URL`, `CORTEX_POSTGRES_USER` e
+  `CORTEX_POSTGRES_PASSWORD_FILE` apontam para o PostgreSQL canônico; nenhum
+  `CORTEX_DB_*` é usado como fallback.
 - [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
   `email_verificado_em` preenchido.
 - [ ] Os registros ALFA explícitos anteriores permanecem ALFA após a migração.
@@ -23,19 +26,26 @@ estado; `/api/health` mede somente o processo.
 ## 2. HTTPS, cookies e passkeys
 
 - [ ] O proxy termina HTTPS e publica PWA e `/api` na mesma origem.
+- [ ] `cortex-web` fica em `127.0.0.1` por padrão; qualquer override de
+  `CORTEX_WEB_BIND_ADDRESS` pertence somente à rede privada do ingresso TLS.
 - [ ] `CORTEX_PUBLIC_ORIGIN`, CORS e WebAuthn contêm somente a origem HTTPS
   exata, sem curinga, path, query ou credenciais.
 - [ ] `CORTEX_AUTH_WEBAUTHN_RP_ID` é o hostname público sem esquema/porta.
 - [ ] Cookies estão `Secure`; `SameSite` foi escolhido para a topologia real.
 - [ ] O par PEM do offline grant está montado e o fingerprint público usado no
   build da PWA corresponde exatamente a esse par.
-- [ ] Login OTP, logout, registro de passkey, login por passkey e acesso offline
-  foram exercitados no hostname final.
+- [ ] Identificação por CPF, logout, registro de passkey, login por passkey e
+  acesso offline foram exercitados no hostname final.
+- [ ] Após login CPF + passkey online, a mesma identidade consegue abrir o
+  cofre offline sem rede; uma identidade não provisionada continua bloqueada.
 
 ## 3. Secrets e providers
 
 - [ ] CPF HMAC, OTP HMAC, chave privada offline e senha SMTP vêm de arquivos
   secretos montados; os equivalentes inline estão vazios.
+- [ ] As URLs, usuários e arquivos de senha de Academy/Zeladoria são distintos
+  do PostgreSQL canônico, montados por Config Tree, e os usuários das fontes
+  têm somente `SELECT` no schema explicitamente autorizado.
 - [ ] `CORTEX_AUTH_DEV_ADMIN_ENABLED=false` e
   `CORTEX_AUTH_PROVISIONING_ENABLED=false` no processo web.
 - [ ] `CORTEX_EMAIL_PROVIDER=smtp`; provider `fake` não existe no runtime de
@@ -71,6 +81,10 @@ estado; `/api/health` mede somente o processo.
 - [ ] Memória e grafo retornam somente eventos/arestas autorizados, com
   cobertura e frescor explícitos; fatos apenas locais não são apresentados como
   confirmados pelo servidor.
+- [ ] `CORTEX_SYNC_ENABLED` foi deixado `false` até validar uma importação QA;
+  depois de habilitado, os resultados aparecem em `source_sync_run` no
+  PostgreSQL. O replay offline da PWA permanece automático e separado desse
+  scheduler.
 
 ## 6. Build e testes da revisão
 
@@ -86,6 +100,7 @@ npm run build
 cd ../..
 docker build -t cortex-api:release apps/api
 docker build -t cortex-web:release apps/web
+./scripts/security/test-local-compose-security.sh
 docker compose -f compose.production.example.yml config
 git diff --check
 ```
@@ -93,6 +108,8 @@ git diff --check
 - [ ] Maven completo passou em JDK 21.
 - [ ] PostgreSQL 18 descartável passou com migrations V44–V60 e os fluxos
   Cortex 3.0.
+- [ ] O contrato de Compose de produção passou com secrets temporários, fontes
+  MySQL somente leitura e porta web loopback.
 - [ ] Vitest, lint e build PWA passaram.
 - [ ] As duas imagens Docker buildaram e executam como configuradas.
 - [ ] Desktop, tablet e mobile foram verificados sem overflow ou console error.

@@ -33,9 +33,13 @@ final class RdoPdfFormRenderer {
     private static final float PAGE_BOX_TOLERANCE = 0.1f;
     private static final float OBSERVATION_FONT_SIZE = 6.5f;
     private static final float OBSERVATION_LINE_HEIGHT = 7.6f;
+    private static final float MIN_READABLE_FONT_SIZE = 4f;
     private static final String UNSAFE_GLYPH_MESSAGE =
             "O conteúdo do RDO contém caractere sem representação segura no PDF; "
                     + "nenhum conteúdo foi substituído.";
+    private static final String UNREADABLE_FITTED_TEXT_MESSAGE =
+            "O conteúdo do RDO não permanece legível na célula fixa do PDF; "
+                    + "nenhum conteúdo foi truncado.";
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT =
@@ -757,9 +761,10 @@ final class RdoPdfFormRenderer {
         float fontSize = units <= 0f
                 ? maximumFontSize
                 : Math.min(maximumFontSize, availableWidth / units);
-        if (fontSize <= 0f) {
-            throw new IllegalStateException(
-                    "Não foi possível dimensionar uma célula do PDF do RDO."
+        if (fontSize < MIN_READABLE_FONT_SIZE) {
+            throw new ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    UNREADABLE_FITTED_TEXT_MESSAGE
             );
         }
         drawRawText(content, font, fontSize, x, baseline, value);

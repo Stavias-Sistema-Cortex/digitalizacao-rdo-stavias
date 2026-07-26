@@ -101,6 +101,8 @@ const CPF = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g;
 const PRIVATE_KEY_MARKER = /-{2,}\s*(?:BEGIN|END)(?: [A-Z0-9]+)* PRIVATE KEY\s*-{2,}/gi;
 const SECRET_ASSIGNMENT = /\b(?:api[_-]?key|secret|token|password|senha|chave|aws_access_key_id|aws_secret_access_key)\s*[:=]\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/gi;
 const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const BASIC_OR_DIGEST_AUTHORIZATION_HEADER = /\b((?:Proxy-)?Authorization[\t \u00A0]*:)[\t \u00A0]*(?:Basic|Digest)\b[^\r\n]*(?:\r?\n[\t ]+[^\r\n]*)*/gi;
+const COOKIE_HEADER = /\b((?:Set-)?Cookie[\t \u00A0]*:)[\t \u00A0]*(?:[^\r\n]+(?:\r?\n[\t ]+[^\r\n]*)*|\r?\n[\t ]+[^\r\n]*(?:\r?\n[\t ]+[^\r\n]*)*)/gi;
 const AWS_ACCESS_KEY = /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g;
 
 function error(code: RdoExportErrorCode, message: string): never {
@@ -353,7 +355,7 @@ function removeDisallowedControls(value: string): string {
 }
 
 export function sanitizeRdoCellText(value: string): string {
-  let sanitized = removeDisallowedControls(value).replace(PRIVATE_KEY_BLOCK, "[bloco de chave privada removido]").replace(UNBOUNDED_PRIVATE_KEY, "[bloco de chave privada inválido removido]").replace(EMAIL, "[email removido]").replace(CPF, "[CPF removido]").replace(PRIVATE_KEY_MARKER, "[chave privada removida]").replace(BEARER_TOKEN, "Bearer [segredo removido]").replace(AWS_ACCESS_KEY, "[credencial AWS removida]").replace(SECRET_ASSIGNMENT, "[segredo removido]");
+  let sanitized = removeDisallowedControls(value).replace(PRIVATE_KEY_BLOCK, "[bloco de chave privada removido]").replace(UNBOUNDED_PRIVATE_KEY, "[bloco de chave privada inválido removido]").replace(EMAIL, "[email removido]").replace(CPF, "[CPF removido]").replace(PRIVATE_KEY_MARKER, "[chave privada removida]").replace(BASIC_OR_DIGEST_AUTHORIZATION_HEADER, "$1 [segredo removido]").replace(COOKIE_HEADER, "$1 [segredo removido]").replace(BEARER_TOKEN, "Bearer [segredo removido]").replace(AWS_ACCESS_KEY, "[credencial AWS removida]").replace(SECRET_ASSIGNMENT, "[segredo removido]");
   const firstVisible = sanitized.search(/\S/);
   if (firstVisible >= 0 && /^[=+\-@]$/.test(sanitized[firstVisible])) sanitized = `'${sanitized}`;
   return sanitized;

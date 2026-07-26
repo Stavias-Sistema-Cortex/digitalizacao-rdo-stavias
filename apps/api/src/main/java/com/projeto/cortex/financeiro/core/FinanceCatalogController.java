@@ -7,6 +7,7 @@ import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Profile("legacy-finance")
 @RestController
 @RequestMapping("/api/financeiro")
 public class FinanceCatalogController {

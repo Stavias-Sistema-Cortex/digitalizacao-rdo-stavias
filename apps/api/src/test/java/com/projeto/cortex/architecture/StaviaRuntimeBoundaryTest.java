@@ -487,6 +487,17 @@ class StaviaRuntimeBoundaryTest {
     }
 
     @Test
+    void allowsApprovedBrandingInsideACompiledConstantPool() {
+        List<String> violations = new ArrayList<>();
+
+        inspect("target/classes/example/Brand.class",
+                "\u0001\u0000\u0007STAVIAS\n".getBytes(StandardCharsets.ISO_8859_1),
+                violations);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
     void rejectsUnapprovedCorporateBrandCaseAndBoundaryVariants() {
         for (String unapproved : List.of(
                 "stavias",
@@ -803,7 +814,10 @@ class StaviaRuntimeBoundaryTest {
                         .distinct()
                         .map(Pattern::quote)
                         .toList());
-        String identifierCharacter = "\\p{javaJavaIdentifierPart}";
+        // A compiled class prefixes UTF-8 constants with binary length bytes. Some
+        // control bytes are Java-identifier-ignorable, so javaJavaIdentifierPart
+        // would falsely join them to a permitted STAVIAS branding constant.
+        String identifierCharacter = "[A-Za-z0-9_$]";
         return Pattern.compile("(?<!" + identifierCharacter + ")(?:"
                 + alternatives + ")(?!" + identifierCharacter + ")");
     }

@@ -5,14 +5,13 @@ import {
   Route,
   Routes,
   useNavigate,
-} from "react-router-dom";
+} from "react-router";
 
 import {
   AUTH_SESSION_CHANGED_EVENT,
   getSession,
   isAlfa,
 } from "./features/auth/authSession";
-import { resolveCortexAuthMode } from "./features/auth/cortexAuthMode";
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
@@ -171,9 +170,6 @@ function App({ initialAuthUnavailable = false }: AppProps) {
 
   // Sem sessão online, somente um grant assinado aberto por PRF libera o cache.
   if (!session) {
-    if (resolveCortexAuthMode() === "postgresql") {
-      return <LoginPage />;
-    }
     if (!vaultChecked) {
       return (
         <main className="auth-bootstrap-status" role="status">

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.rdos.RdoQueryService;
 import com.projeto.cortex.rdos.RdoResponse;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -173,7 +174,13 @@ class RdoPdfExportServiceTest {
         RdoResponse rdo = copyRdo(
                 emptyRdo("rdo-private", "RDO-PRIVATE"),
                 "Contato ana@example.com, CPF 123.456.789-09, "
-                        + "token=SECRET_CANARY",
+                        + "token=SECRET_CANARY\n"
+                        + "Authorization: Basic BASIC_SECRET_CANARY\n"
+                        + "Proxy-Authorization: Basic PROXY_BASIC_SECRET_CANARY\n"
+                        + "Authorization: Digest username=\"digest\", "
+                        + "response=\"DIGEST_SECRET_CANARY\"\n"
+                        + "Cookie: session=COOKIE_SECRET_CANARY\n"
+                        + "Set-Cookie: session=SET_COOKIE_SECRET_CANARY",
                 List.of()
         );
         when(queryService.buscarPorId("rdo-private")).thenReturn(rdo);
@@ -186,9 +193,134 @@ class RdoPdfExportServiceTest {
                     .doesNotContain(
                             "ana@example.com",
                             "123.456.789-09",
-                            "SECRET_CANARY"
+                            "SECRET_CANARY",
+                            "BASIC_SECRET_CANARY",
+                            "PROXY_BASIC_SECRET_CANARY",
+                            "DIGEST_SECRET_CANARY",
+                            "COOKIE_SECRET_CANARY",
+                            "SET_COOKIE_SECRET_CANARY"
                     );
         }
+    }
+
+    @Test
+    void redactsFoldedCredentialHeadersBeforeEmbeddingThemInThePdf()
+            throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization: Basic\r\n BASIC_FOLDED_SECRET_CANARY",
+                        "BASIC_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Proxy-Authorization: Basic\r\n "
+                                + "PROXY_BASIC_FOLDED_SECRET_CANARY",
+                        "PROXY_BASIC_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Authorization: Digest\r\n "
+                                + "response=\"DIGEST_FOLDED_SECRET_CANARY\"",
+                        "DIGEST_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie: session=one;\r\n COOKIE_FOLDED_SECRET_CANARY",
+                        "COOKIE_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Set-Cookie: session=one;\r\n "
+                                + "SET_COOKIE_FOLDED_SECRET_CANARY",
+                        "SET_COOKIE_FOLDED_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-folded-private", "RDO-FOLDED-PRIVATE"),
+                    vector[0],
+                    List.of()
+            );
+            when(queryService.buscarPorId("rdo-folded-private")).thenReturn(rdo);
+
+            try (PDDocument document = Loader.loadPDF(
+                    service.export("rdo-folded-private").content()
+            )) {
+                assertThat(new PDFTextStripper().getText(document))
+                        .contains("[segredo removido]")
+                        .doesNotContain(vector[1]);
+            }
+        }
+    }
+
+    @Test
+    void redactsNonBreakingSpaceCredentialHeadersBeforeEmbeddingThemInThePdf()
+            throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization\u00A0: Basic "
+                                + "NBSP_AUTHORIZATION_SECRET_CANARY",
+                        "NBSP_AUTHORIZATION_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie:\u00A0session=NBSP_COOKIE_SECRET_CANARY",
+                        "NBSP_COOKIE_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-nbsp-private", "RDO-NBSP-PRIVATE"),
+                    vector[0],
+                    List.of()
+            );
+            when(queryService.buscarPorId("rdo-nbsp-private")).thenReturn(rdo);
+
+            try (PDDocument document = Loader.loadPDF(
+                    service.export("rdo-nbsp-private").content()
+            )) {
+                assertThat(new PDFTextStripper().getText(document))
+                        .contains("[segredo removido]")
+                        .doesNotContain(vector[1]);
+            }
+        }
+    }
+
+    @Test
+    void preservesNonCredentialTextAfterABareCookieLabelOnANewLineInThePdf()
+            throws Exception {
+        RdoResponse rdo = copyRdo(
+                emptyRdo("rdo-cookie-label", "RDO-COOKIE-LABEL"),
+                "Cookie:\r\nTexto operacional preservado",
+                List.of()
+        );
+        when(queryService.buscarPorId("rdo-cookie-label")).thenReturn(rdo);
+
+        try (PDDocument document = Loader.loadPDF(
+                service.export("rdo-cookie-label").content()
+        )) {
+            assertThat(new PDFTextStripper().getText(document))
+                    .contains("Cookie:", "Texto operacional preservado")
+                    .doesNotContain("[segredo removido]");
+        }
+    }
+
+    @Test
+    void refusesToShrinkFixedCellTextBelowTheReadablePdfMinimum() {
+        RdoResponse rdo = copyRdoWithMaterials(
+                populatedRdo("rdo-minimum-font", "RDO-MINIMUM-FONT"),
+                List.of(new RdoResponse.MaterialItem(
+                        "mat-minimum-font", "W".repeat(24), "t", BigDecimal.ONE,
+                        null, null, null, null, null, null
+                ))
+        );
+        when(queryService.buscarPorId("rdo-minimum-font")).thenReturn(rdo);
+        AtomicReference<byte[]> generated = new AtomicReference<>();
+
+        assertThatThrownBy(() -> generated.set(
+                service.export("rdo-minimum-font").content()
+        )).isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+            assertThat(exception.getStatusCode())
+                    .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+            assertThat(exception.getReason()).isEqualTo(
+                    "O conteúdo do RDO não permanece legível na célula fixa "
+                            + "do PDF; nenhum conteúdo foi truncado."
+            );
+        });
+        assertThat(generated).hasNullValue();
     }
 
     @Test
@@ -228,6 +360,30 @@ class RdoPdfExportServiceTest {
                 original.equipamentos(), original.materiais(), controls,
                 original.servicosExecutados(), original.alocacoesColaboradores(),
                 original.attachments()
+        );
+    }
+
+    private static RdoResponse copyRdoWithMaterials(
+            RdoResponse original,
+            List<RdoResponse.MaterialItem> materials
+    ) {
+        return new RdoResponse(
+                original.id(), original.obraId(), original.programacaoId(),
+                original.numeroRdo(), original.dataRdo(), original.previousRdoId(),
+                original.creationContextVersion(), original.clientMutationId(),
+                original.apontadorColaboradorId(), original.diaSemana(),
+                original.cliente(), original.contrato(), original.rodovia(),
+                original.cidade(), original.uf(), original.kmInicialProgramado(),
+                original.kmFinalProgramado(), original.kmInicialInterditado(),
+                original.kmFinalInterditado(), original.turno(),
+                original.horaInicio(), original.horaFim(), original.condicaoManha(),
+                original.condicaoTarde(), original.condicaoNoite(),
+                original.pluviometriaMm(), original.status(), original.observacoes(),
+                original.preenchidoPor(), original.apontadorRdo(),
+                original.encarregadoObra(), original.fiscalizacaoCampo(),
+                original.maoObra(), original.equipamentos(), materials,
+                original.controlesGeometricos(), original.servicosExecutados(),
+                original.alocacoesColaboradores(), original.attachments()
         );
     }
 }

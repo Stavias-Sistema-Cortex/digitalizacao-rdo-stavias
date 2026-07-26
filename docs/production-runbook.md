@@ -11,12 +11,24 @@ ficam em bucket S3 privado ou no volume persistente `cortex_object_data`.
 `compose.production.example.yml` é um exemplo de topologia, não contém secrets
 nem cria um banco de produção. Parta de `.env.postgresql.example`, mova os
 valores para o secret manager do ambiente e aponte as entradas
-`*_SECRET_FILE` para arquivos locais de implantação com permissões restritas.
+`*_FILE` para arquivos locais de implantação com permissões restritas.
 A senha PostgreSQL é montada como `CORTEX_POSTGRES_PASSWORD` sob
 `/run/secrets` e carregada pelo Spring Config Tree; ela não deve ser injetada
 como variável de ambiente. Para S3, use a cadeia padrão do AWS SDK com workload
 identity/role da plataforma ou um arquivo de credenciais montado por override;
 não publique `AWS_SECRET_ACCESS_KEY` no ambiente do container.
+
+O processo não aceita `CORTEX_DB_*` como fallback do banco canônico: forneça
+`CORTEX_POSTGRES_URL`, `CORTEX_POSTGRES_USER` e
+`CORTEX_POSTGRES_PASSWORD_FILE` para o banco `StaviasCortex`. Academy e
+Zeladoria exigem URLs, usuários e arquivos de senha próprios; os respectivos
+usuários no banco de origem devem ter somente `SELECT` no schema autorizado. A
+API grava exclusivamente no PostgreSQL canônico.
+
+Por padrão, `cortex-web` publica `127.0.0.1:8080`, nunca HTTP em todas as
+interfaces. O ingresso HTTPS gerenciado deve encaminhar essa porta ou definir
+`CORTEX_WEB_BIND_ADDRESS` apenas na sua rede privada e confiável. PWA e API
+continuam na mesma origem HTTPS externa.
 
 ## Preparação de chaves
 
@@ -33,14 +45,26 @@ não publique `AWS_SECRET_ACCESS_KEY` no ambiente do container.
 1. Restaure uma cópia de `StaviasCortex` e ensaie a atualização Flyway até a
    versão exigida pela release.
 2. Confirme um ALFA ativo com identidade ATIVA e e-mail já verificado.
-3. Configure SMTP real, storage persistente, origens HTTPS exatas e secrets por
-   arquivo.
-4. Valide `docker compose ... config` e construa imagens imutáveis.
-5. Inicie a API com o scheduler de cobrança desativado.
-6. Aguarde `/api/readiness`, faça login OTP/passkey e valide uma obra QA.
-7. Inicie a PWA e execute `scripts/smoke-deploy.sh`.
-8. Habilite o scheduler somente depois do preview de uma regra QA e de um envio
-   único confirmado no provider.
+3. Configure SMTP real, storage persistente, `CORTEX_PUBLIC_ORIGIN` HTTPS
+   exata, passkeys e todos os secrets por arquivo. Nunca copie uma senha para
+   `.env` nem para uma variável de ambiente.
+4. Mantenha `CORTEX_POSTGRES_RUNTIME_READY=false` até concluir Flyway, o
+   bootstrap ALFA e o preflight; então altere-o para `true` no ambiente de
+   publicação.
+5. Execute `bash scripts/security/test-local-compose-security.sh` e
+   `docker compose --env-file .env.production -f compose.production.example.yml config`.
+   O primeiro comando usa arquivos temporários sem conteúdo real e verifica o
+   contrato de secrets, fontes e porta loopback.
+6. Inicie com `CORTEX_SYNC_ENABLED=false`, aguarde `/api/readiness`, faça login
+   por CPF + passkey e valide o cofre offline depois de um login online real.
+7. Inicie a PWA e execute `scripts/smoke-deploy.sh` na origem HTTPS final.
+8. Depois de validar os usuários `SELECT`-only e uma importação QA, habilite
+   `CORTEX_SYNC_ENABLED=true`; acompanhe `source_sync_run` no PostgreSQL antes
+   de considerar a sincronização de Academy/Zeladoria automática em produção.
+
+`CORTEX_SYNC_ENABLED` controla somente os pulls programados de Academy e
+Zeladoria. Ele não desliga o replay automático da outbox offline da PWA, que
+continua tentando mutações locais quando a conectividade retorna.
 
 ## Observabilidade operacional
 

@@ -4,6 +4,17 @@ import com.projeto.cortex.CortexApplication;
 import com.projeto.cortex.auth.AuthController;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.financeiro.ItemContratualController;
+import com.projeto.cortex.financeiro.allocation.FinanceAllocationSyncOperationHandler;
+import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetSyncOperationHandler;
+import com.projeto.cortex.financeiro.catalog.ServiceCatalogSyncOperationHandler;
+import com.projeto.cortex.financeiro.catalog.ServicePriceVersionSyncOperationHandler;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeScheduler;
+import com.projeto.cortex.financeiro.core.sync.FinancePurchaseSyncOperationHandler;
+import com.projeto.cortex.financeiro.core.sync.FinanceSolicitationSyncOperationHandler;
+import com.projeto.cortex.financeiro.invoice.sync.FinanceInvoiceSyncOperationHandler;
+import com.projeto.cortex.financeiro.invoice.sync.FinanceLedgerSyncOperationHandler;
+import com.projeto.cortex.financeiro.invoice.sync.FinanceSettlementSyncOperationHandler;
+import com.projeto.cortex.financeiro.unit.FinancialUnitSyncOperationHandler;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.ontology.graph.GraphProjectionService;
 import com.projeto.cortex.ontology.graph.OntologyGraphController;
@@ -18,6 +29,8 @@ import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +41,9 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -41,6 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
 )
 @ActiveProfiles("postgresql")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
 
     @Container
@@ -119,6 +135,58 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
                     .isEqualTo("PostgreSQL");
             assertThat(connection.getCatalog()).isEqualTo(DATABASE.getDatabaseName());
         }
+    }
+
+    @Test
+    void mapsOnlyTheRevenueFinanceSurfaceInThePostgresqlRuntime() {
+        RequestMappingHandlerMapping mappings = context.getBean(
+                RequestMappingHandlerMapping.class
+        );
+        Set<String> paths = mappings.getHandlerMethods().keySet().stream()
+                .flatMap(mapping -> mapping.getPatternValues().stream())
+                .collect(Collectors.toSet());
+
+        assertThat(paths).contains(
+                "/api/financeiro/rastreio-receita",
+                "/api/financeiro/rastreio-receita/{executionId}",
+                "/api/financeiro/resultado-operacional",
+                "/api/obras/{obraId}/financeiro/catalogo-servicos",
+                "/api/obras/{obraId}/previsao-financeira/atual"
+        ).doesNotContain(
+                "/api/financeiro/compras",
+                "/api/financeiro/solicitacoes",
+                "/api/financeiro/rateios",
+                "/api/financeiro/notas-fiscais",
+                "/api/financeiro/lancamentos",
+                "/api/financeiro/liquidacoes",
+                "/api/financeiro/cobrancas",
+                "/api/financeiro/unidades"
+        );
+    }
+
+    @Test
+    void registersOnlyRevenueFinanceSyncHandlersInThePostgresqlRuntime() {
+        assertThat(context.getBeansOfType(ServiceCatalogSyncOperationHandler.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(ServicePriceVersionSyncOperationHandler.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(FinanceAllocationSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinancePurchasedAssetSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinancePurchaseSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceSolicitationSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceInvoiceSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceLedgerSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceSettlementSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinancialUnitSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeScheduler.class)).isEmpty();
     }
 
     @Test

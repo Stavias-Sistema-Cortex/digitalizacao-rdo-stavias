@@ -112,8 +112,12 @@ export default defineConfig({
         navigateFallback: "/index.html",
 
         globPatterns: [
-          "**/*.{js,css,html,svg,png,ico,webp,woff,woff2,ttf,xlsx}",
+          "**/*.{js,mjs,css,html,svg,png,ico,webp,woff,woff2,ttf,xlsx}",
         ],
+        // The PDF.js worker is required to parse an RDO PDF before the
+        // browser reconnects, and is slightly larger than Workbox's 2 MiB
+        // default cache limit.
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
 
         cleanupOutdatedCaches: true,
 
