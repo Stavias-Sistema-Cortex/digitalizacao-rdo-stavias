@@ -122,18 +122,54 @@ final class RdoPdfFormRenderer {
         for (RdoResponse.ControleGeometricoItem item : aggregate.geometry()) {
             validateUserText(item.subtrecho(), false);
         }
+        validateOriginalObservationSources(aggregate);
         validateUserText(aggregate.observations(), true);
         validateUserText(aggregate.apontadorName(), false);
         validateUserText(rdo.encarregadoObra(), false);
         validateUserText(rdo.fiscalizacaoCampo(), false);
     }
 
+    private void validateOriginalObservationSources(
+            RdoExportAggregate aggregate
+    ) throws IOException {
+        RdoResponse rdo = aggregate.rdo();
+        validateUserText(aggregate.previousRdoNumber(), false);
+        validateUserText(rdo.observacoes(), true);
+        for (RdoResponse.MaoObraItem item : safeItems(rdo.maoObra())) {
+            validateUserText(item.observacoes(), true);
+        }
+        for (RdoResponse.EquipamentoItem item : safeItems(rdo.equipamentos())) {
+            validateUserText(item.observacoes(), true);
+        }
+        for (RdoResponse.MaterialItem item : safeItems(rdo.materiais())) {
+            validateUserText(item.observacoes(), true);
+        }
+        for (RdoResponse.ControleGeometricoItem item
+                : safeItems(rdo.controlesGeometricos())) {
+            validateUserText(item.observacoes(), true);
+        }
+        for (RdoResponse.ServicoExecutadoItem item
+                : safeItems(rdo.servicosExecutados())) {
+            validateUserText(item.observacoes(), true);
+        }
+    }
+
     private String validateUserText(String value, boolean allowLineBreaks)
             throws IOException {
+        requireSafePdfText(value, allowLineBreaks);
         String sanitized = sanitizer.cellText(value);
+        requireSafePdfText(sanitized, allowLineBreaks);
+        return sanitized;
+    }
+
+    private void requireSafePdfText(String value, boolean allowLineBreaks)
+            throws IOException {
+        if (value == null) {
+            return;
+        }
         int offset = 0;
-        while (offset < sanitized.length()) {
-            int codePoint = sanitized.codePointAt(offset);
+        while (offset < value.length()) {
+            int codePoint = value.codePointAt(offset);
             offset += Character.charCount(codePoint);
             if (allowLineBreaks && (codePoint == '\n' || codePoint == '\r')) {
                 continue;
@@ -144,7 +180,6 @@ final class RdoPdfFormRenderer {
                 throw unsafeGlyph();
             }
         }
-        return sanitized;
     }
 
     private boolean hasGlyph(PDFont font, int codePoint) throws IOException {
@@ -1016,6 +1051,10 @@ final class RdoPdfFormRenderer {
 
     private <T> T item(List<T> values, int index) {
         return index >= 0 && index < values.size() ? values.get(index) : null;
+    }
+
+    private <T> List<T> safeItems(List<T> values) {
+        return values == null ? List.of() : values;
     }
 
     private static float mm(float millimetres) {

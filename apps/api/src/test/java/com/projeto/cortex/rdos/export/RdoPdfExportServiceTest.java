@@ -143,6 +143,32 @@ class RdoPdfExportServiceTest {
     }
 
     @Test
+    void rejectsC0ControlBeforeSanitizerCanDropIt() {
+        RdoResponse rdo = copyRdo(
+                emptyRdo("rdo-control", "RDO-CONTROL"),
+                "A\u0001B",
+                List.of()
+        );
+        when(queryService.buscarPorId("rdo-control")).thenReturn(rdo);
+        AtomicReference<byte[]> generated = new AtomicReference<>();
+
+        assertThatThrownBy(() -> generated.set(
+                service.export("rdo-control").content()
+        )).isInstanceOfSatisfying(
+                ResponseStatusException.class,
+                exception -> {
+                    assertThat(exception.getStatusCode())
+                            .isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+                    assertThat(exception.getReason()).isEqualTo(
+                            "O conteúdo do RDO contém caractere sem representação "
+                                    + "segura no PDF; nenhum conteúdo foi substituído."
+                    );
+                }
+        );
+        assertThat(generated).hasNullValue();
+    }
+
+    @Test
     void redactsSensitiveTextBeforeEmbeddingItInThePdf() throws Exception {
         RdoResponse rdo = copyRdo(
                 emptyRdo("rdo-private", "RDO-PRIVATE"),
