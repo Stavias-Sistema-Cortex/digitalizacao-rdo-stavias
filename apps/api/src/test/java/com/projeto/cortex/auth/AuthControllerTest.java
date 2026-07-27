@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -170,15 +171,37 @@ class AuthControllerTest {
     }
 
     @Test
-    void malformedCpfStopsBeforeIdentityLookup()
+    void malformedCpfUsesTheSameGenericRejectionAsAnUnknownCpf()
             throws Exception {
-        mockMvc.perform(post("/api/auth/login")
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.empty());
+
+        var malformed = mockMvc.perform(post("/api/auth/login")
                         .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cpf\":\"123\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andReturn()
+                .getResponse();
+        var unknown = mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"11144477735\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andReturn()
+                .getResponse();
 
-        verify(authService, never()).autenticarPorCpf(any());
+        assertEquals(unknown.getStatus(), malformed.getStatus());
+        assertEquals(unknown.getContentAsString(), malformed.getContentAsString());
+        assertEquals(unknown.getErrorMessage(), malformed.getErrorMessage());
+        assertEquals(
+                AuthController.LOGIN_REJECTED_MESSAGE,
+                malformed.getErrorMessage()
+        );
+        verify(authService, never()).autenticarPorCpf("123");
+        verify(authService).autenticarPorCpf("11144477735");
         verify(sessions, never()).issue(any(), any());
     }
 

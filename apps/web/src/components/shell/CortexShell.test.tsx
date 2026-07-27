@@ -6,9 +6,13 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  encerrarSessao: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  class LogoutReauthenticationRequiredError extends Error {}
+  return {
+    encerrarSessao: vi.fn(),
+    LogoutReauthenticationRequiredError,
+  };
+});
 
 vi.mock("../SyncStatusBanner", () => ({
   SyncStatusBanner: () => <span>Sincronização ao vivo</span>,
@@ -28,6 +32,8 @@ vi.mock("../../features/auth/authSession", () => ({
 
 vi.mock("../../features/auth/authService", () => ({
   encerrarSessao: mocks.encerrarSessao,
+  LogoutReauthenticationRequiredError:
+    mocks.LogoutReauthenticationRequiredError,
 }));
 
 import { CortexShell } from "./CortexShell";
@@ -140,6 +146,26 @@ describe("CortexShell chrome", () => {
     await waitFor(() => expect(mocks.encerrarSessao).toHaveBeenCalledOnce());
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Não foi possível encerrar a sessão no servidor.",
+    );
+  });
+
+  it("solicita nova autenticação quando esta aba não pode confirmar o logout compartilhado", async () => {
+    const user = userEvent.setup();
+    mocks.encerrarSessao.mockRejectedValueOnce(
+      new mocks.LogoutReauthenticationRequiredError(),
+    );
+
+    render(
+      <MemoryRouter>
+        <ShellWithHeaderSlot />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "AO" }));
+    await user.click(screen.getByRole("button", { name: "Sair" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Entre novamente antes de encerrar a sessão compartilhada.",
     );
   });
 });

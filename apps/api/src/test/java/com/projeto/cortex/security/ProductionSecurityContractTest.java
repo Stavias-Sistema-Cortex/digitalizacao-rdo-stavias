@@ -80,15 +80,28 @@ class ProductionSecurityContractTest {
     }
 
     @Test
-    void webImageRequiresAnExplicitAuthenticationMode() throws Exception {
+    void webImageRequiresExplicitAuthenticationAndOfflineSigningConfiguration()
+            throws Exception {
         String dockerfile = Files.readString(
                 REPOSITORY_ROOT.resolve("apps/web/Dockerfile")
+        );
+        String validator = Files.readString(
+                REPOSITORY_ROOT.resolve(
+                        "apps/web/validate-docker-build-args.sh"
+                )
         );
 
         assertThat(dockerfile).contains(
                 "ARG VITE_CORTEX_AUTH_MODE\n",
-                "test \"${VITE_CORTEX_AUTH_MODE}\" = \"legacy\"",
-                "test \"${VITE_CORTEX_AUTH_MODE}\" = \"postgresql\""
+                "ARG VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256\n",
+                "RUN sh ./validate-docker-build-args.sh"
         ).doesNotContain("ARG VITE_CORTEX_AUTH_MODE=legacy");
+        assertThat(validator).contains(
+                "case \"${VITE_CORTEX_AUTH_MODE:-}\" in",
+                "legacy|postgresql)",
+                "fingerprint=\"${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:-}\"",
+                "[ \"${#fingerprint}\" -ne 43 ]",
+                "*[!A-Za-z0-9_-]*)"
+        );
     }
 }

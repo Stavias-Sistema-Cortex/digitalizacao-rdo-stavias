@@ -7,8 +7,19 @@ type PdfTextContent = {
   items: unknown[];
 };
 
+type PdfTextStreamReader = {
+  read: () => Promise<{
+    done: boolean;
+    value?: PdfTextContent;
+  }>;
+  cancel: (reason?: unknown) => Promise<void>;
+  releaseLock: () => void;
+};
+
 type PdfPageForTextExtraction = {
-  getTextContent: () => Promise<PdfTextContent>;
+  streamTextContent: () => {
+    getReader: () => PdfTextStreamReader;
+  };
 };
 
 export interface PdfDocumentForTextExtraction {
@@ -66,50 +77,75 @@ export async function extractBoundedPdfLines(
     pageNumber += 1
   ) {
     const page = await document.getPage(pageNumber);
-    const content = await page.getTextContent();
-    if (!Array.isArray(content.items)) {
+    const stream = page.streamTextContent();
+    if (!stream || typeof stream.getReader !== "function") {
       throw new RdoImportResourceError(
         "O conteúdo de texto do PDF de RDO é inválido.",
       );
     }
-
-    totalItems += content.items.length;
-    if (totalItems > limits.textItems) {
-      throw new RdoImportResourceError(
-        `O PDF de RDO possui mais de ${limits.textItems} itens de texto.`,
-      );
-    }
-
+    const reader = stream.getReader();
     const items: PdfTextLineItem[] = [];
-    for (const item of content.items) {
-      const textItem = item as {
-        str?: unknown;
-        transform?: unknown;
-      };
-      if (typeof textItem.str !== "string") {
-        continue;
-      }
-      totalChars += codePointLength(textItem.str);
-      if (totalChars > limits.textChars) {
-        throw new RdoImportResourceError(
-          `O PDF de RDO possui mais de ${limits.textChars} caracteres de texto.`,
-        );
-      }
+    let streamComplete = false;
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          streamComplete = true;
+          break;
+        }
+        if (!chunk.value || !Array.isArray(chunk.value.items)) {
+          throw new RdoImportResourceError(
+            "O conteúdo de texto do PDF de RDO é inválido.",
+          );
+        }
+        for (const item of chunk.value.items) {
+          totalItems += 1;
+          if (totalItems > limits.textItems) {
+            throw new RdoImportResourceError(
+              `O PDF de RDO possui mais de ${limits.textItems} itens de texto.`,
+            );
+          }
 
-      const text = textItem.str.replace(/\s+/g, " ").trim();
-      if (
-        !text ||
-        !Array.isArray(textItem.transform) ||
-        textItem.transform.length < 6
-      ) {
-        continue;
+          const textItem = item as {
+            str?: unknown;
+            transform?: unknown;
+          };
+          if (typeof textItem.str !== "string") {
+            continue;
+          }
+          totalChars += codePointLength(textItem.str);
+          if (totalChars > limits.textChars) {
+            throw new RdoImportResourceError(
+              `O PDF de RDO possui mais de ${limits.textChars} caracteres de texto.`,
+            );
+          }
+
+          const text = textItem.str.replace(/\s+/g, " ").trim();
+          if (
+            !text ||
+            !Array.isArray(textItem.transform) ||
+            textItem.transform.length < 6
+          ) {
+            continue;
+          }
+          const x = Number(textItem.transform[4]);
+          const y = Number(textItem.transform[5]);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            continue;
+          }
+          items.push({ text, x, y });
+        }
       }
-      const x = Number(textItem.transform[4]);
-      const y = Number(textItem.transform[5]);
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        continue;
+    } finally {
+      if (!streamComplete) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Preserve the bounded extraction error even if PDF.js cancellation
+          // races with a worker that has already terminated.
+        }
       }
-      items.push({ text, x, y });
+      reader.releaseLock();
     }
 
     items.sort((left, right) => {

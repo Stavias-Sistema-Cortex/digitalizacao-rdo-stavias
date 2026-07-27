@@ -156,15 +156,22 @@ describe("authApi", () => {
     await expect(fetchSession()).rejects.toThrow("Falha controlada.");
   });
 
-  it("revoga a sessão no servidor e reconhece uma sessão já expirada", async () => {
-    mocks.revokeRemoteSessionCookie.mockResolvedValueOnce(response(204));
-    mocks.readResponseBody.mockResolvedValueOnce(null);
+  it("revoga a sessão no servidor somente quando o servidor confirma", async () => {
+    mocks.revokeRemoteSessionCookie.mockResolvedValue(response(204));
+    mocks.readResponseBody.mockResolvedValue(null);
+
     await expect(logoutOnline()).resolves.toBe("revoked");
 
-    mocks.revokeRemoteSessionCookie.mockResolvedValueOnce(response(401));
-    mocks.readResponseBody.mockResolvedValueOnce({ message: "expirada" });
-    await expect(logoutOnline()).resolves.toBe("already-expired");
+    expect(mocks.revokeRemoteSessionCookie).toHaveBeenCalledOnce();
+  });
 
-    expect(mocks.revokeRemoteSessionCookie).toHaveBeenCalledTimes(2);
+  it("não trata um logout 401 ligado a outra aba como revogação confirmada", async () => {
+    const body = { message: "Autenticação necessária ou sessão expirada." };
+    mocks.revokeRemoteSessionCookie.mockResolvedValue(response(401));
+    mocks.readResponseBody.mockResolvedValue(body);
+
+    await expect(logoutOnline()).rejects.toThrow("Falha controlada.");
+
+    expect(mocks.apiError).toHaveBeenCalledWith(body, 401);
   });
 });

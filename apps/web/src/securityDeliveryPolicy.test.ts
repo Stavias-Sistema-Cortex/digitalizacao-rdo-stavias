@@ -58,5 +58,8 @@ describe("frontend security delivery policy", () => {
     expect(dockerfile).toContain(
       "COPY security-headers.conf /etc/nginx/snippets/cortex-security-headers.conf"
     );
+    expect(dockerfile).toContain(
+      "RUN sh ./validate-docker-build-args.sh"
+    );
   });
 });

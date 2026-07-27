@@ -204,8 +204,8 @@ public class AuthController {
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "CPF inválido."
+                    HttpStatus.UNAUTHORIZED,
+                    LOGIN_REJECTED_MESSAGE
             );
         }
     }

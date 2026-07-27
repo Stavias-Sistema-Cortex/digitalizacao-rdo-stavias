@@ -11,8 +11,11 @@ function pdfDocument(
   return {
     numPages: pages.length,
     getPage: vi.fn(async (pageNumber: number) => ({
-      getTextContent: async () => ({
-        items: pages[pageNumber - 1],
+      streamTextContent: () => new ReadableStream({
+        start(controller) {
+          controller.enqueue({ items: pages[pageNumber - 1] });
+          controller.close();
+        },
       }),
     })),
   };
@@ -37,6 +40,43 @@ describe("bounded PDF text extraction", () => {
     ).rejects.toThrow("mais de 2 itens de texto");
   });
 
+  it("cancels incremental extraction as soon as the item limit is crossed", async () => {
+    const item = { str: "RDO", transform: [1, 0, 0, 1, 10, 10] };
+    const read = vi.fn()
+      .mockResolvedValueOnce({
+        done: false,
+        value: { items: [item, item] },
+      })
+      .mockResolvedValueOnce({
+        done: false,
+        value: { items: [item] },
+      })
+      .mockResolvedValue({ done: true, value: undefined });
+    const cancel = vi.fn(async () => undefined);
+    const releaseLock = vi.fn();
+    const getTextContent = vi.fn(async () => ({
+      items: new Array(10_000).fill(item),
+    }));
+    const document: PdfDocumentForTextExtraction = {
+      numPages: 1,
+      getPage: vi.fn(async () => ({
+        streamTextContent: () => ({
+          getReader: () => ({ read, cancel, releaseLock }),
+        }),
+        getTextContent,
+      })),
+    };
+
+    await expect(
+      extractBoundedPdfLines(document, { textItems: 2 }),
+    ).rejects.toThrow("mais de 2 itens de texto");
+
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+    expect(getTextContent).not.toHaveBeenCalled();
+  });
+
   it("rejects extracted characters over the configured limit", async () => {
     const document = pdfDocument([[
       { str: "abc", transform: [1, 0, 0, 1, 10, 10] },
@@ -56,6 +96,38 @@ describe("bounded PDF text extraction", () => {
     await expect(
       extractBoundedPdfLines(document, { textChars: 5 }),
     ).rejects.toThrow("mais de 5 caracteres");
+  });
+
+  it("cancels the text stream when the character limit is crossed", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const document: PdfDocumentForTextExtraction = {
+      numPages: 1,
+      getPage: vi.fn(async () => ({
+        streamTextContent: () => ({
+          getReader: () => ({
+            read: vi.fn()
+              .mockResolvedValueOnce({
+                done: false,
+                value: {
+                  items: [
+                    {
+                      str: "texto longo",
+                      transform: [1, 0, 0, 1, 10, 10],
+                    },
+                  ],
+                },
+              }),
+            cancel,
+            releaseLock: vi.fn(),
+          }),
+        }),
+      })),
+    };
+
+    await expect(
+      extractBoundedPdfLines(document, { textChars: 5 }),
+    ).rejects.toThrow("mais de 5 caracteres");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it("groups selectable Brazilian text in visual order", async () => {

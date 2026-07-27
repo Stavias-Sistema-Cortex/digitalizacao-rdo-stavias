@@ -66,16 +66,11 @@ async function parseOfflineGrantResponse(
   return parseSignedOfflineGrant(body);
 }
 
-export async function logoutOnline(): Promise<
-  "revoked" | "already-expired"
-> {
+export async function logoutOnline(): Promise<"revoked"> {
   const response = await revokeRemoteSessionCookie();
   const body = await readResponseBody(response);
   if (response.status === 204) {
     return "revoked";
-  }
-  if (response.status === 401) {
-    return "already-expired";
   }
   throw responseError(body, response.status);
 }

@@ -31,6 +31,16 @@ export type CpfAuthenticationResult = {
   offlineGrant: "READY" | "UNAVAILABLE";
 };
 
+export class LogoutReauthenticationRequiredError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "Esta aba não pode confirmar a sessão remota atual. Entre novamente antes de encerrar a sessão compartilhada.",
+      { cause },
+    );
+    this.name = "LogoutReauthenticationRequiredError";
+  }
+}
+
 export async function initializeAuthSession(): Promise<AuthProfile | null> {
   purgeLegacyAuthStorage();
   if (hasRemoteSessionIsolation()) {
@@ -95,9 +105,9 @@ export async function autenticarPorCpf(
 /** Bloqueia o dispositivo antes de tentar revogar a sessão no servidor. */
 export async function encerrarSessao(): Promise<void> {
   const remoteAlreadyIsolated = hasRemoteSessionIsolation();
-  // A deliberate logout is the only auth transition that intentionally
-  // propagates to every same-origin tab.
-  clearSession();
+  // Until the server confirms revocation, clear only this document: another
+  // tab may have replaced the shared cookie with its own bound session.
+  clearSessionForCurrentDocument();
   if (!remoteAlreadyIsolated) {
     markRemoteSessionIsolation();
   }
@@ -107,7 +117,17 @@ export async function encerrarSessao(): Promise<void> {
   if (remoteAlreadyIsolated) {
     return;
   }
-  await logoutOnline();
+  try {
+    await logoutOnline();
+  } catch (error: unknown) {
+    if (error instanceof ApiError && error.status === 401) {
+      throw new LogoutReauthenticationRequiredError(error);
+    }
+    throw error;
+  }
+  // A confirmed server revoke is the only logout outcome that propagates to
+  // every same-origin document and releases the origin-wide isolation marker.
+  clearSession();
   clearRemoteSessionIsolation();
 }
 

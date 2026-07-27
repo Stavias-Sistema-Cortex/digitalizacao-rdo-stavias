@@ -29,6 +29,7 @@ import {
   autenticarPorCpf,
   encerrarSessao,
   initializeAuthSession,
+  LogoutReauthenticationRequiredError,
 } from "./authService";
 import { clearSession, getSession, setSession } from "./authSession";
 import {
@@ -36,6 +37,20 @@ import {
   hasRemoteSessionIsolation,
 } from "./remoteSessionIsolation";
 import { ApiError } from "../../lib/api/apiError";
+
+const broadcastMessages: unknown[] = [];
+
+class FakeBroadcastChannel {
+  onmessage: ((event: MessageEvent) => void) | null = null;
+
+  constructor(readonly name: string) {}
+
+  postMessage(message: unknown): void {
+    broadcastMessages.push(message);
+  }
+
+  close(): void {}
+}
 
 const profile = {
   colaboradorId: "00000000-0000-4000-8000-000000000001",
@@ -57,6 +72,7 @@ describe("authService", () => {
     mocks.logoutOnline.mockResolvedValue("revoked");
     storage.clear();
     rejectIsolationMarkerWrite = false;
+    vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -73,6 +89,7 @@ describe("authService", () => {
     });
     localStorage.clear();
     clearSession();
+    broadcastMessages.length = 0;
   });
 
   afterEach(() => {
@@ -193,12 +210,14 @@ describe("authService", () => {
   });
 
   it("bloqueia a sessão local mesmo quando a rede impede a revogação", async () => {
+    setSession(profile);
     mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
     await expect(encerrarSessao()).rejects.toThrow("offline");
     expect(getSession()).toBeNull();
     expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
     expect(localStorage.getItem("cortex.auth.logoutPending")).toBeNull();
+    expect(broadcastMessages).toEqual([]);
   });
 
   it("clears local state before a failed isolation-marker write during logout", async () => {
@@ -212,14 +231,35 @@ describe("authService", () => {
     expect(mocks.logoutOnline).not.toHaveBeenCalled();
   });
 
-  it("limpa a memória após revogação ou sessão já expirada", async () => {
-    mocks.logoutOnline.mockResolvedValueOnce("revoked");
-    await encerrarSessao();
-    mocks.logoutOnline.mockResolvedValueOnce("already-expired");
+  it("propaga logout e limpa a isolação somente após revogação confirmada", async () => {
+    setSession(profile);
+    mocks.logoutOnline.mockResolvedValue("revoked");
+
     await encerrarSessao();
 
     expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBeNull();
     expect(localStorage.getItem("cortex.auth.logoutPending")).toBeNull();
+    expect(broadcastMessages).toEqual(["LOGOUT"]);
+  });
+
+  it("preserva a isolação e não anuncia logout quando outra aba substituiu o cookie", async () => {
+    setSession(profile);
+    mocks.logoutOnline.mockRejectedValue(
+      new ApiError(
+        "Autenticação necessária ou sessão expirada.",
+        401,
+        null,
+      ),
+    );
+
+    await expect(encerrarSessao()).rejects.toBeInstanceOf(
+      LogoutReauthenticationRequiredError,
+    );
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+    expect(broadcastMessages).toEqual([]);
   });
 
   it("does not revoke an unknown shared cookie when an existing isolation marker is logged out", async () => {

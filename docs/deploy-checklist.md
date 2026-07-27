@@ -110,6 +110,16 @@ estado; `/api/health` mede somente o processo.
 ## 6. Build e testes da revisão
 
 ```bash
+export VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256="$(
+  openssl pkey -pubin \
+    -in "${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:?Aponte para o PEM público do offline grant}" \
+    -outform DER |
+    openssl dgst -sha256 -binary |
+    openssl base64 -A |
+    tr '+/' '-_' |
+    tr -d '='
+)"
+
 cd apps/api
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
 
@@ -120,7 +130,11 @@ npm run build
 
 cd ../..
 docker build -t cortex-api:release apps/api
-docker build -t cortex-web:release apps/web
+docker build -t cortex-web:release \
+  --build-arg VITE_CORTEX_AUTH_MODE=postgresql \
+  --build-arg \
+    VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256="${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:?Calcule e exporte o fingerprint SHA-256 base64url da chave pública offline}" \
+  apps/web
 ./scripts/security/test-local-compose-security.sh
 docker compose -f compose.production.example.yml config
 git diff --check
