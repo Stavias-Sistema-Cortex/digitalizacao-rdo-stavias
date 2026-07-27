@@ -160,8 +160,47 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
+    "scripts/deploy/migrate-local-postgres-to-neon.sh",
+    [
+      "if source[\"database\"] != \"StaviasCortex\":",
+      "\"Source PostgreSQL URI must target StaviasCortex.\"",
+      "database=\"StaviasCortex\",",
+      "write_password(pass_handle, neon, database=\"StaviasCortex\")",
+      "echo \"Target StaviasCortex database is not empty; migration stopped.\" >&2",
+      "dump_file=\"$rollback_dir/StaviasCortex-pre-neon.dump\"",
+      "dump_partial=\"$(mktemp \"$rollback_dir/.StaviasCortex-pre-neon.dump.XXXXXX\")\"",
+      "GRANT CONNECT ON DATABASE \"StaviasCortex\" TO cortex_runtime;",
+    ],
+  ],
+  [
+    "scripts/deploy/prepare-neon-database.sql",
+    [
+      "SELECT 'CREATE DATABASE \"StaviasCortex\"'",
+      "SELECT 1 FROM pg_database WHERE datname = 'StaviasCortex'",
+    ],
+  ],
+  [
     "scripts/security/test-production-publication.sh",
     ["CORTEX_POSTGRES_DB='StaviasCortex' \\"],
+  ],
+  [
+    "scripts/security/test-hosted-deployment-contract-regressions.sh",
+    [
+      "+ \"jdbc:post\" + \"gresql://invalid.invalid:5432/StaviasCortex\",",
+    ],
+  ],
+  [
+    "scripts/security/test-neon-migration-contract.sh",
+    [
+      "source_uri=\"postgresql://${fixture_user}:${fixture_password}@source.fixture.invalid:5432/StaviasCortex\"",
+      "\"$nonempty_output\" == \"Target StaviasCortex database is not empty; migration stopped.\" ]] || {",
+      "ln -s \"$escaped_dump\" \"$rollback_dir/StaviasCortex-pre-neon.dump\"",
+      "rm -f \"$rollback_dir/StaviasCortex-pre-neon.dump\"",
+      "\"$rerun_output\" == \"Target StaviasCortex database is not empty; migration stopped.\" &&",
+      "[[ -f \"$rollback_dir/StaviasCortex-pre-neon.dump\" ]] || {",
+      "rollback_mode=\"$(stat -f '%Lp' \"$rollback_dir/StaviasCortex-pre-neon.dump\" 2>/dev/null ||",
+      "stat -c '%a' \"$rollback_dir/StaviasCortex-pre-neon.dump\")\"",
+    ],
   ],
   [
     "scripts/deploy/configure-github-production-environment.sh",
@@ -215,6 +254,7 @@ const TEXT_EXTENSIONS = new Set([
   ".mts",
   ".ps1",
   ".sh",
+  ".sql",
   ".svg",
   ".ts",
   ".tsx",

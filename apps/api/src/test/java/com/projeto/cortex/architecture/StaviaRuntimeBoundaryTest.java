@@ -93,6 +93,38 @@ class StaviaRuntimeBoundaryTest {
                     "StaviasCortex",
                     "CORTEX_POSTGRES_DB='StaviasCortex'"),
             sourceReference(
+                    "scripts/deploy/migrate-local-postgres-to-neon.sh",
+                    "StaviasCortex",
+                    "source[\"database\"] != \"StaviasCortex\"",
+                    "Source PostgreSQL URI must target StaviasCortex.",
+                    "database=\"StaviasCortex\",",
+                    "database=\"StaviasCortex\")",
+                    "Target StaviasCortex database is not empty; migration stopped.",
+                    "StaviasCortex-pre-neon.dump\"",
+                    ".StaviasCortex-pre-neon.dump.XXXXXX",
+                    "DATABASE \"StaviasCortex\" TO cortex_runtime"),
+            sourceReference(
+                    "scripts/deploy/prepare-neon-database.sql",
+                    "StaviasCortex",
+                    "CREATE DATABASE \"StaviasCortex\"",
+                    "datname = 'StaviasCortex'"),
+            sourceReference(
+                    "scripts/security/test-hosted-deployment-contract-regressions.sh",
+                    "StaviasCortex",
+                    "gresql://invalid.invalid:5432/StaviasCortex"),
+            sourceReference(
+                    "scripts/security/test-neon-migration-contract.sh",
+                    "StaviasCortex",
+                    "source.fixture.invalid:5432/StaviasCortex",
+                    "Target StaviasCortex database is not empty; migration stopped.",
+                    "ln -s \"$escaped_dump\" "
+                            + "\"$rollback_dir/StaviasCortex-pre-neon.dump\"",
+                    "rm -f \"$rollback_dir/StaviasCortex-pre-neon.dump\"",
+                    "Target StaviasCortex database is not empty; migration stopped.",
+                    "[[ -f \"$rollback_dir/StaviasCortex-pre-neon.dump\" ]]",
+                    "stat -f '%Lp' \"$rollback_dir/StaviasCortex-pre-neon.dump\"",
+                    "stat -c '%a' \"$rollback_dir/StaviasCortex-pre-neon.dump\")"),
+            sourceReference(
                     "scripts/deploy/configure-github-production-environment.sh",
                     "Stavia",
                     "Stavias-Sistema-Cortex"),
