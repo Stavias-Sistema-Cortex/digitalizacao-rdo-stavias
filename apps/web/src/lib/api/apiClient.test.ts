@@ -435,6 +435,14 @@ describe("apiFetch cookie session", () => {
     expect(mocks.clearSession).not.toHaveBeenCalled();
   });
 
+  it("expõe uma orientação segura e acionável para sessão substituída durante o sync", () => {
+    expect(apiError(null, 401)).toMatchObject({
+      status: 401,
+      message:
+        "Sua sessão online expirou ou foi substituída por outra aba. Entre novamente para sincronizar.",
+    });
+  });
+
   it("limpa 401 de registro de passkey, mas preserva rotas públicas exatas", async () => {
     fetchMock.mockResolvedValue({ status: 401 } as Response);
 

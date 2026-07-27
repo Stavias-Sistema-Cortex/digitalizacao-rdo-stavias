@@ -46,7 +46,6 @@ const operationalWorkspaceCss = readCss(
 const rdoWorkspaceCss = readCss("./features/rdos/RdoWorkspacePage.css");
 const deviceSecurityCss = readCss("./features/auth/DeviceSecurityPage.css");
 const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
-const offlineUnlockCss = readCss("./features/auth/OfflineUnlockPage.css");
 const equipesCss = readCss("./features/equipes/EquipesPage.css");
 
 describe("polimento visual da plataforma autenticada", () => {
@@ -81,7 +80,6 @@ describe("polimento visual da plataforma autenticada", () => {
   it("aplica vidro líquido somente nas superfícies externas com fallback opaco", () => {
     const institutionalFrame = rule(globalCss, ".institutional-frame");
     const documentSurface = rule(rdoWorkspaceCss, ".rdo-document-surface");
-    const offlineCard = rule(offlineUnlockCss, ".offline-unlock__card");
     const integrationCard = rule(
       integracoesCss,
       ".integracoes-table-card,\n.integracoes-report",
@@ -100,7 +98,6 @@ describe("polimento visual da plataforma autenticada", () => {
     for (const surface of [
       institutionalFrame,
       documentSurface,
-      offlineCard,
       integrationCard,
       teamsFrame,
       managementColumn,
@@ -118,6 +115,9 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(globalCss).toContain("backdrop-filter: blur(14px) saturate(112%);");
     expect(globalCss).toContain(
       "@media (prefers-reduced-transparency: reduce)",
+    );
+    expect(globalCss).not.toMatch(
+      /(?:@supports|prefers-reduced-transparency)[\s\S]*?\.offline-unlock__card,/,
     );
   });
 

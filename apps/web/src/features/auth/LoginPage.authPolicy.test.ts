@@ -88,20 +88,23 @@ describe("LoginPage auth policy", () => {
     );
   });
 
-  it("keeps the offline card as a neutral glass hairline instead of a heavy yellow frame", () => {
+  it("keeps the offline card solid and outside the liquid-glass treatment", () => {
     const offlineCss = readFileSync(
       new URL("./OfflineUnlockPage.css", import.meta.url),
       "utf8",
     );
 
     expect(offlineCss).toMatch(
-      /\.offline-unlock__card\s*\{[^}]*border:\s*1px solid rgb\(255 255 255 \/ 46%\)/s,
+      /\.offline-unlock__card\s*\{[^}]*border:\s*1px solid #d9ddda/s,
     );
     expect(offlineCss).toMatch(
-      /\.offline-unlock__card\s*\{[^}]*background:\s*var\(--surface-glass-fallback\)/s,
+      /\.offline-unlock__card\s*\{[^}]*background:\s*#fff/s,
+    );
+    expect(offlineCss).toMatch(
+      /\.offline-unlock__card\s*\{[^}]*box-shadow:\s*none/s,
     );
     expect(offlineCss).not.toMatch(
-      /\.offline-unlock__card\s*\{[^}]*border:\s*(?:1|2)px solid #f2c800/s,
+      /\.offline-unlock__card\s*\{[^}]*(?:surface-glass|backdrop-filter)/s,
     );
   });
 

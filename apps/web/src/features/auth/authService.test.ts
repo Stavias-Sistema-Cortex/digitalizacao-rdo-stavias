@@ -211,6 +211,7 @@ describe("authService", () => {
 
   it("bloqueia a sessão local mesmo quando a rede impede a revogação", async () => {
     setSession(profile);
+    broadcastMessages.length = 0;
     mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
     await expect(encerrarSessao()).rejects.toThrow("offline");
@@ -233,6 +234,7 @@ describe("authService", () => {
 
   it("propaga logout e limpa a isolação somente após revogação confirmada", async () => {
     setSession(profile);
+    broadcastMessages.length = 0;
     mocks.logoutOnline.mockResolvedValue("revoked");
 
     await encerrarSessao();
@@ -245,6 +247,7 @@ describe("authService", () => {
 
   it("preserva a isolação e não anuncia logout quando outra aba substituiu o cookie", async () => {
     setSession(profile);
+    broadcastMessages.length = 0;
     mocks.logoutOnline.mockRejectedValue(
       new ApiError(
         "Autenticação necessária ou sessão expirada.",

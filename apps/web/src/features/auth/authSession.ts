@@ -2,6 +2,7 @@ const LEGACY_SESSION_KEY = "cortex.auth.sessao";
 const LEGACY_FILTER_KEY = "cortex.auth.cpfFilter";
 const AUTH_BROADCAST_CHANNEL = "cortex-auth-session-v1";
 const LOGOUT_MESSAGE = "LOGOUT";
+const SESSION_REPLACED_MESSAGE = "SESSION_REPLACED";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -47,11 +48,16 @@ export function hasOfflineSession(): boolean {
 }
 
 export function setSession(session: AuthProfile): void {
-  ensureBroadcastChannel();
+  const channel = ensureBroadcastChannel();
   onlineSession = canonicalProfile(session);
   offlineSession = null;
   scheduleExpiry();
   dispatchSessionChanged();
+  // The opaque auth cookie is origin-wide while its proof is tab-bound.
+  // A fresh login in this document therefore replaces the cookie seen by
+  // every older document. Retire those stale in-memory profiles immediately
+  // instead of leaving an editor open until its next request fails.
+  channel?.postMessage(SESSION_REPLACED_MESSAGE);
 }
 
 export function setOfflineSession(session: AuthProfile): void {
@@ -153,7 +159,10 @@ function ensureBroadcastChannel(): BroadcastChannel | null {
 
   const channel = new BroadcastChannel(AUTH_BROADCAST_CHANNEL);
   channel.onmessage = (event: MessageEvent<unknown>) => {
-    if (event.data === LOGOUT_MESSAGE) {
+    if (
+      event.data === LOGOUT_MESSAGE ||
+      event.data === SESSION_REPLACED_MESSAGE
+    ) {
       clearSessionLocally();
     }
   };

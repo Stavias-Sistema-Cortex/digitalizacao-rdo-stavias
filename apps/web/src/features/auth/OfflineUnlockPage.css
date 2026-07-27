@@ -11,11 +11,10 @@
 .offline-unlock__card {
   width: min(100%, 460px);
   padding: 36px;
-  border: 1px solid rgb(255 255 255 / 46%);
-  border-radius: var(--radius-container);
-  background: var(--surface-glass-fallback);
-  background: var(--surface-glass-active);
-  box-shadow: var(--glass-shadow);
+  border: 1px solid #d9ddda;
+  border-radius: var(--radius-control);
+  background: #fff;
+  box-shadow: none;
 }
 
 .offline-unlock__mark {
@@ -142,6 +141,6 @@
 @media (max-width: 520px) {
   .offline-unlock__card {
     padding: 28px 22px;
-    border-radius: var(--radius-container);
+    border-radius: var(--radius-control);
   }
 }
