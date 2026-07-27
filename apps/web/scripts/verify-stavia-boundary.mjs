@@ -706,6 +706,7 @@ function maskVerifiedLegacySource(file) {
 
 const VERIFIED_DIST_BUILD_SUFFIX =
   /&&\s*node scripts\/verify-stavia-boundary\.mjs --dist\s*$/;
+const PAGES_FUNCTION_BUILD_SCRIPT = "build:functions";
 const EXPECTED_PACKAGE_SCRIPTS = new Map([
   ["dev", "vite"],
   [
@@ -738,6 +739,11 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
     "node scripts/verify-stavia-boundary.mjs",
   ],
   ["test", "vitest run"],
+  ["typecheck:functions", "tsc -p tsconfig.functions.json"],
+  [
+    PAGES_FUNCTION_BUILD_SCRIPT,
+    "wrangler pages functions build --outdir=./dist/functions-worker",
+  ],
   ["preview", "vite preview"],
   [
     "preview:local",
@@ -855,6 +861,9 @@ export function inspectPackageBuildScripts(scripts) {
     }
   }
   for (const [name, command] of Object.entries(scripts)) {
+    if (name === PAGES_FUNCTION_BUILD_SCRIPT) {
+      continue;
+    }
     const isBuildEntry = /^build(?::|$)/.test(name);
     const hasViteBuild = invokesViteBuild(command);
     const hasBuildOperation = /build/i.test(command);

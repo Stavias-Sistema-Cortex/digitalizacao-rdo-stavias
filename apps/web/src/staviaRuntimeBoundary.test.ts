@@ -1443,7 +1443,28 @@ describe("StavIA runtime boundary", () => {
     const packageJson = JSON.parse(
       readFileSync(path.join(WEB_ROOT, "package.json"), "utf8"),
     ) as { scripts?: Record<string, string> };
-    expect(inspectPackageBuildScripts(packageJson.scripts ?? {})).toEqual([]);
+    const scripts = packageJson.scripts ?? {};
+    expect(scripts["typecheck:functions"]).toBe(
+      "tsc -p tsconfig.functions.json",
+    );
+    expect(scripts["build:functions"]).toBe(
+      "wrangler pages functions build --outdir=./dist/functions-worker",
+    );
+    expect(inspectPackageBuildScripts(scripts)).toEqual([]);
+    expect(
+      inspectPackageBuildScripts({
+        ...scripts,
+        "build:functions":
+          "wrangler pages functions build --outdir=./dist/other-worker",
+      }),
+    ).not.toEqual([]);
+    expect(
+      inspectPackageBuildScripts({
+        ...scripts,
+        "build:unverified":
+          "wrangler pages functions build --outdir=./dist/other-worker",
+      }),
+    ).not.toEqual([]);
     for (const unsafeCommand of [
       "vite build",
       "vite --mode production build",
