@@ -30,6 +30,20 @@ interfaces. O ingresso HTTPS gerenciado deve encaminhar essa porta ou definir
 `CORTEX_WEB_BIND_ADDRESS` apenas na sua rede privada e confiável. PWA e API
 continuam na mesma origem HTTPS externa.
 
+## Modelo de entrada
+
+No runtime `postgresql`, o CPF é somente um identificador: ele localiza a
+identidade canônica já persistida em PostgreSQL e dispara um OTP para
+`auth_identity.email_autenticacao`. A sessão só nasce após a confirmação desse
+código de uso único ou por passkey, que aparece como alternativa online. O
+runtime normal não consulta Academy ou Zeladoria durante essa autenticação;
+essas fontes MySQL existem apenas para sincronização/bootstrap com permissões
+de leitura.
+
+O cofre offline é uma fronteira diferente: somente uma passkey previamente
+registrada com PRF e um grant assinado podem abri-lo. CPF, PIN, e-mail e OTP não
+são credenciais offline.
+
 ## Preparação de chaves
 
 - CPF e OTP: materiais aleatórios independentes, pelo menos 32 bytes.
@@ -44,10 +58,12 @@ continuam na mesma origem HTTPS externa.
 
 1. Restaure uma cópia de `StaviasCortex` e ensaie a atualização Flyway até a
    versão exigida pela release.
-2. Confirme um ALFA ativo com identidade ATIVA e e-mail já verificado.
-3. Configure SMTP real, storage persistente, `CORTEX_PUBLIC_ORIGIN` HTTPS
-   exata, passkeys e todos os secrets por arquivo. Nunca copie uma senha para
-   `.env` nem para uma variável de ambiente.
+2. Confirme um ALFA ativo e, para cada usuário QA, uma identidade canônica com
+   HMAC de CPF e `email_autenticacao` entregável. A primeira confirmação OTP
+   pode ativar uma identidade `PENDENTE`; nunca crie uma sessão por CPF direto.
+3. Configure SMTP real com STARTTLS, storage persistente,
+   `CORTEX_PUBLIC_ORIGIN` HTTPS exata, passkeys e todos os secrets por arquivo.
+   Nunca copie uma senha para `.env` nem para uma variável de ambiente.
 4. Mantenha `CORTEX_POSTGRES_RUNTIME_READY=false` até concluir Flyway, o
    bootstrap ALFA e o preflight; então altere-o para `true` no ambiente de
    publicação.
@@ -56,7 +72,8 @@ continuam na mesma origem HTTPS externa.
    O primeiro comando usa arquivos temporários sem conteúdo real e verifica o
    contrato de secrets, fontes e porta loopback.
 6. Inicie com `CORTEX_SYNC_ENABLED=false`, aguarde `/api/readiness`, faça login
-   por CPF + passkey e valide o cofre offline depois de um login online real.
+   por CPF + OTP, valide a passkey como alternativa e registre uma passkey PRF
+   antes de validar o cofre offline depois de um login online real.
 7. Inicie a PWA e execute `scripts/smoke-deploy.sh` na origem HTTPS final.
 8. Depois de validar os usuários `SELECT`-only e uma importação QA, habilite
    `CORTEX_SYNC_ENABLED=true`; acompanhe `source_sync_run` no PostgreSQL antes

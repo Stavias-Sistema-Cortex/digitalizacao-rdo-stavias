@@ -149,6 +149,29 @@ public class EmailOtpChallengeService {
             String challengeId,
             String code
     ) {
+        return verify(challengeId, code, "");
+    }
+
+    /**
+     * Verifies a public code only after independent source/global throttling.
+     * HTTP callers must supply the resolved client address.
+     */
+    @Transactional
+    public Optional<AuthenticatedIdentity> verify(
+            String challengeId,
+            String code,
+            String clientIp
+    ) {
+        if (!rateLimiter.allowVerification(challengeId, clientIp)) {
+            return Optional.empty();
+        }
+        return verifyLockedChallenge(challengeId, code);
+    }
+
+    private Optional<AuthenticatedIdentity> verifyLockedChallenge(
+            String challengeId,
+            String code
+    ) {
         if (!canonicalUuid(challengeId)) {
             return Optional.empty();
         }

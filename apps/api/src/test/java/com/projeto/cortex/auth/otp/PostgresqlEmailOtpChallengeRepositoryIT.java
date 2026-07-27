@@ -104,6 +104,8 @@ class PostgresqlEmailOtpChallengeRepositoryIT
                     events, normalizer);
             AuthRateLimiter limiter = mock(AuthRateLimiter.class);
             when(limiter.allow(anyString(), anyString())).thenReturn(true);
+            when(limiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService service = new EmailOtpChallengeService(
                     limiter, issuer, store, cryptography,
                     new OtpPolicy(300, 5, 5, 100, 900), () -> challengeId);
@@ -190,6 +192,8 @@ class PostgresqlEmailOtpChallengeRepositoryIT
                     events, normalizer);
             AuthRateLimiter limiter = mock(AuthRateLimiter.class);
             when(limiter.allow(anyString(), anyString())).thenReturn(true);
+            when(limiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService service = new EmailOtpChallengeService(
                     limiter, issuer, store, cryptography,
                     new OtpPolicy(300, 5, 5, 100, 900), () -> challengeId);

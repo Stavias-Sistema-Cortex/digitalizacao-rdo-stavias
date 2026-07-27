@@ -46,6 +46,8 @@ class EmailOtpChallengeServiceTest {
     void setUp() {
         identities = mock(AuthIdentityChallengeLookup.class);
         rateLimiter = mock(AuthRateLimiter.class);
+        when(rateLimiter.allowVerification(anyString(), anyString()))
+                .thenReturn(true);
         challenges = mock(EmailOtpChallengeRepository.class);
         when(challenges.create(
                 anyString(),
@@ -233,6 +235,19 @@ class EmailOtpChallengeServiceTest {
                 "collaborator-id",
                 SYNTHETIC_EMAIL
         );
+    }
+
+    @Test
+    void verificationRateLimitStopsBeforeLockingTheChallenge() {
+        when(rateLimiter.allowVerification(
+                CHALLENGE_ID, "203.0.113.10"
+        )).thenReturn(false);
+
+        assertThat(service.verify(
+                CHALLENGE_ID, CODE, "203.0.113.10"
+        )).isEmpty();
+
+        verify(challenges, never()).lockForVerification(anyString());
     }
 
     @Test

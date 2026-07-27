@@ -75,13 +75,15 @@ npm run dev:local
 ```
 
 A API usa a porta 8080 e a PWA usa 5173. O modo de autenticação web é
-`postgresql`; importações e dev-admin permanecem desabilitados, e o sync
+`postgresql`: o fluxo online normal é CPF + OTP de e-mail, com passkey como
+alternativa. Importações e dev-admin permanecem desabilitados, e o sync
 canônico fica ativo.
 
 O perfil local aceita e-mail fake apenas para testes automatizados. Ele não é
-prova de login humano. Para validar OTP real, execute a ativação com SMTP
-autenticado e registre o resultado sem e-mail, OTP, cookie ou identificador
-pessoal.
+prova de login humano e não oferece uma caixa de entrada HTTP. Para validar o
+OTP humano, configure SMTP real ou um mail sink controlado; para um smoke local
+sem e-mail, use a passkey alternativa. Registre o resultado sem e-mail, OTP,
+cookie ou identificador pessoal.
 
 ## Dados externos e importação
 
@@ -111,6 +113,8 @@ o banco local do operador.
 - IDs e `clientMutationId` permanecem estáveis no IndexedDB.
 - Recarregar offline não autoriza API; somente um grant assinado abre o cofre
   local.
+- CPF, PIN, e-mail e OTP são deliberadamente online-only. Antes do primeiro
+  acesso offline, registre uma passkey PRF enquanto houver conexão.
 - A reconexão inicia replay automático idempotente. Falhas e conflitos ficam
   visíveis, nunca são descartados silenciosamente.
 - Para diagnosticar, confirme `/api/health`, `/api/readiness`, sessão,

@@ -7,10 +7,12 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.EnvironmentAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.Ordered;
 import org.springframework.core.env.Environment;
 
 @Configuration(proxyBeanMethods = false)
@@ -48,6 +50,30 @@ public class OtpSecurityConfiguration implements EnvironmentAware {
                 globalRateLimitMaxRequests,
                 rateLimitWindowSeconds
         );
+    }
+
+    @Bean
+    OtpRequestPolicy otpRequestPolicy(
+            @Value("${cortex.auth.otp.max-request-body-bytes:4096}")
+            int maxRequestBodyBytes
+    ) {
+        return new OtpRequestPolicy(maxRequestBodyBytes);
+    }
+
+    @Bean
+    FilterRegistrationBean<EmailOtpPreMvcFilter>
+            emailOtpPreMvcFilterRegistration(OtpRequestPolicy requestPolicy) {
+        FilterRegistrationBean<EmailOtpPreMvcFilter> registration =
+                new FilterRegistrationBean<>(new EmailOtpPreMvcFilter(
+                        requestPolicy
+                ));
+        registration.setName("cortexEmailOtpPreMvcFilter");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
+        registration.addUrlPatterns(
+                "/api/auth/email/challenges",
+                "/api/auth/email/challenges/*"
+        );
+        return registration;
     }
 
     @Bean

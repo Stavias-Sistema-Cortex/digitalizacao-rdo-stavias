@@ -2,6 +2,9 @@ package com.projeto.cortex.postgresql;
 
 import com.projeto.cortex.CortexApplication;
 import com.projeto.cortex.auth.AuthController;
+import com.projeto.cortex.auth.identity.PostgresqlCpfOtpIdentityLookup;
+import com.projeto.cortex.auth.identity.PostgresqlEmailOtpIdentityLookup;
+import com.projeto.cortex.auth.otp.PostgresqlCpfIdentifierNormalizer;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.financeiro.ItemContratualController;
 import com.projeto.cortex.financeiro.allocation.FinanceAllocationSyncOperationHandler;
@@ -128,6 +131,12 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         assertThat(context.getBeansOfType(SyncController.class)).hasSize(1);
         assertThat(context.getBeansOfType(AuthController.class)).hasSize(1);
         assertThat(context.getBeansOfType(GraphProjectionService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(PostgresqlCpfOtpIdentityLookup.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(PostgresqlCpfIdentifierNormalizer.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(PostgresqlEmailOtpIdentityLookup.class))
+                .isEmpty();
 
         DataSource dataSource = context.getBean(DataSource.class);
         try (var connection = dataSource.getConnection()) {

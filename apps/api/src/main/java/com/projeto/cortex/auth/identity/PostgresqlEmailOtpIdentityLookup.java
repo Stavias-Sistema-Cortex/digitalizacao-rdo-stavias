@@ -10,7 +10,7 @@ import org.springframework.stereotype.Repository;
 
 /** PostgreSQL-only e-mail lookup. It never queries protected CPF material. */
 @Repository
-@Profile("postgresql-common")
+@Profile("postgresql-activation")
 public class PostgresqlEmailOtpIdentityLookup
         implements AuthenticationChallengeLookup {
 

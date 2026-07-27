@@ -3,18 +3,15 @@ package com.projeto.cortex.auth;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.web.server.ResponseStatusException;
 
-/** Keeps e-mail OTP session issuance exclusive to activation and legacy mode. */
+/**
+ * Requires the e-mail proof for the primary normal PostgreSQL login path.
+ * The controller only exposes the exact public challenge routes selected by
+ * {@code AuthPublicEndpointPolicy}; direct CPF-session login remains separate.
+ */
 @Component
 public final class EmailOtpAuthenticationPolicy {
-
-    static final String DISABLED_MESSAGE =
-            "Autenticação por e-mail indisponível neste ambiente.";
-
-    private final boolean disabled;
 
     @Autowired
     public EmailOtpAuthenticationPolicy(Environment environment) {
@@ -32,16 +29,10 @@ public final class EmailOtpAuthenticationPolicy {
             boolean normalPostgresqlWebMode,
             boolean activationPostgresqlWebMode
     ) {
-        this.disabled = normalPostgresqlWebMode
-                && !activationPostgresqlWebMode;
     }
 
     public void requireEnabled() {
-        if (disabled) {
-            throw new ResponseStatusException(
-                    HttpStatus.GONE,
-                    DISABLED_MESSAGE
-            );
-        }
+        // E-mail OTP is available in legacy, activation, and normal PostgreSQL
+        // modes. Route-level exposure remains fail-closed in the public policy.
     }
 }

@@ -20,7 +20,7 @@ class AuthPublicEndpointPolicyTest {
                     + "00000000-0000-4000-8000-000000000001/verify";
 
     @Test
-    void barePostgresqlPublishesOnlyPasskeyAuthenticationPosts() {
+    void barePostgresqlPublishesExactPasskeyAndEmailOtpPostsWhileKeepingDirectCpfLoginClosed() {
         AuthPublicEndpointPolicy policy =
                 new AuthPublicEndpointPolicy(true, false);
 
@@ -30,6 +30,8 @@ class AuthPublicEndpointPolicyTest {
                 EMAIL_CHALLENGES,
                 EMAIL_VERIFY,
                 "/api/auth/login",
+                "/api/auth/email/challenges/not-a-uuid/verify",
+                EMAIL_VERIFY + "/extra",
                 "/api/auth/passkeys/authentication/options/extra",
                 "/api/auth/passkeys/registration/options"
         ).stream()
@@ -38,7 +40,12 @@ class AuthPublicEndpointPolicyTest {
                 ))
                 .toList();
 
-        assertThat(publicPosts).containsExactly(OPTIONS, VERIFY);
+        assertThat(publicPosts).containsExactly(
+                OPTIONS,
+                VERIFY,
+                EMAIL_CHALLENGES,
+                EMAIL_VERIFY
+        );
     }
 
     @Test

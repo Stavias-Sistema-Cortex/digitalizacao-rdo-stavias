@@ -85,12 +85,14 @@ public class AuthController {
     public AuthSessionResponse verifyChallenge(
             @PathVariable String challengeId,
             @RequestBody(required = false) OtpVerifyRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse response
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
         AuthenticatedIdentity identity = otpChallenges.verify(
                 challengeId,
-                request == null ? null : request.code()
+                request == null ? null : request.code(),
+                clientAddresses.resolve(servletRequest)
         ).orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED,
                 "Código inválido ou expirado."

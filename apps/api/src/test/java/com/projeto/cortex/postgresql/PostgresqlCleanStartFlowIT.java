@@ -94,6 +94,8 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
             );
             AuthRateLimiter rateLimiter = mock(AuthRateLimiter.class);
             when(rateLimiter.allow(anyString(), anyString())).thenReturn(true);
+            when(rateLimiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService otp = new EmailOtpChallengeService(
                     rateLimiter,
                     issuer,

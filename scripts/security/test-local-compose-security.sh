@@ -7,6 +7,7 @@ production_compose_file="$repo_root/compose.production.example.yml"
 postgresql_env_template="$repo_root/.env.postgresql.example"
 api_dockerfile="$repo_root/apps/api/Dockerfile"
 web_dockerfile="$repo_root/apps/web/Dockerfile"
+web_nginx_config="$repo_root/apps/web/nginx.conf"
 import_diagnostic="$repo_root/scripts/dev/check-imports.sh"
 
 service_block() {
@@ -183,10 +184,20 @@ for documented_variable in \
   CORTEX_PUBLIC_ORIGIN \
   CORTEX_WEB_BIND_ADDRESS \
   CORTEX_WEB_PORT \
+  CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID \
+  CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE \
+  CORTEX_AUTH_OTP_HMAC_KEY_FILE \
   CORTEX_AUTH_WEBAUTHN_RP_ID \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID \
+  CORTEX_EMAIL_PROVIDER \
   CORTEX_EMAIL_SENDER_PROFILE_KEY \
+  CORTEX_SMTP_HOST \
+  CORTEX_SMTP_PORT \
+  CORTEX_SMTP_USERNAME \
+  CORTEX_SMTP_FROM \
+  CORTEX_SMTP_PASSWORD_FILE \
+  CORTEX_SMTP_STARTTLS \
   VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 \
   CORTEX_ACADEMY_DB_URL \
   CORTEX_ACADEMY_DB_USER \
@@ -231,6 +242,8 @@ done
 grep -Fq 'USER cortex' "$api_dockerfile"
 grep -Fq 'USER nginx' "$web_dockerfile"
 grep -Fq 'ENTRYPOINT ["nginx"]' "$web_dockerfile"
+grep -Fq 'location ~ ^/api/auth/email/challenges(?:/.*)?$' "$web_nginx_config"
+grep -Fq 'client_max_body_size 4k;' "$web_nginx_config"
 
 assert_production_compose_renders_from_documented_contract
 

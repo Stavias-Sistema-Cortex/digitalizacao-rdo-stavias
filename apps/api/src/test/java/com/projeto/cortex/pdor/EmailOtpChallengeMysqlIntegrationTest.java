@@ -2,7 +2,9 @@ package com.projeto.cortex.pdor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.identity.AuthIdentityChallengeLookup;
 import com.projeto.cortex.auth.otp.AuthRateLimiter;
@@ -237,9 +239,12 @@ class EmailOtpChallengeMysqlIntegrationTest {
     private EmailOtpChallengeService service(
             EmailOtpChallengeRepository challenges
     ) {
+        AuthRateLimiter limiter = mock(AuthRateLimiter.class);
+        when(limiter.allowVerification(anyString(), anyString()))
+                .thenReturn(true);
         return new EmailOtpChallengeService(
                 mock(AuthIdentityChallengeLookup.class),
-                mock(AuthRateLimiter.class),
+                limiter,
                 challenges,
                 cryptography(),
                 new OtpPolicy(600, 5, 5, 1000, 900),

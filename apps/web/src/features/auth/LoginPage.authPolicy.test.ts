@@ -102,7 +102,7 @@ describe("LoginPage auth policy", () => {
     );
   });
 
-  it("oferece entrada por CPF e por passkey", () => {
+  it("usa CPF para o desafio OTP primário e mantém a passkey como alternativa", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
       "utf8",
@@ -112,27 +112,18 @@ describe("LoginPage auth policy", () => {
     expect(source).not.toContain("filtroOfflinePronto");
     expect(source).not.toContain("login offline está habilitado");
     expect(source).not.toContain("cpfMascarado");
-    expect(source).toContain("autenticarPorCpf");
+    expect(source).not.toContain("autenticarPorCpf");
+    expect(source).toContain("requestCpfOtpChallenge");
+    expect(source).toContain("verifyEmailOtpChallenge");
+    expect(source).toContain("setSession(profile)");
     expect(source).toContain("O login exige conexão com o Córtex.");
     expect(source).toContain("authenticateWithPasskey(cpf)");
     expect(source.match(/authenticateWithPasskey\(cpf\)/g)).toHaveLength(1);
-    expect(source).toContain('"Entrar com CPF"');
+    expect(source).toContain('"Enviar código"');
     expect(source).toContain('"Entrar com passkey"');
-    expect(source).toContain('"Confirmar com passkey"');
-    expect(source).toContain("allowsDirectCpfLogin");
-    const forbiddenPublicLoginTerms = [
-      "Enviar c\u00f3digo",
-      "C\u00f3digo de acesso",
-      "Reenviar c\u00f3digo",
-      'autoComplete="one-time-' + 'code"',
-      "chall" + "enge",
-      "e-" + "mail",
-      "em" + "ail",
-      "login__" + "divider",
-    ];
-    for (const term of forbiddenPublicLoginTerms) {
-      expect(source).not.toContain(term);
-    }
+    expect(source).toContain("Código de acesso");
+    expect(source).toContain('autoComplete="one-time-code"');
     expect(source).not.toContain("PIN");
+    expect(source).not.toContain("offlineVault");
   });
 });

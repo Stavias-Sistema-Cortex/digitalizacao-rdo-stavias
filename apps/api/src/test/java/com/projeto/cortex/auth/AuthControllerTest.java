@@ -58,6 +58,7 @@ class AuthControllerTest {
 
     @BeforeEach
     void setUp() {
+        when(addresses.resolve(any())).thenReturn("203.0.113.10");
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
                 otp,
                 Optional.of(authService),
@@ -184,7 +185,7 @@ class AuthControllerTest {
     }
 
     @Test
-    void normalPostgresqlRejectsEmailOtpEvenAfterAuthenticationFilter()
+    void normalPostgresqlAllowsEmailOtpAndIssuesOpaqueSessionCookie()
             throws Exception {
         MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
@@ -198,41 +199,35 @@ class AuthControllerTest {
                         new EmailOtpAuthenticationPolicy(true, false)
                 )
         ).build();
-        ResolvedAuthSession authenticated = new ResolvedAuthSession(
-                SESSION_ID,
-                COLLABORATOR_ID,
-                "Pessoa Sintética",
-                PapelAcesso.BETA,
-                EXPIRY,
-                "a".repeat(64)
-        );
+        AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
+        IssuedAuthSession issued = issuedSession();
+        when(addresses.resolve(any())).thenReturn("203.0.113.10");
+        when(otp.request("11144477735", "203.0.113.10"))
+                .thenReturn(OtpChallengeResponse.generic(CHALLENGE_ID, 600));
+        when(otp.verify(CHALLENGE_ID, "123456", "203.0.113.10"))
+                .thenReturn(Optional.of(identity));
+        when(sessions.issue(identity)).thenReturn(issued);
 
         postgresqlMvc.perform(post("/api/auth/email/challenges")
-                        .requestAttr(
-                                AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
-                                authenticated
-                        )
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"identifier\":\"11144477735\"}"))
-                .andExpect(status().isGone());
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("Cache-Control", "no-store"));
         postgresqlMvc.perform(post(
                         "/api/auth/email/challenges/{id}/verify",
                         CHALLENGE_ID
-                ).requestAttr(
-                        AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
-                        authenticated
                 ).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"123456\"}"))
-                .andExpect(status().isGone());
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.colaboradorId").value(COLLABORATOR_ID));
 
-        verifyNoInteractions(otp, addresses);
-        verify(sessions, never()).issue(any());
-        verify(cookies, never()).write(any(), any());
+        verify(cookies).write(any(HttpServletResponse.class), eq(issued));
     }
 
     @Test
     void invalidCodeNeverIssuesSessionOrCookies() throws Exception {
-        when(otp.verify(CHALLENGE_ID, "000000"))
+        when(otp.verify(CHALLENGE_ID, "000000", "203.0.113.10"))
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(post(
@@ -242,6 +237,7 @@ class AuthControllerTest {
                         .content("{\"code\":\"000000\"}"))
                 .andExpect(status().isUnauthorized());
 
+        verify(addresses).resolve(any(HttpServletRequest.class));
         verify(sessions, never()).issue(any());
         verify(cookies, never()).write(any(), any());
     }
@@ -256,7 +252,7 @@ class AuthControllerTest {
                 token('c'),
                 EXPIRY
         );
-        when(otp.verify(CHALLENGE_ID, "123456"))
+        when(otp.verify(CHALLENGE_ID, "123456", "203.0.113.10"))
                 .thenReturn(Optional.of(identity));
         when(sessions.issue(identity)).thenReturn(issued);
 
@@ -286,7 +282,8 @@ class AuthControllerTest {
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.ALFA);
         IssuedAuthSession issued = issuedSession();
-        when(otp.verify(CHALLENGE_ID, "123456")).thenReturn(Optional.of(identity));
+        when(otp.verify(CHALLENGE_ID, "123456", "203.0.113.10"))
+                .thenReturn(Optional.of(identity));
         when(sessions.issue(identity)).thenReturn(issued);
         MockMvc activationMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(

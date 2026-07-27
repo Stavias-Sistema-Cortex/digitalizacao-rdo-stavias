@@ -1,7 +1,8 @@
 # Córtex — checklist de deploy
 
 Esta é a trava operacional do artefato atual: API Java 21, PWA, autenticação
-CPF/passkey (com OTP somente para ativação verificada), Mensagens, armazenamento compartilhado, RDO, Financeiro orientado
+online por CPF + OTP de e-mail (passkey como alternativa), cofre offline por
+passkey PRF, Mensagens, armazenamento compartilhado, RDO, Financeiro orientado
 à receita, Memória e grafo ontológico. Marque um item somente com evidência da
 mesma revisão que será publicada.
 
@@ -18,12 +19,16 @@ mesma revisão que será publicada.
 - [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
   `email_verificado_em` preenchido.
 - [ ] Os registros ALFA explícitos anteriores permanecem ALFA após a migração.
+- [ ] Antes do acesso de cada colaborador QA, a sincronização/bootstrap da
+  Academy (ou o processo de provisionamento explicitamente auditado) persistiu
+  no PostgreSQL o HMAC de CPF e um `email_autenticacao` entregável. O login
+  normal não consulta MySQL em tempo de requisição.
 
 A API em perfil `production` falha na inicialização quando o último requisito
 de ALFA não é atendido. `/api/readiness` também consulta o banco e revalida esse
 estado; `/api/health` mede somente o processo.
 
-## 2. HTTPS, cookies e passkeys
+## 2. HTTPS, cookies, OTP e passkeys
 
 - [ ] O proxy termina HTTPS e publica PWA e `/api` na mesma origem.
 - [ ] `cortex-web` fica em `127.0.0.1` por padrão; qualquer override de
@@ -34,10 +39,18 @@ estado; `/api/health` mede somente o processo.
 - [ ] Cookies estão `Secure`; `SameSite` foi escolhido para a topologia real.
 - [ ] O par PEM do offline grant está montado e o fingerprint público usado no
   build da PWA corresponde exatamente a esse par.
-- [ ] Identificação por CPF, logout, registro de passkey, login por passkey e
-  acesso offline foram exercitados no hostname final.
-- [ ] Após login CPF + passkey online, a mesma identidade consegue abrir o
-  cofre offline sem rede; uma identidade não provisionada continua bloqueada.
+- [ ] CPF válido, CPF inválido e CPF sem identidade recebem a mesma resposta
+  pública de solicitação; nenhum deles cria sessão somente pelo CPF.
+- [ ] O OTP chega ao `auth_identity.email_autenticacao` canônico, é de uso
+  único, expira e só então emite cookie opaco + CSRF no hostname final.
+- [ ] As rotas públicas de OTP aceitam no máximo 4 KiB tanto no proxy quanto
+  antes do MVC (inclusive em corpo chunked), e a verificação aplica orçamento
+  de tentativas por origem e global antes de consultar o desafio armazenado.
+- [ ] Login por passkey foi exercitado como alternativa online explícita; o
+  endpoint legado de CPF direto permanece inacessível fora de local/teste.
+- [ ] Depois de login online e registro de passkey com PRF, a mesma identidade
+  abre o cofre offline sem rede. CPF, PIN, e-mail e OTP não desbloqueiam o
+  cofre; uma identidade sem grant/passkey continua bloqueada.
 
 ## 3. Secrets e providers
 
@@ -50,8 +63,10 @@ estado; `/api/health` mede somente o processo.
   `CORTEX_AUTH_PROVISIONING_ENABLED=false` no processo web.
 - [ ] `CORTEX_EMAIL_PROVIDER=smtp`; provider `fake` não existe no runtime de
   produção.
-- [ ] From, usuário, host, STARTTLS e `CORTEX_EMAIL_SENDER_PROFILE_KEY`
-  correspondem à caixa Stavias autenticada.
+- [ ] From, usuário, host, porta, STARTTLS e
+  `CORTEX_EMAIL_SENDER_PROFILE_KEY` correspondem à caixa Stavias autenticada;
+  existe um e-mail institucional verificável para cada usuário que fará login
+  por OTP.
 - [ ] Nenhuma senha, OTP, CPF, token de sessão ou conteúdo de mensagem aparece
   em logs, imagem, compose ou repositório.
 

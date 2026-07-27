@@ -41,6 +41,9 @@ origem HTTPS exata, SMTP autenticado, storage durável e um ALFA ativo com e-mai
 verificado. O web container fica em loopback por padrão e deve ser publicado por
 um ingresso HTTPS gerenciado; Academy e Zeladoria recebem somente credenciais
 de leitura para importação, enquanto todo estado do Córtex fica no PostgreSQL.
+O acesso online normal usa CPF + OTP entregue ao e-mail canônico persistido no
+PostgreSQL; passkey é uma alternativa online. O cofre offline exige uma passkey
+PRF previamente registrada e nunca aceita CPF ou OTP como desbloqueio.
 
 ## Runtime PostgreSQL canônico
 
