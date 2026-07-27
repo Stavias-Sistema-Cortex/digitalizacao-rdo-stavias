@@ -13,7 +13,7 @@ cortex_require_text CORTEX_POSTGRES_USER
 cortex_prepare_postgres_password
 
 if [[ "${CORTEX_POSTGRES_RUNTIME_READY:-false}" != "true" ]]; then
-  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V60 and a real ALFA bootstrap in the canonical database." >&2
+  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V61 and a real ALFA bootstrap in the canonical database." >&2
   exit 1
 fi
 

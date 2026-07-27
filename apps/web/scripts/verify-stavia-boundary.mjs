@@ -881,19 +881,68 @@ function hasFixedLocalOperationalPort(content) {
     /https?:\/\/(?:localhost|127\.0\.0\.1):(?:5173|8081)\b|127\.0\.0\.1:(?:5173|8081):|--port[=\s]+(?:5173|8081)\b/.test(
       executable,
     ) ||
-    /(?:^|\n)\s*(?:export\s+)?(?:CORTEX_WEB_PORT|CORTEX_API_PORT|API_PORT)\s*=\s*["']?(?:5173|8081)["']?\s*(?:$|\n)/m.test(
+    /(?:^|\n)\s*(?:export\s+)?(?:CORTEX_WEB_PORT|CORTEX_API_PORT|API_PORT|SERVER_PORT)\s*=\s*["']?(?:5173|8081)["']?\s*(?:$|\n)/m.test(
       executable,
     )
   );
 }
 
+function shellLogicalLines(content) {
+  const lines = executableContractText(content).split(/\r?\n/);
+  const logicalLines = [];
+  let pending = "";
+
+  for (const line of lines) {
+    const candidate = pending === "" ? line : pending + line.trimStart();
+    const trailingBackslashes = candidate.match(/(\\+)$/)?.[1].length ?? 0;
+    if (trailingBackslashes % 2 === 1) {
+      // Join only an actual Bash line continuation. This is structural parsing
+      // for launcher contracts, not shell evaluation or variable expansion.
+      pending = `${candidate.slice(0, -1)} `;
+      continue;
+    }
+    logicalLines.push(candidate);
+    pending = "";
+  }
+
+  if (pending !== "") {
+    logicalLines.push(pending);
+  }
+  return logicalLines;
+}
+
 function topLevelExecutableContractText(content) {
-  const executableLines = executableContractText(content).split(/\r?\n/);
+  const executableLines = shellLogicalLines(content);
   const topLevelLines = [];
   let functionDepth = 0;
+  let pendingFunctionDeclaration = false;
+  let guardedBlockDepth = 0;
+
+  const guardedBlockDepthDelta = (line) => {
+    const opens = line.match(
+      /(?:^|[;\s])(?:if|while|until|for|select|case)\b/g,
+    )?.length ?? 0;
+    const closes = line.match(/(?:^|[;\s])(?:fi|done|esac)\b/g)?.length ?? 0;
+    return opens - closes;
+  };
+
+  const beginsGuardedBlock = (line) =>
+    /^(?:if|while|until|for|select|case)\b/.test(line);
 
   for (const line of executableLines) {
     const trimmed = line.trim();
+    if (pendingFunctionDeclaration) {
+      if (trimmed === "") {
+        continue;
+      }
+      pendingFunctionDeclaration = false;
+      if (/^\{/.test(trimmed)) {
+        functionDepth =
+          (line.match(/\{/g)?.length ?? 0) -
+          (line.match(/\}/g)?.length ?? 0);
+        continue;
+      }
+    }
     if (
       functionDepth === 0 &&
       /^(?:function\s+)?[A-Za-z_][A-Za-z0-9_]*\s*(?:\(\s*\))?\s*\{/.test(
@@ -904,9 +953,29 @@ function topLevelExecutableContractText(content) {
         (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
       continue;
     }
+    if (
+      functionDepth === 0 &&
+      /^(?:function\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*\(\s*\))?|[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\))\s*(?:#.*)?$/.test(
+        trimmed,
+      )
+    ) {
+      pendingFunctionDeclaration = true;
+      continue;
+    }
     if (functionDepth > 0) {
       functionDepth +=
         (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      continue;
+    }
+    if (guardedBlockDepth > 0) {
+      guardedBlockDepth += guardedBlockDepthDelta(trimmed);
+      continue;
+    }
+    if (beginsGuardedBlock(trimmed)) {
+      // The runtime safety arguments must be unconditional top-level commands.
+      // Ignoring every shell guard prevents a dormant `if false` (or a dynamic
+      // condition) from satisfying the static contract for a later bare command.
+      guardedBlockDepth = guardedBlockDepthDelta(trimmed);
       continue;
     }
     topLevelLines.push(line);
@@ -916,7 +985,7 @@ function topLevelExecutableContractText(content) {
 }
 
 function sourcesNormalRuntimeSanitizer(content) {
-  const executable = executableContractText(content);
+  const executable = topLevelExecutableContractText(content);
   return /source\s+"\$ROOT_DIR\/scripts\/dev\/load-local-env\.sh"\s*\n\s*source\s+"\$ROOT_DIR\/scripts\/dev\/normal-runtime-env\.sh"/.test(
     executable,
   );
@@ -1015,15 +1084,25 @@ function inspectNormalRuntimeContracts(files, requireFiles) {
 
   const runDocker = byPath.get("scripts/dev/run-api-docker.sh");
   if (runDocker !== undefined) {
-    const executable = topLevelExecutableContractText(runDocker).replace(
-      /\\\s*\n/g,
-      " ",
+    const executable = topLevelExecutableContractText(runDocker)
+      .replace(/\\\s*\n/g, " ");
+    // A matching argument fragment is not enough: it has to be the actual
+    // unconditional `docker run` command. This deliberately accepts only the
+    // one launcher invocation, rejecting a dead `false && docker run …`, an
+    // `eval`/command-substitution fragment, or a second unconfigured run.
+    const dockerRuns = executable
+      .split(/\r?\n/)
+      .filter((line) => /^\s*docker\s+run\b/.test(line));
+    const hasConditionalDockerRun = /(?:&&|\|\|)\s*docker\s+run\b/.test(
+      executable,
     );
     if (
       !/CORTEX_WEB_PORT="\$\{CORTEX_WEB_PORT:-5173}"/.test(executable) ||
       !/CORTEX_API_PORT="\$\{CORTEX_API_PORT:-8081}"/.test(executable) ||
-      !/docker\s+run\b[^\n]*-p\s+"127\.0\.0\.1:\$\{CORTEX_API_PORT}:8080"[^\n]*-e\s+CORTEX_WEB_PORT="\$CORTEX_WEB_PORT"/.test(
-        executable,
+      hasConditionalDockerRun ||
+      dockerRuns.length !== 1 ||
+      !/^\s*docker\s+run\b[^\n]*-p\s+"127\.0\.0\.1:\$\{CORTEX_API_PORT}:8080"[^\n]*-e\s+CORTEX_WEB_PORT="\$CORTEX_WEB_PORT"/.test(
+        dockerRuns[0] ?? "",
       )
     ) {
       violations.push(

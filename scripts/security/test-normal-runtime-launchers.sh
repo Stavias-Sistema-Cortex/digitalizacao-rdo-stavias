@@ -2,6 +2,11 @@
 set -euo pipefail
 
 repository_root="$(git rev-parse --show-toplevel)"
+real_docker="$(command -v docker || true)"
+if [[ -z "$real_docker" ]] || ! "$real_docker" compose version >/dev/null 2>&1; then
+  echo "Docker Compose is required to render the normal-runtime descendant environment." >&2
+  exit 1
+fi
 contract_root="$(mktemp -d "${TMPDIR:-/tmp}/cortex-normal-launchers.XXXXXX")"
 contract_root="$(cd "$contract_root" && pwd)"
 
@@ -43,6 +48,7 @@ for secret_name in postgres cpf_hmac offline_private offline_public memory_curso
 done
 
 canonical_database="Sta""vias""Cortex"
+activation_marker="activation-marker"
 cat > "$mirror_root/.env" <<EOF
 CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/$canonical_database
 CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/$canonical_database
@@ -61,9 +67,9 @@ CORTEX_WEB_PORT=15473
 CORTEX_API_PORT=18091
 PORT=18092
 CORTEX_SYNC_ENABLED=true
-OTP=activation-marker
-VENDOR_OTP_SECRET=activation-marker
-CORTEX_AUTH_OTP_ROTATION_TOKEN=activation-marker
+OTP=$activation_marker
+VENDOR_OTP_SECRET=$activation_marker
+CORTEX_AUTH_OTP_ROTATION_TOKEN=$activation_marker
 CORTEX_EMAIL_PROVIDER=smtp
 CORTEX_SMTP_HOST=smtp.invalid
 CORTEX_FINANCE_EMAIL_ENABLED=true
@@ -72,6 +78,12 @@ EOF
 cat > "$fake_bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "compose" && " $* " == *" up "* ]]; then
+  "$CORTEX_CONTRACT_REAL_DOCKER" compose \
+    --env-file "$CORTEX_CONTRACT_COMPOSE_ENV_FILE" \
+    -f "$CORTEX_CONTRACT_COMPOSE_FILE" \
+    config --format json > "$CORTEX_CONTRACT_DESCENDANT_CONFIG"
+fi
 {
   printf 'docker'
   printf '\t%s' "$@"
@@ -112,11 +124,16 @@ run_contract() {
   local arguments="$capture_root/$name.arguments"
   local environment="$capture_root/$name.environment"
   local server_port="$capture_root/$name.server-port"
+  local descendant_config="$capture_root/$name.descendant-config.json"
 
   : > "$arguments"
   : > "$environment"
   PATH="$fake_bin:/usr/bin:/bin" \
     CORTEX_CONTRACT_ARGUMENTS="$arguments" \
+    CORTEX_CONTRACT_REAL_DOCKER="$real_docker" \
+    CORTEX_CONTRACT_COMPOSE_ENV_FILE="$mirror_root/.env" \
+    CORTEX_CONTRACT_COMPOSE_FILE="$mirror_root/compose.local.yml" \
+    CORTEX_CONTRACT_DESCENDANT_CONFIG="$descendant_config" \
     CORTEX_CONTRACT_ENVIRONMENT="$environment" \
     CORTEX_CONTRACT_SERVER_PORT="$server_port" \
     bash "$mirror_root/$launcher" > "$capture_root/$name.stdout"
@@ -126,6 +143,17 @@ run_contract scripts/dev/run-compose.sh compose
 run_contract scripts/dev/run-api-docker.sh docker
 run_contract scripts/dev/run-api.sh api
 
+node -e '
+const { readFileSync } = require("node:fs");
+const rendered = JSON.parse(readFileSync(process.argv[1], "utf8"));
+for (const [serviceName, service] of Object.entries(rendered.services ?? {})) {
+  for (const variableName of Object.keys(service.environment ?? {})) {
+    console.log(`${serviceName}\t${variableName}`);
+  }
+}
+' "$capture_root/compose.descendant-config.json" \
+  > "$capture_root/compose.descendant-environment"
+
 for environment_file in "$capture_root"/*.environment; do
   if grep -Eqi '(^|_)OTP(_|$)|^CORTEX_EMAIL_|^CORTEX_SMTP_|^CORTEX_FINANCE_EMAIL_' \
     "$environment_file"; then
@@ -133,6 +161,12 @@ for environment_file in "$capture_root"/*.environment; do
     exit 1
   fi
 done
+
+if grep -Eqi '(^|_)OTP(_|$)|(^|	)CORTEX_EMAIL_|(^|	)CORTEX_SMTP_|(^|	)CORTEX_FINANCE_EMAIL_' \
+  "$capture_root/compose.descendant-environment"; then
+  echo "normal Compose runtime recreated activation or legacy e-mail environment names in a descendant container" >&2
+  exit 1
+fi
 
 grep -Fq $'docker\tcompose\t-f\t'"$mirror_root/compose.local.yml"$'\tup\t--build\t-d\t--remove-orphans' \
   "$capture_root/compose.arguments"

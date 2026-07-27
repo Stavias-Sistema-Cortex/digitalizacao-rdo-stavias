@@ -536,6 +536,33 @@ describe("StavIA runtime boundary", () => {
     );
   });
 
+  it("rejects a later SERVER_PORT override after exporting the selected API port", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'export SERVER_PORT="$API_PORT"',
+                'export SERVER_PORT="$API_PORT"\nSERVER_PORT=8081',
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: fixed operational port 5173/8081 bypasses the selected port variables",
+    );
+  });
+
   it("requires selected port variables in executable launcher consumers", () => {
     const inspectStrict = inspectSourceBoundary as (
       files: Array<{ path: string; content: string }>,
@@ -586,6 +613,243 @@ describe("StavIA runtime boundary", () => {
                 '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
                 '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
                 "}",
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores uncalled Docker fragments in a multiline Bash function declaration", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "reviewed_docker_arguments()",
+                "{",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores uncalled Docker fragments in a function-keyword declaration without parentheses", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "function reviewed_docker_arguments",
+                "{",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\\\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores a commented multiline function declaration before its brace", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "function reviewed_docker_arguments # intentionally uncalled",
+                "{",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\\\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  for (const declaration of [
+    "function reviewed_docker_arguments " + String.fromCharCode(92),
+    "reviewed_docker_arguments() " + String.fromCharCode(92),
+  ]) {
+    it("ignores a backslash-continued function declaration before its brace", () => {
+      const inspectStrict = inspectSourceBoundary as (
+        files: Array<{ path: string; content: string }>,
+        options: { requireNormalRuntimeFiles: boolean },
+      ) => string[];
+      const fixtures = [
+        ...validCleanupFixtures(),
+        ...validNormalRuntimeFixtures().map((fixture) =>
+          fixture.path === "scripts/dev/run-api-docker.sh"
+            ? {
+                ...fixture,
+                content: [
+                  'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                  'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                  'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                  'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                  declaration,
+                  "{",
+                  '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\\\',
+                  '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                  "}",
+                ].join("\n"),
+              }
+            : fixture,
+        ),
+      ];
+
+      expect(
+        inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+      ).toContain(
+        "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+      );
+    });
+  }
+
+  it("rejects selected Docker arguments hidden behind a shell condition", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                'false && docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("requires the normal-runtime sanitizer to run outside an uncalled function", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"\nsource "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                [
+                  "normal_runtime_sources()",
+                  "{",
+                  '  source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                  '  source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                  "}",
+                ].join("\n"),
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: normal-runtime environment sanitizer must run immediately after the local env loader",
+    );
+  });
+
+  it("ignores reviewed Docker fragments parked in an unreachable shell guard", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                'if false; then docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local; fi',
                 "docker run cortex-api:local",
               ].join("\n"),
             }

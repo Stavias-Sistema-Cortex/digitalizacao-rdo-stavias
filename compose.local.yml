@@ -17,7 +17,7 @@ services:
       SPRING_CONFIG_IMPORT: configtree:/run/secrets/
       CORTEX_POSTGRES_URL: ${CORTEX_POSTGRES_DOCKER_URL:?Set the Docker-reachable canonical PostgreSQL JDBC URL}
       CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_USER:?Set the least-privilege PostgreSQL role}
-      CORTEX_POSTGRES_RUNTIME_READY: ${CORTEX_POSTGRES_RUNTIME_READY:?Set true only after V60 and a real ALFA bootstrap}
+      CORTEX_POSTGRES_RUNTIME_READY: ${CORTEX_POSTGRES_RUNTIME_READY:?Set true only after V61 and a real ALFA bootstrap}
       CORTEX_POSTGRES_SCHEMA_READINESS_ENABLED: "true"
 
       CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}
@@ -36,7 +36,6 @@ services:
       CORTEX_AUTH_DEV_ADMIN_ENABLED: "false"
       CORTEX_AUTH_PROVISIONING_ENABLED: "false"
 
-      CORTEX_EMAIL_PROVIDER: ${CORTEX_EMAIL_PROVIDER:-fake}
       CORTEX_STORAGE_PROVIDER: local
       CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
       CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
