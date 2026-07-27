@@ -11,22 +11,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   authenticateWithPasskey: vi.fn(),
-  requestCpfOtpChallenge: vi.fn(),
-  setSession: vi.fn(),
-  verifyEmailOtpChallenge: vi.fn(),
+  autenticarPorCpf: vi.fn(),
 }));
 
 vi.mock("./passkeyApi", () => ({
   authenticateWithPasskey: mocks.authenticateWithPasskey,
 }));
 
-vi.mock("./emailOtpApi", () => ({
-  requestCpfOtpChallenge: mocks.requestCpfOtpChallenge,
-  verifyEmailOtpChallenge: mocks.verifyEmailOtpChallenge,
-}));
-
-vi.mock("./authSession", () => ({
-  setSession: mocks.setSession,
+vi.mock("./authService", () => ({
+  autenticarPorCpf: mocks.autenticarPorCpf,
 }));
 
 import { LoginPage } from "./LoginPage";
@@ -48,14 +41,14 @@ afterEach(() => {
 });
 
 describe("LoginPage access methods", () => {
-  it("offers CPF OTP first and passkey as the explicit secondary production action", () => {
+  it("offers direct CPF first and passkey as the explicit secondary production action", () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("PROD", true);
 
     render(<LoginPage />);
 
     expect(
-      screen.getByRole("button", { name: "Enviar código" }),
+      screen.getByRole("button", { name: "Entrar" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Entrar com passkey" }),
@@ -66,49 +59,56 @@ describe("LoginPage access methods", () => {
     );
   });
 
-  it("stores the safe OTP profile and navigates after a CPF challenge is confirmed", async () => {
+  it("authenticates the active collaborator directly with the canonical CPF", async () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("PROD", true);
-    mocks.requestCpfOtpChallenge.mockResolvedValue({
-      challengeId: "00000000-0000-4000-8000-000000000003",
+    mocks.autenticarPorCpf.mockResolvedValue({
+      profile,
+      offlineGrant: "READY",
     });
-    mocks.verifyEmailOtpChallenge.mockResolvedValue(profile);
     const user = userEvent.setup();
+    const navigate = vi.fn();
+    vi.stubGlobal("location", { assign: navigate });
 
     render(<LoginPage />);
 
     await user.type(screen.getByRole("textbox", { name: "CPF" }), "11144477735");
-    await user.click(screen.getByRole("button", { name: "Enviar código" }));
-
-    expect(mocks.requestCpfOtpChallenge).toHaveBeenCalledWith("11144477735");
-
-    await user.type(
-      await screen.findByRole("textbox", { name: "Código de acesso" }),
-      "123456",
-    );
-
-    const navigate = vi.fn();
-    vi.stubGlobal("location", { assign: navigate });
-
-    await user.click(screen.getByRole("button", { name: "Confirmar acesso" }));
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
 
     await waitFor(() => {
-      expect(mocks.setSession).toHaveBeenCalledWith(profile);
+      expect(mocks.autenticarPorCpf).toHaveBeenCalledWith("11144477735");
     });
-    expect(mocks.verifyEmailOtpChallenge).toHaveBeenCalledWith(
-      "00000000-0000-4000-8000-000000000003",
-      "123456",
+    expect(navigate).toHaveBeenCalledWith("/");
+    expect(screen.queryByText(/código|e-mail/i)).not.toBeInTheDocument();
+  });
+
+  it("reports a nonfatal offline-cache warning without blocking the online session", async () => {
+    mocks.autenticarPorCpf.mockResolvedValue({
+      profile,
+      offlineGrant: "UNAVAILABLE",
+    });
+    const navigate = vi.fn();
+    vi.stubGlobal("location", { assign: navigate });
+    const user = userEvent.setup();
+
+    render(<LoginPage />);
+
+    await user.type(screen.getByRole("textbox", { name: "CPF" }), "111.444.777-35");
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Acesso realizado, mas o acesso offline não pôde ser atualizado neste dispositivo.",
     );
     expect(navigate).toHaveBeenCalledWith("/");
   });
 
-  it("keeps the same secure CPF-to-code primary flow in local development", () => {
+  it("keeps the same direct CPF primary flow in local development", () => {
     vi.stubEnv("DEV", true);
     vi.stubEnv("PROD", false);
 
     render(<LoginPage />);
 
-    expect(screen.getByRole("button", { name: "Enviar código" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Entrar" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Entrar com passkey" }),
     ).toBeInTheDocument();

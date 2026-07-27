@@ -310,6 +310,17 @@
   font-weight: 700;
 }
 
+.login__warning {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #b89a00;
+  border-radius: var(--radius-control);
+  background: #fff8cf;
+  color: #4f4200;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 /* Nota de acesso restrito / suporte */
 .login__hint {
   margin: 22px 0 0;

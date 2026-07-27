@@ -15,7 +15,10 @@ import {
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
-import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
+import {
+  hasCollaborativeOfflineGrantMetadata,
+  loadOfflineVaultMetadata,
+} from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
 import { useAppAutomaticSync } from "./appAutomaticSync";
@@ -112,6 +115,8 @@ function App({ initialAuthUnavailable = false }: AppProps) {
   const [online, setOnline] = useState(() => navigator.onLine);
   const [offlineVault, setOfflineVault] =
     useState<OfflineVaultMetadata | null>(null);
+  const [hasCollaborativeCpfGrant, setHasCollaborativeCpfGrant] =
+    useState(false);
   const [vaultChecked, setVaultChecked] = useState(false);
 
   useAppAutomaticSync(session);
@@ -135,16 +140,14 @@ function App({ initialAuthUnavailable = false }: AppProps) {
 
   useEffect(() => {
     let cancelled = false;
-    loadOfflineVaultMetadata()
-      .then((metadata) => {
+    Promise.all([
+      loadOfflineVaultMetadata().catch(() => null),
+      hasCollaborativeOfflineGrantMetadata().catch(() => false),
+    ])
+      .then(([metadata, hasCpfGrant]) => {
         if (!cancelled) {
           setOfflineVault(metadata);
-          setVaultChecked(true);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setOfflineVault(null);
+          setHasCollaborativeCpfGrant(hasCpfGrant);
           setVaultChecked(true);
         }
       });
@@ -168,7 +171,7 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     };
   }, []);
 
-  // Sem sessão online, somente um grant assinado aberto por PRF libera o cache.
+  // Sem sessão online, somente um grant assinado validado libera o cache.
   if (!session) {
     if (!vaultChecked) {
       return (
@@ -177,10 +180,14 @@ function App({ initialAuthUnavailable = false }: AppProps) {
         </main>
       );
     }
-    if (offlineVault && (!online || initialAuthUnavailable)) {
+    if (
+      (offlineVault || hasCollaborativeCpfGrant) &&
+      (!online || initialAuthUnavailable)
+    ) {
       return (
         <OfflineUnlockPage
-          metadata={offlineVault}
+          passkeyMetadata={offlineVault}
+          hasCollaborativeCpfGrant={hasCollaborativeCpfGrant}
           canRetryOnline={online}
         />
       );

@@ -80,6 +80,11 @@ export async function loadCollaborativeOfflineGrantMetadata(
   return await database.get("cpf_grants", cpfHash) ?? null;
 }
 
+export async function hasCollaborativeOfflineGrantMetadata(): Promise<boolean> {
+  const database = await getVaultDatabase();
+  return (await database.count("cpf_grants")) > 0;
+}
+
 function getVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {
   databasePromise ??= openVaultDatabase();
   return databasePromise;

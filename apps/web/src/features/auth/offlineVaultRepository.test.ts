@@ -8,6 +8,7 @@ import type {
   OfflineVaultMetadata,
 } from "./offlineVault.types";
 import {
+  hasCollaborativeOfflineGrantMetadata,
   loadOfflineVaultMetadata,
   saveCollaborativeOfflineGrantMetadata,
 } from "./offlineVaultRepository";
@@ -63,8 +64,10 @@ describe("repositório de cofres offline", () => {
       atualizadoEm: "2026-07-14T12:01:00Z",
     };
 
+    expect(await hasCollaborativeOfflineGrantMetadata()).toBe(false);
     await saveCollaborativeOfflineGrantMetadata(grant);
 
+    expect(await hasCollaborativeOfflineGrantMetadata()).toBe(true);
     expect(await loadOfflineVaultMetadata()).toEqual(legacyVault);
     const upgraded = await openDB(databaseName);
     expect([...upgraded.objectStoreNames]).toEqual(expect.arrayContaining([

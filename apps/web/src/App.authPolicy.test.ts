@@ -14,9 +14,10 @@ describe("App normal authentication policy", () => {
     );
     expect(source).not.toContain("EmailOtpAccessForm");
     expect(source).not.toContain("PostgresqlAccessPage");
+    expect(source).toContain("hasCollaborativeOfflineGrantMetadata");
 
     const offlineUnlockDecision = source.indexOf(
-      "if (offlineVault && (!online || initialAuthUnavailable))",
+      "(offlineVault || hasCollaborativeCpfGrant)",
     );
     const loginFallback = source.indexOf("return <LoginPage />;");
 

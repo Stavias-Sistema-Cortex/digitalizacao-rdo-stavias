@@ -13,31 +13,22 @@ import {
   validateLoginForm,
   type LoginFieldErrors,
 } from "./loginValidation";
-import { setSession } from "./authSession";
-import {
-  requestCpfOtpChallenge,
-  verifyEmailOtpChallenge,
-} from "./emailOtpApi";
+import { autenticarPorCpf } from "./authService";
 import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
 
-type LoginStep = "cpf" | "code";
-type SubmitStatus = "idle" | "passkey" | "request" | "verify";
+type SubmitStatus = "idle" | "cpf" | "passkey";
 
 export function LoginPage() {
   const cpfId = useId();
-  const codeId = useId();
   const cpfRef = useRef<HTMLInputElement>(null);
-  const codeRef = useRef<HTMLInputElement>(null);
 
   const [cpf, setCpf] = useState("");
-  const [code, setCode] = useState("");
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [step, setStep] = useState<LoginStep>("cpf");
   const [errors, setErrors] = useState<LoginFieldErrors>({});
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [authError, setAuthError] = useState("");
+  const [cacheWarning, setCacheWarning] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
 
   const loading = status !== "idle";
@@ -57,13 +48,7 @@ export function LoginPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (step === "code") {
-      codeRef.current?.focus();
-    }
-  }, [step]);
-
-  async function requestCode(
+  async function authenticateCpf(
     event: SubmitEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
@@ -72,6 +57,7 @@ export function LoginPage() {
     }
 
     setAuthError("");
+    setCacheWarning("");
     const nextErrors = validateLoginForm(cpf);
     setErrors(nextErrors);
     if (nextErrors.cpf) {
@@ -79,44 +65,20 @@ export function LoginPage() {
       return;
     }
 
-    setStatus("request");
+    setStatus("cpf");
     try {
-      const challenge = await requestCpfOtpChallenge(onlyDigits(cpf));
-      setChallengeId(challenge.challengeId);
-      setCode("");
-      setStep("code");
+      const result = await autenticarPorCpf(onlyDigits(cpf));
+      if (result.offlineGrant === "UNAVAILABLE") {
+        setCacheWarning(
+          "Acesso realizado, mas o acesso offline não pôde ser atualizado neste dispositivo.",
+        );
+      }
       setStatus("idle");
-    } catch (error: unknown) {
-      setStatus("idle");
-      setAuthError(errorMessage(error));
-      cpfRef.current?.focus();
-    }
-  }
-
-  async function confirmCode(
-    event: SubmitEvent<HTMLFormElement>,
-  ): Promise<void> {
-    event.preventDefault();
-    if (loading || !online || !challengeId) {
-      return;
-    }
-    if (!/^\d{6}$/.test(code)) {
-      setAuthError("Informe os seis dígitos recebidos por e-mail.");
-      codeRef.current?.focus();
-      return;
-    }
-
-    setStatus("verify");
-    setAuthError("");
-    try {
-      const profile = await verifyEmailOtpChallenge(challengeId, code);
-      setCode("");
-      setSession(profile);
       globalThis.location.assign("/");
     } catch (error: unknown) {
       setStatus("idle");
       setAuthError(errorMessage(error));
-      codeRef.current?.focus();
+      cpfRef.current?.focus();
     }
   }
 
@@ -126,6 +88,7 @@ export function LoginPage() {
     }
 
     setAuthError("");
+    setCacheWarning("");
     const nextErrors = validateLoginForm(cpf);
     setErrors(nextErrors);
     if (nextErrors.cpf) {
@@ -142,17 +105,6 @@ export function LoginPage() {
       setAuthError(errorMessage(error));
       cpfRef.current?.focus();
     }
-  }
-
-  function returnToCpf(): void {
-    if (loading) {
-      return;
-    }
-    setChallengeId(null);
-    setCode("");
-    setAuthError("");
-    setStep("cpf");
-    window.setTimeout(() => cpfRef.current?.focus(), 0);
   }
 
   return (
@@ -191,9 +143,7 @@ export function LoginPage() {
             <p className="login__eyebrow">Área restrita</p>
             <h2>Entrar no sistema</h2>
             <p className="login__subtitle">
-              {step === "cpf"
-                ? "Informe seu CPF para receber um código no e-mail institucional cadastrado."
-                : "Digite o código de seis dígitos enviado ao e-mail institucional cadastrado."}
+              Informe seu CPF para autenticar seu vínculo ativo de colaborador.
             </p>
           </header>
 
@@ -206,149 +156,101 @@ export function LoginPage() {
           <form
             className="login__form"
             onSubmit={(event) => {
-              void (step === "cpf" ? requestCode(event) : confirmCode(event));
+              void authenticateCpf(event);
             }}
             noValidate
           >
-            {step === "cpf" ? (
-              <div className="login-field">
-                <label className="login-field__label" htmlFor={cpfId}>
-                  CPF
-                </label>
-                <input
-                  ref={cpfRef}
-                  id={cpfId}
-                  className={
-                    errors.cpf
-                      ? "login-field__input login-field__input--error"
-                      : "login-field__input"
+            <div className="login-field">
+              <label className="login-field__label" htmlFor={cpfId}>
+                CPF
+              </label>
+              <input
+                ref={cpfRef}
+                id={cpfId}
+                className={
+                  errors.cpf
+                    ? "login-field__input login-field__input--error"
+                    : "login-field__input"
+                }
+                type="text"
+                inputMode="numeric"
+                autoComplete="username"
+                placeholder="000.000.000-00"
+                maxLength={14}
+                value={cpf}
+                onChange={(event) => {
+                  setCpf(formatCpf(event.target.value));
+                  if (errors.cpf) {
+                    setErrors({});
                   }
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="username"
-                  placeholder="000.000.000-00"
-                  maxLength={14}
-                  value={cpf}
-                  onChange={(event) => {
-                    setCpf(formatCpf(event.target.value));
-                    if (errors.cpf) {
-                      setErrors({});
-                    }
-                  }}
-                  aria-invalid={errors.cpf ? true : undefined}
-                  aria-describedby={errors.cpf ? `${cpfId}-error` : undefined}
-                  disabled={loading}
-                />
-                {errors.cpf ? (
-                  <p
-                    className="login-field__error"
-                    id={`${cpfId}-error`}
-                    role="alert"
-                  >
-                    {errors.cpf}
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="login-field">
-                <label className="login-field__label" htmlFor={codeId}>
-                  Código de acesso
-                </label>
-                <input
-                  ref={codeRef}
-                  id={codeId}
-                  className="login-field__input"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  placeholder="000000"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  value={code}
-                  onChange={(event) => {
-                    setCode(event.target.value.replace(/\D/g, "").slice(0, 6));
-                    if (authError) {
-                      setAuthError("");
-                    }
-                  }}
-                  aria-invalid={authError ? true : undefined}
-                  aria-describedby={authError ? `${codeId}-error` : undefined}
-                  disabled={loading}
-                />
-              </div>
-            )}
+                  if (authError) {
+                    setAuthError("");
+                  }
+                  if (cacheWarning) {
+                    setCacheWarning("");
+                  }
+                }}
+                aria-invalid={errors.cpf ? true : undefined}
+                aria-describedby={errors.cpf ? `${cpfId}-error` : undefined}
+                disabled={loading}
+              />
+              {errors.cpf ? (
+                <p
+                  className="login-field__error"
+                  id={`${cpfId}-error`}
+                  role="alert"
+                >
+                  {errors.cpf}
+                </p>
+              ) : null}
+            </div>
 
             <div className="login__actions">
-              {step === "cpf" ? (
-                <>
-                  <button
-                    type="submit"
-                    className="login__submit"
-                    disabled={loading || !online}
-                  >
-                    {status === "request" ? (
-                      <span className="login__submit-loading">
-                        <span className="login__spinner" aria-hidden="true" />
-                        Enviando código...
-                      </span>
-                    ) : (
-                      "Enviar código"
-                    )}
-                  </button>
+              <button
+                type="submit"
+                className="login__submit"
+                disabled={loading || !online}
+              >
+                {status === "cpf" ? (
+                  <span className="login__submit-loading">
+                    <span className="login__spinner" aria-hidden="true" />
+                    Verificando acesso...
+                  </span>
+                ) : (
+                  "Entrar"
+                )}
+              </button>
 
-                  <button
-                    type="button"
-                    className="login__submit login__submit-secondary"
-                    disabled={loading || !online}
-                    onClick={() => {
-                      void authenticatePasskey();
-                    }}
-                  >
-                    {status === "passkey" ? (
-                      <span className="login__submit-loading">
-                        <span className="login__spinner" aria-hidden="true" />
-                        Validando passkey...
-                      </span>
-                    ) : (
-                      "Entrar com passkey"
-                    )}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="submit"
-                    className="login__submit"
-                    disabled={loading || !online}
-                  >
-                    {status === "verify" ? (
-                      <span className="login__submit-loading">
-                        <span className="login__spinner" aria-hidden="true" />
-                        Confirmando acesso...
-                      </span>
-                    ) : (
-                      "Confirmar acesso"
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="login__submit login__submit-secondary"
-                    disabled={loading}
-                    onClick={returnToCpf}
-                  >
-                    Usar outro CPF
-                  </button>
-                </>
-              )}
+              <button
+                type="button"
+                className="login__submit login__submit-secondary"
+                disabled={loading || !online}
+                onClick={() => {
+                  void authenticatePasskey();
+                }}
+              >
+                {status === "passkey" ? (
+                  <span className="login__submit-loading">
+                    <span className="login__spinner" aria-hidden="true" />
+                    Validando passkey...
+                  </span>
+                ) : (
+                  "Entrar com passkey"
+                )}
+              </button>
             </div>
 
             {authError ? (
               <p
                 className="login__alert"
-                id={step === "code" ? `${codeId}-error` : undefined}
                 role="alert"
               >
                 {authError}
+              </p>
+            ) : null}
+            {cacheWarning ? (
+              <p className="login__warning" role="status">
+                {cacheWarning}
               </p>
             ) : null}
           </form>
