@@ -134,6 +134,7 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_AUTH_DEV_ADMIN_ENABLED=false",
                 "CORTEX_SYNC_ENABLED=true"
         ).doesNotContain(
+                "CORTEX_AUTH_OTP_",
                 "CORTEX_DB_URL=",
                 "CORTEX_DB_PASSWORD=",
                 "CORTEX_MYSQL_ROOT_PASSWORD=",

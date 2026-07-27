@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"
 source "$ROOT_DIR/scripts/dev/operational-memory-cursor-preflight.sh"
 source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 

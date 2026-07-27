@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"
 source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 
 canonical_database="$(cortex_postgres_database_name)"
@@ -56,7 +57,6 @@ docker run --rm \
   -e CORTEX_AUTH_PROVISIONING_ENABLED=false \
   -e CORTEX_IMPORT_ENABLED=false \
   -e CORTEX_SYNC_ENABLED=true \
-  -e CORTEX_EMAIL_PROVIDER="${CORTEX_EMAIL_PROVIDER:-fake}" \
   -e CORTEX_STORAGE_PROVIDER=local \
   -e CORTEX_STORAGE_LOCAL_ROOT=/var/lib/cortex/objects \
   -e CORTEX_STORAGE_LOCAL_PERSISTENT=true \

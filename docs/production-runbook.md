@@ -43,6 +43,12 @@ runtime normal não consulta Academy ou Zeladoria durante essa autenticação e
 não carrega configuração de OTP; e-mail/OTP pertence somente à ativação
 explícita `postgresql-activation`.
 
+O template normal `.env.example` não contém variáveis de OTP ou SMTP. A
+ativação deve receber seu ambiente próprio diretamente do gerenciador de
+segredos/orquestrador ao iniciar `start-postgres-activation.sh`; esse ambiente
+não pode ser compartilhado com `run-api.sh`, `run-compose.sh` ou
+`run-api-docker.sh`.
+
 O acesso offline é uma fronteira diferente. Um grant colaborativo assinado pode
 ser localizado e validado somente pelo CPF correspondente, enquanto o cofre PRF
 exige uma passkey previamente registrada. Nenhum dos dois cria autorização de

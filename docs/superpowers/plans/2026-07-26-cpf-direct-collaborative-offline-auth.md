@@ -411,6 +411,45 @@ contracts without weakening activation or passkey/CPF controls.
 Run focused web/API/PostgreSQL tests, source/Compose/secret checks, diff check,
 and update the verification document with the exact new proof.
 
+### Task 7: Provar o ambiente e os argumentos executados dos launchers normais
+
+**Files:**
+- Modify: normal local launcher scripts and a small shared normal-runtime
+  environment helper as needed
+- Modify: `.env.example` and activation documentation as needed
+- Modify: `apps/web/scripts/verify-stavia-boundary.mjs` and boundary tests
+- Add: deterministic shell launcher-contract test under `scripts/security/`
+- Modify: deployment verification/documentation and Task plan
+
+**Interfaces:**
+- Normal launchers remove activation/legacy environment variables after loading
+  local files and before Maven/Docker/Compose execute; this includes generic
+  `*OTP*`, email/SMTP and legacy finance-delivery variables.
+- The test must execute the launcher control flow with safe stubbed Docker
+  commands and prove selected port values reach actual arguments/environment;
+  lexically parked strings in an unused function do not count.
+- Existing user secrets are never copied or printed. Explicit activation
+  continues to receive its distinct OTP/SMTP configuration.
+
+- [x] **Step 1: Add failing dynamic launcher tests**
+
+Use a controlled environment with fake executables to demonstrate current
+activation-variable leakage and a Docker command whose actual port arguments
+are not the reviewed values. Add exact adversarial boundary mutations from the
+independent review.
+
+- [x] **Step 2: Implement normal-runtime sanitization and real argument proof**
+
+Add the minimal reusable Bash helper, source it from every normal launcher after
+the generic local env loader, remove activation settings from the normal template,
+and make tests assert the captured process environment and Docker arguments.
+Keep port/CSRF/WebAuthn semantics intact.
+
+- [x] **Step 3: Verify and commit**
+
+Run focused web/API/runtime and shell contracts, then the secret/Compose gates,
+diff check, and exact same-worktree local smoke after the final review.
+
 ## Plan self-review
 
 - Task 1 covers canonical Academy identity, normal/activation route separation, rate limiting, readiness, cookies, CSRF, and PostgreSQL proof.
@@ -421,4 +460,6 @@ and update the verification document with the exact new proof.
   retired normal OTP requirement or fixed-origin confusion.
 - Task 6 prevents bypasses in that runtime contract and removes the legacy
   charge/e-mail graph from the revenue-only PostgreSQL deployment.
+- Task 7 validates the actual child-process environment and launcher arguments,
+  closing the remaining lexical-verifier bypasses.
 - No task queries Academy/Zeladoria MySQL on a browser request or fabricates operational data.

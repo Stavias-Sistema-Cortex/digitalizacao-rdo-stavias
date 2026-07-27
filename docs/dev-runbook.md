@@ -41,6 +41,17 @@ para fazer o runtime parecer pronto. Consulte
 [cortex-postgresql-clean-start.md](operations/cortex-postgresql-clean-start.md)
 para a transição e o rollback.
 
+### Ambiente separado de ativação
+
+`.env.example` descreve somente o runtime normal e, por isso, não contém OTP,
+SMTP nem entrega financeira legada. Quando a transição de ativação for
+necessária, forneça `CORTEX_AUTH_OTP_HMAC_KEY_FILE`, `CORTEX_EMAIL_PROVIDER`,
+`CORTEX_SMTP_HOST`, `CORTEX_SMTP_USERNAME`, `CORTEX_SMTP_FROM` e
+`CORTEX_SMTP_PASSWORD_FILE` somente ao processo
+`start-postgres-activation.sh`, junto das variáveis PostgreSQL e da origem
+pública exigidas pelo script. Não grave essas variáveis em `.env` ou
+`.env.local`, pois esses arquivos são carregados pelos launchers normais.
+
 ## Stack Docker local
 
 Depois de concluir os gates acima e definir

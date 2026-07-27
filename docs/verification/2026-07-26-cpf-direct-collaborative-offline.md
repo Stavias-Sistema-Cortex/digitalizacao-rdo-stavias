@@ -260,3 +260,49 @@ criam e-mail, enquanto a ativação explícita e o deployment legado continuam
 compatíveis. O launcher shell agora exporta a porta selecionada como
 `SERVER_PORT`, alinhando o health check com a porta realmente usada pelo
 Spring Boot.
+
+## Prova executável dos launchers normais
+
+O RED adversarial registrou três falhas estáticas reais: `OTP` genérico não era
+detectado, uma segunda atribuição `API_PORT=8081` passava pelo contrato e os
+argumentos Docker revisados podiam ficar estacionados em uma função nunca
+chamada. O contrato shell também saiu com código 1 porque os ambientes-filho
+herdavam nomes OTP/SMTP/e-mail carregados pelo `.env`.
+
+O runtime normal agora carrega um sanitizador imediatamente depois do loader
+local. Antes de Maven, Docker ou Compose, ele remove todo nome de ambiente com
+`OTP` e as famílias `CORTEX_EMAIL_*`, `CORTEX_SMTP_*` e
+`CORTEX_FINANCE_EMAIL_*`. PostgreSQL, HMAC de CPF, grant offline, cursor,
+portas e sync permanecem disponíveis. `.env.example` contém somente o runtime
+normal; a ativação recebe OTP/SMTP em um processo separado.
+
+GREEN:
+
+```text
+npm --prefix apps/web test -- --run src/staviaRuntimeBoundary.test.ts
+1 arquivo; 30 testes; 30 passaram.
+
+node apps/web/scripts/verify-stavia-boundary.mjs --source
+StavIA source boundary verified.
+
+bash scripts/security/test-normal-runtime-launchers.sh
+Normal launcher child environments and selected port arguments passed.
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+  ./mvnw -Dtest='PostgresqlLocalRuntimeContractTest,EmailConfigurationTest,PostgresqlMinimalLauncherContractTest' test
+24 testes; 0 falhas; 0 erros.
+
+bash scripts/security/test-local-compose-security.sh
+Local PostgreSQL/loopback, normal-runtime OTP/e-mail isolation, production
+secret-mount, source-read-only wiring, and container hardening contracts
+passed.
+
+bash scripts/security/scan-cortex-secrets.sh
+Cortex secret scan passed: no unreviewed literal candidates.
+```
+
+O contrato shell copia os launchers para um diretório temporário, cria somente
+arquivos descartáveis, coloca `docker`, `lsof` e `mvnw` falsos no `PATH` e
+executa o fluxo real dos scripts. Ele comprovou os binds
+`127.0.0.1:18091:8080`, `CORTEX_WEB_PORT=15473` e `SERVER_PORT=18092` sem abrir
+portas, iniciar containers, matar processos ou ler credenciais locais.

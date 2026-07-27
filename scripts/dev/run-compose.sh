@@ -10,6 +10,7 @@ if [ ! -f "$COMPOSE_FILE" ]; then
 fi
 
 source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"
 source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 
 cortex_require_postgres_url

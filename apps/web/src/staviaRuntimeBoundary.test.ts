@@ -70,6 +70,8 @@ function validNormalRuntimeFixtures(): Array<{ path: string; content: string }> 
     {
       path: "scripts/dev/run-api.sh",
       content: [
+        'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+        'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
         'API_PORT="${PORT:-${SERVER_PORT:-8080}}"',
         'export SERVER_PORT="$API_PORT"',
         'API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"',
@@ -80,6 +82,8 @@ function validNormalRuntimeFixtures(): Array<{ path: string; content: string }> 
     {
       path: "scripts/dev/run-compose.sh",
       content: [
+        'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+        'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
         'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
         'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
         "export CORTEX_WEB_PORT CORTEX_API_PORT",
@@ -92,11 +96,17 @@ function validNormalRuntimeFixtures(): Array<{ path: string; content: string }> 
     {
       path: "scripts/dev/run-api-docker.sh",
       content: [
+        'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+        'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
         'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
         'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
         'docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
         '  -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
       ].join("\n"),
+    },
+    {
+      path: "scripts/dev/normal-runtime-env.sh",
+      content: "unset_normal_runtime_activation_environment",
     },
     {
       path: "scripts/dev/start-postgres-activation.sh",
@@ -416,6 +426,38 @@ describe("StavIA runtime boundary", () => {
     }
   });
 
+  it("rejects a generic OTP variable from every normal-runtime launcher", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+
+    for (const runtimePath of [
+      "scripts/dev/run-api.sh",
+      "scripts/dev/run-compose.sh",
+      "scripts/dev/run-api-docker.sh",
+    ]) {
+      const fixtures = [
+        ...validCleanupFixtures(),
+        ...validNormalRuntimeFixtures().map((fixture) =>
+          fixture.path === runtimePath
+            ? {
+                ...fixture,
+                content: `${fixture.content}\nexport OTP=activation-only`,
+              }
+            : fixture,
+        ),
+      ];
+
+      expect(
+        inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+        runtimePath,
+      ).toContain(
+        `${runtimePath}: normal PostgreSQL runtime must not contain OTP tokens, mounts, or exports`,
+      );
+    }
+  });
+
   it("rejects fixed operational ports even when configurable declarations are present", () => {
     const inspectStrict = inspectSourceBoundary as (
       files: Array<{ path: string; content: string }>,
@@ -467,6 +509,33 @@ describe("StavIA runtime boundary", () => {
     );
   });
 
+  it("rejects a later API_PORT override after the selected fallback", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'export SERVER_PORT="$API_PORT"',
+                'API_PORT=8081\nexport SERVER_PORT="$API_PORT"',
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: fixed operational port 5173/8081 bypasses the selected port variables",
+    );
+  });
+
   it("requires selected port variables in executable launcher consumers", () => {
     const inspectStrict = inspectSourceBoundary as (
       files: Array<{ path: string; content: string }>,
@@ -483,6 +552,40 @@ describe("StavIA runtime boundary", () => {
                 'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
                 '# -p "127.0.0.1:${CORTEX_API_PORT}:8080"',
                 '# -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT"',
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores reviewed Docker fragments parked in an uncalled function", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "reviewed_docker_arguments() {",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
                 "docker run cortex-api:local",
               ].join("\n"),
             }

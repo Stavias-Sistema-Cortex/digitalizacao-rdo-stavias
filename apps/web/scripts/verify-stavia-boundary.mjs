@@ -847,6 +847,7 @@ const REQUIRED_NORMAL_RUNTIME_PATHS = [
   "scripts/dev/run-api.sh",
   "scripts/dev/run-compose.sh",
   "scripts/dev/run-api-docker.sh",
+  "scripts/dev/normal-runtime-env.sh",
   "scripts/dev/start-postgres-activation.sh",
   ".env.example",
   ".env.postgresql.example",
@@ -869,7 +870,7 @@ function executableContractText(content) {
 }
 
 function hasOtpRuntimeToken(content) {
-  return /\b(?:CORTEX_[A-Z0-9_]*OTP[A-Z0-9_]*|[A-Z0-9_]*OTP[A-Z0-9_]*(?:_FILE|_SECRET|_TOKEN|_KEY)|cortex[_-]otp[a-z0-9_-]*)\b/i.test(
+  return /\b(?:[A-Z0-9_]*OTP[A-Z0-9_]*|cortex[_-]otp[a-z0-9_-]*)\b/i.test(
     executableContractText(content),
   );
 }
@@ -880,9 +881,44 @@ function hasFixedLocalOperationalPort(content) {
     /https?:\/\/(?:localhost|127\.0\.0\.1):(?:5173|8081)\b|127\.0\.0\.1:(?:5173|8081):|--port[=\s]+(?:5173|8081)\b/.test(
       executable,
     ) ||
-    /(?:^|\n)\s*(?:export\s+)?(?:CORTEX_WEB_PORT|CORTEX_API_PORT)\s*=\s*["']?(?:5173|8081)["']?\s*(?:$|\n)/m.test(
+    /(?:^|\n)\s*(?:export\s+)?(?:CORTEX_WEB_PORT|CORTEX_API_PORT|API_PORT)\s*=\s*["']?(?:5173|8081)["']?\s*(?:$|\n)/m.test(
       executable,
     )
+  );
+}
+
+function topLevelExecutableContractText(content) {
+  const executableLines = executableContractText(content).split(/\r?\n/);
+  const topLevelLines = [];
+  let functionDepth = 0;
+
+  for (const line of executableLines) {
+    const trimmed = line.trim();
+    if (
+      functionDepth === 0 &&
+      /^(?:function\s+)?[A-Za-z_][A-Za-z0-9_]*\s*(?:\(\s*\))?\s*\{/.test(
+        trimmed,
+      )
+    ) {
+      functionDepth =
+        (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      continue;
+    }
+    if (functionDepth > 0) {
+      functionDepth +=
+        (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      continue;
+    }
+    topLevelLines.push(line);
+  }
+
+  return topLevelLines.join("\n");
+}
+
+function sourcesNormalRuntimeSanitizer(content) {
+  const executable = executableContractText(content);
+  return /source\s+"\$ROOT_DIR\/scripts\/dev\/load-local-env\.sh"\s*\n\s*source\s+"\$ROOT_DIR\/scripts\/dev\/normal-runtime-env\.sh"/.test(
+    executable,
   );
 }
 
@@ -905,6 +941,19 @@ function inspectNormalRuntimeContracts(files, requireFiles) {
     if (content !== undefined && hasOtpRuntimeToken(content)) {
       violations.push(
         `${runtimePath}: normal PostgreSQL runtime must not contain OTP tokens, mounts, or exports`,
+      );
+    }
+  }
+
+  for (const runtimePath of [
+    "scripts/dev/run-api.sh",
+    "scripts/dev/run-compose.sh",
+    "scripts/dev/run-api-docker.sh",
+  ]) {
+    const content = byPath.get(runtimePath);
+    if (content !== undefined && !sourcesNormalRuntimeSanitizer(content)) {
+      violations.push(
+        `${runtimePath}: normal-runtime environment sanitizer must run immediately after the local env loader`,
       );
     }
   }
@@ -966,12 +1015,16 @@ function inspectNormalRuntimeContracts(files, requireFiles) {
 
   const runDocker = byPath.get("scripts/dev/run-api-docker.sh");
   if (runDocker !== undefined) {
-    const executable = executableContractText(runDocker);
+    const executable = topLevelExecutableContractText(runDocker).replace(
+      /\\\s*\n/g,
+      " ",
+    );
     if (
       !/CORTEX_WEB_PORT="\$\{CORTEX_WEB_PORT:-5173}"/.test(executable) ||
       !/CORTEX_API_PORT="\$\{CORTEX_API_PORT:-8081}"/.test(executable) ||
-      !/-p\s+"127\.0\.0\.1:\$\{CORTEX_API_PORT}:8080"/.test(executable) ||
-      !/-e\s+CORTEX_WEB_PORT="\$CORTEX_WEB_PORT"/.test(executable)
+      !/docker\s+run\b[^\n]*-p\s+"127\.0\.0\.1:\$\{CORTEX_API_PORT}:8080"[^\n]*-e\s+CORTEX_WEB_PORT="\$CORTEX_WEB_PORT"/.test(
+        executable,
+      )
     ) {
       violations.push(
         "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
