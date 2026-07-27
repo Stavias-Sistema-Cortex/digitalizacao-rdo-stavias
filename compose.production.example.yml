@@ -37,17 +37,6 @@ services:
       CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID:?Set the deployed memory cursor key id}
       CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_memory_cursor_hmac
 
-      # SMTP is not an authentication mechanism in this runtime. It remains
-      # available for idempotent finance delivery when that scheduler is on.
-      CORTEX_EMAIL_PROVIDER: smtp
-      CORTEX_EMAIL_SENDER_PROFILE_KEY: ${CORTEX_EMAIL_SENDER_PROFILE_KEY:?Set the authenticated sender profile key}
-      CORTEX_SMTP_FROM: ${CORTEX_SMTP_FROM:?Set the authenticated Córtex From mailbox}
-      CORTEX_SMTP_HOST: ${CORTEX_SMTP_HOST:?Set the SMTP hostname}
-      CORTEX_SMTP_PORT: ${CORTEX_SMTP_PORT:-587}
-      CORTEX_SMTP_USERNAME: ${CORTEX_SMTP_USERNAME:?Set the SMTP username}
-      CORTEX_SMTP_PASSWORD_FILE: /run/secrets/cortex_smtp_password
-      CORTEX_SMTP_STARTTLS: "true"
-
       CORTEX_STORAGE_PROVIDER: ${CORTEX_STORAGE_PROVIDER:-local}
       CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
       CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
@@ -56,13 +45,6 @@ services:
       CORTEX_STORAGE_S3_ENDPOINT: ${CORTEX_STORAGE_S3_ENDPOINT:-}
       CORTEX_STORAGE_S3_PREFIX: ${CORTEX_STORAGE_S3_PREFIX:-production}
       CORTEX_STORAGE_S3_PATH_STYLE: ${CORTEX_STORAGE_S3_PATH_STYLE:-false}
-
-      CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED: ${CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:-true}
-      CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE: ${CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE:-25}
-      CORTEX_FINANCE_EMAIL_RETRY_MAX_ATTEMPTS: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_ATTEMPTS:-4}
-      CORTEX_FINANCE_EMAIL_RETRY_INITIAL_DELAY_SECONDS: ${CORTEX_FINANCE_EMAIL_RETRY_INITIAL_DELAY_SECONDS:-120}
-      CORTEX_FINANCE_EMAIL_RETRY_MAX_DELAY_SECONDS: ${CORTEX_FINANCE_EMAIL_RETRY_MAX_DELAY_SECONDS:-3600}
-      CORTEX_FINANCE_EMAIL_DISPATCH_LEASE_SECONDS: ${CORTEX_FINANCE_EMAIL_DISPATCH_LEASE_SECONDS:-120}
 
       CORTEX_IMPORT_ENABLED: "false"
       CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-false}
@@ -83,7 +65,6 @@ services:
       - cortex_offline_private
       - cortex_offline_public
       - cortex_memory_cursor_hmac
-      - cortex_smtp_password
     volumes:
       - cortex_object_data:/var/lib/cortex/objects
     networks:
@@ -139,8 +120,6 @@ secrets:
     file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:?Point to the public PEM}
   cortex_memory_cursor_hmac:
     file: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:?Point to the memory cursor HMAC secret file}
-  cortex_smtp_password:
-    file: ${CORTEX_SMTP_PASSWORD_FILE:?Point to the SMTP password file}
 
 volumes:
   cortex_object_data:

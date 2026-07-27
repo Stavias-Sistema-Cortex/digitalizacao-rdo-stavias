@@ -7,12 +7,25 @@ import com.projeto.cortex.auth.identity.PostgresqlEmailOtpIdentityLookup;
 import com.projeto.cortex.auth.otp.PostgresqlCpfIdentifierNormalizer;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.auth.webauthn.WebAuthnController;
+import com.projeto.cortex.email.EmailConfiguration;
+import com.projeto.cortex.email.EmailGateway;
+import com.projeto.cortex.email.FakeEmailGateway;
 import com.projeto.cortex.financeiro.ItemContratualController;
 import com.projeto.cortex.financeiro.allocation.FinanceAllocationSyncOperationHandler;
 import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetSyncOperationHandler;
 import com.projeto.cortex.financeiro.catalog.ServiceCatalogSyncOperationHandler;
 import com.projeto.cortex.financeiro.catalog.ServicePriceVersionSyncOperationHandler;
+import com.projeto.cortex.financeiro.cobranca.FinanceAutomaticChargeService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeCatalogController;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeCatalogService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeController;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeDeliveryService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeOccurrenceCalculator;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeRetryPolicy;
 import com.projeto.cortex.financeiro.cobranca.FinanceChargeScheduler;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeTargetReader;
+import com.projeto.cortex.financeiro.cobranca.FinanceEmailSenderConfiguration;
 import com.projeto.cortex.financeiro.core.sync.FinancePurchaseSyncOperationHandler;
 import com.projeto.cortex.financeiro.core.sync.FinanceSolicitationSyncOperationHandler;
 import com.projeto.cortex.financeiro.invoice.sync.FinanceInvoiceSyncOperationHandler;
@@ -66,9 +79,7 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
     @Container
     private static final PostgreSQLContainer<?> DATABASE =
             database();
-    private static final Path OTP_KEY_FILE = secretFile('a');
     private static final Path CPF_KEY_FILE = secretFile('b');
-    private static final Path SMTP_PASSWORD_FILE = secretFile('c');
     private static final Path MEMORY_CURSOR_KEY_FILE = secretFile('d');
     private static final OfflineKeyFiles OFFLINE_KEYS = offlineKeyFiles();
 
@@ -80,14 +91,8 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         properties.add("spring.datasource.username", DATABASE::getUsername);
         properties.add("spring.datasource.password", DATABASE::getPassword);
         properties.add("cortex.postgresql.runtime-ready", () -> "true");
-        properties.add("cortex.auth.otp.hmac-key-file", OTP_KEY_FILE::toString);
         properties.add("cortex.auth.cpf-hmac.current-key-id", () -> "runtime-it");
         properties.add("cortex.auth.cpf-hmac.current-key-file", CPF_KEY_FILE::toString);
-        properties.add("cortex.email.provider", () -> "smtp");
-        properties.add("cortex.email.from", () -> "runtime.it@fixture.invalid");
-        properties.add("cortex.email.smtp.host", () -> "127.0.0.1");
-        properties.add("cortex.email.smtp.username", () -> "runtime-it");
-        properties.add("cortex.email.smtp.password-file", SMTP_PASSWORD_FILE::toString);
         properties.add("cortex.storage.provider", () -> "s3");
         properties.add("cortex.storage.s3.bucket", () -> "runtime-it");
         properties.add("cortex.storage.s3.region", () -> "us-east-1");
@@ -200,6 +205,35 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         assertThat(context.getBeansOfType(FinancialUnitSyncOperationHandler.class))
                 .isEmpty();
         assertThat(context.getBeansOfType(FinanceChargeScheduler.class)).isEmpty();
+    }
+
+    @Test
+    void excludesLegacyChargeAndEmailBeanGraphFromNormalPostgresqlRuntime() {
+        assertThat(context.getBeansOfType(FinanceAutomaticChargeService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeCatalogController.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeCatalogService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeController.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeDeliveryService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeOccurrenceCalculator.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeRetryPolicy.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeScheduler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeTargetReader.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceEmailSenderConfiguration.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(EmailConfiguration.class)).isEmpty();
+        assertThat(context.getBeansOfType(EmailGateway.class)).isEmpty();
+        assertThat(context.getBeansOfType(FakeEmailGateway.class)).isEmpty();
     }
 
     @Test

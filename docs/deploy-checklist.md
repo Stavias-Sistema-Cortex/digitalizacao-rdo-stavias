@@ -56,17 +56,19 @@ estado; `/api/health` mede somente o processo.
 
 - [ ] CPF HMAC e chave privada offline vêm de arquivos secretos montados; os
   equivalentes inline estão vazios. OTP HMAC é requisito apenas do deployment
-  de ativação explícita, nunca do runtime normal. SMTP no runtime normal serve
-  exclusivamente à entrega operacional do scheduler financeiro e nunca
-  autentica usuário.
+  de ativação explícita, nunca do runtime normal. O runtime normal
+  `production,postgresql` não instancia `EmailGateway`, não configura SMTP e
+  não executa o scheduler legado de cobranças.
 - [ ] As URLs, usuários e arquivos de senha de Academy/Zeladoria são distintos
   do PostgreSQL canônico, montados por Config Tree, e os usuários das fontes
   têm somente `SELECT` no schema explicitamente autorizado.
 - [ ] `CORTEX_AUTH_DEV_ADMIN_ENABLED=false` e
   `CORTEX_AUTH_PROVISIONING_ENABLED=false` no processo web.
 - [ ] Quando a ativação explícita for executada, `CORTEX_EMAIL_PROVIDER=smtp`;
-  provider `fake` não é usado para essa transição real. O deployment normal
-  também valida SMTP quando o scheduler financeiro estiver habilitado.
+  provider `fake` não é usado para essa transição real. As variáveis e o
+  arquivo secreto SMTP pertencem somente a esse processo de ativação (ou a um
+  deployment legado explicitamente marcado `legacy-finance`), nunca ao login
+  ou ao Compose normal.
 - [ ] Nenhuma senha, OTP, CPF, token de sessão ou conteúdo de mensagem aparece
   em logs, imagem, compose ou repositório.
 
@@ -152,7 +154,7 @@ git diff --check
 
 ## Limite de evidência externa
 
-Build e fake SMTP comprovam contrato, segurança e idempotência; não comprovam
-entrega pela caixa Stavias real. S3/SMTP/Graph só podem ser declarados validados
-depois de um smoke no ambiente com credenciais próprias. Sem essas credenciais,
-o handoff deve registrar essa dependência como não verificada.
+Build e testes locais comprovam o contrato do runtime normal, mas não comprovam
+S3/Graph nem a entrega SMTP do processo isolado de ativação. Esses itens só
+podem ser declarados validados depois de um smoke no ambiente com credenciais
+próprias; sem elas, o handoff deve registrar a dependência como não verificada.

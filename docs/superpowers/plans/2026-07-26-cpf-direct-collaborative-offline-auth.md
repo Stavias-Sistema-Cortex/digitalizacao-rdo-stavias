@@ -368,6 +368,49 @@ Run the source verifier and relevant focused web tests, then `git diff --check`.
 Record the exact evidence in the existing verification document and commit the
 correction separately.
 
+### Task 6: Fechar a fronteira revenue-only e tornar o verificador não contornável
+
+**Files:**
+- Modify: `apps/web/scripts/verify-stavia-boundary.mjs`
+- Modify: `apps/api/src/test/java/com/projeto/cortex/postgresql/PostgresqlLocalRuntimeContractTest.java`
+- Modify: `apps/api/src/test/java/com/projeto/cortex/postgresql/PostgresqlCortexRuntimeIT.java`
+- Modify: `apps/api/src/main/java/com/projeto/cortex/email/EmailConfiguration.java`
+- Modify: `apps/api/src/main/java/com/projeto/cortex/email/FakeEmailGateway.java`
+- Modify: all Spring component types under `apps/api/src/main/java/com/projeto/cortex/financeiro/cobranca/`
+- Modify: `compose.production.example.yml`
+- Modify: `.env.example`, `.env.postgresql.example`
+- Modify: `scripts/security/test-local-compose-security.sh`
+- Modify: relevant deployment/docs verification files
+
+**Interfaces:**
+- A missing expected launcher/config file is a verifier failure, never a skipped
+  check. Every normal launcher rejects every OTP token form and fixed
+  operational bind/URL form, while the default-port declaration itself remains
+  permitted.
+- The normal `postgresql` revenue-only runtime has no legacy charge/delivery
+  bean graph and therefore no `EmailGateway` or SMTP requirement. Explicit
+  activation and `legacy-finance` retain their isolated e-mail behavior.
+- Production Compose for normal PostgreSQL does not mount OTP or SMTP secrets;
+  its documentation must not claim a legacy scheduler is live.
+
+- [x] **Step 1: Add failing runtime and verifier assertions**
+
+Prove the missing-file/OTP/fixed-port negative cases in the source verifier and
+prove the normal PostgreSQL context has no legacy charge or e-mail gateway
+beans. Capture red evidence.
+
+- [x] **Step 2: Implement the isolated legacy graph**
+
+Profile all legacy charge Spring beans consistently, gate the e-mail
+configuration/fake gateway out of normal PostgreSQL, and remove now-unneeded
+SMTP settings/secrets from normal production. Strengthen the static and Java
+contracts without weakening activation or passkey/CPF controls.
+
+- [x] **Step 3: Verify and commit**
+
+Run focused web/API/PostgreSQL tests, source/Compose/secret checks, diff check,
+and update the verification document with the exact new proof.
+
 ## Plan self-review
 
 - Task 1 covers canonical Academy identity, normal/activation route separation, rate limiting, readiness, cookies, CSRF, and PostgreSQL proof.
@@ -376,4 +419,6 @@ correction separately.
 - Task 4 covers the screenshot's host mismatch and deployment/local evidence.
 - Task 5 ensures the remaining operator-facing helpers cannot reintroduce the
   retired normal OTP requirement or fixed-origin confusion.
+- Task 6 prevents bypasses in that runtime contract and removes the legacy
+  charge/e-mail graph from the revenue-only PostgreSQL deployment.
 - No task queries Academy/Zeladoria MySQL on a browser request or fabricates operational data.

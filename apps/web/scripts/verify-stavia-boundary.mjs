@@ -841,9 +841,170 @@ export function inspectPackageBuildScripts(scripts) {
   return violations;
 }
 
-export function inspectSourceBoundary(files) {
+const REQUIRED_NORMAL_RUNTIME_PATHS = [
+  "compose.local.yml",
+  "compose.production.example.yml",
+  "scripts/dev/run-api.sh",
+  "scripts/dev/run-compose.sh",
+  "scripts/dev/run-api-docker.sh",
+  "scripts/dev/start-postgres-activation.sh",
+  ".env.example",
+  ".env.postgresql.example",
+  "apps/api/src/main/resources/application-local.yml",
+];
+
+const NORMAL_RUNTIME_OTP_FORBIDDEN_PATHS = [
+  "compose.local.yml",
+  "compose.production.example.yml",
+  "scripts/dev/run-api.sh",
+  "scripts/dev/run-compose.sh",
+  "scripts/dev/run-api-docker.sh",
+];
+
+function executableContractText(content) {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+}
+
+function hasOtpRuntimeToken(content) {
+  return /\b(?:CORTEX_[A-Z0-9_]*OTP[A-Z0-9_]*|[A-Z0-9_]*OTP[A-Z0-9_]*(?:_FILE|_SECRET|_TOKEN|_KEY)|cortex[_-]otp[a-z0-9_-]*)\b/i.test(
+    executableContractText(content),
+  );
+}
+
+function hasFixedLocalOperationalPort(content) {
+  const executable = executableContractText(content);
+  return (
+    /https?:\/\/(?:localhost|127\.0\.0\.1):(?:5173|8081)\b|127\.0\.0\.1:(?:5173|8081):|--port[=\s]+(?:5173|8081)\b/.test(
+      executable,
+    ) ||
+    /(?:^|\n)\s*(?:export\s+)?(?:CORTEX_WEB_PORT|CORTEX_API_PORT)\s*=\s*["']?(?:5173|8081)["']?\s*(?:$|\n)/m.test(
+      executable,
+    )
+  );
+}
+
+function inspectNormalRuntimeContracts(files, requireFiles) {
+  const violations = [];
+  const byPath = new Map(files.map((file) => [file.path, file.content]));
+
+  if (requireFiles) {
+    for (const requiredPath of REQUIRED_NORMAL_RUNTIME_PATHS) {
+      if (!byPath.has(requiredPath)) {
+        violations.push(
+          `${requiredPath}: required normal-runtime contract file is missing`,
+        );
+      }
+    }
+  }
+
+  for (const runtimePath of NORMAL_RUNTIME_OTP_FORBIDDEN_PATHS) {
+    const content = byPath.get(runtimePath);
+    if (content !== undefined && hasOtpRuntimeToken(content)) {
+      violations.push(
+        `${runtimePath}: normal PostgreSQL runtime must not contain OTP tokens, mounts, or exports`,
+      );
+    }
+  }
+
+  for (const runtimePath of [
+    "compose.local.yml",
+    "scripts/dev/run-api.sh",
+    "scripts/dev/run-compose.sh",
+    "scripts/dev/run-api-docker.sh",
+  ]) {
+    const content = byPath.get(runtimePath);
+    if (content !== undefined && hasFixedLocalOperationalPort(content)) {
+      violations.push(
+        `${runtimePath}: fixed operational port 5173/8081 bypasses the selected port variables`,
+      );
+    }
+  }
+
+  const runApi = byPath.get("scripts/dev/run-api.sh");
+  if (runApi !== undefined) {
+    const executable = executableContractText(runApi);
+    if (
+      !/API_PORT="\$\{PORT:-\$\{SERVER_PORT:-8080}}"/.test(executable) ||
+      !/API_HEALTH_URL="http:\/\/127\.0\.0\.1:\$\{API_PORT}\/api\/health"/.test(
+        executable,
+      ) ||
+      !/lsof\b[^\n]*"\$API_PORT"/.test(executable) ||
+      !/curl\b[^\n]*"\$API_HEALTH_URL"/.test(executable)
+    ) {
+      violations.push(
+        "scripts/dev/run-api.sh: selected API port is not consumed by health and bind checks",
+      );
+    }
+    if (!/export\s+SERVER_PORT="\$API_PORT"/.test(executable)) {
+      violations.push(
+        "scripts/dev/run-api.sh: selected API port is not exported to Spring Boot",
+      );
+    }
+  }
+
+  const runCompose = byPath.get("scripts/dev/run-compose.sh");
+  if (runCompose !== undefined) {
+    const executable = executableContractText(runCompose);
+    if (
+      !/CORTEX_WEB_PORT="\$\{CORTEX_WEB_PORT:-5173}"/.test(executable) ||
+      !/CORTEX_API_PORT="\$\{CORTEX_API_PORT:-8081}"/.test(executable) ||
+      !/export\s+CORTEX_WEB_PORT\s+CORTEX_API_PORT/.test(executable) ||
+      !/docker\s+compose\b/.test(executable) ||
+      !/http:\/\/localhost:\$\{CORTEX_WEB_PORT}/.test(executable) ||
+      !/http:\/\/127\.0\.0\.1:\$\{CORTEX_API_PORT}\/api\/health/.test(
+        executable,
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-compose.sh: selected ports are not exported to Compose and operator URLs",
+      );
+    }
+  }
+
+  const runDocker = byPath.get("scripts/dev/run-api-docker.sh");
+  if (runDocker !== undefined) {
+    const executable = executableContractText(runDocker);
+    if (
+      !/CORTEX_WEB_PORT="\$\{CORTEX_WEB_PORT:-5173}"/.test(executable) ||
+      !/CORTEX_API_PORT="\$\{CORTEX_API_PORT:-8081}"/.test(executable) ||
+      !/-p\s+"127\.0\.0\.1:\$\{CORTEX_API_PORT}:8080"/.test(executable) ||
+      !/-e\s+CORTEX_WEB_PORT="\$CORTEX_WEB_PORT"/.test(executable)
+    ) {
+      violations.push(
+        "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+      );
+    }
+  }
+
+  const compose = byPath.get("compose.local.yml");
+  if (compose !== undefined) {
+    const executable = executableContractText(compose);
+    if (
+      !/"127\.0\.0\.1:\$\{CORTEX_API_PORT:-8081}:8080"/.test(executable) ||
+      !/"127\.0\.0\.1:\$\{CORTEX_WEB_PORT:-5173}:8080"/.test(executable) ||
+      !/http:\/\/localhost:\$\{CORTEX_WEB_PORT:-5173}/.test(executable)
+    ) {
+      violations.push(
+        "compose.local.yml: selected ports are not consumed by loopback binds and the browser origin",
+      );
+    }
+  }
+
+  return violations;
+}
+
+export function inspectSourceBoundary(
+  files,
+  { requireNormalRuntimeFiles = false } = {},
+) {
   const violations = inspectLegacySource(files);
   const byPath = new Map(files.map((file) => [file.path, file.content]));
+  violations.push(
+    ...inspectNormalRuntimeContracts(files, requireNormalRuntimeFiles),
+  );
   const packageFile = files.find(
     (file) => file.path === "apps/web/package.json",
   );
@@ -1054,7 +1215,9 @@ export function verifySourceBoundary(repositoryRoot = REPOSITORY_ROOT) {
     path: canonicalSourcePath(repositoryRoot, file),
     content: isTextFile(file) ? readFileSync(file, "utf8") : "",
   }));
-  const violations = inspectSourceBoundary(files);
+  const violations = inspectSourceBoundary(files, {
+    requireNormalRuntimeFiles: hasMonorepoWebRoot(repositoryRoot),
+  });
   if (violations.length > 0) {
     throw new Error(`StavIA source boundary failed:\n${violations.join("\n")}`);
   }

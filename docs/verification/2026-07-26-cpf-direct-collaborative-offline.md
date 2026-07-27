@@ -184,7 +184,7 @@ npm --prefix apps/web test -- --run src/lib/api/apiClient.test.ts
 1 arquivo; 13 testes; 13 passaram.
 
 bash scripts/security/test-local-compose-security.sh
-Local PostgreSQL/loopback, normal-runtime OTP isolation, production
+Local PostgreSQL/loopback, normal-runtime OTP/e-mail isolation, production
 secret-mount, source-read-only wiring, and container hardening contracts
 passed.
 
@@ -197,8 +197,66 @@ exit 0.
 ```
 
 O `docker compose config` da verificação de segurança foi renderizado sem
-fornecer OTP HMAC: o runtime `production,postgresql` não declara nem monta essa
-chave. `start-postgres-activation.sh` continua exigindo o segredo OTP
-explicitamente. SMTP permanece montado no runtime normal exclusivamente para
-entrega operacional idempotente do scheduler financeiro; não participa da
-autenticação.
+fornecer OTP HMAC ou SMTP: o runtime `production,postgresql` não declara nem
+monta essas chaves e não habilita o scheduler legado de cobranças.
+`start-postgres-activation.sh` continua exigindo OTP e SMTP explicitamente em
+seu processo isolado; nenhum deles participa do login normal por CPF/passkey.
+
+## Fronteira final revenue-only do runtime normal
+
+O RED estático registrou 5 falhas: quatro regressões intencionais
+(arquivo obrigatório ausente, token OTP alternativo, porta operacional fixa e
+uso de variável apenas em comentário) e uma fixture antiga que ainda omitia as
+declarações de porta já exigidas. O contrato Java registrou 2 falhas esperadas
+por SMTP/scheduler ainda presentes no Compose e no template normal.
+
+O `PostgresqlCortexRuntimeIT` novo também foi reproduzido sobre o commit-base
+`0762fbd`, em worktree temporário, sem SMTP/OTP de teste: o contexto
+`postgresql` falhou fechado porque ainda dependia do grafo de e-mail. Depois do
+perfilamento, o mesmo teste inicia sem essas propriedades e comprova ausência
+de todos os beans Spring de cobrança legada, `EmailConfiguration` e
+`EmailGateway`.
+
+Evidência GREEN:
+
+```text
+npm --prefix apps/web test -- --run src/staviaRuntimeBoundary.test.ts
+1 arquivo; 27 testes; 27 passaram.
+
+node apps/web/scripts/verify-stavia-boundary.mjs --source
+StavIA source boundary verified.
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+  ./mvnw -Dtest='PostgresqlLocalRuntimeContractTest,EmailConfigurationTest,PostgresqlMinimalLauncherContractTest' test
+24 testes; 0 falhas; 0 erros.
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+  ./mvnw -Ppostgresql-it -DforkCount=1 -DreuseForks=true \
+  -Dit.test=PostgresqlCortexRuntimeIT verify
+1045 testes unitários; 0 falhas; 7 testes do runtime PostgreSQL; 0 falhas.
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+  ./mvnw -Ppostgresql-it -DforkCount=1 -DreuseForks=true \
+  -Dit.test=PostgresqlCortex3FlowIT \
+  failsafe:integration-test failsafe:verify
+1 fluxo PostgreSQL V44–V60; preço de serviço/RDO/receita preservados.
+
+bash scripts/security/test-local-compose-security.sh
+Local PostgreSQL/loopback, normal-runtime OTP/e-mail isolation, production
+secret-mount, source-read-only wiring, and container hardening contracts
+passed.
+
+bash scripts/security/scan-cortex-secrets.sh
+Cortex secret scan passed: no unreviewed literal candidates.
+
+git diff --check
+exit 0.
+```
+
+O perfil de e-mail ficou
+`!postgresql | postgresql-activation | legacy-finance`; o provider fake exige
+também `local | test`. Assim, `local,postgresql` e `production,postgresql` não
+criam e-mail, enquanto a ativação explícita e o deployment legado continuam
+compatíveis. O launcher shell agora exporta a porta selecionada como
+`SERVER_PORT`, alinhando o health check com a porta realmente usada pelo
+Spring Boot.

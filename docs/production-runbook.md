@@ -68,10 +68,10 @@ API; PIN, e-mail e OTP não são fallbacks offline.
    com HMAC de CPF, persistida pelo bootstrap/sync autorizado.
 3. Configure storage persistente, `CORTEX_PUBLIC_ORIGIN` HTTPS exata, passkeys e
    todos os secrets do runtime normal por arquivo. OTP é configurado somente ao
-   executar a ativação explícita. SMTP permanece no runtime normal apenas para
-   entrega operacional idempotente do scheduler financeiro, nunca para
-   autenticação. Nunca copie uma senha para `.env` nem para uma variável de
-   ambiente.
+   executar a ativação explícita; o SMTP usado por essa transição também fica
+   somente nesse processo. O runtime normal `production,postgresql` não carrega
+   `EmailGateway`, SMTP nem o scheduler legado de cobranças. Nunca copie uma
+   senha para `.env` nem para uma variável de ambiente.
 4. Mantenha `CORTEX_POSTGRES_RUNTIME_READY=false` até concluir Flyway, o
    bootstrap ALFA e o preflight; então altere-o para `true` no ambiente de
    publicação.
@@ -102,10 +102,7 @@ Alertar para:
 - readiness diferente de `READY`;
 - aumento de 401/403 fora de um deploy ou revogação esperada;
 - mutações de sync em erro/retry por mais de uma janela;
-- cobranças `FALHA` ou leases vencidos;
 - falhas de storage e diferença entre metadata e objeto;
-- SMTP timeout/resultado ambíguo (não reenviar manualmente sem verificar o
-  provider e a chave idempotente);
 - ausência de cobertura/frescor na Memória, no grafo ou no rastreio de receita.
 
 Logs devem carregar correlation ID, entidade e resultado, nunca CPF, OTP,
@@ -118,12 +115,6 @@ cookie, segredo, corpo de mensagem ou anexo.
 Retire a instância do balanceador quando readiness falhar. Não desative Flyway
 nem o gate de ALFA. Recupere o banco e confirme a fila idempotente antes de
 recolocar tráfego.
-
-### SMTP indisponível ou ambíguo
-
-Pause `CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED`. Consulte o provider pelo ID de
-tentativa antes de liberar retry; resultado ambíguo deve falhar fechado para não
-duplicar cobrança.
 
 ### Storage indisponível
 

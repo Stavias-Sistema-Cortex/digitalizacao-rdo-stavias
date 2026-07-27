@@ -33,6 +33,7 @@ export CORTEX_AUTH_PROVISIONING_ENABLED="false"
 export SPRING_PROFILES_ACTIVE="local,postgresql"
 
 API_PORT="${PORT:-${SERVER_PORT:-8080}}"
+export SERVER_PORT="$API_PORT"
 API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"
 
 if command -v lsof >/dev/null 2>&1 &&

@@ -70,8 +70,7 @@ assert_production_compose_renders_from_documented_contract() {
         cpf_hmac \
         offline_private \
         offline_public \
-        memory_cursor_hmac \
-        smtp; do
+        memory_cursor_hmac; do
         rm -f -- "$contract_secret_dir/$secret_name"
       done
       rmdir "$contract_secret_dir" 2>/dev/null || true
@@ -86,8 +85,7 @@ assert_production_compose_renders_from_documented_contract() {
     cpf_hmac \
     offline_private \
     offline_public \
-    memory_cursor_hmac \
-    smtp; do
+    memory_cursor_hmac; do
     printf 'contract-secret' > "$contract_secret_dir/$secret_name"
   done
 
@@ -105,11 +103,6 @@ assert_production_compose_renders_from_documented_contract() {
     CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE="$contract_secret_dir/offline_public" \
     CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID='memory-contract-key' \
     CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/memory_cursor_hmac" \
-    CORTEX_EMAIL_SENDER_PROFILE_KEY='cortex-contract-sender' \
-    CORTEX_SMTP_FROM='noreply@cortex.example.invalid' \
-    CORTEX_SMTP_HOST='smtp.contract.internal' \
-    CORTEX_SMTP_USERNAME='smtp-contract' \
-    CORTEX_SMTP_PASSWORD_FILE="$contract_secret_dir/smtp" \
     VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256='contract-public-key-fingerprint' \
     CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy' \
     CORTEX_ACADEMY_DB_USER='academy_readonly' \
@@ -126,8 +119,8 @@ assert_production_compose_renders_from_documented_contract() {
   grep -Fq 'published: "8080"' <<< "$rendered"
   grep -Fq 'target: CORTEX_ACADEMY_DB_PASSWORD' <<< "$rendered"
   grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' <<< "$rendered"
-  if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac' <<< "$rendered"; then
-    echo "rendered normal production compose still contains activation OTP" >&2
+  if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac|CORTEX_EMAIL_|CORTEX_SMTP_|cortex_smtp_password|CORTEX_FINANCE_EMAIL_' <<< "$rendered"; then
+    echo "rendered normal production compose still contains activation OTP or legacy e-mail delivery" >&2
     exit 1
   fi
   if grep -Fq 'contract-secret' <<< "$rendered"; then
@@ -191,14 +184,6 @@ for documented_variable in \
   CORTEX_AUTH_WEBAUTHN_RP_ID \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID \
-  CORTEX_EMAIL_PROVIDER \
-  CORTEX_EMAIL_SENDER_PROFILE_KEY \
-  CORTEX_SMTP_HOST \
-  CORTEX_SMTP_PORT \
-  CORTEX_SMTP_USERNAME \
-  CORTEX_SMTP_FROM \
-  CORTEX_SMTP_PASSWORD_FILE \
-  CORTEX_SMTP_STARTTLS \
   VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 \
   CORTEX_ACADEMY_DB_URL \
   CORTEX_ACADEMY_DB_USER \
@@ -223,12 +208,14 @@ if grep -Eq '^CORTEX_AUTH_OTP_HMAC_KEY_FILE=' "$postgresql_env_template"; then
   exit 1
 fi
 
+if grep -Eq 'CORTEX_EMAIL_|CORTEX_SMTP_|CORTEX_FINANCE_EMAIL_' \
+  "$production_compose_file" "$postgresql_env_template"; then
+  echo "normal PostgreSQL runtime still declares legacy e-mail or scheduler configuration" >&2
+  exit 1
+fi
+
 grep -Fq 'cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE' \
   "$activation_script"
-grep -Fq 'CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:' \
-  "$production_compose_file"
-grep -Fq 'CORTEX_SMTP_PASSWORD_FILE: /run/secrets/cortex_smtp_password' \
-  "$production_compose_file"
 
 if grep -Eq '^[[:space:]]+(CORTEX_POSTGRES_PASSWORD|CORTEX_ACADEMY_DB_PASSWORD|CORTEX_ZELADORIA_DB_PASSWORD|AWS_SECRET_ACCESS_KEY):' \
   "$production_compose_file"; then
@@ -266,4 +253,4 @@ grep -Fq 'client_max_body_size 4k;' "$web_nginx_config"
 
 assert_production_compose_renders_from_documented_contract
 
-echo "Local PostgreSQL/loopback, normal-runtime OTP isolation, production secret-mount, source-read-only wiring, and container hardening contracts passed."
+echo "Local PostgreSQL/loopback, normal-runtime OTP/e-mail isolation, production secret-mount, source-read-only wiring, and container hardening contracts passed."

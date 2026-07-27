@@ -86,7 +86,8 @@ class PostgresqlLocalRuntimeContractTest {
     }
 
     @Test
-    void productionRuntimeDoesNotMountActivationOtpSecret() throws Exception {
+    void productionRevenueRuntimeMountsNeitherActivationOtpNorLegacySmtp()
+            throws Exception {
         String productionCompose = read("compose.production.example.yml");
 
         assertThat(productionCompose).contains(
@@ -94,7 +95,12 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac"
         ).doesNotContain(
                 "CORTEX_AUTH_OTP_HMAC_KEY_FILE",
-                "cortex_otp_hmac"
+                "cortex_otp_hmac",
+                "CORTEX_EMAIL_PROVIDER",
+                "CORTEX_EMAIL_SENDER_PROFILE_KEY",
+                "CORTEX_SMTP_",
+                "cortex_smtp_password",
+                "CORTEX_FINANCE_EMAIL_"
         );
     }
 
@@ -133,7 +139,11 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_MYSQL_ROOT_PASSWORD=",
                 "jdbc:mysql",
                 "CORTEX_CORS_ALLOWED_ORIGINS=http://localhost:5173",
-                "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173"
+                "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173",
+                "CORTEX_EMAIL_PROVIDER=",
+                "CORTEX_EMAIL_SENDER_PROFILE_KEY=",
+                "CORTEX_SMTP_",
+                "CORTEX_FINANCE_EMAIL_"
         );
         assertThat(webEnvironment)
                 .contains("VITE_CORTEX_AUTH_MODE=postgresql")
