@@ -2,7 +2,13 @@ import "fake-indexeddb/auto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getSession } from "./authSession";
+import {
+  getSession,
+  hasOfflineSession,
+  hasOnlineSession,
+  setOfflineSession,
+  setSession,
+} from "./authSession";
 import {
   saveCollaborativeOfflineGrant,
   unlockCollaborativeOfflineGrant,
@@ -66,6 +72,85 @@ describe("grant colaborativo de CPF", () => {
     expect(getSession()).toBeNull();
   });
 
+  it("limpa uma sessão online existente quando o CPF não corresponde", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await saveCollaborativeOfflineGrant(
+      "11144477735",
+      fixture.grant,
+    );
+    setSession(existingProfile());
+    expect(hasOnlineSession()).toBe(true);
+
+    await expect(
+      unlockCollaborativeOfflineGrant("11144477734", metadata),
+    ).rejects.toThrow("CPF não corresponde");
+
+    expect(getSession()).toBeNull();
+  });
+
+  it("limpa uma sessão online existente quando a assinatura é alterada", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await saveCollaborativeOfflineGrant(
+      "11144477735",
+      fixture.grant,
+    );
+    const tampered = {
+      ...metadata,
+      signedGrant: {
+        ...metadata.signedGrant,
+        signature: `${metadata.signedGrant.signature[0] === "A" ? "B" : "A"}${metadata.signedGrant.signature.slice(1)}`,
+      },
+    };
+    setSession(existingProfile());
+    expect(hasOnlineSession()).toBe(true);
+
+    await expect(
+      unlockCollaborativeOfflineGrant("11144477735", tampered),
+    ).rejects.toThrow("assinatura");
+
+    expect(getSession()).toBeNull();
+  });
+
+  it("limpa uma sessão offline existente quando a fingerprint é alterada", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await saveCollaborativeOfflineGrant(
+      "11144477735",
+      fixture.grant,
+    );
+    const tampered = {
+      ...metadata,
+      serverKeyFingerprint: "x".repeat(43),
+    };
+    setOfflineSession(existingProfile());
+    expect(hasOfflineSession()).toBe(true);
+
+    await expect(
+      unlockCollaborativeOfflineGrant("11144477735", tampered),
+    ).rejects.toThrow("assinatura");
+
+    expect(getSession()).toBeNull();
+  });
+
+  it("limpa uma sessão offline existente quando o escopo é alterado", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await saveCollaborativeOfflineGrant(
+      "11144477735",
+      fixture.grant,
+    );
+    const tampered = {
+      ...metadata,
+      scopeFingerprint: "a".repeat(64),
+    };
+    setOfflineSession(existingProfile());
+    expect(hasOfflineSession()).toBe(true);
+
+    await expect(
+      unlockCollaborativeOfflineGrant("11144477735", tampered),
+    ).rejects.toThrow("escopo");
+
+    expect(getSession()).toBeNull();
+  });
+
   it("rejeita grants adulterados ou expirados", async () => {
     const fixture = await signedGrantFixture({
       expiraEm: "2026-07-14T12:01:00Z",
@@ -94,6 +179,17 @@ describe("grant colaborativo de CPF", () => {
     expect(getSession()).toBeNull();
   });
 });
+
+function existingProfile() {
+  return {
+    colaboradorId: "00000000-0000-4000-8000-000000000003",
+    nome: "Sessão existente",
+    papelAcesso: "BETA" as const,
+    escopoGlobal: false,
+    obraIds: ["00000000-0000-4000-8000-000000000004"],
+    expiraEm: "2026-07-14T20:00:00Z",
+  };
+}
 
 async function signedGrantFixture(
   overrides: Partial<OfflineGrantClaims> = {},
