@@ -1,5 +1,6 @@
 package com.projeto.cortex.auth;
 
+import com.projeto.cortex.auth.webauthn.CpfPasskeyAuthenticationRequest;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,5 +30,14 @@ class AuthLogRedactionTest {
                         "Pessoa Teste",
                         "***.***.***-35"
                 );
+    }
+
+    @Test
+    void cpfPasskeyAuthenticationRequestNeverExposesCpfThroughToString() {
+        assertThat(new CpfPasskeyAuthenticationRequest(
+                "52998224725"
+        ).toString())
+                .contains("REDACTED")
+                .doesNotContain("52998224725");
     }
 }

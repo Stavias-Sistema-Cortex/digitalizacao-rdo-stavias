@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -120,5 +123,62 @@ class StoredObjectContentInspectorTest {
                 bigEndian.length,
                 "image/tiff"
         ).detectedMediaType()).isEqualTo("image/tiff");
+    }
+
+    @Test
+    void validatesOfficeStructureAndRejectsArbitraryZipOrExternalLinks()
+            throws Exception {
+        String xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        StoredObjectContentInspector office = new StoredObjectContentInspector(
+                16_384,
+                Set.of(xlsx)
+        );
+        byte[] valid = zip(
+                "[Content_Types].xml", "<Types/>",
+                "_rels/.rels", "<Relationships/>",
+                "xl/workbook.xml", "<workbook/>"
+        );
+        assertThat(office.inspect(
+                () -> new ByteArrayInputStream(valid), valid.length, xlsx
+        ).detectedMediaType()).isEqualTo(xlsx);
+
+        byte[] arbitrary = zip("payload.bin", "not office");
+        assertThatThrownBy(() -> office.inspect(
+                () -> new ByteArrayInputStream(arbitrary), arbitrary.length, xlsx
+        )).isInstanceOf(ResponseStatusException.class);
+
+        byte[] external = zip(
+                "[Content_Types].xml", "<Types/>",
+                "_rels/.rels",
+                "<Relationships><Relationship TargetMode=\"External\"/></Relationships>",
+                "xl/workbook.xml", "<workbook/>"
+        );
+        assertThatThrownBy(() -> office.inspect(
+                () -> new ByteArrayInputStream(external), external.length, xlsx
+        )).isInstanceOf(ResponseStatusException.class);
+
+        byte[] encodedExternal = zip(
+                "[Content_Types].xml", "<Types/>",
+                "_rels/.rels",
+                "<Relationships><Relationship TargetMode = \"Ex&#116;ernal\"/></Relationships>",
+                "xl/workbook.xml", "<workbook/>"
+        );
+        assertThatThrownBy(() -> office.inspect(
+                () -> new ByteArrayInputStream(encodedExternal),
+                encodedExternal.length,
+                xlsx
+        )).isInstanceOf(ResponseStatusException.class);
+    }
+
+    private byte[] zip(String... entries) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(output)) {
+            for (int index = 0; index < entries.length; index += 2) {
+                zip.putNextEntry(new ZipEntry(entries[index]));
+                zip.write(entries[index + 1].getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+        }
+        return output.toByteArray();
     }
 }

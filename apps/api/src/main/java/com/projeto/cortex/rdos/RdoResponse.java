@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -14,6 +15,10 @@ public record RdoResponse(
 
         String numeroRdo,
         LocalDate dataRdo,
+        String previousRdoId,
+        Long creationContextVersion,
+        String clientMutationId,
+        String apontadorColaboradorId,
         String diaSemana,
 
         String cliente,
@@ -60,7 +65,8 @@ public record RdoResponse(
             BigDecimal quantidade,
             LocalTime horaInicio,
             LocalTime horaFim,
-            String observacoes
+            String observacoes,
+            String origemItemId
     ) {
     }
 
@@ -120,6 +126,8 @@ public record RdoResponse(
 
     public record ServicoExecutadoItem(
             String id,
+            String serviceId,
+            String priceVersionId,
             String servicoNome,
             String itemContratualId,
             BigDecimal quantidadeExecutada,
@@ -130,8 +138,10 @@ public record RdoResponse(
             String turno,
             String statusValidacao,
             String estadoReceita,
-            BigDecimal receitaOperacionalEstimativa,
-            BigDecimal custoRealizado,
+            String revenueCoverageCode,
+            String revenueEvidenceId,
+            String revenueEventId,
+            Instant acceptedAt,
             boolean retrabalho,
             boolean producaoRejeitada,
             String observacoes
@@ -153,8 +163,6 @@ public record RdoResponse(
             String tipoAlocacao,
             String fonte,
             String status,
-            BigDecimal custoHora,
-            BigDecimal custoTotal,
             String observacoes
     ) {
     }

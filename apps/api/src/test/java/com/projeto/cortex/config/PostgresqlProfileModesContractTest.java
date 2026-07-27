@@ -34,13 +34,14 @@ class PostgresqlProfileModesContractTest {
 
         assertThat(common).contains(
                 "on-profile: postgresql-common",
-                "${CORTEX_POSTGRES_URL:jdbc:postgresql://127.0.0.1:5432/StaviasCortex}",
+                "${CORTEX_POSTGRES_URL}",
                 "${CORTEX_POSTGRES_USER:joaolucas}",
                 "${CORTEX_POSTGRES_PASSWORD:}",
                 "classpath:db/migration-postgresql",
-                "required-schema-version: 44"
+                "required-schema-version: 61"
         );
         assertThat(common).doesNotContain("schema-readiness:", "runtime-ready:");
+        assertThat(common).doesNotContain("${CORTEX_POSTGRES_URL:");
         assertThat(application).contains(
                 "schema-readiness:\n      enabled: false",
                 "runtime-ready: false"

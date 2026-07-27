@@ -10,6 +10,7 @@ import com.projeto.cortex.financeiro.core.FinanceValidation;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.springframework.context.annotation.Profile;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+@Profile("legacy-finance")
 @RestController
 @RequestMapping("/api/financeiro")
 public class FinanceLedgerController {

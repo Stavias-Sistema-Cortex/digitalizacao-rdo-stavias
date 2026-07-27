@@ -30,6 +30,7 @@ class JdbcAuthSessionRepositoryTest {
                 eq("10000000-0000-0000-0000-000000000001"),
                 eq("a".repeat(64)),
                 eq("b".repeat(64)),
+                eq("c".repeat(64)),
                 eq(43_200)
         )).thenReturn(1);
         when(jdbc.queryForObject(
@@ -43,6 +44,7 @@ class JdbcAuthSessionRepositoryTest {
                 "10000000-0000-0000-0000-000000000001",
                 "a".repeat(64),
                 "b".repeat(64),
+                "c".repeat(64),
                 43_200
         );
 
@@ -55,10 +57,12 @@ class JdbcAuthSessionRepositoryTest {
                 eq("10000000-0000-0000-0000-000000000001"),
                 eq("a".repeat(64)),
                 eq("b".repeat(64)),
+                eq("c".repeat(64)),
                 eq(43_200)
         );
         assertThat(compact(insertSql.getValue()))
-                .contains("TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6))")
+                .contains("CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second')")
+                .contains("client_instance_bound")
                 .doesNotContain("raw");
     }
 
@@ -74,23 +78,30 @@ class JdbcAuthSessionRepositoryTest {
         when(jdbc.query(
                 anyString(),
                 any(RowMapper.class),
-                eq("a".repeat(64))
+                eq("a".repeat(64)),
+                eq("c".repeat(64))
         )).thenReturn(List.of(expected));
 
-        assertThat(repository.findActiveByTokenHash("a".repeat(64)))
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                "a".repeat(64),
+                "c".repeat(64)
+        ))
                 .containsSame(expected);
 
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc).query(
                 sql.capture(),
                 any(RowMapper.class),
-                eq("a".repeat(64))
+                eq("a".repeat(64)),
+                eq("c".repeat(64))
         );
         assertThat(compact(sql.getValue()))
                 .contains("JOIN colaborador")
                 .contains("session.revogado_em IS NULL")
                 .contains("session.expira_em > CURRENT_TIMESTAMP(6)")
-                .contains("colaborador.ativo = 1")
+                .contains("session.client_instance_bound = TRUE")
+                .contains("session.client_instance_hash = ?")
+                .contains("colaborador.ativo = TRUE")
                 .contains("colaborador.deletado_em IS NULL")
                 .contains("colaborador.papel_acesso IN ('ALFA', 'BETA')");
     }

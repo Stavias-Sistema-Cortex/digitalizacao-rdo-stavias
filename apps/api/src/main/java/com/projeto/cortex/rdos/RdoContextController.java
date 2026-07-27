@@ -30,6 +30,10 @@ public class RdoContextController {
             LocalDate data
     ) {
         currentUserService.requireWorksiteAccess(obraId);
-        return service.buscarContexto(obraId, data);
+        return service.buscarContexto(
+                obraId,
+                data,
+                currentUserService.requireUserId()
+        );
     }
 }

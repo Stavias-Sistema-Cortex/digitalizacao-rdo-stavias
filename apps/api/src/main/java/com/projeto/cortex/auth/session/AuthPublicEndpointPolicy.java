@@ -1,5 +1,6 @@
 package com.projeto.cortex.auth.session;
 
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,7 @@ public final class AuthPublicEndpointPolicy {
 
     private final boolean normalPostgresqlWebMode;
     private final boolean activationPostgresqlWebMode;
+    private final boolean directCpfLoginEnabled;
 
     @Autowired
     public AuthPublicEndpointPolicy(Environment environment) {
@@ -29,7 +31,9 @@ public final class AuthPublicEndpointPolicy {
                 ),
                 environment != null && environment.acceptsProfiles(
                         Profiles.of("postgresql-activation")
-                )
+                ),
+                environment != null
+                        && SecurityRuntimeMode.isLocalOrTestOnly(environment)
         );
     }
 
@@ -37,13 +41,26 @@ public final class AuthPublicEndpointPolicy {
             boolean normalPostgresqlWebMode,
             boolean activationPostgresqlWebMode
     ) {
+        this(
+                normalPostgresqlWebMode,
+                activationPostgresqlWebMode,
+                false
+        );
+    }
+
+    AuthPublicEndpointPolicy(
+            boolean normalPostgresqlWebMode,
+            boolean activationPostgresqlWebMode,
+            boolean directCpfLoginEnabled
+    ) {
         this.normalPostgresqlWebMode = normalPostgresqlWebMode;
         this.activationPostgresqlWebMode = activationPostgresqlWebMode;
+        this.directCpfLoginEnabled = directCpfLoginEnabled;
     }
 
     /** Legacy compatibility policy used only by direct filter unit tests. */
     public static AuthPublicEndpointPolicy legacy() {
-        return new AuthPublicEndpointPolicy(false, false);
+        return new AuthPublicEndpointPolicy(false, false, true);
     }
 
     public boolean isOutsideApi(HttpServletRequest request) {
@@ -68,16 +85,15 @@ public final class AuthPublicEndpointPolicy {
         if (!"POST".equalsIgnoreCase(method)) {
             return false;
         }
-        if (isPostgresqlWebMode()) {
-            if (isEmailOtpPath(path)) {
-                return true;
-            }
-            // In normal PostgreSQL mode the controller must return its
-            // explicit 410 policy before any legacy CPF normalization. The
-            // activation gate runs first and masks this same path with 503.
-            return normalPostgresqlWebMode && "/api/auth/login".equals(path);
+        if (activationPostgresqlWebMode) {
+            return isEmailOtpPath(path);
         }
-        if ("/api/auth/login".equals(path)
+        if (normalPostgresqlWebMode) {
+            return "/api/auth/login".equals(path)
+                    || "/api/auth/passkeys/authentication/options".equals(path)
+                    || "/api/auth/passkeys/authentication/verify".equals(path);
+        }
+        if ((directCpfLoginEnabled && "/api/auth/login".equals(path))
                 || "/api/auth/passkeys/authentication/options".equals(path)
                 || "/api/auth/passkeys/authentication/verify".equals(path)) {
             return true;
@@ -90,10 +106,6 @@ public final class AuthPublicEndpointPolicy {
                 && SAFE_METHODS.contains(request.getMethod().toUpperCase(
                         java.util.Locale.ROOT
                 ));
-    }
-
-    private boolean isPostgresqlWebMode() {
-        return normalPostgresqlWebMode || activationPostgresqlWebMode;
     }
 
     private boolean isEmailOtpPath(String path) {

@@ -35,6 +35,7 @@ class PostgresqlBaselineMigrationIT {
             Flyway flyway = Flyway.configure()
                     .dataSource(database.getJdbcUrl(), database.getUsername(), database.getPassword())
                     .locations("classpath:db/migration-postgresql")
+                    .target("44")
                     .load();
 
             MigrateResult migration = flyway.migrate();

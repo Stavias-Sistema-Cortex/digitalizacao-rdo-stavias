@@ -2,6 +2,8 @@ package com.projeto.cortex.financeiro;
 
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
+import com.projeto.cortex.pdor.PdorHistoricoResponse;
+import com.projeto.cortex.pdor.PdorResultadoResponse;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 public class PrevisaoFinanceiraController {
@@ -27,7 +28,7 @@ public class PrevisaoFinanceiraController {
     }
 
     @PostMapping("/api/obras/{obraId}/previsao-financeira/calcular")
-    public PrevisaoFinanceiraResponse calcular(
+    public PdorResultadoResponse calcular(
             @PathVariable String obraId,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
@@ -48,7 +49,7 @@ public class PrevisaoFinanceiraController {
     }
 
     @GetMapping("/api/obras/{obraId}/previsao-financeira/atual")
-    public PrevisaoFinanceiraResponse atual(@PathVariable String obraId) {
+    public PdorResultadoResponse atual(@PathVariable String obraId) {
         financialAccessService.requirePermission(
                 obraId,
                 FinancialPermission.FINANCEIRO_VISUALIZAR
@@ -57,7 +58,7 @@ public class PrevisaoFinanceiraController {
     }
 
     @GetMapping("/api/obras/{obraId}/previsao-financeira/historico")
-    public List<PrevisaoFinanceiraResponse> historico(
+    public PdorHistoricoResponse historico(
             @PathVariable String obraId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size

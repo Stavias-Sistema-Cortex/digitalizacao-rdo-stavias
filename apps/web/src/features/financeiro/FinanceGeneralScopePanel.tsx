@@ -51,25 +51,33 @@ export function FinanceGeneralScopePanel({
   }
 
   return (
-    <section className="finance-workspace-section finance-unit-catalog">
+    <section
+      className="finance-workspace-section finance-unit-catalog"
+      aria-label="Unidades financeiras autorizadas"
+    >
       <div className="finance-section-heading">
         <div>
           <p className="finance-kicker">Unidades de controle</p>
-          <h2>Destinos financeiros reais</h2>
+          <h2>Selecione uma unidade para abrir sua visão financeira</h2>
           <p>
-            Obras, equipamentos e custos administrativos permanecem separados;
-            o consolidado não é uma obra fictícia.
+            Cada lançamento permanece ligado à sua obra, equipamento ou
+            unidade administrativa de origem.
           </p>
         </div>
-        {canAdminister ? (
-          <button
-            type="button"
-            className="finance-secondary-action"
-            onClick={() => setCreating((value) => !value)}
-          >
-            Nova unidade administrativa
-          </button>
-        ) : null}
+        <div className="finance-unit-catalog__tools">
+          <span>
+            {units.length} {units.length === 1 ? "unidade" : "unidades"} no escopo
+          </span>
+          {canAdminister ? (
+            <button
+              type="button"
+              className="finance-secondary-action"
+              onClick={() => setCreating((value) => !value)}
+            >
+              Nova unidade administrativa
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {creating ? (
@@ -98,11 +106,18 @@ export function FinanceGeneralScopePanel({
               key={unit.id}
               type="button"
               className={unit.id === selectedUnitId ? "is-selected" : ""}
+              aria-pressed={unit.id === selectedUnitId}
+              aria-label={`${TYPE_LABELS[unit.tipo]}: ${unit.nome} · ${unit.codigo}`}
               onClick={() => onSelect(unit)}
             >
-              <span>{TYPE_LABELS[unit.tipo]}</span>
+              <span className="finance-unit-card__kind">
+                {TYPE_LABELS[unit.tipo]}
+              </span>
               <strong>{unit.nome}</strong>
-              <small>{unit.codigo}</small>
+              <small className="finance-unit-card__code">{unit.codigo}</small>
+              <span className="finance-unit-card__action">
+                Abrir unidade <span aria-hidden="true">↗</span>
+              </span>
             </button>
           ))}
         </div>

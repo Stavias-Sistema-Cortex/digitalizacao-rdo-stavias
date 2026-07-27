@@ -3,6 +3,7 @@ package com.projeto.cortex.auth.roles;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -137,6 +139,222 @@ class AdminRoleServiceTest {
 
         verify(repository).updateRole(TARGET, PapelAcesso.ALFA);
         verify(repository, never()).revokeActiveSessions(any(), any());
+    }
+
+    @Test
+    void versionedLegacyChangeRejectsAlfaWithoutAdministrativeCapability() {
+        when(repository.findActiveAccount(ACTOR))
+                .thenReturn(Optional.of(new RoleAccount(
+                        ACTOR,
+                        "Alfa sem capacidade",
+                        PapelAcesso.ALFA,
+                        9L,
+                        LocalDateTime.of(2026, 7, 23, 16, 0)
+                )));
+        when(repository.hasActiveCapability(ACTOR)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.changeRoleVersioned(
+                ACTOR,
+                TARGET,
+                new AdminRoleVersionedChangeRequest(
+                        "BETA",
+                        "ALFA",
+                        4L,
+                        "Promoção aprovada pela direção."
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, error ->
+                assertThat(error.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN)
+        );
+
+        verify(repository).lockGovernanceRows();
+        verify(repository, never()).updateRole(any(), any());
+        verify(repository, never()).updateRoleIfCurrent(
+                any(), any(), anyLong(), any()
+        );
+        verify(repository, never()).insertHistory(any(), any(), any(), any(), any());
+        verify(repository, never()).revokeActiveSessions(any(), any());
+    }
+
+    @Test
+    void versionedLegacyChangeChecksExpectedStateInsideGovernanceLock() {
+        authorizeActor();
+        when(repository.findActiveAccount(TARGET))
+                .thenReturn(Optional.of(new RoleAccount(
+                        TARGET,
+                        "Operadora",
+                        PapelAcesso.BETA,
+                        5L,
+                        LocalDateTime.of(2026, 7, 23, 16, 0)
+                )));
+
+        assertThatThrownBy(() -> service.changeRoleVersioned(
+                ACTOR,
+                TARGET,
+                new AdminRoleVersionedChangeRequest(
+                        "BETA",
+                        "ALFA",
+                        4L,
+                        "Promoção aprovada pela direção."
+                )
+        )).isInstanceOfSatisfying(ResponseStatusException.class, error -> {
+            assertThat(error.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(error.getReason())
+                    .isEqualTo("Conflito de versão ou papel de acesso do colaborador.");
+        });
+
+        verify(repository).lockGovernanceRows();
+        verify(repository, never()).updateRole(any(), any());
+        verify(repository, never()).updateRoleIfCurrent(
+                any(), any(), anyLong(), any()
+        );
+        verify(repository, never()).insertHistory(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void versionedLegacyChangeReturnsPersistedSnapshotAndWritesCanonicalAudit() {
+        LocalDateTime beforeTime = LocalDateTime.of(2026, 7, 22, 16, 0);
+        LocalDateTime afterTime = LocalDateTime.of(2026, 7, 23, 16, 0);
+        authorizeActor();
+        when(repository.findActiveAccount(TARGET))
+                .thenReturn(
+                        Optional.of(new RoleAccount(
+                                TARGET,
+                                "Operadora",
+                                PapelAcesso.BETA,
+                                4L,
+                                beforeTime
+                        )),
+                        Optional.of(new RoleAccount(
+                                TARGET,
+                                "Operadora",
+                                PapelAcesso.ALFA,
+                                5L,
+                                afterTime
+                        ))
+                );
+        when(memory.registrarEventoAuditado(
+                any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any()
+        )).thenReturn(89L);
+        when(repository.updateRoleIfCurrent(
+                TARGET,
+                PapelAcesso.BETA,
+                4L,
+                PapelAcesso.ALFA
+        )).thenReturn(true);
+
+        AdminRoleVersionedChangeResponse response = service.changeRoleVersioned(
+                ACTOR,
+                TARGET,
+                new AdminRoleVersionedChangeRequest(
+                        "BETA",
+                        "ALFA",
+                        4L,
+                        "Promoção aprovada pela direção."
+                )
+        );
+
+        assertThat(response).isEqualTo(new AdminRoleVersionedChangeResponse(
+                TARGET,
+                "Operadora",
+                "ALFA",
+                5L,
+                afterTime
+        ));
+        verify(repository).updateRoleIfCurrent(
+                TARGET,
+                PapelAcesso.BETA,
+                4L,
+                PapelAcesso.ALFA
+        );
+        verify(repository).insertHistory(
+                TARGET,
+                PapelAcesso.BETA,
+                PapelAcesso.ALFA,
+                ACTOR,
+                "Promoção aprovada pela direção."
+        );
+        verify(memory).registrarEventoAuditado(
+                any(), any(), any(), eq("PAPEL_ACESSO_ALTERADO"), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any()
+        );
+    }
+
+    @Test
+    void versionedLegacyDowngradeUsesCanonicalLocksRevocationsAndHistory() {
+        LocalDateTime beforeTime = LocalDateTime.of(2026, 7, 22, 17, 0);
+        LocalDateTime afterTime = LocalDateTime.of(2026, 7, 23, 17, 0);
+        authorizeActor();
+        when(repository.findActiveAccount(TARGET))
+                .thenReturn(
+                        Optional.of(new RoleAccount(
+                                TARGET,
+                                "Gestora",
+                                PapelAcesso.ALFA,
+                                6L,
+                                beforeTime
+                        )),
+                        Optional.of(new RoleAccount(
+                                TARGET,
+                                "Gestora",
+                                PapelAcesso.BETA,
+                                7L,
+                                afterTime
+                        ))
+                );
+        when(repository.countActiveAlfas()).thenReturn(2L);
+        when(repository.hasActiveCapability(TARGET)).thenReturn(true);
+        when(repository.countActiveRoleAdministrators()).thenReturn(2L);
+        when(repository.updateRoleIfCurrent(
+                TARGET,
+                PapelAcesso.ALFA,
+                6L,
+                PapelAcesso.BETA
+        )).thenReturn(true);
+        when(repository.revokeActiveSessions(
+                TARGET,
+                "PAPEL_REBAIXADO_PARA_BETA"
+        )).thenReturn(3);
+
+        AdminRoleVersionedChangeResponse response = service.changeRoleVersioned(
+                ACTOR,
+                TARGET,
+                new AdminRoleVersionedChangeRequest(
+                        "ALFA",
+                        "BETA",
+                        6L,
+                        "Rebaixamento aprovado pela direção."
+                )
+        );
+
+        assertThat(response.papelAcesso()).isEqualTo("BETA");
+        assertThat(response.versaoLinha()).isEqualTo(7L);
+        verify(repository).lockGovernanceRows();
+        verify(repository).countActiveAlfas();
+        verify(repository).countActiveRoleAdministrators();
+        verify(repository).revokeCapability(
+                TARGET,
+                ACTOR,
+                "Rebaixamento aprovado pela direção."
+        );
+        verify(repository).revokeActiveSessions(
+                TARGET,
+                "PAPEL_REBAIXADO_PARA_BETA"
+        );
+        verify(repository).insertHistory(
+                TARGET,
+                PapelAcesso.ALFA,
+                PapelAcesso.BETA,
+                ACTOR,
+                "Rebaixamento aprovado pela direção."
+        );
+        verify(memory).registrarEventoAuditado(
+                any(), any(), any(), eq("PAPEL_ACESSO_ALTERADO"), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any(), any(), any(), any(), any(), any()
+        );
     }
 
     private void authorizeActor() {

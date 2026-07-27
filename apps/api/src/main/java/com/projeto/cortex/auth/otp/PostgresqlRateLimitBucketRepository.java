@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** PostgreSQL bucket implementation with deterministic locks and database time. */
 @Repository
 @Profile("postgresql-common")
-public final class PostgresqlRateLimitBucketRepository implements AuthRateLimitStore {
+public class PostgresqlRateLimitBucketRepository implements AuthRateLimitStore {
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -22,8 +22,8 @@ public final class PostgresqlRateLimitBucketRepository implements AuthRateLimitS
 
     @Override
     public boolean hasCapacity(String bucketKey, int maxRequests, int windowSeconds) {
-        List<String> keys = MysqlRateLimitBucketRepository.normalizeKeys(List.of(bucketKey));
-        MysqlRateLimitBucketRepository.validatePolicy(maxRequests, windowSeconds);
+        List<String> keys = RateLimitBucketPolicy.normalizeKeys(List.of(bucketKey));
+        RateLimitBucketPolicy.validatePolicy(maxRequests, windowSeconds);
         List<Bucket> rows = jdbcTemplate.query("""
                 SELECT bucket_key, janela_inicio, contador, bloqueado_ate,
                     clock_timestamp() AS agora
@@ -50,8 +50,8 @@ public final class PostgresqlRateLimitBucketRepository implements AuthRateLimitS
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean consume(List<String> bucketKeys, int maxRequests, int windowSeconds) {
-        List<String> keys = MysqlRateLimitBucketRepository.normalizeKeys(bucketKeys);
-        MysqlRateLimitBucketRepository.validatePolicy(maxRequests, windowSeconds);
+        List<String> keys = RateLimitBucketPolicy.normalizeKeys(bucketKeys);
+        RateLimitBucketPolicy.validatePolicy(maxRequests, windowSeconds);
         for (String key : keys) {
             jdbcTemplate.update("""
                     INSERT INTO auth_rate_limit_bucket (
@@ -100,7 +100,7 @@ public final class PostgresqlRateLimitBucketRepository implements AuthRateLimitS
         return new Bucket(resultSet.getString("bucket_key"),
                 resultSet.getTimestamp("janela_inicio").toInstant(),
                 resultSet.getInt("contador"),
-                MysqlRateLimitBucketRepository.nullableInstant(
+                RateLimitBucketPolicy.nullableInstant(
                         resultSet.getTimestamp("bloqueado_ate")),
                 resultSet.getTimestamp("agora").toInstant());
     }

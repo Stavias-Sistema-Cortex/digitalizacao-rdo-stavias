@@ -7,6 +7,11 @@ import {
   hasOnlineSession,
 } from "../../features/auth/authSession";
 import { registerDeviceApi } from "./syncApiClient";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+  type SyncSessionGuard,
+} from "./syncSession";
 
 function createDeviceName(): string {
   const platform =
@@ -17,8 +22,12 @@ function createDeviceName(): string {
   return `Córtex Web - ${platform}`;
 }
 
-export async function ensureRegisteredDevice(): Promise<string> {
-  const currentState = await getSyncState();
+export async function ensureRegisteredDevice(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<string> {
+  assertSyncSession(guard);
+  const currentState = await getSyncState(guard);
+  assertSyncSession(guard);
   const session = getSession();
   const usuarioId =
     session?.colaboradorId?.trim() || null;
@@ -42,6 +51,7 @@ export async function ensureRegisteredDevice(): Promise<string> {
     tipo: "WEB",
     usuarioId,
   });
+  assertSyncSession(guard);
 
   if (
     typeof response.id !== "string" ||
@@ -61,7 +71,8 @@ export async function ensureRegisteredDevice(): Promise<string> {
           lastPulledCommitSeq: 0,
           lastAckedCommitSeq: 0,
         }),
-  });
+  }, guard);
+  assertSyncSession(guard);
 
   return response.id;
 }

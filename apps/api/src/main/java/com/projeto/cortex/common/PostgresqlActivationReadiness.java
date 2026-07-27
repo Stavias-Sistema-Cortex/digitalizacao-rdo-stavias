@@ -5,15 +5,15 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-/** Activation proves only database/V44 availability; an ALFA may still be pending. */
+/** Activation proves current database availability; an ALFA may still be pending. */
 @Component
 @Profile("postgresql-activation")
 public final class PostgresqlActivationReadiness implements RuntimeReadiness {
 
-    private static final String V44_COMPLETED_SQL = """
+    private static final String CURRENT_SCHEMA_COMPLETED_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
-            WHERE version = '44'
+            WHERE version = '61'
               AND success = TRUE
             """;
 
@@ -30,12 +30,13 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
                     "SELECT 1",
                     Integer.class
             );
-            Integer v44Completed = jdbcTemplate.queryForObject(
-                    V44_COMPLETED_SQL,
+            Integer currentSchemaCompleted = jdbcTemplate.queryForObject(
+                    CURRENT_SCHEMA_COMPLETED_SQL,
                     Integer.class
             );
             if (databaseReady == null || databaseReady != 1
-                    || v44Completed == null || v44Completed < 1) {
+                    || currentSchemaCompleted == null
+                    || currentSchemaCompleted < 1) {
                 throw unavailable();
             }
         } catch (DataAccessException exception) {
@@ -50,7 +51,7 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
 
     private IllegalStateException unavailable() {
         return new IllegalStateException(
-                "Ativação PostgreSQL indisponível até a baseline V44."
+                "Ativação PostgreSQL indisponível até a cadeia V61."
         );
     }
 }

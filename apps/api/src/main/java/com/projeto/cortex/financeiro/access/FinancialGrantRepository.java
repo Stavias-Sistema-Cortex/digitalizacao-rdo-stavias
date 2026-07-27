@@ -110,7 +110,7 @@ public class FinancialGrantRepository {
                 """
                 SELECT 1 FROM colaborador
                 WHERE id = ?
-                  AND ativo = 1
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                   AND papel_acesso = 'BETA'
                 """,

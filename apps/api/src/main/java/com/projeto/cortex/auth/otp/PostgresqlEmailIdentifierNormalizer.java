@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 /** PostgreSQL Córtex accepts only bounded canonical e-mail identifiers. */
 @Component
-@Profile("postgresql-common")
+@Profile("postgresql-activation")
 public final class PostgresqlEmailIdentifierNormalizer
         implements AuthenticationIdentifierNormalizer {
 

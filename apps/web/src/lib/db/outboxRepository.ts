@@ -3,29 +3,11 @@ import type {
   OutboxMutationRecord,
   OutboxMutationStatus,
 } from "./db.types";
-import {
-  isCanonicalOutboxMutation,
-  isOutboxMutationBlocked,
-} from "./outboxContract";
 import { selectReadyOutboxMutations } from "../sync/outboxDependencies";
-import { classifyLegacyOutboxMutationsForReview } from "../sync/syncStorage";
-
-async function listClassifiedOutboxMutations(): Promise<
-  OutboxMutationRecord[]
-> {
-  await classifyLegacyOutboxMutationsForReview();
-  const database = await getCortexDb();
-
-  return database.getAllFromIndex(
-    "outbox_mutations",
-    "by-created-at",
-  );
-}
 
 export async function getOutboxMutation(
   clientMutationId: string,
 ): Promise<OutboxMutationRecord | undefined> {
-  await classifyLegacyOutboxMutationsForReview();
   const database = await getCortexDb();
 
   return database.get(
@@ -37,21 +19,36 @@ export async function getOutboxMutation(
 export async function listOutboxMutations(): Promise<
   OutboxMutationRecord[]
 > {
-  return listClassifiedOutboxMutations();
+  const database = await getCortexDb();
+
+  return database.getAllFromIndex(
+    "outbox_mutations",
+    "by-created-at",
+  );
 }
 
 export async function listOutboxMutationsByStatus(
   status: OutboxMutationStatus,
 ): Promise<OutboxMutationRecord[]> {
-  return (await listClassifiedOutboxMutations())
-    .filter((mutation) => mutation.status === status);
+  const database = await getCortexDb();
+
+  return database.getAllFromIndex(
+    "outbox_mutations",
+    "by-status",
+    status,
+  );
 }
 
 export async function listPendingOutboxMutations(
   limit = 100,
 ): Promise<OutboxMutationRecord[]> {
-  const pending = (await listClassifiedOutboxMutations())
-    .filter((mutation) => mutation.status === "PENDING");
+  const database = await getCortexDb();
+
+  const pending = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-status",
+    "PENDING",
+  );
 
   return pending
     .sort((left, right) =>
@@ -66,29 +63,9 @@ export async function listReadyPendingOutboxMutations(
   limit = 100,
 ): Promise<OutboxMutationRecord[]> {
   return selectReadyOutboxMutations(
-    await listClassifiedOutboxMutations(),
+    await listOutboxMutations(),
     limit,
-  ).filter(
-    (mutation) =>
-      isCanonicalOutboxMutation(mutation) &&
-      !isOutboxMutationBlocked(mutation),
   );
-}
-
-/**
- * This is the storage-facing review queue consumed by Home > Memória. No
- * payload is transformed; callers receive the original record and its reason.
- */
-export async function listOutboxMutationsRequiringReview(): Promise<
-  OutboxMutationRecord[]
-> {
-  return (await listClassifiedOutboxMutations())
-    .filter(
-      (mutation) =>
-        mutation.status === "REJECTED" ||
-        mutation.status === "CONFLICT" ||
-        isOutboxMutationBlocked(mutation),
-    );
 }
 
 export async function putOutboxMutation(

@@ -5,7 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
- * Derives the StavIA messaging capability from the same active conversation
+ * Derives worksite-scoped messaging access from the same active conversation
  * and team memberships enforced by the messaging API.
  */
 @Service

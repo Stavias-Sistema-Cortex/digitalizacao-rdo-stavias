@@ -238,7 +238,7 @@ The calculation uses `BigDecimal`, the service unit scale, explicit rounding, an
 
 The Financeiro UI offers a revenue ledger and trace drawer derived from persisted evidence. Totals are sums of rows, never independent values returned without their components.
 
-### 8.3 Removal of subjective cost
+### 8.3 Revenue-only Financeiro surface
 
 RDO, revenue forecasting, and PDOR remove:
 
@@ -247,7 +247,12 @@ RDO, revenue forecasting, and PDOR remove:
 - estimated cost, projected cost, operational margin, and margin percentage;
 - data-quality warnings whose only purpose is missing subjective cost.
 
-Factual accounting modules—purchases, invoices, payments, allocations, and accounting cost centers—remain because they represent recorded transactions. They are visually separated from production revenue and are not silently joined into PDOR.
+The active Financeiro product exposes only `Rastreio de receita`, `Serviços e
+preços`, and `PDOR`. Purchases, invoices, payments, collections, allocations,
+cost centers, cost, margin, and other legacy finance modules are not active or
+reachable. Historical implementation code may remain dormant for compatibility,
+but it is not an approved product surface and must not appear in navigation,
+routes, Home summaries, exports, or runtime evidence.
 
 ### 8.4 PDOR
 
@@ -387,7 +392,9 @@ Cortex 3.0 is done only when all of the following are simultaneously true:
 - RDO creation requires a real worksite, generates/preserves its ID, carries forward the previous workforce, supports worker/apontador changes, works offline, and synchronizes automatically.
 - RDO exports a truthful two-sheet XLSX matching the supplied operational model online and offline.
 - Financeiro owns versioned service prices and revenue is traceable from accepted RDO execution to immutable price evidence.
-- RDO/PDOR expose no subjective cost or margin, while factual accounting transactions remain intact.
+- Financeiro exposes only revenue trace, service prices, and revenue-only PDOR;
+  subjective cost, margin, and legacy accounting surfaces are not active or
+  reachable.
 - PDOR is reproducible from persisted evidence and reports failures/staleness honestly.
 - Authenticated tab workspaces use the available area, remain responsive/accessible, and contain no fabricated production data.
 - The full mutable Cortex runtime is proven on PostgreSQL `StaviasCortex` from clean migration through reconnect scenarios.

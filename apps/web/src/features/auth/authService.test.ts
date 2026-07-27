@@ -1,31 +1,59 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  clearSession: vi.fn(),
-  fetchSession: vi.fn(),
-  loginWithCpf: vi.fn(),
-  logoutOnline: vi.fn(),
-  purgeLegacyAuthStorage: vi.fn(),
-  setSession: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  class OfflineGrantOwnerMismatchError extends Error {}
+  return {
+    fetchOfflineGrantAfterFreshCpfLogin: vi.fn(),
+    fetchSession: vi.fn(),
+    loginWithCpf: vi.fn(),
+    logoutOnline: vi.fn(),
+    saveCollaborativeOfflineGrant: vi.fn(),
+    OfflineGrantOwnerMismatchError,
+  };
+});
 
 vi.mock("./authApi", () => ({
+  fetchOfflineGrantAfterFreshCpfLogin:
+    mocks.fetchOfflineGrantAfterFreshCpfLogin,
   fetchSession: mocks.fetchSession,
   loginWithCpf: mocks.loginWithCpf,
   logoutOnline: mocks.logoutOnline,
 }));
 
-vi.mock("./authSession", () => ({
-  clearSession: mocks.clearSession,
-  purgeLegacyAuthStorage: mocks.purgeLegacyAuthStorage,
-  setSession: mocks.setSession,
+vi.mock("./collaborativeOfflineGrant", () => ({
+  OfflineGrantOwnerMismatchError: mocks.OfflineGrantOwnerMismatchError,
+  saveCollaborativeOfflineGrant: mocks.saveCollaborativeOfflineGrant,
 }));
 
 import {
   autenticarPorCpf,
   encerrarSessao,
   initializeAuthSession,
+  LogoutReauthenticationRequiredError,
 } from "./authService";
+import { clearSession, getSession, setSession } from "./authSession";
+import {
+  clearRemoteSessionIsolation,
+  hasRemoteSessionIsolation,
+} from "./remoteSessionIsolation";
+import {
+  ApiError,
+  ApiTransportError,
+} from "../../lib/api/apiError";
+
+const broadcastMessages: unknown[] = [];
+
+class FakeBroadcastChannel {
+  onmessage: ((event: MessageEvent) => void) | null = null;
+
+  constructor(readonly name: string) {}
+
+  postMessage(message: unknown): void {
+    broadcastMessages.push(message);
+  }
+
+  close(): void {}
+}
 
 const profile = {
   colaboradorId: "00000000-0000-4000-8000-000000000001",
@@ -35,47 +63,234 @@ const profile = {
   obraIds: ["00000000-0000-4000-8000-000000000002"],
   expiraEm: "2099-07-14T12:00:00Z",
 };
+const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
 
 describe("authService", () => {
+  const storage = new Map<string, string>();
+  let rejectIsolationMarkerWrite = false;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.logoutOnline.mockReset();
+    mocks.logoutOnline.mockResolvedValue("revoked");
+    storage.clear();
+    rejectIsolationMarkerWrite = false;
+    vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (
+          key === REMOTE_SESSION_ISOLATION_KEY &&
+          rejectIsolationMarkerWrite
+        ) {
+          throw new Error("storage unavailable");
+        }
+        storage.set(key, value);
+      },
+      removeItem: (key: string) => storage.delete(key),
+      clear: () => storage.clear(),
+    });
+    localStorage.clear();
+    clearSession();
+    broadcastMessages.length = 0;
+  });
+
+  afterEach(() => {
+    rejectIsolationMarkerWrite = false;
+    clearRemoteSessionIsolation();
+    clearSession();
+    vi.unstubAllGlobals();
   });
 
   it("purga credenciais legadas antes de consultar a sessão online", async () => {
-    const order: string[] = [];
-    mocks.purgeLegacyAuthStorage.mockImplementation(() => order.push("purge"));
-    mocks.fetchSession.mockImplementation(async () => {
-      order.push("fetch");
-      return profile;
-    });
+    localStorage.setItem("cortex.auth.sessao", "legado");
+    localStorage.setItem("cortex.auth.cpfFilter", "legado");
+    mocks.fetchSession.mockResolvedValue(profile);
 
     await expect(initializeAuthSession()).resolves.toEqual(profile);
-    expect(order).toEqual(["purge", "fetch"]);
-    expect(mocks.setSession).toHaveBeenCalledWith(profile);
+    expect(localStorage.getItem("cortex.auth.sessao")).toBeNull();
+    expect(localStorage.getItem("cortex.auth.cpfFilter")).toBeNull();
+    expect(getSession()).toEqual(profile);
   });
 
-  it("normaliza o CPF e grava somente o perfil validado", async () => {
+  it("does not rehydrate a stale cookie principal during bootstrap while remote isolation is persisted", async () => {
+    localStorage.setItem(REMOTE_SESSION_ISOLATION_KEY, "1");
+    mocks.fetchSession.mockResolvedValue(profile);
+
+    await expect(initializeAuthSession()).resolves.toBeNull();
+
+    expect(mocks.fetchSession).not.toHaveBeenCalled();
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+  });
+
+  it("normaliza o CPF, grava o grant e retorna seu estado", async () => {
     mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrantAfterFreshCpfLogin.mockResolvedValue({ signed: "grant" });
 
     await expect(autenticarPorCpf("111.444.777-35"))
-      .resolves.toEqual(profile);
+      .resolves.toEqual({ profile, offlineGrant: "READY" });
     expect(mocks.loginWithCpf).toHaveBeenCalledWith("11144477735");
-    expect(mocks.setSession).toHaveBeenCalledWith(profile);
+    expect(mocks.saveCollaborativeOfflineGrant).toHaveBeenCalledWith(
+      "11144477735",
+      { signed: "grant" },
+      profile.colaboradorId,
+    );
+    expect(getSession()).toEqual(profile);
   });
 
-  it("não limpa a memória quando a rede impede revogar a sessão", async () => {
+  it("clears the resident session and keeps this tab isolated when the marker cannot persist", async () => {
+    setSession(profile);
+    rejectIsolationMarkerWrite = true;
+
+    await expect(autenticarPorCpf("11144477735"))
+      .rejects.toThrow("isolar a sessão remota");
+
+    expect(getSession()).toBeNull();
+    expect(hasRemoteSessionIsolation()).toBe(true);
+    expect(mocks.loginWithCpf).not.toHaveBeenCalled();
+  });
+
+  it("keeps the bound online session when only the fresh offline grant transport is unavailable", async () => {
+    mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrantAfterFreshCpfLogin.mockRejectedValue(
+      new TypeError("offline"),
+    );
+
+    await expect(autenticarPorCpf("11144477735"))
+      .resolves.toEqual({ profile, offlineGrant: "UNAVAILABLE" });
+
+    expect(getSession()).toEqual(profile);
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBeNull();
+  });
+
+  it("releases remote isolation only after a new direct CPF login succeeds", async () => {
+    localStorage.setItem(REMOTE_SESSION_ISOLATION_KEY, "1");
+    mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrantAfterFreshCpfLogin.mockResolvedValue({
+      signed: "grant",
+    });
+
+    await expect(autenticarPorCpf("11144477735")).resolves.toEqual({
+      profile,
+      offlineGrant: "READY",
+    });
+
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBeNull();
+    expect(getSession()).toEqual(profile);
+  });
+
+  it("fails closed when a concurrent login returns another collaborator's offline grant", async () => {
+    mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrantAfterFreshCpfLogin.mockResolvedValue({
+      signed: "grant-b",
+    });
+    mocks.saveCollaborativeOfflineGrant.mockRejectedValue(
+      new mocks.OfflineGrantOwnerMismatchError("owner mismatch"),
+    );
+
+    await expect(autenticarPorCpf("11144477735")).rejects.toThrow(
+      "sessão foi alterada",
+    );
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+    expect(mocks.logoutOnline).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the server rejects the bound fresh-grant session", async () => {
+    mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrantAfterFreshCpfLogin.mockRejectedValue(
+      new ApiError("Sessão incompatível.", 401, null),
+    );
+
+    await expect(autenticarPorCpf("11144477735"))
+      .rejects.toThrow("Sessão incompatível.");
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+  });
+
+  it("preserva a orientação segura quando a prova da aba não pode ser preparada", async () => {
+    mocks.loginWithCpf.mockRejectedValue(
+      new ApiTransportError(
+        "Não foi possível preparar a prova desta aba. Atualize a página e entre novamente.",
+        "CLIENT_INSTANCE_UNAVAILABLE",
+      ),
+    );
+
+    await expect(autenticarPorCpf("11144477735")).rejects.toThrow(
+      "Não foi possível preparar a prova desta aba. Atualize a página e entre novamente.",
+    );
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+  });
+
+  it("bloqueia a sessão local mesmo quando a rede impede a revogação", async () => {
+    setSession(profile);
+    broadcastMessages.length = 0;
     mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
     await expect(encerrarSessao()).rejects.toThrow("offline");
-    expect(mocks.clearSession).not.toHaveBeenCalled();
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+    expect(localStorage.getItem("cortex.auth.logoutPending")).toBeNull();
+    expect(broadcastMessages).toEqual([]);
   });
 
-  it("limpa a memória após revogação ou sessão já expirada", async () => {
-    mocks.logoutOnline.mockResolvedValueOnce("revoked");
-    await encerrarSessao();
-    mocks.logoutOnline.mockResolvedValueOnce("already-expired");
+  it("clears local state before a failed isolation-marker write during logout", async () => {
+    setSession(profile);
+    rejectIsolationMarkerWrite = true;
+
+    await expect(encerrarSessao()).rejects.toThrow("isolar a sessão remota");
+
+    expect(getSession()).toBeNull();
+    expect(hasRemoteSessionIsolation()).toBe(true);
+    expect(mocks.logoutOnline).not.toHaveBeenCalled();
+  });
+
+  it("propaga logout e limpa a isolação somente após revogação confirmada", async () => {
+    setSession(profile);
+    broadcastMessages.length = 0;
+    mocks.logoutOnline.mockResolvedValue("revoked");
+
     await encerrarSessao();
 
-    expect(mocks.clearSession).toHaveBeenCalledTimes(2);
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBeNull();
+    expect(localStorage.getItem("cortex.auth.logoutPending")).toBeNull();
+    expect(broadcastMessages).toEqual(["LOGOUT"]);
+  });
+
+  it("preserva a isolação e não anuncia logout quando outra aba substituiu o cookie", async () => {
+    setSession(profile);
+    broadcastMessages.length = 0;
+    mocks.logoutOnline.mockRejectedValue(
+      new ApiError(
+        "Autenticação necessária ou sessão expirada.",
+        401,
+        null,
+      ),
+    );
+
+    await expect(encerrarSessao()).rejects.toBeInstanceOf(
+      LogoutReauthenticationRequiredError,
+    );
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+    expect(broadcastMessages).toEqual([]);
+  });
+
+  it("does not revoke an unknown shared cookie when an existing isolation marker is logged out", async () => {
+    localStorage.setItem(REMOTE_SESSION_ISOLATION_KEY, "1");
+    setSession(profile);
+
+    await encerrarSessao();
+
+    expect(getSession()).toBeNull();
+    expect(mocks.logoutOnline).not.toHaveBeenCalled();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
   });
 });

@@ -54,81 +54,12 @@
   white-space: nowrap;
 }
 
-.institutional-status[data-state="LOCAL"] {
-  color: #50605a;
-}
-
-.institutional-status[data-state="PENDING"] {
-  color: #866900;
-}
-
-.institutional-status[data-state="SYNCING"] {
-  color: var(--color-brand-teal);
-}
-
-.institutional-status[data-state="SYNCED"] {
-  color: #2d6744;
-}
-
+.institutional-status[data-state="LOCAL"] { color: #50605a; }
+.institutional-status[data-state="PENDING"] { color: #866900; }
+.institutional-status[data-state="SYNCING"] { color: var(--color-brand-teal); }
+.institutional-status[data-state="SYNCED"] { color: #2d6744; }
 .institutional-status[data-state="CONFLICT"],
-.institutional-status[data-state="REJECTED"] {
-  color: #9b3232;
-}
-
-.institutional-sync-state {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-}
-
-.institutional-sync-state__facts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  min-width: 0;
-  margin: 0;
-}
-
-.institutional-sync-state__facts div {
-  min-width: 0;
-}
-
-.institutional-sync-state__facts dt {
-  color: var(--color-muted);
-  font-size: 0.66rem;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.institutional-sync-state__facts dd {
-  margin: 3px 0 0;
-  color: var(--color-ink);
-  font-size: 0.78rem;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
-.institutional-sync-state__error {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  color: #9b3232;
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.institutional-sync-state__checking {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.4;
-}
+.institutional-status[data-state="REJECTED"] { color: #9b3232; }
 
 .trace-reference {
   display: inline-flex;
@@ -141,9 +72,7 @@
   text-underline-offset: 3px;
 }
 
-.trace-reference:hover {
-  color: var(--color-ink);
-}
+.trace-reference:hover { color: var(--color-ink); }
 
 .trace-reference__id {
   color: var(--color-muted);
@@ -157,20 +86,5 @@
     flex-direction: column;
   }
 
-  .institutional-page-header__actions {
-    justify-content: flex-start;
-  }
-
-  .institutional-sync-state {
-    align-items: flex-start;
-    grid-template-columns: 1fr;
-  }
-
-  .institutional-sync-state__facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .institutional-sync-state__last-sync {
-    grid-column: 1 / -1;
-  }
+  .institutional-page-header__actions { justify-content: flex-start; }
 }

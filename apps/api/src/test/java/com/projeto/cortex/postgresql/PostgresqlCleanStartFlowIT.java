@@ -14,14 +14,22 @@ import com.projeto.cortex.auth.otp.PostgresqlEmailOtpChallengeRepository;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.auth.session.AuthSessionProperties;
 import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.PostgresqlAuthSessionRepository;
 import com.projeto.cortex.common.PostgresqlActivationGateFilter;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,13 +51,22 @@ import static org.mockito.Mockito.when;
  */
 class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
 
+    private static final String V44_TABLE_INVENTORY =
+            "/postgresql/v44-required-tables.txt";
+    private static final Set<String> RETIRED_ASSISTANT_TABLES = Set.of(
+            assistantTable("context_snapshots"),
+            assistantTable("queries"),
+            assistantTable("contexto_obra")
+    );
+
     @Test
     void migratesAnEmptyDatabaseThenAllowsOnlyActivationRoutesAndIssuesAnAlfaSession()
             throws Exception {
         try (PostgreSQLContainer<?> database = database()) {
             database.start();
             JdbcTemplate jdbc = migratedJdbc(database);
-            assertV44WasApplied(database);
+            assertCurrentMigrationChainWasApplied(database);
+            assertCurrentTableInventory(jdbc);
             assertThat(jdbc.queryForObject(
                     "SELECT count(*) FROM colaborador", Integer.class
             )).isZero();
@@ -78,6 +95,8 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
             );
             AuthRateLimiter rateLimiter = mock(AuthRateLimiter.class);
             when(rateLimiter.allow(anyString(), anyString())).thenReturn(true);
+            when(rateLimiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService otp = new EmailOtpChallengeService(
                     rateLimiter,
                     issuer,
@@ -85,8 +104,15 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                     cryptography,
                     new OtpPolicy(300, 5, 5, 100, 900)
             );
+            ClientInstanceProof clientInstance = ClientInstanceProof
+                    .fromRawValue("A".repeat(43))
+                    .orElseThrow();
 
-            otp.request("  INITIAL.ALFA@FIXTURE.INVALID  ", "203.0.113.30");
+            otp.request(
+                    "  INITIAL.ALFA@FIXTURE.INVALID  ",
+                    "203.0.113.30",
+                    clientInstance.hash()
+            );
             verify(events).publishEvent(
                     org.mockito.ArgumentMatchers.any(OtpDeliveryRequested.class)
             );
@@ -98,7 +124,9 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
 
             Optional<AuthenticatedIdentity> verified = transactions(jdbc)
                     .execute(status -> otp.verify(
-                            challengeId, "123456"
+                            challengeId,
+                            "123456",
+                            clientInstance.hash()
                     ));
             assertThat(verified).contains(new AuthenticatedIdentity(
                     collaboratorId, "Synthetic Operator", PapelAcesso.ALFA
@@ -108,8 +136,8 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                     new PostgresqlAuthSessionRepository(jdbc),
                     new AuthSessionProperties(300)
             );
-            var issued = sessions.issue(verified.orElseThrow());
-            assertThat(sessions.resolve(issued.sessionToken()))
+            var issued = sessions.issue(verified.orElseThrow(), clientInstance);
+            assertThat(sessions.resolve(issued.sessionToken(), clientInstance))
                     .hasValueSatisfying(session -> {
                         assertThat(session.collaboratorId()).isEqualTo(collaboratorId);
                         assertThat(session.role()).isEqualTo(PapelAcesso.ALFA);
@@ -122,8 +150,9 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         }
     }
 
-    private void assertV44WasApplied(PostgreSQLContainer<?> database)
+    private void assertCurrentMigrationChainWasApplied(PostgreSQLContainer<?> database)
             throws Exception {
+        List<String> appliedVersions = new java.util.ArrayList<>();
         try (Connection connection = DriverManager.getConnection(
                 database.getJdbcUrl(), database.getUsername(), database.getPassword()
         ); Statement statement = connection.createStatement(); ResultSet rows =
@@ -133,11 +162,69 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                              WHERE type = 'SQL'
                              ORDER BY installed_rank
                              """)) {
-            assertThat(rows.next()).isTrue();
-            assertThat(rows.getString("version")).isEqualTo("44");
-            assertThat(rows.getBoolean("success")).isTrue();
-            assertThat(rows.next()).isFalse();
+            while (rows.next()) {
+                assertThat(rows.getBoolean("success")).isTrue();
+                appliedVersions.add(rows.getString("version"));
+            }
         }
+        assertThat(appliedVersions).containsExactly(
+                "44", "45", "45.1", "46", "47", "48", "49", "50", "51",
+                "52", "53", "54", "55", "56", "57", "58", "59", "60", "61"
+        );
+    }
+
+    private void assertCurrentTableInventory(JdbcTemplate jdbc) throws Exception {
+        Set<String> expectedTables = v44Tables();
+        assertThat(expectedTables).containsAll(RETIRED_ASSISTANT_TABLES);
+        expectedTables.removeAll(RETIRED_ASSISTANT_TABLES);
+        expectedTables.add("graph_projection_checkpoint");
+        expectedTables.add("asset_obra_eligibilidade");
+        expectedTables.add("rdo_number_sequence");
+        expectedTables.add("rdo_creation_context_snapshot");
+        expectedTables.add("catalogo_servico");
+        expectedTables.add("service_catalog_revision");
+        expectedTables.add("service_catalog_mutation");
+        expectedTables.add("service_price_version");
+        expectedTables.add("service_price_version_cancellation");
+        expectedTables.add("pdor_calculation_failure");
+        expectedTables.add("ontology_entity_worksite_snapshots");
+
+        Set<String> actualTables = new TreeSet<>(jdbc.queryForList("""
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_type = 'BASE TABLE'
+                  AND table_name <> 'flyway_schema_history'
+                ORDER BY table_name
+                """, String.class));
+
+        assertThat(expectedTables).hasSize(124).doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES);
+        assertThat(actualTables)
+                .doesNotContainAnyElementsOf(RETIRED_ASSISTANT_TABLES)
+                .containsExactlyElementsOf(expectedTables);
+    }
+
+    private Set<String> v44Tables() throws Exception {
+        InputStream resource = PostgresqlCleanStartFlowIT.class.getResourceAsStream(
+                V44_TABLE_INVENTORY
+        );
+        assertThat(resource).as("immutable V44 table inventory").isNotNull();
+        try (BufferedReader lines = new BufferedReader(new InputStreamReader(
+                resource,
+                StandardCharsets.UTF_8
+        ))) {
+            Set<String> tables = new TreeSet<>();
+            lines.lines()
+                    .map(String::trim)
+                    .filter(line -> !line.isEmpty())
+                    .filter(line -> !line.startsWith("#"))
+                    .forEach(tables::add);
+            return tables;
+        }
+    }
+
+    private static String assistantTable(String suffix) {
+        return String.join("", "sta", "via", "_", suffix);
     }
 
     private void assertActivationGateSurface() throws Exception {

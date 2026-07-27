@@ -4,43 +4,44 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 source "$ROOT_DIR/scripts/dev/load-local-env.sh"
+source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"
+source "$ROOT_DIR/scripts/dev/operational-memory-cursor-preflight.sh"
+source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 
-if [ -z "${CORTEX_DB_PASSWORD:-}" ]; then
-  echo "Missing CORTEX_DB_PASSWORD."
-  echo "Set it with:"
-  echo "export CORTEX_DB_PASSWORD='your-local-password'"
-  echo ""
-  echo "Or create a local .env file. Never commit .env."
+# A manually selected web port must rotate both browser-origin allowlists
+# together. This explicit override wins over stale values loaded from .env.
+if [[ -n "${CORTEX_PUBLIC_ORIGIN:-}" ]]; then
+  export CORTEX_CORS_ALLOWED_ORIGINS="$CORTEX_PUBLIC_ORIGIN"
+  export CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS="$CORTEX_PUBLIC_ORIGIN"
+fi
+
+cortex_require_postgres_url
+cortex_require_text CORTEX_POSTGRES_USER
+cortex_prepare_postgres_password
+
+if [[ "${CORTEX_POSTGRES_RUNTIME_READY:-false}" != "true" ]]; then
+  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V61 and a real ALFA bootstrap in the canonical database." >&2
   exit 1
 fi
 
-if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:-}" ]; then
-  echo "Missing CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID."
-  exit 1
-fi
+cortex_require_text CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID
+cortex_require_secret_file CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE
+cortex_require_text CORTEX_AUTH_OFFLINE_GRANT_KEY_ID
+cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE
+cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE
 
-if [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:-}" ] &&
-  [ -z "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
-  echo "Missing CPF lookup HMAC key."
-  echo "Set CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE or CORTEX_AUTH_CPF_HMAC_CURRENT_KEY in your local .env."
-  exit 1
-fi
-
-if [ -n "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:-}" ] &&
-  [ -n "${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:-}" ]; then
-  echo "Configure only one CPF lookup HMAC key source."
-  exit 1
-fi
+cortex_preflight_operational_memory_cursor_hmac
 
 cd "$ROOT_DIR/apps/api"
 
-export CORTEX_IMPORT_ENABLED="${CORTEX_IMPORT_ENABLED:-true}"
+export CORTEX_IMPORT_ENABLED="false"
 export CORTEX_SYNC_ENABLED="${CORTEX_SYNC_ENABLED:-true}"
-export CORTEX_AUTH_DEV_ADMIN_ENABLED="${CORTEX_AUTH_DEV_ADMIN_ENABLED:-true}"
-export CORTEX_STAVIA_GENERATOR_MODE="${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}"
-export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-local}"
+export CORTEX_AUTH_DEV_ADMIN_ENABLED="false"
+export CORTEX_AUTH_PROVISIONING_ENABLED="false"
+export SPRING_PROFILES_ACTIVE="local,postgresql"
 
 API_PORT="${PORT:-${SERVER_PORT:-8080}}"
+export SERVER_PORT="$API_PORT"
 API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"
 
 if command -v lsof >/dev/null 2>&1 &&

@@ -7,6 +7,18 @@ public record PdorErrorResponse(
         int status,
         String erro,
         String mensagem,
-        String caminho
+        String caminho,
+        String codigo,
+        String correlationId
 ) {
+
+    PdorErrorResponse(
+            LocalDateTime timestamp,
+            int status,
+            String erro,
+            String mensagem,
+            String caminho
+    ) {
+        this(timestamp, status, erro, mensagem, caminho, null, null);
+    }
 }

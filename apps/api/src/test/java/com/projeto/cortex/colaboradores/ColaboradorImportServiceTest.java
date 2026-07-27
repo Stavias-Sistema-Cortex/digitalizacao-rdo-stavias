@@ -167,7 +167,7 @@ class ColaboradorImportServiceTest {
     }
 
     @Test
-    void refusesInvalidAcademyCpfBeforeIdentityOrOperationalProjection() {
+    void importsInvalidAcademyCpfWithoutCreatingAnAuthenticationIdentity() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
         CortexOperationalMemoryService memory =
@@ -197,20 +197,22 @@ class ColaboradorImportServiceTest {
                 authIdentities
         );
 
-        assertThat(org.assertj.core.api.Assertions.catchThrowable(
-                service::importarUsuariosDaAcademy
-        )).isInstanceOf(RuntimeException.class)
-                .hasMessage("Falha ao importar colaboradores da Academy.");
+        ColaboradorImportResult result =
+                service.importarUsuariosDaAcademy();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(result.registrosLidos()).isEqualTo(1);
+        assertThat(result.registrosProcessados()).isEqualTo(1);
 
         verify(authIdentities, never()).upsertAcademyIdentity(
                 anyString(),
                 anyString(),
                 anyString()
         );
-        verify(memory, never()).registrarEvidencias(
+        verify(memory).registrarEvidencias(
                 eq("COLABORADOR"),
                 anyString(),
-                anyString(),
+                eq("IMPORTACAO_LEGADO"),
                 any(Map.class)
         );
     }

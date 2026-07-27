@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 /** PostgreSQL native e-mail challenge persistence with a decoy-safe row lock. */
 @Repository
 @Profile("postgresql-common")
-public final class PostgresqlEmailOtpChallengeRepository
+public class PostgresqlEmailOtpChallengeRepository
         implements EmailOtpChallengeStore {
 
     private final JdbcTemplate jdbcTemplate;
@@ -28,19 +28,22 @@ public final class PostgresqlEmailOtpChallengeRepository
             String collaboratorId,
             String identifierDigest,
             String codeDigest,
+            String clientInstanceHash,
             int ttlSeconds,
             int maxAttempts
     ) {
         Timestamp expiresAt = jdbcTemplate.queryForObject("""
                 INSERT INTO auth_email_challenge (
                     id, colaborador_id, identifier_digest, codigo_digest,
+                    client_instance_hash, client_instance_bound,
                     expira_em, tentativas, max_tentativas, status
-                ) VALUES (?, ?, ?, ?,
+                ) VALUES (?, ?, ?, ?, ?, TRUE,
                     clock_timestamp() + (? * INTERVAL '1 second'),
                     0, ?, 'PENDENTE')
                 RETURNING expira_em
                 """, Timestamp.class, challengeId, collaboratorId,
-                identifierDigest, codeDigest, ttlSeconds, maxAttempts);
+                identifierDigest, codeDigest, clientInstanceHash, ttlSeconds,
+                maxAttempts);
         if (expiresAt == null) {
             throw new IllegalStateException("Desafio de autenticação não persistido.");
         }
@@ -48,7 +51,10 @@ public final class PostgresqlEmailOtpChallengeRepository
     }
 
     @Override
-    public Optional<LockedChallenge> lockForVerification(String challengeId) {
+    public Optional<LockedChallenge> lockForVerification(
+            String challengeId,
+            String clientInstanceHash
+    ) {
         List<LockedChallenge> rows = jdbcTemplate.query("""
                 SELECT challenge.id, challenge.colaborador_id,
                     challenge.codigo_digest, challenge.expira_em,
@@ -65,6 +71,8 @@ public final class PostgresqlEmailOtpChallengeRepository
                 LEFT JOIN colaborador
                     ON colaborador.id = challenge.colaborador_id
                 WHERE challenge.id = ?
+                  AND challenge.client_instance_bound = TRUE
+                  AND challenge.client_instance_hash = ?
                 FOR UPDATE OF challenge
                 """, (resultSet, rowNumber) -> new LockedChallenge(
                         resultSet.getString("id"),
@@ -81,7 +89,7 @@ public final class PostgresqlEmailOtpChallengeRepository
                         resultSet.getString("identity_status"),
                         resultSet.getBoolean("ativo"),
                         resultSet.getTimestamp("deletado_em") != null
-                ), challengeId);
+                ), challengeId, clientInstanceHash);
         if (rows.size() > 1) {
             throw new IllegalStateException("Desafio de autenticação ambíguo.");
         }
@@ -143,14 +151,22 @@ public final class PostgresqlEmailOtpChallengeRepository
     }
 
     @Override
-    public int consume(String challengeId, String collaboratorId, String codeDigest) {
+    public int consume(
+            String challengeId,
+            String collaboratorId,
+            String codeDigest,
+            String clientInstanceHash
+    ) {
         return jdbcTemplate.update("""
                 UPDATE auth_email_challenge
                 SET status = 'CONSUMIDO', consumido_em = clock_timestamp()
                 WHERE id = ? AND colaborador_id = ? AND status = 'PENDENTE'
                     AND expira_em > clock_timestamp()
                     AND tentativas < max_tentativas AND codigo_digest = ?
-                """, challengeId, collaboratorId, codeDigest);
+                    AND client_instance_bound = TRUE
+                    AND client_instance_hash = ?
+                """, challengeId, collaboratorId, codeDigest,
+                clientInstanceHash);
     }
 
     @Override

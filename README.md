@@ -1,20 +1,26 @@
 # Stavias Córtex
 
-Plataforma operacional offline-first para obras, RDO, Mensagens, Financeiro e
-StavIA. O backend usa Java 21, Spring Boot, MySQL/Flyway e armazenamento local
-persistente ou S3; a PWA usa React, TypeScript, Vite e IndexedDB.
+Plataforma operacional offline-first para obras, RDO, Mensagens, Financeiro,
+memória operacional e grafo ontológico. O backend usa Java 21, Spring Boot,
+PostgreSQL/Flyway e armazenamento local persistente ou S3; a PWA usa React,
+TypeScript, Vite e IndexedDB. A StavIA está arquivada fora do runtime ativo.
 
 ## Desenvolvimento local
 
 ```bash
 cp .env.example .env
 # preencha somente secrets locais
-docker compose --env-file .env -f compose.local.yml up --build
+./scripts/dev/run-compose.sh
 ```
 
-- PWA: `http://127.0.0.1:5173`
+- PWA: `http://localhost:5173`
 - health da API: `http://127.0.0.1:8081/api/health`
 - readiness com banco: `http://127.0.0.1:8081/api/readiness`
+
+`compose.local.yml` usa somente o runtime PostgreSQL canônico. Ele não cria
+ALFA, obra, RDO ou receita fictícios: migrações até V61, bootstrap de uma identidade
+real e o preflight de release devem ser concluídos antes de definir
+`CORTEX_POSTGRES_RUNTIME_READY=true`.
 
 Para executar sem containers, veja [docs/dev-runbook.md](docs/dev-runbook.md).
 
@@ -31,15 +37,28 @@ Comece por [docs/deploy-checklist.md](docs/deploy-checklist.md) e
 [docs/production-runbook.md](docs/production-runbook.md). O arquivo
 `compose.production.example.yml` é apenas uma topologia de referência: não cria
 banco nem contém credenciais. Produção falha fechada sem secrets por arquivo,
-origem HTTPS exata, SMTP autenticado, storage durável e um ALFA ativo com e-mail
-verificado.
+origem HTTPS exata, storage durável e uma identidade Academy ALFA ativa no
+PostgreSQL. O SMTP pertence somente ao processo isolado de ativação. O web
+container fica em loopback por padrão e deve ser publicado por
+um ingresso HTTPS gerenciado; Academy e Zeladoria recebem somente credenciais
+de leitura para importação, enquanto todo estado do Córtex fica no PostgreSQL.
+O acesso online normal usa CPF para localizar a identidade canônica persistida
+no PostgreSQL e emitir uma sessão opaca; passkey é uma alternativa online. Em
+dispositivo colaborativo, um grant offline assinado, válido e correspondente
+permite reabrir somente o cache local com o mesmo CPF. O cofre PRF continua
+exigindo uma passkey previamente registrada; nenhum mecanismo offline autoriza
+chamadas à API.
 
-## Fundação PostgreSQL limpa
+## Runtime PostgreSQL canônico
 
-O PostgreSQL `StaviasCortex` é uma fundação canônica nova, não um cutover
-automático do runtime MySQL. Academy e Zeladoria continuam somente como fontes
-MySQL de leitura. Veja o
+O PostgreSQL `StaviasCortex` é a fonte canônica do runtime Cortex 3.0; Academy e
+Zeladoria continuam somente como fontes MySQL de leitura. A ativação normal
+continua fail-closed: exige schema completo, `CORTEX_POSTGRES_RUNTIME_READY=true`
+e o conjunto exato de superfícies operacionais registradas. Veja o
 [runbook de clean start PostgreSQL](docs/operations/cortex-postgresql-clean-start.md)
-antes de provisionar, migrar, fazer bootstrap ou ativar esse ambiente. O
-runtime operacional PostgreSQL permanece propositalmente bloqueado até uma
-release posterior registrar um slice seguro e verificado.
+antes de provisionar, migrar, fazer bootstrap ou ativar esse ambiente.
+
+Para verificar o contrato de deploy sem usar credenciais reais, execute
+`bash scripts/security/test-local-compose-security.sh`. Ele renderiza o Compose
+com secrets temporários, confirma que não há fallback para `CORTEX_DB_*` e que
+as fontes externas não substituem o PostgreSQL canônico.

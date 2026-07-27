@@ -3,565 +3,672 @@ import "fake-indexeddb/auto";
 import { deleteDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearSession, setSession } from "../../features/auth/authSession";
 import {
-  closeCortexDb,
-  getCortexDb,
-} from "../db/cortexDb";
+  clearSession,
+  getSession,
+  setSession,
+} from "../../features/auth/authSession";
+import { closeCortexDb, getCortexDb } from "../db/cortexDb";
 import type { LocalRdoRecord } from "../db/db.types";
 import { databaseNameForScope } from "../db/localDataNamespace";
+import { repairRdoCreateMutationsForSync } from "../db/localRdoService";
 import {
   LOCAL_MUTATION_QUEUED_EVENT,
   commitLocalMutation,
-  type CommitLocalMutationInput,
-  type LocalMutationTransaction,
+  type LocalMutationCommand,
+  type LocalMutationDomainWrite,
 } from "./localMutationCoordinator";
 import {
-  buildMutationEnvelope,
+  buildCanonicalMutation,
   mutationPayloadHash,
-  type BuildMutationEnvelopeInput,
 } from "./mutationEnvelope";
+import { captureOnlineSyncSession } from "./syncSession";
 
 const OBRA_ID = "00000000-0000-4000-8000-000000000001";
-const CREATED_AT = "2026-07-17T12:00:00.000Z";
+const FOREIGN_OBRA_ID = "00000000-0000-4000-8000-000000000006";
+const DEVICE_ID = "00000000-0000-4000-8000-000000000002";
+const RDO_ID = "00000000-0000-4000-8000-000000000003";
+const OCCURRED_AT = "2026-07-21T12:00:00.000Z";
 
 let databaseName = "";
-let ownerId = "";
+let userId = "";
 
-function fixtureActor() {
+function rdo(): LocalRdoRecord {
   return {
-    actorId: ownerId,
-    actorName: "Operador de campo",
-    deviceId: "00000000-0000-4000-8000-000000000002",
-    authorizationScope: [OBRA_ID],
-  };
-}
-
-function localRdo(): LocalRdoRecord {
-  return {
-    id: "00000000-0000-4000-8000-000000000003",
+    id: RDO_ID,
     obraId: OBRA_ID,
     programacaoId: null,
     numeroRdo: "RDO-001",
-    dataRdo: "2026-07-17",
+    dataRdo: "2026-07-21",
     statusRdo: "RASCUNHO",
     syncStatus: "PENDING_SYNC",
     versaoEntidade: null,
     payload: { observacoes: "Registro offline" },
-    createdAt: CREATED_AT,
-    updatedAt: CREATED_AT,
+    createdAt: OCCURRED_AT,
+    updatedAt: OCCURRED_AT,
   };
 }
 
-function coordinatorInput(rdo = localRdo()) {
+function writePlan(
+  record: LocalRdoRecord,
+): readonly LocalMutationDomainWrite<"rdos">[] {
+  return [{ store: "rdos", value: record, principal: true }];
+}
+
+function command(record = rdo()): LocalMutationCommand<"rdos"> {
   return {
-    stores: ["rdos"] as const,
-    entity: {
-      type: "RDO" as const,
-      id: rdo.id,
-      obraId: rdo.obraId,
-      rdoId: rdo.id,
-    },
-    operation: "CRIAR_RDO" as const,
-    eventType: "RDO_CRIADO" as const,
+    clientMutationId: "00000000-0000-4000-8000-000000000004",
+    ontologyEventId: "00000000-0000-4000-8000-000000000005",
+    deviceId: DEVICE_ID,
+    userId,
+    obraId: OBRA_ID,
+    entityType: "RDO",
+    entityId: record.id,
+    entityName: record.numeroRdo,
+    operation: "CREATE",
+    transportOperation: "CRIAR_RDO",
     baseVersion: null,
-    previousState: {},
-    newState: { ...rdo },
-    actor: fixtureActor(),
-    createdAt: CREATED_AT,
-    write: (tx: LocalMutationTransaction<"rdos">) => {
-      void tx.objectStore("rdos").put(rdo);
-      return undefined;
-    },
+    occurredAt: OCCURRED_AT,
+    previousSnapshot: {},
+    nextSnapshot: { ...record },
+    eventType: "RDO_CRIADO",
+    write: () => writePlan(record),
+  };
+}
+
+function betaSession(id = userId, obraIds = [OBRA_ID]) {
+  return {
+    colaboradorId: id,
+    nome: "Operador de campo",
+    papelAcesso: "BETA" as const,
+    escopoGlobal: false,
+    obraIds,
+    expiraEm: new Date(Date.now() + 60_000).toISOString(),
   };
 }
 
 beforeEach(async () => {
-  vi.stubGlobal("BroadcastChannel", undefined);
   vi.stubGlobal("window", new EventTarget());
-  ownerId = crypto.randomUUID();
-  setSession({
-    colaboradorId: ownerId,
-    nome: "Operador de campo",
-    papelAcesso: "BETA",
-    escopoGlobal: false,
-    obraIds: [OBRA_ID],
-    expiraEm: new Date(Date.now() + 60_000).toISOString(),
-  });
-  databaseName = await databaseNameForScope(ownerId, `BETA:${OBRA_ID}`);
+  userId = crypto.randomUUID();
+  setSession(betaSession());
+  databaseName = await databaseNameForScope(userId, `BETA:${OBRA_ID}`);
 });
 
 afterEach(async () => {
   await closeCortexDb();
-  if (databaseName) {
-    await deleteDB(databaseName);
-  }
+  if (databaseName) await deleteDB(databaseName);
   clearSession();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
-describe("canonical mutation hashing", () => {
-  it("hashes recursively sorted canonical JSON deterministically", async () => {
-    const left = {
-      z: [{ b: 2, a: 1 }],
-      a: { second: true, first: null },
-    };
-    const right = {
-      a: { first: null, second: true },
-      z: [{ a: 1, b: 2 }],
-    };
-
-    expect(await mutationPayloadHash(left)).toBe(
-      await mutationPayloadHash(right),
+describe("canonical local mutation coordinator", () => {
+  it("hashes recursively sorted JSON deterministically", async () => {
+    expect(
+      await mutationPayloadHash({ z: [{ b: 2, a: 1 }], a: true }),
+    ).toBe(
+      await mutationPayloadHash({ a: true, z: [{ a: 1, b: 2 }] }),
     );
-    expect(await mutationPayloadHash({ b: 2, a: 1 })).toBe(
-      "43258cff783fe7036d8a43033f830adfc60ec037382473548ac742b888292777",
-    );
-  });
-
-  it.each([
-    ["undefined", { invalid: undefined }],
-    ["non-finite number", { invalid: Number.NaN }],
-    ["function", { invalid: () => undefined }],
-  ])("rejects %s values", async (_label, invalid) => {
-    await expect(mutationPayloadHash(invalid)).rejects.toThrow();
-  });
-
-  it("preserves an inherited correlation and causation chain", async () => {
-    const previousState = { statusRdo: "RASCUNHO", unchanged: true };
-    const newState = { statusRdo: "ENVIADO", unchanged: true };
-    const mutation = await buildMutationEnvelope({
-      entity: { type: "RDO", id: localRdo().id },
-      operation: "ENVIAR_RDO",
-      baseVersion: 4,
-      previousState,
-      newState,
-      actor: fixtureActor(),
-      correlationId: "correlation-root",
-      causationId: "mutation-parent",
-      createdAt: CREATED_AT,
-    });
-
-    expect(mutation).toMatchObject({
-      contractVersion: 13,
-      correlationId: "correlation-root",
-      fieldPatch: {
-        changed: { statusRdo: "ENVIADO" },
-        baseValues: { statusRdo: "RASCUNHO" },
-      },
-      trace: {
-        actorId: ownerId,
-        deviceId: fixtureActor().deviceId,
-        authorizationScope: [OBRA_ID],
-        correlationId: "correlation-root",
-        causationId: "mutation-parent",
-      },
-    });
-    expect(mutation.trace.payloadHash).toBe(
-      await mutationPayloadHash(newState),
-    );
-  });
-
-  it("snapshots every envelope field before the first async boundary", async () => {
-    const entity: BuildMutationEnvelopeInput["entity"] = {
-      type: "RDO",
-      id: localRdo().id,
-    };
-    const authorizationScope = [OBRA_ID];
-    const actor = {
-      ...fixtureActor(),
-      authorizationScope,
-    };
-    const dependencies = ["dependency-original"];
-    const input: BuildMutationEnvelopeInput = {
-      entity,
-      operation: "ENVIAR_RDO",
-      baseVersion: 4,
-      previousState: { statusRdo: "RASCUNHO" },
-      newState: { statusRdo: "ENVIADO" },
-      actor,
-      correlationId: "correlation-original",
-      causationId: "causation-original",
-      createdAt: CREATED_AT,
-      transport: "SYNC_PUSH",
-      dependsOnMutationIds: dependencies,
-    };
-
-    const pending = buildMutationEnvelope(input);
-    entity.type = "MENSAGEM";
-    entity.id = "00000000-0000-4000-8000-000000000099";
-    input.operation = "CRIAR_MENSAGEM";
-    input.baseVersion = 99;
-    input.transport = "OBJECT_UPLOAD";
-    input.correlationId = "correlation-mutated";
-    input.causationId = "causation-mutated";
-    input.createdAt = "2026-07-17T13:00:00.000Z";
-    actor.actorId = "00000000-0000-4000-8000-000000000098";
-    actor.actorName = "Operador alterado";
-    actor.deviceId = "00000000-0000-4000-8000-000000000097";
-    authorizationScope[0] =
-      "00000000-0000-4000-8000-000000000096";
-    dependencies[0] = "dependency-mutated";
-
-    const mutation = await pending;
-
-    expect(mutation).toMatchObject({
-      entidadeTipo: "RDO",
-      entidadeId: localRdo().id,
-      operacao: "ENVIAR_RDO",
-      baseVersao: 4,
-      transport: "SYNC_PUSH",
-      criadaNoClienteEm: CREATED_AT,
-      updatedAt: CREATED_AT,
-      dependsOnMutationIds: ["dependency-original"],
-      correlationId: "correlation-original",
-      trace: {
-        actorId: ownerId,
-        deviceId: fixtureActor().deviceId,
-        authorizationScope: [OBRA_ID],
-        correlationId: "correlation-original",
-        causationId: "causation-original",
-      },
-    });
-  });
-
-  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
-    "rejects a non-finite base version (%s)",
-    async (baseVersion) => {
-      await expect(
-        buildMutationEnvelope({
-          entity: { type: "RDO", id: localRdo().id },
-          operation: "ENVIAR_RDO",
-          baseVersion,
-          previousState: {},
-          newState: { statusRdo: "ENVIADO" },
-          actor: fixtureActor(),
-        }),
-      ).rejects.toThrow("baseVersion must be finite or null.");
-    },
-  );
-
-  it.each([
-    ["blank", [" "]],
-    ["sparse", new Array<string>(1)],
-  ])("rejects a %s dependency id", async (_label, dependencies) => {
     await expect(
-      buildMutationEnvelope({
-        entity: { type: "RDO", id: localRdo().id },
-        operation: "ENVIAR_RDO",
-        baseVersion: null,
-        previousState: {},
-        newState: { statusRdo: "ENVIADO" },
-        actor: fixtureActor(),
-        dependsOnMutationIds: dependencies,
-      }),
-    ).rejects.toThrow(
-      "dependsOnMutationIds[0] must be a nonblank string.",
-    );
+      mutationPayloadHash({ invalid: Number.NaN }),
+    ).rejects.toThrow(/non-finite/i);
+    await expect(
+      mutationPayloadHash({ invalid: undefined }),
+    ).rejects.toThrow(/non-JSON/i);
   });
-});
 
-describe("local mutation coordinator", () => {
-  it("commits record, outbox and event atomically", async () => {
-    const db = await getCortexDb();
+  it("validates UUIDs, UTC instants, enums, base version and transport coherence", async () => {
+    const input = command();
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        clientMutationId: "not-a-uuid",
+      }),
+    ).rejects.toThrow(/clientMutationId.*UUID/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        occurredAt: "2026-07-21T09:00:00-03:00",
+      }),
+    ).rejects.toThrow(/UTC ISO/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        operation: "UPDATE",
+      }),
+    ).rejects.toThrow(/does not represent UPDATE/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        baseVersion: 0,
+      }),
+    ).rejects.toThrow(/CREATE requires baseVersion null/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        transport: "EMAIL" as never,
+      }),
+    ).rejects.toThrow(/transport EMAIL/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        transportOperation: "DROP_DATABASE" as never,
+      }),
+    ).rejects.toThrow(/transportOperation DROP_DATABASE/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        operation: "UPSERT" as never,
+      }),
+    ).rejects.toThrow(/operation UPSERT/i);
+  });
+
+  it("derives changedFields from the exact sorted snapshot delta", async () => {
+    const input = command();
+    const previousSnapshot = { kept: 1, removed: true, updated: "old" };
+    const nextSnapshot = { kept: 1, added: true, updated: "new" };
+    const built = await buildCanonicalMutation({
+      ...input,
+      operation: "UPDATE",
+      transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 7,
+      previousSnapshot,
+      nextSnapshot,
+      changedFields: ["added", "removed", "updated"],
+      authorizationScope: [OBRA_ID],
+    });
+
+    expect(built.mutation.changedFields).toEqual([
+      "added",
+      "removed",
+      "updated",
+    ]);
+    expect(built.mutation.fieldPatch).toEqual({
+      changed: { added: true, updated: "new" },
+      baseValues: { removed: true, updated: "old" },
+    });
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        changedFields: ["payload"],
+      }),
+    ).rejects.toThrow(/exact snapshot delta/i);
+    await expect(
+      buildCanonicalMutation({
+        ...input,
+        authorizationScope: [OBRA_ID],
+        changedFields: [
+          ...Object.keys(input.nextSnapshot).sort(),
+          Object.keys(input.nextSnapshot).sort()[0],
+        ],
+      }),
+    ).rejects.toThrow(/exact snapshot delta/i);
+  });
+
+  it("commits domain snapshot, exact v13 envelope and correlated event atomically", async () => {
+    const database = await getCortexDb();
     let queuedEvents = 0;
     window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
       queuedEvents += 1;
     });
-    const input = coordinatorInput();
 
-    const result = await commitLocalMutation(input);
+    const result = await commitLocalMutation(command());
 
-    expect(await db.get("rdos", input.entity.id)).toEqual(input.newState);
+    expect(result.mutation).toMatchObject({
+      schemaVersion: 13,
+      clientMutationId: "00000000-0000-4000-8000-000000000004",
+      deviceId: DEVICE_ID,
+      userId,
+      obraId: OBRA_ID,
+      entityType: "RDO",
+      entityId: RDO_ID,
+      operation: "CREATE",
+      baseVersion: null,
+      occurredAt: OCCURRED_AT,
+      payload: command().nextSnapshot,
+      status: "PENDING",
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO",
+    });
+    expect(result.mutation.changedFields).toEqual(
+      Object.keys(command().nextSnapshot).sort(),
+    );
+    expect(result.mutation.trace.authorizationScope).toEqual([OBRA_ID]);
+    expect(result.mutation).not.toHaveProperty("contractVersion");
+    expect(result.mutation.trace.payloadHash).toBe(
+      await mutationPayloadHash(command().nextSnapshot),
+    );
+    expect(result.event).toMatchObject({
+      id: "00000000-0000-4000-8000-000000000005",
+      schemaVersion: 13,
+      clientMutationId: result.mutation.clientMutationId,
+      deviceId: DEVICE_ID,
+      responsibleUserId: userId,
+      responsibleUserName: "Operador de campo",
+      obraId: OBRA_ID,
+      result: "PENDING",
+      previousState: {},
+      newState: command().nextSnapshot,
+    });
+    expect(await database.get("rdos", RDO_ID)).toEqual(command().nextSnapshot);
     expect(
-      await db.get("outbox_mutations", result.mutation.clientMutationId),
+      await database.get("outbox_mutations", result.mutation.clientMutationId),
     ).toEqual(result.mutation);
-    expect(await db.get("operational_events", result.event.id)).toEqual(
+    expect(await database.get("operational_events", result.event.id)).toEqual(
       result.event,
     );
-    expect(result.mutation).toMatchObject({
-      contractVersion: 13,
-      status: "PENDING",
-      correlationId: result.mutation.clientMutationId,
-      trace: {
-        actorId: ownerId,
-        deviceId: fixtureActor().deviceId,
-        authorizationScope: [OBRA_ID],
-        correlationId: result.mutation.clientMutationId,
-        causationId: null,
-        ontologyEventId: result.event.id,
-      },
-    });
-    expect(result.event).toMatchObject({
-      contractVersion: 13,
-      id: result.mutation.trace.ontologyEventId,
-      clientMutationId: result.mutation.clientMutationId,
-      deviceId: result.mutation.trace.deviceId,
-      correlationId: result.mutation.correlationId,
-      causationId: null,
-      previousState: {},
-      newState: input.newState,
-      result: "PENDING",
-      errorCategory: null,
-      entityVersion: null,
-      schemaVersion: 1,
-    });
     expect(queuedEvents).toBe(1);
   });
 
-  it("rolls back all three records when the domain write throws", async () => {
-    const db = await getCortexDb();
+  it("rolls back all stores when the event add fails", async () => {
+    const database = await getCortexDb();
+    const input = command();
     let queuedEvents = 0;
     window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
       queuedEvents += 1;
     });
-    const rdo = localRdo();
-    const input = coordinatorInput(rdo);
+    await database.add("operational_events", {
+      id: input.ontologyEventId,
+      type: "RDO_CRIADO",
+      principalEntity: { tipo: "RDO", id: "existing" },
+      principalEntityKey: "RDO:existing",
+      relatedEntities: [],
+      obraId: OBRA_ID,
+      rdoId: null,
+      colaboradorId: null,
+      occurredAt: OCCURRED_AT,
+      syncedAt: null,
+      origin: "OFFLINE",
+      responsibleUserId: userId,
+      responsibleUserName: "Operador de campo",
+      payload: {},
+      syncStatus: "PENDING_SYNC",
+      schemaVersion: 1,
+    });
 
+    await expect(commitLocalMutation(input)).rejects.toThrow();
+
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(
+      await database.get("outbox_mutations", input.clientMutationId),
+    ).toBeUndefined();
+    expect(queuedEvents).toBe(0);
+  });
+
+  it("rejects async writers without committing a partial snapshot", async () => {
+    const database = await getCortexDb();
+    const input = command();
+    const asyncWriter = async () => writePlan(rdo());
+
+    await expect(
+      commitLocalMutation({ ...input, write: asyncWriter as never }),
+    ).rejects.toThrow(/write plan must be synchronous/i);
+
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+  });
+
+  it("rejects a principal domain write that differs from nextSnapshot", async () => {
+    const database = await getCortexDb();
+    const input = command();
     await expect(
       commitLocalMutation({
         ...input,
-        write: (tx) => {
-          void tx.objectStore("rdos").put(rdo).catch(() => undefined);
-          throw new Error("boom");
-        },
+        write: () => writePlan({ ...rdo(), numeroRdo: "DIVERGENTE" }),
       }),
-    ).rejects.toThrow("boom");
-
-    expect(await db.getAll("rdos")).toHaveLength(0);
-    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
-    expect(await db.getAll("operational_events")).toHaveLength(0);
-    expect(queuedEvents).toBe(0);
+    ).rejects.toThrow(/must equal nextSnapshot/i);
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
   });
 
-  it("rejects a delayed async writer before a partial domain commit", async () => {
-    const db = await getCortexDb();
-    let queuedEvents = 0;
-    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
-      queuedEvents += 1;
-    });
-    const rdo = localRdo();
-    const input = coordinatorInput(rdo);
-    const delayedWriter = (async (
-      tx: LocalMutationTransaction<"rdos">,
-    ) => {
-      await tx.objectStore("rdos").put(rdo);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      throw new Error("late failure");
-    }) as unknown as typeof input.write;
-
+  it("binds entityId to the principal record and forbids a second write in its store", async () => {
     await expect(
-      commitLocalMutation({ ...input, write: delayedWriter }),
-    ).rejects.toThrow(
-      "Local mutation write must synchronously enqueue IndexedDB requests and return undefined.",
-    );
-
-    expect(await db.getAll("rdos")).toHaveLength(0);
-    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
-    expect(await db.getAll("operational_events")).toHaveLength(0);
-    expect(queuedEvents).toBe(0);
-  });
-
-  it("rejects a directly returned IndexedDB request promise", async () => {
-    const db = await getCortexDb();
-    let queuedEvents = 0;
-    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
-      queuedEvents += 1;
-    });
-    const rdo = localRdo();
-    const input = coordinatorInput(rdo);
-    const promiseReturningWriter = ((
-      tx: LocalMutationTransaction<"rdos">,
-    ) => tx.objectStore("rdos").put(rdo)) as unknown as typeof input.write;
-
+      commitLocalMutation({
+        ...command(),
+        entityId: FOREIGN_OBRA_ID,
+      }),
+    ).rejects.toThrow(/write id must equal entityId/i);
     await expect(
-      commitLocalMutation({ ...input, write: promiseReturningWriter }),
-    ).rejects.toThrow(
-      "Local mutation write must synchronously enqueue IndexedDB requests and return undefined.",
-    );
-
-    expect(await db.getAll("rdos")).toHaveLength(0);
-    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
-    expect(await db.getAll("operational_events")).toHaveLength(0);
-    expect(queuedEvents).toBe(0);
+      commitLocalMutation({
+        ...command(),
+        write: () => [
+          ...writePlan(rdo()),
+          {
+            store: "rdos",
+            value: { ...rdo(), numeroRdo: "SOBRESCRITO" },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/principal domain store/i);
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
   });
 
-  it("persists one immutable state snapshot across async boundaries", async () => {
-    const db = await getCortexDb();
-    const rdo = localRdo();
-    const previousState = {
-      statusRdo: "NOVO",
-      metadata: { source: "before" },
+  it("binds an RDO envelope to the rdos store and the same authorized worksite", async () => {
+    const wrongStoreValue = {
+      id: RDO_ID,
+      codigoContrato: "C-1",
+      nome: "Obra indevida",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "ATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      updatedAt: OCCURRED_AT,
     };
-    const newState = {
-      ...rdo,
-      payload: { observacoes: "snapshot original" },
-    };
-    const expectedPreviousState = structuredClone(previousState);
-    const expectedNewState = structuredClone(newState);
-    const input = {
-      ...coordinatorInput(rdo),
-      previousState,
-      newState,
-      write: (tx: LocalMutationTransaction<"rdos">) => {
-        void tx.objectStore("rdos").put(rdo);
-        newState.payload.observacoes = "mutated inside write";
-        previousState.metadata.source = "mutated inside write";
-        return undefined;
-      },
-    };
+    await expect(
+      commitLocalMutation({
+        ...command(),
+        nextSnapshot: wrongStoreValue,
+        write: () => [{
+          store: "obras",
+          value: wrongStoreValue,
+          principal: true,
+        }],
+      } as unknown as LocalMutationCommand<"obras">),
+    ).rejects.toThrow(/RDO requires principal store rdos/i);
 
-    const committed = commitLocalMutation(input);
-    newState.numeroRdo = "MUTATED-AFTER-INVOKE";
-    newState.payload.observacoes = "mutated after invoke";
-    previousState.statusRdo = "MUTATED-AFTER-INVOKE";
-
-    const result = await committed;
-
-    expect(result.mutation.payload).toEqual(expectedNewState);
-    expect(result.mutation.trace.payloadHash).toBe(
-      await mutationPayloadHash(expectedNewState),
-    );
-    expect(result.mutation.fieldPatch.changed).toMatchObject({
-      payload: { observacoes: "snapshot original" },
-      numeroRdo: "RDO-001",
-    });
-    expect(result.event.previousState).toEqual(expectedPreviousState);
-    expect(result.event.newState).toEqual(expectedNewState);
-    expect(
-      await db.get("outbox_mutations", result.mutation.clientMutationId),
-    ).toMatchObject({ payload: expectedNewState });
-    expect(await db.get("operational_events", result.event.id)).toMatchObject({
-      previousState: expectedPreviousState,
-      newState: expectedNewState,
-    });
+    const foreignRecord = { ...rdo(), obraId: FOREIGN_OBRA_ID };
+    await expect(
+      commitLocalMutation({
+        ...command(foreignRecord),
+        obraId: OBRA_ID,
+      }),
+    ).rejects.toThrow(/RDO obraId must equal envelope obraId/i);
   });
 
-  it("keeps pre-await provenance across the coordinator boundary", async () => {
-    const rdo = localRdo();
-    const authorizationScope = [OBRA_ID];
-    const dependencies = ["dependency-original"];
-    const input: CommitLocalMutationInput<"rdos"> = {
-      ...coordinatorInput(rdo),
-      entity: {
-        type: "RDO",
-        id: rdo.id,
-        name: "RDO original",
-        obraId: rdo.obraId,
-        rdoId: rdo.id,
-      },
-      actor: {
-        ...fixtureActor(),
-        actorName: "Operador original",
-        authorizationScope,
-      },
-      correlationId: "correlation-original",
-      causationId: "causation-original",
-      dependsOnMutationIds: dependencies,
-    };
-
+  it("clones the declarative domain write before hashing", async () => {
+    const record = rdo();
+    const input = command(record);
     const pending = commitLocalMutation(input);
-    input.entity.id = "00000000-0000-4000-8000-000000000095";
-    input.entity.name = "RDO alterado";
-    input.entity.obraId =
-      "00000000-0000-4000-8000-000000000094";
-    input.entity.rdoId = "00000000-0000-4000-8000-000000000093";
-    input.actor.actorName = "Operador alterado";
-    authorizationScope[0] =
-      "00000000-0000-4000-8000-000000000092";
-    input.correlationId = "correlation-mutated";
-    input.causationId = "causation-mutated";
-    input.eventType = "RDO_EDITADO";
-    dependencies[0] = "dependency-mutated";
+    record.numeroRdo = "MUTADO";
+    record.payload = { observacoes: "mutated after call" };
+    input.nextSnapshot.numeroRdo = "MUTADO";
 
     const result = await pending;
-
-    expect(result.mutation).toMatchObject({
-      entidadeId: rdo.id,
-      dependsOnMutationIds: ["dependency-original"],
-      correlationId: "correlation-original",
-      trace: {
-        authorizationScope: [OBRA_ID],
-        correlationId: "correlation-original",
-        causationId: "causation-original",
-      },
+    expect(result.mutation.payload).toMatchObject({
+      numeroRdo: "RDO-001",
+      payload: { observacoes: "Registro offline" },
     });
-    expect(result.event).toMatchObject({
-      type: "RDO_CRIADO",
-      principalEntity: {
-        id: rdo.id,
-        nome: "RDO original",
-      },
-      obraId: OBRA_ID,
-      rdoId: rdo.id,
-      responsibleUserName: "Operador original",
-      correlationId: "correlation-original",
-      causationId: "causation-original",
-    });
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toEqual(result.mutation.payload);
+    expect(result.event.newState).toEqual(result.mutation.payload);
   });
 
-  it("rejects an empty authorization scope before opening a write", async () => {
-    const db = await getCortexDb();
-    let queuedEvents = 0;
-    let writeCalls = 0;
-    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
-      queuedEvents += 1;
-    });
-    const input = coordinatorInput();
-
+  it("rejects mismatched users, foreign BETA worksites and absent sessions", async () => {
+    const database = await getCortexDb();
     await expect(
-      commitLocalMutation({
-        ...input,
-        actor: {
-          ...input.actor,
-          authorizationScope: [],
-        },
-        write: (tx) => {
-          writeCalls += 1;
-          void tx.objectStore("rdos").put(localRdo());
-          return undefined;
-        },
-      }),
-    ).rejects.toThrow("actor.authorizationScope is required.");
-
-    expect(await db.getAll("rdos")).toHaveLength(0);
-    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
-    expect(await db.getAll("operational_events")).toHaveLength(0);
-    expect(writeCalls).toBe(0);
-    expect(queuedEvents).toBe(0);
+      commitLocalMutation({ ...command(), userId: crypto.randomUUID() }),
+    ).rejects.toThrow(/não pertence à sessão ativa/i);
+    await expect(
+      commitLocalMutation({ ...command(), obraId: FOREIGN_OBRA_ID }),
+    ).rejects.toThrow(/obra.*escopo/i);
+    clearSession();
+    await expect(commitLocalMutation(command())).rejects.toThrow(/sessão válida/i);
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
   });
 
-  it("rejects a sparse authorization scope before opening a write", async () => {
-    const db = await getCortexDb();
-    let queuedEvents = 0;
-    let writeCalls = 0;
-    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, () => {
-      queuedEvents += 1;
-    });
-    const input = coordinatorInput();
-    const sparseScope = new Array<string>(1);
-
+  it("rejects unknown event types and non-UUID related entity IDs", async () => {
     await expect(
       commitLocalMutation({
-        ...input,
-        actor: {
-          ...input.actor,
-          authorizationScope: sparseScope,
-        },
-        write: (tx) => {
-          writeCalls += 1;
-          void tx.objectStore("rdos").put(localRdo());
-          return undefined;
-        },
+        ...command(),
+        eventType: "RDO_INVENTADO" as never,
       }),
-    ).rejects.toThrow(
-      "actor.authorizationScope[0] must be a nonblank string.",
+    ).rejects.toThrow(/eventType RDO_INVENTADO/i);
+    await expect(
+      commitLocalMutation({
+        ...command(),
+        relatedEntities: [{ tipo: "OBRA", id: "obra-estrangeira" }],
+      }),
+    ).rejects.toThrow(/relatedEntities\[0\]\.id.*UUID/i);
+  });
+
+  it("derives ALFA global authorization without trusting the command", async () => {
+    setSession({
+      colaboradorId: userId,
+      nome: "Administrador",
+      papelAcesso: "ALFA",
+      escopoGlobal: true,
+      obraIds: [],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const result = await commitLocalMutation({
+      ...command({ ...rdo(), obraId: FOREIGN_OBRA_ID }),
+      obraId: FOREIGN_OBRA_ID,
+      nextSnapshot: { ...rdo(), obraId: FOREIGN_OBRA_ID },
+      write: () => writePlan({ ...rdo(), obraId: FOREIGN_OBRA_ID }),
+    });
+    expect(result.mutation.trace.authorizationScope).toEqual(["ALFA:GLOBAL"]);
+    expect(result.event.responsibleUserName).toBe("Administrador");
+  });
+
+  it("aborts when the active session changes while the payload hash is pending", async () => {
+    let releaseDigest: ((value: ArrayBuffer) => void) | undefined;
+    vi.spyOn(crypto.subtle, "digest").mockImplementationOnce(
+      () => new Promise<ArrayBuffer>((resolve) => {
+        releaseDigest = resolve;
+      }),
     );
+    const pending = commitLocalMutation(command());
+    await vi.waitFor(() => expect(releaseDigest).toBeTypeOf("function"));
+    setSession(betaSession(crypto.randomUUID()));
+    releaseDigest?.(new Uint8Array(32).buffer);
 
-    expect(await db.getAll("rdos")).toHaveLength(0);
-    expect(await db.getAll("outbox_mutations")).toHaveLength(0);
-    expect(await db.getAll("operational_events")).toHaveLength(0);
-    expect(writeCalls).toBe(0);
-    expect(queuedEvents).toBe(0);
+    await expect(pending).rejects.toThrow(/sessão.*mudou|não pertence/i);
+    setSession(betaSession());
+    const database = await getCortexDb();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+  });
+
+  it("aborts on an exact auth rotation even when the profile fields are equal", async () => {
+    let releaseDigest: ((value: ArrayBuffer) => void) | undefined;
+    vi.spyOn(crypto.subtle, "digest").mockImplementationOnce(
+      () => new Promise<ArrayBuffer>((resolve) => {
+        releaseDigest = resolve;
+      }),
+    );
+    const pending = commitLocalMutation(command());
+    await vi.waitFor(() => expect(releaseDigest).toBeTypeOf("function"));
+    setSession(betaSession());
+    releaseDigest?.(new Uint8Array(32).buffer);
+
+    await expect(pending).rejects.toThrow(/sessão mudou/i);
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await database.getAll("operational_events")).toHaveLength(0);
+  });
+
+  it("aborts the IndexedDB transaction when the active session changes during its writes", async () => {
+    const originalPut = IDBObjectStore.prototype.put;
+    let switched = false;
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey,
+    ) {
+      if (!switched) {
+        switched = true;
+        setSession(betaSession(crypto.randomUUID()));
+      }
+      return key === undefined
+        ? originalPut.call(this, value)
+        : originalPut.call(this, value, key);
+    });
+
+    await expect(commitLocalMutation(command())).rejects.toThrow(/sessão mudou/i);
+    setSession(betaSession());
+    const database = await getCortexDb();
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await database.getAll("operational_events")).toHaveLength(0);
+  });
+
+  it("keeps canonical RDO creates byte-for-byte intact in the legacy pre-push repair", async () => {
+    const result = await commitLocalMutation(command());
+    expect(await repairRdoCreateMutationsForSync()).toBe(0);
+    const database = await getCortexDb();
+    expect(
+      await database.get("outbox_mutations", result.mutation.clientMutationId),
+    ).toEqual(result.mutation);
+  });
+
+  it("keeps a pre-V48 RDO create pending with a literal context block instead of terminal error", async () => {
+    const database = await getCortexDb();
+    const localRdo = rdo();
+    const mutation = {
+      clientMutationId: "00000000-0000-4000-8000-000000000018",
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: { stale: true },
+      status: "ERROR" as const,
+      tentativas: 3,
+      ultimaTentativaEm: OCCURRED_AT,
+      ultimoErro: "payload legado",
+      conflito: null,
+      criadaNoClienteEm: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+
+    expect(await repairRdoCreateMutationsForSync()).toBe(1);
+
+    expect(
+      await database.get("outbox_mutations", mutation.clientMutationId),
+    ).toMatchObject({
+      clientMutationId: mutation.clientMutationId,
+      status: "PENDING",
+      blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
+      ultimoErro: null,
+    });
+    expect(await database.getAll("outbox_mutations")).toHaveLength(1);
+  });
+
+  it("enriches and unblocks a pre-V48 queue when the local RDO has a complete context receipt", async () => {
+    const database = await getCortexDb();
+    const localRdo = {
+      ...rdo(),
+      payload: {
+        previousRdoId: "00000000-0000-4000-8000-000000000021",
+        creationContextVersion: 48,
+        apontadorColaboradorId: userId,
+        maoObra: [{
+          id: "00000000-0000-4000-8000-000000000022",
+          colaboradorId: userId,
+          nomeColaborador: "Operador de campo",
+          cargo: "Apontador",
+          tipoVinculo: "CONTRATADO",
+          quantidade: 1,
+          origemItemId: "00000000-0000-4000-8000-000000000023",
+        }],
+      },
+    };
+    const mutation = {
+      clientMutationId: "00000000-0000-4000-8000-000000000028",
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: { stale: true },
+      status: "PENDING" as const,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: null,
+      conflito: null,
+      blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
+      criadaNoClienteEm: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+
+    expect(await repairRdoCreateMutationsForSync()).toBe(1);
+
+    expect(
+      await database.get("outbox_mutations", mutation.clientMutationId),
+    ).toMatchObject({
+      status: "PENDING",
+      blockedReason: null,
+      payload: {
+        previousRdoId: "00000000-0000-4000-8000-000000000021",
+        creationContextVersion: 48,
+        apontadorColaboradorId: userId,
+        maoObra: [{
+          id: "00000000-0000-4000-8000-000000000022",
+          origemItemId: "00000000-0000-4000-8000-000000000023",
+        }],
+      },
+    });
+  });
+
+  it("rolls back legacy RDO-create preflight repair on same-scope session rotation", async () => {
+    const database = await getCortexDb();
+    const localRdo = rdo();
+    const mutation = {
+      clientMutationId: "00000000-0000-4000-8000-000000000008",
+      entidadeTipo: "RDO" as const,
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO" as const,
+      baseVersao: null,
+      payload: { stale: true },
+      status: "PENDING" as const,
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: "payload legado",
+      conflito: null,
+      criadaNoClienteEm: OCCURRED_AT,
+      updatedAt: OCCURRED_AT,
+    };
+    await database.put("rdos", localRdo);
+    await database.put("outbox_mutations", mutation);
+    const guard = captureOnlineSyncSession();
+    const originalSession = getSession()!;
+    const originalPut = IDBObjectStore.prototype.put;
+    let rotated = false;
+    const putSpy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        if (!rotated) {
+          rotated = true;
+          setSession({
+            ...originalSession,
+            expiraEm: new Date(
+              Date.parse(originalSession.expiraEm) + 60_000,
+            ).toISOString(),
+          });
+        }
+        return key === undefined
+          ? originalPut.call(this, value)
+          : originalPut.call(this, value, key);
+      });
+
+    await expect(
+      repairRdoCreateMutationsForSync(guard),
+    ).rejects.toBeDefined();
+
+    putSpy.mockRestore();
+    setSession(originalSession);
+    expect(await database.get("outbox_mutations", mutation.clientMutationId))
+      .toEqual(mutation);
+    expect(await database.get("rdos", RDO_ID)).toEqual(localRdo);
   });
 });

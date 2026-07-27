@@ -5,7 +5,6 @@ export type ChartPeriod = "3M" | "6M" | "12M" | "ALL";
 export interface MonthlyPoint {
   month: string;
   fisicoPct: number | null;
-  custoPct: number | null;
   pdorPct: number | null;
 }
 
@@ -68,10 +67,6 @@ export function buildMonthlySeries(
       fisicoPct: ratioPct(
         snapshot.producaoRealizada,
         snapshot.producaoPlanejada,
-      ),
-      custoPct: ratioPct(
-        snapshot.custoRealizado,
-        snapshot.custoPrevistoFinal,
       ),
       pdorPct: ratioPct(
         snapshot.receitaPrevistaFinal,

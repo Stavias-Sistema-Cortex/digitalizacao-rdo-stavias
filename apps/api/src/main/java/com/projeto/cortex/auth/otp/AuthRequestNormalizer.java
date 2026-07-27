@@ -75,8 +75,8 @@ final class AuthRequestNormalizer {
 
     private static String bounded(String value) {
         if (value == null
-                || value.isBlank()
                 || value.length() > 512
+                || value.isBlank()
                 || value.contains("\r")
                 || value.contains("\n")) {
             return null;

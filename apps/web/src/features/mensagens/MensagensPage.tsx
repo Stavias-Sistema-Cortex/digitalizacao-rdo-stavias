@@ -6,9 +6,10 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { CortexPageHeader } from "../../components/header/CortexPageHeader";
 import type {
   ConversaLocalRecord,
   MensagemAnexoLocalRecord,
@@ -348,17 +349,22 @@ export function MensagensPage() {
       isRefreshing={refreshing}
     >
       <main className="mensagens-page">
-        <header className="mensagens-header">
-          <div><h1>Mensagens</h1><p>{conversations.length} conversas autorizadas</p></div>
-          <button
-            type="button"
-            className="mensagens-primary"
-            onClick={() => setShowCreate(true)}
-            disabled={!navigator.onLine || !hasOnlineSession()}
-          >
-            Nova conversa
-          </button>
-        </header>
+        <CortexPageHeader
+          eyebrow="Operação · comunicação"
+          title="Mensagens"
+          description={`${conversations.length} conversas autorizadas`}
+          legacyPrefix="mensagens-header"
+          actions={(
+            <button
+              type="button"
+              className="mensagens-primary"
+              onClick={() => setShowCreate(true)}
+              disabled={!navigator.onLine || !hasOnlineSession()}
+            >
+              Nova conversa
+            </button>
+          )}
+        />
 
         {error ? (
           <div className="mensagens-alert" role="alert">

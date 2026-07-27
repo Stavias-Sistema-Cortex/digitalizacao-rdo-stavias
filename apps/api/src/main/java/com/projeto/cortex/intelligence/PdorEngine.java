@@ -506,7 +506,7 @@ public final class PdorEngine {
             );
 
             double materialShock = triangular(random, assumptions.material()) - 1.0;
-            double indirectLossShock = scheduleShock * assumptions.scheduleToIndirectCostEffect();
+            double indirectLossShock = scheduleShock * assumptions.scheduleToRevenueLossEffect();
 
             double remainingDirectRevenue = remainingBaseRevenue * 0.82;
             double remainingIndirectRevenue = remainingBaseRevenue * 0.18;
@@ -924,7 +924,7 @@ public final class PdorEngine {
         DistributionRange equipment,
         double downtimeToProductivityEffect,
         double productivityToScheduleEffect,
-        double scheduleToIndirectCostEffect,
+        double scheduleToRevenueLossEffect,
         double phaseUncertaintyMultiplier
     ) {
         public double prototypeShare() {

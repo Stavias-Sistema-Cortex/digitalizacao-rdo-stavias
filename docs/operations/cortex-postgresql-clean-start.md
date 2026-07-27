@@ -1,8 +1,8 @@
 # Córtex PostgreSQL: clean start operacional
 
-Este runbook descreve a fundação PostgreSQL limpa do Córtex. Ele não é uma
-conversão automática do runtime MySQL atual, não importa dados legados e não
-autoriza o início do shell operacional.
+Este runbook descreve a fundação PostgreSQL limpa e a ativação fail-closed do
+runtime Cortex 3.0. Ele não é uma conversão automática de um runtime MySQL e
+não importa dados legados.
 
 Leia este documento antes de executar qualquer comando de transição. Os
 comandos abaixo são para um operador autorizado; esta documentação não executa
@@ -20,7 +20,7 @@ nem recomenda transições no banco local de outra pessoa.
 - Arquivos não entram no PostgreSQL. O PostgreSQL guarda o `storage_key`, hash,
   tamanho, tipo e permissões; os bytes pertencem somente ao storage de objetos
   aprovado (local persistente ou bucket S3 compatível privado). Isso também se
-  aplica a importações, contexto StavIA, fotos e anexos.
+  aplica a importações, contexto de RDO, fotos e anexos.
 - Não adicione uma camada de banco gerenciada de terceiros, importação MySQL,
   dual write, reset destrutivo do Flyway ou baseline automático nesta fundação.
 
@@ -64,22 +64,21 @@ requer confirmação do operador; não encadeie tudo num único comando.
 
 ```text
 PostgreSQL provisionado e vazio
-  -- postgresql-migrate --> V44 instalado
+  -- postgresql-migrate --> schema completo instalado
   -- postgresql-bootstrap --> ALFA inicial criado
   -- postgresql-activation --> servidor restrito de ativação
-  -- preflight postgresql --> runtime normal reservado (permanece bloqueado)
+  -- preflight postgresql --> runtime normal liberado somente pelos gates
 ```
 
 | Transição | Perfil público | Launcher permitido | Resultado esperado |
 | --- | --- | --- | --- |
-| 1. Migrar | `postgresql-migrate` | `PostgresqlMigrationApplication` | Flyway instala somente V44 em `StaviasCortex`. |
+| 1. Migrar | `postgresql-migrate` | `PostgresqlMigrationApplication` | Flyway instala/valida o schema completo exigido pela release em `StaviasCortex`. |
 | 2. Bootstrap | `postgresql-bootstrap` | `PostgresqlBootstrapApplication` | Cria uma única identidade ALFA a partir da consulta Academy somente leitura. |
 | 3. Ativar | `postgresql-activation` | `PostgresqlActivationApplication` | Expõe somente health, readiness e os dois endpoints de OTP por e-mail. |
-| 4. Preflight normal | `postgresql` | verificador de release, sem launcher web | Recusa o release enquanto não existir um slice operacional PostgreSQL-safe. |
+| 4. Preflight normal | `postgresql` | verificador de release e `CortexApplication` | Libera somente com schema atual, gate explícito e o conjunto exato de superfícies PostgreSQL-safe. |
 
-O preflight não é uma transição de serviço normal. Ele existe para demonstrar
-que a configuração ainda falha fechada. Não inicie `CortexApplication` nem um
-controller operacional como parte deste runbook.
+O preflight não substitui backup, smoke test ou aprovação de release. Um gate
+ausente, schema incompleto ou superfície inesperada impede a inicialização.
 
 ## 0. Provisionar o banco vazio
 
@@ -98,7 +97,7 @@ Faça um checkpoint: a base precisa estar vazia de dados de produto antes da
 próxima etapa. A única linha estrutural permitida após a migração será a
 sequência de commit de eventos do Córtex.
 
-## 1. Instalar V44 uma única vez
+## 1. Instalar o schema completo uma única vez
 
 Após conferir a URL não secreta do PostgreSQL e os caminhos de segredo no
 ambiente do operador, execute somente o migrador isolado:
@@ -115,10 +114,10 @@ importação.
 
 ## 2. Criar o ALFA inicial
 
-Somente depois de V44 concluído, o operador fornece o caminho do arquivo do
-segredo de bootstrap e habilita o bootstrap de forma explícita no processo. O
-script dedicado deve chamar apenas `PostgresqlBootstrapApplication` com
-`postgresql-bootstrap`:
+Somente depois de o schema completo exigido pela release estar aplicado, o
+operador fornece o caminho do arquivo do segredo de bootstrap e habilita o
+bootstrap de forma explícita no processo. O script dedicado deve chamar apenas
+`PostgresqlBootstrapApplication` com `postgresql-bootstrap`:
 
 ```bash
 CORTEX_BOOTSTRAP_ADMIN_CPF_FILE=/caminho/protegido/owner-id \
@@ -155,30 +154,27 @@ cofre offline ou sincronização. Ele mostra somente a tela de ativação por
 e-mail; após verificar o OTP, confirma o estado terminal e não navega para
 uma rota operacional.
 
-## 4. Preflight do runtime normal: bloqueado nesta entrega
+## 4. Preflight e início do runtime normal
 
-O valor inicial é literalmente:
+O padrão permanece em falha fechada:
 
 ```text
 CORTEX_POSTGRES_RUNTIME_READY=false
 ```
 
-Mesmo que um operador mude a variável para `true`, o release normal ainda deve
-ser recusado nesta entrega porque o registro de superfícies PostgreSQL-safe
-está vazio. O preflight abaixo só inspeciona essa condição; ele não inicia a
-aplicação normal:
+O operador só define o gate como `true` depois de validar backup, schema,
+secrets e smoke em ambiente equivalente. O verificador exige também o conjunto
+exato de superfícies registradas (`authentication`, `finance`,
+`memory-ontology`, `rdo` e `sync`):
 
 ```bash
 CORTEX_POSTGRES_RUNTIME_READY=true \
   ./scripts/dev/check-postgres-runtime-release.sh
 ```
 
-O resultado correto hoje é recusa. As superfícies ainda intencionalmente não
-portadas/verificadas incluem Obras, RDO, Memória, sincronização e outbox,
-financeiro, mensagens, anexos/upload, mapas, rotas administrativas e demais
-controllers do shell. Uma futura entrega precisa registrar e testar um slice
-vertical PostgreSQL-safe antes de mudar esse estado; `runtime-ready=true` por
-si só nunca é autorização de release.
+O resultado correto é sucesso somente quando o schema exigido está presente e
+o registro não possui superfície ausente ou inesperada. O valor
+`runtime-ready=true` isoladamente nunca é autorização de release.
 
 ## Verificação segura e evidência
 
@@ -191,31 +187,32 @@ Use a verificação automatizada em containers descartáveis e fixtures sintéti
 Ela não deve apagar, migrar, importar nem consultar a base local do
 proprietário por padrão. A evidência mínima de um ensaio descartável é:
 
-1. V44 aplicado exatamente uma vez numa instância PostgreSQL 18 vazia;
+1. V44–V61 aplicados exatamente uma vez numa instância PostgreSQL 18 vazia;
 2. nenhuma linha de negócio copiada, exceto o controle estrutural de sequência;
 3. bootstrap sintético `CREATED`, seguido de `ALREADY_APPLIED` sem duplicatas;
 4. evento de Memória redigido, sem CPF, e-mail completo ou credenciais;
 5. rota de ativação limitada aos endpoints permitidos;
-6. OTP sintético cria sessão ALFA, mas uma rota do shell continua negada;
-7. runtime normal recusa tanto com o gate `false` quanto com `true` enquanto
-   não houver slice PostgreSQL-safe registrado.
+6. OTP sintético cria sessão ALFA; o modo de ativação continua negando rotas do
+   shell;
+7. runtime normal recusa com o gate `false`, schema incompleto ou registro de
+   superfícies divergente e inicia somente com os três gates corretos.
 
 Para uma transição real em `StaviasCortex`, trate backup, rollback, SMTP,
 storage, fontes MySQL somente leitura e aprovação do proprietário como uma
 operação separada. Este runbook não substitui essa decisão.
 
-## Handoff para uma futura release operacional
+## Handoff da release operacional
 
 Antes de liberar qualquer módulo, registre no handoff:
 
-- versão V44 e resultado de validação Flyway;
+- versão V61 e resultado de validação Flyway;
 - perfil executado e launcher correspondente;
 - estado do bootstrap sem dados de identidade;
 - status de health/readiness da ativação;
-- resultado recusado do preflight normal;
+- resultado do preflight normal, incluindo os casos negativos;
 - configuração por arquivo/secret manager de PostgreSQL, Academy/Zeladoria,
   SMTP, object storage e APIs de mapa;
-- o slice PostgreSQL-safe, os controllers, queries e testes que serão
-  explicitamente adicionados na próxima aprovação.
+- o conjunto PostgreSQL-safe efetivamente publicado, seus controllers, queries
+  e testes de autorização/sincronização.
 
 Não faça stage, commit, deploy ou transição local como parte da documentação.

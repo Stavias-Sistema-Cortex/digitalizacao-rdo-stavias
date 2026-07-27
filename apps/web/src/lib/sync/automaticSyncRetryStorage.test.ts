@@ -1,186 +1,100 @@
-import "fake-indexeddb/auto";
+import { describe, expect, it } from "vitest";
 
-import { deleteDB } from "idb";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
-
-import {
-  clearSession,
-  setSession,
-} from "../../features/auth/authSession";
-import {
-  closeCortexDb,
-  getCortexDb,
-} from "../db/cortexDb";
 import type { OutboxMutationRecord } from "../db/db.types";
-import { databaseNameForScope } from "../db/localDataNamespace";
 import {
-  clearAutomaticSyncRetryMetadata,
-  loadAutomaticSyncRetryMetadata,
-  persistAutomaticSyncRetryMetadata,
-  returnMutationToPending,
-} from "./syncStorage";
+  earliestRetryAt,
+  mutationAfterRetryScheduled,
+  retryDispositionForResult,
+} from "./automaticSyncRetryStorage";
 
-const OBRA_ID = "00000000-0000-4000-8000-000000000002";
-const SCOPE_MATERIAL = `BETA:${OBRA_ID}`;
-
-function pendingMutation(
-  clientMutationId = "retry-storage-1",
-  status: OutboxMutationRecord["status"] = "PENDING",
-): OutboxMutationRecord {
+function pending(id: string): OutboxMutationRecord {
   return {
-    clientMutationId,
+    clientMutationId: id,
     entidadeTipo: "RDO",
-    entidadeId: "rdo-1",
+    entidadeId: `rdo-${id}`,
     operacao: "CRIAR_RDO",
     baseVersao: null,
-    payload: { id: "rdo-1", preserved: true },
-    status,
+    payload: {},
+    status: "PENDING",
     tentativas: 0,
     ultimaTentativaEm: null,
-    ultimoErro: "Falha transitória",
+    ultimoErro: null,
     conflito: null,
-    criadaNoClienteEm: "2026-07-17T12:00:00.000Z",
-    updatedAt: "2026-07-17T12:00:00.000Z",
-    nextAttemptAt: null,
+    criadaNoClienteEm: "2026-07-22T12:00:00.000Z",
+    updatedAt: "2026-07-22T12:00:00.000Z",
   };
 }
 
-describe("automatic sync retry IndexedDB persistence", () => {
-  let databaseName = "";
-
-  beforeEach(async () => {
-    vi.stubGlobal("BroadcastChannel", undefined);
-    const ownerId = crypto.randomUUID();
-    setSession({
-      colaboradorId: ownerId,
-      nome: "Operador de campo",
-      papelAcesso: "BETA",
-      escopoGlobal: false,
-      obraIds: [OBRA_ID],
-      expiraEm: new Date(Date.now() + 60_000).toISOString(),
-    });
-    databaseName = await databaseNameForScope(
-      ownerId,
-      SCOPE_MATERIAL,
+describe("per-row automatic retry metadata", () => {
+  it("persists attempt, nextAttemptAt and safe code on the failed row only", () => {
+    const left = mutationAfterRetryScheduled(
+      pending("left"),
+      {
+        safeCode: "NETWORK_TRANSIENT",
+        message: "offline",
+        now: Date.parse("2026-07-22T12:00:00.000Z"),
+        random: () => 0,
+      },
     );
+    const right = pending("right");
+
+    expect(left).toMatchObject({
+      status: "PENDING",
+      retryAttempt: 1,
+      nextAttemptAt: "2026-07-22T12:00:01.000Z",
+      lastSafeCode: "NETWORK_TRANSIENT",
+    });
+    expect(right).not.toHaveProperty("nextAttemptAt");
   });
 
-  afterEach(async () => {
-    await closeCortexDb();
-    if (databaseName) {
-      await deleteDB(databaseName);
-    }
-    clearSession();
-    vi.unstubAllGlobals();
-  });
-
-  it("persists, reloads and clears retry metadata across database reopens", async () => {
-    const database = await getCortexDb();
-    await database.put(
-      "outbox_mutations",
-      pendingMutation(),
-    );
-
-    await persistAutomaticSyncRetryMetadata({
-      attempt: 3,
-      nextAttemptAt: "2026-07-17T12:05:00.000Z",
-    });
-    await closeCortexDb();
-
-    await expect(
-      loadAutomaticSyncRetryMetadata(),
-    ).resolves.toEqual({
-      attempt: 3,
-      nextAttemptAt: "2026-07-17T12:05:00.000Z",
-    });
+  it("loads the earliest valid future retry across independent rows", () => {
     expect(
-      await (await getCortexDb()).get(
-        "outbox_mutations",
-        "retry-storage-1",
-      ),
-    ).toMatchObject({
-      status: "PENDING",
-      tentativas: 3,
-      nextAttemptAt: "2026-07-17T12:05:00.000Z",
-      payload: { id: "rdo-1", preserved: true },
-    });
-
-    await clearAutomaticSyncRetryMetadata();
-    await closeCortexDb();
-
-    const reopened = await getCortexDb();
-    expect(
-      await reopened.get(
-        "outbox_mutations",
-        "retry-storage-1",
-      ),
-    ).toMatchObject({
-      status: "PENDING",
-      tentativas: 0,
-      ultimaTentativaEm: null,
-      nextAttemptAt: null,
-      payload: { id: "rdo-1", preserved: true },
-    });
-    await expect(
-      loadAutomaticSyncRetryMetadata(),
-    ).resolves.toEqual({
-      attempt: 0,
-      nextAttemptAt: null,
-    });
+      earliestRetryAt([
+        {
+          ...pending("late"),
+          nextAttemptAt: "2026-07-22T12:00:10.000Z",
+        },
+        {
+          ...pending("terminal"),
+          status: "REJECTED",
+          nextAttemptAt: "2026-07-22T12:00:01.000Z",
+        },
+        {
+          ...pending("early"),
+          nextAttemptAt: "2026-07-22T12:00:05.000Z",
+        },
+      ]),
+    ).toBe("2026-07-22T12:00:05.000Z");
   });
 
-  it("returns only SYNCING rows to PENDING and preserves every terminal status", async () => {
-    const database = await getCortexDb();
-    const terminalMutations = [
-      pendingMutation("terminal-synced", "SYNCED"),
-      pendingMutation("terminal-conflict", "CONFLICT"),
-      pendingMutation("terminal-error", "ERROR"),
-    ];
-    const inProgress = pendingMutation("retry-in-progress", "SYNCING");
+  it("classifies validation/auth rejection as terminal and server error as transient", () => {
+    expect(
+      retryDispositionForResult({
+        clientMutationId: "m-1",
+        status: "REJEITADA",
+        resultado: {
+          rejeicao: { categoria: "RELATED_ENTITY_SCOPE" },
+        },
+      }),
+    ).toEqual({ retryable: false, safeCode: "RELATED_ENTITY_SCOPE" });
+    expect(
+      retryDispositionForResult({
+        clientMutationId: "m-2",
+        status: "ERRO",
+        erro: "Falha interna.",
+      }),
+    ).toEqual({ retryable: true, safeCode: "SERVER_TRANSIENT" });
+  });
 
-    await Promise.all(
-      [...terminalMutations, inProgress].map((mutation) =>
-        database.put("outbox_mutations", mutation),
-      ),
-    );
-
-    for (const mutation of terminalMutations) {
-      await returnMutationToPending(
-        mutation.clientMutationId,
-        "Falha posterior no lote",
-      );
-    }
-    await returnMutationToPending(
-      inProgress.clientMutationId,
-      "Falha posterior no lote",
-    );
-
-    for (const mutation of terminalMutations) {
-      await expect(
-        database.get(
-          "outbox_mutations",
-          mutation.clientMutationId,
-        ),
-      ).resolves.toMatchObject({
-        status: mutation.status,
-        ultimoErro: mutation.ultimoErro,
-      });
-    }
-    await expect(
-      database.get(
-        "outbox_mutations",
-        inProgress.clientMutationId,
-      ),
-    ).resolves.toMatchObject({
-      status: "PENDING",
-      ultimoErro: "Falha posterior no lote",
-    });
+  it("does not persist an unbounded or display-oriented server category as a safe code", () => {
+    expect(
+      retryDispositionForResult({
+        clientMutationId: "m-3",
+        status: "REJEITADA",
+        resultado: {
+          rejeicao: { categoria: "<script>alert(1)</script>" },
+        },
+      }),
+    ).toEqual({ retryable: false, safeCode: "SERVER_REJECTED" });
   });
 });

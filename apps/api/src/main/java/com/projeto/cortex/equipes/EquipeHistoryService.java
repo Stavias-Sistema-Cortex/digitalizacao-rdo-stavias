@@ -72,13 +72,13 @@ public class EquipeHistoryService {
                               'PARTICIPACAO_EQUIPE',
                               'ALOCACAO_EQUIPE_OBRA'
                           )
-                          AND JSON_SEARCH(
-                              ev.entidades_relacionadas_json,
-                              'one',
-                              ?,
-                              NULL,
-                              '$[*].id'
-                          ) IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1
+                              FROM jsonb_array_elements(
+                                  COALESCE(ev.entidades_relacionadas_json, '[]'::jsonb)
+                              ) AS related
+                              WHERE related ->> 'id' = ?
+                          )
                       )
                   )
                 ORDER BY ev.commit_seq

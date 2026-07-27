@@ -17,6 +17,13 @@ interface AdminRoleRepository {
 
     void updateRole(String collaboratorId, PapelAcesso newRole);
 
+    boolean updateRoleIfCurrent(
+            String collaboratorId,
+            PapelAcesso expectedRole,
+            long expectedVersion,
+            PapelAcesso newRole
+    );
+
     void revokeCapability(
             String collaboratorId,
             String actorId,

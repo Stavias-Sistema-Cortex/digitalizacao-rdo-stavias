@@ -16,6 +16,7 @@ import type {
   NumericInput,
   RdoAttachmentDraft,
   RdoDraft,
+  RdoImportEvidence,
   ServicoExecutadoDraft,
 } from "./rdo.types";
 
@@ -50,7 +51,18 @@ function mapMaoObra(value: unknown): MaoObraDraft[] {
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
+      origemItemId: asString(item.origemItemId),
+      sourceRdoId: asString(item.sourceRdoId),
+      origin: asString(
+        item.origin,
+        empty.origin,
+      ) as MaoObraDraft["origin"],
+      availability: asString(
+        item.availability,
+        empty.availability,
+      ) as MaoObraDraft["availability"],
+      selected: item.selected !== false,
       colaboradorId: asString(item.colaboradorId),
       nomeColaborador: asString(item.nomeColaborador),
       cargo: asString(item.cargo),
@@ -75,7 +87,7 @@ function mapEquipamentos(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       assetId: asString(item.assetId),
       prefixo: asString(item.prefixo),
       descricao: asString(item.descricao),
@@ -99,7 +111,7 @@ function mapMateriais(value: unknown): MaterialDraft[] {
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       materialNome: asString(item.materialNome),
       unidade: asString(item.unidade),
       quantidadePrevista: asNumericInput(
@@ -128,7 +140,7 @@ function mapControles(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       subtrecho: asString(item.subtrecho),
       numero: asString(item.numero),
       estacaInicial: asString(item.estacaInicial),
@@ -159,7 +171,9 @@ function mapServicosExecutados(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
+      serviceId: asString(item.serviceId),
+      priceVersionId: asString(item.priceVersionId),
       servicoNome: asString(item.servicoNome),
       itemContratualId: asString(item.itemContratualId),
       quantidadeExecutada: asNumericInput(
@@ -177,7 +191,6 @@ function mapServicosExecutados(
         item.statusValidacao,
         empty.statusValidacao,
       ) as ServicoExecutadoDraft["statusValidacao"],
-      custoRealizado: asNumericInput(item.custoRealizado),
       retrabalho: item.retrabalho === true,
       producaoRejeitada: item.producaoRejeitada === true,
       observacoes: asString(item.observacoes),
@@ -194,7 +207,7 @@ function mapAlocacoesColaboradores(
 
     return {
       ...empty,
-      localId: asString(item.localId, empty.localId),
+      localId: asString(item.localId) || asString(item.id, empty.localId),
       colaboradorId: asString(item.colaboradorId),
       equipe: asString(item.equipe),
       servicoNome: asString(item.servicoNome),
@@ -216,7 +229,6 @@ function mapAlocacoesColaboradores(
         item.status,
         empty.status,
       ) as AlocacaoColaboradorDraft["status"],
-      custoHora: asNumericInput(item.custoHora),
       observacoes: asString(item.observacoes),
     };
   });
@@ -226,6 +238,38 @@ function asNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : fallback;
+}
+
+function mapImportEvidence(value: unknown): RdoImportEvidence | null {
+  const evidence = asObject(value);
+  const raw = asObject(evidence.rawWorksiteIdentity);
+  const bound = asObject(evidence.boundContext);
+  if (
+    evidence.source !== "IMPORTED_DOCUMENT" ||
+    typeof bound.receiptVersion !== "number" ||
+    !Number.isSafeInteger(bound.receiptVersion) ||
+    bound.receiptVersion <= 0
+  ) {
+    return null;
+  }
+  return {
+    source: "IMPORTED_DOCUMENT",
+    rawWorksiteIdentity: {
+      numeroRdo: asString(raw.numeroRdo),
+      obraId: asString(raw.obraId),
+      dataRdo: asString(raw.dataRdo),
+      cliente: asString(raw.cliente),
+      contrato: asString(raw.contrato),
+      rodovia: asString(raw.rodovia),
+      cidade: asString(raw.cidade),
+      uf: asString(raw.uf),
+    },
+    boundContext: {
+      obraId: asString(bound.obraId),
+      dataRdo: asString(bound.dataRdo),
+      receiptVersion: bound.receiptVersion,
+    },
+  };
 }
 
 function mapAttachments(value: unknown): RdoAttachmentDraft[] {
@@ -266,6 +310,17 @@ export function localRecordToDraft(
     id: record.id,
     obraId: record.obraId,
     programacaoId: record.programacaoId ?? "",
+    previousRdoId: asString(payload.previousRdoId),
+    previousRdoNumber: asString(payload.previousRdoNumber),
+    creationContextVersion:
+      typeof payload.creationContextVersion === "number" &&
+      Number.isSafeInteger(payload.creationContextVersion) &&
+      payload.creationContextVersion > 0
+        ? payload.creationContextVersion
+        : null,
+    apontadorColaboradorId: asString(
+      payload.apontadorColaboradorId,
+    ),
     numeroRdo: record.numeroRdo,
     dataRdo: record.dataRdo,
     cliente: asString(payload.cliente),
@@ -286,7 +341,9 @@ export function localRecordToDraft(
     turno:
       asString(payload.turno) === "NOTURNO"
         ? "NOTURNO"
-        : "DIURNO",
+        : asString(payload.turno) === "DIURNO"
+          ? "DIURNO"
+          : "",
     horaInicio: asString(payload.horaInicio),
     horaFim: asString(payload.horaFim),
     condicaoManha: asString(
@@ -297,7 +354,6 @@ export function localRecordToDraft(
     ) as RdoDraft["condicaoTarde"],
     condicaoNoite: asString(
       payload.condicaoNoite,
-      "NAO_APLICAVEL",
     ) as RdoDraft["condicaoNoite"],
     pluviometriaMm:
       payload.pluviometriaMm === null
@@ -321,6 +377,7 @@ export function localRecordToDraft(
       payload.controlesGeometricos,
     ),
     attachments: mapAttachments(payload.attachments),
+    importEvidence: mapImportEvidence(payload.importEvidence),
     syncStatus: record.syncStatus,
   };
 }

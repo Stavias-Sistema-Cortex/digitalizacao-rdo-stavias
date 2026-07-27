@@ -5,24 +5,29 @@ import {
   Route,
   Routes,
   useNavigate,
-} from "react-router-dom";
+} from "react-router";
 
 import {
   AUTH_SESSION_CHANGED_EVENT,
+  clearSessionForCurrentDocument,
   getSession,
   isAlfa,
-  setSession,
 } from "./features/auth/authSession";
-import { resolveCortexAuthMode } from "./features/auth/cortexAuthMode";
-import { EmailOtpAccessForm } from "./features/auth/EmailOtpAccessForm";
+import {
+  AUTH_NOTICE_CHANGED_EVENT,
+  consumeAuthNotice,
+} from "./features/auth/authNotice";
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
-import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
+import {
+  hasCollaborativeOfflineGrantMetadata,
+  loadOfflineVaultMetadata,
+} from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
-import { StaviaLauncherProvider } from "./features/stavia/StaviaLauncherProvider";
-import { useAutomaticSync } from "./lib/sync/useAutomaticSync";
+import { useAppAutomaticSync } from "./appAutomaticSync";
+import { initializeCortexDb } from "./lib/db/cortexDb";
 
 const HomePage = lazy(() =>
   import("./features/home/HomePage").then((module) => ({
@@ -110,70 +115,96 @@ type AppProps = {
   initialAuthUnavailable?: boolean;
 };
 
-function PostgresqlAccessPage() {
-  return (
-    <main className="cortex-login postgresql-access">
-      <section className="postgresql-access__stage" aria-labelledby="postgresql-access-title">
-        <div className="postgresql-access__identity">
-          <p className="postgresql-access__eyebrow">Sistema Córtex</p>
-          <h1 id="postgresql-access-title">Acesso institucional</h1>
-          <p>
-            Confirme sua identidade pelo e-mail institucional. O Córtex usa
-            sessão opaca em cookie e não recebe senha ou CPF nesta etapa.
-          </p>
-        </div>
-        <div className="postgresql-access__panel">
-          <EmailOtpAccessForm
-            purpose="runtime"
-            onVerified={(profile) => {
-              setSession(profile);
-            }}
-          />
-        </div>
-      </section>
-    </main>
-  );
-}
-
 function App({ initialAuthUnavailable = false }: AppProps) {
   const [session, setSession] =
     useState(() => getSession());
+  const sessionScope = session === null
+    ? null
+    : [
+      session.colaboradorId,
+      session.papelAcesso,
+      session.escopoGlobal ? "global" : session.obraIds.join(","),
+      session.expiraEm,
+    ].join("\u0000");
+  const [preparedSessionScope, setPreparedSessionScope] =
+    useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [offlineVault, setOfflineVault] =
     useState<OfflineVaultMetadata | null>(null);
+  const [hasCollaborativeCpfGrant, setHasCollaborativeCpfGrant] =
+    useState(false);
   const [vaultChecked, setVaultChecked] = useState(false);
+  const [authNotice, setAuthNotice] = useState(() =>
+    session ? consumeAuthNotice() : null,
+  );
+  const localDataReady = sessionScope !== null &&
+    preparedSessionScope === sessionScope;
 
-  useAutomaticSync(session !== null);
+  useAppAutomaticSync(localDataReady ? session : null);
 
   useEffect(() => {
     function refreshSession() {
       setSession(getSession());
     }
 
+    function refreshAuthNotice() {
+      const nextNotice = consumeAuthNotice();
+      if (nextNotice) {
+        setAuthNotice(nextNotice);
+      }
+    }
+
     window.addEventListener(
       AUTH_SESSION_CHANGED_EVENT,
       refreshSession,
+    );
+    window.addEventListener(
+      AUTH_NOTICE_CHANGED_EVENT,
+      refreshAuthNotice,
     );
     return () => {
       window.removeEventListener(
         AUTH_SESSION_CHANGED_EVENT,
         refreshSession,
       );
+      window.removeEventListener(
+        AUTH_NOTICE_CHANGED_EVENT,
+        refreshAuthNotice,
+      );
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    loadOfflineVaultMetadata()
-      .then((metadata) => {
-        if (!cancelled) {
-          setOfflineVault(metadata);
-          setVaultChecked(true);
+    if (sessionScope === null) {
+      return;
+    }
+    let active = true;
+    void initializeCortexDb()
+      .then(() => {
+        if (active) {
+          setPreparedSessionScope(sessionScope);
         }
       })
       .catch(() => {
+        if (active) {
+          clearSessionForCurrentDocument();
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionScope]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      loadOfflineVaultMetadata().catch(() => null),
+      hasCollaborativeOfflineGrantMetadata().catch(() => false),
+    ])
+      .then(([metadata, hasCpfGrant]) => {
         if (!cancelled) {
-          setOfflineVault(null);
+          setOfflineVault(metadata);
+          setHasCollaborativeCpfGrant(hasCpfGrant);
           setVaultChecked(true);
         }
       });
@@ -197,11 +228,8 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     };
   }, []);
 
-  // Sem sessão online, somente um grant assinado aberto por PRF libera o cache.
+  // Sem sessão online, somente um grant assinado validado libera o cache.
   if (!session) {
-    if (resolveCortexAuthMode() === "postgresql") {
-      return <PostgresqlAccessPage />;
-    }
     if (!vaultChecked) {
       return (
         <main className="auth-bootstrap-status" role="status">
@@ -209,10 +237,14 @@ function App({ initialAuthUnavailable = false }: AppProps) {
         </main>
       );
     }
-    if (offlineVault && (!online || initialAuthUnavailable)) {
+    if (
+      (offlineVault || hasCollaborativeCpfGrant) &&
+      (!online || initialAuthUnavailable)
+    ) {
       return (
         <OfflineUnlockPage
-          metadata={offlineVault}
+          passkeyMetadata={offlineVault}
+          hasCollaborativeCpfGrant={hasCollaborativeCpfGrant}
           canRetryOnline={online}
         />
       );
@@ -220,44 +252,60 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     return <LoginPage />;
   }
 
+  if (!localDataReady) {
+    return (
+      <main className="auth-bootstrap-status" role="status">
+        Preparando os dados locais protegidos…
+      </main>
+    );
+  }
+
   return (
     <BrowserRouter>
-      <StaviaLauncherProvider>
-        <Suspense
-          fallback={
-            <main className="auth-bootstrap-status" role="status">
-              Abrindo módulo…
-            </main>
-          }
+      {authNotice ? (
+        <aside
+          className="auth-session-notice"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          <Routes>
-            <Route path="/home" element={<HomePage />} />
-            <Route path="/obras" element={<ObrasPage />} />
-            <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
-            <Route path="/rdos" element={<RdoWorkspacePage />} />
-            <Route path="/tarefas" element={<TarefasPage />} />
-            <Route path="/equipes" element={<EquipesPage />} />
-            <Route path="/financeiro" element={<FinanceiroPage />} />
-            <Route path="/mensagens" element={<MensagensPage />} />
-            <Route
-              path="/seguranca"
-              element={
-                <CortexShell active={null}>
-                  <DeviceSecurityPage />
-                </CortexShell>
-              }
-            />
-            <Route
-              path="/integracoes"
-              element={<IntegracoesRoute />}
-            />
-            <Route
-              path="*"
-              element={<Navigate to="/home" replace />}
-            />
-          </Routes>
-        </Suspense>
-      </StaviaLauncherProvider>
+          {authNotice}
+        </aside>
+      ) : null}
+      <Suspense
+        fallback={
+          <main className="auth-bootstrap-status" role="status">
+            Abrindo módulo…
+          </main>
+        }
+      >
+        <Routes>
+          <Route path="/home" element={<HomePage />} />
+          <Route path="/obras" element={<ObrasPage />} />
+          <Route path="/obras/gestao" element={<GestaoObrasRoute />} />
+          <Route path="/rdos" element={<RdoWorkspacePage />} />
+          <Route path="/tarefas" element={<TarefasPage />} />
+          <Route path="/equipes" element={<EquipesPage />} />
+          <Route path="/financeiro" element={<FinanceiroPage />} />
+          <Route path="/mensagens" element={<MensagensPage />} />
+          <Route
+            path="/seguranca"
+            element={
+              <CortexShell active={null}>
+                <DeviceSecurityPage />
+              </CortexShell>
+            }
+          />
+          <Route
+            path="/integracoes"
+            element={<IntegracoesRoute />}
+          />
+          <Route
+            path="*"
+            element={<Navigate to="/home" replace />}
+          />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

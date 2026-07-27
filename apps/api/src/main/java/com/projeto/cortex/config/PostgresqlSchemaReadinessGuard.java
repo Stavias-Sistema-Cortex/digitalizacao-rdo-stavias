@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Refuses the PostgreSQL profile before the web server is initialized unless a
- * tested Córtex baseline has been installed. The current MySQL schema cannot
+ * tested Córtex migration chain has been installed. The current MySQL schema cannot
  * be replayed against PostgreSQL because it contains vendor-specific
  * migrations and SQL.
  */
@@ -29,17 +29,17 @@ import org.springframework.stereotype.Component;
 public final class PostgresqlSchemaReadinessGuard
         implements BeanFactoryPostProcessor, EnvironmentAware, PriorityOrdered {
 
-    private static final int CLEAN_START_REQUIRED_SCHEMA_VERSION = 44;
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "61";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
-            WHERE version = '%d'
+            WHERE version = '%s'
               AND success = TRUE
             """;
 
     private final JdbcTemplate testJdbcTemplate;
-    private final Integer testRequiredSchemaVersion;
+    private final String testRequiredSchemaVersion;
     private Environment environment;
 
     public PostgresqlSchemaReadinessGuard() {
@@ -47,7 +47,7 @@ public final class PostgresqlSchemaReadinessGuard
         this.testRequiredSchemaVersion = null;
     }
 
-    PostgresqlSchemaReadinessGuard(JdbcTemplate jdbcTemplate, int requiredSchemaVersion) {
+    PostgresqlSchemaReadinessGuard(JdbcTemplate jdbcTemplate, String requiredSchemaVersion) {
         this.testJdbcTemplate = jdbcTemplate;
         this.testRequiredSchemaVersion = requiredSchemaVersion;
     }
@@ -92,7 +92,7 @@ public final class PostgresqlSchemaReadinessGuard
         return new JdbcTemplate(new DriverManagerDataSource(url, username, password));
     }
 
-    private static void verifyReadiness(JdbcTemplate jdbcTemplate, int requiredSchemaVersion) {
+    private static void verifyReadiness(JdbcTemplate jdbcTemplate, String requiredSchemaVersion) {
         Integer completedRequiredVersion;
         try {
             completedRequiredVersion = jdbcTemplate.queryForObject(
@@ -101,18 +101,18 @@ public final class PostgresqlSchemaReadinessGuard
             );
         } catch (DataAccessException exception) {
             throw new IllegalStateException(
-                    "PostgreSQL Córtex não está pronto: a baseline V"
+                    "PostgreSQL Córtex não está pronto: a cadeia de migrações até V"
                             + requiredSchemaVersion
-                            + " equivalente não foi encontrada.",
+                            + " não foi encontrada.",
                 exception
             );
         }
 
         if (completedRequiredVersion == null || completedRequiredVersion < 1) {
             throw new IllegalStateException(
-                    "PostgreSQL Córtex não está pronto: a baseline V"
+                    "PostgreSQL Córtex não está pronto: a cadeia de migrações até V"
                             + requiredSchemaVersion
-                            + " equivalente é obrigatória e deve constar como concluída."
+                            + " é obrigatória e deve constar como concluída."
             );
         }
     }

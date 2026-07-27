@@ -5,6 +5,7 @@ import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.CreateFinancialUnitR
 import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.FinancialUnitFilter;
 import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.FinancialUnitResponse;
 import java.util.List;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+@Profile("legacy-finance")
 @RestController
 @RequestMapping("/api/financeiro/unidades")
 public class FinancialUnitController {

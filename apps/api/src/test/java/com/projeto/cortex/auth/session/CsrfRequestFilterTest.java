@@ -185,6 +185,47 @@ class CsrfRequestFilterTest {
         assertThat(response.getStatus()).isEqualTo(403);
     }
 
+    @Test
+    void normalPostgresqlExemptsExactDirectCpfAndPasskeyPathsOnly()
+            throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        CsrfRequestFilter filter = new CsrfRequestFilter(
+                sessions,
+                cookies,
+                new AuthPublicEndpointPolicy(true, false)
+        );
+        FilterChain chain = mock(FilterChain.class);
+
+        for (MockHttpServletRequest publicRequest
+                : new MockHttpServletRequest[] {
+                    request("POST", "/api/auth/login"),
+                    request("POST", "/api/auth/passkeys/authentication/options"),
+                    request("POST", "/api/auth/passkeys/authentication/verify")
+                }) {
+            filter.doFilter(
+                    publicRequest,
+                    new MockHttpServletResponse(),
+                    chain
+            );
+            verify(chain).doFilter(
+                    org.mockito.ArgumentMatchers.eq(publicRequest),
+                    org.mockito.ArgumentMatchers.any()
+            );
+            org.mockito.Mockito.reset(chain);
+        }
+
+        MockHttpServletRequest directCpf = request(
+                "POST", "/api/auth/email/challenges"
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(directCpf, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(403);
+        verify(chain, never()).doFilter(directCpf, response);
+        verifyNoInteractions(sessions, cookies);
+    }
+
     private MockHttpServletRequest request(String method, String path) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRequestURI(path);

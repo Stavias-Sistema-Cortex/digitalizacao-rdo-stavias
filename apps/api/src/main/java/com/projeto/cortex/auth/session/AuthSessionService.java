@@ -50,8 +50,15 @@ public class AuthSessionService {
         this.sessionIdSupplier = Objects.requireNonNull(sessionIdSupplier);
     }
 
-    public IssuedAuthSession issue(AuthenticatedIdentity identity) {
+    public IssuedAuthSession issue(
+            AuthenticatedIdentity identity,
+            ClientInstanceProof clientInstance
+    ) {
         Objects.requireNonNull(identity, "Identidade autenticada obrigatória.");
+        Objects.requireNonNull(
+                clientInstance,
+                "Instância do cliente obrigatória."
+        );
         String sessionId = sessionIdSupplier.get();
         String rawSessionToken = generateToken();
         String rawCsrfToken = generateToken();
@@ -63,6 +70,7 @@ public class AuthSessionService {
                 identity.colaboradorId(),
                 SessionTokenHash.sha256(rawSessionToken),
                 SessionTokenHash.sha256(rawCsrfToken),
+                clientInstance.hash(),
                 properties.ttlSeconds()
         );
         return new IssuedAuthSession(
@@ -73,13 +81,17 @@ public class AuthSessionService {
         );
     }
 
-    public Optional<ResolvedAuthSession> resolve(String rawSessionToken) {
-        if (!hasRawTokenShape(rawSessionToken)) {
+    public Optional<ResolvedAuthSession> resolve(
+            String rawSessionToken,
+            ClientInstanceProof clientInstance
+    ) {
+        if (!hasRawTokenShape(rawSessionToken) || clientInstance == null) {
             return Optional.empty();
         }
-        return repository.findActiveByTokenHash(
-                SessionTokenHash.sha256(rawSessionToken)
-        );
+        return repository.findActiveByTokenHashAndClientInstanceHash(
+                SessionTokenHash.sha256(rawSessionToken),
+                clientInstance.hash()
+        ).filter(session -> matchesClientInstance(session, clientInstance));
     }
 
     public boolean matchesCsrf(
@@ -91,6 +103,18 @@ public class AuthSessionService {
                 && SessionTokenHash.matches(
                         rawCsrfToken,
                         session.csrfHash()
+                );
+    }
+
+    public boolean matchesClientInstance(
+            ResolvedAuthSession session,
+            ClientInstanceProof clientInstance
+    ) {
+        return session != null
+                && clientInstance != null
+                && SessionTokenHash.matchesHash(
+                        clientInstance.hash(),
+                        session.clientInstanceHash()
                 );
     }
 

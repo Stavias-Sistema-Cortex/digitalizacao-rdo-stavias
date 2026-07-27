@@ -1,16 +1,9 @@
 import { getCortexDb } from "../../lib/db/cortexDb";
 import type {
-  CanonicalOutboxMutationRecord,
   ConversaLocalRecord,
   MensagemAnexoLocalRecord,
   MensagemLocalRecord,
 } from "../../lib/db/db.types";
-import {
-  getSyncState,
-  updateSyncState,
-} from "../../lib/db/syncStateRepository";
-import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
-import type { MutationActor } from "../../lib/sync/mutationEnvelope";
 import { getSession } from "../auth/authSession";
 import type {
   ConversationApi,
@@ -24,6 +17,11 @@ import {
   buildConversationPreviews,
   type ConversationPreview,
 } from "./mensagensView";
+import { guardSyncTransaction } from "../../lib/sync/guardedSyncTransaction";
+import {
+  assertSyncSession,
+  type SyncSessionGuard,
+} from "../../lib/sync/syncSession";
 
 export const MESSAGES_CHANGED_EVENT =
   "cortex-messages-changed";
@@ -74,217 +72,6 @@ export function validateMessageFiles(files: File[]): void {
   }
 }
 
-function canonicalMessagePayload(
-  message: MensagemLocalRecord,
-  attachments: readonly MensagemAnexoLocalRecord[],
-): Record<string, unknown> {
-  const anexos = attachments
-    .slice()
-    .sort((left, right) => left.ordem - right.ordem)
-    .map((attachment) => {
-      if (!attachment.objetoId || !attachment.sha256) {
-        throw new Error(
-          "O anexo ainda não possui uma referência íntegra do servidor.",
-        );
-      }
-      return {
-        objetoId: attachment.objetoId,
-        sha256: attachment.sha256,
-      };
-    });
-
-  return {
-    conversaId: message.conversaId,
-    corpo: message.corpo,
-    anexos,
-  };
-}
-
-async function messageMutationActor(
-  message: MensagemLocalRecord,
-  conversation: ConversaLocalRecord | undefined,
-): Promise<MutationActor> {
-  const session = getSession();
-  if (!session) {
-    throw new Error(
-      "Abra uma sessão protegida antes de preparar a mensagem para sincronização.",
-    );
-  }
-  if (session.colaboradorId !== message.autorId) {
-    throw new Error(
-      "A mensagem local pertence a outra sessão e requer revisão antes de sincronizar.",
-    );
-  }
-
-  const authorizationScope = conversation?.obraId
-    ? [conversation.obraId]
-    : session.obraIds;
-  if (authorizationScope.length === 0 && !session.escopoGlobal) {
-    throw new Error(
-      "A conversa sem obra não possui um escopo canônico para sincronização.",
-    );
-  }
-
-  const syncState = await getSyncState();
-  const deviceId =
-    syncState.usuarioId === session.colaboradorId && syncState.deviceId
-      ? syncState.deviceId
-      : crypto.randomUUID();
-  if (
-    syncState.usuarioId !== session.colaboradorId ||
-    syncState.deviceId !== deviceId
-  ) {
-    await updateSyncState({
-      usuarioId: session.colaboradorId,
-      deviceId,
-    });
-  }
-
-  return {
-    actorId: session.colaboradorId,
-    actorName: session.nome,
-    deviceId,
-    authorizationScope,
-  };
-}
-
-async function commitCanonicalMessageMutation(input: {
-  message: MensagemLocalRecord;
-  attachments: readonly MensagemAnexoLocalRecord[];
-  conversation: ConversaLocalRecord | undefined;
-  writeMode: "add" | "put";
-}): Promise<{
-  message: MensagemLocalRecord;
-  mutation: CanonicalOutboxMutationRecord;
-}> {
-  const actor = await messageMutationActor(
-    input.message,
-    input.conversation,
-  );
-  const payload = canonicalMessagePayload(
-    input.message,
-    input.attachments,
-  );
-  const { mutation } = await commitLocalMutation({
-    stores: ["mensagens"],
-    entity: {
-      type: "MENSAGEM",
-      id: input.message.id,
-      obraId: input.conversation?.obraId ?? null,
-      colaboradorId: actor.actorId,
-      relatedEntities: [
-        { tipo: "CONVERSA", id: input.message.conversaId },
-      ],
-    },
-    eventType: "MENSAGEM_CRIADA",
-    operation: "CRIAR_MENSAGEM",
-    baseVersion: null,
-    previousState: {},
-    newState: payload,
-    actor,
-    createdAt: input.message.criadaNoClienteEm,
-    write: (transaction, mutationForMessage) => {
-      const record: MensagemLocalRecord = {
-        ...input.message,
-        clientMutationId: mutationForMessage.clientMutationId,
-        syncStatus: "NA_FILA",
-        ultimoErro: null,
-        updatedAt: input.message.criadaNoClienteEm,
-      };
-      if (input.writeMode === "add") {
-        void transaction.objectStore("mensagens").add(record).catch(
-          () => undefined,
-        );
-      } else {
-        void transaction.objectStore("mensagens").put(record).catch(
-          () => undefined,
-        );
-      }
-      return undefined;
-    },
-  });
-
-  return {
-    message: {
-      ...input.message,
-      clientMutationId: mutation.clientMutationId,
-      syncStatus: "NA_FILA",
-      ultimoErro: null,
-      updatedAt: input.message.criadaNoClienteEm,
-    },
-    mutation,
-  };
-}
-
-/**
- * Materializes a message mutation only after every attachment has an immutable
- * server object id and hash. It never alters an existing canonical envelope.
- */
-export async function materializeCanonicalMessageMutation(
-  messageId: string,
-): Promise<CanonicalOutboxMutationRecord | null> {
-  const database = await getCortexDb();
-  const [message, attachments, mutations] = await Promise.all([
-    database.get("mensagens", messageId),
-    database.getAllFromIndex(
-      "mensagem_anexos",
-      "by-message-id",
-      messageId,
-    ),
-    database.getAll("outbox_mutations"),
-  ]);
-  if (!message || message.versaoEntidade !== null) {
-    return null;
-  }
-  if (
-    mutations.some(
-      (mutation) =>
-        mutation.entidadeTipo === "MENSAGEM" &&
-        mutation.entidadeId === message.id &&
-        mutation.operacao === "CRIAR_MENSAGEM",
-    )
-  ) {
-    return null;
-  }
-  if (
-    attachments.some(
-      (attachment) =>
-        attachment.syncStatus !== "SINCRONIZADO" ||
-        !attachment.objetoId ||
-        !attachment.sha256,
-    )
-  ) {
-    return null;
-  }
-
-  const conversation = await database.get(
-    "mensagem_conversas",
-    message.conversaId,
-  );
-  const committed = await commitCanonicalMessageMutation({
-    message,
-    attachments,
-    conversation,
-    writeMode: "put",
-  });
-  return committed.mutation;
-}
-
-export async function materializeReadyMessageMutations(): Promise<number> {
-  const database = await getCortexDb();
-  const messages = await database.getAll("mensagens");
-  let materialized = 0;
-
-  for (const message of messages) {
-    const mutation = await materializeCanonicalMessageMutation(message.id);
-    if (mutation) {
-      materialized += 1;
-    }
-  }
-
-  return materialized;
-}
-
 export async function queueMessage(input: {
   conversaId: string;
   corpo: string;
@@ -302,25 +89,6 @@ export async function queueMessage(input: {
   });
   const hashedPlan = await addAttachmentHashes(plan);
   const database = await getCortexDb();
-
-  if (hashedPlan.attachments.length === 0) {
-    const conversation = await database.get(
-      "mensagem_conversas",
-      hashedPlan.message.conversaId,
-    );
-    const committed = await commitCanonicalMessageMutation({
-      message: hashedPlan.message,
-      attachments: [],
-      conversation,
-      writeMode: "add",
-    });
-    emitMessagesChanged();
-    return {
-      ...committed.message,
-      anexos: [],
-    };
-  }
-
   const transaction = database.transaction(
     ["mensagens", "mensagem_anexos", "outbox_mutations"],
     "readwrite",
@@ -330,7 +98,10 @@ export async function queueMessage(input: {
   for (const attachment of hashedPlan.attachments) {
     await transaction.objectStore("mensagem_anexos").add(attachment);
   }
-  for (const mutation of hashedPlan.uploadMutations) {
+  for (const mutation of [
+    ...hashedPlan.uploadMutations,
+    hashedPlan.messageMutation,
+  ]) {
     await transaction.objectStore("outbox_mutations").add(mutation);
   }
   await transaction.done;
@@ -423,9 +194,12 @@ export async function searchLocalMessages(
 export async function storeServerConversations(
   conversations: ConversationApi[],
   options: { authoritative?: boolean } = {},
+  guard?: SyncSessionGuard,
 ): Promise<void> {
+  if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
-  const transaction = database.transaction(
+  if (guard) assertSyncSession(guard);
+  const rawTransaction = database.transaction(
     [
       "mensagem_conversas",
       "mensagens",
@@ -434,6 +208,10 @@ export async function storeServerConversations(
     ],
     "readwrite",
   );
+  const guardedTransaction = guard
+    ? guardSyncTransaction(rawTransaction, guard)
+    : null;
+  const transaction = guardedTransaction?.transaction ?? rawTransaction;
   const conversationStore = transaction.objectStore(
     "mensagem_conversas",
   );
@@ -489,18 +267,29 @@ export async function storeServerConversations(
       await conversationStore.delete(local.id);
     }
   }
-  await transaction.done;
+  if (guardedTransaction) {
+    await guardedTransaction.complete();
+  } else {
+    await transaction.done;
+  }
   emitMessagesChanged();
 }
 
 export async function storeServerMessages(
   messages: MessageApi[],
+  guard?: SyncSessionGuard,
 ): Promise<void> {
+  if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
-  const transaction = database.transaction(
+  if (guard) assertSyncSession(guard);
+  const rawTransaction = database.transaction(
     ["mensagens", "mensagem_anexos"],
     "readwrite",
   );
+  const guardedTransaction = guard
+    ? guardSyncTransaction(rawTransaction, guard)
+    : null;
+  const transaction = guardedTransaction?.transaction ?? rawTransaction;
   const messageStore = transaction.objectStore("mensagens");
   const attachmentStore = transaction.objectStore("mensagem_anexos");
   const timestamp = new Date().toISOString();
@@ -565,7 +354,11 @@ export async function storeServerMessages(
       });
     }
   }
-  await transaction.done;
+  if (guardedTransaction) {
+    await guardedTransaction.complete();
+  } else {
+    await transaction.done;
+  }
   emitMessagesChanged();
 }
 

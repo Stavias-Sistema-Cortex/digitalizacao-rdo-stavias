@@ -115,12 +115,19 @@ function firstMutationReviewReason(
   mutations: OutboxMutationRecord[],
 ): string | null {
   const review = mutations
-    .filter((mutation) => mutation.status === "REJECTED")
+    .filter(
+      (mutation) =>
+        mutation.status === "REJECTED",
+    )
     .sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt),
     )[0];
 
-  return review?.blockedReason ?? review?.ultimoErro ?? null;
+  return (
+    review?.blockedReason ??
+    review?.ultimoErro ??
+    null
+  );
 }
 
 export function useSyncStatus(): {

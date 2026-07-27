@@ -1,461 +1,392 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router";
 
 import { CortexShell } from "../../components/shell/CortexShell";
+import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 import { listObrasLocais } from "../../lib/db/obraLocalRepository";
-import { getSession, isAlfa } from "../auth/authSession";
 import {
-  EMPTY_FINANCE_FILTERS,
   filtersFromSearchParams,
   filtersToSearchParams,
 } from "./financeiroFilters";
 import type {
   FinanceCapabilities,
-  FinanceControlUnit,
-  FinanceControlUnitType,
   FinanceFilters,
 } from "./financeiro.types";
-import {
-  buscarCapacidadesUnidade,
-  buscarUnidadesFinanceiras,
-} from "./financeiroApi";
-import {
-  useFinanceiroData,
-  type FinanceSection,
-} from "./useFinanceiroData";
 import { FinanceRevenueTracePage } from "./FinanceRevenueTracePage";
-import { FinancePurchasesPanel } from "./FinancePurchasesPanel";
-import { FinanceInvoicesPanel } from "./FinanceInvoicesPanel";
-import { FinancePaymentsPanel } from "./FinancePaymentsPanel";
-import { FinanceCostCentersPanel } from "./FinanceCostCentersPanel";
-import { FinanceReportsPanel } from "./FinanceReportsPanel";
-import { FinanceAllocationsPanel } from "./FinanceAllocationsPanel";
-import { FinanceManualFilters } from "./FinanceManualFilters";
+import { ServicePriceCatalogPage } from "./ServicePriceCatalogPage";
+import { FinanceSectionIndex } from "./FinanceSectionIndex";
+import {
+  FINANCE_SECTIONS,
+  type ActiveFinanceSection,
+} from "./financeSectionIndexModel";
+import { resolveFinanceCapabilities } from "./financeCapabilitiesResolver";
+import {
+  fetchAuthorizedRevenueWorksites,
+  type RevenueWorksite,
+} from "./financeRevenueWorksiteApi";
+import { FinancePdorSection } from "./FinancePdorSection";
 import "./FinanceiroPage.css";
 
-type FinanceScopeType = "GERAL" | Exclude<FinanceControlUnitType, "CORPORATIVO">;
+const DEFAULT_SECTION: ActiveFinanceSection = "receita";
 
-const SECTIONS: { id: FinanceSection; label: string }[] = [
-  { id: "visao-geral", label: "Rastreio de receita" },
-];
-
-const SCOPES: { id: FinanceScopeType; label: string }[] = [
-  { id: "GERAL", label: "Consolidado das obras" },
-];
-
-function sectionFromParams(params: URLSearchParams): FinanceSection {
+function sectionFromParams(params: URLSearchParams): ActiveFinanceSection {
   const requested = params.get("secao");
-  return SECTIONS.some((section) => section.id === requested)
-    ? requested as FinanceSection
-    : "visao-geral";
+  return FINANCE_SECTIONS.some((section) => section.id === requested)
+    ? requested as ActiveFinanceSection
+    : DEFAULT_SECTION;
 }
-function scopeFromParams(params: URLSearchParams): FinanceScopeType {
-  const requested = params.get("escopo");
-  return SCOPES.some((scope) => scope.id === requested)
-    ? requested as FinanceScopeType
-    : "GERAL";
+
+function localWorksiteUnit(
+  obra: Awaited<ReturnType<typeof listObrasLocais>>[number],
+): RevenueWorksite {
+  return {
+    id: obra.id,
+    codigoContrato: obra.codigoContrato,
+    nome: obra.nome,
+    status: obra.status,
+  };
 }
 
 export function FinanceiroPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [units, setUnits] = useState<FinanceControlUnit[]>([]);
-  const [unitError, setUnitError] = useState("");
-  const [unitVersion] = useState(0);
-  const [unitCapabilities, setUnitCapabilities] =
-    useState<FinanceCapabilities | null>(null);
-  const [reportGroup, setReportGroup] = useState("CENTRO_CUSTO");
+  const [worksites, setWorksites] = useState<RevenueWorksite[]>([]);
+  const [worksiteError, setWorksiteError] = useState("");
+  const [accessVersion, setAccessVersion] = useState(0);
+  const [accessState, setAccessState] = useState<{
+    obraId: string;
+    capabilities: FinanceCapabilities | null;
+    loading: boolean;
+    error: string;
+  }>({
+    obraId: "",
+    capabilities: null,
+    loading: false,
+    error: "",
+  });
   const section = sectionFromParams(searchParams);
-  const scopeType = scopeFromParams(searchParams);
-  const selectedUnitId = searchParams.get("unidade")?.trim() ?? "";
   const filters = useMemo(
     () => filtersFromSearchParams(searchParams),
     [searchParams],
   );
-  const data = useFinanceiroData(filters, section, reportGroup);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadUnits() {
-      try {
-        const remote = navigator.onLine
-          ? await buscarUnidadesFinanceiras()
-          : [];
-        if (!cancelled && remote.length > 0) {
-          setUnits(remote);
-          return;
-        }
-        const local = await listObrasLocais();
-        if (!cancelled) {
-          setUnits(local.map((obra) => ({
-            id: obra.id,
-            tipo: "OBRA",
-            obraId: obra.id,
-            ativoId: null,
-            codigo: obra.codigoContrato || `OBRA:${obra.id}`,
-            nome: obra.nome,
-            status: "ATIVA",
-            versao: 0,
-          })));
-        }
-      } catch (reason: unknown) {
+
+    async function loadWorksites() {
+      setWorksiteError("");
+      if (navigator.onLine) {
         try {
-          const local = await listObrasLocais();
+          const remote = await fetchAuthorizedRevenueWorksites();
           if (!cancelled) {
-            setUnits(local.map((obra) => ({
-              id: obra.id,
-              tipo: "OBRA",
-              obraId: obra.id,
-              ativoId: null,
-              codigo: obra.codigoContrato || `OBRA:${obra.id}`,
-              nome: obra.nome,
-              status: "ATIVA",
-              versao: 0,
-            })));
+            setWorksites(remote);
           }
-        } catch {
+          return;
+        } catch (reason: unknown) {
           if (!cancelled) {
-            setUnitError(reason instanceof Error
+            setWorksiteError(reason instanceof Error
               ? reason.message
-              : "Não foi possível carregar as unidades financeiras.");
+              : "Não foi possível atualizar a lista de obras autorizadas.");
           }
         }
       }
+
+      try {
+        const local = await listObrasLocais();
+        if (!cancelled) {
+          setWorksites(local.map(localWorksiteUnit));
+        }
+      } catch (reason: unknown) {
+        if (!cancelled) {
+          setWorksiteError(reason instanceof Error
+            ? reason.message
+            : "Não foi possível carregar as obras armazenadas neste dispositivo.");
+        }
+      }
     }
-    void loadUnits();
+
+    void loadWorksites();
     return () => {
       cancelled = true;
     };
-  }, [unitVersion]);
+  }, [accessVersion]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedUnitId || filters.obraId) {
+    const obraId = filters.obraId;
+    if (!obraId) {
       queueMicrotask(() => {
-        if (!cancelled) setUnitCapabilities(null);
+        if (!cancelled) {
+          setAccessState({
+            obraId: "",
+            capabilities: null,
+            loading: false,
+            error: "",
+          });
+        }
       });
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+      };
     }
-    void buscarCapacidadesUnidade(selectedUnitId)
-      .then((capabilities) => {
-        if (!cancelled) setUnitCapabilities(capabilities);
-      })
-      .catch(() => {
-        if (!cancelled) setUnitCapabilities(null);
+
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setAccessState({
+        obraId,
+        capabilities: null,
+        loading: true,
+        error: "",
       });
-    return () => { cancelled = true; };
-  }, [filters.obraId, selectedUnitId]);
+      void resolveFinanceCapabilities(obraId)
+        .then((capabilities) => {
+          if (!cancelled) {
+            setAccessState({
+              obraId,
+              capabilities,
+              loading: false,
+              error: "",
+            });
+          }
+        })
+        .catch((reason: unknown) => {
+          if (!cancelled) {
+            setAccessState({
+              obraId,
+              capabilities: null,
+              loading: false,
+              error: reason instanceof Error
+                ? reason.message
+                : "Não foi possível validar o acesso desta obra.",
+            });
+          }
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessVersion, filters.obraId]);
 
   function applyParams(
     nextFilters: FinanceFilters,
     nextSection = section,
-    nextScope = scopeType,
-    nextUnitId = selectedUnitId,
   ) {
     const params = filtersToSearchParams(nextFilters);
     params.set("secao", nextSection);
-    params.set("escopo", nextScope);
-    if (nextUnitId) params.set("unidade", nextUnitId);
     setSearchParams(params, { replace: true });
   }
 
-  function updateFilters(next: FinanceFilters) {
-    applyParams(next);
-  }
-
   function patchFilters(patch: Partial<FinanceFilters>) {
-    updateFilters({ ...filters, ...patch });
+    applyParams({ ...filters, ...patch });
   }
 
-  const selectedUnit = units.find((unit) => unit.id === selectedUnitId);
-  const visibleUnits = scopeType === "GERAL"
-    ? units.filter((unit) => unit.tipo !== "CORPORATIVO")
-    : units.filter((unit) => unit.tipo === scopeType);
-  const permissions = data.capabilities?.permissoes ?? [];
-  const canView = permissions.includes("FINANCEIRO_VISUALIZAR");
-  const canOperateUnit = isAlfa(getSession()) ||
-    Boolean(unitCapabilities?.permissoes.includes("FINANCEIRO_OPERAR"));
-
-  function selectScope(nextScope: FinanceScopeType) {
-    applyParams(
-      { ...filters, obraId: "" },
-      section,
-      nextScope,
-      "",
-    );
+  function selectWorksite(obraId: string) {
+    applyParams({ ...filters, obraId });
   }
 
-  function selectUnit(unitId: string) {
-    const unit = units.find((candidate) => candidate.id === unitId);
-    applyParams(
-      { ...filters, obraId: unit?.obraId ?? "" },
-      section,
-      scopeType,
-      unit?.id ?? "",
+  const selectedWorksite = worksites.find(
+    (unit) => unit.id === filters.obraId,
+  );
+  const currentAccess = accessState.obraId === filters.obraId
+    ? accessState
+    : null;
+  const permissions = currentAccess?.capabilities?.permissoes ?? [];
+  const canViewSelectedWorksite = !filters.obraId ||
+    permissions.includes("FINANCEIRO_VISUALIZAR");
+  const selectedWorksitePending = Boolean(
+    filters.obraId && (
+      currentAccess === null ||
+      currentAccess.loading
+    ),
+  );
+  const selectedSectionLabel = FINANCE_SECTIONS.find(
+    (item) => item.id === section,
+  )?.label ?? "Rastreio de receita";
+
+  function renderSelectedSection() {
+    if (section === "receita") {
+      return (
+        <>
+          <section
+            className="finance-revenue-period"
+            aria-label="Período da receita"
+          >
+            <label>
+              De
+              <input
+                type="date"
+                value={filters.de}
+                onChange={(event) => patchFilters({ de: event.target.value })}
+              />
+            </label>
+            <label>
+              Até
+              <input
+                type="date"
+                value={filters.ate}
+                onChange={(event) => patchFilters({ ate: event.target.value })}
+              />
+            </label>
+            <p>
+              Somente trabalho aceito em RDO e ligado ao preço vigente entra
+              na receita.
+            </p>
+          </section>
+          <FinanceRevenueTracePage
+            key={`revenue-${accessVersion}`}
+            obraId={filters.obraId}
+            de={filters.de}
+            ate={filters.ate}
+          />
+        </>
+      );
+    }
+
+    if (!filters.obraId) {
+      return (
+        <section className="finance-empty">
+          <div className="finance-empty-mark" aria-hidden="true">↳</div>
+          <div>
+            <h2>Selecione uma obra</h2>
+            <p>
+              Preços versionados e PDOR preservam o vínculo com uma obra
+              específica.
+            </p>
+          </div>
+        </section>
+      );
+    }
+
+    if (section === "servicos-precos") {
+      return (
+        <ServicePriceCatalogPage
+          key={`prices-${accessVersion}`}
+          obraId={filters.obraId}
+          permissions={permissions}
+        />
+      );
+    }
+
+    return (
+      <FinancePdorSection
+        obraId={filters.obraId}
+        refreshVersion={accessVersion}
+      />
     );
   }
 
   return (
     <CortexShell
       active="financeiro"
-      onRefresh={data.reload}
-      isRefreshing={data.loading}
+      onRefresh={() => setAccessVersion((version) => version + 1)}
+      isRefreshing={Boolean(currentAccess?.loading)}
     >
-      <main className="finance-page">
-        <header className="finance-page-header">
-          <div>
-            <p className="finance-kicker">Operação</p>
-            <h1>Financeiro</h1>
-            <p>
-              Produção dos RDOs, receita operacional e projeção de receita por obra e serviço.
-            </p>
-          </div>
-        </header>
+      <OperationalWorkspace
+        className="finance-page"
+        eyebrow="Operação · Evidência de receita"
+        title="Financeiro"
+        description="Receita reconhecida a partir do trabalho aceito nos RDOs, dos preços versionados e da evidência preservada na ontologia."
+        actions={(
+          <dl
+            className="finance-command-context"
+            aria-label="Contexto de receita ativo"
+          >
+            <div>
+              <dt>Visão</dt>
+              <dd>{selectedSectionLabel}</dd>
+            </div>
+            <div>
+              <dt>Obra</dt>
+              <dd>
+                {selectedWorksite?.nome ??
+                  selectedWorksite?.codigoContrato ??
+                  (filters.obraId
+                    ? "Obra selecionada"
+                    : "Consolidado autorizado")}
+              </dd>
+            </div>
+          </dl>
+        )}
+      >
+        <FinanceSectionIndex
+          activeSection={section}
+          onSelect={(nextSection) => applyParams(filters, nextSection)}
+        />
 
-        {unitError ? (
-          <div className="finance-error-state" role="alert">{unitError}</div>
+        {worksiteError ? (
+          <div className="finance-error-state" role="alert">
+            {worksiteError}
+          </div>
         ) : null}
 
-        <section className="finance-scope-bar" aria-label="Escopo financeiro">
-          <nav>
-            {SCOPES.map((scope) => (
-              <button
-                key={scope.id}
-                type="button"
-                className={scopeType === scope.id ? "is-active" : ""}
-                onClick={() => selectScope(scope.id)}
-              >
-                {scope.label}
-              </button>
-            ))}
-          </nav>
-          {scopeType !== "GERAL" ? (
+        <section
+          className="finance-scope-bar is-revenue"
+          aria-label="Escopo da receita"
+        >
+          <div className="finance-scope-bar__identity">
+            <span>Perímetro da evidência</span>
+            <strong>
+              {selectedWorksite?.nome ??
+                selectedWorksite?.codigoContrato ??
+                (filters.obraId
+                  ? "Obra selecionada"
+                  : "Todas as obras autorizadas")}
+            </strong>
+          </div>
+          <div className="finance-scope-bar__selection">
             <label>
-              Unidade em análise
-              <select value={selectedUnitId} onChange={(event) => selectUnit(event.target.value)}>
+              Obra em análise
+              <select
+                value={filters.obraId}
+                onChange={(event) => selectWorksite(event.target.value)}
+              >
                 <option value="">Consolidado autorizado</option>
-                {visibleUnits.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.codigo} · {unit.nome}
+                {worksites.map((unit) => (
+                  <option
+                    key={unit.id}
+                    value={unit.id}
+                  >
+                    {unit.codigoContrato
+                      ? `${unit.codigoContrato} · `
+                      : ""}
+                    {unit.nome ?? unit.id}
                   </option>
                 ))}
               </select>
             </label>
-          ) : (
-            <p>{units.length} unidades autorizadas no consolidado</p>
-          )}
+          </div>
         </section>
 
-        <nav className="finance-section-nav" aria-label="Áreas do financeiro">
-          {SECTIONS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={section === item.id ? "is-active" : ""}
-              onClick={() => applyParams(filters, item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-
-        {filters.obraId && (
-          <>
-          <FinanceFiltersBar
-            filters={filters}
-            section={section}
-            suppliers={data.suppliers}
-            costCenters={data.costCenters}
-            categories={data.categories}
-            statuses={data.statuses.filter((status) => {
-              if (section === "compras") return status.agregadoTipo === "COMPRA";
-              if (section === "notas-fiscais") return status.agregadoTipo === "NOTA_FISCAL";
-              return status.agregadoTipo === "LANCAMENTO";
-            })}
-            onChange={patchFilters}
-            onClear={() => updateFilters({
-              ...EMPTY_FINANCE_FILTERS,
-              obraId: filters.obraId,
-              moeda: filters.moeda,
-            })}
-          />
-          {!["visao-geral", "centros-custo", "relatorios"].includes(section) ? (
-            <FinanceManualFilters
-              mode={filters.manualMode}
-              rules={filters.manualRules}
-              onModeChange={(manualMode) => patchFilters({ manualMode })}
-              onRulesChange={(manualRules) => patchFilters({ manualRules })}
-            />
-          ) : null}
-          </>
-        )}
-
-        {section === "visao-geral" ? (
-          <FinanceRevenueTracePage obraId={filters.obraId} de={filters.de} ate={filters.ate} />
-        ) : !filters.obraId && section === "rateios" ? (
-          <FinanceAllocationsPanel
-            units={units}
-            selectedUnitId={selectedUnitId}
-            purchases={[]}
-            invoices={[]}
-            ledger={[]}
-            canOperate={canOperateUnit}
-            onChanged={data.reload}
-          />
-        ) : !filters.obraId ? (
-          <section className="finance-empty">
-            <div className="finance-empty-mark" aria-hidden="true">↳</div>
+        {currentAccess?.error && filters.obraId ? (
+          <div className="finance-error-state" role="alert">
             <div>
-              <h2>Escolha uma obra para esta área</h2>
-              <p>
-                Compras, notas e pagamentos continuam vinculados à origem real.
-                Use Rateios para consultar equipamentos e unidades administrativas.
-              </p>
+              <strong>Não foi possível validar o acesso desta obra.</strong>
+              <span>{currentAccess.error}</span>
             </div>
-          </section>
-        ) : data.loading && !data.capabilities ? (
-          <div className="finance-loading" role="status">Carregando o escopo financeiro…</div>
-        ) : data.capabilities && !canView ? (
+            <button
+              type="button"
+              onClick={() => setAccessVersion((version) => version + 1)}
+            >
+              Tentar novamente
+            </button>
+          </div>
+        ) : selectedWorksitePending ? (
+          <div className="finance-loading" role="status">
+            Validando o acesso à obra…
+          </div>
+        ) : !canViewSelectedWorksite ? (
           <section className="finance-denied" role="status">
             <span aria-hidden="true">⊘</span>
             <div>
-              <h2>Acesso financeiro não concedido</h2>
+              <h2>Acesso à receita não concedido</h2>
               <p>
-                Você pode acessar {selectedUnit?.nome || "esta obra"}, mas
-                não possui a capacidade FINANCEIRO_VISUALIZAR para os dados financeiros.
+                Seu perfil não possui a capacidade
+                FINANCEIRO_VISUALIZAR nesta obra.
               </p>
             </div>
           </section>
-        ) : (
-          <>
-            {data.error ? (
-              <div className="finance-error-state" role="alert">
-                <div><strong>Não foi possível atualizar esta área.</strong><span>{data.error}</span></div>
-                <button type="button" onClick={data.reload}>Tentar novamente</button>
-              </div>
-            ) : null}
-            {data.loading ? <div className="finance-progress" role="status"><span />Atualizando dados reais…</div> : null}
-            {canView && section === "compras" && (
-              <FinancePurchasesPanel
-                obraId={filters.obraId}
-                purchases={data.purchases}
-                suppliers={data.suppliers}
-                costCenters={data.costCenters}
-                categories={data.categories}
-                statuses={data.statuses}
-                permissions={permissions}
-                onChanged={data.reload}
-              />
-            )}
-            {canView && section === "notas-fiscais" && (
-              <FinanceInvoicesPanel
-                obraId={filters.obraId}
-                invoices={data.invoices}
-                suppliers={data.suppliers}
-                costCenters={data.costCenters}
-                categories={data.categories}
-                statuses={data.statuses}
-                permissions={permissions}
-                onChanged={data.reload}
-              />
-            )}
-            {canView && section === "pagamentos" && (
-              <FinancePaymentsPanel
-                obraId={filters.obraId}
-                ledger={data.ledger}
-                charges={data.charges}
-                suppliers={data.suppliers}
-                costCenters={data.costCenters}
-                categories={data.categories}
-                statuses={data.statuses}
-                permissions={permissions}
-                onChanged={data.reload}
-              />
-            )}
-            {canView && section === "rateios" && (
-              <FinanceAllocationsPanel
-                units={units}
-                selectedUnitId={selectedUnitId}
-                purchases={data.purchases}
-                invoices={data.invoices}
-                ledger={data.ledger}
-                canOperate={permissions.includes("FINANCEIRO_OPERAR")}
-                onChanged={data.reload}
-              />
-            )}
-            {canView && section === "centros-custo" && (
-              <FinanceCostCentersPanel
-                obraId={filters.obraId}
-                costCenters={data.costCenters}
-                permissions={permissions}
-                onChanged={data.reload}
-              />
-            )}
-            {canView && section === "relatorios" && (
-              <FinanceReportsPanel
-                filters={filters}
-                overview={data.overview}
-                rows={data.report}
-                reportGroup={reportGroup}
-                onReportGroupChange={setReportGroup}
-              />
-            )}
-          </>
-        )}
-      </main>
+        ) : renderSelectedSection()}
+      </OperationalWorkspace>
     </CortexShell>
-  );
-}
-
-function FinanceFiltersBar({
-  filters,
-  section,
-  suppliers,
-  costCenters,
-  categories,
-  statuses,
-  onChange,
-  onClear,
-}: {
-  filters: FinanceFilters;
-  section: FinanceSection;
-  suppliers: { id: string; nomeFantasia: string | null; razaoSocial: string }[];
-  costCenters: { id: string; codigo: string; nome: string }[];
-  categories: { id: string; nome: string }[];
-  statuses: { id: string; nome: string }[];
-  onChange: (patch: Partial<FinanceFilters>) => void;
-  onClear: () => void;
-}) {
-  return (
-    <form
-      className="finance-filter-bar"
-      aria-label="Filtros financeiros"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const form = new FormData(event.currentTarget);
-        onChange({ query: String(form.get("query") ?? "").trim() });
-      }}
-    >
-      <label className="finance-search-field">
-        <span className="sr-only">Buscar</span>
-        <input key={filters.query} name="query" defaultValue={filters.query} placeholder="Buscar número, descrição ou CNPJ" />
-        <button type="submit">Buscar</button>
-      </label>
-      <label><span>De</span><input type="date" value={filters.de} onChange={(event) => onChange({ de: event.target.value })} /></label>
-      <label><span>Até</span><input type="date" value={filters.ate} onChange={(event) => onChange({ ate: event.target.value })} /></label>
-      <label><span>Fornecedor</span><select value={filters.fornecedorId} onChange={(event) => onChange({ fornecedorId: event.target.value })}><option value="">Todos</option>{suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.nomeFantasia || supplier.razaoSocial}</option>)}</select></label>
-      <label><span>Centro de custo</span><select value={filters.centroCustoId} onChange={(event) => onChange({ centroCustoId: event.target.value })}><option value="">Todos</option>{costCenters.map((center) => <option key={center.id} value={center.id}>{center.codigo} · {center.nome}</option>)}</select></label>
-      <label><span>Categoria</span><select value={filters.categoriaId} onChange={(event) => onChange({ categoriaId: event.target.value })}><option value="">Todas</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.nome}</option>)}</select></label>
-      <label><span>Status</span><select value={filters.statusId} onChange={(event) => onChange({ statusId: event.target.value })}><option value="">Todos</option>{statuses.map((status) => <option key={status.id} value={status.id}>{status.nome}</option>)}</select></label>
-      {section === "compras" ? (
-        <label><span>Prioridade</span><select value={filters.prioridade} onChange={(event) => onChange({ prioridade: event.target.value })}><option value="">Todas</option><option value="BAIXA">Baixa</option><option value="MEDIA">Média</option><option value="ALTA">Alta</option><option value="URGENTE">Urgente</option></select></label>
-      ) : null}
-      {["visao-geral", "pagamentos", "relatorios"].includes(section) ? (
-        <label><span>Tipo</span><select value={filters.tipo} onChange={(event) => onChange({ tipo: event.target.value })}><option value="">Todos</option><option value="PAGAR">A pagar</option><option value="RECEBER">A receber</option></select></label>
-      ) : null}
-      {["visao-geral", "relatorios"].includes(section) ? (
-        <label><span>Moeda</span><input value={filters.moeda} maxLength={3} onChange={(event) => onChange({ moeda: event.target.value.toUpperCase() })} /></label>
-      ) : null}
-      <button type="button" className="finance-clear-filters" onClick={onClear}>Limpar filtros</button>
-    </form>
   );
 }

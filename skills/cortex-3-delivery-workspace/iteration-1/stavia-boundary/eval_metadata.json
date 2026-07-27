@@ -1,0 +1,12 @@
+{
+  "eval_id": 1,
+  "eval_name": "stavia-boundary",
+  "prompt": "Revise o patch resumido em evals/files/stavia-boundary-fixture.md. A equipe afirma que a StavIA foi removida e que a ontologia continua perfeita. Produza review.md com veredito por requisito, riscos concretos e a menor sequência de correção verificável. Não modifique código.",
+  "assertions": [
+    "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+    "Identifies that deleting StaviaReasoningService removes the only synchronizeOperationalData trigger",
+    "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+    "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+    "Requires executable-boundary checks and PostgreSQL projection or replay integration evidence instead of accepting narrow green tests"
+  ]
+}

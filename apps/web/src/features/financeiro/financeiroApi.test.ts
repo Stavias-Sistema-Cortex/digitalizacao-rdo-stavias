@@ -22,9 +22,9 @@ import {
   buscarRateios,
   buscarUnidadesFinanceiras,
   buscarCompras,
+  buscarConteudoDocumento,
   buscarLancamentos,
   buscarNotasFiscais,
-  buscarRastreioReceita,
   enviarDocumentoFiscal,
   registrarLiquidacao,
   vincularDocumentoNota,
@@ -176,51 +176,25 @@ describe("financeiroApi query contracts", () => {
     );
   });
 
-  it("consulta o rastreio canônico sem inventar receita indisponível", async () => {
-    const trace = {
-      consolidado: {
-        producao: 12,
-        custo: 400,
-        receitaEstimada: 0,
-        margem: -400,
-        receitaMedida: 0,
-        receitaAprovada: 0,
-        receitaFaturada: 0,
-        receitaRecebida: 0,
-      },
-      obras: [],
-      tiposServico: [{
-        nome: "Terraplenagem",
-        unidade: "m³",
-        totais: {
-          producao: 12,
-          custo: 400,
-          receitaEstimada: 0,
-          margem: -400,
-          receitaMedida: 0,
-          receitaAprovada: 0,
-          receitaFaturada: 0,
-          receitaRecebida: 0,
-        },
-        obras: [],
-        quantidadeRdos: 1,
-        receitaDisponivel: false,
-      }],
-    };
-    mocks.readResponseBody.mockResolvedValue(trace);
-
-    const result = await buscarRastreioReceita({
-      obraId: "obra-1",
-      de: "2026-07-01",
-      ate: "2026-07-31",
+  it("busca conteúdo fiscal pela API autenticada sem transformar a URL em link nativo", async () => {
+    const blob = new Blob(["%PDF-1.7"], { type: "application/pdf" });
+    mocks.apiFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/pdf; charset=binary" }),
+      blob: vi.fn().mockResolvedValue(blob),
     });
 
-    expect(mocks.apiFetch.mock.calls[0][0]).toBe(
-      "/financeiro/rastreio-receita?obraId=obra-1&de=2026-07-01&ate=2026-07-31",
+    const content = await buscarConteudoDocumento(
+      "invoice-1",
+      "document-1",
+      "obra-1",
     );
-    expect(mocks.apiFetch.mock.calls[0][1]).toMatchObject({
-      cache: "no-store",
-    });
-    expect(result.tiposServico[0].receitaDisponivel).toBe(false);
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/financeiro/notas-fiscais/invoice-1/anexos/document-1/conteudo?obraId=obra-1",
+      expect.objectContaining({ method: "GET", timeoutMs: 30_000 }),
+    );
+    expect(content).toEqual({ blob, mediaType: "application/pdf" });
   });
 });

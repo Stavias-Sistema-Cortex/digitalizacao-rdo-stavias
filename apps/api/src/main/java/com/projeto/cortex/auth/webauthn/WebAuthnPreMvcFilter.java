@@ -57,7 +57,8 @@ public final class WebAuthnPreMvcFilter extends OncePerRequestFilter {
         }
         String path = request.getRequestURI();
         WebAuthnRateLimitAction action = publicAction(path);
-        boolean ceremonyBody = AUTH_VERIFY_PATH.equals(path)
+        boolean ceremonyBody = OPTIONS_PATH.equals(path)
+                || AUTH_VERIFY_PATH.equals(path)
                 || REGISTRATION_VERIFY_PATH.equals(path);
         if (action == null && !ceremonyBody) {
             filterChain.doFilter(request, response);

@@ -13,6 +13,7 @@ const EVENT_LABELS: Record<string, string> = {
   OCORRENCIA_REGISTRADA: "Ocorrência registrada",
   CALCULO_REPROCESSADO: "Cálculo reprocessado",
   TAREFA_CRIADA: "Tarefa criada",
+  TAREFA_ATUALIZADA: "Tarefa atualizada",
   TAREFA_CONCLUIDA: "Tarefa concluída",
   TAREFA_REABERTA: "Tarefa reaberta",
   TAREFA_EXCLUIDA: "Tarefa excluída",

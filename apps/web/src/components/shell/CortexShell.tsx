@@ -5,12 +5,15 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 import staviasTile from "../../assets/stavias-s-tile.png";
 import { SyncStatusBanner } from "../SyncStatusBanner";
 import { getSession, isAlfa } from "../../features/auth/authSession";
-import { encerrarSessao } from "../../features/auth/authService";
+import {
+  encerrarSessao,
+  LogoutReauthenticationRequiredError,
+} from "../../features/auth/authService";
 import {
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_KEY,
@@ -19,6 +22,7 @@ import {
   clampSidebarWidth,
   readStoredSidebarWidth,
 } from "./sidebarWidth";
+import { CortexShellChromeProvider } from "./CortexShellChromeContext";
 
 const SIDEBAR_COLLAPSED_KEY = "cortex.ui.sidebarRecolhida";
 
@@ -176,30 +180,94 @@ export function CortexShell({
     try {
       await encerrarSessao();
       window.location.assign("/");
-    } catch {
-      setLogoutError(
-        "Não foi possível encerrar a sessão no servidor. Verifique a conexão e tente novamente.",
-      );
+    } catch (error: unknown) {
+      setLogoutError(error instanceof LogoutReauthenticationRequiredError
+        ? "Esta aba não confirmou a sessão remota. Entre novamente antes de encerrar a sessão compartilhada."
+        : "Não foi possível encerrar a sessão no servidor. Verifique a conexão e tente novamente.");
       setIsLoggingOut(false);
     }
   }
 
-  return (
+  const headerControls = (
     <div
-      className={[
-        "cortex-shell",
-        isSidebarCollapsed ? "cortex-shell--collapsed" : "",
-        isResizingSidebar ? "is-resizing" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={
-        {
-          "--sidebar-width": `${sidebarWidth}px`,
-        } as CSSProperties
-      }
+      role="group"
+      aria-label="Controles globais"
     >
-      <aside className="cortex-sidebar">
+      <SyncStatusBanner />
+      <div className="profile-menu-anchor">
+      <button
+        type="button"
+        className="avatar-button"
+        onClick={() =>
+          setIsProfileMenuOpen((open) => !open)
+        }
+        aria-expanded={isProfileMenuOpen}
+        aria-haspopup="dialog"
+        title={session?.nome ?? "Perfil"}
+      >
+        {sessionInitials(session?.nome ?? null)}
+      </button>
+      {isProfileMenuOpen && (
+        <div
+          className="profile-menu"
+          role="dialog"
+          aria-label="Opções do perfil"
+        >
+          <p className="profile-menu-name">
+            {session?.nome ?? "Colaborador"}
+          </p>
+          <p className="profile-menu-scope">
+            {alfa
+              ? "Escopo global (Alfa)"
+              : "Escopo das obras vinculadas (Beta)"}
+          </p>
+          <button
+            type="button"
+            className="profile-menu-security"
+            onClick={() => {
+              setIsProfileMenuOpen(false);
+              navigate("/seguranca");
+            }}
+          >
+            Segurança do dispositivo
+          </button>
+          <button
+            type="button"
+            className="profile-menu-logout"
+            onClick={() => {
+              void handleLogout();
+            }}
+            disabled={isLoggingOut}
+          >
+            {isLoggingOut ? "Saindo..." : "Sair"}
+          </button>
+          {logoutError ? (
+            <p className="profile-menu-error" role="alert">
+              {logoutError}
+            </p>
+          ) : null}
+        </div>
+      )}
+      </div>
+    </div>
+  );
+
+  return (
+    <CortexShellChromeProvider headerControls={headerControls}>
+      <div
+        className={[
+          "cortex-shell",
+          isSidebarCollapsed ? "cortex-shell--collapsed" : "",
+          isResizingSidebar ? "is-resizing" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={
+          {
+            "--sidebar-width": `${sidebarWidth}px`,
+          } as CSSProperties
+        }
+      >
         <button
           type="button"
           className="sidebar-toggle"
@@ -229,6 +297,7 @@ export function CortexShell({
           </svg>
         </button>
 
+      <aside className="cortex-sidebar">
         <div
           className="sidebar-resizer"
           role="separator"
@@ -434,71 +503,9 @@ export function CortexShell({
       </aside>
 
       <div className="cortex-shell-content">
-        <div
-          className="floating-controls"
-          role="group"
-          aria-label="Controles globais"
-        >
-          <SyncStatusBanner />
-          <div className="profile-menu-anchor">
-            <button
-              type="button"
-              className="avatar-button"
-              onClick={() =>
-                setIsProfileMenuOpen((open) => !open)
-              }
-              aria-expanded={isProfileMenuOpen}
-              aria-haspopup="dialog"
-              title={session?.nome ?? "Perfil"}
-            >
-              {sessionInitials(session?.nome ?? null)}
-            </button>
-            {isProfileMenuOpen && (
-              <div
-                className="profile-menu"
-                role="dialog"
-                aria-label="Opções do perfil"
-              >
-                <p className="profile-menu-name">
-                  {session?.nome ?? "Colaborador"}
-                </p>
-                <p className="profile-menu-scope">
-                  {alfa
-                    ? "Escopo global (Alfa)"
-                    : "Escopo das obras vinculadas (Beta)"}
-                </p>
-                <button
-                  type="button"
-                  className="profile-menu-security"
-                  onClick={() => {
-                    setIsProfileMenuOpen(false);
-                    navigate("/seguranca");
-                  }}
-                >
-                  Segurança do dispositivo
-                </button>
-                <button
-                  type="button"
-                  className="profile-menu-logout"
-                  onClick={() => {
-                    void handleLogout();
-                  }}
-                  disabled={isLoggingOut}
-                >
-                  {isLoggingOut ? "Saindo..." : "Sair"}
-                </button>
-                {logoutError ? (
-                  <p className="profile-menu-error" role="alert">
-                    {logoutError}
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </div>
-
         {children}
       </div>
-    </div>
+      </div>
+    </CortexShellChromeProvider>
   );
 }

@@ -1,20 +1,15 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
-import {
-  buscarCapacidadesFinanceiras,
-  buscarVisaoGeral,
-} from "../financeiro/financeiroApi";
-import { EMPTY_FINANCE_FILTERS } from "../financeiro/financeiroFilters";
-import type { FinanceOverview } from "../financeiro/financeiro.types";
-import { formatMoney } from "../financeiro/financeiroView";
+import { fetchRevenueCapabilities } from "../financeiro/financeRevenueAccessApi";
+import { fetchRevenueTrace } from "../financeiro/servicePriceApi";
 
 interface FinanceHomeCardProps {
   obraId: string;
 }
 
 export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
-  const [overview, setOverview] = useState<FinanceOverview | null>(null);
+  const [evidenceCount, setEvidenceCount] = useState(0);
   const [state, setState] = useState<
     "loading" | "ready" | "denied" | "offline" | "error"
   >("loading");
@@ -26,7 +21,7 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
 
     async function load() {
       if (!navigator.onLine) {
-        setOverview(null);
+        setEvidenceCount(0);
         setState("offline");
         return;
       }
@@ -34,28 +29,25 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
       setState("loading");
       setError("");
       try {
-        const capabilities = await buscarCapacidadesFinanceiras(obraId);
+        const capabilities = await fetchRevenueCapabilities(obraId);
         if (!capabilities.permissoes.includes("FINANCEIRO_VISUALIZAR")) {
           if (!cancelled) {
-            setOverview(null);
+            setEvidenceCount(0);
             setState("denied");
           }
           return;
         }
-        const result = await buscarVisaoGeral({
-          ...EMPTY_FINANCE_FILTERS,
-          obraId,
-        });
+        const trace = await fetchRevenueTrace(obraId);
         if (!cancelled) {
-          setOverview(result);
+          setEvidenceCount(trace.evidenceCount);
           setState("ready");
         }
       } catch (reason: unknown) {
         if (!cancelled) {
-          setOverview(null);
+          setEvidenceCount(0);
           setError(reason instanceof Error
             ? reason.message
-            : "Não foi possível consultar o financeiro.");
+            : "Não foi possível consultar as evidências de receita.");
           setState("error");
         }
       }
@@ -67,38 +59,58 @@ export function FinanceHomeCard({ obraId }: FinanceHomeCardProps) {
     };
   }, [obraId, reloadTick]);
 
+  const traceLink = (
+    <Link to={`/financeiro?obra=${encodeURIComponent(obraId)}&secao=receita`}>
+      Abrir rastreio de receita
+    </Link>
+  );
+
   return (
     <section className="home-card home-finance-card">
       <h3>
-        Financeiro
-        {state === "ready" && overview?.possuiDados ? (
-          <span>{overview.quantidadeLancamentos} lançamento(s)</span>
+        Receita da obra
+        {state === "ready" ? (
+          <span>
+            {evidenceCount} {evidenceCount === 1 ? "evidência" : "evidências"}
+          </span>
         ) : null}
       </h3>
       {state === "loading" ? (
-        <p className="home-card-muted" role="status">Consultando o servidor…</p>
+        <p className="home-card-muted" role="status">
+          Consultando evidências aceitas…
+        </p>
       ) : state === "denied" ? (
-        <p className="home-card-muted">Seu perfil não possui acesso financeiro nesta obra.</p>
+        <p className="home-card-muted">
+          Seu perfil não possui acesso à receita desta obra.
+        </p>
       ) : state === "offline" ? (
-        <p className="home-card-muted">O resumo financeiro exige conexão; nenhum total foi estimado localmente.</p>
+        <>
+          <p className="home-card-muted">
+            Abra o rastreio para consultar a última evidência confirmada
+            armazenada neste dispositivo.
+          </p>
+          {traceLink}
+        </>
       ) : state === "error" ? (
         <div className="home-finance-error" role="alert">
           <p>{error}</p>
-          <button type="button" onClick={() => setReloadTick((tick) => tick + 1)}>Tentar novamente</button>
+          <button
+            type="button"
+            onClick={() => setReloadTick((tick) => tick + 1)}
+          >
+            Tentar novamente
+          </button>
         </div>
-      ) : overview && overview.possuiDados ? (
-        <>
-          <dl className="home-finance-totals">
-            <div><dt>Em aberto</dt><dd>{formatMoney(overview.aberto, overview.moeda)}</dd></div>
-            <div><dt>Vencido</dt><dd className={overview.vencido > 0 ? "is-alert" : ""}>{formatMoney(overview.vencido, overview.moeda)}</dd></div>
-            <div><dt>A receber</dt><dd>{formatMoney(overview.aReceber, overview.moeda)}</dd></div>
-          </dl>
-          <Link to={`/financeiro?obra=${encodeURIComponent(obraId)}&secao=visao-geral`}>Abrir gestão financeira</Link>
-        </>
       ) : (
         <>
-          <p className="home-card-muted">Nenhum lançamento financeiro encontrado para esta obra.</p>
-          <Link to={`/financeiro?obra=${encodeURIComponent(obraId)}&secao=visao-geral`}>Abrir gestão financeira</Link>
+          <p className="home-card-muted">
+            {evidenceCount === 0
+              ? "Nenhuma evidência de receita aceita nesta obra."
+              : `${evidenceCount} ${evidenceCount === 1
+                ? "evidência aceita"
+                : "evidências aceitas"}`}
+          </p>
+          {traceLink}
         </>
       )}
     </section>

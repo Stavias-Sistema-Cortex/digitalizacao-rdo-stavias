@@ -19,7 +19,7 @@ class PostgresqlFoundationContractTest {
     private static final Path POSTGRESQL_MIGRATIONS = Path.of("src/main/resources/db/migration-postgresql");
 
     @Test
-    void keepsPostgresqlDependenciesAlongsideMysqlDependencies() throws IOException {
+    void keepsOnlyTheCanonicalPostgresqlRuntimeDependencies() throws IOException {
         String pom = Files.readString(POM);
 
         assertTrue(pom.contains("<artifactId>postgresql</artifactId>"),
@@ -27,9 +27,9 @@ class PostgresqlFoundationContractTest {
         assertTrue(pom.contains("<artifactId>flyway-database-postgresql</artifactId>"),
                 "Flyway PostgreSQL support must be available for the opt-in profile");
         assertTrue(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
-                "MySQL JDBC must remain available for Academy and Zeladoria");
-        assertTrue(pom.contains("<artifactId>flyway-mysql</artifactId>"),
-                "Flyway MySQL support must remain available for Academy and Zeladoria");
+                "the separately configured, read-only Academy source needs its JDBC driver");
+        assertFalse(pom.contains("<artifactId>flyway-mysql</artifactId>"),
+                "the canonical runtime must not load retired MySQL migrations");
     }
 
     @Test
@@ -46,7 +46,9 @@ class PostgresqlFoundationContractTest {
 
         assertTrue(profile.contains("on-profile: postgresql"));
         assertTrue(commonProfile.contains("on-profile: postgresql-common"));
-        assertTrue(commonProfile.contains("${CORTEX_POSTGRES_URL:"));
+        assertTrue(commonProfile.contains("${CORTEX_POSTGRES_URL}"));
+        assertFalse(commonProfile.contains("${CORTEX_POSTGRES_URL:"),
+                "the canonical PostgreSQL URL must be supplied explicitly");
         assertTrue(commonProfile.contains("${CORTEX_POSTGRES_USER:joaolucas}"));
         assertTrue(commonProfile.contains("${CORTEX_POSTGRES_PASSWORD:}"));
         assertFalse(commonProfile.contains("CORTEX_DB_URL"),
@@ -54,7 +56,7 @@ class PostgresqlFoundationContractTest {
         assertTrue(commonProfile.contains("classpath:db/migration-postgresql"));
         assertTrue(profile.contains("enabled: false"),
                 "normal PostgreSQL runtime must never execute migrations");
-        assertTrue(commonProfile.contains("required-schema-version: 44"));
+        assertTrue(commonProfile.contains("required-schema-version: 61"));
         assertFalse(commonProfile.contains("classpath:db/migration\n"),
                 "the PostgreSQL profile must not run the MySQL migration directory");
         assertFalse((profile + commonProfile).toLowerCase().contains("supabase"),

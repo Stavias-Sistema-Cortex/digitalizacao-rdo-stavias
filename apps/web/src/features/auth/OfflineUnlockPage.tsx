@@ -1,34 +1,89 @@
-import { useState } from "react";
+import {
+  useId,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from "react";
 
 import staviasTile from "../../assets/stavias-s-tile.png";
 import { unlockOfflineVault } from "./offlineVault";
 import type { OfflineVaultMetadata } from "./offlineVault.types";
 import { initializeCortexDb } from "../../lib/db/cortexDb";
+import {
+  loadCollaborativeOfflineGrant,
+  unlockCollaborativeOfflineGrant,
+} from "./collaborativeOfflineGrant";
+import {
+  formatCpf,
+  onlyDigits,
+  validateLoginForm,
+  type LoginFieldErrors,
+} from "./loginValidation";
 
 import "./OfflineUnlockPage.css";
 
 type OfflineUnlockPageProps = {
-  metadata: OfflineVaultMetadata;
+  passkeyMetadata: OfflineVaultMetadata | null;
+  hasCollaborativeCpfGrant: boolean;
   canRetryOnline: boolean;
 };
 
 export function OfflineUnlockPage({
-  metadata,
+  passkeyMetadata,
+  hasCollaborativeCpfGrant,
   canRetryOnline,
 }: OfflineUnlockPageProps) {
+  const cpfId = useId();
+  const cpfRef = useRef<HTMLInputElement>(null);
+  const [cpf, setCpf] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
   const [status, setStatus] = useState<
-    "idle" | "unlocking" | "unsupported" | "error"
+    "idle" | "cpf" | "passkey" | "unsupported" | "error"
   >("idle");
   const [error, setError] = useState("");
+  const busy = status === "cpf" || status === "passkey";
 
-  async function handleUnlock(): Promise<void> {
-    if (status === "unlocking") {
+  async function handleCpfUnlock(
+    event: SubmitEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    if (busy) {
       return;
     }
-    setStatus("unlocking");
+    setError("");
+    const nextErrors = validateLoginForm(cpf);
+    setFieldErrors(nextErrors);
+    if (nextErrors.cpf) {
+      cpfRef.current?.focus();
+      return;
+    }
+
+    const canonicalCpf = onlyDigits(cpf);
+    setStatus("cpf");
+    try {
+      const metadata = await loadCollaborativeOfflineGrant(canonicalCpf);
+      if (!metadata) {
+        throw new Error(
+          "CPF não corresponde a um acesso offline válido neste dispositivo.",
+        );
+      }
+      await unlockCollaborativeOfflineGrant(canonicalCpf, metadata);
+      await initializeCortexDb();
+    } catch (cause: unknown) {
+      setStatus("error");
+      setError(unlockErrorMessage(cause));
+      cpfRef.current?.focus();
+    }
+  }
+
+  async function handlePasskeyUnlock(): Promise<void> {
+    if (busy || !passkeyMetadata) {
+      return;
+    }
+    setStatus("passkey");
     setError("");
     try {
-      const result = await unlockOfflineVault(metadata);
+      const result = await unlockOfflineVault(passkeyMetadata);
       if (result === "PRF_UNAVAILABLE") {
         setStatus("unsupported");
         return;
@@ -59,7 +114,9 @@ export function OfflineUnlockPage({
           Desbloquear dados deste dispositivo
         </h1>
         <p className="offline-unlock__copy">
-          Confirme sua passkey para abrir somente os dados locais autorizados. Nenhuma credencial é enviada pela rede.
+          {hasCollaborativeCpfGrant
+            ? "Informe seu CPF para abrir somente os dados locais autorizados neste dispositivo."
+            : "Confirme sua passkey para abrir somente os dados locais autorizados neste dispositivo."}
         </p>
 
         {status === "unsupported" ? (
@@ -73,18 +130,75 @@ export function OfflineUnlockPage({
           </p>
         ) : null}
 
-        <button
-          type="button"
-          className="offline-unlock__primary"
-          disabled={status === "unlocking" || status === "unsupported"}
-          onClick={() => {
-            void handleUnlock();
-          }}
-        >
-          {status === "unlocking"
-            ? "Verificando passkey…"
-            : "Usar passkey"}
-        </button>
+        {hasCollaborativeCpfGrant ? (
+          <form
+            className="offline-unlock__form"
+            onSubmit={(event) => {
+              void handleCpfUnlock(event);
+            }}
+            noValidate
+          >
+            <label htmlFor={cpfId}>CPF</label>
+            <input
+              ref={cpfRef}
+              id={cpfId}
+              type="text"
+              inputMode="numeric"
+              autoComplete="username"
+              placeholder="000.000.000-00"
+              maxLength={14}
+              value={cpf}
+              onChange={(event) => {
+                setCpf(formatCpf(event.target.value));
+                if (fieldErrors.cpf) {
+                  setFieldErrors({});
+                }
+                if (error) {
+                  setError("");
+                  setStatus("idle");
+                }
+              }}
+              aria-invalid={fieldErrors.cpf ? true : undefined}
+              aria-describedby={
+                fieldErrors.cpf ? `${cpfId}-error` : undefined
+              }
+              disabled={busy}
+            />
+            {fieldErrors.cpf ? (
+              <p id={`${cpfId}-error`} role="alert">
+                {fieldErrors.cpf}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="offline-unlock__primary"
+              disabled={busy}
+            >
+              {status === "cpf"
+                ? "Verificando CPF…"
+                : "Desbloquear com CPF"}
+            </button>
+          </form>
+        ) : null}
+
+        {passkeyMetadata ? (
+          <button
+            type="button"
+            className={
+              hasCollaborativeCpfGrant
+                ? "offline-unlock__secondary"
+                : "offline-unlock__primary"
+            }
+            disabled={busy || status === "unsupported"}
+            onClick={() => {
+              void handlePasskeyUnlock();
+            }}
+          >
+            {status === "passkey"
+              ? "Verificando passkey…"
+              : "Usar passkey"}
+          </button>
+        ) : null}
 
         {canRetryOnline ? (
           <button
@@ -97,7 +211,7 @@ export function OfflineUnlockPage({
         ) : null}
 
         <p className="offline-unlock__footnote">
-          Não há entrada alternativa por CPF, PIN ou código local.
+          A identidade é confirmada localmente antes da abertura dos dados.
         </p>
       </section>
     </main>

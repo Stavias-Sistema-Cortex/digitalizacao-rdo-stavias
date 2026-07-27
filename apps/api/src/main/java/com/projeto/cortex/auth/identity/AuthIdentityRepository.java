@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
-import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -20,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
  * another verifiable challenge remains mandatory.
  */
 @Repository
-@Profile("!postgresql-common")
 public class AuthIdentityRepository {
 
     public static final String MANUAL_PENDING_SOURCE = "MANUAL_PENDENTE";
@@ -91,6 +89,55 @@ public class AuthIdentityRepository {
             );
         }
         return eligible;
+    }
+
+    /**
+     * Read-only local-development authentication lookup restricted to an
+     * already active Academy identity. It deliberately excludes legacy SHA
+     * material and never upgrades persisted HMAC data.
+     */
+    public Optional<AuthIdentity> findActiveAcademyByCpf(String cpfRaw) {
+        AuthChallengeLookupMaterial material =
+                digestService.challengeLookup(cpfRaw);
+        CpfLookupDigest current = material.candidates().get(0);
+        CpfLookupDigest previous = material.candidates().size() == 2
+                ? material.candidates().get(1)
+                : current;
+        List<AuthIdentity> identities = jdbcTemplate.query("""
+                SELECT
+                    colaborador.id AS colaborador_id,
+                    colaborador.nome,
+                    identity.email_autenticacao,
+                    colaborador.papel_acesso
+                FROM auth_identity identity
+                INNER JOIN colaborador
+                    ON colaborador.id = identity.colaborador_id
+                WHERE (
+                    (
+                        identity.cpf_lookup_key_id = ?
+                        AND identity.cpf_lookup_hmac = ?
+                    ) OR (
+                        identity.cpf_lookup_key_id = ?
+                        AND identity.cpf_lookup_hmac = ?
+                    )
+                )
+                  AND colaborador.banco_origem = 'dbstavias_acad'
+                  AND colaborador.tabela_origem = 'usuarios'
+                  AND colaborador.ativo = TRUE
+                  AND colaborador.deletado_em IS NULL
+                  AND colaborador.papel_acesso IN ('ALFA', 'BETA')
+                  AND identity.status = 'ATIVA'
+                LIMIT 2
+                """,
+                IDENTITY_ROW_MAPPER,
+                current.keyId(),
+                current.value(),
+                previous.keyId(),
+                previous.value()
+        );
+        return identities.size() == 1
+                ? Optional.of(identities.get(0))
+                : Optional.empty();
     }
 
     @Transactional
@@ -170,7 +217,7 @@ public class AuthIdentityRepository {
                 INNER JOIN colaborador
                     ON colaborador.id = identity.colaborador_id
                 WHERE identity.colaborador_id = ?
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND identity.status <> 'BLOQUEADA'
                 FOR UPDATE
@@ -229,7 +276,7 @@ public class AuthIdentityRepository {
                 LEFT JOIN auth_identity identity
                     ON identity.colaborador_id = colaborador.id
                 WHERE colaborador.id = ?
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND (
                       identity.status IS NULL

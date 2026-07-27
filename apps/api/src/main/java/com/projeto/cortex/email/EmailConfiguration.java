@@ -8,9 +8,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.EnvironmentAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 
 @Configuration(proxyBeanMethods = false)
+@Profile("!postgresql | postgresql-activation | legacy-finance")
 public class EmailConfiguration implements EnvironmentAware {
 
     private Environment environment;

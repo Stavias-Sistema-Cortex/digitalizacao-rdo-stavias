@@ -36,6 +36,10 @@ export interface TeamDto {
   criadoEm: string;
   atualizadoEm: string;
   membros: TeamMemberDto[];
+  /** Present only while the local optimistic projection awaits server replay. */
+  syncStatus?: "PENDING_SYNC" | "SYNCED" | "CONFLICT" | "REJECTED";
+  ultimoErro?: string | null;
+  pendingMutationId?: string | null;
 }
 
 export interface TeamPageDto {

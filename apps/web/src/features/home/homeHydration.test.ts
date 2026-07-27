@@ -65,7 +65,12 @@ describe("snapshotRecordFromApi", () => {
       NOW,
     );
 
-    expect(ok?.dataReferencia).toBe("2026-06-30");
+    expect(ok).toMatchObject({
+      dataReferencia: "2026-06-30",
+      custoRealizado: null,
+      custoPrevistoFinal: null,
+      receitaPrevistaFinal: 120,
+    });
     expect(missing).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ package com.projeto.cortex.postgresql.activation;
 
 import com.projeto.cortex.auth.AuthController;
 import com.projeto.cortex.auth.DirectCpfLoginPolicy;
+import com.projeto.cortex.auth.EmailOtpAuthenticationPolicy;
 import com.projeto.cortex.auth.activation.PostgresqlActivationSessionProfileResolver;
 import com.projeto.cortex.auth.identity.PostgresqlEmailOtpIdentityLookup;
 import com.projeto.cortex.auth.otp.AuthRateLimiter;
@@ -55,6 +56,7 @@ import org.springframework.context.annotation.Import;
         HealthController.class,
         ReadinessController.class,
         AuthController.class,
+        EmailOtpAuthenticationPolicy.class,
         DirectCpfLoginPolicy.class,
         PostgresqlActivationSessionProfileResolver.class,
         AuthSessionProperties.class,

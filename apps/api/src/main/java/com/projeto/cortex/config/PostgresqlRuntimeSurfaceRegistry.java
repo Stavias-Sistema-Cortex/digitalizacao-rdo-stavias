@@ -5,17 +5,26 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * Explicit release ledger for PostgreSQL-safe operational slices.
+ * Exact release ledger for the complete PostgreSQL operational runtime.
  *
- * <p>The clean-start delivery deliberately registers none. A later vertical
- * slice must add an explicit release before the normal runtime can start.</p>
+ * <p>Runtime readiness is granted only when the immutable registry contains
+ * exactly authentication, finance, memory/ontology, RDO and sync. Missing or
+ * unexpected labels keep the normal runtime fail-closed.</p>
  */
 public final class PostgresqlRuntimeSurfaceRegistry {
+
+    private static final Set<String> CORTEX_RUNTIME_SURFACES = Set.of(
+            "authentication",
+            "finance",
+            "memory-ontology",
+            "rdo",
+            "sync"
+    );
 
     private final Set<String> releasedSurfaces;
 
     public PostgresqlRuntimeSurfaceRegistry() {
-        this(Set.of());
+        this(CORTEX_RUNTIME_SURFACES);
     }
 
     PostgresqlRuntimeSurfaceRegistry(Set<String> releasedSurfaces) {
@@ -28,7 +37,7 @@ public final class PostgresqlRuntimeSurfaceRegistry {
         return releasedSurfaces;
     }
 
-    boolean hasReleasedOperationalSurface() {
-        return !releasedSurfaces.isEmpty();
+    boolean hasCompleteRuntimeSurfaceSet() {
+        return releasedSurfaces.equals(CORTEX_RUNTIME_SURFACES);
     }
 }

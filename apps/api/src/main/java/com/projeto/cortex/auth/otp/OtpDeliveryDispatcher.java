@@ -19,9 +19,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
 /** Bounded, secret-sanitized asynchronous OTP delivery. */
 @Component
+@Profile("!postgresql | postgresql-activation")
 public class OtpDeliveryDispatcher {
 
     private static final Logger LOG = LoggerFactory.getLogger(

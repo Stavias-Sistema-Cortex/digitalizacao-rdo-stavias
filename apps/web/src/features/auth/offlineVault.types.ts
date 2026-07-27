@@ -32,4 +32,16 @@ export type OfflineVaultMetadata = {
   atualizadoEm: string;
 };
 
+/** Metadados públicos para liberar um grant de CPF colaborativo offline. */
+export type OfflineCpfGrantMetadata = {
+  key: string;
+  versao: 1;
+  cpfHash: string;
+  ownerId: string;
+  scopeFingerprint: string;
+  signedGrant: SignedOfflineGrant;
+  serverKeyFingerprint: string;
+  atualizadoEm: string;
+};
+
 export type OfflineUnlockResult = "UNLOCKED" | "PRF_UNAVAILABLE";

@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,16 +25,26 @@ class PdorSnapshotRepositoryTest {
 
         assertThat(jdbcTemplate.sql)
                 .contains("INSERT INTO pdor_snapshot")
-                .doesNotContain("CAST(? AS JSON)");
-        assertThat(jdbcTemplate.args).hasSize(49);
+                .contains("CAST(? AS JSONB)");
+        assertThat(jdbcTemplate.args).hasSize(57);
+        assertThat(jdbcTemplate.sql.chars().filter(character -> character == '?').count())
+                .isEqualTo(jdbcTemplate.args.length);
         assertThat(jdbcTemplate.args[12].toString()).contains("contractValue");
         assertThat(jdbcTemplate.args[13].toString()).contains("availability");
         assertThat(jdbcTemplate.args[23].toString()).contains("warning");
-        assertThat(jdbcTemplate.args[47].toString()).contains("LOW_DATA_QUALITY");
+        assertThat(jdbcTemplate.args[26]).isEqualTo("PDOR-REVENUE-1");
+        assertThat(jdbcTemplate.args[27].toString()).contains("evidence-1");
+        assertThat(jdbcTemplate.args[28]).isEqualTo(42L);
+        assertThat(jdbcTemplate.args[29]).isEqualTo("COMPLETE_ACCEPTED_EXACT");
+        assertThat(jdbcTemplate.args[30].toString()).contains("iterations");
+        assertThat(jdbcTemplate.args[31].toString()).isEqualTo("2026-06-22T13:00Z");
+        assertThat(jdbcTemplate.args[32]).isEqualTo(false);
+        assertThat(jdbcTemplate.args[33]).isEqualTo(true);
+        assertThat(jdbcTemplate.args[55].toString()).contains("LOW_DATA_QUALITY");
     }
 
     private static PdorSnapshot snapshot(ObjectMapper objectMapper) {
-        return new PdorSnapshot(
+        PdorSnapshot base = new PdorSnapshot(
                 "snapshot-1",
                 "obra-1",
                 "CW38386",
@@ -77,6 +89,16 @@ class PdorSnapshotRepositoryTest {
                                 .put("code", "LOW_DATA_QUALITY")),
                 null,
                 LocalDateTime.of(2026, 6, 22, 10, 0)
+        );
+        return base.withRevenueMetadata(
+                "PDOR-REVENUE-1",
+                List.of("evidence-1"),
+                42L,
+                "COMPLETE_ACCEPTED_EXACT",
+                objectMapper.createObjectNode().put("iterations", 2_000),
+                Instant.parse("2026-06-22T13:00:00Z"),
+                false,
+                true
         );
     }
 

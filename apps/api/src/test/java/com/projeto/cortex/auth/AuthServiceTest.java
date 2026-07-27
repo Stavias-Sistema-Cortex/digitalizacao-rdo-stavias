@@ -2,6 +2,8 @@ package com.projeto.cortex.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.identity.AuthIdentity;
@@ -21,7 +23,7 @@ class AuthServiceTest {
 
     @Test
     void eligibleCpfProducesOnlyTheAuthenticatedIdentity() {
-        when(identities.findActiveByCpf("111.444.777-35"))
+        when(identities.findActiveAcademyByCpf("111.444.777-35"))
                 .thenReturn(Optional.of(new AuthIdentity(
                         COLLABORATOR_ID,
                         "Pessoa Sintética",
@@ -35,11 +37,14 @@ class AuthServiceTest {
                         "Pessoa Sintética",
                         PapelAcesso.BETA
                 ));
+        verify(identities, never()).findActiveByCpf(
+                "111.444.777-35"
+        );
     }
 
     @Test
     void missingCpfOwnerDoesNotAuthenticate() {
-        when(identities.findActiveByCpf("111.444.777-35"))
+        when(identities.findActiveAcademyByCpf("111.444.777-35"))
                 .thenReturn(Optional.empty());
 
         assertThat(service.autenticarPorCpf("111.444.777-35"))
@@ -48,7 +53,7 @@ class AuthServiceTest {
 
     @Test
     void invalidPersistedRoleFailsClosed() {
-        when(identities.findActiveByCpf("111.444.777-35"))
+        when(identities.findActiveAcademyByCpf("111.444.777-35"))
                 .thenReturn(Optional.of(new AuthIdentity(
                         COLLABORATOR_ID,
                         "Pessoa Sintética",
@@ -58,5 +63,23 @@ class AuthServiceTest {
 
         assertThat(service.autenticarPorCpf("111.444.777-35"))
                 .isEmpty();
+    }
+
+    @Test
+    void persistedCollaboratorIdCasingIsPreservedForForeignKeyWrites() {
+        when(identities.findActiveAcademyByCpf("111.444.777-35"))
+                .thenReturn(Optional.of(new AuthIdentity(
+                        "ABCDEFAB-1234-4321-ABCD-ABCDEFABCDEF",
+                        "Pessoa Sintética",
+                        null,
+                        "BETA"
+                )));
+
+        assertThat(service.autenticarPorCpf("111.444.777-35"))
+                .contains(new AuthenticatedIdentity(
+                        "ABCDEFAB-1234-4321-ABCD-ABCDEFABCDEF",
+                        "Pessoa Sintética",
+                        PapelAcesso.BETA
+                ));
     }
 }

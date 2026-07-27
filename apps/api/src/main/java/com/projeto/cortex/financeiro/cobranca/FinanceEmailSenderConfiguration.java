@@ -2,10 +2,12 @@ package com.projeto.cortex.financeiro.cobranca;
 
 import com.projeto.cortex.financeiro.core.FinanceValidation;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /** Binds database sender profiles to the single authenticated provider config. */
 @Component
+@Profile("legacy-finance")
 public final class FinanceEmailSenderConfiguration {
 
     private final String configuredProfileKey;

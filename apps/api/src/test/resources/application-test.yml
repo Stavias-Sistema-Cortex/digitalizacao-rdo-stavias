@@ -6,6 +6,11 @@ cortex:
       allowed-origins: http://127.0.0.1:5173
     otp:
       hmac-key-inline: test-only-otp-hmac-key-material-00000001
+  ontology:
+    memory:
+      cursor-hmac:
+        current-key-id: test-current
+        current-key-inline: test-only-memory-cursor-hmac-material-0001
   email:
     provider: fake
   storage:

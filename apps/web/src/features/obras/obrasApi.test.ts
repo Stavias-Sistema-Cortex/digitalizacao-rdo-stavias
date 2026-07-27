@@ -2,11 +2,24 @@ import { describe, expect, it } from "vitest";
 
 import { obraPdorFromApi } from "./obrasApi";
 
+const WORKSITE_ID = "11111111-1111-4111-8111-111111111111";
+
 describe("obraPdorFromApi", () => {
   it("converte o snapshot PDOR real da API sem inventar valores", () => {
     const pdor = obraPdorFromApi({
       id: "snap-1",
+      obra: {
+        id: WORKSITE_ID,
+        nome: "Obra Norte",
+      },
       dataReferencia: "2026-07-01",
+      janelaTemporal: {
+        inicioProgramacao: "2025-12-10",
+        fimProgramacao: "2026-07-01",
+        dataReferencia: "2026-07-01",
+        janelaEquipamentosDias: 30,
+        serieHistoricaSemanal: true,
+      },
       dataExecucao: "2026-07-08T09:00:00",
       versaoModelo: "PDOR-0.2.0",
       versaoPremissas: "PDOR-ASSUMPTIONS-0.2.0",
@@ -66,6 +79,14 @@ describe("obraPdorFromApi", () => {
       erroExecucao: null,
     });
 
+    expect(pdor.obraId).toBe(WORKSITE_ID);
+    expect(pdor.janelaTemporal).toEqual({
+      inicioProgramacao: "2025-12-10",
+      fimProgramacao: "2026-07-01",
+      dataReferencia: "2026-07-01",
+      janelaEquipamentosDias: 30,
+      serieHistoricaSemanal: true,
+    });
     expect(pdor.receitaPrevistaFinal).toBe(934000.1);
     expect(pdor.p10).toBe(880000.5);
     expect(pdor.p95).toBe(955000);

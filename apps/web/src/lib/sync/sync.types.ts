@@ -1,20 +1,16 @@
 import type {
-  MutationFieldPatch,
   OutboxMutationRecord,
+  CanonicalMutationOperation,
+  MutationFieldPatch,
+  MutationTrace,
+  OperationalEntityRef,
   SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
 import {
+  assertCanonicalPayloadHash,
   isCanonicalOutboxMutation,
-  LEGACY_TRACE_REVIEW_REASON,
-} from "../db/outboxContract";
-
-/** @deprecated Use LEGACY_TRACE_REVIEW_REASON from outboxContract. */
-export const NONCANONICAL_MUTATION_BLOCKED_REASON =
-  LEGACY_TRACE_REVIEW_REASON;
-
-/** @deprecated Use isCanonicalOutboxMutation from outboxContract. */
-export const isCanonicalPushMutation = isCanonicalOutboxMutation;
+} from "./mutationEnvelope";
 
 export interface RegisterDeviceRequest {
   id: string;
@@ -39,13 +35,20 @@ export interface SyncPushMutationRequest {
   payload: Record<string, unknown>;
   criadaNoClienteEm: string;
   correlacaoId: string;
-  fieldPatch: MutationFieldPatch;
-  actorId: string;
-  authorizationScope: string[];
-  ontologyEventId: string;
-  payloadHash: string;
-  causationId: string | null;
-  dependsOnMutationIds: string[];
+  schemaVersion?: 13;
+  deviceId?: string;
+  userId?: string;
+  obraId?: string | null;
+  entityType?: string;
+  entityId?: string;
+  operation?: CanonicalMutationOperation;
+  baseVersion?: number | null;
+  changedFields?: readonly string[];
+  occurredAt?: string;
+  trace?: MutationTrace;
+  fieldPatch?: MutationFieldPatch;
+  relatedEntities?: readonly OperationalEntityRef[];
+  dependsOnMutationIds?: readonly string[];
 }
 
 export interface SyncPushRequest {
@@ -55,10 +58,10 @@ export interface SyncPushRequest {
 
 export type ServerMutationStatus =
   | "APLICADA"
-  | "CONCILIADA"
+  | "ERRO"
   | "DESCARTADA"
-  | "REJEITADA"
-  | "ERRO";
+  | "CONFLITO"
+  | "REJEITADA";
 
 export interface SyncMutationEntityResult
   extends Record<string, unknown> {
@@ -120,15 +123,44 @@ export interface SyncRunSummary {
   acknowledgedCommitSeq: number;
 }
 
-export function toPushMutationRequest(
+export async function toPushMutationRequest(
   mutation: OutboxMutationRecord,
-): SyncPushMutationRequest {
-  if (!isCanonicalPushMutation(mutation)) {
-    throw new TypeError(
-      `Mutacao ${mutation.clientMutationId} bloqueada: envelope canonico v13 incompleto.`,
-    );
+): Promise<SyncPushMutationRequest> {
+  if (isCanonicalOutboxMutation(mutation)) {
+    await assertCanonicalPayloadHash(mutation);
+    return {
+      schemaVersion: mutation.schemaVersion,
+      clientMutationId: mutation.clientMutationId,
+      deviceId: mutation.deviceId,
+      userId: mutation.userId,
+      obraId: mutation.obraId,
+      entityType: mutation.entityType,
+      entityId: mutation.entityId,
+      operation: mutation.operation,
+      baseVersion: mutation.baseVersion,
+      changedFields: [...mutation.changedFields],
+      occurredAt: mutation.occurredAt,
+      payload: mutation.payload,
+      entidadeTipo: mutation.entidadeTipo,
+      entidadeId: mutation.entidadeId,
+      operacao: mutation.operacao,
+      baseVersao: mutation.baseVersao,
+      criadaNoClienteEm: mutation.criadaNoClienteEm,
+      correlacaoId: mutation.correlationId,
+      trace: {
+        ...mutation.trace,
+        authorizationScope: [...mutation.trace.authorizationScope],
+      },
+      fieldPatch: {
+        changed: { ...mutation.fieldPatch.changed },
+        baseValues: { ...mutation.fieldPatch.baseValues },
+      },
+      relatedEntities: (mutation.relatedEntities ?? []).map((entity) => ({
+        ...entity,
+      })),
+      dependsOnMutationIds: [...(mutation.dependsOnMutationIds ?? [])],
+    };
   }
-
   return {
     clientMutationId: mutation.clientMutationId,
     entidadeTipo: mutation.entidadeTipo,
@@ -138,13 +170,6 @@ export function toPushMutationRequest(
     payload: mutation.payload,
     criadaNoClienteEm: mutation.criadaNoClienteEm,
     correlacaoId:
-      mutation.correlationId,
-    fieldPatch: mutation.fieldPatch,
-    actorId: mutation.trace.actorId,
-    authorizationScope: mutation.trace.authorizationScope,
-    ontologyEventId: mutation.trace.ontologyEventId,
-    payloadHash: mutation.trace.payloadHash,
-    causationId: mutation.trace.causationId,
-    dependsOnMutationIds: mutation.dependsOnMutationIds,
+      mutation.correlationId ?? mutation.clientMutationId,
   };
 }

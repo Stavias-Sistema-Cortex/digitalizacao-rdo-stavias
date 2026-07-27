@@ -1,16 +1,45 @@
 package com.projeto.cortex.rdos;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 public record RdoContextResponse(
         ObraContexto obra,
         LocalDate data,
+        String nextNumberSuggestion,
+        PreviousRdo previousRdo,
+        List<PreviousWorkforceItem> previousWorkforce,
         List<ProgramacaoContexto> programacoes,
         List<ColaboradorContexto> colaboradores,
-        List<EquipamentoContexto> equipamentos
+        List<EquipamentoContexto> equipamentos,
+        List<ServiceCatalogContext> serviceCatalog,
+        ContextCoverage coverage,
+        ContextFreshness freshness,
+        CreationProvenance provenance
 ) {
+
+    public RdoContextResponse(
+            ObraContexto obra,
+            LocalDate data,
+            String nextNumberSuggestion,
+            PreviousRdo previousRdo,
+            List<PreviousWorkforceItem> previousWorkforce,
+            List<ProgramacaoContexto> programacoes,
+            List<ColaboradorContexto> colaboradores,
+            List<EquipamentoContexto> equipamentos,
+            ContextCoverage coverage,
+            ContextFreshness freshness,
+            CreationProvenance provenance
+    ) {
+        this(
+                obra, data, nextNumberSuggestion, previousRdo,
+                previousWorkforce, programacoes, colaboradores, equipamentos,
+                List.of(), coverage, freshness, provenance
+        );
+    }
 
     public record ObraContexto(
             String id,
@@ -21,7 +50,32 @@ public record RdoContextResponse(
             String cidade,
             String uf,
             String rodovia,
-            String status
+            String status,
+            long version
+    ) {
+    }
+
+    public record PreviousRdo(
+            String id,
+            String numeroRdo,
+            LocalDate dataRdo,
+            String status,
+            long version
+    ) {
+    }
+
+    public record PreviousWorkforceItem(
+            String sourceItemId,
+            String sourceRdoId,
+            String collaboratorId,
+            String nameSnapshot,
+            String roleSnapshot,
+            String linkType,
+            BigDecimal quantity,
+            LocalTime startTime,
+            LocalTime endTime,
+            String observations,
+            String availability
     ) {
     }
 
@@ -54,10 +108,8 @@ public record RdoContextResponse(
             String id,
             String codigoColaborador,
             String nome,
-            String email,
-            String nomeGrupo,
-            String nomePerfil,
-            String cpfMascarado
+            String papelNaObra,
+            String nomePerfil
     ) {
     }
 
@@ -67,5 +119,69 @@ public record RdoContextResponse(
             String nome,
             String categoria
     ) {
+    }
+
+    public record ServiceCatalogContext(
+            String id,
+            String code,
+            String name,
+            String description,
+            List<ServicePriceChoice> priceChoices
+    ) {
+    }
+
+    public record ServicePriceChoice(
+            String id,
+            String serviceId,
+            String unit,
+            int version,
+            LocalDate validFrom,
+            LocalDate effectiveValidTo
+    ) {
+    }
+
+    public record CreationProvenance(
+            long receiptVersion,
+            long sourceVersion,
+            String worksiteId,
+            LocalDate selectedDate,
+            String previousRdoId,
+            Instant generatedAt
+    ) {
+    }
+
+    public record CoverageSection(
+            String status,
+            long total,
+            long returned,
+            boolean complete
+    ) {
+    }
+
+    public record ContextCoverage(
+            CoverageSection previousWorkforce,
+            CoverageSection programacoes,
+            CoverageSection colaboradores,
+            CoverageSection equipamentos,
+            CoverageSection serviceCatalog,
+            CoverageSection priceCatalog
+    ) {
+    }
+
+    public record ContextFreshness(
+            String status,
+            long sourceVersion,
+            long catalogRevision,
+            Instant generatedAt,
+            Instant staleAfter
+    ) {
+        public ContextFreshness(
+                String status,
+                long sourceVersion,
+                Instant generatedAt,
+                Instant staleAfter
+        ) {
+            this(status, sourceVersion, 0L, generatedAt, staleAfter);
+        }
     }
 }

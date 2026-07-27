@@ -265,6 +265,82 @@ class AuthIdentityRepositoryTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginReadsOnlyActiveAcademyIdentityFromRotationHmacs() {
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT, PREVIOUS),
+                        "c".repeat(64)
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(PREVIOUS.keyId()),
+                eq(PREVIOUS.value())
+        )).thenReturn(List.of(activeIdentity()));
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .contains(activeIdentity());
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).query(
+                sql.capture(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(PREVIOUS.keyId()),
+                eq(PREVIOUS.value())
+        );
+        assertThat(sql.getValue())
+                .contains("colaborador.banco_origem = 'dbstavias_acad'")
+                .contains("colaborador.tabela_origem = 'usuarios'")
+                .contains("identity.status = 'ATIVA'")
+                .contains("colaborador.papel_acesso IN ('ALFA', 'BETA')")
+                .doesNotContain("cpf_hash");
+        verify(digests, never()).candidates(anyString());
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginFailsClosedForZeroOrMultipleAcademyOwners() {
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        "c".repeat(64)
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(
+                List.of(),
+                List.of(
+                        activeIdentity(),
+                        new AuthIdentity(
+                                "beta-sintetico",
+                                "Colaborador BETA Sintético",
+                                "beta@example.invalid",
+                                "BETA"
+                        )
+                )
+        );
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
     void academyUpsertProtectsAnyVerifiedAuthenticationEmail() {
         when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
         stubDigestOwnerForUpdate(CURRENT, List.of());
@@ -403,7 +479,7 @@ class AuthIdentityRepositoryTest {
         InOrder order = inOrder(jdbc);
         order.verify(jdbc).query(
                 argThat(sql -> sql != null
-                        && sql.contains("colaborador.ativo = 1")
+                        && sql.contains("colaborador.ativo = TRUE")
                         && sql.contains("colaborador.deletado_em IS NULL")
                         && sql.contains("identity.status <> 'BLOQUEADA'")
                         && sql.contains("FOR UPDATE")),
@@ -496,7 +572,7 @@ class AuthIdentityRepositoryTest {
     ) {
         when(jdbc.query(
                 argThat(sql -> sql != null
-                        && sql.contains("colaborador.ativo = 1")
+                        && sql.contains("colaborador.ativo = TRUE")
                         && sql.contains("FOR UPDATE")),
                 any(RowMapper.class),
                 eq(colaboradorId)

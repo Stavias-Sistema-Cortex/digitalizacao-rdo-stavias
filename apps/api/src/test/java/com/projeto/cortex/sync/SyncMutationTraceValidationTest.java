@@ -1,14 +1,12 @@
 package com.projeto.cortex.sync;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,6 +16,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
@@ -26,300 +26,428 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.server.ResponseStatusException;
 
 class SyncMutationTraceValidationTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final String OCCURRED_AT = "2026-07-21T12:00:00.000Z";
+
+    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     @Test
-    void canonicalRequestCarriesTheCompleteOfflineTrace() throws Exception {
-        ObjectNode changed = objectMapper.createObjectNode().put("titulo", "Novo");
-        ObjectNode base = objectMapper.createObjectNode().put("titulo", "Antigo");
-        String actorId = UUID.randomUUID().toString();
-        String eventId = UUID.randomUUID().toString();
-
-        SyncPushRequest.MutacaoCliente mutation = mutation(
-                actorId,
-                List.of(UUID.randomUUID().toString()),
-                eventId,
-                payloadHash(changed),
-                new SyncPushRequest.FieldPatch(changed, base)
+    void v46AddsCanonicalReceiptAndEventBindingsWithoutReplacingLegacyKey()
+            throws Exception {
+        Path migration = Path.of(
+                "src/main/resources/db/migration-postgresql/"
+                        + "V46__canonical_mutation_trace.sql"
         );
 
-        assertThat(mutation.actorId()).isEqualTo(actorId);
-        assertThat(mutation.authorizationScope()).hasSize(1);
-        assertThat(mutation.ontologyEventId()).isEqualTo(eventId);
-        assertThat(mutation.payloadHash()).hasSize(64);
-        assertThat(mutation.fieldPatch().changed()).isEqualTo(changed);
-        assertThat(mutation.fieldPatch().baseValues()).isEqualTo(base);
-        assertThat(mutation.causationId()).isEqualTo("cause-1");
-        assertThat(mutation.dependsOnMutationIds()).containsExactly("dependency-1");
+        assertThat(migration).exists();
+        assertThat(Files.readString(migration))
+                .contains("ADD COLUMN schema_version integer NOT NULL DEFAULT 1")
+                .contains("ADD COLUMN changed_fields_json jsonb NOT NULL DEFAULT '[]'::jsonb")
+                .contains("ADD COLUMN operacao_canonica varchar(20)")
+                .contains("ADD COLUMN client_mutation_id varchar(120)")
+                .contains("uq_sync_mutation_owner_client_v13")
+                .contains("WHERE schema_version = 13")
+                .doesNotContain("DROP CONSTRAINT uq_sync_mutacao_cliente")
+                .doesNotContain("DROP INDEX uq_sync_mutacao_cliente");
     }
 
     @Test
-    void rejectsActorMismatchBeforeCallingTheDomainHandler() throws Exception {
-        String authenticatedActor = UUID.randomUUID().toString();
-        String claimedActor = UUID.randomUUID().toString();
-        String deviceId = UUID.randomUUID().toString();
-        String scopeId = UUID.randomUUID().toString();
-        ObjectNode payload = objectMapper.createObjectNode().put("obraId", scopeId);
-        SyncOperationHandler handler = handler();
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        CurrentUserService currentUser = mock(CurrentUserService.class);
-        TransactionTemplate transactions = immediateTransactions();
+    void canonicalRequestCarriesExactV13EnvelopeAndTrace() throws Exception {
+        Fixture fixture = fixture();
+        SyncPushRequest.MutacaoCliente mutation = fixture.mutation();
 
-        when(currentUser.requireUserId()).thenReturn(authenticatedActor);
-        when(currentUser.allowedObraIds(authenticatedActor))
-                .thenReturn(Optional.of(Set.of(scopeId)));
-        when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(deviceId), eq(authenticatedActor)))
-                .thenReturn(1);
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+        assertThat(mutation.schemaVersion()).isEqualTo(13);
+        assertThat(mutation.deviceId()).isEqualTo(fixture.deviceId());
+        assertThat(mutation.userId()).isEqualTo(fixture.actorId());
+        assertThat(mutation.obraId()).isEqualTo(fixture.obraId());
+        assertThat(mutation.entityType()).isEqualTo("RDO");
+        assertThat(mutation.entityId()).isEqualTo(fixture.entityId());
+        assertThat(mutation.operation()).isEqualTo("CREATE");
+        assertThat(mutation.baseVersion()).isNull();
+        assertThat(mutation.changedFields()).containsExactly("id", "obraId");
+        assertThat(mutation.occurredAt()).isEqualTo(OCCURRED_AT);
+        assertThat(mutation.trace().actorId()).isEqualTo(fixture.actorId());
+        assertThat(mutation.trace().payloadHash()).hasSize(64);
+        assertThat(mutation.relatedEntities()).singleElement().satisfies(related -> {
+            assertThat(related.tipo()).isEqualTo("RDO");
+            assertThat(related.id()).isEqualTo(fixture.relatedId());
+        });
+    }
 
-        SyncService service = new SyncService(
-                jdbc,
-                objectMapper,
-                transactions,
-                new SyncOperationRegistry(List.of(handler)),
-                currentUser,
-                mock(FinancialAccessService.class)
+    @Test
+    void rejectsCanonicalIdentityAliasAndHashMismatchBeforeHandler() throws Exception {
+        Fixture fixture = fixture();
+        Harness harness = harness(fixture);
+
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withUserId(UUID.randomUUID().toString()),
+                "USER_MISMATCH"
         );
-        SyncPushRequest.MutacaoCliente mutation = mutation(
-                claimedActor,
-                List.of(scopeId),
-                UUID.randomUUID().toString(),
-                payloadHash(payload),
-                new SyncPushRequest.FieldPatch(payload, objectMapper.createObjectNode())
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withDeviceId(UUID.randomUUID().toString()),
+                "DEVICE_MISMATCH"
+        );
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withAliasOperation("ATUALIZAR_RDO_RASCUNHO"),
+                "OPERATION_ALIAS_MISMATCH"
+        );
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withPayloadHash("0".repeat(64)),
+                "PAYLOAD_HASH_MISMATCH"
         );
 
-        SyncPushResponse response = service.push(
-                new SyncPushRequest(deviceId, List.of(mutation))
+        verify(harness.handler(), never()).apply(any(), any());
+    }
+
+    @Test
+    void rejectsRelatedEntityOutsideAuthorizedWorksiteBeforeHandler() throws Exception {
+        Fixture fixture = fixture();
+        Harness harness = harness(fixture);
+        when(harness.jdbc().queryForObject(
+                contains("FROM rdo"),
+                eq(String.class),
+                eq(fixture.relatedId())
+        )).thenReturn(UUID.randomUUID().toString());
+
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.mutation(),
+                "RELATED_ENTITY_SCOPE"
+        );
+
+        verify(harness.handler(), never()).apply(any(), any());
+    }
+
+    @Test
+    void rejectsDuplicateAndSelfDependenciesBeforeHandler() throws Exception {
+        Fixture fixture = fixture();
+        Harness harness = harness(fixture);
+        SyncPushRequest.MutacaoCliente original = fixture.mutation();
+        String dependency = UUID.randomUUID().toString();
+
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withDependencies(original, List.of(dependency, dependency)),
+                "DUPLICATE_DEPENDENCY_ID"
+        );
+        assertRejected(
+                harness.service(),
+                fixture.deviceId(),
+                fixture.withDependencies(
+                        original,
+                        List.of(original.clientMutationId())
+                ),
+                "SELF_DEPENDENCY"
+        );
+
+        verify(harness.handler(), never()).apply(any(), any());
+    }
+
+    @Test
+    void keepsCanonicalMutationRetryableUntilAllDependenciesAreApplied()
+            throws Exception {
+        Fixture fixture = fixture();
+        Harness harness = harness(fixture);
+        SyncPushRequest.MutacaoCliente original = fixture.mutation();
+        SyncPushRequest.MutacaoCliente dependent = fixture.withDependencies(
+                original,
+                List.of(UUID.randomUUID().toString())
+        );
+        when(harness.jdbc().queryForObject(
+                contains("FROM rdo"),
+                eq(String.class),
+                eq(fixture.relatedId())
+        )).thenReturn(fixture.obraId());
+        when(harness.jdbc().queryForObject(
+                contains("FROM sync_mutacao_cliente"),
+                eq(Integer.class),
+                any(Object[].class)
+        )).thenReturn(0);
+
+        SyncPushResponse response = harness.service().push(
+                new SyncPushRequest(fixture.deviceId(), List.of(dependent))
         );
 
         assertThat(response.resultados()).singleElement().satisfies(result -> {
-            assertThat(result.status()).isEqualTo("REJEITADA");
-            assertThat(result.resultado().path("rejeicao").path("categoria").asText())
-                    .isEqualTo("ACTOR_MISMATCH");
+            assertThat(result.status()).isEqualTo("ERRO");
+            assertThat(result.erro()).contains("dependências causais");
         });
-        verify(handler, never()).apply(any(), any());
-        ArgumentCaptor<Object[]> rejectedArgs = ArgumentCaptor.forClass(Object[].class);
-        verify(jdbc).update(contains("evento_cliente_id"), rejectedArgs.capture());
-        String rejectedSql = sqlForUpdateContaining(jdbc, "INSERT INTO sync_mutacao_cliente");
-        assertThat(rejectedSql.chars().filter(character -> character == '?').count())
-                .isEqualTo(rejectedArgs.getValue().length);
+        verify(harness.handler(), never()).apply(any(), any());
     }
 
     @Test
-    void rejectsMalformedIdsInvalidHashAndUnsupportedScopeBeforeHandler() throws Exception {
-        String actorId = UUID.randomUUID().toString();
-        String deviceId = UUID.randomUUID().toString();
-        String allowedScope = UUID.randomUUID().toString();
-        String unsupportedScope = UUID.randomUUID().toString();
-        ObjectNode payload = objectMapper.createObjectNode().put("obraId", allowedScope);
-        SyncOperationHandler handler = handler();
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        CurrentUserService currentUser = mock(CurrentUserService.class);
-
-        when(currentUser.requireUserId()).thenReturn(actorId);
-        when(currentUser.allowedObraIds(actorId))
-                .thenReturn(Optional.of(Set.of(allowedScope)));
-        when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(deviceId), eq(actorId)))
-                .thenReturn(1);
-        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
-
-        SyncService service = new SyncService(
-                jdbc,
-                objectMapper,
-                immediateTransactions(),
-                new SyncOperationRegistry(List.of(handler)),
-                currentUser,
-                mock(FinancialAccessService.class)
-        );
-
-        assertRejected(
-                service,
-                deviceId,
-                mutation(actorId, List.of(allowedScope), "not-a-uuid",
-                        payloadHash(payload), fieldPatch(payload)),
-                "MALFORMED_ONTOLOGY_EVENT_ID"
-        );
-        assertRejected(
-                service,
-                deviceId,
-                mutation(actorId, List.of(allowedScope), UUID.randomUUID().toString(),
-                        "0".repeat(64), fieldPatch(payload)),
-                "PAYLOAD_HASH_MISMATCH"
-        );
-        assertRejected(
-                service,
-                deviceId,
-                mutation(actorId, List.of(unsupportedScope), UUID.randomUUID().toString(),
-                        payloadHash(payload), fieldPatch(payload)),
-                "UNSUPPORTED_AUTHORIZATION_SCOPE"
-        );
-        assertRejected(
-                service,
-                deviceId,
-                mutation("not-a-uuid", List.of(allowedScope), UUID.randomUUID().toString(),
-                        payloadHash(payload), fieldPatch(payload)),
-                "MALFORMED_ACTOR_ID"
-        );
-
-        verify(handler, never()).apply(any(), any());
-    }
-
-    @Test
-    void rejectsAnUnregisteredDeviceBeforeHandlerExecution() throws Exception {
-        String actorId = UUID.randomUUID().toString();
-        String deviceId = UUID.randomUUID().toString();
-        String scopeId = UUID.randomUUID().toString();
-        ObjectNode payload = objectMapper.createObjectNode().put("obraId", scopeId);
-        SyncOperationHandler handler = handler();
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        CurrentUserService currentUser = mock(CurrentUserService.class);
-
-        when(currentUser.requireUserId()).thenReturn(actorId);
-        when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(deviceId), eq(actorId)))
-                .thenReturn(0);
-
-        SyncService service = new SyncService(
-                jdbc,
-                objectMapper,
-                immediateTransactions(),
-                new SyncOperationRegistry(List.of(handler)),
-                currentUser,
-                mock(FinancialAccessService.class)
-        );
-
-        assertThatThrownBy(() -> service.push(new SyncPushRequest(
-                deviceId,
-                List.of(mutation(
-                        actorId,
-                        List.of(scopeId),
-                        UUID.randomUUID().toString(),
-                        payloadHash(payload),
-                        fieldPatch(payload)
-                ))
-        ))).isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Dispositivo não pertence");
-        verify(handler, never()).apply(any(), any());
-    }
-
-    @Test
-    void mapsOntologyEventToClientColumnAndKeepsServerCommitAuthoritative()
+    void acceptsGlobalServiceReferenceWhenCreatingPriceForAnotherAuthorizedWorksite()
             throws Exception {
         String actorId = UUID.randomUUID().toString();
         String deviceId = UUID.randomUUID().toString();
-        String scopeId = UUID.randomUUID().toString();
-        String eventId = UUID.randomUUID().toString();
-        String entityId = UUID.randomUUID().toString();
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("zeta", 2);
-        payload.put("alpha", 1);
-        payload.put("decimalInteiro", 1.0d);
-        SyncOperationHandler handler = handler();
+        String obraId = UUID.randomUUID().toString();
+        String serviceAuthorizingWorksite = UUID.randomUUID().toString();
+        String priceId = UUID.randomUUID().toString();
+        String serviceId = UUID.randomUUID().toString();
+        String correlationId = UUID.randomUUID().toString();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", priceId);
+        payload.put("obraId", obraId);
+        payload.put("serviceId", serviceId);
+
+        SyncPushRequest.MutacaoCliente mutation = new SyncPushRequest.MutacaoCliente(
+                UUID.randomUUID().toString(),
+                "SERVICE_PRICE_VERSION",
+                priceId,
+                "CRIAR_PRECO_SERVICO",
+                null,
+                payload,
+                LocalDateTime.parse("2026-07-21T12:00:00"),
+                correlationId,
+                13,
+                deviceId,
+                actorId,
+                obraId,
+                "SERVICE_PRICE_VERSION",
+                priceId,
+                "CREATE",
+                null,
+                List.of("id", "obraId", "serviceId"),
+                OCCURRED_AT,
+                new SyncPushRequest.MutationTrace(
+                        actorId,
+                        deviceId,
+                        List.of(obraId),
+                        correlationId,
+                        null,
+                        UUID.randomUUID().toString(),
+                        sha256("{\"id\":\"" + priceId
+                                + "\",\"obraId\":\"" + obraId
+                                + "\",\"serviceId\":\"" + serviceId + "\"}")
+                ),
+                new SyncPushRequest.FieldPatch(payload, mapper.createObjectNode()),
+                List.of(new SyncPushRequest.RelatedEntity(
+                        "SERVICE", serviceId, "Serviço global"
+                )),
+                List.of()
+        );
+
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         CurrentUserService currentUser = mock(CurrentUserService.class);
-
+        SyncOperationHandler handler = mock(SyncOperationHandler.class);
+        when(handler.entityType()).thenReturn("SERVICE_PRICE_VERSION");
+        when(handler.operations()).thenReturn(Set.of("CRIAR_PRECO_SERVICO"));
         when(currentUser.requireUserId()).thenReturn(actorId);
-        when(currentUser.allowedObraIds(actorId)).thenReturn(Optional.of(Set.of(scopeId)));
-        when(jdbc.queryForObject(anyString(), eq(Integer.class), eq(deviceId), eq(actorId)))
-                .thenReturn(1);
-        when(handler.requiresBaseVersion("CRIAR_RDO")).thenReturn(false);
-        when(handler.apply(any(), any())).thenReturn(new AppliedSyncMutation(
-                "RDO",
-                entityId,
-                objectMapper.createObjectNode()
-        ));
+        when(currentUser.allowedObraIds(actorId)).thenReturn(Optional.of(Set.of(obraId)));
         when(jdbc.queryForObject(
-                contains("SELECT ev.commit_seq"),
-                eq(Long.class),
-                eq("RDO"),
-                eq(entityId)
-        )).thenReturn(77L);
+                anyString(), eq(Integer.class), eq(deviceId), eq(actorId)
+        )).thenReturn(1);
         when(jdbc.queryForObject(
-                contains("SELECT versao_entidade"),
-                eq(Long.class),
-                eq("RDO"),
-                eq(entityId)
-        )).thenReturn(4L);
+                contains("FROM catalogo_servico"), eq(String.class), eq(serviceId)
+        )).thenReturn(serviceAuthorizingWorksite);
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
 
         SyncService service = new SyncService(
                 jdbc,
-                objectMapper,
+                mapper,
                 immediateTransactions(),
                 new SyncOperationRegistry(List.of(handler)),
                 currentUser,
                 mock(FinancialAccessService.class)
         );
-        SyncPushResponse response = service.push(new SyncPushRequest(
-                deviceId,
-                List.of(mutation(
-                        actorId,
-                        List.of(scopeId),
-                        eventId,
-                        canonicalHash("{\"alpha\":1,\"decimalInteiro\":1,\"zeta\":2}"),
-                        fieldPatch(payload)
-                ))
-        ));
 
-        assertThat(response.resultados()).singleElement().satisfies(result -> {
-            assertThat(result.status()).isEqualTo("APLICADA");
-            assertThat(result.eventoServidorCommitSeq()).isEqualTo(77L);
-        });
-        ArgumentCaptor<Object[]> pendingArgs = ArgumentCaptor.forClass(Object[].class);
-        verify(jdbc).update(
-                contains("INSERT INTO sync_mutacao_cliente"),
-                pendingArgs.capture()
-        );
-        String pendingSql = sqlForUpdateContaining(jdbc, "INSERT INTO sync_mutacao_cliente");
-        assertThat(pendingSql.chars().filter(character -> character == '?').count())
-                .isEqualTo(pendingArgs.getValue().length);
-        assertThat(pendingArgs.getValue()).contains(eventId);
-        assertThat(pendingArgs.getValue()).doesNotContain(77L);
-        ArgumentCaptor<Object[]> appliedArgs = ArgumentCaptor.forClass(Object[].class);
-        verify(jdbc).update(
-                contains("evento_servidor_commit_seq = ?"),
-                appliedArgs.capture()
-        );
-        assertThat(appliedArgs.getValue()).contains(77L);
+        service.push(new SyncPushRequest(deviceId, List.of(mutation)));
+
+        verify(handler).apply(eq(mutation), any());
     }
 
-    private SyncPushRequest.MutacaoCliente mutation(
-            String actorId,
-            List<String> authorizationScope,
-            String ontologyEventId,
-            String payloadHash,
-            SyncPushRequest.FieldPatch fieldPatch
-    ) {
-        return new SyncPushRequest.MutacaoCliente(
-                "mutation-1",
+    @Test
+    void acceptsCanonicalTaskCreateWithRelatedWorksiteBeforeHandler()
+            throws Exception {
+        String actorId = UUID.randomUUID().toString();
+        String deviceId = UUID.randomUUID().toString();
+        String obraId = UUID.randomUUID().toString();
+        String taskId = UUID.randomUUID().toString();
+        String correlationId = UUID.randomUUID().toString();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", taskId);
+        payload.put("obraId", obraId);
+        SyncPushRequest.MutacaoCliente mutation =
+                new SyncPushRequest.MutacaoCliente(
+                        UUID.randomUUID().toString(),
+                        "TAREFA",
+                        taskId,
+                        "CRIAR_TAREFA",
+                        null,
+                        payload,
+                        LocalDateTime.parse("2026-07-23T12:00:00"),
+                        correlationId,
+                        13,
+                        deviceId,
+                        actorId,
+                        obraId,
+                        "TAREFA",
+                        taskId,
+                        "CREATE",
+                        null,
+                        List.of("id", "obraId"),
+                        "2026-07-23T12:00:00.000Z",
+                        new SyncPushRequest.MutationTrace(
+                                actorId,
+                                deviceId,
+                                List.of(obraId),
+                                correlationId,
+                                null,
+                                UUID.randomUUID().toString(),
+                                sha256("{\"id\":\"" + taskId
+                                        + "\",\"obraId\":\"" + obraId + "\"}")
+                        ),
+                        new SyncPushRequest.FieldPatch(
+                                payload,
+                                mapper.createObjectNode()
+                        ),
+                        List.of(new SyncPushRequest.RelatedEntity(
+                                "OBRA", obraId, null
+                        )),
+                        List.of()
+                );
+        String updateCorrelationId = UUID.randomUUID().toString();
+        SyncPushRequest.MutacaoCliente update =
+                new SyncPushRequest.MutacaoCliente(
+                        UUID.randomUUID().toString(),
+                        "TAREFA",
+                        taskId,
+                        "ATUALIZAR_TAREFA",
+                        1L,
+                        payload,
+                        LocalDateTime.parse("2026-07-23T12:01:00"),
+                        updateCorrelationId,
+                        13,
+                        deviceId,
+                        actorId,
+                        obraId,
+                        "TAREFA",
+                        taskId,
+                        "UPDATE",
+                        1L,
+                        List.of("id", "obraId"),
+                        "2026-07-23T12:01:00.000Z",
+                        new SyncPushRequest.MutationTrace(
+                                actorId,
+                                deviceId,
+                                List.of(obraId),
+                                updateCorrelationId,
+                                null,
+                                UUID.randomUUID().toString(),
+                                sha256("{\"id\":\"" + taskId
+                                        + "\",\"obraId\":\"" + obraId + "\"}")
+                        ),
+                        new SyncPushRequest.FieldPatch(
+                                payload,
+                                mapper.createObjectNode()
+                        ),
+                        List.of(new SyncPushRequest.RelatedEntity(
+                                "OBRA", obraId, null
+                        )),
+                        List.of()
+                );
+
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        SyncOperationHandler handler = mock(SyncOperationHandler.class);
+        when(handler.entityType()).thenReturn("TAREFA");
+        when(handler.operations()).thenReturn(Set.of(
+                "CRIAR_TAREFA",
+                "ATUALIZAR_TAREFA"
+        ));
+        when(currentUser.requireUserId()).thenReturn(actorId);
+        when(currentUser.allowedObraIds(actorId))
+                .thenReturn(Optional.of(Set.of(obraId)));
+        when(jdbc.queryForObject(
+                anyString(), eq(Integer.class), eq(deviceId), eq(actorId)
+        )).thenReturn(1);
+        when(jdbc.queryForObject(
+                contains("FROM obra"), eq(String.class), eq(obraId)
+        )).thenReturn(obraId);
+        when(jdbc.queryForObject(
+                contains("FROM tarefa"), eq(String.class), eq(taskId)
+        )).thenReturn(obraId);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                immediateTransactions(),
+                new SyncOperationRegistry(List.of(handler)),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+
+        service.push(new SyncPushRequest(
+                deviceId,
+                List.of(mutation, update)
+        ));
+
+        verify(handler).apply(eq(mutation), any());
+        verify(handler).apply(eq(update), any());
+    }
+
+    @Test
+    void legacyEightFieldRequestRemainsSupported() {
+        SyncPushRequest.MutacaoCliente legacy = new SyncPushRequest.MutacaoCliente(
+                "legacy-client-id",
                 "RDO",
                 null,
                 "CRIAR_RDO",
                 null,
-                fieldPatch.changed(),
-                LocalDateTime.now(),
-                "correlation-1",
-                fieldPatch,
-                actorId,
-                authorizationScope,
-                ontologyEventId,
-                payloadHash,
-                "cause-1",
-                List.of("dependency-1")
+                mapper.createObjectNode().put("obraId", "legacy-worksite"),
+                LocalDateTime.parse("2026-07-21T12:00:00"),
+                "legacy-correlation"
         );
+
+        assertThat(legacy.schemaVersion()).isNull();
+        assertThat(legacy.clientMutationId()).isEqualTo("legacy-client-id");
+        assertThat(legacy.operacao()).isEqualTo("CRIAR_RDO");
     }
 
-    private SyncPushRequest.FieldPatch fieldPatch(ObjectNode changed) {
-        return new SyncPushRequest.FieldPatch(
-                changed,
-                objectMapper.createObjectNode()
+    private Harness harness(Fixture fixture) {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        SyncOperationHandler handler = mock(SyncOperationHandler.class);
+        when(handler.entityType()).thenReturn("RDO");
+        when(handler.operations()).thenReturn(Set.of("CRIAR_RDO", "ATUALIZAR_RDO_RASCUNHO"));
+        when(currentUser.requireUserId()).thenReturn(fixture.actorId());
+        when(currentUser.allowedObraIds(fixture.actorId()))
+                .thenReturn(Optional.of(Set.of(fixture.obraId())));
+        when(jdbc.queryForObject(
+                anyString(),
+                eq(Integer.class),
+                eq(fixture.deviceId()),
+                eq(fixture.actorId())
+        )).thenReturn(1);
+        when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+
+        return new Harness(
+                jdbc,
+                handler,
+                new SyncService(
+                        jdbc,
+                        mapper,
+                        immediateTransactions(),
+                        new SyncOperationRegistry(List.of(handler)),
+                        currentUser,
+                        mock(FinancialAccessService.class)
+                )
         );
     }
 
@@ -339,22 +467,6 @@ class SyncMutationTraceValidationTest {
         });
     }
 
-    private String sqlForUpdateContaining(JdbcTemplate jdbc, String fragment) {
-        return mockingDetails(jdbc).getInvocations().stream()
-                .filter(invocation -> invocation.getMethod().getName().equals("update"))
-                .map(invocation -> invocation.getArgument(0, String.class))
-                .filter(sql -> sql.contains(fragment))
-                .findFirst()
-                .orElseThrow();
-    }
-
-    private SyncOperationHandler handler() {
-        SyncOperationHandler handler = mock(SyncOperationHandler.class);
-        when(handler.entityType()).thenReturn("RDO");
-        when(handler.operations()).thenReturn(Set.of("CRIAR_RDO"));
-        return handler;
-    }
-
     private TransactionTemplate immediateTransactions() {
         TransactionTemplate transactions = mock(TransactionTemplate.class);
         doAnswer(invocation -> invocation
@@ -364,13 +476,151 @@ class SyncMutationTraceValidationTest {
         return transactions;
     }
 
-    private String payloadHash(ObjectNode payload) throws Exception {
-        return canonicalHash(objectMapper.writeValueAsString(payload));
+    private Fixture fixture() throws Exception {
+        String actorId = UUID.randomUUID().toString();
+        String deviceId = UUID.randomUUID().toString();
+        String obraId = UUID.randomUUID().toString();
+        String entityId = UUID.randomUUID().toString();
+        String relatedId = UUID.randomUUID().toString();
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", entityId);
+        payload.put("obraId", obraId);
+        String hash = sha256("{\"id\":\"" + entityId
+                + "\",\"obraId\":\"" + obraId + "\"}");
+        return new Fixture(actorId, deviceId, obraId, entityId, relatedId, hash);
     }
 
-    private String canonicalHash(String canonicalJson) throws Exception {
-        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(
-                canonicalJson.getBytes(StandardCharsets.UTF_8)
-        ));
+    private String sha256(String canonicalJson) throws Exception {
+        return HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256")
+                        .digest(canonicalJson.getBytes(StandardCharsets.UTF_8))
+        );
+    }
+
+    private record Harness(
+            JdbcTemplate jdbc,
+            SyncOperationHandler handler,
+            SyncService service
+    ) {
+    }
+
+    private record Fixture(
+            String actorId,
+            String deviceId,
+            String obraId,
+            String entityId,
+            String relatedId,
+            String payloadHash
+    ) {
+        private SyncPushRequest.MutacaoCliente mutation() {
+            ObjectMapper mapper = new ObjectMapper();
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("id", entityId);
+            payload.put("obraId", obraId);
+            String clientId = UUID.randomUUID().toString();
+            String correlationId = UUID.randomUUID().toString();
+            return new SyncPushRequest.MutacaoCliente(
+                    clientId,
+                    "RDO",
+                    entityId,
+                    "CRIAR_RDO",
+                    null,
+                    payload,
+                    LocalDateTime.parse("2026-07-21T12:00:00"),
+                    correlationId,
+                    13,
+                    deviceId,
+                    actorId,
+                    obraId,
+                    "RDO",
+                    entityId,
+                    "CREATE",
+                    null,
+                    List.of("id", "obraId"),
+                    OCCURRED_AT,
+                    new SyncPushRequest.MutationTrace(
+                            actorId,
+                            deviceId,
+                            List.of(obraId),
+                            correlationId,
+                            null,
+                            UUID.randomUUID().toString(),
+                            payloadHash
+                    ),
+                    new SyncPushRequest.FieldPatch(
+                            payload,
+                            mapper.createObjectNode()
+                    ),
+                    List.of(new SyncPushRequest.RelatedEntity(
+                            "RDO",
+                            relatedId,
+                            "RDO anterior"
+                    )),
+                    List.of()
+            );
+        }
+
+        private SyncPushRequest.MutacaoCliente withUserId(String value) {
+            return copy(value, deviceId, "CRIAR_RDO", payloadHash);
+        }
+
+        private SyncPushRequest.MutacaoCliente withDeviceId(String value) {
+            return copy(actorId, value, "CRIAR_RDO", payloadHash);
+        }
+
+        private SyncPushRequest.MutacaoCliente withAliasOperation(String value) {
+            return copy(actorId, deviceId, value, payloadHash);
+        }
+
+        private SyncPushRequest.MutacaoCliente withPayloadHash(String value) {
+            return copy(actorId, deviceId, "CRIAR_RDO", value);
+        }
+
+        private SyncPushRequest.MutacaoCliente withDependencies(
+                SyncPushRequest.MutacaoCliente original,
+                List<String> dependencies
+        ) {
+            return new SyncPushRequest.MutacaoCliente(
+                    original.clientMutationId(), original.entidadeTipo(),
+                    original.entidadeId(), original.operacao(),
+                    original.baseVersao(), original.payload(),
+                    original.criadaNoClienteEm(), original.correlacaoId(),
+                    original.schemaVersion(), original.deviceId(),
+                    original.userId(), original.obraId(), original.entityType(),
+                    original.entityId(), original.operation(),
+                    original.baseVersion(), original.changedFields(),
+                    original.occurredAt(), original.trace(),
+                    original.fieldPatch(), original.relatedEntities(),
+                    dependencies
+            );
+        }
+
+        private SyncPushRequest.MutacaoCliente copy(
+                String newUserId,
+                String newDeviceId,
+                String aliasOperation,
+                String newPayloadHash
+        ) {
+            SyncPushRequest.MutacaoCliente original = mutation();
+            return new SyncPushRequest.MutacaoCliente(
+                    original.clientMutationId(), original.entidadeTipo(), original.entidadeId(),
+                    aliasOperation, original.baseVersao(), original.payload(),
+                    original.criadaNoClienteEm(), original.correlacaoId(), original.schemaVersion(),
+                    newDeviceId, newUserId, original.obraId(), original.entityType(),
+                    original.entityId(), original.operation(), original.baseVersion(),
+                    original.changedFields(), original.occurredAt(),
+                    new SyncPushRequest.MutationTrace(
+                            newUserId,
+                            newDeviceId,
+                            original.trace().authorizationScope(),
+                            original.trace().correlationId(),
+                            original.trace().causationId(),
+                            original.trace().ontologyEventId(),
+                            newPayloadHash
+                    ),
+                    original.fieldPatch(), original.relatedEntities(),
+                    original.dependsOnMutationIds()
+            );
+        }
     }
 }

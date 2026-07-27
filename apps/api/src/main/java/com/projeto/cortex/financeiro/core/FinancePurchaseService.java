@@ -3,9 +3,15 @@ package com.projeto.cortex.financeiro.core;
 import static com.projeto.cortex.financeiro.core.FinanceDtos.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import java.math.BigDecimal;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -13,10 +19,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -67,17 +75,20 @@ public class FinancePurchaseService {
 
     private final JdbcTemplate jdbc;
     private final CurrentUserService currentUser;
+    private final FinancialAccessService financialAccess;
     private final FinanceOntologyProjector ontology;
     private final ObjectMapper objectMapper;
 
     public FinancePurchaseService(
             JdbcTemplate jdbc,
             CurrentUserService currentUser,
+            FinancialAccessService financialAccess,
             FinanceOntologyProjector ontology,
             ObjectMapper objectMapper
     ) {
         this.jdbc = jdbc;
         this.currentUser = currentUser;
+        this.financialAccess = financialAccess;
         this.ontology = ontology;
         this.objectMapper = objectMapper;
     }
@@ -89,13 +100,24 @@ public class FinancePurchaseService {
     ) {
         requireActor(audit);
         ValidatedSolicitation input = validate(request);
-        String replayId = mutationEntity(
+        String requestHash = mutationPayloadHash("SAVE_SOLICITATION", request);
+        financialAccess.requirePermission(
+                input.obraId(), FinancialPermission.FINANCEIRO_OPERAR
+        );
+        MutationReceipt replayReceipt = mutationReceipt(
                 "SOLICITACAO",
                 audit.actorId(),
                 input.clientMutationId()
         );
-        if (replayId != null) {
-            return solicitation(replayId);
+        if (replayReceipt != null) {
+            requireMatchingMutation(
+                    replayReceipt,
+                    input.id(),
+                    input.explicitId(),
+                    "SAVE_SOLICITATION",
+                    requestHash
+            );
+            return solicitation(replayReceipt.entityId());
         }
         String existingByCreateMutation = jdbc.query(
                 """
@@ -119,6 +141,12 @@ public class FinancePurchaseService {
 
         String id = input.id();
         SolicitationResponse previous = findSolicitation(id);
+        if (previous != null && !previous.obraId().equals(input.obraId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "A solicitação pertence a outra obra."
+            );
+        }
         if (previous == null) {
             jdbc.update(
                     """
@@ -184,7 +212,9 @@ public class FinancePurchaseService {
                 previous == null ? null : previous.statusId(),
                 response.statusId(), audit, input.clientMutationId(),
                 previous == null ? Map.of() : solicitationState(previous),
-                solicitationState(response)
+                solicitationState(response),
+                "SAVE_SOLICITATION",
+                requestHash
         );
         ontology.success(
                 "SOLICITACAO_COMPRA", id, response.titulo(),
@@ -236,11 +266,22 @@ public class FinancePurchaseService {
     ) {
         requireActor(audit);
         ValidatedPurchase input = validate(request);
-        String replayId = mutationEntity(
+        String requestHash = mutationPayloadHash("SAVE_PURCHASE", request);
+        financialAccess.requirePermission(
+                input.obraId(), FinancialPermission.FINANCEIRO_OPERAR
+        );
+        MutationReceipt replayReceipt = mutationReceipt(
                 "COMPRA", audit.actorId(), input.clientMutationId()
         );
-        if (replayId != null) {
-            return purchase(replayId);
+        if (replayReceipt != null) {
+            requireMatchingMutation(
+                    replayReceipt,
+                    input.id(),
+                    input.explicitId(),
+                    "SAVE_PURCHASE",
+                    requestHash
+            );
+            return purchase(replayReceipt.entityId());
         }
         String existingByCreateMutation = jdbc.query(
                 """
@@ -262,6 +303,12 @@ public class FinancePurchaseService {
         }
         String id = input.id();
         PurchaseResponse previous = findPurchase(id);
+        if (previous != null && !previous.obraId().equals(input.obraId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "A compra pertence a outra obra."
+            );
+        }
         if (previous == null) {
             jdbc.update(
                     """
@@ -330,7 +377,9 @@ public class FinancePurchaseService {
                 previous == null ? null : previous.statusId(),
                 response.statusId(), audit, input.clientMutationId(),
                 previous == null ? Map.of() : purchaseState(previous),
-                purchaseState(response)
+                purchaseState(response),
+                "SAVE_PURCHASE",
+                requestHash
         );
         ontology.success(
                 "COMPRA", id, response.numeroPedido() == null
@@ -389,11 +438,33 @@ public class FinancePurchaseService {
         }
         String id = FinanceValidation.uuid(purchaseId, "compraId");
         String mutationId = FinanceValidation.mutationId(request.clientMutationId());
+        String target = FinanceValidation.uuid(request.statusId(), "statusId");
+        String requestHash = mutationPayloadHash(
+                "CHANGE_PURCHASE_STATUS",
+                Map.of(
+                        "purchaseId", id,
+                        "statusId", target,
+                        "baseVersao", request.baseVersao(),
+                        "clientMutationId", mutationId
+                )
+        );
         PurchaseResponse purchase = purchase(id);
-        if (mutationEntity("COMPRA", audit.actorId(), mutationId) != null) {
+        financialAccess.requirePermission(
+                purchase.obraId(), FinancialPermission.FINANCEIRO_OPERAR
+        );
+        MutationReceipt replayReceipt = mutationReceipt(
+                "COMPRA", audit.actorId(), mutationId
+        );
+        if (replayReceipt != null) {
+            requireMatchingMutation(
+                    replayReceipt,
+                    id,
+                    true,
+                    "CHANGE_PURCHASE_STATUS",
+                    requestHash
+            );
             return statusResponse(purchase, true, null, null);
         }
-        String target = FinanceValidation.uuid(request.statusId(), "statusId");
         Transition transition = transition(
                 purchase.obraId(), "COMPRA", purchase.statusId(), target
         );
@@ -416,9 +487,11 @@ public class FinancePurchaseService {
                 UPDATE finance_compra
                 SET status_id = ?, atualizado_por = ?,
                     versao_linha = versao_linha + 1
-                WHERE id = ? AND versao_linha = ? AND arquivado_em IS NULL
+                WHERE id = ? AND obra_id = ? AND versao_linha = ?
+                  AND arquivado_em IS NULL
                 """,
-                target, audit.actorId(), id, request.baseVersao()
+                target, audit.actorId(), id, purchase.obraId(),
+                request.baseVersao()
         );
         if (changed != 1) {
             throw new ResponseStatusException(
@@ -429,7 +502,8 @@ public class FinancePurchaseService {
         PurchaseResponse updated = purchase(id);
         recordHistory(
                 "COMPRA", id, updated.obraId(), purchase.statusId(), target,
-                audit, mutationId, purchaseState(purchase), purchaseState(updated)
+                audit, mutationId, purchaseState(purchase), purchaseState(updated),
+                "CHANGE_PURCHASE_STATUS", requestHash
         );
         ontology.success(
                 "COMPRA", id, updated.descricao(),
@@ -449,6 +523,9 @@ public class FinancePurchaseService {
         PurchaseResponse purchase = purchase(
                 FinanceValidation.uuid(purchaseId, "compraId")
         );
+        financialAccess.requirePermission(
+                purchase.obraId(), FinancialPermission.FINANCEIRO_APROVAR
+        );
         if (request == null) {
             throw FinanceValidation.badRequest("Decisão é obrigatória.");
         }
@@ -459,16 +536,57 @@ public class FinancePurchaseService {
             throw FinanceValidation.badRequest("Decisão inválida.");
         }
         String mutationId = FinanceValidation.mutationId(request.clientMutationId());
+        String justification = FinanceValidation.optionalText(
+                request.justificativa(), "justificativa", 2000
+        );
+        String requestHash = mutationPayloadHash(
+                "DECIDE_PURCHASE",
+                state(
+                        "purchaseId", purchase.id(),
+                        "decision", decision,
+                        "justification", justification,
+                        "clientMutationId", mutationId
+                )
+        );
+        MutationReceipt replayReceipt = mutationReceipt(
+                "COMPRA", audit.actorId(), mutationId
+        );
+        if (replayReceipt != null) {
+            requireMatchingMutation(
+                    replayReceipt,
+                    purchase.id(),
+                    true,
+                    "DECIDE_PURCHASE",
+                    requestHash
+            );
+            ExistingDecision boundReplay = decisionByMutation(
+                    audit.actorId(), mutationId
+            );
+            if (boundReplay == null) {
+                throw new IllegalStateException(
+                        "Recibo de decisão não possui decisão financeira vinculada."
+                );
+            }
+            return boundReplay.response();
+        }
         ExistingDecision replay = decisionByMutation(
                 audit.actorId(), mutationId
         );
         if (replay != null) {
-            if (!decision.equals(replay.decision())) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "clientMutationId já foi usado com outro conteúdo."
-                );
+            if (!purchase.id().equals(replay.purchaseId())
+                    || !decision.equals(replay.decision())
+                    || !Objects.equals(justification, replay.justification())) {
+                throw mutationConflict();
             }
+            recordDecisionMutation(
+                    purchase,
+                    audit,
+                    mutationId,
+                    decision,
+                    justification,
+                    requestHash,
+                    replay.response().statusAprovacao()
+            );
             return replay.response();
         }
         Approval approval = pendingApproval(purchase.id());
@@ -503,9 +621,7 @@ public class FinancePurchaseService {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     UUID.randomUUID().toString(), stage.id(), decision,
-                    FinanceValidation.optionalText(
-                            request.justificativa(), "justificativa", 2000
-                    ),
+                    justification,
                     audit.actorId(), mutationId, audit.deviceId(),
                     audit.correlationId(), decidedAt
             );
@@ -514,7 +630,21 @@ public class FinancePurchaseService {
                     audit.actorId(), mutationId
             );
             if (concurrentReplay != null
-                    && decision.equals(concurrentReplay.decision())) {
+                    && purchase.id().equals(concurrentReplay.purchaseId())
+                    && decision.equals(concurrentReplay.decision())
+                    && Objects.equals(
+                            justification,
+                            concurrentReplay.justification()
+                    )) {
+                recordDecisionMutation(
+                        purchase,
+                        audit,
+                        mutationId,
+                        decision,
+                        justification,
+                        requestHash,
+                        concurrentReplay.response().statusAprovacao()
+                );
                 return concurrentReplay.response();
             }
             throw new ResponseStatusException(
@@ -576,7 +706,44 @@ public class FinancePurchaseService {
                     "Decisão financeira persistida não foi encontrada."
             );
         }
+        recordDecisionMutation(
+                purchase,
+                audit,
+                mutationId,
+                decision,
+                justification,
+                requestHash,
+                persisted.response().statusAprovacao()
+        );
         return persisted.response();
+    }
+
+    private void recordDecisionMutation(
+            PurchaseResponse purchase,
+            FinanceAuditContext audit,
+            String mutationId,
+            String decision,
+            String justification,
+            String requestHash,
+            String approvalStatus
+    ) {
+        recordHistory(
+                "COMPRA",
+                purchase.id(),
+                purchase.obraId(),
+                purchase.statusId(),
+                purchase.statusId(),
+                audit,
+                mutationId,
+                state("approvalStatus", "PENDENTE"),
+                state(
+                        "approvalStatus", approvalStatus,
+                        "decision", decision,
+                        "justification", justification
+                ),
+                "DECIDE_PURCHASE",
+                requestHash
+        );
     }
 
     @Transactional
@@ -617,6 +784,15 @@ public class FinancePurchaseService {
         requireActor(audit);
         String id = FinanceValidation.uuid(rawId, "id");
         String mutation = FinanceValidation.mutationId(clientMutationId);
+        String operation = "ARCHIVE_" + aggregate;
+        String requestHash = mutationPayloadHash(
+                operation,
+                Map.of(
+                        "entityId", id,
+                        "baseVersao", baseVersion,
+                        "clientMutationId", mutation
+                )
+        );
         Map<String, Object> row;
         try {
             row = jdbc.queryForMap(
@@ -630,12 +806,26 @@ public class FinancePurchaseService {
                     "Registro financeiro não encontrado."
             );
         }
-        if (mutationEntity(aggregate, audit.actorId(), mutation) != null) {
+        String worksite = row.get("obra_id").toString();
+        financialAccess.requirePermission(
+                worksite, FinancialPermission.FINANCEIRO_OPERAR
+        );
+        MutationReceipt replayReceipt = mutationReceipt(
+                aggregate, audit.actorId(), mutation
+        );
+        if (replayReceipt != null) {
+            requireMatchingMutation(
+                    replayReceipt,
+                    id,
+                    true,
+                    operation,
+                    requestHash
+            );
             return;
         }
         int changed = jdbc.update(
-                "UPDATE " + table + " SET arquivado_em = CURRENT_TIMESTAMP(6), arquivado_por = ?, versao_linha = versao_linha + 1 WHERE id = ? AND versao_linha = ? AND arquivado_em IS NULL",
-                audit.actorId(), id, baseVersion
+                "UPDATE " + table + " SET arquivado_em = CURRENT_TIMESTAMP(6), arquivado_por = ?, versao_linha = versao_linha + 1 WHERE id = ? AND obra_id = ? AND versao_linha = ? AND arquivado_em IS NULL",
+                audit.actorId(), id, worksite, baseVersion
         );
         if (changed != 1) {
             throw new ResponseStatusException(
@@ -643,11 +833,11 @@ public class FinancePurchaseService {
                     "O registro possui uma versão mais recente."
             );
         }
-        String worksite = row.get("obra_id").toString();
         String statusId = row.get("status_id").toString();
         recordHistory(
                 aggregate, id, worksite, statusId, statusId,
-                audit, mutation, row, Map.of("arquivado", true)
+                audit, mutation, row, Map.of("arquivado", true),
+                operation, requestHash
         );
         ontology.success(
                 entityType, id, entityType + " " + id,
@@ -864,7 +1054,7 @@ public class FinancePurchaseService {
     ) {
         List<ExistingDecision> decisions = jdbc.query(
                 """
-                SELECT d.decisao, d.decidido_em,
+                SELECT d.decisao, d.justificativa, d.decidido_em, a.compra_id,
                        a.id AS aprovacao_id, a.status AS aprovacao_status,
                        e.id AS etapa_id, e.status AS etapa_status
                 FROM finance_aprovacao_decisao d
@@ -874,7 +1064,9 @@ public class FinancePurchaseService {
                 WHERE d.decidido_por = ? AND d.client_mutation_id = ?
                 """,
                 (rs, row) -> new ExistingDecision(
+                        rs.getString("compra_id"),
                         rs.getString("decisao"),
+                        rs.getString("justificativa"),
                         new ApprovalDecisionResponse(
                                 rs.getString("aprovacao_id"),
                                 rs.getString("etapa_id"),
@@ -1117,8 +1309,9 @@ public class FinancePurchaseService {
             throw FinanceValidation.badRequest("Solicitação é obrigatória.");
         }
         String priority = FinanceValidation.priority(request.prioridade(), false);
+        boolean explicitId = request.id() != null && !request.id().isBlank();
         return new ValidatedSolicitation(
-                request.id() == null || request.id().isBlank()
+                !explicitId
                         ? UUID.randomUUID().toString()
                         : FinanceValidation.uuid(request.id(), "id"),
                 FinanceValidation.mutationId(request.clientMutationId()),
@@ -1140,7 +1333,8 @@ public class FinancePurchaseService {
                 FinanceValidation.optionalMoney(request.valorContratado(), "valorContratado"),
                 FinanceValidation.optionalMoney(request.valorPago(), "valorPago"),
                 request.necessarioEm(),
-                request.itens() == null ? List.of() : List.copyOf(request.itens())
+                request.itens() == null ? List.of() : List.copyOf(request.itens()),
+                explicitId
         );
     }
 
@@ -1148,8 +1342,9 @@ public class FinancePurchaseService {
         if (request == null) {
             throw FinanceValidation.badRequest("Compra é obrigatória.");
         }
+        boolean explicitId = request.id() != null && !request.id().isBlank();
         return new ValidatedPurchase(
-                request.id() == null || request.id().isBlank()
+                !explicitId
                         ? UUID.randomUUID().toString()
                         : FinanceValidation.uuid(request.id(), "id"),
                 FinanceValidation.mutationId(request.clientMutationId()),
@@ -1171,7 +1366,8 @@ public class FinancePurchaseService {
                 FinanceValidation.money(request.valorContratado(), "valorContratado"),
                 FinanceValidation.optionalMoney(request.valorPago(), "valorPago"),
                 request.pedidoEmitidoEm(), request.entregaPrevistaEm(),
-                request.itens() == null ? List.of() : List.copyOf(request.itens())
+                request.itens() == null ? List.of() : List.copyOf(request.itens()),
+                explicitId
         );
     }
 
@@ -1312,8 +1508,17 @@ public class FinancePurchaseService {
             FinanceAuditContext audit,
             String mutationId,
             Map<String, ?> previous,
-            Map<String, ?> next
+            Map<String, ?> next,
+            String operation,
+            String requestHash
     ) {
+        Map<String, Object> boundNext = new LinkedHashMap<>();
+        if (next != null) {
+            boundNext.putAll(next);
+        }
+        boundNext.put("_mutationOperation", operation);
+        boundNext.put("_mutationEntityId", entityId);
+        boundNext.put("_mutationRequestHash", requestHash);
         try {
             jdbc.update(
                     """
@@ -1328,22 +1533,98 @@ public class FinancePurchaseService {
                     UUID.randomUUID().toString(), entityType, entityId, obraId,
                     previousStatusId, newStatusId, audit.actorId(), audit.origin(),
                     audit.deviceId(), mutationId, audit.correlationId(),
-                    json(previous), json(next)
+                    json(previous), json(boundNext)
             );
         } catch (DuplicateKeyException duplicate) {
-            // Idempotent replay already produced this immutable audit record.
+            MutationReceipt receipt = mutationReceipt(
+                    entityType,
+                    audit.actorId(),
+                    mutationId
+            );
+            requireMatchingMutation(
+                    receipt,
+                    entityId,
+                    true,
+                    operation,
+                    requestHash
+            );
         }
     }
 
-    private String mutationEntity(String type, String actorId, String mutationId) {
+    private MutationReceipt mutationReceipt(
+            String type,
+            String actorId,
+            String mutationId
+    ) {
         return jdbc.query(
                 """
-                SELECT entidade_id FROM finance_status_historico
+                SELECT entidade_id, estado_novo_json
+                FROM finance_status_historico
                 WHERE ator_id = ? AND client_mutation_id = ?
                   AND entidade_tipo = ? LIMIT 1
                 """,
-                rs -> rs.next() ? rs.getString(1) : null,
+                rs -> {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    JsonNode state;
+                    try {
+                        state = objectMapper.readTree(rs.getString("estado_novo_json"));
+                    } catch (JsonProcessingException exception) {
+                        throw new IllegalStateException(
+                                "Histórico financeiro possui JSON inválido.",
+                                exception
+                        );
+                    }
+                    return new MutationReceipt(
+                            rs.getString("entidade_id"),
+                            state.path("_mutationOperation").asText(null),
+                            state.path("_mutationRequestHash").asText(null)
+                    );
+                },
                 actorId, mutationId, type
+        );
+    }
+
+    private void requireMatchingMutation(
+            MutationReceipt receipt,
+            String entityId,
+            boolean explicitEntityId,
+            String operation,
+            String requestHash
+    ) {
+        if (receipt == null
+                || (explicitEntityId && !Objects.equals(receipt.entityId(), entityId))
+                || !Objects.equals(receipt.operation(), operation)
+                || !Objects.equals(receipt.requestHash(), requestHash)) {
+            throw mutationConflict();
+        }
+    }
+
+    private String mutationPayloadHash(String operation, Object payload) {
+        ObjectNode material = objectMapper.createObjectNode();
+        material.put("operation", operation);
+        material.set("payload", objectMapper.valueToTree(payload));
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(
+                            objectMapper.writeValueAsBytes(material)
+                    )
+            );
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 indisponível.", exception);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException(
+                    "Falha ao vincular o conteúdo da mutação financeira.",
+                    exception
+            );
+        }
+    }
+
+    private ResponseStatusException mutationConflict() {
+        return new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "clientMutationId já foi usado com outro conteúdo."
         );
     }
 
@@ -1369,21 +1650,111 @@ public class FinancePurchaseService {
             SolicitationResponse existing,
             ValidatedSolicitation input
     ) {
-        return existing.obraId().equals(input.obraId())
-                && existing.centroCustoId().equals(input.centroCustoId())
-                && existing.categoriaId().equals(input.categoriaId())
-                && existing.statusId().equals(input.statusId())
-                && existing.titulo().equals(input.titulo())
-                && existing.valorPrevisto().compareTo(input.valorPrevisto()) == 0;
+        return (!input.explicitId() || existing.id().equals(input.id()))
+                && Objects.equals(existing.obraId(), input.obraId())
+                && Objects.equals(existing.centroCustoId(), input.centroCustoId())
+                && Objects.equals(existing.categoriaId(), input.categoriaId())
+                && Objects.equals(existing.fornecedorId(), input.fornecedorId())
+                && Objects.equals(existing.solicitanteId(), input.solicitanteId())
+                && Objects.equals(
+                        existing.responsavelCompraId(),
+                        input.responsavelCompraId()
+                )
+                && Objects.equals(existing.statusId(), input.statusId())
+                && Objects.equals(existing.titulo(), input.titulo())
+                && Objects.equals(existing.descricao(), input.descricao())
+                && Objects.equals(existing.prioridade(), input.prioridade())
+                && Objects.equals(existing.moeda(), input.moeda())
+                && sameDecimal(existing.valorPrevisto(), input.valorPrevisto())
+                && sameDecimal(existing.valorAprovado(), input.valorAprovado())
+                && sameDecimal(existing.valorContratado(), input.valorContratado())
+                && sameDecimal(existing.valorPago(), input.valorPago())
+                && Objects.equals(existing.necessarioEm(), input.necessarioEm())
+                && sameItems(existing.itens(), input.itens(), true);
     }
 
     private boolean samePurchase(PurchaseResponse existing, ValidatedPurchase input) {
-        return existing.obraId().equals(input.obraId())
-                && existing.centroCustoId().equals(input.centroCustoId())
-                && existing.categoriaId().equals(input.categoriaId())
-                && existing.fornecedorId().equals(input.fornecedorId())
-                && existing.statusId().equals(input.statusId())
-                && existing.valorContratado().compareTo(input.valorContratado()) == 0;
+        return (!input.explicitId() || existing.id().equals(input.id()))
+                && Objects.equals(existing.solicitacaoId(), input.solicitacaoId())
+                && Objects.equals(existing.obraId(), input.obraId())
+                && Objects.equals(existing.centroCustoId(), input.centroCustoId())
+                && Objects.equals(existing.categoriaId(), input.categoriaId())
+                && Objects.equals(existing.fornecedorId(), input.fornecedorId())
+                && Objects.equals(
+                        existing.responsavelCompraId(),
+                        input.responsavelCompraId()
+                )
+                && Objects.equals(existing.statusId(), input.statusId())
+                && Objects.equals(existing.numeroPedido(), input.numeroPedido())
+                && Objects.equals(existing.descricao(), input.descricao())
+                && Objects.equals(existing.prioridade(), input.prioridade())
+                && Objects.equals(existing.moeda(), input.moeda())
+                && sameDecimal(existing.valorPrevisto(), input.valorPrevisto())
+                && sameDecimal(existing.valorAprovado(), input.valorAprovado())
+                && sameDecimal(existing.valorContratado(), input.valorContratado())
+                && sameDecimal(existing.valorPago(), input.valorPago())
+                && Objects.equals(existing.pedidoEmitidoEm(), input.pedidoEmitidoEm())
+                && Objects.equals(
+                        existing.entregaPrevistaEm(),
+                        input.entregaPrevistaEm()
+                )
+                && sameItems(existing.itens(), input.itens(), false);
+    }
+
+    private boolean sameItems(
+            List<LineItemRequest> stored,
+            List<LineItemRequest> requested,
+            boolean forecast
+    ) {
+        if (stored.size() != requested.size()) {
+            return false;
+        }
+        for (int index = 0; index < stored.size(); index++) {
+            LineItemRequest persisted = stored.get(index);
+            LineItemRequest input = requested.get(index);
+            if (input == null
+                    || (input.id() != null && !input.id().isBlank()
+                            && !Objects.equals(
+                                    persisted.id(),
+                                    FinanceValidation.uuid(input.id(), "item.id")
+                            ))
+                    || !Objects.equals(
+                            persisted.descricao(),
+                            FinanceValidation.requiredText(
+                                    input.descricao(), "item.descricao", 1000
+                            )
+                    )
+                    || !sameDecimal(persisted.quantidade(), input.quantidade())
+                    || !Objects.equals(
+                            persisted.unidade(),
+                            FinanceValidation.requiredText(
+                                    input.unidade(), "item.unidade", 40
+                            )
+                    )
+                    || !sameDecimal(
+                            persisted.valorUnitario(),
+                            FinanceValidation.optionalMoney(
+                                    input.valorUnitario(), "item.valorUnitario"
+                            )
+                    )
+                    || !sameDecimal(
+                            persisted.valorTotal(),
+                            FinanceValidation.optionalMoney(
+                                    input.valorTotal(), "item.valorTotal"
+                            )
+                    )
+                    || (!forecast && !Objects.equals(
+                            persisted.natureza(),
+                            purchaseItemNature(input.natureza())
+                    ))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean sameDecimal(BigDecimal left, BigDecimal right) {
+        return left == null ? right == null : right != null && left.compareTo(right) == 0;
     }
 
     private Map<String, Object> solicitationState(SolicitationResponse value) {
@@ -1499,7 +1870,8 @@ public class FinancePurchaseService {
             String titulo, String descricao, String prioridade, String moeda,
             BigDecimal valorPrevisto, BigDecimal valorAprovado,
             BigDecimal valorContratado, BigDecimal valorPago,
-            LocalDate necessarioEm, List<LineItemRequest> itens
+            LocalDate necessarioEm, List<LineItemRequest> itens,
+            boolean explicitId
     ) {
     }
 
@@ -1511,7 +1883,14 @@ public class FinancePurchaseService {
             String moeda, BigDecimal valorPrevisto, BigDecimal valorAprovado,
             BigDecimal valorContratado, BigDecimal valorPago,
             LocalDate pedidoEmitidoEm, LocalDate entregaPrevistaEm,
-            List<LineItemRequest> itens
+            List<LineItemRequest> itens, boolean explicitId
+    ) {
+    }
+
+    private record MutationReceipt(
+            String entityId,
+            String operation,
+            String requestHash
     ) {
     }
 
@@ -1535,7 +1914,9 @@ public class FinancePurchaseService {
     }
 
     private record ExistingDecision(
+            String purchaseId,
             String decision,
+            String justification,
             ApprovalDecisionResponse response
     ) {
     }

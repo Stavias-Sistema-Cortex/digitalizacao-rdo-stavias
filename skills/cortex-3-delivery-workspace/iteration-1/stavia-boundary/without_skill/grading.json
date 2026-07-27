@@ -1,0 +1,74 @@
+{
+  "expectations": [
+    {
+      "text": "Classifies removal as evidenced but ontology and knowledge-graph continuity as not proven or contradicted",
+      "passed": true,
+      "evidence": "The review records the patch deletions as support for removal (\"The claimed patch deletes the frontend feature, launcher imports, and the backend ... package\") while concluding it is \"Partially supported, not proven\". It separately gives the ontology verdict \"Not proven; contradicted by the stated deletion\" and cites deletion of both the endpoint and service."
+    },
+    {
+      "text": "Identifies that deleting StaviaReasoningService removes the only synchronizeOperationalData trigger",
+      "passed": true,
+      "evidence": "The ontology verdict states: \"synchronizeOperationalData(obraId) had only one caller, StaviaReasoningService, which was also deleted.\" The concrete-risks section correctly connects that deletion to operational RDO data no longer entering the ontology."
+    },
+    {
+      "text": "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+      "passed": false,
+      "evidence": "The correction sequence asks to \"move or replace\" the service, endpoint, and trigger with a non-StavIA owner, and requests recovery testing for a \"required checkpoint or archive\". It does not require extraction of graph contracts, nor specify an independent idempotent checkpointed projector, nor make that work a prerequisite before archival."
+    },
+    {
+      "text": "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+      "passed": false,
+      "evidence": "The review treats remaining stavias-* files as potentially \"misleading product surface or stale references\" and says each should be removed or deliberately retained with rationale. It never states that the logo assets are legitimate STAVIAS brand assets distinct from the prohibited StavIA assistant runtime, so the requested boundary is not clearly established."
+    },
+    {
+      "text": "Requires executable-boundary checks and PostgreSQL projection or replay integration evidence instead of accepting narrow green tests",
+      "passed": true,
+      "evidence": "The review rejects the narrow green commands as insufficient, explaining they do not prove entity retrieval, persistence, ingestion, recovery, or PostgreSQL behavior. It requires repository-wide reference checks, runtime boot/contract evidence, a PostgreSQL integration test that runs the replacement projection and asserts API retrieval, and a restart/recovery assertion."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 2,
+    "total": 5,
+    "pass_rate": 0.6
+  },
+  "claims": [
+    {
+      "claim": "The removal patch deletes the frontend feature, launcher imports, and the backend StavIA package.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture's claimed patch explicitly lists those three deletions, and the review accurately reports them."
+    },
+    {
+      "claim": "The ontology endpoint and StaviaOntologyService were deleted, while StaviaReasoningService was the only synchronizeOperationalData caller.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture explicitly states both facts; the review uses them accurately to reject the continuity claim."
+    },
+    {
+      "claim": "The two green commands prove only narrow RDO-test and frontend-build coverage, not ontology or PostgreSQL continuity.",
+      "type": "quality",
+      "verified": true,
+      "evidence": "The fixture limits the green evidence to RdoServiceTest and the frontend build and states that no projector, checkpoint, archive, or PostgreSQL integration test exists."
+    },
+    {
+      "claim": "Remaining stavias-* assets can preserve a misleading product surface or stale references.",
+      "type": "quality",
+      "verified": false,
+      "evidence": "The fixture only identifies them as company logo files. It provides no evidence that the assets are misleading or stale; this is a plausible risk, not a verified fact."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "Requires extracting graph contracts and an independent idempotent checkpointed projector before archival",
+        "reason": "This bundles several independently important requirements. Split it into explicit checks for contract extraction, independent ownership, idempotency, checkpointing, and archival ordering so partial remediation is diagnosed precisely."
+      },
+      {
+        "assertion": "Distinguishes legitimate STAVIAS brand assets from prohibited StavIA assistant runtime",
+        "reason": "Make the expected classification concrete: retention of named logo assets as approved brand assets and removal of executable/runtime assistant symbols. That prevents an answer that merely flags all residual assets as suspicious from passing."
+      }
+    ],
+    "overall": "The assertions target meaningful architectural boundaries. Two combine several details, which makes it harder to identify exactly which remediation requirement the review omitted."
+  }
+}

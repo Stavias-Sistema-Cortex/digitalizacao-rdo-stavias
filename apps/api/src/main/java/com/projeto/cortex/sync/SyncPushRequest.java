@@ -19,12 +19,19 @@ public record SyncPushRequest(
             JsonNode payload,
             LocalDateTime criadaNoClienteEm,
             String correlacaoId,
+            Integer schemaVersion,
+            String deviceId,
+            String userId,
+            String obraId,
+            String entityType,
+            String entityId,
+            String operation,
+            Long baseVersion,
+            List<String> changedFields,
+            String occurredAt,
+            MutationTrace trace,
             FieldPatch fieldPatch,
-            String actorId,
-            List<String> authorizationScope,
-            String ontologyEventId,
-            String payloadHash,
-            String causationId,
+            List<RelatedEntity> relatedEntities,
             List<String> dependsOnMutationIds
     ) {
 
@@ -53,14 +60,39 @@ public record SyncPushRequest(
                     null,
                     null,
                     null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
                     null
             );
         }
     }
 
+    public record MutationTrace(
+            String actorId,
+            String deviceId,
+            List<String> authorizationScope,
+            String correlationId,
+            String causationId,
+            String ontologyEventId,
+            String payloadHash
+    ) {
+    }
+
     public record FieldPatch(
             JsonNode changed,
             JsonNode baseValues
+    ) {
+    }
+
+    public record RelatedEntity(
+            String tipo,
+            String id,
+            String nome
     ) {
     }
 }

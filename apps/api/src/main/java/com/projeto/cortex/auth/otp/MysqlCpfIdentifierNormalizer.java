@@ -13,8 +13,8 @@ public final class MysqlCpfIdentifierNormalizer
     @Override
     public String canonicalize(String identifier) {
         if (identifier == null
-                || identifier.isBlank()
                 || identifier.length() > 512
+                || identifier.isBlank()
                 || identifier.contains("\r")
                 || identifier.contains("\n")) {
             return INVALID_VALUE;

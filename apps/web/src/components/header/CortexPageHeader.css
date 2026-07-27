@@ -1,0 +1,178 @@
+.cortex-page-header {
+  inline-size: 100%;
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: clamp(20px, 4vw, 56px);
+  padding: clamp(24px, 3vw, 42px) clamp(20px, 3.5vw, 52px) 22px;
+  border: 0;
+  border-block-end: 3px solid var(--color-brand-yellow, #f2c800);
+  background: var(--cortex-shell-chrome-surface);
+  background-attachment: fixed;
+  background-size: 100vw 100dvh;
+  background-position: 0 0;
+  color: #fff;
+}
+
+.cortex-page-header__copy {
+  min-inline-size: 0;
+}
+
+.cortex-page-header__eyebrow {
+  margin: 0 0 8px;
+  color: var(--color-brand-yellow, #f2c800);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.cortex-page-header h1 {
+  max-inline-size: 22ch;
+  margin: 0;
+  color: #fff;
+  font-size: clamp(2rem, 3.3vw, 3.35rem);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.cortex-page-header__description {
+  max-inline-size: 72ch;
+  margin: 12px 0 0;
+  color: color-mix(in srgb, #fff 78%, transparent);
+  line-height: 1.5;
+}
+
+.cortex-page-header__right {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cortex-page-header__actions,
+.cortex-page-header__global-controls,
+.cortex-page-header__global-controls > [role="group"] {
+  display: flex;
+  min-inline-size: 0;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cortex-page-header__global-controls > [role="group"] {
+  padding-inline-start: 10px;
+  border-inline-start: 1px solid rgb(255 255 255 / 28%);
+}
+
+.cortex-page-header .cortex-page-header__actions :is(button, a) {
+  border-color: rgb(255 255 255 / 42%);
+  background: rgb(255 255 255 / 7%);
+  color: #fff;
+  box-shadow: none;
+}
+
+.cortex-page-header .cortex-page-header__actions :is(button, a):hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 68%);
+  background: rgb(255 255 255 / 13%);
+  color: #fff;
+}
+
+.cortex-page-header__global-controls :is(.sync-chip__button, .avatar-button) {
+  border-color: rgb(255 255 255 / 38%);
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+  box-shadow: none;
+}
+
+.cortex-page-header__global-controls :is(.sync-chip__button, .avatar-button):hover {
+  border-color: rgb(255 255 255 / 64%);
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+}
+
+.cortex-page-header :is(button, a):focus-visible {
+  outline: 3px solid var(--color-brand-yellow, #f2c800);
+  outline-offset: 3px;
+}
+
+/* Compatibility classes are deliberately more specific than their legacy
+ * sheets. Those sheets continue to own page-only details during migration. */
+.cortex-page-header.workspace-header,
+.cortex-page-header.institutional-page-header,
+.cortex-page-header.mensagens-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-content: normal;
+  align-items: end;
+  gap: clamp(20px, 4vw, 56px);
+  padding: clamp(24px, 3vw, 42px) clamp(20px, 3.5vw, 52px) 22px;
+  border: 0;
+  border-block-end: 3px solid var(--color-brand-yellow, #f2c800);
+  background: var(--cortex-shell-chrome-surface);
+  background-attachment: fixed;
+  background-size: 100vw 100dvh;
+  background-position: 0 0;
+  color: #fff;
+}
+
+.cortex-page-header.workspace-header h1,
+.cortex-page-header.institutional-page-header h1,
+.cortex-page-header.mensagens-header h1 {
+  color: #fff;
+}
+
+.cortex-page-header.workspace-header .workspace-header__eyebrow,
+.cortex-page-header.institutional-page-header .institutional-page-header__eyebrow,
+.cortex-page-header.mensagens-header .mensagens-header__eyebrow {
+  color: var(--color-brand-yellow, #f2c800);
+}
+
+.cortex-page-header.workspace-header .workspace-header__description,
+.cortex-page-header.institutional-page-header .institutional-page-header__description,
+.cortex-page-header.mensagens-header .mensagens-header__description {
+  color: color-mix(in srgb, #fff 78%, transparent);
+}
+
+@media (max-width: 760px) {
+  .cortex-page-header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    padding: 22px 18px 18px;
+  }
+
+  .cortex-page-header__right,
+  .cortex-page-header__actions,
+  .cortex-page-header__global-controls,
+  .cortex-page-header__global-controls > [role="group"] {
+    justify-content: flex-start;
+  }
+
+  .cortex-page-header__global-controls > [role="group"] {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
+  .cortex-page-header.workspace-header,
+  .cortex-page-header.institutional-page-header,
+  .cortex-page-header.mensagens-header {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    padding: 22px 18px 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cortex-page-header *,
+  .cortex-page-header *::before,
+  .cortex-page-header *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

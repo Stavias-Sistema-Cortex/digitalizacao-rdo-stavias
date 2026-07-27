@@ -89,14 +89,45 @@ public class VinculoColaboradorObraService {
             String papelNaObra,
             String atribuidoPor
     ) {
+        return vincularComId(
+                null,
+                obraId,
+                colaboradorId,
+                papelNaObra,
+                atribuidoPor
+        );
+    }
+
+    /**
+     * Variante canônica que preserva a identidade escolhida no cliente.
+     * O endpoint online continua podendo omitir o identificador.
+     */
+    @Transactional
+    public VinculoColaboradorObraResponse vincularComId(
+            String requestedVinculoId,
+            String obraId,
+            String colaboradorId,
+            String papelNaObra,
+            String atribuidoPor
+    ) {
         String normalizedObraId = exigirObra(obraId);
         String normalizedColaboradorId = exigirColaborador(colaboradorId);
         String papel = normalizarPapel(papelNaObra);
+        String canonicalRequestedId = requestedVinculoId == null
+                ? null
+                : normalizarId(requestedVinculoId, "vinculoId");
 
         VinculoAtual atual = buscarVinculo(normalizedColaboradorId, normalizedObraId);
         LocalDateTime agora = LocalDateTime.now();
 
         if (atual != null && "ATIVO".equals(atual.status())) {
+            if (canonicalRequestedId != null
+                    && !canonicalRequestedId.equals(atual.id())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Já existe vínculo ativo com outro identificador."
+                );
+            }
             return carregar(atual.id());
         }
 
@@ -104,7 +135,9 @@ public class VinculoColaboradorObraService {
         String estadoAnterior;
 
         if (atual == null) {
-            vinculoId = UUID.randomUUID().toString();
+            vinculoId = canonicalRequestedId == null
+                    ? UUID.randomUUID().toString()
+                    : canonicalRequestedId;
             estadoAnterior = "INEXISTENTE";
             jdbcTemplate.update(
                     """
@@ -365,7 +398,7 @@ public class VinculoColaboradorObraService {
                 """
                 SELECT CASE WHEN EXISTS (
                     SELECT 1 FROM colaborador
-                    WHERE id = ? AND ativo = 1 AND deletado_em IS NULL
+                    WHERE id = ? AND ativo = TRUE AND deletado_em IS NULL
                 ) THEN 1 ELSE 0 END
                 """,
                 Integer.class,

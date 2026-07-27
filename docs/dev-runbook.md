@@ -2,32 +2,84 @@
 
 ## Pré-requisitos
 
-- JDK 21 (Java 25 não é o runtime suportado para o gate Maven);
-- Node 22 e npm;
-- Docker Desktop para MySQL/compose;
-- `.env` local ignorado pelo Git, criado a partir de `.env.example`.
+- JDK 21 e Node 22;
+- PostgreSQL 18 acessível com o banco canônico `StaviasCortex`;
+- Docker Desktop apenas se a API/PWA forem executadas em containers;
+- `.env` local ignorado pelo Git, criado a partir de `.env.example`;
+- arquivos locais protegidos para senha PostgreSQL, HMAC de CPF, cursor de
+  Memória e chaves offline. O HMAC de OTP é exigido somente na ativação
+  explícita, não no runtime normal.
 
-No mínimo, preencha senhas do MySQL e uma chave CPF HMAC local aleatória. Não
-use CPF, e-mail, senha ou token real em fixture, log ou commit.
+Academy e Zeladoria não são bancos do Córtex. Elas podem ser configuradas
+somente como fontes MySQL externas de leitura e continuam desabilitadas por
+padrão.
 
-## Stack Docker local
+## Preparar o runtime PostgreSQL
+
+Copie o modelo e preencha apenas URLs não secretas, IDs de chave e caminhos de
+arquivos protegidos:
 
 ```bash
 cp .env.example .env
-# edite os valores locais
-./scripts/dev/run-compose.sh
 ```
 
-Serviços:
+O runtime normal usa `local,postgresql` e falha fechado sem schema V61, ALFA
+real ativo e o gate explícito. A sequência completa é:
 
-- PWA: `http://127.0.0.1:5173`
-- API: `http://127.0.0.1:8081`
-- MySQL: `127.0.0.1:3307`
-- readiness: `http://127.0.0.1:8081/api/readiness`
+```bash
+./scripts/dev/migrate-postgres-cortex.sh
+# Execute o bootstrap somente com a identidade real autorizada e a fonte
+# Academy somente leitura, conforme o runbook de clean start.
+./scripts/dev/bootstrap-postgres-alfa.sh
+CORTEX_POSTGRES_RUNTIME_READY=true \
+  ./scripts/dev/check-postgres-runtime-release.sh
+```
 
-O compose usa e-mail fake somente no perfil `local` e um volume persistente
-para anexos. Não há endpoint para ler OTPs fake: testes capturam o gateway por
-injeção; códigos nunca são expostos por uma rota de produção.
+`start-postgres-activation.sh` não faz parte da entrada normal por CPF. Use-o
+somente quando uma transição de ativação explicitamente autorizada exigir
+e-mail/OTP no processo separado descrito abaixo.
+
+Não crie ALFA, pessoa, obra, equipe, RDO, serviço, preço ou receita sintéticos
+para fazer o runtime parecer pronto. Consulte
+[cortex-postgresql-clean-start.md](operations/cortex-postgresql-clean-start.md)
+para a transição e o rollback.
+
+### Ambiente separado de ativação
+
+`.env.example` descreve somente o runtime normal e, por isso, não contém OTP,
+SMTP nem entrega financeira legada. Quando a transição de ativação for
+necessária, forneça `CORTEX_AUTH_OTP_HMAC_KEY_FILE`, `CORTEX_EMAIL_PROVIDER`,
+`CORTEX_SMTP_HOST`, `CORTEX_SMTP_USERNAME`, `CORTEX_SMTP_FROM` e
+`CORTEX_SMTP_PASSWORD_FILE` somente ao processo
+`start-postgres-activation.sh`, junto das variáveis PostgreSQL e da origem
+pública exigidas pelo script. Não grave essas variáveis em `.env` ou
+`.env.local`, pois esses arquivos são carregados pelos launchers normais.
+
+## Stack Docker local
+
+Depois de concluir os gates acima e definir
+`CORTEX_POSTGRES_RUNTIME_READY=true`, execute. As portas ficam sempre em
+loopback e podem ser escolhidas sem colidir com outro checkout:
+
+```bash
+CORTEX_WEB_PORT=15173 CORTEX_API_PORT=18081 \
+  ./scripts/dev/run-compose.sh
+```
+
+O Compose não contém um MySQL primário e não injeta a senha PostgreSQL no
+ambiente do container. `CORTEX_POSTGRES_DOCKER_URL` deve apontar para a mesma
+instância canônica, por exemplo via `host.docker.internal` no macOS. O helper
+valida somente os secrets do runtime normal; o HMAC de OTP pertence ao processo
+separado de ativação.
+
+- PWA: `http://localhost:${CORTEX_WEB_PORT:-5173}`
+- API: `http://127.0.0.1:${CORTEX_API_PORT:-8081}`
+- health pela mesma origem da PWA:
+  `http://localhost:${CORTEX_WEB_PORT:-5173}/api/health`
+- health direto da API:
+  `http://127.0.0.1:${CORTEX_API_PORT:-8081}/api/health`
+- readiness direto da API:
+  `http://127.0.0.1:${CORTEX_API_PORT:-8081}/api/readiness`
 
 ```bash
 docker compose -f compose.local.yml logs -f cortex-api cortex-web
@@ -36,35 +88,52 @@ docker compose -f compose.local.yml logs -f cortex-api cortex-web
 
 ## Processos locais separados
 
+Use dois terminais no mesmo worktree e escolha portas livres. O backend recebe
+a porta web exata para derivar CORS e a origem WebAuthn; o frontend embute
+somente `/api` e usa `CORTEX_API_TARGET` exclusivamente no proxy Vite:
+
 ```bash
-./scripts/dev/run-api.sh
+export CORTEX_API_PORT=18081
+export CORTEX_WEB_PORT=15173
+PORT="$CORTEX_API_PORT" ./scripts/dev/run-api.sh
 
 cd apps/web
 npm ci
-npm run dev:local
+VITE_CORTEX_AUTH_MODE=postgresql \
+VITE_CORTEX_API_BASE_URL=/api \
+CORTEX_API_TARGET="http://127.0.0.1:$CORTEX_API_PORT" \
+  npm exec vite -- --host localhost --port "$CORTEX_WEB_PORT" --strictPort
 ```
 
-A API local usa porta 8080 e a PWA 5173. `run-api.sh` valida banco e CPF HMAC,
-ativa o perfil `local` e não cria JWT. Autenticação online usa desafio OTP,
-cookie de sessão opaco e CSRF; passkeys usam WebAuthn.
+Acesse exatamente `http://localhost:$CORTEX_WEB_PORT` e valide
+`curl -fsS "http://localhost:$CORTEX_WEB_PORT/api/health"`. Uma porta
+`localhost` diferente é outra origem de navegador e, portanto, outra sessão,
+cookie, CSRF e origem WebAuthn. Não reutilize uma aba aberta por outro checkout.
+
+No runtime normal `postgresql`, o CPF resolve somente a identidade canônica já
+persistida em `StaviasCortex` e emite a sessão opaca; passkey continua como
+alternativa. Por decisão da operação colaborativa, esse endpoint não aplica um
+rate limit da aplicação nem emite `429`; uma proteção de borda, se necessária,
+deve ser configurada fora do contrato de login. Não há consulta MySQL ao Academy
+ou à Zeladoria durante uma autenticação do navegador e não há requisito de
+segredo OTP. A ativação por e-mail/OTP continua uma transição separada e
+explícita por `start-postgres-activation.sh`.
 
 ## Dados externos e importação
 
-Importação é opt-in. Configure `CORTEX_IMPORT_ENABLED=true` e as variáveis
-`CORTEX_ZELADORIA_DB_*` / `CORTEX_ACADEMY_DB_*` apenas quando o acesso às fontes
-for intencional. Com importação desativada, rotas administrativas respondem
-403. Nunca copie credenciais externas para compose ou documentação.
-
-Scripts úteis em `scripts/dev/` incluem busca de ativos/colaboradores,
-importações explícitas, histórico de sync e `smoke-stavia-sync.sh`. O smoke cria
-MySQL e dados `example.invalid` descartáveis, valida CORS/sessão/sync/StavIA e
-remove tudo ao encerrar.
+`CORTEX_IMPORT_ENABLED=false` é o padrão. Bootstrap e sincronização de
+Academy/Zeladoria só funcionam depois de configurar e verificar explicitamente
+URL, usuário com `SELECT` apenas no schema autorizado e arquivo de senha próprio
+para cada fonte. `CORTEX_SYNC_ENABLED=true` sozinho não cria essas credenciais
+nem comprova que a sincronização funciona. Nunca copie credenciais das fontes
+para Compose, documentação, logs ou fixtures.
 
 ## Testes
 
 ```bash
 cd apps/api
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
+JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -Ppostgresql-it verify
 
 cd ../web
 npm test -- --run
@@ -72,37 +141,38 @@ npm run lint
 npm run build
 ```
 
-Para habilitar os testes MySQL locais já anotados, exporte somente durante a
-execução:
+Os testes PostgreSQL usam containers descartáveis e não consultam nem alteram
+o banco local do operador.
 
-```bash
-export CORTEX_MYSQL_ROOT_PASSWORD='senha-local-do-container'
-cd apps/api
-JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
-```
+## Offline e sincronização
 
-Cada teste cria e apaga seu próprio schema. Flyway deve aplicar V1–V33 sem
-`repair`.
+- IDs e `clientMutationId` permanecem estáveis no IndexedDB.
+- Recarregar offline não autoriza API; somente um grant assinado abre o cofre
+  local.
+- O CPF offline apenas localiza e valida o grant colaborativo assinado; ele não
+  autoriza API. PIN, e-mail e OTP não desbloqueiam o cache. Para o cofre PRF,
+  registre uma passkey enquanto houver conexão.
+- Com o app aberto, online e com sessão online ativa, o replay idempotente é
+  solicitado após escrita local, abertura/montagem, reconexão, retorno da aba ao
+  primeiro plano, mudança de sessão, intervalo e retry agendado. Falhas e
+  conflitos ficam visíveis, nunca são descartados silenciosamente.
+- Uma PWA ou navegador fechados não recebem promessa universal de background
+  sync; o replay retoma quando a aplicação volta a executar nas condições
+  acima.
+- Para diagnosticar, confirme `/api/health`, `/api/readiness`, sessão,
+  escopo/capability, rota, recibo idempotente e evento ontológico.
 
-## Offline e sync
+## Financeiro
 
-- Mensagens, anexos e compras usam IDs/clientMutationId estáveis no IndexedDB.
-- Recarregar offline não autoriza chamadas à API; o grant offline serve apenas
-  ao cofre local verificado.
-- Na reconexão, acompanhe o estado no indicador de sync. Falhas permanecem
-  visíveis e podem ser repetidas; não são descartadas silenciosamente.
-- Para diagnosticar erro de sync, confirme nesta ordem: `/api/health`,
-  `/api/readiness`, sessão, scope/capability, rota e recibo idempotente.
+A superfície ativa contém somente:
 
-## Financeiro e autorização
+- Rastreio de receita;
+- Serviços e preços versionados;
+- PDOR de receita.
 
-ALFA possui acesso global. BETA exige vínculo ativo com a obra e capability
-financeira exata. O frontend só reflete o resultado de
-`/api/financeiro/capacidades`; a autoridade permanece no backend.
-
-Não semeie fornecedores, notas, totais ou gráficos para “preencher” a tela.
-Estados vazios e “sem vínculo orçamentário” são comportamento correto quando a
-consulta real não oferece dados.
+Receita é calculada a partir da execução aceita no RDO e do preço aplicável
+persistido. Não semeie custos, margens, compras, rateios ou gráficos
+demonstrativos.
 
 ## Antes de commitar
 
@@ -111,6 +181,5 @@ git status --short
 git diff --check
 ```
 
-Não versionar `.env*`, `target/`, `dist/`, `node_modules/`, `.DS_Store`,
-`.neurotrace/`, secrets, dumps ou dados pessoais. Para publicação, siga
-`docs/deploy-checklist.md` e `docs/production-runbook.md`.
+Não versione `.env*`, arquivos de segredo, `target/`, `dist/`,
+`node_modules/`, dumps ou dados pessoais.

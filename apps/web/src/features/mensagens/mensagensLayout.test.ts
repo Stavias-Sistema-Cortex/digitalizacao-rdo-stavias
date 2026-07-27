@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import {
+  measureMensagensGeometry,
+  readGeometryTokens,
+  VIEWPORTS,
+} from "../../../scripts/verify-mensagens-geometry.mjs";
 
 const css = readFileSync(
   new URL("./MensagensPage.css", import.meta.url),
@@ -108,7 +113,7 @@ describe("layout da aba Mensagens", () => {
    * da altura fixa. Mesma armadilha da altura — mínimo maior que o workspace
    * estoura a moldura em tela baixa.
    */
-  it("deixa colunas e altura para o container, mesmo na media query de 700px", () => {
+  it("deixa colunas para o container e altura para o fluxo, mesmo na media query de 700px", () => {
     const inicio = css.indexOf("@media (max-width: 700px)");
     const faixa = css.slice(inicio, css.indexOf("@media", inicio + 1));
     const naFaixa = (seletor: string) => {
@@ -117,7 +122,22 @@ describe("layout da aba Mensagens", () => {
       return faixa.slice(abre, faixa.indexOf("\n  }", abre));
     };
     expect(naFaixa(".mensagens-workspace")).not.toContain("grid-template-columns");
+    expect(naFaixa(".mensagens-workspace")).not.toContain("height:");
     expect(naFaixa(".mensagens-thread")).not.toContain("min-height: 560px");
+  });
+
+  it("mantém uma área de conversa utilizável enquanto o frame flexível cresce", () => {
+    let tokens: ReturnType<typeof readGeometryTokens> | undefined;
+    expect(() => {
+      tokens = readGeometryTokens(css);
+    }).not.toThrow();
+
+    expect(tokens?.workspaceMinimumHeight).toBe(512);
+    for (const viewport of VIEWPORTS) {
+      expect(
+        measureMensagensGeometry(viewport, tokens ?? {}).workspaceHeight,
+      ).toBeGreaterThanOrEqual(512);
+    }
   });
 
   it("distingue o registro que ainda não saiu do aparelho", () => {

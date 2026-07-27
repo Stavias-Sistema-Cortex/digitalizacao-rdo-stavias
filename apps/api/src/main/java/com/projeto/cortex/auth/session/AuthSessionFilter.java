@@ -55,13 +55,29 @@ public class AuthSessionFilter extends OncePerRequestFilter {
         request.removeAttribute(REQUEST_ATTRIBUTE_SESSION);
 
         Optional<String> token = cookies.readSessionToken(request);
-        Optional<ResolvedAuthSession> resolved = token.flatMap(sessions::resolve);
+        Optional<ClientInstanceProof> instance = ClientInstanceProof.from(
+                request
+        );
+        if (instance.isEmpty()) {
+            reject(response);
+            return;
+        }
+        Optional<ResolvedAuthSession> resolved = token.flatMap(raw ->
+                sessions.resolve(raw, instance.orElseThrow())
+        );
         if (resolved.isEmpty()) {
             reject(response);
             return;
         }
 
         ResolvedAuthSession session = resolved.orElseThrow();
+        if (!sessions.matchesClientInstance(
+                session,
+                instance.orElseThrow()
+        )) {
+            reject(response);
+            return;
+        }
         request.setAttribute(
                 CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
                 session.collaboratorId()

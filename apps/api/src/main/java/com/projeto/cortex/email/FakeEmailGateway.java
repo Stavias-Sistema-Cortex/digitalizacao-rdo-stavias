@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 /** In-process capture only; intentionally has no HTTP mailbox endpoint. */
 @Component
-@Profile({"local", "test"})
+@Profile("(local | test) & (!postgresql | postgresql-activation | legacy-finance)")
 @ConditionalOnProperty(
         prefix = "cortex.email",
         name = "provider",

@@ -2,12 +2,13 @@ package com.projeto.cortex.financeiro;
 
 import com.projeto.cortex.financeiro.core.FinanceValidation;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ResultadoOperacionalFinanceiroService {
@@ -21,6 +22,7 @@ public class ResultadoOperacionalFinanceiroService {
         this.previsao = previsao;
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResultadoOperacionalFinanceiroResponse buscar(
             String obraId, LocalDate de, LocalDate ate
     ) {
@@ -30,35 +32,43 @@ public class ResultadoOperacionalFinanceiroService {
         }
         Filtro filtro = new Filtro(obra, de, ate);
         Totais totais = jdbc.queryForObject(SQL_TOTAIS, (rs, row) -> new Totais(
-                zero(rs.getBigDecimal("producao")), zero(rs.getBigDecimal("receita")),
-                zero(rs.getBigDecimal("custo")), zero(rs.getBigDecimal("medida")),
-                zero(rs.getBigDecimal("aprovada")), zero(rs.getBigDecimal("faturada")),
-                zero(rs.getBigDecimal("recebida"))
+                rs.getLong("eligible_count"),
+                rs.getLong("evidence_count"),
+                rs.getBigDecimal("producao"),
+                rs.getBigDecimal("receita"),
+                rs.getBigDecimal("medida"),
+                rs.getBigDecimal("aprovada"),
+                rs.getBigDecimal("faturada"),
+                rs.getBigDecimal("recebida")
         ), filtro.args().toArray());
         List<ResultadoOperacionalFinanceiroResponse.Servico> servicos = jdbc.query(
                 SQL_SERVICOS, (rs, row) -> {
                     BigDecimal receita = rs.getBigDecimal("receita");
-                    BigDecimal custo = zero(rs.getBigDecimal("custo"));
-                    BigDecimal margem = receita == null ? null : receita.subtract(custo);
                     return new ResultadoOperacionalFinanceiroResponse.Servico(
                             rs.getString("nome"), rs.getString("unidade"),
-                            zero(rs.getBigDecimal("quantidade")), custo, receita, margem,
-                            receita == null || receita.signum() == 0 ? null
-                                    : margem.divide(receita, 4, RoundingMode.HALF_UP),
+                            rs.getBigDecimal("quantidade"), receita,
                             rs.getLong("rdos")
                     );
                 }, filtro.args().toArray());
-        BigDecimal margem = totais.receita.subtract(totais.custo);
         return new ResultadoOperacionalFinanceiroResponse(
-                obra, de, ate, totais.producao, totais.receita, totais.custo, margem,
-                totais.receita.signum() == 0 ? null
-                        : margem.divide(totais.receita, 4, RoundingMode.HALF_UP),
+                obra, de, ate, coverage(totais), totais.evidenceCount,
+                totais.producao, totais.receita,
                 totais.medida, totais.aprovada, totais.faturada, totais.recebida,
-                servicos, previsao.buscarAtual(obra)
+                servicos, previsao.buscarAtualSeExistente(obra)
         );
     }
 
-    private record Totais(BigDecimal producao, BigDecimal receita, BigDecimal custo,
+    private String coverage(Totais totals) {
+        if (totals.evidenceCount == 0) {
+            return "NO_ACCEPTED_EVIDENCE";
+        }
+        return totals.evidenceCount == totals.eligibleCount
+                ? "COMPLETE_ACCEPTED_EXACT"
+                : "PARTIAL_ACCEPTED_EXACT";
+    }
+
+    private record Totais(long eligibleCount, long evidenceCount,
+                          BigDecimal producao, BigDecimal receita,
                           BigDecimal medida, BigDecimal aprovada, BigDecimal faturada,
                           BigDecimal recebida) { }
     private record Filtro(String obraId, LocalDate de, LocalDate ate) {
@@ -71,9 +81,77 @@ public class ResultadoOperacionalFinanceiroService {
             return args;
         }
     }
-    private static BigDecimal zero(BigDecimal value) { return value == null ? BigDecimal.ZERO : value; }
-    private static final String BASE = " FROM execucao_servico_rdo WHERE obra_id = ? AND cancelada = 0 AND status_validacao IN ('REGISTRADA', 'VALIDADA') AND producao_rejeitada = 0";
-    private static final String SQL_TOTAIS = "SELECT COALESCE(SUM(quantidade_executada), 0) producao, COALESCE(SUM(receita_operacional_estimativa), 0) receita, COALESCE(SUM(custo_realizado), 0) custo, COALESCE(SUM(CASE WHEN estado_receita IN ('RECEITA_MEDIDA','RECEITA_APROVADA','RECEITA_FATURADA','RECEITA_RECEBIDA') THEN receita_operacional_estimativa ELSE 0 END), 0) medida, COALESCE(SUM(CASE WHEN estado_receita IN ('RECEITA_APROVADA','RECEITA_FATURADA','RECEITA_RECEBIDA') THEN receita_operacional_estimativa ELSE 0 END), 0) aprovada, COALESCE(SUM(CASE WHEN estado_receita IN ('RECEITA_FATURADA','RECEITA_RECEBIDA') THEN receita_operacional_estimativa ELSE 0 END), 0) faturada, COALESCE(SUM(CASE WHEN estado_receita = 'RECEITA_RECEBIDA' THEN receita_operacional_estimativa ELSE 0 END), 0) recebida" + BASE + " AND (? IS NULL OR data_execucao >= ?) AND (? IS NULL OR data_execucao <= ?)";
-    private static final String SQL_SERVICOS = "SELECT servico_nome nome, unidade_medida unidade, SUM(quantidade_executada) quantidade, SUM(custo_realizado) custo, SUM(receita_operacional_estimativa) receita, COUNT(DISTINCT rdo_id) rdos" + BASE + " AND (? IS NULL OR data_execucao >= ?) AND (? IS NULL OR data_execucao <= ?) GROUP BY servico_nome, unidade_medida ORDER BY servico_nome, unidade_medida";
-}
 
+    private static final String CANONICAL_CTE = """
+            WITH eligible AS (
+                SELECT execution.*
+                FROM execucao_servico_rdo execution
+                WHERE execution.obra_id = ?
+                  AND %s
+                  AND (? IS NULL OR execution.data_execucao >= ?)
+                  AND (? IS NULL OR execution.data_execucao <= ?)
+            ),
+            canonical AS (
+                SELECT execution.*
+                FROM eligible execution
+                %s
+                WHERE %s
+            )
+            """.formatted(
+            CanonicalRevenueEvidenceSql.ELIGIBLE_EXECUTION_PREDICATE,
+            CanonicalRevenueEvidenceSql.CANONICAL_EVENT_JOIN,
+            CanonicalRevenueEvidenceSql.ACCEPTED_EVIDENCE_PREDICATE
+    );
+
+    private static final String SQL_TOTAIS = CANONICAL_CTE + """
+            SELECT (SELECT COUNT(*) FROM eligible) AS eligible_count,
+                   COUNT(*) AS evidence_count,
+                   SUM(quantidade_executada) AS producao,
+                   SUM(revenue_amount) AS receita,
+                   SUM(CASE
+                       WHEN estado_receita IN (
+                           'RECEITA_MEDIDA',
+                           'RECEITA_APROVADA',
+                           'RECEITA_FATURADA',
+                           'RECEITA_RECEBIDA'
+                       ) THEN revenue_amount
+                       ELSE 0::numeric(31,2)
+                   END) AS medida,
+                   SUM(CASE
+                       WHEN estado_receita IN (
+                           'RECEITA_APROVADA',
+                           'RECEITA_FATURADA',
+                           'RECEITA_RECEBIDA'
+                       ) THEN revenue_amount
+                       ELSE 0::numeric(31,2)
+                   END) AS aprovada,
+                   SUM(CASE
+                       WHEN estado_receita IN (
+                           'RECEITA_FATURADA',
+                           'RECEITA_RECEBIDA'
+                       ) THEN revenue_amount
+                       ELSE 0::numeric(31,2)
+                   END) AS faturada,
+                   SUM(CASE
+                       WHEN estado_receita = 'RECEITA_RECEBIDA'
+                       THEN revenue_amount
+                       ELSE 0::numeric(31,2)
+                   END) AS recebida
+            FROM canonical
+            """;
+
+    private static final String SQL_SERVICOS = CANONICAL_CTE + """
+            SELECT service.nome AS nome,
+                   execution.unidade_medida AS unidade,
+                   SUM(execution.quantidade_executada) AS quantidade,
+                   SUM(execution.revenue_amount) AS receita,
+                   COUNT(DISTINCT execution.rdo_id) AS rdos
+            FROM canonical execution
+            JOIN catalogo_servico service
+              ON service.id = execution.service_id
+            GROUP BY execution.service_id,
+                     service.nome,
+                     execution.unidade_medida
+            ORDER BY service.nome, execution.unidade_medida
+            """;
+}

@@ -51,6 +51,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
             WebAuthnCeremony ceremony,
             ByteArray challenge,
             String requestJson,
+            String clientInstanceHash,
             int ttlSeconds
     ) {
         requireUuid(id, "Challenge WebAuthn inválido.");
@@ -62,6 +63,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 || challenge.isEmpty()
                 || requestJson == null
                 || requestJson.isBlank()
+                || !isCanonicalHash(clientInstanceHash)
                 || ttlSeconds != WebAuthnProperties.REQUIRED_CHALLENGE_TTL_SECONDS) {
             throw new IllegalArgumentException("Challenge WebAuthn inválido.");
         }
@@ -73,15 +75,18 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                     ceremony,
                     challenge_hash,
                     request_json,
+                    client_instance_hash,
+                    client_instance_bound,
                     expira_em
-                ) VALUES (?, ?, ?, ?, ?,
-                    TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)))
+                ) VALUES (?, ?, ?, ?, ?::jsonb, ?, TRUE,
+                    CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second'))
                 """,
                 id,
                 collaboratorId,
                 ceremony.name(),
                 sha256(challenge.getBytes()),
                 requestJson,
+                clientInstanceHash,
                 ttlSeconds
         );
         if (inserted != 1) {
@@ -98,10 +103,12 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<StoredWebAuthnChallenge> consumeChallenge(
             String id,
-            WebAuthnCeremony ceremony
+            WebAuthnCeremony ceremony,
+            String clientInstanceHash
     ) {
         if (WebAuthnUserHandle.parseCanonical(id).isEmpty()
-                || ceremony == null) {
+                || ceremony == null
+                || !isCanonicalHash(clientInstanceHash)) {
             return Optional.empty();
         }
         int consumed = jdbcTemplate.update(
@@ -112,9 +119,12 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                   AND ceremony = ?
                   AND consumido_em IS NULL
                   AND expira_em > CURRENT_TIMESTAMP(6)
+                  AND client_instance_bound = TRUE
+                  AND client_instance_hash = ?
                 """,
                 id,
-                ceremony.name()
+                ceremony.name(),
+                clientInstanceHash
         );
         if (consumed != 1) {
             return Optional.empty();
@@ -123,7 +133,10 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 """
                 SELECT id, colaborador_id, ceremony, request_json
                 FROM auth_webauthn_challenge
-                WHERE id = ? AND ceremony = ?
+                WHERE id = ?
+                  AND ceremony = ?
+                  AND client_instance_bound = TRUE
+                  AND client_instance_hash = ?
                 LIMIT 1
                 """,
                 (rs, rowNum) -> new StoredWebAuthnChallenge(
@@ -133,7 +146,8 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                         rs.getString("request_json")
                 ),
                 id,
-                ceremony.name()
+                ceremony.name(),
+                clientInstanceHash
         ).stream().findFirst();
     }
 
@@ -151,7 +165,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 JOIN auth_identity identidade
                   ON identidade.colaborador_id = colaborador.id
                 WHERE colaborador.id = ?
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -183,7 +197,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 WHERE credencial.credential_id_hash = ?
                   AND credencial.credential_id = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -306,7 +320,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                   ON identidade.colaborador_id = colaborador.id
                 WHERE credencial.colaborador_id = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -366,7 +380,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                   AND credencial.credential_id = ?
                   AND credencial.user_handle = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -399,7 +413,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                 WHERE credencial.credential_id_hash = ?
                   AND credencial.credential_id = ?
                   AND credencial.revogado_em IS NULL
-                  AND colaborador.ativo = 1
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                   AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                   AND identidade.status = 'ATIVA'
@@ -490,5 +504,9 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
         if (WebAuthnUserHandle.parseCanonical(value).isEmpty()) {
             throw new IllegalArgumentException(message);
         }
+    }
+
+    private boolean isCanonicalHash(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
     }
 }

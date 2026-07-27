@@ -1243,7 +1243,8 @@ public class FinanceLedgerService {
                     id, lancamento_id, obra_id, acao, ator_id, origem,
                     dispositivo_id, client_mutation_id, correlacao_id,
                     estado_anterior_json, estado_novo_json, resultado
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCESSO')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb,
+                          'SUCESSO')
                 """,
                 UUID.randomUUID().toString(), ledger.id(), ledger.obraId(),
                 action, audit.actorId(), audit.origin(), audit.deviceId(),
@@ -1264,8 +1265,8 @@ public class FinanceLedgerService {
                     status_anterior_id, status_novo_id, ator_id, origem,
                     dispositivo_id, client_mutation_id, correlacao_id,
                     estado_anterior_json, estado_novo_json, resultado
-                ) VALUES (?, 'LANCAMENTO', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          'SUCESSO')
+                ) VALUES (?, 'LANCAMENTO', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                          ?::jsonb, ?::jsonb, 'SUCESSO')
                 """,
                 UUID.randomUUID().toString(), saved.id(), saved.obraId(),
                 previous == null ? null : previous.statusId(), saved.statusId(),
@@ -1290,7 +1291,8 @@ public class FinanceLedgerService {
                     id, liquidacao_id, obra_id, acao, ator_id, origem,
                     dispositivo_id, client_mutation_id, correlacao_id,
                     estado_anterior_json, estado_novo_json, resultado
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUCESSO')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb,
+                          'SUCESSO')
                 """,
                 UUID.randomUUID().toString(), settlement.id(),
                 settlement.obraId(), action, audit.actorId(), audit.origin(),

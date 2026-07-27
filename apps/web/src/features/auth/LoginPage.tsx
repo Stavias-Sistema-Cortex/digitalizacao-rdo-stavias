@@ -9,10 +9,12 @@ import {
 import cortexLogo from "../../assets/login/cortex-logo.png";
 import {
   formatCpf,
+  onlyDigits,
   validateLoginForm,
   type LoginFieldErrors,
 } from "./loginValidation";
 import { autenticarPorCpf } from "./authService";
+import { queueOfflineGrantUnavailableNotice } from "./authNotice";
 import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
@@ -46,7 +48,7 @@ export function LoginPage() {
     };
   }, []);
 
-  async function handleSubmit(
+  async function authenticateCpf(
     event: SubmitEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
@@ -64,8 +66,11 @@ export function LoginPage() {
 
     setStatus("cpf");
     try {
-      await autenticarPorCpf(cpf);
-      window.location.assign("/");
+      const result = await autenticarPorCpf(onlyDigits(cpf));
+      if (result.offlineGrant === "UNAVAILABLE") {
+        queueOfflineGrantUnavailableNotice();
+      }
+      setStatus("idle");
     } catch (error: unknown) {
       setStatus("idle");
       setAuthError(errorMessage(error));
@@ -73,18 +78,26 @@ export function LoginPage() {
     }
   }
 
-  async function handlePasskeyLogin(): Promise<void> {
+  async function authenticatePasskey(): Promise<void> {
     if (loading || !online) {
       return;
     }
-    setStatus("passkey");
+
     setAuthError("");
+    const nextErrors = validateLoginForm(cpf);
+    setErrors(nextErrors);
+    if (nextErrors.cpf) {
+      cpfRef.current?.focus();
+      return;
+    }
+
+    setStatus("passkey");
     try {
-      await authenticateWithPasskey();
-      window.location.assign("/");
+      await authenticateWithPasskey(cpf);
     } catch (error: unknown) {
-      setAuthError(errorMessage(error));
       setStatus("idle");
+      setAuthError(errorMessage(error));
+      cpfRef.current?.focus();
     }
   }
 
@@ -124,7 +137,7 @@ export function LoginPage() {
             <p className="login__eyebrow">Área restrita</p>
             <h2>Entrar no sistema</h2>
             <p className="login__subtitle">
-              Informe o CPF vinculado ao seu cadastro no Academy.
+              Informe seu CPF para autenticar seu vínculo ativo de colaborador.
             </p>
           </header>
 
@@ -137,7 +150,7 @@ export function LoginPage() {
           <form
             className="login__form"
             onSubmit={(event) => {
-              void handleSubmit(event);
+              void authenticateCpf(event);
             }}
             noValidate
           >
@@ -164,6 +177,9 @@ export function LoginPage() {
                   if (errors.cpf) {
                     setErrors({});
                   }
+                  if (authError) {
+                    setAuthError("");
+                  }
                 }}
                 aria-invalid={errors.cpf ? true : undefined}
                 aria-describedby={errors.cpf ? `${cpfId}-error` : undefined}
@@ -180,34 +196,46 @@ export function LoginPage() {
               ) : null}
             </div>
 
-            <button
-              type="submit"
-              className="login__submit"
-              disabled={loading || !online}
-            >
-              {status === "cpf" ? (
-                <span className="login__submit-loading">
-                  <span className="login__spinner" aria-hidden="true" />
-                  Entrando...
-                </span>
-              ) : (
-                "Entrar"
-              )}
-            </button>
+            <div className="login__actions">
+              <button
+                type="submit"
+                className="login__submit"
+                disabled={loading || !online}
+              >
+                {status === "cpf" ? (
+                  <span className="login__submit-loading">
+                    <span className="login__spinner" aria-hidden="true" />
+                    Verificando acesso...
+                  </span>
+                ) : (
+                  "Entrar"
+                )}
+              </button>
 
-            <button
-              type="button"
-              className="login__passkey"
-              onClick={() => {
-                void handlePasskeyLogin();
-              }}
-              disabled={loading || !online}
-            >
-              {status === "passkey" ? "Confirmando..." : "Usar passkey"}
-            </button>
+              <button
+                type="button"
+                className="login__submit login__submit-secondary"
+                disabled={loading || !online}
+                onClick={() => {
+                  void authenticatePasskey();
+                }}
+              >
+                {status === "passkey" ? (
+                  <span className="login__submit-loading">
+                    <span className="login__spinner" aria-hidden="true" />
+                    Validando passkey...
+                  </span>
+                ) : (
+                  "Entrar com passkey"
+                )}
+              </button>
+            </div>
 
             {authError ? (
-              <p className="login__alert" role="alert">
+              <p
+                className="login__alert"
+                role="alert"
+              >
                 {authError}
               </p>
             ) : null}

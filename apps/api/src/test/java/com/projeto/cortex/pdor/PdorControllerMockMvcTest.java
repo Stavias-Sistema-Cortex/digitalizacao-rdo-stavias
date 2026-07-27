@@ -51,6 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc(addFilters = false)
 @Import({
         PdorApplicationService.class,
+        PdorSnapshotPublicationService.class,
         PdorExceptionHandler.class
 })
 class PdorControllerMockMvcTest {

@@ -3,6 +3,7 @@ package com.projeto.cortex.auth.webauthn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +52,29 @@ class WebAuthnPreMvcFilterTest {
         assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
         verify(limiter).allow(
                 WebAuthnRateLimitAction.AUTHENTICATION_VERIFY,
+                "203.0.113.10"
+        );
+        verify(chain, never()).doFilter(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    void rejectsOversizedOptionsBodyBeforeMvcAfterOneRateLimit()
+            throws Exception {
+        MockHttpServletRequest request = request(
+                "/api/auth/passkeys/authentication/options",
+                "x".repeat(4_097)
+        );
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(413);
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        verify(limiter, times(1)).allow(
+                WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
                 "203.0.113.10"
         );
         verify(chain, never()).doFilter(

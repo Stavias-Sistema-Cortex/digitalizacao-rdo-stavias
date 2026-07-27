@@ -2,6 +2,7 @@ export type NumericInput = number | "";
 
 export type RdoSyncStatus =
   | "LOCAL_ONLY"
+  | "LOCAL_PENDING"
   | "PENDING_SYNC"
   | "SYNCING"
   | "SYNCED"
@@ -9,6 +10,16 @@ export type RdoSyncStatus =
   | "CONFLICT";
 
 export type TurnoRdo = "DIURNO" | "NOTURNO";
+
+export type WorkforceAvailability =
+  | "AVAILABLE"
+  | "UNAVAILABLE"
+  | "UNKNOWN";
+
+export type WorkforceOrigin =
+  | "PREVIOUS_RDO"
+  | "AUTHORIZED_CONTEXT"
+  | "MANUAL";
 
 export type CondicaoClimatica =
   | ""
@@ -20,6 +31,11 @@ export type CondicaoClimatica =
 
 export interface MaoObraDraft {
   localId: string;
+  origemItemId: string;
+  sourceRdoId: string;
+  origin: WorkforceOrigin;
+  availability: WorkforceAvailability;
+  selected: boolean;
   colaboradorId: string;
   nomeColaborador: string;
   cargo: string;
@@ -79,6 +95,8 @@ export interface ControleGeometricoDraft {
 
 export interface ServicoExecutadoDraft {
   localId: string;
+  serviceId: string;
+  priceVersionId: string;
   servicoNome: string;
   itemContratualId: string;
   quantidadeExecutada: NumericInput;
@@ -87,8 +105,7 @@ export interface ServicoExecutadoDraft {
   trechoFinal: string;
   localizacao: string;
   turno: "" | TurnoRdo;
-  statusValidacao: "REGISTRADA" | "VALIDADA" | "REJEITADA";
-  custoRealizado: NumericInput;
+  statusValidacao: "" | "REGISTRADA" | "VALIDADA" | "REJEITADA";
   retrabalho: boolean;
   producaoRejeitada: boolean;
   observacoes: string;
@@ -106,6 +123,7 @@ export interface AlocacaoColaboradorDraft {
   funcao: string;
   centroCusto: string;
   tipoAlocacao:
+    | ""
     | "TRABALHO"
     | "DESLOCAMENTO"
     | "TREINAMENTO"
@@ -115,8 +133,7 @@ export interface AlocacaoColaboradorDraft {
     | "AFASTAMENTO"
     | "OUTRO";
   fonte: string;
-  status: "REGISTRADA" | "VALIDADA" | "CONFLITO";
-  custoHora: NumericInput;
+  status: "" | "REGISTRADA" | "VALIDADA" | "CONFLITO";
   observacoes: string;
 }
 
@@ -143,10 +160,33 @@ export interface RdoAttachmentDraft {
   metadata: Record<string, unknown>;
 }
 
+export interface RdoImportEvidence {
+  source: "IMPORTED_DOCUMENT";
+  rawWorksiteIdentity: {
+    numeroRdo: string;
+    obraId: string;
+    dataRdo: string;
+    cliente: string;
+    contrato: string;
+    rodovia: string;
+    cidade: string;
+    uf: string;
+  };
+  boundContext: {
+    obraId: string;
+    dataRdo: string;
+    receiptVersion: number;
+  };
+}
+
 export interface RdoDraft {
   id: string;
   obraId: string;
   programacaoId: string;
+  previousRdoId: string;
+  previousRdoNumber: string;
+  creationContextVersion: number | null;
+  apontadorColaboradorId: string;
   numeroRdo: string;
   dataRdo: string;
   cliente: string;
@@ -158,7 +198,7 @@ export interface RdoDraft {
   kmFinalProgramado: string;
   kmInicialInterditado: string;
   kmFinalInterditado: string;
-  turno: TurnoRdo;
+  turno: "" | TurnoRdo;
   horaInicio: string;
   horaFim: string;
   condicaoManha: CondicaoClimatica;
@@ -177,5 +217,6 @@ export interface RdoDraft {
   materiais: MaterialDraft[];
   controlesGeometricos: ControleGeometricoDraft[];
   attachments: RdoAttachmentDraft[];
+  importEvidence: RdoImportEvidence | null;
   syncStatus: RdoSyncStatus;
 }

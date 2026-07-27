@@ -1,11 +1,9 @@
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
+import { LOCAL_MUTATION_QUEUED_EVENT } from "./localMutationCoordinator";
+import { isSyncLeaseUnavailableError } from "./syncExecutionLease";
 
 export const AUTOMATIC_SYNC_INTERVAL_MS = 30_000;
-export const AUTOMATIC_SYNC_MAX_RETRY_DELAY_MS = 300_000;
-export const LOCAL_MUTATION_QUEUED_EVENT =
-  "cortex:local-mutation-queued";
-
-const AUTOMATIC_SYNC_INITIAL_RETRY_DELAY_MS = 1_000;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export type AutomaticSyncTrigger =
   | "STARTUP"
@@ -16,388 +14,177 @@ export type AutomaticSyncTrigger =
   | "AUTH_SESSION"
   | "RETRY";
 
-export interface AutomaticSyncRetryMetadata {
-  attempt: number;
-  nextAttemptAt: string | null;
-}
-
-export interface AutomaticSyncTimers {
-  setInterval: (
-    callback: () => void,
-    delay: number,
-  ) => number;
-  clearInterval: (timerId: number) => void;
-  setTimeout: (
-    callback: () => void,
-    delay: number,
-  ) => number;
-  clearTimeout: (timerId: number) => void;
-}
-
 interface SchedulerEventTarget {
-  addEventListener: (
-    type: string,
-    listener: EventListener,
-  ) => void;
-  removeEventListener: (
-    type: string,
-    listener: EventListener,
-  ) => void;
+  addEventListener(type: string, listener: EventListener): void;
+  removeEventListener(type: string, listener: EventListener): void;
 }
 
-export interface AutomaticSyncSchedulerOptions<TResult = unknown> {
-  syncNow: () => Promise<TResult>;
+interface SchedulerTimers {
+  setInterval(callback: () => void, delay: number): number;
+  clearInterval(timerId: number): void;
+  setTimeout(callback: () => void, delay: number): number;
+  clearTimeout(timerId: number): void;
+}
+
+export interface AutomaticSyncSchedulerOptions {
+  syncNow: () => Promise<unknown>;
   hasOnlineSession: () => boolean;
-  loadRetryMetadata: () => Promise<AutomaticSyncRetryMetadata>;
-  persistRetryMetadata: (
-    metadata: AutomaticSyncRetryMetadata,
-  ) => Promise<void>;
-  clearRetryMetadata: () => Promise<void>;
+  loadNextRetryAt: () => Promise<string | null>;
   isOnline?: () => boolean;
   now?: () => number;
-  random?: () => number;
-  timers?: AutomaticSyncTimers;
+  timers?: SchedulerTimers;
   eventTarget?: SchedulerEventTarget;
   visibilityTarget?: SchedulerEventTarget;
   getVisibilityState?: () => DocumentVisibilityState;
   intervalMs?: number;
-  shouldRetryResult?: (result: TResult) => boolean;
-  onSuccess?: (
-    trigger: AutomaticSyncTrigger,
-    result: TResult,
-  ) => void;
-  onError?: (
-    trigger: AutomaticSyncTrigger,
-    error: unknown,
-  ) => void;
+  onRun?: (trigger: AutomaticSyncTrigger) => void;
+  onSuccess?: (trigger: AutomaticSyncTrigger, result: unknown) => void;
+  onError?: (trigger: AutomaticSyncTrigger, error: unknown) => void;
 }
 
 export interface AutomaticSyncScheduler {
-  start: () => void;
-  request: (trigger: AutomaticSyncTrigger) => void;
-  dispose: () => void;
+  start(): void;
+  request(trigger: AutomaticSyncTrigger): void;
+  dispose(): void;
 }
 
-function defaultTimers(): AutomaticSyncTimers {
-  return {
-    setInterval: (callback, delay) =>
-      window.setInterval(callback, delay),
-    clearInterval: (timerId) => window.clearInterval(timerId),
-    setTimeout: (callback, delay) =>
-      window.setTimeout(callback, delay),
-    clearTimeout: (timerId) => window.clearTimeout(timerId),
-  };
-}
-
-function safeAttempt(value: number): number {
-  return Number.isFinite(value)
-    ? Math.max(0, Math.floor(value))
-    : 0;
-}
-
-function safeRandom(random: () => number): number {
-  const value = random();
-
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.min(1, Math.max(0, value));
-}
-
-export function nextRetryDelay(
-  attempt: number,
-  random: () => number = Math.random,
-): number {
-  const exponent = Math.max(0, safeAttempt(attempt) - 1);
-  const baseDelay = Math.min(
-    AUTOMATIC_SYNC_MAX_RETRY_DELAY_MS,
-    AUTOMATIC_SYNC_INITIAL_RETRY_DELAY_MS * 2 ** exponent,
-  );
-  const jitter = baseDelay * safeRandom(random);
-
-  return Math.min(
-    AUTOMATIC_SYNC_MAX_RETRY_DELAY_MS,
-    Math.floor(baseDelay + jitter),
-  );
-}
-
-function retryTimestamp(value: string | null): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const timestamp = Date.parse(value);
-
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-export function createAutomaticSyncScheduler<TResult = unknown>(
-  options: AutomaticSyncSchedulerOptions<TResult>,
+export function createAutomaticSyncScheduler(
+  options: AutomaticSyncSchedulerOptions,
 ): AutomaticSyncScheduler {
-  const now = options.now ?? Date.now;
-  const random = options.random ?? Math.random;
-  const timers = options.timers ?? defaultTimers();
   const eventTarget = options.eventTarget ?? window;
   const visibilityTarget = options.visibilityTarget ?? document;
+  const timers = options.timers ?? browserTimers();
+  const now = options.now ?? Date.now;
+  const isOnline = options.isOnline ?? (() => navigator.onLine);
   const getVisibilityState =
-    options.getVisibilityState ??
-    (() => document.visibilityState);
-  const isOnline =
-    options.isOnline ?? (() => navigator.onLine);
-  const intervalMs =
-    options.intervalMs ?? AUTOMATIC_SYNC_INTERVAL_MS;
+    options.getVisibilityState ?? (() => document.visibilityState);
+  const intervalMs = options.intervalMs ?? AUTOMATIC_SYNC_INTERVAL_MS;
 
   let started = false;
   let disposed = false;
   let intervalId: number | null = null;
   let retryTimerId: number | null = null;
-  let inFlightPromise: Promise<void> | null = null;
-  let pendingTrigger: AutomaticSyncTrigger | null = null;
-  let retryMetadataLoaded = false;
-  let retryMetadataPromise: Promise<void> | null = null;
-  let retryAttempt = 0;
-  let nextAttemptAt: number | null = null;
+  let retryRefreshVersion = 0;
+  let inFlight = false;
+  let followUpRequested = false;
+  let followUpTrigger: AutomaticSyncTrigger = "INTERVAL";
 
-  function canSynchronize(): boolean {
-    return isOnline() && options.hasOnlineSession();
+  function canRun(): boolean {
+    return !disposed && isOnline() && options.hasOnlineSession();
   }
 
   function clearRetryTimer(): void {
-    if (retryTimerId === null) {
-      return;
-    }
-
-    timers.clearTimeout(retryTimerId);
-    retryTimerId = null;
-  }
-
-  function scheduleRetryTimer(): void {
-    if (
-      disposed ||
-      nextAttemptAt === null ||
-      retryTimerId !== null
-    ) {
-      return;
-    }
-
-    retryTimerId = timers.setTimeout(() => {
+    if (retryTimerId !== null) {
+      timers.clearTimeout(retryTimerId);
       retryTimerId = null;
-      request("RETRY");
-    }, Math.max(0, nextAttemptAt - now()));
+    }
   }
 
-  function loadRetryMetadata(): Promise<void> {
-    if (retryMetadataLoaded) {
-      return Promise.resolve();
-    }
-
-    if (retryMetadataPromise) {
-      return retryMetadataPromise;
-    }
-
-    retryMetadataPromise = options
-      .loadRetryMetadata()
-      .then((metadata) => {
-        retryAttempt = safeAttempt(metadata.attempt);
-        nextAttemptAt = retryTimestamp(
-          metadata.nextAttemptAt,
-        );
-      })
-      .catch((error: unknown) => {
-        retryAttempt = 0;
-        nextAttemptAt = null;
-        options.onError?.("STARTUP", error);
-      })
-      .finally(() => {
-        retryMetadataLoaded = true;
-        retryMetadataPromise = null;
-      });
-
-    return retryMetadataPromise;
-  }
-
-  async function handleRunFailure(
-    trigger: AutomaticSyncTrigger,
-    error: unknown,
-  ): Promise<void> {
-    retryAttempt += 1;
-    nextAttemptAt =
-      now() + nextRetryDelay(retryAttempt, random);
-
-    try {
-      await options.persistRetryMetadata({
-        attempt: retryAttempt,
-        nextAttemptAt: new Date(nextAttemptAt).toISOString(),
-      });
-    } catch (persistenceError: unknown) {
-      options.onError?.(trigger, persistenceError);
-    }
-
-    options.onError?.(trigger, error);
-    scheduleRetryTimer();
-  }
-
-  function beginRun(trigger: AutomaticSyncTrigger): void {
+  async function refreshRetryTimer(): Promise<void> {
+    const refreshVersion = ++retryRefreshVersion;
     clearRetryTimer();
-    pendingTrigger = null;
-    let runFailed = false;
-
-    inFlightPromise = Promise.resolve()
-      .then(() => options.syncNow())
-      .then(async (result) => {
-        if (options.shouldRetryResult?.(result)) {
-          runFailed = true;
-          await handleRunFailure(
-            trigger,
-            new Error(
-              "A sincronização deixou operações pendentes para nova tentativa.",
-            ),
-          );
-          return;
+    if (!canRun()) return;
+    try {
+      const value = await options.loadNextRetryAt();
+      if (disposed || refreshVersion !== retryRefreshVersion || !value) return;
+      const timestamp = Date.parse(value);
+      // A due row is handled by the current/just-finished run. Avoid a tight
+      // loop if a corrupt or terminal row retained an old timestamp.
+      if (!Number.isFinite(timestamp) || timestamp <= now()) return;
+      retryTimerId = timers.setTimeout(() => {
+        retryTimerId = null;
+        if (timestamp > now()) {
+          void refreshRetryTimer();
+        } else {
+          request("RETRY");
         }
+      }, Math.min(MAX_TIMER_DELAY_MS, timestamp - now()));
+    } catch (error: unknown) {
+      options.onError?.("RETRY", error);
+    }
+  }
 
-        await options.clearRetryMetadata();
-        retryAttempt = 0;
-        nextAttemptAt = null;
-
-        if (!disposed) {
-          options.onSuccess?.(trigger, result);
-        }
-      })
-      .catch(async (error: unknown) => {
-        runFailed = true;
-
-        if (!disposed) {
-          await handleRunFailure(trigger, error);
-        }
-      })
-      .finally(() => {
-        inFlightPromise = null;
-
-        if (disposed || !pendingTrigger) {
-          return;
-        }
-
-        if (runFailed) {
-          scheduleRetryTimer();
-          return;
-        }
-
-        const nextTrigger = pendingTrigger;
-        pendingTrigger = null;
-        request(nextTrigger);
-      });
+  async function run(trigger: AutomaticSyncTrigger): Promise<void> {
+    inFlight = true;
+    options.onRun?.(trigger);
+    try {
+      const result = await options.syncNow();
+      if (!disposed) options.onSuccess?.(trigger, result);
+    } catch (error: unknown) {
+      if (
+        !disposed &&
+        !isSyncLeaseUnavailableError(error)
+      ) {
+        options.onError?.(trigger, error);
+      }
+    } finally {
+      inFlight = false;
+      await refreshRetryTimer();
+      if (!disposed && followUpRequested) {
+        const next = followUpTrigger;
+        followUpRequested = false;
+        request(next);
+      }
+    }
   }
 
   function request(trigger: AutomaticSyncTrigger): void {
-    if (disposed || !canSynchronize()) {
+    if (!canRun()) return;
+    if (inFlight) {
+      followUpRequested = true;
+      followUpTrigger = trigger;
       return;
     }
-
-    if (!retryMetadataLoaded) {
-      void loadRetryMetadata().then(() => {
-        request(trigger);
-      });
-      return;
-    }
-
-    if (inFlightPromise) {
-      pendingTrigger = trigger;
-      return;
-    }
-
-    if (
-      nextAttemptAt !== null &&
-      nextAttemptAt > now()
-    ) {
-      pendingTrigger = trigger;
-      scheduleRetryTimer();
-      return;
-    }
-
-    beginRun(trigger);
+    void run(trigger);
   }
 
-  const handleLocalMutationQueued: EventListener = () => {
-    request("LOCAL_WRITE");
-  };
-
-  const handleOnline: EventListener = () => {
-    request("ONLINE");
-  };
-
-  const handleAuthSessionChanged: EventListener = () => {
+  const onLocalWrite: EventListener = () => request("LOCAL_WRITE");
+  const onOnline: EventListener = () => request("ONLINE");
+  const onAuthSession: EventListener = () => {
+    retryRefreshVersion += 1;
+    clearRetryTimer();
     request("AUTH_SESSION");
   };
-
-  const handleVisibilityChange: EventListener = () => {
-    if (getVisibilityState() === "visible") {
-      request("VISIBILITY");
-    }
+  const onVisibility: EventListener = () => {
+    if (getVisibilityState() === "visible") request("VISIBILITY");
   };
 
   function start(): void {
-    if (started || disposed) {
-      return;
-    }
-
+    if (started || disposed) return;
     started = true;
-
-    eventTarget.addEventListener(
-      LOCAL_MUTATION_QUEUED_EVENT,
-      handleLocalMutationQueued,
-    );
-    eventTarget.addEventListener("online", handleOnline);
-    eventTarget.addEventListener(
-      AUTH_SESSION_CHANGED_EVENT,
-      handleAuthSessionChanged,
-    );
-    visibilityTarget.addEventListener(
-      "visibilitychange",
-      handleVisibilityChange,
-    );
-
-    intervalId = timers.setInterval(() => {
-      request("INTERVAL");
-    }, intervalMs);
-
+    eventTarget.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, onLocalWrite);
+    eventTarget.addEventListener("online", onOnline);
+    eventTarget.addEventListener(AUTH_SESSION_CHANGED_EVENT, onAuthSession);
+    visibilityTarget.addEventListener("visibilitychange", onVisibility);
+    intervalId = timers.setInterval(() => request("INTERVAL"), intervalMs);
     request("STARTUP");
+    void refreshRetryTimer();
   }
 
   function dispose(): void {
-    if (disposed) {
-      return;
-    }
-
+    if (disposed) return;
     disposed = true;
-    pendingTrigger = null;
-
-    eventTarget.removeEventListener(
-      LOCAL_MUTATION_QUEUED_EVENT,
-      handleLocalMutationQueued,
-    );
-    eventTarget.removeEventListener("online", handleOnline);
-    eventTarget.removeEventListener(
-      AUTH_SESSION_CHANGED_EVENT,
-      handleAuthSessionChanged,
-    );
-    visibilityTarget.removeEventListener(
-      "visibilitychange",
-      handleVisibilityChange,
-    );
-
-    if (intervalId !== null) {
-      timers.clearInterval(intervalId);
-      intervalId = null;
-    }
-
+    retryRefreshVersion += 1;
+    followUpRequested = false;
+    eventTarget.removeEventListener(LOCAL_MUTATION_QUEUED_EVENT, onLocalWrite);
+    eventTarget.removeEventListener("online", onOnline);
+    eventTarget.removeEventListener(AUTH_SESSION_CHANGED_EVENT, onAuthSession);
+    visibilityTarget.removeEventListener("visibilitychange", onVisibility);
+    if (intervalId !== null) timers.clearInterval(intervalId);
+    intervalId = null;
     clearRetryTimer();
   }
 
+  return { start, request, dispose };
+}
+
+function browserTimers(): SchedulerTimers {
   return {
-    start,
-    request,
-    dispose,
+    setInterval: (callback, delay) =>
+      globalThis.setInterval(callback, delay) as unknown as number,
+    clearInterval: (timerId) => globalThis.clearInterval(timerId),
+    setTimeout: (callback, delay) =>
+      globalThis.setTimeout(callback, delay) as unknown as number,
+    clearTimeout: (timerId) => globalThis.clearTimeout(timerId),
   };
 }

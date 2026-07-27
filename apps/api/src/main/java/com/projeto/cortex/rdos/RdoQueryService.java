@@ -39,6 +39,10 @@ public class RdoQueryService {
                 cabecalho.programacaoId(),
                 cabecalho.numeroRdo(),
                 cabecalho.dataRdo(),
+                cabecalho.previousRdoId(),
+                cabecalho.creationContextVersion(),
+                cabecalho.clientMutationId(),
+                cabecalho.apontadorColaboradorId(),
                 cabecalho.diaSemana(),
                 cabecalho.cliente(),
                 cabecalho.contrato(),
@@ -176,6 +180,10 @@ public class RdoQueryService {
                         programacao_id,
                         numero_rdo,
                         data_rdo,
+                        previous_rdo_id,
+                        creation_context_version,
+                        client_mutation_id,
+                        apontador_colaborador_id,
                         dia_semana,
                         cliente,
                         contrato,
@@ -208,6 +216,10 @@ public class RdoQueryService {
                             rs.getString("programacao_id"),
                             rs.getString("numero_rdo"),
                             rs.getDate("data_rdo").toLocalDate(),
+                            rs.getString("previous_rdo_id"),
+                            rs.getObject("creation_context_version", Long.class),
+                            rs.getString("client_mutation_id"),
+                            rs.getString("apontador_colaborador_id"),
                             rs.getString("dia_semana"),
                             rs.getString("cliente"),
                             rs.getString("contrato"),
@@ -251,7 +263,8 @@ public class RdoQueryService {
                     quantidade,
                     hora_inicio,
                     hora_fim,
-                    observacoes
+                    observacoes,
+                    origem_item_id
                 FROM rdo_mao_obra
                 WHERE rdo_id = ?
                 ORDER BY cargo, nome_colaborador, id
@@ -269,7 +282,8 @@ public class RdoQueryService {
                         rs.getTime("hora_fim") == null
                                 ? null
                                 : rs.getTime("hora_fim").toLocalTime(),
-                        rs.getString("observacoes")
+                        rs.getString("observacoes"),
+                        rs.getString("origem_item_id")
                 ),
                 rdoId
         );
@@ -427,6 +441,10 @@ public class RdoQueryService {
             String programacaoId,
             String numeroRdo,
             LocalDate dataRdo,
+            String previousRdoId,
+            Long creationContextVersion,
+            String clientMutationId,
+            String apontadorColaboradorId,
             String diaSemana,
             String cliente,
             String contrato,

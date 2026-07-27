@@ -1,12 +1,12 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
-import { getSession } from "../auth/authSession";
-import { useStaviaLauncher } from "../stavia/useStaviaLauncher";
+import { AUTH_SESSION_CHANGED_EVENT, getSession } from "../auth/authSession";
 import {
   listOperationalEvents,
 } from "../../lib/db/operationalEventRepository";
@@ -18,21 +18,23 @@ import type {
   OperationalEventRecord,
   RdoAttachmentRecord,
 } from "../../lib/db/db.types";
-import {
-  discardRejectedLocalRdo,
-  listLocalRdos,
-} from "../../lib/db/rdoRepository";
-import { createEmptyRdo } from "./createEmptyRdo";
+import { listLocalRdos } from "../../lib/db/rdoRepository";
 import { importarRdoArquivo } from "./importRdoExcel";
 import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
+import { RdoCreationDialog } from "./RdoCreationDialog";
 import { RdoLocalList } from "./RdoLocalList";
 import type { RdoDraft } from "./rdo.types";
+import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import "./RdoWorkspacePage.css";
 import {
   colaboradorStorageKey,
   setLastAccessedObraId,
 } from "../home/lastAccessedObra";
+import {
+  captureRdoExportSessionGuard,
+  type RdoExportSessionGuard,
+} from "./rdoExportSessionGuard";
 
 type WorkspaceMode =
   | {
@@ -43,9 +45,12 @@ type WorkspaceMode =
       draft: RdoDraft;
       isExisting: boolean;
       initialNotice?: string;
+      creationContext?: RdoCreationContextLookup;
     };
 
 export function RdoWorkspacePage() {
+  const createButtonRef = useRef<HTMLButtonElement | null>(null);
+  const loadGenerationRef = useRef(0);
   const [mode, setMode] =
     useState<WorkspaceMode>({
       type: "LIST",
@@ -62,29 +67,26 @@ export function RdoWorkspacePage() {
     useState(true);
   const [isImporting, setIsImporting] =
     useState(false);
-  const [discardingRdoId, setDiscardingRdoId] =
-    useState<string | null>(null);
+  const [isCreationDialogOpen, setIsCreationDialogOpen] =
+    useState(false);
+  const [pendingImport, setPendingImport] = useState<{
+    draft: RdoDraft;
+    notice: string;
+  } | null>(null);
 
   const [loadError, setLoadError] =
     useState("");
-  const { openStavia, setStaviaContext } =
-    useStaviaLauncher();
-
-  useEffect(() => {
-    if (mode.type === "FORM") {
-      setStaviaContext({
-        obraId: mode.draft.obraId,
-        rdoId: mode.draft.id,
-      });
-    }
-  }, [mode, setStaviaContext]);
+  const [exportSessionGuard, setExportSessionGuard] =
+    useState<RdoExportSessionGuard | null>(null);
 
   const loadRecords =
     useCallback(async () => {
+      const generation = ++loadGenerationRef.current;
       setIsLoading(true);
       setLoadError("");
 
       try {
+        const guard = captureRdoExportSessionGuard();
         const [
           localRecords,
           localEvents,
@@ -95,17 +97,22 @@ export function RdoWorkspacePage() {
           listAllRdoAttachments(),
         ]);
 
+        if (generation !== loadGenerationRef.current) return;
         setRecords(localRecords);
         setEvents(localEvents);
         setAttachments(localAttachments);
+        setExportSessionGuard(guard);
       } catch (error: unknown) {
+        if (generation !== loadGenerationRef.current) return;
         setLoadError(
           error instanceof Error
             ? error.message
             : "Falha ao carregar os RDOs locais.",
         );
       } finally {
-        setIsLoading(false);
+        if (generation === loadGenerationRef.current) {
+          setIsLoading(false);
+        }
       }
     }, []);
 
@@ -119,12 +126,41 @@ export function RdoWorkspacePage() {
     };
   }, [loadRecords]);
 
+  useEffect(() => {
+    let reloadTimer: number | null = null;
+
+    function resetForSession() {
+      loadGenerationRef.current += 1;
+      setRecords([]);
+      setEvents([]);
+      setAttachments([]);
+      setExportSessionGuard(null);
+      setMode({ type: "LIST" });
+      setPendingImport(null);
+      setIsCreationDialogOpen(false);
+      setIsImporting(false);
+      setLoadError("");
+      if (reloadTimer !== null) {
+        window.clearTimeout(reloadTimer);
+      }
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = null;
+        void loadRecords();
+      }, 0);
+    }
+
+    window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetForSession);
+      if (reloadTimer !== null) {
+        window.clearTimeout(reloadTimer);
+      }
+    };
+  }, [loadRecords]);
+
   function handleCreate() {
-    setMode({
-      type: "FORM",
-      draft: createEmptyRdo(),
-      isExisting: false,
-    });
+    setPendingImport(null);
+    setIsCreationDialogOpen(true);
   }
 
   function handleOpen(
@@ -143,39 +179,6 @@ export function RdoWorkspacePage() {
     });
   }
 
-  async function handleDiscardRejected(
-    record: LocalRdoRecord,
-  ) {
-    const recordLabel = record.numeroRdo || record.id;
-    const confirmed = window.confirm(
-      [
-        `Excluir ${recordLabel} deste dispositivo?`,
-        "A cópia local, os anexos e a pendência rejeitada serão removidos.",
-        "O rastro técnico de rejeição já registrado no servidor será preservado para auditoria.",
-      ].join("\n\n"),
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDiscardingRdoId(record.id);
-    setLoadError("");
-
-    try {
-      await discardRejectedLocalRdo(record.id);
-      await loadRecords();
-    } catch (error: unknown) {
-      setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível excluir o RDO rejeitado localmente.",
-      );
-    } finally {
-      setDiscardingRdoId(null);
-    }
-  }
-
   async function handleImportRdoFile(file: File) {
     setIsImporting(true);
     setLoadError("");
@@ -187,15 +190,24 @@ export function RdoWorkspacePage() {
         session?.nome ?? "",
       );
 
-      setMode({
-        type: "FORM",
-        draft: imported.draft,
-        isExisting: false,
-        initialNotice: [
-          imported.summary,
-          ...imported.warnings,
-        ].join(" "),
-      });
+      const notice = [
+        imported.summary,
+        ...imported.warnings,
+      ].join(" ");
+      if (
+        !imported.draft.obraId ||
+        imported.draft.creationContextVersion === null
+      ) {
+        setPendingImport({ draft: imported.draft, notice });
+        setIsCreationDialogOpen(true);
+      } else {
+        setMode({
+          type: "FORM",
+          draft: imported.draft,
+          isExisting: false,
+          initialNotice: notice,
+        });
+      }
     } catch (error: unknown) {
       setLoadError(
         error instanceof Error
@@ -223,6 +235,7 @@ export function RdoWorkspacePage() {
           initialDraft={mode.draft}
           isExisting={mode.isExisting}
           initialNotice={mode.initialNotice}
+          creationContext={mode.creationContext}
           onBackToList={() => {
             void handleBackToList();
           }}
@@ -250,6 +263,7 @@ export function RdoWorkspacePage() {
     >
       <RdoLocalList
         records={records}
+        exportSessionGuard={exportSessionGuard}
         events={events}
         attachments={attachments}
         isLoading={isLoading}
@@ -260,20 +274,40 @@ export function RdoWorkspacePage() {
         }}
         isImporting={isImporting}
         onOpen={handleOpen}
-        onDiscardRejected={(record) => {
-          void handleDiscardRejected(record);
-        }}
-        discardingRdoId={discardingRdoId}
         onRefresh={() => {
           void loadRecords();
         }}
-        onOpenStavia={(context) => {
-          openStavia({
-            obraId: context?.obraId ?? "",
-            rdoId: context?.rdoId ?? "",
-          });
-        }}
+        createButtonRef={createButtonRef}
       />
+      {isCreationDialogOpen ? (
+        <RdoCreationDialog
+          returnFocusRef={createButtonRef}
+          initialDraft={pendingImport?.draft}
+          onClose={() => {
+            setIsCreationDialogOpen(false);
+            setPendingImport(null);
+          }}
+          onCreated={(draft, creationContext) => {
+            setIsCreationDialogOpen(false);
+            setMode({
+              type: "FORM",
+              draft,
+              isExisting: true,
+              initialNotice:
+                [
+                  pendingImport?.notice,
+                  draft.syncStatus === "LOCAL_PENDING"
+                    ? "Rascunho local persistido; a sincronização aguardará o contexto canônico da obra."
+                    : "Rascunho local persistido e incluído na fila de sincronização.",
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+              creationContext,
+            });
+            setPendingImport(null);
+          }}
+        />
+      ) : null}
     </CortexShell>
   );
 }

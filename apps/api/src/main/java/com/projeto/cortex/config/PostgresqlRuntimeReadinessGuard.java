@@ -23,28 +23,30 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    private static final int CLEAN_START_REQUIRED_SCHEMA_VERSION = 44;
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "61";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
-            WHERE version = '%d'
+            WHERE version = '%s'
               AND success = TRUE
             """;
 
-    private static final String VERIFIED_ACTIVE_ALFA_COUNT_SQL = """
+    private static final String ACTIVE_ACADEMY_CPF_IDENTITY_COUNT_SQL = """
             SELECT COUNT(*)
             FROM colaborador c
             JOIN auth_identity ai ON ai.colaborador_id = c.id
             WHERE c.ativo = TRUE
               AND c.deletado_em IS NULL
-              AND c.papel_acesso = 'ALFA'
+              AND c.banco_origem = 'dbstavias_acad'
+              AND c.tabela_origem = 'usuarios'
               AND ai.status = 'ATIVA'
-              AND ai.email_verificado_em IS NOT NULL
+              AND ai.cpf_lookup_key_id IS NOT NULL
+              AND ai.cpf_lookup_hmac IS NOT NULL
             """;
 
     private final JdbcTemplate testJdbcTemplate;
-    private final Integer testRequiredSchemaVersion;
+    private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
     private Environment environment;
@@ -58,7 +60,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     PostgresqlRuntimeReadinessGuard(
             JdbcTemplate jdbcTemplate,
-            int requiredSchemaVersion,
+            String requiredSchemaVersion,
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
@@ -142,7 +144,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     private static void verifyReadiness(
             JdbcTemplate jdbcTemplate,
-            int requiredSchemaVersion,
+            String requiredSchemaVersion,
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
@@ -152,10 +154,10 @@ public final class PostgresqlRuntimeReadinessGuard implements
                             + "somente após a liberação operacional."
             );
         }
-        if (!surfaceRegistry.hasReleasedOperationalSurface()) {
+        if (!surfaceRegistry.hasCompleteRuntimeSurfaceSet()) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL bloqueado: nenhuma superfície operacional PostgreSQL segura "
-                            + "foi explicitamente liberada."
+                    "Runtime PostgreSQL bloqueado: o conjunto completo e exato de superfícies "
+                            + "operacionais PostgreSQL não foi liberado."
             );
         }
 
@@ -174,25 +176,27 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
         if (completedRequiredVersion == null || completedRequiredVersion < 1) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL exige a baseline V" + requiredSchemaVersion + "."
+                    "Runtime PostgreSQL exige a cadeia de migrações até V"
+                            + requiredSchemaVersion + "."
             );
         }
 
-        Integer verifiedActiveAlfas;
+        Integer activeAcademyIdentities;
         try {
-            verifiedActiveAlfas = jdbcTemplate.queryForObject(
-                    VERIFIED_ACTIVE_ALFA_COUNT_SQL,
+            activeAcademyIdentities = jdbcTemplate.queryForObject(
+                    ACTIVE_ACADEMY_CPF_IDENTITY_COUNT_SQL,
                     Integer.class
             );
         } catch (DataAccessException exception) {
             throw new IllegalStateException(
-                    "PostgreSQL Córtex não está pronto para validar o ALFA inicial.",
+                    "PostgreSQL Córtex não está pronto para validar a identidade Academy.",
                     exception
             );
         }
-        if (verifiedActiveAlfas == null || verifiedActiveAlfas < 1) {
+        if (activeAcademyIdentities == null || activeAcademyIdentities < 1) {
             throw new IllegalStateException(
-                    "Runtime PostgreSQL exige ao menos um ALFA ativo, autenticável e com e-mail verificado."
+                    "Runtime PostgreSQL exige ao menos uma identidade Academy ativa "
+                            + "com HMAC atual de CPF."
             );
         }
     }

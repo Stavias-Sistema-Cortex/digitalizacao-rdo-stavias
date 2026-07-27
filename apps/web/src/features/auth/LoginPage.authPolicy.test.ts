@@ -62,6 +62,21 @@ describe("LoginPage auth policy", () => {
     );
   });
 
+  it("defines the login action stack and secondary action only once", () => {
+    const loginCss = readFileSync(
+      new URL("./LoginPage.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(loginCss.match(/\.login__actions\s*\{/g)).toHaveLength(1);
+    expect(
+      loginCss.match(/\.cortex-login \.login__submit-secondary\s*\{/g),
+    ).toHaveLength(1);
+    expect(loginCss).toMatch(
+      /\.login__actions \.login__submit\s*\{[^}]*margin-top:\s*0/s,
+    );
+  });
+
   it("uses a teal focus ring for offline unlock actions", () => {
     const offlineCss = readFileSync(
       new URL("./OfflineUnlockPage.css", import.meta.url),
@@ -73,21 +88,27 @@ describe("LoginPage auth policy", () => {
     );
   });
 
-  it("keeps the offline card frame structural instead of permanently yellow", () => {
+  it("keeps the offline card solid and outside the liquid-glass treatment", () => {
     const offlineCss = readFileSync(
       new URL("./OfflineUnlockPage.css", import.meta.url),
       "utf8",
     );
 
     expect(offlineCss).toMatch(
-      /\.offline-unlock__card\s*\{[^}]*border:\s*2px solid #111312/s,
+      /\.offline-unlock__card\s*\{[^}]*border:\s*1px solid #d9ddda/s,
+    );
+    expect(offlineCss).toMatch(
+      /\.offline-unlock__card\s*\{[^}]*background:\s*#fff/s,
+    );
+    expect(offlineCss).toMatch(
+      /\.offline-unlock__card\s*\{[^}]*box-shadow:\s*none/s,
     );
     expect(offlineCss).not.toMatch(
-      /\.offline-unlock__card\s*\{[^}]*border:\s*2px solid #f2c800/s,
+      /\.offline-unlock__card\s*\{[^}]*(?:surface-glass|backdrop-filter)/s,
     );
   });
 
-  it("usa CPF direto e mantém a passkey como ação minimalista", () => {
+  it("usa CPF direto e mantém uma única alternativa por passkey", () => {
     const source = readFileSync(
       new URL("./LoginPage.tsx", import.meta.url),
       "utf8",
@@ -97,24 +118,20 @@ describe("LoginPage auth policy", () => {
     expect(source).not.toContain("filtroOfflinePronto");
     expect(source).not.toContain("login offline está habilitado");
     expect(source).not.toContain("cpfMascarado");
-    expect(source).toContain("autenticarPorCpf");
+    expect(source).toContain("autenticarPorCpf(onlyDigits(cpf))");
+    expect(source).not.toContain("emailOtpApi");
+    expect(source).not.toContain("requestCpfOtpChallenge");
+    expect(source).not.toContain("verifyEmailOtpChallenge");
+    expect(source).not.toMatch(/e-mail/i);
     expect(source).toContain("O login exige conexão com o Córtex.");
+    expect(source).toContain("authenticateWithPasskey(cpf)");
+    expect(source.match(/authenticateWithPasskey\(cpf\)/g)).toHaveLength(1);
     expect(source).toContain('"Entrar"');
-    expect(source).toContain("Usar passkey");
-    expect(source).toContain("authenticateWithPasskey");
-    const forbiddenPublicLoginTerms = [
-      "Enviar c\u00f3digo",
-      "C\u00f3digo de acesso",
-      "Reenviar c\u00f3digo",
-      'autoComplete="one-time-' + 'code"',
-      "chall" + "enge",
-      "e-" + "mail",
-      "em" + "ail",
-      "login__" + "divider",
-    ];
-    for (const term of forbiddenPublicLoginTerms) {
-      expect(source).not.toContain(term);
-    }
+    expect(source).toContain('"Entrar com passkey"');
+    expect(source).not.toContain("Código de acesso");
+    expect(source).not.toContain('autoComplete="one-time-code"');
     expect(source).not.toContain("PIN");
+    expect(source).not.toContain("offlineVault");
+    expect(source).not.toMatch(/localStorage|sessionStorage|indexedDB/);
   });
 });

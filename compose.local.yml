@@ -1,55 +1,57 @@
 services:
-  cortex-mysql:
-    image: mysql:8.4
-    container_name: cortex-mysql-local
-    environment:
-      MYSQL_DATABASE: cortex_dev
-      MYSQL_USER: cortex_app
-      MYSQL_PASSWORD: ${CORTEX_DB_PASSWORD:?Set CORTEX_DB_PASSWORD for the local MySQL user}
-      MYSQL_ROOT_PASSWORD: ${CORTEX_MYSQL_ROOT_PASSWORD:?Set CORTEX_MYSQL_ROOT_PASSWORD for local MySQL admin access}
-    ports:
-      - "3307:3306"
-    volumes:
-      - cortex_mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u\"$${MYSQL_USER}\" -p\"$${MYSQL_PASSWORD}\""]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   cortex-api:
     build:
       context: ./apps/api
     container_name: cortex-api-local
-    depends_on:
-      cortex-mysql:
-        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      CORTEX_DB_URL: jdbc:mysql://cortex-mysql:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-      CORTEX_DB_USER: cortex_app
-      CORTEX_DB_PASSWORD: ${CORTEX_DB_PASSWORD:?Set CORTEX_DB_PASSWORD for the API datasource}
+      SPRING_PROFILES_ACTIVE: local,postgresql
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      CORTEX_POSTGRES_URL: ${CORTEX_POSTGRES_DOCKER_URL:?Set the Docker-reachable canonical PostgreSQL JDBC URL}
+      CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_USER:?Set the least-privilege PostgreSQL role}
+      CORTEX_POSTGRES_RUNTIME_READY: ${CORTEX_POSTGRES_RUNTIME_READY:?Set true only after V61 and a real ALFA bootstrap}
+      CORTEX_POSTGRES_SCHEMA_READINESS_ENABLED: "true"
+
+      CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}
+      CORTEX_AUTH_COOKIE_SECURE: "false"
+      CORTEX_AUTH_COOKIE_SAME_SITE: Lax
+      CORTEX_AUTH_WEBAUTHN_RP_ID: localhost
+      CORTEX_AUTH_WEBAUTHN_RP_NAME: Córtex Local
+      CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}
       CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:?Set the local CPF HMAC key id}
-      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY:?Set the local CPF HMAC key material}
-      CORTEX_AUTH_DEV_ADMIN_ENABLED: ${CORTEX_AUTH_DEV_ADMIN_ENABLED:-true}
-      CORTEX_EMAIL_PROVIDER: fake
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac
+      CORTEX_AUTH_OFFLINE_GRANT_KEY_ID: ${CORTEX_AUTH_OFFLINE_GRANT_KEY_ID:?Set the local offline signing key id}
+      CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE: /run/secrets/cortex_offline_private
+      CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE: /run/secrets/cortex_offline_public
+      CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID:?Set the local memory cursor key id}
+      CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_memory_cursor_hmac
+      CORTEX_AUTH_DEV_ADMIN_ENABLED: "false"
+      CORTEX_AUTH_PROVISIONING_ENABLED: "false"
+
       CORTEX_STORAGE_PROVIDER: local
       CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
       CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
-      CORTEX_IMPORT_ENABLED: ${CORTEX_IMPORT_ENABLED:-true}
-      CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-true}
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
-      CORTEX_STAVIA_GENERATOR_MODE: ${CORTEX_STAVIA_GENERATOR_MODE:-deterministic}
-      CORTEX_STAVIA_INTERPRETER_MODE: ${CORTEX_STAVIA_INTERPRETER_MODE:-deterministic}
+      CORTEX_IMPORT_ENABLED: "false"
+      CORTEX_SYNC_ENABLED: "true"
       CORTEX_SYNC_INITIAL_DELAY_MS: ${CORTEX_SYNC_INITIAL_DELAY_MS:-10000}
       CORTEX_SYNC_FIXED_DELAY_MS: ${CORTEX_SYNC_FIXED_DELAY_MS:-300000}
-      CORTEX_ACADEMY_DB_URL: ${CORTEX_ACADEMY_DB_URL:-${ACAD_DB_URL:-}}
-      CORTEX_ACADEMY_DB_USER: ${CORTEX_ACADEMY_DB_USER:-${ACAD_DB_USER:-}}
-      CORTEX_ACADEMY_DB_PASSWORD: ${CORTEX_ACADEMY_DB_PASSWORD:-${ACAD_DB_PASSWORD:-}}
-      CORTEX_ZELADORIA_DB_URL: ${CORTEX_ZELADORIA_DB_URL:-${ZLD_DB_URL:-}}
-      CORTEX_ZELADORIA_DB_USER: ${CORTEX_ZELADORIA_DB_USER:-${ZLD_DB_USER:-}}
-      CORTEX_ZELADORIA_DB_PASSWORD: ${CORTEX_ZELADORIA_DB_PASSWORD:-${ZLD_DB_PASSWORD:-}}
+    secrets:
+      - source: cortex_postgres_password
+        target: CORTEX_POSTGRES_PASSWORD
+      - cortex_cpf_hmac
+      - cortex_offline_private
+      - cortex_offline_public
+      - cortex_memory_cursor_hmac
     ports:
-      - "8081:8080"
+      - "127.0.0.1:${CORTEX_API_PORT:-8081}:8080"
     volumes:
       - cortex_object_data:/var/lib/cortex/objects
     healthcheck:
@@ -64,14 +66,36 @@ services:
       context: ./apps/web
       args:
         VITE_CORTEX_API_BASE_URL: /api
+        VITE_CORTEX_AUTH_MODE: postgresql
+        VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:?Set the local offline public-key fingerprint}
         VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: ${CORTEX_STORAGE_MAX_SIZE_BYTES:-26214400}
     container_name: cortex-web-local
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run:rw,noexec,nosuid,nodev,size=1m,mode=1777
     depends_on:
       cortex-api:
         condition: service_healthy
     ports:
-      - "5173:8080"
+      - "127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"
+
+secrets:
+  cortex_postgres_password:
+    file: ${CORTEX_POSTGRES_PASSWORD_FILE:?Point to the local PostgreSQL password file}
+  cortex_cpf_hmac:
+    file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:?Point to the local CPF HMAC secret file}
+  cortex_offline_private:
+    file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE:?Point to the local PKCS8 private PEM}
+  cortex_offline_public:
+    file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:?Point to the local public PEM}
+  cortex_memory_cursor_hmac:
+    file: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:?Point to the local memory cursor HMAC secret file}
 
 volumes:
-  cortex_mysql_data:
   cortex_object_data:

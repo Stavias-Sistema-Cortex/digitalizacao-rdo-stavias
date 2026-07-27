@@ -11,9 +11,10 @@ spring:
       enabled: ALWAYS
 
   datasource:
-    url: ${CORTEX_DB_URL:jdbc:mysql://127.0.0.1:3306/cortex_dev?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    username: ${CORTEX_DB_USER:cortex_app}
-    password: ${CORTEX_DB_PASSWORD}
+    url: ${CORTEX_POSTGRES_URL}
+    username: ${CORTEX_POSTGRES_USER:joaolucas}
+    password: ${CORTEX_POSTGRES_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
@@ -22,7 +23,7 @@ spring:
 
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations: classpath:db/migration-postgresql
 
 server:
   port: ${PORT:${SERVER_PORT:8080}}
@@ -82,6 +83,7 @@ cortex:
       rate-limit-max-requests: ${CORTEX_AUTH_OTP_RATE_LIMIT_MAX_REQUESTS:5}
       rate-limit-global-max-requests: ${CORTEX_AUTH_OTP_RATE_LIMIT_GLOBAL_MAX_REQUESTS:100}
       rate-limit-window-seconds: ${CORTEX_AUTH_OTP_RATE_LIMIT_WINDOW_SECONDS:900}
+      max-request-body-bytes: ${CORTEX_AUTH_OTP_MAX_REQUEST_BODY_BYTES:4096}
       delivery:
         core-pool-size: ${CORTEX_AUTH_OTP_DELIVERY_CORE_POOL_SIZE:8}
         max-pool-size: ${CORTEX_AUTH_OTP_DELIVERY_MAX_POOL_SIZE:8}
@@ -116,6 +118,16 @@ cortex:
         batch-size: ${CORTEX_FINANCE_EMAIL_SCHEDULER_BATCH_SIZE:25}
         initial-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_INITIAL_DELAY_MS:30000}
         fixed-delay-ms: ${CORTEX_FINANCE_EMAIL_SCHEDULER_FIXED_DELAY_MS:60000}
+
+  ontology:
+    memory:
+      cursor-hmac:
+        current-key-id: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID:}
+        current-key-file: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:}
+        current-key-inline: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY:}
+        previous-key-id: ${CORTEX_MEMORY_CURSOR_HMAC_PREVIOUS_KEY_ID:}
+        previous-key-file: ${CORTEX_MEMORY_CURSOR_HMAC_PREVIOUS_KEY_FILE:}
+        previous-key-inline: ${CORTEX_MEMORY_CURSOR_HMAC_PREVIOUS_KEY:}
 
   storage:
     provider: ${CORTEX_STORAGE_PROVIDER:}
@@ -159,17 +171,3 @@ cortex:
       url: ${ACAD_DB_URL:}
       username: ${ACAD_DB_USER:}
       password: ${ACAD_DB_PASSWORD:}
-
-  stavia:
-    generator-mode: ${CORTEX_STAVIA_GENERATOR_MODE:prompt}
-    interpreter-mode: ${CORTEX_STAVIA_INTERPRETER_MODE:llm-on-doubt}
-    llm:
-      base-url: ${CORTEX_STAVIA_LLM_BASE_URL:http://localhost:11434/v1}
-      model: ${CORTEX_STAVIA_LLM_MODEL:gemma4:latest}
-      api-key: ${CORTEX_STAVIA_LLM_API_KEY:}
-      connect-timeout-ms: 2000
-      read-timeout-ms: ${CORTEX_STAVIA_LLM_READ_TIMEOUT_MS:45000}
-      max-evidences: 50
-      confidence-threshold: 0.45
-      breaker-failure-threshold: 3
-      breaker-open-seconds: 30

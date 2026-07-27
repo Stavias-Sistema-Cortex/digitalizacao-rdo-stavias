@@ -20,7 +20,8 @@ cortex_require_text CORTEX_SMTP_HOST
 cortex_require_text CORTEX_SMTP_USERNAME
 cortex_require_text CORTEX_SMTP_FROM
 cortex_require_secret_file CORTEX_SMTP_PASSWORD_FILE
-cortex_require_text CORTEX_CORS_ALLOWED_ORIGINS
+cortex_require_text CORTEX_PUBLIC_ORIGIN
+export CORTEX_CORS_ALLOWED_ORIGINS="$CORTEX_PUBLIC_ORIGIN"
 cortex_require_psql
 cortex_psql_connection
 cortex_verify_target_database

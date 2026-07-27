@@ -1,0 +1,12 @@
+{
+  "eval_id": 2,
+  "eval_name": "offline-rdo",
+  "prompt": "Analise evals/files/offline-rdo-fixture.md como continuação do Cortex 3. O autor diz que o Novo RDO e o sync estão prontos. Produza review.md com achados priorizados e critérios de aceite funcionais, sem escrever implementação.",
+  "assertions": [
+    "Flags obra-demo, RDO-001, and named workers in production source as fabricated operational data",
+    "Requires selecting an authorized real obra and preserving a stable client-generated UUID with authoritative collision-safe numbering",
+    "Requires previous eligible RDO workforce provenance keyed by collaborator ID with deselection, addition, and clearable apontador",
+    "Requires an atomic IndexedDB transaction for domain snapshot, outbox mutation, and pending event plus automatic synchronization triggers",
+    "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates"
+  ]
+}

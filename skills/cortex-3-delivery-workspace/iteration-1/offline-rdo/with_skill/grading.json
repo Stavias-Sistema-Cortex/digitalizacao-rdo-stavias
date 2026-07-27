@@ -1,0 +1,63 @@
+{
+  "expectations": [
+    {
+      "text": "Flags obra-demo, RDO-001, and named workers in production source as fabricated operational data",
+      "passed": true,
+      "evidence": "review.md, P0 at lines 9-11, explicitly identifies `obra-demo`, `RDO-001`, João, and Carlos as hard-coded production data and calls them fictional operational data."
+    },
+    {
+      "text": "Requires selecting an authorized real obra and preserving a stable client-generated UUID with authoritative collision-safe numbering",
+      "passed": true,
+      "evidence": "Acceptance criteria 1-2 (review.md lines 48-49) require selecting an authorized real obra and generating a client UUID once; criterion 4 (line 51) requires authoritative distinct numbers for concurrent creations without changing the UUID."
+    },
+    {
+      "text": "Requires previous eligible RDO workforce provenance keyed by collaborator ID with deselection, addition, and clearable apontador",
+      "passed": true,
+      "evidence": "Acceptance criterion 3 (review.md line 50) requires the latest eligible prior RDO, provenance by `colaboradorId`, initially selected authorized workers, visible deselected unavailable workers, add/remove selection, and an apontador that can be changed or cleared."
+    },
+    {
+      "text": "Requires an atomic IndexedDB transaction for domain snapshot, outbox mutation, and pending event plus automatic synchronization triggers",
+      "passed": true,
+      "evidence": "Acceptance criterion 2 (review.md line 49) requires one IndexedDB transaction storing the draft snapshot, versioned canonical mutation, and correlated pending event; criterion 5 (line 52) requires automatic triggers after login, successful local write, network return, and focus."
+    },
+    {
+      "text": "Requires offline reload and automatic reconnect replay evidence with literal persisted status and no duplicates",
+      "passed": true,
+      "evidence": "Acceptance criteria 2, 5, and 6 (review.md lines 49, 52-53) require offline reload preservation, persisted literal status, automatic reconnect without pressing sync, and repeated reload/reconnect tests proving a single creation/event with no duplicates."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "claims": [
+    {
+      "claim": "The only supplied test proves navigation, not valid creation, offline persistence, or synchronization.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture states that one component test only checks navigation to `/rdos/novo` and separately states there are no IndexedDB, previous-RDO, or reload/offline/reconnect tests (fixture lines 25-31)."
+    },
+    {
+      "claim": "The current synchronization is manual rather than automatic.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture says `syncNow()` exists and that sync runs only when the user presses `Sincronizar` (fixture lines 18-22 and 31)."
+    },
+    {
+      "claim": "The production creation path uses fabricated worksite, RDO number, and worker data.",
+      "type": "factual",
+      "verified": true,
+      "evidence": "The fixture hard-codes `obra-demo`, `RDO-001`, and João/Carlos with null collaborator IDs (fixture lines 6-13), and confirms these appear in production source (line 32)."
+    }
+  ],
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "reason": "The assertions check whether the review states the target requirements, but none requires grounding its conclusion in the supplied fixture evidence. Add an assertion that cites the hard-coded values, manual trigger, and missing tests so a generic offline-sync checklist cannot pass."
+      }
+    ],
+    "overall": "The assertions cover the principal acceptance requirements well, but should also test fixture-specific evidence and the requested prioritization of findings."
+  }
+}

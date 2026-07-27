@@ -14,6 +14,7 @@ import com.projeto.cortex.sync.SyncMutationContext;
 import com.projeto.cortex.sync.SyncOperationHandler;
 import com.projeto.cortex.sync.SyncPushRequest;
 import java.util.Set;
+import org.springframework.context.annotation.Profile;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 @Component
+@Profile("legacy-finance")
 public class FinancePurchaseSyncOperationHandler
         implements SyncOperationHandler {
 

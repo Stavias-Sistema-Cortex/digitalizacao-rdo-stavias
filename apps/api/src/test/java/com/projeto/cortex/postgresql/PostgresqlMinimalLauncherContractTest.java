@@ -81,6 +81,7 @@ class PostgresqlMinimalLauncherContractTest {
                 "HealthController.class",
                 "ReadinessController.class",
                 "AuthController.class",
+                "EmailOtpAuthenticationPolicy.class",
                 "PostgresqlActivationSessionProfileResolver.class",
                 "AuthFilterConfiguration.class",
                 "PostgresqlActivationGateConfiguration.class",
@@ -169,7 +170,8 @@ class PostgresqlMinimalLauncherContractTest {
         assertThat(pom).contains(
                 "<id>postgresql-it</id>",
                 "<artifactId>maven-failsafe-plugin</artifactId>",
-                "<argLine>-Dnet.bytebuddy.experimental=true</argLine>",
+                "-javaagent:${settings.localRepository}/net/bytebuddy/byte-buddy-agent/",
+                "-Dnet.bytebuddy.experimental=true</argLine>",
                 "<include>**/*IT.java</include>",
                 "<goal>integration-test</goal>",
                 "<goal>verify</goal>"

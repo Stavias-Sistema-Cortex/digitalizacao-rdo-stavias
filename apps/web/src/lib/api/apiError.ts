@@ -1,6 +1,8 @@
 const API_ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 const GENERIC_API_ERROR_MESSAGE =
   "Não foi possível concluir a solicitação ao Córtex.";
+const REAUTHENTICATION_REQUIRED_MESSAGE =
+  "Sua sessão online expirou ou foi substituída por outra aba. Entre novamente para sincronizar.";
 const ACTIVATION_ONLY_MESSAGE =
   "Ativação inicial do Córtex em andamento.";
 
@@ -18,6 +20,28 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+  }
+}
+
+export type ApiTransportFailureKind =
+  | "CONNECTION"
+  | "TIMEOUT"
+  | "REMOTE_SESSION_ISOLATED"
+  | "CLIENT_INSTANCE_REAUTH_REQUIRED"
+  | "CLIENT_INSTANCE_UNAVAILABLE";
+
+/** A typed transport failure so retry decisions never inspect display text. */
+export class ApiTransportError extends Error {
+  readonly kind: ApiTransportFailureKind;
+
+  constructor(
+    message: string,
+    kind: ApiTransportFailureKind,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "ApiTransportError";
+    this.kind = kind;
   }
 }
 
@@ -63,6 +87,8 @@ export function apiError(body: unknown, status: number): ApiError {
   return new ApiError(
     code === "CORTEX_ACTIVATION_ONLY"
       ? ACTIVATION_ONLY_MESSAGE
+      : status === 401
+        ? REAUTHENTICATION_REQUIRED_MESSAGE
       : GENERIC_API_ERROR_MESSAGE,
     status,
     code,

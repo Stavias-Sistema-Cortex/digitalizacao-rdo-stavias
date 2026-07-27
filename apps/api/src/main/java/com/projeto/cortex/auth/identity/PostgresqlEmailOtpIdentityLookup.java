@@ -10,8 +10,8 @@ import org.springframework.stereotype.Repository;
 
 /** PostgreSQL-only e-mail lookup. It never queries protected CPF material. */
 @Repository
-@Profile("postgresql-common")
-public final class PostgresqlEmailOtpIdentityLookup
+@Profile("postgresql-activation")
+public class PostgresqlEmailOtpIdentityLookup
         implements AuthenticationChallengeLookup {
 
     private static final String AMBIGUOUS_IDENTITY_MESSAGE =

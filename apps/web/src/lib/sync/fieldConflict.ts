@@ -1,202 +1,162 @@
-export interface FieldConflictValues {
-  base?: unknown;
-  local?: unknown;
-  remote?: unknown;
+import { canonicalMutationJson } from "./mutationEnvelope";
+
+export interface FieldValueEvidence {
+  present: boolean;
+  value?: unknown;
 }
 
-export type FieldConflicts = Record<string, FieldConflictValues>;
+export interface FieldConflictEvidence {
+  field: string;
+  base: FieldValueEvidence;
+  local: FieldValueEvidence;
+  remote: FieldValueEvidence;
+}
+
+export interface RemoteSnapshotEvidence {
+  complete: boolean;
+  snapshot: Record<string, unknown> | null;
+}
 
 export interface FieldConflictResolution {
   merged: Record<string, unknown>;
-  conflicts: FieldConflicts;
+  conflicts: FieldConflictEvidence[];
   canAutoMerge: boolean;
+}
+
+export function remoteSnapshotEvidence(
+  conflict: Record<string, unknown> | null | undefined,
+): RemoteSnapshotEvidence {
+  if (!conflict || conflict.remoteCompleto !== true) {
+    return { complete: false, snapshot: null };
+  }
+  const candidate =
+    conflict.snapshotRemoto ?? conflict.estadoRemoto ?? conflict.remote;
+  if (!isRecord(candidate)) {
+    return { complete: false, snapshot: null };
+  }
+  // Clone and validate with the exact canonical serializer used by v13.
+  return {
+    complete: true,
+    snapshot: JSON.parse(canonicalMutationJson(candidate)) as Record<
+      string,
+      unknown
+    >,
+  };
 }
 
 export function classifyFieldConflict(
   baseValues: Record<string, unknown>,
   localValues: Record<string, unknown>,
-  remoteValues: Record<string, unknown>,
+  remote: RemoteSnapshotEvidence,
 ): FieldConflictResolution {
+  if (!remote.complete || !remote.snapshot) {
+    const fields = changedFields(baseValues, localValues);
+    return {
+      merged: cloneRecord(localValues),
+      conflicts: fields.map((field) => ({
+        field,
+        base: fieldEvidence(baseValues, field),
+        local: fieldEvidence(localValues, field),
+        remote: { present: false },
+      })),
+      canAutoMerge: false,
+    };
+  }
+
   const merged: Record<string, unknown> = {};
-  const conflicts: FieldConflicts = {};
+  const conflicts: FieldConflictEvidence[] = [];
   const fields = new Set([
     ...Object.keys(baseValues),
     ...Object.keys(localValues),
-    ...Object.keys(remoteValues),
+    ...Object.keys(remote.snapshot),
   ]);
 
   for (const field of [...fields].sort()) {
-    const base = fieldValue(baseValues, field);
-    const local = fieldValue(localValues, field);
-    const remote = fieldValue(remoteValues, field);
+    const base = fieldEvidence(baseValues, field);
+    const local = fieldEvidence(localValues, field);
+    const remoteValue = fieldEvidence(remote.snapshot, field);
 
-    if (sameFieldValue(local, remote)) {
-      copyPresentValue(merged, field, local);
-      continue;
+    if (sameValue(local, remoteValue)) {
+      copyField(merged, field, local);
+    } else if (sameValue(local, base)) {
+      copyField(merged, field, remoteValue);
+    } else if (sameValue(remoteValue, base)) {
+      copyField(merged, field, local);
+    } else {
+      copyField(merged, field, local);
+      conflicts.push({ field, base, local, remote: remoteValue });
     }
-    if (sameFieldValue(local, base)) {
-      copyPresentValue(merged, field, remote);
-      continue;
-    }
-    if (sameFieldValue(remote, base)) {
-      copyPresentValue(merged, field, local);
-      continue;
-    }
-
-    copyPresentValue(merged, field, local);
-    setOwnDataProperty(
-      conflicts,
-      field,
-      conflictValues(base, local, remote),
-    );
   }
 
   return {
-    canAutoMerge: Object.keys(conflicts).length === 0,
     merged,
     conflicts,
+    canAutoMerge: conflicts.length === 0,
   };
 }
 
-interface PresentFieldValue {
-  present: boolean;
-  value: unknown;
-  canonical: string | null;
+function changedFields(
+  base: Record<string, unknown>,
+  local: Record<string, unknown>,
+): string[] {
+  return [...new Set([...Object.keys(base), ...Object.keys(local)])]
+    .filter(
+      (field) =>
+        !sameValue(
+          fieldEvidence(base, field),
+          fieldEvidence(local, field),
+        ),
+    )
+    .sort();
 }
 
-function fieldValue(
+function fieldEvidence(
   values: Record<string, unknown>,
   field: string,
-): PresentFieldValue {
-  const present = Object.prototype.hasOwnProperty.call(values, field);
-  const value = values[field];
-
-  return {
-    present,
-    value,
-    canonical: present ? canonicalJson(value) : null,
-  };
+): FieldValueEvidence {
+  if (!Object.prototype.hasOwnProperty.call(values, field)) {
+    return { present: false };
+  }
+  return { present: true, value: values[field] };
 }
 
-function sameFieldValue(
-  left: PresentFieldValue,
-  right: PresentFieldValue,
+function sameValue(
+  left: FieldValueEvidence,
+  right: FieldValueEvidence,
 ): boolean {
-  return left.present === right.present && (
-    !left.present || left.canonical === right.canonical
+  return (
+    left.present === right.present &&
+    (!left.present ||
+      canonicalMutationJson(left.value) ===
+        canonicalMutationJson(right.value))
   );
 }
 
-function copyPresentValue(
+function copyField(
   target: Record<string, unknown>,
   field: string,
-  source: PresentFieldValue,
+  evidence: FieldValueEvidence,
 ): void {
-  if (source.present) {
-    setOwnDataProperty(target, field, source.value);
+  if (evidence.present) {
+    Object.defineProperty(target, field, {
+      configurable: true,
+      enumerable: true,
+      value: evidence.value,
+      writable: true,
+    });
   }
 }
 
-function setOwnDataProperty<T>(
-  target: Record<string, T>,
-  field: string,
-  value: T,
-): void {
-  Object.defineProperty(target, field, {
-    configurable: true,
-    enumerable: true,
-    value,
-    writable: true,
-  });
+function cloneRecord(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  return JSON.parse(canonicalMutationJson(value)) as Record<string, unknown>;
 }
 
-function conflictValues(
-  base: PresentFieldValue,
-  local: PresentFieldValue,
-  remote: PresentFieldValue,
-): FieldConflictValues {
-  return {
-    ...(base.present ? { base: base.value } : {}),
-    ...(local.present ? { local: local.value } : {}),
-    ...(remote.present ? { remote: remote.value } : {}),
-  };
-}
-
-function canonicalJson(value: unknown): string {
-  return canonicalJsonAt(value, "$", new WeakSet<object>());
-}
-
-function canonicalJsonAt(
-  value: unknown,
-  path: string,
-  ancestors: WeakSet<object>,
-): string {
-  if (value === null) {
-    return "null";
-  }
-
-  switch (typeof value) {
-    case "string":
-    case "boolean":
-      return JSON.stringify(value);
-    case "number":
-      if (!Number.isFinite(value)) {
-        throw new TypeError(
-          `Canonical JSON rejects non-finite number at ${path}.`,
-        );
-      }
-      return JSON.stringify(value);
-    case "undefined":
-      throw new TypeError(`Canonical JSON rejects undefined at ${path}.`);
-    case "function":
-      throw new TypeError(`Canonical JSON rejects functions at ${path}.`);
-    case "bigint":
-    case "symbol":
-      throw new TypeError(
-        `Canonical JSON rejects ${typeof value} at ${path}.`,
-      );
-    case "object":
-      break;
-  }
-
-  if (ancestors.has(value)) {
-    throw new TypeError(`Canonical JSON rejects cycles at ${path}.`);
-  }
-  ancestors.add(value);
-
-  try {
-    if (Array.isArray(value)) {
-      const items: string[] = [];
-      for (let index = 0; index < value.length; index += 1) {
-        items.push(
-          canonicalJsonAt(value[index], `${path}[${index}]`, ancestors),
-        );
-      }
-      return `[${items.join(",")}]`;
-    }
-
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new TypeError(
-        `Canonical JSON rejects non-plain object at ${path}.`,
-      );
-    }
-    if (Object.getOwnPropertySymbols(value).length > 0) {
-      throw new TypeError(
-        `Canonical JSON rejects symbol keys at ${path}.`,
-      );
-    }
-
-    const record = value as Record<string, unknown>;
-    const entries = Object.keys(record).sort().map((key) =>
-      `${JSON.stringify(key)}:${canonicalJsonAt(
-        record[key],
-        `${path}.${key}`,
-        ancestors,
-      )}`,
-    );
-    return `{${entries.join(",")}}`;
-  } finally {
-    ancestors.delete(value);
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
 }

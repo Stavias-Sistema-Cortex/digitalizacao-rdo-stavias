@@ -19,10 +19,10 @@ class OfflineGrantSubjectRepository {
         return jdbcTemplate.query(
                 """
                 SELECT colaborador.nome,
-                       UTC_TIMESTAMP(6) AS database_now
+                       CURRENT_TIMESTAMP(6) AS database_now
                 FROM colaborador
-                WHERE colaborador.id = ?
-                  AND colaborador.ativo = 1
+                WHERE LOWER(colaborador.id) = LOWER(?)
+                  AND colaborador.ativo = TRUE
                   AND colaborador.deletado_em IS NULL
                 LIMIT 1
                 """,

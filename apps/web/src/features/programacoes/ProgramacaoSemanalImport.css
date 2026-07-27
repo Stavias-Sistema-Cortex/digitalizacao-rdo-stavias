@@ -53,7 +53,7 @@
   padding: 10px 12px;
   border: 1px solid #c59f18;
   border-radius: 3px;
-  background: linear-gradient(135deg, #fff 0%, #fffbeb 100%);
+  background: #fffbeb;
   color: #92400e;
   font-size: 0.82rem;
 }
@@ -75,10 +75,6 @@
   color: #1f3328;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color var(--transition-functional),
-    background-color var(--transition-functional),
-    outline-color var(--transition-functional);
 }
 
 .programacao-day span {

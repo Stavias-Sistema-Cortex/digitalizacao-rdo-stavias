@@ -3,6 +3,8 @@ package com.projeto.cortex.financeiro.core;
 import static com.projeto.cortex.financeiro.core.FinanceDtos.*;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.financeiro.access.FinancialPermission;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -23,15 +25,18 @@ public class FinanceCatalogService {
 
     private final JdbcTemplate jdbc;
     private final CurrentUserService currentUser;
+    private final FinancialAccessService financialAccess;
     private final FinanceOntologyProjector ontology;
 
     public FinanceCatalogService(
             JdbcTemplate jdbc,
             CurrentUserService currentUser,
+            FinancialAccessService financialAccess,
             FinanceOntologyProjector ontology
     ) {
         this.jdbc = jdbc;
         this.currentUser = currentUser;
+        this.financialAccess = financialAccess;
         this.ontology = ontology;
     }
 
@@ -108,7 +113,8 @@ public class FinanceCatalogService {
                 INSERT INTO finance_fornecedor_obra (
                     id, fornecedor_id, obra_id, criado_por
                 ) VALUES (?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE status = 'ATIVO', arquivado_em = NULL,
+                ON CONFLICT (fornecedor_id, obra_id) DO UPDATE SET
+                    status = 'ATIVO', arquivado_em = NULL,
                     arquivado_por = NULL
                 """,
                 UUID.randomUUID().toString(),
@@ -186,12 +192,13 @@ public class FinanceCatalogService {
                     id, obra_id, codigo, nome, descricao, responsavel_id,
                     criado_por
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE codigo = VALUES(codigo),
-                    nome = VALUES(nome), descricao = VALUES(descricao),
-                    responsavel_id = VALUES(responsavel_id), status = 'ATIVO',
+                ON CONFLICT (obra_id, codigo) DO UPDATE SET
+                    codigo = EXCLUDED.codigo,
+                    nome = EXCLUDED.nome, descricao = EXCLUDED.descricao,
+                    responsavel_id = EXCLUDED.responsavel_id, status = 'ATIVO',
                     arquivado_em = NULL, arquivado_por = NULL,
-                    atualizado_por = VALUES(criado_por),
-                    versao_linha = versao_linha + 1
+                    atualizado_por = EXCLUDED.criado_por,
+                    versao_linha = finance_centro_custo.versao_linha + 1
                 """,
                 id,
                 scope,
@@ -250,11 +257,12 @@ public class FinanceCatalogService {
                 INSERT INTO finance_categoria (
                     id, obra_id, codigo, nome, descricao, criado_por
                 ) VALUES (?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE codigo = VALUES(codigo),
-                    nome = VALUES(nome), descricao = VALUES(descricao),
+                ON CONFLICT (obra_id, codigo) DO UPDATE SET
+                    codigo = EXCLUDED.codigo,
+                    nome = EXCLUDED.nome, descricao = EXCLUDED.descricao,
                     status = 'ATIVA', arquivado_em = NULL, arquivado_por = NULL,
-                    atualizado_por = VALUES(criado_por),
-                    versao_linha = versao_linha + 1
+                    atualizado_por = EXCLUDED.criado_por,
+                    versao_linha = finance_categoria.versao_linha + 1
                 """,
                 id,
                 scope,
@@ -327,11 +335,12 @@ public class FinanceCatalogService {
                     id, obra_id, agregado_tipo, codigo, nome, descricao,
                     ordem, terminal, criado_por
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE nome = VALUES(nome),
-                    descricao = VALUES(descricao), ordem = VALUES(ordem),
-                    terminal = VALUES(terminal), ativo = TRUE,
-                    arquivado_em = NULL, atualizado_por = VALUES(criado_por),
-                    versao_linha = versao_linha + 1
+                ON CONFLICT (obra_id, agregado_tipo, codigo) DO UPDATE SET
+                    nome = EXCLUDED.nome,
+                    descricao = EXCLUDED.descricao, ordem = EXCLUDED.ordem,
+                    terminal = EXCLUDED.terminal, ativo = TRUE,
+                    arquivado_em = NULL, atualizado_por = EXCLUDED.criado_por,
+                    versao_linha = finance_status_definicao.versao_linha + 1
                 """,
                 id, scope, aggregate, code,
                 FinanceValidation.requiredText(request.nome(), "nome", 120),
@@ -384,9 +393,10 @@ public class FinanceCatalogService {
                         id, obra_id, agregado_tipo, status_origem_id,
                         status_destino_id, exige_aprovacao, criado_por
                     ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE exige_aprovacao = VALUES(exige_aprovacao),
-                        ativo = TRUE, atualizado_por = VALUES(criado_por),
-                        versao_linha = versao_linha + 1
+                    ON CONFLICT (status_origem_id, status_destino_id) DO UPDATE SET
+                        exige_aprovacao = EXCLUDED.exige_aprovacao,
+                        ativo = TRUE, atualizado_por = EXCLUDED.criado_por,
+                        versao_linha = finance_status_transicao.versao_linha + 1
                     """,
                     request.id() == null || request.id().isBlank()
                             ? UUID.randomUUID().toString()
@@ -413,6 +423,9 @@ public class FinanceCatalogService {
     ) {
         requireActor(audit);
         String scope = FinanceValidation.uuid(obraId, "obraId");
+        financialAccess.requirePermission(
+                scope, FinancialPermission.FINANCEIRO_ADMINISTRAR
+        );
         if (request == null || request.vigenteDe() == null
                 || request.etapas() == null || request.etapas().isEmpty()) {
             throw FinanceValidation.badRequest(
@@ -426,23 +439,42 @@ public class FinanceCatalogService {
         String id = request.id() == null || request.id().isBlank()
                 ? UUID.randomUUID().toString()
                 : FinanceValidation.uuid(request.id(), "id");
+        String existingWorksite = jdbc.query(
+                "SELECT obra_id FROM finance_regra_aprovacao WHERE id = ? FOR UPDATE",
+                rs -> rs.next() ? rs.getString(1) : null,
+                id
+        );
+        if (existingWorksite != null) {
+            financialAccess.requirePermission(
+                    existingWorksite,
+                    FinancialPermission.FINANCEIRO_ADMINISTRAR
+            );
+            if (!scope.equals(existingWorksite)) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "A regra de aprovação pertence a outra obra."
+                );
+            }
+        }
         try {
-            jdbc.update(
+            int changed = jdbc.update(
                     """
                     INSERT INTO finance_regra_aprovacao (
                         id, obra_id, centro_custo_id, categoria_id, nome,
                         prioridade, moeda, valor_minimo, valor_maximo,
                         vigente_de, vigente_ate, criado_por
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE centro_custo_id = VALUES(centro_custo_id),
-                        categoria_id = VALUES(categoria_id), nome = VALUES(nome),
-                        prioridade = VALUES(prioridade), moeda = VALUES(moeda),
-                        valor_minimo = VALUES(valor_minimo),
-                        valor_maximo = VALUES(valor_maximo),
-                        vigente_de = VALUES(vigente_de),
-                        vigente_ate = VALUES(vigente_ate), ativo = TRUE,
-                        arquivado_em = NULL, atualizado_por = VALUES(criado_por),
-                        versao_linha = versao_linha + 1
+                    ON CONFLICT (id) DO UPDATE SET
+                        centro_custo_id = EXCLUDED.centro_custo_id,
+                        categoria_id = EXCLUDED.categoria_id, nome = EXCLUDED.nome,
+                        prioridade = EXCLUDED.prioridade, moeda = EXCLUDED.moeda,
+                        valor_minimo = EXCLUDED.valor_minimo,
+                        valor_maximo = EXCLUDED.valor_maximo,
+                        vigente_de = EXCLUDED.vigente_de,
+                        vigente_ate = EXCLUDED.vigente_ate, ativo = TRUE,
+                        arquivado_em = NULL, atualizado_por = EXCLUDED.criado_por,
+                        versao_linha = finance_regra_aprovacao.versao_linha + 1
+                    WHERE finance_regra_aprovacao.obra_id = EXCLUDED.obra_id
                     """,
                     id,
                     scope,
@@ -457,6 +489,12 @@ public class FinanceCatalogService {
                     request.vigenteAte(),
                     audit.actorId()
             );
+            if (changed != 1) {
+                throw new ResponseStatusException(
+                        HttpStatus.FORBIDDEN,
+                        "A regra de aprovação pertence a outra obra."
+                );
+            }
             jdbc.update(
                     "DELETE FROM finance_regra_aprovacao_etapa WHERE regra_id = ?",
                     id

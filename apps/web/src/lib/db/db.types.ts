@@ -1,7 +1,6 @@
-import type { OperationalFeatureCollection } from "../../features/obras/map/mapGeometry";
-
 export type LocalSyncStatus =
   | "LOCAL_ONLY"
+  | "LOCAL_PENDING"
   | "PENDING_SYNC"
   | "SYNCING"
   | "SYNCED"
@@ -25,11 +24,22 @@ export type OperationalEventType =
   | "ENTIDADE_RELACIONADA"
   | "ENTIDADE_DESRELACIONADA"
   | "TAREFA_CRIADA"
+  | "TAREFA_ATUALIZADA"
   | "TAREFA_CONCLUIDA"
   | "TAREFA_REABERTA"
   | "TAREFA_EXCLUIDA"
-  | "MENSAGEM_CRIADA"
-  | "COMPRA_CRIADA";
+  | "EQUIPE_CRIADA"
+  | "EQUIPE_ATUALIZADA"
+  | "EQUIPE_ARQUIVADA"
+  | "EQUIPE_VINCULO_ALTERADO"
+  | "VINCULO_OBRA_ATRIBUIDO"
+  | "VINCULO_OBRA_REVOGADO"
+  | "SOLICITACAO_INTEGRACAO_CRIADA"
+  | "COMPRA_CRIADA"
+  | "SERVICE_CREATED"
+  | "SERVICE_PRICE_VERSION_PUBLISHED"
+  | "SERVICE_PRICE_VERSION_SUPERSEDED"
+  | "SERVICE_PRICE_VERSION_CANCELLED";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -57,14 +67,34 @@ export type OutboxMutationStatus =
   | "CONFLICT"
   | "REJECTED";
 
+export type CanonicalMutationOperation =
+  | "CREATE"
+  | "UPDATE"
+  | "DELETE"
+  | "TRANSITION";
+
 export type CanonicalMutationResult =
   | "LOCAL"
   | "PENDING"
   | "SYNCING"
   | "SYNCED"
-  | "CONCILIADA"
   | "CONFLICT"
   | "REJECTED";
+
+export interface CanonicalMutationEnvelopeV13 {
+  readonly schemaVersion: 13;
+  readonly clientMutationId: string;
+  readonly deviceId: string;
+  readonly userId: string;
+  readonly obraId: string | null;
+  readonly entityType: string;
+  readonly entityId: string;
+  readonly operation: CanonicalMutationOperation;
+  readonly baseVersion: number | null;
+  readonly changedFields: readonly string[];
+  readonly occurredAt: string;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
 
 export interface MutationFieldPatch {
   changed: Record<string, unknown>;
@@ -72,13 +102,13 @@ export interface MutationFieldPatch {
 }
 
 export interface MutationTrace {
-  actorId: string;
-  deviceId: string;
-  authorizationScope: string[];
-  correlationId: string;
-  causationId: string | null;
-  ontologyEventId: string;
-  payloadHash: string;
+  readonly actorId: string;
+  readonly deviceId: string;
+  readonly authorizationScope: readonly string[];
+  readonly correlationId: string;
+  readonly causationId: string | null;
+  readonly ontologyEventId: string;
+  readonly payloadHash: string;
 }
 
 export type SyncEntityType =
@@ -88,13 +118,19 @@ export type SyncEntityType =
   | "MENSAGEM"
   | "MENSAGEM_ANEXO"
   | "SOLICITACAO_COMPRA"
-  | "COMPRA";
+  | "COMPRA"
+  | "SERVICE"
+  | "SERVICE_PRICE_VERSION"
+  | "EQUIPE"
+  | "VINCULO_OBRA"
+  | "SOLICITACAO_INTEGRACAO";
 
 export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
   | "ENVIAR_RDO"
   | "CRIAR_TAREFA"
+  | "ATUALIZAR_TAREFA"
   | "CONCLUIR_TAREFA"
   | "REABRIR_TAREFA"
   | "EXCLUIR_TAREFA"
@@ -112,7 +148,18 @@ export type SyncOperation =
   | "ATUALIZAR_COMPRA"
   | "ALTERAR_STATUS_COMPRA"
   | "DECIDIR_APROVACAO_COMPRA"
-  | "ARQUIVAR_COMPRA";
+  | "ARQUIVAR_COMPRA"
+  | "CRIAR_SERVICO_CATALOGO"
+  | "CRIAR_PRECO_SERVICO"
+  | "SUBSTITUIR_PRECO_SERVICO"
+  | "CANCELAR_PRECO_SERVICO"
+  | "CRIAR_EQUIPE"
+  | "ATUALIZAR_EQUIPE"
+  | "ARQUIVAR_EQUIPE"
+  | "ALTERAR_VINCULO_EQUIPE"
+  | "VINCULAR_COLABORADOR_OBRA"
+  | "REVOGAR_VINCULO_COLABORADOR_OBRA"
+  | "SOLICITAR_INTEGRACAO";
 
 export type OutboxTransport =
   | "SYNC_PUSH"
@@ -130,6 +177,102 @@ export interface LocalRdoRecord {
   payload: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ServiceCatalogLocalRecord {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: string;
+  syncStatus: LocalSyncStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastError: string | null;
+}
+
+export interface ServicePriceVersionLocalRecord {
+  id: string;
+  obraId: string;
+  serviceId: string;
+  unit: string;
+  currency: string;
+  version: number;
+  unitPrice: string;
+  contractedQuantity: string | null;
+  validFrom: string;
+  validTo: string | null;
+  source: string | null;
+  supersedesId: string | null;
+  status: string;
+  effectiveValidTo: string | null;
+  entityVersion: number;
+  syncStatus: LocalSyncStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastError: string | null;
+}
+
+export interface FinanceCapabilitiesCacheRecord {
+  key: [string, string];
+  ownerId: string;
+  obraId: string;
+  permissions: string[];
+  cachedAt: string;
+  sessionExpiresAt: string;
+}
+
+export interface FinanceRevenueTraceCacheRecord {
+  key: [string, string, string, string, string];
+  ownerId: string;
+  scopeMaterial: string;
+  obraId: string;
+  fromFilter: string;
+  toFilter: string;
+  fetchedAt: string;
+  expiresAt: string;
+  source: "SERVER_CONFIRMED";
+  coverage: {
+    status: "COMPLETE_ACCEPTED_EXACT";
+    from: string;
+    to: string;
+    evidenceCount: number;
+  };
+  response: unknown;
+}
+
+export interface FinancePdorRevenueCacheRecord {
+  key: [string, string, string];
+  ownerId: string;
+  scopeMaterial: string;
+  obraId: string;
+  fetchedAt: string;
+  expiresAt: string;
+  sessionExpiresAt: string;
+  source: "SERVER_CONFIRMED";
+  payloadHash: string;
+  provenance: {
+    snapshotId: string | null;
+    worksiteId: string;
+    referenceDate: string | null;
+    temporalWindow: {
+      inicioProgramacao: string | null;
+      fimProgramacao: string | null;
+      dataReferencia: string | null;
+      janelaEquipamentosDias: number | null;
+      serieHistoricaSemanal: boolean | null;
+    } | null;
+    evidenceHighWaterMark: number | null;
+    coverageCode:
+      | "COMPLETE_ACCEPTED_EXACT"
+      | "PARTIAL_ACCEPTED_EXACT"
+      | "NO_ACCEPTED_EVIDENCE"
+      | "NO_CURRENT_SNAPSHOT";
+    evidenceCount: number;
+    algorithmVersion: string | null;
+    executedAtUtc: string | null;
+  };
+  response: unknown;
 }
 
 export interface LocalRdoChildRecord {
@@ -152,12 +295,12 @@ export type LocalRdoControleGeometricoRecord =
   LocalRdoChildRecord;
 
 interface OutboxMutationRecordBase {
-  clientMutationId: string;
+  readonly clientMutationId: string;
   entidadeTipo: SyncEntityType;
   entidadeId: string;
   operacao: SyncOperation;
   baseVersao: number | null;
-  payload: Record<string, unknown>;
+  readonly payload: Readonly<Record<string, unknown>>;
   status: OutboxMutationStatus;
   tentativas: number;
   ultimaTentativaEm: string | null;
@@ -168,33 +311,33 @@ interface OutboxMutationRecordBase {
   transport?: OutboxTransport;
   dependsOnMutationIds?: string[];
   correlationId?: string;
+  retryAttempt?: number;
+  lastSafeCode?: string | null;
 }
 
 export interface LegacyOutboxMutationRecord
   extends OutboxMutationRecordBase {
-  contractVersion?: 12;
-  fieldPatch?: MutationFieldPatch;
-  trace?: MutationTrace;
+  schemaVersion?: undefined;
   nextAttemptAt?: string | null;
   blockedReason?: string | null;
 }
 
 export interface CanonicalOutboxMutationRecord
-  extends OutboxMutationRecordBase {
-  contractVersion: 13;
-  correlationId: string;
-  fieldPatch: MutationFieldPatch;
-  trace: MutationTrace;
+  extends OutboxMutationRecordBase,
+    CanonicalMutationEnvelopeV13 {
+  readonly correlationId: string;
+  readonly causationId: string | null;
+  readonly fieldPatch: MutationFieldPatch;
+  readonly relatedEntities: readonly OperationalEntityRef[];
+  readonly trace: MutationTrace;
   nextAttemptAt: string | null;
   blockedReason: string | null;
 }
 
-export type StoredOutboxMutationRecord =
+/** Legacy reads remain supported; every new coordinated write is canonical v13. */
+export type OutboxMutationRecord =
   | LegacyOutboxMutationRecord
   | CanonicalOutboxMutationRecord;
-
-/** Stored v12/v13 read boundary. Canonical writers use CanonicalOutboxMutationRecord. */
-export type OutboxMutationRecord = StoredOutboxMutationRecord;
 
 export type MensagemSyncStatus =
   | "LOCAL"
@@ -266,6 +409,13 @@ export interface MensagemAnexoLocalRecord {
   updatedAt: string;
 }
 
+export interface SyncExecutionLeaseRecord {
+  ownerToken: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+  expiresAt: string;
+}
+
 export interface SyncStateRecord {
   key: "default";
   deviceId: string | null;
@@ -276,6 +426,7 @@ export interface SyncStateRecord {
   lastSyncStartedAt: string | null;
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
+  syncExecutionLease: SyncExecutionLeaseRecord | null;
 }
 
 export interface ProcessedEventRecord {
@@ -287,7 +438,7 @@ export interface ProcessedEventRecord {
   aplicadoEm: string;
 }
 
-interface OperationalEventRecordBase {
+export interface OperationalEventRecord {
   id: string;
   type: OperationalEventType;
   principalEntity: OperationalEntityRef;
@@ -304,11 +455,6 @@ interface OperationalEventRecordBase {
   payload: Record<string, unknown>;
   syncStatus: OperationalEventSyncStatus;
   schemaVersion: number;
-}
-
-export interface LegacyOperationalEventRecord
-  extends OperationalEventRecordBase {
-  contractVersion?: 12;
   clientMutationId?: string;
   deviceId?: string;
   correlationId?: string;
@@ -318,11 +464,12 @@ export interface LegacyOperationalEventRecord
   result?: CanonicalMutationResult;
   errorCategory?: string | null;
   entityVersion?: number | null;
+  serverCommitSequence?: number | null;
 }
 
 export interface CanonicalOperationalEventRecord
-  extends OperationalEventRecordBase {
-  contractVersion: 13;
+  extends OperationalEventRecord {
+  schemaVersion: 13;
   clientMutationId: string;
   deviceId: string;
   correlationId: string;
@@ -333,13 +480,6 @@ export interface CanonicalOperationalEventRecord
   errorCategory: string | null;
   entityVersion: number | null;
 }
-
-export type StoredOperationalEventRecord =
-  | LegacyOperationalEventRecord
-  | CanonicalOperationalEventRecord;
-
-/** Stored v12/v13 read boundary. Canonical writers use CanonicalOperationalEventRecord. */
-export type OperationalEventRecord = StoredOperationalEventRecord;
 
 export type AttachmentType = "FOTO" | "VIDEO";
 
@@ -375,13 +515,6 @@ export interface RdoAttachmentRecord {
   removedAt: string | null;
 }
 
-export interface StaviaSnapshotRecord {
-  key: "default";
-  snapshot: import("../../features/stavia/stavia.types").StaviaSnapshot;
-  localSyncedAt: string;
-  updatedAt: string;
-}
-
 export interface ObraLocalRecord {
   id: string;
   codigoContrato: string;
@@ -398,12 +531,15 @@ export interface ObraLocalRecord {
   updatedAt: string;
 }
 
-export interface ObraGeometryLocalRecord {
+export interface RdoCreationContextCacheRecord {
+  ownerId: string;
   obraId: string;
-  geometry: OperationalFeatureCollection;
-  entityVersion: number | null;
-  syncStatus: CanonicalMutationResult;
-  updatedAt: string;
+  selectedDate: string;
+  sourceVersion: number;
+  receiptVersion: number;
+  cachedAt: string;
+  coverage: Record<string, unknown>;
+  context: Record<string, unknown>;
 }
 
 export type TarefaPrioridade = 1 | 2 | 3;
@@ -421,14 +557,11 @@ export interface TarefaRecord {
   prioridade: TarefaPrioridade;
   concluida: boolean;
   concluidaEm: string | null;
+  versaoEntidade: number | null;
+  syncStatus: LocalSyncStatus;
+  deletadaEm: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Versão confirmada pelo servidor; nula enquanto a criação está offline. */
-  versaoEntidade?: number | null;
-  /** Estado de transporte local, sem substituir a situação operacional. */
-  syncStatus?: LocalSyncStatus;
-  /** Tombstone local para que uma exclusão offline também possa sincronizar. */
-  deletadaEm?: string | null;
 }
 
 export interface ColaboradorLocalRecord {
@@ -473,6 +606,9 @@ export interface LocalTeamRecord {
   criadoEm: string;
   atualizadoEm: string;
   membros: LocalTeamMemberRecord[];
+  syncStatus?: "PENDING_SYNC" | "SYNCED" | "CONFLICT" | "REJECTED";
+  ultimoErro?: string | null;
+  pendingMutationId?: string | null;
 }
 
 export interface LocalOperationalRoleRecord {
@@ -514,6 +650,85 @@ export interface LocalTeamWorksiteRecord {
   versaoEntidade: number;
   criadoEm: string;
   atualizadoEm: string;
+}
+
+export interface MemorySearchDocumentRecord {
+  key: string;
+  userId: string;
+  scopeHash: string;
+  eventId: string;
+  commitSequence: number | null;
+  normalizedText: string;
+  structuralKeys: {
+    eventType: string;
+    entityType: string;
+    entityId: string | null;
+    worksiteId: string | null;
+    rdoId: string | null;
+    actorId: string | null;
+    deviceId: string | null;
+    origin: string | null;
+    result: string | null;
+  };
+  syncStatus: "UPDATED" | "LOCAL_PENDING" | "SYNCING" | "CONFLICT" | "REJECTED";
+  sourceKind: "SERVER" | "LOCAL";
+  occurredAt: string;
+  eventType: string;
+  source: string | null;
+  principalName: string | null;
+  worksiteName: string | null;
+  rdoNumber: string | null;
+  serviceName: string | null;
+  errorCategory: string | null;
+  trace: {
+    clientMutationId: string | null;
+    correlationId: string | null;
+    causationId: string | null;
+    entityVersion: number | null;
+  };
+  review: {
+    status: "CONFLICT" | "REJECTED";
+    clientMutationId: string | null;
+    baseVersion: number | null;
+    eventVersion: number | null;
+    remoteVersion: number | null;
+    localStateAvailable: boolean;
+    remoteStateAvailable: boolean;
+    changedFields: string[];
+    conflictFields: string[];
+    canReconcile: boolean;
+    unavailableReason:
+      | "REJECTED"
+      | "LOCAL_EVIDENCE_UNAVAILABLE"
+      | "REMOTE_SNAPSHOT_UNAVAILABLE"
+      | "UNSUPPORTED_ENTITY"
+      | "CREATE_CONFLICT_REQUIRES_REVIEW"
+      | "REMOTE_SNAPSHOT_MISMATCH"
+      | "FIELD_CONFLICT"
+      | null;
+  } | null;
+}
+
+export interface MemoryCacheMetadataRecord {
+  key: string;
+  userId: string;
+  scopeHash: string;
+  highWaterMark: number;
+  authorizedEventCount: number;
+  cachedEventCount: number;
+  oldestCommitSequence: number | null;
+  newestCommitSequence: number;
+  coverageMode: string;
+  serverCoverageComplete: boolean;
+  graph?: {
+    checkpointCommitSequence: number;
+    targetCommitSequence: number;
+    lagEventCount: number;
+    fresh: boolean;
+    lastSafeError: string | null;
+  };
+  complete: boolean;
+  cachedAt: string;
 }
 
 export interface PrevisaoSnapshotRecord {

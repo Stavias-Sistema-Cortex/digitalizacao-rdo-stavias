@@ -3,6 +3,7 @@ package com.projeto.cortex.auth.webauthn;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -14,18 +15,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.projeto.cortex.auth.AuthSessionResponse;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.auth.PapelAcesso;
+import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
+import com.projeto.cortex.auth.identity.CpfLookupDigest;
+import com.projeto.cortex.auth.identity.CpfLookupDigestService;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
+import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,16 +49,29 @@ class WebAuthnControllerTest {
             "20000000-0000-0000-0000-000000000002";
     private static final Instant EXPIRY =
             Instant.parse("2030-01-02T03:04:05Z");
+    private static final String CLIENT_INSTANCE = clientInstanceToken((byte) 61);
 
     private final WebAuthnService webAuthn = mock(WebAuthnService.class);
     private final CurrentUserService currentUser =
             mock(CurrentUserService.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
     private final AuthCookieService cookies = mock(AuthCookieService.class);
+    private final AuthSessionProfileResolver sessionProfiles =
+            mock(AuthSessionProfileResolver.class);
     private final ClientAddressResolver clientAddresses =
             mock(ClientAddressResolver.class);
     private final WebAuthnRateLimiter rateLimiter =
             mock(WebAuthnRateLimiter.class);
+    private final CpfLookupDigestService cpfDigests =
+            mock(CpfLookupDigestService.class);
+    private final AuthChallengeLookupMaterial lookupMaterial =
+            new AuthChallengeLookupMaterial(
+                    List.of(new CpfLookupDigest(
+                            "synthetic-current",
+                            "a".repeat(64)
+                    )),
+                    "b".repeat(64)
+            );
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -59,11 +81,15 @@ class WebAuthnControllerTest {
                 currentUser,
                 sessions,
                 cookies,
+                sessionProfiles,
                 clientAddresses,
-                rateLimiter
+                rateLimiter,
+                cpfDigests
         )).build();
         when(clientAddresses.resolve(any())).thenReturn("127.0.0.1");
         when(rateLimiter.allow(any(), eq("127.0.0.1"))).thenReturn(true);
+        when(cpfDigests.challengeLookup(any())).thenReturn(lookupMaterial);
+        when(rateLimiter.allowIdentifier(lookupMaterial)).thenReturn(true);
         when(currentUser.allowedObraIds(any())).thenReturn(Optional.of(Set.of(
                 "40000000-0000-0000-0000-000000000004"
         )));
@@ -73,7 +99,10 @@ class WebAuthnControllerTest {
     void registrationUsesAuthenticatedCollaboratorAndNeverReturnsPrfOutput()
             throws Exception {
         when(currentUser.requireUserId()).thenReturn(COLLABORATOR_ID);
-        when(webAuthn.startRegistration(COLLABORATOR_ID))
+        when(webAuthn.startRegistration(
+                eq(COLLABORATOR_ID),
+                any(ClientInstanceProof.class)
+        ))
                 .thenReturn(new WebAuthnOptionsResponse(
                         CHALLENGE_ID,
                         new ObjectMapper().readTree("""
@@ -84,7 +113,7 @@ class WebAuthnControllerTest {
 
         mockMvc.perform(post(
                         "/api/auth/passkeys/registration/options"
-                ))
+                ).header("X-Cortex-Client-Instance", CLIENT_INSTANCE))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.challengeId").value(CHALLENGE_ID))
@@ -93,7 +122,49 @@ class WebAuthnControllerTest {
                 ))
                 .andExpect(jsonPath("$.prfOutput").doesNotExist());
 
-        verify(webAuthn).startRegistration(COLLABORATOR_ID);
+        verify(webAuthn).startRegistration(
+                eq(COLLABORATOR_ID),
+                any(ClientInstanceProof.class)
+        );
+    }
+
+    @Test
+    void authenticationOptionsBindCpfAfterRateLimitAndAreNeverCacheable()
+            throws Exception {
+        when(webAuthn.startCpfBoundAuthentication(
+                eq("529.982.247-25"),
+                any(ClientInstanceProof.class)
+        ))
+                .thenReturn(new WebAuthnOptionsResponse(
+                        CHALLENGE_ID,
+                        new ObjectMapper().readTree("""
+                                {"challenge":"public"}
+                                """),
+                        "cortex.example.invalid"
+                ));
+
+        mockMvc.perform(post(
+                        "/api/auth/passkeys/authentication/options"
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
+                        .content("""
+                                {"cpf":"529.982.247-25"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.challengeId").value(CHALLENGE_ID));
+
+        InOrder ordering = inOrder(rateLimiter, cpfDigests, webAuthn);
+        ordering.verify(rateLimiter).allow(
+                WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
+                "127.0.0.1"
+        );
+        ordering.verify(cpfDigests).challengeLookup("529.982.247-25");
+        ordering.verify(rateLimiter).allowIdentifier(lookupMaterial);
+        ordering.verify(webAuthn).startCpfBoundAuthentication(
+                eq("529.982.247-25"),
+                any(ClientInstanceProof.class)
+        );
     }
 
     @Test
@@ -110,13 +181,27 @@ class WebAuthnControllerTest {
                 "c".repeat(43),
                 EXPIRY
         );
-        when(webAuthn.finishAuthentication(eq(CHALLENGE_ID), any()))
+        when(webAuthn.finishCpfBoundAuthentication(
+                eq(CHALLENGE_ID),
+                any(),
+                any(ClientInstanceProof.class)
+        ))
                 .thenReturn(identity);
-        when(sessions.issue(identity)).thenReturn(issued);
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issued);
+        when(sessionProfiles.profileForIssuedSession(identity, EXPIRY))
+                .thenReturn(AuthSessionResponse.from(
+                        identity,
+                        EXPIRY,
+                        Optional.of(Set.of(
+                                "40000000-0000-0000-0000-000000000004"
+                        ))
+                ));
 
         mockMvc.perform(post(
                         "/api/auth/passkeys/authentication/verify"
                 ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .content("""
                                 {
                                   "challengeId": "%s",
@@ -138,7 +223,9 @@ class WebAuthnControllerTest {
                 .andExpect(jsonPath("$.email").doesNotExist())
                 .andExpect(jsonPath("$.prf").doesNotExist());
 
+        verify(sessionProfiles).requireEligibleForSessionIssue(identity);
         verify(cookies).write(any(), eq(issued));
+        verify(sessionProfiles).profileForIssuedSession(identity, EXPIRY);
     }
 
     @Test
@@ -157,7 +244,11 @@ class WebAuthnControllerTest {
 
     @Test
     void failedAuthenticationResponseIsAlsoNeverCacheable() throws Exception {
-        when(webAuthn.finishAuthentication(eq(CHALLENGE_ID), any()))
+        when(webAuthn.finishCpfBoundAuthentication(
+                eq(CHALLENGE_ID),
+                any(),
+                any(ClientInstanceProof.class)
+        ))
                 .thenThrow(new ResponseStatusException(
                         HttpStatus.UNAUTHORIZED,
                         "Credencial inválida."
@@ -166,6 +257,7 @@ class WebAuthnControllerTest {
         mockMvc.perform(post(
                         "/api/auth/passkeys/authentication/verify"
                 ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .content("""
                                 {
                                   "challengeId": "%s",
@@ -186,10 +278,63 @@ class WebAuthnControllerTest {
 
         mockMvc.perform(post(
                         "/api/auth/passkeys/authentication/options"
-                ))
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
+                        .content("""
+                                {"cpf":"529.982.247-25"}
+                                """))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("Cache-Control", "no-store"));
 
         verifyNoInteractions(webAuthn);
+    }
+
+    @Test
+    void identifierLimitRejectsAfterProtectedCpfLookupBeforeChallengePersistence()
+            throws Exception {
+        when(rateLimiter.allowIdentifier(lookupMaterial)).thenReturn(false);
+
+        mockMvc.perform(post(
+                        "/api/auth/passkeys/authentication/options"
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
+                        .content("""
+                                {"cpf":"529.982.247-25"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        InOrder ordering = inOrder(rateLimiter, cpfDigests);
+        ordering.verify(rateLimiter).allow(
+                WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
+                "127.0.0.1"
+        );
+        ordering.verify(cpfDigests).challengeLookup("529.982.247-25");
+        ordering.verify(rateLimiter).allowIdentifier(lookupMaterial);
+        verifyNoInteractions(webAuthn);
+    }
+
+    @Test
+    void missingInstanceRejectsAuthenticationOptionsBeforeCpfLookup()
+            throws Exception {
+        mockMvc.perform(post(
+                        "/api/auth/passkeys/authentication/options"
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"529.982.247-25\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        verifyNoInteractions(webAuthn, cpfDigests, rateLimiter);
+    }
+
+    private static String clientInstanceToken(byte fill) {
+        byte[] bytes = new byte[32];
+        java.util.Arrays.fill(bytes, fill);
+        try {
+            return java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(bytes);
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
     }
 }

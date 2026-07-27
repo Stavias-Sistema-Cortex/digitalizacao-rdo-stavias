@@ -31,6 +31,8 @@ class EmailOtpChallengeServiceTest {
     private static final String SYNTHETIC_EMAIL =
             "collaborator@example.invalid";
     private static final String CODE = "123456";
+    private static final String CLIENT_INSTANCE_HASH = "a".repeat(64);
+    private static final String OTHER_CLIENT_INSTANCE_HASH = "b".repeat(64);
     private static final Instant DATABASE_EXPIRES_AT = Instant.parse(
             "2026-07-13T18:10:00.123456Z"
     );
@@ -46,10 +48,13 @@ class EmailOtpChallengeServiceTest {
     void setUp() {
         identities = mock(AuthIdentityChallengeLookup.class);
         rateLimiter = mock(AuthRateLimiter.class);
+        when(rateLimiter.allowVerification(anyString(), anyString()))
+                .thenReturn(true);
         challenges = mock(EmailOtpChallengeRepository.class);
         when(challenges.create(
                 anyString(),
                 any(),
+                anyString(),
                 anyString(),
                 anyString(),
                 anyInt(),
@@ -82,11 +87,13 @@ class EmailOtpChallengeServiceTest {
 
         OtpChallengeResponse known = service.request(
                 SYNTHETIC_CPF,
-                "203.0.113.10"
+                "203.0.113.10",
+                CLIENT_INSTANCE_HASH
         );
         OtpChallengeResponse unknown = service.request(
                 SYNTHETIC_CPF,
-                "203.0.113.11"
+                "203.0.113.11",
+                CLIENT_INSTANCE_HASH
         );
 
         assertThat(known.message()).isEqualTo(unknown.message());
@@ -98,6 +105,7 @@ class EmailOtpChallengeServiceTest {
                 any(),
                 anyString(),
                 anyString(),
+                eq(CLIENT_INSTANCE_HASH),
                 eq(600),
                 eq(5)
         );
@@ -112,17 +120,24 @@ class EmailOtpChallengeServiceTest {
         when(identities.find(SYNTHETIC_CPF))
                 .thenReturn(Optional.of(activeIdentity()));
 
-        service.request(SYNTHETIC_CPF, "203.0.113.10");
+        service.request(
+                SYNTHETIC_CPF,
+                "203.0.113.10",
+                CLIENT_INSTANCE_HASH
+        );
 
         ArgumentCaptor<String> identifierDigest =
                 ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> codeDigest =
+                ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> clientInstanceHash =
                 ArgumentCaptor.forClass(String.class);
         verify(challenges).create(
                 eq(CHALLENGE_ID),
                 eq("collaborator-id"),
                 identifierDigest.capture(),
                 codeDigest.capture(),
+                clientInstanceHash.capture(),
                 eq(600),
                 eq(5)
         );
@@ -131,6 +146,8 @@ class EmailOtpChallengeServiceTest {
         assertThat(codeDigest.getValue()).matches("[0-9a-f]{64}")
                 .doesNotContain(CODE)
                 .doesNotContain(SYNTHETIC_EMAIL);
+        assertThat(clientInstanceHash.getValue())
+                .isEqualTo(CLIENT_INSTANCE_HASH);
 
         ArgumentCaptor<OtpDeliveryRequested> delivery =
                 ArgumentCaptor.forClass(OtpDeliveryRequested.class);
@@ -157,7 +174,8 @@ class EmailOtpChallengeServiceTest {
 
         OtpChallengeResponse response = service.request(
                 SYNTHETIC_CPF,
-                "203.0.113.10"
+                "203.0.113.10",
+                CLIENT_INSTANCE_HASH
         );
 
         assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
@@ -166,6 +184,7 @@ class EmailOtpChallengeServiceTest {
                 eq(null),
                 anyString(),
                 anyString(),
+                eq(CLIENT_INSTANCE_HASH),
                 eq(600),
                 eq(5)
         );
@@ -181,14 +200,15 @@ class EmailOtpChallengeServiceTest {
 
         OtpChallengeResponse response = service.request(
                 SYNTHETIC_CPF,
-                "203.0.113.10"
+                "203.0.113.10",
+                CLIENT_INSTANCE_HASH
         );
 
         assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
         verify(identities, never()).find(anyString());
         verify(challenges, never()).create(
                 anyString(), any(), anyString(), anyString(),
-                anyInt(), anyInt()
+                anyString(), anyInt(), anyInt()
         );
         verify(events, never()).publishEvent(any(OtpDeliveryRequested.class));
     }
@@ -197,12 +217,16 @@ class EmailOtpChallengeServiceTest {
     void validCodeConsumesOnceAndActivatesWithoutChangingTheRole() {
         EmailOtpChallengeRepository.LockedChallenge candidate =
                 realCandidate(CODE, Instant.parse("2026-07-13T18:00:00Z"));
-        when(challenges.lockForVerification(CHALLENGE_ID))
+        when(challenges.lockForVerification(
+                CHALLENGE_ID,
+                CLIENT_INSTANCE_HASH
+        ))
                 .thenReturn(Optional.of(candidate));
         when(challenges.consume(
                 eq(CHALLENGE_ID),
                 eq("collaborator-id"),
-                anyString()
+                anyString(),
+                eq(CLIENT_INSTANCE_HASH)
         )).thenReturn(1, 0);
         when(challenges.activateIdentity(
                 "collaborator-id",
@@ -211,11 +235,13 @@ class EmailOtpChallengeServiceTest {
 
         Optional<AuthenticatedIdentity> first = service.verify(
                 CHALLENGE_ID,
-                CODE
+                CODE,
+                CLIENT_INSTANCE_HASH
         );
         Optional<AuthenticatedIdentity> replay = service.verify(
                 CHALLENGE_ID,
-                CODE
+                CODE,
+                CLIENT_INSTANCE_HASH
         );
 
         assertThat(first).contains(new AuthenticatedIdentity(
@@ -227,7 +253,8 @@ class EmailOtpChallengeServiceTest {
         verify(challenges, times(2)).consume(
                 eq(CHALLENGE_ID),
                 eq("collaborator-id"),
-                anyString()
+                anyString(),
+                eq(CLIENT_INSTANCE_HASH)
         );
         verify(challenges).activateIdentity(
                 "collaborator-id",
@@ -236,17 +263,39 @@ class EmailOtpChallengeServiceTest {
     }
 
     @Test
+    void verificationRateLimitStopsBeforeLockingTheChallenge() {
+        when(rateLimiter.allowVerification(
+                CHALLENGE_ID, "203.0.113.10"
+        )).thenReturn(false);
+
+        assertThat(service.verify(
+                CHALLENGE_ID, CODE, "203.0.113.10"
+                , CLIENT_INSTANCE_HASH
+        )).isEmpty();
+
+        verify(challenges, never()).lockForVerification(anyString(), anyString());
+    }
+
+    @Test
     void activationRaceFailsTheTransactionInsteadOfCommittingConsumption() {
         Instant now = Instant.parse("2026-07-13T18:00:00Z");
-        when(challenges.lockForVerification(CHALLENGE_ID))
+        when(challenges.lockForVerification(
+                CHALLENGE_ID,
+                CLIENT_INSTANCE_HASH
+        ))
                 .thenReturn(Optional.of(realCandidate(CODE, now)));
         when(challenges.consume(
-                eq(CHALLENGE_ID), eq("collaborator-id"), anyString()
+                eq(CHALLENGE_ID), eq("collaborator-id"), anyString(),
+                eq(CLIENT_INSTANCE_HASH)
         )).thenReturn(1);
         when(challenges.activateIdentity("collaborator-id", SYNTHETIC_EMAIL))
                 .thenReturn(0);
 
-        assertThatThrownBy(() -> service.verify(CHALLENGE_ID, CODE))
+        assertThatThrownBy(() -> service.verify(
+                CHALLENGE_ID,
+                CODE,
+                CLIENT_INSTANCE_HASH
+        ))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Identidade não pôde ser ativada.");
     }
@@ -254,7 +303,10 @@ class EmailOtpChallengeServiceTest {
     @Test
     void wrongMalformedExpiredAndDecoyCodesNeverAuthenticate() {
         Instant now = Instant.parse("2026-07-13T18:00:00Z");
-        when(challenges.lockForVerification(CHALLENGE_ID))
+        when(challenges.lockForVerification(
+                CHALLENGE_ID,
+                CLIENT_INSTANCE_HASH
+        ))
                 .thenReturn(
                         Optional.of(realCandidate(CODE, now)),
                         Optional.of(realCandidate(CODE, now)),
@@ -262,14 +314,46 @@ class EmailOtpChallengeServiceTest {
                         Optional.of(decoyCandidate(CODE, now))
                 );
 
-        assertThat(service.verify(CHALLENGE_ID, "654321")).isEmpty();
-        assertThat(service.verify(CHALLENGE_ID, "not-a-code")).isEmpty();
-        assertThat(service.verify(CHALLENGE_ID, CODE)).isEmpty();
-        assertThat(service.verify(CHALLENGE_ID, CODE)).isEmpty();
+        assertThat(service.verify(
+                CHALLENGE_ID, "654321", CLIENT_INSTANCE_HASH
+        )).isEmpty();
+        assertThat(service.verify(
+                CHALLENGE_ID, "not-a-code", CLIENT_INSTANCE_HASH
+        )).isEmpty();
+        assertThat(service.verify(
+                CHALLENGE_ID, CODE, CLIENT_INSTANCE_HASH
+        )).isEmpty();
+        assertThat(service.verify(
+                CHALLENGE_ID, CODE, CLIENT_INSTANCE_HASH
+        )).isEmpty();
 
         verify(challenges, times(3)).recordFailedAttempt(CHALLENGE_ID);
         verify(challenges).markExpired(CHALLENGE_ID);
         verify(challenges, never()).activateIdentity(anyString(), anyString());
+    }
+
+    @Test
+    void anotherTabCannotConsumeTheEmailChallenge() {
+        when(challenges.lockForVerification(
+                CHALLENGE_ID,
+                CLIENT_INSTANCE_HASH
+        )).thenReturn(Optional.of(realCandidate(
+                CODE,
+                Instant.parse("2026-07-13T18:00:00Z")
+        )));
+
+        assertThat(service.verify(
+                CHALLENGE_ID,
+                CODE,
+                OTHER_CLIENT_INSTANCE_HASH
+        )).isEmpty();
+
+        verify(challenges, never()).consume(
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString()
+        );
     }
 
     private AuthIdentity activeIdentity() {

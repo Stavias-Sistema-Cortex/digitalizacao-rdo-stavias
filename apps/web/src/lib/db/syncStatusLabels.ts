@@ -6,6 +6,8 @@ export function formatLocalSyncStatus(
   switch (status) {
     case "LOCAL_ONLY":
       return "Salvo apenas neste dispositivo";
+    case "LOCAL_PENDING":
+      return "Local pendente de contexto";
     case "PENDING_SYNC":
       return "Pendente de sincronização";
     case "SYNCING":
