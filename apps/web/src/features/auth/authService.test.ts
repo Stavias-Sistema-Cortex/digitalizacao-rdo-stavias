@@ -1,24 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  clearSession: vi.fn(),
+  fetchOfflineGrant: vi.fn(),
   fetchSession: vi.fn(),
   loginWithCpf: vi.fn(),
   logoutOnline: vi.fn(),
-  purgeLegacyAuthStorage: vi.fn(),
-  setSession: vi.fn(),
+  saveCollaborativeOfflineGrant: vi.fn(),
 }));
 
 vi.mock("./authApi", () => ({
+  fetchOfflineGrant: mocks.fetchOfflineGrant,
   fetchSession: mocks.fetchSession,
   loginWithCpf: mocks.loginWithCpf,
   logoutOnline: mocks.logoutOnline,
 }));
 
-vi.mock("./authSession", () => ({
-  clearSession: mocks.clearSession,
-  purgeLegacyAuthStorage: mocks.purgeLegacyAuthStorage,
-  setSession: mocks.setSession,
+vi.mock("./collaborativeOfflineGrant", () => ({
+  saveCollaborativeOfflineGrant: mocks.saveCollaborativeOfflineGrant,
 }));
 
 import {
@@ -26,6 +24,7 @@ import {
   encerrarSessao,
   initializeAuthSession,
 } from "./authService";
+import { clearSession, getSession, setSession } from "./authSession";
 
 const profile = {
   colaboradorId: "00000000-0000-4000-8000-000000000001",
@@ -49,39 +48,54 @@ describe("authService", () => {
       clear: () => storage.clear(),
     });
     localStorage.clear();
+    clearSession();
   });
 
   afterEach(() => {
+    clearSession();
     vi.unstubAllGlobals();
   });
 
   it("purga credenciais legadas antes de consultar a sessão online", async () => {
-    const order: string[] = [];
-    mocks.purgeLegacyAuthStorage.mockImplementation(() => order.push("purge"));
-    mocks.fetchSession.mockImplementation(async () => {
-      order.push("fetch");
-      return profile;
-    });
+    localStorage.setItem("cortex.auth.sessao", "legado");
+    localStorage.setItem("cortex.auth.cpfFilter", "legado");
+    mocks.fetchSession.mockResolvedValue(profile);
 
     await expect(initializeAuthSession()).resolves.toEqual(profile);
-    expect(order).toEqual(["purge", "fetch"]);
-    expect(mocks.setSession).toHaveBeenCalledWith(profile);
+    expect(localStorage.getItem("cortex.auth.sessao")).toBeNull();
+    expect(localStorage.getItem("cortex.auth.cpfFilter")).toBeNull();
+    expect(getSession()).toEqual(profile);
   });
 
-  it("normaliza o CPF e grava somente o perfil validado", async () => {
+  it("normaliza o CPF, grava o grant e retorna seu estado", async () => {
     mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrant.mockResolvedValue({ signed: "grant" });
 
     await expect(autenticarPorCpf("111.444.777-35"))
-      .resolves.toEqual(profile);
+      .resolves.toEqual({ profile, offlineGrant: "READY" });
     expect(mocks.loginWithCpf).toHaveBeenCalledWith("11144477735");
-    expect(mocks.setSession).toHaveBeenCalledWith(profile);
+    expect(mocks.saveCollaborativeOfflineGrant).toHaveBeenCalledWith(
+      "11144477735",
+      { signed: "grant" },
+    );
+    expect(getSession()).toEqual(profile);
+  });
+
+  it("preserva a sessão online quando a atualização do grant falha", async () => {
+    mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrant.mockRejectedValue(new TypeError("offline"));
+
+    await expect(autenticarPorCpf("11144477735"))
+      .resolves.toEqual({ profile, offlineGrant: "UNAVAILABLE" });
+
+    expect(getSession()).toEqual(profile);
   });
 
   it("bloqueia a sessão local mesmo quando a rede impede a revogação", async () => {
     mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
     await expect(encerrarSessao()).rejects.toThrow("offline");
-    expect(mocks.clearSession).toHaveBeenCalledOnce();
+    expect(getSession()).toBeNull();
     expect(localStorage.getItem("cortex.auth.logoutPending")).toBe("1");
   });
 
@@ -91,17 +105,18 @@ describe("authService", () => {
     mocks.logoutOnline.mockResolvedValueOnce("already-expired");
     await encerrarSessao();
 
-    expect(mocks.clearSession).toHaveBeenCalledTimes(2);
+    expect(getSession()).toBeNull();
     expect(localStorage.getItem("cortex.auth.logoutPending")).toBeNull();
   });
 
   it("não restaura o cookie enquanto uma revogação pendente estiver offline", async () => {
     localStorage.setItem("cortex.auth.logoutPending", "1");
+    setSession(profile);
     mocks.logoutOnline.mockRejectedValue(new TypeError("offline"));
 
     await expect(initializeAuthSession()).resolves.toBeNull();
 
-    expect(mocks.clearSession).toHaveBeenCalledOnce();
+    expect(getSession()).toBeNull();
     expect(mocks.fetchSession).not.toHaveBeenCalled();
   });
 });

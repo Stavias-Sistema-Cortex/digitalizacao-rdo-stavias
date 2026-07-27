@@ -15,6 +15,7 @@ vi.mock("../../lib/api/apiClient", () => ({
 }));
 
 import {
+  fetchOfflineGrant,
   fetchSession,
   loginWithCpf,
   logoutOnline,
@@ -58,6 +59,38 @@ describe("authApi", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cpf: "11144477735" }),
       },
+    );
+  });
+
+  it("obtém somente o envelope assinado exato do grant offline", async () => {
+    const grant = {
+      keyId: "offline-test-v1",
+      payload: "payload",
+      signature: "signature",
+      publicKeySpki: "public-key",
+    };
+    mocks.apiFetch.mockResolvedValue(response(200));
+    mocks.readResponseBody.mockResolvedValue(grant);
+
+    await expect(fetchOfflineGrant()).resolves.toEqual(grant);
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/offline-grant", {
+      method: "POST",
+    });
+  });
+
+  it("rejeita um envelope de grant offline com campos extras", async () => {
+    mocks.apiFetch.mockResolvedValue(response(200));
+    mocks.readResponseBody.mockResolvedValue({
+      keyId: "offline-test-v1",
+      payload: "payload",
+      signature: "signature",
+      publicKeySpki: "public-key",
+      cpf: "11144477735",
+    });
+
+    await expect(fetchOfflineGrant()).rejects.toThrow(
+      "Envelope do grant offline inválido.",
     );
   });
 

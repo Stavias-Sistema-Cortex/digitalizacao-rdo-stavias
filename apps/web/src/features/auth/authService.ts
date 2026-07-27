@@ -1,8 +1,10 @@
 import {
+  fetchOfflineGrant,
   fetchSession,
   loginWithCpf,
   logoutOnline,
 } from "./authApi";
+import { saveCollaborativeOfflineGrant } from "./collaborativeOfflineGrant";
 import { onlyDigits } from "./loginValidation";
 import {
   clearSession,
@@ -12,6 +14,11 @@ import {
 } from "./authSession";
 
 const LOGOUT_PENDING_KEY = "cortex.auth.logoutPending";
+
+export type CpfAuthenticationResult = {
+  profile: AuthProfile;
+  offlineGrant: "READY" | "UNAVAILABLE";
+};
 
 function logoutPending(): boolean {
   try {
@@ -50,10 +57,19 @@ export async function initializeAuthSession(): Promise<AuthProfile | null> {
   return profile;
 }
 
-export async function autenticarPorCpf(cpf: string): Promise<AuthProfile> {
-  const profile = await loginWithCpf(onlyDigits(cpf));
+export async function autenticarPorCpf(
+  cpf: string,
+): Promise<CpfAuthenticationResult> {
+  const canonicalCpf = onlyDigits(cpf);
+  const profile = await loginWithCpf(canonicalCpf);
   setSession(profile);
-  return profile;
+  try {
+    const signedGrant = await fetchOfflineGrant();
+    await saveCollaborativeOfflineGrant(canonicalCpf, signedGrant);
+    return { profile, offlineGrant: "READY" };
+  } catch {
+    return { profile, offlineGrant: "UNAVAILABLE" };
+  }
 }
 
 /** Bloqueia o dispositivo antes de tentar revogar a sessão no servidor. */

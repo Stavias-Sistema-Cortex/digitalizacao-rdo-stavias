@@ -5,6 +5,10 @@ import {
 } from "../../lib/api/apiClient";
 import type { AuthProfile } from "./authSession";
 import { parseAuthProfile } from "./authProfile";
+import {
+  parseSignedOfflineGrant,
+} from "./offlineVault";
+import type { SignedOfflineGrant } from "./offlineVault.types";
 
 export { parseAuthProfile } from "./authProfile";
 
@@ -31,6 +35,17 @@ export async function fetchSession(): Promise<AuthProfile | null> {
     throw responseError(body, response.status);
   }
   return parseAuthProfile(body);
+}
+
+export async function fetchOfflineGrant(): Promise<SignedOfflineGrant> {
+  const response = await apiFetch("/auth/offline-grant", {
+    method: "POST",
+  });
+  const body = await readResponseBody(response);
+  if (!response.ok) {
+    throw responseError(body, response.status);
+  }
+  return parseSignedOfflineGrant(body);
 }
 
 export async function logoutOnline(): Promise<

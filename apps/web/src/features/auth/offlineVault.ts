@@ -23,12 +23,17 @@ const VAULT_INFO = new TextEncoder().encode(
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-type VaultPolicy = {
+export type OfflineGrantPolicy = {
   allowedKeyFingerprints?: string[];
   now?: () => number;
 };
 
-type CreateOfflineVaultInput = VaultPolicy & {
+export type VerifiedOfflineGrant = {
+  claims: OfflineGrantClaims;
+  fingerprint: string;
+};
+
+type CreateOfflineVaultInput = OfflineGrantPolicy & {
   credentialId: string;
   rpId: string;
   prfSalt: string;
@@ -48,7 +53,7 @@ export async function createOfflineVault(
     throw new Error("Resultado PRF inválido para o cofre offline.");
   }
   const rpId = canonicalRpId(input.rpId);
-  const verified = await verifySignedGrant(
+  const verified = await verifySignedOfflineGrant(
     input.signedGrant,
     input,
   );
@@ -56,7 +61,7 @@ export async function createOfflineVault(
   const ownerId = verified.claims.colaboradorId;
   const scopeHash = await scopeFingerprint(
     ownerId,
-    grantScopeMaterial(verified.claims),
+    offlineGrantScopeMaterial(verified.claims),
   );
   const credentialFingerprint = toBase64Url(
     await crypto.subtle.digest("SHA-256", credentialId),
@@ -100,7 +105,7 @@ export async function createOfflineVault(
 
 export async function unlockOfflineVault(
   metadata: OfflineVaultMetadata,
-  policy: VaultPolicy = {},
+  policy: OfflineGrantPolicy = {},
 ): Promise<OfflineUnlockResult> {
   const normalized = validateMetadata(metadata);
   if (
@@ -134,16 +139,16 @@ export async function unlockOfflineVault(
     } catch {
       throw new Error("O cofre offline está inválido ou foi alterado.");
     }
-    const grant = parseSignedGrant(
+    const grant = parseSerializedSignedOfflineGrant(
       new TextDecoder("utf-8", { fatal: true }).decode(plaintext),
     );
-    const verified = await verifySignedGrant(grant, policy);
+    const verified = await verifySignedOfflineGrant(grant, policy);
     if (verified.fingerprint !== normalized.serverKeyFingerprint) {
       throw new Error("A assinatura do grant offline não é confiável.");
     }
     const expectedScope = await scopeFingerprint(
       verified.claims.colaboradorId,
-      grantScopeMaterial(verified.claims),
+      offlineGrantScopeMaterial(verified.claims),
     );
     if (
       normalized.ownerId !== verified.claims.colaboradorId ||
@@ -151,15 +156,7 @@ export async function unlockOfflineVault(
     ) {
       throw new Error("O escopo do cofre offline foi alterado.");
     }
-    activeGrant = verified.claims;
-    setOfflineSession({
-      colaboradorId: verified.claims.colaboradorId,
-      nome: verified.claims.nome,
-      papelAcesso: verified.claims.papelAcesso,
-      escopoGlobal: verified.claims.escopoGlobal,
-      obraIds: [...verified.claims.obraIds],
-      expiraEm: verified.claims.expiraEm,
-    });
+    activateOfflineGrant(verified.claims);
     return "UNLOCKED";
   } finally {
     prfOutput.fill(0);
@@ -169,7 +166,7 @@ export async function unlockOfflineVault(
 export async function renewOfflineVault(
   metadata: OfflineVaultMetadata,
   requestGrant: () => Promise<SignedOfflineGrant>,
-  policy: VaultPolicy = {},
+  policy: OfflineGrantPolicy = {},
 ): Promise<OfflineVaultMetadata | "PRF_UNAVAILABLE"> {
   const normalized = validateMetadata(metadata);
   if (
@@ -211,10 +208,22 @@ export function clearOfflineGrant(): void {
   clearOfflineSession();
 }
 
-async function verifySignedGrant(
+export function activateOfflineGrant(claims: OfflineGrantClaims): void {
+  activeGrant = claims;
+  setOfflineSession({
+    colaboradorId: claims.colaboradorId,
+    nome: claims.nome,
+    papelAcesso: claims.papelAcesso,
+    escopoGlobal: claims.escopoGlobal,
+    obraIds: [...claims.obraIds],
+    expiraEm: claims.expiraEm,
+  });
+}
+
+export async function verifySignedOfflineGrant(
   grant: SignedOfflineGrant,
-  policy: VaultPolicy,
-): Promise<{ claims: OfflineGrantClaims; fingerprint: string }> {
+  policy: OfflineGrantPolicy = {},
+): Promise<VerifiedOfflineGrant> {
   validateEnvelope(grant);
   const payload = fromBase64Url(grant.payload, 32_768);
   const publicKeySpki = fromBase64Url(grant.publicKeySpki, 8_192);
@@ -256,7 +265,7 @@ async function verifySignedGrant(
 }
 
 function allowedFingerprints(
-  policy: VaultPolicy,
+  policy: OfflineGrantPolicy,
   localFingerprint: string,
 ): Set<string> {
   const configured = policy.allowedKeyFingerprints ??
@@ -373,7 +382,7 @@ async function requestVaultPrf(
   return extractPrfFirst(publicCredential.getClientExtensionResults());
 }
 
-function validateEnvelope(grant: SignedOfflineGrant): void {
+function validateEnvelope(grant: unknown): void {
   if (
     !isRecord(grant) ||
     !exactKeys(grant, ["keyId", "payload", "publicKeySpki", "signature"]) ||
@@ -386,15 +395,19 @@ function validateEnvelope(grant: SignedOfflineGrant): void {
   }
 }
 
-function parseSignedGrant(value: string): SignedOfflineGrant {
+export function parseSignedOfflineGrant(value: unknown): SignedOfflineGrant {
+  validateEnvelope(value);
+  return value as SignedOfflineGrant;
+}
+
+function parseSerializedSignedOfflineGrant(value: string): SignedOfflineGrant {
   let parsed: unknown;
   try {
     parsed = JSON.parse(value);
   } catch {
     throw new Error("Envelope do grant offline inválido.");
   }
-  validateEnvelope(parsed as SignedOfflineGrant);
-  return parsed as SignedOfflineGrant;
+  return parseSignedOfflineGrant(parsed);
 }
 
 function parseClaims(value: string, now: number): OfflineGrantClaims {
@@ -515,7 +528,7 @@ function vaultAdditionalData(value: {
   );
 }
 
-function grantScopeMaterial(claims: OfflineGrantClaims): string {
+export function offlineGrantScopeMaterial(claims: OfflineGrantClaims): string {
   return claims.escopoGlobal
     ? "ALFA:GLOBAL"
     : `BETA:${claims.obraIds.join(",")}`;
