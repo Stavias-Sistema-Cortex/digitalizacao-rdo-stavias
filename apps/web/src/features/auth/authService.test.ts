@@ -36,7 +36,10 @@ import {
   clearRemoteSessionIsolation,
   hasRemoteSessionIsolation,
 } from "./remoteSessionIsolation";
-import { ApiError } from "../../lib/api/apiError";
+import {
+  ApiError,
+  ApiTransportError,
+} from "../../lib/api/apiError";
 
 const broadcastMessages: unknown[] = [];
 
@@ -201,8 +204,23 @@ describe("authService", () => {
       new ApiError("Sessão incompatível.", 401, null),
     );
 
+    await expect(autenticarPorCpf("11144477735"))
+      .rejects.toThrow("Sessão incompatível.");
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+  });
+
+  it("preserva a orientação segura quando a prova da aba não pode ser preparada", async () => {
+    mocks.loginWithCpf.mockRejectedValue(
+      new ApiTransportError(
+        "Não foi possível preparar a prova desta aba. Atualize a página e entre novamente.",
+        "CLIENT_INSTANCE_UNAVAILABLE",
+      ),
+    );
+
     await expect(autenticarPorCpf("11144477735")).rejects.toThrow(
-      "confirmar a sessão recém-autenticada",
+      "Não foi possível preparar a prova desta aba. Atualize a página e entre novamente.",
     );
 
     expect(getSession()).toBeNull();

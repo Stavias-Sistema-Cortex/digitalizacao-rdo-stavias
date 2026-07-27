@@ -66,6 +66,9 @@ VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=contract-fingerprint
 CORTEX_WEB_PORT=15473
 CORTEX_API_PORT=18091
 PORT=18092
+CORTEX_PUBLIC_ORIGIN=http://localhost:15473
+CORTEX_CORS_ALLOWED_ORIGINS=http://localhost:5174
+CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5174
 CORTEX_SYNC_ENABLED=true
 OTP=$activation_marker
 VENDOR_OTP_SECRET=$activation_marker
@@ -114,7 +117,11 @@ set -euo pipefail
   printf 'maven-environment\n'
   env | sed 's/=.*//' | LC_ALL=C sort
 } >> "$CORTEX_CONTRACT_ENVIRONMENT"
-printf '%s\n' "${SERVER_PORT:-missing}" > "$CORTEX_CONTRACT_SERVER_PORT"
+{
+  printf '%s\n' "${SERVER_PORT:-missing}"
+  printf '%s\n' "${CORTEX_CORS_ALLOWED_ORIGINS:-missing}"
+  printf '%s\n' "${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:-missing}"
+} > "$CORTEX_CONTRACT_SERVER_PORT"
 EOF
 chmod +x "$fake_bin/docker" "$fake_bin/lsof" "$mirror_root/apps/api/mvnw"
 
@@ -178,7 +185,11 @@ grep -Fq 'CORTEX_SYNC_ENABLED' "$capture_root/compose.environment"
 grep -Fq $'\t-p\t127.0.0.1:18091:8080' "$capture_root/docker.arguments"
 grep -Fq $'\t-e\tCORTEX_WEB_PORT=15473' "$capture_root/docker.arguments"
 
-grep -Fxq '18092' "$capture_root/api.server-port"
+sed -n '1p' "$capture_root/api.server-port" | grep -Fxq '18092'
+sed -n '2p' "$capture_root/api.server-port" |
+  grep -Fxq 'http://localhost:15473'
+sed -n '3p' "$capture_root/api.server-port" |
+  grep -Fxq 'http://localhost:15473'
 grep -Fq 'CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE' "$capture_root/api.environment"
 grep -Fq 'CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE' "$capture_root/api.environment"
 grep -Fq 'CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE' "$capture_root/api.environment"

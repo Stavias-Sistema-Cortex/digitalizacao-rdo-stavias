@@ -153,6 +153,9 @@ function failClosedAfterFreshLogin(error: unknown): never {
       { cause: error },
     );
   }
+  if (error instanceof ApiError || error instanceof ApiTransportError) {
+    throw error;
+  }
   throw new Error(
     "Não foi possível confirmar a sessão recém-autenticada. Entre novamente.",
     { cause: error },

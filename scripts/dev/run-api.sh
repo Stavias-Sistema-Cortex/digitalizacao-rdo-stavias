@@ -8,6 +8,13 @@ source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"
 source "$ROOT_DIR/scripts/dev/operational-memory-cursor-preflight.sh"
 source "$ROOT_DIR/scripts/dev/postgres-cortex-common.sh"
 
+# A manually selected web port must rotate both browser-origin allowlists
+# together. This explicit override wins over stale values loaded from .env.
+if [[ -n "${CORTEX_PUBLIC_ORIGIN:-}" ]]; then
+  export CORTEX_CORS_ALLOWED_ORIGINS="$CORTEX_PUBLIC_ORIGIN"
+  export CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS="$CORTEX_PUBLIC_ORIGIN"
+fi
+
 cortex_require_postgres_url
 cortex_require_text CORTEX_POSTGRES_USER
 cortex_prepare_postgres_password
