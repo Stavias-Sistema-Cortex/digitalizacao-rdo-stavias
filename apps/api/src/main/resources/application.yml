@@ -142,6 +142,7 @@ cortex:
       endpoint: ${CORTEX_STORAGE_S3_ENDPOINT:}
       prefix: ${CORTEX_STORAGE_S3_PREFIX:}
       path-style: ${CORTEX_STORAGE_S3_PATH_STYLE:false}
+      send-sse-header: ${CORTEX_STORAGE_S3_SEND_SSE_HEADER:true}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}

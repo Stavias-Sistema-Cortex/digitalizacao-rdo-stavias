@@ -32,7 +32,8 @@ class S3ObjectStorageTest {
         S3ObjectStorage storage = new S3ObjectStorage(
                 client,
                 "cortex-private",
-                "production/tenant-a"
+                "production/tenant-a",
+                true
         );
         byte[] body = "conteudo".getBytes(StandardCharsets.UTF_8);
 
@@ -56,6 +57,31 @@ class S3ObjectStorageTest {
     }
 
     @Test
+    void omitsTheUnsupportedSseHeaderForR2() {
+        S3Client client = mock(S3Client.class);
+        when(client.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
+                .thenReturn(PutObjectResponse.builder().build());
+        S3ObjectStorage storage = new S3ObjectStorage(
+                client,
+                "cortex-private",
+                "production",
+                false
+        );
+
+        storage.put(
+                "objects/ab/id/hash",
+                new ByteArrayInputStream(new byte[]{1}),
+                1,
+                "application/octet-stream"
+        );
+
+        ArgumentCaptor<PutObjectRequest> request =
+                ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(client).putObject(request.capture(), any(RequestBody.class));
+        assertThat(request.getValue().serverSideEncryption()).isNull();
+    }
+
+    @Test
     void streamsReadsAndDeletesWithoutGeneratingPublicUrls() throws Exception {
         byte[] body = "conteudo".getBytes(StandardCharsets.UTF_8);
         S3Client client = mock(S3Client.class);
@@ -72,7 +98,8 @@ class S3ObjectStorageTest {
         S3ObjectStorage storage = new S3ObjectStorage(
                 client,
                 "cortex-private",
-                ""
+                "",
+                true
         );
 
         try (ObjectStorageContent content = storage.get(

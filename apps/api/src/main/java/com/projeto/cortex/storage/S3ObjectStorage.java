@@ -20,11 +20,18 @@ public final class S3ObjectStorage implements ObjectStorage {
     private final S3Client client;
     private final String bucket;
     private final String prefix;
+    private final boolean sendSseHeader;
 
-    public S3ObjectStorage(S3Client client, String bucket, String prefix) {
+    public S3ObjectStorage(
+            S3Client client,
+            String bucket,
+            String prefix,
+            boolean sendSseHeader
+    ) {
         this.client = Objects.requireNonNull(client, "client");
         this.bucket = requireSimpleValue(bucket, "bucket");
         this.prefix = normalizePrefix(prefix);
+        this.sendSseHeader = sendSseHeader;
     }
 
     @Override
@@ -43,19 +50,16 @@ public final class S3ObjectStorage implements ObjectStorage {
             throw new IllegalArgumentException("Conteúdo S3 inválido.");
         }
         try {
+            PutObjectRequest.Builder request = PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(resolveKey(key))
+                    .contentLength(length)
+                    .contentType(requireSimpleValue(mediaType, "mediaType"));
+            if (sendSseHeader) {
+                request.serverSideEncryption(ServerSideEncryption.AES256);
+            }
             client.putObject(
-                    PutObjectRequest.builder()
-                            .bucket(bucket)
-                            .key(resolveKey(key))
-                            .contentLength(length)
-                            .contentType(requireSimpleValue(
-                                    mediaType,
-                                    "mediaType"
-                            ))
-                            .serverSideEncryption(
-                                    ServerSideEncryption.AES256
-                            )
-                            .build(),
+                    request.build(),
                     RequestBody.fromInputStream(inputStream, length)
             );
         } catch (S3Exception exception) {

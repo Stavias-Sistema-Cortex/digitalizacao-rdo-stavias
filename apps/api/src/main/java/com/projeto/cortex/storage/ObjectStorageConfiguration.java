@@ -92,7 +92,8 @@ public class ObjectStorageConfiguration implements EnvironmentAware {
         return new S3ObjectStorage(
                 cortexS3Client,
                 properties.getS3().getBucket(),
-                properties.getS3().getPrefix()
+                properties.getS3().getPrefix(),
+                properties.getS3().isSendSseHeader()
         );
     }
 }

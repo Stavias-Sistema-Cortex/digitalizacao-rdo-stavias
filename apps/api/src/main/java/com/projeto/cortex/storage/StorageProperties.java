@@ -89,6 +89,7 @@ public class StorageProperties {
         private String endpoint = "";
         private String prefix = "";
         private boolean pathStyle;
+        private boolean sendSseHeader = true;
 
         public String getBucket() {
             return bucket;
@@ -128,6 +129,14 @@ public class StorageProperties {
 
         public void setPathStyle(boolean pathStyle) {
             this.pathStyle = pathStyle;
+        }
+
+        public boolean isSendSseHeader() {
+            return sendSseHeader;
+        }
+
+        public void setSendSseHeader(boolean sendSseHeader) {
+            this.sendSseHeader = sendSseHeader;
         }
     }
 }

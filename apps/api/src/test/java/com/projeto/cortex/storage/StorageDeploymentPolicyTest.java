@@ -60,4 +60,28 @@ class StorageDeploymentPolicyTest {
                 false
         )).doesNotThrowAnyException();
     }
+
+    @Test
+    void sseHeaderCanOnlyBeDisabledForTheHttpsR2Endpoint() {
+        StorageProperties properties = new StorageProperties();
+        properties.setProvider("s3");
+        properties.getS3().setBucket("cortex-private");
+        properties.getS3().setRegion("auto");
+        properties.getS3().setSendSseHeader(false);
+
+        assertThatThrownBy(() -> StorageDeploymentPolicy.validate(properties, false))
+                .hasMessageContaining("R2");
+
+        properties.getS3().setEndpoint(
+                "https://account-id.r2.cloudflarestorage.com"
+        );
+        assertThatCode(() -> StorageDeploymentPolicy.validate(properties, false))
+                .doesNotThrowAnyException();
+
+        properties.getS3().setEndpoint(
+                "https://r2.cloudflarestorage.com.attacker.example"
+        );
+        assertThatThrownBy(() -> StorageDeploymentPolicy.validate(properties, false))
+                .hasMessageContaining("R2");
+    }
 }

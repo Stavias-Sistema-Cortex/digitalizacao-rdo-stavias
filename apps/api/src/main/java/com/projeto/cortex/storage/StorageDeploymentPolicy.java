@@ -1,5 +1,6 @@
 package com.projeto.cortex.storage;
 
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.Locale;
 
@@ -82,6 +83,31 @@ public final class StorageDeploymentPolicy {
         if (strip(properties.getS3().getRegion()) == null) {
             throw new IllegalStateException(
                     "ObjectStorage S3 exige region."
+            );
+        }
+        if (!properties.getS3().isSendSseHeader()) {
+            validateR2Endpoint(properties);
+        }
+    }
+
+    private static void validateR2Endpoint(StorageProperties properties) {
+        URI endpoint;
+        try {
+            endpoint = URI.create(strip(properties.getS3().getEndpoint()));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(
+                    "O header SSE só pode ser omitido para um endpoint HTTPS R2."
+            );
+        }
+        String host = endpoint.getHost();
+        if (!"https".equalsIgnoreCase(endpoint.getScheme())
+                || host == null
+                || !host.endsWith(".r2.cloudflarestorage.com")
+                || endpoint.getUserInfo() != null
+                || endpoint.getQuery() != null
+                || endpoint.getFragment() != null) {
+            throw new IllegalStateException(
+                    "O header SSE só pode ser omitido para um endpoint HTTPS R2."
             );
         }
     }
