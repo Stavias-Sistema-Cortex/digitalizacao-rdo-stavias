@@ -74,6 +74,11 @@ export function clearSession(): void {
   channel?.postMessage(LOGOUT_MESSAGE);
 }
 
+/** Clears only this document; explicit logout remains the cross-tab action. */
+export function clearSessionForCurrentDocument(): void {
+  clearSessionLocally();
+}
+
 function clearSessionLocally(): void {
   onlineSession = null;
   offlineSession = null;

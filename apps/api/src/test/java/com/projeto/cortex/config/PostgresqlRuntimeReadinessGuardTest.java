@@ -19,13 +19,13 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV60Chain() throws Exception {
+    void configuredRuntimeRequiresTheCompleteV61Chain() throws Exception {
         var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
                 "CLEAN_START_REQUIRED_SCHEMA_VERSION"
         );
         field.setAccessible(true);
 
-        assertThat(field.get(null)).isEqualTo("60");
+        assertThat(field.get(null)).isEqualTo("61");
     }
 
     @Test
@@ -97,14 +97,14 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV60RowIsAbsent() {
+    void refusesWhenTheExplicitV61RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V60");
-        verify(jdbcTemplate).queryForObject(contains("version = '60'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V61");
+        verify(jdbcTemplate).queryForObject(contains("version = '61'"), eq(Integer.class));
     }
 
     @Test
@@ -119,7 +119,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV60AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV61AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -166,7 +166,7 @@ class PostgresqlRuntimeReadinessGuardTest {
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "60", runtimeReady, registry
+                jdbcTemplate, "61", runtimeReady, registry
         );
     }
 

@@ -137,6 +137,23 @@ describe("authSession", () => {
     ).not.toContain(profile.colaboradorId);
   });
 
+  it("clears only the current document when a remote session is rejected", async () => {
+    const firstTab = await import("./authSession");
+    firstTab.setSession(profile);
+
+    vi.resetModules();
+    const secondTab = await import("./authSession");
+    secondTab.setSession(profile);
+
+    firstTab.clearSessionForCurrentDocument();
+
+    expect(firstTab.getSession()).toBeNull();
+    expect(secondTab.getSession()).toEqual(profile);
+    expect(
+      broadcastChannels.flatMap((channel) => channel.messages),
+    ).toEqual([]);
+  });
+
   it("reconhece ALFA somente com valor canônico exato", async () => {
     const session = await import("./authSession");
     expect(session.isAlfa({ ...profile, papelAcesso: "ALFA" })).toBe(true);

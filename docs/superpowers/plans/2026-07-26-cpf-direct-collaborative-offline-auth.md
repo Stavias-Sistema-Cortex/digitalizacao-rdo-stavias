@@ -20,11 +20,10 @@
 
 ---
 
-### Task 1: Expor CPF direto no PostgreSQL com limites persistentes
+### Task 1: Expor CPF direto no PostgreSQL sem gate de rate limit da aplicação
 
 **Files:**
 - Modify: `apps/api/src/main/java/com/projeto/cortex/auth/DirectCpfLoginPolicy.java`
-- Modify: `apps/api/src/main/java/com/projeto/cortex/auth/AuthLoginRateLimiter.java`
 - Modify: `apps/api/src/main/java/com/projeto/cortex/auth/AuthController.java`
 - Modify: `apps/api/src/main/java/com/projeto/cortex/auth/session/AuthPublicEndpointPolicy.java`
 - Modify: `apps/api/src/main/java/com/projeto/cortex/auth/EmailOtpAuthenticationPolicy.java`
@@ -37,7 +36,6 @@
 - Modify: `apps/api/src/main/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuard.java`
 - Modify: `apps/api/src/main/resources/application.yml`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/AuthControllerTest.java`
-- Modify: `apps/api/src/test/java/com/projeto/cortex/auth/AuthLoginRateLimiterTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/DirectCpfLoginPolicyTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/session/AuthPublicEndpointPolicyTest.java`
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/session/AuthSessionFilterTest.java`
@@ -46,13 +44,13 @@
 - Modify: `apps/api/src/test/java/com/projeto/cortex/auth/postgresql/PostgresqlAcademyDirectCpfLoginIT.java`
 
 **Interfaces:**
-- `AuthLoginRateLimiter.check(String cpfRaw, String clientIp)` must execute before `AuthService.autenticarPorCpf`; it uses `AuthRateLimitStore` and `CpfLookupDigestService.challengeLookup`, never the JVM-only map.
+- `POST /api/auth/login` normaliza o CPF e chama `AuthService.autenticarPorCpf` sem um limiter de aplicação ou resposta `429`; essa é a política explícita para o dispositivo colaborativo. Proteções de borda não pertencem a este controlador.
 - Normal PostgreSQL exact public POST set is `"/api/auth/login"`, `"/api/auth/passkeys/authentication/options"`, and `"/api/auth/passkeys/authentication/verify"`.
 - `AuthController.login(LoginRequest, HttpServletRequest, HttpServletResponse)` returns the existing safe `AuthSessionResponse`, emits no CPF/e-mail/token body fields, and returns the existing generic rejection for malformed/unknown/inactive CPF.
 
 - [ ] **Step 1: Write failing direct-login policy and controller tests**
 
-Replace the normal-PostgreSQL `410 Gone` expectation with a successful direct CPF session case. Add one test that sets the limiter to reject and asserts `429`, no `autenticarPorCpf`, no `sessions.issue`, and no cookie write. Add a normal-runtime OTP rejection case while preserving the activation OTP case.
+Replace the normal-PostgreSQL `410 Gone` expectation with a successful direct CPF session case. Add one controller-constructor test proving que o endpoint direto não depende de `AuthLoginRateLimiter` e não retorna `429`. Add a normal-runtime OTP rejection case while preserving the activation OTP case.
 
 ```java
 doNothing().when(rateLimiter).check(eq("11144477735"), anyString());
@@ -70,7 +68,7 @@ Run:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw \
-  -Dtest='AuthControllerTest,DirectCpfLoginPolicyTest,AuthLoginRateLimiterTest,AuthPublicEndpointPolicyTest,AuthSessionFilterTest,CsrfRequestFilterTest,PostgresqlRuntimeReadinessGuardTest' test
+  -Dtest='AuthControllerTest,DirectCpfLoginPolicyTest,AuthPublicEndpointPolicyTest,AuthSessionFilterTest,CsrfRequestFilterTest,PostgresqlRuntimeReadinessGuardTest' test
 ```
 
 Expected: FAIL because normal PostgreSQL still disables/directly hides CPF, allows normal OTP, and the login limiter is not wired/persistent.
@@ -81,13 +79,13 @@ Make `DirectCpfLoginPolicy` enabled only when `postgresql` is active and `postgr
 
 Give the OTP configuration, challenge issuer/service, and delivery executor/listener the profile expression `!postgresql | postgresql-activation`. This keeps legacy and activation behavior intact but removes the normal PostgreSQL OTP HMAC/SMTP dependency. Keep `ClientAddressResolver`, `PostgresqlRateLimitBucketRepository`, and the new direct CPF limiter available in normal PostgreSQL.
 
-Refactor `AuthLoginRateLimiter` to depend on `AuthRateLimitStore` and `CpfLookupDigestService`; derive fixed 64-hex bucket keys from a domain-separated SHA-256 of `challengeLookup(cpfRaw)` material, canonical client IP, and the global label. Consume source, global, and protected-identifier buckets with `cortex.auth.login-rate-limit.{max-requests,global-max-requests,window-seconds}`. Add those properties to `application.yml` with bounded defaults. Inject the limiter and `ClientAddressResolver` into `AuthController`; invoke `check` before identity resolution.
+Do not introduce `AuthLoginRateLimiter`, IP buckets, a direct-login rate configuration, or `429` behavior into `AuthController`. Keep the opaque-cookie, CSRF, scope, expiry and exact canonical-identity checks intact. `ClientAddressResolver` may remain for the separately profiled activation flow only.
 
 Change PostgreSQL readiness from verified e-mail ALFA to one active Academy `auth_identity` with current HMAC material, so the runtime does not require an irrelevant e-mail proof.
 
 - [ ] **Step 4: Run focused backend tests and verify GREEN**
 
-Run the command from Step 2. Expected: PASS, normal PostgreSQL CPF login is public and rate-limited, normal OTP is not accessible, and activation OTP remains isolated.
+Run the command from Step 2. Expected: PASS, normal PostgreSQL CPF login is public without an application `429` gate, normal OTP is not accessible, and activation OTP remains isolated.
 
 - [ ] **Step 5: Run PostgreSQL integration proof**
 
@@ -95,10 +93,10 @@ Run:
 
 ```bash
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw -Ppostgresql-it -DforkCount=1 -DreuseForks=true \
-  -Dit.test='PostgresqlAcademyDirectCpfLoginIT,PostgresqlCortexRuntimeIT,PostgresqlCleanStartFlowIT,PostgresqlRateLimitBucketRepositoryIT' verify
+  -Dit.test='PostgresqlAcademyDirectCpfLoginIT,PostgresqlCortexRuntimeIT,PostgresqlCleanStartFlowIT' verify
 ```
 
-Expected: PASS; a synthetic active Academy identity issues a resolvable opaque session using PostgreSQL only, and runtime activation does not publish OTP in normal mode.
+Expected: PASS; a synthetic active Academy identity issues a resolvable opaque session using PostgreSQL only, without application rate-limit storage, and runtime activation does not publish OTP in normal mode.
 
 - [ ] **Step 6: Commit**
 
@@ -452,7 +450,7 @@ diff check, and exact same-worktree local smoke after the final review.
 
 ## Plan self-review
 
-- Task 1 covers canonical Academy identity, normal/activation route separation, rate limiting, readiness, cookies, CSRF, and PostgreSQL proof.
+- Task 1 covers canonical Academy identity, normal/activation route separation, the deliberate absence of an application CPF `429` gate, readiness, cookies, CSRF, and PostgreSQL proof.
 - Task 2 covers the new local grant boundary without altering PRF encryption or data namespaces.
 - Task 3 covers the actual customer-visible removal of OTP/e-mail plus both offline paths.
 - Task 4 covers the screenshot's host mismatch and deployment/local evidence.
@@ -463,3 +461,16 @@ diff check, and exact same-worktree local smoke after the final review.
 - Task 7 validates the actual child-process environment and launcher arguments,
   closing the remaining lexical-verifier bypasses.
 - No task queries Academy/Zeladoria MySQL on a browser request or fabricates operational data.
+
+## Execution ledger
+
+| Item | Status | Evidence |
+| --- | --- | --- |
+| Tasks 1–3: CPF direct login, signed collaborative offline grant, and CPF/passkey UI | complete | `c3ce22c`, `4e84887`, `3e370db`, `babac26`; direct CPF intentionally has no application rate limiter/`429`, and unit plus PostgreSQL integration gates passed. |
+| Tasks 4–7: same-origin runtime, normal launcher policy, revenue-only boundary, and dynamic launcher proof | complete | `5359e08`, `0762fbd`, `807fa83`, `52412c6`; source, Compose, secret, API and PostgreSQL contracts passed. |
+| Task 8: configured offline signing keys | complete | `492096c`; startup and boundary contracts passed. |
+| Task 9: bounded RDO PDF/XLS/XLSX/XLSM import | complete | `f00a3b6`; focused import/export checks, full web suite, lint, and build passed. |
+| Task 10: stale remote cookie isolation after offline use | complete | `b876486`; targeted authentication tests passed. |
+| Task 11: bind sessions and challenges to active browser documents | complete | PostgreSQL V61/V44 migrations, V60→V61 integration proof, focused auth and PostgreSQL gates passed. |
+| Task 12: adversarial normal-runtime verifier repair | complete | static and dynamic launcher fixtures, 34 boundary tests, Compose and secret gates passed. |
+| Canonical local database upgrade | complete | `StaviasCortex` moved V60→V61 with Flyway; database query returned `61:true` and runtime preflight passed. |

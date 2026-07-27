@@ -9,15 +9,15 @@ somente com evidência da mesma revisão que será publicada.
 ## 1. Banco e migrações
 
 - [ ] Backup restaurável do banco atual foi criado e testado.
-- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V60 sem `repair` ou edição de
+- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V61 sem `repair` ou edição de
   migration.
-- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V60.
+- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V61.
 - [ ] O usuário da API tem somente os privilégios necessários no schema.
 - [ ] `CORTEX_POSTGRES_URL`, `CORTEX_POSTGRES_USER` e
   `CORTEX_POSTGRES_PASSWORD_FILE` apontam para o PostgreSQL canônico; nenhum
   `CORTEX_DB_*` é usado como fallback.
-- [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
-  `email_verificado_em` preenchido.
+- [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA,
+  HMAC de CPF atual e origem Academy persistidos no PostgreSQL.
 - [ ] Os registros ALFA explícitos anteriores permanecem ALFA após a migração.
 - [ ] Antes do acesso de cada colaborador QA, um bootstrap/sync explicitamente
   auditado do Academy persistiu no PostgreSQL o HMAC de CPF e o estado ativo. O
@@ -38,9 +38,10 @@ estado; `/api/health` mede somente o processo.
 - [ ] Cookies estão `Secure`; `SameSite` foi escolhido para a topologia real.
 - [ ] O par PEM do offline grant está montado e o fingerprint público usado no
   build da PWA corresponde exatamente a esse par.
-- [ ] O login por CPF normaliza o identificador, aplica limites por origem,
-  globais e por identificador antes da consulta e resolve somente a identidade
-  Academy já espelhada em PostgreSQL.
+- [ ] O login por CPF normaliza o identificador, resolve somente a identidade
+  Academy já espelhada em PostgreSQL e não depende de OTP/e-mail, senha ou de
+  um gate de rate limit da aplicação. Proteções de borda, se adotadas, são
+  configuradas e testadas no ingresso sem mudar essa política colaborativa.
 - [ ] Sucesso por CPF emite somente cookie opaco + CSRF no hostname final; a
   resposta e os logs não expõem material de lookup, CPF persistido ou segredo.
 - [ ] E-mail/OTP está indisponível no runtime normal e permanece isolado no
@@ -126,7 +127,7 @@ git diff --check
 ```
 
 - [ ] Maven completo passou em JDK 21.
-- [ ] PostgreSQL 18 descartável passou com migrations V44–V60 e os fluxos
+- [ ] PostgreSQL 18 descartável passou com migrations V44–V61 e os fluxos
   Cortex 3.0.
 - [ ] O contrato de Compose de produção passou com secrets temporários, fontes
   MySQL somente leitura e porta web loopback.
@@ -149,7 +150,7 @@ git diff --check
 
 - Preserve a imagem anterior e o backup pré-migração.
 - Não altere nem apague migrations aplicadas. Rollback de aplicação só é seguro
-  se a versão anterior tolerar as tabelas aditivas V45–V60.
+  se a versão anterior tolerar as tabelas aditivas V45–V61.
 - Nunca use `flyway repair` para mascarar checksum divergente.
 
 ## Limite de evidência externa

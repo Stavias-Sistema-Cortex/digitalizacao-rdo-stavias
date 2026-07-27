@@ -23,7 +23,7 @@ arquivos protegidos:
 cp .env.example .env
 ```
 
-O runtime normal usa `local,postgresql` e falha fechado sem schema V60, ALFA
+O runtime normal usa `local,postgresql` e falha fechado sem schema V61, ALFA
 real ativo e o gate explícito. A sequência completa é:
 
 ```bash
@@ -31,10 +31,13 @@ real ativo e o gate explícito. A sequência completa é:
 # Execute o bootstrap somente com a identidade real autorizada e a fonte
 # Academy somente leitura, conforme o runbook de clean start.
 ./scripts/dev/bootstrap-postgres-alfa.sh
-./scripts/dev/start-postgres-activation.sh
 CORTEX_POSTGRES_RUNTIME_READY=true \
   ./scripts/dev/check-postgres-runtime-release.sh
 ```
+
+`start-postgres-activation.sh` não faz parte da entrada normal por CPF. Use-o
+somente quando uma transição de ativação explicitamente autorizada exigir
+e-mail/OTP no processo separado descrito abaixo.
 
 Não crie ALFA, pessoa, obra, equipe, RDO, serviço, preço ou receita sintéticos
 para fazer o runtime parecer pronto. Consulte
@@ -108,8 +111,10 @@ Acesse exatamente `http://localhost:$CORTEX_WEB_PORT` e valide
 cookie, CSRF e origem WebAuthn. Não reutilize uma aba aberta por outro checkout.
 
 No runtime normal `postgresql`, o CPF resolve somente a identidade canônica já
-persistida em `StaviasCortex` e emite a sessão opaca protegida pelos limites de
-requisição; passkey continua como alternativa. Não há consulta MySQL ao Academy
+persistida em `StaviasCortex` e emite a sessão opaca; passkey continua como
+alternativa. Por decisão da operação colaborativa, esse endpoint não aplica um
+rate limit da aplicação nem emite `429`; uma proteção de borda, se necessária,
+deve ser configurada fora do contrato de login. Não há consulta MySQL ao Academy
 ou à Zeladoria durante uma autenticação do navegador e não há requisito de
 segredo OTP. A ativação por e-mail/OTP continua uma transição separada e
 explícita por `start-postgres-activation.sh`.

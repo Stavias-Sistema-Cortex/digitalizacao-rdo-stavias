@@ -7,6 +7,7 @@ import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.session.AuthCookieService;
 import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
@@ -120,7 +121,7 @@ class PdorCw38386MysqlIntegrationTest {
                 ADMIN_USER_ID,
                 "Admin PDOR Teste",
                 PapelAcesso.ALFA
-        ));
+        ), ClientInstanceProof.fromRawValue("A".repeat(43)).orElseThrow());
 
         assertThat(contarProgramacoesCw38386()).isEqualTo(172);
     }

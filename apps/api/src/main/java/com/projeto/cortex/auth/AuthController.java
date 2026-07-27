@@ -7,6 +7,7 @@ import com.projeto.cortex.auth.otp.OtpChallengeRequest;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
 import com.projeto.cortex.auth.otp.OtpVerifyRequest;
 import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
 import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
@@ -39,7 +40,6 @@ public class AuthController {
     private final Optional<EmailOtpChallengeService> otpChallenges;
     private final Optional<AuthService> authService;
     private final ClientAddressResolver clientAddresses;
-    private final AuthLoginRateLimiter loginRateLimiter;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
     private final AuthSessionProfileResolver sessionProfiles;
@@ -51,7 +51,6 @@ public class AuthController {
             Optional<EmailOtpChallengeService> otpChallenges,
             Optional<AuthService> authService,
             ClientAddressResolver clientAddresses,
-            AuthLoginRateLimiter loginRateLimiter,
             AuthSessionService sessions,
             AuthCookieService cookies,
             AuthSessionProfileResolver sessionProfiles,
@@ -61,7 +60,6 @@ public class AuthController {
         this.otpChallenges = otpChallenges;
         this.authService = authService;
         this.clientAddresses = clientAddresses;
-        this.loginRateLimiter = loginRateLimiter;
         this.sessions = sessions;
         this.cookies = cookies;
         this.sessionProfiles = sessionProfiles;
@@ -78,9 +76,13 @@ public class AuthController {
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
         servletResponse.setHeader("Cache-Control", "no-store");
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                servletRequest
+        );
         return requiredOtpChallenges().request(
                 request == null ? null : request.identifier(),
-                clientAddresses.resolve(servletRequest)
+                clientAddresses.resolve(servletRequest),
+                clientInstance.hash()
         );
     }
 
@@ -92,18 +94,22 @@ public class AuthController {
             HttpServletResponse response
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
+        response.setHeader("Cache-Control", "no-store");
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                servletRequest
+        );
         AuthenticatedIdentity identity = requiredOtpChallenges().verify(
                 challengeId,
                 request == null ? null : request.code(),
-                clientAddresses.resolve(servletRequest)
+                clientAddresses.resolve(servletRequest),
+                clientInstance.hash()
         ).orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED,
                 "Código inválido ou expirado."
         ));
         sessionProfiles.requireEligibleForSessionIssue(identity);
-        IssuedAuthSession issued = sessions.issue(identity);
+        IssuedAuthSession issued = sessions.issue(identity, clientInstance);
         cookies.write(response, issued);
-        response.setHeader("Cache-Control", "no-store");
         return sessionProfiles.profileForIssuedSession(
                 identity,
                 issued.expiresAt()
@@ -149,8 +155,10 @@ public class AuthController {
     ) {
         response.setHeader("Cache-Control", "no-store");
         directCpfLoginPolicy.requireEnabled();
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                servletRequest
+        );
         String cpf = canonicalCpf(request);
-        loginRateLimiter.check(cpf, clientAddresses.resolve(servletRequest));
         AuthenticatedIdentity identity = authService.orElseThrow(
                 () -> new ResponseStatusException(
                         HttpStatus.SERVICE_UNAVAILABLE,
@@ -162,7 +170,7 @@ public class AuthController {
                         LOGIN_REJECTED_MESSAGE
                 ));
         sessionProfiles.requireEligibleForSessionIssue(identity);
-        IssuedAuthSession issued = sessions.issue(identity);
+        IssuedAuthSession issued = sessions.issue(identity, clientInstance);
         cookies.write(response, issued);
         return sessionProfiles.profileForIssuedSession(
                 identity,

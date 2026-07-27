@@ -41,6 +41,7 @@ class EmailOtpChallengeMysqlIntegrationTest {
             "test-only-otp-hmac-key-material-00000001".getBytes();
     private static final String CODE = "123456";
     private static final String EMAIL = "collaborator@example.invalid";
+    private static final String CLIENT_INSTANCE_HASH = "a".repeat(64);
 
     private PdorMysqlTestDatabase database;
 
@@ -149,7 +150,11 @@ class EmailOtpChallengeMysqlIntegrationTest {
         );
 
         assertThatThrownBy(() -> transaction.execute(
-                ignored -> service.verify(fixture.challengeId(), CODE)
+                ignored -> service.verify(
+                        fixture.challengeId(),
+                        CODE,
+                        CLIENT_INSTANCE_HASH
+                )
         )).isInstanceOf(IllegalStateException.class)
                 .hasMessage("Identidade não pôde ser ativada.");
 
@@ -175,7 +180,11 @@ class EmailOtpChallengeMysqlIntegrationTest {
     ) throws Exception {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return new TransactionTemplate(transactions).execute(
-                ignored -> service.verify(challengeId, CODE)
+                ignored -> service.verify(
+                        challengeId,
+                        CODE,
+                        CLIENT_INSTANCE_HASH
+                )
         );
     }
 
@@ -220,6 +229,7 @@ class EmailOtpChallengeMysqlIntegrationTest {
                 collaboratorId,
                 cryptography.identifierDigest("11144477735"),
                 cryptography.codeDigest(challengeId, CODE, EMAIL),
+                CLIENT_INSTANCE_HASH,
                 600,
                 5
         );

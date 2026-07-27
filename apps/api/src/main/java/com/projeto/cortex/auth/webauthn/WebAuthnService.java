@@ -2,6 +2,7 @@ package com.projeto.cortex.auth.webauthn;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.yubico.webauthn.data.ByteArray;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -65,7 +66,11 @@ public class WebAuthnService {
         this.idSupplier = Objects.requireNonNull(idSupplier);
     }
 
-    public WebAuthnOptionsResponse startRegistration(String collaboratorId) {
+    public WebAuthnOptionsResponse startRegistration(
+            String collaboratorId,
+            ClientInstanceProof clientInstance
+    ) {
+        Objects.requireNonNull(clientInstance, "Instância do cliente obrigatória.");
         AuthenticatedIdentity identity = repository.findActiveIdentity(
                 collaboratorId
         ).orElseThrow(this::invalidSession);
@@ -81,6 +86,7 @@ public class WebAuthnService {
                 WebAuthnCeremony.REGISTRATION,
                 started.challenge(),
                 started.requestJson(),
+                clientInstance.hash(),
                 properties.challengeTtlSeconds()
         );
         return new WebAuthnOptionsResponse(
@@ -93,11 +99,13 @@ public class WebAuthnService {
     public PasskeySummary finishRegistration(
             String collaboratorId,
             String challengeId,
-            JsonNode credentialResponse
+            JsonNode credentialResponse,
+            ClientInstanceProof clientInstance
     ) {
         StoredWebAuthnChallenge challenge = consume(
                 challengeId,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                clientInstance
         );
         if (challenge.collaboratorId() == null
                 || !challenge.collaboratorId().equals(collaboratorId)) {
@@ -138,7 +146,11 @@ public class WebAuthnService {
         );
     }
 
-    public WebAuthnOptionsResponse startCpfBoundAuthentication(String cpf) {
+    public WebAuthnOptionsResponse startCpfBoundAuthentication(
+            String cpf,
+            ClientInstanceProof clientInstance
+    ) {
+        Objects.requireNonNull(clientInstance, "Instância do cliente obrigatória.");
         StartedWebAuthnCeremony started = engine.startAuthentication();
         String challengeId = nextId();
         repository.createChallenge(
@@ -147,6 +159,7 @@ public class WebAuthnService {
                 WebAuthnCeremony.AUTHENTICATION,
                 started.challenge(),
                 started.requestJson(),
+                clientInstance.hash(),
                 properties.challengeTtlSeconds()
         );
         return new WebAuthnOptionsResponse(
@@ -158,11 +171,13 @@ public class WebAuthnService {
 
     public AuthenticatedIdentity finishCpfBoundAuthentication(
             String challengeId,
-            JsonNode credentialResponse
+            JsonNode credentialResponse,
+            ClientInstanceProof clientInstance
     ) {
         StoredWebAuthnChallenge challenge = consume(
                 challengeId,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                clientInstance
         );
         String challengeOwner = challenge.collaboratorId();
         if (challengeOwner == null) {
@@ -208,9 +223,17 @@ public class WebAuthnService {
 
     private StoredWebAuthnChallenge consume(
             String challengeId,
-            WebAuthnCeremony ceremony
+            WebAuthnCeremony ceremony,
+            ClientInstanceProof clientInstance
     ) {
-        return repository.consumeChallenge(challengeId, ceremony)
+        if (clientInstance == null) {
+            throw invalidPasskey();
+        }
+        return repository.consumeChallenge(
+                challengeId,
+                ceremony,
+                clientInstance.hash()
+        )
                 .orElseThrow(this::invalidPasskey);
     }
 

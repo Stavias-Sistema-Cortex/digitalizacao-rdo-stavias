@@ -41,6 +41,7 @@ class EmailOtpChallengeRepositoryTest {
                 "collaborator-id",
                 "identifier-digest",
                 "code-digest",
+                "a".repeat(64),
                 600,
                 5
         );

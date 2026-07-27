@@ -90,7 +90,8 @@ public class LocalCorsConfiguration implements WebMvcConfigurer {
                 .allowedHeaders(
                         "Accept",
                         "Content-Type",
-                        "X-CSRF-Token"
+                        "X-CSRF-Token",
+                        "X-Cortex-Client-Instance"
                 )
                 .allowCredentials(true)
                 .allowPrivateNetwork(false)
@@ -126,7 +127,8 @@ public class LocalCorsConfiguration implements WebMvcConfigurer {
         configuration.setAllowedHeaders(Arrays.asList(
                 HttpHeaders.ACCEPT,
                 HttpHeaders.CONTENT_TYPE,
-                "X-CSRF-Token"
+                "X-CSRF-Token",
+                "X-Cortex-Client-Instance"
         ));
         configuration.setAllowCredentials(true);
         configuration.setAllowPrivateNetwork(false);

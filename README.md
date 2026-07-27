@@ -18,7 +18,7 @@ cp .env.example .env
 - readiness com banco: `http://127.0.0.1:8081/api/readiness`
 
 `compose.local.yml` usa somente o runtime PostgreSQL canônico. Ele não cria
-ALFA, obra, RDO ou receita fictícios: migrações até V60, bootstrap de uma identidade
+ALFA, obra, RDO ou receita fictícios: migrações até V61, bootstrap de uma identidade
 real e o preflight de release devem ser concluídos antes de definir
 `CORTEX_POSTGRES_RUNTIME_READY=true`.
 
@@ -37,13 +37,17 @@ Comece por [docs/deploy-checklist.md](docs/deploy-checklist.md) e
 [docs/production-runbook.md](docs/production-runbook.md). O arquivo
 `compose.production.example.yml` é apenas uma topologia de referência: não cria
 banco nem contém credenciais. Produção falha fechada sem secrets por arquivo,
-origem HTTPS exata, SMTP autenticado, storage durável e um ALFA ativo com e-mail
-verificado. O web container fica em loopback por padrão e deve ser publicado por
+origem HTTPS exata, storage durável e uma identidade Academy ALFA ativa no
+PostgreSQL. O SMTP pertence somente ao processo isolado de ativação. O web
+container fica em loopback por padrão e deve ser publicado por
 um ingresso HTTPS gerenciado; Academy e Zeladoria recebem somente credenciais
 de leitura para importação, enquanto todo estado do Córtex fica no PostgreSQL.
-O acesso online normal usa CPF + OTP entregue ao e-mail canônico persistido no
-PostgreSQL; passkey é uma alternativa online. O cofre offline exige uma passkey
-PRF previamente registrada e nunca aceita CPF ou OTP como desbloqueio.
+O acesso online normal usa CPF para localizar a identidade canônica persistida
+no PostgreSQL e emitir uma sessão opaca; passkey é uma alternativa online. Em
+dispositivo colaborativo, um grant offline assinado, válido e correspondente
+permite reabrir somente o cache local com o mesmo CPF. O cofre PRF continua
+exigindo uma passkey previamente registrada; nenhum mecanismo offline autoriza
+chamadas à API.
 
 ## Runtime PostgreSQL canônico
 

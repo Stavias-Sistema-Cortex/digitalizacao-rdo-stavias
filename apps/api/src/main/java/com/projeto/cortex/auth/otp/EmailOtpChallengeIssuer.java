@@ -42,7 +42,11 @@ public class EmailOtpChallengeIssuer {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void issue(String challengeId, String identifier) {
+    public void issue(
+            String challengeId,
+            String identifier,
+            String clientInstanceHash
+    ) {
         String canonicalIdentifier = identifierNormalizer.canonicalize(identifier);
         Optional<AuthIdentity> identity = identifierNormalizer.isInvalid(
                 canonicalIdentifier
@@ -64,6 +68,7 @@ public class EmailOtpChallengeIssuer {
                 identity.map(AuthIdentity::colaboradorId).orElse(null),
                 identifierDigest,
                 codeDigest,
+                clientInstanceHash,
                 policy.ttlSeconds(),
                 policy.maxAttempts()
         );

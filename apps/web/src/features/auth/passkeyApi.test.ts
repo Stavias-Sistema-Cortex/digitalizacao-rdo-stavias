@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   readResponseBody: vi.fn(),
   saveOfflineVaultMetadata: vi.fn(),
   clearSession: vi.fn(),
+  clearSessionForCurrentDocument: vi.fn(),
   setSession: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock("../../lib/api/apiClient", () => ({
 }));
 vi.mock("./authSession", () => ({
   clearSession: mocks.clearSession,
+  clearSessionForCurrentDocument: mocks.clearSessionForCurrentDocument,
   setSession: mocks.setSession,
 }));
 vi.mock("./offlineVault", () => ({
@@ -152,6 +154,8 @@ describe("passkeyApi", () => {
       .mockResolvedValueOnce(profile);
 
     await expect(authenticateWithPasskey(cpf)).resolves.toEqual(profile);
+    expect(mocks.clearSessionForCurrentDocument).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSession).not.toHaveBeenCalled();
     expect(mocks.setSession).toHaveBeenCalledWith(profile);
     expect(mocks.freshAuthenticationFetch.mock.calls[0][0]).toBe(
       "/auth/passkeys/authentication/options",

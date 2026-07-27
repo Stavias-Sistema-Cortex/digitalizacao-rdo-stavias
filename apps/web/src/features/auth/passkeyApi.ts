@@ -12,7 +12,7 @@ import type {
 } from "./offlineVault.types";
 import { saveOfflineVaultMetadata } from "./offlineVaultRepository";
 import {
-  clearSession,
+  clearSessionForCurrentDocument,
   setSession,
   type AuthProfile,
 } from "./authSession";
@@ -131,7 +131,7 @@ export async function authenticateWithPasskey(
     freshAuthenticationFetch,
   );
   const profile = parseProfile(response);
-  clearSession();
+  clearSessionForCurrentDocument();
   clearRemoteSessionIsolation();
   setSession(profile);
   return profile;

@@ -56,7 +56,8 @@ class AuthSessionResponseTest {
                         "Colaborador Sintético",
                         PapelAcesso.ALFA,
                         EXPIRY,
-                        "a".repeat(64)
+                        "a".repeat(64),
+                        "b".repeat(64)
                 ),
                 Optional.empty()
         );

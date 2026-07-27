@@ -37,11 +37,13 @@ continuam na mesma origem HTTPS externa.
 ## Modelo de entrada
 
 No runtime `postgresql`, o CPF é somente um identificador: ele localiza a
-identidade Academy canônica já persistida em PostgreSQL e, após rate limiting,
-emite a sessão opaca existente. Passkey permanece como alternativa online. O
-runtime normal não consulta Academy ou Zeladoria durante essa autenticação e
-não carrega configuração de OTP; e-mail/OTP pertence somente à ativação
-explícita `postgresql-activation`.
+identidade Academy canônica já persistida em PostgreSQL e emite a sessão opaca
+existente. Passkey permanece como alternativa online. Por política explícita de
+dispositivo colaborativo, esse endpoint não tem rate limit da aplicação nem
+retorna `429`; qualquer proteção de borda deve ser adotada e validada no
+ingresso. O runtime normal não consulta Academy ou Zeladoria durante essa
+autenticação e não carrega configuração de OTP; e-mail/OTP pertence somente à
+ativação explícita `postgresql-activation`.
 
 O template normal `.env.example` não contém variáveis de OTP ou SMTP. A
 ativação deve receber seu ambiente próprio diretamente do gerenciador de

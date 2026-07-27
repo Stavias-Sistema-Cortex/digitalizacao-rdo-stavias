@@ -1,6 +1,8 @@
 const AUTH_NOTICE_KEY = "cortex.auth.notice";
 const OFFLINE_GRANT_UNAVAILABLE = "offline-grant-unavailable";
 
+export const AUTH_NOTICE_CHANGED_EVENT = "cortex-auth-notice-changed";
+
 export const OFFLINE_GRANT_UNAVAILABLE_MESSAGE =
   "Acesso realizado. O acesso offline deste dispositivo não foi atualizado.";
 
@@ -8,6 +10,9 @@ export const OFFLINE_GRANT_UNAVAILABLE_MESSAGE =
 export function queueOfflineGrantUnavailableNotice(): void {
   try {
     sessionStorage.setItem(AUTH_NOTICE_KEY, OFFLINE_GRANT_UNAVAILABLE);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTH_NOTICE_CHANGED_EVENT));
+    }
   } catch {
     // O acesso online continua válido quando o storage do navegador falha.
   }

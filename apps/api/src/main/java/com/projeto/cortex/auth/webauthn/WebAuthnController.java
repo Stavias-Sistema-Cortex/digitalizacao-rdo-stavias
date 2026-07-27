@@ -7,6 +7,7 @@ import com.projeto.cortex.auth.identity.CpfLookupDigestService;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
 import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
@@ -53,22 +54,28 @@ public class WebAuthnController {
 
     @PostMapping("/api/auth/passkeys/registration/options")
     public WebAuthnOptionsResponse startRegistration(
+            HttpServletRequest request,
             HttpServletResponse response
     ) {
         noStore(response);
-        return webAuthn.startRegistration(currentUser.requireUserId());
+        return webAuthn.startRegistration(
+                currentUser.requireUserId(),
+                ClientInstanceProof.require(request)
+        );
     }
 
     @PostMapping("/api/auth/passkeys/registration/verify")
     public PasskeySummary finishRegistration(
             @RequestBody(required = false) WebAuthnCeremonyResult result,
+            HttpServletRequest request,
             HttpServletResponse response
     ) {
         noStore(response);
         return webAuthn.finishRegistration(
                 currentUser.requireUserId(),
                 result == null ? null : result.challengeId(),
-                result == null ? null : result.credential()
+                result == null ? null : result.credential(),
+                ClientInstanceProof.require(request)
         );
     }
 
@@ -80,6 +87,9 @@ public class WebAuthnController {
             HttpServletResponse response
     ) {
         noStore(response);
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                request
+        );
         requireAllowed(
                 WebAuthnRateLimitAction.AUTHENTICATION_OPTIONS,
                 request
@@ -89,7 +99,8 @@ public class WebAuthnController {
                 : authenticationRequest.cpf();
         requireIdentifierAllowed(cpfDigests.challengeLookup(cpf));
         return webAuthn.startCpfBoundAuthentication(
-                cpf
+                cpf,
+                clientInstance
         );
     }
 
@@ -100,6 +111,9 @@ public class WebAuthnController {
             HttpServletResponse response
     ) {
         noStore(response);
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                request
+        );
         requireAllowed(
                 WebAuthnRateLimitAction.AUTHENTICATION_VERIFY,
                 request
@@ -107,10 +121,11 @@ public class WebAuthnController {
         AuthenticatedIdentity identity =
                 webAuthn.finishCpfBoundAuthentication(
                         result == null ? null : result.challengeId(),
-                        result == null ? null : result.credential()
+                        result == null ? null : result.credential(),
+                        clientInstance
                 );
         sessionProfiles.requireEligibleForSessionIssue(identity);
-        IssuedAuthSession issued = sessions.issue(identity);
+        IssuedAuthSession issued = sessions.issue(identity, clientInstance);
         cookies.write(response, issued);
         return sessionProfiles.profileForIssuedSession(
                 identity,

@@ -1,4 +1,9 @@
 import { apiUrl } from "../../lib/api/apiEndpoint";
+import {
+  CLIENT_INSTANCE_HEADER,
+  getOrCreateClientInstance,
+  markClientInstanceAuthenticated,
+} from "../../lib/api/clientInstance";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const EMAIL_CHALLENGE_PATH = "/auth/email/challenges";
@@ -21,6 +26,12 @@ export async function publicAuthFetch(
   headers.set("Accept", "application/json");
   headers.delete("Authorization");
   headers.delete("X-CSRF-Token");
+  headers.delete(CLIENT_INSTANCE_HEADER);
+  const lease = await getOrCreateClientInstance();
+  if (lease === null) {
+    throw new Error("Não foi possível preparar a prova desta aba.");
+  }
+  headers.set(CLIENT_INSTANCE_HEADER, lease.value);
 
   const controller = new AbortController();
   const timeoutId = window.setTimeout(
@@ -28,12 +39,16 @@ export async function publicAuthFetch(
     REQUEST_TIMEOUT_MS,
   );
   try {
-    return await fetch(apiUrl(path), {
+    const response = await fetch(apiUrl(path), {
       ...options,
       credentials: "include",
       signal: controller.signal,
       headers,
     });
+    if (response.ok && EMAIL_CHALLENGE_VERIFY_PATH.test(path)) {
+      markClientInstanceAuthenticated(lease.value);
+    }
+    return response;
   } finally {
     window.clearTimeout(timeoutId);
   }

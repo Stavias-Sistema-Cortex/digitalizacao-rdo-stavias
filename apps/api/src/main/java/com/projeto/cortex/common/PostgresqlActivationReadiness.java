@@ -13,7 +13,7 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
     private static final String CURRENT_SCHEMA_COMPLETED_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
-            WHERE version = '60'
+            WHERE version = '61'
               AND success = TRUE
             """;
 
@@ -51,7 +51,7 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
 
     private IllegalStateException unavailable() {
         return new IllegalStateException(
-                "Ativação PostgreSQL indisponível até a cadeia V60."
+                "Ativação PostgreSQL indisponível até a cadeia V61."
         );
     }
 }

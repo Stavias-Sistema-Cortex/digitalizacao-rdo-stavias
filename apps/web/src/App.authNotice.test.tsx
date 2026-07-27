@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   autenticarPorCpf: vi.fn(),
   hasCollaborativeOfflineGrantMetadata: vi.fn(),
+  initializeCortexDb: vi.fn(),
   loadOfflineVaultMetadata: vi.fn(),
 }));
 
@@ -26,6 +27,10 @@ vi.mock("./features/auth/offlineVaultRepository", () => ({
 
 vi.mock("./appAutomaticSync", () => ({
   useAppAutomaticSync: () => undefined,
+}));
+
+vi.mock("./lib/db/cortexDb", () => ({
+  initializeCortexDb: mocks.initializeCortexDb,
 }));
 
 vi.mock("./features/home/HomePage", () => ({
@@ -49,6 +54,7 @@ beforeEach(() => {
   sessionStorage.clear();
   window.history.replaceState({}, "", "/home");
   mocks.hasCollaborativeOfflineGrantMetadata.mockResolvedValue(false);
+  mocks.initializeCortexDb.mockResolvedValue(undefined);
   mocks.loadOfflineVaultMetadata.mockResolvedValue(null);
   mocks.autenticarPorCpf.mockImplementation(async () => {
     setSession(profile);
@@ -65,19 +71,9 @@ afterEach(() => {
 });
 
 describe("App direct CPF authentication notice", () => {
-  it("keeps a generic offline-cache status after the login screen unmounts and the app reloads", async () => {
-    const assign = vi.fn();
-    vi.stubGlobal("location", {
-      assign,
-      hash: "",
-      href: "http://localhost/home",
-      origin: "http://localhost",
-      pathname: "/home",
-      protocol: "http:",
-      search: "",
-    });
+  it("keeps a generic offline-cache status after CPF login in the same document", async () => {
     const user = userEvent.setup();
-    const firstApp = render(<App />);
+    render(<App />);
 
     await user.type(await screen.findByRole("textbox", { name: "CPF" }), "11144477735");
     await user.click(screen.getByRole("button", { name: "Entrar" }));
@@ -86,7 +82,9 @@ describe("App direct CPF authentication notice", () => {
       .toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Entrar no sistema" }))
       .not.toBeInTheDocument();
-    expect(assign).toHaveBeenCalledWith("/");
+    expect(await screen.findByText(
+      "Acesso realizado. O acesso offline deste dispositivo não foi atualizado.",
+    )).toBeInTheDocument();
 
     const persistedValues = Array.from(
       { length: sessionStorage.length },
@@ -96,14 +94,5 @@ describe("App direct CPF authentication notice", () => {
     expect(persistedValues).not.toContain(profile.nome);
     expect(persistedValues).not.toContain(profile.colaboradorId);
 
-    firstApp.unmount();
-    clearSession();
-    setSession(profile);
-    render(<App />);
-
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Acesso realizado. O acesso offline deste dispositivo não foi atualizado.",
-    );
-    expect(screen.getByTestId("authenticated-home")).toBeInTheDocument();
   });
 });

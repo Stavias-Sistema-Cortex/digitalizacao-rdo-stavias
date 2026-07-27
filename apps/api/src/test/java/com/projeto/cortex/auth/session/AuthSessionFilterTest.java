@@ -6,6 +6,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import jakarta.servlet.FilterChain;
@@ -22,13 +24,18 @@ class AuthSessionFilterTest {
         AuthCookieService cookies = mock(AuthCookieService.class);
         FilterChain chain = mock(FilterChain.class);
         String raw = SessionTokenFixtures.token((byte) 7);
+        String rawClientInstance = SessionTokenFixtures.token((byte) 9);
         ResolvedAuthSession resolved = SessionTokenFixtures.resolved(
-                SessionTokenFixtures.token((byte) 8)
+                SessionTokenFixtures.token((byte) 8),
+                rawClientInstance
         );
         MockHttpServletRequest request = request("GET", "/api/obras");
+        request.addHeader(ClientInstanceProof.HEADER, rawClientInstance);
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(cookies.readSessionToken(request)).thenReturn(Optional.of(raw));
-        when(sessions.resolve(raw)).thenReturn(Optional.of(resolved));
+        when(sessions.resolve(eq(raw), any())).thenReturn(Optional.of(resolved));
+        when(sessions.matchesClientInstance(eq(resolved), any()))
+                .thenReturn(true);
 
         new AuthSessionFilter(sessions, cookies)
                 .doFilter(request, response, chain);
@@ -40,6 +47,66 @@ class AuthSessionFilterTest {
                 AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION
         )).isSameAs(resolved);
         verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void cookieSessionWithoutClientInstanceNeverReachesTheController()
+            throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        FilterChain chain = mock(FilterChain.class);
+        String raw = SessionTokenFixtures.token((byte) 21);
+        MockHttpServletRequest request = request("GET", "/api/obras");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(cookies.readSessionToken(request)).thenReturn(Optional.of(raw));
+        new AuthSessionFilter(sessions, cookies)
+                .doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        verify(chain, never()).doFilter(request, response);
+        verify(cookies, never()).clear(response);
+        verify(sessions, never()).revoke(raw, "LOGOUT");
+    }
+
+    @Test
+    void cookieSessionWithAnotherTabInstanceNeverReachesTheController()
+            throws Exception {
+        AuthSessionService sessions = mock(AuthSessionService.class);
+        AuthCookieService cookies = mock(AuthCookieService.class);
+        FilterChain chain = mock(FilterChain.class);
+        String rawSession = SessionTokenFixtures.token((byte) 31);
+        String sessionInstance = SessionTokenFixtures.token((byte) 32);
+        String otherTabInstance = SessionTokenFixtures.token((byte) 33);
+        ResolvedAuthSession resolved = SessionTokenFixtures.resolved(
+                SessionTokenFixtures.token((byte) 34),
+                sessionInstance
+        );
+        MockHttpServletRequest request = request("GET", "/api/obras");
+        request.addHeader(ClientInstanceProof.HEADER, otherTabInstance);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(cookies.readSessionToken(request)).thenReturn(
+                Optional.of(rawSession)
+        );
+        when(sessions.resolve(eq(rawSession), any()))
+                .thenReturn(Optional.of(resolved));
+        when(sessions.matchesClientInstance(eq(resolved), any()))
+                .thenReturn(false);
+
+        new AuthSessionFilter(sessions, cookies)
+                .doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(request.getAttribute(
+                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID
+        )).isNull();
+        assertThat(request.getAttribute(
+                AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION
+        )).isNull();
+        verify(chain, never()).doFilter(request, response);
+        verify(cookies, never()).clear(response);
+        verify(sessions, never()).revoke(rawSession, "LOGOUT");
     }
 
     @Test
@@ -70,9 +137,13 @@ class AuthSessionFilterTest {
         FilterChain chain = mock(FilterChain.class);
         String raw = SessionTokenFixtures.token((byte) 9);
         MockHttpServletRequest request = request("GET", "/api/obras");
+        request.addHeader(
+                ClientInstanceProof.HEADER,
+                SessionTokenFixtures.token((byte) 10)
+        );
         MockHttpServletResponse response = new MockHttpServletResponse();
         when(cookies.readSessionToken(request)).thenReturn(Optional.of(raw));
-        when(sessions.resolve(raw)).thenReturn(Optional.empty());
+        when(sessions.resolve(eq(raw), any())).thenReturn(Optional.empty());
 
         new AuthSessionFilter(sessions, cookies)
                 .doFilter(request, response, chain);

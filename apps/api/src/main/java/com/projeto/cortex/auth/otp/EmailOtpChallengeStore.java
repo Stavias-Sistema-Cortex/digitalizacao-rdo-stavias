@@ -11,11 +11,15 @@ public interface EmailOtpChallengeStore {
             String collaboratorId,
             String identifierDigest,
             String codeDigest,
+            String clientInstanceHash,
             int ttlSeconds,
             int maxAttempts
     );
 
-    Optional<LockedChallenge> lockForVerification(String challengeId);
+    Optional<LockedChallenge> lockForVerification(
+            String challengeId,
+            String clientInstanceHash
+    );
 
     Optional<DeliveryState> deliveryState(String challengeId);
 
@@ -27,7 +31,12 @@ public interface EmailOtpChallengeStore {
 
     int recordFailedAttempt(String challengeId);
 
-    int consume(String challengeId, String collaboratorId, String codeDigest);
+    int consume(
+            String challengeId,
+            String collaboratorId,
+            String codeDigest,
+            String clientInstanceHash
+    );
 
     int activateIdentity(String collaboratorId, String authenticationEmail);
 

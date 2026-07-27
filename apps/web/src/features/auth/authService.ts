@@ -5,12 +5,17 @@ import {
   logoutOnline,
 } from "./authApi";
 import {
+  ApiError,
+  ApiTransportError,
+} from "../../lib/api/apiClient";
+import {
   OfflineGrantOwnerMismatchError,
   saveCollaborativeOfflineGrant,
 } from "./collaborativeOfflineGrant";
 import { onlyDigits } from "./loginValidation";
 import {
   clearSession,
+  clearSessionForCurrentDocument,
   purgeLegacyAuthStorage,
   setSession,
   type AuthProfile,
@@ -29,14 +34,14 @@ export type CpfAuthenticationResult = {
 export async function initializeAuthSession(): Promise<AuthProfile | null> {
   purgeLegacyAuthStorage();
   if (hasRemoteSessionIsolation()) {
-    clearSession();
+    clearSessionForCurrentDocument();
     return null;
   }
   const profile = await fetchSession();
   if (profile) {
     setSession(profile);
   } else {
-    clearSession();
+    clearSessionForCurrentDocument();
   }
   return profile;
 }
@@ -48,38 +53,50 @@ export async function autenticarPorCpf(
   // Keep every ordinary credentialed request blocked throughout this
   // multi-request transition. A second tab can rotate the shared HttpOnly
   // cookie after /auth/login, so only the signed grant can release it.
-  clearSession();
+  clearSessionForCurrentDocument();
   markRemoteSessionIsolation();
+  let profile: AuthProfile;
   try {
-    const profile = await loginWithCpf(canonicalCpf);
+    profile = await loginWithCpf(canonicalCpf);
+  } catch (error: unknown) {
+    failClosedAfterFreshLogin(error);
+  }
+  try {
     const signedGrant = await fetchOfflineGrantAfterFreshCpfLogin();
     await saveCollaborativeOfflineGrant(
       canonicalCpf,
       signedGrant,
       profile.colaboradorId,
     );
+  } catch (error: unknown) {
+    if (requiresRemoteSessionIsolation(error)) {
+      failClosedAfterFreshLogin(error);
+    }
+    // The session cookie is now cryptographically bound to this tab. A
+    // transient grant transport/cache failure must not discard a valid online
+    // login; it only leaves collaborative offline access unavailable.
+    try {
+      clearRemoteSessionIsolation();
+      setSession(profile);
+      return { profile, offlineGrant: "UNAVAILABLE" };
+    } catch (releaseError: unknown) {
+      failClosedAfterFreshLogin(releaseError);
+    }
+  }
+  try {
     clearRemoteSessionIsolation();
     setSession(profile);
     return { profile, offlineGrant: "READY" };
   } catch (error: unknown) {
-    markRemoteSessionIsolation();
-    clearSession();
-    if (error instanceof OfflineGrantOwnerMismatchError) {
-      throw new Error(
-        "A sessão foi alterada durante a atualização do acesso offline. Entre novamente.",
-        { cause: error },
-      );
-    }
-    throw new Error(
-      "Não foi possível confirmar a sessão recém-autenticada. Entre novamente.",
-      { cause: error },
-    );
+    failClosedAfterFreshLogin(error);
   }
 }
 
 /** Bloqueia o dispositivo antes de tentar revogar a sessão no servidor. */
 export async function encerrarSessao(): Promise<void> {
   const remoteAlreadyIsolated = hasRemoteSessionIsolation();
+  // A deliberate logout is the only auth transition that intentionally
+  // propagates to every same-origin tab.
   clearSession();
   if (!remoteAlreadyIsolated) {
     markRemoteSessionIsolation();
@@ -92,4 +109,32 @@ export async function encerrarSessao(): Promise<void> {
   }
   await logoutOnline();
   clearRemoteSessionIsolation();
+}
+
+function requiresRemoteSessionIsolation(error: unknown): boolean {
+  return error instanceof OfflineGrantOwnerMismatchError ||
+    (error instanceof ApiError &&
+      (error.status === 401 || error.status === 403)) ||
+    (error instanceof ApiTransportError &&
+      error.kind === "REMOTE_SESSION_ISOLATED");
+}
+
+function failClosedAfterFreshLogin(error: unknown): never {
+  try {
+    markRemoteSessionIsolation();
+  } catch {
+    // The initial pre-login marker already failed closed in memory. Do not
+    // replace the authentication error with a storage implementation detail.
+  }
+  clearSessionForCurrentDocument();
+  if (error instanceof OfflineGrantOwnerMismatchError) {
+    throw new Error(
+      "A sessão foi alterada durante a atualização do acesso offline. Entre novamente.",
+      { cause: error },
+    );
+  }
+  throw new Error(
+    "Não foi possível confirmar a sessão recém-autenticada. Entre novamente.",
+    { cause: error },
+  );
 }

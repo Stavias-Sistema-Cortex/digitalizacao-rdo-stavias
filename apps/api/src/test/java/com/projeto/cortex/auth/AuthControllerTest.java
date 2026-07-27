@@ -1,14 +1,15 @@
 package com.projeto.cortex.auth;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -21,6 +22,7 @@ import com.projeto.cortex.auth.otp.ClientAddressResolver;
 import com.projeto.cortex.auth.otp.EmailOtpChallengeService;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
 import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
 import com.projeto.cortex.auth.session.AuthSessionService;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
@@ -28,15 +30,14 @@ import com.projeto.cortex.auth.session.ResolvedAuthSession;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.server.ResponseStatusException;
 
 class AuthControllerTest {
 
@@ -48,14 +49,13 @@ class AuthControllerTest {
             "30000000-0000-0000-0000-000000000003";
     private static final Instant EXPIRY =
             Instant.parse("2030-01-02T03:04:05Z");
+    private static final String CLIENT_INSTANCE = clientInstanceToken((byte) 51);
 
     private final EmailOtpChallengeService otp =
             mock(EmailOtpChallengeService.class);
     private final AuthService authService = mock(AuthService.class);
     private final ClientAddressResolver addresses =
             mock(ClientAddressResolver.class);
-    private final AuthLoginRateLimiter loginRateLimiter =
-            mock(AuthLoginRateLimiter.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
     private final AuthCookieService cookies = mock(AuthCookieService.class);
     private final CurrentUserService currentUsers = mock(CurrentUserService.class);
@@ -68,7 +68,6 @@ class AuthControllerTest {
                 Optional.of(otp),
                 Optional.of(authService),
                 addresses,
-                loginRateLimiter,
                 sessions,
                 cookies,
                 currentUsers,
@@ -87,15 +86,28 @@ class AuthControllerTest {
     }
 
     @Test
+    void directCpfControllerDoesNotDependOnAnApplicationRateLimiter() {
+        assertFalse(Arrays.stream(AuthController.class.getConstructors())
+                .flatMap(constructor -> Arrays.stream(
+                        constructor.getParameterTypes()
+                ))
+                .anyMatch(type -> type.getSimpleName().equals(
+                        "AuthLoginRateLimiter"
+                )));
+    }
+
+    @Test
     void directCpfStartsOpaqueSessionAndReturnsOnlyTheSafeProfile()
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
         IssuedAuthSession issued = issuedSession();
         when(authService.autenticarPorCpf("11144477735"))
                 .thenReturn(Optional.of(identity));
-        when(sessions.issue(identity)).thenReturn(issued);
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issued);
 
         mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cpf\":\"111.444.777-35\"}"))
                 .andExpect(status().isOk())
@@ -114,19 +126,60 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.email").doesNotExist());
 
         verify(cookies).write(any(HttpServletResponse.class), eq(issued));
-        verify(loginRateLimiter).check("11144477735", "203.0.113.10");
+    }
+
+    @Test
+    void directCpfRejectsMissingClientInstanceBeforeIdentityLookup()
+            throws Exception {
+        AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.of(identity));
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issuedSession());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        verify(authService, never()).autenticarPorCpf(any());
+        verify(sessions, never()).issue(any(), any());
+        verify(cookies, never()).write(any(), any());
+    }
+
+    @Test
+    void directCpfRejectsMalformedClientInstanceBeforeIdentityLookup()
+            throws Exception {
+        AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.of(identity));
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issuedSession());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", "malformed")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Cache-Control", "no-store"));
+
+        verify(authService, never()).autenticarPorCpf(any());
+        verify(sessions, never()).issue(any(), any());
+        verify(cookies, never()).write(any(), any());
     }
 
     @Test
     void malformedCpfStopsBeforeIdentityLookup()
             throws Exception {
         mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cpf\":\"123\"}"))
                 .andExpect(status().isBadRequest());
 
         verify(authService, never()).autenticarPorCpf(any());
-        verify(sessions, never()).issue(any());
+        verify(sessions, never()).issue(any(), any());
     }
 
     @Test
@@ -136,13 +189,13 @@ class AuthControllerTest {
         IssuedAuthSession issued = issuedSession();
         when(authService.autenticarPorCpf("11144477735"))
                 .thenReturn(Optional.of(identity));
-        when(sessions.issue(identity)).thenReturn(issued);
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issued);
         MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
                         Optional.empty(),
                         Optional.of(authService),
                         addresses,
-                        loginRateLimiter,
                         sessions,
                         cookies,
                         currentUsers,
@@ -152,6 +205,7 @@ class AuthControllerTest {
         ).build();
 
         postgresqlMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cpf\":\"111.444.777-35\"}"))
                 .andExpect(status().isOk())
@@ -162,43 +216,32 @@ class AuthControllerTest {
     }
 
     @Test
-    void rejectedDirectCpfRateLimitStopsBeforeIdentityAndCookieWrites()
-            throws Exception {
-        doThrow(new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
-                "Limite de tentativas atingido. Tente novamente em instantes."))
-                .when(loginRateLimiter).check("11144477735", "203.0.113.10");
-
-        mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"11144477735\"}"))
-                .andExpect(status().isTooManyRequests());
-
-        verify(authService, never()).autenticarPorCpf(any());
-        verify(sessions, never()).issue(any());
-        verify(cookies, never()).write(any(), any());
-    }
-
-    @Test
     void ineligibleCpfNeverIssuesSessionOrCookies() throws Exception {
         when(authService.autenticarPorCpf("11144477735"))
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(post("/api/auth/login")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"cpf\":\"11144477735\"}"))
                 .andExpect(status().isUnauthorized());
 
-        verify(sessions, never()).issue(any());
+        verify(sessions, never()).issue(any(), any());
         verify(cookies, never()).write(any(), any());
     }
 
     @Test
     void challengeReturnsOnlyTheStableGenericResponse() throws Exception {
         when(addresses.resolve(any())).thenReturn("203.0.113.10");
-        when(otp.request("11144477735", "203.0.113.10"))
+        when(otp.request(
+                eq("11144477735"),
+                eq("203.0.113.10"),
+                anyString()
+        ))
                 .thenReturn(OtpChallengeResponse.generic(CHALLENGE_ID, 600));
 
         mockMvc.perform(post("/api/auth/email/challenges")
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"identifier\":\"11144477735\"}"))
                 .andExpect(status().isAccepted())
@@ -221,7 +264,6 @@ class AuthControllerTest {
                         Optional.empty(),
                         Optional.of(authService),
                         addresses,
-                        loginRateLimiter,
                         sessions,
                         cookies,
                         currentUsers,
@@ -239,18 +281,24 @@ class AuthControllerTest {
 
     @Test
     void invalidCodeNeverIssuesSessionOrCookies() throws Exception {
-        when(otp.verify(CHALLENGE_ID, "000000", "203.0.113.10"))
+        when(otp.verify(
+                eq(CHALLENGE_ID),
+                eq("000000"),
+                eq("203.0.113.10"),
+                anyString()
+        ))
                 .thenReturn(Optional.empty());
 
         mockMvc.perform(post(
                         "/api/auth/email/challenges/{id}/verify",
                         CHALLENGE_ID
                 ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .content("{\"code\":\"000000\"}"))
                 .andExpect(status().isUnauthorized());
 
         verify(addresses).resolve(any(HttpServletRequest.class));
-        verify(sessions, never()).issue(any());
+        verify(sessions, never()).issue(any(), any());
         verify(cookies, never()).write(any(), any());
     }
 
@@ -264,14 +312,21 @@ class AuthControllerTest {
                 token('c'),
                 EXPIRY
         );
-        when(otp.verify(CHALLENGE_ID, "123456", "203.0.113.10"))
+        when(otp.verify(
+                eq(CHALLENGE_ID),
+                eq("123456"),
+                eq("203.0.113.10"),
+                anyString()
+        ))
                 .thenReturn(Optional.of(identity));
-        when(sessions.issue(identity)).thenReturn(issued);
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issued);
 
         mockMvc.perform(post(
                         "/api/auth/email/challenges/{id}/verify",
                         CHALLENGE_ID
                 ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .content("{\"code\":\"123456\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
@@ -294,15 +349,20 @@ class AuthControllerTest {
             throws Exception {
         AuthenticatedIdentity identity = identity(PapelAcesso.ALFA);
         IssuedAuthSession issued = issuedSession();
-        when(otp.verify(CHALLENGE_ID, "123456", "203.0.113.10"))
+        when(otp.verify(
+                eq(CHALLENGE_ID),
+                eq("123456"),
+                eq("203.0.113.10"),
+                anyString()
+        ))
                 .thenReturn(Optional.of(identity));
-        when(sessions.issue(identity)).thenReturn(issued);
+        when(sessions.issue(eq(identity), any(ClientInstanceProof.class)))
+                .thenReturn(issued);
         MockMvc activationMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
                         Optional.of(otp),
                         Optional.empty(),
                         addresses,
-                        loginRateLimiter,
                         sessions,
                         cookies,
                         new PostgresqlActivationSessionProfileResolver(),
@@ -315,6 +375,7 @@ class AuthControllerTest {
                         "/api/auth/email/challenges/{id}/verify",
                         CHALLENGE_ID
                 ).contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Cortex-Client-Instance", CLIENT_INSTANCE)
                         .content("{\"code\":\"123456\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.papelAcesso").value("ALFA"))
@@ -333,7 +394,8 @@ class AuthControllerTest {
                 "Pessoa Sintética",
                 PapelAcesso.ALFA,
                 EXPIRY,
-                "a".repeat(64)
+                "a".repeat(64),
+                "b".repeat(64)
         );
         mockMvc.perform(get("/api/auth/session").requestAttr(
                         AuthSessionFilter.REQUEST_ATTRIBUTE_SESSION,
@@ -370,7 +432,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.message").value(
                         AuthController.CPF_FILTER_DISABLED_MESSAGE
                 ));
-        verify(sessions, never()).issue(any());
+        verify(sessions, never()).issue(any(), any());
     }
 
     private IssuedAuthSession issuedSession() {
@@ -392,6 +454,17 @@ class AuthControllerTest {
 
     private String token(char character) {
         return String.valueOf(character).repeat(43);
+    }
+
+    private static String clientInstanceToken(byte fill) {
+        byte[] bytes = new byte[32];
+        java.util.Arrays.fill(bytes, fill);
+        try {
+            return java.util.Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(bytes);
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     private AuthSessionResponse profileFor(

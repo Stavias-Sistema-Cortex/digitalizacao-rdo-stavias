@@ -24,7 +24,9 @@ export class ApiError extends Error {
 export type ApiTransportFailureKind =
   | "CONNECTION"
   | "TIMEOUT"
-  | "REMOTE_SESSION_ISOLATED";
+  | "REMOTE_SESSION_ISOLATED"
+  | "CLIENT_INSTANCE_REAUTH_REQUIRED"
+  | "CLIENT_INSTANCE_UNAVAILABLE";
 
 /** A typed transport failure so retry decisions never inspect display text. */
 export class ApiTransportError extends Error {

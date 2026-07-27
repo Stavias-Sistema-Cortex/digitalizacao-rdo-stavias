@@ -59,7 +59,7 @@ describe("LoginPage access methods", () => {
     );
   });
 
-  it("authenticates the active collaborator directly with the canonical CPF", async () => {
+  it("keeps the live document after direct CPF authentication so a memory-only lease survives", async () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("PROD", true);
     mocks.autenticarPorCpf.mockResolvedValue({
@@ -78,7 +78,7 @@ describe("LoginPage access methods", () => {
     await waitFor(() => {
       expect(mocks.autenticarPorCpf).toHaveBeenCalledWith("11144477735");
     });
-    expect(navigate).toHaveBeenCalledWith("/");
+    expect(navigate).not.toHaveBeenCalled();
     expect(screen.queryByText(/código|e-mail/i)).not.toBeInTheDocument();
   });
 

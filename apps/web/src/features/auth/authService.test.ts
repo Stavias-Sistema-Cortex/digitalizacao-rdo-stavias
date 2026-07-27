@@ -35,6 +35,7 @@ import {
   clearRemoteSessionIsolation,
   hasRemoteSessionIsolation,
 } from "./remoteSessionIsolation";
+import { ApiError } from "../../lib/api/apiError";
 
 const profile = {
   colaboradorId: "00000000-0000-4000-8000-000000000001",
@@ -130,17 +131,17 @@ describe("authService", () => {
     expect(mocks.loginWithCpf).not.toHaveBeenCalled();
   });
 
-  it("keeps remote isolation and no local profile when the fresh grant cannot confirm the cookie owner", async () => {
+  it("keeps the bound online session when only the fresh offline grant transport is unavailable", async () => {
     mocks.loginWithCpf.mockResolvedValue(profile);
     mocks.fetchOfflineGrantAfterFreshCpfLogin.mockRejectedValue(
       new TypeError("offline"),
     );
 
     await expect(autenticarPorCpf("11144477735"))
-      .rejects.toThrow("confirmar a sessão recém-autenticada");
+      .resolves.toEqual({ profile, offlineGrant: "UNAVAILABLE" });
 
-    expect(getSession()).toBeNull();
-    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+    expect(getSession()).toEqual(profile);
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBeNull();
   });
 
   it("releases remote isolation only after a new direct CPF login succeeds", async () => {
@@ -175,6 +176,20 @@ describe("authService", () => {
     expect(getSession()).toBeNull();
     expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
     expect(mocks.logoutOnline).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the server rejects the bound fresh-grant session", async () => {
+    mocks.loginWithCpf.mockResolvedValue(profile);
+    mocks.fetchOfflineGrantAfterFreshCpfLogin.mockRejectedValue(
+      new ApiError("Sessão incompatível.", 401, null),
+    );
+
+    await expect(autenticarPorCpf("11144477735")).rejects.toThrow(
+      "confirmar a sessão recém-autenticada",
+    );
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
   });
 
   it("bloqueia a sessão local mesmo quando a rede impede a revogação", async () => {

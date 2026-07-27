@@ -53,6 +53,7 @@ class WebAuthnMysqlIntegrationTest {
         Fixture fixture = fixture();
         WebAuthnCredentialRepository repository = fixture.repository();
         String challengeId = UUID.randomUUID().toString();
+        String clientInstanceHash = "a".repeat(64);
         ByteArray challenge = new ByteArray(new byte[]{1, 2, 3, 4});
 
         repository.createChallenge(
@@ -61,16 +62,19 @@ class WebAuthnMysqlIntegrationTest {
                 WebAuthnCeremony.REGISTRATION,
                 challenge,
                 "{\"request\":true}",
+                clientInstanceHash,
                 300
         );
         assertThat(repository.consumeChallenge(
                 challengeId,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                clientInstanceHash
         )).get().extracting(StoredWebAuthnChallenge::collaboratorId)
                 .isEqualTo(fixture.collaboratorId());
         assertThat(repository.consumeChallenge(
                 challengeId,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                clientInstanceHash
         )).isEmpty();
 
         ByteArray credentialId = new ByteArray(new byte[]{5, 6, 7, 8});

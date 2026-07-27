@@ -71,7 +71,6 @@ export function LoginPage() {
         queueOfflineGrantUnavailableNotice();
       }
       setStatus("idle");
-      globalThis.location.assign("/");
     } catch (error: unknown) {
       setStatus("idle");
       setAuthError(errorMessage(error));
@@ -95,7 +94,6 @@ export function LoginPage() {
     setStatus("passkey");
     try {
       await authenticateWithPasskey(cpf);
-      globalThis.location.assign("/");
     } catch (error: unknown) {
       setStatus("idle");
       setAuthError(errorMessage(error));

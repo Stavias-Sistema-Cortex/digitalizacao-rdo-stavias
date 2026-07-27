@@ -11,6 +11,7 @@ import com.projeto.cortex.auth.identity.CpfLookupDigest;
 import com.projeto.cortex.auth.identity.HmacCpfLookupDigestService;
 import com.projeto.cortex.auth.session.AuthSessionProperties;
 import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.auth.session.PostgresqlAuthSessionRepository;
 import com.projeto.cortex.auth.session.ResolvedAuthSession;
@@ -86,10 +87,14 @@ class PostgresqlAcademyDirectCpfLoginIT
                     new PostgresqlAuthSessionRepository(jdbc),
                     new AuthSessionProperties(300)
             );
-            IssuedAuthSession issued = sessions.issue(identity);
+            ClientInstanceProof clientInstance = ClientInstanceProof
+                    .fromRawValue("A".repeat(43))
+                    .orElseThrow();
+            IssuedAuthSession issued = sessions.issue(identity, clientInstance);
 
             ResolvedAuthSession resolved = sessions.resolve(
-                    issued.sessionToken()
+                    issued.sessionToken(),
+                    clientInstance
             ).orElseThrow();
             assertThat(resolved.collaboratorId())
                     .isEqualTo(COLLABORATOR_ID);

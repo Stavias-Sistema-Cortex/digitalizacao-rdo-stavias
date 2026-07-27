@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.PapelAcesso;
 import com.projeto.cortex.auth.otp.AuthenticatedIdentity;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.yubico.webauthn.CredentialRepository;
 import com.yubico.webauthn.RelyingParty;
 import com.yubico.webauthn.data.AuthenticatorTransport;
@@ -38,6 +39,10 @@ class WebAuthnServiceTest {
     private static final String CREDENTIAL_RECORD_ID =
             "30000000-0000-0000-0000-000000000003";
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ClientInstanceProof CLIENT_INSTANCE =
+            clientInstance((byte) 71);
+    private static final ClientInstanceProof OTHER_CLIENT_INSTANCE =
+            clientInstance((byte) 72);
 
     @Test
     void productionAcceptsOnlyExactHttpsOriginsForTheConfiguredRp() {
@@ -158,7 +163,8 @@ class WebAuthnServiceTest {
         WebAuthnService service = service(repository, engine);
 
         WebAuthnOptionsResponse response = service.startRegistration(
-                COLLABORATOR_ID
+                COLLABORATOR_ID,
+                CLIENT_INSTANCE
         );
 
         assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
@@ -175,6 +181,7 @@ class WebAuthnServiceTest {
                 WebAuthnCeremony.REGISTRATION,
                 started.challenge(),
                 started.requestJson(),
+                CLIENT_INSTANCE.hash(),
                 300
         );
     }
@@ -193,7 +200,8 @@ class WebAuthnServiceTest {
         JsonNode credential = JSON.createObjectNode().put("id", "invalid");
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(stored));
         when(repository.findActiveIdentity(COLLABORATOR_ID))
                 .thenReturn(java.util.Optional.of(identity(COLLABORATOR_ID)));
@@ -204,14 +212,16 @@ class WebAuthnServiceTest {
         assertThatThrownBy(() -> service.finishRegistration(
                 COLLABORATOR_ID,
                 CHALLENGE_ID,
-                credential
+                credential,
+                CLIENT_INSTANCE
         )).isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Passkey inválida");
 
         InOrder order = inOrder(repository, engine);
         order.verify(repository).consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                CLIENT_INSTANCE.hash()
         );
         order.verify(engine).finishRegistration(
                 stored.requestJson(),
@@ -233,7 +243,8 @@ class WebAuthnServiceTest {
         JsonNode credential = JSON.createObjectNode().put("id", "synthetic");
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(new StoredWebAuthnChallenge(
                 CHALLENGE_ID,
                 OTHER_COLLABORATOR_ID,
@@ -245,7 +256,8 @@ class WebAuthnServiceTest {
                 .finishRegistration(
                         COLLABORATOR_ID,
                         CHALLENGE_ID,
-                        credential
+                        credential,
+                        CLIENT_INSTANCE
                 )).isInstanceOf(ResponseStatusException.class);
 
         verify(engine, never()).finishRegistration(any(), any());
@@ -273,7 +285,10 @@ class WebAuthnServiceTest {
                 repository,
                 engine,
                 lookup
-        ).startCpfBoundAuthentication("529.982.247-25");
+        ).startCpfBoundAuthentication(
+                "529.982.247-25",
+                CLIENT_INSTANCE
+        );
 
         assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
         assertThat(response.publicKey()).isSameAs(publicKey);
@@ -285,6 +300,7 @@ class WebAuthnServiceTest {
                 WebAuthnCeremony.AUTHENTICATION,
                 started.challenge(),
                 started.requestJson(),
+                CLIENT_INSTANCE.hash(),
                 300
         );
     }
@@ -318,7 +334,7 @@ class WebAuthnServiceTest {
                     repository,
                     engine,
                     lookup
-            ).startCpfBoundAuthentication(cpf);
+            ).startCpfBoundAuthentication(cpf, CLIENT_INSTANCE);
 
             assertThat(response.challengeId()).isEqualTo(CHALLENGE_ID);
             assertThat(response.publicKey()).isSameAs(publicKey);
@@ -332,6 +348,7 @@ class WebAuthnServiceTest {
                     WebAuthnCeremony.AUTHENTICATION,
                     started.challenge(),
                     started.requestJson(),
+                    CLIENT_INSTANCE.hash(),
                     300
             );
         }
@@ -351,11 +368,16 @@ class WebAuthnServiceTest {
         );
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(stored));
 
         assertThatThrownBy(() -> service(repository, engine)
-                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .finishCpfBoundAuthentication(
+                        CHALLENGE_ID,
+                        credential,
+                        CLIENT_INSTANCE
+                ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Credencial inválida");
 
@@ -384,7 +406,8 @@ class WebAuthnServiceTest {
         );
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(stored));
         when(engine.finishAuthentication(stored.requestJson(), credential))
                 .thenReturn(new VerifiedWebAuthnAuthentication(
@@ -398,7 +421,11 @@ class WebAuthnServiceTest {
                 ));
 
         assertThatThrownBy(() -> service(repository, engine)
-                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .finishCpfBoundAuthentication(
+                        CHALLENGE_ID,
+                        credential,
+                        CLIENT_INSTANCE
+                ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Credencial inválida");
 
@@ -426,7 +453,8 @@ class WebAuthnServiceTest {
         );
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(stored));
         when(engine.finishAuthentication(stored.requestJson(), credential))
                 .thenReturn(new VerifiedWebAuthnAuthentication(
@@ -440,7 +468,11 @@ class WebAuthnServiceTest {
                 ));
 
         assertThatThrownBy(() -> service(repository, engine)
-                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .finishCpfBoundAuthentication(
+                        CHALLENGE_ID,
+                        credential,
+                        CLIENT_INSTANCE
+                ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Credencial inválida");
 
@@ -471,7 +503,8 @@ class WebAuthnServiceTest {
         );
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(stored));
         when(engine.finishAuthentication(stored.requestJson(), credential))
                 .thenReturn(new VerifiedWebAuthnAuthentication(
@@ -485,7 +518,11 @@ class WebAuthnServiceTest {
                 .thenReturn(java.util.Optional.of(OTHER_COLLABORATOR_ID));
 
         assertThatThrownBy(() -> service(repository, engine)
-                .finishCpfBoundAuthentication(CHALLENGE_ID, credential))
+                .finishCpfBoundAuthentication(
+                        CHALLENGE_ID,
+                        credential,
+                        CLIENT_INSTANCE
+                ))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("Credencial inválida");
 
@@ -516,7 +553,8 @@ class WebAuthnServiceTest {
         AuthenticatedIdentity identity = identity(COLLABORATOR_ID);
         when(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                CLIENT_INSTANCE.hash()
         )).thenReturn(java.util.Optional.of(stored));
         when(engine.finishAuthentication(stored.requestJson(), credential))
                 .thenReturn(new VerifiedWebAuthnAuthentication(
@@ -539,7 +577,8 @@ class WebAuthnServiceTest {
 
         assertThat(service(repository, engine).finishCpfBoundAuthentication(
                 CHALLENGE_ID,
-                credential
+                credential,
+                CLIENT_INSTANCE
         )).isSameAs(identity);
         verify(repository).recordAuthentication(
                 credentialId,
@@ -575,6 +614,30 @@ class WebAuthnServiceTest {
                 true,
                 false
         )).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void anotherTabCannotConsumeTheAuthenticationChallenge() {
+        WebAuthnCredentialRepository repository =
+                mock(WebAuthnCredentialRepository.class);
+        WebAuthnCeremonyEngine engine = mock(WebAuthnCeremonyEngine.class);
+        JsonNode credential = JSON.createObjectNode().put("id", "synthetic");
+
+        assertThatThrownBy(() -> service(repository, engine)
+                .finishCpfBoundAuthentication(
+                        CHALLENGE_ID,
+                        credential,
+                        OTHER_CLIENT_INSTANCE
+                ))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Passkey inválida");
+
+        verify(repository).consumeChallenge(
+                CHALLENGE_ID,
+                WebAuthnCeremony.AUTHENTICATION,
+                OTHER_CLIENT_INSTANCE.hash()
+        );
+        verify(engine, never()).finishAuthentication(any(), any());
     }
 
     private WebAuthnService service(
@@ -625,5 +688,18 @@ class WebAuthnServiceTest {
                 "Pessoa Sintética",
                 PapelAcesso.ALFA
         );
+    }
+
+    private static ClientInstanceProof clientInstance(byte fill) {
+        byte[] bytes = new byte[32];
+        java.util.Arrays.fill(bytes, fill);
+        try {
+            return ClientInstanceProof.fromRawValue(
+                    java.util.Base64.getUrlEncoder().withoutPadding()
+                            .encodeToString(bytes)
+            ).orElseThrow();
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
+        }
     }
 }

@@ -40,10 +40,6 @@ cortex:
       ttl-seconds: ${CORTEX_AUTH_SESSION_TTL_SECONDS:43200}
       cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:true}
       same-site: ${CORTEX_AUTH_COOKIE_SAME_SITE:Lax}
-    login-rate-limit:
-      max-requests: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_MAX_REQUESTS:20}
-      global-max-requests: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_GLOBAL_MAX_REQUESTS:1000}
-      window-seconds: ${CORTEX_AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS:60}
     webauthn:
       rp-id: ${CORTEX_AUTH_WEBAUTHN_RP_ID:}
       rp-name: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:}

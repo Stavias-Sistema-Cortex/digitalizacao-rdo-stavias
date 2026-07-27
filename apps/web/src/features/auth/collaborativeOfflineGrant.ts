@@ -1,5 +1,5 @@
 import { scopeFingerprint } from "../../lib/db/localDataNamespace";
-import { clearSession } from "./authSession";
+import { clearSessionForCurrentDocument } from "./authSession";
 import { onlyDigits } from "./loginValidation";
 import {
   activateOfflineGrant,
@@ -61,7 +61,7 @@ export async function unlockCollaborativeOfflineGrant(
   cpf: string,
   metadata: OfflineCpfGrantMetadata,
 ): Promise<void> {
-  clearSession();
+  clearSessionForCurrentDocument();
   const cpfHash = await hashCanonicalCpf(cpf);
   const normalized = validateMetadata(metadata);
   if (normalized.cpfHash !== cpfHash) {

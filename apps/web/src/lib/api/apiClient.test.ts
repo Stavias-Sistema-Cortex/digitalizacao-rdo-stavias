@@ -4,12 +4,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearSession: vi.fn(),
+  clearSessionForCurrentDocument: vi.fn(),
+  getOrCreateClientInstance: vi.fn(),
   hasOfflineSession: vi.fn(),
+  markClientInstanceAuthenticated: vi.fn(),
 }));
 
 vi.mock("../../features/auth/authSession", () => ({
   clearSession: mocks.clearSession,
+  clearSessionForCurrentDocument: mocks.clearSessionForCurrentDocument,
   hasOfflineSession: mocks.hasOfflineSession,
+}));
+
+vi.mock("./clientInstance", () => ({
+  CLIENT_INSTANCE_HEADER: "X-Cortex-Client-Instance",
+  getOrCreateClientInstance: mocks.getOrCreateClientInstance,
+  markClientInstanceAuthenticated: mocks.markClientInstanceAuthenticated,
 }));
 
 import {
@@ -22,6 +32,7 @@ import {
 
 const fetchMock = vi.fn();
 const csrfToken = "c".repeat(43);
+const clientInstance = "A".repeat(43);
 const localValues = new Map<string, string>();
 let rejectIsolationMarkerWrite = false;
 
@@ -99,6 +110,10 @@ describe("apiFetch cookie session", () => {
     localValues.clear();
     rejectIsolationMarkerWrite = false;
     mocks.hasOfflineSession.mockReturnValue(false);
+    mocks.getOrCreateClientInstance.mockResolvedValue({
+      value: clientInstance,
+      requiresFreshAuthentication: false,
+    });
     fetchMock.mockResolvedValue({ status: 200 } as Response);
     Object.assign(document, { cookie: "" });
   });
@@ -260,6 +275,126 @@ describe("apiFetch cookie session", () => {
     expect(headers.get("X-Request-Id")).toBe("sintético");
   });
 
+  it("anexa a prova da aba e substitui qualquer cabeçalho forjado pelo chamador", async () => {
+    await apiFetch("/obras", {
+      headers: {
+        "X-Cortex-Client-Instance": "proof-forged-by-caller",
+      },
+    });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(options.headers);
+    expect(headers.get("X-Cortex-Client-Instance")).toBe(clientInstance);
+    expect(mocks.getOrCreateClientInstance).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a credentialed fetch before the document lease resolves", async () => {
+    let resolveLease: (value: {
+      value: string;
+      requiresFreshAuthentication: boolean;
+    } | null) => void = () => undefined;
+    mocks.getOrCreateClientInstance.mockReturnValueOnce(new Promise<{
+      value: string;
+      requiresFreshAuthentication: boolean;
+    } | null>((resolve) => {
+      resolveLease = resolve;
+    }));
+
+    const request = apiFetch("/obras");
+    await Promise.resolve();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    resolveLease({ value: clientInstance, requiresFreshAuthentication: false });
+    await request;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      new Headers(fetchMock.mock.calls[0][1].headers)
+        .get("X-Cortex-Client-Instance"),
+    ).toBe(clientInstance);
+  });
+
+  it("cobre a prova de aba nas transições frescas e no grant isolado", async () => {
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      fetchFreshCpfOfflineGrant?: () => Promise<Response>;
+      freshAuthenticationFetch?: (
+        path: string,
+        options: RequestInit,
+      ) => Promise<Response>;
+    };
+
+    await client.freshAuthenticationFetch!("/auth/login", {
+      method: "POST",
+    });
+    await client.freshAuthenticationFetch!(
+      "/auth/passkeys/authentication/options",
+      { method: "POST" },
+    );
+    await client.freshAuthenticationFetch!(
+      "/auth/passkeys/authentication/verify",
+      { method: "POST" },
+    );
+    await client.fetchFreshCpfOfflineGrant!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (const [, options] of fetchMock.mock.calls as Array<
+      [string, RequestInit]
+    >) {
+      expect(
+        new Headers(options.headers).get("X-Cortex-Client-Instance"),
+      ).toBe(clientInstance);
+    }
+  });
+
+  it("blocks a copied or newly minted proof before any ordinary cookie request", async () => {
+    mocks.getOrCreateClientInstance.mockResolvedValueOnce({
+      value: clientInstance,
+      requiresFreshAuthentication: true,
+    });
+
+    await expect(apiFetch("/auth/session")).rejects.toMatchObject({
+      kind: "CLIENT_INSTANCE_REAUTH_REQUIRED",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a newly minted proof only after a successful session-establishing auth response", async () => {
+    mocks.getOrCreateClientInstance.mockResolvedValue({
+      value: clientInstance,
+      requiresFreshAuthentication: true,
+    });
+    fetchMock.mockResolvedValueOnce({ status: 200, ok: true } as Response);
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      freshAuthenticationFetch?: (
+        path: string,
+        options: RequestInit,
+      ) => Promise<Response>;
+    };
+
+    await client.freshAuthenticationFetch!("/auth/login", { method: "POST" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mocks.markClientInstanceAuthenticated).toHaveBeenCalledWith(
+      clientInstance,
+    );
+  });
+
+  it("mantém health, readiness e preflight sem uma prova de sessão", async () => {
+    await apiFetch("/health");
+    await apiFetch("/readiness");
+    await apiFetch("/obras", { method: "OPTIONS" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, options] of fetchMock.mock.calls as Array<
+      [string, RequestInit]
+    >) {
+      expect(
+        new Headers(options.headers).get("X-Cortex-Client-Instance"),
+      ).toBeNull();
+    }
+    expect(mocks.getOrCreateClientInstance).not.toHaveBeenCalled();
+  });
+
   it("usa o token CSRF do cookie em mutações e não aceita sobrescrita", async () => {
     Object.assign(document, {
       cookie: `tema=claro; cortex_csrf=${csrfToken}`,
@@ -290,13 +425,14 @@ describe("apiFetch cookie session", () => {
     expect(new Headers(options.headers).get("X-CSRF-Token")).toBeNull();
   });
 
-  it("limpa a memória após 401 protegido sem retry silencioso", async () => {
+  it("limpa somente a memória desta aba após 401 protegido sem retry silencioso", async () => {
     fetchMock.mockResolvedValue({ status: 401 } as Response);
 
     await apiFetch("/obras");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(mocks.clearSession).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSessionForCurrentDocument).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSession).not.toHaveBeenCalled();
   });
 
   it("limpa 401 de registro de passkey, mas preserva rotas públicas exatas", async () => {
@@ -305,19 +441,19 @@ describe("apiFetch cookie session", () => {
     await apiFetch("/auth/passkeys/registration/options", {
       method: "POST",
     });
-    expect(mocks.clearSession).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSessionForCurrentDocument).toHaveBeenCalledTimes(1);
 
-    mocks.clearSession.mockClear();
+    mocks.clearSessionForCurrentDocument.mockClear();
     await apiFetch("/auth/login", {
       method: "POST",
     });
-    expect(mocks.clearSession).not.toHaveBeenCalled();
+    expect(mocks.clearSessionForCurrentDocument).not.toHaveBeenCalled();
 
-    mocks.clearSession.mockClear();
+    mocks.clearSessionForCurrentDocument.mockClear();
     await apiFetch("/auth/passkeys/authentication/options", {
       method: "POST",
     });
-    expect(mocks.clearSession).not.toHaveBeenCalled();
+    expect(mocks.clearSessionForCurrentDocument).not.toHaveBeenCalled();
   });
 });
 
