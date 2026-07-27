@@ -3,6 +3,7 @@ import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clearSession,
   getSession,
   hasOfflineSession,
   hasOnlineSession,
@@ -13,7 +14,6 @@ import {
   saveCollaborativeOfflineGrant,
   unlockCollaborativeOfflineGrant,
 } from "./collaborativeOfflineGrant";
-import { clearOfflineGrant } from "./offlineVault";
 import type {
   OfflineGrantClaims,
   SignedOfflineGrant,
@@ -26,11 +26,11 @@ describe("grant colaborativo de CPF", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(now);
-    clearOfflineGrant();
+    clearSession();
   });
 
   afterEach(() => {
-    clearOfflineGrant();
+    clearSession();
     vi.useRealTimers();
   });
 
@@ -147,6 +147,26 @@ describe("grant colaborativo de CPF", () => {
     await expect(
       unlockCollaborativeOfflineGrant("11144477735", tampered),
     ).rejects.toThrow("escopo");
+
+    expect(getSession()).toBeNull();
+  });
+
+  it("limpa uma sessão online existente quando o fingerprint do escopo é malformado", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await saveCollaborativeOfflineGrant(
+      "11144477735",
+      fixture.grant,
+    );
+    const malformed = {
+      ...metadata,
+      scopeFingerprint: "fingerprint-malformado",
+    };
+    setSession(existingProfile());
+    expect(hasOnlineSession()).toBe(true);
+
+    await expect(
+      unlockCollaborativeOfflineGrant("11144477735", malformed),
+    ).rejects.toThrow("Metadados do grant offline inválidos.");
 
     expect(getSession()).toBeNull();
   });
