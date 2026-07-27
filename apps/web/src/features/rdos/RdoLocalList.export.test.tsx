@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LocalRdoRecord } from "../../lib/db/db.types";
+import { RDO_IMPORT_LIMITS } from "../../lib/files/rdoImportResourcePolicy";
 import { clearSession, setSession } from "../auth/authSession";
 import { RdoLocalList } from "./RdoLocalList";
 import { localRdoPdfExportAvailability } from "./export/rdoPdfAvailability";
@@ -172,6 +173,50 @@ describe("RdoLocalList offline export", () => {
       message:
         "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
     });
+  });
+
+  it("rejects an oversized import in the file input without replacing the rendered list", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    const onImportRdoFile = vi.fn();
+    const rendered = render(
+      <RdoLocalList
+        records={[record()]}
+        events={[]}
+        attachments={[]}
+        isLoading={false}
+        error=""
+        onCreate={vi.fn()}
+        onImportRdoFile={onImportRdoFile}
+        isImporting={false}
+        onOpen={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    const input = rendered.container.querySelector<HTMLInputElement>(
+      'input[type="file"][accept*=".pdf"]',
+    );
+    const oversized = new File(["rdo"], "RDO-grande.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(oversized, "size", {
+      configurable: true,
+      value: RDO_IMPORT_LIMITS.fileBytes + 1,
+    });
+
+    expect(input).not.toBeNull();
+    fireEvent.change(input!, {
+      target: {
+        files: [oversized],
+      },
+    });
+
+    expect(onImportRdoFile).not.toHaveBeenCalled();
+    expect(await screen.findByText(
+      /O arquivo de RDO excede o limite/,
+    )).toBeInTheDocument();
+    expect(screen.getByText("RDO-1")).toBeInTheDocument();
   });
 
   it("blocks a local XLSX download when the session changes while its lazy module resolves", async () => {

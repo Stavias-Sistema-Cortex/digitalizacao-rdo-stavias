@@ -130,6 +130,15 @@ export async function freshAuthenticationFetch(
   return rawFetch(path, options);
 }
 
+/**
+ * The only protected follow-up permitted while a CPF fresh-login transition
+ * remains isolated. Its signed owner is verified before normal API access is
+ * released by the caller.
+ */
+export async function fetchFreshCpfOfflineGrant(): Promise<Response> {
+  return rawFetch("/auth/offline-grant", { method: "POST" });
+}
+
 /** Exact server-side cookie revocation; not available through ordinary API fetch. */
 export async function revokeRemoteSessionCookie(): Promise<Response> {
   return rawFetch("/auth/logout", { method: "POST" });

@@ -3,12 +3,21 @@ import {
   type SpreadsheetSheet,
 } from "../../lib/files/readSpreadsheetWorkbook";
 import {
+  preflightRdoImportFile,
+  RdoImportResourceError,
+  readValidatedRdoImportBytes,
+} from "../../lib/files/rdoImportResourcePolicy";
+import {
   createEmptyControleGeometrico,
   createEmptyEquipamento,
   createEmptyMaoObra,
   createEmptyMaterial,
   createEmptyRdo,
 } from "./createEmptyRdo";
+import {
+  extractBoundedPdfLines,
+  type PdfDocumentForTextExtraction,
+} from "./boundedPdfTextExtraction";
 import type {
   CondicaoClimatica,
   ControleGeometricoDraft,
@@ -43,21 +52,15 @@ export async function importarRdoArquivo(
   file: File,
   preenchidoPorSessao: string,
 ): Promise<RdoImportResult> {
-  const extension = file.name
-    .split(".")
-    .pop()
-    ?.toLowerCase();
+  const preflight = preflightRdoImportFile(file);
+  const bytes = await readValidatedRdoImportBytes(file, preflight);
 
-  if (extension === "pdf") {
-    return importarRdoPdf(file, preenchidoPorSessao);
+  if (preflight.kind === "PDF") {
+    return importarRdoPdf(file, preenchidoPorSessao, bytes);
   }
 
-  if (
-    extension === "xlsx" ||
-    extension === "xls" ||
-    extension === "xlsm"
-  ) {
-    return importarRdoPlanilha(file, preenchidoPorSessao);
+  if (preflight.kind === "SPREADSHEET") {
+    return importarRdoPlanilha(file, preenchidoPorSessao, bytes);
   }
 
   throw new Error(
@@ -75,8 +78,9 @@ export async function importarRdoExcel(
 async function importarRdoPlanilha(
   file: File,
   preenchidoPorSessao: string,
+  bytes: Uint8Array,
 ): Promise<RdoImportResult> {
-  const workbook = await readSpreadsheetWorkbook(file);
+  const workbook = await readSpreadsheetWorkbook(file, { bytes });
 
   const frente = pickSheet(workbook, "frente", 0);
   const verso = pickSheet(workbook, "verso", 1);
@@ -186,8 +190,9 @@ async function importarRdoPlanilha(
 async function importarRdoPdf(
   file: File,
   preenchidoPorSessao: string,
+  bytes: Uint8Array,
 ): Promise<RdoImportResult> {
-  const lines = await extractPdfLines(file);
+  const lines = await extractPdfLines(bytes);
   const textoExtraido = lines.join("\n").trim();
 
   if (!textoExtraido) {
@@ -286,93 +291,37 @@ async function importarRdoPdf(
   };
 }
 
-type PdfTextLineItem = {
-  text: string;
-  x: number;
-  y: number;
-};
-
 async function extractPdfLines(
-  file: File,
+  bytes: Uint8Array,
 ): Promise<string[]> {
-  const [pdfjsLib, pdfWorker] = await Promise.all([
-    import("pdfjs-dist/legacy/build/pdf.mjs"),
-    import("pdfjs-dist/legacy/build/pdf.worker.mjs?url"),
-  ]);
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-
-  const data = new Uint8Array(
-    await file.arrayBuffer(),
-  );
-  const document = await pdfjsLib.getDocument({
-    data,
-  }).promise;
-  const lines: string[] = [];
-
-  for (
-    let pageNumber = 1;
-    pageNumber <= document.numPages;
-    pageNumber += 1
-  ) {
-    const page = await document.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const items = content.items
-      .map((item): PdfTextLineItem | null => {
-        const textItem = item as {
-          str?: string;
-          transform?: number[];
-        };
-        const text = textItem.str?.replace(/\s+/g, " ").trim();
-        const transform = textItem.transform;
-
-        if (!text || !transform) {
-          return null;
-        }
-
-        return {
-          text,
-          x: transform[4],
-          y: transform[5],
-        };
-      })
-      .filter(
-        (item): item is PdfTextLineItem => item !== null,
-      )
-      .sort((left, right) => {
-        const yDistance = right.y - left.y;
-        return Math.abs(yDistance) > 2
-          ? yDistance
-          : left.x - right.x;
-      });
-
-    const grouped: PdfTextLineItem[][] = [];
-
-    for (const item of items) {
-      const group = grouped.find(
-        (candidate) =>
-          Math.abs(candidate[0].y - item.y) <= 2.5,
-      );
-
-      if (group) {
-        group.push(item);
-      } else {
-        grouped.push([item]);
-      }
+  let loadingTask: {
+    promise: Promise<PdfDocumentForTextExtraction>;
+    destroy: () => Promise<void>;
+  } | null = null;
+  try {
+    const [pdfjsLib, pdfWorker] = await Promise.all([
+      import("pdfjs-dist/legacy/build/pdf.mjs"),
+      import("pdfjs-dist/legacy/build/pdf.worker.mjs?url"),
+    ]);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+    loadingTask = pdfjsLib.getDocument({
+      data: bytes,
+    });
+    const document = await loadingTask.promise;
+    return await extractBoundedPdfLines(document);
+  } catch (error: unknown) {
+    if (error instanceof RdoImportResourceError) {
+      throw error;
     }
-
-    lines.push(
-      ...grouped.map((group) =>
-        group
-          .sort((left, right) => left.x - right.x)
-          .map((item) => item.text)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim(),
-      ),
+    throw new Error(
+      "Não foi possível ler o PDF de RDO; o arquivo pode estar corrompido ou fora do formato permitido.",
+      { cause: error },
     );
+  } finally {
+    if (loadingTask) {
+      await loadingTask.destroy().catch(() => undefined);
+    }
   }
-
-  return lines.filter(Boolean);
 }
 
 function extractLabeledValue(

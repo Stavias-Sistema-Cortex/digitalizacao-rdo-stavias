@@ -8,6 +8,7 @@ import {
   renewOfflineVault,
   unlockOfflineVault,
 } from "./offlineVault";
+import { clearRemoteSessionIsolation } from "./remoteSessionIsolation";
 import type {
   OfflineGrantClaims,
   SignedOfflineGrant,
@@ -46,6 +47,7 @@ describe("offlineVault PRF-only", () => {
   });
 
   afterEach(() => {
+    clearRemoteSessionIsolation();
     vi.useRealTimers();
   });
 

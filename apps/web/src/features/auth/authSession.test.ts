@@ -102,6 +102,20 @@ describe("authSession", () => {
     expect(legacyValues.has("cortex:stavia:last-context")).toBe(false);
   });
 
+  it("clears session memory even when retired local-storage cleanup is unavailable", async () => {
+    const session = await import("./authSession");
+    session.setSession(profile);
+    const removeItem = vi.spyOn(window.localStorage, "removeItem")
+      .mockImplementation(() => {
+        throw new Error("storage unavailable");
+      });
+
+    expect(() => session.clearSession()).not.toThrow();
+    expect(session.getSession()).toBeNull();
+
+    removeItem.mockRestore();
+  });
+
   it("propaga somente LOGOUT entre abas sem perfil ou segredo", async () => {
     const firstTab = await import("./authSession");
     firstTab.setSession(profile);

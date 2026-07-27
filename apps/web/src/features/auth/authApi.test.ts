@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   apiError: vi.fn(),
   apiFetch: vi.fn(),
+  fetchFreshCpfOfflineGrant: vi.fn(),
   freshAuthenticationFetch: vi.fn(),
   readResponseBody: vi.fn(),
   revokeRemoteSessionCookie: vi.fn(),
@@ -12,6 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../lib/api/apiClient", () => ({
   apiError: mocks.apiError,
   apiFetch: mocks.apiFetch,
+  fetchFreshCpfOfflineGrant: mocks.fetchFreshCpfOfflineGrant,
   freshAuthenticationFetch: mocks.freshAuthenticationFetch,
   readResponseBody: mocks.readResponseBody,
   revokeRemoteSessionCookie: mocks.revokeRemoteSessionCookie,
@@ -20,6 +22,7 @@ vi.mock("../../lib/api/apiClient", () => ({
 
 import {
   fetchOfflineGrant,
+  fetchOfflineGrantAfterFreshCpfLogin,
   fetchSession,
   loginWithCpf,
   logoutOnline,
@@ -98,6 +101,22 @@ describe("authApi", () => {
     expect(mocks.apiFetch).toHaveBeenCalledWith("/auth/offline-grant", {
       method: "POST",
     });
+  });
+
+  it("obtém o grant de CPF somente pelo follow-up isolado de autenticação fresca", async () => {
+    const grant = {
+      keyId: "offline-test-v1",
+      payload: "payload",
+      signature: "signature",
+      publicKeySpki: "public-key",
+    };
+    mocks.fetchFreshCpfOfflineGrant.mockResolvedValue(response(200));
+    mocks.readResponseBody.mockResolvedValue(grant);
+
+    await expect(fetchOfflineGrantAfterFreshCpfLogin()).resolves.toEqual(grant);
+
+    expect(mocks.apiFetch).not.toHaveBeenCalled();
+    expect(mocks.fetchFreshCpfOfflineGrant).toHaveBeenCalledTimes(1);
   });
 
   it("rejeita um envelope de grant offline com campos extras", async () => {

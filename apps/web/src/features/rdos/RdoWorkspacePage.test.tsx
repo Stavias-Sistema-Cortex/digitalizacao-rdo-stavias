@@ -44,15 +44,18 @@ vi.mock("./RdoLocalList", () => ({
     onCreate,
     onImportRdoFile,
     records,
+    error,
   }: {
     onCreate: () => void;
     onImportRdoFile: (file: File) => void;
     records: Array<{ id: string; numeroRdo: string }>;
+    error: string;
   }) => (
     <>
       <output aria-label="RDOs carregados">
         {records.map((record) => record.numeroRdo).join(",")}
       </output>
+      {error ? <div role="alert">{error}</div> : null}
       <button type="button" onClick={onCreate}>
         Novo RDO
       </button>
@@ -168,6 +171,33 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
       ),
     ).toBeVisible();
     expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.queryByTestId("rdo-editor")).not.toBeInTheDocument();
+  });
+
+  it("keeps the loaded RDO list intact when an import is rejected", async () => {
+    listLocalRdos.mockResolvedValue([
+      { id: "rdo-preservado", numeroRdo: "RDO-PRESERVADO" },
+    ]);
+    importarRdoArquivo.mockRejectedValue(
+      new Error("O arquivo selecionado não é um RDO válido."),
+    );
+    const user = userEvent.setup();
+    render(<RdoWorkspacePage />);
+
+    expect(
+      await screen.findByText("RDO-PRESERVADO"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", {
+      name: "Importar teste",
+    }));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent(
+      "O arquivo selecionado não é um RDO válido.",
+    );
+    expect(screen.getByText("RDO-PRESERVADO")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByTestId("rdo-editor")).not.toBeInTheDocument();
   });
 

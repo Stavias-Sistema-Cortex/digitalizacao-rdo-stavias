@@ -39,6 +39,9 @@ import {
   type RdoExportSessionGuard,
 } from "./rdoExportSessionGuard";
 import type { RdoExportDownloadPermit } from "./export/rdoExportDownload";
+import {
+  preflightRdoImportFile,
+} from "../../lib/files/rdoImportResourcePolicy";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -387,6 +390,7 @@ export function RdoLocalList({
   const [exportNotices, setExportNotices] = useState<
     Record<string, Partial<Record<RdoExportFormat, RdoExportNotice>>>
   >({});
+  const [importPreflightError, setImportPreflightError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -707,7 +711,17 @@ export function RdoLocalList({
                 const file = event.target.files?.[0];
                 event.target.value = "";
                 if (file) {
-                  onImportRdoFile(file);
+                  try {
+                    preflightRdoImportFile(file);
+                    setImportPreflightError("");
+                    onImportRdoFile(file);
+                  } catch (caught: unknown) {
+                    setImportPreflightError(
+                      caught instanceof Error
+                        ? caught.message
+                        : "O arquivo de RDO não pôde ser validado.",
+                    );
+                  }
                 }
               }}
             />
@@ -795,6 +809,9 @@ export function RdoLocalList({
       </section>
 
       {error && <div className="notice notice-error">{error}</div>}
+      {importPreflightError && (
+        <div className="notice notice-error">{importPreflightError}</div>
+      )}
       {isLoading && <div className="notice">Carregando RDOs locais...</div>}
 
       <section

@@ -1,6 +1,7 @@
 const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
 const STORAGE_UNAVAILABLE_MESSAGE =
   "Não foi possível isolar a sessão remota deste dispositivo.";
+let transientIsolation = false;
 
 /**
  * This marker deliberately carries no principal, CPF, credential, or grant
@@ -8,6 +9,9 @@ const STORAGE_UNAVAILABLE_MESSAGE =
  * longer be treated as proof that it belongs to the local browser state.
  */
 export function hasRemoteSessionIsolation(): boolean {
+  if (transientIsolation) {
+    return true;
+  }
   if (typeof localStorage === "undefined") {
     return false;
   }
@@ -23,20 +27,24 @@ export function hasRemoteSessionIsolation(): boolean {
 }
 
 export function markRemoteSessionIsolation(): void {
-  const storage = requiredStorage();
   try {
-    storage.setItem(REMOTE_SESSION_ISOLATION_KEY, "1");
+    requiredStorage().setItem(REMOTE_SESSION_ISOLATION_KEY, "1");
+    transientIsolation = false;
   } catch {
+    // A failed durable write still has to isolate this live tab. It can only
+    // be released later by a successful explicit clear after fresh auth.
+    transientIsolation = true;
     throw new Error(STORAGE_UNAVAILABLE_MESSAGE);
   }
 }
 
 /** Only a successful fresh authentication or a known server revoke may clear it. */
 export function clearRemoteSessionIsolation(): void {
-  const storage = requiredStorage();
   try {
-    storage.removeItem(REMOTE_SESSION_ISOLATION_KEY);
+    requiredStorage().removeItem(REMOTE_SESSION_ISOLATION_KEY);
+    transientIsolation = false;
   } catch {
+    transientIsolation = true;
     throw new Error(STORAGE_UNAVAILABLE_MESSAGE);
   }
 }

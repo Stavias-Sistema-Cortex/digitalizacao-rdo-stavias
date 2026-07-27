@@ -23,6 +23,7 @@ import {
 const fetchMock = vi.fn();
 const csrfToken = "c".repeat(43);
 const localValues = new Map<string, string>();
+let rejectIsolationMarkerWrite = false;
 
 vi.stubGlobal("fetch", fetchMock);
 vi.stubGlobal("window", {
@@ -38,7 +39,15 @@ vi.stubGlobal("document", { cookie: "" });
 vi.stubGlobal("localStorage", {
   getItem: (key: string) => localValues.get(key) ?? null,
   removeItem: (key: string) => localValues.delete(key),
-  setItem: (key: string, value: string) => localValues.set(key, value),
+  setItem: (key: string, value: string) => {
+    if (
+      key === "cortex.auth.remote-session-isolation" &&
+      rejectIsolationMarkerWrite
+    ) {
+      throw new Error("storage unavailable");
+    }
+    localValues.set(key, value);
+  },
 });
 
 describe("responseErrorMessage", () => {
@@ -88,6 +97,7 @@ describe("apiFetch cookie session", () => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
     localValues.clear();
+    rejectIsolationMarkerWrite = false;
     mocks.hasOfflineSession.mockReturnValue(false);
     fetchMock.mockResolvedValue({ status: 200 } as Response);
     Object.assign(document, { cookie: "" });
@@ -116,6 +126,22 @@ describe("apiFetch cookie session", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("keeps this live tab gated when the durable isolation marker write fails", async () => {
+    const isolation = await import("../../features/auth/remoteSessionIsolation");
+    rejectIsolationMarkerWrite = true;
+
+    expect(() => isolation.markRemoteSessionIsolation()).toThrow(
+      "isolar a sessão remota",
+    );
+    await expect(apiFetch("/obras")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    rejectIsolationMarkerWrite = false;
+    isolation.clearRemoteSessionIsolation();
+  });
+
   it("permits cookie revocation only through its named exact POST path", async () => {
     localStorage.setItem("cortex.auth.remote-session-isolation", "1");
 
@@ -133,6 +159,20 @@ describe("apiFetch cookie session", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toContain("/auth/logout");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("permits the isolated CPF grant follow-up only through its named helper", async () => {
+    localStorage.setItem("cortex.auth.remote-session-isolation", "1");
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      fetchFreshCpfOfflineGrant?: () => Promise<Response>;
+    };
+    expect(client.fetchFreshCpfOfflineGrant).toBeTypeOf("function");
+
+    await client.fetchFreshCpfOfflineGrant!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("/auth/offline-grant");
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST" });
   });
 

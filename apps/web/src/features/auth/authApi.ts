@@ -1,6 +1,7 @@
 import {
   apiError,
   apiFetch,
+  fetchFreshCpfOfflineGrant,
   freshAuthenticationFetch,
   readResponseBody,
   revokeRemoteSessionCookie,
@@ -40,9 +41,24 @@ export async function fetchSession(): Promise<AuthProfile | null> {
 }
 
 export async function fetchOfflineGrant(): Promise<SignedOfflineGrant> {
-  const response = await apiFetch("/auth/offline-grant", {
+  return parseOfflineGrantResponse(await apiFetch("/auth/offline-grant", {
     method: "POST",
-  });
+  }));
+}
+
+/**
+ * A direct CPF sign-in keeps remote access isolated until this signed grant
+ * proves the current cookie still belongs to the profile returned by login.
+ */
+export async function fetchOfflineGrantAfterFreshCpfLogin(): Promise<
+  SignedOfflineGrant
+> {
+  return parseOfflineGrantResponse(await fetchFreshCpfOfflineGrant());
+}
+
+async function parseOfflineGrantResponse(
+  response: Response,
+): Promise<SignedOfflineGrant> {
   const body = await readResponseBody(response);
   if (!response.ok) {
     throw responseError(body, response.status);

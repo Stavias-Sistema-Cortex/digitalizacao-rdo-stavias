@@ -1,5 +1,5 @@
 import {
-  fetchOfflineGrant,
+  fetchOfflineGrantAfterFreshCpfLogin,
   fetchSession,
   loginWithCpf,
   logoutOnline,
@@ -45,41 +45,45 @@ export async function autenticarPorCpf(
   cpf: string,
 ): Promise<CpfAuthenticationResult> {
   const canonicalCpf = onlyDigits(cpf);
-  const profile = await loginWithCpf(canonicalCpf);
-  // A successful explicit login replaces the remote cookie. Only then can a
-  // prior offline isolation marker be released for the normal grant request.
-  clearRemoteSessionIsolation();
+  // Keep every ordinary credentialed request blocked throughout this
+  // multi-request transition. A second tab can rotate the shared HttpOnly
+  // cookie after /auth/login, so only the signed grant can release it.
   clearSession();
+  markRemoteSessionIsolation();
   try {
-    const signedGrant = await fetchOfflineGrant();
+    const profile = await loginWithCpf(canonicalCpf);
+    const signedGrant = await fetchOfflineGrantAfterFreshCpfLogin();
     await saveCollaborativeOfflineGrant(
       canonicalCpf,
       signedGrant,
       profile.colaboradorId,
     );
+    clearRemoteSessionIsolation();
     setSession(profile);
     return { profile, offlineGrant: "READY" };
   } catch (error: unknown) {
+    markRemoteSessionIsolation();
+    clearSession();
     if (error instanceof OfflineGrantOwnerMismatchError) {
-      markRemoteSessionIsolation();
-      clearSession();
       throw new Error(
         "A sessão foi alterada durante a atualização do acesso offline. Entre novamente.",
         { cause: error },
       );
     }
-    setSession(profile);
-    return { profile, offlineGrant: "UNAVAILABLE" };
+    throw new Error(
+      "Não foi possível confirmar a sessão recém-autenticada. Entre novamente.",
+      { cause: error },
+    );
   }
 }
 
 /** Bloqueia o dispositivo antes de tentar revogar a sessão no servidor. */
 export async function encerrarSessao(): Promise<void> {
   const remoteAlreadyIsolated = hasRemoteSessionIsolation();
+  clearSession();
   if (!remoteAlreadyIsolated) {
     markRemoteSessionIsolation();
   }
-  clearSession();
   // A persisted marker may have survived a reload after offline access. Its
   // cookie cannot be assumed to belong to this browser state, so never revoke
   // it implicitly.

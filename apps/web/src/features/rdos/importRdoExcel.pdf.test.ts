@@ -74,4 +74,20 @@ describe("RDO PDF import", () => {
       "Não encontrei texto selecionável neste PDF. Para PDF escaneado, será necessário OCR antes da importação.",
     );
   });
+
+  it("returns a safe Portuguese error for a malformed PDF", async () => {
+    const malformed = new File(
+      ["%PDF-arquivo-corrompido"],
+      "rdo-corrompido.pdf",
+      {
+        type: "application/pdf",
+      },
+    );
+
+    await expect(
+      importarRdoArquivo(malformed, "Sessão atual"),
+    ).rejects.toThrow(
+      "Não foi possível ler o PDF de RDO",
+    );
+  });
 });

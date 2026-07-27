@@ -87,12 +87,17 @@ function clearRetiredPrivateLocalStorage(): void {
     "cortex:stavia:chat:operacional",
     "cortex:stavia:last-context",
   ] as const;
-  const target = typeof window === "undefined" ? null : window.localStorage;
-  if (!target) {
-    return;
-  }
-  for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {
-    target.removeItem(key);
+  try {
+    const target = typeof window === "undefined" ? null : window.localStorage;
+    if (!target) {
+      return;
+    }
+    for (const key of LEGACY_PRIVATE_LOCAL_STORAGE_KEYS) {
+      target.removeItem(key);
+    }
+  } catch {
+    // Session memory is already cleared. Storage privacy failures must not
+    // prevent higher-level remote-session isolation from taking effect.
   }
 }
 

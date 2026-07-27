@@ -131,8 +131,8 @@ export async function authenticateWithPasskey(
     freshAuthenticationFetch,
   );
   const profile = parseProfile(response);
-  clearRemoteSessionIsolation();
   clearSession();
+  clearRemoteSessionIsolation();
   setSession(profile);
   return profile;
 }
