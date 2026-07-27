@@ -141,6 +141,35 @@ const CORPORATE_SOURCE_LINES = new Map([
     ["printf '%s' 'StaviasCortex'"],
   ],
   [
+    "deploy/production/compose.yml",
+    [
+      "POSTGRES_DB: ${CORTEX_POSTGRES_DB:-StaviasCortex}",
+      "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}",
+      "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}",
+    ],
+  ],
+  [
+    "scripts/deploy/prepare-local-production.sh",
+    [
+      "if [[ ! \"$CORTEX_POSTGRES_URL\" =~ ^jdbc:postgresql://([^/:?]+)(:([0-9]+))?/StaviasCortex(\\?.*)?$ ]]; then",
+      "echo \"The source PostgreSQL URL must target StaviasCortex.\" >&2",
+      "printf 'CORTEX_POSTGRES_DB=StaviasCortex\\n'",
+      "backup_file=\"$backup_dir/StaviasCortex-$(date -u +%Y%m%dT%H%M%SZ).dump\"",
+      "--dbname=StaviasCortex",
+      "psql --username=cortex_admin --dbname=StaviasCortex --tuples-only --no-align \\",
+    ],
+  ],
+  [
+    "scripts/security/test-production-publication.sh",
+    ["CORTEX_POSTGRES_DB='StaviasCortex' \\"],
+  ],
+  [
+    "scripts/deploy/configure-github-production-environment.sh",
+    [
+      "repo=\"${CORTEX_GITHUB_REPOSITORY:-Stavias-Sistema-Cortex/digitalizacao-rdo-stavias}\"",
+    ],
+  ],
+  [
     "scripts/smoke-deploy.sh",
     ["request \"$BASE_URL/manifest.webmanifest\" | grep -q '\"name\":\"Córtex Stavias\"'"],
   ],

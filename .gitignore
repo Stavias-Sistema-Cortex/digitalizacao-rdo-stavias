@@ -24,3 +24,6 @@ var/cortex-attachments/
 # Local Git worktrees
 .worktrees/
 .superpowers/
+
+# Generated production runtime, backups and mounted secret material
+.runtime/

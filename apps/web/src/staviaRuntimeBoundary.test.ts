@@ -227,6 +227,7 @@ function supportFiles(): string[] {
     path.join(REPOSITORY_ROOT, ".env.example"),
     path.join(REPOSITORY_ROOT, ".env.postgresql.example"),
     path.join(REPOSITORY_ROOT, "compose.production.example.yml"),
+    path.join(REPOSITORY_ROOT, "deploy", "production", "compose.yml"),
   ];
   return [
     ...explicit.filter(existsSync),

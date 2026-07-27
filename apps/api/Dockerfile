@@ -29,4 +29,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=5 \
   CMD wget -q -O - http://127.0.0.1:8080/api/readiness | grep -q '"status":"READY"' || exit 1
 
-ENTRYPOINT ["sh", "-c", "exec java -Dserver.port=${PORT:-8080} -jar app.jar"]
+# PropertiesLauncher honors CORTEX_MAIN_CLASS for isolated operational modes
+# (for example, Flyway) while preserving the normal web application default.
+ENTRYPOINT ["sh", "-c", "exec java -Dserver.port=${PORT:-8080} -Dloader.main=${CORTEX_MAIN_CLASS:-com.projeto.cortex.CortexApplication} -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher"]

@@ -1,0 +1,237 @@
+name: cortex-production
+
+services:
+  cortex-postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /run/postgresql:rw,noexec,nosuid,nodev,size=16m,mode=0775
+    environment:
+      POSTGRES_DB: ${CORTEX_POSTGRES_DB:-StaviasCortex}
+      POSTGRES_USER: ${CORTEX_POSTGRES_ADMIN_USER:-cortex_admin}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      CORTEX_POSTGRES_MIGRATOR_USER: ${CORTEX_POSTGRES_MIGRATOR_USER:-cortex_migrator}
+      CORTEX_POSTGRES_RUNTIME_USER: ${CORTEX_POSTGRES_USER:-cortex_runtime}
+    secrets:
+      - source: cortex_postgres_admin_password
+        target: postgres_admin_password
+      - source: cortex_postgres_migrator_password
+        target: postgres_migrator_password
+      - source: cortex_postgres_runtime_password
+        target: postgres_runtime_password
+    volumes:
+      # PostgreSQL 18 stores clusters below a major-version directory so
+      # pg_upgrade can operate without crossing a mount boundary.
+      - cortex_postgres_data:/var/lib/postgresql
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-cortex-roles.sh:ro
+    networks:
+      - cortex_private
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  cortex-migrate:
+    image: ${CORTEX_API_IMAGE:-cortex-api:production}
+    build:
+      context: ../../apps/api
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    environment:
+      SPRING_PROFILES_ACTIVE: postgresql-migrate
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      CORTEX_MAIN_CLASS: com.projeto.cortex.postgresql.migrate.PostgresqlMigrationApplication
+      CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}
+      CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_MIGRATOR_USER:-cortex_migrator}
+      CORTEX_POSTGRES_RUNTIME_READY: "false"
+    secrets:
+      - source: cortex_postgres_migrator_password
+        target: CORTEX_POSTGRES_PASSWORD
+    depends_on:
+      cortex-postgres:
+        condition: service_healthy
+    networks:
+      - cortex_private
+
+  cortex-api:
+    image: ${CORTEX_API_IMAGE:-cortex-api:production}
+    build:
+      context: ../../apps/api
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    environment:
+      SPRING_PROFILES_ACTIVE: production,postgresql
+      SPRING_CONFIG_IMPORT: configtree:/run/secrets/
+      CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}
+      CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_USER:-cortex_runtime}
+      CORTEX_POSTGRES_RUNTIME_READY: "true"
+      CORTEX_POSTGRES_SCHEMA_READINESS_ENABLED: "true"
+      CORTEX_CORS_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN:?Set the exact HTTPS public origin}
+      CORTEX_AUTH_COOKIE_SECURE: "true"
+      CORTEX_AUTH_COOKIE_SAME_SITE: Lax
+      CORTEX_AUTH_TRUSTED_PROXY_CIDRS: 172.31.0.0/24
+      CORTEX_AUTH_WEBAUTHN_RP_ID: ${CORTEX_AUTH_WEBAUTHN_RP_ID:?Set the public hostname}
+      CORTEX_AUTH_WEBAUTHN_RP_NAME: Córtex
+      CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN}
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:?Set the CPF HMAC key id}
+      CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac
+      CORTEX_AUTH_OFFLINE_GRANT_KEY_ID: ${CORTEX_AUTH_OFFLINE_GRANT_KEY_ID:?Set the offline signing key id}
+      CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE: /run/secrets/cortex_offline_private
+      CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE: /run/secrets/cortex_offline_public
+      CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID:?Set the memory cursor key id}
+      CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_memory_cursor_hmac
+      CORTEX_AUTH_DEV_ADMIN_ENABLED: "false"
+      CORTEX_AUTH_PROVISIONING_ENABLED: "false"
+      CORTEX_STORAGE_PROVIDER: local
+      CORTEX_STORAGE_LOCAL_ROOT: /var/lib/cortex/objects
+      CORTEX_STORAGE_LOCAL_PERSISTENT: "true"
+      CORTEX_IMPORT_ENABLED: "false"
+      CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-false}
+      CORTEX_ACADEMY_DB_URL: ${CORTEX_ACADEMY_DB_URL:?Set the Academy read-only JDBC URL}
+      CORTEX_ACADEMY_DB_USER: ${CORTEX_ACADEMY_DB_USER:?Set the Academy read-only database user}
+      CORTEX_ZELADORIA_DB_URL: ${CORTEX_ZELADORIA_DB_URL:?Set the Zeladoria read-only JDBC URL}
+      CORTEX_ZELADORIA_DB_USER: ${CORTEX_ZELADORIA_DB_USER:?Set the Zeladoria read-only database user}
+    secrets:
+      - source: cortex_postgres_runtime_password
+        target: CORTEX_POSTGRES_PASSWORD
+      - source: cortex_academy_password
+        target: CORTEX_ACADEMY_DB_PASSWORD
+      - source: cortex_zeladoria_password
+        target: CORTEX_ZELADORIA_DB_PASSWORD
+      - cortex_cpf_hmac
+      - cortex_offline_private
+      - cortex_offline_public
+      - cortex_memory_cursor_hmac
+    volumes:
+      - cortex_object_data:/var/lib/cortex/objects
+    depends_on:
+      cortex-postgres:
+        condition: service_healthy
+      cortex-migrate:
+        condition: service_completed_successfully
+    networks:
+      - cortex_private
+      - cortex_source_egress
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:8080/api/readiness | grep -q '"status":"READY"'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  cortex-web:
+    image: ${CORTEX_WEB_IMAGE:-cortex-web:production}
+    build:
+      context: ../../apps/web
+      args:
+        VITE_CORTEX_API_BASE_URL: /api
+        VITE_CORTEX_AUTH_MODE: postgresql
+        VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:?Set the offline public-key fingerprint}
+        VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: "26214400"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run:rw,noexec,nosuid,nodev,size=1m,mode=1777
+    depends_on:
+      cortex-api:
+        condition: service_healthy
+    networks:
+      - cortex_private
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:8080/healthz | grep -q '^ok$'
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  cortex-edge:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    ports:
+      - "127.0.0.1:${CORTEX_HTTPS_PORT:-18443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - cortex_caddy_data:/data
+      - cortex_caddy_config:/config
+    depends_on:
+      cortex-web:
+        condition: service_healthy
+    networks:
+      - cortex_private
+      - cortex_host_edge
+
+secrets:
+  cortex_postgres_admin_password:
+    file: ${CORTEX_POSTGRES_ADMIN_PASSWORD_FILE:?Point to the PostgreSQL admin password file}
+  cortex_postgres_migrator_password:
+    file: ${CORTEX_POSTGRES_MIGRATOR_PASSWORD_FILE:?Point to the PostgreSQL migrator password file}
+  cortex_postgres_runtime_password:
+    file: ${CORTEX_POSTGRES_PASSWORD_FILE:?Point to the PostgreSQL password file}
+  cortex_academy_password:
+    file: ${CORTEX_ACADEMY_DB_PASSWORD_FILE:?Point to the Academy read-only password file}
+  cortex_zeladoria_password:
+    file: ${CORTEX_ZELADORIA_DB_PASSWORD_FILE:?Point to the Zeladoria read-only password file}
+  cortex_cpf_hmac:
+    file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:?Point to the CPF HMAC secret file}
+  cortex_offline_private:
+    file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE:?Point to the PKCS8 private PEM}
+  cortex_offline_public:
+    file: ${CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE:?Point to the public PEM}
+  cortex_memory_cursor_hmac:
+    file: ${CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:?Point to the memory cursor HMAC secret file}
+
+volumes:
+  cortex_postgres_data:
+  cortex_object_data:
+  cortex_caddy_data:
+  cortex_caddy_config:
+
+networks:
+  cortex_private:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+  cortex_source_egress:
+    driver: bridge
+  cortex_host_edge:
+    driver: bridge

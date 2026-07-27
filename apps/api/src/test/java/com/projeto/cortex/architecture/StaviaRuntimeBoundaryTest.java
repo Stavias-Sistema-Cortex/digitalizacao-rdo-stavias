@@ -72,6 +72,35 @@ class StaviaRuntimeBoundaryTest {
                     "StaviasCortex",
                     "printf '%s' 'StaviasCortex'"),
             sourceReference(
+                    "deploy/production/compose.yml",
+                    "StaviasCortex",
+                    "POSTGRES_DB: ${CORTEX_POSTGRES_DB:-StaviasCortex}",
+                    "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/"
+                            + "${CORTEX_POSTGRES_DB:-StaviasCortex}",
+                    "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/"
+                            + "${CORTEX_POSTGRES_DB:-StaviasCortex}"),
+            sourceReference(
+                    "scripts/deploy/prepare-local-production.sh",
+                    "StaviasCortex",
+                    "/StaviasCortex(\\?.*)?$ ]]; then",
+                    "The source PostgreSQL URL must target StaviasCortex.",
+                    "CORTEX_POSTGRES_DB=StaviasCortex",
+                    "StaviasCortex-$(date -u +%Y%m%dT%H%M%SZ).dump",
+                    "--dbname=StaviasCortex",
+                    "--dbname=StaviasCortex"),
+            sourceReference(
+                    "scripts/security/test-production-publication.sh",
+                    "StaviasCortex",
+                    "CORTEX_POSTGRES_DB='StaviasCortex'"),
+            sourceReference(
+                    "scripts/deploy/configure-github-production-environment.sh",
+                    "Stavia",
+                    "Stavias-Sistema-Cortex"),
+            sourceReference(
+                    "scripts/deploy/configure-github-production-environment.sh",
+                    "stavia",
+                    "digitalizacao-rdo-stavias"),
+            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/config/"
                             + "PostgresqlModeConfigurationGuard.java",
                     "StaviasCortex",
