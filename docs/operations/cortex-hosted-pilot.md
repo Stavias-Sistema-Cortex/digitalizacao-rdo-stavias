@@ -70,12 +70,25 @@ Configure estes quatro arquivos secretos exatamente sob `/etc/secrets`:
 ## 4. Release Flyway antes do deploy
 
 Render Free não executa pre-deploy command. Após criar a imagem da revisão,
-execute a migração com o mesmo conjunto de variáveis secretas do runtime,
-mas antes de liberar a API:
+execute a migração com um arquivo de ambiente exclusivo de migração, antes de
+liberar a API. Esse arquivo não é o conjunto de ambiente do runtime e usa uma
+conta PostgreSQL migradora dedicada, nunca a conta runtime.
+
+O arquivo protegido `cortex-render-migration.env` contém estes nomes (os
+valores não são exibidos, versionados ou impressos):
+
+- `SPRING_PROFILES_ACTIVE=postgresql-migrate`
+- `CORTEX_POSTGRES_RUNTIME_READY=false`
+- `CORTEX_POSTGRES_URL` com o datasource Neon TLS canônico `StaviasCortex`
+- `CORTEX_POSTGRES_USER` com o usuário migrador dedicado
+- `CORTEX_POSTGRES_PASSWORD` com a credencial migradora dedicada
+- `CORTEX_MAIN_CLASS=com.projeto.cortex.postgresql.migrate.PostgresqlMigrationApplication`
+
+Execute:
 
 ```bash
-docker run --rm --env-file /absolute/path/to/cortex-render-migration.env \
-  -e CORTEX_MAIN_CLASS=com.projeto.cortex.postgresql.migrate.PostgresqlMigrationApplication \
+docker run --rm \
+  --env-file /absolute/path/to/cortex-render-migration.env \
   cortex-api:release
 ```
 

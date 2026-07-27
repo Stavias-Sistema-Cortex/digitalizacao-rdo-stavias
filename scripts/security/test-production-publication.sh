@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 bash "$repo_root/scripts/security/test-hosted-deployment-contract.sh"
+bash "$repo_root/scripts/security/test-hosted-deployment-contract-regressions.sh"
 workflow_file="$repo_root/.github/workflows/production.yml"
 ci_workflow_file="$repo_root/.github/workflows/api-ci.yml"
 compose_file="$repo_root/deploy/production/compose.yml"
