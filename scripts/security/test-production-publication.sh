@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 workflow_file="$repo_root/.github/workflows/production.yml"
+ci_workflow_file="$repo_root/.github/workflows/api-ci.yml"
 compose_file="$repo_root/deploy/production/compose.yml"
 caddy_file="$repo_root/deploy/production/Caddyfile"
 postgres_init_file="$repo_root/deploy/production/postgres-init.sh"
@@ -11,6 +12,7 @@ prepare_script="$repo_root/scripts/deploy/prepare-local-production.sh"
 
 for required_file in \
   "$workflow_file" \
+  "$ci_workflow_file" \
   "$compose_file" \
   "$caddy_file" \
   "$postgres_init_file" \
@@ -32,6 +34,10 @@ grep -Fq 'docker/build-push-action@' "$workflow_file"
 grep -Fq 'push: true' "$workflow_file"
 grep -Fq 'persist-credentials: false' "$workflow_file"
 grep -Fq 'github.ref_name == '\''develop'\''' "$workflow_file"
+grep -Fq -- '--build-arg VITE_CORTEX_API_BASE_URL=/api' "$ci_workflow_file"
+grep -Fq -- '--build-arg VITE_CORTEX_AUTH_MODE=postgresql' "$ci_workflow_file"
+grep -Eq -- '--build-arg VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=[A-Za-z0-9_-]{43}' \
+  "$ci_workflow_file"
 
 if grep -Eq 'pull_request_target|secrets:[[:space:]]*inherit' "$workflow_file"; then
   echo "production publication workflow exposes an unsafe trigger or inherited secrets" >&2
