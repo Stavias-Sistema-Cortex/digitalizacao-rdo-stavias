@@ -50,6 +50,9 @@ valores de segredo, URL de conexão, identificador de conta ou endpoint.
 - Provide the TLS JDBC connection only through `CORTEX_POSTGRES_URL`.
 - Provide the least-privilege runtime account only through
   `CORTEX_POSTGRES_USER` and `CORTEX_POSTGRES_PASSWORD`.
+- Use project `Sistema Córtex`, PostgreSQL 18, region Ohio, and branch
+  `production`. Confirm all four values in the Neon console before migration;
+  do not infer the project or branch from a copied connection string.
 
 ### Cloudflare R2
 
@@ -67,7 +70,34 @@ Configure estes quatro arquivos secretos exatamente sob `/etc/secrets`:
 - `/etc/secrets/cortex-offline-public.pem`
 - `/etc/secrets/cortex-memory-cursor-hmac`
 
-## 4. Release Flyway antes do deploy
+## 4. Migração guardada do PostgreSQL local para Neon
+
+Preserve o PostgreSQL local como rollback canônico. Não faça reset, limpeza ou
+drop local e não remova o dump revisado após o cutover. Antes da primeira
+release, configure no ambiente do operador, sem imprimir os valores:
+
+- `CORTEX_SOURCE_PGURI`: URI PostgreSQL local para `StaviasCortex`.
+- `CORTEX_NEON_ADMIN_PGURI`: URI owner do projeto Neon com
+  `sslmode=require`.
+- `CORTEX_NEON_RUNTIME_PASSWORD`: senha nova da role `cortex_runtime`.
+
+Use um conjunto coerente de clientes PostgreSQL 18. O script procura
+instalações PostgreSQL 18 conhecidas; para outra instalação, informe somente o
+diretório não secreto por `CORTEX_POSTGRES_BIN_DIR`. Execute sem `set -x`:
+
+```bash
+bash scripts/deploy/migrate-local-postgres-to-neon.sh
+```
+
+O script cria `StaviasCortex` e `cortex_runtime` de forma idempotente, mas
+interrompe sem apagar ou limpar quando encontra qualquer tabela pública no
+alvo. Ele exige TLS, valida um dump custom legível, restaura em transação única,
+aplica privilégios mínimos e compara as contagens das dez tabelas centrais. A
+saída de validação contém somente `tabela|origem|alvo`; qualquer divergência
+encerra com status não zero. Se Neon estiver indisponível, a migração falha:
+não habilite banco local, dados falsos ou outro fallback no serviço hospedado.
+
+## 5. Release Flyway antes do deploy
 
 Render Free não executa pre-deploy command. Após criar a imagem da revisão,
 execute a migração com um arquivo de ambiente exclusivo de migração, antes de
@@ -96,13 +126,13 @@ O arquivo informado é local, protegido e não é versionado. Não use `set -x`,
 não imprima variáveis e interrompa o release se Flyway falhar. Só então faça o
 deploy manual do `cortex-api`; `autoDeployTrigger` permanece desligado.
 
-## 5. Build do Pages
+## 6. Build do Pages
 
 No Cloudflare Pages, configure root `apps/web`, comando `npm ci && npm run
 build` e output `dist`. Mantenha a Function e as regras de proxy Pages atuais;
 o navegador continua usando a mesma origem Pages para `/api`.
 
-## 6. Smoke test
+## 7. Smoke test
 
 Após o Render informar que a release está pronta, verifique:
 
@@ -115,7 +145,7 @@ Depois do deploy Pages, execute o smoke na origem Pages e confirme uma sessão
 QA real para login, autorização, upload/download autorizado em R2 e os fluxos
 offline. Falha de Neon, Render ou R2 é falha visível, não motivo para fallback.
 
-## 7. Rollback
+## 8. Rollback
 
 Crie e valide um dump local antes do cutover:
 
@@ -128,12 +158,12 @@ somente em um banco de recuperação revisado e faça deploy manual da revisão
 anterior no Render e no Pages. Não apague migrations nem execute `flyway
 repair` para ocultar um checksum divergente.
 
-## 8. Limites de passkeys
+## 9. Limites de passkeys
 
 Enquanto o piloto usar `pages.dev`, passkeys permanecem temporárias. Antes de
 uma origem final, valide novamente RP ID, origem WebAuthn e as credenciais.
 
-## 9. Academy e Zeladoria
+## 10. Academy e Zeladoria
 
 Academy e Zeladoria permanecem com pulls desabilitados até que seus bancos
 somente leitura estejam publicamente alcançáveis por um caminho seguro. Não
