@@ -84,4 +84,51 @@ class StorageDeploymentPolicyTest {
         assertThatThrownBy(() -> StorageDeploymentPolicy.validate(properties, false))
                 .hasMessageContaining("R2");
     }
+
+    @Test
+    void sseHeaderCannotBeDisabledForAMalformedR2Endpoint() {
+        assertSseHeaderCannotBeDisabledFor(
+                "https://account-id.r2.cloudflarestorage.com/%zz"
+        );
+    }
+
+    @Test
+    void sseHeaderCannotBeDisabledForAnHttpR2Endpoint() {
+        assertSseHeaderCannotBeDisabledFor(
+                "http://account-id.r2.cloudflarestorage.com"
+        );
+    }
+
+    @Test
+    void sseHeaderCannotBeDisabledForAnR2EndpointWithUserInfo() {
+        assertSseHeaderCannotBeDisabledFor(
+                "https://r2-user@account-id.r2.cloudflarestorage.com"
+        );
+    }
+
+    @Test
+    void sseHeaderCannotBeDisabledForAnR2EndpointWithAQuery() {
+        assertSseHeaderCannotBeDisabledFor(
+                "https://account-id.r2.cloudflarestorage.com?check=1"
+        );
+    }
+
+    @Test
+    void sseHeaderCannotBeDisabledForAnR2EndpointWithAFragment() {
+        assertSseHeaderCannotBeDisabledFor(
+                "https://account-id.r2.cloudflarestorage.com#fragment"
+        );
+    }
+
+    private static void assertSseHeaderCannotBeDisabledFor(String endpoint) {
+        StorageProperties properties = new StorageProperties();
+        properties.setProvider("s3");
+        properties.getS3().setBucket("cortex-private");
+        properties.getS3().setRegion("auto");
+        properties.getS3().setSendSseHeader(false);
+        properties.getS3().setEndpoint(endpoint);
+
+        assertThatThrownBy(() -> StorageDeploymentPolicy.validate(properties, false))
+                .hasMessageContaining("R2");
+    }
 }
