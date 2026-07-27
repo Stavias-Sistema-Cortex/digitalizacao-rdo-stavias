@@ -186,7 +186,7 @@ class CsrfRequestFilterTest {
     }
 
     @Test
-    void normalPostgresqlExemptsExactOtpAndPasskeyPathsOnly()
+    void normalPostgresqlExemptsExactDirectCpfAndPasskeyPathsOnly()
             throws Exception {
         AuthSessionService sessions = mock(AuthSessionService.class);
         AuthCookieService cookies = mock(AuthCookieService.class);
@@ -199,12 +199,7 @@ class CsrfRequestFilterTest {
 
         for (MockHttpServletRequest publicRequest
                 : new MockHttpServletRequest[] {
-                    request("POST", "/api/auth/email/challenges"),
-                    request(
-                            "POST",
-                            "/api/auth/email/challenges/"
-                                    + "30000000-0000-0000-0000-000000000003/verify"
-                    ),
+                    request("POST", "/api/auth/login"),
                     request("POST", "/api/auth/passkeys/authentication/options"),
                     request("POST", "/api/auth/passkeys/authentication/verify")
                 }) {
@@ -220,7 +215,9 @@ class CsrfRequestFilterTest {
             org.mockito.Mockito.reset(chain);
         }
 
-        MockHttpServletRequest directCpf = request("POST", "/api/auth/login");
+        MockHttpServletRequest directCpf = request(
+                "POST", "/api/auth/email/challenges"
+        );
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(directCpf, response, chain);
 

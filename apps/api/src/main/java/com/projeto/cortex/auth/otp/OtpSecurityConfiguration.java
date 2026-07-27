@@ -16,6 +16,7 @@ import org.springframework.core.Ordered;
 import org.springframework.core.env.Environment;
 
 @Configuration(proxyBeanMethods = false)
+@Profile("!postgresql | postgresql-activation")
 public class OtpSecurityConfiguration implements EnvironmentAware {
 
     private Environment environment;

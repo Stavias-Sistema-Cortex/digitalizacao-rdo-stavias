@@ -1,54 +1,62 @@
 package com.projeto.cortex.auth;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.web.server.ResponseStatusException;
-
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
+import com.projeto.cortex.auth.identity.CpfLookupDigest;
+import com.projeto.cortex.auth.identity.CpfLookupDigestService;
+import com.projeto.cortex.auth.otp.AuthRateLimitStore;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.server.ResponseStatusException;
 
 class AuthLoginRateLimiterTest {
 
-    private final ApplicationContextRunner contextRunner =
-            new ApplicationContextRunner()
-                    .withUserConfiguration(RateLimiterConfiguration.class)
-                    .withPropertyValues(
-                            "cortex.auth.login-rate-limit.enabled=true",
-                            "cortex.auth.login-rate-limit.attempts-per-minute=2",
-                            "cortex.auth.login-rate-limit.global-attempts-per-minute=10"
-                    );
-
     @Test
-    void startsWithTheConfiguredConstructor() {
-        contextRunner.run(context -> {
-            assertThat(context).hasNotFailed();
-            assertThat(context).hasSingleBean(AuthLoginRateLimiter.class);
-        });
-    }
-
-    @Test
-    void blocksRepeatedPublicLoginAttemptsFromTheSameSource() {
+    void consumesPersistentSourceGlobalAndProtectedCpfBuckets() {
+        AuthRateLimitStore buckets = mock(AuthRateLimitStore.class);
+        CpfLookupDigestService digests = mock(CpfLookupDigestService.class);
+        when(digests.challengeLookup("11144477735")).thenReturn(material());
+        when(buckets.hasCapacity(anyString(), eq(10), eq(60))).thenReturn(true);
+        when(buckets.consume(anyList(), anyInt(), eq(60))).thenReturn(true);
         AuthLoginRateLimiter limiter = new AuthLoginRateLimiter(
-                true,
-                2,
-                Clock.fixed(Instant.parse("2026-07-15T12:00:00Z"), ZoneOffset.UTC)
+                buckets, digests, 2, 10, 60
         );
 
-        limiter.check("198.51.100.25");
-        limiter.check("198.51.100.25");
+        limiter.check("11144477735", "198.51.100.25");
 
-        assertThatThrownBy(() -> limiter.check("198.51.100.25"))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Limite de tentativas");
+        verify(digests).challengeLookup("11144477735");
+        verify(buckets, times(3)).consume(anyList(), anyInt(), eq(60));
     }
 
-    @Configuration(proxyBeanMethods = false)
-    @Import(AuthLoginRateLimiter.class)
-    static class RateLimiterConfiguration {
+    @Test
+    void rejectsWhenThePersistentGlobalBucketIsFull() {
+        AuthRateLimitStore buckets = mock(AuthRateLimitStore.class);
+        CpfLookupDigestService digests = mock(CpfLookupDigestService.class);
+        when(digests.challengeLookup("11144477735")).thenReturn(material());
+        when(buckets.hasCapacity(anyString(), eq(10), eq(60))).thenReturn(false);
+        AuthLoginRateLimiter limiter = new AuthLoginRateLimiter(
+                buckets, digests, 2, 10, 60
+        );
+
+        assertThatThrownBy(() -> limiter.check("11144477735", "198.51.100.25"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Limite de tentativas");
+        verify(digests).challengeLookup("11144477735");
+    }
+
+    private AuthChallengeLookupMaterial material() {
+        return new AuthChallengeLookupMaterial(
+                List.of(new CpfLookupDigest("current", "a".repeat(64))),
+                "b".repeat(64)
+        );
     }
 }

@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -31,9 +32,11 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
 
 class AuthControllerTest {
 
@@ -51,6 +54,8 @@ class AuthControllerTest {
     private final AuthService authService = mock(AuthService.class);
     private final ClientAddressResolver addresses =
             mock(ClientAddressResolver.class);
+    private final AuthLoginRateLimiter loginRateLimiter =
+            mock(AuthLoginRateLimiter.class);
     private final AuthSessionService sessions = mock(AuthSessionService.class);
     private final AuthCookieService cookies = mock(AuthCookieService.class);
     private final CurrentUserService currentUsers = mock(CurrentUserService.class);
@@ -60,14 +65,15 @@ class AuthControllerTest {
     void setUp() {
         when(addresses.resolve(any())).thenReturn("203.0.113.10");
         mockMvc = MockMvcBuilders.standaloneSetup(new AuthController(
-                otp,
+                Optional.of(otp),
                 Optional.of(authService),
                 addresses,
+                loginRateLimiter,
                 sessions,
                 cookies,
                 currentUsers,
-                new DirectCpfLoginPolicy(false),
-                new EmailOtpAuthenticationPolicy(false, false)
+                new DirectCpfLoginPolicy(true),
+                new EmailOtpAuthenticationPolicy(false, true)
         )).build();
         when(currentUsers.profileForIssuedSession(any(), any())).thenAnswer(
                 invocation -> profileFor(
@@ -108,7 +114,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.email").doesNotExist());
 
         verify(cookies).write(any(HttpServletResponse.class), eq(issued));
-        verify(addresses, never()).resolve(any());
+        verify(loginRateLimiter).check("11144477735", "203.0.113.10");
     }
 
     @Test
@@ -124,13 +130,19 @@ class AuthControllerTest {
     }
 
     @Test
-    void postgresqlDirectCpfReturnsGoneBeforeCpfNormalizationOrLegacyAuth()
+    void normalPostgresqlDirectCpfIssuesOnlyTheSafeSessionProfile()
             throws Exception {
+        AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
+        IssuedAuthSession issued = issuedSession();
+        when(authService.autenticarPorCpf("11144477735"))
+                .thenReturn(Optional.of(identity));
+        when(sessions.issue(identity)).thenReturn(issued);
         MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
-                        otp,
+                        Optional.empty(),
                         Optional.of(authService),
                         addresses,
+                        loginRateLimiter,
                         sessions,
                         cookies,
                         currentUsers,
@@ -141,8 +153,25 @@ class AuthControllerTest {
 
         postgresqlMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"cpf\":\"123\"}"))
-                .andExpect(status().isGone());
+                        .content("{\"cpf\":\"111.444.777-35\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cpf").doesNotExist())
+                .andExpect(jsonPath("$.email").doesNotExist());
+
+        verify(authService).autenticarPorCpf("11144477735");
+    }
+
+    @Test
+    void rejectedDirectCpfRateLimitStopsBeforeIdentityAndCookieWrites()
+            throws Exception {
+        doThrow(new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                "Limite de tentativas atingido. Tente novamente em instantes."))
+                .when(loginRateLimiter).check("11144477735", "203.0.113.10");
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"cpf\":\"11144477735\"}"))
+                .andExpect(status().isTooManyRequests());
 
         verify(authService, never()).autenticarPorCpf(any());
         verify(sessions, never()).issue(any());
@@ -185,13 +214,14 @@ class AuthControllerTest {
     }
 
     @Test
-    void normalPostgresqlAllowsEmailOtpAndIssuesOpaqueSessionCookie()
+    void normalPostgresqlRejectsEmailOtpBeforeServiceLookup()
             throws Exception {
         MockMvc postgresqlMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
-                        otp,
+                        Optional.empty(),
                         Optional.of(authService),
                         addresses,
+                        loginRateLimiter,
                         sessions,
                         cookies,
                         currentUsers,
@@ -199,30 +229,12 @@ class AuthControllerTest {
                         new EmailOtpAuthenticationPolicy(true, false)
                 )
         ).build();
-        AuthenticatedIdentity identity = identity(PapelAcesso.BETA);
-        IssuedAuthSession issued = issuedSession();
-        when(addresses.resolve(any())).thenReturn("203.0.113.10");
-        when(otp.request("11144477735", "203.0.113.10"))
-                .thenReturn(OtpChallengeResponse.generic(CHALLENGE_ID, 600));
-        when(otp.verify(CHALLENGE_ID, "123456", "203.0.113.10"))
-                .thenReturn(Optional.of(identity));
-        when(sessions.issue(identity)).thenReturn(issued);
-
         postgresqlMvc.perform(post("/api/auth/email/challenges")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"identifier\":\"11144477735\"}"))
-                .andExpect(status().isAccepted())
-                .andExpect(header().string("Cache-Control", "no-store"));
-        postgresqlMvc.perform(post(
-                        "/api/auth/email/challenges/{id}/verify",
-                        CHALLENGE_ID
-                ).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"code\":\"123456\"}"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.colaboradorId").value(COLLABORATOR_ID));
+                .andExpect(status().isGone());
 
-        verify(cookies).write(any(HttpServletResponse.class), eq(issued));
+        verifyNoInteractions(otp);
     }
 
     @Test
@@ -287,13 +299,14 @@ class AuthControllerTest {
         when(sessions.issue(identity)).thenReturn(issued);
         MockMvc activationMvc = MockMvcBuilders.standaloneSetup(
                 new AuthController(
-                        otp,
+                        Optional.of(otp),
                         Optional.empty(),
                         addresses,
+                        loginRateLimiter,
                         sessions,
                         cookies,
                         new PostgresqlActivationSessionProfileResolver(),
-                        new DirectCpfLoginPolicy(true),
+                        new DirectCpfLoginPolicy(false),
                         new EmailOtpAuthenticationPolicy(true, true)
                 )
         ).build();

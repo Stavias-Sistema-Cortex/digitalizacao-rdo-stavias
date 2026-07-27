@@ -9,11 +9,13 @@ import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Enumeration-safe request and single-use verification state machine. */
 @Service
+@Profile("!postgresql | postgresql-activation")
 public class EmailOtpChallengeService {
 
     private static final String PENDING = "PENDENTE";

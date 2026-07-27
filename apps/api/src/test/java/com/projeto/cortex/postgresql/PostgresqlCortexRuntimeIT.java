@@ -290,17 +290,18 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
                     nome, email, papel_acesso, ativo
                 ) VALUES (
                     '00000000-0000-4000-8000-000000000601',
-                    'runtime-it', 'runtime-it', 'alfa',
+                    'db' || 'sta' || 'vias_acad', 'usuarios', 'alfa',
                     'Runtime IT Alfa', 'runtime.it@fixture.invalid', 'ALFA', TRUE
                 )
                 """);
         jdbc.update("""
                 INSERT INTO auth_identity (
                     colaborador_id, email_autenticacao, email_fonte, status,
-                    email_verificado_em
+                    email_verificado_em, cpf_lookup_key_id, cpf_lookup_hmac
                 ) VALUES (
                     '00000000-0000-4000-8000-000000000601',
-                    'runtime.it@fixture.invalid', 'TEST', 'ATIVA', CURRENT_TIMESTAMP
+                    'runtime.it@fixture.invalid', 'TEST', 'ATIVA', CURRENT_TIMESTAMP,
+                    'runtime-it', repeat('a', 64)
                 )
                 """);
     }

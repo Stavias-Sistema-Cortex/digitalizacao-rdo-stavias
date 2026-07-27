@@ -24,15 +24,16 @@ class DirectCpfLoginPolicyTest {
     }
 
     @Test
-    void enablesDirectCpfLoginOnlyForExplicitLocalOrTestRuntime() {
-        assertEnabled("local");
-        assertEnabled("test");
-        assertEnabled("local", "postgresql");
+    void enablesDirectCpfLoginOnlyForNormalPostgresqlRuntime() {
+        assertEnabled("postgresql");
+        assertEnabled("postgresql", "local");
     }
 
     @Test
-    void failsClosedOutsideExplicitLocalOrTestRuntime() {
-        assertDisabled("postgresql");
+    void failsClosedOutsideNormalPostgresqlRuntime() {
+        assertDisabled("local");
+        assertDisabled("test");
+        assertDisabled("postgresql", "postgresql-activation");
         assertDisabled("staging");
         assertDisabled("local", "staging");
         assertDisabled("prod");

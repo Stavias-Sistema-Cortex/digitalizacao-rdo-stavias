@@ -36,9 +36,10 @@ public class AuthController {
     static final String CPF_FILTER_DISABLED_MESSAGE =
             "Filtro de CPF desativado.";
 
-    private final EmailOtpChallengeService otpChallenges;
+    private final Optional<EmailOtpChallengeService> otpChallenges;
     private final Optional<AuthService> authService;
     private final ClientAddressResolver clientAddresses;
+    private final AuthLoginRateLimiter loginRateLimiter;
     private final AuthSessionService sessions;
     private final AuthCookieService cookies;
     private final AuthSessionProfileResolver sessionProfiles;
@@ -47,9 +48,10 @@ public class AuthController {
 
     @Autowired
     public AuthController(
-            EmailOtpChallengeService otpChallenges,
+            Optional<EmailOtpChallengeService> otpChallenges,
             Optional<AuthService> authService,
             ClientAddressResolver clientAddresses,
+            AuthLoginRateLimiter loginRateLimiter,
             AuthSessionService sessions,
             AuthCookieService cookies,
             AuthSessionProfileResolver sessionProfiles,
@@ -59,6 +61,7 @@ public class AuthController {
         this.otpChallenges = otpChallenges;
         this.authService = authService;
         this.clientAddresses = clientAddresses;
+        this.loginRateLimiter = loginRateLimiter;
         this.sessions = sessions;
         this.cookies = cookies;
         this.sessionProfiles = sessionProfiles;
@@ -75,7 +78,7 @@ public class AuthController {
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
         servletResponse.setHeader("Cache-Control", "no-store");
-        return otpChallenges.request(
+        return requiredOtpChallenges().request(
                 request == null ? null : request.identifier(),
                 clientAddresses.resolve(servletRequest)
         );
@@ -89,7 +92,7 @@ public class AuthController {
             HttpServletResponse response
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
-        AuthenticatedIdentity identity = otpChallenges.verify(
+        AuthenticatedIdentity identity = requiredOtpChallenges().verify(
                 challengeId,
                 request == null ? null : request.code(),
                 clientAddresses.resolve(servletRequest)
@@ -141,11 +144,13 @@ public class AuthController {
     @PostMapping("/api/auth/login")
     public AuthSessionResponse login(
             @RequestBody(required = false) LoginRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse response
     ) {
         response.setHeader("Cache-Control", "no-store");
         directCpfLoginPolicy.requireEnabled();
         String cpf = canonicalCpf(request);
+        loginRateLimiter.check(cpf, clientAddresses.resolve(servletRequest));
         AuthenticatedIdentity identity = authService.orElseThrow(
                 () -> new ResponseStatusException(
                         HttpStatus.SERVICE_UNAVAILABLE,
@@ -175,6 +180,13 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.GONE).body(
                 Map.of("message", message)
         );
+    }
+
+    private EmailOtpChallengeService requiredOtpChallenges() {
+        return otpChallenges.orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.GONE,
+                "Autenticação por e-mail indisponível."
+        ));
     }
 
     private String canonicalCpf(LoginRequest request) {

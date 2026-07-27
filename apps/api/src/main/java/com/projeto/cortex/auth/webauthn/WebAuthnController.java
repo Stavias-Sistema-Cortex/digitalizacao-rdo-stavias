@@ -16,10 +16,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.server.ResponseStatusException;
 
 /** Authenticated enrollment and public discoverable passkey authentication. */
 @RestController
+@Profile("!postgresql | postgresql-activation")
 public class WebAuthnController {
 
     private final WebAuthnService webAuthn;

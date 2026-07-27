@@ -8,12 +8,14 @@ import com.projeto.cortex.email.EmailMessage;
 import java.time.Instant;
 import java.util.Optional;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Creates one real or decoy challenge only after rate limiting succeeds. */
 @Service
+@Profile("!postgresql | postgresql-activation")
 public class EmailOtpChallengeIssuer {
 
     private final AuthenticationChallengeLookup identities;

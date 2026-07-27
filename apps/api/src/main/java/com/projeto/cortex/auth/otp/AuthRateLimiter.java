@@ -4,9 +4,11 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 
 /** Shared e-mail challenge pre-gate plus global circuit breaker. */
 @Service
+@Profile("!postgresql | postgresql-activation")
 public class AuthRateLimiter {
 
     private final AuthRateLimitStore buckets;

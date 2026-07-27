@@ -108,18 +108,18 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWithoutAVerifiedActiveAlfa() {
+    void refusesWithoutAnActiveAcademyIdentityWithCurrentHmacMaterial() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("ALFA ativo")
-                .hasMessageContaining("e-mail verificado");
+                .hasMessageContaining("Academy ativa")
+                .hasMessageContaining("HMAC atual");
     }
 
     @Test
-    void acceptsOnlyV60VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV60AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -128,7 +128,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void localDirectCpfReadinessAcceptsOnlyAnActiveAcademyHmacAlfa() {
+    void readinessAcceptsOnlyAnActiveAcademyIdentityWithCurrentHmac() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(
                 contains("flyway_schema_history"),
@@ -140,13 +140,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         )).thenReturn(1);
 
         PostgresqlRuntimeReadinessGuard localDirectCpfGuard =
-                new PostgresqlRuntimeReadinessGuard(
-                        jdbcTemplate,
-                        "60",
-                        true,
-                        released(),
-                        true
-                );
+                guard(jdbcTemplate, true, released());
 
         assertThatCode(localDirectCpfGuard::verifyReadiness)
                 .doesNotThrowAnyException();

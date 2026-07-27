@@ -4,8 +4,10 @@ import com.projeto.cortex.auth.otp.OtpPolicy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 @Configuration(proxyBeanMethods = false)
+@Profile("!postgresql | postgresql-activation")
 public class AuthSecurityRetentionConfiguration {
 
     @Bean

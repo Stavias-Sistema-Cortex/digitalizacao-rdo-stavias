@@ -20,16 +20,16 @@ class AuthPublicEndpointPolicyTest {
                     + "00000000-0000-4000-8000-000000000001/verify";
 
     @Test
-    void barePostgresqlPublishesExactPasskeyAndEmailOtpPostsWhileKeepingDirectCpfLoginClosed() {
+    void barePostgresqlPublishesOnlyExactDirectCpfAndPasskeyPosts() {
         AuthPublicEndpointPolicy policy =
                 new AuthPublicEndpointPolicy(true, false);
 
         List<String> publicPosts = List.of(
                 OPTIONS,
                 VERIFY,
+                "/api/auth/login",
                 EMAIL_CHALLENGES,
                 EMAIL_VERIFY,
-                "/api/auth/login",
                 "/api/auth/email/challenges/not-a-uuid/verify",
                 EMAIL_VERIFY + "/extra",
                 "/api/auth/passkeys/authentication/options/extra",
@@ -43,14 +43,13 @@ class AuthPublicEndpointPolicyTest {
         assertThat(publicPosts).containsExactly(
                 OPTIONS,
                 VERIFY,
-                EMAIL_CHALLENGES,
-                EMAIL_VERIFY
+                "/api/auth/login"
         );
     }
 
     @Test
-    void localPostgresqlAlsoPublishesDirectCpfLogin() {
-        AuthPublicEndpointPolicy policy = policy("local", "postgresql");
+    void normalPostgresqlPublishesDirectCpfLogin() {
+        AuthPublicEndpointPolicy policy = policy("postgresql");
 
         assertThat(policy.isPublicAuthenticationRequest(
                 request("POST", "/api/auth/login")
@@ -64,12 +63,11 @@ class AuthPublicEndpointPolicyTest {
     }
 
     @Test
-    void directCpfLoginFailsClosedOutsideLocalOrTestProfiles() {
+    void directCpfLoginFailsClosedOutsideNormalPostgresqlProfiles() {
         assertThat(policy().isPublicAuthenticationRequest(
                 request("POST", "/api/auth/login")
         )).isFalse();
         for (String profile : List.of(
-                "postgresql",
                 "staging",
                 "prod",
                 "production"

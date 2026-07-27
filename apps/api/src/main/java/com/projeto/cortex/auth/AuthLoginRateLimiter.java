@@ -1,9 +1,12 @@
 package com.projeto.cortex.auth;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
+import com.projeto.cortex.auth.identity.CpfLookupDigestService;
+import com.projeto.cortex.auth.otp.AuthRateLimitStore;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -11,104 +14,98 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Limite simples para a única rota pública de CPF. O perfil local o desliga
- * explicitamente para não bloquear o desenvolvimento; em produção há limites
- * por origem e globais, ambos com janela fixa curta.
+ * Shared PostgreSQL gate for the only public direct-CPF route.
  */
 @Service
 public class AuthLoginRateLimiter {
 
-    private static final long WINDOW_SECONDS = 60;
-    private static final int PRUNE_THRESHOLD = 10_000;
+    private static final String BUCKET_DOMAIN =
+            "cortex.auth.login-rate-limit.v1";
 
-    private final boolean enabled;
-    private final int attemptsPerMinute;
-    private final int globalAttemptsPerMinute;
-    private final Clock clock;
-    private final ConcurrentHashMap<String, Window> windows =
-            new ConcurrentHashMap<>();
+    private final AuthRateLimitStore buckets;
+    private final CpfLookupDigestService cpfDigests;
+    private final int maxRequests;
+    private final int globalMaxRequests;
+    private final int windowSeconds;
 
     @Autowired
     public AuthLoginRateLimiter(
-            @Value("${cortex.auth.login-rate-limit.enabled:true}")
-            boolean enabled,
-            @Value("${cortex.auth.login-rate-limit.attempts-per-minute:20}")
-            int attemptsPerMinute,
-            @Value("${cortex.auth.login-rate-limit.global-attempts-per-minute:1000}")
-            int globalAttemptsPerMinute
+            AuthRateLimitStore buckets,
+            CpfLookupDigestService cpfDigests,
+            @Value("${cortex.auth.login-rate-limit.max-requests:20}")
+            int maxRequests,
+            @Value("${cortex.auth.login-rate-limit.global-max-requests:1000}")
+            int globalMaxRequests,
+            @Value("${cortex.auth.login-rate-limit.window-seconds:60}")
+            int windowSeconds
     ) {
-        this(
-                enabled,
-                attemptsPerMinute,
-                globalAttemptsPerMinute,
-                Clock.systemUTC()
+        if (buckets == null || cpfDigests == null
+                || maxRequests < 1 || maxRequests > 10_000
+                || globalMaxRequests < 1 || globalMaxRequests > 100_000
+                || windowSeconds < 1 || windowSeconds > 3_600) {
+            throw new IllegalArgumentException("Limite de login inválido.");
+        }
+        this.buckets = buckets;
+        this.cpfDigests = cpfDigests;
+        this.maxRequests = maxRequests;
+        this.globalMaxRequests = globalMaxRequests;
+        this.windowSeconds = windowSeconds;
+    }
+
+    public void check(String cpfRaw, String clientIp) {
+        AuthChallengeLookupMaterial material = cpfDigests.challengeLookup(cpfRaw);
+        String source = canonicalClientIp(clientIp);
+        String global = bucketKey("global", material, "global");
+        if (!buckets.hasCapacity(global, globalMaxRequests, windowSeconds)
+                || !consume(bucketKey("source", material, source), maxRequests)
+                || !consume(global, globalMaxRequests)
+                || !consume(bucketKey("identifier", material, "cpf"), maxRequests)) {
+            throw rejected();
+        }
+    }
+
+    private boolean consume(String key, int limit) {
+        return buckets.consume(List.of(key), limit, windowSeconds);
+    }
+
+    private String canonicalClientIp(String clientIp) {
+        return clientIp == null || clientIp.isBlank()
+                ? "invalid"
+                : clientIp.strip();
+    }
+
+    private String bucketKey(
+            String scope,
+            AuthChallengeLookupMaterial material,
+            String subject
+    ) {
+        String protectedCpf = material.candidates().stream()
+                .map(candidate -> candidate.keyId() + ":" + candidate.value())
+                .sorted()
+                .reduce("", (left, right) -> left + "|" + right);
+        return sha256(BUCKET_DOMAIN + "\0" + scope + "\0"
+                + subject + "\0" + protectedCpf + "\0"
+                + material.legacyDigest());
+    }
+
+    private String sha256(String input) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte value : digest) {
+                hex.append(String.format("%02x", value));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 indisponível.", exception);
+        }
+    }
+
+    private ResponseStatusException rejected() {
+        return new ResponseStatusException(
+                HttpStatus.TOO_MANY_REQUESTS,
+                "Limite de tentativas atingido. Tente novamente em instantes."
         );
-    }
-
-    AuthLoginRateLimiter(
-            boolean enabled,
-            int attemptsPerMinute,
-            Clock clock
-    ) {
-        this(enabled, attemptsPerMinute, Math.max(100, attemptsPerMinute), clock);
-    }
-
-    AuthLoginRateLimiter(
-            boolean enabled,
-            int attemptsPerMinute,
-            int globalAttemptsPerMinute,
-            Clock clock
-    ) {
-        this.enabled = enabled;
-        this.attemptsPerMinute = Math.max(1, attemptsPerMinute);
-        this.globalAttemptsPerMinute = Math.max(1, globalAttemptsPerMinute);
-        this.clock = clock;
-    }
-
-    public void check(String clientAddress) {
-        if (!enabled) {
-            return;
-        }
-
-        Instant now = clock.instant();
-        String source = clientAddress == null || clientAddress.isBlank()
-                ? "unknown"
-                : clientAddress.trim();
-
-        if (!consume("source:" + source, attemptsPerMinute, now)
-                || !consume("global", globalAttemptsPerMinute, now)) {
-            throw new ResponseStatusException(
-                    HttpStatus.TOO_MANY_REQUESTS,
-                    "Limite de tentativas atingido. Tente novamente em instantes."
-            );
-        }
-
-        if (windows.size() > PRUNE_THRESHOLD) {
-            Instant earliestActive = now.minusSeconds(WINDOW_SECONDS);
-            windows.entrySet().removeIf(entry ->
-                    entry.getValue().startedAt().isBefore(earliestActive)
-            );
-        }
-    }
-
-    private boolean consume(String key, int maxAttempts, Instant now) {
-        AtomicBoolean allowed = new AtomicBoolean(false);
-        windows.compute(key, (ignored, current) -> {
-            if (current == null || !now.isBefore(
-                    current.startedAt().plusSeconds(WINDOW_SECONDS)
-            )) {
-                allowed.set(true);
-                return new Window(now, 1);
-            }
-            if (current.attempts() >= maxAttempts) {
-                return current;
-            }
-            allowed.set(true);
-            return new Window(current.startedAt(), current.attempts() + 1);
-        });
-        return allowed.get();
-    }
-
-    private record Window(Instant startedAt, int attempts) {
     }
 }

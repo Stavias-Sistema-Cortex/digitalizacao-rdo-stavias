@@ -6,9 +6,11 @@ import com.projeto.cortex.auth.otp.AuthRateLimitStore;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 
 /** Shared, HMAC-keyed circuit breaker for public WebAuthn ceremonies. */
 @Service
+@Profile("!postgresql | postgresql-activation")
 public class WebAuthnRateLimiter {
 
     private final AuthRateLimitStore buckets;
