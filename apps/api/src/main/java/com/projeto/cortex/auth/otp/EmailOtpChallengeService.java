@@ -9,11 +9,13 @@ import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Enumeration-safe request and single-use verification state machine. */
 @Service
+@Profile("!postgresql | postgresql-activation")
 public class EmailOtpChallengeService {
 
     private static final String PENDING = "PENDENTE";
@@ -130,8 +132,10 @@ public class EmailOtpChallengeService {
     @Transactional(propagation = Propagation.NEVER)
     public OtpChallengeResponse request(
             String identifier,
-            String clientIp
+            String clientIp,
+            String clientInstanceHash
     ) {
+        requireClientInstanceHash(clientInstanceHash);
         String challengeId = challengeIds.get();
         OtpChallengeResponse response = OtpChallengeResponse.generic(
                 challengeId,
@@ -140,20 +144,50 @@ public class EmailOtpChallengeService {
         if (!rateLimiter.allow(identifier, clientIp)) {
             return response;
         }
-        issuer.issue(challengeId, identifier);
+        issuer.issue(challengeId, identifier, clientInstanceHash);
         return response;
     }
 
     @Transactional
     public Optional<AuthenticatedIdentity> verify(
             String challengeId,
-            String code
+            String code,
+            String clientInstanceHash
+    ) {
+        return verify(challengeId, code, "", clientInstanceHash);
+    }
+
+    /**
+     * Verifies a public code only after independent source/global throttling.
+     * HTTP callers must supply the resolved client address.
+     */
+    @Transactional
+    public Optional<AuthenticatedIdentity> verify(
+            String challengeId,
+            String code,
+            String clientIp,
+            String clientInstanceHash
+    ) {
+        requireClientInstanceHash(clientInstanceHash);
+        if (!rateLimiter.allowVerification(challengeId, clientIp)) {
+            return Optional.empty();
+        }
+        return verifyLockedChallenge(challengeId, code, clientInstanceHash);
+    }
+
+    private Optional<AuthenticatedIdentity> verifyLockedChallenge(
+            String challengeId,
+            String code,
+            String clientInstanceHash
     ) {
         if (!canonicalUuid(challengeId)) {
             return Optional.empty();
         }
         Optional<EmailOtpChallengeStore.LockedChallenge> locked =
-                challenges.lockForVerification(challengeId);
+                challenges.lockForVerification(
+                        challengeId,
+                        clientInstanceHash
+                );
         if (locked.isEmpty()) {
             return Optional.empty();
         }
@@ -207,7 +241,8 @@ public class EmailOtpChallengeService {
         int consumed = challenges.consume(
                 challengeId,
                 candidate.collaboratorId(),
-                candidateDigest
+                candidateDigest,
+                clientInstanceHash
         );
         if (consumed != 1) {
             return Optional.empty();
@@ -250,6 +285,14 @@ public class EmailOtpChallengeService {
                     && UUID.fromString(value).toString().equals(value);
         } catch (RuntimeException exception) {
             return false;
+        }
+    }
+
+    private void requireClientInstanceHash(String value) {
+        if (value == null || !value.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException(
+                    "Instância do cliente inválida."
+            );
         }
     }
 }

@@ -4,26 +4,63 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LocalRdoRecord } from "../../lib/db/db.types";
+import { RDO_IMPORT_LIMITS } from "../../lib/files/rdoImportResourcePolicy";
+import { clearSession, setSession } from "../auth/authSession";
 import { RdoLocalList } from "./RdoLocalList";
+import { localRdoPdfExportAvailability } from "./export/rdoPdfAvailability";
+import type { RdoExportDownloadPermit } from "./export/rdoExportDownload";
 
 const mocks = vi.hoisted(() => ({
   listWorksites: vi.fn(),
   downloadLocal: vi.fn(),
   downloadServer: vi.fn(),
+  downloadPdfLocal: vi.fn(),
+  downloadPdfServer: vi.fn(),
+  onWorkbookModuleLoad: vi.fn(),
 }));
 
 vi.mock("./rdoCreationContextRepository", () => ({
   listCachedAuthorizedRdoWorksites: mocks.listWorksites,
 }));
 
-vi.mock("./export/exportRdoWorkbook", () => ({
-  downloadRdoWorkbook: mocks.downloadLocal,
-  downloadAuthoritativeRdoWorkbook: mocks.downloadServer,
+vi.mock("./export/exportRdoWorkbook", () => {
+  // This callback models a session rotation while the lazy module resolves.
+  // It must run before the list invokes the downloaded exporter.
+  mocks.onWorkbookModuleLoad();
+  return {
+    downloadRdoWorkbook: mocks.downloadLocal,
+    downloadAuthoritativeRdoWorkbook: mocks.downloadServer,
+  };
+});
+
+vi.mock("./export/exportRdoPdf", () => ({
+  downloadRdoPdf: mocks.downloadPdfLocal,
+  downloadAuthoritativeRdoPdf: mocks.downloadPdfServer,
 }));
 
 vi.mock("../programacoes/ProgramacaoSemanalImport", () => ({
   ProgramacaoSemanalImport: () => null,
 }));
+
+const OWNER_A = "00000000-0000-4000-8000-000000000010";
+const OWNER_B = "00000000-0000-4000-8000-000000000011";
+const WORKSITE_A = "00000000-0000-4000-8000-000000000020";
+const WORKSITE_B = "00000000-0000-4000-8000-000000000021";
+
+function session(
+  ownerId = OWNER_A,
+  options: { obraIds?: string[]; global?: boolean; nome?: string } = {},
+) {
+  const global = options.global ?? true;
+  return {
+    colaboradorId: ownerId,
+    nome: options.nome ?? "Encarregado de teste",
+    papelAcesso: global ? "ALFA" as const : "BETA" as const,
+    escopoGlobal: global,
+    obraIds: options.obraIds ?? [],
+    expiraEm: "2099-07-14T12:00:00Z",
+  };
+}
 
 function record(
   overrides: Partial<LocalRdoRecord> = {},
@@ -77,8 +114,8 @@ function record(
   };
 }
 
-function renderList(localRecord = record()) {
-  render(
+function list(localRecord = record()) {
+  return (
     <RdoLocalList
       records={[localRecord]}
       events={[]}
@@ -90,21 +127,205 @@ function renderList(localRecord = record()) {
       isImporting={false}
       onOpen={vi.fn()}
       onRefresh={vi.fn()}
-    />,
+    />
   );
 }
 
+function renderList(localRecord = record()) {
+  return render(list(localRecord));
+}
+
 describe("RdoLocalList offline export", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    clearSession();
+  });
 
   beforeEach(() => {
+    clearSession();
+    setSession(session());
     mocks.listWorksites.mockReset();
     mocks.downloadLocal.mockReset();
     mocks.downloadServer.mockReset();
+    mocks.downloadPdfLocal.mockReset();
+    mocks.downloadPdfServer.mockReset();
+    mocks.onWorkbookModuleLoad.mockReset();
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,
       value: false,
     });
+  });
+
+  it("shares glyph rejection through the static PDF availability helper", () => {
+    const availability = localRdoPdfExportAvailability(
+      record({
+        payload: {
+          ...record().payload,
+          observacoes: "Frente com alerta ⚠",
+        },
+      }),
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    );
+
+    expect(availability).toEqual({
+      ready: false,
+      code: "RDO_EXPORT_UNSUPPORTED_PDF_GLYPH",
+      message:
+        "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    });
+  });
+
+  it("rejects an oversized import in the file input without replacing the rendered list", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    const onImportRdoFile = vi.fn();
+    const rendered = render(
+      <RdoLocalList
+        records={[record()]}
+        events={[]}
+        attachments={[]}
+        isLoading={false}
+        error=""
+        onCreate={vi.fn()}
+        onImportRdoFile={onImportRdoFile}
+        isImporting={false}
+        onOpen={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    const input = rendered.container.querySelector<HTMLInputElement>(
+      'input[type="file"][accept*=".pdf"]',
+    );
+    const oversized = new File(["rdo"], "RDO-grande.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(oversized, "size", {
+      configurable: true,
+      value: RDO_IMPORT_LIMITS.fileBytes + 1,
+    });
+
+    expect(input).not.toBeNull();
+    fireEvent.change(input!, {
+      target: {
+        files: [oversized],
+      },
+    });
+
+    expect(onImportRdoFile).not.toHaveBeenCalled();
+    expect(await screen.findByText(
+      /O arquivo de RDO excede o limite/,
+    )).toBeInTheDocument();
+    expect(screen.getByText("RDO-1")).toBeInTheDocument();
+  });
+
+  it("blocks a local XLSX download when the session changes while its lazy module resolves", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.onWorkbookModuleLoad.mockImplementation(() => {
+      setSession(session(OWNER_B));
+    });
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText(
+      "XLSX: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
+  it("blocks both local formats after an owner rotation leaves an offline RDO rendered", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList();
+
+    const xlsxButton = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(xlsxButton).toBeEnabled());
+    setSession(session(OWNER_B));
+
+    fireEvent.click(xlsxButton);
+    expect(await screen.findByText(
+      "XLSX: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Exportar PDF" }));
+    expect(await screen.findByText(
+      "PDF: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+    expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
+  });
+
+  it("blocks a stale worksite after the same BETA owner loses that worksite scope", async () => {
+    setSession(session(OWNER_A, {
+      global: false,
+      obraIds: [WORKSITE_A],
+    }));
+    mocks.listWorksites.mockResolvedValue([
+      { id: WORKSITE_A, nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({ obraId: WORKSITE_A }));
+
+    const xlsxButton = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(xlsxButton).toBeEnabled());
+    setSession(session(OWNER_A, {
+      global: false,
+      obraIds: [WORKSITE_B],
+    }));
+
+    fireEvent.click(xlsxButton);
+    expect(await screen.findByText(
+      "XLSX: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Exportar PDF" }));
+    expect(await screen.findByText(
+      "PDF: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+    expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
+  });
+
+  it("keeps a same-scope export valid when only the display name refreshes", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    setSession(session(OWNER_A, { nome: "Nome operacional atualizado" }));
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadLocal).toHaveBeenCalledOnce());
+  });
+
+  it("reasserts the session at the local downloader boundary", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.downloadLocal.mockImplementation(async (
+      _snapshot: unknown,
+      permit: RdoExportDownloadPermit,
+    ) => {
+      setSession(session(OWNER_B));
+      permit.assertCurrentAuthorization();
+    });
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText(
+      "XLSX: A sessão mudou durante a exportação local do RDO; o download foi bloqueado.",
+    )).toBeInTheDocument();
+    expect(mocks.downloadLocal).toHaveBeenCalledOnce();
   });
 
   it("enables a complete canonical snapshot and downloads it locally offline", async () => {
@@ -120,7 +341,7 @@ describe("RdoLocalList offline export", () => {
     const button = await screen.findByRole("button", { name: "Exportar XLSX" });
     await waitFor(() => expect(button).toBeEnabled());
     expect(screen.getByText(
-      "Dados locais pendentes · exportação offline",
+      "XLSX · Dados locais pendentes · exportação offline",
     )).toBeInTheDocument();
 
     fireEvent.click(button);
@@ -150,6 +371,20 @@ describe("RdoLocalList offline export", () => {
     expect(mocks.downloadServer).not.toHaveBeenCalled();
   });
 
+  it("downloads a complete pending RDO as PDF locally offline", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList();
+
+    const button = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadPdfLocal).toHaveBeenCalledOnce());
+    expect(mocks.downloadPdfServer).not.toHaveBeenCalled();
+  });
+
   it("uses the authenticated server only for a synced server-versioned RDO", async () => {
     Object.defineProperty(window.navigator, "onLine", {
       configurable: true,
@@ -161,12 +396,30 @@ describe("RdoLocalList offline export", () => {
     renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
 
     expect(await screen.findByText(
-      "Servidor autoritativo · cópia local pronta offline",
+      "XLSX · Servidor autoritativo · cópia local pronta offline",
     )).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Exportar XLSX" }));
 
     await waitFor(() => expect(mocks.downloadServer).toHaveBeenCalledOnce());
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
+  it("uses the authenticated server only for a synced server-versioned PDF", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
+
+    const button = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.downloadPdfServer).toHaveBeenCalledOnce());
+    expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
   });
 
   it("does not silently fall back to local export after a server rejection", async () => {
@@ -187,10 +440,112 @@ describe("RdoLocalList offline export", () => {
     fireEvent.click(button);
 
     expect(await screen.findByText(
-      "O servidor recusou a exportação do RDO (403).",
+      "XLSX: O servidor recusou a exportação do RDO (403).",
     )).toBeInTheDocument();
     expect(mocks.downloadServer).toHaveBeenCalledOnce();
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
+  });
+
+  it("does not silently fall back after a PDF server rejection", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.downloadPdfServer.mockRejectedValue(
+      new Error("O servidor recusou a exportação do RDO (403)."),
+    );
+    renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
+
+    const button = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText(
+      "PDF: O servidor recusou a exportação do RDO (403).",
+    )).toBeInTheDocument();
+    expect(mocks.downloadPdfServer).toHaveBeenCalledOnce();
+    expect(mocks.downloadPdfLocal).not.toHaveBeenCalled();
+    expect(mocks.downloadLocal).not.toHaveBeenCalled();
+    expect(mocks.downloadServer).not.toHaveBeenCalled();
+  });
+
+  it("keeps XLSX available when a PDF glyph cannot be represented safely", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList(record({
+      payload: {
+        ...record().payload,
+        observacoes: "Frente com alerta ⚠",
+      },
+    }));
+
+    const xlsxButton = await screen.findByRole("button", { name: "Exportar XLSX" });
+    const pdfButton = screen.getByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(xlsxButton).toBeEnabled());
+    expect(pdfButton).toBeDisabled();
+    expect(await screen.findByText(
+      "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    )).toBeInTheDocument();
+  });
+
+  it("validates PDF list availability without loading the PDF export module", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    renderList();
+
+    const pdfButton = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(pdfButton).toBeEnabled());
+  });
+
+  it("does not reuse PDF availability when a record payload changes without metadata", async () => {
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    const view = renderList();
+
+    const pdfButton = await screen.findByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(pdfButton).toBeEnabled());
+
+    view.rerender(list(record({
+      payload: {
+        ...record().payload,
+        observacoes: "Frente com alerta ⚠",
+      },
+    })));
+
+    expect(pdfButton).toBeDisabled();
+    expect(screen.getByText(
+      "O conteúdo do RDO contém caractere sem representação segura no PDF; nenhum conteúdo foi substituído.",
+    )).toBeInTheDocument();
+    expect(pdfButton).toBeDisabled();
+  });
+
+  it("preserves each format notice after independent export failures", async () => {
+    Object.defineProperty(window.navigator, "onLine", {
+      configurable: true,
+      value: true,
+    });
+    mocks.listWorksites.mockResolvedValue([
+      { id: "obra-1", nome: "Obra Norte", codigoContrato: "CTR-1" },
+    ]);
+    mocks.downloadServer.mockRejectedValue(new Error("Falha XLSX."));
+    mocks.downloadPdfServer.mockRejectedValue(new Error("Falha PDF."));
+    renderList(record({ syncStatus: "SYNCED", versaoEntidade: 7 }));
+
+    const xlsxButton = await screen.findByRole("button", { name: "Exportar XLSX" });
+    const pdfButton = screen.getByRole("button", { name: "Exportar PDF" });
+    await waitFor(() => expect(pdfButton).toBeEnabled());
+    fireEvent.click(xlsxButton);
+    expect(await screen.findByText("XLSX: Falha XLSX.")).toBeInTheDocument();
+
+    fireEvent.click(pdfButton);
+    expect(await screen.findByText("PDF: Falha PDF.")).toBeInTheDocument();
+    expect(screen.getByText("XLSX: Falha XLSX.")).toBeInTheDocument();
   });
 
   it("keeps export disabled with the literal missing-worksite reason", async () => {
@@ -198,10 +553,12 @@ describe("RdoLocalList offline export", () => {
     renderList();
 
     const button = await screen.findByRole("button", { name: "Exportar XLSX" });
+    const pdfButton = screen.getByRole("button", { name: "Exportar PDF" });
     await waitFor(() => expect(button).toBeDisabled());
-    expect(await screen.findByText(
+    expect(pdfButton).toBeDisabled();
+    expect(screen.getAllByText(
       "A obra canônica deste RDO não está completa no armazenamento offline.",
-    )).toBeInTheDocument();
+    )).toHaveLength(2);
     expect(mocks.downloadLocal).not.toHaveBeenCalled();
   });
 });

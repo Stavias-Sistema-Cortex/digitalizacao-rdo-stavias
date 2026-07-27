@@ -5,12 +5,15 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 import staviasTile from "../../assets/stavias-s-tile.png";
 import { SyncStatusBanner } from "../SyncStatusBanner";
 import { getSession, isAlfa } from "../../features/auth/authSession";
-import { encerrarSessao } from "../../features/auth/authService";
+import {
+  encerrarSessao,
+  LogoutReauthenticationRequiredError,
+} from "../../features/auth/authService";
 import {
   SIDEBAR_WIDTH_DEFAULT,
   SIDEBAR_WIDTH_KEY,
@@ -177,10 +180,10 @@ export function CortexShell({
     try {
       await encerrarSessao();
       window.location.assign("/");
-    } catch {
-      setLogoutError(
-        "Não foi possível encerrar a sessão no servidor. Verifique a conexão e tente novamente.",
-      );
+    } catch (error: unknown) {
+      setLogoutError(error instanceof LogoutReauthenticationRequiredError
+        ? "Esta aba não confirmou a sessão remota. Entre novamente antes de encerrar a sessão compartilhada."
+        : "Não foi possível encerrar a sessão no servidor. Verifique a conexão e tente novamente.");
       setIsLoggingOut(false);
     }
   }
@@ -265,7 +268,6 @@ export function CortexShell({
           } as CSSProperties
         }
       >
-      <aside className="cortex-sidebar">
         <button
           type="button"
           className="sidebar-toggle"
@@ -295,6 +297,7 @@ export function CortexShell({
           </svg>
         </button>
 
+      <aside className="cortex-sidebar">
         <div
           className="sidebar-resizer"
           role="separator"

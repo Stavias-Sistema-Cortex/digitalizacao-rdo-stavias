@@ -48,6 +48,99 @@ function validCleanupFixtures(): Array<{ path: string; content: string }> {
   ];
 }
 
+function validNormalRuntimeFixtures(): Array<{ path: string; content: string }> {
+  return [
+    {
+      path: "compose.local.yml",
+      content: [
+        'CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}',
+        'CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}',
+        'ports:',
+        '  - "127.0.0.1:${CORTEX_API_PORT:-8081}:8080"',
+        '  - "127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"',
+      ].join("\n"),
+    },
+    {
+      path: "compose.production.example.yml",
+      content: [
+        "SPRING_PROFILES_ACTIVE: production,postgresql",
+        "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac",
+      ].join("\n"),
+    },
+    {
+      path: "scripts/dev/run-api.sh",
+      content: [
+        'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+        'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+        'API_PORT="${PORT:-${SERVER_PORT:-8080}}"',
+        'export SERVER_PORT="$API_PORT"',
+        'API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"',
+        'lsof -nP -iTCP:"$API_PORT" -sTCP:LISTEN',
+        'curl -fsS "$API_HEALTH_URL"',
+      ].join("\n"),
+    },
+    {
+      path: "scripts/dev/run-compose.sh",
+      content: [
+        'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+        'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+        'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+        'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+        "export CORTEX_WEB_PORT CORTEX_API_PORT",
+        'docker compose up -d',
+        'echo "http://localhost:${CORTEX_WEB_PORT}"',
+        'echo "http://127.0.0.1:${CORTEX_API_PORT}/api/health"',
+        'echo "http://127.0.0.1:${CORTEX_API_PORT}/api/readiness"',
+      ].join("\n"),
+    },
+    {
+      path: "scripts/dev/run-api-docker.sh",
+      content: [
+        'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+        'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+        'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+        'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+        'docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
+        '  -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+      ].join("\n"),
+    },
+    {
+      path: "scripts/dev/normal-runtime-env.sh",
+      content: "unset_normal_runtime_activation_environment",
+    },
+    {
+      path: "scripts/dev/start-postgres-activation.sh",
+      content: [
+        "postgresql-activation",
+        "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+      ].join("\n"),
+    },
+    {
+      path: ".env.example",
+      content: [
+        "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex",
+        "CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/StaviasCortex",
+        "CORTEX_WEB_PORT=5173",
+        "CORTEX_API_PORT=8081",
+      ].join("\n"),
+    },
+    {
+      path: ".env.postgresql.example",
+      content: [
+        "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex",
+        "VITE_CORTEX_API_BASE_URL=/api",
+      ].join("\n"),
+    },
+    {
+      path: "apps/api/src/main/resources/application-local.yml",
+      content: [
+        "allowed-origins: ${CORTEX_CORS_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+        "allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+      ].join("\n"),
+    },
+  ];
+}
+
 function writeBoundaryRepository(
   runtimePath: string,
   runtimeContent: string,
@@ -55,7 +148,10 @@ function writeBoundaryRepository(
   const repositoryRoot = mkdtempSync(
     path.join(tmpdir(), "cortex-stavia-boundary-"),
   );
-  for (const fixture of validCleanupFixtures()) {
+  for (const fixture of [
+    ...validCleanupFixtures(),
+    ...validNormalRuntimeFixtures(),
+  ]) {
     const destination = path.join(repositoryRoot, fixture.path);
     mkdirSync(path.dirname(destination), { recursive: true });
     writeFileSync(destination, fixture.content);
@@ -68,6 +164,39 @@ function writeBoundaryRepository(
   mkdirSync(path.dirname(runtimeDestination), { recursive: true });
   writeFileSync(runtimeDestination, runtimeContent);
   return repositoryRoot;
+}
+
+function writeStandaloneBoundaryWebRoot(
+  runtimePath: string,
+  runtimeContent: string,
+): string {
+  const webRoot = mkdtempSync(
+    path.join(tmpdir(), "cortex-stavia-standalone-web-"),
+  );
+  for (const fixture of validCleanupFixtures()) {
+    const destination = path.join(
+      webRoot,
+      fixture.path.replace(/^apps\/web\//, ""),
+    );
+    mkdirSync(path.dirname(destination), { recursive: true });
+    writeFileSync(destination, fixture.content);
+  }
+  const runtimeDestination = path.join(webRoot, "src", runtimePath);
+  mkdirSync(path.dirname(runtimeDestination), { recursive: true });
+  writeFileSync(runtimeDestination, runtimeContent);
+  const verifierDestination = path.join(
+    webRoot,
+    "scripts/verify-stavia-boundary.mjs",
+  );
+  mkdirSync(path.dirname(verifierDestination), { recursive: true });
+  writeFileSync(
+    verifierDestination,
+    readFileSync(
+      path.join(WEB_ROOT, "scripts/verify-stavia-boundary.mjs"),
+      "utf8",
+    ),
+  );
+  return webRoot;
 }
 
 function relativeToRepository(file: string): string {
@@ -98,6 +227,7 @@ function supportFiles(): string[] {
     path.join(REPOSITORY_ROOT, ".env.example"),
     path.join(REPOSITORY_ROOT, ".env.postgresql.example"),
     path.join(REPOSITORY_ROOT, "compose.production.example.yml"),
+    path.join(REPOSITORY_ROOT, "deploy", "production", "compose.yml"),
   ];
   return [
     ...explicit.filter(existsSync),
@@ -203,6 +333,8 @@ describe("StavIA runtime boundary", () => {
         [
           "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex",
           "CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/StaviasCortex",
+          "CORTEX_WEB_PORT=5173",
+          "CORTEX_API_PORT=8081",
           "",
         ].join("\n"),
       );
@@ -214,10 +346,14 @@ describe("StavIA runtime boundary", () => {
         path.join(repositoryRoot, ".env.untracked"),
         "STAVIA_ASSISTANT_TOKEN=ignored-runtime-secret\n",
       );
-      execFileSync("git", ["add", ".env.example"], {
+      execFileSync(
+        "git",
+        ["add", ".env.example", ".env.postgresql.example"],
+        {
         cwd: repositoryRoot,
         stdio: "ignore",
-      });
+        },
+      );
 
       expect(() => verifySourceBoundary(repositoryRoot)).not.toThrow();
 
@@ -226,6 +362,8 @@ describe("StavIA runtime boundary", () => {
         [
           "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex",
           "CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/StaviasCortex",
+          "CORTEX_WEB_PORT=5173",
+          "CORTEX_API_PORT=8081",
           "VITE_STAVIA_API_URL=https://retired-runtime.invalid",
           "",
         ].join("\n"),
@@ -236,6 +374,522 @@ describe("StavIA runtime boundary", () => {
     } finally {
       rmSync(repositoryRoot, { recursive: true, force: true });
     }
+  });
+
+  it("fails closed when an expected normal-runtime contract file is missing", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures(),
+    ].filter((fixture) => fixture.path !== "scripts/dev/run-api.sh");
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: required normal-runtime contract file is missing",
+    );
+  });
+
+  it("rejects every OTP token form from each normal-runtime launcher and compose", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+
+    for (const runtimePath of [
+      "scripts/dev/run-api.sh",
+      "scripts/dev/run-compose.sh",
+      "scripts/dev/run-api-docker.sh",
+      "compose.local.yml",
+      "compose.production.example.yml",
+    ]) {
+      const fixtures = [
+        ...validCleanupFixtures(),
+        ...validNormalRuntimeFixtures().map((fixture) =>
+          fixture.path === runtimePath
+            ? {
+                ...fixture,
+                content: `${fixture.content}\nexport CORTEX_AUTH_OTP_ROTATION_TOKEN_FILE=/run/secrets/otp`,
+              }
+            : fixture,
+        ),
+      ];
+
+      expect(
+        inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+        runtimePath,
+      ).toContain(
+        `${runtimePath}: normal PostgreSQL runtime must not contain OTP tokens, mounts, or exports`,
+      );
+    }
+  });
+
+  it("rejects a generic OTP variable from every normal-runtime launcher", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+
+    for (const runtimePath of [
+      "scripts/dev/run-api.sh",
+      "scripts/dev/run-compose.sh",
+      "scripts/dev/run-api-docker.sh",
+    ]) {
+      const fixtures = [
+        ...validCleanupFixtures(),
+        ...validNormalRuntimeFixtures().map((fixture) =>
+          fixture.path === runtimePath
+            ? {
+                ...fixture,
+                content: `${fixture.content}\nexport OTP=activation-only`,
+              }
+            : fixture,
+        ),
+      ];
+
+      expect(
+        inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+        runtimePath,
+      ).toContain(
+        `${runtimePath}: normal PostgreSQL runtime must not contain OTP tokens, mounts, or exports`,
+      );
+    }
+  });
+
+  it("rejects fixed operational ports even when configurable declarations are present", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-compose.sh"
+          ? {
+              ...fixture,
+              content: `${fixture.content}\necho "http://localhost:5173"\ncurl http://127.0.0.1:8081/api/health`,
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-compose.sh: fixed operational port 5173/8081 bypasses the selected port variables",
+    );
+  });
+
+  it("rejects a fixed selected-port assignment while allowing fallback declarations", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-compose.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "CORTEX_API_PORT=8081",
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-compose.sh: fixed operational port 5173/8081 bypasses the selected port variables",
+    );
+  });
+
+  it("rejects a later API_PORT override after the selected fallback", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'export SERVER_PORT="$API_PORT"',
+                'API_PORT=8081\nexport SERVER_PORT="$API_PORT"',
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: fixed operational port 5173/8081 bypasses the selected port variables",
+    );
+  });
+
+  it("rejects a later SERVER_PORT override after exporting the selected API port", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'export SERVER_PORT="$API_PORT"',
+                'export SERVER_PORT="$API_PORT"\nSERVER_PORT=8081',
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: fixed operational port 5173/8081 bypasses the selected port variables",
+    );
+  });
+
+  it("requires selected port variables in executable launcher consumers", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                '# -p "127.0.0.1:${CORTEX_API_PORT}:8080"',
+                '# -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT"',
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores reviewed Docker fragments parked in an uncalled function", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "reviewed_docker_arguments() {",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores uncalled Docker fragments in a multiline Bash function declaration", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "reviewed_docker_arguments()",
+                "{",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores uncalled Docker fragments in a function-keyword declaration without parentheses", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "function reviewed_docker_arguments",
+                "{",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\\\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("ignores a commented multiline function declaration before its brace", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                "function reviewed_docker_arguments # intentionally uncalled",
+                "{",
+                '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\\\',
+                '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "}",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  for (const declaration of [
+    "function reviewed_docker_arguments " + String.fromCharCode(92),
+    "reviewed_docker_arguments() " + String.fromCharCode(92),
+  ]) {
+    it("ignores a backslash-continued function declaration before its brace", () => {
+      const inspectStrict = inspectSourceBoundary as (
+        files: Array<{ path: string; content: string }>,
+        options: { requireNormalRuntimeFiles: boolean },
+      ) => string[];
+      const fixtures = [
+        ...validCleanupFixtures(),
+        ...validNormalRuntimeFixtures().map((fixture) =>
+          fixture.path === "scripts/dev/run-api-docker.sh"
+            ? {
+                ...fixture,
+                content: [
+                  'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                  'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                  'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                  'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                  declaration,
+                  "{",
+                  '  docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" \\\\',
+                  '    -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                  "}",
+                ].join("\n"),
+              }
+            : fixture,
+        ),
+      ];
+
+      expect(
+        inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+      ).toContain(
+        "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+      );
+    });
+  }
+
+  it("rejects selected Docker arguments hidden behind a shell condition", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                'false && docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local',
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("requires the normal-runtime sanitizer to run outside an uncalled function", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"\nsource "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                [
+                  "normal_runtime_sources()",
+                  "{",
+                  '  source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                  '  source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                  "}",
+                ].join("\n"),
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: normal-runtime environment sanitizer must run immediately after the local env loader",
+    );
+  });
+
+  it("ignores reviewed Docker fragments parked in an unreachable shell guard", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api-docker.sh"
+          ? {
+              ...fixture,
+              content: [
+                'source "$ROOT_DIR/scripts/dev/load-local-env.sh"',
+                'source "$ROOT_DIR/scripts/dev/normal-runtime-env.sh"',
+                'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+                'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+                'if false; then docker run -p "127.0.0.1:${CORTEX_API_PORT}:8080" -e CORTEX_WEB_PORT="$CORTEX_WEB_PORT" cortex-api:local; fi',
+                "docker run cortex-api:local",
+              ].join("\n"),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+    );
+  });
+
+  it("requires the selected shell API port to reach Spring Boot", () => {
+    const inspectStrict = inspectSourceBoundary as (
+      files: Array<{ path: string; content: string }>,
+      options: { requireNormalRuntimeFiles: boolean },
+    ) => string[];
+    const fixtures = [
+      ...validCleanupFixtures(),
+      ...validNormalRuntimeFixtures().map((fixture) =>
+        fixture.path === "scripts/dev/run-api.sh"
+          ? {
+              ...fixture,
+              content: fixture.content.replace(
+                'export SERVER_PORT="$API_PORT"\n',
+                "",
+              ),
+            }
+          : fixture,
+      ),
+    ];
+
+    expect(
+      inspectStrict(fixtures, { requireNormalRuntimeFiles: true }),
+    ).toContain(
+      "scripts/dev/run-api.sh: selected API port is not exported to Spring Boot",
+    );
   });
 
   it("rejects assistant roles hidden behind the plural corporate brand", () => {
@@ -338,6 +992,16 @@ describe("StavIA runtime boundary", () => {
     expect(
       inspectDistCorporateContent(
         "label:`Portal Stavias`,href:`https://www.stavias.com.br`,children:`Mais Stavias`",
+      ),
+    ).toEqual([]);
+    expect(
+      inspectDistCorporateContent(
+        "drawText(document,`STAVIAS`,margin,14,`bold`,16)",
+      ),
+    ).toEqual([]);
+    expect(
+      inspectDistCorporateContent(
+        "url:\"assets/stavias-logo-4x2g.png\"",
       ),
     ).toEqual([]);
     for (const extendedApprovedFragment of [
@@ -580,6 +1244,24 @@ describe("StavIA runtime boundary", () => {
     expect(existsSync(path.join(WEB_ROOT, "src/features/stavia"))).toBe(false);
 
     expect(() => verifySourceBoundary(REPOSITORY_ROOT)).not.toThrow();
+  });
+
+  it("verifies a standalone web Docker context with canonical source paths", () => {
+    const webRoot = writeStandaloneBoundaryWebRoot(
+      "runtime.ts",
+      "export const runtime = 'cortex';",
+    );
+    try {
+      expect(() =>
+        execFileSync(
+          process.execPath,
+          ["scripts/verify-stavia-boundary.mjs"],
+          { cwd: webRoot, stdio: "pipe" },
+        ),
+      ).not.toThrow();
+    } finally {
+      rmSync(webRoot, { recursive: true, force: true });
+    }
   });
 
   it("allows the corporate STAVIAS brand only in the explicit source and asset allowlists", () => {

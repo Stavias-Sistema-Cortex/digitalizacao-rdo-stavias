@@ -5,6 +5,7 @@ import com.projeto.cortex.auth.identity.PostgresqlEmailOtpIdentityLookup;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.auth.session.AuthSessionProperties;
 import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.PostgresqlAuthSessionRepository;
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -42,18 +43,21 @@ class PostgresqlEmailOtpChallengeRepositoryIT
             insertIdentity(jdbc, collaboratorId,
                     "operator.challenge@fixture.invalid", "PENDENTE", true);
             String challengeId = "00000000-0000-4000-8000-000000000202";
+            String clientInstanceHash = "c".repeat(64);
             PostgresqlEmailOtpChallengeRepository store =
                     new PostgresqlEmailOtpChallengeRepository(jdbc);
 
             Instant expiry = store.create(challengeId, collaboratorId,
-                    digest('a'), digest('b'), 300, 5);
+                    digest('a'), digest('b'), clientInstanceHash, 300, 5);
             assertThat(expiry).isAfter(Instant.now().minusSeconds(2));
             assertThat(jdbc.queryForMap("""
-                    SELECT identifier_digest, codigo_digest, status
+                    SELECT identifier_digest, codigo_digest,
+                           client_instance_hash, status
                     FROM auth_email_challenge WHERE id = ?
                     """, challengeId))
                     .containsEntry("identifier_digest", digest('a'))
                     .containsEntry("codigo_digest", digest('b'))
+                    .containsEntry("client_instance_hash", clientInstanceHash)
                     .containsEntry("status", "PENDENTE");
 
             CountDownLatch start = new CountDownLatch(1);
@@ -61,11 +65,15 @@ class PostgresqlEmailOtpChallengeRepositoryIT
                 Callable<Boolean> consume = () -> {
                     start.await();
                     return Boolean.TRUE.equals(transactions(jdbc).execute(status ->
-                            store.lockForVerification(challengeId)
+                            store.lockForVerification(
+                                    challengeId,
+                                    clientInstanceHash
+                            )
                                     .filter(locked -> "PENDENTE".equals(
                                             locked.challengeStatus()))
                                     .map(locked -> store.consume(challengeId,
-                                            collaboratorId, digest('b')) == 1)
+                                            collaboratorId, digest('b'),
+                                            clientInstanceHash) == 1)
                                     .orElse(false)
                     ));
                 };
@@ -104,23 +112,47 @@ class PostgresqlEmailOtpChallengeRepositoryIT
                     events, normalizer);
             AuthRateLimiter limiter = mock(AuthRateLimiter.class);
             when(limiter.allow(anyString(), anyString())).thenReturn(true);
+            when(limiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService service = new EmailOtpChallengeService(
                     limiter, issuer, store, cryptography,
                     new OtpPolicy(300, 5, 5, 100, 900), () -> challengeId);
 
-            service.request("  OPERATOR.FLOW@FIXTURE.INVALID  ", "203.0.113.1");
+            ClientInstanceProof clientInstance = clientInstance((byte) 41);
+            service.request(
+                    "  OPERATOR.FLOW@FIXTURE.INVALID  ",
+                    "203.0.113.1",
+                    clientInstance.hash()
+            );
             ArgumentCaptor<OtpDeliveryRequested> delivery =
                     ArgumentCaptor.forClass(OtpDeliveryRequested.class);
             verify(events).publishEvent(delivery.capture());
             assertThat(delivery.getValue().deliverable()).isTrue();
 
+            ClientInstanceProof anotherTab = clientInstance((byte) 43);
+            Optional<AuthenticatedIdentity> wrongTab = transactions(jdbc)
+                    .execute(status -> service.verify(
+                    challengeId,
+                    delivery.getValue().code(),
+                    anotherTab.hash()
+            ));
+            assertThat(wrongTab).isEmpty();
+            assertThat(jdbc.queryForObject("""
+                    SELECT status FROM auth_email_challenge WHERE id = ?
+                    """, String.class, challengeId)).isEqualTo("PENDENTE");
+
             Optional<AuthenticatedIdentity> wrongCode = transactions(jdbc)
-                    .execute(status -> service.verify(challengeId, "000000"));
+                    .execute(status -> service.verify(
+                            challengeId,
+                            "000000",
+                            clientInstance.hash()
+                    ));
             assertThat(wrongCode).isEmpty();
 
             Optional<AuthenticatedIdentity> verified = transactions(jdbc)
                     .execute(status -> service.verify(challengeId,
-                            delivery.getValue().code()));
+                            delivery.getValue().code(),
+                            clientInstance.hash()));
             assertThat(verified).contains(new AuthenticatedIdentity(
                     collaboratorId, "Synthetic Operator", PapelAcesso.ALFA));
             assertThat(jdbc.queryForObject("""
@@ -130,23 +162,31 @@ class PostgresqlEmailOtpChallengeRepositoryIT
             AuthSessionService sessions = new AuthSessionService(
                     new PostgresqlAuthSessionRepository(jdbc),
                     new AuthSessionProperties(300));
-            var issued = sessions.issue(verified.orElseThrow());
-            assertThat(sessions.resolve(issued.sessionToken()))
+            var issued = sessions.issue(verified.orElseThrow(), clientInstance);
+            assertThat(sessions.resolve(
+                    issued.sessionToken(),
+                    clientInstance
+            ))
                     .hasValueSatisfying(resolved -> assertThat(
                             resolved.collaboratorId()).isEqualTo(collaboratorId));
-            assertThat(service.verify(challengeId, delivery.getValue().code())).isEmpty();
+            assertThat(service.verify(
+                    challengeId,
+                    delivery.getValue().code(),
+                    clientInstance.hash()
+            )).isEmpty();
 
             String expiredChallengeId = "00000000-0000-4000-8000-000000000213";
             store.create(expiredChallengeId, collaboratorId, digest('g'),
                     cryptography.codeDigest(expiredChallengeId, "123456", syntheticEmail),
-                    300, 5);
+                    clientInstance.hash(), 300, 5);
             jdbc.update("""
                     UPDATE auth_email_challenge
                     SET expira_em = clock_timestamp() - INTERVAL '1 second'
                     WHERE id = ?
                     """, expiredChallengeId);
             Optional<AuthenticatedIdentity> expired = transactions(jdbc)
-                    .execute(status -> service.verify(expiredChallengeId, "123456"));
+                    .execute(status -> service.verify(expiredChallengeId, "123456",
+                            clientInstance.hash()));
             assertThat(expired).isEmpty();
             assertThat(jdbc.queryForObject("""
                     SELECT status FROM auth_email_challenge WHERE id = ?
@@ -158,9 +198,13 @@ class PostgresqlEmailOtpChallengeRepositoryIT
             insertIdentity(jdbc, inactiveId, inactiveEmail, "PENDENTE", false);
             store.create(inactiveChallengeId, inactiveId, digest('h'),
                     cryptography.codeDigest(inactiveChallengeId, "123456", inactiveEmail),
-                    300, 5);
+                    clientInstance.hash(), 300, 5);
             Optional<AuthenticatedIdentity> inactive = transactions(jdbc)
-                    .execute(status -> service.verify(inactiveChallengeId, "123456"));
+                    .execute(status -> service.verify(
+                            inactiveChallengeId,
+                            "123456",
+                            clientInstance.hash()
+                    ));
             assertThat(inactive).isEmpty();
             assertThat(jdbc.queryForObject("""
                     SELECT status FROM auth_email_challenge WHERE id = ?
@@ -190,18 +234,26 @@ class PostgresqlEmailOtpChallengeRepositoryIT
                     events, normalizer);
             AuthRateLimiter limiter = mock(AuthRateLimiter.class);
             when(limiter.allow(anyString(), anyString())).thenReturn(true);
+            when(limiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService service = new EmailOtpChallengeService(
                     limiter, issuer, store, cryptography,
                     new OtpPolicy(300, 5, 5, 100, 900), () -> challengeId);
 
-            service.request(syntheticEmail, "203.0.113.2");
+            ClientInstanceProof clientInstance = clientInstance((byte) 42);
+            service.request(
+                    syntheticEmail,
+                    "203.0.113.2",
+                    clientInstance.hash()
+            );
             ArgumentCaptor<OtpDeliveryRequested> delivery =
                     ArgumentCaptor.forClass(OtpDeliveryRequested.class);
             verify(events).publishEvent(delivery.capture());
             doReturn(0).when(store).activateIdentity(collaboratorId, syntheticEmail);
 
             assertThatThrownBy(() -> transactions(jdbc).execute(status ->
-                    service.verify(challengeId, delivery.getValue().code())
+                    service.verify(challengeId, delivery.getValue().code(),
+                            clientInstance.hash())
             )).isInstanceOf(IllegalStateException.class)
                     .hasMessage("Identidade não pôde ser ativada.");
             assertThat(jdbc.queryForObject("""
@@ -215,6 +267,19 @@ class PostgresqlEmailOtpChallengeRepositoryIT
         @Override
         public int nextInt(int bound) {
             return 123456;
+        }
+    }
+
+    private static ClientInstanceProof clientInstance(byte fill) {
+        byte[] bytes = new byte[32];
+        java.util.Arrays.fill(bytes, fill);
+        try {
+            return ClientInstanceProof.fromRawValue(
+                    java.util.Base64.getUrlEncoder().withoutPadding()
+                            .encodeToString(bytes)
+            ).orElseThrow();
+        } finally {
+            java.util.Arrays.fill(bytes, (byte) 0);
         }
     }
 }

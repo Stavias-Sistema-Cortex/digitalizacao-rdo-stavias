@@ -1,6 +1,5 @@
 import {
   apiFetch,
-  apiUrl,
   readResponseBody,
   responseErrorMessage,
 } from "../../lib/api/apiClient";
@@ -367,16 +366,41 @@ export async function arquivarNotaFiscal(
   }
 }
 
-export function urlConteudoDocumento(
+export interface FinanceInvoiceDocumentContent {
+  blob: Blob;
+  mediaType: string;
+}
+
+export async function buscarConteudoDocumento(
   invoiceId: string,
   documentId: string,
   obraId: string,
-): string {
-  return apiUrl(endpoint(
+): Promise<FinanceInvoiceDocumentContent> {
+  const response = await apiFetch(endpoint(
     `/financeiro/notas-fiscais/${encodeURIComponent(invoiceId)}` +
       `/anexos/${encodeURIComponent(documentId)}/conteudo`,
     new URLSearchParams({ obraId }),
-  ));
+  ), {
+    method: "GET",
+    timeoutMs: 30_000,
+    connectionErrorMessage:
+      "Não foi possível acessar o documento fiscal autorizado.",
+    timeoutErrorMessage:
+      "A exportação do documento fiscal excedeu o tempo limite.",
+  });
+  if (!response.ok) {
+    const body = await readResponseBody(response);
+    throw new Error(responseErrorMessage(body, response.status));
+  }
+  const mediaType = response.headers
+    .get("Content-Type")
+    ?.split(";", 1)[0]
+    .trim()
+    .toLowerCase() || "application/octet-stream";
+  return {
+    blob: await response.blob(),
+    mediaType,
+  };
 }
 
 export async function buscarLancamentos(

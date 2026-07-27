@@ -58,7 +58,9 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 16px;
-  background: var(--color-surface);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .gestao-obras-busca,
@@ -221,7 +223,9 @@
   padding: 18px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .gestao-papeis > header {
@@ -362,12 +366,16 @@
 }
 
 .gestao-obras-coluna,
-.gestao-papeis,
+.gestao-papeis {
+  border-radius: var(--radius-container);
+  box-shadow: var(--glass-shadow);
+}
+
 .gestao-obras-aviso,
 .gestao-obras-item,
 .gestao-obras :is(input, select, textarea, button),
 .gestao-papeis-atual {
-  border-radius: 0;
+  border-radius: var(--radius-control);
   box-shadow: none;
 }
 
@@ -385,9 +393,9 @@
 }
 
 .gestao-obras-item.ativo {
-  border-color: var(--color-ink);
-  background: #fff;
-  box-shadow: none;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
+  box-shadow: inset 3px 0 0 var(--color-brand-yellow);
 }
 
 .gestao-papeis-atual,

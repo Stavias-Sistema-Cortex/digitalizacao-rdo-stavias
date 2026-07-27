@@ -2,8 +2,36 @@ package com.projeto.cortex.postgresql;
 
 import com.projeto.cortex.CortexApplication;
 import com.projeto.cortex.auth.AuthController;
+import com.projeto.cortex.auth.identity.PostgresqlCpfOtpIdentityLookup;
+import com.projeto.cortex.auth.identity.PostgresqlEmailOtpIdentityLookup;
+import com.projeto.cortex.auth.otp.PostgresqlCpfIdentifierNormalizer;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
+import com.projeto.cortex.auth.webauthn.WebAuthnController;
+import com.projeto.cortex.email.EmailConfiguration;
+import com.projeto.cortex.email.EmailGateway;
+import com.projeto.cortex.email.FakeEmailGateway;
 import com.projeto.cortex.financeiro.ItemContratualController;
+import com.projeto.cortex.financeiro.allocation.FinanceAllocationSyncOperationHandler;
+import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetSyncOperationHandler;
+import com.projeto.cortex.financeiro.catalog.ServiceCatalogSyncOperationHandler;
+import com.projeto.cortex.financeiro.catalog.ServicePriceVersionSyncOperationHandler;
+import com.projeto.cortex.financeiro.cobranca.FinanceAutomaticChargeService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeCatalogController;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeCatalogService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeController;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeDeliveryService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeOccurrenceCalculator;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeRetryPolicy;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeScheduler;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeService;
+import com.projeto.cortex.financeiro.cobranca.FinanceChargeTargetReader;
+import com.projeto.cortex.financeiro.cobranca.FinanceEmailSenderConfiguration;
+import com.projeto.cortex.financeiro.core.sync.FinancePurchaseSyncOperationHandler;
+import com.projeto.cortex.financeiro.core.sync.FinanceSolicitationSyncOperationHandler;
+import com.projeto.cortex.financeiro.invoice.sync.FinanceInvoiceSyncOperationHandler;
+import com.projeto.cortex.financeiro.invoice.sync.FinanceLedgerSyncOperationHandler;
+import com.projeto.cortex.financeiro.invoice.sync.FinanceSettlementSyncOperationHandler;
+import com.projeto.cortex.financeiro.unit.FinancialUnitSyncOperationHandler;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.ontology.graph.GraphProjectionService;
 import com.projeto.cortex.ontology.graph.OntologyGraphController;
@@ -18,6 +46,8 @@ import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +58,9 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -41,14 +73,13 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
 )
 @ActiveProfiles("postgresql")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
 
     @Container
     private static final PostgreSQLContainer<?> DATABASE =
             database();
-    private static final Path OTP_KEY_FILE = secretFile('a');
     private static final Path CPF_KEY_FILE = secretFile('b');
-    private static final Path SMTP_PASSWORD_FILE = secretFile('c');
     private static final Path MEMORY_CURSOR_KEY_FILE = secretFile('d');
     private static final OfflineKeyFiles OFFLINE_KEYS = offlineKeyFiles();
 
@@ -60,14 +91,8 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         properties.add("spring.datasource.username", DATABASE::getUsername);
         properties.add("spring.datasource.password", DATABASE::getPassword);
         properties.add("cortex.postgresql.runtime-ready", () -> "true");
-        properties.add("cortex.auth.otp.hmac-key-file", OTP_KEY_FILE::toString);
         properties.add("cortex.auth.cpf-hmac.current-key-id", () -> "runtime-it");
         properties.add("cortex.auth.cpf-hmac.current-key-file", CPF_KEY_FILE::toString);
-        properties.add("cortex.email.provider", () -> "smtp");
-        properties.add("cortex.email.from", () -> "runtime.it@fixture.invalid");
-        properties.add("cortex.email.smtp.host", () -> "127.0.0.1");
-        properties.add("cortex.email.smtp.username", () -> "runtime-it");
-        properties.add("cortex.email.smtp.password-file", SMTP_PASSWORD_FILE::toString);
         properties.add("cortex.storage.provider", () -> "s3");
         properties.add("cortex.storage.s3.bucket", () -> "runtime-it");
         properties.add("cortex.storage.s3.region", () -> "us-east-1");
@@ -111,7 +136,14 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         assertThat(context.getBeansOfType(CortexOperationalMemoryService.class)).hasSize(1);
         assertThat(context.getBeansOfType(SyncController.class)).hasSize(1);
         assertThat(context.getBeansOfType(AuthController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(WebAuthnController.class)).hasSize(1);
         assertThat(context.getBeansOfType(GraphProjectionService.class)).hasSize(1);
+        assertThat(context.getBeansOfType(PostgresqlCpfOtpIdentityLookup.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(PostgresqlCpfIdentifierNormalizer.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(PostgresqlEmailOtpIdentityLookup.class))
+                .isEmpty();
 
         DataSource dataSource = context.getBean(DataSource.class);
         try (var connection = dataSource.getConnection()) {
@@ -119,6 +151,89 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
                     .isEqualTo("PostgreSQL");
             assertThat(connection.getCatalog()).isEqualTo(DATABASE.getDatabaseName());
         }
+    }
+
+    @Test
+    void mapsRevenueFinanceAndPublicPasskeyAuthenticationInThePostgresqlRuntime() {
+        RequestMappingHandlerMapping mappings = context.getBean(
+                RequestMappingHandlerMapping.class
+        );
+        Set<String> paths = mappings.getHandlerMethods().keySet().stream()
+                .flatMap(mapping -> mapping.getPatternValues().stream())
+                .collect(Collectors.toSet());
+
+        assertThat(paths).contains(
+                "/api/financeiro/rastreio-receita",
+                "/api/financeiro/rastreio-receita/{executionId}",
+                "/api/financeiro/resultado-operacional",
+                "/api/obras/{obraId}/financeiro/catalogo-servicos",
+                "/api/obras/{obraId}/previsao-financeira/atual",
+                "/api/auth/passkeys/authentication/options",
+                "/api/auth/passkeys/authentication/verify"
+        ).doesNotContain(
+                "/api/financeiro/compras",
+                "/api/financeiro/solicitacoes",
+                "/api/financeiro/rateios",
+                "/api/financeiro/notas-fiscais",
+                "/api/financeiro/lancamentos",
+                "/api/financeiro/liquidacoes",
+                "/api/financeiro/cobrancas",
+                "/api/financeiro/unidades"
+        );
+    }
+
+    @Test
+    void registersOnlyRevenueFinanceSyncHandlersInThePostgresqlRuntime() {
+        assertThat(context.getBeansOfType(ServiceCatalogSyncOperationHandler.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(ServicePriceVersionSyncOperationHandler.class))
+                .hasSize(1);
+        assertThat(context.getBeansOfType(FinanceAllocationSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinancePurchasedAssetSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinancePurchaseSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceSolicitationSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceInvoiceSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceLedgerSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceSettlementSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinancialUnitSyncOperationHandler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeScheduler.class)).isEmpty();
+    }
+
+    @Test
+    void excludesLegacyChargeAndEmailBeanGraphFromNormalPostgresqlRuntime() {
+        assertThat(context.getBeansOfType(FinanceAutomaticChargeService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeCatalogController.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeCatalogService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeController.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeDeliveryService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeOccurrenceCalculator.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeRetryPolicy.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeScheduler.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeService.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceChargeTargetReader.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(FinanceEmailSenderConfiguration.class))
+                .isEmpty();
+        assertThat(context.getBeansOfType(EmailConfiguration.class)).isEmpty();
+        assertThat(context.getBeansOfType(EmailGateway.class)).isEmpty();
+        assertThat(context.getBeansOfType(FakeEmailGateway.class)).isEmpty();
     }
 
     @Test
@@ -213,17 +328,18 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
                     nome, email, papel_acesso, ativo
                 ) VALUES (
                     '00000000-0000-4000-8000-000000000601',
-                    'runtime-it', 'runtime-it', 'alfa',
+                    'db' || 'sta' || 'vias_acad', 'usuarios', 'alfa',
                     'Runtime IT Alfa', 'runtime.it@fixture.invalid', 'ALFA', TRUE
                 )
                 """);
         jdbc.update("""
                 INSERT INTO auth_identity (
                     colaborador_id, email_autenticacao, email_fonte, status,
-                    email_verificado_em
+                    email_verificado_em, cpf_lookup_key_id, cpf_lookup_hmac
                 ) VALUES (
                     '00000000-0000-4000-8000-000000000601',
-                    'runtime.it@fixture.invalid', 'TEST', 'ATIVA', CURRENT_TIMESTAMP
+                    'runtime.it@fixture.invalid', 'TEST', 'ATIVA', CURRENT_TIMESTAMP,
+                    'runtime-it', repeat('a', 64)
                 )
                 """);
     }

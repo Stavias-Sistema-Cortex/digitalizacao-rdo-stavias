@@ -1,5 +1,11 @@
 # CPF + passkey PostgreSQL — evidence
 
+> Histórico de uma política anterior. O login normal somente por passkey foi
+> substituído em 2026-07-26 por CPF + OTP de e-mail como fluxo principal, com
+> passkey como alternativa online e como proteção obrigatória do cofre offline.
+> Consulte [a evidência atual](2026-07-26-cpf-otp-primary.md) antes de operar ou
+> publicar o ambiente.
+
 Date: 2026-07-24
 Scope: `856f0b7..HEAD` on `develop`
 

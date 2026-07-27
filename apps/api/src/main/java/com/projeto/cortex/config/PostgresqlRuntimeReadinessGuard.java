@@ -1,7 +1,6 @@
 package com.projeto.cortex.config;
 
 import com.projeto.cortex.common.RuntimeReadiness;
-import com.projeto.cortex.common.SecurityRuntimeMode;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -24,7 +23,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "60";
+    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "61";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
@@ -33,24 +32,12 @@ public final class PostgresqlRuntimeReadinessGuard implements
               AND success = TRUE
             """;
 
-    private static final String VERIFIED_ACTIVE_ALFA_COUNT_SQL = """
+    private static final String ACTIVE_ACADEMY_CPF_IDENTITY_COUNT_SQL = """
             SELECT COUNT(*)
             FROM colaborador c
             JOIN auth_identity ai ON ai.colaborador_id = c.id
             WHERE c.ativo = TRUE
               AND c.deletado_em IS NULL
-              AND c.papel_acesso = 'ALFA'
-              AND ai.status = 'ATIVA'
-              AND ai.email_verificado_em IS NOT NULL
-            """;
-
-    private static final String LOCAL_DIRECT_CPF_ACTIVE_ALFA_COUNT_SQL = """
-            SELECT COUNT(*)
-            FROM colaborador c
-            JOIN auth_identity ai ON ai.colaborador_id = c.id
-            WHERE c.ativo = TRUE
-              AND c.deletado_em IS NULL
-              AND c.papel_acesso = 'ALFA'
               AND c.banco_origem = 'dbstavias_acad'
               AND c.tabela_origem = 'usuarios'
               AND ai.status = 'ATIVA'
@@ -62,7 +49,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
     private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
-    private final Boolean testLocalDirectCpfAllowed;
     private Environment environment;
 
     public PostgresqlRuntimeReadinessGuard() {
@@ -70,7 +56,6 @@ public final class PostgresqlRuntimeReadinessGuard implements
         this.testRequiredSchemaVersion = null;
         this.testRuntimeReady = null;
         this.testSurfaceRegistry = null;
-        this.testLocalDirectCpfAllowed = null;
     }
 
     PostgresqlRuntimeReadinessGuard(
@@ -79,27 +64,10 @@ public final class PostgresqlRuntimeReadinessGuard implements
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
-        this(
-                jdbcTemplate,
-                requiredSchemaVersion,
-                runtimeReady,
-                surfaceRegistry,
-                false
-        );
-    }
-
-    PostgresqlRuntimeReadinessGuard(
-            JdbcTemplate jdbcTemplate,
-            String requiredSchemaVersion,
-            boolean runtimeReady,
-            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
-            boolean localDirectCpfAllowed
-    ) {
         this.testJdbcTemplate = jdbcTemplate;
         this.testRequiredSchemaVersion = requiredSchemaVersion;
         this.testRuntimeReady = runtimeReady;
         this.testSurfaceRegistry = surfaceRegistry;
-        this.testLocalDirectCpfAllowed = localDirectCpfAllowed;
     }
 
     @Override
@@ -123,8 +91,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 postgresqlJdbcTemplate(),
                 CLEAN_START_REQUIRED_SCHEMA_VERSION,
                 environment.getProperty("cortex.postgresql.runtime-ready", Boolean.class, false),
-                new PostgresqlRuntimeSurfaceRegistry(),
-                SecurityRuntimeMode.isLocalOrTestOnly(environment)
+                new PostgresqlRuntimeSurfaceRegistry()
         );
     }
 
@@ -141,8 +108,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 testJdbcTemplate,
                 testRequiredSchemaVersion,
                 testRuntimeReady,
-                testSurfaceRegistry,
-                Boolean.TRUE.equals(testLocalDirectCpfAllowed)
+                testSurfaceRegistry
         );
     }
 
@@ -180,8 +146,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
             JdbcTemplate jdbcTemplate,
             String requiredSchemaVersion,
             boolean runtimeReady,
-            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
-            boolean localDirectCpfAllowed
+            PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
         if (!runtimeReady) {
             throw new IllegalStateException(
@@ -216,27 +181,22 @@ public final class PostgresqlRuntimeReadinessGuard implements
             );
         }
 
-        Integer verifiedActiveAlfas;
+        Integer activeAcademyIdentities;
         try {
-            verifiedActiveAlfas = jdbcTemplate.queryForObject(
-                    localDirectCpfAllowed
-                            ? LOCAL_DIRECT_CPF_ACTIVE_ALFA_COUNT_SQL
-                            : VERIFIED_ACTIVE_ALFA_COUNT_SQL,
+            activeAcademyIdentities = jdbcTemplate.queryForObject(
+                    ACTIVE_ACADEMY_CPF_IDENTITY_COUNT_SQL,
                     Integer.class
             );
         } catch (DataAccessException exception) {
             throw new IllegalStateException(
-                    "PostgreSQL Córtex não está pronto para validar o ALFA inicial.",
+                    "PostgreSQL Córtex não está pronto para validar a identidade Academy.",
                     exception
             );
         }
-        if (verifiedActiveAlfas == null || verifiedActiveAlfas < 1) {
+        if (activeAcademyIdentities == null || activeAcademyIdentities < 1) {
             throw new IllegalStateException(
-                    localDirectCpfAllowed
-                            ? "Runtime PostgreSQL local exige ao menos um ALFA ativo "
-                                    + "e autenticável por CPF Academy."
-                            : "Runtime PostgreSQL exige ao menos um ALFA ativo, "
-                                    + "autenticável e com e-mail verificado."
+                    "Runtime PostgreSQL exige ao menos uma identidade Academy ativa "
+                            + "com HMAC atual de CPF."
             );
         }
     }

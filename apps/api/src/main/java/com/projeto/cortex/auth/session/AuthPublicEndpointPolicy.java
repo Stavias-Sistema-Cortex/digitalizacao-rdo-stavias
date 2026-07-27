@@ -89,7 +89,7 @@ public final class AuthPublicEndpointPolicy {
             return isEmailOtpPath(path);
         }
         if (normalPostgresqlWebMode) {
-            return (directCpfLoginEnabled && "/api/auth/login".equals(path))
+            return "/api/auth/login".equals(path)
                     || "/api/auth/passkeys/authentication/options".equals(path)
                     || "/api/auth/passkeys/authentication/verify".equals(path);
         }

@@ -17,13 +17,25 @@ final class SessionTokenFixtures {
     }
 
     static ResolvedAuthSession resolved(String rawCsrfToken) {
+        return resolved(rawCsrfToken, token((byte) 23));
+    }
+
+    static ResolvedAuthSession resolved(
+            String rawCsrfToken,
+            String rawClientInstance
+    ) {
         return new ResolvedAuthSession(
                 "20000000-0000-0000-0000-000000000002",
                 "10000000-0000-0000-0000-000000000001",
                 "Pessoa Sintética",
                 PapelAcesso.ALFA,
                 Instant.parse("2030-01-02T03:04:05Z"),
-                SessionTokenHash.sha256(rawCsrfToken)
+                SessionTokenHash.sha256(rawCsrfToken),
+                SessionTokenHash.sha256(rawClientInstance)
         );
+    }
+
+    static ClientInstanceProof clientInstance(byte fill) {
+        return ClientInstanceProof.fromRawValue(token(fill)).orElseThrow();
     }
 }

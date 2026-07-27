@@ -5,21 +5,29 @@ import {
   Route,
   Routes,
   useNavigate,
-} from "react-router-dom";
+} from "react-router";
 
 import {
   AUTH_SESSION_CHANGED_EVENT,
+  clearSessionForCurrentDocument,
   getSession,
   isAlfa,
 } from "./features/auth/authSession";
-import { resolveCortexAuthMode } from "./features/auth/cortexAuthMode";
+import {
+  AUTH_NOTICE_CHANGED_EVENT,
+  consumeAuthNotice,
+} from "./features/auth/authNotice";
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
-import { loadOfflineVaultMetadata } from "./features/auth/offlineVaultRepository";
+import {
+  hasCollaborativeOfflineGrantMetadata,
+  loadOfflineVaultMetadata,
+} from "./features/auth/offlineVaultRepository";
 import type { OfflineVaultMetadata } from "./features/auth/offlineVault.types";
 import { CortexShell } from "./components/shell/CortexShell";
 import { useAppAutomaticSync } from "./appAutomaticSync";
+import { initializeCortexDb } from "./lib/db/cortexDb";
 
 const HomePage = lazy(() =>
   import("./features/home/HomePage").then((module) => ({
@@ -110,42 +118,93 @@ type AppProps = {
 function App({ initialAuthUnavailable = false }: AppProps) {
   const [session, setSession] =
     useState(() => getSession());
+  const sessionScope = session === null
+    ? null
+    : [
+      session.colaboradorId,
+      session.papelAcesso,
+      session.escopoGlobal ? "global" : session.obraIds.join(","),
+      session.expiraEm,
+    ].join("\u0000");
+  const [preparedSessionScope, setPreparedSessionScope] =
+    useState<string | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [offlineVault, setOfflineVault] =
     useState<OfflineVaultMetadata | null>(null);
+  const [hasCollaborativeCpfGrant, setHasCollaborativeCpfGrant] =
+    useState(false);
   const [vaultChecked, setVaultChecked] = useState(false);
+  const [authNotice, setAuthNotice] = useState(() =>
+    session ? consumeAuthNotice() : null,
+  );
+  const localDataReady = sessionScope !== null &&
+    preparedSessionScope === sessionScope;
 
-  useAppAutomaticSync(session);
+  useAppAutomaticSync(localDataReady ? session : null);
 
   useEffect(() => {
     function refreshSession() {
       setSession(getSession());
     }
 
+    function refreshAuthNotice() {
+      const nextNotice = consumeAuthNotice();
+      if (nextNotice) {
+        setAuthNotice(nextNotice);
+      }
+    }
+
     window.addEventListener(
       AUTH_SESSION_CHANGED_EVENT,
       refreshSession,
+    );
+    window.addEventListener(
+      AUTH_NOTICE_CHANGED_EVENT,
+      refreshAuthNotice,
     );
     return () => {
       window.removeEventListener(
         AUTH_SESSION_CHANGED_EVENT,
         refreshSession,
       );
+      window.removeEventListener(
+        AUTH_NOTICE_CHANGED_EVENT,
+        refreshAuthNotice,
+      );
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    loadOfflineVaultMetadata()
-      .then((metadata) => {
-        if (!cancelled) {
-          setOfflineVault(metadata);
-          setVaultChecked(true);
+    if (sessionScope === null) {
+      return;
+    }
+    let active = true;
+    void initializeCortexDb()
+      .then(() => {
+        if (active) {
+          setPreparedSessionScope(sessionScope);
         }
       })
       .catch(() => {
+        if (active) {
+          clearSessionForCurrentDocument();
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionScope]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      loadOfflineVaultMetadata().catch(() => null),
+      hasCollaborativeOfflineGrantMetadata().catch(() => false),
+    ])
+      .then(([metadata, hasCpfGrant]) => {
         if (!cancelled) {
-          setOfflineVault(null);
+          setOfflineVault(metadata);
+          setHasCollaborativeCpfGrant(hasCpfGrant);
           setVaultChecked(true);
         }
       });
@@ -169,11 +228,8 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     };
   }, []);
 
-  // Sem sessão online, somente um grant assinado aberto por PRF libera o cache.
+  // Sem sessão online, somente um grant assinado validado libera o cache.
   if (!session) {
-    if (resolveCortexAuthMode() === "postgresql") {
-      return <LoginPage />;
-    }
     if (!vaultChecked) {
       return (
         <main className="auth-bootstrap-status" role="status">
@@ -181,10 +237,14 @@ function App({ initialAuthUnavailable = false }: AppProps) {
         </main>
       );
     }
-    if (offlineVault && (!online || initialAuthUnavailable)) {
+    if (
+      (offlineVault || hasCollaborativeCpfGrant) &&
+      (!online || initialAuthUnavailable)
+    ) {
       return (
         <OfflineUnlockPage
-          metadata={offlineVault}
+          passkeyMetadata={offlineVault}
+          hasCollaborativeCpfGrant={hasCollaborativeCpfGrant}
           canRetryOnline={online}
         />
       );
@@ -192,8 +252,26 @@ function App({ initialAuthUnavailable = false }: AppProps) {
     return <LoginPage />;
   }
 
+  if (!localDataReady) {
+    return (
+      <main className="auth-bootstrap-status" role="status">
+        Preparando os dados locais protegidos…
+      </main>
+    );
+  }
+
   return (
     <BrowserRouter>
+      {authNotice ? (
+        <aside
+          className="auth-session-notice"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {authNotice}
+        </aside>
+      ) : null}
       <Suspense
         fallback={
           <main className="auth-bootstrap-status" role="status">

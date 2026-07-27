@@ -12,7 +12,8 @@ public record ResolvedAuthSession(
         String collaboratorName,
         PapelAcesso role,
         Instant expiresAt,
-        String csrfHash
+        String csrfHash,
+        String clientInstanceHash
 ) {
 
     public ResolvedAuthSession {
@@ -34,6 +35,12 @@ public record ResolvedAuthSession(
                     "Verificador CSRF inválido."
             );
         }
+        if (clientInstanceHash == null
+                || !clientInstanceHash.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException(
+                    "Vínculo de instância do cliente inválido."
+            );
+        }
     }
 
     @Override
@@ -43,7 +50,8 @@ public record ResolvedAuthSession(
                 + ", collaboratorName=" + collaboratorName
                 + ", role=" + role
                 + ", expiresAt=" + expiresAt
-                + ", csrfHash=[REDACTED]]";
+                + ", csrfHash=[REDACTED]"
+                + ", clientInstanceHash=[REDACTED]]";
     }
 
     private static String canonicalCollaboratorId(String value) {

@@ -10,7 +10,34 @@ import { fileURLToPath } from "node:url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const WEB_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
-const REPOSITORY_ROOT = path.resolve(WEB_ROOT, "../..");
+
+function hasMonorepoWebRoot(repositoryRoot) {
+  const nestedWebRoot = path.join(repositoryRoot, "apps", "web");
+  return (
+    existsSync(path.join(nestedWebRoot, "src")) ||
+    existsSync(path.join(nestedWebRoot, "package.json"))
+  );
+}
+
+function webRootFor(repositoryRoot) {
+  return hasMonorepoWebRoot(repositoryRoot)
+    ? path.join(repositoryRoot, "apps", "web")
+    : repositoryRoot;
+}
+
+function canonicalSourcePath(repositoryRoot, file) {
+  const webRoot = webRootFor(repositoryRoot);
+  const webRelative = path.relative(webRoot, file);
+  if (webRelative && !webRelative.startsWith(`..${path.sep}`) && webRelative !== "..") {
+    return `apps/web/${toPosix(webRelative)}`;
+  }
+  return toPosix(path.relative(repositoryRoot, file));
+}
+
+const MONOREPO_CANDIDATE = path.resolve(WEB_ROOT, "../..");
+const REPOSITORY_ROOT = hasMonorepoWebRoot(MONOREPO_CANDIDATE)
+  ? MONOREPO_CANDIDATE
+  : WEB_ROOT;
 
 export const LEGACY_LOCAL_STORAGE_KEYS = [
   "cortex:stavia:chat:operacional",
@@ -83,16 +110,15 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
-    "apps/web/src/index.css",
+    "apps/web/src/features/rdos/export/rdoPdfLayout.ts",
     [
-      "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",
+      "import corporateWordmark from \"../../../assets/login/stavias-logo.png?inline\";",
     ],
   ],
   [
-    "compose.production.example.yml",
+    "apps/web/src/index.css",
     [
-      "CORTEX_AUTH_WEBAUTHN_RP_NAME: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:-Stavias Córtex}",
-      "CORTEX_SMTP_FROM: ${CORTEX_SMTP_FROM:?Set the authenticated Stavias From mailbox}",
+      "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",
     ],
   ],
   [
@@ -113,6 +139,35 @@ const CORPORATE_SOURCE_LINES = new Map([
   [
     "scripts/dev/postgres-cortex-common.sh",
     ["printf '%s' 'StaviasCortex'"],
+  ],
+  [
+    "deploy/production/compose.yml",
+    [
+      "POSTGRES_DB: ${CORTEX_POSTGRES_DB:-StaviasCortex}",
+      "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}",
+      "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/${CORTEX_POSTGRES_DB:-StaviasCortex}",
+    ],
+  ],
+  [
+    "scripts/deploy/prepare-local-production.sh",
+    [
+      "if [[ ! \"$CORTEX_POSTGRES_URL\" =~ ^jdbc:postgresql://([^/:?]+)(:([0-9]+))?/StaviasCortex(\\?.*)?$ ]]; then",
+      "echo \"The source PostgreSQL URL must target StaviasCortex.\" >&2",
+      "printf 'CORTEX_POSTGRES_DB=StaviasCortex\\n'",
+      "backup_file=\"$backup_dir/StaviasCortex-$(date -u +%Y%m%dT%H%M%SZ).dump\"",
+      "--dbname=StaviasCortex",
+      "psql --username=cortex_admin --dbname=StaviasCortex --tuples-only --no-align \\",
+    ],
+  ],
+  [
+    "scripts/security/test-production-publication.sh",
+    ["CORTEX_POSTGRES_DB='StaviasCortex' \\"],
+  ],
+  [
+    "scripts/deploy/configure-github-production-environment.sh",
+    [
+      "repo=\"${CORTEX_GITHUB_REPOSITORY:-Stavias-Sistema-Cortex/digitalizacao-rdo-stavias}\"",
+    ],
   ],
   [
     "scripts/smoke-deploy.sh",
@@ -399,6 +454,7 @@ const CORPORATE_DIST_PATTERNS = [
   /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias — Sistema Córtex`/gu,
   /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias · Sistema Córtex · Ambiente operacional restrito`/gu,
   /(?<![\p{L}\p{N}_$])children:`Stavias Córtex · Ambiente institucional restrito`/gu,
+  /(?<![\p{L}\p{N}_$])[$\w]+\([\$\w]+,`STAVIAS`,[$\w]+,14,`bold`,16\)/gu,
 ];
 
 function maskAllowedCorporateDist(content) {
@@ -436,7 +492,7 @@ export function isViteRuntimeSourceFile(file) {
 }
 
 function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
-  const webRoot = path.join(repositoryRoot, "apps/web");
+  const webRoot = webRootFor(repositoryRoot);
   const source = listFiles(path.join(webRoot, "src"));
   const runtime = source.filter(isViteRuntimeSourceFile);
   const sourceAssets = source.filter(
@@ -466,6 +522,12 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
         /^compose(?:\..+)?\.ya?ml$/.test(entry.name),
     )
     .map((entry) => path.join(repositoryRoot, entry.name));
+  const localRuntimeSupport = [
+    path.join(
+      repositoryRoot,
+      "apps/api/src/main/resources/application-local.yml",
+    ),
+  ].filter(existsSync);
   const environmentContracts =
     trackedEnvironmentContracts(repositoryRoot);
   const scripts = listFiles(path.join(repositoryRoot, "scripts"));
@@ -476,6 +538,7 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
     ...publicFiles,
     ...webSupport,
     ...repositorySupport,
+    ...localRuntimeSupport,
     ...environmentContracts,
     ...scripts,
   ])];
@@ -659,11 +722,11 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
   ],
   [
     "build:local",
-    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8080/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
   ],
   [
     "build:compose",
-    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8081/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
   ],
   ["lint", "eslint ."],
   [
@@ -807,8 +870,302 @@ export function inspectPackageBuildScripts(scripts) {
   return violations;
 }
 
-export function inspectSourceBoundary(files) {
+const REQUIRED_NORMAL_RUNTIME_PATHS = [
+  "compose.local.yml",
+  "compose.production.example.yml",
+  "scripts/dev/run-api.sh",
+  "scripts/dev/run-compose.sh",
+  "scripts/dev/run-api-docker.sh",
+  "scripts/dev/normal-runtime-env.sh",
+  "scripts/dev/start-postgres-activation.sh",
+  ".env.example",
+  ".env.postgresql.example",
+  "apps/api/src/main/resources/application-local.yml",
+];
+
+const NORMAL_RUNTIME_OTP_FORBIDDEN_PATHS = [
+  "compose.local.yml",
+  "compose.production.example.yml",
+  "scripts/dev/run-api.sh",
+  "scripts/dev/run-compose.sh",
+  "scripts/dev/run-api-docker.sh",
+];
+
+function executableContractText(content) {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+}
+
+function hasOtpRuntimeToken(content) {
+  return /\b(?:[A-Z0-9_]*OTP[A-Z0-9_]*|cortex[_-]otp[a-z0-9_-]*)\b/i.test(
+    executableContractText(content),
+  );
+}
+
+function hasFixedLocalOperationalPort(content) {
+  const executable = executableContractText(content);
+  return (
+    /https?:\/\/(?:localhost|127\.0\.0\.1):(?:5173|8081)\b|127\.0\.0\.1:(?:5173|8081):|--port[=\s]+(?:5173|8081)\b/.test(
+      executable,
+    ) ||
+    /(?:^|\n)\s*(?:export\s+)?(?:CORTEX_WEB_PORT|CORTEX_API_PORT|API_PORT|SERVER_PORT)\s*=\s*["']?(?:5173|8081)["']?\s*(?:$|\n)/m.test(
+      executable,
+    )
+  );
+}
+
+function shellLogicalLines(content) {
+  const lines = executableContractText(content).split(/\r?\n/);
+  const logicalLines = [];
+  let pending = "";
+
+  for (const line of lines) {
+    const candidate = pending === "" ? line : pending + line.trimStart();
+    const trailingBackslashes = candidate.match(/(\\+)$/)?.[1].length ?? 0;
+    if (trailingBackslashes % 2 === 1) {
+      // Join only an actual Bash line continuation. This is structural parsing
+      // for launcher contracts, not shell evaluation or variable expansion.
+      pending = `${candidate.slice(0, -1)} `;
+      continue;
+    }
+    logicalLines.push(candidate);
+    pending = "";
+  }
+
+  if (pending !== "") {
+    logicalLines.push(pending);
+  }
+  return logicalLines;
+}
+
+function topLevelExecutableContractText(content) {
+  const executableLines = shellLogicalLines(content);
+  const topLevelLines = [];
+  let functionDepth = 0;
+  let pendingFunctionDeclaration = false;
+  let guardedBlockDepth = 0;
+
+  const guardedBlockDepthDelta = (line) => {
+    const opens = line.match(
+      /(?:^|[;\s])(?:if|while|until|for|select|case)\b/g,
+    )?.length ?? 0;
+    const closes = line.match(/(?:^|[;\s])(?:fi|done|esac)\b/g)?.length ?? 0;
+    return opens - closes;
+  };
+
+  const beginsGuardedBlock = (line) =>
+    /^(?:if|while|until|for|select|case)\b/.test(line);
+
+  for (const line of executableLines) {
+    const trimmed = line.trim();
+    if (pendingFunctionDeclaration) {
+      if (trimmed === "") {
+        continue;
+      }
+      pendingFunctionDeclaration = false;
+      if (/^\{/.test(trimmed)) {
+        functionDepth =
+          (line.match(/\{/g)?.length ?? 0) -
+          (line.match(/\}/g)?.length ?? 0);
+        continue;
+      }
+    }
+    if (
+      functionDepth === 0 &&
+      /^(?:function\s+)?[A-Za-z_][A-Za-z0-9_]*\s*(?:\(\s*\))?\s*\{/.test(
+        trimmed,
+      )
+    ) {
+      functionDepth =
+        (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      continue;
+    }
+    if (
+      functionDepth === 0 &&
+      /^(?:function\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*\(\s*\))?|[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\))\s*(?:#.*)?$/.test(
+        trimmed,
+      )
+    ) {
+      pendingFunctionDeclaration = true;
+      continue;
+    }
+    if (functionDepth > 0) {
+      functionDepth +=
+        (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+      continue;
+    }
+    if (guardedBlockDepth > 0) {
+      guardedBlockDepth += guardedBlockDepthDelta(trimmed);
+      continue;
+    }
+    if (beginsGuardedBlock(trimmed)) {
+      // The runtime safety arguments must be unconditional top-level commands.
+      // Ignoring every shell guard prevents a dormant `if false` (or a dynamic
+      // condition) from satisfying the static contract for a later bare command.
+      guardedBlockDepth = guardedBlockDepthDelta(trimmed);
+      continue;
+    }
+    topLevelLines.push(line);
+  }
+
+  return topLevelLines.join("\n");
+}
+
+function sourcesNormalRuntimeSanitizer(content) {
+  const executable = topLevelExecutableContractText(content);
+  return /source\s+"\$ROOT_DIR\/scripts\/dev\/load-local-env\.sh"\s*\n\s*source\s+"\$ROOT_DIR\/scripts\/dev\/normal-runtime-env\.sh"/.test(
+    executable,
+  );
+}
+
+function inspectNormalRuntimeContracts(files, requireFiles) {
+  const violations = [];
+  const byPath = new Map(files.map((file) => [file.path, file.content]));
+
+  if (requireFiles) {
+    for (const requiredPath of REQUIRED_NORMAL_RUNTIME_PATHS) {
+      if (!byPath.has(requiredPath)) {
+        violations.push(
+          `${requiredPath}: required normal-runtime contract file is missing`,
+        );
+      }
+    }
+  }
+
+  for (const runtimePath of NORMAL_RUNTIME_OTP_FORBIDDEN_PATHS) {
+    const content = byPath.get(runtimePath);
+    if (content !== undefined && hasOtpRuntimeToken(content)) {
+      violations.push(
+        `${runtimePath}: normal PostgreSQL runtime must not contain OTP tokens, mounts, or exports`,
+      );
+    }
+  }
+
+  for (const runtimePath of [
+    "scripts/dev/run-api.sh",
+    "scripts/dev/run-compose.sh",
+    "scripts/dev/run-api-docker.sh",
+  ]) {
+    const content = byPath.get(runtimePath);
+    if (content !== undefined && !sourcesNormalRuntimeSanitizer(content)) {
+      violations.push(
+        `${runtimePath}: normal-runtime environment sanitizer must run immediately after the local env loader`,
+      );
+    }
+  }
+
+  for (const runtimePath of [
+    "compose.local.yml",
+    "scripts/dev/run-api.sh",
+    "scripts/dev/run-compose.sh",
+    "scripts/dev/run-api-docker.sh",
+  ]) {
+    const content = byPath.get(runtimePath);
+    if (content !== undefined && hasFixedLocalOperationalPort(content)) {
+      violations.push(
+        `${runtimePath}: fixed operational port 5173/8081 bypasses the selected port variables`,
+      );
+    }
+  }
+
+  const runApi = byPath.get("scripts/dev/run-api.sh");
+  if (runApi !== undefined) {
+    const executable = executableContractText(runApi);
+    if (
+      !/API_PORT="\$\{PORT:-\$\{SERVER_PORT:-8080}}"/.test(executable) ||
+      !/API_HEALTH_URL="http:\/\/127\.0\.0\.1:\$\{API_PORT}\/api\/health"/.test(
+        executable,
+      ) ||
+      !/lsof\b[^\n]*"\$API_PORT"/.test(executable) ||
+      !/curl\b[^\n]*"\$API_HEALTH_URL"/.test(executable)
+    ) {
+      violations.push(
+        "scripts/dev/run-api.sh: selected API port is not consumed by health and bind checks",
+      );
+    }
+    if (!/export\s+SERVER_PORT="\$API_PORT"/.test(executable)) {
+      violations.push(
+        "scripts/dev/run-api.sh: selected API port is not exported to Spring Boot",
+      );
+    }
+  }
+
+  const runCompose = byPath.get("scripts/dev/run-compose.sh");
+  if (runCompose !== undefined) {
+    const executable = executableContractText(runCompose);
+    if (
+      !/CORTEX_WEB_PORT="\$\{CORTEX_WEB_PORT:-5173}"/.test(executable) ||
+      !/CORTEX_API_PORT="\$\{CORTEX_API_PORT:-8081}"/.test(executable) ||
+      !/export\s+CORTEX_WEB_PORT\s+CORTEX_API_PORT/.test(executable) ||
+      !/docker\s+compose\b/.test(executable) ||
+      !/http:\/\/localhost:\$\{CORTEX_WEB_PORT}/.test(executable) ||
+      !/http:\/\/127\.0\.0\.1:\$\{CORTEX_API_PORT}\/api\/health/.test(
+        executable,
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-compose.sh: selected ports are not exported to Compose and operator URLs",
+      );
+    }
+  }
+
+  const runDocker = byPath.get("scripts/dev/run-api-docker.sh");
+  if (runDocker !== undefined) {
+    const executable = topLevelExecutableContractText(runDocker)
+      .replace(/\\\s*\n/g, " ");
+    // A matching argument fragment is not enough: it has to be the actual
+    // unconditional `docker run` command. This deliberately accepts only the
+    // one launcher invocation, rejecting a dead `false && docker run …`, an
+    // `eval`/command-substitution fragment, or a second unconfigured run.
+    const dockerRuns = executable
+      .split(/\r?\n/)
+      .filter((line) => /^\s*docker\s+run\b/.test(line));
+    const hasConditionalDockerRun = /(?:&&|\|\|)\s*docker\s+run\b/.test(
+      executable,
+    );
+    if (
+      !/CORTEX_WEB_PORT="\$\{CORTEX_WEB_PORT:-5173}"/.test(executable) ||
+      !/CORTEX_API_PORT="\$\{CORTEX_API_PORT:-8081}"/.test(executable) ||
+      hasConditionalDockerRun ||
+      dockerRuns.length !== 1 ||
+      !/^\s*docker\s+run\b[^\n]*-p\s+"127\.0\.0\.1:\$\{CORTEX_API_PORT}:8080"[^\n]*-e\s+CORTEX_WEB_PORT="\$CORTEX_WEB_PORT"/.test(
+        dockerRuns[0] ?? "",
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-api-docker.sh: selected ports are not consumed by the Docker bind/origin arguments",
+      );
+    }
+  }
+
+  const compose = byPath.get("compose.local.yml");
+  if (compose !== undefined) {
+    const executable = executableContractText(compose);
+    if (
+      !/"127\.0\.0\.1:\$\{CORTEX_API_PORT:-8081}:8080"/.test(executable) ||
+      !/"127\.0\.0\.1:\$\{CORTEX_WEB_PORT:-5173}:8080"/.test(executable) ||
+      !/http:\/\/localhost:\$\{CORTEX_WEB_PORT:-5173}/.test(executable)
+    ) {
+      violations.push(
+        "compose.local.yml: selected ports are not consumed by loopback binds and the browser origin",
+      );
+    }
+  }
+
+  return violations;
+}
+
+export function inspectSourceBoundary(
+  files,
+  { requireNormalRuntimeFiles = false } = {},
+) {
   const violations = inspectLegacySource(files);
+  const byPath = new Map(files.map((file) => [file.path, file.content]));
+  violations.push(
+    ...inspectNormalRuntimeContracts(files, requireNormalRuntimeFiles),
+  );
   const packageFile = files.find(
     (file) => file.path === "apps/web/package.json",
   );
@@ -821,6 +1178,152 @@ export function inspectSourceBoundary(files) {
     } catch (error) {
       violations.push(
         `apps/web/package.json: cannot validate build scripts (${error instanceof Error ? error.message : error})`,
+      );
+    }
+  }
+  const compose = byPath.get("compose.local.yml");
+  if (compose !== undefined) {
+    for (const required of [
+      '"127.0.0.1:${CORTEX_API_PORT:-8081}:8080"',
+      '"127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"',
+      "CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+      "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+    ]) {
+      if (compose.includes(required)) {
+        continue;
+      }
+      violations.push(
+        `compose.local.yml: missing same-origin local runtime contract (${required})`,
+      );
+    }
+    if (
+      compose.includes("CORTEX_AUTH_OTP_HMAC_KEY_FILE") ||
+      compose.includes("cortex_otp_hmac")
+    ) {
+      violations.push(
+        "compose.local.yml: normal PostgreSQL runtime must not require an OTP secret",
+      );
+    }
+  }
+
+  const runApi = byPath.get("scripts/dev/run-api.sh");
+  if (runApi !== undefined) {
+    if (
+      runApi.includes(
+        "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-api.sh: normal PostgreSQL runtime must not require an OTP secret",
+      );
+    }
+    if (
+      !runApi.includes(
+        'API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"',
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-api.sh: health output must derive the exact API port",
+      );
+    }
+  }
+
+  const normalRuntimeContracts = new Map([
+    [
+      "scripts/dev/run-compose.sh",
+      [
+        'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+        'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+        'http://localhost:${CORTEX_WEB_PORT}',
+        'http://127.0.0.1:${CORTEX_API_PORT}/api/health',
+        'http://127.0.0.1:${CORTEX_API_PORT}/api/readiness',
+      ],
+    ],
+    [
+      "scripts/dev/run-api-docker.sh",
+      [
+        'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+        'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+        '-p "127.0.0.1:${CORTEX_API_PORT}:8080"',
+        '-e CORTEX_WEB_PORT="$CORTEX_WEB_PORT"',
+      ],
+    ],
+    [
+      "compose.production.example.yml",
+      [
+        "SPRING_PROFILES_ACTIVE: production,postgresql",
+        "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac",
+      ],
+    ],
+  ]);
+  for (const [runtimePath, requiredContracts] of normalRuntimeContracts) {
+    const content = byPath.get(runtimePath);
+    if (content === undefined) {
+      continue;
+    }
+    if (
+      content.includes("CORTEX_AUTH_OTP_HMAC_KEY_FILE") ||
+      content.includes("cortex_otp_hmac")
+    ) {
+      violations.push(
+        `${runtimePath}: normal PostgreSQL runtime must not require or mount an OTP secret`,
+      );
+    }
+    for (const required of requiredContracts) {
+      if (!content.includes(required)) {
+        violations.push(
+          `${runtimePath}: missing configurable normal-runtime contract (${required})`,
+        );
+      }
+    }
+  }
+
+  const activation = byPath.get("scripts/dev/start-postgres-activation.sh");
+  if (
+    activation !== undefined &&
+    !activation.includes(
+      "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+    )
+  ) {
+    violations.push(
+      "scripts/dev/start-postgres-activation.sh: explicit activation must retain its OTP secret requirement",
+    );
+  }
+
+  const rootEnvironment = byPath.get(".env.example");
+  if (rootEnvironment !== undefined) {
+    for (const required of [
+      "CORTEX_WEB_PORT=5173",
+      "CORTEX_API_PORT=8081",
+    ]) {
+      if (!rootEnvironment.includes(required)) {
+        violations.push(`.env.example: missing local port contract (${required})`);
+      }
+    }
+    for (const fixedOrigin of [
+      "CORTEX_CORS_ALLOWED_ORIGINS=http://localhost:5173",
+      "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173",
+    ]) {
+      if (rootEnvironment.includes(fixedOrigin)) {
+        violations.push(
+          `.env.example: fixed origin defeats CORTEX_WEB_PORT derivation (${fixedOrigin})`,
+        );
+      }
+    }
+  }
+
+  const localApplication =
+    byPath.get("apps/api/src/main/resources/application-local.yml");
+  if (localApplication !== undefined) {
+    for (const required of [
+      "allowed-origins: ${CORTEX_CORS_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+      "allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+    ]) {
+      if (localApplication.includes(required)) {
+        continue;
+      }
+      violations.push(
+        `apps/api/src/main/resources/application-local.yml: missing exact local origin contract (${required})`,
       );
     }
   }
@@ -870,10 +1373,12 @@ export function inspectSourceBoundary(files) {
 
 export function verifySourceBoundary(repositoryRoot = REPOSITORY_ROOT) {
   const files = sourceFiles(repositoryRoot).map((file) => ({
-    path: toPosix(path.relative(repositoryRoot, file)),
+    path: canonicalSourcePath(repositoryRoot, file),
     content: isTextFile(file) ? readFileSync(file, "utf8") : "",
   }));
-  const violations = inspectSourceBoundary(files);
+  const violations = inspectSourceBoundary(files, {
+    requireNormalRuntimeFiles: hasMonorepoWebRoot(repositoryRoot),
+  });
   if (violations.length > 0) {
     throw new Error(`StavIA source boundary failed:\n${violations.join("\n")}`);
   }

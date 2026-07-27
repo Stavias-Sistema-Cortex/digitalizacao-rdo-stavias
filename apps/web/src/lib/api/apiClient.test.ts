@@ -1,11 +1,25 @@
+import { readFileSync } from "node:fs";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearSession: vi.fn(),
+  clearSessionForCurrentDocument: vi.fn(),
+  getOrCreateClientInstance: vi.fn(),
+  hasOfflineSession: vi.fn(),
+  markClientInstanceAuthenticated: vi.fn(),
 }));
 
 vi.mock("../../features/auth/authSession", () => ({
   clearSession: mocks.clearSession,
+  clearSessionForCurrentDocument: mocks.clearSessionForCurrentDocument,
+  hasOfflineSession: mocks.hasOfflineSession,
+}));
+
+vi.mock("./clientInstance", () => ({
+  CLIENT_INSTANCE_HEADER: "X-Cortex-Client-Instance",
+  getOrCreateClientInstance: mocks.getOrCreateClientInstance,
+  markClientInstanceAuthenticated: mocks.markClientInstanceAuthenticated,
 }));
 
 import {
@@ -18,6 +32,9 @@ import {
 
 const fetchMock = vi.fn();
 const csrfToken = "c".repeat(43);
+const clientInstance = "A".repeat(43);
+const localValues = new Map<string, string>();
+let rejectIsolationMarkerWrite = false;
 
 vi.stubGlobal("fetch", fetchMock);
 vi.stubGlobal("window", {
@@ -30,6 +47,19 @@ vi.stubGlobal("window", {
   },
 });
 vi.stubGlobal("document", { cookie: "" });
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => localValues.get(key) ?? null,
+  removeItem: (key: string) => localValues.delete(key),
+  setItem: (key: string, value: string) => {
+    if (
+      key === "cortex.auth.remote-session-isolation" &&
+      rejectIsolationMarkerWrite
+    ) {
+      throw new Error("storage unavailable");
+    }
+    localValues.set(key, value);
+  },
+});
 
 describe("responseErrorMessage", () => {
   it("traduz bloqueio de CORS para uma mensagem operacional", () => {
@@ -77,8 +107,107 @@ describe("apiFetch cookie session", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    localValues.clear();
+    rejectIsolationMarkerWrite = false;
+    mocks.hasOfflineSession.mockReturnValue(false);
+    mocks.getOrCreateClientInstance.mockResolvedValue({
+      value: clientInstance,
+      requiresFreshAuthentication: false,
+    });
     fetchMock.mockResolvedValue({ status: 200 } as Response);
     Object.assign(document, { cookie: "" });
+  });
+
+  it("does not reach fetch for operational or session probes while remote isolation is persisted", async () => {
+    localStorage.setItem("cortex.auth.remote-session-isolation", "1");
+
+    await expect(apiFetch("/obras")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+    await expect(apiFetch("/auth/session")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reach fetch while an in-memory offline session is active", async () => {
+    mocks.hasOfflineSession.mockReturnValue(true);
+
+    await expect(apiFetch("/obras")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps this live tab gated when the durable isolation marker write fails", async () => {
+    const isolation = await import("../../features/auth/remoteSessionIsolation");
+    rejectIsolationMarkerWrite = true;
+
+    expect(() => isolation.markRemoteSessionIsolation()).toThrow(
+      "isolar a sessão remota",
+    );
+    await expect(apiFetch("/obras")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    rejectIsolationMarkerWrite = false;
+    isolation.clearRemoteSessionIsolation();
+  });
+
+  it("permits cookie revocation only through its named exact POST path", async () => {
+    localStorage.setItem("cortex.auth.remote-session-isolation", "1");
+
+    await expect(
+      apiFetch("/auth/logout", { method: "POST" }),
+    ).rejects.toMatchObject({ kind: "REMOTE_SESSION_ISOLATED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      revokeRemoteSessionCookie?: () => Promise<Response>;
+    };
+    expect(client.revokeRemoteSessionCookie).toBeTypeOf("function");
+
+    await client.revokeRemoteSessionCookie!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("/auth/logout");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("permits the isolated CPF grant follow-up only through its named helper", async () => {
+    localStorage.setItem("cortex.auth.remote-session-isolation", "1");
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      fetchFreshCpfOfflineGrant?: () => Promise<Response>;
+    };
+    expect(client.fetchFreshCpfOfflineGrant).toBeTypeOf("function");
+
+    await client.fetchFreshCpfOfflineGrant!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("/auth/offline-grant");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("permits only the exact fresh-authentication POST allowlist", async () => {
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      freshAuthenticationFetch?: (
+        path: string,
+        options: RequestInit,
+      ) => Promise<Response>;
+    };
+    expect(client.freshAuthenticationFetch).toBeTypeOf("function");
+
+    await expect(
+      client.freshAuthenticationFetch!("/obras", { method: "POST" }),
+    ).rejects.toThrow("autenticação nova inválida");
+    await expect(
+      client.freshAuthenticationFetch!("/auth/login", { method: "GET" }),
+    ).rejects.toThrow("autenticação nova inválida");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejeita API em outro hostname porque o CSRF é host-only", () => {
@@ -146,6 +275,126 @@ describe("apiFetch cookie session", () => {
     expect(headers.get("X-Request-Id")).toBe("sintético");
   });
 
+  it("anexa a prova da aba e substitui qualquer cabeçalho forjado pelo chamador", async () => {
+    await apiFetch("/obras", {
+      headers: {
+        "X-Cortex-Client-Instance": "proof-forged-by-caller",
+      },
+    });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(options.headers);
+    expect(headers.get("X-Cortex-Client-Instance")).toBe(clientInstance);
+    expect(mocks.getOrCreateClientInstance).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a credentialed fetch before the document lease resolves", async () => {
+    let resolveLease: (value: {
+      value: string;
+      requiresFreshAuthentication: boolean;
+    } | null) => void = () => undefined;
+    mocks.getOrCreateClientInstance.mockReturnValueOnce(new Promise<{
+      value: string;
+      requiresFreshAuthentication: boolean;
+    } | null>((resolve) => {
+      resolveLease = resolve;
+    }));
+
+    const request = apiFetch("/obras");
+    await Promise.resolve();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    resolveLease({ value: clientInstance, requiresFreshAuthentication: false });
+    await request;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      new Headers(fetchMock.mock.calls[0][1].headers)
+        .get("X-Cortex-Client-Instance"),
+    ).toBe(clientInstance);
+  });
+
+  it("cobre a prova de aba nas transições frescas e no grant isolado", async () => {
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      fetchFreshCpfOfflineGrant?: () => Promise<Response>;
+      freshAuthenticationFetch?: (
+        path: string,
+        options: RequestInit,
+      ) => Promise<Response>;
+    };
+
+    await client.freshAuthenticationFetch!("/auth/login", {
+      method: "POST",
+    });
+    await client.freshAuthenticationFetch!(
+      "/auth/passkeys/authentication/options",
+      { method: "POST" },
+    );
+    await client.freshAuthenticationFetch!(
+      "/auth/passkeys/authentication/verify",
+      { method: "POST" },
+    );
+    await client.fetchFreshCpfOfflineGrant!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    for (const [, options] of fetchMock.mock.calls as Array<
+      [string, RequestInit]
+    >) {
+      expect(
+        new Headers(options.headers).get("X-Cortex-Client-Instance"),
+      ).toBe(clientInstance);
+    }
+  });
+
+  it("blocks a copied or newly minted proof before any ordinary cookie request", async () => {
+    mocks.getOrCreateClientInstance.mockResolvedValueOnce({
+      value: clientInstance,
+      requiresFreshAuthentication: true,
+    });
+
+    await expect(apiFetch("/auth/session")).rejects.toMatchObject({
+      kind: "CLIENT_INSTANCE_REAUTH_REQUIRED",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a newly minted proof only after a successful session-establishing auth response", async () => {
+    mocks.getOrCreateClientInstance.mockResolvedValue({
+      value: clientInstance,
+      requiresFreshAuthentication: true,
+    });
+    fetchMock.mockResolvedValueOnce({ status: 200, ok: true } as Response);
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      freshAuthenticationFetch?: (
+        path: string,
+        options: RequestInit,
+      ) => Promise<Response>;
+    };
+
+    await client.freshAuthenticationFetch!("/auth/login", { method: "POST" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mocks.markClientInstanceAuthenticated).toHaveBeenCalledWith(
+      clientInstance,
+    );
+  });
+
+  it("mantém health, readiness e preflight sem uma prova de sessão", async () => {
+    await apiFetch("/health");
+    await apiFetch("/readiness");
+    await apiFetch("/obras", { method: "OPTIONS" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, options] of fetchMock.mock.calls as Array<
+      [string, RequestInit]
+    >) {
+      expect(
+        new Headers(options.headers).get("X-Cortex-Client-Instance"),
+      ).toBeNull();
+    }
+    expect(mocks.getOrCreateClientInstance).not.toHaveBeenCalled();
+  });
+
   it("usa o token CSRF do cookie em mutações e não aceita sobrescrita", async () => {
     Object.assign(document, {
       cookie: `tema=claro; cortex_csrf=${csrfToken}`,
@@ -176,13 +425,22 @@ describe("apiFetch cookie session", () => {
     expect(new Headers(options.headers).get("X-CSRF-Token")).toBeNull();
   });
 
-  it("limpa a memória após 401 protegido sem retry silencioso", async () => {
+  it("limpa somente a memória desta aba após 401 protegido sem retry silencioso", async () => {
     fetchMock.mockResolvedValue({ status: 401 } as Response);
 
     await apiFetch("/obras");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(mocks.clearSession).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSessionForCurrentDocument).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSession).not.toHaveBeenCalled();
+  });
+
+  it("expõe uma orientação segura e acionável para sessão substituída durante o sync", () => {
+    expect(apiError(null, 401)).toMatchObject({
+      status: 401,
+      message:
+        "Sua sessão online expirou ou foi substituída por outra aba. Entre novamente para sincronizar.",
+    });
   });
 
   it("limpa 401 de registro de passkey, mas preserva rotas públicas exatas", async () => {
@@ -191,18 +449,102 @@ describe("apiFetch cookie session", () => {
     await apiFetch("/auth/passkeys/registration/options", {
       method: "POST",
     });
-    expect(mocks.clearSession).toHaveBeenCalledTimes(1);
+    expect(mocks.clearSessionForCurrentDocument).toHaveBeenCalledTimes(1);
 
-    mocks.clearSession.mockClear();
+    mocks.clearSessionForCurrentDocument.mockClear();
     await apiFetch("/auth/login", {
       method: "POST",
     });
-    expect(mocks.clearSession).not.toHaveBeenCalled();
+    expect(mocks.clearSessionForCurrentDocument).not.toHaveBeenCalled();
 
-    mocks.clearSession.mockClear();
+    mocks.clearSessionForCurrentDocument.mockClear();
     await apiFetch("/auth/passkeys/authentication/options", {
       method: "POST",
     });
-    expect(mocks.clearSession).not.toHaveBeenCalled();
+    expect(mocks.clearSessionForCurrentDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe("same-origin local runtime contract", () => {
+  it("embeds only the root-relative API base in local and compose builds", () => {
+    const packageJson = JSON.parse(
+      readFileSync(
+        new URL("../../../package.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { scripts: Record<string, string> };
+
+    for (const script of ["build:local", "build:compose"]) {
+      expect(packageJson.scripts[script]).toContain(
+        "VITE_CORTEX_API_BASE_URL=/api",
+      );
+      expect(packageJson.scripts[script]).not.toMatch(
+        /VITE_CORTEX_API_BASE_URL=https?:\/\//,
+      );
+      expect(packageJson.scripts[script]).not.toContain(
+        "CORTEX_API_TARGET=",
+      );
+    }
+
+    for (const script of [
+      "dev:local",
+      "dev:compose",
+      "preview:local",
+      "preview:compose",
+    ]) {
+      expect(packageJson.scripts[script]).toContain(
+        "CORTEX_API_TARGET=http://127.0.0.1:",
+      );
+    }
+  });
+
+  it("derives loopback ports and the exact local web origin without normal OTP", () => {
+    const compose = readFileSync(
+      new URL("../../../../../compose.local.yml", import.meta.url),
+      "utf8",
+    );
+    const runApi = readFileSync(
+      new URL(
+        "../../../../../scripts/dev/run-api.sh",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const localApplication = readFileSync(
+      new URL(
+        "../../../../api/src/main/resources/application-local.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(compose).toContain(
+      '"127.0.0.1:${CORTEX_API_PORT:-8081}:8080"',
+    );
+    expect(compose).toContain(
+      '"127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"',
+    );
+    expect(compose).toContain(
+      "CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+    );
+    expect(compose).toContain(
+      "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+    );
+    expect(compose).not.toContain("CORTEX_AUTH_OTP_HMAC_KEY_FILE");
+    expect(compose).not.toContain("cortex_otp_hmac");
+
+    expect(runApi).not.toContain(
+      "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+    );
+    expect(runApi).toContain(
+      'API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"',
+    );
+
+    expect(localApplication).toContain(
+      "allowed-origins: ${CORTEX_CORS_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+    );
+    expect(localApplication).toContain(
+      "allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+    );
   });
 });

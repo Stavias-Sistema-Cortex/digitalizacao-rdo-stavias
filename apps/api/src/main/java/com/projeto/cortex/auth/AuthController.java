@@ -7,6 +7,7 @@ import com.projeto.cortex.auth.otp.OtpChallengeRequest;
 import com.projeto.cortex.auth.otp.OtpChallengeResponse;
 import com.projeto.cortex.auth.otp.OtpVerifyRequest;
 import com.projeto.cortex.auth.session.AuthCookieService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.AuthSessionFilter;
 import com.projeto.cortex.auth.session.AuthSessionProfileResolver;
 import com.projeto.cortex.auth.session.AuthSessionService;
@@ -36,7 +37,7 @@ public class AuthController {
     static final String CPF_FILTER_DISABLED_MESSAGE =
             "Filtro de CPF desativado.";
 
-    private final EmailOtpChallengeService otpChallenges;
+    private final Optional<EmailOtpChallengeService> otpChallenges;
     private final Optional<AuthService> authService;
     private final ClientAddressResolver clientAddresses;
     private final AuthSessionService sessions;
@@ -47,7 +48,7 @@ public class AuthController {
 
     @Autowired
     public AuthController(
-            EmailOtpChallengeService otpChallenges,
+            Optional<EmailOtpChallengeService> otpChallenges,
             Optional<AuthService> authService,
             ClientAddressResolver clientAddresses,
             AuthSessionService sessions,
@@ -75,9 +76,13 @@ public class AuthController {
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
         servletResponse.setHeader("Cache-Control", "no-store");
-        return otpChallenges.request(
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                servletRequest
+        );
+        return requiredOtpChallenges().request(
                 request == null ? null : request.identifier(),
-                clientAddresses.resolve(servletRequest)
+                clientAddresses.resolve(servletRequest),
+                clientInstance.hash()
         );
     }
 
@@ -85,20 +90,26 @@ public class AuthController {
     public AuthSessionResponse verifyChallenge(
             @PathVariable String challengeId,
             @RequestBody(required = false) OtpVerifyRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse response
     ) {
         emailOtpAuthenticationPolicy.requireEnabled();
-        AuthenticatedIdentity identity = otpChallenges.verify(
+        response.setHeader("Cache-Control", "no-store");
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                servletRequest
+        );
+        AuthenticatedIdentity identity = requiredOtpChallenges().verify(
                 challengeId,
-                request == null ? null : request.code()
+                request == null ? null : request.code(),
+                clientAddresses.resolve(servletRequest),
+                clientInstance.hash()
         ).orElseThrow(() -> new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED,
                 "Código inválido ou expirado."
         ));
         sessionProfiles.requireEligibleForSessionIssue(identity);
-        IssuedAuthSession issued = sessions.issue(identity);
+        IssuedAuthSession issued = sessions.issue(identity, clientInstance);
         cookies.write(response, issued);
-        response.setHeader("Cache-Control", "no-store");
         return sessionProfiles.profileForIssuedSession(
                 identity,
                 issued.expiresAt()
@@ -139,10 +150,14 @@ public class AuthController {
     @PostMapping("/api/auth/login")
     public AuthSessionResponse login(
             @RequestBody(required = false) LoginRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse response
     ) {
         response.setHeader("Cache-Control", "no-store");
         directCpfLoginPolicy.requireEnabled();
+        ClientInstanceProof clientInstance = ClientInstanceProof.require(
+                servletRequest
+        );
         String cpf = canonicalCpf(request);
         AuthenticatedIdentity identity = authService.orElseThrow(
                 () -> new ResponseStatusException(
@@ -155,7 +170,7 @@ public class AuthController {
                         LOGIN_REJECTED_MESSAGE
                 ));
         sessionProfiles.requireEligibleForSessionIssue(identity);
-        IssuedAuthSession issued = sessions.issue(identity);
+        IssuedAuthSession issued = sessions.issue(identity, clientInstance);
         cookies.write(response, issued);
         return sessionProfiles.profileForIssuedSession(
                 identity,
@@ -175,6 +190,13 @@ public class AuthController {
         );
     }
 
+    private EmailOtpChallengeService requiredOtpChallenges() {
+        return otpChallenges.orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.GONE,
+                "Autenticação por e-mail indisponível."
+        ));
+    }
+
     private String canonicalCpf(LoginRequest request) {
         try {
             return CpfNormalizer.requireValid(
@@ -182,8 +204,8 @@ public class AuthController {
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "CPF inválido."
+                    HttpStatus.UNAUTHORIZED,
+                    LOGIN_REJECTED_MESSAGE
             );
         }
     }

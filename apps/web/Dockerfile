@@ -19,8 +19,7 @@ ENV VITE_CORTEX_AUTH_MODE=${VITE_CORTEX_AUTH_MODE}
 ENV VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256}
 ENV VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES=${VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES}
 
-RUN test "${VITE_CORTEX_AUTH_MODE}" = "legacy" \
-      || test "${VITE_CORTEX_AUTH_MODE}" = "postgresql"
+RUN sh ./validate-docker-build-args.sh
 RUN npm run build
 
 FROM nginx:1.27-alpine
@@ -28,6 +27,15 @@ FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY security-headers.conf /etc/nginx/snippets/cortex-security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
+
+RUN mkdir -p \
+      /var/cache/nginx/client_temp \
+      /var/cache/nginx/proxy_temp \
+      /var/cache/nginx/fastcgi_temp \
+      /var/cache/nginx/uwsgi_temp \
+      /var/cache/nginx/scgi_temp \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown nginx:nginx /run
 
 USER nginx
 

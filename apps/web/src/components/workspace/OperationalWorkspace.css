@@ -107,7 +107,10 @@
   margin: 12px var(--workspace-gutter) 0;
   padding: 8px 10px;
   border: 1px solid #d7dad8;
-  background: #f7f8f7;
+  border-radius: var(--radius-control);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .workspace-status-rail__state {

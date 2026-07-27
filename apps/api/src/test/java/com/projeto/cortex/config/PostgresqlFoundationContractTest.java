@@ -26,8 +26,8 @@ class PostgresqlFoundationContractTest {
                 "PostgreSQL JDBC must be available for the opt-in profile");
         assertTrue(pom.contains("<artifactId>flyway-database-postgresql</artifactId>"),
                 "Flyway PostgreSQL support must be available for the opt-in profile");
-        assertFalse(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
-                "the canonical runtime must not depend on the retired MySQL driver");
+        assertTrue(pom.contains("<artifactId>mysql-connector-j</artifactId>"),
+                "the separately configured, read-only Academy source needs its JDBC driver");
         assertFalse(pom.contains("<artifactId>flyway-mysql</artifactId>"),
                 "the canonical runtime must not load retired MySQL migrations");
     }
@@ -56,7 +56,7 @@ class PostgresqlFoundationContractTest {
         assertTrue(commonProfile.contains("classpath:db/migration-postgresql"));
         assertTrue(profile.contains("enabled: false"),
                 "normal PostgreSQL runtime must never execute migrations");
-        assertTrue(commonProfile.contains("required-schema-version: 60"));
+        assertTrue(commonProfile.contains("required-schema-version: 61"));
         assertFalse(commonProfile.contains("classpath:db/migration\n"),
                 "the PostgreSQL profile must not run the MySQL migration directory");
         assertFalse((profile + commonProfile).toLowerCase().contains("supabase"),

@@ -25,14 +25,18 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
     @Override
     @Transactional
     public Instant create(String sessionId, String collaboratorId,
-            String tokenHash, String csrfHash, int ttlSeconds) {
-        validateCreate(sessionId, collaboratorId, tokenHash, csrfHash, ttlSeconds);
+            String tokenHash, String csrfHash, String clientInstanceHash,
+            int ttlSeconds) {
+        validateCreate(sessionId, collaboratorId, tokenHash, csrfHash,
+                clientInstanceHash, ttlSeconds);
         int inserted = jdbcTemplate.update("""
                 INSERT INTO auth_session (
-                    id, colaborador_id, token_hash, csrf_hash, expira_em
-                ) VALUES (?, ?, ?, ?,
+                    id, colaborador_id, token_hash, csrf_hash,
+                    client_instance_hash, client_instance_bound, expira_em
+                ) VALUES (?, ?, ?, ?, ?, TRUE,
                     CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second'))
-                """, sessionId, collaboratorId, tokenHash, csrfHash, ttlSeconds);
+                """, sessionId, collaboratorId, tokenHash, csrfHash,
+                clientInstanceHash, ttlSeconds);
         if (inserted != 1) {
             throw new IllegalStateException("Sessão não persistida.");
         }
@@ -46,20 +50,29 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
     }
 
     @Override
-    public Optional<ResolvedAuthSession> findActiveByTokenHash(String tokenHash) {
+    public Optional<ResolvedAuthSession> findActiveByTokenHashAndClientInstanceHash(
+            String tokenHash,
+            String clientInstanceHash
+    ) {
         requireHash(tokenHash, "token");
+        requireHash(clientInstanceHash, "instância do cliente");
         List<ResolvedAuthSession> sessions = jdbcTemplate.query("""
                 SELECT session.id, session.colaborador_id, session.csrf_hash,
+                    session.client_instance_hash,
                     session.expira_em, colaborador.nome, colaborador.papel_acesso
                 FROM auth_session session
                 INNER JOIN colaborador ON colaborador.id = session.colaborador_id
                 WHERE session.token_hash = ?
+                    AND session.client_instance_hash = ?
                     AND session.revogado_em IS NULL
                     AND session.expira_em > CURRENT_TIMESTAMP(6)
+                    AND session.client_instance_bound = TRUE
+                    AND session.client_instance_hash IS NOT NULL
                     AND colaborador.ativo = TRUE
                     AND colaborador.deletado_em IS NULL
                     AND colaborador.papel_acesso IN ('ALFA', 'BETA')
-                """, (resultSet, rowNumber) -> resolved(resultSet), tokenHash);
+                """, (resultSet, rowNumber) -> resolved(resultSet), tokenHash,
+                clientInstanceHash);
         if (sessions.size() > 1) {
             throw new IllegalStateException("Token de sessão ambíguo.");
         }
@@ -81,15 +94,19 @@ public class MysqlAuthSessionRepository implements AuthSessionRepository {
                 resultSet.getString("colaborador_id"), resultSet.getString("nome"),
                 PapelAcesso.fromPersistedExact(resultSet.getString("papel_acesso"))
                         .orElseThrow(() -> new IllegalStateException("Papel persistido inválido.")),
-                resultSet.getTimestamp("expira_em").toInstant(), resultSet.getString("csrf_hash"));
+                resultSet.getTimestamp("expira_em").toInstant(),
+                resultSet.getString("csrf_hash"),
+                resultSet.getString("client_instance_hash"));
     }
 
     static void validateCreate(String sessionId, String collaboratorId,
-            String tokenHash, String csrfHash, int ttlSeconds) {
+            String tokenHash, String csrfHash, String clientInstanceHash,
+            int ttlSeconds) {
         requireUuid(sessionId, "sessão");
         requireUuid(collaboratorId, "colaborador");
         requireHash(tokenHash, "token");
         requireHash(csrfHash, "CSRF");
+        requireHash(clientInstanceHash, "instância do cliente");
         if (ttlSeconds < 1) {
             throw invalidInput();
         }

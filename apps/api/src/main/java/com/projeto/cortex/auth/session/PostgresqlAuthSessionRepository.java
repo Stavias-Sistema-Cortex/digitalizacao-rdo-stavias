@@ -23,17 +23,20 @@ public class PostgresqlAuthSessionRepository implements AuthSessionRepository {
     @Override
     @Transactional
     public Instant create(String sessionId, String collaboratorId,
-            String tokenHash, String csrfHash, int ttlSeconds) {
+            String tokenHash, String csrfHash, String clientInstanceHash,
+            int ttlSeconds) {
         MysqlAuthSessionRepository.validateCreate(
-                sessionId, collaboratorId, tokenHash, csrfHash, ttlSeconds);
+                sessionId, collaboratorId, tokenHash, csrfHash,
+                clientInstanceHash, ttlSeconds);
         Timestamp expiresAt = jdbcTemplate.queryForObject("""
                 INSERT INTO auth_session (
-                    id, colaborador_id, token_hash, csrf_hash, expira_em
-                ) VALUES (?, ?, ?, ?,
+                    id, colaborador_id, token_hash, csrf_hash,
+                    client_instance_hash, client_instance_bound, expira_em
+                ) VALUES (?, ?, ?, ?, ?, TRUE,
                     clock_timestamp() + (? * INTERVAL '1 second'))
                 RETURNING expira_em
                 """, Timestamp.class, sessionId, collaboratorId, tokenHash,
-                csrfHash, ttlSeconds);
+                csrfHash, clientInstanceHash, ttlSeconds);
         if (expiresAt == null) {
             throw new IllegalStateException("Sessão não persistida.");
         }
@@ -41,23 +44,35 @@ public class PostgresqlAuthSessionRepository implements AuthSessionRepository {
     }
 
     @Override
-    public Optional<ResolvedAuthSession> findActiveByTokenHash(String tokenHash) {
+    public Optional<ResolvedAuthSession> findActiveByTokenHashAndClientInstanceHash(
+            String tokenHash,
+            String clientInstanceHash
+    ) {
         MysqlAuthSessionRepository.requireHash(tokenHash, "token");
+        MysqlAuthSessionRepository.requireHash(
+                clientInstanceHash,
+                "instância do cliente"
+        );
         List<ResolvedAuthSession> sessions = jdbcTemplate.query("""
                 SELECT session.id, session.colaborador_id, session.csrf_hash,
+                    session.client_instance_hash,
                     session.expira_em, colaborador.nome, colaborador.papel_acesso
                 FROM auth_session session
                 INNER JOIN colaborador ON colaborador.id = session.colaborador_id
                 INNER JOIN auth_identity identity
                     ON identity.colaborador_id = colaborador.id
                 WHERE session.token_hash = ?
+                    AND session.client_instance_hash = ?
                     AND session.revogado_em IS NULL
                     AND session.expira_em > clock_timestamp()
+                    AND session.client_instance_bound = TRUE
+                    AND session.client_instance_hash IS NOT NULL
                     AND colaborador.ativo = TRUE
                     AND colaborador.deletado_em IS NULL
                     AND colaborador.papel_acesso IN ('ALFA', 'BETA')
                     AND identity.status = 'ATIVA'
-                """, (resultSet, rowNumber) -> MysqlAuthSessionRepository.resolved(resultSet), tokenHash);
+                """, (resultSet, rowNumber) -> MysqlAuthSessionRepository.resolved(resultSet), tokenHash,
+                clientInstanceHash);
         if (sessions.size() > 1) {
             throw new IllegalStateException("Token de sessão ambíguo.");
         }

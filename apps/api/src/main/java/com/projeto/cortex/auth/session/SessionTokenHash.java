@@ -39,6 +39,21 @@ final class SessionTokenHash {
         }
     }
 
+    /** Compares two persisted SHA-256 values without timing-dependent equals. */
+    static boolean matchesHash(String candidateHash, String storedHash) {
+        if (!isHash(candidateHash) || !isHash(storedHash)) {
+            return false;
+        }
+        byte[] candidate = HexFormat.of().parseHex(candidateHash);
+        byte[] stored = HexFormat.of().parseHex(storedHash);
+        try {
+            return MessageDigest.isEqual(candidate, stored);
+        } finally {
+            Arrays.fill(candidate, (byte) 0);
+            Arrays.fill(stored, (byte) 0);
+        }
+    }
+
     private static byte[] digest(String rawMaterial) {
         if (!isAcceptableMaterial(rawMaterial)) {
             throw new IllegalArgumentException(
@@ -63,5 +78,9 @@ final class SessionTokenHash {
                 && !rawMaterial.isBlank()
                 && rawMaterial.length() <= MAXIMUM_MATERIAL_LENGTH
                 && rawMaterial.chars().allMatch(value -> value <= 0x7f);
+    }
+
+    private static boolean isHash(String value) {
+        return value != null && value.matches("[0-9a-f]{64}");
     }
 }

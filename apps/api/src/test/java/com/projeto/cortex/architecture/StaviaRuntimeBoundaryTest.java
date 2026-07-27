@@ -72,6 +72,35 @@ class StaviaRuntimeBoundaryTest {
                     "StaviasCortex",
                     "printf '%s' 'StaviasCortex'"),
             sourceReference(
+                    "deploy/production/compose.yml",
+                    "StaviasCortex",
+                    "POSTGRES_DB: ${CORTEX_POSTGRES_DB:-StaviasCortex}",
+                    "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/"
+                            + "${CORTEX_POSTGRES_DB:-StaviasCortex}",
+                    "CORTEX_POSTGRES_URL: jdbc:postgresql://cortex-postgres:5432/"
+                            + "${CORTEX_POSTGRES_DB:-StaviasCortex}"),
+            sourceReference(
+                    "scripts/deploy/prepare-local-production.sh",
+                    "StaviasCortex",
+                    "/StaviasCortex(\\?.*)?$ ]]; then",
+                    "The source PostgreSQL URL must target StaviasCortex.",
+                    "CORTEX_POSTGRES_DB=StaviasCortex",
+                    "StaviasCortex-$(date -u +%Y%m%dT%H%M%SZ).dump",
+                    "--dbname=StaviasCortex",
+                    "--dbname=StaviasCortex"),
+            sourceReference(
+                    "scripts/security/test-production-publication.sh",
+                    "StaviasCortex",
+                    "CORTEX_POSTGRES_DB='StaviasCortex'"),
+            sourceReference(
+                    "scripts/deploy/configure-github-production-environment.sh",
+                    "Stavia",
+                    "Stavias-Sistema-Cortex"),
+            sourceReference(
+                    "scripts/deploy/configure-github-production-environment.sh",
+                    "stavia",
+                    "digitalizacao-rdo-stavias"),
+            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/config/"
                             + "PostgresqlModeConfigurationGuard.java",
                     "StaviasCortex",
@@ -182,6 +211,21 @@ class StaviaRuntimeBoundaryTest {
                     "banco_origem = 'dbstavias_acad'",
                     "banco_origem = 'dbstavias_acad'"),
             sourceReference(
+                    "apps/api/src/main/java/com/projeto/cortex/config/"
+                            + "PostgresqlRuntimeReadinessGuard.java",
+                    "dbstavias_acad",
+                    "AND c.banco_origem = 'dbstavias_acad'"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/config/"
+                            + "PostgresqlRuntimeReadinessGuardTest.java",
+                    "dbstavias_acad",
+                    "contains(\"c.banco_origem = 'dbstavias_acad'\")"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/integracoes/"
+                            + "AcademyJdbcRuntimeContractTest.java",
+                    "dbstavias_acad",
+                    "\"jdbc:mysql://127.0.0.1:3306/dbstavias_acad\""),
+            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
                     "dbstavias_zld",
                     "SOURCE_DATABASE = \"dbstavias_zld\"",
@@ -244,6 +288,10 @@ class StaviaRuntimeBoundaryTest {
                     "target/classes/com/projeto/cortex/auth/bootstrap/"
                             + "PostgresqlInitialAlfaBootstrapRepository.class",
                     "dbstavias_acad", 1, "PostgresqlInitialAlfaBootstrapRepository.java"),
+            compiledReference(
+                    "target/classes/com/projeto/cortex/config/"
+                            + "PostgresqlRuntimeReadinessGuard.class",
+                    "dbstavias_acad", 1, "PostgresqlRuntimeReadinessGuard.java"),
             compiledReference(
                     "target/classes/com/projeto/cortex/assets/AssetImportService.class",
                     "dbstavias_zld", 3, "AssetImportService.java"),
@@ -468,6 +516,17 @@ class StaviaRuntimeBoundaryTest {
     }
 
     @Test
+    void allowsApprovedBrandingInsideACompiledConstantPool() {
+        List<String> violations = new ArrayList<>();
+
+        inspect("target/classes/example/Brand.class",
+                "\u0001\u0000\u0007STAVIAS\n".getBytes(StandardCharsets.ISO_8859_1),
+                violations);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
     void rejectsUnapprovedCorporateBrandCaseAndBoundaryVariants() {
         for (String unapproved : List.of(
                 "stavias",
@@ -487,6 +546,26 @@ class StaviaRuntimeBoundaryTest {
                     .as("unapproved case/boundary variant %s", unapproved)
                     .containsExactly("branding.txt [assistant content]");
         }
+    }
+
+    @Test
+    void permitsOnlyTheDeclaredAcademyCompatibilitySourceReferences() throws IOException {
+        List<String> violations = new ArrayList<>();
+        for (Path relative : List.of(
+                Path.of("apps/api/src/main/java/com/projeto/cortex/config/"
+                        + "PostgresqlRuntimeReadinessGuard.java"),
+                Path.of("apps/api/src/test/java/com/projeto/cortex/config/"
+                        + "PostgresqlRuntimeReadinessGuardTest.java"),
+                Path.of("apps/api/src/test/java/com/projeto/cortex/integracoes/"
+                        + "AcademyJdbcRuntimeContractTest.java"))) {
+            inspectSourceFile(
+                    relative,
+                    Files.readAllBytes(repositoryRoot().resolve(relative)),
+                    violations
+            );
+        }
+
+        assertThat(violations).isEmpty();
     }
 
     @ParameterizedTest(name = "rejects scoped-only reference {0}")
@@ -523,6 +602,9 @@ class StaviaRuntimeBoundaryTest {
             "STAVIAS_HISTORY|apps/api/src/main/java/com/projeto/cortex/intelligence/PdorEngine.java",
             "StaviasCortex|.env.postgresql.example",
             "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/colaboradores/AcademyCollaboratorIdentity.java",
+            "dbstavias_acad|apps/api/src/main/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuard.java",
+            "dbstavias_acad|apps/api/src/test/java/com/projeto/cortex/config/PostgresqlRuntimeReadinessGuardTest.java",
+            "dbstavias_acad|apps/api/src/test/java/com/projeto/cortex/integracoes/AcademyJdbcRuntimeContractTest.java",
             "dbstavias_zld|apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
             "Stavias Córtex|compose.production.example.yml",
             "Stavias From|compose.production.example.yml",
@@ -761,7 +843,10 @@ class StaviaRuntimeBoundaryTest {
                         .distinct()
                         .map(Pattern::quote)
                         .toList());
-        String identifierCharacter = "\\p{javaJavaIdentifierPart}";
+        // A compiled class prefixes UTF-8 constants with binary length bytes. Some
+        // control bytes are Java-identifier-ignorable, so javaJavaIdentifierPart
+        // would falsely join them to a permitted STAVIAS branding constant.
+        String identifierCharacter = "[A-Za-z0-9_$]";
         return Pattern.compile("(?<!" + identifierCharacter + ")(?:"
                 + alternatives + ")(?!" + identifierCharacter + ")");
     }

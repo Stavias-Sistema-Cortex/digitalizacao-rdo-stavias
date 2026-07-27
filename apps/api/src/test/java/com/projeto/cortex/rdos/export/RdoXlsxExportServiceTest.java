@@ -1,5 +1,9 @@
 package com.projeto.cortex.rdos.export;
 
+import static com.projeto.cortex.rdos.export.RdoExportTestFixtures.control;
+import static com.projeto.cortex.rdos.export.RdoExportTestFixtures.emptyRdo;
+import static com.projeto.cortex.rdos.export.RdoExportTestFixtures.parityControl;
+import static com.projeto.cortex.rdos.export.RdoExportTestFixtures.populatedRdo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -17,8 +21,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -56,7 +58,9 @@ class RdoXlsxExportServiceTest {
         when(worksiteReader.read(anyString())).thenReturn(
                 new RdoExportWorksiteReader.Worksite("Obra Norte", "CW-007")
         );
-        service = new RdoXlsxExportService(queryService, worksiteReader);
+        service = new RdoXlsxExportService(
+                new RdoExportAggregateFactory(queryService, worksiteReader)
+        );
     }
 
     @Test
@@ -77,7 +81,7 @@ class RdoXlsxExportServiceTest {
         RdoResponse rdo = populatedRdo("rdo-42", "RDO-0042");
         when(queryService.buscarPorId("rdo-42")).thenReturn(rdo);
 
-        RdoXlsxExportService.ExportedRdo exported = service.export("rdo-42");
+        RdoExportFile exported = service.export("rdo-42");
 
         assertThat(exported.filename()).isEqualTo("rdo-RDO-0042.xlsx");
         assertThat(exported.content()).isNotEmpty();
@@ -420,7 +424,7 @@ class RdoXlsxExportServiceTest {
         );
         when(queryService.buscarPorId("=cmd")).thenReturn(malicious);
 
-        RdoXlsxExportService.ExportedRdo exported = service.export("=cmd");
+        RdoExportFile exported = service.export("=cmd");
 
         assertThat(exported.filename()).matches("rdo-[A-Za-z0-9._-]+\\.xlsx");
         assertThat(exported.filename()).doesNotContain("=").doesNotContain("+");
@@ -468,6 +472,148 @@ class RdoXlsxExportServiceTest {
                     .getCustomProperties()
                     .getUnderlyingProperties()
                     .sizeOfPropertyArray()).isZero();
+        }
+    }
+
+    @Test
+    void redactsCredentialHeadersBeforeWritingWorkbookCells() throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization: Basic BASIC_SECRET_CANARY",
+                        "BASIC_SECRET_CANARY"
+                },
+                new String[] {
+                        "Proxy-Authorization: Basic PROXY_BASIC_SECRET_CANARY",
+                        "PROXY_BASIC_SECRET_CANARY"
+                },
+                new String[] {
+                        "Authorization: Digest username=\"digest\", "
+                                + "response=\"DIGEST_SECRET_CANARY\"",
+                        "DIGEST_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie: session=COOKIE_SECRET_CANARY",
+                        "COOKIE_SECRET_CANARY"
+                },
+                new String[] {
+                        "Set-Cookie: session=SET_COOKIE_SECRET_CANARY",
+                        "SET_COOKIE_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-credential", "RDO-CREDENTIAL"),
+                    "", "", "", vector[0],
+                    List.of(), List.of(), List.of(), List.of(), List.of()
+            );
+            when(queryService.buscarPorId("rdo-credential")).thenReturn(rdo);
+
+            Map<String, byte[]> packageEntries = zipEntries(
+                    service.export("rdo-credential").content()
+            );
+            String packageText = packageEntries.values().stream()
+                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                    .reduce("", (left, right) -> left + "\n" + right);
+
+            assertThat(packageText).contains("[segredo removido]")
+                    .doesNotContain(vector[1]);
+        }
+    }
+
+    @Test
+    void redactsFoldedCredentialHeadersBeforeWritingWorkbookCells() throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization: Basic\r\n BASIC_FOLDED_SECRET_CANARY",
+                        "BASIC_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Proxy-Authorization: Basic\r\n "
+                                + "PROXY_BASIC_FOLDED_SECRET_CANARY",
+                        "PROXY_BASIC_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Authorization: Digest\r\n "
+                                + "response=\"DIGEST_FOLDED_SECRET_CANARY\"",
+                        "DIGEST_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie: session=one;\r\n COOKIE_FOLDED_SECRET_CANARY",
+                        "COOKIE_FOLDED_SECRET_CANARY"
+                },
+                new String[] {
+                        "Set-Cookie: session=one;\r\n "
+                                + "SET_COOKIE_FOLDED_SECRET_CANARY",
+                        "SET_COOKIE_FOLDED_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-folded-credential", "RDO-FOLDED"),
+                    "", "", "", vector[0],
+                    List.of(), List.of(), List.of(), List.of(), List.of()
+            );
+            when(queryService.buscarPorId("rdo-folded-credential")).thenReturn(rdo);
+
+            Map<String, byte[]> packageEntries = zipEntries(
+                    service.export("rdo-folded-credential").content()
+            );
+            String packageText = packageEntries.values().stream()
+                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                    .reduce("", (left, right) -> left + "\n" + right);
+
+            assertThat(packageText).contains("[segredo removido]")
+                    .doesNotContain(vector[1]);
+        }
+    }
+
+    @Test
+    void redactsNonBreakingSpaceCredentialHeadersBeforeWritingWorkbookCells()
+            throws Exception {
+        for (String[] vector : List.of(
+                new String[] {
+                        "Authorization\u00A0: Basic "
+                                + "NBSP_AUTHORIZATION_SECRET_CANARY",
+                        "NBSP_AUTHORIZATION_SECRET_CANARY"
+                },
+                new String[] {
+                        "Cookie:\u00A0session=NBSP_COOKIE_SECRET_CANARY",
+                        "NBSP_COOKIE_SECRET_CANARY"
+                }
+        )) {
+            RdoResponse rdo = copyRdo(
+                    emptyRdo("rdo-nbsp-credential", "RDO-NBSP"),
+                    "", "", "", vector[0],
+                    List.of(), List.of(), List.of(), List.of(), List.of()
+            );
+            when(queryService.buscarPorId("rdo-nbsp-credential")).thenReturn(rdo);
+
+            Map<String, byte[]> packageEntries = zipEntries(
+                    service.export("rdo-nbsp-credential").content()
+            );
+            String packageText = packageEntries.values().stream()
+                    .map(bytes -> new String(bytes, StandardCharsets.UTF_8))
+                    .reduce("", (left, right) -> left + "\n" + right);
+
+            assertThat(packageText).contains("[segredo removido]")
+                    .doesNotContain(vector[1]);
+        }
+    }
+
+    @Test
+    void preservesNonCredentialTextAfterABareCookieLabelOnANewLine()
+            throws Exception {
+        RdoResponse rdo = copyRdo(
+                emptyRdo("rdo-cookie-label", "RDO-COOKIE-LABEL"),
+                "", "", "", "Cookie:\r\nTexto operacional preservado",
+                List.of(), List.of(), List.of(), List.of(), List.of()
+        );
+        when(queryService.buscarPorId("rdo-cookie-label")).thenReturn(rdo);
+
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(
+                service.export("rdo-cookie-label").content()
+        ))) {
+            assertThat(stringCell(workbook.getSheetAt(1), "B63"))
+                    .contains("Cookie:", "Texto operacional preservado")
+                    .doesNotContain("[segredo removido]");
         }
     }
 
@@ -704,7 +850,7 @@ class RdoXlsxExportServiceTest {
         );
         when(queryService.buscarPorId("rdo-boundary")).thenReturn(boundary);
 
-        RdoXlsxExportService.ExportedRdo exported = service.export("rdo-boundary");
+        RdoExportFile exported = service.export("rdo-boundary");
         String requestedOutput = System.getProperty("cortex.rdo.render.output");
         if (requestedOutput != null && !requestedOutput.isBlank()) {
             writeAuditFixture(requestedOutput, exported.content());
@@ -754,7 +900,7 @@ class RdoXlsxExportServiceTest {
         );
         when(queryService.buscarPorId("rdo-parity")).thenReturn(parity);
 
-        RdoXlsxExportService.ExportedRdo exported = service.export("rdo-parity");
+        RdoExportFile exported = service.export("rdo-parity");
         String requestedOutput = System.getProperty("cortex.rdo.parity.output");
         if (requestedOutput != null && !requestedOutput.isBlank()) {
             writeAuditFixture(requestedOutput, exported.content());
@@ -795,91 +941,6 @@ class RdoXlsxExportServiceTest {
             Files.createDirectories(parent);
         }
         Files.write(output, content);
-    }
-
-    private static RdoResponse populatedRdo(String id, String numero) {
-        return new RdoResponse(
-                id, "obra-7", null, numero, LocalDate.of(2026, 7, 22),
-                "rdo-41", 9L, "mutation-42", "col-ana", "quarta-feira",
-                "Cliente Rodovias", "CTR-9", "BR-101", "Joinville", "SC",
-                "10+000", "11+000", "10+200", "10+800", "DIURNO",
-                LocalTime.of(7, 30), LocalTime.of(17, 15), "BOM", "CHUVA",
-                "IMPOSSIBILITADO", new BigDecimal("3.25"), "RASCUNHO",
-                "Execução conferida", "encarregado-7", "Ana Apontadora",
-                "Enzo Encarregado", "Fiscal de Campo",
-                List.of(
-                        new RdoResponse.MaoObraItem(
-                                "mo-1", "col-ana", "Ana Apontadora", "Apontador",
-                                "CONTRATADO", BigDecimal.ONE, LocalTime.of(7, 30),
-                                LocalTime.of(17, 15), null, "mo-anterior"
-                        ),
-                        new RdoResponse.MaoObraItem(
-                                "mo-2", "col-op", "Otávio Operador", "Operador",
-                                "SUBCONTRATADO", new BigDecimal("2"),
-                                LocalTime.of(8, 0), LocalTime.of(16, 0), null, null
-                        )
-                ),
-                List.of(new RdoResponse.EquipamentoItem(
-                        "eq-1", "asset-7", "EQ-7", "Escavadeira", "ESCAVADEIRA",
-                        "PROPRIO", BigDecimal.ONE, LocalTime.of(8, 0),
-                        LocalTime.of(16, 0), "Operação normal"
-                )),
-                List.of(new RdoResponse.MaterialItem(
-                        "mat-1", "CAP", "t", new BigDecimal("16"),
-                        new BigDecimal("15.50"), new BigDecimal("14.25"),
-                        new BigDecimal("1.25"), "NF-88", "Fornecedor", null
-                )),
-                List.of(control("cg-1")),
-                List.of(new RdoResponse.ServicoExecutadoItem(
-                        "svc-1", null, null, "Fresagem", "item-1",
-                        new BigDecimal("125.50"),
-                        "m²", "10+000", "10+500", "Faixa direita", "DIURNO",
-                        "VALIDADO", "ESTIMADA", "HISTORICAL_UNPRICED",
-                        null, null, null,
-                        false, false, "Sem intercorrências"
-                )),
-                List.of(),
-                List.of(new RdoResponse.AttachmentItem(
-                        "att-1", id, "obra-7", "FOTO", "foto", "foto.jpg",
-                        "image/jpeg", 10L, 8L, 8L, "SINCRONIZADO", null, null,
-                        null, Map.of("email", "must-not-be-exported@example.com")
-                ))
-        );
-    }
-
-    private static RdoResponse emptyRdo(String id, String numero) {
-        return new RdoResponse(
-                id, "obra-7", null, numero, LocalDate.of(2026, 7, 22),
-                null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null,
-                null, "RASCUNHO", null, null, null, null, null,
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of()
-        );
-    }
-
-    private static RdoResponse.ControleGeometricoItem control(String id) {
-        return new RdoResponse.ControleGeometricoItem(
-                id, "km 10 ao km 11", "1", "10+000", "11+000", "10", "11",
-                "Pista norte", "Direita", "OS-7", "Regularização",
-                new BigDecimal("1000"), new BigDecimal("3.5"),
-                new BigDecimal("4"), new BigDecimal("5"), new BigDecimal("6"),
-                new BigDecimal("5"), new BigDecimal("3500"),
-                new BigDecimal("175"), new BigDecimal("2.45"),
-                new BigDecimal("12.75"), "Controle aprovado"
-        );
-    }
-
-    private static RdoResponse.ControleGeometricoItem parityControl() {
-        return new RdoResponse.ControleGeometricoItem(
-                "cg-parity", "km 10 ao km 11", "1", "10+000", "11+000",
-                "10", "11", "Pista norte", "Direita", "OS-7",
-                "Regularização", new BigDecimal("1000"), new BigDecimal("3.5"),
-                new BigDecimal("4"), new BigDecimal("5"), new BigDecimal("6"),
-                new BigDecimal("5"), new BigDecimal("3500"),
-                new BigDecimal("175"), new BigDecimal("2.45"),
-                new BigDecimal("428.75"), "Controle aprovado"
-        );
     }
 
     private static RdoResponse withPrintableField(

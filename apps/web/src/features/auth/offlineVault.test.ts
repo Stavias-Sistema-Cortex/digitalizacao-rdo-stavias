@@ -8,6 +8,7 @@ import {
   renewOfflineVault,
   unlockOfflineVault,
 } from "./offlineVault";
+import { clearRemoteSessionIsolation } from "./remoteSessionIsolation";
 import type {
   OfflineGrantClaims,
   SignedOfflineGrant,
@@ -19,12 +20,19 @@ const prfSalt = crypto.getRandomValues(new Uint8Array(32));
 const prfOutput = crypto.getRandomValues(new Uint8Array(32));
 const fetchMock = vi.fn();
 const localValues = new Map<string, string>();
+const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
+let rejectIsolationMarkerWrite = false;
 
 vi.stubGlobal("fetch", fetchMock);
 vi.stubGlobal("localStorage", {
   getItem: (key: string) => localValues.get(key) ?? null,
   removeItem: (key: string) => localValues.delete(key),
-  setItem: (key: string, value: string) => localValues.set(key, value),
+  setItem: (key: string, value: string) => {
+    if (key === REMOTE_SESSION_ISOLATION_KEY && rejectIsolationMarkerWrite) {
+      throw new Error("storage unavailable");
+    }
+    localValues.set(key, value);
+  },
 });
 
 describe("offlineVault PRF-only", () => {
@@ -33,11 +41,13 @@ describe("offlineVault PRF-only", () => {
     vi.setSystemTime(now);
     vi.clearAllMocks();
     localValues.clear();
+    rejectIsolationMarkerWrite = false;
     clearOfflineGrant();
     localStorage.removeItem("cortex.auth.cpfFilter");
   });
 
   afterEach(() => {
+    clearRemoteSessionIsolation();
     vi.useRealTimers();
   });
 
@@ -96,10 +106,47 @@ describe("offlineVault PRF-only", () => {
     ).resolves.toBe("UNLOCKED");
 
     expect(getOfflineGrant()).toEqual(fixture.claims);
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).not.toContain(
+      fixture.claims.colaboradorId,
+    );
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).not.toContain(
+      fixture.claims.nome,
+    );
     expect(JSON.stringify(metadata)).not.toContain(
       toBase64Url(prfOutput),
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not activate a passkey grant when remote session isolation cannot persist first", async () => {
+    const fixture = await signedGrantFixture();
+    const metadata = await createOfflineVault({
+      credentialId: toBase64Url(credentialId),
+      rpId: "cortex.example.invalid",
+      prfSalt: toBase64Url(prfSalt),
+      prfOutput,
+      signedGrant: fixture.grant,
+      allowedKeyFingerprints: [fixture.fingerprint],
+      now: () => now,
+    });
+    vi.stubGlobal("navigator", {
+      credentials: {
+        get: vi.fn().mockResolvedValue(
+          assertionCredential(credentialId, prfOutput),
+        ),
+      },
+    });
+    rejectIsolationMarkerWrite = true;
+
+    await expect(
+      unlockOfflineVault(metadata, {
+        allowedKeyFingerprints: [fixture.fingerprint],
+        now: () => now,
+      }),
+    ).rejects.toThrow("isolar a sessão remota");
+
+    expect(getOfflineGrant()).toBeNull();
   });
 
   it("rejeita chave não fixada, assinatura alterada e grant expirado", async () => {

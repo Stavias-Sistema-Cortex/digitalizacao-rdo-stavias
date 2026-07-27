@@ -19,6 +19,7 @@ import {
 } from "../../lib/db/rdoAttachmentRepository";
 import { getLocalRdo } from "../../lib/db/rdoRepository";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import type { RdoAttachmentRecord } from "../../lib/db/db.types";
 import {
   createEmptyAlocacaoColaborador,
@@ -653,12 +654,46 @@ export function RdoCreatePage({
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    const reconcilePersistedRdo = () => {
+      void getLocalRdo(initialDraft.id)
+        .then((persistedRdo) => {
+          if (!active || !persistedRdo) {
+            return;
+          }
+          setDraft((current) => ({
+            ...current,
+            numeroRdo: persistedRdo.numeroRdo,
+            syncStatus: persistedRdo.syncStatus,
+          }));
+        })
+        .catch(() => {
+          // A próxima execução automática tentará novamente. A tela mantém
+          // o último estado local confirmado em vez de inventar um resultado.
+        });
+    };
+
+    window.addEventListener(
+      SYNC_COMPLETED_EVENT,
+      reconcilePersistedRdo,
+    );
+    return () => {
+      active = false;
+      window.removeEventListener(
+        SYNC_COMPLETED_EVENT,
+        reconcilePersistedRdo,
+      );
+    };
+  }, [initialDraft.id]);
+
+  useEffect(() => {
     let cancelled = false;
     if (
       creationContext ||
-      initialDraft.syncStatus === "LOCAL_PENDING" ||
-      !initialDraft.obraId ||
-      !initialDraft.dataRdo
+      draft.syncStatus === "LOCAL_PENDING" ||
+      !draft.obraId ||
+      !draft.dataRdo
     ) {
       return () => {
         cancelled = true;
@@ -667,8 +702,8 @@ export function RdoCreatePage({
 
     const online = typeof navigator !== "undefined" && navigator.onLine;
     void requireRdoCreationContext(
-      initialDraft.obraId,
-      initialDraft.dataRdo,
+      draft.obraId,
+      draft.dataRdo,
       online,
     )
       .then((resolved) => {
@@ -695,9 +730,9 @@ export function RdoCreatePage({
     };
   }, [
     creationContext,
-    initialDraft.dataRdo,
-    initialDraft.obraId,
-    initialDraft.syncStatus,
+    draft.dataRdo,
+    draft.obraId,
+    draft.syncStatus,
   ]);
 
   function updateField<K extends keyof RdoDraft>(

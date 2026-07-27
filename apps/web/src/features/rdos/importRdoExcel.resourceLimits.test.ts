@@ -20,18 +20,22 @@ vi.mock("pdfjs-dist/legacy/build/pdf.worker.mjs?url", () => ({
 
 import { importarRdoArquivo } from "./importRdoExcel";
 import { readValidatedRdoImport } from "./rdoImportPolicy";
+import {
+  RDO_IMPORT_LIMITS,
+} from "../../lib/files/rdoImportResourcePolicy";
 
 const PDF_MIME = "application/pdf";
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const MAX_FILE_BYTES = 12 * 1024 * 1024;
-const MAX_PDF_PAGES = 20;
-const MAX_PDF_ITEMS_PER_PAGE = 5_000;
-const MAX_PDF_TEXT_CHARACTERS = 250_000;
-const MAX_WORKBOOK_SHEETS = 8;
-const MAX_WORKBOOK_ROWS = 500;
-const MAX_WORKBOOK_COLUMNS = 256;
-const MAX_WORKBOOK_CELLS = 50_000;
+const MAX_FILE_BYTES = RDO_IMPORT_LIMITS.fileBytes;
+const MAX_PDF_PAGES = RDO_IMPORT_LIMITS.pdfPages;
+const MAX_PDF_TEXT_ITEMS = RDO_IMPORT_LIMITS.pdfTextItems;
+const MAX_PDF_TEXT_CHARACTERS = RDO_IMPORT_LIMITS.pdfTextChars;
+const MAX_WORKBOOK_SHEETS = RDO_IMPORT_LIMITS.workbookSheets;
+const MAX_WORKBOOK_ROWS = RDO_IMPORT_LIMITS.workbookRowsPerSheet;
+const MAX_WORKBOOK_COLUMNS =
+  RDO_IMPORT_LIMITS.workbookColumnsPerSheet;
+const MAX_WORKBOOK_CELLS = RDO_IMPORT_LIMITS.workbookCells;
 const TEMPLATE = new URL("./export/RDO-v1.xlsx", import.meta.url);
 
 interface PdfTextItem {
@@ -91,12 +95,25 @@ function installPdfDocument(
         transform: [1, 0, 0, 1, 10, 90],
       },
     ];
-  const cleanup = vi.fn();
+  let emitted = false;
+  const reader = {
+    read: vi.fn(async () => {
+      if (emitted) {
+        return { done: true };
+      }
+      emitted = true;
+      return {
+        done: false,
+        value: { items },
+      };
+    }),
+    cancel: vi.fn(async () => undefined),
+    releaseLock: vi.fn(),
+  };
   const getPage = vi.fn(async () => ({
-    getTextContent: vi.fn(async () => ({
-      items,
+    streamTextContent: vi.fn(() => ({
+      getReader: () => reader,
     })),
-    cleanup,
   }));
   const destroy = vi.fn(async () => undefined);
 
@@ -110,9 +127,9 @@ function installPdfDocument(
   });
 
   return {
-    cleanup,
     destroy,
     getPage,
+    reader,
   };
 }
 
@@ -121,7 +138,7 @@ describe("importação local de RDO: limites de recursos", () => {
     pdfRuntime.getDocument.mockReset();
   });
 
-  it("rejeita arquivo acima de 12 MiB antes de ler seus bytes", async () => {
+  it("rejeita arquivo acima do limite antes de ler seus bytes", async () => {
     installPdfDocument();
     const file = pdfFile();
     Object.defineProperty(file, "size", {
@@ -131,7 +148,7 @@ describe("importação local de RDO: limites de recursos", () => {
     const arrayBuffer = vi.spyOn(file, "arrayBuffer");
 
     await expect(importarRdoArquivo(file, "Ana")).rejects.toThrow(
-      /12 MiB/,
+      /10 MiB/,
     );
     expect(arrayBuffer).not.toHaveBeenCalled();
   });
@@ -148,25 +165,25 @@ describe("importação local de RDO: limites de recursos", () => {
     const file = pdfFile("RDO-0042.xlsx", XLSX_MIME);
 
     await expect(importarRdoArquivo(file, "Ana")).rejects.toThrow(
-      /conteúdo.*planilha|planilha.*válida/i,
+      /assinatura.*extensão/i,
     );
   });
 
-  it("rejeita PDF com mais de 20 páginas antes de extrair uma página", async () => {
+  it("rejeita PDF acima do limite de páginas antes de extrair uma página", async () => {
     const document = installPdfDocument({
       pages: MAX_PDF_PAGES + 1,
     });
 
     await expect(
       importarRdoArquivo(pdfFile(), "Ana"),
-    ).rejects.toThrow(/20 páginas/);
+    ).rejects.toThrow(new RegExp(`${MAX_PDF_PAGES} páginas`));
     expect(document.getPage).not.toHaveBeenCalled();
   });
 
   it("rejeita página PDF com trabalho de texto acima do limite", async () => {
     installPdfDocument({
       items: Array.from(
-        { length: MAX_PDF_ITEMS_PER_PAGE + 1 },
+        { length: MAX_PDF_TEXT_ITEMS + 1 },
         (_, index) => ({
           str: `item-${index}`,
           transform: [1, 0, 0, 1, index, 100],
@@ -191,7 +208,9 @@ describe("importação local de RDO: limites de recursos", () => {
 
     await expect(
       importarRdoArquivo(pdfFile(), "Ana"),
-    ).rejects.toThrow(/texto extraído.*limite/i);
+    ).rejects.toThrow(
+      new RegExp(`${MAX_PDF_TEXT_CHARACTERS} caracteres de texto`),
+    );
   });
 
   it("traduz PDF malformado em erro seguro e acionável", async () => {
@@ -208,7 +227,7 @@ describe("importação local de RDO: limites de recursos", () => {
     ).rejects.not.toThrow(/xref internals/i);
   });
 
-  it("rejeita planilha com mais de 8 abas", async () => {
+  it("rejeita planilha acima do limite de abas", async () => {
     const file = spreadsheetFile(
       Array.from(
         { length: MAX_WORKBOOK_SHEETS + 1 },
@@ -226,11 +245,11 @@ describe("importação local de RDO: limites de recursos", () => {
     );
 
     await expect(importarRdoArquivo(file, "Ana")).rejects.toThrow(
-      /8 abas/,
+      new RegExp(`${MAX_WORKBOOK_SHEETS} abas`),
     );
   });
 
-  it("rejeita planilha com mais de 500 linhas em uma aba", async () => {
+  it("rejeita planilha acima do limite de linhas em uma aba", async () => {
     const rows = Array.from(
       { length: MAX_WORKBOOK_ROWS + 1 },
       (_, index) => [
@@ -245,10 +264,12 @@ describe("importação local de RDO: limites de recursos", () => {
         spreadsheetFile([{ name: "frente", rows }]),
         "Ana",
       ),
-    ).rejects.toThrow(/500 linhas/);
+    ).rejects.toThrow(
+      new RegExp(`${MAX_WORKBOOK_ROWS} linhas`),
+    );
   });
 
-  it("rejeita planilha com mais de 256 colunas em uma aba", async () => {
+  it("rejeita planilha acima do limite de colunas em uma aba", async () => {
     const row = Array.from(
       { length: MAX_WORKBOOK_COLUMNS + 1 },
       (_, index) =>
@@ -262,15 +283,17 @@ describe("importação local de RDO: limites de recursos", () => {
         spreadsheetFile([{ name: "frente", rows: [row] }]),
         "Ana",
       ),
-    ).rejects.toThrow(/256 colunas/);
+    ).rejects.toThrow(
+      new RegExp(`${MAX_WORKBOOK_COLUMNS} colunas`),
+    );
   });
 
-  it("rejeita planilha com mais de 50000 células preenchidas", async () => {
+  it("rejeita planilha acima do limite de células preenchidas", async () => {
     const rows = Array.from(
-      { length: 200 },
+      { length: 800 },
       (_, rowIndex) =>
         Array.from(
-          { length: 251 },
+          { length: 126 },
           (_, columnIndex) =>
             rowIndex === 0 && columnIndex === 0
               ? "RELATÓRIO DIÁRIO DE OBRA"
@@ -286,7 +309,9 @@ describe("importação local de RDO: limites de recursos", () => {
         spreadsheetFile([{ name: "frente", rows }]),
         "Ana",
       ),
-    ).rejects.toThrow(/50000 células/);
+    ).rejects.toThrow(
+      new RegExp(`${MAX_WORKBOOK_CELLS} células`),
+    );
   });
 
   it("traduz planilha malformada em erro seguro e acionável", async () => {

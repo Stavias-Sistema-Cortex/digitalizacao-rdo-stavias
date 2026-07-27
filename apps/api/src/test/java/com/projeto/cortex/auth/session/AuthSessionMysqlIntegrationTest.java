@@ -59,6 +59,9 @@ class AuthSessionMysqlIntegrationTest {
         String rawCsrf = SessionTokenFixtures.token((byte) 32);
         String sessionHash = SessionTokenHash.sha256(rawSession);
         String csrfHash = SessionTokenHash.sha256(rawCsrf);
+        String clientInstanceHash = SessionTokenHash.sha256(
+                SessionTokenFixtures.token((byte) 33)
+        );
         Instant databaseBefore = databaseNow(jdbc);
 
         Instant expiresAt = repository.create(
@@ -66,6 +69,7 @@ class AuthSessionMysqlIntegrationTest {
                 fixture.collaboratorId(),
                 sessionHash,
                 csrfHash,
+                clientInstanceHash,
                 300
         );
 
@@ -74,37 +78,52 @@ class AuthSessionMysqlIntegrationTest {
                 .isAfterOrEqualTo(databaseBefore.plusSeconds(300))
                 .isBeforeOrEqualTo(databaseAfter.plusSeconds(300));
         StoredSecrets stored = jdbc.queryForObject("""
-                SELECT token_hash, csrf_hash
+                SELECT token_hash, csrf_hash, client_instance_hash
                 FROM auth_session
                 WHERE id = ?
                 """,
                 (resultSet, rowNumber) -> new StoredSecrets(
                         resultSet.getString("token_hash"),
-                        resultSet.getString("csrf_hash")
+                        resultSet.getString("csrf_hash"),
+                        resultSet.getString("client_instance_hash")
                 ),
                 sessionId
         );
         assertThat(stored).isEqualTo(new StoredSecrets(
                 sessionHash,
-                csrfHash
+                csrfHash,
+                clientInstanceHash
         ));
         assertThat(stored.tokenHash()).isNotEqualTo(rawSession);
         assertThat(stored.csrfHash()).isNotEqualTo(rawCsrf);
+        assertThat(stored.clientInstanceHash()).isNotEqualTo(
+                SessionTokenFixtures.token((byte) 33)
+        );
 
         Optional<ResolvedAuthSession> resolved =
-                repository.findActiveByTokenHash(sessionHash);
+                repository.findActiveByTokenHashAndClientInstanceHash(
+                        sessionHash,
+                        clientInstanceHash
+                );
         assertThat(resolved).isPresent();
         assertThat(resolved.orElseThrow().role()).isEqualTo(PapelAcesso.ALFA);
         assertThat(SessionTokenHash.matches(
                 rawCsrf,
                 resolved.orElseThrow().csrfHash()
         )).isTrue();
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                sessionHash,
+                SessionTokenHash.sha256(SessionTokenFixtures.token((byte) 34))
+        )).isEmpty();
 
         assertThat(repository.revokeByTokenHash(sessionHash, "LOGOUT"))
                 .isEqualTo(1);
         assertThat(repository.revokeByTokenHash(sessionHash, "LOGOUT"))
                 .isZero();
-        assertThat(repository.findActiveByTokenHash(sessionHash)).isEmpty();
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                sessionHash,
+                clientInstanceHash
+        )).isEmpty();
     }
 
     @Test
@@ -114,6 +133,9 @@ class AuthSessionMysqlIntegrationTest {
         JdbcAuthSessionRepository repository = fixture.repository();
         String rawSession = SessionTokenFixtures.token((byte) 41);
         String sessionHash = SessionTokenHash.sha256(rawSession);
+        String clientInstanceHash = SessionTokenHash.sha256(
+                SessionTokenFixtures.token((byte) 43)
+        );
         repository.create(
                 UUID.randomUUID().toString(),
                 fixture.collaboratorId(),
@@ -121,10 +143,16 @@ class AuthSessionMysqlIntegrationTest {
                 SessionTokenHash.sha256(
                         SessionTokenFixtures.token((byte) 42)
                 ),
+                SessionTokenHash.sha256(
+                        SessionTokenFixtures.token((byte) 43)
+                ),
                 300
         );
 
-        assertThat(repository.findActiveByTokenHash(sessionHash))
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                sessionHash,
+                clientInstanceHash
+        ))
                 .get()
                 .extracting(ResolvedAuthSession::role)
                 .isEqualTo(PapelAcesso.BETA);
@@ -133,7 +161,10 @@ class AuthSessionMysqlIntegrationTest {
                 "UPDATE colaborador SET ativo = 0 WHERE id = ?",
                 fixture.collaboratorId()
         );
-        assertThat(repository.findActiveByTokenHash(sessionHash)).isEmpty();
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                sessionHash,
+                clientInstanceHash
+        )).isEmpty();
 
         jdbc.update("""
                 UPDATE colaborador
@@ -141,7 +172,10 @@ class AuthSessionMysqlIntegrationTest {
                     deletado_em = CURRENT_TIMESTAMP(6)
                 WHERE id = ?
                 """, fixture.collaboratorId());
-        assertThat(repository.findActiveByTokenHash(sessionHash)).isEmpty();
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                sessionHash,
+                clientInstanceHash
+        )).isEmpty();
 
         jdbc.update(
                 "UPDATE colaborador SET deletado_em = NULL WHERE id = ?",
@@ -152,7 +186,10 @@ class AuthSessionMysqlIntegrationTest {
                 SET expira_em = TIMESTAMPADD(SECOND, -1, CURRENT_TIMESTAMP(6))
                 WHERE token_hash = ?
                 """, sessionHash);
-        assertThat(repository.findActiveByTokenHash(sessionHash)).isEmpty();
+        assertThat(repository.findActiveByTokenHashAndClientInstanceHash(
+                sessionHash,
+                clientInstanceHash
+        )).isEmpty();
     }
 
     private Fixture fixture(String prefix, String role) {
@@ -248,6 +285,10 @@ class AuthSessionMysqlIntegrationTest {
     ) {
     }
 
-    private record StoredSecrets(String tokenHash, String csrfHash) {
+    private record StoredSecrets(
+            String tokenHash,
+            String csrfHash,
+            String clientInstanceHash
+    ) {
     }
 }

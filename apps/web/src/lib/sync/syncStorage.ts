@@ -1046,6 +1046,23 @@ async function updateRdoAttachmentsObraReference(
   );
 }
 
+const LEGACY_RDO_CREATION_PROVENANCE_ERROR =
+  "A proveniência de criação do RDO não pode ser alterada.";
+
+function isRecoverableLegacyRdoProvenanceFailure(
+  mutation: OutboxMutationRecord,
+): boolean {
+  return (
+    !isCanonicalOutboxMutation(mutation) &&
+    !isDefinitelyNonAppliedSuperseded(mutation) &&
+    mutation.entidadeTipo === "RDO" &&
+    mutation.operacao === "ATUALIZAR_RDO_RASCUNHO" &&
+    mutation.status === "ERROR" &&
+    mutation.ultimoErro?.trim() ===
+      LEGACY_RDO_CREATION_PROVENANCE_ERROR
+  );
+}
+
 export async function recoverInterruptedMutations(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<void> {
@@ -1066,18 +1083,38 @@ export async function recoverInterruptedMutations(
 
   const syncingMutations =
     await outboxStore.index("by-status").getAll("SYNCING");
+  const legacyProvenanceFailures = (
+    await outboxStore.index("by-status").getAll("ERROR")
+  ).filter(isRecoverableLegacyRdoProvenanceFailure);
 
-  for (const mutation of syncingMutations) {
+  for (const mutation of [
+    ...syncingMutations,
+    ...legacyProvenanceFailures,
+  ]) {
     const timestamp = nowUtc();
+    const repairsLegacyProvenance =
+      isRecoverableLegacyRdoProvenanceFailure(mutation);
     const updatedMutation: OutboxMutationRecord = {
       ...mutation,
       status: "PENDING",
+      tentativas: repairsLegacyProvenance
+        ? 0
+        : mutation.tentativas,
+      ultimaTentativaEm: repairsLegacyProvenance
+        ? null
+        : mutation.ultimaTentativaEm,
       nextAttemptAt: null,
-      lastSafeCode: isCanonicalOutboxMutation(mutation)
-        ? "INTERRUPTED_RUN"
-        : mutation.lastSafeCode,
-      ultimoErro:
-        "Sincronização anterior foi interrompida antes da confirmação.",
+      lastSafeCode: repairsLegacyProvenance
+        ? "RDO_CREATION_PROVENANCE_REPAIRED"
+        : isCanonicalOutboxMutation(mutation)
+          ? "INTERRUPTED_RUN"
+          : mutation.lastSafeCode,
+      ultimoErro: repairsLegacyProvenance
+        ? "Reenviando o RDO com a proveniência de criação preservada pelo servidor."
+        : "Sincronização anterior foi interrompida antes da confirmação.",
+      conflito: repairsLegacyProvenance
+        ? null
+        : mutation.conflito,
       updatedAt: timestamp,
     };
 

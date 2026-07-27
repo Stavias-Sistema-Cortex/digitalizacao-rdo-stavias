@@ -16,6 +16,8 @@ describe("DeviceSecurityPage policy", () => {
     expect(source).toContain('offlineVault === "READY"');
     expect(source).toContain("não oferece PRF");
     expect(source).not.toContain("useEffect(() => registerPasskey");
+    expect(source).not.toContain("autenticarPorCpf");
+    expect(source).not.toContain("saveCollaborativeOfflineGrant");
     expect(source).not.toContain("CPF");
     expect(source).not.toContain("PIN");
   });

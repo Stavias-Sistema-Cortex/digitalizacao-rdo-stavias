@@ -1,8 +1,12 @@
 import {
   readSpreadsheetWorkbook,
-  SpreadsheetWorkbookLimitError,
   type SpreadsheetSheet,
 } from "../../lib/files/readSpreadsheetWorkbook";
+import {
+  preflightRdoImportFile,
+  RdoImportResourceError,
+  readValidatedRdoImportBytes,
+} from "../../lib/files/rdoImportResourcePolicy";
 import {
   createEmptyControleGeometrico,
   createEmptyEquipamento,
@@ -10,6 +14,10 @@ import {
   createEmptyMaterial,
   createEmptyRdo,
 } from "./createEmptyRdo";
+import {
+  extractBoundedPdfLines,
+  type PdfDocumentForTextExtraction,
+} from "./boundedPdfTextExtraction";
 import type {
   CondicaoClimatica,
   ControleGeometricoDraft,
@@ -19,9 +27,7 @@ import type {
   RdoDraft,
 } from "./rdo.types";
 import {
-  RDO_IMPORT_LIMITS,
   RdoImportSafeError,
-  readValidatedRdoImport,
 } from "./rdoImportPolicy";
 import { normalizarUnidade } from "./unidades";
 
@@ -49,20 +55,19 @@ export async function importarRdoArquivo(
   file: File,
   preenchidoPorSessao: string,
 ): Promise<RdoImportResult> {
-  const validated = await readValidatedRdoImport(file);
+  const preflight = preflightRdoImportFile(file);
+  const bytes = await readValidatedRdoImportBytes(file, preflight);
 
-  if (validated.kind === "PDF") {
-    return importarRdoPdf(
-      file,
-      validated.data,
-      preenchidoPorSessao,
-    );
+  if (preflight.kind === "PDF") {
+    return importarRdoPdf(file, preenchidoPorSessao, bytes);
   }
 
-  return importarRdoPlanilha(
-    file,
-    validated.data,
-    preenchidoPorSessao,
+  if (preflight.kind === "SPREADSHEET") {
+    return importarRdoPlanilha(file, preenchidoPorSessao, bytes);
+  }
+
+  throw new Error(
+    "Envie um RDO em PDF, XLS, XLSX ou XLSM.",
   );
 }
 
@@ -75,32 +80,10 @@ export async function importarRdoExcel(
 
 async function importarRdoPlanilha(
   file: File,
-  data: Uint8Array,
   preenchidoPorSessao: string,
+  bytes: Uint8Array,
 ): Promise<RdoImportResult> {
-  let workbook: WorkSheet[];
-  try {
-    workbook = await readSpreadsheetWorkbook(data, {
-      limits: {
-        maxSheets: RDO_IMPORT_LIMITS.maxWorkbookSheets,
-        maxRowsPerSheet:
-          RDO_IMPORT_LIMITS.maxWorkbookRowsPerSheet,
-        maxColumnsPerSheet:
-          RDO_IMPORT_LIMITS.maxWorkbookColumnsPerSheet,
-        maxCells: RDO_IMPORT_LIMITS.maxWorkbookCells,
-      },
-    });
-  } catch (error: unknown) {
-    if (
-      error instanceof SpreadsheetWorkbookLimitError ||
-      error instanceof RdoImportSafeError
-    ) {
-      throw error;
-    }
-    throw new RdoImportSafeError(
-      "Não foi possível ler a planilha do RDO. O arquivo pode estar corrompido; exporte-o novamente em XLS, XLSX ou XLSM.",
-    );
-  }
+  const workbook = await readSpreadsheetWorkbook(file, { bytes });
 
   const frente = pickSheet(workbook, "frente", 0);
   const verso = pickSheet(workbook, "verso", 1);
@@ -209,20 +192,10 @@ async function importarRdoPlanilha(
 
 async function importarRdoPdf(
   file: File,
-  data: Uint8Array,
   preenchidoPorSessao: string,
+  bytes: Uint8Array,
 ): Promise<RdoImportResult> {
-  let lines: string[];
-  try {
-    lines = await extractPdfLines(data);
-  } catch (error: unknown) {
-    if (error instanceof RdoImportSafeError) {
-      throw error;
-    }
-    throw new RdoImportSafeError(
-      "Não foi possível ler o PDF do RDO. O arquivo pode estar corrompido; exporte-o novamente com texto selecionável.",
-    );
-  }
+  const lines = await extractPdfLines(bytes);
   const textoExtraido = lines.join("\n").trim();
 
   if (!textoExtraido) {
@@ -321,159 +294,35 @@ async function importarRdoPdf(
   };
 }
 
-type PdfTextLineItem = {
-  text: string;
-  x: number;
-  y: number;
-};
-
 async function extractPdfLines(
-  data: Uint8Array,
+  bytes: Uint8Array,
 ): Promise<string[]> {
-  const [pdfjsLib, pdfWorker] = await Promise.all([
-    import("pdfjs-dist/legacy/build/pdf.mjs"),
-    import("pdfjs-dist/legacy/build/pdf.worker.mjs?url"),
-  ]);
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
-
-  const loadingTask = pdfjsLib.getDocument({
-    data,
-  });
-  let document:
-    | Awaited<typeof loadingTask.promise>
-    | null = null;
-
+  let loadingTask: {
+    promise: Promise<PdfDocumentForTextExtraction>;
+    destroy: () => Promise<void>;
+  } | null = null;
   try {
-    document = await loadingTask.promise;
-    if (
-      !Number.isSafeInteger(document.numPages) ||
-      document.numPages <= 0
-    ) {
-      throw new RdoImportSafeError(
-        "O PDF não possui uma estrutura de páginas válida. Exporte o RDO novamente.",
-      );
+    const [pdfjsLib, pdfWorker] = await Promise.all([
+      import("pdfjs-dist/legacy/build/pdf.mjs"),
+      import("pdfjs-dist/legacy/build/pdf.worker.mjs?url"),
+    ]);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
+    loadingTask = pdfjsLib.getDocument({
+      data: bytes,
+    });
+    const document = await loadingTask.promise;
+    return await extractBoundedPdfLines(document);
+  } catch (error: unknown) {
+    if (error instanceof RdoImportResourceError) {
+      throw error;
     }
-    if (
-      document.numPages >
-      RDO_IMPORT_LIMITS.maxPdfPages
-    ) {
-      throw new RdoImportSafeError(
-        `O PDF possui mais de ${RDO_IMPORT_LIMITS.maxPdfPages} páginas. Importe apenas o relatório diário necessário.`,
-      );
-    }
-
-    const lines: string[] = [];
-    let totalItems = 0;
-    let totalCharacters = 0;
-
-    for (
-      let pageNumber = 1;
-      pageNumber <= document.numPages;
-      pageNumber += 1
-    ) {
-      const page = await document.getPage(pageNumber);
-      try {
-        const content = await page.getTextContent();
-        if (
-          content.items.length >
-          RDO_IMPORT_LIMITS.maxPdfTextItemsPerPage
-        ) {
-          throw new RdoImportSafeError(
-            `A página ${pageNumber} do PDF possui itens de texto demais para uma importação segura. Simplifique o PDF e tente novamente.`,
-          );
-        }
-
-        totalItems += content.items.length;
-        if (
-          totalItems >
-          RDO_IMPORT_LIMITS.maxPdfTextItems
-        ) {
-          throw new RdoImportSafeError(
-            "O PDF possui itens de texto demais para uma importação segura. Importe apenas o relatório necessário.",
-          );
-        }
-
-        const items: PdfTextLineItem[] = [];
-        for (const item of content.items) {
-          const textItem = item as {
-            str?: string;
-            transform?: number[];
-          };
-          const rawText =
-            typeof textItem.str === "string"
-              ? textItem.str
-              : "";
-          totalCharacters += rawText.length;
-          if (
-            totalCharacters >
-            RDO_IMPORT_LIMITS.maxPdfTextCharacters
-          ) {
-            throw new RdoImportSafeError(
-              "O texto extraído do PDF excede o limite seguro. Importe apenas o relatório necessário.",
-            );
-          }
-
-          const text = rawText.replace(/\s+/g, " ").trim();
-          const transform = textItem.transform;
-          const x = transform?.[4];
-          const y = transform?.[5];
-
-          if (
-            !text ||
-            !Number.isFinite(x) ||
-            !Number.isFinite(y)
-          ) {
-            continue;
-          }
-
-          items.push({
-            text,
-            x: x as number,
-            y: y as number,
-          });
-        }
-
-        items.sort((left, right) => {
-          const yDistance = right.y - left.y;
-          return Math.abs(yDistance) > 2
-            ? yDistance
-            : left.x - right.x;
-        });
-
-        const grouped: PdfTextLineItem[][] = [];
-        for (const item of items) {
-          const group = grouped.at(-1);
-          if (
-            group &&
-            Math.abs(group[0].y - item.y) <= 2.5
-          ) {
-            group.push(item);
-          } else {
-            grouped.push([item]);
-          }
-        }
-
-        lines.push(
-          ...grouped.map((group) =>
-            group
-              .sort((left, right) => left.x - right.x)
-              .map((item) => item.text)
-              .join(" ")
-              .replace(/\s+/g, " ")
-              .trim(),
-          ),
-        );
-      } finally {
-        page.cleanup();
-      }
-    }
-
-    return lines.filter(Boolean);
+    throw new Error(
+      "Não foi possível ler o PDF de RDO; o arquivo pode estar corrompido ou fora do formato permitido.",
+      { cause: error },
+    );
   } finally {
-    try {
-      await loadingTask.destroy();
-    } catch {
-      // Cleanup must not replace the actionable import error.
+    if (loadingTask) {
+      await loadingTask.destroy().catch(() => undefined);
     }
   }
 }

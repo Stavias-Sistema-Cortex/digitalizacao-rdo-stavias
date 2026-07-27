@@ -46,6 +46,7 @@ class AuthRateLimiterMysqlIntegrationTest {
 
     private static final byte[] TEST_KEY =
             "test-only-otp-hmac-key-material-00000001".getBytes();
+    private static final String CLIENT_INSTANCE_HASH = "a".repeat(64);
 
     private PdorMysqlTestDatabase database;
 
@@ -259,7 +260,8 @@ class AuthRateLimiterMysqlIntegrationTest {
                         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
                         service.request(
                                 "11144477735",
-                                "203.0.113.7"
+                                "203.0.113.7",
+                                CLIENT_INSTANCE_HASH
                         );
                         return null;
                     }));
@@ -277,7 +279,8 @@ class AuthRateLimiterMysqlIntegrationTest {
 
             verify(issuer, times(5)).issue(
                     anyString(),
-                    eq("11144477735")
+                    eq("11144477735"),
+                    eq(CLIENT_INSTANCE_HASH)
             );
             assertThat(pooled.getHikariPoolMXBean().getActiveConnections())
                     .isZero();

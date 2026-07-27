@@ -171,4 +171,46 @@ class AuthRateLimiterTest {
         verify(buckets, never()).consume(anyList(), eq(100), eq(900));
     }
 
+    @Test
+    void verificationUsesASeparateBoundedChallengeScope() {
+        RateLimitBucketRepository buckets = mock(
+                RateLimitBucketRepository.class
+        );
+        OtpPolicy policy = new OtpPolicy(600, 5, 5, 100, 900);
+        OtpCryptography cryptography = new OtpCryptography(
+                "test-only-otp-hmac-key-material-00000001".getBytes(),
+                new SecureRandom()
+        );
+        when(buckets.consume(anyList(), eq(5), eq(900))).thenReturn(true);
+        when(buckets.consume(anyList(), eq(100), eq(900)))
+                .thenReturn(true);
+        when(buckets.hasCapacity(anyString(), eq(100), eq(900)))
+                .thenReturn(true);
+        AuthRateLimiter limiter = new AuthRateLimiter(
+                buckets,
+                cryptography,
+                policy
+        );
+
+        assertThat(limiter.allow("11144477735", "203.0.113.7"))
+                .isTrue();
+        assertThat(limiter.allowVerification(
+                "00000000-0000-4000-8000-000000000001",
+                "203.0.113.7"
+        )).isTrue();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(
+                List.class
+        );
+        verify(buckets, times(4)).consume(keys.capture(), eq(5), eq(900));
+        verify(buckets, times(2)).consume(keys.capture(), eq(100), eq(900));
+        assertThat(keys.getAllValues().stream()
+                .flatMap(List::stream)
+                .toList())
+                .hasSize(6)
+                .doesNotHaveDuplicates()
+                .allMatch(key -> key.matches("[0-9a-f]{64}"));
+    }
+
 }

@@ -69,7 +69,8 @@ class OfflineGrantEndpointBoundaryTest {
                 "Pessoa Sintética",
                 PapelAcesso.BETA,
                 Instant.parse("2030-01-02T03:04:05Z"),
-                "a".repeat(64)
+                "a".repeat(64),
+                "b".repeat(64)
         );
     }
 }

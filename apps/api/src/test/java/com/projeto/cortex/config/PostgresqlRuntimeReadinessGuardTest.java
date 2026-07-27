@@ -19,13 +19,13 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV60Chain() throws Exception {
+    void configuredRuntimeRequiresTheCompleteV61Chain() throws Exception {
         var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
                 "CLEAN_START_REQUIRED_SCHEMA_VERSION"
         );
         field.setAccessible(true);
 
-        assertThat(field.get(null)).isEqualTo("60");
+        assertThat(field.get(null)).isEqualTo("61");
     }
 
     @Test
@@ -97,29 +97,29 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV60RowIsAbsent() {
+    void refusesWhenTheExplicitV61RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V60");
-        verify(jdbcTemplate).queryForObject(contains("version = '60'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V61");
+        verify(jdbcTemplate).queryForObject(contains("version = '61'"), eq(Integer.class));
     }
 
     @Test
-    void refusesWithoutAVerifiedActiveAlfa() {
+    void refusesWithoutAnActiveAcademyIdentityWithCurrentHmacMaterial() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("ALFA ativo")
-                .hasMessageContaining("e-mail verificado");
+                .hasMessageContaining("Academy ativa")
+                .hasMessageContaining("HMAC atual");
     }
 
     @Test
-    void acceptsOnlyV60VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV61AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -128,7 +128,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void localDirectCpfReadinessAcceptsOnlyAnActiveAcademyHmacAlfa() {
+    void readinessAcceptsOnlyAnActiveAcademyIdentityWithCurrentHmac() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(
                 contains("flyway_schema_history"),
@@ -139,16 +139,10 @@ class PostgresqlRuntimeReadinessGuardTest {
                 eq(Integer.class)
         )).thenReturn(1);
 
-        PostgresqlRuntimeReadinessGuard localDirectCpfGuard =
-                new PostgresqlRuntimeReadinessGuard(
-                        jdbcTemplate,
-                        "60",
-                        true,
-                        released(),
-                        true
-                );
+        PostgresqlRuntimeReadinessGuard readinessGuard =
+                guard(jdbcTemplate, true, released());
 
-        assertThatCode(localDirectCpfGuard::verifyReadiness)
+        assertThatCode(readinessGuard::verifyReadiness)
                 .doesNotThrowAnyException();
         verify(jdbcTemplate).queryForObject(
                 contains("c.banco_origem = 'dbstavias_acad'"),
@@ -172,7 +166,7 @@ class PostgresqlRuntimeReadinessGuardTest {
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "60", runtimeReady, registry
+                jdbcTemplate, "61", runtimeReady, registry
         );
     }
 

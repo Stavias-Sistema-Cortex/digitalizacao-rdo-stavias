@@ -219,7 +219,6 @@ describe("Memory search documents", () => {
 
     expect(document.responsibleUserName).toBe("Maria Supervisora");
   });
-
   it("projects conflict versions without copying local or remote snapshot values", () => {
     const event = localEvent({
       syncStatus: "SYNC_FAILED",

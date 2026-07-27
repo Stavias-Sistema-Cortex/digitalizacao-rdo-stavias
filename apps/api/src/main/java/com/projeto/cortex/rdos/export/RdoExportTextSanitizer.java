@@ -33,6 +33,15 @@ final class RdoExportTextSanitizer {
     private static final Pattern BEARER_TOKEN = Pattern.compile(
             "(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{8,}"
     );
+    private static final Pattern BASIC_OR_DIGEST_AUTHORIZATION_HEADER = Pattern.compile(
+            "(?im)\\b((?:Proxy-)?Authorization[\\t \\u00A0]*:)[\\t \\u00A0]*"
+                    + "(?:Basic|Digest)\\b[^\\r\\n]*(?:\\r?\\n[\\t ]+[^\\r\\n]*)*"
+    );
+    private static final Pattern COOKIE_HEADER = Pattern.compile(
+            "(?im)\\b((?:Set-)?Cookie[\\t \\u00A0]*:)[\\t \\u00A0]*"
+                    + "(?:[^\\r\\n]+(?:\\r?\\n[\\t ]+[^\\r\\n]*)*"
+                    + "|\\r?\\n[\\t ]+[^\\r\\n]*(?:\\r?\\n[\\t ]+[^\\r\\n]*)*)"
+    );
     private static final Pattern AWS_ACCESS_KEY = Pattern.compile(
             "(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])"
     );
@@ -58,6 +67,10 @@ final class RdoExportTextSanitizer {
         sanitized = CPF.matcher(sanitized).replaceAll("[CPF removido]");
         sanitized = PRIVATE_KEY_MARKER.matcher(sanitized)
                 .replaceAll("[chave privada removida]");
+        sanitized = BASIC_OR_DIGEST_AUTHORIZATION_HEADER.matcher(sanitized)
+                .replaceAll("$1 [segredo removido]");
+        sanitized = COOKIE_HEADER.matcher(sanitized)
+                .replaceAll("$1 [segredo removido]");
         sanitized = BEARER_TOKEN.matcher(sanitized)
                 .replaceAll("Bearer [segredo removido]");
         sanitized = AWS_ACCESS_KEY.matcher(sanitized)
@@ -73,6 +86,19 @@ final class RdoExportTextSanitizer {
     }
 
     String filename(String numeroRdo, String rdoId) {
+        return filename(numeroRdo, rdoId, ".xlsx");
+    }
+
+    String filename(String numeroRdo, String rdoId, String extension) {
+        if (!".xlsx".equals(extension) && !".pdf".equals(extension)) {
+            throw new IllegalArgumentException(
+                    "Extensão de exportação não permitida."
+            );
+        }
+        return "rdo-" + safeBasename(numeroRdo, rdoId) + extension;
+    }
+
+    private String safeBasename(String numeroRdo, String rdoId) {
         String candidate = firstNonBlank(numeroRdo, rdoId, "rdo");
         candidate = Normalizer.normalize(candidate, Normalizer.Form.NFKD)
                 .replaceAll("\\p{M}+", "");
@@ -85,7 +111,7 @@ final class RdoExportTextSanitizer {
         if (candidate.length() > 64) {
             candidate = candidate.substring(0, 64);
         }
-        return "rdo-" + candidate + ".xlsx";
+        return candidate;
     }
 
     private int firstNonWhitespace(String value) {

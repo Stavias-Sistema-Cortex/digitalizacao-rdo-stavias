@@ -7,14 +7,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Keeps e-mail OTP session issuance exclusive to activation and legacy mode. */
+/**
+ * Limits e-mail OTP to the PostgreSQL activation profile.
+ */
 @Component
 public final class EmailOtpAuthenticationPolicy {
-
-    static final String DISABLED_MESSAGE =
-            "Autenticação por e-mail indisponível neste ambiente.";
-
-    private final boolean disabled;
 
     @Autowired
     public EmailOtpAuthenticationPolicy(Environment environment) {
@@ -28,19 +25,20 @@ public final class EmailOtpAuthenticationPolicy {
         );
     }
 
+    private final boolean enabled;
+
     EmailOtpAuthenticationPolicy(
             boolean normalPostgresqlWebMode,
             boolean activationPostgresqlWebMode
     ) {
-        this.disabled = normalPostgresqlWebMode
-                && !activationPostgresqlWebMode;
+        this.enabled = activationPostgresqlWebMode;
     }
 
     public void requireEnabled() {
-        if (disabled) {
+        if (!enabled) {
             throw new ResponseStatusException(
                     HttpStatus.GONE,
-                    DISABLED_MESSAGE
+                    "Autenticação por e-mail indisponível."
             );
         }
     }

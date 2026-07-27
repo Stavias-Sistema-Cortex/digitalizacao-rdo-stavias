@@ -23,6 +23,7 @@ import {
   applyPushResultAtomically,
   markMutationAsSyncing,
   queueErroredMutationsForRetry,
+  recoverInterruptedMutations,
   repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync,
 } from "../sync/syncStorage";
@@ -114,6 +115,58 @@ afterEach(async () => {
 });
 
 describe("legacy RDO save while mutation A is in flight", () => {
+  it("automatically retries the exact legacy provenance failure and converges", async () => {
+    const database = await getCortexDb();
+    const mutation = {
+      ...legacyMutationWithPayloadA(),
+      status: "ERROR" as const,
+      tentativas: 1,
+      ultimaTentativaEm: "2026-07-23T14:00:05.000Z",
+      ultimoErro:
+        "A proveniência de criação do RDO não pode ser alterada.",
+      lastSafeCode: "VALIDATION_OR_AUTHORIZATION",
+    };
+    await database.put("rdos", {
+      ...rdoWithPayloadA(),
+      syncStatus: "ERROR",
+    });
+    await database.put("outbox_mutations", mutation);
+
+    await recoverInterruptedMutations();
+
+    const pending = await database.get(
+      "outbox_mutations",
+      MUTATION_A_ID,
+    );
+    expect(pending).toMatchObject({
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      lastSafeCode: "RDO_CREATION_PROVENANCE_REPAIRED",
+    });
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      syncStatus: "PENDING_SYNC",
+    });
+
+    await markMutationAsSyncing(pending!);
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_A_ID,
+      status: "APLICADA",
+      resultado: {
+        numeroRdo: "RDO-0702",
+        versaoEntidade: 8,
+      },
+    });
+
+    expect(
+      await database.get("outbox_mutations", MUTATION_A_ID),
+    ).toMatchObject({ status: "SYNCED" });
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      syncStatus: "SYNCED",
+      versaoEntidade: 8,
+    });
+  });
+
   it("keeps edit B pending under a distinct identity when response A arrives", async () => {
     const database = await getCortexDb();
     const mutationA = legacyMutationWithPayloadA();

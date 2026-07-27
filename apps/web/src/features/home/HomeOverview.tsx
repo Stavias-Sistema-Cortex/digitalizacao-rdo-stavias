@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 import { SyncStateStrip } from "../../components/institutional/SyncStateStrip";
 import { useSyncStatus } from "../../lib/sync/useSyncStatus";

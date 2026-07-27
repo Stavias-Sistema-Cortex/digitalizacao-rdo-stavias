@@ -16,6 +16,7 @@ vi.mock("./emailOtpTransport", () => ({
 }));
 
 import {
+  requestCpfOtpChallenge,
   requestEmailOtpChallenge,
   verifyEmailOtpChallenge,
 } from "./emailOtpApi";
@@ -39,7 +40,7 @@ describe("emailOtpApi", () => {
     mocks.apiError.mockReturnValue(new Error("Falha controlada."));
   });
 
-  it("solicita o desafio por e-mail e conserva somente o identificador opaco", async () => {
+  it("solicita o desafio com os dígitos canônicos do CPF e conserva somente o identificador opaco", async () => {
     mocks.publicAuthFetch.mockResolvedValue(response(202));
     mocks.readPublicAuthResponse.mockResolvedValue({
       challengeId: "00000000-0000-4000-8000-000000000003",
@@ -48,7 +49,7 @@ describe("emailOtpApi", () => {
     });
 
     await expect(
-      requestEmailOtpChallenge("alfa@stavias.example"),
+      requestCpfOtpChallenge("111.444.777-35"),
     ).resolves.toEqual({
       challengeId: "00000000-0000-4000-8000-000000000003",
     });
@@ -58,8 +59,25 @@ describe("emailOtpApi", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: "alfa@stavias.example" }),
+        body: JSON.stringify({ identifier: "11144477735" }),
       },
+    );
+  });
+
+  it("preserva o desafio de e-mail para o fluxo de ativação", async () => {
+    mocks.publicAuthFetch.mockResolvedValue(response(202));
+    mocks.readPublicAuthResponse.mockResolvedValue({
+      challengeId: "00000000-0000-4000-8000-000000000003",
+      expiresInSeconds: 600,
+    });
+
+    await requestEmailOtpChallenge(" alfas@stavias.example ");
+
+    expect(mocks.publicAuthFetch).toHaveBeenCalledWith(
+      "/auth/email/challenges",
+      expect.objectContaining({
+        body: JSON.stringify({ identifier: "alfas@stavias.example" }),
+      }),
     );
   });
 
@@ -96,7 +114,7 @@ describe("emailOtpApi", () => {
     });
 
     await expect(
-      requestEmailOtpChallenge("alfa@stavias.example"),
+      requestCpfOtpChallenge("11144477735"),
     ).rejects.toThrow("Desafio de autenticação inválido");
   });
 });

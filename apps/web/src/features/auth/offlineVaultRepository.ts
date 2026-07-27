@@ -1,14 +1,22 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 
-import type { OfflineVaultMetadata } from "./offlineVault.types";
+import type {
+  OfflineCpfGrantMetadata,
+  OfflineVaultMetadata,
+} from "./offlineVault.types";
 
 const VAULT_DATABASE_NAME = "cortex-auth-vaults";
-const VAULT_DATABASE_VERSION = 1;
+const VAULT_DATABASE_VERSION = 2;
 
 interface OfflineVaultDbSchema extends DBSchema {
   vaults: {
     key: string;
     value: OfflineVaultMetadata;
+    indexes: { "by-updated-at": string; "by-owner": string };
+  };
+  cpf_grants: {
+    key: string;
+    value: OfflineCpfGrantMetadata;
     indexes: { "by-updated-at": string; "by-owner": string };
   };
 }
@@ -58,6 +66,25 @@ export async function deleteOfflineVaultMetadata(
   await database.clear("vaults");
 }
 
+export async function saveCollaborativeOfflineGrantMetadata(
+  metadata: OfflineCpfGrantMetadata,
+): Promise<void> {
+  const database = await getVaultDatabase();
+  await database.put("cpf_grants", metadata);
+}
+
+export async function loadCollaborativeOfflineGrantMetadata(
+  cpfHash: string,
+): Promise<OfflineCpfGrantMetadata | null> {
+  const database = await getVaultDatabase();
+  return await database.get("cpf_grants", cpfHash) ?? null;
+}
+
+export async function hasCollaborativeOfflineGrantMetadata(): Promise<boolean> {
+  const database = await getVaultDatabase();
+  return (await database.count("cpf_grants")) > 0;
+}
+
 function getVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {
   databasePromise ??= openVaultDatabase();
   return databasePromise;
@@ -68,12 +95,21 @@ function openVaultDatabase(): Promise<IDBPDatabase<OfflineVaultDbSchema>> {
     VAULT_DATABASE_NAME,
     VAULT_DATABASE_VERSION,
     {
-      upgrade(database) {
-        const store = database.createObjectStore("vaults", {
-          keyPath: "key",
-        });
-        store.createIndex("by-updated-at", "atualizadoEm");
-        store.createIndex("by-owner", "ownerId");
+      upgrade(database, oldVersion) {
+        if (oldVersion < 1) {
+          const store = database.createObjectStore("vaults", {
+            keyPath: "key",
+          });
+          store.createIndex("by-updated-at", "atualizadoEm");
+          store.createIndex("by-owner", "ownerId");
+        }
+        if (oldVersion < 2) {
+          const grants = database.createObjectStore("cpf_grants", {
+            keyPath: "key",
+          });
+          grants.createIndex("by-updated-at", "atualizadoEm");
+          grants.createIndex("by-owner", "ownerId");
+        }
       },
       terminated() {
         databasePromise = null;

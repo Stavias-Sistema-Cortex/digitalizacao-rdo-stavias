@@ -11,7 +11,12 @@ class EmailOtpChallengeTransactionBoundaryTest {
     @Test
     void rateLimitingRunsWithoutAnOuterTransaction() throws Exception {
         Transactional transactional = EmailOtpChallengeService.class
-                .getMethod("request", String.class, String.class)
+                .getMethod(
+                        "request",
+                        String.class,
+                        String.class,
+                        String.class
+                )
                 .getAnnotation(Transactional.class);
 
         assertThat(transactional).isNotNull();
@@ -22,7 +27,12 @@ class EmailOtpChallengeTransactionBoundaryTest {
     @Test
     void challengeIssuanceStartsOnlyAfterRateLimiting() throws Exception {
         Transactional transactional = EmailOtpChallengeIssuer.class
-                .getMethod("issue", String.class, String.class)
+                .getMethod(
+                        "issue",
+                        String.class,
+                        String.class,
+                        String.class
+                )
                 .getAnnotation(Transactional.class);
 
         assertThat(transactional).isNotNull();

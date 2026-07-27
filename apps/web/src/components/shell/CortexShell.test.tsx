@@ -3,12 +3,16 @@
 import type { ReactNode } from "react";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  encerrarSessao: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  class LogoutReauthenticationRequiredError extends Error {}
+  return {
+    encerrarSessao: vi.fn(),
+    LogoutReauthenticationRequiredError,
+  };
+});
 
 vi.mock("../SyncStatusBanner", () => ({
   SyncStatusBanner: () => <span>Sincronização ao vivo</span>,
@@ -28,6 +32,8 @@ vi.mock("../../features/auth/authSession", () => ({
 
 vi.mock("../../features/auth/authService", () => ({
   encerrarSessao: mocks.encerrarSessao,
+  LogoutReauthenticationRequiredError:
+    mocks.LogoutReauthenticationRequiredError,
 }));
 
 import { CortexShell } from "./CortexShell";
@@ -56,9 +62,46 @@ function LocationProbe() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 describe("CortexShell chrome", () => {
+  it("mantém a semântica acessível ao recolher e expandir o menu", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <ShellWithHeaderSlot />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Recolher menu" }));
+    expect(screen.getByRole("button", { name: "Expandir menu" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Expandir menu" }));
+    expect(screen.getByRole("button", { name: "Recolher menu" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
+  it("posiciona a alavanca fora da área rolável da sidebar", () => {
+    render(
+      <MemoryRouter>
+        <ShellWithHeaderSlot />
+      </MemoryRouter>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Recolher menu" });
+    const sidebar = document.querySelector(".cortex-sidebar");
+
+    expect(toggle.parentElement).toHaveClass("cortex-shell");
+    expect(sidebar).not.toContainElement(toggle);
+  });
+
   it("fornece os controles globais apenas pelo slot descendente do cabeçalho", () => {
     render(
       <MemoryRouter>
@@ -103,6 +146,26 @@ describe("CortexShell chrome", () => {
     await waitFor(() => expect(mocks.encerrarSessao).toHaveBeenCalledOnce());
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Não foi possível encerrar a sessão no servidor.",
+    );
+  });
+
+  it("solicita nova autenticação quando esta aba não pode confirmar o logout compartilhado", async () => {
+    const user = userEvent.setup();
+    mocks.encerrarSessao.mockRejectedValueOnce(
+      new mocks.LogoutReauthenticationRequiredError(),
+    );
+
+    render(
+      <MemoryRouter>
+        <ShellWithHeaderSlot />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "AO" }));
+    await user.click(screen.getByRole("button", { name: "Sair" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Entre novamente antes de encerrar a sessão compartilhada.",
     );
   });
 });

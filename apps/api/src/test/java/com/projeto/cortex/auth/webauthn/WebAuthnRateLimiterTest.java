@@ -11,9 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
 import com.projeto.cortex.auth.identity.CpfLookupDigest;
-import com.projeto.cortex.auth.otp.OtpCryptography;
 import com.projeto.cortex.auth.otp.RateLimitBucketRepository;
-import java.security.SecureRandom;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,7 +19,7 @@ import org.mockito.ArgumentCaptor;
 class WebAuthnRateLimiterTest {
 
     @Test
-    void consumesHmacKeyedSourceAndGlobalBuckets() {
+    void consumesOpaqueSourceAndGlobalBucketsWithoutOtpCryptography() {
         RateLimitBucketRepository buckets = mock(
                 RateLimitBucketRepository.class
         );
@@ -108,13 +106,8 @@ class WebAuthnRateLimiterTest {
     private WebAuthnRateLimiter limiter(
             RateLimitBucketRepository buckets
     ) {
-        OtpCryptography cryptography = new OtpCryptography(
-                "test-only-passkey-rate-limit-key-0001".getBytes(),
-                new SecureRandom()
-        );
         return new WebAuthnRateLimiter(
                 buckets,
-                cryptography,
                 new WebAuthnRateLimitPolicy(20, 2_000, 900)
         );
     }

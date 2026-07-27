@@ -11,10 +11,14 @@ public interface AuthSessionRepository {
             String collaboratorId,
             String tokenHash,
             String csrfHash,
+            String clientInstanceHash,
             int ttlSeconds
     );
 
-    Optional<ResolvedAuthSession> findActiveByTokenHash(String tokenHash);
+    Optional<ResolvedAuthSession> findActiveByTokenHashAndClientInstanceHash(
+            String tokenHash,
+            String clientInstanceHash
+    );
 
     int revokeByTokenHash(String tokenHash, String reason);
 }

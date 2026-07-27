@@ -1138,16 +1138,17 @@
 
 .teams-list-item {
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
   transition:
     background-color var(--transition-functional),
     border-color var(--transition-functional);
 }
 
 .teams-list-item.is-active {
-  border-color: var(--color-ink);
-  background: #fff;
+  border-color: var(--color-border-strong);
+  background: var(--color-surface);
   color: var(--color-ink);
+  box-shadow: inset 3px 0 0 var(--color-brand-yellow);
 }
 
 .teams-list-marker,
@@ -1183,13 +1184,13 @@
 
 .teams-status {
   border: 1px solid currentColor;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
   background: transparent;
 }
 
 .teams-member-drawer {
-  border-left: 2px solid var(--color-ink);
-  box-shadow: none;
+  border-left: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-overlay);
 }
 
 .teams-workspace {
@@ -1204,12 +1205,20 @@
 }
 
 .teams-workspace .teams-page {
+  min-width: 0;
   border: 1px solid var(--color-ink);
-  background: #f5f6f5;
+  border-radius: 0;
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .teams-workspace .teams-catalog,
-.teams-workspace .teams-detail,
+.teams-workspace .teams-detail {
+  border-radius: var(--radius-container);
+  box-shadow: none;
+}
+
 .teams-workspace .teams-overview,
 .teams-workspace .teams-member-card,
 .teams-workspace .teams-section-empty,
@@ -1217,12 +1226,14 @@
 .teams-workspace .teams-history-table,
 .teams-workspace .teams-danger-zone,
 .teams-workspace .teams-empty-state {
-  border-radius: 0;
+  border-radius: var(--radius-control);
   box-shadow: none;
 }
 
 .teams-modal {
-  border: 2px solid var(--color-ink);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-container);
-  box-shadow: none;
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--shadow-overlay);
 }

@@ -14,6 +14,7 @@ import com.projeto.cortex.auth.otp.PostgresqlEmailOtpChallengeRepository;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.auth.session.AuthSessionProperties;
 import com.projeto.cortex.auth.session.AuthSessionService;
+import com.projeto.cortex.auth.session.ClientInstanceProof;
 import com.projeto.cortex.auth.session.PostgresqlAuthSessionRepository;
 import com.projeto.cortex.common.PostgresqlActivationGateFilter;
 import java.io.BufferedReader;
@@ -94,6 +95,8 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
             );
             AuthRateLimiter rateLimiter = mock(AuthRateLimiter.class);
             when(rateLimiter.allow(anyString(), anyString())).thenReturn(true);
+            when(rateLimiter.allowVerification(anyString(), anyString()))
+                    .thenReturn(true);
             EmailOtpChallengeService otp = new EmailOtpChallengeService(
                     rateLimiter,
                     issuer,
@@ -101,8 +104,15 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                     cryptography,
                     new OtpPolicy(300, 5, 5, 100, 900)
             );
+            ClientInstanceProof clientInstance = ClientInstanceProof
+                    .fromRawValue("A".repeat(43))
+                    .orElseThrow();
 
-            otp.request("  INITIAL.ALFA@FIXTURE.INVALID  ", "203.0.113.30");
+            otp.request(
+                    "  INITIAL.ALFA@FIXTURE.INVALID  ",
+                    "203.0.113.30",
+                    clientInstance.hash()
+            );
             verify(events).publishEvent(
                     org.mockito.ArgumentMatchers.any(OtpDeliveryRequested.class)
             );
@@ -114,7 +124,9 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
 
             Optional<AuthenticatedIdentity> verified = transactions(jdbc)
                     .execute(status -> otp.verify(
-                            challengeId, "123456"
+                            challengeId,
+                            "123456",
+                            clientInstance.hash()
                     ));
             assertThat(verified).contains(new AuthenticatedIdentity(
                     collaboratorId, "Synthetic Operator", PapelAcesso.ALFA
@@ -124,8 +136,8 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
                     new PostgresqlAuthSessionRepository(jdbc),
                     new AuthSessionProperties(300)
             );
-            var issued = sessions.issue(verified.orElseThrow());
-            assertThat(sessions.resolve(issued.sessionToken()))
+            var issued = sessions.issue(verified.orElseThrow(), clientInstance);
+            assertThat(sessions.resolve(issued.sessionToken(), clientInstance))
                     .hasValueSatisfying(session -> {
                         assertThat(session.collaboratorId()).isEqualTo(collaboratorId);
                         assertThat(session.role()).isEqualTo(PapelAcesso.ALFA);
@@ -157,7 +169,7 @@ class PostgresqlCleanStartFlowIT extends PostgresqlAuthPersistenceTestSupport {
         }
         assertThat(appliedVersions).containsExactly(
                 "44", "45", "45.1", "46", "47", "48", "49", "50", "51",
-                "52", "53", "54", "55", "56", "57", "58", "59", "60"
+                "52", "53", "54", "55", "56", "57", "58", "59", "60", "61"
         );
     }
 

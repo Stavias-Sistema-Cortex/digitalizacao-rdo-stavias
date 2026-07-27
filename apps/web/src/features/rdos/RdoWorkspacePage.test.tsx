@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearSession, setSession } from "../auth/authSession";
 
 const {
   listLocalRdos,
@@ -42,13 +43,19 @@ vi.mock("./RdoLocalList", () => ({
   RdoLocalList: ({
     onCreate,
     onImportRdoFile,
+    records,
     error,
   }: {
     onCreate: () => void;
     onImportRdoFile: (file: File) => void;
+    records: Array<{ id: string; numeroRdo: string }>;
     error: string;
   }) => (
     <>
+      <output aria-label="RDOs carregados">
+        {records.map((record) => record.numeroRdo).join(",")}
+      </output>
+      {error ? <div role="alert">{error}</div> : null}
       <button type="button" onClick={onCreate}>
         Novo RDO
       </button>
@@ -58,13 +65,13 @@ vi.mock("./RdoLocalList", () => ({
       >
         Importar teste
       </button>
-      {error ? <p role="alert">{error}</p> : null}
     </>
   ),
 }));
 
 afterEach(() => {
   cleanup();
+  clearSession();
 });
 
 vi.mock("./RdoCreationDialog", () => ({
@@ -91,8 +98,36 @@ vi.mock("./RdoCreatePage", () => ({
 import { RdoWorkspacePage } from "./RdoWorkspacePage";
 import { createEmptyRdo } from "./createEmptyRdo";
 
+const OWNER_A = "00000000-0000-4000-8000-000000000030";
+const OWNER_B = "00000000-0000-4000-8000-000000000031";
+
+function session(ownerId = OWNER_A) {
+  return {
+    colaboradorId: ownerId,
+    nome: "Encarregado de teste",
+    papelAcesso: "ALFA" as const,
+    escopoGlobal: true,
+    obraIds: [],
+    expiraEm: "2099-07-14T12:00:00Z",
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe("RdoWorkspacePage: entrada do novo RDO", () => {
   beforeEach(() => {
+    clearSession();
+    setSession(session());
+    listLocalRdos.mockReset();
+    listOperationalEvents.mockReset();
+    listAllRdoAttachments.mockReset();
+    importarRdoArquivo.mockReset();
     listLocalRdos.mockResolvedValue([]);
     listOperationalEvents.mockResolvedValue([]);
     listAllRdoAttachments.mockResolvedValue([]);
@@ -139,26 +174,68 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
     expect(screen.queryByTestId("rdo-editor")).not.toBeInTheDocument();
   });
 
-  it("mostra erro de importação sem trocar a lista por diálogo ou editor", async () => {
-    importarRdoArquivo.mockRejectedValueOnce(
-      new Error(
-        "O arquivo de RDO excede o limite seguro de 12 MiB.",
-      ),
+  it("keeps the loaded RDO list intact when an import is rejected", async () => {
+    listLocalRdos.mockResolvedValue([
+      { id: "rdo-preservado", numeroRdo: "RDO-PRESERVADO" },
+    ]);
+    importarRdoArquivo.mockRejectedValue(
+      new Error("O arquivo selecionado não é um RDO válido."),
     );
     const user = userEvent.setup();
     render(<RdoWorkspacePage />);
 
-    await user.click(
-      screen.getByRole("button", { name: "Importar teste" }),
-    );
+    expect(
+      await screen.findByText("RDO-PRESERVADO"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", {
+      name: "Importar teste",
+    }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "O arquivo de RDO excede o limite seguro de 12 MiB.",
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent(
+      "O arquivo selecionado não é um RDO válido.",
     );
+    expect(screen.getByText("RDO-PRESERVADO")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByTestId("rdo-editor")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Importar teste" }),
-    ).toBeVisible();
+  });
+
+  it("does not let an old session load repopulate the workspace after rotation", async () => {
+    const oldRecords = deferred<Array<{
+      id: string;
+      numeroRdo: string;
+    }>>();
+    const oldEvents = deferred<[]>();
+    const oldAttachments = deferred<[]>();
+    listLocalRdos
+      .mockImplementationOnce(() => oldRecords.promise)
+      .mockResolvedValueOnce([]);
+    listOperationalEvents
+      .mockImplementationOnce(() => oldEvents.promise)
+      .mockResolvedValueOnce([]);
+    listAllRdoAttachments
+      .mockImplementationOnce(() => oldAttachments.promise)
+      .mockResolvedValueOnce([]);
+
+    render(<RdoWorkspacePage />);
+    await waitFor(() => expect(listLocalRdos).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      setSession(session(OWNER_B));
+    });
+
+    oldRecords.resolve([
+      { id: "rdo-antigo", numeroRdo: "RDO-ANTIGO" },
+    ]);
+    oldEvents.resolve([]);
+    oldAttachments.resolve([]);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("RDO-ANTIGO")).not.toBeInTheDocument();
+    await waitFor(() => expect(listLocalRdos).toHaveBeenCalledTimes(2));
   });
 });

@@ -1,6 +1,7 @@
 import { apiError } from "../../lib/api/apiError";
 import { parseAuthProfile } from "./authProfile";
 import type { AuthProfile } from "./authSession";
+import { isValidCpf, onlyDigits } from "./loginValidation";
 import {
   publicAuthFetch,
   readPublicAuthResponse,
@@ -22,10 +23,32 @@ export async function requestEmailOtpChallenge(
     throw new Error("Informe um e-mail institucional válido.");
   }
 
+  return requestOtpChallenge(email);
+}
+
+/**
+ * Starts the normal Córtex login challenge. CPF is an identifier only; the
+ * proof of possession remains the one-time code delivered to the canonical
+ * PostgreSQL identity e-mail.
+ */
+export async function requestCpfOtpChallenge(
+  identifier: string,
+): Promise<EmailOtpChallenge> {
+  const cpf = onlyDigits(identifier);
+  if (!isValidCpf(cpf)) {
+    throw new Error("Informe um CPF válido.");
+  }
+
+  return requestOtpChallenge(cpf);
+}
+
+async function requestOtpChallenge(
+  identifier: string,
+): Promise<EmailOtpChallenge> {
   const response = await publicAuthFetch("/auth/email/challenges", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier: email }),
+    body: JSON.stringify({ identifier }),
   });
   const body = await readPublicAuthResponse(response);
   if (!response.ok) {

@@ -54,7 +54,8 @@ class LocalCorsConfigurationTest {
         assertThat(cors.getAllowedHeaders()).containsExactlyInAnyOrder(
                 "Accept",
                 "Content-Type",
-                "X-CSRF-Token"
+                "X-CSRF-Token",
+                "X-Cortex-Client-Instance"
         );
     }
 

@@ -8,8 +8,8 @@
     "dev:local": "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8080 vite --host localhost --port 5173",
     "dev:compose": "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8081 vite --host localhost --port 5173",
     "build": "tsc -b && vite build && node scripts/verify-stavia-boundary.mjs --dist",
-    "build:local": "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8080/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
-    "build:compose": "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8081/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+    "build:local": "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+    "build:compose": "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
     "lint": "eslint .",
     "verify:mensagens-geometry": "node scripts/verify-mensagens-geometry.mjs",
     "verify:retired-runtime-boundary": "node scripts/verify-stavia-boundary.mjs",
@@ -21,6 +21,7 @@
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
     "fflate": "^0.8.3",
+    "html2canvas": "^1.4.1",
     "idb": "^8.0.3",
     "jspdf": "^4.2.1",
     "mapbox-gl": "^3.26.0",
@@ -29,7 +30,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-router-dom": "7.18.1"
+    "react-router": "8.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

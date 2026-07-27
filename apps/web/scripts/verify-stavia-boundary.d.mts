@@ -16,6 +16,7 @@ export function inspectPackageBuildScripts(
 ): string[];
 export function inspectSourceBoundary(
   files: Array<{ path: string; content: string }>,
+  options?: { requireNormalRuntimeFiles?: boolean },
 ): string[];
 export function verifySourceBoundary(repositoryRoot?: string): void;
 export function verifyDist(distRoot?: string): void;

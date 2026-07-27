@@ -647,6 +647,48 @@ describe("RDO workbook mapping", () => {
     expect(packageText).not.toMatch(/<f(?:\s|>)/);
   });
 
+  it.each([
+    ["Basic authorization", "Authorization: Basic BASIC_SECRET_CANARY", "BASIC_SECRET_CANARY"],
+    ["Proxy Basic authorization", "Proxy-Authorization: Basic PROXY_BASIC_SECRET_CANARY", "PROXY_BASIC_SECRET_CANARY"],
+    ["Digest authorization", "Authorization: Digest username=\"digest\", response=\"DIGEST_SECRET_CANARY\"", "DIGEST_SECRET_CANARY"],
+    ["Cookie", "Cookie: session=COOKIE_SECRET_CANARY", "COOKIE_SECRET_CANARY"],
+    ["Set-Cookie", "Set-Cookie: session=SET_COOKIE_SECRET_CANARY", "SET_COOKIE_SECRET_CANARY"],
+    ["folded Basic authorization", "Authorization: Basic\r\n BASIC_FOLDED_SECRET_CANARY", "BASIC_FOLDED_SECRET_CANARY"],
+    ["folded Proxy Basic authorization", "Proxy-Authorization: Basic\r\n PROXY_BASIC_FOLDED_SECRET_CANARY", "PROXY_BASIC_FOLDED_SECRET_CANARY"],
+    ["folded Digest authorization", "Authorization: Digest\r\n response=\"DIGEST_FOLDED_SECRET_CANARY\"", "DIGEST_FOLDED_SECRET_CANARY"],
+    ["folded Cookie", "Cookie: session=one;\r\n COOKIE_FOLDED_SECRET_CANARY", "COOKIE_FOLDED_SECRET_CANARY"],
+    ["folded Set-Cookie", "Set-Cookie: session=one;\r\n SET_COOKIE_FOLDED_SECRET_CANARY", "SET_COOKIE_FOLDED_SECRET_CANARY"],
+    ["NBSP Authorization", "Authorization\u00a0: Basic NBSP_AUTHORIZATION_SECRET_CANARY", "NBSP_AUTHORIZATION_SECRET_CANARY"],
+    ["NBSP Cookie", "Cookie:\u00a0session=NBSP_COOKIE_SECRET_CANARY", "NBSP_COOKIE_SECRET_CANARY"],
+  ])("redacts %s credentials before emitting offline workbook cells", async (_label, credentialHeader, canary) => {
+    const value = snapshot();
+    value.rdo.observacoes = credentialHeader;
+    const bytes = await exportRdoWorkbook(value, {
+      templateBytes: await templateBytes(),
+    });
+    const packageText = Object.values(unzipSync(bytes))
+      .map((entry) => new TextDecoder().decode(entry))
+      .join("\n");
+
+    expect(packageText).toContain("[segredo removido]");
+    expect(packageText).not.toContain(canary);
+  });
+
+  it("preserves non-credential text after a bare Cookie label on a new line", async () => {
+    const value = snapshot();
+    value.rdo.observacoes = "Cookie:\r\nTexto operacional preservado";
+
+    const bytes = await exportRdoWorkbook(value, {
+      templateBytes: await templateBytes(),
+    });
+    const workbook = XLSX.read(bytes, { type: "array", cellStyles: true });
+    const observations = workbook.Sheets["v.1 RDO verso"].B63.v as string;
+
+    expect(observations).toContain("Cookie:");
+    expect(observations).toContain("Texto operacional preservado");
+    expect(observations).not.toContain("[segredo removido]");
+  });
+
   it("emits the Java parity fixture when an audit output path is requested", async () => {
     const output = process.env.CORTEX_RDO_OFFLINE_OUTPUT;
     if (!output) return;

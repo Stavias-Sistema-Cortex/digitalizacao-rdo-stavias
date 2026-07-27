@@ -25,6 +25,7 @@ class WebAuthnCredentialRepositoryTest {
             "10000000-0000-0000-0000-000000000001";
     private static final String CHALLENGE_ID =
             "20000000-0000-0000-0000-000000000002";
+    private static final String CLIENT_INSTANCE_HASH = "a".repeat(64);
 
     @Test
     void persistsOnlyChallengeHashAndUsesDatabaseClockForExpiry() {
@@ -38,6 +39,7 @@ class WebAuthnCredentialRepositoryTest {
                 eq("REGISTRATION"),
                 anyString(),
                 eq("{\"request\":true}"),
+                eq(CLIENT_INSTANCE_HASH),
                 eq(300)
         )).thenReturn(1);
 
@@ -47,6 +49,7 @@ class WebAuthnCredentialRepositoryTest {
                 WebAuthnCeremony.REGISTRATION,
                 challenge,
                 "{\"request\":true}",
+                CLIENT_INSTANCE_HASH,
                 300
         );
 
@@ -59,10 +62,13 @@ class WebAuthnCredentialRepositoryTest {
                 eq("REGISTRATION"),
                 hash.capture(),
                 eq("{\"request\":true}"),
+                eq(CLIENT_INSTANCE_HASH),
                 eq(300)
         );
         assertThat(compact(sql.getValue()))
                 .contains("CURRENT_TIMESTAMP(6) + (? * INTERVAL '1 second')");
+        assertThat(compact(sql.getValue()))
+                .contains("client_instance_bound");
         assertThat(hash.getValue())
                 .matches("[0-9a-f]{64}")
                 .doesNotContain(challenge.getBase64Url());
@@ -82,18 +88,21 @@ class WebAuthnCredentialRepositoryTest {
         when(jdbc.update(
                 anyString(),
                 eq(CHALLENGE_ID),
-                eq("REGISTRATION")
+                eq("REGISTRATION"),
+                eq(CLIENT_INSTANCE_HASH)
         )).thenReturn(1);
         when(jdbc.query(
                 anyString(),
                 any(RowMapper.class),
                 eq(CHALLENGE_ID),
-                eq("REGISTRATION")
+                eq("REGISTRATION"),
+                eq(CLIENT_INSTANCE_HASH)
         )).thenReturn(List.of(stored));
 
         assertThat(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.REGISTRATION
+                WebAuthnCeremony.REGISTRATION,
+                CLIENT_INSTANCE_HASH
         )).containsSame(stored);
 
         ArgumentCaptor<String> updateSql =
@@ -101,12 +110,14 @@ class WebAuthnCredentialRepositoryTest {
         verify(jdbc).update(
                 updateSql.capture(),
                 eq(CHALLENGE_ID),
-                eq("REGISTRATION")
+                eq("REGISTRATION"),
+                eq(CLIENT_INSTANCE_HASH)
         );
         assertThat(compact(updateSql.getValue()))
                 .contains("consumido_em = CURRENT_TIMESTAMP(6)")
                 .contains("consumido_em IS NULL")
-                .contains("expira_em > CURRENT_TIMESTAMP(6)");
+                .contains("expira_em > CURRENT_TIMESTAMP(6)")
+                .contains("client_instance_hash = ?");
     }
 
     @Test
@@ -116,12 +127,14 @@ class WebAuthnCredentialRepositoryTest {
         when(jdbc.update(
                 anyString(),
                 eq(CHALLENGE_ID),
-                eq("AUTHENTICATION")
+                eq("AUTHENTICATION"),
+                eq(CLIENT_INSTANCE_HASH)
         )).thenReturn(0);
 
         assertThat(repository.consumeChallenge(
                 CHALLENGE_ID,
-                WebAuthnCeremony.AUTHENTICATION
+                WebAuthnCeremony.AUTHENTICATION,
+                CLIENT_INSTANCE_HASH
         )).isEmpty();
 
         verify(jdbc, never()).query(

@@ -18,9 +18,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(FinancePurchasedAssetController.class)
+@WebMvcTest(
+        value = FinancePurchasedAssetController.class,
+        properties = "cortex.cors.allowed-origins=https://legacy-finance.test"
+)
+@ActiveProfiles("legacy-finance")
 @AutoConfigureMockMvc(addFilters = false)
 class FinancePurchasedAssetControllerMockMvcTest {
 

@@ -62,12 +62,13 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(shell).toContain("min-height: 100dvh;");
     expect(shell).not.toMatch(/(?:^|\n)\s*height:\s*100dvh;/);
     expect(shell).not.toContain("overflow: hidden;");
+    expect(shell).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(shell).toContain("background-attachment: fixed;");
     expect(sidebar).toContain("position: sticky;");
     expect(sidebar).toContain("top: 0;");
     expect(sidebar).toContain("height: 100dvh;");
     expect(sidebar).toContain("overflow-y: auto;");
-    expect(sidebar).toContain("#111312 0%");
-    expect(sidebar).toContain("var(--color-brand-teal) 100%");
+    expect(sidebar).toContain("background: transparent;");
     expect(content).toContain("min-height: 100dvh;");
     expect(content).not.toContain("height: 100%;");
     expect(content).not.toContain("overflow-y: auto;");
@@ -195,7 +196,7 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(worksiteManagement).not.toMatch(/padding:\s*clamp/);
   });
 
-  it("uses neutral hairlines for RDO document surfaces and reserves ink for actions", () => {
+  it("uses a light glass shell for RDO while keeping inner form cards solid", () => {
     const documentSurface = rule(rdoCss, ".rdo-document-surface");
     const documentStatus = rule(rdoCss, ".rdo-document-status");
     const formCard = rule(rdoCss, ".rdo-create-workspace .form-card");
@@ -210,6 +211,13 @@ describe("Cortex 3 institutional visual policy", () => {
       expect(surface).toContain("border: 1px solid var(--color-border);");
       expect(surface).not.toContain("2px solid var(--color-ink)");
     }
+    expect(documentSurface).toContain(
+      "background: var(--surface-glass-fallback);",
+    );
+    expect(documentSurface).toContain("box-shadow: var(--glass-shadow);");
+    expect(documentStatus).toContain("background: var(--color-surface);");
+    expect(formCard).toContain("background: var(--color-surface);");
+    expect(formCard).toContain("box-shadow: none;");
     expect(dialog).toContain("border: 1px solid var(--color-border);");
     expect(provenance).not.toContain("box-shadow:");
     expect(action).toContain("background: var(--color-ink);");
@@ -243,8 +251,10 @@ describe("Cortex 3 institutional visual policy", () => {
       ".finance-page > .operational-workspace__content",
     );
 
-    expect(financeHeader).toContain("linear-gradient(");
-    expect(financeHeader).toContain("#124e4a 100%");
+    expect(financeHeader).toContain(
+      "background: var(--cortex-shell-chrome-surface);",
+    );
+    expect(financeHeader).toContain("background-attachment: fixed;");
     expect(financeTitle).toContain("color: #fff;");
     expect(financeCss).not.toContain(".finance-page > .workspace-header");
     expect(financeNavigation).toContain("background: transparent;");

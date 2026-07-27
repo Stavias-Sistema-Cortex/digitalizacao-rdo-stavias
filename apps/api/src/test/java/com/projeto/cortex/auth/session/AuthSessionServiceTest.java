@@ -33,6 +33,7 @@ class AuthSessionServiceTest {
                 anyString(),
                 anyString(),
                 anyString(),
+                anyString(),
                 org.mockito.ArgumentMatchers.anyInt()
         )).thenReturn(databaseExpiry);
         AuthSessionService service = new AuthSessionService(
@@ -42,11 +43,17 @@ class AuthSessionServiceTest {
                 () -> SESSION_ID
         );
 
-        IssuedAuthSession issued = service.issue(new AuthenticatedIdentity(
-                COLLABORATOR_ID,
-                "Pessoa Sintética",
-                PapelAcesso.ALFA
-        ));
+        ClientInstanceProof clientInstance = SessionTokenFixtures.clientInstance(
+                (byte) 44
+        );
+        IssuedAuthSession issued = service.issue(
+                new AuthenticatedIdentity(
+                        COLLABORATOR_ID,
+                        "Pessoa Sintética",
+                        PapelAcesso.ALFA
+                ),
+                clientInstance
+        );
 
         assertThat(issued.sessionToken())
                 .matches("[A-Za-z0-9_-]{43}")
@@ -68,11 +75,14 @@ class AuthSessionServiceTest {
                 ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> csrfHash =
                 ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> clientInstanceHash =
+                ArgumentCaptor.forClass(String.class);
         verify(repository).create(
                 org.mockito.ArgumentMatchers.eq(SESSION_ID),
                 org.mockito.ArgumentMatchers.eq(COLLABORATOR_ID),
                 tokenHash.capture(),
                 csrfHash.capture(),
+                clientInstanceHash.capture(),
                 org.mockito.ArgumentMatchers.eq(43_200)
         );
         assertThat(tokenHash.getValue())
@@ -85,6 +95,10 @@ class AuthSessionServiceTest {
                 .isNotEqualTo(issued.sessionToken());
         assertThat(csrfHash.getValue())
                 .isNotEqualTo(issued.csrfToken());
+        assertThat(clientInstanceHash.getValue())
+                .matches("[0-9a-f]{64}")
+                .isEqualTo(clientInstance.hash())
+                .isNotEqualTo(SessionTokenFixtures.token((byte) 44));
     }
 
     @Test
@@ -113,16 +127,26 @@ class AuthSessionServiceTest {
         ResolvedAuthSession resolved = SessionTokenFixtures.resolved(
                 SessionTokenFixtures.token((byte) 8)
         );
-        when(repository.findActiveByTokenHash(
-                SessionTokenHash.sha256(rawToken)
+        ClientInstanceProof clientInstance = SessionTokenFixtures.clientInstance(
+                (byte) 23
+        );
+        when(repository.findActiveByTokenHashAndClientInstanceHash(
+                SessionTokenHash.sha256(rawToken),
+                clientInstance.hash()
         )).thenReturn(Optional.of(resolved));
 
-        assertThat(service.resolve(rawToken)).containsSame(resolved);
-        assertThat(service.resolve(" ")).isEmpty();
-        assertThat(service.resolve("not-a-32-byte-token")).isEmpty();
+        assertThat(service.resolve(rawToken, clientInstance))
+                .containsSame(resolved);
+        assertThat(service.resolve(" ", clientInstance)).isEmpty();
+        assertThat(service.resolve(
+                "not-a-32-byte-token",
+                clientInstance
+        )).isEmpty();
+        assertThat(service.resolve(rawToken, null)).isEmpty();
 
-        verify(repository).findActiveByTokenHash(
-                SessionTokenHash.sha256(rawToken)
+        verify(repository).findActiveByTokenHashAndClientInstanceHash(
+                SessionTokenHash.sha256(rawToken),
+                clientInstance.hash()
         );
     }
 
@@ -142,6 +166,29 @@ class AuthSessionServiceTest {
         )).isFalse();
         assertThat(service.matchesCsrf(resolved, "")).isFalse();
         assertThat(service.matchesCsrf(null, validCsrf)).isFalse();
+    }
+
+    @Test
+    void clientInstanceMustMatchThePersistedHash() {
+        JdbcAuthSessionRepository repository =
+                mock(JdbcAuthSessionRepository.class);
+        AuthSessionService service = service(repository);
+        String rawCsrf = SessionTokenFixtures.token((byte) 11);
+        String rawClientInstance = SessionTokenFixtures.token((byte) 12);
+        ResolvedAuthSession resolved = SessionTokenFixtures.resolved(
+                rawCsrf,
+                rawClientInstance
+        );
+
+        assertThat(service.matchesClientInstance(
+                resolved,
+                ClientInstanceProof.fromRawValue(rawClientInstance).orElseThrow()
+        )).isTrue();
+        assertThat(service.matchesClientInstance(
+                resolved,
+                SessionTokenFixtures.clientInstance((byte) 13)
+        )).isFalse();
+        assertThat(service.matchesClientInstance(resolved, null)).isFalse();
     }
 
     @Test

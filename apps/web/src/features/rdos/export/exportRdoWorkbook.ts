@@ -4,6 +4,11 @@ import { unzipSync, zipSync } from "fflate";
 import { apiFetch } from "../../../lib/api/apiClient";
 import templateUrl from "./RDO-v1.xlsx?url";
 import {
+  assertRdoExportDownloadPermit,
+  downloadRdoExportBlob,
+  type RdoExportDownloadPermit,
+} from "./rdoExportDownload";
+import {
   RDO_BACK_SHEET,
   RDO_FRONT_SHEET,
   RDO_OPERATIONAL_CLEAR_RANGES,
@@ -529,30 +534,21 @@ export function rdoWorkbookFilename(snapshot: RdoWorkbookSnapshot): string {
 
 export async function downloadRdoWorkbook(
   snapshot: RdoWorkbookSnapshot,
+  permit: RdoExportDownloadPermit,
 ): Promise<void> {
+  assertRdoExportDownloadPermit(permit);
   const bytes = await exportRdoWorkbook(snapshot);
   const blob = new Blob([bytes.slice().buffer], {
     type: RDO_XLSX_MEDIA_TYPE,
   });
-  downloadBlob(blob, rdoWorkbookFilename(snapshot));
-}
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.rel = "noopener";
-    anchor.click();
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  downloadRdoExportBlob(blob, rdoWorkbookFilename(snapshot), permit);
 }
 
 export async function downloadAuthoritativeRdoWorkbook(
   snapshot: RdoWorkbookSnapshot,
+  permit: RdoExportDownloadPermit,
 ): Promise<void> {
+  assertRdoExportDownloadPermit(permit);
   const response = await apiFetch(
     `/rdos/${encodeURIComponent(snapshot.rdo.id)}/export.xlsx`,
     {
@@ -579,5 +575,9 @@ export async function downloadAuthoritativeRdoWorkbook(
       "O servidor respondeu sem um arquivo XLSX válido; o download foi bloqueado.",
     );
   }
-  downloadBlob(await response.blob(), rdoWorkbookFilename(snapshot));
+  downloadRdoExportBlob(
+    await response.blob(),
+    rdoWorkbookFilename(snapshot),
+    permit,
+  );
 }

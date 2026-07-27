@@ -9,6 +9,7 @@ import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceValidation;
 import com.projeto.cortex.storage.StoredObjectUploadResult;
 import com.projeto.cortex.storage.StoredObjectService;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+@Profile("legacy-finance")
 @RestController
 public class FiscalDocumentExtractionController {
 

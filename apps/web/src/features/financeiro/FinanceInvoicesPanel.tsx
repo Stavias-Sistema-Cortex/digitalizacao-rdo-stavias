@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 
 import {
   arquivarNotaFiscal,
+  buscarConteudoDocumento,
   buscarDocumentosNota,
   salvarNotaFiscal,
-  urlConteudoDocumento,
   vincularDocumentoNota,
 } from "./financeiroApi";
 import { getSession } from "../auth/authSession";
@@ -376,6 +376,12 @@ function InvoiceDocuments({
   const [extraction, setExtraction] = useState<FinanceFiscalExtraction | null>(null);
   const [confirmationMutationId, setConfirmationMutationId] = useState("");
   const [attaching, setAttaching] = useState(false);
+  const [preview, setPreview] = useState<{
+    objectUrl: string;
+    kind: FinanceDocumentPreviewKind;
+  } | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const previewLoading = selected !== null && preview === null && !previewError;
 
   useEffect(() => {
     let cancelled = false;
@@ -383,7 +389,7 @@ function InvoiceDocuments({
       .then((rows) => {
         if (!cancelled) {
           setDocuments(rows);
-          setSelected(rows.find((row) => row.principal) ?? rows[0] ?? null);
+          selectDocument(rows.find((row) => row.principal) ?? rows[0] ?? null);
         }
       })
       .catch((reason: unknown) => {
@@ -396,6 +402,47 @@ function InvoiceDocuments({
       cancelled = true;
     };
   }, [invoice]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    if (!selected) {
+      return () => undefined;
+    }
+
+    void buscarConteudoDocumento(invoice.id, selected.id, invoice.obraId)
+      .then((content) => {
+        objectUrl = URL.createObjectURL(content.blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
+        setPreview({
+          objectUrl,
+          kind: financeDocumentPreviewKind(content.mediaType),
+        });
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setPreviewError(reason instanceof Error
+            ? reason.message
+            : "Não foi possível carregar o documento fiscal.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [invoice.id, invoice.obraId, selected?.id]);
+
+  function selectDocument(document: FinanceInvoiceDocument | null) {
+    setSelected(document);
+    setPreview(null);
+    setPreviewError("");
+  }
 
   async function archive() {
     if (!window.confirm("Arquivar esta nota fiscal? Os documentos e o histórico serão preservados.")) return;
@@ -421,7 +468,7 @@ function InvoiceDocuments({
       );
       const rows = await buscarDocumentosNota(invoice.id, invoice.obraId);
       setDocuments(rows);
-      setSelected(rows.find((row) => row.id === linked.id) ?? linked);
+      selectDocument(rows.find((row) => row.id === linked.id) ?? linked);
       setExtraction(null);
       setConfirmationMutationId("");
     } catch (reason: unknown) {
@@ -467,7 +514,7 @@ function InvoiceDocuments({
       <section className="finance-document-viewer">
         <nav aria-label="Documentos da nota">
           {documents.map((document) => (
-            <button key={document.id} type="button" className={selected?.id === document.id ? "is-active" : ""} onClick={() => setSelected(document)}>
+            <button key={document.id} type="button" className={selected?.id === document.id ? "is-active" : ""} onClick={() => selectDocument(document)}>
               <strong>{document.nomeOriginal}</strong>
               <span>{document.tipoDocumento} · {Math.ceil(document.tamanhoBytes / 1024)} KB</span>
             </button>
@@ -476,18 +523,38 @@ function InvoiceDocuments({
         <div>
           {loading ? <p>Carregando documentos…</p> : selected ? (
             <>
-              <object
-                data={urlConteudoDocumento(invoice.id, selected.id, invoice.obraId)}
-                type={selected.mediaType}
-                aria-label={`Pré-visualização de ${selected.nomeOriginal}`}
-              >
-                <a href={urlConteudoDocumento(invoice.id, selected.id, invoice.obraId)}>
-                  Abrir {selected.nomeOriginal}
+              {previewLoading ? <p>Carregando pré-visualização segura…</p> : null}
+              {preview && preview.kind === "pdf" ? (
+                <iframe
+                  src={preview.objectUrl}
+                  sandbox=""
+                  referrerPolicy="no-referrer"
+                  title={`Pré-visualização de ${selected.nomeOriginal}`}
+                />
+              ) : null}
+              {preview && preview.kind === "image" ? (
+                <img
+                  className="finance-document-preview-image"
+                  src={preview.objectUrl}
+                  alt={`Pré-visualização de ${selected.nomeOriginal}`}
+                />
+              ) : null}
+              {preview && preview.kind === null ? (
+                <p>
+                  Pré-visualização indisponível para este tipo de arquivo.
+                  Baixe o documento para abri-lo com segurança.
+                </p>
+              ) : null}
+              {preview ? (
+                <a
+                  className="finance-secondary-action"
+                  href={preview.objectUrl}
+                  download={selected.nomeOriginal}
+                >
+                  Baixar documento
                 </a>
-              </object>
-              <a className="finance-secondary-action" href={urlConteudoDocumento(invoice.id, selected.id, invoice.obraId)}>
-                Abrir documento
-              </a>
+              ) : null}
+              {previewError ? <p role="alert">{previewError}</p> : null}
               <dl className="finance-document-trace">
                 <div><dt>Enviado por</dt><dd>{selected.enviadoPor}</dd></div>
                 <div><dt>Confirmado por</dt><dd>{selected.confirmadoPor}</dd></div>
@@ -501,6 +568,23 @@ function InvoiceDocuments({
       {canArchive && <button type="button" className="finance-danger-action" onClick={() => void archive()}>Arquivar nota fiscal</button>}
     </FinanceDrawer>
   );
+}
+
+type FinanceDocumentPreviewKind = "pdf" | "image" | null;
+
+function financeDocumentPreviewKind(
+  mediaType: string,
+): FinanceDocumentPreviewKind {
+  if (mediaType === "application/pdf") return "pdf";
+  if (new Set([
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+  ]).has(mediaType)) {
+    return "image";
+  }
+  return null;
 }
 
 function text(form: FormData, key: string): string {

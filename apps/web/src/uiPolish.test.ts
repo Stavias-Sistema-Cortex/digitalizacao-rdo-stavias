@@ -31,6 +31,7 @@ function lastRule(css: string, selector: string): string {
 }
 
 const globalCss = readCss("./index.css");
+const headerCss = readCss("./components/header/CortexPageHeader.css");
 const syncCss = readCss("./components/SyncStatusBanner.css");
 const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
 const integracoesCss = readCss("./features/integracoes/IntegracoesPage.css");
@@ -39,26 +40,35 @@ const programacaoCss = readCss(
   "./features/programacoes/ProgramacaoSemanalImport.css",
 );
 const mensagensCss = readCss("./features/mensagens/MensagensPage.css");
-const authenticatedCss = [
-  globalCss,
-  syncCss,
-  integracoesCss,
-  gestaoObrasCss,
-  programacaoCss,
-  tarefasCss,
-  mensagensCss,
-].join("\n");
+const operationalWorkspaceCss = readCss(
+  "./components/workspace/OperationalWorkspace.css",
+);
+const rdoWorkspaceCss = readCss("./features/rdos/RdoWorkspacePage.css");
+const deviceSecurityCss = readCss("./features/auth/DeviceSecurityPage.css");
+const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
+const equipesCss = readCss("./features/equipes/EquipesPage.css");
 
 describe("polimento visual da plataforma autenticada", () => {
-  it("centraliza a paleta preta e a escala quadrada aprovadas", () => {
+  it("centraliza a paleta de campo e a escala moderna de superfícies", () => {
     expect(rule(globalCss, ":root")).toContain("--color-ink: #111312;");
     expect(rule(globalCss, ":root")).toContain(
       "--color-text: var(--color-ink);",
     );
     expect(rule(globalCss, ":root")).toContain("--color-brand-teal: #124e4a;");
     expect(rule(globalCss, ":root")).toContain("--color-brand-yellow: #f2c800;");
-    expect(rule(globalCss, ":root")).toContain("--radius-control: 4px;");
-    expect(rule(globalCss, ":root")).toContain("--radius-container: 4px;");
+    expect(rule(globalCss, ":root")).toContain("--color-canvas: #edf2ef;");
+    expect(rule(globalCss, ":root")).toContain(
+      "--color-border: rgb(18 58 55 / 14%);",
+    );
+    expect(rule(globalCss, ":root")).toContain(
+      "--surface-glass: rgb(255 255 255 / 78%);",
+    );
+    expect(rule(globalCss, ":root")).toContain(
+      "--surface-glass-fallback: #f8fbf9;",
+    );
+    expect(rule(globalCss, ":root")).toContain("--glass-shadow:");
+    expect(rule(globalCss, ":root")).toContain("--radius-control: 8px;");
+    expect(rule(globalCss, ":root")).toContain("--radius-container: 14px;");
     expect(rule(globalCss, ":root")).toContain(
       "--radius-sm: var(--radius-control);",
     );
@@ -67,28 +77,139 @@ describe("polimento visual da plataforma autenticada", () => {
     );
   });
 
-  it("remove receitas de vidro da interface autenticada", () => {
-    expect(authenticatedCss).not.toContain("--glass-");
-    expect(authenticatedCss).not.toContain("backdrop-filter");
+  it("aplica vidro líquido somente nas superfícies externas com fallback opaco", () => {
+    const institutionalFrame = rule(globalCss, ".institutional-frame");
+    const documentSurface = rule(rdoWorkspaceCss, ".rdo-document-surface");
+    const integrationCard = rule(
+      integracoesCss,
+      ".integracoes-table-card,\n.integracoes-report",
+    );
+    const teamsFrame = rule(
+      equipesCss,
+      ".teams-workspace .teams-page",
+    );
+    const managementColumn = rule(gestaoObrasCss, ".gestao-obras-coluna");
+    const workspaceRail = rule(
+      operationalWorkspaceCss,
+      ".workspace-status-rail",
+    );
+    const financeScope = rule(financeiroCss, ".finance-scope-bar");
+
+    for (const surface of [
+      institutionalFrame,
+      documentSurface,
+      integrationCard,
+      teamsFrame,
+      managementColumn,
+      workspaceRail,
+      financeScope,
+    ]) {
+      expect(surface).toContain("background: var(--surface-glass-fallback);");
+      expect(surface).toContain("box-shadow: var(--glass-shadow);");
+    }
+    expect(teamsFrame).not.toContain("overflow: hidden;");
+
+    expect(globalCss).toContain(
+      "@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
+    );
+    expect(globalCss).toContain("backdrop-filter: blur(14px) saturate(112%);");
+    expect(globalCss).toContain(
+      "@media (prefers-reduced-transparency: reduce)",
+    );
+    expect(globalCss).not.toMatch(
+      /(?:@supports|prefers-reduced-transparency)[\s\S]*?\.offline-unlock__card,/,
+    );
   });
 
-  it("usa a sidebar preto-verde aprovada e métricas operacionais discretas", () => {
+  it("usa uma única superfície contínua para sidebar e cabeçalhos", () => {
     const sidebar = lastRule(globalCss, ".cortex-sidebar");
-    expect(sidebar).toContain("background: linear-gradient(");
-    expect(sidebar).toContain("#111312 0%");
-    expect(sidebar).toContain("var(--color-brand-teal) 100%");
+    const shell = rule(globalCss, ".cortex-shell");
+    const header = rule(headerCss, ".cortex-page-header");
+    const compatibilityHeader = rule(
+      headerCss,
+      ".cortex-page-header.workspace-header,\n" +
+        ".cortex-page-header.institutional-page-header,\n" +
+        ".cortex-page-header.mensagens-header",
+    );
+
+    expect(shell).toContain("--cortex-shell-chrome-surface:");
+    expect(shell).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(shell).toContain("background-attachment: fixed;");
+    expect(shell).toContain("background-size: 100vw 100dvh;");
+    expect(shell).toContain("background-position: 0 0;");
+    expect(sidebar).toContain("background: transparent;");
+    expect(header).toContain("background: var(--cortex-shell-chrome-surface);");
+    expect(header).toContain("background-attachment: fixed;");
+    expect(header).toContain("background-size: 100vw 100dvh;");
+    expect(header).toContain("background-position: 0 0;");
+    expect(compatibilityHeader).toContain(
+      "background: var(--cortex-shell-chrome-surface);",
+    );
+    expect(compatibilityHeader).toContain("background-attachment: fixed;");
+    expect(compatibilityHeader).toContain("background-size: 100vw 100dvh;");
+    expect(compatibilityHeader).toContain("background-position: 0 0;");
+    expect(headerCss).not.toContain("--cortex-shell-chrome-surface:");
+  });
+
+  it("projeta o chrome sobre os canvases legados opacos", () => {
+    expect(rule(operationalWorkspaceCss, ".operational-workspace")).toContain(
+      "background: var(--color-canvas, #f3f5f2);",
+    );
+    expect(
+      rule(rdoWorkspaceCss, ".rdo-dashboard,\n.rdo-create-workspace"),
+    ).toContain("background: var(--color-canvas);");
+    expect(rule(mensagensCss, ".mensagens-page")).toContain(
+      "background: var(--color-canvas);",
+    );
+    expect(rule(deviceSecurityCss, ".device-security-page")).toContain(
+      "background: var(--color-canvas);",
+    );
+    expect(rule(financeiroCss, ".finance-page")).toContain(
+      "background: var(--finance-canvas);",
+    );
+  });
+
+  it("mantém a alavanca de recolher visível e sinalizada", () => {
+    const sidebar = lastRule(globalCss, ".cortex-sidebar");
+    const shell = rule(globalCss, ".cortex-shell");
+    const collapsedShell = rule(globalCss, ".cortex-shell--collapsed");
+    const toggle = lastRule(globalCss, ".sidebar-toggle");
+    const toggleFocus = rule(globalCss, ".sidebar-toggle:focus-visible");
+
+    expect(sidebar).toContain("z-index: 1;");
+    expect(shell).toContain("position: relative;");
+    expect(shell).toContain(
+      "--cortex-sidebar-edge: var(--sidebar-width, 248px);",
+    );
+    expect(collapsedShell).toContain("--cortex-sidebar-edge: 84px;");
+    expect(toggle).toContain("width: 44px;");
+    expect(toggle).toContain("height: 48px;");
+    expect(toggle).toContain("left: calc(var(--cortex-sidebar-edge) - 22px);");
+    expect(toggle).toContain("right: auto;");
+    expect(toggle).toContain("background: var(--color-brand-yellow);");
+    expect(toggle).toContain("color: #111312;");
+    expect(toggleFocus).toContain(
+      "outline: 3px solid var(--color-brand-yellow);",
+    );
+    expect(toggleFocus).toContain("outline-offset: 3px;");
+  });
+
+  it("mantém métricas operacionais discretas", () => {
     expect(rule(globalCss, ".metric-card")).toContain(
       "background: var(--color-surface);",
     );
   });
 
-  it("enquadra métricas RDO com moldura amarela e cantos quadrados", () => {
+  it("assina métricas RDO com uma faixa de pista sem moldura pesada", () => {
     const metricCard = rule(globalCss, ".metric-card");
-    expect(metricCard).toContain(
-      "border: 2px solid var(--color-brand-yellow);",
-    );
-    expect(metricCard).toContain("border-radius: 0;");
-    expect(metricCard).not.toContain("border-top:");
+    const metricStripe = rule(globalCss, ".metric-card::before");
+    expect(metricCard).toContain("border: 1px solid var(--color-border);");
+    expect(metricCard).toContain("border-radius: var(--radius-container);");
+    expect(metricCard).toContain("overflow: hidden;");
+    expect(metricStripe).toContain('content: "";');
+    expect(metricStripe).toContain("width: 48px;");
+    expect(metricStripe).toContain("height: 3px;");
+    expect(metricStripe).toContain("background: var(--color-brand-yellow);");
   });
 
   it("mantém foco visível para os controles principais", () => {
@@ -166,7 +287,7 @@ describe("polimento visual da plataforma autenticada", () => {
     const metric = rule(globalCss, ".metric-card");
     expect(metric).toContain("min-height: 82px;");
     expect(metric).toContain("padding: 14px 16px;");
-    expect(metric).toContain("border-radius: 0;");
+    expect(metric).toContain("border-radius: var(--radius-container);");
     expect(rule(globalCss, ".metric-card span")).toContain(
       "text-align: left;",
     );
@@ -276,7 +397,24 @@ describe("polimento visual da plataforma autenticada", () => {
     const surfaces = rule(globalCss, ".obras-list,\n.obras-detail");
     expect(surfaces).toContain("border: 1px solid var(--color-border);");
     expect(surfaces).toContain("border-radius: var(--radius-lg);");
-    expect(surfaces).toContain("background: var(--color-surface);");
+    expect(surfaces).toContain("background: var(--surface-glass-fallback);");
+    expect(surfaces).toContain("box-shadow: var(--glass-shadow);");
+
+    const nestedPdor = rule(globalCss, ".obras-pdor");
+    expect(nestedPdor).toContain("border: 0;");
+    expect(nestedPdor).toContain(
+      "border-top: 1px solid var(--color-border);",
+    );
+    expect(nestedPdor).toContain("background: transparent;");
+
+    const pdorMain = lastRule(
+      globalCss,
+      ".obras-pdor-grid .obras-pdor-main",
+    );
+    expect(pdorMain).toContain("border: 1px solid var(--color-border);");
+    expect(pdorMain).toContain(
+      "border-top: 3px solid var(--color-brand-yellow);",
+    );
 
     const active = rule(globalCss, ".obras-list-item.active");
     expect(active).toContain("border-color: var(--color-border);");
@@ -371,7 +509,8 @@ describe("polimento visual da plataforma autenticada", () => {
     const column = rule(gestaoObrasCss, ".gestao-obras-coluna");
     expect(column).toContain("border: 1px solid var(--color-border);");
     expect(column).toContain("border-radius: var(--radius-md);");
-    expect(column).toContain("background: var(--color-surface);");
+    expect(column).toContain("background: var(--surface-glass-fallback);");
+    expect(column).toContain("box-shadow: var(--glass-shadow);");
 
     const active = rule(gestaoObrasCss, ".gestao-obras-item.ativo");
     expect(active).toContain("background: #f7f9f7;");

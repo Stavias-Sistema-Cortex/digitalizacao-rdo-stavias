@@ -102,7 +102,41 @@ describe("authSession", () => {
     expect(legacyValues.has("cortex:stavia:last-context")).toBe(false);
   });
 
-  it("propaga somente LOGOUT entre abas sem perfil ou segredo", async () => {
+  it("clears session memory even when retired local-storage cleanup is unavailable", async () => {
+    const session = await import("./authSession");
+    session.setSession(profile);
+    const removeItem = vi.spyOn(window.localStorage, "removeItem")
+      .mockImplementation(() => {
+        throw new Error("storage unavailable");
+      });
+
+    expect(() => session.clearSession()).not.toThrow();
+    expect(session.getSession()).toBeNull();
+
+    removeItem.mockRestore();
+  });
+
+  it("encerra a sessão da aba anterior quando um novo login substitui o cookie compartilhado", async () => {
+    const firstTab = await import("./authSession");
+    firstTab.setSession(profile);
+
+    vi.resetModules();
+    const secondTab = await import("./authSession");
+    secondTab.setSession(profile);
+
+    expect(firstTab.getSession()).toBeNull();
+    expect(secondTab.getSession()).toEqual(profile);
+    expect(
+      broadcastChannels.flatMap((channel) => channel.messages),
+    ).toEqual(["SESSION_REPLACED", "SESSION_REPLACED"]);
+    expect(
+      JSON.stringify(
+        broadcastChannels.flatMap((channel) => channel.messages),
+      ),
+    ).not.toContain(profile.colaboradorId);
+  });
+
+  it("propaga LOGOUT entre abas sem perfil ou segredo", async () => {
     const firstTab = await import("./authSession");
     firstTab.setSession(profile);
 
@@ -115,12 +149,29 @@ describe("authSession", () => {
     expect(secondTab.getSession()).toBeNull();
     expect(
       broadcastChannels.flatMap((channel) => channel.messages),
-    ).toEqual(["LOGOUT"]);
+    ).toEqual(["SESSION_REPLACED", "LOGOUT", "SESSION_REPLACED"]);
     expect(
       JSON.stringify(
         broadcastChannels.flatMap((channel) => channel.messages),
       ),
     ).not.toContain(profile.colaboradorId);
+  });
+
+  it("clears only the current document when a remote session is rejected", async () => {
+    const firstTab = await import("./authSession");
+    firstTab.setSession(profile);
+
+    vi.resetModules();
+    const secondTab = await import("./authSession");
+    secondTab.setSession(profile);
+
+    firstTab.clearSessionForCurrentDocument();
+
+    expect(firstTab.getSession()).toBeNull();
+    expect(secondTab.getSession()).toEqual(profile);
+    expect(
+      broadcastChannels.flatMap((channel) => channel.messages),
+    ).toEqual(["SESSION_REPLACED", "SESSION_REPLACED"]);
   });
 
   it("reconhece ALFA somente com valor canônico exato", async () => {
