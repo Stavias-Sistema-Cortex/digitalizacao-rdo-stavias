@@ -493,6 +493,12 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
         /^compose(?:\..+)?\.ya?ml$/.test(entry.name),
     )
     .map((entry) => path.join(repositoryRoot, entry.name));
+  const localRuntimeSupport = [
+    path.join(
+      repositoryRoot,
+      "apps/api/src/main/resources/application-local.yml",
+    ),
+  ].filter(existsSync);
   const environmentContracts =
     trackedEnvironmentContracts(repositoryRoot);
   const scripts = listFiles(path.join(repositoryRoot, "scripts"));
@@ -503,6 +509,7 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
     ...publicFiles,
     ...webSupport,
     ...repositorySupport,
+    ...localRuntimeSupport,
     ...environmentContracts,
     ...scripts,
   ])];
@@ -686,11 +693,11 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
   ],
   [
     "build:local",
-    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8080/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
   ],
   [
     "build:compose",
-    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=http://127.0.0.1:8081/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
+    "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
   ],
   ["lint", "eslint ."],
   [
@@ -836,6 +843,7 @@ export function inspectPackageBuildScripts(scripts) {
 
 export function inspectSourceBoundary(files) {
   const violations = inspectLegacySource(files);
+  const byPath = new Map(files.map((file) => [file.path, file.content]));
   const packageFile = files.find(
     (file) => file.path === "apps/web/package.json",
   );
@@ -848,6 +856,68 @@ export function inspectSourceBoundary(files) {
     } catch (error) {
       violations.push(
         `apps/web/package.json: cannot validate build scripts (${error instanceof Error ? error.message : error})`,
+      );
+    }
+  }
+  const compose = byPath.get("compose.local.yml");
+  if (compose !== undefined) {
+    for (const required of [
+      '"127.0.0.1:${CORTEX_API_PORT:-8081}:8080"',
+      '"127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"',
+      "CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+      "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+    ]) {
+      if (compose.includes(required)) {
+        continue;
+      }
+      violations.push(
+        `compose.local.yml: missing same-origin local runtime contract (${required})`,
+      );
+    }
+    if (
+      compose.includes("CORTEX_AUTH_OTP_HMAC_KEY_FILE") ||
+      compose.includes("cortex_otp_hmac")
+    ) {
+      violations.push(
+        "compose.local.yml: normal PostgreSQL runtime must not require an OTP secret",
+      );
+    }
+  }
+
+  const runApi = byPath.get("scripts/dev/run-api.sh");
+  if (runApi !== undefined) {
+    if (
+      runApi.includes(
+        "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-api.sh: normal PostgreSQL runtime must not require an OTP secret",
+      );
+    }
+    if (
+      !runApi.includes(
+        'API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"',
+      )
+    ) {
+      violations.push(
+        "scripts/dev/run-api.sh: health output must derive the exact API port",
+      );
+    }
+  }
+
+  const localApplication =
+    byPath.get("apps/api/src/main/resources/application-local.yml");
+  if (localApplication !== undefined) {
+    for (const required of [
+      "allowed-origins: ${CORTEX_CORS_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+      "allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+    ]) {
+      if (localApplication.includes(required)) {
+        continue;
+      }
+      violations.push(
+        `apps/api/src/main/resources/application-local.yml: missing exact local origin contract (${required})`,
       );
     }
   }

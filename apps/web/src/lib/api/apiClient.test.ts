@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -204,5 +206,89 @@ describe("apiFetch cookie session", () => {
       method: "POST",
     });
     expect(mocks.clearSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("same-origin local runtime contract", () => {
+  it("embeds only the root-relative API base in local and compose builds", () => {
+    const packageJson = JSON.parse(
+      readFileSync(
+        new URL("../../../package.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { scripts: Record<string, string> };
+
+    for (const script of ["build:local", "build:compose"]) {
+      expect(packageJson.scripts[script]).toContain(
+        "VITE_CORTEX_API_BASE_URL=/api",
+      );
+      expect(packageJson.scripts[script]).not.toMatch(
+        /VITE_CORTEX_API_BASE_URL=https?:\/\//,
+      );
+      expect(packageJson.scripts[script]).not.toContain(
+        "CORTEX_API_TARGET=",
+      );
+    }
+
+    for (const script of [
+      "dev:local",
+      "dev:compose",
+      "preview:local",
+      "preview:compose",
+    ]) {
+      expect(packageJson.scripts[script]).toContain(
+        "CORTEX_API_TARGET=http://127.0.0.1:",
+      );
+    }
+  });
+
+  it("derives loopback ports and the exact local web origin without normal OTP", () => {
+    const compose = readFileSync(
+      new URL("../../../../../compose.local.yml", import.meta.url),
+      "utf8",
+    );
+    const runApi = readFileSync(
+      new URL(
+        "../../../../../scripts/dev/run-api.sh",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const localApplication = readFileSync(
+      new URL(
+        "../../../../api/src/main/resources/application-local.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(compose).toContain(
+      '"127.0.0.1:${CORTEX_API_PORT:-8081}:8080"',
+    );
+    expect(compose).toContain(
+      '"127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"',
+    );
+    expect(compose).toContain(
+      "CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+    );
+    expect(compose).toContain(
+      "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}",
+    );
+    expect(compose).not.toContain("CORTEX_AUTH_OTP_HMAC_KEY_FILE");
+    expect(compose).not.toContain("cortex_otp_hmac");
+
+    expect(runApi).not.toContain(
+      "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+    );
+    expect(runApi).toContain(
+      'API_HEALTH_URL="http://127.0.0.1:${API_PORT}/api/health"',
+    );
+
+    expect(localApplication).toContain(
+      "allowed-origins: ${CORTEX_CORS_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+    );
+    expect(localApplication).toContain(
+      "allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}",
+    );
   });
 });

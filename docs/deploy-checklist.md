@@ -1,10 +1,10 @@
 # Córtex — checklist de deploy
 
 Esta é a trava operacional do artefato atual: API Java 21, PWA, autenticação
-online por CPF + OTP de e-mail (passkey como alternativa), cofre offline por
-passkey PRF, Mensagens, armazenamento compartilhado, RDO, Financeiro orientado
-à receita, Memória e grafo ontológico. Marque um item somente com evidência da
-mesma revisão que será publicada.
+online direta por CPF canônico (passkey como alternativa), grants colaborativos
+offline e cofre por passkey PRF, Mensagens, armazenamento compartilhado, RDO,
+Financeiro orientado à receita, Memória e grafo ontológico. Marque um item
+somente com evidência da mesma revisão que será publicada.
 
 ## 1. Banco e migrações
 
@@ -19,16 +19,15 @@ mesma revisão que será publicada.
 - [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
   `email_verificado_em` preenchido.
 - [ ] Os registros ALFA explícitos anteriores permanecem ALFA após a migração.
-- [ ] Antes do acesso de cada colaborador QA, a sincronização/bootstrap da
-  Academy (ou o processo de provisionamento explicitamente auditado) persistiu
-  no PostgreSQL o HMAC de CPF e um `email_autenticacao` entregável. O login
-  normal não consulta MySQL em tempo de requisição.
+- [ ] Antes do acesso de cada colaborador QA, um bootstrap/sync explicitamente
+  auditado do Academy persistiu no PostgreSQL o HMAC de CPF e o estado ativo. O
+  login normal consulta somente PostgreSQL, nunca MySQL em tempo de requisição.
 
 A API em perfil `production` falha na inicialização quando o último requisito
 de ALFA não é atendido. `/api/readiness` também consulta o banco e revalida esse
 estado; `/api/health` mede somente o processo.
 
-## 2. HTTPS, cookies, OTP e passkeys
+## 2. HTTPS, cookies, CPF e passkeys
 
 - [ ] O proxy termina HTTPS e publica PWA e `/api` na mesma origem.
 - [ ] `cortex-web` fica em `127.0.0.1` por padrão; qualquer override de
@@ -39,34 +38,32 @@ estado; `/api/health` mede somente o processo.
 - [ ] Cookies estão `Secure`; `SameSite` foi escolhido para a topologia real.
 - [ ] O par PEM do offline grant está montado e o fingerprint público usado no
   build da PWA corresponde exatamente a esse par.
-- [ ] CPF válido, CPF inválido e CPF sem identidade recebem a mesma resposta
-  pública de solicitação; nenhum deles cria sessão somente pelo CPF.
-- [ ] O OTP chega ao `auth_identity.email_autenticacao` canônico, é de uso
-  único, expira e só então emite cookie opaco + CSRF no hostname final.
-- [ ] As rotas públicas de OTP aceitam no máximo 4 KiB tanto no proxy quanto
-  antes do MVC (inclusive em corpo chunked), e a verificação aplica orçamento
-  de tentativas por origem e global antes de consultar o desafio armazenado.
+- [ ] O login por CPF normaliza o identificador, aplica limites por origem,
+  globais e por identificador antes da consulta e resolve somente a identidade
+  Academy já espelhada em PostgreSQL.
+- [ ] Sucesso por CPF emite somente cookie opaco + CSRF no hostname final; a
+  resposta e os logs não expõem material de lookup, CPF persistido ou segredo.
+- [ ] E-mail/OTP está indisponível no runtime normal e permanece isolado no
+  perfil explícito `postgresql-activation`, com seu segredo próprio.
 - [ ] Login por passkey foi exercitado como alternativa online explícita; o
-  endpoint legado de CPF direto permanece inacessível fora de local/teste.
-- [ ] Depois de login online e registro de passkey com PRF, a mesma identidade
-  abre o cofre offline sem rede. CPF, PIN, e-mail e OTP não desbloqueiam o
-  cofre; uma identidade sem grant/passkey continua bloqueada.
+  RP ID e a origem WebAuthn correspondem exatamente à origem publicada.
+- [ ] Depois de login online, o grant colaborativo assinado permite reabertura
+  offline somente com o CPF correspondente; o cofre PRF continua disponível
+  apenas para uma passkey registrada explicitamente. E-mail, OTP e PIN não são
+  fallbacks offline; sem grant/passkey a identidade continua bloqueada.
 
 ## 3. Secrets e providers
 
-- [ ] CPF HMAC, OTP HMAC, chave privada offline e senha SMTP vêm de arquivos
-  secretos montados; os equivalentes inline estão vazios.
+- [ ] CPF HMAC e chave privada offline vêm de arquivos secretos montados; os
+  equivalentes inline estão vazios. OTP HMAC e SMTP são requisitos apenas do
+  deployment de ativação explícita, nunca do runtime normal.
 - [ ] As URLs, usuários e arquivos de senha de Academy/Zeladoria são distintos
   do PostgreSQL canônico, montados por Config Tree, e os usuários das fontes
   têm somente `SELECT` no schema explicitamente autorizado.
 - [ ] `CORTEX_AUTH_DEV_ADMIN_ENABLED=false` e
   `CORTEX_AUTH_PROVISIONING_ENABLED=false` no processo web.
-- [ ] `CORTEX_EMAIL_PROVIDER=smtp`; provider `fake` não existe no runtime de
-  produção.
-- [ ] From, usuário, host, porta, STARTTLS e
-  `CORTEX_EMAIL_SENDER_PROFILE_KEY` correspondem à caixa Stavias autenticada;
-  existe um e-mail institucional verificável para cada usuário que fará login
-  por OTP.
+- [ ] Quando a ativação explícita for executada, `CORTEX_EMAIL_PROVIDER=smtp`;
+  provider `fake` não é usado para essa transição real.
 - [ ] Nenhuma senha, OTP, CPF, token de sessão ou conteúdo de mensagem aparece
   em logs, imagem, compose ou repositório.
 
@@ -97,9 +94,12 @@ estado; `/api/health` mede somente o processo.
   cobertura e frescor explícitos; fatos apenas locais não são apresentados como
   confirmados pelo servidor.
 - [ ] `CORTEX_SYNC_ENABLED` foi deixado `false` até validar uma importação QA;
-  depois de habilitado, os resultados aparecem em `source_sync_run` no
-  PostgreSQL. O replay offline da PWA permanece automático e separado desse
-  scheduler.
+  as URLs, usuários `SELECT`-only e arquivos de senha de cada fonte foram
+  verificados explicitamente antes de habilitá-lo, e os resultados aparecem em
+  `source_sync_run` no PostgreSQL.
+- [ ] O replay offline da PWA foi exercitado com o app aberto e uma sessão
+  online ativa em escrita local/reconexão/abertura/foreground. Não foi registrada
+  promessa de execução universal com navegador ou PWA fechados.
 
 ## 6. Build e testes da revisão
 

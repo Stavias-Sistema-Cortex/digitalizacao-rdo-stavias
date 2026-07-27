@@ -28,8 +28,8 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_IMPORT_ENABLED: \"false\"",
                 "CORTEX_SYNC_ENABLED: \"true\"",
                 "VITE_CORTEX_AUTH_MODE: postgresql",
-                "127.0.0.1:8081:8080",
-                "127.0.0.1:5173:8080"
+                "127.0.0.1:${CORTEX_API_PORT:-8081}:8080",
+                "127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"
         ).doesNotContain(
                 "cortex-mysql",
                 "jdbc:mysql",

@@ -4,13 +4,16 @@ spring:
       on-profile: local
 
 cortex:
+  cors:
+    allowed-origins: ${CORTEX_CORS_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}
+
   auth:
     session:
       cookie-secure: ${CORTEX_AUTH_COOKIE_SECURE:false}
     webauthn:
       rp-id: ${CORTEX_AUTH_WEBAUTHN_RP_ID:localhost}
       rp-name: ${CORTEX_AUTH_WEBAUTHN_RP_NAME:Córtex Local}
-      allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:5173}
+      allowed-origins: ${CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS:http://localhost:${CORTEX_WEB_PORT:5173}}
 
   import:
     enabled: ${CORTEX_IMPORT_ENABLED:false}

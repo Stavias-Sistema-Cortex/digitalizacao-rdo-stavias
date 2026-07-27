@@ -20,15 +20,14 @@ services:
       CORTEX_POSTGRES_RUNTIME_READY: ${CORTEX_POSTGRES_RUNTIME_READY:?Set true only after V60 and a real ALFA bootstrap}
       CORTEX_POSTGRES_SCHEMA_READINESS_ENABLED: "true"
 
-      CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:5173
+      CORTEX_CORS_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}
       CORTEX_AUTH_COOKIE_SECURE: "false"
       CORTEX_AUTH_COOKIE_SAME_SITE: Lax
       CORTEX_AUTH_WEBAUTHN_RP_ID: localhost
       CORTEX_AUTH_WEBAUTHN_RP_NAME: Córtex Local
-      CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:5173
+      CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS: http://localhost:${CORTEX_WEB_PORT:-5173}
       CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID:?Set the local CPF HMAC key id}
       CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac
-      CORTEX_AUTH_OTP_HMAC_KEY_FILE: /run/secrets/cortex_otp_hmac
       CORTEX_AUTH_OFFLINE_GRANT_KEY_ID: ${CORTEX_AUTH_OFFLINE_GRANT_KEY_ID:?Set the local offline signing key id}
       CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE: /run/secrets/cortex_offline_private
       CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE: /run/secrets/cortex_offline_public
@@ -49,12 +48,11 @@ services:
       - source: cortex_postgres_password
         target: CORTEX_POSTGRES_PASSWORD
       - cortex_cpf_hmac
-      - cortex_otp_hmac
       - cortex_offline_private
       - cortex_offline_public
       - cortex_memory_cursor_hmac
     ports:
-      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:${CORTEX_API_PORT:-8081}:8080"
     volumes:
       - cortex_object_data:/var/lib/cortex/objects
     healthcheck:
@@ -86,15 +84,13 @@ services:
       cortex-api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:5173:8080"
+      - "127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"
 
 secrets:
   cortex_postgres_password:
     file: ${CORTEX_POSTGRES_PASSWORD_FILE:?Point to the local PostgreSQL password file}
   cortex_cpf_hmac:
     file: ${CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE:?Point to the local CPF HMAC secret file}
-  cortex_otp_hmac:
-    file: ${CORTEX_AUTH_OTP_HMAC_KEY_FILE:?Point to the local OTP HMAC secret file}
   cortex_offline_private:
     file: ${CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE:?Point to the local PKCS8 private PEM}
   cortex_offline_public:
