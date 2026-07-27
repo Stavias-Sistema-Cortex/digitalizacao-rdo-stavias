@@ -504,14 +504,15 @@ if ! migrator_ready="$(
   PGSERVICE=neon_target "$psql_bin" \
     -X -Atq -w -v ON_ERROR_STOP=1 \
     -v migrator_role="$migrator_role" \
-    -c "SELECT CASE
-      WHEN EXISTS (
-        SELECT 1 FROM pg_roles WHERE rolname = :'migrator_role'
-      )
-      THEN pg_has_role(current_user, :'migrator_role', 'MEMBER')::int
-      ELSE 0
-    END" \
-    2>/dev/null
+    2>/dev/null <<'SQL'
+SELECT CASE
+  WHEN EXISTS (
+    SELECT 1 FROM pg_roles WHERE rolname = :'migrator_role'
+  )
+  THEN pg_has_role(current_user, :'migrator_role', 'MEMBER')::int
+  ELSE 0
+END;
+SQL
 )"; then
   echo "Unable to verify the configured migrator role." >&2
   exit 1
@@ -659,8 +660,25 @@ WHERE NOT EXISTS (
 )
 \gexec
 ALTER ROLE cortex_runtime WITH
-  LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT
-  NOREPLICATION NOBYPASSRLS PASSWORD :'runtime_password'; -- environment placeholder
+  LOGIN INHERIT PASSWORD :'runtime_password'; -- environment placeholder
+DO $runtime_role_guard$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'cortex_runtime'
+      AND rolcanlogin
+      AND rolinherit
+      AND NOT rolsuper
+      AND NOT rolcreatedb
+      AND NOT rolcreaterole
+      AND NOT rolreplication
+      AND NOT rolbypassrls
+  ) THEN
+    RAISE EXCEPTION 'cortex_runtime has unsafe role attributes';
+  END IF;
+END
+$runtime_role_guard$;
 GRANT CONNECT ON DATABASE "StaviasCortex" TO cortex_runtime;
 GRANT USAGE ON SCHEMA public TO cortex_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE

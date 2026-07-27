@@ -30,8 +30,6 @@ if [[ "${CORTEX_NEON_CONTRACT_SKIP_STATIC:-false}" != "true" ]]; then
   grep -Fq -- '--exit-on-error' "$script"
   grep -Fq -- '--single-transaction' "$script"
   grep -Fq 'FOR ROLE' "$script"
-  grep -Fq 'NOSUPERUSER NOCREATEDB NOCREATEROLE' "$script"
-  grep -Fq 'NOREPLICATION NOBYPASSRLS' "$script"
   grep -Fq 'public.auth_identity' "$script"
   if grep -Fq 'postgres-error.log' "$script"; then
     echo "Migration script persists PostgreSQL client diagnostics" >&2
@@ -194,6 +192,9 @@ case "$tool_name" in
     fi
 
     if [[ -n "$query" && "$query" == *"pg_has_role"* ]]; then
+      if [[ "${FAKE_REQUIRE_STDIN_MIGRATOR_QUERY:-false}" == "true" ]]; then
+        mark_failure migrator-query-used-command-string
+      fi
       [[ "${PGSERVICE:-}" == "neon_target" ]] ||
         mark_failure migrator-check-wrong-service
       log_operation migrator_check
@@ -227,12 +228,23 @@ case "$tool_name" in
 
     if [[ "${PGSERVICE:-}" == "neon_target" ]]; then
       payload="$(</dev/stdin)"
+      if [[ "$payload" == *"pg_has_role"* ]]; then
+        log_operation migrator_check
+        printf '%s\n' "${FAKE_MIGRATOR_READY:-1}"
+        exit 0
+      fi
+
       if [[ "$payload" == *"ALTER ROLE cortex_runtime"* ]]; then
         [[ "${CORTEX_RUNTIME_PASSWORD_INPUT:-}" == "$FIXTURE_RUNTIME_PASSWORD" ]] ||
           mark_failure missing-runtime-password-environment
         [[ "$payload" == *"BEGIN;"* && "$payload" == *"COMMIT;"* &&
-          "$payload" == *"NOSUPERUSER NOCREATEDB NOCREATEROLE"* &&
-          "$payload" == *"NOREPLICATION NOBYPASSRLS"* &&
+          "$payload" == *"rolsuper"* &&
+          "$payload" == *"rolcreatedb"* &&
+          "$payload" == *"rolcreaterole"* &&
+          "$payload" == *"rolreplication"* &&
+          "$payload" == *"rolbypassrls"* &&
+          "$payload" != *"NOSUPERUSER"* &&
+          "$payload" != *"NOBYPASSRLS"* &&
           "$payload" == *"ALTER DEFAULT PRIVILEGES FOR ROLE"* ]] ||
           mark_failure unsafe-role-grant-transaction
         log_operation role_grants
@@ -350,6 +362,7 @@ run_case() {
     FAKE_FAIL_ROLE_GRANTS="${FAKE_FAIL_ROLE_GRANTS:-false}" \
     FAKE_MISMATCH_TABLE="${FAKE_MISMATCH_TABLE:-}" \
     FAKE_MIGRATOR_READY="${FAKE_MIGRATOR_READY:-1}" \
+    FAKE_REQUIRE_STDIN_MIGRATOR_QUERY="${FAKE_REQUIRE_STDIN_MIGRATOR_QUERY:-false}" \
     bash "$script"
 }
 
@@ -477,6 +490,19 @@ set -e
   exit 1
 }
 assert_redacted "$symlink_output"
+
+prepare_case migrator-command-substitution
+FAKE_REQUIRE_STDIN_MIGRATOR_QUERY=true
+set +e
+migrator_command_output="$(run_case 2>&1)"
+migrator_command_status=$?
+set -e
+unset FAKE_REQUIRE_STDIN_MIGRATOR_QUERY
+[[ $migrator_command_status -eq 0 ]] || {
+  echo "Migration contract passed a psql variable through a command string" >&2
+  exit 1
+}
+assert_redacted "$migrator_command_output"
 
 prepare_case migrator-unavailable
 FAKE_MIGRATOR_READY=0

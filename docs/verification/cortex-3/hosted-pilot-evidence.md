@@ -94,17 +94,71 @@ deletion was executed against it.
 | `finance_lancamento` | 0 |
 | `stored_object` | 0 |
 
+## Neon migration rehearsal
+
+- Captured: `2026-07-27T20:43:13-03:00`
+- Successful branch: `migration-rehearsal-2`, created from `production`
+- PostgreSQL: `18.4`
+- Guarded dump and restore duration: approximately 4 minutes 56 seconds
+- Latest Flyway migration: `61`, successful
+- Runtime role: login enabled; superuser, database creation, role creation,
+  replication, and row-level-security bypass all disabled
+- Runtime authentication read: 461 identities
+- Historical synchronization errors preserved: 1
+
+The first disposable branch, `migration-rehearsal`, completed the transactional
+restore but rejected the runtime-role transaction. It remains isolated for
+review and expires automatically. No automatic clean, drop, repair, baseline,
+or reuse was attempted.
+
+The live failure exposed two migration-tooling defects. The migrator-role check
+passed a `psql` variable through `-c`, where it was not substituted, and the
+runtime-role normalization attempted to restate `NOSUPERUSER`, which Neon
+correctly reserves for a superuser. The corrected contract passes the role
+query through standard input, creates the runtime role with PostgreSQL's safe
+defaults, changes only login, inheritance, and password, and then verifies all
+restricted attributes through `pg_roles`. The behavioral migration contract
+failed before each correction and passed afterward.
+
+The successful guarded restore compared the same exported source snapshot with
+the Neon target:
+
+| Core table | Source | Neon |
+| --- | ---: | ---: |
+| `auth_identity` | 461 | 461 |
+| `auth_capacidade_administrativa` | 2 | 2 |
+| `colaborador` | 480 | 480 |
+| `obra` | 1 | 1 |
+| `rdo` | 1 | 1 |
+| `rdo_mao_obra` | 0 | 0 |
+| `vinculo_colaborador_obra` | 0 | 0 |
+| `cortex_evento_operacional` | 1,861 | 1,861 |
+| `finance_lancamento` | 0 | 0 |
+| `stored_object` | 0 | 0 |
+
+The isolated migration application validated the schema without `repair`,
+`clean`, or `baseline`. Read-only SQL then confirmed Flyway V61, the
+authentication counts, the historical error row, the restricted runtime-role
+attributes, and a runtime-role read from `auth_identity`.
+
+The protected rollback dump remains outside the checkout with owner-only
+permissions. The local PostgreSQL source was not cleaned, dropped, migrated, or
+otherwise replaced.
+
 ## Scope and remaining live proof
 
-No live Neon migration, Render deployment, Cloudflare Pages/R2 action, or live
-cloud smoke test has happened. These results cover local gates and local image
-builds only; the next phase must verify the dedicated ref and exact reviewed
-SHA in remote CI before any cloud credential or deployment action.
+A live Neon rehearsal has now passed. No Render deployment, Cloudflare
+Pages/R2 action, or hosted application smoke test has happened. The next phase
+must verify the dedicated ref and exact reviewed SHA remotely before
+provisioning those services.
 
 Non-blocking warnings observed:
 
 - Flyway recommends an upgrade because this version is tested through
   PostgreSQL 17, while the PostgreSQL 18.4 integration suite passed.
+- Neon reported warnings for grants on extension-owned `pg_trgm` functions;
+  the runtime transaction, restricted-role verification, and application-table
+  grants still completed successfully.
 - ESLint reported the existing `react-hooks/exhaustive-deps` warning in
   `FinanceInvoicesPanel.tsx`.
 - Docker's generic secret heuristic labeled `VITE_CORTEX_AUTH_MODE`; the actual
