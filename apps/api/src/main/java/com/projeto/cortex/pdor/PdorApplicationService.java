@@ -25,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAccessor;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -612,7 +613,8 @@ public class PdorApplicationService {
                 UUID.randomUUID().toString(),
                 inputs.obraId(),
                 inputs.codigoObra(),
-                LocalDateTime.now(Clock.systemUTC()),
+                LocalDateTime.now(Clock.systemUTC())
+                        .truncatedTo(ChronoUnit.MICROS),
                 inputs.referenceDate(),
                 PdorEngine.MODEL_VERSION,
                 PdorEngine.ASSUMPTIONS_VERSION,
@@ -647,6 +649,7 @@ public class PdorApplicationService {
                 drivers == null ? objectMapper.createArrayNode() : drivers,
                 executionError,
                 LocalDateTime.now(Clock.systemUTC())
+                        .truncatedTo(ChronoUnit.MICROS)
         );
     }
 
@@ -690,7 +693,7 @@ public class PdorApplicationService {
                     inputs.evidenceHighWaterMark(),
                     normalizedTrigger,
                     initiator.id(),
-                    Instant.now()
+                    Instant.now().truncatedTo(ChronoUnit.MICROS)
             );
         } catch (RuntimeException auditFailure) {
             exception.addSuppressed(auditFailure);

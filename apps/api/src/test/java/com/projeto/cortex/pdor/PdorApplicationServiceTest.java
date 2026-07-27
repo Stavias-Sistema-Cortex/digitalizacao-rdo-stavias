@@ -94,6 +94,7 @@ class PdorApplicationServiceTest {
         assertThat(response.statusExecucao()).isEqualTo("SUCCESS");
         assertThat(response.statusExecucaoLabel()).isEqualTo("Concluído");
         assertThat(response.snapshotExistente()).isFalse();
+        assertThat(response.executedAtUtc().getNano() % 1_000).isZero();
         assertThat(response.receitaEstimadaFinal()).isNotNull();
         assertThat(response.p50()).isNotNull();
         assertThat(response.racs()).containsKeys(
