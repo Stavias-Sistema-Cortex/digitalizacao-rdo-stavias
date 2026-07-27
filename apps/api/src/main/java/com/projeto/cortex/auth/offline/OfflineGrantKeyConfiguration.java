@@ -36,13 +36,29 @@ public class OfflineGrantKeyConfiguration {
     ) {
         properties.requireValidTtlSeconds();
         properties.requireValidMaxWorksites();
-        if (environment.acceptsProfiles(Profiles.of("prod", "production"))) {
+        // Mounted material is explicit deployment intent, even for local+PostgreSQL.
+        if (hasConfiguredKeyMaterial(properties)
+                || environment.acceptsProfiles(
+                        Profiles.of("prod", "production")
+                )) {
             return productionKey(properties);
         }
         if (environment.acceptsProfiles(Profiles.of("local", "test"))) {
             return ephemeralKey();
         }
         return productionKey(properties);
+    }
+
+    private boolean hasConfiguredKeyMaterial(
+            OfflineGrantProperties properties
+    ) {
+        return hasText(properties.getKeyId())
+                || hasText(properties.getPrivateKeyFile())
+                || hasText(properties.getPublicKeyFile());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private OfflineGrantSigningKey ephemeralKey() {
