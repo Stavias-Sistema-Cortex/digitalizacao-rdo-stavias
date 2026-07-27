@@ -78,24 +78,62 @@ release, configure no ambiente do operador, sem imprimir os valores:
 
 - `CORTEX_SOURCE_PGURI`: URI PostgreSQL local para `StaviasCortex`.
 - `CORTEX_NEON_ADMIN_PGURI`: URI owner do projeto Neon com
-  `sslmode=require`.
+  `sslmode=require`, `verify-ca` ou `verify-full`, sem parâmetros duplicados.
 - `CORTEX_NEON_RUNTIME_PASSWORD`: senha nova da role `cortex_runtime`.
+- `CORTEX_NEON_MIGRATOR_ROLE`: nome não secreto, em minúsculas, da role
+  migradora que criará objetos futuros. Ela deve existir e a conta owner deve
+  ser membro; o script verifica as duas condições antes do dump.
+- `CORTEX_NEON_ROLLBACK_DIR`: diretório absoluto, protegido e fora do checkout
+  para o dump local de rollback.
 
 Use um conjunto coerente de clientes PostgreSQL 18. O script procura
 instalações PostgreSQL 18 conhecidas; para outra instalação, informe somente o
-diretório não secreto por `CORTEX_POSTGRES_BIN_DIR`. Execute sem `set -x`:
+diretório não secreto por `CORTEX_POSTGRES_BIN_DIR`. Prepare um diretório novo
+para cada tentativa, fora do checkout:
 
 ```bash
+umask 077
+install -d -m 700 /absolute/protected/cortex-neon-rollbacks
+export CORTEX_NEON_ROLLBACK_DIR="$(
+  mktemp -d /absolute/protected/cortex-neon-rollbacks/production.XXXXXX
+)"
 bash scripts/deploy/migrate-local-postgres-to-neon.sh
 ```
 
-O script cria `StaviasCortex` e `cortex_runtime` de forma idempotente, mas
-interrompe sem apagar ou limpar quando encontra qualquer tabela pública no
-alvo. Ele exige TLS, valida um dump custom legível, restaura em transação única,
-aplica privilégios mínimos e compara as contagens das dez tabelas centrais. A
-saída de validação contém somente `tabela|origem|alvo`; qualquer divergência
-encerra com status não zero. Se Neon estiver indisponível, a migração falha:
-não habilite banco local, dados falsos ou outro fallback no serviço hospedado.
+Não use `set -x` e não passe URI ou senha como argumento de comando. O script
+interpreta as URIs sem imprimi-las, rejeita parâmetros duplicados ou TLS fraco,
+preserva `channel_binding`, certificados e opções Neon seguras, e cria
+`PGSERVICEFILE` e `PGPASSFILE` temporários com modo `0600`. Variáveis libpq
+herdadas são removidas antes de executar qualquer cliente PostgreSQL; um
+`TMPDIR` dentro do checkout também é rejeitado.
+
+O bootstrap idempotente cria somente `StaviasCortex`. Antes de tocar em role,
+grant, restore ou dados, o gate rejeita tabelas, views, materialized views,
+sequences, functions, types, relações e schemas não-sistema. Ele nunca limpa
+um alvo não vazio.
+
+O dump PostgreSQL 18 usa um snapshot exportado por uma transação
+`REPEATABLE READ READ ONLY` que permanece aberta. `pg_dump` e as contagens da
+origem importam esse mesmo snapshot, evitando divergência por escritas
+concorrentes sem exigir congelamento informal. O dump custom validado fica em
+`$CORTEX_NEON_ROLLBACK_DIR/StaviasCortex-pre-neon.dump`, com modo `0600`, e
+permanece preservado mesmo se uma etapa posterior falhar.
+
+O restore usa transação única. Somente depois dele uma segunda transação cria
+ou normaliza `cortex_runtime` como `NOSUPERUSER`, `NOCREATEDB`,
+`NOCREATEROLE`, `NOREPLICATION` e `NOBYPASSRLS`, aplica os grants e configura
+default privileges `FOR ROLE` da role migradora. A saída normal contém somente
+`tabela|origem|alvo` para as dez tabelas centrais, todas qualificadas por
+`public`; qualquer divergência encerra com status não zero.
+
+Falha de restore deixa o alvo vazio e permite nova tentativa com um diretório
+de rollback novo, preservando o dump anterior. Falha posterior ao restore ou
+divergência deixa um alvo parcial deliberadamente não reutilizável: interrompa,
+preserve a origem e o dump, isole o alvo para revisão e reprovisione um alvo
+Neon vazio pelo control plane sob aprovação operacional. Nunca adicione
+`--clean`, drop ou limpeza automática ao script. Se Neon estiver indisponível,
+a migração falha; não habilite banco local, dados falsos ou outro fallback no
+serviço hospedado.
 
 ## 5. Release Flyway antes do deploy
 
@@ -147,11 +185,11 @@ offline. Falha de Neon, Render ou R2 é falha visível, não motivo para fallbac
 
 ## 8. Rollback
 
-Crie e valide um dump local antes do cutover:
-
-```bash
-pg_dump --format=custom --file cortex-pre-render.dump StaviasCortex
-```
+O script de migração cria e valida o dump de rollback com o mesmo toolset
+PostgreSQL 18 usado pelo snapshot. O dump fica no diretório externo protegido
+configurado por `CORTEX_NEON_ROLLBACK_DIR`; não o mova para o checkout, não o
+anexe a tickets e não reduza suas permissões. Guarde também o PostgreSQL local
+intacto.
 
 Para reverter, preserve o serviço e a build Pages anteriores, restaure o dump
 somente em um banco de recuperação revisado e faça deploy manual da revisão
