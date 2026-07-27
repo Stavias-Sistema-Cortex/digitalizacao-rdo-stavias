@@ -1,5 +1,6 @@
 package com.projeto.cortex.auth.session;
 
+import com.projeto.cortex.common.SecurityRuntimeMode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,7 @@ public final class AuthPublicEndpointPolicy {
 
     private final boolean normalPostgresqlWebMode;
     private final boolean activationPostgresqlWebMode;
+    private final boolean directCpfLoginEnabled;
 
     @Autowired
     public AuthPublicEndpointPolicy(Environment environment) {
@@ -29,7 +31,9 @@ public final class AuthPublicEndpointPolicy {
                 ),
                 environment != null && environment.acceptsProfiles(
                         Profiles.of("postgresql-activation")
-                )
+                ),
+                environment != null
+                        && SecurityRuntimeMode.isLocalOrTestOnly(environment)
         );
     }
 
@@ -37,13 +41,26 @@ public final class AuthPublicEndpointPolicy {
             boolean normalPostgresqlWebMode,
             boolean activationPostgresqlWebMode
     ) {
+        this(
+                normalPostgresqlWebMode,
+                activationPostgresqlWebMode,
+                false
+        );
+    }
+
+    AuthPublicEndpointPolicy(
+            boolean normalPostgresqlWebMode,
+            boolean activationPostgresqlWebMode,
+            boolean directCpfLoginEnabled
+    ) {
         this.normalPostgresqlWebMode = normalPostgresqlWebMode;
         this.activationPostgresqlWebMode = activationPostgresqlWebMode;
+        this.directCpfLoginEnabled = directCpfLoginEnabled;
     }
 
     /** Legacy compatibility policy used only by direct filter unit tests. */
     public static AuthPublicEndpointPolicy legacy() {
-        return new AuthPublicEndpointPolicy(false, false);
+        return new AuthPublicEndpointPolicy(false, false, true);
     }
 
     public boolean isOutsideApi(HttpServletRequest request) {
@@ -72,10 +89,11 @@ public final class AuthPublicEndpointPolicy {
             return isEmailOtpPath(path);
         }
         if (normalPostgresqlWebMode) {
-            return "/api/auth/passkeys/authentication/options".equals(path)
+            return (directCpfLoginEnabled && "/api/auth/login".equals(path))
+                    || "/api/auth/passkeys/authentication/options".equals(path)
                     || "/api/auth/passkeys/authentication/verify".equals(path);
         }
-        if ("/api/auth/login".equals(path)
+        if ((directCpfLoginEnabled && "/api/auth/login".equals(path))
                 || "/api/auth/passkeys/authentication/options".equals(path)
                 || "/api/auth/passkeys/authentication/verify".equals(path)) {
             return true;

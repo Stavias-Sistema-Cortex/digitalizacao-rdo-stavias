@@ -153,10 +153,98 @@ class RdoXlsxExportServiceTest {
             assertThat(numericCell(verso, "AA26")).isEqualTo(12.75d);
             assertThat(stringCell(verso, "B69")).isEqualTo("Ana Apontadora");
             assertThat(stringCell(verso, "L69")).isEqualTo("Enzo Encarregado");
-            assertThat(stringCell(verso, "B63")).contains("rdo-41");
+            assertThat(stringCell(verso, "B63")).doesNotContain("rdo-41");
 
             assertThat(allFormulaCells(workbook)).isEmpty();
             assertThat(allHyperlinkedCells(workbook)).isEmpty();
+        }
+    }
+
+    @Test
+    void exportsHumanPreviousRdoNumberWithoutItsInternalId() throws Exception {
+        RdoResponse current = populatedRdo("rdo-42", "RDO-0042");
+        when(queryService.buscarPorId("rdo-42")).thenReturn(current);
+        when(queryService.buscarPorId("rdo-41"))
+                .thenReturn(emptyRdo("rdo-41", "RDO-0041"));
+
+        byte[] content = service.export("rdo-42").content();
+
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(content)
+        )) {
+            String observations = stringCell(workbook.getSheetAt(1), "B63");
+            assertThat(observations)
+                    .contains("Continuidade da equipe")
+                    .contains("RDO-0041")
+                    .doesNotContain("rdo-41");
+        }
+    }
+
+    @Test
+    void omitsPreviousRdoProvenanceWhenNoHumanNumberIsAvailable()
+            throws Exception {
+        RdoResponse current = populatedRdo("rdo-42", "RDO-0042");
+        when(queryService.buscarPorId("rdo-42")).thenReturn(current);
+        when(queryService.buscarPorId("rdo-41"))
+                .thenReturn(emptyRdo("rdo-41", " "));
+
+        byte[] content = service.export("rdo-42").content();
+
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(content)
+        )) {
+            String observations = stringCell(workbook.getSheetAt(1), "B63");
+            assertThat(observations)
+                    .doesNotContain("Continuidade da equipe")
+                    .doesNotContain("rdo-41");
+        }
+    }
+
+    @Test
+    void omitsPreviousRdoProvenanceWhenResolvedNumberIsAnInternalUuid()
+            throws Exception {
+        RdoResponse current = populatedRdo("rdo-42", "RDO-0042");
+        when(queryService.buscarPorId("rdo-42")).thenReturn(current);
+        when(queryService.buscarPorId("rdo-41")).thenReturn(emptyRdo(
+                "rdo-41",
+                "00000000-0000-4000-8000-000000000041"
+        ));
+
+        byte[] content = service.export("rdo-42").content();
+
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(content)
+        )) {
+            String observations = stringCell(workbook.getSheetAt(1), "B63");
+            assertThat(observations)
+                    .doesNotContain("Continuidade da equipe")
+                    .doesNotContain(
+                            "00000000-0000-4000-8000-000000000041"
+                    );
+        }
+    }
+
+    @Test
+    void omitsPreviousRdoProvenanceForVersionZeroUuidShape()
+            throws Exception {
+        RdoResponse current = populatedRdo("rdo-42", "RDO-0042");
+        when(queryService.buscarPorId("rdo-42")).thenReturn(current);
+        when(queryService.buscarPorId("rdo-41")).thenReturn(emptyRdo(
+                "rdo-41",
+                "00000000-0000-0000-0000-000000000041"
+        ));
+
+        byte[] content = service.export("rdo-42").content();
+
+        try (Workbook workbook = WorkbookFactory.create(
+                new ByteArrayInputStream(content)
+        )) {
+            String observations = stringCell(workbook.getSheetAt(1), "B63");
+            assertThat(observations)
+                    .doesNotContain("Continuidade da equipe")
+                    .doesNotContain(
+                            "00000000-0000-0000-0000-000000000041"
+                    );
         }
     }
 

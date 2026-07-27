@@ -29,6 +29,9 @@ const rdoCss = source("./features/rdos/RdoWorkspacePage.css");
 const rdoDialogCss = source("./features/rdos/RdoCreationDialog.css");
 const financeCss = source("./features/financeiro/FinanceiroPage.css");
 const mensagensCss = source("./features/mensagens/MensagensPage.css");
+const equipesCss = source("./features/equipes/EquipesPage.css");
+const integracoesCss = source("./features/integracoes/IntegracoesPage.css");
+const gestaoObrasCss = source("./features/obras/gestao/gestaoObras.css");
 const tasksCss = source("./features/tarefas/TarefasPage.css");
 const deviceSecuritySource = source(
   "./features/auth/DeviceSecurityPage.tsx",
@@ -51,21 +54,23 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(primaryGeometry).toContain("border-radius: var(--radius-control);");
   });
 
-  it("contains desktop chrome in the viewport and scrolls only the content column", () => {
+  it("keeps desktop chrome in normal document flow with a sticky full-height sidebar", () => {
     const shell = rule(globalCss, ".cortex-shell");
     const sidebar = rule(globalCss, ".cortex-sidebar");
     const content = rule(globalCss, ".cortex-shell-content");
 
-    expect(shell).toContain("height: 100dvh;");
-    expect(shell).toContain("min-height: 0;");
-    expect(shell).toContain("overflow: hidden;");
-    expect(sidebar).toContain("height: 100%;");
+    expect(shell).toContain("min-height: 100dvh;");
+    expect(shell).not.toMatch(/(?:^|\n)\s*height:\s*100dvh;/);
+    expect(shell).not.toContain("overflow: hidden;");
+    expect(sidebar).toContain("position: sticky;");
+    expect(sidebar).toContain("top: 0;");
+    expect(sidebar).toContain("height: 100dvh;");
     expect(sidebar).toContain("overflow-y: auto;");
-    expect(sidebar).not.toContain("position: sticky;");
     expect(sidebar).toContain("#111312 0%");
     expect(sidebar).toContain("var(--color-brand-teal) 100%");
-    expect(content).toContain("height: 100%;");
-    expect(content).toContain("overflow-y: auto;");
+    expect(content).toContain("min-height: 100dvh;");
+    expect(content).not.toContain("height: 100%;");
+    expect(content).not.toContain("overflow-y: auto;");
     expect(globalCss).not.toContain(".floating-controls");
   });
 
@@ -100,6 +105,17 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(icon).toContain("filter: grayscale(1) brightness(0) invert(1);");
   });
 
+  it("keeps one intentional square black profile control instead of a later teal override", () => {
+    const avatarRules =
+      globalCss.match(/^\.avatar-button \{/gm) ?? [];
+    const avatar = lastRule(globalCss, ".avatar-button");
+
+    expect(avatarRules).toHaveLength(1);
+    expect(avatar).toContain("border-radius: 0;");
+    expect(avatar).toContain("background: #101112;");
+    expect(avatar).toContain("color: #fff;");
+  });
+
   it("lets the operational ribbon reach every content edge without a gray top band", () => {
     const workspace = rule(workspaceCss, ".operational-workspace");
     const workspaceContent = rule(
@@ -122,6 +138,61 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(deviceSecuritySource).toContain("<CortexPageHeader");
     expect(deviceSecuritySource).not.toContain('<header className="topbar">');
     expect(globalCss).not.toContain(".floating-controls");
+  });
+
+  it("fills short operational workspaces without reserving rows for absent chrome", () => {
+    const workspace = rule(workspaceCss, ".operational-workspace");
+    const content = rule(
+      workspaceCss,
+      ".operational-workspace__content",
+    );
+
+    expect(workspace).toContain("display: flex;");
+    expect(workspace).toContain("flex-direction: column;");
+    expect(workspace).not.toContain("grid-template-rows:");
+    expect(content).toContain("flex: 1 1 auto;");
+  });
+
+  it("lets Equipes and Mensagens fill available space without viewport subtraction locks", () => {
+    const teamsPage = rule(equipesCss, ".teams-page");
+    const teamsContent = rule(
+      equipesCss,
+      ".teams-workspace > .operational-workspace__content",
+    );
+    const messagesPage = rule(mensagensCss, ".mensagens-page");
+    const messagesFrame = rule(mensagensCss, ".mensagens-frame");
+    const messagesWorkspace = rule(
+      mensagensCss,
+      ".mensagens-workspace",
+    );
+
+    expect(teamsPage).not.toMatch(/(?:^|\n)\s*height:/);
+    expect(teamsPage).not.toContain("overflow: hidden;");
+    expect(teamsContent).toContain("flex: 1 1 auto;");
+    expect(equipesCss).not.toMatch(
+      /(?:^|\n)\s*height:\s*calc\(100d?vh\s*-\s*\d+px\)/,
+    );
+    expect(messagesPage).toContain("display: flex;");
+    expect(messagesPage).toContain("min-height: 100dvh;");
+    expect(messagesFrame).toContain("flex: 1 1 auto;");
+    expect(messagesWorkspace).toContain("flex: 1 1 auto;");
+    expect(messagesWorkspace).not.toContain("overflow: hidden;");
+    expect(mensagensCss).not.toMatch(
+      /(?:^|\n)\s*height:\s*(?:min\([^;]*100vh|calc\(100vh\s*-\s*\d+px\))/,
+    );
+  });
+
+  it("keeps admin headers edge-to-edge and applies gutters only to workspace content", () => {
+    const integrations = rule(integracoesCss, ".integracoes-page");
+    const worksiteManagement = rule(
+      gestaoObrasCss,
+      ".operational-workspace.gestao-obras",
+    );
+
+    expect(integrations).toContain("padding: 0;");
+    expect(worksiteManagement).toContain("padding: 0;");
+    expect(integrations).not.toMatch(/padding:\s*clamp/);
+    expect(worksiteManagement).not.toMatch(/padding:\s*clamp/);
   });
 
   it("uses neutral hairlines for RDO document surfaces and reserves ink for actions", () => {

@@ -74,6 +74,7 @@ function renderOverview() {
     events: [],
     latestRdo: null,
     isLoading: false,
+    hasConfirmedRemoteHydration: true,
     dataUpdatedAt: "2026-07-23T12:00:00.000Z",
     reload: vi.fn(),
   };

@@ -12,13 +12,23 @@ import {
   validateLoginForm,
   type LoginFieldErrors,
 } from "./loginValidation";
+import { allowsDirectCpfLogin } from "./cortexAuthMode";
 import { authenticateWithPasskey } from "./passkeyApi";
+import { autenticarPorCpf } from "./authService";
 
 import "./LoginPage.css";
 
-type SubmitStatus = "idle" | "passkey";
+type SubmitStatus = "idle" | "passkey" | "cpf";
 
 export function LoginPage() {
+  return <LoginPageContent directCpfLoginEnabled={allowsDirectCpfLogin()} />;
+}
+
+function LoginPageContent({
+  directCpfLoginEnabled,
+}: {
+  directCpfLoginEnabled: boolean;
+}) {
   const cpfId = useId();
   const cpfRef = useRef<HTMLInputElement>(null);
 
@@ -46,9 +56,10 @@ export function LoginPage() {
   }, []);
 
   async function handleSubmit(
-    event: SubmitEvent<HTMLFormElement>,
+    event: SubmitEvent<HTMLFormElement> | null,
+    mode: "passkey" | "cpf" = "cpf",
   ): Promise<void> {
-    event.preventDefault();
+    event?.preventDefault();
     if (loading || !online) {
       return;
     }
@@ -61,9 +72,13 @@ export function LoginPage() {
       return;
     }
 
-    setStatus("passkey");
+    setStatus(mode);
     try {
-      await authenticateWithPasskey(cpf);
+      if (mode === "passkey") {
+        await authenticateWithPasskey(cpf);
+      } else {
+        await autenticarPorCpf(cpf);
+      }
       window.location.assign("/");
     } catch (error: unknown) {
       setStatus("idle");
@@ -108,7 +123,9 @@ export function LoginPage() {
             <p className="login__eyebrow">Área restrita</p>
             <h2>Entrar no sistema</h2>
             <p className="login__subtitle">
-              CPF identifica o colaborador; sua passkey confirma o acesso.
+              {directCpfLoginEnabled
+                ? "CPF identifica o colaborador; use o método de autenticação que preferir."
+                : "CPF identifica o colaborador; sua passkey confirma o acesso."}
             </p>
           </header>
 
@@ -121,7 +138,10 @@ export function LoginPage() {
           <form
             className="login__form"
             onSubmit={(event) => {
-              void handleSubmit(event);
+              void handleSubmit(
+                event,
+                directCpfLoginEnabled ? "cpf" : "passkey",
+              );
             }}
             noValidate
           >
@@ -164,20 +184,59 @@ export function LoginPage() {
               ) : null}
             </div>
 
-            <button
-              type="submit"
-              className="login__submit"
-              disabled={loading || !online}
-            >
-              {status === "passkey" ? (
-                <span className="login__submit-loading">
-                  <span className="login__spinner" aria-hidden="true" />
-                  Confirmando...
-                </span>
+            <div className="login__actions">
+              {directCpfLoginEnabled ? (
+                <>
+                  <button
+                    type="submit"
+                    className="login__submit"
+                    disabled={loading || !online}
+                  >
+                    {status === "cpf" ? (
+                      <span className="login__submit-loading">
+                        <span className="login__spinner" aria-hidden="true" />
+                        Validando CPF...
+                      </span>
+                    ) : (
+                      "Entrar com CPF"
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="login__submit login__submit-secondary"
+                    disabled={loading || !online}
+                    onClick={() => {
+                      void handleSubmit(null, "passkey");
+                    }}
+                  >
+                    {status === "passkey" ? (
+                      <span className="login__submit-loading">
+                        <span className="login__spinner" aria-hidden="true" />
+                        Validando passkey...
+                      </span>
+                    ) : (
+                      "Entrar com passkey"
+                    )}
+                  </button>
+                </>
               ) : (
-                "Confirmar com passkey"
+                <button
+                  type="submit"
+                  className="login__submit"
+                  disabled={loading || !online}
+                >
+                  {status === "passkey" ? (
+                    <span className="login__submit-loading">
+                      <span className="login__spinner" aria-hidden="true" />
+                      Validando passkey...
+                    </span>
+                  ) : (
+                    "Confirmar com passkey"
+                  )}
+                </button>
               )}
-            </button>
+            </div>
 
             {authError ? (
               <p className="login__alert" role="alert">

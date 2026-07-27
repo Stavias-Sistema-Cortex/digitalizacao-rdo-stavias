@@ -330,7 +330,94 @@ describe("legacy RDO context hydration", () => {
   });
 });
 
+describe("authoritative RDO number reconciliation", () => {
+  it("persists the server-assigned number in the local record and payload", async () => {
+    const database = await getCortexDb();
+    const mutation = {
+      ...legacyCreate(),
+      blockedReason: null,
+    };
+    await database.put(
+      "rdos",
+      localRdo({
+        numeroRdo: "RDO-0303",
+        observacoes: "offline",
+      }),
+    );
+    await database.put("outbox_mutations", mutation);
+    await markMutationAsSyncing(mutation);
+
+    await applyPushResultAtomically({
+      clientMutationId: MUTATION_ID,
+      status: "APLICADA",
+      resultado: {
+        id: RDO_ID,
+        numeroRdo: "RDO-0310",
+        versaoEntidade: 1,
+      },
+    });
+
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      numeroRdo: "RDO-0310",
+      syncStatus: "SYNCED",
+      versaoEntidade: 1,
+      payload: {
+        numeroRdo: "RDO-0310",
+        observacoes: "offline",
+      },
+    });
+  });
+});
+
 describe("legacy RDO event evidence repair", () => {
+  it("substitui uma identidade já tentada sem reescrever o conteúdo registrado no servidor", async () => {
+    const database = await getCortexDb();
+    await database.put(
+      "rdos",
+      localRdo({ creationContextVersion: 48, observacoes: "corrigido" }),
+    );
+    await database.put("outbox_mutations", {
+      ...legacyCreate(),
+      status: "ERROR",
+      tentativas: 1,
+      ultimaTentativaEm: "2026-07-27T14:28:20.000Z",
+      ultimoErro: "clientMutationId já foi usado com outro conteúdo.",
+      blockedReason: null,
+      payload: { creationContextVersion: 48, observacoes: "antigo" },
+    });
+
+    expect(await repairRdoCreateMutationsForSync()).toBe(1);
+
+    const mutations = await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-entity-id",
+      RDO_ID,
+    );
+    expect(mutations).toHaveLength(2);
+    expect(
+      mutations.find(
+        (mutation) => mutation.clientMutationId === MUTATION_ID,
+      ),
+    ).toMatchObject({
+      status: "REJECTED",
+      payload: { observacoes: "antigo" },
+      blockedReason: expect.stringMatching(/^SUPERSEDED_BY:/),
+    });
+    const replacement = mutations.find(
+      (mutation) => mutation.clientMutationId !== MUTATION_ID,
+    );
+    expect(replacement).toMatchObject({
+      schemaVersion: 13,
+      status: "PENDING",
+      causationId: MUTATION_ID,
+      payload: {
+        creationContextVersion: 48,
+        observacoes: "corrigido",
+      },
+    });
+    expect(selectReadyOutboxMutations(mutations, 10)).toEqual([replacement]);
+  });
+
   it("survives reopen and marks only events carried by the applied mutation", async () => {
     let database = await getCortexDb();
     await database.put("rdos", localRdo({ creationContextVersion: 48 }));

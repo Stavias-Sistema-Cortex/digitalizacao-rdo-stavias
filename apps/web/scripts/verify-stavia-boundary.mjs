@@ -4,6 +4,7 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -181,6 +182,51 @@ function listFiles(root) {
     const entryPath = path.join(root, entry.name);
     return entry.isDirectory() ? listFiles(entryPath) : [entryPath];
   });
+}
+
+function fallbackEnvironmentContracts(repositoryRoot) {
+  return [
+    repositoryRoot,
+    path.join(repositoryRoot, "apps/web"),
+  ].flatMap((root) => {
+    if (!existsSync(root)) {
+      return [];
+    }
+    return readdirSync(root, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.startsWith(".env") &&
+          entry.name.includes(".example"),
+      )
+      .map((entry) => path.join(root, entry.name));
+  });
+}
+
+function trackedEnvironmentContracts(repositoryRoot) {
+  try {
+    const output = execFileSync(
+      "git",
+      [
+        "ls-files",
+        "-z",
+        "--",
+        ":(top).env*",
+        ":(top)apps/web/.env*",
+      ],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+    return output
+      .split("\0")
+      .filter(Boolean)
+      .map((relative) => path.join(repositoryRoot, relative));
+  } catch {
+    return fallbackEnvironmentContracts(repositoryRoot);
+  }
 }
 
 function isTextFile(file) {
@@ -400,6 +446,9 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
   const webSupport = listFiles(webRoot).filter((file) => {
     const relative = path.relative(webRoot, file);
     const firstSegment = relative.split(path.sep)[0];
+    if (path.basename(file).startsWith(".env")) {
+      return false;
+    }
     return ![
       "archive",
       "dist",
@@ -414,10 +463,11 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
     .filter(
       (entry) =>
         entry.isFile() &&
-        (entry.name.startsWith(".env") ||
-          /^compose(?:\..+)?\.ya?ml$/.test(entry.name)),
+        /^compose(?:\..+)?\.ya?ml$/.test(entry.name),
     )
     .map((entry) => path.join(repositoryRoot, entry.name));
+  const environmentContracts =
+    trackedEnvironmentContracts(repositoryRoot);
   const scripts = listFiles(path.join(repositoryRoot, "scripts"));
 
   return [...new Set([
@@ -426,6 +476,7 @@ function sourceFiles(repositoryRoot = REPOSITORY_ROOT) {
     ...publicFiles,
     ...webSupport,
     ...repositorySupport,
+    ...environmentContracts,
     ...scripts,
   ])];
 }
@@ -596,11 +647,11 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
   ["dev", "vite"],
   [
     "dev:local",
-    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8080 vite --host 127.0.0.1 --port 5173",
+    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8080 vite --host localhost --port 5173",
   ],
   [
     "dev:compose",
-    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8081 vite --host 127.0.0.1 --port 5173",
+    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8081 vite --host localhost --port 5173",
   ],
   [
     "build",
@@ -627,11 +678,11 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
   ["preview", "vite preview"],
   [
     "preview:local",
-    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host 127.0.0.1 --port 4173",
+    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host localhost --port 4173",
   ],
   [
     "preview:compose",
-    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8081 vite preview --host 127.0.0.1 --port 4173",
+    "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8081 vite preview --host localhost --port 4173",
   ],
 ]);
 

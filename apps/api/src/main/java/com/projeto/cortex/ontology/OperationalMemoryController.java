@@ -9,6 +9,7 @@ import java.util.Set;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,15 +28,18 @@ public class OperationalMemoryController {
     private final OperationalMemoryQueryService service;
     private final CurrentUserService currentUserService;
     private final FinancialAccessService financialAccessService;
+    private final JdbcTemplate jdbcTemplate;
 
     public OperationalMemoryController(
             OperationalMemoryQueryService service,
             CurrentUserService currentUserService,
-            FinancialAccessService financialAccessService
+            FinancialAccessService financialAccessService,
+            JdbcTemplate jdbcTemplate
     ) {
         this.service = service;
         this.currentUserService = currentUserService;
         this.financialAccessService = financialAccessService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @GetMapping("/api/ontology/memory")
@@ -46,6 +50,7 @@ public class OperationalMemoryController {
             @RequestParam(required = false) String obraId,
             @RequestParam(required = false) String rdoId,
             @RequestParam(required = false) String actorId,
+            @RequestParam(required = false) String deviceId,
             @RequestParam(required = false) String eventType,
             @RequestParam(required = false) String origin,
             @RequestParam(required = false) String result,
@@ -68,6 +73,7 @@ public class OperationalMemoryController {
                 obraId,
                 rdoId,
                 actorId,
+                deviceId,
                 eventType,
                 origin,
                 result,
@@ -78,6 +84,7 @@ public class OperationalMemoryController {
                 beforeEventId
         );
         authorizeExplicitScope(entityType, entityId, obraId, rdoId);
+        authorizeOwnedDevice(userId, deviceId);
 
         Optional<Set<String>> allowedWorksites = currentUserService.allowedObraIds(userId);
         OperationalMemoryScope scope = allowedWorksites
@@ -101,6 +108,7 @@ public class OperationalMemoryController {
                 obraId,
                 rdoId,
                 actorId,
+                deviceId,
                 eventType,
                 origin,
                 result,
@@ -150,6 +158,7 @@ public class OperationalMemoryController {
             String obraId,
             String rdoId,
             String actorId,
+            String deviceId,
             String eventType,
             String origin,
             String result,
@@ -168,6 +177,7 @@ public class OperationalMemoryController {
         validateLength(obraId, MAX_IDENTIFIER_LENGTH, "MEMORY_IDENTIFIER_LIMIT");
         validateLength(rdoId, MAX_IDENTIFIER_LENGTH, "MEMORY_IDENTIFIER_LIMIT");
         validateLength(actorId, MAX_IDENTIFIER_LENGTH, "MEMORY_IDENTIFIER_LIMIT");
+        validateLength(deviceId, MAX_IDENTIFIER_LENGTH, "MEMORY_IDENTIFIER_LIMIT");
         validateLength(beforeEventId, MAX_IDENTIFIER_LENGTH, "MEMORY_CURSOR_INVALID");
         validateLength(cursor, 2_048, "MEMORY_CURSOR_INVALID");
         if (hasText(entityType) != hasText(entityId)) {
@@ -181,6 +191,27 @@ public class OperationalMemoryController {
         }
         if (from != null && to != null && from.isAfter(to)) {
             throw badRequest("MEMORY_UTC_RANGE_INVALID");
+        }
+    }
+
+    private void authorizeOwnedDevice(String userId, String deviceId) {
+        if (!hasText(deviceId)) {
+            return;
+        }
+        Integer ownedDevices = jdbcTemplate.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM sync_dispositivo
+                WHERE id = ?
+                  AND usuario_id = ?
+                  AND ativo = TRUE
+                """,
+                Integer.class,
+                deviceId.trim(),
+                userId
+        );
+        if (ownedDevices == null || ownedDevices < 1) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         }
     }
 

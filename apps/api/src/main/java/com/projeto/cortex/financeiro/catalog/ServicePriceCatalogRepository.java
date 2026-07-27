@@ -48,6 +48,7 @@ public interface ServicePriceCatalogRepository {
             String unit,
             String currency,
             BigDecimal unitPrice,
+            BigDecimal contractedQuantity,
             LocalDate validFrom,
             LocalDate validTo,
             String source,

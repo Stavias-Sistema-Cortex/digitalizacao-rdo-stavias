@@ -3,8 +3,10 @@ package com.projeto.cortex.ontology;
 import java.time.Instant;
 
 /**
- * Safe projection for Memory. Arbitrary payload/state JSON and person/device
- * identifiers are intentionally absent from this public record.
+ * Safe projection for Memory. Arbitrary payload/state JSON and direct contact
+ * data are intentionally absent. The authorized actor display name is exposed
+ * only for the audit row, and device identifiers are owner-scoped by the query
+ * service.
  */
 public record OperationalMemoryEventResponse(
         String eventId,
@@ -26,6 +28,13 @@ public record OperationalMemoryEventResponse(
         int schemaVersion,
         String result,
         String errorCategory,
+        String actorId,
+        String actorName,
+        String deviceId,
+        String clientMutationId,
+        String correlationId,
+        String causationId,
+        Long entityVersion,
         double relevance
 ) {
 }

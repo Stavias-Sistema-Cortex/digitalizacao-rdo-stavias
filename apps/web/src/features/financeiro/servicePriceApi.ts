@@ -27,6 +27,7 @@ export interface ServicePriceVersion {
   currency: string;
   version: number;
   unitPrice: DecimalValue;
+  contractedQuantity: DecimalValue | null;
   validFrom: string;
   validTo: string | null;
   supersedesId: string | null;
@@ -87,6 +88,9 @@ export interface RevenueTraceResponse {
   totalRevenue: DecimalValue;
   evidenceCount: number;
   rows: RevenueTraceRow[];
+  nextCursor: string | null;
+  coverage: "PARTIAL" | "COMPLETE";
+  highWaterMark: number;
 }
 
 export interface RevenueOntologyLink {
@@ -292,12 +296,33 @@ export function parseRevenueTraceResponse(
       "O servidor retornou totalRevenue incompatível com a soma exata das linhas.",
     );
   }
+  const coverage = requiredString(body.coverage, "coverage", 16);
+  if (coverage !== "PARTIAL" && coverage !== "COMPLETE") {
+    throw new Error("O servidor retornou coverage em formato inválido.");
+  }
+  const nextCursor = body.nextCursor === null
+    ? null
+    : requiredString(body.nextCursor, "nextCursor", 2_048);
+  if (
+    (coverage === "PARTIAL" && nextCursor === null) ||
+    (coverage === "COMPLETE" && nextCursor !== null)
+  ) {
+    throw new Error(
+      "O servidor retornou cobertura e cursor de receita inconsistentes.",
+    );
+  }
   return {
     from,
     to,
     totalRevenue,
     evidenceCount,
     rows,
+    nextCursor,
+    coverage,
+    highWaterMark: nonNegativeInteger(
+      body.highWaterMark,
+      "highWaterMark",
+    ),
   };
 }
 
@@ -395,20 +420,109 @@ export async function fetchCompleteServiceCatalog(
   throw new Error("O catálogo excedeu o limite seguro de paginação.");
 }
 
-export async function fetchRevenueTrace(
+const REVENUE_TRACE_PAGE_SIZE = 500;
+const MAX_REVENUE_TRACE_PAGES = 1_000;
+const MAX_COMPLETE_REVENUE_TRACE_ROWS = 50_000;
+
+async function fetchRevenueTracePage(
   obraId: string,
   from = "",
   to = "",
+  cursor = "",
 ): Promise<RevenueTraceResponse> {
   const params = new URLSearchParams({ obraId });
   if (from) params.set("de", from);
   if (to) params.set("ate", to);
+  params.set("limit", String(REVENUE_TRACE_PAGE_SIZE));
+  if (cursor) params.set("cursor", cursor);
   return parseRevenueTraceResponse(
     await readJson(await apiFetch(
       `/financeiro/rastreio-receita?${params}`,
     )),
     obraId,
   );
+}
+
+function canonicalScaledDecimal(value: bigint, scale: number): string {
+  const factor = 10n ** BigInt(scale);
+  const integer = value / factor;
+  const fraction = (value % factor).toString().padStart(scale, "0");
+  return scale === 0 ? integer.toString() : `${integer}.${fraction}`;
+}
+
+export async function fetchRevenueTrace(
+  obraId: string,
+  from = "",
+  to = "",
+): Promise<RevenueTraceResponse> {
+  const rows: RevenueTraceRow[] = [];
+  const executionIds = new Set<string>();
+  const evidenceIds = new Set<string>();
+  const seenCursors = new Set<string>();
+  let cursor = "";
+  let firstPage: RevenueTraceResponse | null = null;
+
+  for (
+    let pageNumber = 0;
+    pageNumber < MAX_REVENUE_TRACE_PAGES;
+    pageNumber += 1
+  ) {
+    const page = await fetchRevenueTracePage(obraId, from, to, cursor);
+    if (
+      firstPage &&
+      (
+        page.highWaterMark !== firstPage.highWaterMark ||
+        page.from !== firstPage.from ||
+        page.to !== firstPage.to
+      )
+    ) {
+      throw new Error(
+        "O snapshot do demonstrativo de receita mudou durante a paginação.",
+      );
+    }
+    firstPage ??= page;
+    for (const row of page.rows) {
+      if (
+        executionIds.has(row.executionId) ||
+        evidenceIds.has(row.revenueEvidenceId)
+      ) {
+        throw new Error(
+          "O servidor repetiu uma evidência na paginação da receita.",
+        );
+      }
+      executionIds.add(row.executionId);
+      evidenceIds.add(row.revenueEvidenceId);
+      rows.push(row);
+    }
+    if (rows.length > MAX_COMPLETE_REVENUE_TRACE_ROWS) {
+      throw new Error(
+        "O demonstrativo excedeu o limite seguro de paginação.",
+      );
+    }
+    if (!page.nextCursor) {
+      const total = sumExactDecimals(
+        rows.map((row) => row.revenue),
+        2,
+        "revenue",
+      );
+      return {
+        ...page,
+        totalRevenue: canonicalScaledDecimal(total, 2),
+        evidenceCount: rows.length,
+        rows,
+        nextCursor: null,
+        coverage: "COMPLETE",
+      };
+    }
+    if (seenCursors.has(page.nextCursor)) {
+      throw new Error(
+        "O servidor retornou um cursor repetido para a receita.",
+      );
+    }
+    seenCursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  }
+  throw new Error("O demonstrativo excedeu o limite seguro de paginação.");
 }
 
 export async function fetchRevenueTraceEvidence(

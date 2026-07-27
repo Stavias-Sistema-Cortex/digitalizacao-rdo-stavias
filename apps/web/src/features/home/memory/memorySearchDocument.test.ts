@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { OperationalEventRecord } from "../../../lib/db/db.types";
+import type {
+  OperationalEventRecord,
+  OutboxMutationRecord,
+} from "../../../lib/db/db.types";
 import {
   localEventToSearchDocument,
   memoryCoverage,
@@ -34,6 +37,13 @@ function serverEvent(overrides: Partial<MemoryServerEvent> = {}): MemoryServerEv
     schemaVersion: 13,
     result: "SYNCED",
     errorCategory: null,
+    actorId: USER_ID,
+    actorName: "João Operador",
+    deviceId: "device-1",
+    clientMutationId: "mutation-server-1",
+    correlationId: "correlation-server-1",
+    causationId: null,
+    entityVersion: 7,
     relevance: 0,
     ...overrides,
   };
@@ -60,8 +70,62 @@ function localEvent(
     syncStatus: "PENDING_SYNC",
     schemaVersion: 13,
     clientMutationId: "mutation-1",
+    deviceId: "device-1",
+    correlationId: "correlation-1",
+    causationId: null,
+    entityVersion: 3,
     result: "PENDING",
     ...overrides,
+  };
+}
+
+function conflictMutation(
+  conflict: Record<string, unknown>,
+): OutboxMutationRecord {
+  return {
+    clientMutationId: "mutation-1",
+    entidadeTipo: "RDO",
+    entidadeId: "rdo-2",
+    operacao: "ATUALIZAR_RDO_RASCUNHO",
+    baseVersao: 3,
+    payload: { id: "rdo-2", obraId: WORKSITE_ID, titulo: "Local" },
+    status: "CONFLICT",
+    tentativas: 1,
+    ultimaTentativaEm: "2026-07-22T09:00:01.000Z",
+    ultimoErro: "Conflito de versão.",
+    conflito: conflict,
+    criadaNoClienteEm: "2026-07-22T09:00:00.000Z",
+    updatedAt: "2026-07-22T09:00:01.000Z",
+    transport: "SYNC_PUSH",
+    schemaVersion: 13,
+    deviceId: "device-1",
+    userId: USER_ID,
+    obraId: WORKSITE_ID,
+    entityType: "RDO",
+    entityId: "rdo-2",
+    operation: "UPDATE",
+    baseVersion: 3,
+    changedFields: ["titulo"],
+    occurredAt: "2026-07-22T09:00:00.000Z",
+    correlationId: "correlation-1",
+    causationId: null,
+    fieldPatch: {
+      changed: { titulo: "Local" },
+      baseValues: { titulo: "Base" },
+    },
+    relatedEntities: [],
+    trace: {
+      actorId: USER_ID,
+      deviceId: "device-1",
+      authorizationScope: [WORKSITE_ID],
+      correlationId: "correlation-1",
+      causationId: null,
+      ontologyEventId: "local-event-1",
+      payloadHash: "a".repeat(64),
+    },
+    nextAttemptAt: null,
+    blockedReason: "REMOTE_SNAPSHOT_UNAVAILABLE",
+    lastSafeCode: "VERSION_CONFLICT",
   };
 }
 
@@ -91,9 +155,12 @@ describe("Memory search documents", () => {
         entityId: "rdo-1",
         worksiteId: WORKSITE_ID,
         rdoId: "rdo-1",
+        actorId: USER_ID,
+        deviceId: "device-1",
         origin: "SYNC",
         result: "SYNCED",
       },
+      responsibleUserName: "João Operador",
     });
     expect(document.normalizedText).toContain("compactacao norte");
     expect(document.normalizedText).toContain("duplicacao br-262");
@@ -141,6 +208,97 @@ describe("Memory search documents", () => {
     );
     expect(document.normalizedText).toContain("talude sul");
     expect(document.normalizedText).not.toContain("nao indexar");
+  });
+
+  it("preserves the authorized local responsible user name for the audit row", () => {
+    const document = localEventToSearchDocument(
+      USER_ID,
+      SCOPE_HASH,
+      localEvent({ responsibleUserName: "Maria Supervisora" }),
+    );
+
+    expect(document.responsibleUserName).toBe("Maria Supervisora");
+  });
+
+  it("projects conflict versions without copying local or remote snapshot values", () => {
+    const event = localEvent({
+      syncStatus: "SYNC_FAILED",
+      result: "CONFLICT",
+      previousState: {
+        id: "rdo-2",
+        obraId: WORKSITE_ID,
+        titulo: "segredo base",
+      },
+      newState: {
+        id: "rdo-2",
+        obraId: WORKSITE_ID,
+        titulo: "segredo local",
+      },
+    });
+    const document = localEventToSearchDocument(
+      USER_ID,
+      SCOPE_HASH,
+      event,
+      conflictMutation({ versaoAtual: 4 }),
+    );
+
+    expect(document.review).toMatchObject({
+      status: "CONFLICT",
+      clientMutationId: "mutation-1",
+      baseVersion: 3,
+      eventVersion: 3,
+      remoteVersion: 4,
+      localStateAvailable: true,
+      remoteStateAvailable: false,
+      changedFields: ["titulo"],
+      canReconcile: false,
+      unavailableReason: "REMOTE_SNAPSHOT_UNAVAILABLE",
+    });
+    expect(JSON.stringify(document)).not.toContain("segredo base");
+    expect(JSON.stringify(document)).not.toContain("segredo local");
+  });
+
+  it("enables canonical reconciliation only for a complete disjoint remote snapshot", () => {
+    const event = localEvent({
+      syncStatus: "SYNC_FAILED",
+      result: "CONFLICT",
+      previousState: {
+        id: "rdo-2",
+        obraId: WORKSITE_ID,
+        titulo: "Base",
+        responsavel: "Ana",
+      },
+      newState: {
+        id: "rdo-2",
+        obraId: WORKSITE_ID,
+        titulo: "Local",
+        responsavel: "Ana",
+      },
+    });
+    const mutation = conflictMutation({
+      versaoAtual: 4,
+      remoteCompleto: true,
+      snapshotRemoto: {
+        id: "rdo-2",
+        obraId: WORKSITE_ID,
+        titulo: "Base",
+        responsavel: "Bia",
+      },
+    });
+
+    expect(
+      localEventToSearchDocument(
+        USER_ID,
+        SCOPE_HASH,
+        event,
+        mutation,
+      ).review,
+    ).toMatchObject({
+      remoteStateAvailable: true,
+      conflictFields: [],
+      canReconcile: true,
+      unavailableReason: null,
+    });
   });
 
   it("applies the same PII redaction to local evidence", () => {

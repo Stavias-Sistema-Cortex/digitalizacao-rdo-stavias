@@ -129,6 +129,7 @@ export function createEmptyRdo(): RdoDraft {
     obraId: "",
     programacaoId: "",
     previousRdoId: "",
+    previousRdoNumber: "",
     creationContextVersion: null,
     apontadorColaboradorId: "",
     numeroRdo: "",

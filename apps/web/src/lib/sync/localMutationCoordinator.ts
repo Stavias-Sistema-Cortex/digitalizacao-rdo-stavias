@@ -51,6 +51,13 @@ const OPERATIONAL_EVENT_TYPES = [
   "TAREFA_CONCLUIDA",
   "TAREFA_REABERTA",
   "TAREFA_EXCLUIDA",
+  "EQUIPE_CRIADA",
+  "EQUIPE_ATUALIZADA",
+  "EQUIPE_ARQUIVADA",
+  "EQUIPE_VINCULO_ALTERADO",
+  "VINCULO_OBRA_ATRIBUIDO",
+  "VINCULO_OBRA_REVOGADO",
+  "SOLICITACAO_INTEGRACAO_CRIADA",
   "COMPRA_CRIADA",
   "SERVICE_CREATED",
   "SERVICE_PRICE_VERSION_PUBLISHED",
@@ -69,11 +76,14 @@ const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
   MENSAGEM_ANEXO: "mensagem_anexos",
   SERVICE: "service_catalog",
   SERVICE_PRICE_VERSION: "service_price_versions",
+  EQUIPE: "teams",
 } as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
 const OUTBOX_ONLY_ENTITY_TYPES = new Set<SyncEntityType>([
   "SOLICITACAO_COMPRA",
   "COMPRA",
+  "VINCULO_OBRA",
+  "SOLICITACAO_INTEGRACAO",
 ]);
 
 type LocalMutationDomainPut<TStore extends LocalDomainStore> = {
@@ -101,7 +111,7 @@ export interface LocalMutationCommand<TStore extends LocalDomainStore> {
   ontologyEventId?: string;
   deviceId: string;
   userId: string;
-  obraId: string;
+  obraId: string | null;
   entityType: string;
   entityId: string;
   entityName?: string | null;
@@ -281,23 +291,13 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
       const original = await outboxStore.get(prepared.supersedesMutationId);
       if (
         !original ||
-        !isCanonicalOutboxMutation(original) ||
         !["PENDING", "ERROR"].includes(original.status) ||
-        original.entityType !== built.mutation.entityType ||
-        original.entityId !== built.mutation.entityId
+        original.entidadeTipo !== built.mutation.entidadeTipo ||
+        original.entidadeId !== built.mutation.entidadeId
       ) {
         transaction.abort();
         throw new Error(
-          "A mutação canônica original não está disponível para substituição.",
-        );
-      }
-      const originalEvents = await eventStore
-        .index("by-client-mutation-id")
-        .getAll(original.clientMutationId);
-      if (originalEvents.length !== 1 || originalEvents[0].schemaVersion !== 13) {
-        transaction.abort();
-        throw new Error(
-          "A mutação canônica original não possui evento local único.",
+          "A mutação original não está disponível para substituição.",
         );
       }
       await outboxStore.put({
@@ -309,12 +309,26 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
         ultimoErro: "Envelope substituído após edição local rastreável.",
         updatedAt: built.mutation.occurredAt,
       });
-      await eventStore.put({
-        ...originalEvents[0],
-        result: "REJECTED",
-        syncStatus: "SYNC_FAILED",
-        errorCategory: "SUPERSEDED_BY_LOCAL_EDIT",
-      });
+      if (isCanonicalOutboxMutation(original)) {
+        const originalEvents = await eventStore
+          .index("by-client-mutation-id")
+          .getAll(original.clientMutationId);
+        if (
+          originalEvents.length !== 1 ||
+          originalEvents[0].schemaVersion !== 13
+        ) {
+          transaction.abort();
+          throw new Error(
+            "A mutação canônica original não possui evento local único.",
+          );
+        }
+        await eventStore.put({
+          ...originalEvents[0],
+          result: "REJECTED",
+          syncStatus: "SYNC_FAILED",
+          errorCategory: "SUPERSEDED_BY_LOCAL_EDIT",
+        });
+      }
     }
     for (const write of prepared.writes) {
       const store = transaction.objectStore(write.store);
@@ -494,7 +508,7 @@ function prepareWrites<TStore extends LocalDomainStore>(
   nextSnapshot: Record<string, unknown>,
   entityId: string,
   entityType: string,
-  obraId: string,
+  obraId: string | null,
 ): LocalMutationDomainWrite<TStore>[] {
   const result: unknown = writer();
   if (isThenable(result)) {
@@ -583,6 +597,15 @@ function prepareWrites<TStore extends LocalDomainStore>(
     );
   }
   if (
+    entityType === "EQUIPE" &&
+    (!("obraPrincipalId" in principalValue) ||
+      principalValue.obraPrincipalId !== obraId)
+  ) {
+    throw new TypeError(
+      "Principal EQUIPE obraPrincipalId must equal envelope obraId.",
+    );
+  }
+  if (
     canonicalMutationJson(principal.value) !==
       canonicalMutationJson(nextSnapshot)
   ) {
@@ -609,7 +632,16 @@ function authorizeActiveSession(
   if (session.colaboradorId !== envelope.userId) {
     throw new Error("A mutação local não pertence à sessão ativa.");
   }
-  if (!session.escopoGlobal && !session.obraIds.includes(envelope.obraId)) {
+  if (envelope.obraId === null) {
+    if (!session.escopoGlobal || session.papelAcesso !== "ALFA") {
+      throw new Error(
+        "A mutação global exige uma sessão Alfa com escopo global.",
+      );
+    }
+  } else if (
+    !session.escopoGlobal &&
+    !session.obraIds.includes(envelope.obraId)
+  ) {
     throw new Error("A obra da mutação não pertence ao escopo da sessão.");
   }
   return {
@@ -618,7 +650,9 @@ function authorizeActiveSession(
     actorName: session.nome,
     authorizationScope: session.escopoGlobal
       ? ["ALFA:GLOBAL"]
-      : [envelope.obraId],
+      : envelope.obraId === null
+        ? []
+        : [envelope.obraId],
   };
 }
 

@@ -19,6 +19,7 @@ function createDefaultSyncState(): SyncStateRecord {
     lastSyncStartedAt: null,
     lastSyncCompletedAt: null,
     lastSyncError: null,
+    syncExecutionLease: null,
   };
 }
 

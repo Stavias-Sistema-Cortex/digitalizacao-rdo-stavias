@@ -7,7 +7,13 @@ import {
 } from "../../auth/authSession";
 import { getCortexDb } from "../../../lib/db/cortexDb";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "../../../lib/sync/localMutationCoordinator";
+import { reconcileCanonicalConflict } from "../../../lib/sync/syncStorage";
 import { fetchMemoryPage, type MemoryFilters, type MemoryPage } from "./memoryApi";
+import {
+  buildMemoryExport,
+  MAX_MEMORY_EXPORT_ITEMS,
+  type MemoryExportResult,
+} from "./memoryExport";
 import { createMemoryRepository } from "./memoryRepository";
 import {
   assertMemorySessionGuard,
@@ -127,6 +133,7 @@ export interface MemoryLedgerReadSnapshot {
   totalMatches: number;
   metadata: MemoryCacheMetadata | null;
   coverage: MemoryCoverageView;
+  currentDeviceId: string | null;
 }
 
 interface RunMemoryLedgerReadOptions {
@@ -160,7 +167,10 @@ export async function runMemoryLedgerRead({
     const database = await openDatabase();
     assertMemorySessionGuard(guard);
     const repository = repositoryFactory(database);
-    const currentMetadata = await repository.latestMetadata(session.colaboradorId);
+    const [currentMetadata, syncState] = await Promise.all([
+      repository.latestMetadata(session.colaboradorId),
+      database.get("sync_state", "default"),
+    ]);
     assertMemorySessionGuard(guard);
     const scopeHash = currentMetadata?.scopeHash ?? localScopeMarker(session);
     const result = await repository.search({
@@ -182,6 +192,9 @@ export async function runMemoryLedgerRead({
           metadata: currentMetadata,
           localStatuses: result.localStatuses,
         }),
+        currentDeviceId: syncState?.usuarioId === session.colaboradorId
+          ? syncState.deviceId
+          : null,
       });
     });
   } catch (cause: unknown) {
@@ -211,11 +224,20 @@ export interface MemoryLedgerViewModel {
   metadata: MemoryCacheMetadata | null;
   isLoading: boolean;
   isRefreshing: boolean;
+  isExporting: boolean;
+  currentDeviceId: string | null;
+  viewMode: "CONSOLIDATED" | "THIS_DEVICE";
+  exportNotice: string | null;
+  reviewNotice: string | null;
+  reconcilingMutationId: string | null;
   error: MemoryLedgerError | null;
   setFilters: (patch: Partial<MemoryFilters>) => void;
   clearFilters: () => void;
   loadMore: () => void;
   refresh: () => void;
+  setViewMode: (mode: "CONSOLIDATED" | "THIS_DEVICE") => void;
+  exportLedger: () => void;
+  reconcileReview: (item: MemorySearchDocument) => void;
 }
 
 export function useMemoryLedger(): MemoryLedgerViewModel {
@@ -229,6 +251,12 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
+  const [reconcilingMutationId, setReconcilingMutationId] =
+    useState<string | null>(null);
   const [error, setError] = useState<MemoryLedgerError | null>(null);
   const mounted = useRef(true);
   const refreshState = useRef(createMemoryRefreshState());
@@ -249,12 +277,94 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
         setTotalMatches(snapshot.totalMatches);
         setMetadata(snapshot.metadata);
         setCoverage(snapshot.coverage);
+        setCurrentDeviceId(snapshot.currentDeviceId);
         setError((current) => current?.source === "CACHE" ? null : current);
       },
       onError: setError,
       onDone: () => setIsLoading(false),
     });
   }, [filters, visibleLimit]);
+
+  const exportLedger = useCallback(async () => {
+    const session = getSession();
+    if (!session || isExporting) return;
+    const guard = captureMemorySessionGuard();
+    setIsExporting(true);
+    setExportNotice(null);
+    try {
+      const database = await getCortexDb();
+      assertMemorySessionGuard(guard);
+      const repository = createMemoryRepository(database);
+      const currentMetadata = await repository.latestMetadata(
+        session.colaboradorId,
+      );
+      assertMemorySessionGuard(guard);
+      const result = await repository.search({
+        userId: session.colaboradorId,
+        scopeHash: currentMetadata?.scopeHash ?? localScopeMarker(session),
+        filters,
+        allowedWorksiteIds: session.escopoGlobal ? null : session.obraIds,
+        limit: MAX_MEMORY_EXPORT_ITEMS + 1,
+      });
+      assertMemorySessionGuard(guard);
+      const exported = buildMemoryExport({
+        items: result.items,
+        totalMatches: result.totalMatches,
+        filters,
+        metadata: currentMetadata,
+      });
+      downloadMemoryExport(exported);
+      if (mounted.current) {
+        commitIfMemorySessionCurrent(guard, () => {
+          setExportNotice(
+            exported.truncated
+              ? `${exported.exportedCount} eventos exportados; o recorte foi limitado e há mais resultados.`
+              : `${exported.exportedCount} eventos autorizados exportados.`,
+          );
+        });
+      }
+    } catch (cause: unknown) {
+      if (mounted.current) {
+        commitIfMemorySessionCurrent(guard, () => {
+          setExportNotice(
+            cause instanceof Error
+              ? `A exportação não foi concluída: ${cause.message}`
+              : "A exportação não foi concluída.",
+          );
+        });
+      }
+    } finally {
+      if (mounted.current) {
+        commitIfMemorySessionCurrent(guard, () => setIsExporting(false));
+      }
+    }
+  }, [filters, isExporting]);
+
+  const reconcileReview = useCallback(async (item: MemorySearchDocument) => {
+    const mutationId = item.review?.clientMutationId ?? null;
+    if (!item.review?.canReconcile || !mutationId || reconcilingMutationId) {
+      return;
+    }
+    setReconcilingMutationId(mutationId);
+    setReviewNotice(null);
+    try {
+      const reconciled = await runMemoryReconciliation(item);
+      setReviewNotice(
+        reconciled
+          ? "A substituição canônica foi criada e permanece na fila de sincronização."
+          : "A evidência mudou; a conciliação continua indisponível para revisão segura.",
+      );
+    } catch (cause: unknown) {
+      setReviewNotice(
+        cause instanceof Error
+          ? `A conciliação não foi concluída: ${cause.message}`
+          : "A conciliação não foi concluída.",
+      );
+    } finally {
+      setReconcilingMutationId(null);
+      await readLedgerRef.current();
+    }
+  }, [reconcilingMutationId]);
 
   const readLedgerRef = useRef(readLedger);
   useEffect(() => {
@@ -348,6 +458,7 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
       setItems([]);
       setTotalMatches(0);
       setMetadata(null);
+      setCurrentDeviceId(null);
       setError(null);
       setIsLoading(true);
       setIsRefreshing(false);
@@ -385,6 +496,14 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
     metadata,
     isLoading,
     isRefreshing,
+    isExporting,
+    currentDeviceId,
+    viewMode: filters.deviceId && filters.deviceId === currentDeviceId
+      ? "THIS_DEVICE"
+      : "CONSOLIDATED",
+    exportNotice,
+    reviewNotice,
+    reconcilingMutationId,
     error,
     setFilters(patch) {
       setVisibleLimit(PAGE_SIZE);
@@ -400,7 +519,46 @@ export function useMemoryLedger(): MemoryLedgerViewModel {
     refresh() {
       void synchronizeCache();
     },
+    setViewMode(mode) {
+      setVisibleLimit(PAGE_SIZE);
+      setFilterState((current) => ({
+        ...current,
+        deviceId: mode === "THIS_DEVICE" && currentDeviceId
+          ? currentDeviceId
+          : undefined,
+      }));
+    },
+    exportLedger() {
+      void exportLedger();
+    },
+    reconcileReview(item) {
+      void reconcileReview(item);
+    },
   };
+}
+
+export async function runMemoryReconciliation(
+  item: MemorySearchDocument,
+  reconcile: (clientMutationId: string) => Promise<unknown | null> =
+    reconcileCanonicalConflict,
+): Promise<boolean> {
+  const review = item.review;
+  if (!review?.canReconcile || !review.clientMutationId) return false;
+  return Boolean(await reconcile(review.clientMutationId));
+}
+
+function downloadMemoryExport(result: MemoryExportResult): void {
+  const url = URL.createObjectURL(
+    new Blob([result.content], { type: "application/json;charset=utf-8" }),
+  );
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = result.filename;
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function localScopeMarker(session: NonNullable<ReturnType<typeof getSession>>): string {

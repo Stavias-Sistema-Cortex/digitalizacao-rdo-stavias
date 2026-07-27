@@ -1,5 +1,6 @@
 package com.projeto.cortex.ontology;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -25,6 +26,10 @@ class OperationalMemoryQueryServiceIT {
     private static final String RDO_A = "10000000-0000-0000-0000-00000000000a";
     private static final String ACTOR_A = "20000000-0000-0000-0000-00000000000a";
     private static final String ACTOR_B = "20000000-0000-0000-0000-00000000000b";
+    private static final String DEVICE_A = "30000000-0000-0000-0000-00000000000a";
+    private static final String DEVICE_A_SECONDARY =
+            "30000000-0000-0000-0000-00000000000c";
+    private static final String DEVICE_B = "30000000-0000-0000-0000-00000000000b";
 
     @Container
     private static final PostgreSQLContainer<?> DATABASE =
@@ -309,6 +314,7 @@ class OperationalMemoryQueryServiceIT {
                 WORKSITE_A,
                 RDO_A,
                 ACTOR_A,
+                null,
                 "RDO_EXECUTADO",
                 "OFFLINE",
                 "SUCESSO",
@@ -324,6 +330,38 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
+    void filtersByOneOwnedDeviceWithinTheAlreadyAuthorizedLedger() {
+        OperationalMemoryFilter filter = new OperationalMemoryFilter(
+                null,
+                null,
+                null,
+                null,
+                null,
+                ACTOR_A,
+                DEVICE_A,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+
+        OperationalMemoryPageResponse page = service.search(
+                OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
+                filter,
+                100,
+                null
+        );
+
+        assertThat(page.items())
+                .extracting(OperationalMemoryEventResponse::eventId)
+                .containsExactly(eventId(103), eventId(99));
+        assertThat(page.items())
+                .extracting(OperationalMemoryEventResponse::deviceId)
+                .containsOnly(DEVICE_A);
+    }
+
+    @Test
     void keepsUtcRangeStableWhenTheJvmTimezoneIsNotUtc() {
         TimeZone original = TimeZone.getDefault();
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
@@ -333,6 +371,7 @@ class OperationalMemoryQueryServiceIT {
                     null,
                     null,
                     WORKSITE_A,
+                    null,
                     null,
                     null,
                     null,
@@ -355,6 +394,165 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
+    void interpretsLegacyWallClockEventsInThePostgresqlMachineTimezone() {
+        DriverManagerDataSource saoPauloDataSource = new DriverManagerDataSource(
+                DATABASE.getJdbcUrl()
+                        + "&options=-c%20TimeZone%3DAmerica%2FSao_Paulo",
+                DATABASE.getUsername(),
+                DATABASE.getPassword()
+        );
+        JdbcTemplate saoPauloJdbc = new JdbcTemplate(saoPauloDataSource);
+        OperationalMemoryQueryService saoPauloService =
+                new OperationalMemoryQueryService(saoPauloJdbc, CURSOR_SIGNER);
+        assertThat(saoPauloJdbc.queryForObject("SHOW TIME ZONE", String.class))
+                .isEqualTo("America/Sao_Paulo");
+
+        try {
+            saoPauloJdbc.update("""
+                    UPDATE cortex_evento_commit_sequence
+                    SET ultima_commit_seq = 107
+                    WHERE id = 1
+                    """);
+            saoPauloJdbc.update("""
+                    INSERT INTO cortex_evento_operacional (
+                        id, commit_seq, tipo_entidade, entidade_id, obra_id,
+                        tipo_evento, fonte, origem, sync_status, usuario_id,
+                        resultado, schema_version, payload_json, ocorrido_em
+                    ) VALUES (
+                        ?, 106, 'IMPORTACAO_LEGADA', 'legacy-import-a', ?,
+                        'IMPORTACAO_LEGADA_CONCLUIDA', 'IT', 'IMPORTACAO_LEGADO',
+                        'SYNCED', ?, 'SUCESSO', 1, '{}'::jsonb,
+                        timestamp '2026-07-21 10:03:00'
+                    )
+                    """, eventId(106), WORKSITE_A, ACTOR_A);
+            saoPauloJdbc.update("""
+                    INSERT INTO cortex_evento_operacional (
+                        id, commit_seq, tipo_entidade, entidade_id, obra_id,
+                        tipo_evento, fonte, origem, sync_status, usuario_id,
+                        resultado, schema_version, payload_json, ocorrido_em
+                    ) VALUES (
+                        ?, 107, 'PDOR', 'pdor-a', ?,
+                        'PDOR_INSUFICIENTE', 'PDOR', 'ONLINE',
+                        'SYNCED', ?, 'SUCESSO', 2, '{}'::jsonb,
+                        timestamp '2026-07-21 10:04:00'
+                    )
+                    """, eventId(107), WORKSITE_A, ACTOR_A);
+
+            OperationalMemoryFilter exactLocalInstant = new OperationalMemoryFilter(
+                    null,
+                    null,
+                    null,
+                    WORKSITE_A,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    Instant.parse("2026-07-21T13:03:00Z"),
+                    Instant.parse("2026-07-21T13:03:00Z")
+            );
+
+            OperationalMemoryPageResponse page = saoPauloService.search(
+                    OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
+                    exactLocalInstant,
+                    20,
+                    null
+            );
+
+            assertThat(page.items())
+                    .extracting(OperationalMemoryEventResponse::eventId)
+                    .containsExactly(eventId(106));
+            assertThat(page.items().getFirst().occurredAt())
+                    .isEqualTo(Instant.parse("2026-07-21T13:03:00Z"));
+
+            OperationalMemoryFilter exactPdorUtcInstant =
+                    new OperationalMemoryFilter(
+                            null,
+                            null,
+                            null,
+                            WORKSITE_A,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            Instant.parse("2026-07-21T10:04:00Z"),
+                            Instant.parse("2026-07-21T10:04:00Z")
+                    );
+            assertThat(saoPauloService.search(
+                    OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
+                    exactPdorUtcInstant,
+                    20,
+                    null
+            ).items()).singleElement().satisfies(item ->
+                    assertThat(item.occurredAt())
+                            .isEqualTo(Instant.parse("2026-07-21T10:04:00Z"))
+            );
+        } finally {
+            saoPauloJdbc.update(
+                    "DELETE FROM cortex_evento_operacional WHERE id IN (?, ?)",
+                    eventId(106),
+                    eventId(107)
+            );
+            saoPauloJdbc.update("""
+                    UPDATE cortex_evento_commit_sequence
+                    SET ultima_commit_seq = 105
+                    WHERE id = 1
+                    """);
+        }
+    }
+
+    @Test
+    void timelineIgnoresLegacyRelatedEntityObjectsInsteadOfFailing() {
+        OperationalTimelineService timelineService =
+                new OperationalTimelineService(jdbc, new ObjectMapper());
+        try {
+            jdbc.update("""
+                    UPDATE cortex_evento_commit_sequence
+                    SET ultima_commit_seq = 106
+                    WHERE id = 1
+                    """);
+            jdbc.update("""
+                    INSERT INTO cortex_evento_operacional (
+                        id, commit_seq, tipo_entidade, entidade_id, obra_id, rdo_id,
+                        tipo_evento, fonte, origem, sync_status, usuario_id,
+                        resultado, schema_version, entidades_relacionadas_json,
+                        payload_json, ocorrido_em
+                    ) VALUES (
+                        ?, 106, 'IMPORTACAO_LEGADA', 'legacy-import-a', ?, ?,
+                        'IMPORTACAO_LEGADA_CONCLUIDA', 'IT', 'IMPORTACAO_LEGADO',
+                        'SYNCED', ?, 'SUCESSO', 1, '{}'::jsonb, '{}'::jsonb,
+                        timestamp '2026-07-21 10:03:00'
+                    )
+                    """, eventId(106), WORKSITE_A, RDO_A, ACTOR_A);
+
+            assertThat(timelineService.timeline(
+                    "RDO",
+                    RDO_A,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    20
+            )).extracting(OperationalTimelineEventResponse::id)
+                    .contains(eventId(103));
+        } finally {
+            jdbc.update(
+                    "DELETE FROM cortex_evento_operacional WHERE id = ?",
+                    eventId(106)
+            );
+            jdbc.update("""
+                    UPDATE cortex_evento_commit_sequence
+                    SET ultima_commit_seq = 105
+                    WHERE id = 1
+                    """);
+        }
+    }
+
+    @Test
     void rejectsUnboundedOrInvertedDirectQueriesAndForeignScopeCursors() {
         OperationalMemoryScope scope = OperationalMemoryScope.beta(
                 ACTOR_A,
@@ -366,7 +564,7 @@ class OperationalMemoryQueryServiceIT {
         assertThatThrownBy(() -> service.search(
                 scope,
                 new OperationalMemoryFilter(
-                        null, null, null, null, null, null, null, null, null,
+                        null, null, null, null, null, null, null, null, null, null,
                         Instant.parse("2026-07-21T12:00:00Z"),
                         Instant.parse("2026-07-21T10:00:00Z")
                 ),
@@ -384,11 +582,11 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
-    void keepsScopeHashOpaqueAndPublicEventProjectionFreeOfRawSensitiveFields() {
+    void exposesOnlyAuthorizedStructuralTraceMetadataWithoutRawSensitiveFields() {
         OperationalMemoryPageResponse page = service.search(
-                OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
+                OperationalMemoryScope.alfa(ACTOR_A),
                 OperationalMemoryFilter.empty(),
-                2,
+                100,
                 null
         );
 
@@ -397,16 +595,41 @@ class OperationalMemoryQueryServiceIT {
                 .doesNotContain(ACTOR_A, WORKSITE_A);
         assertThat(OperationalMemoryEventResponse.class.getRecordComponents())
                 .extracting(java.lang.reflect.RecordComponent::getName)
+                .contains(
+                        "actorId",
+                        "actorName",
+                        "deviceId",
+                        "clientMutationId",
+                        "correlationId",
+                        "causationId",
+                        "entityVersion"
+                )
                 .doesNotContain(
                         "payload",
                         "previousState",
                         "newState",
-                        "actorId",
-                        "actorName",
                         "email",
-                        "cpf",
-                        "deviceId"
+                        "cpf"
                 );
+        OperationalMemoryEventResponse own = page.items().stream()
+                .filter(item -> item.eventId().equals(eventId(103)))
+                .findFirst()
+                .orElseThrow();
+        assertThat(own.actorId()).isEqualTo(ACTOR_A);
+        assertThat(own.actorName()).isEqualTo("Pessoa Privada A");
+        assertThat(own.deviceId()).isEqualTo(DEVICE_A);
+        assertThat(own.clientMutationId()).isEqualTo("mutation-103");
+        assertThat(own.correlationId()).isEqualTo("correlation-103");
+        assertThat(own.causationId()).isEqualTo("cause-103");
+        assertThat(own.entityVersion()).isEqualTo(103L);
+
+        OperationalMemoryEventResponse foreign = page.items().stream()
+                .filter(item -> item.eventId().equals(eventId(101)))
+                .findFirst()
+                .orElseThrow();
+        assertThat(foreign.actorId()).isEqualTo(ACTOR_B);
+        assertThat(foreign.actorName()).isEqualTo("Pessoa Privada B");
+        assertThat(foreign.deviceId()).isNull();
     }
 
     @Test
@@ -485,6 +708,7 @@ class OperationalMemoryQueryServiceIT {
                         null,
                         null,
                         null,
+                        null,
                         null
                 ),
                 limit,
@@ -495,6 +719,9 @@ class OperationalMemoryQueryServiceIT {
     private static void seed() {
         insertActor(ACTOR_A, "Pessoa Privada A");
         insertActor(ACTOR_B, "Pessoa Privada B");
+        insertDevice(DEVICE_A, ACTOR_A);
+        insertDevice(DEVICE_A_SECONDARY, ACTOR_A);
+        insertDevice(DEVICE_B, ACTOR_B);
         insertWorksite(WORKSITE_A, "CTR-A", "Obra Drenagem Norte");
         insertWorksite(WORKSITE_B, "CTR-B", "Obra Drenagem Norte Estrangeira");
         jdbc.update("""
@@ -580,6 +807,13 @@ class OperationalMemoryQueryServiceIT {
                 """, id, contract, name);
     }
 
+    private static void insertDevice(String id, String actorId) {
+        jdbc.update("""
+                INSERT INTO sync_dispositivo (id, nome, tipo, usuario_id, ativo)
+                VALUES (?, 'Dispositivo de teste', 'WEB', ?, TRUE)
+                """, id, actorId);
+    }
+
     private static void insertEvent(
             long commitSequence,
             String worksiteId,
@@ -596,10 +830,13 @@ class OperationalMemoryQueryServiceIT {
                 INSERT INTO cortex_evento_operacional (
                     id, commit_seq, tipo_entidade, entidade_id, obra_id, rdo_id,
                     tipo_evento, fonte, origem, sync_status, sincronizado_em,
-                    usuario_id, resultado, schema_version, payload_json, ocorrido_em
+                    usuario_id, dispositivo_id, client_mutation_id,
+                    correlacao_id, causacao_id, versao_entidade,
+                    resultado, schema_version, payload_json, ocorrido_em
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 'IT', ?, 'SYNCED',
-                          ('2026-07-21 ' || ?)::timestamp, ?, 'SUCESSO', 13,
-                          ?::jsonb, ('2026-07-21 ' || ?)::timestamp)
+                          ('2026-07-21 ' || ?)::timestamp, ?, ?, ?, ?, ?, ?,
+                          'SUCESSO', 13, ?::jsonb,
+                          ('2026-07-21 ' || ?)::timestamp)
                 """,
                 eventId(commitSequence),
                 commitSequence,
@@ -611,9 +848,21 @@ class OperationalMemoryQueryServiceIT {
                 origin,
                 time,
                 actorId,
+                deviceFor(actorId, origin),
+                "mutation-" + commitSequence,
+                "correlation-" + commitSequence,
+                "cause-" + commitSequence,
+                commitSequence,
                 payload,
                 time
         );
+    }
+
+    private static String deviceFor(String actorId, String origin) {
+        if (ACTOR_B.equals(actorId)) {
+            return DEVICE_B;
+        }
+        return "OFFLINE".equals(origin) ? DEVICE_A : DEVICE_A_SECONDARY;
     }
 
     private static String eventId(long sequence) {

@@ -9,6 +9,7 @@ import {
 import {
   addAuthorizedWorker,
   nextRosterFocusIndex,
+  removeRosterMember,
   setRosterApontador,
   setRosterSelected,
 } from "./rdoCreationContext";
@@ -265,6 +266,7 @@ export function RdoWorkforceEditor({
                 <th scope="col">Início</th>
                 <th scope="col">Fim</th>
                 <th scope="col">Observações</th>
+                <th scope="col">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -360,6 +362,18 @@ export function RdoWorkforceEditor({
                         disabled={unavailable}
                         onChange={(event) => updateRow(row.localId, { observacoes: event.target.value })}
                       />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="rdo-workforce-remove"
+                        aria-label={`Remover ${row.nomeColaborador || row.colaboradorId} da equipe`}
+                        onClick={() =>
+                          onChange(removeRosterMember(draft, row.localId))
+                        }
+                      >
+                        Remover
+                      </button>
                     </td>
                   </tr>
                 );

@@ -184,6 +184,7 @@ export interface RdoDraft {
   obraId: string;
   programacaoId: string;
   previousRdoId: string;
+  previousRdoNumber: string;
   creationContextVersion: number | null;
   apontadorColaboradorId: string;
   numeroRdo: string;

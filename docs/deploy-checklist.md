@@ -8,9 +8,9 @@ mesma revisão que será publicada.
 ## 1. Banco e migrações
 
 - [ ] Backup restaurável do banco atual foi criado e testado.
-- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V59 sem `repair` ou edição de
+- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V60 sem `repair` ou edição de
   migration.
-- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V59.
+- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V60.
 - [ ] O usuário da API tem somente os privilégios necessários no schema.
 - [ ] Existe ao menos um `colaborador` ALFA ativo com `auth_identity` ATIVA e
   `email_verificado_em` preenchido.
@@ -91,7 +91,7 @@ git diff --check
 ```
 
 - [ ] Maven completo passou em JDK 21.
-- [ ] PostgreSQL 18 descartável passou com migrations V44–V59 e os fluxos
+- [ ] PostgreSQL 18 descartável passou com migrations V44–V60 e os fluxos
   Cortex 3.0.
 - [ ] Vitest, lint e build PWA passaram.
 - [ ] As duas imagens Docker buildaram e executam como configuradas.
@@ -112,7 +112,7 @@ git diff --check
 
 - Preserve a imagem anterior e o backup pré-migração.
 - Não altere nem apague migrations aplicadas. Rollback de aplicação só é seguro
-  se a versão anterior tolerar as tabelas aditivas V45–V59.
+  se a versão anterior tolerar as tabelas aditivas V45–V60.
 - Nunca use `flyway repair` para mascarar checksum divergente.
 
 ## Limite de evidência externa

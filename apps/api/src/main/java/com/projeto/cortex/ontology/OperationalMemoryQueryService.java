@@ -7,7 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -28,6 +28,13 @@ public class OperationalMemoryQueryService {
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 100;
     private static final int MAX_SEARCH_LENGTH = 200;
+    private static final String OCCURRED_INSTANT_SQL = """
+            CASE
+                WHEN e.schema_version = 2 OR e.schema_version >= 13
+                    THEN e.ocorrido_em AT TIME ZONE 'UTC'
+                ELSE e.ocorrido_em AT TIME ZONE current_setting('TIMEZONE')
+            END
+            """;
     private static final Pattern SAFE_GRAPH_ERROR = Pattern.compile(
             "[A-Z][A-Z0-9_]{0,119}"
     );
@@ -167,14 +174,34 @@ public class OperationalMemoryQueryService {
                         nullif(e.payload_json ->> 'serviceName', ''),
                         nullif(e.payload_json ->> 'nomeServico', '')
                     ), 255) AS service_name,
-                    e.ocorrido_em,
-                    e.sincronizado_em,
+                    CASE
+                        WHEN e.schema_version = 2 OR e.schema_version >= 13
+                            THEN e.ocorrido_em AT TIME ZONE 'UTC'
+                        ELSE e.ocorrido_em AT TIME ZONE current_setting('TIMEZONE')
+                    END AS ocorrido_em_instant,
+                    CASE
+                        WHEN e.sincronizado_em IS NULL THEN NULL
+                        WHEN e.schema_version = 2 OR e.schema_version >= 13
+                            THEN e.sincronizado_em AT TIME ZONE 'UTC'
+                        ELSE e.sincronizado_em AT TIME ZONE current_setting('TIMEZONE')
+                    END AS sincronizado_em_instant,
                     e.origem,
                     e.sync_status,
                     e.schema_version,
                     e.resultado,
                     e.erro_categoria,
+                    e.usuario_id AS actor_id,
+                    actor.nome AS actor_name,
+                    CASE
+                        WHEN e.usuario_id = ? THEN e.dispositivo_id
+                        ELSE NULL
+                    END AS owned_device_id,
+                    e.client_mutation_id,
+                    e.correlacao_id,
+                    e.causacao_id,
+                    e.versao_entidade,
                 """);
+        parameters.add(scope.userId());
         if (hasSearch) {
             sql.append("""
                     (
@@ -214,6 +241,7 @@ public class OperationalMemoryQueryService {
                 FROM cortex_evento_operacional e
                 LEFT JOIN obra worksite ON worksite.id = e.obra_id
                 LEFT JOIN rdo report ON report.id = e.rdo_id
+                LEFT JOIN colaborador actor ON actor.id = e.usuario_id
                 LEFT JOIN LATERAL (
                     SELECT entity.id, entity.external_ref_id, entity.canonical_name
                     FROM ontology_entities entity
@@ -457,16 +485,17 @@ public class OperationalMemoryQueryService {
         appendExact(sql, parameters, "e.obra_id", filter.worksiteId());
         appendExact(sql, parameters, "e.rdo_id", filter.rdoId());
         appendExact(sql, parameters, "e.usuario_id", filter.actorId());
+        appendExact(sql, parameters, "e.dispositivo_id", filter.deviceId());
         appendExact(sql, parameters, "upper(e.tipo_evento)", filter.eventType());
         appendExact(sql, parameters, "upper(e.origem)", filter.origin());
         appendExact(sql, parameters, "upper(e.resultado)", filter.result());
         if (filter.from() != null) {
-            sql.append(" AND e.ocorrido_em >= ?");
-            parameters.add(LocalDateTime.ofInstant(filter.from(), ZoneOffset.UTC));
+            sql.append(" AND (").append(OCCURRED_INSTANT_SQL).append(") >= ?");
+            parameters.add(OffsetDateTime.ofInstant(filter.from(), ZoneOffset.UTC));
         }
         if (filter.to() != null) {
-            sql.append(" AND e.ocorrido_em <= ?");
-            parameters.add(LocalDateTime.ofInstant(filter.to(), ZoneOffset.UTC));
+            sql.append(" AND (").append(OCCURRED_INSTANT_SQL).append(") <= ?");
+            parameters.add(OffsetDateTime.ofInstant(filter.to(), ZoneOffset.UTC));
         }
     }
 
@@ -501,19 +530,28 @@ public class OperationalMemoryQueryService {
                 resultSet.getString("rdo_id"),
                 resultSet.getString("numero_rdo"),
                 resultSet.getString("service_name"),
-                utcInstant(resultSet.getObject("ocorrido_em", LocalDateTime.class)),
-                utcInstant(resultSet.getObject("sincronizado_em", LocalDateTime.class)),
+                instant(resultSet, "ocorrido_em_instant"),
+                instant(resultSet, "sincronizado_em_instant"),
                 resultSet.getString("origem"),
                 resultSet.getString("sync_status"),
                 resultSet.getInt("schema_version"),
                 resultSet.getString("resultado"),
                 resultSet.getString("erro_categoria"),
+                resultSet.getString("actor_id"),
+                resultSet.getString("actor_name"),
+                resultSet.getString("owned_device_id"),
+                resultSet.getString("client_mutation_id"),
+                resultSet.getString("correlacao_id"),
+                resultSet.getString("causacao_id"),
+                resultSet.getObject("versao_entidade", Long.class),
                 resultSet.getDouble("relevance")
         );
     }
 
-    private Instant utcInstant(LocalDateTime value) {
-        return value == null ? null : value.toInstant(ZoneOffset.UTC);
+    private Instant instant(ResultSet resultSet, String column)
+            throws SQLException {
+        OffsetDateTime value = resultSet.getObject(column, OffsetDateTime.class);
+        return value == null ? null : value.toInstant();
     }
 
     private String scopeHash(OperationalMemoryScope scope) {
@@ -560,6 +598,7 @@ public class OperationalMemoryQueryService {
         fields.add(filter.worksiteId());
         fields.add(filter.rdoId());
         fields.add(filter.actorId());
+        fields.add(filter.deviceId());
         fields.add(filter.eventType());
         fields.add(filter.origin());
         fields.add(filter.result());

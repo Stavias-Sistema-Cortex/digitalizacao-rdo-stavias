@@ -100,6 +100,7 @@ export async function apiFetch(
 function isPublicAuthenticationPath(path: string): boolean {
   const pathname = path.split(/[?#]/, 1)[0];
   return pathname === "/auth/email/challenges" ||
+    pathname === "/auth/login" ||
     pathname === "/auth/passkeys/authentication/options" ||
     pathname === "/auth/passkeys/authentication/verify" ||
     /^\/auth\/email\/challenges\/[^/]{1,64}\/verify$/.test(

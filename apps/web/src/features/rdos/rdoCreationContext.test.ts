@@ -7,6 +7,7 @@ import {
   applyRdoCreationContext,
   contextPresentation,
   nextRosterFocusIndex,
+  removeRosterMember,
   setRosterApontador,
   setRosterSelected,
   shouldApplyRemoteContext,
@@ -220,6 +221,24 @@ describe("contexto obra-data do novo RDO", () => {
       false,
     );
     expect(draft.apontadorColaboradorId).toBe("");
+  });
+
+  it("remove um colaborador herdado e limpa o apontador quando necessário", () => {
+    let draft = applyRdoCreationContext(createEmptyRdo(), context());
+    const ana = draft.maoObra.find(
+      (item) => item.colaboradorId === COLABORADOR_A,
+    )!;
+    draft = setRosterApontador(draft, COLABORADOR_A);
+
+    draft = removeRosterMember(draft, ana.localId);
+
+    expect(draft.maoObra).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ colaboradorId: COLABORADOR_A }),
+      ]),
+    );
+    expect(draft.apontadorColaboradorId).toBe("");
+    expect(draft.apontadorRdo).toBe("");
   });
 
   it("não aplica resposta remota sobre edição feita durante a requisição", () => {

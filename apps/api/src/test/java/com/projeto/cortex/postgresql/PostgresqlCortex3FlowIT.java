@@ -193,6 +193,7 @@ class PostgresqlCortex3FlowIT {
                         "M2",
                         "BRL",
                         new BigDecimal("125.0000"),
+                        new BigDecimal("10.000"),
                         FLOW_DATE.minusDays(30),
                         null,
                         "CONTRATO_MEDIDO"
@@ -398,6 +399,8 @@ class PostgresqlCortex3FlowIT {
         ).toInstant()).isEqualTo(pdor.executedAtUtc());
         assertThat(pdor.current()).isTrue();
         assertThat(pdor.stale()).isFalse();
+        assertThat(pdor.inputs().path("quantityMetric").asText())
+                .isEqualTo("SERVICE_CATALOG_CONTRACT");
         assertThat(pdor.inputs().path("remainingContractedQuantity").decimalValue())
                 .isEqualByComparingTo("8.000");
 

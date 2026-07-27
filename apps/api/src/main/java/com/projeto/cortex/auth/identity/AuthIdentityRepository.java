@@ -91,6 +91,55 @@ public class AuthIdentityRepository {
         return eligible;
     }
 
+    /**
+     * Read-only local-development authentication lookup restricted to an
+     * already active Academy identity. It deliberately excludes legacy SHA
+     * material and never upgrades persisted HMAC data.
+     */
+    public Optional<AuthIdentity> findActiveAcademyByCpf(String cpfRaw) {
+        AuthChallengeLookupMaterial material =
+                digestService.challengeLookup(cpfRaw);
+        CpfLookupDigest current = material.candidates().get(0);
+        CpfLookupDigest previous = material.candidates().size() == 2
+                ? material.candidates().get(1)
+                : current;
+        List<AuthIdentity> identities = jdbcTemplate.query("""
+                SELECT
+                    colaborador.id AS colaborador_id,
+                    colaborador.nome,
+                    identity.email_autenticacao,
+                    colaborador.papel_acesso
+                FROM auth_identity identity
+                INNER JOIN colaborador
+                    ON colaborador.id = identity.colaborador_id
+                WHERE (
+                    (
+                        identity.cpf_lookup_key_id = ?
+                        AND identity.cpf_lookup_hmac = ?
+                    ) OR (
+                        identity.cpf_lookup_key_id = ?
+                        AND identity.cpf_lookup_hmac = ?
+                    )
+                )
+                  AND colaborador.banco_origem = 'dbstavias_acad'
+                  AND colaborador.tabela_origem = 'usuarios'
+                  AND colaborador.ativo = TRUE
+                  AND colaborador.deletado_em IS NULL
+                  AND colaborador.papel_acesso IN ('ALFA', 'BETA')
+                  AND identity.status = 'ATIVA'
+                LIMIT 2
+                """,
+                IDENTITY_ROW_MAPPER,
+                current.keyId(),
+                current.value(),
+                previous.keyId(),
+                previous.value()
+        );
+        return identities.size() == 1
+                ? Optional.of(identities.get(0))
+                : Optional.empty();
+    }
+
     @Transactional
     public void upsertAcademyIdentity(
             String colaboradorId,

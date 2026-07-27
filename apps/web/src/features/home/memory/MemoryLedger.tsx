@@ -23,25 +23,31 @@ export function MemoryLedgerView({
   obras: ObraLocalRecord[];
 }) {
   const activeFilters = countFilters(ledger.filters);
+  const reviewItems = ledger.items.filter((item) => item.review !== null);
   return (
     <div className="memory-ledger">
       <header className="memory-ledger__header">
         <div>
-          <span className="memory-ledger__eyebrow">Registro ontológico autorizado</span>
           <h2>Memória operacional</h2>
-          <p>
-            Pesquise todo o histórico armazenado neste dispositivo, inclusive
-            alterações locais que ainda não receberam commit do servidor.
-          </p>
         </div>
-        <button
-          type="button"
-          className="memory-ledger__refresh"
-          onClick={ledger.refresh}
-          disabled={ledger.isRefreshing}
-        >
-          {ledger.isRefreshing ? "Sincronizando…" : "Atualizar Memória"}
-        </button>
+        <div className="memory-ledger__actions">
+          <button
+            type="button"
+            className="memory-ledger__export"
+            onClick={ledger.exportLedger}
+            disabled={ledger.isExporting}
+          >
+            {ledger.isExporting ? "Exportando…" : "Exportar"}
+          </button>
+          <button
+            type="button"
+            className="memory-ledger__refresh"
+            onClick={ledger.refresh}
+            disabled={ledger.isRefreshing}
+          >
+            {ledger.isRefreshing ? "Sincronizando…" : "Atualizar"}
+          </button>
+        </div>
       </header>
 
       <section
@@ -78,6 +84,30 @@ export function MemoryLedgerView({
       </section>
 
       <section className="memory-query">
+        <div
+          className="memory-query__view"
+          role="group"
+          aria-label="Visão da Memória por dispositivo"
+        >
+          <button
+            type="button"
+            aria-pressed={ledger.viewMode !== "THIS_DEVICE"}
+            onClick={() => ledger.setViewMode("CONSOLIDATED")}
+          >
+            Consolidado
+          </button>
+          <button
+            type="button"
+            aria-pressed={ledger.viewMode === "THIS_DEVICE"}
+            disabled={!ledger.currentDeviceId}
+            onClick={() => ledger.setViewMode("THIS_DEVICE")}
+          >
+            Este dispositivo
+          </button>
+          {!ledger.currentDeviceId ? (
+            <span>Dispositivo local ainda não registrado.</span>
+          ) : null}
+        </div>
         <label className="memory-query__search">
           <span>Pesquisa integral</span>
           <input
@@ -139,6 +169,16 @@ export function MemoryLedgerView({
               />
             </label>
             <label>
+              ID interno do ator
+              <input
+                value={ledger.filters.actorId ?? ""}
+                placeholder="ID exato no escopo autorizado"
+                onChange={(event) => ledger.setFilters({
+                  actorId: event.target.value,
+                })}
+              />
+            </label>
+            <label>
               Origem
               <select
                 value={ledger.filters.origin ?? ""}
@@ -185,10 +225,40 @@ export function MemoryLedgerView({
         </details>
       </section>
 
+      {ledger.exportNotice ? (
+        <div className="memory-notice" role="status">
+          <span>{ledger.exportNotice}</span>
+        </div>
+      ) : null}
+
+      {reviewItems.length > 0 ? (
+        <section
+          className="memory-review"
+          aria-labelledby="memory-review-title"
+        >
+          <header>
+            <div>
+              <span>Evidência terminal preservada</span>
+              <h3 id="memory-review-title">Revisão necessária</h3>
+            </div>
+            <span>{reviewItems.length} no recorte visível</span>
+          </header>
+          {ledger.reviewNotice ? (
+            <div className="memory-notice" role="status">
+              <span>{ledger.reviewNotice}</span>
+            </div>
+          ) : null}
+          <ul>
+            {reviewItems.map((item) => (
+              <MemoryReviewCard key={`review:${item.key}`} item={item} ledger={ledger} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="memory-register" aria-labelledby="memory-results-title">
         <header>
           <div>
-            <span>Registro cronológico</span>
             <h3 id="memory-results-title">
               {ledger.totalMatches} {ledger.totalMatches === 1 ? "evento" : "eventos"}
             </h3>
@@ -243,6 +313,62 @@ export function MemoryLedgerView({
   );
 }
 
+function MemoryReviewCard({
+  item,
+  ledger,
+}: {
+  item: MemorySearchDocument;
+  ledger: MemoryLedgerViewModel;
+}) {
+  const review = item.review;
+  if (!review) return null;
+  const reconciling = review.clientMutationId !== null &&
+    ledger.reconcilingMutationId === review.clientMutationId;
+  return (
+    <li className="memory-review__item" data-status={review.status}>
+      <div>
+        <strong>{eventTitle(item.eventType)}</strong>
+        <span>{memoryStatusLabel(item.syncStatus)}</span>
+      </div>
+      <dl>
+        <div><dt>Versão-base</dt><dd>{versionLabel(review.baseVersion)}</dd></div>
+        <div><dt>Versão registrada</dt><dd>{versionLabel(review.eventVersion)}</dd></div>
+        <div><dt>Versão remota</dt><dd>{versionLabel(review.remoteVersion)}</dd></div>
+        <div>
+          <dt>Estado local</dt>
+          <dd>{review.localStateAvailable ? "Disponível" : "Indisponível"}</dd>
+        </div>
+        <div>
+          <dt>Estado remoto</dt>
+          <dd>
+            {review.remoteStateAvailable
+              ? "Disponível"
+              : "Estado remoto indisponível"}
+          </dd>
+        </div>
+      </dl>
+      {review.changedFields.length > 0 ? (
+        <p>Campos alterados: {review.changedFields.join(", ")}.</p>
+      ) : null}
+      {review.conflictFields.length > 0 ? (
+        <p>Divergências: {review.conflictFields.join(", ")}.</p>
+      ) : null}
+      {review.unavailableReason ? (
+        <p>{reviewReason(review.unavailableReason)}</p>
+      ) : null}
+      {review.canReconcile && review.clientMutationId ? (
+        <button
+          type="button"
+          disabled={reconciling}
+          onClick={() => ledger.reconcileReview(item)}
+        >
+          {reconciling ? "Conciliando…" : "Conciliar alterações"}
+        </button>
+      ) : null}
+    </li>
+  );
+}
+
 function graphCoverageLabel(
   graph: NonNullable<MemoryLedgerViewModel["metadata"]>["graph"],
 ): string {
@@ -259,6 +385,9 @@ function MemoryRow({ item }: { item: MemorySearchDocument }) {
     item.structuralKeys.entityId ??
     "Identidade protegida";
   const worksite = item.worksiteName ?? item.structuralKeys.worksiteId;
+  const responsibleUser = item.responsibleUserName?.trim() ||
+    item.structuralKeys.actorId ||
+    "Sistema";
   return (
     <li className="memory-entry" data-status={item.syncStatus}>
       <div className="memory-entry__rail" aria-hidden="true">
@@ -286,6 +415,10 @@ function MemoryRow({ item }: { item: MemorySearchDocument }) {
             <dd>
               {item.structuralKeys.entityType} · {item.structuralKeys.entityId ?? "Identidade protegida"}
             </dd>
+          </div>
+          <div className="memory-entry__actor">
+            <dt>Responsável</dt>
+            <dd>{responsibleUser}</dd>
           </div>
           <div><dt>Origem</dt><dd>{item.source ?? item.structuralKeys.origin ?? "Não informada"}</dd></div>
           {item.errorCategory ? (
@@ -315,6 +448,31 @@ function dateInputValue(value: string | undefined): string {
   return value?.slice(0, 10) ?? "";
 }
 
+function versionLabel(version: number | null): string {
+  return version === null ? "Não informada" : String(version);
+}
+
+function reviewReason(
+  reason: NonNullable<MemorySearchDocument["review"]>["unavailableReason"],
+): string {
+  const reasons: Record<NonNullable<typeof reason>, string> = {
+    REJECTED: "A alteração foi rejeitada; a evidência permanece somente para revisão.",
+    LOCAL_EVIDENCE_UNAVAILABLE:
+      "A evidência canônica local necessária não está disponível.",
+    REMOTE_SNAPSHOT_UNAVAILABLE:
+      "O servidor informou o conflito, mas não forneceu um snapshot remoto completo.",
+    UNSUPPORTED_ENTITY:
+      "Este tipo de entidade não possui conciliação canônica segura.",
+    CREATE_CONFLICT_REQUIRES_REVIEW:
+      "Conflitos de criação exigem revisão manual.",
+    REMOTE_SNAPSHOT_MISMATCH:
+      "O snapshot remoto não corresponde à entidade autorizada.",
+    FIELD_CONFLICT:
+      "Os mesmos campos foram alterados local e remotamente.",
+  };
+  return reason ? reasons[reason] : "";
+}
+
 function eventTitle(eventType: string): string {
   const known = operationalEventLabel(eventType);
   return known === "Atividade registrada"
@@ -330,6 +488,5 @@ function formatDateTime(value: string): string {
     : new Intl.DateTimeFormat("pt-BR", {
       dateStyle: "short",
       timeStyle: "short",
-      timeZone: "UTC",
     }).format(date);
 }

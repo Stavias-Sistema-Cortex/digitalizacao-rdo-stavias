@@ -115,6 +115,31 @@ describe("editor da equipe carregada", () => {
     );
   });
 
+  it("remove um colaborador herdado da equipe do novo RDO", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoWorkforceEditor
+        draft={draft()}
+        collaborators={catalog}
+        sourceRdoNumber="RDO-0020"
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Remover Ana da equipe" }),
+    );
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maoObra: expect.not.arrayContaining([
+          expect.objectContaining({ colaboradorId: "worker-a" }),
+        ]),
+      }),
+    );
+  });
+
   it("busca por nome, código e papel, navega por teclado e deduplica a equipe", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

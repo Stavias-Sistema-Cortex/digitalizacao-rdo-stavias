@@ -3,10 +3,9 @@
 
   inline-size: 100%;
   min-inline-size: 0;
-  min-block-size: 100%;
-  display: grid;
-  align-content: start;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
   gap: 0;
   padding: 0;
   color: var(--color-ink);
@@ -152,6 +151,7 @@
   min-inline-size: 0;
   min-block-size: 0;
   display: grid;
+  flex: 1 1 auto;
   align-content: start;
   gap: 12px;
   padding: 12px var(--workspace-gutter) clamp(28px, 4vw, 64px);

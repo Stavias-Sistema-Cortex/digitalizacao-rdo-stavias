@@ -19,13 +19,13 @@ import static org.mockito.Mockito.when;
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV59Chain() throws Exception {
+    void configuredRuntimeRequiresTheCompleteV60Chain() throws Exception {
         var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
                 "CLEAN_START_REQUIRED_SCHEMA_VERSION"
         );
         field.setAccessible(true);
 
-        assertThat(field.get(null)).isEqualTo("59");
+        assertThat(field.get(null)).isEqualTo("60");
     }
 
     @Test
@@ -97,14 +97,14 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV59RowIsAbsent() {
+    void refusesWhenTheExplicitV60RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V59");
-        verify(jdbcTemplate).queryForObject(contains("version = '59'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V60");
+        verify(jdbcTemplate).queryForObject(contains("version = '60'"), eq(Integer.class));
     }
 
     @Test
@@ -119,12 +119,41 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV59VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV60VerifiedAlfaOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
         assertThatCode(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void localDirectCpfReadinessAcceptsOnlyAnActiveAcademyHmacAlfa() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(
+                contains("flyway_schema_history"),
+                eq(Integer.class)
+        )).thenReturn(1);
+        when(jdbcTemplate.queryForObject(
+                contains("ai.cpf_lookup_hmac IS NOT NULL"),
+                eq(Integer.class)
+        )).thenReturn(1);
+
+        PostgresqlRuntimeReadinessGuard localDirectCpfGuard =
+                new PostgresqlRuntimeReadinessGuard(
+                        jdbcTemplate,
+                        "60",
+                        true,
+                        released(),
+                        true
+                );
+
+        assertThatCode(localDirectCpfGuard::verifyReadiness)
+                .doesNotThrowAnyException();
+        verify(jdbcTemplate).queryForObject(
+                contains("c.banco_origem = 'dbstavias_acad'"),
+                eq(Integer.class)
+        );
     }
 
     @Test
@@ -143,7 +172,7 @@ class PostgresqlRuntimeReadinessGuardTest {
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "59", runtimeReady, registry
+                jdbcTemplate, "60", runtimeReady, registry
         );
     }
 

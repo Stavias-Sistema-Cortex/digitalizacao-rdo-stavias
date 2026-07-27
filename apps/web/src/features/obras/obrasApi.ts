@@ -59,6 +59,22 @@ function objectPayload(value: unknown): Record<string, unknown> {
   return {};
 }
 
+function timelineTimestampForMachine(
+  value: string | null,
+  schemaVersion: number | null,
+): string | null {
+  if (
+    !value ||
+    schemaVersion === null ||
+    (schemaVersion !== 2 && schemaVersion < 13) ||
+    /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+  ) {
+    return value;
+  }
+
+  return `${value}Z`;
+}
+
 export function obraTimelineEventFromApi(
   api: ObraTimelineEventApi,
 ): ObraTimelineEvent {
@@ -69,7 +85,10 @@ export function obraTimelineEventFromApi(
     principalEntityType: api.principalEntityType,
     principalEntityId: api.principalEntityId,
     obraId: api.obraId,
-    occurredAt: api.occurredAt,
+    occurredAt: timelineTimestampForMachine(
+      api.occurredAt,
+      api.schemaVersion,
+    ),
     origin: api.origin,
     syncStatus: api.syncStatus,
     payload: objectPayload(api.payload),

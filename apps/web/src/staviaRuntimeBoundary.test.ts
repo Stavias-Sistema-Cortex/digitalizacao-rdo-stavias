@@ -8,6 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -179,6 +180,61 @@ describe("StavIA runtime boundary", () => {
       } finally {
         rmSync(repositoryRoot, { recursive: true, force: true });
       }
+    }
+  });
+
+  it("scans tracked env contracts without reading ignored runtime secrets", () => {
+    const repositoryRoot = writeBoundaryRepository(
+      "runtime.ts",
+      "export const runtime = 'cortex';",
+    );
+
+    try {
+      execFileSync("git", ["init", "-q"], {
+        cwd: repositoryRoot,
+        stdio: "ignore",
+      });
+      writeFileSync(
+        path.join(repositoryRoot, ".gitignore"),
+        ".env\n.env.local\n.env.untracked\n",
+      );
+      writeFileSync(
+        path.join(repositoryRoot, ".env.example"),
+        [
+          "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex",
+          "CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/StaviasCortex",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(
+        path.join(repositoryRoot, ".env.local"),
+        "VITE_STAVIA_API_URL=https://ignored-secret.invalid\n",
+      );
+      writeFileSync(
+        path.join(repositoryRoot, ".env.untracked"),
+        "STAVIA_ASSISTANT_TOKEN=ignored-runtime-secret\n",
+      );
+      execFileSync("git", ["add", ".env.example"], {
+        cwd: repositoryRoot,
+        stdio: "ignore",
+      });
+
+      expect(() => verifySourceBoundary(repositoryRoot)).not.toThrow();
+
+      writeFileSync(
+        path.join(repositoryRoot, ".env.example"),
+        [
+          "CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex",
+          "CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/StaviasCortex",
+          "VITE_STAVIA_API_URL=https://retired-runtime.invalid",
+          "",
+        ].join("\n"),
+      );
+      expect(() => verifySourceBoundary(repositoryRoot)).toThrow(
+        /forbidden content token/i,
+      );
+    } finally {
+      rmSync(repositoryRoot, { recursive: true, force: true });
     }
   });
 

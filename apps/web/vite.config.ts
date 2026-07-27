@@ -189,7 +189,7 @@ export default defineConfig({
   ],
 
   server: {
-    host: "127.0.0.1",
+    host: "localhost",
     port: 5173,
     strictPort: true,
     headers: developmentSecurityHeaders,
@@ -198,7 +198,7 @@ export default defineConfig({
   },
 
   preview: {
-    host: "127.0.0.1",
+    host: "localhost",
     port: 4173,
     strictPort: true,
     headers: securityHeaders,

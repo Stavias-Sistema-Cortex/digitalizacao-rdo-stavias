@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import org.apache.poi.ooxml.POIXMLProperties;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.openxml4j.opc.PackagePart;
@@ -54,6 +55,10 @@ public class RdoXlsxExportService {
     private static final int MAX_MATERIAL_ROWS = 30;
     private static final int MAX_GEOMETRY_ROWS = 36;
     private static final int MAX_CELL_TEXT_LENGTH = 32_767;
+    private static final Pattern UUID_TEXT = Pattern.compile(
+            "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+            Pattern.CASE_INSENSITIVE
+    );
 
     private final RdoQueryService queryService;
     private final RdoExportWorksiteReader worksiteReader;
@@ -70,12 +75,13 @@ public class RdoXlsxExportService {
 
     public ExportedRdo export(String rdoId) {
         RdoResponse rdo = queryService.buscarPorId(rdoId);
+        String previousRdoNumber = resolvePreviousRdoNumber(rdo);
         RdoExportWorksiteReader.Worksite worksite =
                 worksiteReader.read(rdo.obraId());
         ExportRows rows = buildRows(rdo);
         validateCoverage(rows);
         validateDomainValues(rdo, rows);
-        validatePrintableText(rdo, worksite, rows);
+        validatePrintableText(rdo, previousRdoNumber, worksite, rows);
 
         byte[] template = loadVerifiedTemplate();
         try (Workbook genericWorkbook = WorkbookFactory.create(
@@ -88,7 +94,7 @@ public class RdoXlsxExportService {
             }
             validateTemplateContract(workbook);
             removeExecutableContent(workbook);
-            populate(workbook, rdo, worksite, rows);
+            populate(workbook, rdo, previousRdoNumber, worksite, rows);
             stripPackageMetadata(workbook);
             assertNoExecutableContent(workbook);
 
@@ -195,6 +201,7 @@ public class RdoXlsxExportService {
 
     private void validatePrintableText(
             RdoResponse rdo,
+            String previousRdoNumber,
             RdoExportWorksiteReader.Worksite worksite,
             ExportRows rows
     ) {
@@ -241,7 +248,34 @@ public class RdoXlsxExportService {
         for (RdoResponse.ControleGeometricoItem control : rows.geometry()) {
             printable("subtrecho do controle geométrico", control.subtrecho(), 32);
         }
-        printableObservations(allObservations(rdo));
+        printableObservations(allObservations(rdo, previousRdoNumber));
+    }
+
+    private String resolvePreviousRdoNumber(RdoResponse rdo) {
+        if (rdo.previousRdoId() == null || rdo.previousRdoId().isBlank()) {
+            return "";
+        }
+        try {
+            RdoResponse previous = queryService.buscarPorId(rdo.previousRdoId());
+            if (previous == null
+                    || rdo.obraId() == null
+                    || !rdo.obraId().equals(previous.obraId())) {
+                return "";
+            }
+            String candidate = previous.numeroRdo() == null
+                    ? ""
+                    : previous.numeroRdo().trim();
+            if (candidate.equals(rdo.previousRdoId())
+                    || UUID_TEXT.matcher(candidate).matches()) {
+                return "";
+            }
+            return candidate;
+        } catch (ResponseStatusException exception) {
+            if (exception.getStatusCode().equals(HttpStatus.NOT_FOUND)) {
+                return "";
+            }
+            throw exception;
+        }
     }
 
     private void printable(String section, String value, int maxCodePoints) {
@@ -444,6 +478,7 @@ public class RdoXlsxExportService {
     private void populate(
             XSSFWorkbook workbook,
             RdoResponse rdo,
+            String previousRdoNumber,
             RdoExportWorksiteReader.Worksite worksite,
             ExportRows rows
     ) {
@@ -459,7 +494,12 @@ public class RdoXlsxExportService {
         populateWorkedSection(workbook, front, rows.worked());
         populateMaterials(workbook, back, rows.materials());
         populateGeometry(workbook, back, rows.geometry());
-        populateObservationsAndSignatures(workbook, back, rdo);
+        populateObservationsAndSignatures(
+                workbook,
+                back,
+                rdo,
+                previousRdoNumber
+        );
     }
 
     private void clearOperationalFixtures(Sheet front, Sheet back) {
@@ -733,11 +773,14 @@ public class RdoXlsxExportService {
     private void populateObservationsAndSignatures(
             Workbook workbook,
             Sheet sheet,
-            RdoResponse rdo
+            RdoResponse rdo,
+            String previousRdoNumber
     ) {
         mergeIfMissing(sheet, "B63:AD68");
         Cell observations = cell(sheet, "B63");
-        observations.setCellValue(safeText(allObservations(rdo)));
+        observations.setCellValue(safeText(
+                allObservations(rdo, previousRdoNumber)
+        ));
         CellStyle style = workbook.createCellStyle();
         style.cloneStyleFrom(observations.getCellStyle());
         style.setWrapText(true);
@@ -755,15 +798,20 @@ public class RdoXlsxExportService {
         text(sheet, "V69", rdo.fiscalizacaoCampo());
     }
 
-    private String allObservations(RdoResponse rdo) {
+    private String allObservations(
+            RdoResponse rdo,
+            String previousRdoNumber
+    ) {
         List<String> entries = new ArrayList<>();
         boolean carriesPreviousWorkforce = rdo.previousRdoId() != null
                 && copy(rdo.maoObra()).stream()
                         .anyMatch(item -> item.origemItemId() != null
                                 && !item.origemItemId().isBlank());
-        if (carriesPreviousWorkforce) {
+        if (carriesPreviousWorkforce
+                && previousRdoNumber != null
+                && !previousRdoNumber.isBlank()) {
             entries.add("Continuidade da equipe: mão de obra importada do RDO "
-                    + safeText(rdo.previousRdoId()));
+                    + safeText(previousRdoNumber));
         }
         addCloudObservation(entries, "manhã", rdo.condicaoManha());
         addCloudObservation(entries, "tarde", rdo.condicaoTarde());

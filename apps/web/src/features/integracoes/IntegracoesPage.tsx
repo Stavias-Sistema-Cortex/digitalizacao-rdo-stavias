@@ -8,9 +8,11 @@ import { OperationalWorkspace } from "../../components/workspace/OperationalWork
 
 import {
   listarIntegracoes,
+  listarSolicitacoesIntegracaoPendentes,
   sincronizarIntegracao,
   testarConexaoIntegracao,
 } from "./integracoesApi";
+import type { IntegracaoPendingRequest } from "./integracoesApi";
 import type { IntegracaoStatus } from "./integracoes.types";
 import "./IntegracoesPage.css";
 
@@ -75,6 +77,8 @@ export function IntegracoesPage({
 }: IntegracoesPageProps) {
   const [integracoes, setIntegracoes] =
     useState<IntegracaoStatus[]>([]);
+  const [pendingRequests, setPendingRequests] =
+    useState<IntegracaoPendingRequest[]>([]);
   const [selected, setSelected] =
     useState<IntegracaoStatus | null>(null);
   const [isLoading, setIsLoading] =
@@ -91,6 +95,9 @@ export function IntegracoesPage({
     setError("");
 
     try {
+      setPendingRequests(
+        await listarSolicitacoesIntegracaoPendentes(),
+      );
       const data = await listarIntegracoes();
       setIntegracoes(data);
       setSelected((current) => {
@@ -136,23 +143,19 @@ export function IntegracoesPage({
     setError("");
 
     try {
-      const result =
+      const request =
         action === "testar"
           ? await testarConexaoIntegracao(id)
           : await sincronizarIntegracao(id);
 
-      await load();
-
-      if (
-        result.status === "SUCCESS" || result.status === "PARTIAL"
-      ) {
-        setMessage(result.mensagem);
-      } else {
-        setError(result.mensagem);
-      }
+      setPendingRequests(
+        await listarSolicitacoesIntegracaoPendentes(),
+      );
+      setMessage(
+        `Solicitação ${request.id} pendente (${request.motivo}). `
+          + "Ela será executada automaticamente após a reconexão.",
+      );
     } catch (actionError: unknown) {
-      await load();
-
       setError(
         actionError instanceof Error
           ? actionError.message
@@ -214,6 +217,27 @@ export function IntegracoesPage({
         >
           {error}
         </div>
+      )}
+
+      {pendingRequests.length > 0 && (
+        <section className="form-card" aria-label="Solicitações pendentes">
+          <h2>Solicitações pendentes</h2>
+          <ul>
+            {pendingRequests.map((request) => (
+              <li key={request.id}>
+                <strong>{request.integracaoId}</strong>
+                {" · "}
+                {request.acao}
+                {" · "}
+                {request.estado}
+                {" · "}
+                {request.motivo}
+                {" · "}
+                <code>{request.id}</code>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <section className="form-card integracoes-table-card">

@@ -311,6 +311,7 @@ export function localRecordToDraft(
     obraId: record.obraId,
     programacaoId: record.programacaoId ?? "",
     previousRdoId: asString(payload.previousRdoId),
+    previousRdoNumber: asString(payload.previousRdoNumber),
     creationContextVersion:
       typeof payload.creationContextVersion === "number" &&
       Number.isSafeInteger(payload.creationContextVersion) &&

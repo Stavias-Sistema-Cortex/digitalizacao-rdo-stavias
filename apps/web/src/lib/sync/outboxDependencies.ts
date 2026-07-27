@@ -79,12 +79,44 @@ function isCanonicalRdoCreate(
     mutation.transport === "SYNC_PUSH";
 }
 
+function isLegacyRdoCreate(
+  mutation: OutboxMutationRecord,
+): boolean {
+  return !isCanonicalOutboxMutation(mutation) &&
+    mutation.entidadeTipo === "RDO" &&
+    mutation.operacao === "CRIAR_RDO" &&
+    (!mutation.transport || mutation.transport === "SYNC_PUSH");
+}
+
+function isCanonicalRdoRecovery(
+  mutation: OutboxMutationRecord,
+): mutation is CanonicalOutboxMutationRecord {
+  return isCanonicalOutboxMutation(mutation) &&
+    mutation.entidadeTipo === "RDO" &&
+    (
+      (
+        mutation.operation === "CREATE" &&
+        mutation.operacao === "CRIAR_RDO"
+      ) ||
+      (
+        mutation.operation === "UPDATE" &&
+        mutation.operacao === "ATUALIZAR_RDO_RASCUNHO" &&
+        mutation.baseVersion !== null
+      )
+    ) &&
+    mutation.transport === "SYNC_PUSH";
+}
+
 function aliasMismatchReason(
   current: OutboxMutationRecord,
   replacement: OutboxMutationRecord,
 ): InvalidOutboxDependencyAlias["reason"] | null {
   if (!sameLogicalEntity(current, replacement)) return "ENTITY_MISMATCH";
-  if (!isCanonicalRdoCreate(current) || !isCanonicalRdoCreate(replacement)) {
+  const validCanonicalReplacement =
+    isCanonicalRdoCreate(current) && isCanonicalRdoCreate(replacement);
+  const validLegacyRecovery =
+    isLegacyRdoCreate(current) && isCanonicalRdoRecovery(replacement);
+  if (!validCanonicalReplacement && !validLegacyRecovery) {
     return "NON_CANONICAL_CREATE";
   }
   if (replacement.causationId !== current.clientMutationId) {

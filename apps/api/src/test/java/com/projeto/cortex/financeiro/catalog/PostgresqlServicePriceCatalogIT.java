@@ -943,6 +943,7 @@ class PostgresqlServicePriceCatalogIT {
                 "M2",
                 "BRL",
                 new BigDecimal(amount),
+                new BigDecimal("800.000"),
                 validFrom,
                 validTo,
                 "CONTRATO_MEDIDO"

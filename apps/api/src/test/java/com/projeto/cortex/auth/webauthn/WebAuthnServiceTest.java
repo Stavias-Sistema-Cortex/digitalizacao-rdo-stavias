@@ -85,13 +85,16 @@ class WebAuthnServiceTest {
         WebAuthnProperties properties = new WebAuthnProperties(
                 "127.0.0.1",
                 "Cortex local",
-                "http://127.0.0.1:5173",
+                "http://127.0.0.1:5173,http://127.0.0.1:5175",
                 300,
                 false
         );
 
         assertThat(properties.origins())
-                .containsExactly("http://127.0.0.1:5173");
+                .containsExactly(
+                        "http://127.0.0.1:5173",
+                        "http://127.0.0.1:5175"
+                );
         assertThatThrownBy(() -> new WebAuthnProperties(
                 "dev.example.invalid",
                 "Cortex local",

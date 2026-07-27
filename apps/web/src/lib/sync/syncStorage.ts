@@ -1993,6 +1993,11 @@ export async function applyPushResultAtomically(
         task?.versaoEntidade ??
         canonicalEvent?.entityVersion ??
         null;
+  const authoritativeRdoNumber =
+    isRdoMutation(mutation) &&
+    typeof result.resultado?.numeroRdo === "string"
+      ? result.resultado.numeroRdo.trim()
+      : "";
 
   if (result.status === "APLICADA") {
     await outboxStore.put({
@@ -2041,6 +2046,15 @@ export async function applyPushResultAtomically(
       );
       await rdoStore.put({
         ...rdo,
+        ...(authoritativeRdoNumber
+          ? {
+              numeroRdo: authoritativeRdoNumber,
+              payload: {
+                ...rdo.payload,
+                numeroRdo: authoritativeRdoNumber,
+              },
+            }
+          : {}),
         syncStatus: aggregateSyncStatus,
         versaoEntidade: resultVersion,
         updatedAt: timestamp,

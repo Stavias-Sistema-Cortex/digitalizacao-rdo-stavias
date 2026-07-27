@@ -65,7 +65,11 @@ public class OperationalTimelineService {
                         OR EXISTS (
                             SELECT 1
                             FROM jsonb_array_elements(
-                                COALESCE(entidades_relacionadas_json, '[]'::jsonb)
+                                CASE
+                                    WHEN jsonb_typeof(entidades_relacionadas_json) = 'array'
+                                        THEN entidades_relacionadas_json
+                                    ELSE '[]'::jsonb
+                                END
                             ) AS related
                             WHERE related = to_jsonb(?::text)
                                OR related ->> 'id' = ?

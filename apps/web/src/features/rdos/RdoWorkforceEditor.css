@@ -110,7 +110,7 @@
 
 .rdo-workforce-table {
   width: 100%;
-  min-width: 1040px;
+  min-width: 1130px;
   border-collapse: collapse;
   table-layout: fixed;
   color: #171b19;
@@ -168,6 +168,10 @@
   width: 112px;
 }
 
+.rdo-workforce-table thead th:nth-child(9) {
+  width: 90px;
+}
+
 .rdo-workforce-table tbody th {
   position: relative;
   font-weight: 600;
@@ -205,6 +209,22 @@
   width: 18px;
   min-height: 18px;
   margin: 0;
+}
+
+.rdo-workforce-remove {
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid #c9d2cd;
+  border-radius: 2px;
+  background: #fff;
+  color: #7d3030;
+  font: inherit;
+  font-weight: 500;
+}
+
+.rdo-workforce-remove:hover {
+  border-color: #9f4a4a;
+  background: #fbf3f3;
 }
 
 .rdo-workforce-table :disabled {

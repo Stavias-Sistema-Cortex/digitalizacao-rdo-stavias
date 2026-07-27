@@ -154,22 +154,36 @@ export function createMemoryRepository(
     },
 
     async search(request) {
-      const [serverDocuments, localEvents] = await Promise.all([
+      const [serverDocuments, localEvents, outboxMutations] = await Promise.all([
         database.getAllFromIndex(
           "memory_search_documents",
           "by-user-scope",
           [request.userId, request.scopeHash],
         ),
         database.getAll("operational_events"),
+        database.getAll("outbox_mutations"),
       ]);
       const allowed = request.allowedWorksiteIds === null ||
           request.allowedWorksiteIds === undefined
         ? null
         : new Set(request.allowedWorksiteIds);
+      const mutationsById = new Map(
+        outboxMutations.map((mutation) => [
+          mutation.clientMutationId,
+          mutation,
+        ]),
+      );
       const localDocuments = localEvents
         .filter((event) => authorizedLocalEvent(event, request.userId, allowed))
         .map((event) =>
-          localEventToSearchDocument(request.userId, request.scopeHash, event),
+          localEventToSearchDocument(
+            request.userId,
+            request.scopeHash,
+            event,
+            event.clientMutationId
+              ? mutationsById.get(event.clientMutationId)
+              : null,
+          ),
         );
       const merged = new Map<string, MemorySearchDocument>();
       const serverCommitSequences = new Set(
@@ -281,6 +295,8 @@ function matchesFilters(
   if (!same(structural.entityId, filters.entityId)) return false;
   if (!same(structural.worksiteId, filters.worksiteId)) return false;
   if (!same(structural.rdoId, filters.rdoId)) return false;
+  if (!same(structural.actorId ?? null, filters.actorId)) return false;
+  if (!same(structural.deviceId ?? null, filters.deviceId)) return false;
   if (!same(structural.origin, filters.origin)) return false;
   if (!same(structural.result, filters.result)) return false;
   const occurredAt = Date.parse(document.occurredAt);

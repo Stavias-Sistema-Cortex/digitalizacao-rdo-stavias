@@ -112,6 +112,8 @@ const MAX_EQUIPMENT = 32;
 const MAX_WORKED_ROWS = 21;
 const MAX_MATERIAL_ROWS = 30;
 const MAX_GEOMETRY_ROWS = 36;
+const UUID_TEXT =
+  /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 function error(code: RdoExportErrorCode, message: string): never {
   throw new RdoWorkbookExportError(code, message);
@@ -495,12 +497,19 @@ function weekday(date: string): string {
 function observations(rdo: RdoDraft): string {
   const entries: string[] = [];
   const workforce = rdo.maoObra.filter(nonEmptyWorkforce);
+  const previousRdoNumberCandidate = text(rdo.previousRdoNumber);
+  const previousRdoNumber =
+    previousRdoNumberCandidate === text(rdo.previousRdoId) ||
+    UUID_TEXT.test(previousRdoNumberCandidate)
+      ? ""
+      : previousRdoNumberCandidate;
   if (
     rdo.previousRdoId &&
+    previousRdoNumber &&
     workforce.some((item) => text(item.origemItemId))
   ) {
     entries.push(
-      `Continuidade da equipe: mão de obra importada do RDO ${sanitizeRdoCellText(rdo.previousRdoId)}`,
+      `Continuidade da equipe: mão de obra importada do RDO ${sanitizeRdoCellText(previousRdoNumber)}`,
     );
   }
   const weather = [

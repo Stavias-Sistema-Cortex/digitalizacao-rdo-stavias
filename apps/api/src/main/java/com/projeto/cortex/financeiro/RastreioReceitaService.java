@@ -1,15 +1,22 @@
 package com.projeto.cortex.financeiro;
 
+import com.projeto.cortex.ontology.OperationalMemoryCursorSigner;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,13 +25,24 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class RastreioReceitaService {
 
-    private static final int MAX_RESULT_ROWS = 500;
+    private static final int DEFAULT_PAGE_SIZE = 200;
+    private static final int MAX_PAGE_SIZE = 500;
     private static final long MAX_PERIOD_DAYS = 365;
 
     private final JdbcTemplate jdbc;
+    private final OperationalMemoryCursorSigner cursorSigner;
 
     public RastreioReceitaService(JdbcTemplate jdbc) {
+        this(jdbc, null);
+    }
+
+    @Autowired
+    public RastreioReceitaService(
+            JdbcTemplate jdbc,
+            OperationalMemoryCursorSigner cursorSigner
+    ) {
         this.jdbc = jdbc;
+        this.cursorSigner = cursorSigner;
     }
 
     public RastreioReceitaResponse buscar(
@@ -32,6 +50,17 @@ public class RastreioReceitaService {
             String obraId,
             LocalDate de,
             LocalDate ate
+    ) {
+        return buscar(allowedObraIds, obraId, de, ate, null, null);
+    }
+
+    public RastreioReceitaResponse buscar(
+            Set<String> allowedObraIds,
+            String obraId,
+            LocalDate de,
+            LocalDate ate,
+            String cursor,
+            Integer limit
     ) {
         LocalDate effectiveTo;
         LocalDate effectiveFrom;
@@ -54,24 +83,41 @@ public class RastreioReceitaService {
         }
         if (scope.isEmpty()) {
             return new RastreioReceitaResponse(
-                    effectiveFrom, effectiveTo, BigDecimal.ZERO, 0, List.of()
+                    effectiveFrom, effectiveTo, BigDecimal.ZERO, 0, List.of(),
+                    null, "COMPLETE", 0L
             );
         }
 
-        List<RastreioReceitaResponse.RevenueEvidenceRow> rows = queryRows(
-                scope, effectiveFrom, effectiveTo, null
-        );
-        if (rows.size() > MAX_RESULT_ROWS) {
-            throw error(
-                    HttpStatus.PAYLOAD_TOO_LARGE,
-                    "REVENUE_TRACE_RESULT_LIMIT_EXCEEDED"
-            );
+        int pageSize = limit == null ? DEFAULT_PAGE_SIZE : limit;
+        if (pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+            throw error(HttpStatus.BAD_REQUEST, "REVENUE_TRACE_LIMIT_INVALID");
         }
+        String scopeHash = scopeHash(scope);
+        String filterHash = filterHash(effectiveFrom, effectiveTo);
+        RevenueCursor decoded = decodeCursor(cursor, scopeHash, filterHash);
+        long highWaterMark = decoded == null
+                ? currentHighWaterMark()
+                : decoded.highWaterMark();
+        List<RastreioReceitaResponse.RevenueEvidenceRow> rows = queryRows(
+                scope, effectiveFrom, effectiveTo, null,
+                highWaterMark, decoded, pageSize + 1
+        );
+        boolean hasNext = rows.size() > pageSize;
+        List<RastreioReceitaResponse.RevenueEvidenceRow> pageRows = hasNext
+                ? List.copyOf(rows.subList(0, pageSize))
+                : List.copyOf(rows);
         BigDecimal total = rows.stream()
+                .limit(pageSize)
                 .map(RastreioReceitaResponse.RevenueEvidenceRow::revenue)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String nextCursor = hasNext
+                ? encodeCursor(
+                        pageRows.getLast(), scopeHash, filterHash, highWaterMark
+                )
+                : null;
         return new RastreioReceitaResponse(
-                effectiveFrom, effectiveTo, total, rows.size(), List.copyOf(rows)
+                effectiveFrom, effectiveTo, total, pageRows.size(), pageRows,
+                nextCursor, hasNext ? "PARTIAL" : "COMPLETE", highWaterMark
         );
     }
 
@@ -87,7 +133,8 @@ public class RastreioReceitaService {
             throw notFoundOrForbidden();
         }
         List<RastreioReceitaResponse.RevenueEvidenceRow> rows = queryRows(
-                scope, null, null, normalizedExecution
+                scope, null, null, normalizedExecution,
+                null, null, 2
         );
         if (rows.size() != 1) {
             throw notFoundOrForbidden();
@@ -107,7 +154,10 @@ public class RastreioReceitaService {
             List<String> scope,
             LocalDate from,
             LocalDate to,
-            String executionId
+            String executionId,
+            Long highWaterMark,
+            RevenueCursor cursor,
+            int rowLimit
     ) {
         String placeholders = String.join(
                 ",", scope.stream().map(ignored -> "?").toList()
@@ -164,9 +214,26 @@ public class RastreioReceitaService {
             sql.append(" AND execution.id = ?");
             args.add(executionId);
         }
-        sql.append(" ORDER BY execution.data_execucao DESC, ")
-                .append("execution.accepted_at DESC, execution.id")
-                .append(executionId == null ? " LIMIT 501" : " LIMIT 2");
+        if (highWaterMark != null) {
+            sql.append(" AND event.commit_seq <= ?");
+            args.add(highWaterMark);
+        }
+        if (cursor != null) {
+            sql.append("""
+                     AND (
+                         event.commit_seq < ?
+                         OR (
+                             event.commit_seq = ?
+                             AND execution.id < ?
+                         )
+                     )
+                    """);
+            args.add(cursor.lastCommitSequence());
+            args.add(cursor.lastCommitSequence());
+            args.add(cursor.lastExecutionId());
+        }
+        sql.append(" ORDER BY event.commit_seq DESC, execution.id DESC LIMIT ")
+                .append(rowLimit);
 
         return jdbc.query(
                 sql.toString(),
@@ -195,6 +262,141 @@ public class RastreioReceitaService {
                 ),
                 args.toArray()
         );
+    }
+
+    private long currentHighWaterMark() {
+        Long value = jdbc.queryForObject("""
+                SELECT ultima_commit_seq
+                FROM cortex_evento_commit_sequence
+                WHERE id = 1
+                """, Long.class);
+        return value == null ? 0L : Math.max(0L, value);
+    }
+
+    private RevenueCursor decodeCursor(
+            String token,
+            String expectedScopeHash,
+            String expectedFilterHash
+    ) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        if (token.length() > 2_048) {
+            throw invalidCursor();
+        }
+        try {
+            if (cursorSigner != null) {
+                OperationalMemoryCursorSigner.VerifiedCursor verified =
+                        cursorSigner.verify(
+                                token,
+                                revenueScopeFingerprint(expectedScopeHash),
+                                revenueFilterFingerprint(expectedFilterHash)
+                        );
+                return new RevenueCursor(
+                        verified.highWaterMark(),
+                        verified.commitSequence(),
+                        UUID.fromString(verified.eventId()).toString()
+                );
+            }
+            byte[] bytes = Base64.getUrlDecoder().decode(token);
+            if (bytes.length > 512) {
+                throw invalidCursor();
+            }
+            String[] fields = new String(bytes, StandardCharsets.UTF_8)
+                    .split("\\n", -1);
+            if (fields.length != 5
+                    || !"v1".equals(fields[0])
+                    || !sha256(
+                            expectedScopeHash + ":" + expectedFilterHash
+                    ).equals(fields[1])) {
+                throw invalidCursor();
+            }
+            long highWaterMark = Long.parseLong(fields[2]);
+            long lastCommitSequence = Long.parseLong(fields[3]);
+            if (
+                highWaterMark < 0L ||
+                lastCommitSequence < 0L ||
+                lastCommitSequence > highWaterMark
+            ) {
+                throw invalidCursor();
+            }
+            return new RevenueCursor(
+                    highWaterMark,
+                    lastCommitSequence,
+                    UUID.fromString(fields[4]).toString()
+            );
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (IllegalArgumentException exception) {
+            throw invalidCursor();
+        }
+    }
+
+    private String encodeCursor(
+            RastreioReceitaResponse.RevenueEvidenceRow lastRow,
+            String scopeHash,
+            String filterHash,
+            long highWaterMark
+    ) {
+        if (cursorSigner != null) {
+            return cursorSigner.sign(
+                    highWaterMark,
+                    lastRow.eventCommitSequence(),
+                    lastRow.executionId(),
+                    revenueScopeFingerprint(scopeHash),
+                    revenueFilterFingerprint(filterHash)
+            );
+        }
+        String value = String.join(
+                "\n",
+                "v1",
+                sha256(scopeHash + ":" + filterHash),
+                Long.toString(highWaterMark),
+                Long.toString(lastRow.eventCommitSequence()),
+                lastRow.executionId()
+        );
+        return Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String scopeHash(List<String> scope) {
+        return sha256(String.join(",", scope));
+    }
+
+    private String filterHash(
+            LocalDate from,
+            LocalDate to
+    ) {
+        return sha256(String.join(
+                "\n",
+                from.toString(),
+                to.toString()
+        ));
+    }
+
+    private String revenueScopeFingerprint(String scopeHash) {
+        return "revenue-scope-v1:" + scopeHash;
+    }
+
+    private String revenueFilterFingerprint(String filterHash) {
+        return "revenue-filter-v1:" + filterHash;
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(value.getBytes(StandardCharsets.UTF_8))
+            );
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(
+                    "SHA-256 indisponível.", impossible
+            );
+        }
+    }
+
+    private ResponseStatusException invalidCursor() {
+        return error(HttpStatus.BAD_REQUEST, "REVENUE_TRACE_CURSOR_INVALID");
     }
 
     private void validatePeriod(LocalDate from, LocalDate to) {
@@ -451,5 +653,12 @@ public class RastreioReceitaService {
                     && expectedTargetType.equals(targetType)
                     && expectedTargetId.equals(targetId);
         }
+    }
+
+    private record RevenueCursor(
+            long highWaterMark,
+            long lastCommitSequence,
+            String lastExecutionId
+    ) {
     }
 }

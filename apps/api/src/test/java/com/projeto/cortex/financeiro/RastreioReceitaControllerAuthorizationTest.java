@@ -41,9 +41,11 @@ class RastreioReceitaControllerAuthorizationTest {
         LocalDate from = LocalDate.of(2026, 7, 1);
         LocalDate to = LocalDate.of(2026, 7, 31);
 
-        controller.buscar(null, from, to);
+        controller.buscar(null, from, to, null, null);
 
-        verify(service).buscar(Set.of(OBRA_ID), null, from, to);
+        verify(service).buscar(
+                Set.of(OBRA_ID), null, from, to, null, null
+        );
     }
 
     @Test
@@ -60,7 +62,9 @@ class RastreioReceitaControllerAuthorizationTest {
                 service, access, currentUser
         );
 
-        assertThatThrownBy(() -> controller.buscar(OBRA_ID, null, null))
+        assertThatThrownBy(() ->
+                controller.buscar(OBRA_ID, null, null, null, null)
+        )
                 .isInstanceOf(ResponseStatusException.class);
 
         verifyNoInteractions(service);
@@ -95,11 +99,13 @@ class RastreioReceitaControllerAuthorizationTest {
         );
         String upperCase = UUID.fromString(OBRA_ID).toString().toUpperCase();
 
-        controller.buscar(upperCase, null, null);
+        controller.buscar(upperCase, null, null, null, null);
 
         verify(access).requirePermission(
                 OBRA_ID, FinancialPermission.FINANCEIRO_VISUALIZAR
         );
-        verify(service).buscar(Set.of(OBRA_ID), OBRA_ID, null, null);
+        verify(service).buscar(
+                Set.of(OBRA_ID), OBRA_ID, null, null, null, null
+        );
     }
 }

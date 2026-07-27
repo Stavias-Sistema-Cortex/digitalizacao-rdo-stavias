@@ -28,6 +28,13 @@ export type OperationalEventType =
   | "TAREFA_CONCLUIDA"
   | "TAREFA_REABERTA"
   | "TAREFA_EXCLUIDA"
+  | "EQUIPE_CRIADA"
+  | "EQUIPE_ATUALIZADA"
+  | "EQUIPE_ARQUIVADA"
+  | "EQUIPE_VINCULO_ALTERADO"
+  | "VINCULO_OBRA_ATRIBUIDO"
+  | "VINCULO_OBRA_REVOGADO"
+  | "SOLICITACAO_INTEGRACAO_CRIADA"
   | "COMPRA_CRIADA"
   | "SERVICE_CREATED"
   | "SERVICE_PRICE_VERSION_PUBLISHED"
@@ -79,7 +86,7 @@ export interface CanonicalMutationEnvelopeV13 {
   readonly clientMutationId: string;
   readonly deviceId: string;
   readonly userId: string;
-  readonly obraId: string;
+  readonly obraId: string | null;
   readonly entityType: string;
   readonly entityId: string;
   readonly operation: CanonicalMutationOperation;
@@ -113,7 +120,10 @@ export type SyncEntityType =
   | "SOLICITACAO_COMPRA"
   | "COMPRA"
   | "SERVICE"
-  | "SERVICE_PRICE_VERSION";
+  | "SERVICE_PRICE_VERSION"
+  | "EQUIPE"
+  | "VINCULO_OBRA"
+  | "SOLICITACAO_INTEGRACAO";
 
 export type SyncOperation =
   | "CRIAR_RDO"
@@ -142,7 +152,14 @@ export type SyncOperation =
   | "CRIAR_SERVICO_CATALOGO"
   | "CRIAR_PRECO_SERVICO"
   | "SUBSTITUIR_PRECO_SERVICO"
-  | "CANCELAR_PRECO_SERVICO";
+  | "CANCELAR_PRECO_SERVICO"
+  | "CRIAR_EQUIPE"
+  | "ATUALIZAR_EQUIPE"
+  | "ARQUIVAR_EQUIPE"
+  | "ALTERAR_VINCULO_EQUIPE"
+  | "VINCULAR_COLABORADOR_OBRA"
+  | "REVOGAR_VINCULO_COLABORADOR_OBRA"
+  | "SOLICITAR_INTEGRACAO";
 
 export type OutboxTransport =
   | "SYNC_PUSH"
@@ -182,6 +199,7 @@ export interface ServicePriceVersionLocalRecord {
   currency: string;
   version: number;
   unitPrice: string;
+  contractedQuantity: string | null;
   validFrom: string;
   validTo: string | null;
   source: string | null;
@@ -391,6 +409,13 @@ export interface MensagemAnexoLocalRecord {
   updatedAt: string;
 }
 
+export interface SyncExecutionLeaseRecord {
+  ownerToken: string;
+  acquiredAt: string;
+  heartbeatAt: string;
+  expiresAt: string;
+}
+
 export interface SyncStateRecord {
   key: "default";
   deviceId: string | null;
@@ -401,6 +426,7 @@ export interface SyncStateRecord {
   lastSyncStartedAt: string | null;
   lastSyncCompletedAt: string | null;
   lastSyncError: string | null;
+  syncExecutionLease: SyncExecutionLeaseRecord | null;
 }
 
 export interface ProcessedEventRecord {
@@ -580,6 +606,9 @@ export interface LocalTeamRecord {
   criadoEm: string;
   atualizadoEm: string;
   membros: LocalTeamMemberRecord[];
+  syncStatus?: "PENDING_SYNC" | "SYNCED" | "CONFLICT" | "REJECTED";
+  ultimoErro?: string | null;
+  pendingMutationId?: string | null;
 }
 
 export interface LocalOperationalRoleRecord {
@@ -636,6 +665,8 @@ export interface MemorySearchDocumentRecord {
     entityId: string | null;
     worksiteId: string | null;
     rdoId: string | null;
+    actorId: string | null;
+    deviceId: string | null;
     origin: string | null;
     result: string | null;
   };
@@ -649,6 +680,33 @@ export interface MemorySearchDocumentRecord {
   rdoNumber: string | null;
   serviceName: string | null;
   errorCategory: string | null;
+  trace: {
+    clientMutationId: string | null;
+    correlationId: string | null;
+    causationId: string | null;
+    entityVersion: number | null;
+  };
+  review: {
+    status: "CONFLICT" | "REJECTED";
+    clientMutationId: string | null;
+    baseVersion: number | null;
+    eventVersion: number | null;
+    remoteVersion: number | null;
+    localStateAvailable: boolean;
+    remoteStateAvailable: boolean;
+    changedFields: string[];
+    conflictFields: string[];
+    canReconcile: boolean;
+    unavailableReason:
+      | "REJECTED"
+      | "LOCAL_EVIDENCE_UNAVAILABLE"
+      | "REMOTE_SNAPSHOT_UNAVAILABLE"
+      | "UNSUPPORTED_ENTITY"
+      | "CREATE_CONFLICT_REQUIRES_REVIEW"
+      | "REMOTE_SNAPSHOT_MISMATCH"
+      | "FIELD_CONFLICT"
+      | null;
+  } | null;
 }
 
 export interface MemoryCacheMetadataRecord {

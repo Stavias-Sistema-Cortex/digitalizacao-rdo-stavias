@@ -15,20 +15,24 @@ describe("Memory API client", () => {
   beforeEach(() => mocks.apiFetch.mockReset());
 
   it("serializes structural filters and only the opaque signed cursor", () => {
+    const filters = {
+      q: "compactação norte",
+      worksiteId: "obra-1",
+      entityType: "RDO",
+      entityId: "rdo-1",
+      actorId: "actor-1",
+      deviceId: "device-1",
+      from: "2026-07-01T00:00:00.000Z",
+      limit: 100,
+    };
+
     expect(
       memoryQueryString(
-        {
-          q: "compactação norte",
-          worksiteId: "obra-1",
-          entityType: "RDO",
-          entityId: "rdo-1",
-          from: "2026-07-01T00:00:00.000Z",
-          limit: 100,
-        },
+        filters,
         { token: "signed.cursor-token" },
       ),
     ).toBe(
-      "q=compacta%C3%A7%C3%A3o+norte&entityType=RDO&entityId=rdo-1&obraId=obra-1&from=2026-07-01T00%3A00%3A00.000Z&limit=100&cursor=signed.cursor-token",
+      "q=compacta%C3%A7%C3%A3o+norte&entityType=RDO&entityId=rdo-1&obraId=obra-1&actorId=actor-1&deviceId=device-1&from=2026-07-01T00%3A00%3A00.000Z&limit=100&cursor=signed.cursor-token",
     );
   });
 
@@ -57,6 +61,13 @@ describe("Memory API client", () => {
               schemaVersion: 13,
               result: "SYNCED",
               errorCategory: null,
+              actorId: "actor-9",
+              actorName: "João Operador",
+              deviceId: "device-9",
+              clientMutationId: "mutation-9",
+              correlationId: "correlation-9",
+              causationId: "causation-8",
+              entityVersion: 4,
               relevance: 0,
             },
           ],
@@ -88,7 +99,17 @@ describe("Memory API client", () => {
 
     expect(mocks.apiFetch).toHaveBeenCalledWith("/ontology/memory?limit=100");
     expect(page).toMatchObject({
-      items: [{ eventId: "event-9", commitSequence: 9 }],
+      items: [{
+        eventId: "event-9",
+        commitSequence: 9,
+        actorId: "actor-9",
+        actorName: "João Operador",
+        deviceId: "device-9",
+        clientMutationId: "mutation-9",
+        correlationId: "correlation-9",
+        causationId: "causation-8",
+        entityVersion: 4,
+      }],
       nextCursor: { token: "signed.next-page" },
       hasMore: true,
       highWaterMark: 12,
@@ -137,6 +158,13 @@ describe("Memory API client", () => {
           schemaVersion: 13,
           result: "SYNCED",
           errorCategory: null,
+          actorId: "actor-pii",
+          actorName: "Responsável Autorizado",
+          deviceId: null,
+          clientMutationId: "mutation-pii",
+          correlationId: "correlation-pii",
+          causationId: null,
+          entityVersion: 1,
           relevance: 0,
         }],
         nextCursor: null,

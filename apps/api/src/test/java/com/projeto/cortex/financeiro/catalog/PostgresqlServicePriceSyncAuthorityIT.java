@@ -138,6 +138,7 @@ class PostgresqlServicePriceSyncAuthorityIT {
         createPayload.put("unit", "M2");
         createPayload.put("currency", "BRL");
         createPayload.put("unitPrice", "125.0000");
+        createPayload.put("contractedQuantity", "800.000");
         createPayload.put("validFrom", "2026-01-01");
         createPayload.put("validTo", "2026-06-30");
         createPayload.put("source", "CONTRATO_MEDIDO");
@@ -166,6 +167,7 @@ class PostgresqlServicePriceSyncAuthorityIT {
                 ),
                 Map.of(
                         "serviceId", catalog.id(),
+                        "contractedQuantity", "800.000",
                         "status", "ACTIVE"
                 )
         );
@@ -174,6 +176,7 @@ class PostgresqlServicePriceSyncAuthorityIT {
         ObjectNode supersedePayload = basePayload(replacementId, worksiteId);
         supersedePayload.put("previousPriceId", firstId);
         supersedePayload.put("unitPrice", "130.0000");
+        supersedePayload.put("contractedQuantity", "850.000");
         supersedePayload.put("validFrom", "2026-07-01");
         supersedePayload.put("source", "ADITIVO");
         SyncPushRequest.MutacaoCliente supersede = mutation(
@@ -205,6 +208,7 @@ class PostgresqlServicePriceSyncAuthorityIT {
                 Map.of(
                         "serviceId", catalog.id(),
                         "supersedesId", firstId,
+                        "contractedQuantity", "850.000",
                         "status", "ACTIVE"
                 )
         );
@@ -410,7 +414,9 @@ class PostgresqlServicePriceSyncAuthorityIT {
             SyncPushResponse response
     ) {
         assertThat(response.resultados()).singleElement().satisfies(result ->
-                assertThat(result.status()).isEqualTo("APLICADA")
+                assertThat(result.status())
+                        .as("sync result: %s", result)
+                        .isEqualTo("APLICADA")
         );
         return response.resultados().getFirst();
     }

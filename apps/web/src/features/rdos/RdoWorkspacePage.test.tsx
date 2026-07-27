@@ -42,9 +42,11 @@ vi.mock("./RdoLocalList", () => ({
   RdoLocalList: ({
     onCreate,
     onImportRdoFile,
+    error,
   }: {
     onCreate: () => void;
     onImportRdoFile: (file: File) => void;
+    error: string;
   }) => (
     <>
       <button type="button" onClick={onCreate}>
@@ -56,6 +58,7 @@ vi.mock("./RdoLocalList", () => ({
       >
         Importar teste
       </button>
+      {error ? <p role="alert">{error}</p> : null}
     </>
   ),
 }));
@@ -134,5 +137,28 @@ describe("RdoWorkspacePage: entrada do novo RDO", () => {
     ).toBeVisible();
     expect(screen.getByRole("dialog")).toBeVisible();
     expect(screen.queryByTestId("rdo-editor")).not.toBeInTheDocument();
+  });
+
+  it("mostra erro de importação sem trocar a lista por diálogo ou editor", async () => {
+    importarRdoArquivo.mockRejectedValueOnce(
+      new Error(
+        "O arquivo de RDO excede o limite seguro de 12 MiB.",
+      ),
+    );
+    const user = userEvent.setup();
+    render(<RdoWorkspacePage />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Importar teste" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "O arquivo de RDO excede o limite seguro de 12 MiB.",
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rdo-editor")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Importar teste" }),
+    ).toBeVisible();
   });
 });

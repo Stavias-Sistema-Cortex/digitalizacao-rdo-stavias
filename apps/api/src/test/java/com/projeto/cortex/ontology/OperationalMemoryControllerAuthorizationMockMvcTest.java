@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.test.web.servlet.MockMvc;
+import org.mockito.ArgumentCaptor;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
@@ -35,6 +36,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
 
     private static final String WORKSITE_A = "obra-a";
     private static final String WORKSITE_B = "obra-b";
+    private static final String DEVICE_A = "00000000-0000-4000-8000-00000000000d";
 
     @Autowired
     private MockMvc mockMvc;
@@ -181,6 +183,12 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                 eq(String.class),
                 eq("beta")
         )).thenReturn(List.of(WORKSITE_A));
+        when(jdbcTemplate.queryForObject(
+                contains("sync_dispositivo"),
+                eq(Integer.class),
+                eq(DEVICE_A),
+                eq("beta")
+        )).thenReturn(1);
 
         mockMvc.perform(get("/api/ontology/memory")
                         .param("q", "drenagem norte")
@@ -189,6 +197,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         .param("obraId", WORKSITE_A)
                         .param("rdoId", "rdo-1")
                         .param("actorId", "actor-1")
+                        .param("deviceId", DEVICE_A)
                         .param("eventType", "rdo_editado")
                         .param("origin", "offline")
                         .param("result", "sucesso")
@@ -208,6 +217,7 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                         WORKSITE_A,
                         "rdo-1",
                         "actor-1",
+                        DEVICE_A,
                         "rdo_editado",
                         "offline",
                         "sucesso",
@@ -217,6 +227,50 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                 eq(100),
                 eq(new OperationalMemoryCursor("v1.current.opaque.signature"))
         );
+    }
+
+    @Test
+    void forwardsAnOwnedDeviceFilterWithoutExposingForeignDeviceHistory()
+            throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", WORKSITE_A, true);
+        when(jdbcTemplate.queryForObject(
+                contains("sync_dispositivo"),
+                eq(Integer.class),
+                eq(DEVICE_A),
+                eq("beta")
+        )).thenReturn(1);
+
+        mockMvc.perform(get("/api/ontology/memory")
+                        .param("deviceId", DEVICE_A)
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<OperationalMemoryFilter> filter =
+                ArgumentCaptor.forClass(OperationalMemoryFilter.class);
+        verify(service).search(any(), filter.capture(), eq(50), eq(null));
+        assertThatRecordField(filter.getValue(), "deviceId", DEVICE_A);
+    }
+
+    @Test
+    void rejectsADeviceFilterThatIsNotOwnedByTheAuthenticatedUser()
+            throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", WORKSITE_A, true);
+        when(jdbcTemplate.queryForObject(
+                contains("sync_dispositivo"),
+                eq(Integer.class),
+                eq(DEVICE_A),
+                eq("beta")
+        )).thenReturn(0);
+
+        mockMvc.perform(get("/api/ontology/memory")
+                        .param("deviceId", DEVICE_A)
+                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("MEMORY_ACCESS_DENIED"));
+
+        verify(service, never()).search(any(), any(), any(), any());
     }
 
     @Test
@@ -273,5 +327,19 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                 eq(userId),
                 eq(obraId)
         )).thenReturn(ativo ? 1 : 0);
+    }
+
+    private void assertThatRecordField(
+            OperationalMemoryFilter filter,
+            String field,
+            String expected
+    ) throws Exception {
+        Object actual = java.util.Arrays.stream(filter.getClass().getRecordComponents())
+                .filter(component -> component.getName().equals(field))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Filtro ausente: " + field))
+                .getAccessor()
+                .invoke(filter);
+        org.assertj.core.api.Assertions.assertThat(actual).isEqualTo(expected);
     }
 }

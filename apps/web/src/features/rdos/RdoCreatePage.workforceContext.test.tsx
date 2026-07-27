@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import type { ReactNode } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createEmptyRdo } from "./createEmptyRdo";
@@ -11,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   listRdoAttachments: vi.fn(),
   getCachedContext: vi.fn(),
   requireContext: vi.fn(),
+  getLocalRdo: vi.fn(),
+  synchronize: vi.fn(),
 }));
 
 vi.mock("../../lib/db/rdoAttachmentRepository", () => ({
@@ -24,6 +32,10 @@ vi.mock("./rdoCreationContextRepository", () => ({
   requireRdoCreationContext: mocks.requireContext,
 }));
 
+vi.mock("../../lib/db/rdoRepository", () => ({
+  getLocalRdo: mocks.getLocalRdo,
+}));
+
 vi.mock("./useRdoLocalPersistence", () => ({
   useRdoLocalPersistence: () => ({
     isSaving: false,
@@ -31,7 +43,7 @@ vi.mock("./useRdoLocalPersistence", () => ({
     message: "",
     error: "",
     saveLocally: vi.fn(),
-    synchronize: vi.fn(),
+    synchronize: mocks.synchronize,
   }),
 }));
 
@@ -125,9 +137,55 @@ beforeEach(() => {
   mocks.listRdoAttachments.mockResolvedValue([]);
   mocks.getCachedContext.mockResolvedValue(undefined);
   mocks.requireContext.mockReset();
+  mocks.getLocalRdo.mockReset();
+  mocks.synchronize.mockReset();
+  mocks.synchronize.mockResolvedValue(undefined);
   Object.defineProperty(window.navigator, "onLine", {
     configurable: true,
     value: true,
+  });
+});
+
+describe("reconciliação da identificação canônica", () => {
+  it("rehydrates the read-only number after synchronization", async () => {
+    const draft = legacyDraft();
+    draft.numeroRdo = "RDO-STALE";
+    draft.syncStatus = "PENDING_SYNC";
+    mocks.getLocalRdo.mockResolvedValue({
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: "RDO-0042",
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "SYNCED",
+      versaoEntidade: 1,
+      payload: {
+        numeroRdo: "RDO-0042",
+      },
+      createdAt: "2026-07-22T10:00:00Z",
+      updatedAt: "2026-07-22T10:01:00Z",
+    });
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText(/^Número do RDO/)).toHaveValue("RDO-STALE");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sincronizar agora" }),
+    );
+
+    await waitFor(() => {
+      expect(mocks.synchronize).toHaveBeenCalledOnce();
+      expect(screen.getByLabelText(/^Número do RDO/)).toHaveValue("RDO-0042");
+    });
   });
 });
 

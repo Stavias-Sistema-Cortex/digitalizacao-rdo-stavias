@@ -81,7 +81,9 @@ export function canCoalesceLegacyRdoMutation(
         mutation.blockedReason.trim(),
       )
     ) &&
-    (mutation.status === "PENDING" || mutation.status === "ERROR");
+    mutation.status === "PENDING" &&
+    mutation.tentativas === 0 &&
+    mutation.ultimaTentativaEm === null;
 }
 
 interface RdoChildStoreWriter {
@@ -777,6 +779,7 @@ function buildRdoLocalPayload(
     obraId: draft.obraId,
     programacaoId: draft.programacaoId || null,
     previousRdoId: draft.previousRdoId,
+    previousRdoNumber: draft.previousRdoNumber,
     creationContextVersion: draft.creationContextVersion,
     apontadorColaboradorId: draft.apontadorColaboradorId,
     numeroRdo: draft.numeroRdo,
@@ -1960,7 +1963,7 @@ export async function hydrateBlockedRdoCreationContextsForSync(
         })
       ).filter((event) => event.syncStatus !== "SYNCED");
       assertSyncSession(guard);
-      await replacePendingCanonicalRdoCreate({
+      await replacePendingRdoCreate({
         draft,
         existingRdo: hydratedRdo,
         original: currentMutation,
@@ -1985,57 +1988,48 @@ export async function repairRdoCreateMutationsForSync(
   assertSyncSession(guard);
   const database = await getCortexDb();
   assertSyncSession(guard);
-  const timestamp = nowUtc();
-  const guardedTransaction = guardSyncTransaction(
-    database.transaction(
-      [
-        "rdos",
-        "outbox_mutations",
-        "rdoMaoObra",
-        "rdoEquipamentos",
-        "rdoMateriais",
-        "rdoControlesGeometricos",
-        "operational_events",
-      ],
-      "readwrite",
-    ),
-    guard,
-  );
-  const transaction = guardedTransaction.transaction;
-
-  const outboxStore =
-    transaction.objectStore(
-      "outbox_mutations",
-    );
-  const rdoStore =
-    transaction.objectStore("rdos");
-  const eventStore = transaction.objectStore("operational_events");
   const candidates = [
-    ...(await outboxStore
-      .index("by-status")
-      .getAll("PENDING")),
-    ...(await outboxStore
-      .index("by-status")
-      .getAll("ERROR")),
+    ...(await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "PENDING",
+    )),
+    ...(await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "ERROR",
+    )),
   ];
 
   let repaired = 0;
 
-  for (const mutation of candidates) {
-    if (isCanonicalOutboxMutation(mutation)) {
+  for (const candidate of candidates) {
+    assertSyncSession(guard);
+    if (isCanonicalOutboxMutation(candidate)) {
       continue;
     }
     if (
-      mutation.entidadeTipo !== "RDO" ||
-      mutation.operacao !== "CRIAR_RDO"
+      candidate.entidadeTipo !== "RDO" ||
+      candidate.operacao !== "CRIAR_RDO"
     ) {
       continue;
     }
 
-    const rdo = await rdoStore.get(
-      mutation.entidadeId,
+    const mutation = await database.get(
+      "outbox_mutations",
+      candidate.clientMutationId,
     );
-
+    const rdo = await database.get("rdos", candidate.entidadeId);
+    assertSyncSession(guard);
+    if (
+      !mutation ||
+      isCanonicalOutboxMutation(mutation) ||
+      mutation.entidadeTipo !== "RDO" ||
+      mutation.operacao !== "CRIAR_RDO" ||
+      !["PENDING", "ERROR"].includes(mutation.status)
+    ) {
+      continue;
+    }
     if (!rdo || rdo.syncStatus === "SYNCED") {
       continue;
     }
@@ -2043,41 +2037,92 @@ export async function repairRdoCreateMutationsForSync(
     const draft = rdoDraftFromLocalRecord(rdo);
     const blockedReason = rdoCreationContextBlockReason(draft);
     const pendingOperationalEvents = (
-      await eventStore.index("by-rdo-id").getAll(rdo.id)
+      await queryOperationalEvents({
+        rdoId: rdo.id,
+        limit: 500,
+      })
     ).filter((event) => event.syncStatus !== "SYNCED");
+    assertSyncSession(guard);
+    const timestamp = nowUtc();
 
-    const repairedMutation: OutboxMutationRecord = {
-      ...mutation,
+    if (!canCoalesceLegacyRdoMutation(mutation, "CRIAR_RDO")) {
+      const creationContextCache =
+        typeof rdo.payload.creationContextCache === "object" &&
+        rdo.payload.creationContextCache !== null
+          ? { creationContextCache: rdo.payload.creationContextCache }
+          : {};
+      await replacePendingRdoCreate({
+        draft,
+        existingRdo: rdo,
+        original: mutation,
+        localPayload: {
+          ...buildRdoLocalPayload(draft),
+          ...creationContextCache,
+        },
+        pendingOperationalEvents,
+        timestamp,
+      });
+      assertSyncSession(guard);
+      repaired += 1;
+      continue;
+    }
+
+    const guardedTransaction = guardSyncTransaction(
+      database.transaction(
+        [
+          "rdos",
+          "outbox_mutations",
+          "rdoMaoObra",
+          "rdoEquipamentos",
+          "rdoMateriais",
+          "rdoControlesGeometricos",
+        ],
+        "readwrite",
+      ),
+      guard,
+    );
+    const transaction = guardedTransaction.transaction;
+    const outboxStore = transaction.objectStore("outbox_mutations");
+    const rdoStore = transaction.objectStore("rdos");
+    const currentMutation = await outboxStore.get(
+      mutation.clientMutationId,
+    );
+    const currentRdo = await rdoStore.get(rdo.id);
+
+    if (
+      !currentMutation ||
+      !currentRdo ||
+      !canCoalesceLegacyRdoMutation(currentMutation, "CRIAR_RDO")
+    ) {
+      await guardedTransaction.complete();
+      continue;
+    }
+
+    await outboxStore.put({
+      ...currentMutation,
       payload: buildRdoSyncPayload(draft, pendingOperationalEvents),
       status: "PENDING",
-      tentativas: mutation.status === "ERROR" ? 0 : mutation.tentativas,
-      ultimaTentativaEm: null,
       ultimoErro: null,
       conflito: null,
       blockedReason,
       nextAttemptAt: null,
       updatedAt: timestamp,
-    };
-
-    await outboxStore.put(repairedMutation);
-
+    });
     await rdoStore.put({
-      ...rdo,
+      ...currentRdo,
       syncStatus: "PENDING_SYNC",
       updatedAt: timestamp,
     });
-
     await replaceChildRecords(
       transaction,
       draft,
       "PENDING_SYNC",
       timestamp,
     );
+    await guardedTransaction.complete();
 
     repaired += 1;
   }
-
-  await guardedTransaction.complete();
 
   return repaired;
 }
@@ -2123,15 +2168,26 @@ export async function saveExistingRdoDraftAtomically(
     .sort((left, right) =>
       right.occurredAt.localeCompare(left.occurredAt),
     )[0];
+  const attemptedLegacyCreate = preflightMutations
+    .filter(
+      (candidate) =>
+        !isCanonicalOutboxMutation(candidate) &&
+        candidate.operacao === "CRIAR_RDO" &&
+        ["PENDING", "ERROR"].includes(candidate.status) &&
+        !canCoalesceLegacyRdoMutation(candidate, "CRIAR_RDO"),
+    )
+    .sort((left, right) =>
+      right.criadaNoClienteEm.localeCompare(left.criadaNoClienteEm),
+    )[0];
 
   if (
-    preflightRdo?.versaoEntidade === null &&
-    pendingCanonicalCreate
+    preflightRdo &&
+    (pendingCanonicalCreate || attemptedLegacyCreate)
   ) {
-    return replacePendingCanonicalRdoCreate({
+    return replacePendingRdoCreate({
       draft,
       existingRdo: preflightRdo,
-      original: pendingCanonicalCreate,
+      original: pendingCanonicalCreate ?? attemptedLegacyCreate!,
       localPayload,
       pendingOperationalEvents,
       timestamp,
@@ -2354,10 +2410,10 @@ export async function saveExistingRdoDraftAtomically(
   };
 }
 
-async function replacePendingCanonicalRdoCreate(input: {
+async function replacePendingRdoCreate(input: {
   draft: RdoDraft;
   existingRdo: LocalRdoRecord;
-  original: CanonicalOutboxMutationRecord;
+  original: OutboxMutationRecord;
   localPayload: Record<string, unknown>;
   pendingOperationalEvents: OperationalEventRecord[];
   timestamp: string;
@@ -2389,6 +2445,29 @@ async function replacePendingCanonicalRdoCreate(input: {
     updatedAt: timestamp,
   };
   const database = await getCortexDb();
+  const state = await getSyncState();
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const deviceId =
+    isCanonicalOutboxMutation(original)
+      ? original.deviceId
+      : state.usuarioId === session.colaboradorId &&
+          state.deviceId &&
+          uuidPattern.test(state.deviceId)
+        ? state.deviceId
+        : crypto.randomUUID();
+  if (
+    !isCanonicalOutboxMutation(original) &&
+    (state.deviceId !== deviceId ||
+      state.usuarioId !== session.colaboradorId)
+  ) {
+    await updateSyncState({
+      deviceId,
+      usuarioId: session.colaboradorId,
+      lastPulledCommitSeq: 0,
+      lastAckedCommitSeq: 0,
+    });
+  }
   const childStores = [
     "rdoMaoObra",
     "rdoEquipamentos",
@@ -2435,16 +2514,21 @@ async function replacePendingCanonicalRdoCreate(input: {
       (value) => ({ store: "rdoControlesGeometricos" as const, value }),
     ),
   ];
+  const recoveredAsUpdate = existingRdo.versaoEntidade !== null;
   const committed = await commitLocalMutation<RdoReplacementStore>({
-    deviceId: original.deviceId,
+    deviceId,
     userId: session.colaboradorId,
     obraId: draft.obraId,
     entityType: "RDO",
     entityId: draft.id,
     entityName: draft.numeroRdo.trim() || null,
-    operation: "CREATE",
-    transportOperation: "CRIAR_RDO",
-    baseVersion: null,
+    operation: recoveredAsUpdate ? "UPDATE" : "CREATE",
+    transportOperation: recoveredAsUpdate
+      ? "ATUALIZAR_RDO_RASCUNHO"
+      : "CRIAR_RDO",
+    baseVersion: recoveredAsUpdate
+      ? existingRdo.versaoEntidade
+      : null,
     occurredAt: timestamp,
     previousSnapshot: original.payload as Record<string, unknown>,
     nextSnapshot: replacementPayload,
@@ -2457,9 +2541,16 @@ async function replacePendingCanonicalRdoCreate(input: {
         nome: entityName(draft.contrato) ?? entityName(draft.cliente),
       },
     ],
-    correlationId: original.correlationId,
+    correlationId: isCanonicalOutboxMutation(original)
+      ? original.correlationId
+      : crypto.randomUUID(),
     causationId: original.clientMutationId,
     dependsOnMutationIds: original.dependsOnMutationIds,
+    initialBlockedReason:
+      !recoveredAsUpdate &&
+      rdoCreationContextBlockReason(draft) !== null
+        ? "RDO_CREATION_CONTEXT_REQUIRED"
+        : undefined,
     supersedesMutationId: original.clientMutationId,
     write: () => writes,
   });

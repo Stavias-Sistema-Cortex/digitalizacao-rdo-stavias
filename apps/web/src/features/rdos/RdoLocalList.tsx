@@ -31,6 +31,7 @@ import {
   rdoWorkbookSnapshotFromLocalRecord,
   type RdoExportAvailability,
 } from "./export/rdoWorkbookMapping";
+import { RDO_IMPORT_ACCEPT } from "./rdoImportPolicy";
 
 interface RdoLocalListProps {
   records: LocalRdoRecord[];
@@ -614,7 +615,7 @@ export function RdoLocalList({
             <input
               ref={importInputRef}
               type="file"
-              accept=".pdf,.xlsx,.xls,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12"
+              accept={RDO_IMPORT_ACCEPT}
               className="visually-hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];

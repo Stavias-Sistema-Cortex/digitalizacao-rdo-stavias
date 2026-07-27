@@ -166,6 +166,7 @@ export function ObrasPage() {
     setFocusedObraId,
     events,
     isLoading,
+    hasConfirmedRemoteHydration,
     reload,
   } = useHomeData();
   const [chip, setChip] =
@@ -337,9 +338,8 @@ export function ObrasPage() {
     >
       <OperationalWorkspace
         className="obras-page"
-        eyebrow="Ontologia · Escopo operacional"
+        eyebrow="Obras · Escopo operacional"
         title="Obras"
-        description="Contratos, localização, produção, previsão de receita e rastro de eventos em uma única visão."
         actions={canCreateWorksite ? (
             <button
               type="button"
@@ -350,9 +350,19 @@ export function ObrasPage() {
             </button>
           ) : null}
         status={{
-          code: isLoading ? "SYNCING" : navigator.onLine ? "SYNCED" : "LOCAL",
+          code: isLoading
+            ? "SYNCING"
+            : hasConfirmedRemoteHydration
+              ? "SYNCED"
+              : "LOCAL",
           label: isLoading ? "Atualizando obras" : `${filteredObras.length} obras visíveis`,
-          detail: focusedObra ? `Foco: ${focusedObra.nome}` : "Nenhuma obra selecionada",
+          detail: hasConfirmedRemoteHydration
+            ? focusedObra
+              ? `Foco: ${focusedObra.nome}`
+              : "Nenhuma obra selecionada"
+            : focusedObra
+              ? `Cache local · Foco: ${focusedObra.nome}`
+              : "Dados preservados neste dispositivo",
         }}
       >
         <section className="obras-filter-bar" aria-label="Filtros de obras">
@@ -605,63 +615,66 @@ export function ObrasPage() {
                   )}
                 </section>
 
-                <section className="obras-trace">
-                  <div className="obras-trace-header">
-                    <div>
-                      <h3>Rastreabilidade Cortex</h3>
-                      <span>{traceSource}</span>
+                <details className="obras-ontology">
+                  <summary>Ontologia e rastreabilidade</summary>
+                  <section className="obras-trace">
+                    <div className="obras-trace-header">
+                      <div>
+                        <h3>Rastreabilidade Cortex</h3>
+                        <span>{traceSource}</span>
+                      </div>
+                      <span className="obras-trace-status">
+                        {isTimelineLoading
+                          ? "consultando"
+                          : timelineError
+                            ? "local"
+                            : "sincronizado"}
+                      </span>
                     </div>
-                    <span className="obras-trace-status">
-                      {isTimelineLoading
-                        ? "consultando"
-                        : timelineError
-                          ? "local"
-                          : "sincronizado"}
-                    </span>
-                  </div>
 
-                  {timelineError ? (
-                    <p className="obras-trace-note">
-                      {timelineError}
-                    </p>
-                  ) : null}
+                    {timelineError ? (
+                      <p className="obras-trace-note">
+                        {timelineError}
+                      </p>
+                    ) : null}
 
-                  {traceEvents.length === 0 ? (
-                    <p className="obras-empty">
-                      Nenhum evento operacional registrado.
-                    </p>
-                  ) : (
-                    <ol className="obras-trace-list">
-                      {traceEvents.map((event) => (
-                        <li key={event.id}>
-                          <div>
-                            <strong>{event.type}</strong>
-                            <span>
-                              {formatDateTime(
-                                event.occurredAt,
-                              ) || "-"}
-                            </span>
-                          </div>
-                          <p>
-                            {payloadSummary(event.payload) ||
-                              event.principalEntityId}
-                          </p>
-                          <small>
-                            {[
-                              event.origin,
-                              event.syncStatus,
-                              event.commitSeq === null
-                                ? null
-                                : `commit ${event.commitSeq}`,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </small>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </section>
+                    {traceEvents.length === 0 ? (
+                      <p className="obras-empty">
+                        Nenhum evento operacional registrado.
+                      </p>
+                    ) : (
+                      <ol className="obras-trace-list">
+                        {traceEvents.map((event) => (
+                          <li key={event.id}>
+                            <div>
+                              <strong>{event.type}</strong>
+                              <span>
+                                {formatDateTime(
+                                  event.occurredAt,
+                                ) || "-"}
+                              </span>
+                            </div>
+                            <p>
+                              {payloadSummary(event.payload) ||
+                                event.principalEntityId}
+                            </p>
+                            <small>
+                              {[
+                                event.origin,
+                                event.syncStatus,
+                                event.commitSeq === null
+                                  ? null
+                                  : `commit ${event.commitSeq}`,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </small>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </section>
+                </details>
               </>
             ) : (
               <p className="obras-empty">

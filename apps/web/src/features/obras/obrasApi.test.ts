@@ -1,8 +1,51 @@
 import { describe, expect, it } from "vitest";
 
-import { obraPdorFromApi } from "./obrasApi";
+import {
+  obraPdorFromApi,
+  obraTimelineEventFromApi,
+  type ObraTimelineEventApi,
+} from "./obrasApi";
 
 const WORKSITE_ID = "11111111-1111-4111-8111-111111111111";
+
+const TIMELINE_EVENT: ObraTimelineEventApi = {
+  id: "event-1",
+  commitSeq: 1,
+  type: "OBRA_ATUALIZADA",
+  principalEntityType: "OBRA",
+  principalEntityId: WORKSITE_ID,
+  relatedEntities: [],
+  obraId: WORKSITE_ID,
+  rdoId: null,
+  colaboradorId: null,
+  occurredAt: "2026-07-27T12:31:00",
+  syncedAt: null,
+  origin: "ONLINE",
+  syncStatus: "SYNCED",
+  schemaVersion: 13,
+  payload: {},
+};
+
+describe("obraTimelineEventFromApi", () => {
+  it("marca o relógio UTC dos eventos canônicos para conversão no fuso da máquina", () => {
+    expect(obraTimelineEventFromApi(TIMELINE_EVENT).occurredAt)
+      .toBe("2026-07-27T12:31:00Z");
+  });
+
+  it("marca como UTC os eventos PDOR da versão 2", () => {
+    expect(obraTimelineEventFromApi({
+      ...TIMELINE_EVENT,
+      schemaVersion: 2,
+    }).occurredAt).toBe("2026-07-27T12:31:00Z");
+  });
+
+  it("preserva o relógio local dos eventos legados", () => {
+    expect(obraTimelineEventFromApi({
+      ...TIMELINE_EVENT,
+      schemaVersion: 1,
+    }).occurredAt).toBe("2026-07-27T12:31:00");
+  });
+});
 
 describe("obraPdorFromApi", () => {
   it("converte o snapshot PDOR real da API sem inventar valores", () => {

@@ -3,6 +3,7 @@ import {
   type DBSchema,
   type IDBPDatabase,
   type StoreNames,
+  unwrap,
 } from "idb";
 
 import type {
@@ -39,7 +40,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 19;
+export const CORTEX_DATABASE_VERSION = 20;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -498,6 +499,29 @@ export async function getCortexDb(): Promise<
             keyPath: "key",
           });
         }
+        if (oldVersion < 20) {
+          const syncStateStore = unwrap(
+            transaction.objectStore("sync_state"),
+          );
+          const request = syncStateStore.get("default");
+          request.onsuccess = () => {
+            const current = request.result as
+              | Record<string, unknown>
+              | undefined;
+            if (
+              current &&
+              !Object.prototype.hasOwnProperty.call(
+                current,
+                "syncExecutionLease",
+              )
+            ) {
+              syncStateStore.put({
+                ...current,
+                syncExecutionLease: null,
+              });
+            }
+          };
+        }
 
         if (
           !database.objectStoreNames.contains(
@@ -941,6 +965,7 @@ export async function initializeCortexDb(): Promise<void> {
       lastSyncStartedAt: null,
       lastSyncCompletedAt: null,
       lastSyncError: null,
+      syncExecutionLease: null,
     };
 
     await database.put("sync_state", initialSyncState);

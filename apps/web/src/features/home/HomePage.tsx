@@ -27,7 +27,6 @@ export function HomePage() {
         className="home-dashboard"
         eyebrow="Córtex operacional"
         title="Visão do empreendimento"
-        description="Operação atual e registro rastreável no mesmo espaço de trabalho."
         status={data.isLoading
           ? { code: "SYNCING", label: "Atualizando o banco local" }
           : data.dataUpdatedAt

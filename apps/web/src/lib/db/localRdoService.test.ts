@@ -218,7 +218,17 @@ describe("legacy RDO mutation coalescing boundary", () => {
         { ...legacyCreateMutation, status: "ERROR" },
         "CRIAR_RDO",
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      canCoalesceLegacyRdoMutation(
+        {
+          ...legacyCreateMutation,
+          tentativas: 1,
+          ultimaTentativaEm: "2026-07-27T14:28:20.000Z",
+        },
+        "CRIAR_RDO",
+      ),
+    ).toBe(false);
     expect(
       canCoalesceLegacyRdoMutation(
         {

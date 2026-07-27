@@ -56,6 +56,10 @@ describe("ServicePriceCatalogPage", () => {
       entityId: "00000000-0000-4000-8000-000000000302",
       clientMutationId: "00000000-0000-4000-8000-000000000501",
     });
+    mocks.queueCreatePrice.mockResolvedValue({
+      entityId: "00000000-0000-4000-8000-000000000401",
+      clientMutationId: "00000000-0000-4000-8000-000000000502",
+    });
   });
 
   it("shows persisted catalog offline and does not infer administration rights", async () => {
@@ -92,6 +96,52 @@ describe("ServicePriceCatalogPage", () => {
     await waitFor(() => expect(mocks.queueCreateService).toHaveBeenCalledWith(
       OBRA_ID,
       { code: "PAV.BASE", name: "Base graduada", description: "" },
+    ));
+  });
+
+  it("queues a BRL price with contracted quantity and a backend-valid source", async () => {
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR", "FINANCEIRO_ADMINISTRAR"]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: /novo preço para pavimentação cbuq/i,
+    }));
+    expect(screen.getByLabelText("Moeda")).toHaveValue("BRL");
+    expect(screen.getByLabelText("Moeda")).toHaveAttribute("readonly");
+    expect(screen.getByPlaceholderText("CONTRATO_MEDIDO")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Unidade"), {
+      target: { value: "M2" },
+    });
+    fireEvent.change(screen.getByLabelText("Quantidade contratada"), {
+      target: { value: "800,000" },
+    });
+    fireEvent.change(screen.getByLabelText("Valor unitário"), {
+      target: { value: "125,50" },
+    });
+    fireEvent.change(screen.getByLabelText("Início da vigência"), {
+      target: { value: "2026-07-22" },
+    });
+    fireEvent.change(screen.getByLabelText(/Fonte do preço/), {
+      target: { value: "CONTRATO_MEDIDO" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /salvar offline/i }));
+
+    await waitFor(() => expect(mocks.queueCreatePrice).toHaveBeenCalledWith(
+      OBRA_ID,
+      LOCAL_ROWS[0].service.id,
+      {
+        unit: "M2",
+        currency: "BRL",
+        unitPrice: "125,50",
+        contractedQuantity: "800,000",
+        validFrom: "2026-07-22",
+        validTo: "",
+        source: "CONTRATO_MEDIDO",
+      },
     ));
   });
 });

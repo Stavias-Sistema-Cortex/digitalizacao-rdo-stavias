@@ -10,6 +10,7 @@ public record OperationalMemoryFilter(
         String worksiteId,
         String rdoId,
         String actorId,
+        String deviceId,
         String eventType,
         String origin,
         String result,
@@ -23,6 +24,7 @@ public record OperationalMemoryFilter(
         worksiteId = trimToNull(worksiteId);
         rdoId = trimToNull(rdoId);
         actorId = trimToNull(actorId);
+        deviceId = trimToNull(deviceId);
         eventType = code(eventType);
         origin = code(origin);
         result = code(result);
@@ -30,7 +32,7 @@ public record OperationalMemoryFilter(
 
     public static OperationalMemoryFilter empty() {
         return new OperationalMemoryFilter(
-                null, null, null, null, null, null, null, null, null, null, null
+                null, null, null, null, null, null, null, null, null, null, null, null
         );
     }
 

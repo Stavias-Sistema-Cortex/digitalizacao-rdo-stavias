@@ -91,6 +91,12 @@ public class PostgresqlServiceCatalogOntologyPublisher
         state.put("unit", price.unit());
         state.put("currency", price.currency());
         state.put("unitPrice", price.unitPrice().toPlainString());
+        if (price.contractedQuantity() != null) {
+            state.put(
+                    "contractedQuantity",
+                    price.contractedQuantity().toPlainString()
+            );
+        }
         state.put("version", price.version());
         state.put("validFrom", price.validFrom().toString());
         if (price.validTo() != null) {
@@ -202,6 +208,12 @@ public class PostgresqlServiceCatalogOntologyPublisher
         replacementState.put("unit", replacement.unit());
         replacementState.put("currency", replacement.currency());
         replacementState.put("unitPrice", replacement.unitPrice().toPlainString());
+        if (replacement.contractedQuantity() != null) {
+            replacementState.put(
+                    "contractedQuantity",
+                    replacement.contractedQuantity().toPlainString()
+            );
+        }
         replacementState.put("version", replacement.version());
         replacementState.put("validFrom", replacement.validFrom().toString());
         if (replacement.validTo() != null) {

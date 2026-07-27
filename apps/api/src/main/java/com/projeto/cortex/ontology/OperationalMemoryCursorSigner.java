@@ -9,7 +9,7 @@ import java.util.Arrays;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-final class OperationalMemoryCursorSigner {
+public final class OperationalMemoryCursorSigner {
 
     private static final String TOKEN_VERSION = "v1";
     private static final String ALGORITHM = "HmacSHA256";
@@ -29,7 +29,7 @@ final class OperationalMemoryCursorSigner {
         this.keyring = keyring;
     }
 
-    String sign(
+    public String sign(
             long highWaterMark,
             long commitSequence,
             String eventId,
@@ -52,7 +52,7 @@ final class OperationalMemoryCursorSigner {
         return TOKEN_VERSION + "." + keyId + "." + payloadPart + "." + signature;
     }
 
-    VerifiedCursor verify(
+    public VerifiedCursor verify(
             String token,
             String expectedScopeFingerprint,
             String expectedFilterFingerprint
@@ -199,7 +199,7 @@ final class OperationalMemoryCursorSigner {
         return new OperationalMemoryCursorScopeException();
     }
 
-    record VerifiedCursor(
+    public record VerifiedCursor(
             long highWaterMark,
             long commitSequence,
             String eventId,

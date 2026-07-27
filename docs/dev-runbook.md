@@ -21,7 +21,7 @@ arquivos protegidos:
 cp .env.example .env
 ```
 
-O runtime normal usa `local,postgresql` e falha fechado sem schema V59, ALFA
+O runtime normal usa `local,postgresql` e falha fechado sem schema V60, ALFA
 real ativo e o gate explícito. A sequência completa é:
 
 ```bash
@@ -52,7 +52,7 @@ O Compose não contém um MySQL primário e não injeta a senha PostgreSQL no
 ambiente do container. `CORTEX_POSTGRES_DOCKER_URL` deve apontar para a mesma
 instância canônica, por exemplo via `host.docker.internal` no macOS.
 
-- PWA: `http://127.0.0.1:5173`
+- PWA: `http://localhost:5173`
 - API: `http://127.0.0.1:8081`
 - health: `http://127.0.0.1:8081/api/health`
 - readiness: `http://127.0.0.1:8081/api/readiness`

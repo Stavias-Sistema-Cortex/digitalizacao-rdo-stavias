@@ -1,5 +1,6 @@
 import {
   readSpreadsheetWorkbook,
+  SpreadsheetWorkbookLimitError,
   type SpreadsheetSheet,
 } from "../../lib/files/readSpreadsheetWorkbook";
 import {
@@ -17,6 +18,11 @@ import type {
   MaterialDraft,
   RdoDraft,
 } from "./rdo.types";
+import {
+  RDO_IMPORT_LIMITS,
+  RdoImportSafeError,
+  readValidatedRdoImport,
+} from "./rdoImportPolicy";
 import { normalizarUnidade } from "./unidades";
 
 type WorkSheet = SpreadsheetSheet;
@@ -43,25 +49,20 @@ export async function importarRdoArquivo(
   file: File,
   preenchidoPorSessao: string,
 ): Promise<RdoImportResult> {
-  const extension = file.name
-    .split(".")
-    .pop()
-    ?.toLowerCase();
+  const validated = await readValidatedRdoImport(file);
 
-  if (extension === "pdf") {
-    return importarRdoPdf(file, preenchidoPorSessao);
+  if (validated.kind === "PDF") {
+    return importarRdoPdf(
+      file,
+      validated.data,
+      preenchidoPorSessao,
+    );
   }
 
-  if (
-    extension === "xlsx" ||
-    extension === "xls" ||
-    extension === "xlsm"
-  ) {
-    return importarRdoPlanilha(file, preenchidoPorSessao);
-  }
-
-  throw new Error(
-    "Envie um RDO em PDF, XLS, XLSX ou XLSM.",
+  return importarRdoPlanilha(
+    file,
+    validated.data,
+    preenchidoPorSessao,
   );
 }
 
@@ -74,9 +75,32 @@ export async function importarRdoExcel(
 
 async function importarRdoPlanilha(
   file: File,
+  data: Uint8Array,
   preenchidoPorSessao: string,
 ): Promise<RdoImportResult> {
-  const workbook = await readSpreadsheetWorkbook(file);
+  let workbook: WorkSheet[];
+  try {
+    workbook = await readSpreadsheetWorkbook(data, {
+      limits: {
+        maxSheets: RDO_IMPORT_LIMITS.maxWorkbookSheets,
+        maxRowsPerSheet:
+          RDO_IMPORT_LIMITS.maxWorkbookRowsPerSheet,
+        maxColumnsPerSheet:
+          RDO_IMPORT_LIMITS.maxWorkbookColumnsPerSheet,
+        maxCells: RDO_IMPORT_LIMITS.maxWorkbookCells,
+      },
+    });
+  } catch (error: unknown) {
+    if (
+      error instanceof SpreadsheetWorkbookLimitError ||
+      error instanceof RdoImportSafeError
+    ) {
+      throw error;
+    }
+    throw new RdoImportSafeError(
+      "Não foi possível ler a planilha do RDO. O arquivo pode estar corrompido; exporte-o novamente em XLS, XLSX ou XLSM.",
+    );
+  }
 
   const frente = pickSheet(workbook, "frente", 0);
   const verso = pickSheet(workbook, "verso", 1);
@@ -185,13 +209,24 @@ async function importarRdoPlanilha(
 
 async function importarRdoPdf(
   file: File,
+  data: Uint8Array,
   preenchidoPorSessao: string,
 ): Promise<RdoImportResult> {
-  const lines = await extractPdfLines(file);
+  let lines: string[];
+  try {
+    lines = await extractPdfLines(data);
+  } catch (error: unknown) {
+    if (error instanceof RdoImportSafeError) {
+      throw error;
+    }
+    throw new RdoImportSafeError(
+      "Não foi possível ler o PDF do RDO. O arquivo pode estar corrompido; exporte-o novamente com texto selecionável.",
+    );
+  }
   const textoExtraido = lines.join("\n").trim();
 
   if (!textoExtraido) {
-    throw new Error(
+    throw new RdoImportSafeError(
       "Não encontrei texto selecionável neste PDF. Para PDF escaneado, será necessário OCR antes da importação.",
     );
   }
@@ -293,7 +328,7 @@ type PdfTextLineItem = {
 };
 
 async function extractPdfLines(
-  file: File,
+  data: Uint8Array,
 ): Promise<string[]> {
   const [pdfjsLib, pdfWorker] = await Promise.all([
     import("pdfjs-dist/legacy/build/pdf.mjs"),
@@ -301,78 +336,146 @@ async function extractPdfLines(
   ]);
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker.default;
 
-  const data = new Uint8Array(
-    await file.arrayBuffer(),
-  );
-  const document = await pdfjsLib.getDocument({
+  const loadingTask = pdfjsLib.getDocument({
     data,
-  }).promise;
-  const lines: string[] = [];
+  });
+  let document:
+    | Awaited<typeof loadingTask.promise>
+    | null = null;
 
-  for (
-    let pageNumber = 1;
-    pageNumber <= document.numPages;
-    pageNumber += 1
-  ) {
-    const page = await document.getPage(pageNumber);
-    const content = await page.getTextContent();
-    const items = content.items
-      .map((item): PdfTextLineItem | null => {
-        const textItem = item as {
-          str?: string;
-          transform?: number[];
-        };
-        const text = textItem.str?.replace(/\s+/g, " ").trim();
-        const transform = textItem.transform;
+  try {
+    document = await loadingTask.promise;
+    if (
+      !Number.isSafeInteger(document.numPages) ||
+      document.numPages <= 0
+    ) {
+      throw new RdoImportSafeError(
+        "O PDF não possui uma estrutura de páginas válida. Exporte o RDO novamente.",
+      );
+    }
+    if (
+      document.numPages >
+      RDO_IMPORT_LIMITS.maxPdfPages
+    ) {
+      throw new RdoImportSafeError(
+        `O PDF possui mais de ${RDO_IMPORT_LIMITS.maxPdfPages} páginas. Importe apenas o relatório diário necessário.`,
+      );
+    }
 
-        if (!text || !transform) {
-          return null;
+    const lines: string[] = [];
+    let totalItems = 0;
+    let totalCharacters = 0;
+
+    for (
+      let pageNumber = 1;
+      pageNumber <= document.numPages;
+      pageNumber += 1
+    ) {
+      const page = await document.getPage(pageNumber);
+      try {
+        const content = await page.getTextContent();
+        if (
+          content.items.length >
+          RDO_IMPORT_LIMITS.maxPdfTextItemsPerPage
+        ) {
+          throw new RdoImportSafeError(
+            `A página ${pageNumber} do PDF possui itens de texto demais para uma importação segura. Simplifique o PDF e tente novamente.`,
+          );
         }
 
-        return {
-          text,
-          x: transform[4],
-          y: transform[5],
-        };
-      })
-      .filter(
-        (item): item is PdfTextLineItem => item !== null,
-      )
-      .sort((left, right) => {
-        const yDistance = right.y - left.y;
-        return Math.abs(yDistance) > 2
-          ? yDistance
-          : left.x - right.x;
-      });
+        totalItems += content.items.length;
+        if (
+          totalItems >
+          RDO_IMPORT_LIMITS.maxPdfTextItems
+        ) {
+          throw new RdoImportSafeError(
+            "O PDF possui itens de texto demais para uma importação segura. Importe apenas o relatório necessário.",
+          );
+        }
 
-    const grouped: PdfTextLineItem[][] = [];
+        const items: PdfTextLineItem[] = [];
+        for (const item of content.items) {
+          const textItem = item as {
+            str?: string;
+            transform?: number[];
+          };
+          const rawText =
+            typeof textItem.str === "string"
+              ? textItem.str
+              : "";
+          totalCharacters += rawText.length;
+          if (
+            totalCharacters >
+            RDO_IMPORT_LIMITS.maxPdfTextCharacters
+          ) {
+            throw new RdoImportSafeError(
+              "O texto extraído do PDF excede o limite seguro. Importe apenas o relatório necessário.",
+            );
+          }
 
-    for (const item of items) {
-      const group = grouped.find(
-        (candidate) =>
-          Math.abs(candidate[0].y - item.y) <= 2.5,
-      );
+          const text = rawText.replace(/\s+/g, " ").trim();
+          const transform = textItem.transform;
+          const x = transform?.[4];
+          const y = transform?.[5];
 
-      if (group) {
-        group.push(item);
-      } else {
-        grouped.push([item]);
+          if (
+            !text ||
+            !Number.isFinite(x) ||
+            !Number.isFinite(y)
+          ) {
+            continue;
+          }
+
+          items.push({
+            text,
+            x: x as number,
+            y: y as number,
+          });
+        }
+
+        items.sort((left, right) => {
+          const yDistance = right.y - left.y;
+          return Math.abs(yDistance) > 2
+            ? yDistance
+            : left.x - right.x;
+        });
+
+        const grouped: PdfTextLineItem[][] = [];
+        for (const item of items) {
+          const group = grouped.at(-1);
+          if (
+            group &&
+            Math.abs(group[0].y - item.y) <= 2.5
+          ) {
+            group.push(item);
+          } else {
+            grouped.push([item]);
+          }
+        }
+
+        lines.push(
+          ...grouped.map((group) =>
+            group
+              .sort((left, right) => left.x - right.x)
+              .map((item) => item.text)
+              .join(" ")
+              .replace(/\s+/g, " ")
+              .trim(),
+          ),
+        );
+      } finally {
+        page.cleanup();
       }
     }
 
-    lines.push(
-      ...grouped.map((group) =>
-        group
-          .sort((left, right) => left.x - right.x)
-          .map((item) => item.text)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim(),
-      ),
-    );
+    return lines.filter(Boolean);
+  } finally {
+    try {
+      await loadingTask.destroy();
+    } catch {
+      // Cleanup must not replace the actionable import error.
+    }
   }
-
-  return lines.filter(Boolean);
 }
 
 function extractLabeledValue(

@@ -4,6 +4,7 @@ import {
   createAutomaticSyncScheduler,
   type AutomaticSyncTrigger,
 } from "./automaticSyncScheduler";
+import { SyncLeaseUnavailableError } from "./syncExecutionLease";
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "./localMutationCoordinator";
 
@@ -14,6 +15,31 @@ async function flush(): Promise<void> {
 }
 
 describe("automatic sync scheduler", () => {
+  it("treats another tab's active lease as expected contention", async () => {
+    const target = new EventTarget();
+    const onError = vi.fn();
+    const onSuccess = vi.fn();
+    const scheduler = createAutomaticSyncScheduler({
+      syncNow: vi.fn(async () => {
+        throw new SyncLeaseUnavailableError();
+      }),
+      hasOnlineSession: () => true,
+      isOnline: () => true,
+      eventTarget: target,
+      visibilityTarget: target,
+      loadNextRetryAt: async () => null,
+      onError,
+      onSuccess,
+    });
+
+    scheduler.start();
+    await flush();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    scheduler.dispose();
+  });
+
   it("pushes after an online event without a manual action", async () => {
     const target = new EventTarget();
     let online = false;

@@ -194,6 +194,12 @@ describe("apiFetch cookie session", () => {
     expect(mocks.clearSession).toHaveBeenCalledTimes(1);
 
     mocks.clearSession.mockClear();
+    await apiFetch("/auth/login", {
+      method: "POST",
+    });
+    expect(mocks.clearSession).not.toHaveBeenCalled();
+
+    mocks.clearSession.mockClear();
     await apiFetch("/auth/passkeys/authentication/options", {
       method: "POST",
     });

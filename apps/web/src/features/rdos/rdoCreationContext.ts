@@ -80,6 +80,7 @@ export function applyRdoCreationContext(
     dataRdo: context.data,
     numeroRdo: context.nextNumberSuggestion?.trim() ?? "",
     previousRdoId: previous?.id ?? "",
+    previousRdoNumber: previous?.numeroRdo?.trim() ?? "",
     creationContextVersion: context.provenance.receiptVersion,
     programacaoId: "",
     cliente: context.obra.cliente?.trim() ?? "",
@@ -118,6 +119,7 @@ export function applyLocalPendingRdoCreationContext(
     obraId: context.obra.id,
     dataRdo: context.data,
     previousRdoId: previous?.id ?? "",
+    previousRdoNumber: previous?.numeroRdo?.trim() ?? "",
     creationContextVersion: null,
     programacaoId: "",
     cliente: context.obra.cliente?.trim() ?? "",
@@ -170,6 +172,25 @@ export function setRosterSelected(
     maoObra: draft.maoObra.map((item) =>
       item.localId === localId ? { ...item, selected } : item,
     ),
+    apontadorColaboradorId: clearsApontador
+      ? ""
+      : draft.apontadorColaboradorId,
+    apontadorRdo: clearsApontador ? "" : draft.apontadorRdo,
+  };
+}
+
+export function removeRosterMember(
+  draft: RdoDraft,
+  localId: string,
+): RdoDraft {
+  const target = draft.maoObra.find((item) => item.localId === localId);
+  if (!target) return draft;
+  const clearsApontador =
+    target.colaboradorId === draft.apontadorColaboradorId;
+
+  return {
+    ...draft,
+    maoObra: draft.maoObra.filter((item) => item.localId !== localId),
     apontadorColaboradorId: clearsApontador
       ? ""
       : draft.apontadorColaboradorId,

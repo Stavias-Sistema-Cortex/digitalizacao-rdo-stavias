@@ -548,15 +548,28 @@ describe("canonical local mutation coordinator", () => {
 
     expect(await repairRdoCreateMutationsForSync()).toBe(1);
 
+    const mutations = await database.getAll("outbox_mutations");
+    expect(mutations).toHaveLength(2);
     expect(
-      await database.get("outbox_mutations", mutation.clientMutationId),
+      mutations.find(
+        (candidate) =>
+          candidate.clientMutationId === mutation.clientMutationId,
+      ),
     ).toMatchObject({
-      clientMutationId: mutation.clientMutationId,
+      status: "REJECTED",
+      blockedReason: expect.stringMatching(/^SUPERSEDED_BY:/),
+    });
+    expect(
+      mutations.find(
+        (candidate) =>
+          candidate.clientMutationId !== mutation.clientMutationId,
+      ),
+    ).toMatchObject({
+      schemaVersion: 13,
       status: "PENDING",
       blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
-      ultimoErro: null,
+      causationId: mutation.clientMutationId,
     });
-    expect(await database.getAll("outbox_mutations")).toHaveLength(1);
   });
 
   it("enriches and unblocks a pre-V48 queue when the local RDO has a complete context receipt", async () => {

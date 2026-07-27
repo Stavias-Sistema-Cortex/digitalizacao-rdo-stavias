@@ -38,6 +38,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.server.ResponseStatusException;
@@ -63,26 +64,27 @@ class Cortex3ResourceLimitTest {
         OperationalMemoryQueryService search = mock(OperationalMemoryQueryService.class);
         CurrentUserService currentUser = mock(CurrentUserService.class);
         FinancialAccessService financialAccess = mock(FinancialAccessService.class);
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(currentUser.requireUserId()).thenReturn("user-1");
         when(currentUser.allowedObraIds("user-1")).thenReturn(Optional.empty());
         OperationalMemoryController controller = new OperationalMemoryController(
-                search, currentUser, financialAccess
+                search, currentUser, financialAccess, jdbcTemplate
         );
 
         controller.memory("x".repeat(MEMORY_QUERY_LIMIT), null, null, null,
-                null, null, null, null, null, null, null, MEMORY_PAGE_LIMIT,
+                null, null, null, null, null, null, null, null, MEMORY_PAGE_LIMIT,
                 null, null, null);
         verify(search).search(any(), any(), eq(MEMORY_PAGE_LIMIT), eq(null));
 
         controller.memory(null, null, null, null, null, null, null, null,
-                null, null, null, MEMORY_PAGE_LIMIT + 1, null, null, null);
+                null, null, null, null, MEMORY_PAGE_LIMIT + 1, null, null, null);
         verify(search, times(2)).search(
                 any(), any(), eq(MEMORY_PAGE_LIMIT), eq(null)
         );
 
         assertThatThrownBy(() -> controller.memory(
                 "x".repeat(MEMORY_QUERY_LIMIT + 1), null, null, null,
-                null, null, null, null, null, null, null, MEMORY_PAGE_LIMIT,
+                null, null, null, null, null, null, null, null, MEMORY_PAGE_LIMIT,
                 null, null, null
         )).isInstanceOf(RuntimeException.class);
     }

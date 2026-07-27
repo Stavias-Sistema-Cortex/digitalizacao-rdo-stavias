@@ -857,6 +857,7 @@ export function RdoCreatePage({
     if (persistedRdo) {
       setDraft((current) => ({
         ...current,
+        numeroRdo: persistedRdo.numeroRdo,
         syncStatus: persistedRdo.syncStatus,
       }));
     }

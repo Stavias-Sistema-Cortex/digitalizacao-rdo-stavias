@@ -1,5 +1,6 @@
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { LOCAL_MUTATION_QUEUED_EVENT } from "./localMutationCoordinator";
+import { isSyncLeaseUnavailableError } from "./syncExecutionLease";
 
 export const AUTOMATIC_SYNC_INTERVAL_MS = 30_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -110,7 +111,12 @@ export function createAutomaticSyncScheduler(
       const result = await options.syncNow();
       if (!disposed) options.onSuccess?.(trigger, result);
     } catch (error: unknown) {
-      if (!disposed) options.onError?.(trigger, error);
+      if (
+        !disposed &&
+        !isSyncLeaseUnavailableError(error)
+      ) {
+        options.onError?.(trigger, error);
+      }
     } finally {
       inFlight = false;
       await refreshRetryTimer();

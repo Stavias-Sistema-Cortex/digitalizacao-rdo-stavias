@@ -35,6 +35,7 @@ public class PostgresqlServicePriceCatalogRepository
                    price.moeda,
                    price.versao,
                    price.valor_unitario,
+                   price.quantidade_contratada,
                    price.fonte,
                    price.vigencia_inicio,
                    price.vigencia_fim,
@@ -66,6 +67,7 @@ public class PostgresqlServicePriceCatalogRepository
                    price.moeda,
                    price.versao,
                    price.valor_unitario,
+                   price.quantidade_contratada,
                    price.fonte,
                    price.vigencia_inicio,
                    price.vigencia_fim,
@@ -366,9 +368,10 @@ public class PostgresqlServicePriceCatalogRepository
             jdbc.update("""
                     INSERT INTO service_price_version (
                         id, obra_id, service_id, unidade, moeda, versao,
-                        valor_unitario, vigencia_inicio, vigencia_fim, fonte,
+                        valor_unitario, quantidade_contratada,
+                        vigencia_inicio, vigencia_fim, fonte,
                         supersedes_id, criado_por, criado_em
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     record.id(),
                     record.obraId(),
@@ -377,6 +380,7 @@ public class PostgresqlServicePriceCatalogRepository
                     record.currency(),
                     nextVersion,
                     record.unitPrice(),
+                    record.contractedQuantity(),
                     record.validFrom(),
                     record.validTo(),
                     record.source(),
@@ -624,6 +628,7 @@ public class PostgresqlServicePriceCatalogRepository
                 resultSet.getString("moeda"),
                 resultSet.getInt("versao"),
                 resultSet.getBigDecimal("valor_unitario"),
+                resultSet.getBigDecimal("quantidade_contratada"),
                 resultSet.getObject("vigencia_inicio", LocalDate.class),
                 resultSet.getObject("vigencia_fim", LocalDate.class),
                 resultSet.getString("supersedes_id"),

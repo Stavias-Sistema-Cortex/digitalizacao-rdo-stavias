@@ -45,6 +45,7 @@ export interface CreateLocalPriceInput {
   unit: string;
   currency: string;
   unitPrice: string;
+  contractedQuantity: string;
   validFrom: string;
   validTo?: string | null;
   source: string;
@@ -52,6 +53,7 @@ export interface CreateLocalPriceInput {
 
 export interface SupersedeLocalPriceInput {
   unitPrice: string;
+  contractedQuantity: string;
   validFrom: string;
   validTo?: string | null;
   source: string;
@@ -103,6 +105,38 @@ function decimalText(value: string): string {
   const normalized = value.trim().replace(",", ".");
   if (!/^\d{1,14}(?:\.\d{1,4})?$/.test(normalized)) {
     throw new Error("Informe um valor unitário válido com até quatro casas decimais.");
+  }
+  return normalized;
+}
+
+function contractedQuantityText(value: string): string {
+  const normalized = value.trim().replace(",", ".");
+  if (
+    !/^\d{1,15}(?:\.\d{1,3})?$/.test(normalized) ||
+    /^0+(?:\.0+)?$/.test(normalized)
+  ) {
+    throw new Error(
+      "Informe uma quantidade contratada positiva com até três casas decimais.",
+    );
+  }
+  const [integer, fraction = ""] = normalized.split(".");
+  return `${integer}.${fraction.padEnd(3, "0")}`;
+}
+
+function brlCurrency(value: string): "BRL" {
+  const normalized = requiredText(value, "Moeda", 3).toUpperCase();
+  if (normalized !== "BRL") {
+    throw new Error("A moeda do catálogo de receita deve ser BRL.");
+  }
+  return "BRL";
+}
+
+function sourceText(value: string): string {
+  const normalized = requiredText(value, "Fonte", 80).toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9._:-]{0,79}$/.test(normalized)) {
+    throw new Error(
+      "Fonte inválida. Use letras, números e apenas . _ : -.",
+    );
   }
   return normalized;
 }
@@ -270,6 +304,9 @@ export async function hydrateServiceCatalog(
         await priceStore.put({
           ...price,
           unitPrice: String(price.unitPrice),
+          contractedQuantity: price.contractedQuantity === null
+            ? null
+            : String(price.contractedQuantity),
           source: price.source ?? null,
           entityVersion: price.entityVersion ?? 0,
           syncStatus: "SYNCED",
@@ -366,28 +403,34 @@ export async function queueCreatePrice(
   serviceId: string,
   input: CreateLocalPriceInput,
 ): Promise<QueuedCatalogMutation> {
-  const identity = await localMutationIdentity(obraId);
   const normalizedServiceId = requiredUuid(serviceId, "serviceId");
-  const database = await getCortexDb();
-  const service = await database.get("service_catalog", normalizedServiceId);
-  if (!service) throw new Error("O serviço não está disponível no catálogo local.");
-  const entityId = crypto.randomUUID();
-  const occurredAt = nowUtc();
+  const unit = requiredText(input.unit, "Unidade", 30).toUpperCase();
+  const currency = brlCurrency(input.currency);
+  const unitPrice = decimalText(input.unitPrice);
+  const contractedQuantity = contractedQuantityText(input.contractedQuantity);
   const validFrom = dateText(input.validFrom, "Início da vigência");
   const validTo = input.validTo ? dateText(input.validTo, "Fim da vigência") : null;
   if (validTo && validTo < validFrom) {
     throw new Error("O fim da vigência não pode ser anterior ao início.");
   }
+  const source = sourceText(input.source);
+  const identity = await localMutationIdentity(obraId);
+  const database = await getCortexDb();
+  const service = await database.get("service_catalog", normalizedServiceId);
+  if (!service) throw new Error("O serviço não está disponível no catálogo local.");
+  const entityId = crypto.randomUUID();
+  const occurredAt = nowUtc();
   const payload = {
     id: entityId,
     obraId: identity.obraId,
     serviceId: normalizedServiceId,
-    unit: requiredText(input.unit, "Unidade", 30).toUpperCase(),
-    currency: requiredText(input.currency, "Moeda", 3).toUpperCase(),
-    unitPrice: decimalText(input.unitPrice),
+    unit,
+    currency,
+    unitPrice,
+    contractedQuantity,
     validFrom,
     validTo,
-    source: requiredText(input.source, "Fonte", 80).toUpperCase(),
+    source,
   };
   const existing = await database.getAllFromIndex(
     "service_price_versions",
@@ -437,8 +480,13 @@ export async function queueSupersedePrice(
   previousPriceId: string,
   input: SupersedeLocalPriceInput,
 ): Promise<QueuedCatalogMutation> {
-  const identity = await localMutationIdentity(obraId);
   const previousId = requiredUuid(previousPriceId, "previousPriceId");
+  const unitPrice = decimalText(input.unitPrice);
+  const contractedQuantity = contractedQuantityText(input.contractedQuantity);
+  const validFrom = dateText(input.validFrom, "Início da vigência");
+  const validTo = input.validTo ? dateText(input.validTo, "Fim da vigência") : null;
+  const source = sourceText(input.source);
+  const identity = await localMutationIdentity(obraId);
   const database = await getCortexDb();
   const previous = await database.get("service_price_versions", previousId);
   if (!previous || previous.obraId !== identity.obraId) {
@@ -449,8 +497,6 @@ export async function queueSupersedePrice(
   }
   const entityId = crypto.randomUUID();
   const occurredAt = nowUtc();
-  const validFrom = dateText(input.validFrom, "Início da vigência");
-  const validTo = input.validTo ? dateText(input.validTo, "Fim da vigência") : null;
   if (validFrom <= previous.validFrom || (validTo && validTo < validFrom)) {
     throw new Error("A nova vigência deve começar depois da versão anterior.");
   }
@@ -458,10 +504,11 @@ export async function queueSupersedePrice(
     id: entityId,
     obraId: identity.obraId,
     previousPriceId: previous.id,
-    unitPrice: decimalText(input.unitPrice),
+    unitPrice,
+    contractedQuantity,
     validFrom,
     validTo,
-    source: requiredText(input.source, "Fonte", 80).toUpperCase(),
+    source,
   };
   const local: ServicePriceVersionLocalRecord = {
     id: entityId,
@@ -471,6 +518,7 @@ export async function queueSupersedePrice(
     currency: previous.currency,
     version: previous.version + 1,
     unitPrice: payload.unitPrice,
+    contractedQuantity: payload.contractedQuantity,
     validFrom,
     validTo,
     source: payload.source,

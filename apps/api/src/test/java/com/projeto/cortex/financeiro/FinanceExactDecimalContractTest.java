@@ -29,6 +29,7 @@ class FinanceExactDecimalContractTest {
                 "BRL",
                 1,
                 new BigDecimal("99999999999999.9999"),
+                new BigDecimal("999999999999999.999"),
                 LocalDate.of(2026, 1, 1),
                 null,
                 null,
@@ -44,6 +45,8 @@ class FinanceExactDecimalContractTest {
         assertThat(json.path("unitPrice").isTextual()).isTrue();
         assertThat(json.path("unitPrice").asText())
                 .isEqualTo("99999999999999.9999");
+        assertThat(json.path("contractedQuantity").asText())
+                .isEqualTo("999999999999999.999");
     }
 
     @Test

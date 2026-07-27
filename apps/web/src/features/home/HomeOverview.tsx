@@ -127,8 +127,7 @@ export function HomeOverview({
       >
         <header className="home-exception-register__heading">
           <div>
-            <span>Persistência neste dispositivo</span>
-            <h2>Estado operacional</h2>
+            <h2>Sincronização</h2>
           </div>
           <p>
             Atualização local
@@ -150,29 +149,29 @@ export function HomeOverview({
 
         <dl className="home-exception-register__facts">
           <div>
-            <dt>Na fila do dispositivo</dt>
+            <dt>Na fila</dt>
             <dd>{snapshot.isLoading ? "—" : deviceQueueCount}</dd>
           </div>
           <div>
-            <dt>Conflitos no dispositivo</dt>
+            <dt>Conflitos</dt>
             <dd>{snapshot.isLoading ? "—" : snapshot.conflictCount}</dd>
           </div>
           <div>
-            <dt>Falhas no dispositivo</dt>
+            <dt>Falhas</dt>
             <dd>{snapshot.isLoading ? "—" : snapshot.errorCount}</dd>
           </div>
           <div>
-            <dt>Revisões necessárias</dt>
+            <dt>Revisões</dt>
             <dd>{snapshot.isLoading ? "—" : snapshot.reviewCount}</dd>
           </div>
           <div>
-            <dt>Aguardando confirmação nesta obra</dt>
+            <dt>Aguardando</dt>
             <dd>{focusedWorksiteQueueCount}</dd>
           </div>
         </dl>
 
         <Link to="/home?tab=memory">
-          Consultar Memória
+          Ver memória
         </Link>
       </section>
 

@@ -12,8 +12,24 @@ public record RastreioReceitaResponse(
         @JsonSerialize(using = ExactDecimalJsonSerializer.class)
         BigDecimal totalRevenue,
         int evidenceCount,
-        List<RevenueEvidenceRow> rows
+        List<RevenueEvidenceRow> rows,
+        String nextCursor,
+        String coverage,
+        long highWaterMark
 ) {
+
+    public RastreioReceitaResponse(
+            LocalDate from,
+            LocalDate to,
+            BigDecimal totalRevenue,
+            int evidenceCount,
+            List<RevenueEvidenceRow> rows
+    ) {
+        this(
+                from, to, totalRevenue, evidenceCount, rows,
+                null, "COMPLETE", 0L
+        );
+    }
 
     public record RevenueEvidenceRow(
             String worksiteId,

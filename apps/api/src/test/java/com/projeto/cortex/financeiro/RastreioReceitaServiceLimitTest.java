@@ -3,11 +3,14 @@ package com.projeto.cortex.financeiro;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.projeto.cortex.ontology.OperationalMemoryCursorSigner;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -25,19 +28,56 @@ class RastreioReceitaServiceLimitTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void refusesOversizedResultInsteadOfReturningAnIncompleteTotal() {
+    void returnsABoundedCursorPageInsteadOfRejectingMoreThanFiveHundredRows() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         RastreioReceitaResponse.RevenueEvidenceRow row = row();
+        when(jdbc.queryForObject(anyString(), eq(Long.class))).thenReturn(501L);
         when(jdbc.query(
                 anyString(), any(RowMapper.class), any(Object[].class)
         )).thenReturn(Collections.nCopies(501, row));
-        RastreioReceitaService service = new RastreioReceitaService(jdbc);
+        OperationalMemoryCursorSigner signer = mock(
+                OperationalMemoryCursorSigner.class
+        );
+        when(signer.sign(
+                anyLong(), anyLong(), anyString(), anyString(), anyString()
+        )).thenReturn("signed-cursor");
+        RastreioReceitaService service = new RastreioReceitaService(
+                jdbc, signer
+        );
+
+        RastreioReceitaResponse response = service.buscar(
+                Set.of(OBRA_ID), null,
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                null, 500
+        );
+
+        assertThat(response.rows()).hasSize(500);
+        assertThat(response.evidenceCount()).isEqualTo(500);
+        assertThat(response.coverage()).isEqualTo("PARTIAL");
+        assertThat(response.nextCursor()).isEqualTo("signed-cursor");
+        assertThat(response.highWaterMark()).isEqualTo(501L);
+    }
+
+    @Test
+    void rejectsATamperedSignedCursorBeforeQueryingRevenueRows() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        OperationalMemoryCursorSigner signer = mock(
+                OperationalMemoryCursorSigner.class
+        );
+        when(signer.verify(eq("tampered"), anyString(), anyString()))
+                .thenThrow(new IllegalArgumentException("invalid signature"));
+        RastreioReceitaService service = new RastreioReceitaService(
+                jdbc, signer
+        );
 
         assertThatThrownBy(() -> service.buscar(
                 Set.of(OBRA_ID), null,
-                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31)
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31),
+                "tampered", 500
         )).isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("REVENUE_TRACE_RESULT_LIMIT_EXCEEDED");
+                .hasMessageContaining("REVENUE_TRACE_CURSOR_INVALID");
+
+        verifyNoInteractions(jdbc);
     }
 
     @Test
