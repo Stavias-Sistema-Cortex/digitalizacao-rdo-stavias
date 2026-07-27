@@ -149,7 +149,56 @@ Consequentemente, esta execução não declara:
 - bootstrap/sync Academy ou Zeladoria, pois faltam credenciais read-only
   explicitamente verificadas.
 
-O helper fora do escopo `scripts/dev/run-compose.sh` ainda exige OTP e imprime
-portas fixas; a documentação desta entrega usa o Compose parametrizado
-diretamente. O PostgreSQL 18.4 passou todos os testes, com aviso do Flyway de
-que sua faixa oficialmente testada vai até PostgreSQL 17.
+O PostgreSQL 18.4 passou todos os testes, com aviso do Flyway de que sua faixa
+oficialmente testada vai até PostgreSQL 17.
+
+## Correção dos helpers normais
+
+O ciclo RED adicional protegeu cada launcher separadamente, sem concatenar
+fontes:
+
+```text
+node apps/web/scripts/verify-stavia-boundary.mjs --source
+exit 1; 16 violações esperadas:
+- run-compose.sh exigia OTP e não derivava as URLs das portas escolhidas;
+- run-api-docker.sh exigia/montava OTP e publicava 8081 fixo;
+- compose.production.example.yml montava OTP no runtime normal;
+- .env.example fixava origem 5173 e não declarava ambas as portas.
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+  ./mvnw -Dtest=PostgresqlLocalRuntimeContractTest test
+9 testes; 5 falhas esperadas; BUILD FAILURE.
+```
+
+Depois da correção:
+
+```text
+node apps/web/scripts/verify-stavia-boundary.mjs --source
+StavIA source boundary verified.
+
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+  ./mvnw -Dtest=PostgresqlLocalRuntimeContractTest test
+9 testes; 0 falhas; 0 erros; BUILD SUCCESS.
+
+npm --prefix apps/web test -- --run src/lib/api/apiClient.test.ts
+1 arquivo; 13 testes; 13 passaram.
+
+bash scripts/security/test-local-compose-security.sh
+Local PostgreSQL/loopback, normal-runtime OTP isolation, production
+secret-mount, source-read-only wiring, and container hardening contracts
+passed.
+
+bash -n scripts/dev/run-compose.sh scripts/dev/run-api-docker.sh \
+  scripts/security/test-local-compose-security.sh
+exit 0.
+
+git diff --check
+exit 0.
+```
+
+O `docker compose config` da verificação de segurança foi renderizado sem
+fornecer OTP HMAC: o runtime `production,postgresql` não declara nem monta essa
+chave. `start-postgres-activation.sh` continua exigindo o segredo OTP
+explicitamente. SMTP permanece montado no runtime normal exclusivamente para
+entrega operacional idempotente do scheduler financeiro; não participa da
+autenticação.

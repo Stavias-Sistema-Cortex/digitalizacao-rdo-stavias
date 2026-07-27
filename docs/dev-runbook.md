@@ -49,12 +49,14 @@ loopback e podem ser escolhidas sem colidir com outro checkout:
 
 ```bash
 CORTEX_WEB_PORT=15173 CORTEX_API_PORT=18081 \
-  docker compose -f compose.local.yml up --build -d
+  ./scripts/dev/run-compose.sh
 ```
 
 O Compose não contém um MySQL primário e não injeta a senha PostgreSQL no
 ambiente do container. `CORTEX_POSTGRES_DOCKER_URL` deve apontar para a mesma
-instância canônica, por exemplo via `host.docker.internal` no macOS.
+instância canônica, por exemplo via `host.docker.internal` no macOS. O helper
+valida somente os secrets do runtime normal; o HMAC de OTP pertence ao processo
+separado de ativação.
 
 - PWA: `http://localhost:${CORTEX_WEB_PORT:-5173}`
 - API: `http://127.0.0.1:${CORTEX_API_PORT:-8081}`
@@ -62,6 +64,8 @@ instância canônica, por exemplo via `host.docker.internal` no macOS.
   `http://localhost:${CORTEX_WEB_PORT:-5173}/api/health`
 - health direto da API:
   `http://127.0.0.1:${CORTEX_API_PORT:-8081}/api/health`
+- readiness direto da API:
+  `http://127.0.0.1:${CORTEX_API_PORT:-8081}/api/readiness`
 
 ```bash
 docker compose -f compose.local.yml logs -f cortex-api cortex-web

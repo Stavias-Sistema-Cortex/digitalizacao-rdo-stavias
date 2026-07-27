@@ -5,6 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 compose_file="$repo_root/compose.local.yml"
 production_compose_file="$repo_root/compose.production.example.yml"
 postgresql_env_template="$repo_root/.env.postgresql.example"
+activation_script="$repo_root/scripts/dev/start-postgres-activation.sh"
 api_dockerfile="$repo_root/apps/api/Dockerfile"
 web_dockerfile="$repo_root/apps/web/Dockerfile"
 web_nginx_config="$repo_root/apps/web/nginx.conf"
@@ -67,7 +68,6 @@ assert_production_compose_renders_from_documented_contract() {
         academy \
         zeladoria \
         cpf_hmac \
-        otp_hmac \
         offline_private \
         offline_public \
         memory_cursor_hmac \
@@ -84,7 +84,6 @@ assert_production_compose_renders_from_documented_contract() {
     academy \
     zeladoria \
     cpf_hmac \
-    otp_hmac \
     offline_private \
     offline_public \
     memory_cursor_hmac \
@@ -101,7 +100,6 @@ assert_production_compose_renders_from_documented_contract() {
     CORTEX_AUTH_WEBAUTHN_RP_ID='cortex.example.invalid' \
     CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID='cpf-contract-key' \
     CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/cpf_hmac" \
-    CORTEX_AUTH_OTP_HMAC_KEY_FILE="$contract_secret_dir/otp_hmac" \
     CORTEX_AUTH_OFFLINE_GRANT_KEY_ID='offline-contract-key' \
     CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE="$contract_secret_dir/offline_private" \
     CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE="$contract_secret_dir/offline_public" \
@@ -128,6 +126,10 @@ assert_production_compose_renders_from_documented_contract() {
   grep -Fq 'published: "8080"' <<< "$rendered"
   grep -Fq 'target: CORTEX_ACADEMY_DB_PASSWORD' <<< "$rendered"
   grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' <<< "$rendered"
+  if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac' <<< "$rendered"; then
+    echo "rendered normal production compose still contains activation OTP" >&2
+    exit 1
+  fi
   if grep -Fq 'contract-secret' <<< "$rendered"; then
     echo "docker compose config leaked temporary secret contents" >&2
     exit 1
@@ -186,7 +188,6 @@ for documented_variable in \
   CORTEX_WEB_PORT \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID \
   CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE \
-  CORTEX_AUTH_OTP_HMAC_KEY_FILE \
   CORTEX_AUTH_WEBAUTHN_RP_ID \
   CORTEX_AUTH_OFFLINE_GRANT_KEY_ID \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID \
@@ -210,6 +211,24 @@ for documented_variable in \
     exit 1
   }
 done
+
+if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac' \
+  "$production_compose_file"; then
+  echo "normal production compose still requires or mounts activation OTP" >&2
+  exit 1
+fi
+
+if grep -Eq '^CORTEX_AUTH_OTP_HMAC_KEY_FILE=' "$postgresql_env_template"; then
+  echo "normal PostgreSQL runtime template still requires activation OTP" >&2
+  exit 1
+fi
+
+grep -Fq 'cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE' \
+  "$activation_script"
+grep -Fq 'CORTEX_FINANCE_EMAIL_SCHEDULER_ENABLED:' \
+  "$production_compose_file"
+grep -Fq 'CORTEX_SMTP_PASSWORD_FILE: /run/secrets/cortex_smtp_password' \
+  "$production_compose_file"
 
 if grep -Eq '^[[:space:]]+(CORTEX_POSTGRES_PASSWORD|CORTEX_ACADEMY_DB_PASSWORD|CORTEX_ZELADORIA_DB_PASSWORD|AWS_SECRET_ACCESS_KEY):' \
   "$production_compose_file"; then
@@ -247,4 +266,4 @@ grep -Fq 'client_max_body_size 4k;' "$web_nginx_config"
 
 assert_production_compose_renders_from_documented_contract
 
-echo "Local PostgreSQL/loopback, production secret-mount, source-read-only wiring, and container hardening contracts passed."
+echo "Local PostgreSQL/loopback, normal-runtime OTP isolation, production secret-mount, source-read-only wiring, and container hardening contracts passed."

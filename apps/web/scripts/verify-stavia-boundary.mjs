@@ -906,6 +906,90 @@ export function inspectSourceBoundary(files) {
     }
   }
 
+  const normalRuntimeContracts = new Map([
+    [
+      "scripts/dev/run-compose.sh",
+      [
+        'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+        'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+        'http://localhost:${CORTEX_WEB_PORT}',
+        'http://127.0.0.1:${CORTEX_API_PORT}/api/health',
+        'http://127.0.0.1:${CORTEX_API_PORT}/api/readiness',
+      ],
+    ],
+    [
+      "scripts/dev/run-api-docker.sh",
+      [
+        'CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"',
+        'CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"',
+        '-p "127.0.0.1:${CORTEX_API_PORT}:8080"',
+        '-e CORTEX_WEB_PORT="$CORTEX_WEB_PORT"',
+      ],
+    ],
+    [
+      "compose.production.example.yml",
+      [
+        "SPRING_PROFILES_ACTIVE: production,postgresql",
+        "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac",
+      ],
+    ],
+  ]);
+  for (const [runtimePath, requiredContracts] of normalRuntimeContracts) {
+    const content = byPath.get(runtimePath);
+    if (content === undefined) {
+      continue;
+    }
+    if (
+      content.includes("CORTEX_AUTH_OTP_HMAC_KEY_FILE") ||
+      content.includes("cortex_otp_hmac")
+    ) {
+      violations.push(
+        `${runtimePath}: normal PostgreSQL runtime must not require or mount an OTP secret`,
+      );
+    }
+    for (const required of requiredContracts) {
+      if (!content.includes(required)) {
+        violations.push(
+          `${runtimePath}: missing configurable normal-runtime contract (${required})`,
+        );
+      }
+    }
+  }
+
+  const activation = byPath.get("scripts/dev/start-postgres-activation.sh");
+  if (
+    activation !== undefined &&
+    !activation.includes(
+      "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+    )
+  ) {
+    violations.push(
+      "scripts/dev/start-postgres-activation.sh: explicit activation must retain its OTP secret requirement",
+    );
+  }
+
+  const rootEnvironment = byPath.get(".env.example");
+  if (rootEnvironment !== undefined) {
+    for (const required of [
+      "CORTEX_WEB_PORT=5173",
+      "CORTEX_API_PORT=8081",
+    ]) {
+      if (!rootEnvironment.includes(required)) {
+        violations.push(`.env.example: missing local port contract (${required})`);
+      }
+    }
+    for (const fixedOrigin of [
+      "CORTEX_CORS_ALLOWED_ORIGINS=http://localhost:5173",
+      "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173",
+    ]) {
+      if (rootEnvironment.includes(fixedOrigin)) {
+        violations.push(
+          `.env.example: fixed origin defeats CORTEX_WEB_PORT derivation (${fixedOrigin})`,
+        );
+      }
+    }
+  }
+
   const localApplication =
     byPath.get("apps/api/src/main/resources/application-local.yml");
   if (localApplication !== undefined) {

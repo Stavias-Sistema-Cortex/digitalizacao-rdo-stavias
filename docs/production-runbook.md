@@ -67,9 +67,11 @@ API; PIN, e-mail e OTP não são fallbacks offline.
 2. Confirme um ALFA ativo e, para cada usuário QA, uma identidade canônica ativa
    com HMAC de CPF, persistida pelo bootstrap/sync autorizado.
 3. Configure storage persistente, `CORTEX_PUBLIC_ORIGIN` HTTPS exata, passkeys e
-   todos os secrets do runtime normal por arquivo. SMTP e OTP são configurados
-   somente ao executar a ativação explícita. Nunca copie uma senha para `.env`
-   nem para uma variável de ambiente.
+   todos os secrets do runtime normal por arquivo. OTP é configurado somente ao
+   executar a ativação explícita. SMTP permanece no runtime normal apenas para
+   entrega operacional idempotente do scheduler financeiro, nunca para
+   autenticação. Nunca copie uma senha para `.env` nem para uma variável de
+   ambiente.
 4. Mantenha `CORTEX_POSTGRES_RUNTIME_READY=false` até concluir Flyway, o
    bootstrap ALFA e o preflight; então altere-o para `true` no ambiente de
    publicação.

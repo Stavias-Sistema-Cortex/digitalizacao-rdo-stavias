@@ -311,10 +311,69 @@ git add apps/web/package.json apps/web/scripts/verify-stavia-boundary.mjs \
 git commit -m "fix(runtime): serve Cortex auth through one local origin"
 ```
 
+### Task 5: Alinhar os helpers locais restantes ao runtime sem OTP
+
+**Files:**
+- Modify: `scripts/dev/run-compose.sh`
+- Modify: `scripts/dev/run-api-docker.sh`
+- Modify: `compose.production.example.yml`
+- Modify: `scripts/security/test-local-compose-security.sh`
+- Modify: `apps/api/src/test/java/com/projeto/cortex/postgresql/PostgresqlLocalRuntimeContractTest.java`
+- Modify: `.env.example`
+- Modify: `.env.postgresql.example`
+- Modify: `apps/web/scripts/verify-stavia-boundary.mjs`
+- Modify: `docs/dev-runbook.md`
+- Test: `apps/web/src/lib/api/apiClient.test.ts` only if the static verifier needs a focused contract invocation
+
+**Interfaces:**
+- Every normal-runtime helper must work without `CORTEX_AUTH_OTP_HMAC_KEY_FILE`; only `start-postgres-activation.sh` may require it.
+- The normal production Compose example must neither require nor mount the OTP
+  secret. SMTP may remain only for non-auth operational delivery when its
+  finance scheduler is enabled; documentation must not describe it as a login
+  mechanism.
+- `run-compose.sh` and `run-api-docker.sh` use configurable loopback API/Web ports and print the exact resulting origins.
+- The example environment does not override the local CORS/WebAuthn port derivation with fixed origins.
+- This is a corrective extension of Task 4, not an authentication-policy change: direct CPF remains canonical PostgreSQL access and passkey stays optional.
+
+- [ ] **Step 1: Write a failing helper-boundary source assertion**
+
+Extend the source verifier to reject normal-runtime helper references to the OTP
+secret and fixed 5173/8081 ports, while allowing the activation script to retain
+the OTP requirement. Update the Java/local Compose security contracts so each
+normal launcher and the production Compose example is checked independently.
+
+- [ ] **Step 2: Verify RED**
+
+```bash
+node apps/web/scripts/verify-stavia-boundary.mjs --source
+```
+
+Expected: FAIL because `run-compose.sh` and `run-api-docker.sh` still require
+and mount the OTP secret and advertise fixed ports.
+
+- [ ] **Step 3: Implement the compatible helper correction**
+
+Remove the normal OTP dependency and container mount/environment injection.
+Parameterize the loopback host mappings and printed health/PWA URLs, preserving
+secret-file validation for PostgreSQL, CPF HMAC, offline-grant, and memory
+cursor secrets. Let local CORS/WebAuthn derive from `CORTEX_WEB_PORT` rather
+than a fixed example value. Remove OTP from the normal production Compose
+contract and its template/security validation, but preserve explicit activation
+and any separately justified non-auth SMTP finance configuration. Do not weaken
+cookies, CSRF, passkey validation, or activation requirements.
+
+- [ ] **Step 4: Verify GREEN and commit**
+
+Run the source verifier and relevant focused web tests, then `git diff --check`.
+Record the exact evidence in the existing verification document and commit the
+correction separately.
+
 ## Plan self-review
 
 - Task 1 covers canonical Academy identity, normal/activation route separation, rate limiting, readiness, cookies, CSRF, and PostgreSQL proof.
 - Task 2 covers the new local grant boundary without altering PRF encryption or data namespaces.
 - Task 3 covers the actual customer-visible removal of OTP/e-mail plus both offline paths.
 - Task 4 covers the screenshot's host mismatch and deployment/local evidence.
+- Task 5 ensures the remaining operator-facing helpers cannot reintroduce the
+  retired normal OTP requirement or fixed-origin confusion.
 - No task queries Academy/Zeladoria MySQL on a browser request or fabricates operational data.

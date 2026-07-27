@@ -55,15 +55,18 @@ estado; `/api/health` mede somente o processo.
 ## 3. Secrets e providers
 
 - [ ] CPF HMAC e chave privada offline vêm de arquivos secretos montados; os
-  equivalentes inline estão vazios. OTP HMAC e SMTP são requisitos apenas do
-  deployment de ativação explícita, nunca do runtime normal.
+  equivalentes inline estão vazios. OTP HMAC é requisito apenas do deployment
+  de ativação explícita, nunca do runtime normal. SMTP no runtime normal serve
+  exclusivamente à entrega operacional do scheduler financeiro e nunca
+  autentica usuário.
 - [ ] As URLs, usuários e arquivos de senha de Academy/Zeladoria são distintos
   do PostgreSQL canônico, montados por Config Tree, e os usuários das fontes
   têm somente `SELECT` no schema explicitamente autorizado.
 - [ ] `CORTEX_AUTH_DEV_ADMIN_ENABLED=false` e
   `CORTEX_AUTH_PROVISIONING_ENABLED=false` no processo web.
 - [ ] Quando a ativação explícita for executada, `CORTEX_EMAIL_PROVIDER=smtp`;
-  provider `fake` não é usado para essa transição real.
+  provider `fake` não é usado para essa transição real. O deployment normal
+  também valida SMTP quando o scheduler financeiro estiver habilitado.
 - [ ] Nenhuma senha, OTP, CPF, token de sessão ou conteúdo de mensagem aparece
   em logs, imagem, compose ou repositório.
 

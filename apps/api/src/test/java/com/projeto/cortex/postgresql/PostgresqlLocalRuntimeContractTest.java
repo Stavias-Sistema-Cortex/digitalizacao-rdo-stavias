@@ -43,33 +43,68 @@ class PostgresqlLocalRuntimeContractTest {
     }
 
     @Test
-    void localLaunchersEnforceV60RealAlfaAndSecretFiles() throws Exception {
+    void localApiLauncherEnforcesNormalRuntimeWithoutOtp() throws Exception {
         String runApi = read("scripts/dev/run-api.sh");
-        String runCompose = read("scripts/dev/run-compose.sh");
-        String runDocker = read("scripts/dev/run-api-docker.sh");
-        String launchers = runApi + runCompose + runDocker;
 
-        assertThat(launchers).contains(
+        assertNormalRuntimeLauncher(runApi);
+        assertThat(runApi).contains(
                 "cortex_require_postgres_url",
+                "cortex_prepare_postgres_password",
+                "cortex_preflight_operational_memory_cursor_hmac",
                 "CORTEX_POSTGRES_RUNTIME_READY",
                 "local,postgresql",
-                "CORTEX_POSTGRES_PASSWORD_FILE",
-                "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE",
-                "CORTEX_AUTH_OTP_HMAC_KEY_FILE",
-                "CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE",
-                "CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE",
-                "CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE",
                 "CORTEX_AUTH_DEV_ADMIN_ENABLED=\"false\"",
                 "CORTEX_IMPORT_ENABLED=\"false\""
+        );
+    }
+
+    @Test
+    void localComposeLauncherUsesSelectedPortsWithoutOtp() throws Exception {
+        String runCompose = read("scripts/dev/run-compose.sh");
+
+        assertNormalRuntimeLauncher(runCompose);
+        assertThat(runCompose).contains(
+                "CORTEX_WEB_PORT=\"${CORTEX_WEB_PORT:-5173}\"",
+                "CORTEX_API_PORT=\"${CORTEX_API_PORT:-8081}\"",
+                "http://localhost:${CORTEX_WEB_PORT}",
+                "http://127.0.0.1:${CORTEX_API_PORT}/api/health",
+                "http://127.0.0.1:${CORTEX_API_PORT}/api/readiness"
+        );
+    }
+
+    @Test
+    void localDockerApiLauncherUsesSelectedPortsWithoutOtp() throws Exception {
+        String runDocker = read("scripts/dev/run-api-docker.sh");
+
+        assertNormalRuntimeLauncher(runDocker);
+        assertThat(runDocker).contains(
+                "CORTEX_WEB_PORT=\"${CORTEX_WEB_PORT:-5173}\"",
+                "CORTEX_API_PORT=\"${CORTEX_API_PORT:-8081}\"",
+                "-p \"127.0.0.1:${CORTEX_API_PORT}:8080\"",
+                "-e CORTEX_WEB_PORT=\"$CORTEX_WEB_PORT\""
+        );
+    }
+
+    @Test
+    void productionRuntimeDoesNotMountActivationOtpSecret() throws Exception {
+        String productionCompose = read("compose.production.example.yml");
+
+        assertThat(productionCompose).contains(
+                "SPRING_PROFILES_ACTIVE: production,postgresql",
+                "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE: /run/secrets/cortex_cpf_hmac"
         ).doesNotContain(
-                "CORTEX_DB_PASSWORD",
-                "CORTEX_DB_URL",
-                "CORTEX_MYSQL_ROOT_PASSWORD",
-                "jdbc:mysql",
-                "cortex_dev",
-                "CORTEX_AUTH_DEV_ADMIN_ENABLED=\"true\"",
-                "CORTEX_IMPORT_ENABLED=\"true\"",
-                "bootstrap-postgres-alfa.sh"
+                "CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+                "cortex_otp_hmac"
+        );
+    }
+
+    @Test
+    void explicitActivationRetainsOtpSecretRequirement() throws Exception {
+        String activation = read("scripts/dev/start-postgres-activation.sh");
+
+        assertThat(activation).contains(
+                "postgresql-activation",
+                "cortex_require_secret_file CORTEX_AUTH_OTP_HMAC_KEY_FILE"
         );
     }
 
@@ -86,6 +121,8 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_POSTGRES_PASSWORD_FILE=",
                 "SPRING_PROFILES_ACTIVE=local,postgresql",
                 "CORTEX_POSTGRES_RUNTIME_READY=false",
+                "CORTEX_WEB_PORT=5173",
+                "CORTEX_API_PORT=8081",
                 "VITE_CORTEX_AUTH_MODE=postgresql",
                 "CORTEX_IMPORT_ENABLED=false",
                 "CORTEX_AUTH_DEV_ADMIN_ENABLED=false",
@@ -94,7 +131,9 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_DB_URL=",
                 "CORTEX_DB_PASSWORD=",
                 "CORTEX_MYSQL_ROOT_PASSWORD=",
-                "jdbc:mysql"
+                "jdbc:mysql",
+                "CORTEX_CORS_ALLOWED_ORIGINS=http://localhost:5173",
+                "CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173"
         );
         assertThat(webEnvironment)
                 .contains("VITE_CORTEX_AUTH_MODE=postgresql")
@@ -138,5 +177,24 @@ class PostgresqlLocalRuntimeContractTest {
 
     private static String read(String relativePath) throws Exception {
         return Files.readString(REPOSITORY_ROOT.resolve(relativePath));
+    }
+
+    private static void assertNormalRuntimeLauncher(String launcher) {
+        assertThat(launcher).contains(
+                "CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE",
+                "CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE",
+                "CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE"
+        ).doesNotContain(
+                "CORTEX_AUTH_OTP_HMAC_KEY_FILE",
+                "cortex_otp_hmac",
+                "CORTEX_DB_PASSWORD",
+                "CORTEX_DB_URL",
+                "CORTEX_MYSQL_ROOT_PASSWORD",
+                "jdbc:mysql",
+                "cortex_dev",
+                "CORTEX_AUTH_DEV_ADMIN_ENABLED=\"true\"",
+                "CORTEX_IMPORT_ENABLED=\"true\"",
+                "bootstrap-postgres-alfa.sh"
+        );
     }
 }
