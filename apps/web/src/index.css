@@ -69,13 +69,20 @@
   --color-brand-teal-strong: #0d3f3c;
   --color-brand-green: #123a37;
   --color-brand-yellow: #f2c800;
-  --color-canvas: #f1f3f0;
-  --color-surface: #ffffff;
-  --color-border: #cfd4d0;
+  --color-canvas: #edf2ef;
+  --color-surface: #f8fbf9;
+  --color-border: rgb(18 58 55 / 14%);
+  --color-border-strong: rgb(18 58 55 / 22%);
   --color-muted: #66706b;
   --color-focus: #2f6f68;
-  --radius-control: 4px;
-  --radius-container: 4px;
+  --surface-glass: rgb(255 255 255 / 78%);
+  --surface-glass-fallback: #f8fbf9;
+  --surface-glass-active: var(--surface-glass-fallback);
+  --glass-shadow:
+    0 14px 36px rgb(15 45 42 / 8%),
+    inset 0 1px 0 rgb(255 255 255 / 72%);
+  --radius-control: 8px;
+  --radius-container: 14px;
   --radius-sm: var(--radius-control);
   --radius-md: var(--radius-container);
   --radius-lg: var(--radius-container);
@@ -155,11 +162,13 @@ textarea:focus-visible,
 .institutional-frame {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-container);
-  background: var(--color-surface);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .institutional-frame--strong {
-  border: 2px solid var(--color-ink);
+  border: 1px solid var(--color-border-strong);
 }
 
 .tabular-nums {
@@ -1029,11 +1038,23 @@ textarea:focus {
 }
 
 .metric-card {
+  position: relative;
   min-height: 82px;
+  overflow: hidden;
   padding: 14px 16px;
-  border: 2px solid var(--color-brand-yellow);
-  border-radius: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
   background: var(--color-surface);
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 48px;
+  height: 3px;
+  background: var(--color-brand-yellow);
 }
 
 .metric-card span,
@@ -1733,8 +1754,8 @@ textarea:focus {
 .avatar-button {
   width: 40px;
   height: 40px;
-  border: 1px solid #101112;
-  border-radius: 0;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: var(--radius-control);
   background: #101112;
   color: #fff;
   font-size: 0.8rem;
@@ -1750,7 +1771,7 @@ textarea:focus {
   justify-content: center;
   padding: 0 12px;
   border: 1px solid #101112;
-  border-radius: 0;
+  border-radius: var(--radius-control);
   background: #101112;
   color: #fff;
   font: inherit;
@@ -2647,6 +2668,7 @@ textarea:focus {
 }
 
 .obras-workspace {
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
   gap: 14px;
@@ -2655,10 +2677,12 @@ textarea:focus {
 
 .obras-list,
 .obras-detail {
-  background: var(--color-surface);
+  min-width: 0;
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: none;
+  box-shadow: var(--glass-shadow);
 }
 
 .obras-list {
@@ -2719,6 +2743,7 @@ textarea:focus {
 
 .obras-detail {
   min-height: 520px;
+  min-width: 0;
   padding: 20px;
 }
 
@@ -2858,7 +2883,12 @@ textarea:focus {
 
 /* Previsão de receita (PDOR) na página de obras */
 .obras-pdor {
-  border-top: 1px dashed #dfe6e2;
+  min-width: 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   padding-top: 18px;
   margin-bottom: 18px;
 }
@@ -2867,6 +2897,7 @@ textarea:focus {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -2925,6 +2956,7 @@ textarea:focus {
   color: #8a6210;
   font-size: 0.74rem;
   text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .obras-pdor-insufficient p {
@@ -2932,9 +2964,11 @@ textarea:focus {
   color: #6b5a22;
   font-size: 0.76rem;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .obras-pdor-grid {
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(
     auto-fit,
@@ -3115,16 +3149,28 @@ textarea:focus {
 .home-obra-card,
 .home-card,
 .obras-list,
-.obras-detail,
-.obras-pdor {
+.obras-detail {
   border-radius: var(--radius-container);
-  box-shadow: none;
+  box-shadow: var(--glass-shadow);
 }
 
 .home-obra-card,
-.obras-detail,
+.home-card,
+.obras-detail {
+  border: 1px solid var(--color-border);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+}
+
 .obras-pdor {
-  border: 2px solid var(--color-ink);
+  min-width: 0;
+  margin-bottom: 18px;
+  padding-top: 18px;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .home-obra-selector select,
@@ -3163,28 +3209,82 @@ textarea:focus {
 .obras-pdor-insufficient,
 .obras-pdor-drivers li,
 .obras-trace-list li {
-  border-radius: 3px;
+  border-radius: var(--radius-control);
 }
 
 .obras-list-item.active {
-  border: 1px solid var(--color-ink);
-  background: #fff;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
   color: var(--color-ink);
 }
 
 .obras-pdor-risk,
 .obras-trace-status {
   border: 1px solid currentColor;
-  border-radius: 3px;
+  border-radius: var(--radius-control);
 }
 
 .obras-pdor-insufficient {
-  border: 2px solid #c59f18;
-  border-left-width: 2px;
+  border: 1px solid rgb(197 159 24 / 34%);
+  border-left: 3px solid var(--color-brand-yellow);
 }
 
 .obras-pdor-grid .obras-pdor-main {
-  border: 2px solid var(--color-ink);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-brand-yellow);
+  background: var(--color-surface);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root {
+    --surface-glass-active: var(--surface-glass);
+  }
+
+  .institutional-frame,
+  .home-obra-card,
+  .home-card,
+  .obras-list,
+  .obras-detail,
+  .rdo-document-surface,
+  .offline-unlock__card,
+  .integracoes-table-card,
+  .integracoes-report,
+  .teams-workspace .teams-page,
+  .teams-modal,
+  .gestao-obras-coluna,
+  .gestao-papeis,
+  .workspace-status-rail,
+  .finance-scope-bar,
+  .finance-pdor-section .obras-pdor {
+    -webkit-backdrop-filter: blur(14px) saturate(112%);
+    backdrop-filter: blur(14px) saturate(112%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --surface-glass-active: var(--surface-glass-fallback);
+  }
+
+  .institutional-frame,
+  .home-obra-card,
+  .home-card,
+  .obras-list,
+  .obras-detail,
+  .rdo-document-surface,
+  .offline-unlock__card,
+  .integracoes-table-card,
+  .integracoes-report,
+  .teams-workspace .teams-page,
+  .teams-modal,
+  .gestao-obras-coluna,
+  .gestao-papeis,
+  .workspace-status-rail,
+  .finance-scope-bar,
+  .finance-pdor-section .obras-pdor {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 @media (max-width: 620px) {

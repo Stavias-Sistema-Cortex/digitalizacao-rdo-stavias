@@ -64,9 +64,12 @@
 
 .integracoes-table-card,
 .integracoes-report {
-  border: 2px solid var(--color-ink);
+  min-width: 0;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-container);
-  background: var(--color-surface);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .integracoes-actions .secondary-button {
@@ -99,9 +102,13 @@
 }
 
 .integracoes-page .integracoes-table-card,
-.integracoes-page .integracoes-report,
+.integracoes-page .integracoes-report {
+  border-radius: var(--radius-container);
+  box-shadow: var(--glass-shadow);
+}
+
 .integracoes-page .secondary-button,
 .integracoes-page .status-badge {
-  border-radius: 0;
+  border-radius: var(--radius-control);
   box-shadow: none;
 }

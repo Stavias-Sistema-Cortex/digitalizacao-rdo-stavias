@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 
+import corporateWordmark from "../../../assets/login/stavias-logo.png?inline";
 import { calcularControleGeometrico } from "../rdoCalculations";
 import type { NumericInput } from "../rdo.types";
 import {
@@ -25,6 +26,10 @@ const CONTENT_WIDTH = PAGE_WIDTH - (2 * PAGE_MARGIN);
 const SECTION_HEIGHT = 5;
 const CELL_PADDING = 0.7;
 const SECTION_GRAY = 225;
+const WORDMARK_WIDTH = 38;
+const WORDMARK_HEIGHT = WORDMARK_WIDTH * (329 / 1200);
+const WORDMARK_TOP = 4;
+const WORDMARK_ALIAS = "rdo-corporate-wordmark";
 const MIN_READABLE_FONT_SIZE = 4;
 const UNREADABLE_FITTED_TEXT_MESSAGE =
   "O conteúdo do RDO não permanece legível na célula fixa do PDF; nenhum conteúdo foi truncado.";
@@ -253,7 +258,16 @@ function drawHeading(
   face: "FRENTE" | "VERSO",
   rdoNumber: string,
 ): number {
-  drawText(document, "STAVIAS", PAGE_MARGIN, 14, "bold", 16);
+  document.addImage(
+    corporateWordmark,
+    "PNG",
+    PAGE_MARGIN,
+    WORDMARK_TOP,
+    WORDMARK_WIDTH,
+    WORDMARK_HEIGHT,
+    WORDMARK_ALIAS,
+    "FAST",
+  );
   drawText(
     document,
     `${face}  |  RDO ${rdoNumber}`,

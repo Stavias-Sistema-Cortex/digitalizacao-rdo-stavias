@@ -106,13 +106,13 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(icon).toContain("filter: grayscale(1) brightness(0) invert(1);");
   });
 
-  it("keeps one intentional square black profile control instead of a later teal override", () => {
+  it("keeps one intentional dark profile control with modern control geometry", () => {
     const avatarRules =
       globalCss.match(/^\.avatar-button \{/gm) ?? [];
     const avatar = lastRule(globalCss, ".avatar-button");
 
     expect(avatarRules).toHaveLength(1);
-    expect(avatar).toContain("border-radius: 0;");
+    expect(avatar).toContain("border-radius: var(--radius-control);");
     expect(avatar).toContain("background: #101112;");
     expect(avatar).toContain("color: #fff;");
   });
@@ -196,7 +196,7 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(worksiteManagement).not.toMatch(/padding:\s*clamp/);
   });
 
-  it("uses neutral hairlines for RDO document surfaces and reserves ink for actions", () => {
+  it("uses a light glass shell for RDO while keeping inner form cards solid", () => {
     const documentSurface = rule(rdoCss, ".rdo-document-surface");
     const documentStatus = rule(rdoCss, ".rdo-document-status");
     const formCard = rule(rdoCss, ".rdo-create-workspace .form-card");
@@ -211,6 +211,13 @@ describe("Cortex 3 institutional visual policy", () => {
       expect(surface).toContain("border: 1px solid var(--color-border);");
       expect(surface).not.toContain("2px solid var(--color-ink)");
     }
+    expect(documentSurface).toContain(
+      "background: var(--surface-glass-fallback);",
+    );
+    expect(documentSurface).toContain("box-shadow: var(--glass-shadow);");
+    expect(documentStatus).toContain("background: var(--color-surface);");
+    expect(formCard).toContain("background: var(--color-surface);");
+    expect(formCard).toContain("box-shadow: none;");
     expect(dialog).toContain("border: 1px solid var(--color-border);");
     expect(provenance).not.toContain("box-shadow:");
     expect(action).toContain("background: var(--color-ink);");

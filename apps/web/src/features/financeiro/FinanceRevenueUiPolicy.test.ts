@@ -47,7 +47,7 @@ describe("Financeiro revenue-only visual policy", () => {
     expect(provenance).toContain("background: #eef4f1;");
   });
 
-  it("neutralizes the legacy black PDOR frames inside Financeiro", () => {
+  it("renders Financeiro PDOR as one light glass shell with a solid inner metric", () => {
     const pdor = rule(financeCss, ".finance-pdor-section .obras-pdor");
     const pdorMain = rule(
       financeCss,
@@ -57,9 +57,12 @@ describe("Financeiro revenue-only visual policy", () => {
     expect(pdor).toContain("margin: 0;");
     expect(pdor).toContain("padding: 18px;");
     expect(pdor).toContain("border: 1px solid var(--finance-line);");
-    expect(pdor).toContain("background: #fff;");
+    expect(pdor).toContain("border-radius: var(--radius-container);");
+    expect(pdor).toContain("background: var(--surface-glass-fallback);");
+    expect(pdor).toContain("box-shadow: var(--glass-shadow);");
     expect(pdor).not.toContain("2px solid var(--color-ink)");
     expect(pdorMain).toContain("border: 1px solid var(--finance-line);");
+    expect(pdorMain).toContain("background: var(--color-surface);");
     expect(pdorMain).not.toContain("2px solid var(--color-ink)");
   });
 });

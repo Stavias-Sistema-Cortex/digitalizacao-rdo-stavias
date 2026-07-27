@@ -321,11 +321,14 @@
 }
 
 .rdo-document-surface {
+  container-type: inline-size;
   min-width: 0;
   padding: 18px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-container);
-  background: var(--color-surface);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .rdo-document-status {
@@ -334,7 +337,7 @@
   margin-bottom: 16px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: #f8f9f7;
+  background: var(--color-surface);
 }
 
 .rdo-document-status__identity {
@@ -379,10 +382,20 @@
 }
 
 .rdo-document-status dd {
+  min-inline-size: 0;
   margin: 5px 0 0;
   font-size: 0.72rem;
   font-weight: 500;
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.rdo-document-status .institutional-status {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
 }
 
 .rdo-create-workspace .notice {
@@ -394,6 +407,8 @@
   padding: 20px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: none;
 }
 
 .rdo-create-workspace .section-heading h2::before {
@@ -459,6 +474,32 @@
 
 .rdo-create-workspace .button.primary:hover {
   background: var(--color-brand-teal);
+}
+
+@container (max-width: 760px) {
+  .rdo-document-status {
+    grid-template-columns: 1fr;
+  }
+
+  .rdo-document-status dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rdo-document-status__identity {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+}
+
+@container (max-width: 440px) {
+  .rdo-document-status dl {
+    grid-template-columns: 1fr;
+  }
+
+  .rdo-document-status dl div {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
 }
 
 @media (max-width: 1080px) {

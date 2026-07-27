@@ -16,9 +16,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,15 +57,36 @@ class RdoPdfExportServiceTest {
         assertThat(exported.content()).startsWith(
                 "%PDF-".getBytes(StandardCharsets.US_ASCII)
         );
+        assertThat(exported.content()).hasSizeLessThan(1_000_000);
         assertThat(exported.filename()).isEqualTo("rdo-RDO-0042.pdf");
         try (PDDocument document = Loader.loadPDF(exported.content())) {
             assertThat(document.getNumberOfPages()).isEqualTo(2);
+            List<PDImageXObject> embeddedWordmarks = new ArrayList<>();
             for (int index = 0; index < document.getNumberOfPages(); index++) {
                 PDRectangle page = document.getPage(index).getMediaBox();
                 assertThat(page.getWidth()).isEqualTo(PDRectangle.A4.getWidth());
                 assertThat(page.getHeight()).isEqualTo(PDRectangle.A4.getHeight());
                 assertThat(page.getHeight()).isGreaterThan(page.getWidth());
+
+                List<PDImageXObject> wordmarks = new ArrayList<>();
+                for (COSName name
+                        : document.getPage(index).getResources().getXObjectNames()) {
+                    if (document.getPage(index).getResources()
+                            .isImageXObject(name)) {
+                        wordmarks.add((PDImageXObject) document.getPage(index)
+                                .getResources().getXObject(name));
+                    }
+                }
+                assertThat(wordmarks).singleElement().satisfies(wordmark -> {
+                    assertThat(wordmark.getWidth()).isEqualTo(1200);
+                    assertThat(wordmark.getHeight()).isEqualTo(329);
+                    assertThat(wordmark.getCOSObject()
+                            .getDictionaryObject(COSName.SMASK)).isNotNull();
+                });
+                embeddedWordmarks.add(wordmarks.getFirst());
             }
+            assertThat(embeddedWordmarks.get(1).getCOSObject())
+                    .isSameAs(embeddedWordmarks.getFirst().getCOSObject());
             String text = new PDFTextStripper().getText(document);
             assertThat(text)
                     .contains("RELATÓRIO DIÁRIO DE OBRA", "Obra Norte", "RDO-0042")
@@ -82,6 +105,7 @@ class RdoPdfExportServiceTest {
                             "obra-7",
                             "col-ana",
                             "asset-7",
+                            "STAVIAS",
                             "must-not-be-exported@example.com"
                     );
         }

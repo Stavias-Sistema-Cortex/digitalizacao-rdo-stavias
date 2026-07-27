@@ -7,6 +7,7 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -28,9 +29,16 @@ public class RdoPdfExportService {
         try (PDDocument document = new PDDocument()) {
             document.addPage(new PDPage(PDRectangle.A4));
             document.addPage(new PDPage(PDRectangle.A4));
+            PDImageXObject corporateWordmark =
+                    PDImageXObject.createFromByteArray(
+                            document,
+                            RdoPdfCorporateWordmark.bytes(),
+                            "corporate-wordmark"
+                    );
             RdoPdfFormRenderer renderer = new RdoPdfFormRenderer(
                     new PDType1Font(Standard14Fonts.FontName.HELVETICA),
-                    new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD)
+                    new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD),
+                    corporateWordmark
             );
             renderer.render(document, aggregate);
 

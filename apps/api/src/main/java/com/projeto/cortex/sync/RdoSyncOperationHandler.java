@@ -103,10 +103,20 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
     ) {
         String entityId = requireEntityId(mutation);
         currentUserService.requireRdoAccess(entityId);
-        RdoCreateRequest request = toValue(
-                mutation.payload(),
-                RdoCreateRequest.class
+        RdoResponse persisted = rdoQueryService.buscarPorId(entityId);
+        ObjectNode payload = requireObjectPayload(mutation).deepCopy();
+        putNullable(payload, "previousRdoId", persisted.previousRdoId());
+        putNullable(
+                payload,
+                "creationContextVersion",
+                persisted.creationContextVersion()
         );
+        putNullable(
+                payload,
+                "clientMutationId",
+                persisted.clientMutationId()
+        );
+        RdoCreateRequest request = toValue(payload, RdoCreateRequest.class);
         currentUserService.requireWorksiteAccess(request.obraId());
         RdoPrintableCollectionLimits.requireWithinTemplateCapacity(request);
         return rdoDraftUpdateService.atualizarRascunho(entityId, request);
@@ -139,6 +149,30 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
             );
         }
         return mutation.entidadeId().strip();
+    }
+
+    private void putNullable(
+            ObjectNode payload,
+            String field,
+            String value
+    ) {
+        if (value == null) {
+            payload.putNull(field);
+            return;
+        }
+        payload.put(field, value);
+    }
+
+    private void putNullable(
+            ObjectNode payload,
+            String field,
+            Long value
+    ) {
+        if (value == null) {
+            payload.putNull(field);
+            return;
+        }
+        payload.put(field, value);
     }
 
     private <T> T toValue(JsonNode jsonNode, Class<T> type) {

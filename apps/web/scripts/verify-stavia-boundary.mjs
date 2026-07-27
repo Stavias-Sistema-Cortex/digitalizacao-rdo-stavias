@@ -112,7 +112,7 @@ const CORPORATE_SOURCE_LINES = new Map([
   [
     "apps/web/src/features/rdos/export/rdoPdfLayout.ts",
     [
-      "drawText(document, \"STAVIAS\", PAGE_MARGIN, 14, \"bold\", 16);",
+      "import corporateWordmark from \"../../../assets/login/stavias-logo.png?inline\";",
     ],
   ],
   [

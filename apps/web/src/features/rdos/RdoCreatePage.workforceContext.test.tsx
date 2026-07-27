@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -12,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createEmptyRdo } from "./createEmptyRdo";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 
 const mocks = vi.hoisted(() => ({
   listRdoAttachments: vi.fn(),
@@ -185,6 +187,97 @@ describe("reconciliação da identificação canônica", () => {
     await waitFor(() => {
       expect(mocks.synchronize).toHaveBeenCalledOnce();
       expect(screen.getByLabelText(/^Número do RDO/)).toHaveValue("RDO-0042");
+    });
+  });
+
+  it("reconciles the visible RDO after automatic synchronization", async () => {
+    const draft = legacyDraft();
+    draft.numeroRdo = "RDO-STALE";
+    draft.syncStatus = "PENDING_SYNC";
+    mocks.getLocalRdo.mockResolvedValue({
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: "RDO-0042",
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "SYNCED",
+      versaoEntidade: 2,
+      payload: {
+        numeroRdo: "RDO-0042",
+      },
+      createdAt: "2026-07-22T10:00:00Z",
+      updatedAt: "2026-07-22T10:02:00Z",
+    });
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT));
+    });
+
+    await waitFor(() => {
+      expect(mocks.getLocalRdo).toHaveBeenCalledWith(draft.id);
+      expect(screen.getByLabelText(/^Número do RDO/)).toHaveValue("RDO-0042");
+      expect(screen.getByText("Confirmada")).toBeVisible();
+    });
+  });
+
+  it("loads the worksite context after a LOCAL_PENDING RDO synchronizes", async () => {
+    const draft = legacyDraft();
+    draft.syncStatus = "LOCAL_PENDING";
+    mocks.getLocalRdo.mockResolvedValue({
+      id: draft.id,
+      obraId: draft.obraId,
+      programacaoId: null,
+      numeroRdo: "RDO-0042",
+      dataRdo: draft.dataRdo,
+      statusRdo: "RASCUNHO",
+      syncStatus: "SYNCED",
+      versaoEntidade: 1,
+      payload: { numeroRdo: "RDO-0042" },
+      createdAt: "2026-07-22T10:00:00Z",
+      updatedAt: "2026-07-22T10:02:00Z",
+    });
+    mocks.requireContext.mockResolvedValue({
+      source: "SERVER",
+      cachedAt: "2026-07-22T10:02:00Z",
+      context: context(),
+    });
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Contexto canônico pendente; o RDO permanece local até a validação automática.",
+      ),
+    ).toBeVisible();
+
+    await act(async () => {
+      window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT));
+    });
+
+    await waitFor(() => {
+      expect(mocks.requireContext).toHaveBeenCalledWith(
+        "obra-a",
+        "2026-07-22",
+        true,
+      );
+      expect(screen.getByText("Ana da Obra A")).toBeVisible();
     });
   });
 });

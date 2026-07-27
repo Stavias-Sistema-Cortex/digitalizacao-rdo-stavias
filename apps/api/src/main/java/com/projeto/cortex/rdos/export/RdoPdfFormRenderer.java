@@ -16,6 +16,7 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -29,6 +30,9 @@ final class RdoPdfFormRenderer {
     private static final float HAIRLINE = 0.35f;
     private static final float SECTION_HEIGHT = mm(4.7f);
     private static final float CELL_PADDING = 1.6f;
+    private static final float WORDMARK_WIDTH = mm(38);
+    private static final float WORDMARK_HEIGHT =
+            WORDMARK_WIDTH * (329f / 1200f);
     private static final int SECTION_GRAY = 225;
     private static final float PAGE_BOX_TOLERANCE = 0.1f;
     private static final float OBSERVATION_FONT_SIZE = 6.5f;
@@ -48,12 +52,18 @@ final class RdoPdfFormRenderer {
 
     private final PDFont regular;
     private final PDFont bold;
+    private final PDImageXObject corporateWordmark;
     private final RdoExportTextSanitizer sanitizer =
             new RdoExportTextSanitizer();
 
-    RdoPdfFormRenderer(PDFont regular, PDFont bold) {
+    RdoPdfFormRenderer(
+            PDFont regular,
+            PDFont bold,
+            PDImageXObject corporateWordmark
+    ) {
         this.regular = regular;
         this.bold = bold;
+        this.corporateWordmark = corporateWordmark;
     }
 
     void render(PDDocument document, RdoExportAggregate aggregate)
@@ -259,7 +269,13 @@ final class RdoPdfFormRenderer {
             String rdoNumber
     ) throws IOException {
         float top = PAGE_HEIGHT - PAGE_MARGIN;
-        drawRawText(content, bold, 16f, PAGE_MARGIN, top - 14f, "STAVIAS");
+        content.drawImage(
+                corporateWordmark,
+                PAGE_MARGIN,
+                top - WORDMARK_HEIGHT,
+                WORDMARK_WIDTH,
+                WORDMARK_HEIGHT
+        );
         drawRightAligned(
                 content,
                 bold,

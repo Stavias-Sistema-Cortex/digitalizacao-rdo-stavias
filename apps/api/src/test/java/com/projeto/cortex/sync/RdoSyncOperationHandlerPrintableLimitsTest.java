@@ -1,10 +1,12 @@
 package com.projeto.cortex.sync;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -13,10 +15,12 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
+import com.projeto.cortex.rdos.RdoResponse;
 import com.projeto.cortex.rdos.RdoService;
 import com.projeto.cortex.rdos.RdoWorkflowService;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -30,13 +34,14 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
     private final RdoService rdoService = mock(RdoService.class);
     private final RdoDraftUpdateService draftUpdateService =
             mock(RdoDraftUpdateService.class);
+    private final RdoQueryService rdoQueryService = mock(RdoQueryService.class);
     private final RdoSyncOperationHandler handler = new RdoSyncOperationHandler(
             mock(JdbcTemplate.class),
             mapper,
             rdoService,
             draftUpdateService,
             mock(RdoWorkflowService.class),
-            mock(RdoQueryService.class),
+            rdoQueryService,
             mock(CurrentUserService.class)
     );
 
@@ -52,6 +57,8 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
 
     @Test
     void offlineReplayDraftUpdateRejectsCollectionAboveTemplateCapacity() {
+        when(rdoQueryService.buscarPorId(RDO_ID))
+                .thenReturn(mock(RdoResponse.class));
         ObjectNode payload = payloadWithRows("maoObra", 27);
         SyncPushRequest.MutacaoCliente mutation = mutation(
                 "ATUALIZAR_RDO_RASCUNHO",
@@ -77,6 +84,43 @@ class RdoSyncOperationHandlerPrintableLimitsTest {
                 any(String.class),
                 any(RdoCreateRequest.class)
         );
+    }
+
+    @Test
+    void offlineReplayDraftUpdatePreservesServerOwnedCreationProvenance() {
+        RdoResponse persisted = mock(RdoResponse.class);
+        when(persisted.id()).thenReturn(RDO_ID);
+        when(persisted.previousRdoId()).thenReturn("rdo-previous");
+        when(persisted.creationContextVersion()).thenReturn(17L);
+        when(persisted.clientMutationId()).thenReturn("mutation-create-rdo");
+        when(rdoQueryService.buscarPorId(RDO_ID)).thenReturn(persisted);
+        when(draftUpdateService.atualizarRascunho(
+                any(String.class),
+                any(RdoCreateRequest.class)
+        )).thenReturn(persisted);
+
+        ObjectNode payload = payloadWithRows("maoObra", 0);
+        payload.putNull("previousRdoId");
+        payload.put("creationContextVersion", 1L);
+        payload.putNull("clientMutationId");
+
+        handler.apply(
+                mutation("ATUALIZAR_RDO_RASCUNHO", RDO_ID, payload),
+                new SyncMutationContext("usuario-1", "device-1")
+        );
+
+        ArgumentCaptor<RdoCreateRequest> request =
+                ArgumentCaptor.forClass(RdoCreateRequest.class);
+        verify(draftUpdateService).atualizarRascunho(
+                org.mockito.ArgumentMatchers.eq(RDO_ID),
+                request.capture()
+        );
+        assertThat(request.getValue().previousRdoId())
+                .isEqualTo("rdo-previous");
+        assertThat(request.getValue().creationContextVersion())
+                .isEqualTo(17L);
+        assertThat(request.getValue().clientMutationId())
+                .isEqualTo("mutation-create-rdo");
     }
 
     private void assertCreateRejected(String field, int rows) {

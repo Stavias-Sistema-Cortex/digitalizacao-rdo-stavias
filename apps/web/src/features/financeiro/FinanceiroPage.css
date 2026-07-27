@@ -3,8 +3,8 @@
   --finance-teal: #124e4a;
   --finance-teal-strong: #0b3835;
   --finance-yellow: #f2c800;
-  --finance-canvas: #f7f9f7;
-  --finance-line: #d7ded9;
+  --finance-canvas: var(--color-canvas);
+  --finance-line: var(--color-border);
   --finance-muted: #606664;
   grid-column: 2;
   min-width: 0;
@@ -106,10 +106,10 @@
   margin: 0 auto 24px;
   padding: 14px 20px;
   border: 1px solid var(--finance-line);
-  border-right: 0;
-  border-left: 0;
-  border-radius: 0;
-  background: rgb(255 255 255 / 78%);
+  border-radius: var(--radius-container);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .finance-scope-bar.is-general {
@@ -1774,14 +1774,15 @@
   margin: 0;
   padding: 18px;
   border: 1px solid var(--finance-line);
-  border-radius: 4px;
-  background: #fff;
-  box-shadow: none;
+  border-radius: var(--radius-container);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .finance-pdor-section .obras-pdor-grid .obras-pdor-main {
   border: 1px solid var(--finance-line);
-  background: #f7f9f7;
+  background: var(--color-surface);
 }
 
 @media (max-width: 900px) {

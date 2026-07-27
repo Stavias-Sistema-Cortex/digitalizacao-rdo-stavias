@@ -220,7 +220,10 @@ describe("local RDO PDF export", () => {
 
     expect(document.getNumberOfPages()).toBe(2);
     expect(pdfText(bytes.slice(0, 5))).toBe("%PDF-");
-    expect(content).toContain("STAVIAS");
+    expect(content).toContain("/Subtype /Image");
+    expect(content.match(/\/I\d+ Do/g)).toHaveLength(2);
+    expect(content).not.toContain("STAVIAS");
+    expect(bytes.byteLength).toBeLessThan(1_000_000);
     expect(content).toContain("MATERIAIS");
     expect(content).toContain("ASSINATURAS");
     expect(rdoPdfFilename(value)).toBe("rdo-RDO-0042.pdf");

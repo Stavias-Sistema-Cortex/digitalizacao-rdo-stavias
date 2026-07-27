@@ -998,6 +998,11 @@ describe("StavIA runtime boundary", () => {
         "drawText(document,`STAVIAS`,margin,14,`bold`,16)",
       ),
     ).toEqual([]);
+    expect(
+      inspectDistCorporateContent(
+        "url:\"assets/stavias-logo-4x2g.png\"",
+      ),
+    ).toEqual([]);
     for (const extendedApprovedFragment of [
       "AgentPortal Stavias",
       "Portal StaviasAgent",

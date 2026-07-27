@@ -11,10 +11,11 @@
 .offline-unlock__card {
   width: min(100%, 460px);
   padding: 36px;
-  border: 2px solid #111312;
-  border-radius: 4px;
-  background: #ffffff;
-  box-shadow: none;
+  border: 1px solid rgb(255 255 255 / 46%);
+  border-radius: var(--radius-container);
+  background: var(--surface-glass-fallback);
+  background: var(--surface-glass-active);
+  box-shadow: var(--glass-shadow);
 }
 
 .offline-unlock__mark {
@@ -51,7 +52,7 @@
   margin: 0 0 18px;
   padding: 12px 14px;
   border: 1px solid #b53632;
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: #fff4f2;
   color: #8f2926;
   font-size: 0.9rem;
@@ -76,7 +77,7 @@
   min-height: 50px;
   padding: 0 14px;
   border: 1px solid #8f9792;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   background: #ffffff;
   color: #111312;
   font: inherit;
@@ -100,7 +101,7 @@
 .offline-unlock__secondary {
   width: 100%;
   min-height: 48px;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -141,6 +142,6 @@
 @media (max-width: 520px) {
   .offline-unlock__card {
     padding: 28px 22px;
-    border-radius: 4px;
+    border-radius: var(--radius-container);
   }
 }
