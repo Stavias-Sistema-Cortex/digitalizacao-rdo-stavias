@@ -3,18 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   createOfflineVault: vi.fn(),
+  freshAuthenticationFetch: vi.fn(),
   renewOfflineVault: vi.fn(),
   readResponseBody: vi.fn(),
   saveOfflineVaultMetadata: vi.fn(),
+  clearSession: vi.fn(),
   setSession: vi.fn(),
 }));
 
 vi.mock("../../lib/api/apiClient", () => ({
   apiFetch: mocks.apiFetch,
+  freshAuthenticationFetch: mocks.freshAuthenticationFetch,
   readResponseBody: mocks.readResponseBody,
   responseErrorMessage: vi.fn(() => "Falha sintética"),
 }));
-vi.mock("./authSession", () => ({ setSession: mocks.setSession }));
+vi.mock("./authSession", () => ({
+  clearSession: mocks.clearSession,
+  setSession: mocks.setSession,
+}));
 vi.mock("./offlineVault", () => ({
   createOfflineVault: mocks.createOfflineVault,
   renewOfflineVault: mocks.renewOfflineVault,
@@ -35,10 +41,19 @@ const userId = new Uint8Array([5, 6, 7, 8]);
 const credentialId = new Uint8Array([9, 10, 11, 12]);
 const prfSalt = crypto.getRandomValues(new Uint8Array(32));
 const prfOutput = crypto.getRandomValues(new Uint8Array(32));
+const localValues = new Map<string, string>();
+const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
+
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => localValues.get(key) ?? null,
+  removeItem: (key: string) => localValues.delete(key),
+  setItem: (key: string, value: string) => localValues.set(key, value),
+});
 
 describe("passkeyApi", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localValues.clear();
   });
 
   it("registra passkey, preserva PRF só em memória e sela o cofre", async () => {
@@ -126,19 +141,60 @@ describe("passkeyApi", () => {
       expiraEm: "2099-07-14T20:00:00Z",
     };
     mockResponses(authenticationOptions(), profile);
+    const response = { ok: true, status: 200 } as Response;
+    mocks.apiFetch.mockReset();
+    mocks.freshAuthenticationFetch
+      .mockResolvedValueOnce(response)
+      .mockResolvedValueOnce(response);
+    mocks.readResponseBody.mockReset();
+    mocks.readResponseBody
+      .mockResolvedValueOnce(authenticationOptions())
+      .mockResolvedValueOnce(profile);
 
     await expect(authenticateWithPasskey(cpf)).resolves.toEqual(profile);
     expect(mocks.setSession).toHaveBeenCalledWith(profile);
-    expect(mocks.apiFetch.mock.calls[0][0]).toBe(
+    expect(mocks.freshAuthenticationFetch.mock.calls[0][0]).toBe(
       "/auth/passkeys/authentication/options",
     );
-    expect(mocks.apiFetch.mock.calls[0][1].body).toBe(
+    expect(mocks.freshAuthenticationFetch.mock.calls[0][1].body).toBe(
       JSON.stringify({ cpf }),
     );
-    expect(mocks.apiFetch.mock.calls[1][0]).toBe(
+    expect(mocks.freshAuthenticationFetch.mock.calls[1][0]).toBe(
       "/auth/passkeys/authentication/verify",
     );
-    expect(mocks.apiFetch.mock.calls[1][1].body).not.toContain(cpf);
+    expect(mocks.freshAuthenticationFetch.mock.calls[1][1].body).not.toContain(cpf);
+  });
+
+  it("uses the explicit fresh passkey transition instead of ordinary api fetch after offline isolation", async () => {
+    const get = vi.fn().mockResolvedValue(assertionCredential());
+    vi.stubGlobal("navigator", { credentials: { get } });
+    localStorage.setItem(REMOTE_SESSION_ISOLATION_KEY, "1");
+    const cpf = "529.982.247-25";
+    const profile = {
+      colaboradorId: "00000000-0000-4000-8000-000000000001",
+      nome: "Colaborador Sintético",
+      papelAcesso: "ALFA",
+      escopoGlobal: true,
+      obraIds: [],
+      expiraEm: "2099-07-14T20:00:00Z",
+    };
+    const response = { ok: true, status: 200 } as Response;
+    mocks.freshAuthenticationFetch
+      .mockResolvedValueOnce(response)
+      .mockResolvedValueOnce(response);
+    mocks.readResponseBody
+      .mockResolvedValueOnce(authenticationOptions())
+      .mockResolvedValueOnce(profile);
+
+    await expect(authenticateWithPasskey(cpf)).resolves.toEqual(profile);
+
+    expect(mocks.apiFetch).not.toHaveBeenCalled();
+    expect(mocks.freshAuthenticationFetch.mock.calls.map(([path]) => path))
+      .toEqual([
+        "/auth/passkeys/authentication/options",
+        "/auth/passkeys/authentication/verify",
+      ]);
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBeNull();
   });
 
   it("renova o grant e só substitui o cofre após concluir", async () => {

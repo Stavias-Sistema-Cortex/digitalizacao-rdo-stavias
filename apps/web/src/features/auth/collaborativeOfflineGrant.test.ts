@@ -11,21 +11,28 @@ import {
   setSession,
 } from "./authSession";
 import {
+  loadCollaborativeOfflineGrant,
   saveCollaborativeOfflineGrant,
   unlockCollaborativeOfflineGrant,
 } from "./collaborativeOfflineGrant";
-import type {
-  OfflineGrantClaims,
-  SignedOfflineGrant,
-} from "./offlineVault.types";
+import type { OfflineGrantClaims } from "./offlineVault.types";
 import { toBase64Url } from "./webauthnCodec";
 
 const now = Date.parse("2026-07-14T12:00:00Z");
+const REMOTE_SESSION_ISOLATION_KEY = "cortex.auth.remote-session-isolation";
+const localValues = new Map<string, string>();
+
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => localValues.get(key) ?? null,
+  removeItem: (key: string) => localValues.delete(key),
+  setItem: (key: string, value: string) => localValues.set(key, value),
+});
 
 describe("grant colaborativo de CPF", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(now);
+    localValues.clear();
     clearSession();
   });
 
@@ -40,6 +47,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "111.444.777-35",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
 
     expect(metadata.cpfHash).not.toBe("11144477735");
@@ -48,6 +56,7 @@ describe("grant colaborativo de CPF", () => {
     await expect(
       unlockCollaborativeOfflineGrant("11144477735", metadata),
     ).resolves.toBeUndefined();
+    expect(localStorage.getItem(REMOTE_SESSION_ISOLATION_KEY)).toBe("1");
     expect(getSession()).toEqual({
       colaboradorId: fixture.claims.colaboradorId,
       nome: fixture.claims.nome,
@@ -58,11 +67,24 @@ describe("grant colaborativo de CPF", () => {
     });
   });
 
+  it("does not cache a signed grant for CPF A when the returned owner is collaborator B", async () => {
+    const fixture = await signedGrantFixture();
+    const expectedOwnerId = "00000000-0000-4000-8000-000000000003";
+    const cpf = "00000000000";
+    await expect(
+      saveCollaborativeOfflineGrant(cpf, fixture.grant, expectedOwnerId),
+    ).rejects.toThrow("identidade autenticada");
+
+    await expect(loadCollaborativeOfflineGrant(cpf)).resolves.toBeNull();
+    expect(getSession()).toBeNull();
+  });
+
   it("rejeita um CPF diferente sem criar uma sessão local", async () => {
     const fixture = await signedGrantFixture();
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
 
     await expect(
@@ -77,6 +99,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
     setSession(existingProfile());
     expect(hasOnlineSession()).toBe(true);
@@ -93,6 +116,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
     const tampered = {
       ...metadata,
@@ -116,6 +140,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
     const tampered = {
       ...metadata,
@@ -136,6 +161,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
     const tampered = {
       ...metadata,
@@ -156,6 +182,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
     const malformed = {
       ...metadata,
@@ -178,6 +205,7 @@ describe("grant colaborativo de CPF", () => {
     const metadata = await saveCollaborativeOfflineGrant(
       "11144477735",
       fixture.grant,
+      fixture.claims.colaboradorId,
     );
     const tampered = {
       ...metadata,

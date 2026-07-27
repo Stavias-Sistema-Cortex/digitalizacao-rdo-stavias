@@ -1,7 +1,9 @@
 import {
   apiError,
   apiFetch,
+  freshAuthenticationFetch,
   readResponseBody,
+  revokeRemoteSessionCookie,
 } from "../../lib/api/apiClient";
 import type { AuthProfile } from "./authSession";
 import { parseAuthProfile } from "./authProfile";
@@ -13,7 +15,7 @@ import type { SignedOfflineGrant } from "./offlineVault.types";
 export { parseAuthProfile } from "./authProfile";
 
 export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
-  const response = await apiFetch("/auth/login", {
+  const response = await freshAuthenticationFetch("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cpf }),
@@ -51,7 +53,7 @@ export async function fetchOfflineGrant(): Promise<SignedOfflineGrant> {
 export async function logoutOnline(): Promise<
   "revoked" | "already-expired"
 > {
-  const response = await apiFetch("/auth/logout", { method: "POST" });
+  const response = await revokeRemoteSessionCookie();
   const body = await readResponseBody(response);
   if (response.status === 204) {
     return "revoked";

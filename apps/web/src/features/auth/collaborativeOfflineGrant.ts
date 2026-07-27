@@ -17,12 +17,23 @@ import {
 
 const CPF_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
+export class OfflineGrantOwnerMismatchError extends Error {
+  constructor() {
+    super("O grant offline não corresponde à identidade autenticada.");
+    this.name = "OfflineGrantOwnerMismatchError";
+  }
+}
+
 export async function saveCollaborativeOfflineGrant(
   cpf: string,
   signedGrant: SignedOfflineGrant,
+  authenticatedOwnerId: string,
 ): Promise<OfflineCpfGrantMetadata> {
   const cpfHash = await hashCanonicalCpf(cpf);
   const verified = await verifySignedOfflineGrant(signedGrant);
+  if (verified.claims.colaboradorId !== authenticatedOwnerId) {
+    throw new OfflineGrantOwnerMismatchError();
+  }
   const metadata: OfflineCpfGrantMetadata = {
     key: cpfHash,
     versao: 1,

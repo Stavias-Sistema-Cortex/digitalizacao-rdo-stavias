@@ -8,6 +8,7 @@ import {
   clearOfflineSession,
   setOfflineSession,
 } from "./authSession";
+import { markRemoteSessionIsolation } from "./remoteSessionIsolation";
 import {
   bytesEqual,
   fromBase64Url,
@@ -209,6 +210,10 @@ export function clearOfflineGrant(): void {
 }
 
 export function activateOfflineGrant(claims: OfflineGrantClaims): void {
+  // Persist the identity-free boundary before exposing an offline principal.
+  // If storage cannot preserve it, do not activate a state that could later
+  // trust a stale HttpOnly cookie after a reload.
+  markRemoteSessionIsolation();
   activeGrant = claims;
   setOfflineSession({
     colaboradorId: claims.colaboradorId,

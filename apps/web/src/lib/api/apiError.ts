@@ -21,7 +21,10 @@ export class ApiError extends Error {
   }
 }
 
-export type ApiTransportFailureKind = "CONNECTION" | "TIMEOUT";
+export type ApiTransportFailureKind =
+  | "CONNECTION"
+  | "TIMEOUT"
+  | "REMOTE_SESSION_ISOLATED";
 
 /** A typed transport failure so retry decisions never inspect display text. */
 export class ApiTransportError extends Error {

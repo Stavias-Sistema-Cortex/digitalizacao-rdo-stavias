@@ -1,5 +1,6 @@
 import { apiUrl } from "../../lib/api/apiEndpoint";
 import { responseErrorCode } from "../../lib/api/apiError";
+import { hasRemoteSessionIsolation } from "./remoteSessionIsolation";
 
 export type ActivationFetch = (
   input: RequestInfo | URL,
@@ -13,6 +14,9 @@ export type ActivationFetch = (
 export async function probeActivationOnly(
   fetchImplementation: ActivationFetch = fetch,
 ): Promise<boolean> {
+  if (hasRemoteSessionIsolation()) {
+    return false;
+  }
   try {
     const response = await fetchImplementation(apiUrl("/auth/session"), {
       method: "GET",

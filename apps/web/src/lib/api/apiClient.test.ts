@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearSession: vi.fn(),
+  hasOfflineSession: vi.fn(),
 }));
 
 vi.mock("../../features/auth/authSession", () => ({
   clearSession: mocks.clearSession,
+  hasOfflineSession: mocks.hasOfflineSession,
 }));
 
 import {
@@ -20,6 +22,7 @@ import {
 
 const fetchMock = vi.fn();
 const csrfToken = "c".repeat(43);
+const localValues = new Map<string, string>();
 
 vi.stubGlobal("fetch", fetchMock);
 vi.stubGlobal("window", {
@@ -32,6 +35,11 @@ vi.stubGlobal("window", {
   },
 });
 vi.stubGlobal("document", { cookie: "" });
+vi.stubGlobal("localStorage", {
+  getItem: (key: string) => localValues.get(key) ?? null,
+  removeItem: (key: string) => localValues.delete(key),
+  setItem: (key: string, value: string) => localValues.set(key, value),
+});
 
 describe("responseErrorMessage", () => {
   it("traduz bloqueio de CORS para uma mensagem operacional", () => {
@@ -79,8 +87,72 @@ describe("apiFetch cookie session", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    localValues.clear();
+    mocks.hasOfflineSession.mockReturnValue(false);
     fetchMock.mockResolvedValue({ status: 200 } as Response);
     Object.assign(document, { cookie: "" });
+  });
+
+  it("does not reach fetch for operational or session probes while remote isolation is persisted", async () => {
+    localStorage.setItem("cortex.auth.remote-session-isolation", "1");
+
+    await expect(apiFetch("/obras")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+    await expect(apiFetch("/auth/session")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reach fetch while an in-memory offline session is active", async () => {
+    mocks.hasOfflineSession.mockReturnValue(true);
+
+    await expect(apiFetch("/obras")).rejects.toMatchObject({
+      kind: "REMOTE_SESSION_ISOLATED",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("permits cookie revocation only through its named exact POST path", async () => {
+    localStorage.setItem("cortex.auth.remote-session-isolation", "1");
+
+    await expect(
+      apiFetch("/auth/logout", { method: "POST" }),
+    ).rejects.toMatchObject({ kind: "REMOTE_SESSION_ISOLATED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      revokeRemoteSessionCookie?: () => Promise<Response>;
+    };
+    expect(client.revokeRemoteSessionCookie).toBeTypeOf("function");
+
+    await client.revokeRemoteSessionCookie!();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("/auth/logout");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("permits only the exact fresh-authentication POST allowlist", async () => {
+    const client = await import("./apiClient") as typeof import("./apiClient") & {
+      freshAuthenticationFetch?: (
+        path: string,
+        options: RequestInit,
+      ) => Promise<Response>;
+    };
+    expect(client.freshAuthenticationFetch).toBeTypeOf("function");
+
+    await expect(
+      client.freshAuthenticationFetch!("/obras", { method: "POST" }),
+    ).rejects.toThrow("autenticação nova inválida");
+    await expect(
+      client.freshAuthenticationFetch!("/auth/login", { method: "GET" }),
+    ).rejects.toThrow("autenticação nova inválida");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejeita API em outro hostname porque o CSRF é host-only", () => {

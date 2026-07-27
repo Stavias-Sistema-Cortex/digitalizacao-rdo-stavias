@@ -1,7 +1,9 @@
 import {
   apiFetch,
+  freshAuthenticationFetch,
   readResponseBody,
   responseErrorMessage,
+  type ApiRequestOptions,
 } from "../../lib/api/apiClient";
 import { createOfflineVault, renewOfflineVault } from "./offlineVault";
 import type {
@@ -9,7 +11,12 @@ import type {
   SignedOfflineGrant,
 } from "./offlineVault.types";
 import { saveOfflineVaultMetadata } from "./offlineVaultRepository";
-import { setSession, type AuthProfile } from "./authSession";
+import {
+  clearSession,
+  setSession,
+  type AuthProfile,
+} from "./authSession";
+import { clearRemoteSessionIsolation } from "./remoteSessionIsolation";
 import {
   assertionCredentialToJson,
   creationPrfSalt,
@@ -25,6 +32,11 @@ type WebAuthnOptionsResponse = {
   rpId: string;
   publicKey: unknown;
 };
+
+type PostTransport = (
+  path: string,
+  options: ApiRequestOptions,
+) => Promise<Response>;
 
 export type PasskeySummary = {
   credentialId: string;
@@ -98,6 +110,7 @@ export async function authenticateWithPasskey(
   const started = await requestOptions(
     "/auth/passkeys/authentication/options",
     { cpf },
+    freshAuthenticationFetch,
   );
   const publicKey = decodeRequestOptions(started.publicKey);
   if (publicKey.rpId !== started.rpId) {
@@ -115,8 +128,11 @@ export async function authenticateWithPasskey(
         credential as PublicKeyCredential,
       ),
     },
+    freshAuthenticationFetch,
   );
   const profile = parseProfile(response);
+  clearRemoteSessionIsolation();
+  clearSession();
   setSession(profile);
   return profile;
 }
@@ -137,8 +153,9 @@ export async function renewOfflineAccess(
 async function requestOptions(
   path: string,
   body: unknown = null,
+  transport: PostTransport = apiFetch,
 ): Promise<WebAuthnOptionsResponse> {
-  const response = await postJson(path, body);
+  const response = await postJson(path, body, transport);
   const source = record(response, "Opções da passkey inválidas.");
   const challengeId = requiredString(source.challengeId);
   const rpId = requiredString(source.rpId);
@@ -152,8 +169,12 @@ async function requestOptions(
   return { challengeId, rpId, publicKey: source.publicKey };
 }
 
-async function postJson(path: string, body: unknown): Promise<unknown> {
-  const response = await apiFetch(path, {
+async function postJson(
+  path: string,
+  body: unknown,
+  transport: PostTransport = apiFetch,
+): Promise<unknown> {
+  const response = await transport(path, {
     method: "POST",
     ...(body === null
       ? {}

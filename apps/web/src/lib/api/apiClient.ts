@@ -1,4 +1,8 @@
-import { clearSession } from "../../features/auth/authSession";
+import {
+  clearSession,
+  hasOfflineSession,
+} from "../../features/auth/authSession";
+import { hasRemoteSessionIsolation } from "../../features/auth/remoteSessionIsolation";
 import { apiUrl } from "./apiEndpoint";
 import {
   ApiError,
@@ -11,6 +15,11 @@ import {
 const CSRF_COOKIE = "cortex_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
+const FRESH_AUTHENTICATION_PATHS = new Set([
+  "/auth/login",
+  "/auth/passkeys/authentication/options",
+  "/auth/passkeys/authentication/verify",
+]);
 
 export {
   ApiError,
@@ -87,6 +96,12 @@ export async function apiFetch(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<Response> {
+  if (hasOfflineSession() || hasRemoteSessionIsolation()) {
+    throw new ApiTransportError(
+      "O acesso remoto está isolado até uma nova autenticação.",
+      "REMOTE_SESSION_ISOLATED",
+    );
+  }
   const response = await rawFetch(path, options);
   if (
     response.status === 401 &&
@@ -95,6 +110,29 @@ export async function apiFetch(
     clearSession();
   }
   return response;
+}
+
+/**
+ * Deliberately narrow escape hatch for a person explicitly starting a new
+ * credentialed sign-in. The path and method are checked here rather than
+ * allowing callers to opt out of the normal isolation gate.
+ */
+export async function freshAuthenticationFetch(
+  path: string,
+  options: ApiRequestOptions,
+): Promise<Response> {
+  if (
+    (options.method ?? "GET").toUpperCase() !== "POST" ||
+    !FRESH_AUTHENTICATION_PATHS.has(path)
+  ) {
+    throw new Error("Transição de autenticação nova inválida.");
+  }
+  return rawFetch(path, options);
+}
+
+/** Exact server-side cookie revocation; not available through ordinary API fetch. */
+export async function revokeRemoteSessionCookie(): Promise<Response> {
+  return rawFetch("/auth/logout", { method: "POST" });
 }
 
 function isPublicAuthenticationPath(path: string): boolean {

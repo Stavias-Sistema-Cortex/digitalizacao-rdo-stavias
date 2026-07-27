@@ -3,14 +3,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   apiError: vi.fn(),
   apiFetch: vi.fn(),
+  freshAuthenticationFetch: vi.fn(),
   readResponseBody: vi.fn(),
+  revokeRemoteSessionCookie: vi.fn(),
   responseErrorMessage: vi.fn(),
 }));
 
 vi.mock("../../lib/api/apiClient", () => ({
   apiError: mocks.apiError,
   apiFetch: mocks.apiFetch,
+  freshAuthenticationFetch: mocks.freshAuthenticationFetch,
   readResponseBody: mocks.readResponseBody,
+  revokeRemoteSessionCookie: mocks.revokeRemoteSessionCookie,
   responseErrorMessage: mocks.responseErrorMessage,
 }));
 
@@ -42,7 +46,7 @@ describe("authApi", () => {
   });
 
   it("entra com CPF e retorna somente o perfil seguro", async () => {
-    mocks.apiFetch.mockResolvedValue(response(200));
+    mocks.freshAuthenticationFetch.mockResolvedValue(response(200));
     mocks.readResponseBody.mockResolvedValue({
       ...profile,
       token: "não deve atravessar o parser",
@@ -52,7 +56,24 @@ describe("authApi", () => {
 
     await expect(loginWithCpf("11144477735")).resolves.toEqual(profile);
 
-    expect(mocks.apiFetch).toHaveBeenCalledWith(
+    expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
+      "/auth/login",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cpf: "11144477735" }),
+      },
+    );
+  });
+
+  it("uses the explicit fresh CPF transition instead of ordinary api fetch", async () => {
+    mocks.freshAuthenticationFetch.mockResolvedValue(response(200));
+    mocks.readResponseBody.mockResolvedValue(profile);
+
+    await expect(loginWithCpf("11144477735")).resolves.toEqual(profile);
+
+    expect(mocks.apiFetch).not.toHaveBeenCalled();
+    expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
       "/auth/login",
       {
         method: "POST",
@@ -117,16 +138,14 @@ describe("authApi", () => {
   });
 
   it("revoga a sessão no servidor e reconhece uma sessão já expirada", async () => {
-    mocks.apiFetch.mockResolvedValueOnce(response(204));
+    mocks.revokeRemoteSessionCookie.mockResolvedValueOnce(response(204));
     mocks.readResponseBody.mockResolvedValueOnce(null);
     await expect(logoutOnline()).resolves.toBe("revoked");
 
-    mocks.apiFetch.mockResolvedValueOnce(response(401));
+    mocks.revokeRemoteSessionCookie.mockResolvedValueOnce(response(401));
     mocks.readResponseBody.mockResolvedValueOnce({ message: "expirada" });
     await expect(logoutOnline()).resolves.toBe("already-expired");
 
-    expect(mocks.apiFetch).toHaveBeenNthCalledWith(1, "/auth/logout", {
-      method: "POST",
-    });
+    expect(mocks.revokeRemoteSessionCookie).toHaveBeenCalledTimes(2);
   });
 });
