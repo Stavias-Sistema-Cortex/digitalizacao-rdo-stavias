@@ -1,29 +1,29 @@
 package com.projeto.cortex.auth.webauthn;
 
 import com.projeto.cortex.auth.identity.AuthChallengeLookupMaterial;
-import com.projeto.cortex.auth.otp.OtpCryptography;
 import com.projeto.cortex.auth.otp.AuthRateLimitStore;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Service;
-import org.springframework.context.annotation.Profile;
 
-/** Shared, HMAC-keyed circuit breaker for public WebAuthn ceremonies. */
+/** Shared opaque circuit breaker for public WebAuthn ceremonies. */
 @Service
-@Profile("!postgresql | postgresql-activation")
 public class WebAuthnRateLimiter {
 
+    private static final String BUCKET_DOMAIN =
+            "cortex.auth.webauthn-rate-limit.v1";
+
     private final AuthRateLimitStore buckets;
-    private final OtpCryptography cryptography;
     private final WebAuthnRateLimitPolicy policy;
 
     public WebAuthnRateLimiter(
             AuthRateLimitStore buckets,
-            OtpCryptography cryptography,
             WebAuthnRateLimitPolicy policy
     ) {
         this.buckets = buckets;
-        this.cryptography = cryptography;
         this.policy = policy;
     }
 
@@ -35,10 +35,7 @@ public class WebAuthnRateLimiter {
             return false;
         }
         String scope = action.name().toLowerCase(Locale.ROOT);
-        String globalBucket = cryptography.bucketDigest(
-                "global",
-                "webauthn:" + scope
-        );
+        String globalBucket = bucketKey("global", scope);
         if (!buckets.hasCapacity(
                 globalBucket,
                 policy.globalMaxRequests(),
@@ -50,10 +47,7 @@ public class WebAuthnRateLimiter {
         String source = clientIp == null || clientIp.isBlank()
                 ? "invalid"
                 : clientIp.strip();
-        String ipBucket = cryptography.bucketDigest(
-                "ip",
-                "webauthn:" + scope + ":" + source
-        );
+        String ipBucket = bucketKey("source", scope + "\0" + source);
         if (!buckets.consume(
                 List.of(ipBucket),
                 policy.maxRequests(),
@@ -73,12 +67,9 @@ public class WebAuthnRateLimiter {
             return false;
         }
         List<String> identifierBuckets = material.candidates().stream()
-                .map(candidate -> cryptography.bucketDigest(
+                .map(candidate -> bucketKey(
                         "identifier",
-                        "webauthn:authentication-options:"
-                                + candidate.keyId()
-                                + ":"
-                                + candidate.value()
+                        candidate.keyId() + "\0" + candidate.value()
                 ))
                 .toList();
         return buckets.consume(
@@ -86,5 +77,23 @@ public class WebAuthnRateLimiter {
                 policy.maxRequests(),
                 policy.windowSeconds()
         );
+    }
+
+    private String bucketKey(String scope, String material) {
+        return sha256(BUCKET_DOMAIN + "\0" + scope + "\0" + material);
+    }
+
+    private String sha256(String input) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte value : digest) {
+                hex.append(String.format("%02x", value));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 indisponível.", exception);
+        }
     }
 }

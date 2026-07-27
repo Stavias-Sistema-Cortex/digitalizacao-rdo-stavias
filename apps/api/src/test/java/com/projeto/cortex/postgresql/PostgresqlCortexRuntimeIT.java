@@ -6,6 +6,7 @@ import com.projeto.cortex.auth.identity.PostgresqlCpfOtpIdentityLookup;
 import com.projeto.cortex.auth.identity.PostgresqlEmailOtpIdentityLookup;
 import com.projeto.cortex.auth.otp.PostgresqlCpfIdentifierNormalizer;
 import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
+import com.projeto.cortex.auth.webauthn.WebAuthnController;
 import com.projeto.cortex.financeiro.ItemContratualController;
 import com.projeto.cortex.financeiro.allocation.FinanceAllocationSyncOperationHandler;
 import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetSyncOperationHandler;
@@ -130,6 +131,7 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
         assertThat(context.getBeansOfType(CortexOperationalMemoryService.class)).hasSize(1);
         assertThat(context.getBeansOfType(SyncController.class)).hasSize(1);
         assertThat(context.getBeansOfType(AuthController.class)).hasSize(1);
+        assertThat(context.getBeansOfType(WebAuthnController.class)).hasSize(1);
         assertThat(context.getBeansOfType(GraphProjectionService.class)).hasSize(1);
         assertThat(context.getBeansOfType(PostgresqlCpfOtpIdentityLookup.class))
                 .hasSize(1);
@@ -147,7 +149,7 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
     }
 
     @Test
-    void mapsOnlyTheRevenueFinanceSurfaceInThePostgresqlRuntime() {
+    void mapsRevenueFinanceAndPublicPasskeyAuthenticationInThePostgresqlRuntime() {
         RequestMappingHandlerMapping mappings = context.getBean(
                 RequestMappingHandlerMapping.class
         );
@@ -160,7 +162,9 @@ class PostgresqlCortexRuntimeIT extends PostgresqlAuthPersistenceTestSupport {
                 "/api/financeiro/rastreio-receita/{executionId}",
                 "/api/financeiro/resultado-operacional",
                 "/api/obras/{obraId}/financeiro/catalogo-servicos",
-                "/api/obras/{obraId}/previsao-financeira/atual"
+                "/api/obras/{obraId}/previsao-financeira/atual",
+                "/api/auth/passkeys/authentication/options",
+                "/api/auth/passkeys/authentication/verify"
         ).doesNotContain(
                 "/api/financeiro/compras",
                 "/api/financeiro/solicitacoes",

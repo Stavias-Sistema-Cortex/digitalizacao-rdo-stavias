@@ -33,11 +33,9 @@ import java.nio.ByteBuffer;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
-import org.springframework.context.annotation.Profile;
 
 /** Audited Yubico 2.9.0 adapter for the four online WebAuthn operations. */
 @Component
-@Profile("!postgresql | postgresql-activation")
 final class YubicoWebAuthnCeremonyEngine implements WebAuthnCeremonyEngine {
 
     private final RelyingParty relyingParty;

@@ -15,12 +15,10 @@ import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.context.annotation.Profile;
 import org.springframework.web.server.ResponseStatusException;
 
 /** Orchestrates one-use WebAuthn ceremonies and canonical user resolution. */
 @Service
-@Profile("!postgresql | postgresql-activation")
 public class WebAuthnService {
 
     private static final int PRF_SALT_BYTES = 32;

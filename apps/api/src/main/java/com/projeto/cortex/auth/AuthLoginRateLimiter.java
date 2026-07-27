@@ -55,9 +55,9 @@ public class AuthLoginRateLimiter {
     public void check(String cpfRaw, String clientIp) {
         AuthChallengeLookupMaterial material = cpfDigests.challengeLookup(cpfRaw);
         String source = canonicalClientIp(clientIp);
-        String global = bucketKey("global", material, "global");
+        String global = bucketKey("global", "global");
         if (!buckets.hasCapacity(global, globalMaxRequests, windowSeconds)
-                || !consume(bucketKey("source", material, source), maxRequests)
+                || !consume(bucketKey("source", source), maxRequests)
                 || !consume(global, globalMaxRequests)
                 || !consume(bucketKey("identifier", material, "cpf"), maxRequests)) {
             throw rejected();
@@ -72,6 +72,13 @@ public class AuthLoginRateLimiter {
         return clientIp == null || clientIp.isBlank()
                 ? "invalid"
                 : clientIp.strip();
+    }
+
+    private String bucketKey(
+            String scope,
+            String subject
+    ) {
+        return sha256(BUCKET_DOMAIN + "\0" + scope + "\0" + subject);
     }
 
     private String bucketKey(
