@@ -167,6 +167,28 @@ git diff --check
   se a versão anterior tolerar as tabelas aditivas V45–V61.
 - Nunca use `flyway repair` para mascarar checksum divergente.
 
+## 9. Piloto Cloudflare Pages, Render, Neon e R2
+
+- [ ] O banco canônico é exatamente `StaviasCortex`, com TLS Neon e usuário de
+  menor privilégio configurados apenas como secrets do Render.
+- [ ] `cortex-api` está no Render como web service Docker `free` na região
+  `ohio`, com `autoDeployTrigger` desligado e health check
+  `/api/readiness`.
+- [ ] Flyway foi executado e confirmado antes de cada deploy manual da API;
+  Render Free não tem pre-deploy command.
+- [ ] O Pages mantém `/api/*` na mesma origem através da Function existente;
+  `CORTEX_API_ORIGIN` é secret e nenhum proxy adicional foi publicado.
+- [ ] A build Pages usa root `apps/web`, comando `npm ci && npm run build` e
+  output `dist`.
+- [ ] Novos anexos usam bucket Cloudflare R2 Standard privado. O endpoint
+  HTTPS R2 foi validado, `CORTEX_STORAGE_S3_SEND_SSE_HEADER=false` foi usado
+  somente para ele e as credenciais R2 existem apenas como secrets do Render.
+- [ ] Sem Neon, Render ou R2, a API falha fechada: não há storage local,
+  provider fake, dados fabricados ou fallback de conexão.
+- [ ] Academy e Zeladoria permanecem com `CORTEX_IMPORT_ENABLED=false` e
+  `CORTEX_SYNC_ENABLED=false` até que suas fontes read-only tenham um caminho
+  público seguro.
+
 ## Limite de evidência externa
 
 Build e testes locais comprovam o contrato do runtime normal, mas não comprovam

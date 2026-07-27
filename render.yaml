@@ -1,0 +1,73 @@
+services:
+  - type: web
+    name: cortex-api
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    autoDeployTrigger: off
+    healthCheckPath: /api/readiness
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: production,postgresql
+      - key: CORTEX_POSTGRES_URL
+        sync: false
+      - key: CORTEX_POSTGRES_USER
+        sync: false
+      - key: CORTEX_POSTGRES_PASSWORD
+        sync: false
+      - key: CORTEX_POSTGRES_RUNTIME_READY
+        value: "true"
+      - key: CORTEX_CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CORTEX_AUTH_COOKIE_SECURE
+        value: "true"
+      - key: CORTEX_AUTH_COOKIE_SAME_SITE
+        value: Lax
+      - key: CORTEX_AUTH_WEBAUTHN_RP_ID
+        sync: false
+      - key: CORTEX_AUTH_WEBAUTHN_RP_NAME
+        value: Córtex
+      - key: CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS
+        sync: false
+      - key: CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_ID
+        sync: false
+      - key: CORTEX_AUTH_CPF_HMAC_CURRENT_KEY_FILE
+        value: /etc/secrets/cortex-cpf-hmac
+      - key: CORTEX_AUTH_OFFLINE_GRANT_KEY_ID
+        sync: false
+      - key: CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE
+        value: /etc/secrets/cortex-offline-private.pem
+      - key: CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE
+        value: /etc/secrets/cortex-offline-public.pem
+      - key: CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID
+        sync: false
+      - key: CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE
+        value: /etc/secrets/cortex-memory-cursor-hmac
+      - key: CORTEX_AUTH_DEV_ADMIN_ENABLED
+        value: "false"
+      - key: CORTEX_AUTH_PROVISIONING_ENABLED
+        value: "false"
+      - key: CORTEX_STORAGE_PROVIDER
+        value: s3
+      - key: CORTEX_STORAGE_S3_BUCKET
+        sync: false
+      - key: CORTEX_STORAGE_S3_REGION
+        value: auto
+      - key: CORTEX_STORAGE_S3_ENDPOINT
+        sync: false
+      - key: CORTEX_STORAGE_S3_PREFIX
+        value: production
+      - key: CORTEX_STORAGE_S3_PATH_STYLE
+        value: "true"
+      - key: CORTEX_STORAGE_S3_SEND_SSE_HEADER
+        value: "false"
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: CORTEX_IMPORT_ENABLED
+        value: "false"
+      - key: CORTEX_SYNC_ENABLED
+        value: "false"
