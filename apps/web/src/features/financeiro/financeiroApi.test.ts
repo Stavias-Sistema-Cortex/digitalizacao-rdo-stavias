@@ -22,6 +22,7 @@ import {
   buscarRateios,
   buscarUnidadesFinanceiras,
   buscarCompras,
+  buscarConteudoDocumento,
   buscarLancamentos,
   buscarNotasFiscais,
   enviarDocumentoFiscal,
@@ -173,5 +174,27 @@ describe("financeiroApi query contracts", () => {
     expect(mocks.apiFetch.mock.calls[1][0]).toBe(
       "/financeiro/rateios?unidadeId=unit-asset-1",
     );
+  });
+
+  it("busca conteúdo fiscal pela API autenticada sem transformar a URL em link nativo", async () => {
+    const blob = new Blob(["%PDF-1.7"], { type: "application/pdf" });
+    mocks.apiFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/pdf; charset=binary" }),
+      blob: vi.fn().mockResolvedValue(blob),
+    });
+
+    const content = await buscarConteudoDocumento(
+      "invoice-1",
+      "document-1",
+      "obra-1",
+    );
+
+    expect(mocks.apiFetch).toHaveBeenCalledWith(
+      "/financeiro/notas-fiscais/invoice-1/anexos/document-1/conteudo?obraId=obra-1",
+      expect.objectContaining({ method: "GET", timeoutMs: 30_000 }),
+    );
+    expect(content).toEqual({ blob, mediaType: "application/pdf" });
   });
 });

@@ -19,6 +19,7 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
+  "frame-src blob:",
   "frame-ancestors 'none'",
   "form-action 'self'",
   "script-src 'self'",
