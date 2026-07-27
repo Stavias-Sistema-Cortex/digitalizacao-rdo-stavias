@@ -14,6 +14,7 @@ import {
   type LoginFieldErrors,
 } from "./loginValidation";
 import { autenticarPorCpf } from "./authService";
+import { queueOfflineGrantUnavailableNotice } from "./authNotice";
 import { authenticateWithPasskey } from "./passkeyApi";
 
 import "./LoginPage.css";
@@ -28,7 +29,6 @@ export function LoginPage() {
   const [errors, setErrors] = useState<LoginFieldErrors>({});
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [authError, setAuthError] = useState("");
-  const [cacheWarning, setCacheWarning] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
 
   const loading = status !== "idle";
@@ -57,7 +57,6 @@ export function LoginPage() {
     }
 
     setAuthError("");
-    setCacheWarning("");
     const nextErrors = validateLoginForm(cpf);
     setErrors(nextErrors);
     if (nextErrors.cpf) {
@@ -69,9 +68,7 @@ export function LoginPage() {
     try {
       const result = await autenticarPorCpf(onlyDigits(cpf));
       if (result.offlineGrant === "UNAVAILABLE") {
-        setCacheWarning(
-          "Acesso realizado, mas o acesso offline não pôde ser atualizado neste dispositivo.",
-        );
+        queueOfflineGrantUnavailableNotice();
       }
       setStatus("idle");
       globalThis.location.assign("/");
@@ -88,7 +85,6 @@ export function LoginPage() {
     }
 
     setAuthError("");
-    setCacheWarning("");
     const nextErrors = validateLoginForm(cpf);
     setErrors(nextErrors);
     if (nextErrors.cpf) {
@@ -186,9 +182,6 @@ export function LoginPage() {
                   if (authError) {
                     setAuthError("");
                   }
-                  if (cacheWarning) {
-                    setCacheWarning("");
-                  }
                 }}
                 aria-invalid={errors.cpf ? true : undefined}
                 aria-describedby={errors.cpf ? `${cpfId}-error` : undefined}
@@ -246,11 +239,6 @@ export function LoginPage() {
                 role="alert"
               >
                 {authError}
-              </p>
-            ) : null}
-            {cacheWarning ? (
-              <p className="login__warning" role="status">
-                {cacheWarning}
               </p>
             ) : null}
           </form>

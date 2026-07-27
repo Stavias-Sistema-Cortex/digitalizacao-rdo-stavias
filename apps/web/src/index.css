@@ -333,6 +333,25 @@ h1 {
   color: #2d5c3b;
 }
 
+.auth-session-notice {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 90;
+  width: min(420px, calc(100vw - 32px));
+  margin: 0;
+  padding: 13px 16px;
+  border: 1px solid #b89a00;
+  border-left: 4px solid var(--color-brand-yellow);
+  border-radius: var(--radius-control);
+  background: #fff8cf;
+  color: #453900;
+  font-size: 0.84rem;
+  font-weight: 500;
+  line-height: 1.5;
+  box-shadow: none;
+}
+
 .form-card {
   margin-bottom: 18px;
   padding: 26px;

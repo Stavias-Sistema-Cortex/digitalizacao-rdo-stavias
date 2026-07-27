@@ -12,6 +12,7 @@ import {
   getSession,
   isAlfa,
 } from "./features/auth/authSession";
+import { consumeAuthNotice } from "./features/auth/authNotice";
 import { LoginPage } from "./features/auth/LoginPage";
 import { DeviceSecurityPage } from "./features/auth/DeviceSecurityPage";
 import { OfflineUnlockPage } from "./features/auth/OfflineUnlockPage";
@@ -118,6 +119,9 @@ function App({ initialAuthUnavailable = false }: AppProps) {
   const [hasCollaborativeCpfGrant, setHasCollaborativeCpfGrant] =
     useState(false);
   const [vaultChecked, setVaultChecked] = useState(false);
+  const [authNotice] = useState(() =>
+    session ? consumeAuthNotice() : null,
+  );
 
   useAppAutomaticSync(session);
 
@@ -197,6 +201,16 @@ function App({ initialAuthUnavailable = false }: AppProps) {
 
   return (
     <BrowserRouter>
+      {authNotice ? (
+        <aside
+          className="auth-session-notice"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {authNotice}
+        </aside>
+      ) : null}
       <Suspense
         fallback={
           <main className="auth-bootstrap-status" role="status">

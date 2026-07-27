@@ -82,26 +82,6 @@ describe("LoginPage access methods", () => {
     expect(screen.queryByText(/código|e-mail/i)).not.toBeInTheDocument();
   });
 
-  it("reports a nonfatal offline-cache warning without blocking the online session", async () => {
-    mocks.autenticarPorCpf.mockResolvedValue({
-      profile,
-      offlineGrant: "UNAVAILABLE",
-    });
-    const navigate = vi.fn();
-    vi.stubGlobal("location", { assign: navigate });
-    const user = userEvent.setup();
-
-    render(<LoginPage />);
-
-    await user.type(screen.getByRole("textbox", { name: "CPF" }), "111.444.777-35");
-    await user.click(screen.getByRole("button", { name: "Entrar" }));
-
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Acesso realizado, mas o acesso offline não pôde ser atualizado neste dispositivo.",
-    );
-    expect(navigate).toHaveBeenCalledWith("/");
-  });
-
   it("keeps the same direct CPF primary flow in local development", () => {
     vi.stubEnv("DEV", true);
     vi.stubEnv("PROD", false);
