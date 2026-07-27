@@ -135,7 +135,56 @@ Neon vazio pelo control plane sob aprovação operacional. Nunca adicione
 a migração falha; não habilite banco local, dados falsos ou outro fallback no
 serviço hospedado.
 
-## 5. Release Flyway antes do deploy
+## 5. Binding da release e Flyway antes do deploy
+
+### Gate obrigatório da Task 8
+
+O único source aprovado para provisionar ou fazer deploy do piloto é:
+
+- ref: `feat/cortex-hosted-candidate-2026-07-27`;
+- commit: `21d64c1bf5e930eae1968fb7e6d86090aac657cd`.
+
+Commits posteriores em `feat/cortex-render-cloudflare-deploy` registram
+evidência ou documentação e não são build source. Não use o HEAD dessa branch
+para criar o serviço Render, o projeto Pages, uma imagem release ou um deploy.
+
+Antes de qualquer push da ref dedicada, criação de serviço ou configuração de
+Git integration, execute no checkout revisado:
+
+```bash
+candidate_ref=refs/heads/feat/cortex-hosted-candidate-2026-07-27
+candidate_sha=21d64c1bf5e930eae1968fb7e6d86090aac657cd
+
+test "$(git rev-parse "$candidate_ref")" = "$candidate_sha"
+git diff --quiet "$candidate_sha"..HEAD -- apps/api apps/web render.yaml
+test -z "$(git diff --name-only \
+  "$candidate_sha"..HEAD -- apps/api apps/web render.yaml)"
+```
+
+Os três checks devem sair com status zero e o último não pode produzir saída.
+Eles provam que `apps/api`, `apps/web` e `render.yaml` não mudaram entre o
+candidato que passou nos gates e o HEAD documental. Se qualquer check falhar,
+interrompa: um novo SHA de aplicação exige novamente os gates completos.
+
+Na Task 8, envie explicitamente a ref dedicada sem trocar o checkout e confirme
+o remoto antes de provisionar:
+
+```bash
+git push origin \
+  refs/heads/feat/cortex-hosted-candidate-2026-07-27:refs/heads/feat/cortex-hosted-candidate-2026-07-27
+test "$(
+  git ls-remote --exit-code --heads origin \
+    refs/heads/feat/cortex-hosted-candidate-2026-07-27 |
+    awk '{print $1}'
+)" = "21d64c1bf5e930eae1968fb7e6d86090aac657cd"
+```
+
+Esse push não faz parte da Task 6. Configure Pages e Render para essa ref e
+confirme no provedor que o commit selecionado/deployado é exatamente
+`21d64c1bf5e930eae1968fb7e6d86090aac657cd`. Divergência de ref ou SHA é falha
+de release; não prossiga para credenciais, migração, Flyway ou smoke.
+
+### Flyway explícito
 
 Render Free não executa pre-deploy command. Após criar a imagem da revisão,
 execute a migração com um arquivo de ambiente exclusivo de migração, antes de

@@ -1,6 +1,7 @@
 # Hosted pilot local release evidence
 
 - Verified release candidate: `21d64c1bf5e930eae1968fb7e6d86090aac657cd`
+- Dedicated deploy ref: `feat/cortex-hosted-candidate-2026-07-27`
 - Requested base candidate: `6f7ce4769ffcefa77ae6f5cf225a2d01cb00c191`
 - Captured: `2026-07-27T18:58:40-03:00`
 - Machine timezone: `America/Sao_Paulo` (`UTC-03:00`)
@@ -10,6 +11,40 @@ allowlists because four new hosted-migration files contain the canonical
 database name `StaviasCortex`. Commit `21d64c1` adds exact line/count-scoped
 allowlist entries and classifies tracked SQL as text in the web verifier. The
 base SHA must not be published without that correction.
+
+## Exact build-source binding
+
+The reviewed build source for the hosted pilot is immutable:
+
+- Ref: `refs/heads/feat/cortex-hosted-candidate-2026-07-27`
+- SHA: `21d64c1bf5e930eae1968fb7e6d86090aac657cd`
+
+The local ref was created without switching the active checkout. The checkout
+remained on the documentation branch at `67730a5` during ref creation, while
+the dedicated ref resolved exactly to `21d64c1`.
+
+These read-only checks exited `0`:
+
+```bash
+test "$(git rev-parse refs/heads/feat/cortex-hosted-candidate-2026-07-27)" \
+  = "21d64c1bf5e930eae1968fb7e6d86090aac657cd"
+git diff --quiet \
+  21d64c1bf5e930eae1968fb7e6d86090aac657cd..HEAD \
+  -- apps/api apps/web render.yaml
+test -z "$(git diff --name-only \
+  21d64c1bf5e930eae1968fb7e6d86090aac657cd..HEAD \
+  -- apps/api apps/web render.yaml)"
+```
+
+Therefore `apps/api`, `apps/web`, and `render.yaml` are byte-for-byte unchanged
+between the verified candidate and the documentation HEAD. The heavy suites
+were not rerun because their complete build inputs did not change.
+
+Task 8 must push and provision Cloudflare Pages and Render from this dedicated
+ref at this exact SHA. Later commits on
+`feat/cortex-render-cloudflare-deploy` contain evidence or documentation and
+are not approved build sources. Stop Task 8 if the local ref, remote ref,
+provider branch, or provider-reported deploy commit differs from the SHA above.
 
 ## Local gates
 
@@ -63,8 +98,8 @@ deletion was executed against it.
 
 No live Neon migration, Render deployment, Cloudflare Pages/R2 action, or live
 cloud smoke test has happened. These results cover local gates and local image
-builds only; the next phase must verify the same reviewed SHA in remote CI
-before any cloud credential or deployment action.
+builds only; the next phase must verify the dedicated ref and exact reviewed
+SHA in remote CI before any cloud credential or deployment action.
 
 Non-blocking warnings observed:
 
