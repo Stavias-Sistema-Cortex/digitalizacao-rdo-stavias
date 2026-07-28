@@ -49,9 +49,9 @@ describe("obraRecordFromPayload", () => {
     expect(record).toMatchObject({
       arquivadoEm: "2026-07-06T09:00:00",
       versaoEntidade: 7,
-      syncStatus: "SYNCED",
-      ultimoErro: null,
     });
+    expect(record).not.toHaveProperty("syncStatus");
+    expect(record).not.toHaveProperty("ultimoErro");
   });
 
   it("mapeia resposta REST por id e versaoEntidade", () => {
@@ -72,9 +72,41 @@ describe("obraRecordFromPayload", () => {
       status: "INATIVA",
       arquivadoEm: null,
       versaoEntidade: 11,
-      syncStatus: "SYNCED",
-      ultimoErro: null,
     });
+  });
+
+  it("mapeia versão sem materializar arquivamento nem outros lifecycle omitidos", () => {
+    const record = obraRecordFromPayload(
+      {
+        id: "obra-rest-versionada",
+        nome: "Obra REST versionada",
+        status: "INATIVA",
+        versaoLinha: 12,
+      },
+      NOW,
+    );
+
+    expect(record).toMatchObject({ versaoEntidade: 12 });
+    expect(record).not.toHaveProperty("arquivadoEm");
+    expect(record).not.toHaveProperty("syncStatus");
+    expect(record).not.toHaveProperty("ultimoErro");
+  });
+
+  it("mapeia arquivamento sem materializar versão nem outros lifecycle omitidos", () => {
+    const record = obraRecordFromPayload(
+      {
+        id: "obra-rest-arquivada",
+        nome: "Obra REST arquivada",
+        status: "INATIVA",
+        arquivadoEm: null,
+      },
+      NOW,
+    );
+
+    expect(record).toMatchObject({ arquivadoEm: null });
+    expect(record).not.toHaveProperty("versaoEntidade");
+    expect(record).not.toHaveProperty("syncStatus");
+    expect(record).not.toHaveProperty("ultimoErro");
   });
 
   it("não inventa estado de ciclo de vida quando o payload REST é esparso", () => {
@@ -234,6 +266,45 @@ describe("mergeObraRecords", () => {
       arquivadoEm: "2026-07-06T10:00:00.000Z",
       syncStatus: "SYNCED",
       ultimoErro: null,
+    });
+  });
+
+  it("atualiza versão sem restaurar obra arquivada quando arquivadoEm foi omitido", () => {
+    const existing: ObraLocalRecord = {
+      id: "obra-1",
+      codigoContrato: "CT-LOCAL",
+      nome: "Nome arquivado",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 8,
+      arquivadoEm: "2026-07-06T10:00:00.000Z",
+      syncStatus: "SYNCED",
+      ultimoErro: "Diagnóstico local preservado",
+      updatedAt: NOW,
+    };
+    const incoming = obraRecordFromPayload(
+      {
+        id: "obra-1",
+        nome: "Nome remoto",
+        status: "INATIVA",
+        versaoEntidade: 9,
+      },
+      NOW,
+    )!;
+
+    expect(mergeObraRecords(existing, incoming)).toMatchObject({
+      nome: "Nome remoto",
+      versaoEntidade: 9,
+      arquivadoEm: "2026-07-06T10:00:00.000Z",
+      syncStatus: "SYNCED",
+      ultimoErro: "Diagnóstico local preservado",
     });
   });
 });

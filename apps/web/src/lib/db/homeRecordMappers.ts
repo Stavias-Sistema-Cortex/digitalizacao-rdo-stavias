@@ -69,17 +69,16 @@ export function obraRecordFromPayload(
       toTextOrNull(payload.updatedAt) ??
       fallbackNowIso,
   };
-  const hasLifecycle =
+  if (
     hasOwn(payload, "versaoEntidade") ||
-    hasOwn(payload, "versaoLinha") ||
-    hasOwn(payload, "arquivadoEm");
-  if (hasLifecycle) {
+    hasOwn(payload, "versaoLinha")
+  ) {
     record.versaoEntidade =
       toSafeIntegerOrNull(payload.versaoEntidade) ??
       toSafeIntegerOrNull(payload.versaoLinha);
+  }
+  if (hasOwn(payload, "arquivadoEm")) {
     record.arquivadoEm = toTextOrNull(payload.arquivadoEm);
-    record.syncStatus = "SYNCED";
-    record.ultimoErro = null;
   }
   return record;
 }

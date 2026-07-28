@@ -6,6 +6,7 @@ import type {
 import { getSyncState, updateSyncState } from "../../lib/db/syncStateRepository";
 import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
 import { isCanonicalOutboxMutation } from "../../lib/sync/mutationEnvelope";
+import { effectiveObraMutations } from "../../lib/sync/syncStorage";
 import { getSession } from "../auth/authSession";
 
 const UUID_PATTERN =
@@ -70,8 +71,10 @@ async function activeObraMutations(
     "by-entity-id",
     obraId,
   );
-  const entityMutations = mutations.filter(
-    (mutation) => mutation.entidadeTipo === "OBRA",
+  const entityMutations = effectiveObraMutations(
+    mutations.filter(
+      (mutation) => mutation.entidadeTipo === "OBRA",
+    ),
   );
   const conflict = entityMutations.find(
     (mutation) =>
@@ -80,6 +83,14 @@ async function activeObraMutations(
   if (conflict) {
     throw new Error(
       "A obra possui um conflito pendente de reconciliação.",
+    );
+  }
+  const rejected = entityMutations.find(
+    (mutation) => mutation.status === "REJECTED",
+  );
+  if (rejected) {
+    throw new Error(
+      "A obra possui uma mutação rejeitada não aplicada. Faça a recuperação explícita antes de editar novamente.",
     );
   }
   const active = entityMutations.filter((mutation) =>

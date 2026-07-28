@@ -595,7 +595,7 @@ function effectiveRdoMutations(
   );
 }
 
-function effectiveObraMutations(
+export function effectiveObraMutations(
   mutations: OutboxMutationRecord[],
 ): OutboxMutationRecord[] {
   const byId = new Map(
@@ -606,8 +606,10 @@ function effectiveObraMutations(
   );
   const supersededIds = new Set<string>();
   for (const mutation of mutations) {
-    const replacementId = typeof mutation.blockedReason === "string"
-      ? /^SUPERSEDED_BY:([^\s:]+)$/.exec(
+    const replacementId =
+      mutation.status === "REJECTED" &&
+        typeof mutation.blockedReason === "string"
+      ? /^SUPERSEDED_BY:([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.exec(
           mutation.blockedReason.trim(),
         )?.[1]
       : undefined;
@@ -616,8 +618,11 @@ function effectiveObraMutations(
       : undefined;
     if (
       replacement &&
+      isCanonicalOutboxMutation(mutation) &&
+      isCanonicalOutboxMutation(replacement) &&
       replacement.entidadeTipo === "OBRA" &&
-      replacement.entidadeId === mutation.entidadeId
+      replacement.entidadeId === mutation.entidadeId &&
+      replacement.causationId === mutation.clientMutationId
     ) {
       supersededIds.add(mutation.clientMutationId);
     }
@@ -2288,6 +2293,8 @@ export async function applyPushResultAtomically(
               ...authoritative,
               valorContratual:
                 authoritative.valorContratual ?? obra.valorContratual,
+              syncStatus: "SYNCED",
+              ultimoErro: null,
             }
           : {
               ...obra,

@@ -287,6 +287,24 @@ describe("obra lifecycle queue", () => {
     ]);
   });
 
+  it("recusa queueRestore quando existe REJECTED efetivo não superseded", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    const archived = await queueArchiveObra(obra());
+    const rejected = (await database.getAll("outbox_mutations"))[0];
+    await database.put("outbox_mutations", {
+      ...rejected,
+      status: "REJECTED",
+      blockedReason: "SERVER_VALIDATION_REJECTED",
+      ultimoErro: "Arquivamento rejeitado pelo servidor.",
+    });
+
+    await expect(queueRestoreObra(archived)).rejects.toThrow(
+      /rejeitada.*recuperação explícita/i,
+    );
+    expect(await database.getAll("outbox_mutations")).toHaveLength(1);
+  });
+
   it("reconcilia confirmação, replay e conflito sem perder snapshot/evento/outbox", async () => {
     const database = await getCortexDb();
     await database.put("obras", obra());
@@ -469,6 +487,70 @@ describe("obra lifecycle queue", () => {
       syncStatus: "SYNCED",
       ultimoErro: null,
     });
+  });
+
+  it("permite queueRestore após alias superseded válido convergir", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    const archived = await queueArchiveObra(obra());
+    const original = (await database.getAll("outbox_mutations"))[0];
+    const originalEvent = (await database.getAllFromIndex(
+      "operational_events",
+      "by-client-mutation-id",
+      original.clientMutationId,
+    ))[0];
+    await markMutationAsSyncing(original);
+    await applyPushResultAtomically({
+      clientMutationId: original.clientMutationId,
+      status: "CONFLITO",
+      entidadeTipo: "OBRA",
+      entidadeId: OBRA_ID,
+      conflito: {
+        versaoAtual: 5,
+        remoteCompleto: true,
+        snapshotRemoto: {
+          ...originalEvent.previousState,
+          cliente: "Cliente remoto",
+        },
+      },
+      erro: "Conflito disjunto.",
+    });
+    const replacement = await reconcileCanonicalConflict(
+      original.clientMutationId,
+      "00000000-0000-4000-8000-000000000031",
+      "00000000-0000-4000-8000-000000000032",
+      "2026-07-28T12:04:00.000Z",
+    );
+    await markMutationAsSyncing(replacement!);
+    await applyPushResultAtomically({
+      clientMutationId: replacement!.clientMutationId,
+      status: "APLICADA",
+      entidadeTipo: "OBRA",
+      entidadeId: OBRA_ID,
+      eventoServidorCommitSeq: 43,
+      resultado: {
+        ...replacement!.payload,
+        versaoEntidade: 6,
+        atualizadoEm: "2026-07-28T12:05:00.000Z",
+      },
+    });
+
+    const converged = await database.get("obras", OBRA_ID);
+    expect(converged).toMatchObject({
+      arquivadoEm: archived.arquivadoEm,
+      versaoEntidade: 6,
+      syncStatus: "SYNCED",
+    });
+    await expect(queueRestoreObra(converged!)).resolves.toMatchObject({
+      arquivadoEm: null,
+      syncStatus: "PENDING_SYNC",
+    });
+    expect(await database.get("outbox_mutations", original.clientMutationId))
+      .toMatchObject({
+        status: "REJECTED",
+        blockedReason:
+          `SUPERSEDED_BY:${replacement!.clientMutationId}`,
+      });
   });
 
   it("mantém descendentes coerentes em hold seguro em vez de sobrescrever a projeção", async () => {
