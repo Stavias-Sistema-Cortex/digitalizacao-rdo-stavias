@@ -604,7 +604,10 @@ public class RdoContextService {
                     item.hora_inicio,
                     item.hora_fim,
                     item.observacoes,
-                    CASE WHEN collaborator.id IS NOT NULL
+                    CASE WHEN item.colaborador_id IS NULL
+                              AND NULLIF(BTRIM(item.nome_colaborador), '') IS NOT NULL
+                         THEN 'AVAILABLE'
+                         WHEN collaborator.id IS NOT NULL
                               AND link.status = 'ATIVO'
                          THEN 'AVAILABLE'
                          ELSE 'UNAVAILABLE'

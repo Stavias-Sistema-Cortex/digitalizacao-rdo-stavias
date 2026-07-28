@@ -474,6 +474,46 @@ describe("transação inicial do novo RDO", () => {
     await expectNoCreateWrites();
   });
 
+  it("rejeita mão de obra manual sem nome antes de criar outbox offline", async () => {
+    const draft = canonicalContextDraft();
+    draft.maoObra = [
+      {
+        ...createEmptyMaoObra(),
+        localId: "00000000-0000-4000-8000-000000000042",
+        colaboradorId: "",
+        nomeColaborador: "   ",
+        cargo: "Servente",
+        availability: "AVAILABLE",
+        selected: true,
+      },
+    ];
+
+    await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+      "Informe o nome da mão de obra manual.",
+    );
+    await expectNoCreateWrites();
+  });
+
+  it("rejeita nome manual acima de 255 caracteres antes do outbox", async () => {
+    const draft = canonicalContextDraft();
+    draft.maoObra = [
+      {
+        ...createEmptyMaoObra(),
+        localId: "00000000-0000-4000-8000-000000000043",
+        colaboradorId: "",
+        nomeColaborador: "M".repeat(256),
+        cargo: "Servente",
+        availability: "AVAILABLE",
+        selected: true,
+      },
+    ];
+
+    await expect(saveNewRdoDraftAtomically(draft)).rejects.toThrow(
+      "O nome da mão de obra manual deve ter no máximo 255 caracteres.",
+    );
+    await expectNoCreateWrites();
+  });
+
   it("rejeita receipt positivo forjado sem qualquer write de CREATE", async () => {
     const draft = createEmptyRdo();
     draft.id = RDO_ID;

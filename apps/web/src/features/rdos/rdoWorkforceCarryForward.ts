@@ -41,8 +41,10 @@ export function carryForwardWorkforce(
     const current = collaboratorId
       ? authorized.get(collaboratorId)
       : undefined;
-    const available = Boolean(current) &&
-      item.availability?.toUpperCase() !== "UNAVAILABLE";
+    const availability = item.availability?.toUpperCase();
+    const available = collaboratorId
+      ? Boolean(current) && availability !== "UNAVAILABLE"
+      : Boolean(item.nameSnapshot?.trim()) && availability !== "UNAVAILABLE";
     rows.push({
       ...createEmptyMaoObra(),
       localId: createId(),

@@ -411,10 +411,17 @@ public class RdoDraftUpdateService {
         );
         for (RdoCreateRequest.MaoObraItem item : requested) {
             String itemId = requireUuid(item.id(), "maoObra.id");
-            String collaboratorId = requireText(
-                    item.colaboradorId(), "maoObra.colaboradorId"
-            );
-            validarColaboradorDaObra(collaboratorId, obraId);
+            String collaboratorId = nuloSeVazio(item.colaboradorId());
+            String nomeColaborador = collaboratorId == null
+                    ? requireTextLimitado(
+                            item.nomeColaborador(),
+                            "maoObra.nomeColaborador",
+                            255
+                    )
+                    : item.nomeColaborador();
+            if (collaboratorId != null) {
+                validarColaboradorDaObra(collaboratorId, obraId);
+            }
             String requestedOrigin = nuloSeVazio(item.origemItemId());
             ExistingWorkforceItem persisted = jdbcTemplate.query(
                     "SELECT origem_item_id FROM rdo_mao_obra WHERE id = ? AND rdo_id = ?",
@@ -452,7 +459,7 @@ public class RdoDraftUpdateService {
                       AND rdo_id = ?
                     """,
                     collaboratorId,
-                    item.nomeColaborador(),
+                    nomeColaborador,
                     item.cargo(),
                     primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO"),
                     valorOuUm(item.quantidade()),
@@ -486,7 +493,7 @@ public class RdoDraftUpdateService {
                         itemId,
                         rdoId,
                         collaboratorId,
-                        item.nomeColaborador(),
+                        nomeColaborador,
                         item.cargo(),
                         primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO"),
                         valorOuUm(item.quantidade()),
@@ -507,16 +514,22 @@ public class RdoDraftUpdateService {
         Set<String> collaborators = new HashSet<>();
         for (RdoCreateRequest.MaoObraItem item : listaSegura(itens)) {
             requireUuid(item.id(), "maoObra.id");
-            String collaboratorId = requireText(
-                    item.colaboradorId(), "maoObra.colaboradorId"
-            );
-            if (!collaborators.add(collaboratorId)) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "maoObra contém colaborador duplicado."
+            String collaboratorId = nuloSeVazio(item.colaboradorId());
+            if (collaboratorId == null) {
+                requireTextLimitado(
+                        item.nomeColaborador(),
+                        "maoObra.nomeColaborador",
+                        255
                 );
+            } else {
+                if (!collaborators.add(collaboratorId)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "maoObra contém colaborador duplicado."
+                    );
+                }
+                validarColaboradorDaObra(collaboratorId, obraId);
             }
-            validarColaboradorDaObra(collaboratorId, obraId);
         }
         String normalizedApontador = nuloSeVazio(apontadorId);
         if (normalizedApontador == null) {
@@ -580,7 +593,7 @@ public class RdoDraftUpdateService {
                     JOIN rdo source_rdo ON source_rdo.id = source_item.rdo_id
                     WHERE source_item.id = ?
                       AND source_item.rdo_id = ?
-                      AND source_item.colaborador_id = ?
+                      AND source_item.colaborador_id IS NOT DISTINCT FROM ?
                       AND source_rdo.obra_id = ?
                 ) THEN 1 ELSE 0 END
                 """,
@@ -618,6 +631,21 @@ public class RdoDraftUpdateService {
             );
         }
         return value.strip();
+    }
+
+    private String requireTextLimitado(
+            String value,
+            String fieldName,
+            int maxLength
+    ) {
+        String normalized = requireText(value, fieldName);
+        if (normalized.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " excede " + maxLength + " caracteres."
+            );
+        }
+        return normalized;
     }
 
     private void reconciliarEquipamentos(

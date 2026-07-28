@@ -15,10 +15,16 @@ import {
 import { databaseNameForScope } from "../../lib/db/localDataNamespace";
 import { updateSyncState } from "../../lib/db/syncStateRepository";
 import { selectReadyOutboxMutations } from "../../lib/sync/outboxDependencies";
+import { createEmptyRdo } from "./createEmptyRdo";
+import {
+  putRdoCreationContext,
+  requireRdoDraftCreationContext,
+} from "./rdoCreationContextRepository";
 import {
   createAndPersistLocalPendingRdoDraft,
 } from "./rdoDraftCreation";
 import type {
+  RdoCreationContextLookup,
   RdoLocalPendingCreationContextLookup,
 } from "./rdoLookupApi";
 
@@ -88,6 +94,56 @@ function localPendingContext(): RdoLocalPendingCreationContextLookup {
       },
     ],
     equipamentos: [],
+  };
+}
+
+function canonicalContextForNextDay(): RdoCreationContextLookup {
+  const complete = {
+    status: "COMPLETE" as const,
+    total: 0,
+    returned: 0,
+    complete: true,
+  };
+  return {
+    ...localPendingContext(),
+    data: "2026-07-23",
+    nextNumberSuggestion: "RDO-0206",
+    previousRdo: null,
+    previousWorkforce: [],
+    colaboradores: [],
+    serviceCatalog: [],
+    coverage: {
+      previousWorkforce: complete,
+      programacoes: complete,
+      colaboradores: complete,
+      equipamentos: complete,
+      serviceCatalog: {
+        status: "NOT_CONFIGURED",
+        total: 0,
+        returned: 0,
+        complete: false,
+      },
+      priceCatalog: {
+        status: "NOT_CONFIGURED",
+        total: 0,
+        returned: 0,
+        complete: false,
+      },
+    },
+    freshness: {
+      status: "FRESH",
+      sourceVersion: 1,
+      generatedAt: "2026-07-23T12:00:00.000Z",
+      staleAfter: "2026-07-23T12:15:00.000Z",
+    },
+    provenance: {
+      receiptVersion: 1,
+      sourceVersion: 1,
+      worksiteId: OBRA_ID,
+      selectedDate: "2026-07-23",
+      previousRdoId: null,
+      generatedAt: "2026-07-23T12:00:00.000Z",
+    },
   };
 }
 
@@ -200,5 +256,98 @@ describe("criação local pendente sem receipt canônico", () => {
     const database = await getCortexDb();
     expect(await database.getAll("rdos")).toEqual([]);
     expect(await database.getAll("outbox_mutations")).toEqual([]);
+  });
+
+  it("encadeia dois RDOs offline, herda a mão de obra manual e ordena a sincronização", async () => {
+    const firstDraft = createEmptyRdo();
+    firstDraft.maoObra = [
+      {
+        localId: "00000000-0000-4000-8000-000000000211",
+        origemItemId: "",
+        sourceRdoId: "",
+        selected: true,
+        colaboradorId: "",
+        nomeColaborador: "Maria Servente",
+        cargo: "Servente",
+        tipoVinculo: "CONTRATADO",
+        quantidade: 1,
+        horaInicio: "07:00",
+        horaFim: "17:00",
+        observacoes: "",
+      },
+    ];
+    const firstContext = {
+      ...localPendingContext(),
+      data: "2026-07-22",
+      previousRdo: null,
+      previousWorkforce: [],
+      colaboradores: [],
+    };
+    const first = await createAndPersistLocalPendingRdoDraft(firstContext, {
+      draftId: RDO_ID,
+      baseDraft: firstDraft,
+      occurredAt: "2026-07-22T18:00:00.000Z",
+    });
+
+    await putRdoCreationContext(
+      canonicalContextForNextDay(),
+      "2026-07-23T06:00:00.000Z",
+    );
+    const resolved = await requireRdoDraftCreationContext(
+      OBRA_ID,
+      "2026-07-23",
+      false,
+    );
+    expect(resolved).toMatchObject({
+      kind: "LOCAL_PENDING",
+      source: "LOCAL_CHAIN",
+      context: {
+        previousRdo: { id: RDO_ID },
+        previousWorkforce: [
+          {
+            sourceItemId:
+              "00000000-0000-4000-8000-000000000211",
+            collaboratorId: null,
+            nameSnapshot: "Maria Servente",
+            availability: "AVAILABLE",
+          },
+        ],
+      },
+    });
+    if (resolved.kind !== "LOCAL_PENDING") {
+      throw new Error("O encadeamento offline não foi aplicado.");
+    }
+
+    const second = await createAndPersistLocalPendingRdoDraft(
+      resolved.context,
+      {
+        draftId: "00000000-0000-4000-8000-000000000212",
+        occurredAt: "2026-07-23T18:00:00.000Z",
+        workforceIdFactory: () =>
+          "00000000-0000-4000-8000-000000000213",
+      },
+    );
+
+    expect(second.draft).toMatchObject({
+      previousRdoId: RDO_ID,
+      maoObra: [
+        {
+          localId: "00000000-0000-4000-8000-000000000213",
+          origemItemId:
+            "00000000-0000-4000-8000-000000000211",
+          sourceRdoId: RDO_ID,
+          colaboradorId: "",
+          nomeColaborador: "Maria Servente",
+          selected: true,
+        },
+      ],
+    });
+    expect(second.mutation.dependsOnMutationIds).toEqual([
+      first.mutation.clientMutationId,
+    ]);
+    expect(selectReadyOutboxMutations(
+      [second.mutation, first.mutation],
+      Date.now(),
+    )).toEqual([]);
   });
 });

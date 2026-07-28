@@ -539,7 +539,8 @@ textarea:focus {
 }
 
 .lookup-option:hover,
-.lookup-option:focus {
+.lookup-option:focus,
+.lookup-option.is-active {
   background: #f3f7f4;
 }
 

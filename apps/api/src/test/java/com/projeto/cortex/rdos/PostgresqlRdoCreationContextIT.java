@@ -902,6 +902,284 @@ class PostgresqlRdoCreationContextIT {
     }
 
     @Test
+    void criaMaoDeObraManualEHerdavelSemConcederAcessoAObra()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "MAO-OBRA-MANUAL");
+        String owner = inserirColaborador("Responsável do RDO", null, null);
+        vincular(owner, obraId, "APONTADOR", "ATIVO");
+        int collaboratorsBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM colaborador",
+                Integer.class
+        );
+        int linksBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM vinculo_colaborador_obra",
+                Integer.class
+        );
+        String rdoId = id();
+        String workforceItemId = id();
+        ObjectNode manualJson = mapper.valueToTree(request(
+                rdoId,
+                obraId,
+                id(),
+                1L,
+                null,
+                owner,
+                workforceItemId,
+                null
+        ));
+        manualJson.putNull("apontadorColaboradorId");
+        ObjectNode manualItem = (ObjectNode) manualJson
+                .withArray("maoObra")
+                .get(0);
+        manualItem.putNull("colaboradorId");
+        manualItem.put("nomeColaborador", "  Maria Servente  ");
+        manualItem.put("cargo", "Servente");
+        RdoCreateRequest manualRequest = mapper.treeToValue(
+                manualJson,
+                RdoCreateRequest.class
+        );
+
+        transactions.execute(
+                status -> service(owner).criarRascunho(manualRequest)
+        );
+
+        assertThat(jdbc.queryForMap(
+                """
+                SELECT colaborador_id, nome_colaborador, cargo
+                FROM rdo_mao_obra
+                WHERE id = ?
+                """,
+                workforceItemId
+        )).satisfies(row -> {
+            assertThat(row.get("colaborador_id")).isNull();
+            assertThat(row.get("nome_colaborador"))
+                    .isEqualTo("Maria Servente");
+            assertThat(row.get("cargo")).isEqualTo("Servente");
+        });
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM colaborador",
+                Integer.class
+        )).isEqualTo(collaboratorsBefore);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM vinculo_colaborador_obra",
+                Integer.class
+        )).isEqualTo(linksBefore);
+
+        RdoContextResponse nextContext = new RdoContextService(jdbc)
+                .buscarContexto(obraId, SELECTED_DATE.plusDays(1));
+        assertThat(nextContext.previousWorkforce())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.sourceItemId())
+                            .isEqualTo(workforceItemId);
+                    assertThat(item.collaboratorId()).isNull();
+                    assertThat(item.nameSnapshot())
+                            .isEqualTo("Maria Servente");
+                    assertThat(item.availability())
+                            .isEqualTo("AVAILABLE");
+                });
+    }
+
+    @Test
+    void recusaMaoDeObraManualSemNome() throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "MAO-OBRA-MANUAL-SEM-NOME");
+        String owner = inserirColaborador("Responsável do RDO", null, null);
+        vincular(owner, obraId, "APONTADOR", "ATIVO");
+        String rdoId = id();
+        ObjectNode requestJson = mapper.valueToTree(request(
+                rdoId,
+                obraId,
+                id(),
+                1L,
+                null,
+                owner,
+                id(),
+                null
+        ));
+        requestJson.putNull("apontadorColaboradorId");
+        ObjectNode manualItem = (ObjectNode) requestJson
+                .withArray("maoObra")
+                .get(0);
+        manualItem.putNull("colaboradorId");
+        manualItem.put("nomeColaborador", "   ");
+        RdoCreateRequest request = mapper.treeToValue(
+                requestJson,
+                RdoCreateRequest.class
+        );
+
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service(owner).criarRascunho(request)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("maoObra.nomeColaborador")
+                .hasMessageContaining("obrigatório");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo WHERE id = ?",
+                Integer.class,
+                rdoId
+        )).isZero();
+
+        manualItem.put(
+                "nomeColaborador",
+                "  " + "M".repeat(255) + "  "
+        );
+        RdoCreateRequest boundaryRequest = mapper.treeToValue(
+                requestJson,
+                RdoCreateRequest.class
+        );
+        transactions.execute(
+                status -> service(owner).criarRascunho(boundaryRequest)
+        );
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT char_length(nome_colaborador)
+                FROM rdo_mao_obra
+                WHERE rdo_id = ?
+                """,
+                Integer.class,
+                rdoId
+        )).isEqualTo(255);
+    }
+
+    @Test
+    void recusaNomeDeMaoDeObraManualAcimaDoLimiteDoBanco()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "MAO-OBRA-MANUAL-NOME-LONGO");
+        String owner = inserirColaborador("Responsável do RDO", null, null);
+        vincular(owner, obraId, "APONTADOR", "ATIVO");
+        String rdoId = id();
+        ObjectNode requestJson = mapper.valueToTree(request(
+                rdoId,
+                obraId,
+                id(),
+                1L,
+                null,
+                owner,
+                id(),
+                null
+        ));
+        requestJson.putNull("apontadorColaboradorId");
+        ObjectNode manualItem = (ObjectNode) requestJson
+                .withArray("maoObra")
+                .get(0);
+        manualItem.putNull("colaboradorId");
+        manualItem.put("nomeColaborador", "M".repeat(256));
+        RdoCreateRequest request = mapper.treeToValue(
+                requestJson,
+                RdoCreateRequest.class
+        );
+
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service(owner).criarRascunho(request)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("maoObra.nomeColaborador")
+                .hasMessageContaining("255 caracteres");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo WHERE id = ?",
+                Integer.class,
+                rdoId
+        )).isZero();
+    }
+
+    @Test
+    void herdaMaoDeObraManualEPermiteEditarOuExcluirNoNovoRdo()
+            throws Exception {
+        String obraId = id();
+        inserirObra(obraId, "MAO-OBRA-MANUAL-HERDADA");
+        String owner = inserirColaborador("Responsável do RDO", null, null);
+        vincular(owner, obraId, "APONTADOR", "ATIVO");
+        String previousRdoId = id();
+        inserirRdo(
+                previousRdoId,
+                obraId,
+                "RDO-0001",
+                SELECTED_DATE.minusDays(1),
+                "ENVIADO",
+                LocalDateTime.now().minusDays(1),
+                LocalDateTime.now().minusDays(1)
+        );
+        String sourceItemId = id();
+        inserirMaoObra(sourceItemId, previousRdoId, null, "Servente");
+        String currentRdoId = id();
+        String currentItemId = id();
+        ObjectNode inheritedJson = mapper.valueToTree(request(
+                currentRdoId,
+                obraId,
+                id(),
+                1L,
+                previousRdoId,
+                owner,
+                currentItemId,
+                sourceItemId
+        ));
+        inheritedJson.putNull("apontadorColaboradorId");
+        ObjectNode inheritedItem = (ObjectNode) inheritedJson
+                .withArray("maoObra")
+                .get(0);
+        inheritedItem.putNull("colaboradorId");
+        inheritedItem.put("nomeColaborador", "Snapshot");
+        RdoCreateRequest inheritedRequest = mapper.treeToValue(
+                inheritedJson,
+                RdoCreateRequest.class
+        );
+
+        transactions.execute(
+                status -> service(owner).criarRascunho(inheritedRequest)
+        );
+
+        ObjectNode editedJson = inheritedJson.deepCopy();
+        ((ObjectNode) editedJson.withArray("maoObra").get(0))
+                .put(
+                        "nomeColaborador",
+                        "  " + "L".repeat(255) + "  "
+                );
+        RdoCreateRequest editedRequest = mapper.treeToValue(
+                editedJson,
+                RdoCreateRequest.class
+        );
+        RdoDraftUpdateService updateService = draftService();
+        transactions.execute(
+                status -> updateService.atualizarRascunho(
+                        currentRdoId,
+                        editedRequest
+                )
+        );
+        assertThat(jdbc.queryForMap(
+                """
+                SELECT colaborador_id, nome_colaborador, origem_item_id
+                FROM rdo_mao_obra
+                WHERE id = ?
+                """,
+                currentItemId
+        )).satisfies(row -> {
+            assertThat(row.get("colaborador_id")).isNull();
+            assertThat(row.get("nome_colaborador"))
+                    .isEqualTo("L".repeat(255));
+            assertThat(row.get("origem_item_id")).isEqualTo(sourceItemId);
+        });
+
+        ObjectNode withoutWorkforceJson = editedJson.deepCopy();
+        withoutWorkforceJson.putArray("maoObra");
+        RdoCreateRequest withoutWorkforce = mapper.treeToValue(
+                withoutWorkforceJson,
+                RdoCreateRequest.class
+        );
+        transactions.execute(
+                status -> updateService.atualizarRascunho(
+                        currentRdoId,
+                        withoutWorkforce
+                )
+        );
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo_mao_obra WHERE rdo_id = ?",
+                Integer.class,
+                currentRdoId
+        )).isZero();
+    }
+
+    @Test
     void replayDaMesmaMutacaoNaoCriaOutroRdoNemConsomeOutroNumero() throws Exception {
         String obraId = id();
         inserirObra(obraId, "IDEMPOTENTE");

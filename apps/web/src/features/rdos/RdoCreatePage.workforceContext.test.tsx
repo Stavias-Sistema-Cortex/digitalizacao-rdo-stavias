@@ -8,6 +8,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   requireContext: vi.fn(),
   getLocalRdo: vi.fn(),
   synchronize: vi.fn(),
+  buscarColaboradores: vi.fn(),
 }));
 
 vi.mock("../../lib/db/rdoAttachmentRepository", () => ({
@@ -48,6 +50,14 @@ vi.mock("./useRdoLocalPersistence", () => ({
     synchronize: mocks.synchronize,
   }),
 }));
+
+vi.mock("./rdoLookupApi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./rdoLookupApi")>();
+  return {
+    ...actual,
+    buscarColaboradores: mocks.buscarColaboradores,
+  };
+});
 
 vi.mock("./RdoWorkforceEditor", () => ({
   RdoWorkforceEditor: ({
@@ -142,6 +152,20 @@ beforeEach(() => {
   mocks.getLocalRdo.mockReset();
   mocks.synchronize.mockReset();
   mocks.synchronize.mockResolvedValue(undefined);
+  mocks.buscarColaboradores.mockReset();
+  mocks.buscarColaboradores.mockResolvedValue([
+    {
+      id: "foreign-worker",
+      codigoColaborador: "999",
+      cpfMascarado: null,
+      nome: "Pessoa fora da equipe",
+      email: null,
+      nomeGrupo: null,
+      nomePerfil: "Operador",
+      ativo: true,
+      atualizadoEm: null,
+    },
+  ]);
   Object.defineProperty(window.navigator, "onLine", {
     configurable: true,
     value: true,
@@ -285,6 +309,139 @@ describe("reconciliação da identificação canônica", () => {
 afterEach(cleanup);
 
 describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
+  it("limita o rateio aos colaboradores canônicos selecionados na equipe do RDO", async () => {
+    const draft = legacyDraft();
+    draft.maoObra = [
+      {
+        localId: "workforce-a",
+        origemItemId: "",
+        sourceRdoId: "",
+        origin: "AUTHORIZED_CONTEXT",
+        availability: "AVAILABLE",
+        selected: true,
+        colaboradorId: "worker-a",
+        nomeColaborador: "Ana da Obra A",
+        cargo: "Operadora",
+        tipoVinculo: "PROPRIO",
+        quantidade: 1,
+        horaInicio: "",
+        horaFim: "",
+        observacoes: "",
+      },
+      {
+        localId: "workforce-b",
+        origemItemId: "",
+        sourceRdoId: "",
+        origin: "AUTHORIZED_CONTEXT",
+        availability: "AVAILABLE",
+        selected: true,
+        colaboradorId: "worker-b",
+        nomeColaborador: "Bruno da Obra A",
+        cargo: "Servente",
+        tipoVinculo: "PROPRIO",
+        quantidade: 1,
+        horaInicio: "",
+        horaFim: "",
+        observacoes: "",
+      },
+      {
+        localId: "workforce-stale",
+        origemItemId: "",
+        sourceRdoId: "",
+        origin: "AUTHORIZED_CONTEXT",
+        availability: "AVAILABLE",
+        selected: true,
+        colaboradorId: "worker-stale",
+        nomeColaborador: "Pessoa com vínculo revogado",
+        cargo: "Operadora",
+        tipoVinculo: "PROPRIO",
+        quantidade: 1,
+        horaInicio: "",
+        horaFim: "",
+        observacoes: "",
+      },
+      {
+        localId: "workforce-unknown",
+        origemItemId: "",
+        sourceRdoId: "",
+        origin: "AUTHORIZED_CONTEXT",
+        availability: "UNKNOWN",
+        selected: true,
+        colaboradorId: "worker-unknown",
+        nomeColaborador: "Pessoa sem confirmação",
+        cargo: "Operadora",
+        tipoVinculo: "PROPRIO",
+        quantidade: 1,
+        horaInicio: "",
+        horaFim: "",
+        observacoes: "",
+      },
+    ];
+    const activeContext = context();
+    activeContext.colaboradores.push({
+      id: "worker-b",
+      codigoColaborador: "004",
+      nome: "Bruno da Obra A",
+      papelNaObra: "OPERACIONAL",
+      nomePerfil: "Servente",
+    });
+    activeContext.colaboradores.push({
+      id: "worker-unknown",
+      codigoColaborador: "002",
+      nome: "Pessoa sem confirmação",
+      papelNaObra: "OPERACIONAL",
+      nomePerfil: "Operadora",
+    });
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting={false}
+        creationContext={activeContext}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    const section = screen
+      .getByRole("heading", { name: "Rateio de colaboradores" })
+      .closest("section");
+    expect(section).not.toBeNull();
+    fireEvent.click(
+      within(section!).getByRole("button", { name: "+ Adicionar" }),
+    );
+    const collaboratorSearch = within(section!).getByRole("combobox", {
+      name: "Colaborador",
+    });
+    fireEvent.focus(collaboratorSearch);
+
+    expect(
+      await within(section!).findByRole("option", {
+        name: /Ana da Obra A.*Operadora/,
+      }),
+    ).toBeVisible();
+    expect(
+      within(section!).queryByRole("option", { name: /Pessoa fora da equipe/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(section!).queryByRole("option", {
+        name: /Pessoa com vínculo revogado/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(section!).queryByRole("option", {
+        name: /Pessoa sem confirmação/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(mocks.buscarColaboradores).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(collaboratorSearch, { key: "ArrowDown" });
+    fireEvent.keyDown(collaboratorSearch, { key: "Enter" });
+    await waitFor(() => {
+      expect(collaboratorSearch).toHaveValue("Ana da Obra A");
+    });
+  });
+
   it("mantém obra e número canônicos somente leitura no formulário", () => {
     const draft = legacyDraft();
     draft.numeroRdo = "RDO-1";

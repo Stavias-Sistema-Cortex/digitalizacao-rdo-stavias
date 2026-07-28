@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createEmptyRdo } from "./createEmptyRdo";
+import {
+  createEmptyAlocacaoColaborador,
+  createEmptyMaoObra,
+  createEmptyRdo,
+} from "./createEmptyRdo";
 import {
   RDO_CONTEXT_OFFLINE_MISSING,
   addAuthorizedWorker,
@@ -239,6 +243,61 @@ describe("contexto obra-data do novo RDO", () => {
     );
     expect(draft.apontadorColaboradorId).toBe("");
     expect(draft.apontadorRdo).toBe("");
+  });
+
+  it("remove rateio dependente ao desmarcar ou excluir colaborador canônico", () => {
+    let draft = applyRdoCreationContext(createEmptyRdo(), context());
+    const ana = draft.maoObra.find(
+      (item) => item.colaboradorId === COLABORADOR_A,
+    )!;
+    const bruno = draft.maoObra.find(
+      (item) => item.colaboradorId === COLABORADOR_B,
+    )!;
+    draft.alocacoesColaboradores = [
+      {
+        ...createEmptyAlocacaoColaborador(),
+        localId: "rateio-ana",
+        colaboradorId: COLABORADOR_A,
+      },
+      {
+        ...createEmptyAlocacaoColaborador(),
+        localId: "rateio-bruno",
+        colaboradorId: COLABORADOR_B,
+      },
+    ];
+
+    draft = setRosterSelected(draft, ana.localId, false);
+    expect(draft.alocacoesColaboradores).toEqual([
+      expect.objectContaining({ colaboradorId: COLABORADOR_B }),
+    ]);
+
+    draft = removeRosterMember(draft, bruno.localId);
+    expect(draft.alocacoesColaboradores).toEqual([]);
+  });
+
+  it("não apaga apontador textual legado ao remover mão de obra manual", () => {
+    const manual = {
+      ...createEmptyMaoObra(),
+      localId: "manual-row",
+      nomeColaborador: "Maria Servente",
+      availability: "AVAILABLE" as const,
+    };
+    const draft = {
+      ...createEmptyRdo(),
+      apontadorColaboradorId: "",
+      apontadorRdo: "Apontador registrado no documento",
+      maoObra: [manual],
+    };
+
+    const deselected = setRosterSelected(draft, manual.localId, false);
+    expect(deselected.apontadorRdo).toBe(
+      "Apontador registrado no documento",
+    );
+
+    const removed = removeRosterMember(draft, manual.localId);
+    expect(removed.apontadorRdo).toBe(
+      "Apontador registrado no documento",
+    );
   });
 
   it("não aplica resposta remota sobre edição feita durante a requisição", () => {

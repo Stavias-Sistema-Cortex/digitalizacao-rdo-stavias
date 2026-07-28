@@ -63,26 +63,50 @@ describe("carry-forward determinístico da equipe", () => {
     });
   });
 
-  it("retém evidência histórica com collaboratorId nulo sem crash ou seleção", () => {
+  it("herda a mão de obra manual pelo item de origem sem exigir identidade de acesso", () => {
     const [row] = carryForwardWorkforce(
       [
         previous(null, {
-          sourceItemId: "legacy-item-without-identity",
-          nameSnapshot: "Trabalhador do RDO legado",
+          sourceItemId: "manual-worker-source",
+          nameSnapshot: "Maria Servente",
+          availability: "AVAILABLE",
         }),
       ],
       catalog,
-      () => "retained-null-evidence",
+      () => "manual-worker-next-rdo",
     );
 
     expect(row).toMatchObject({
-      localId: "retained-null-evidence",
-      origemItemId: "legacy-item-without-identity",
+      localId: "manual-worker-next-rdo",
+      origemItemId: "manual-worker-source",
       sourceRdoId: source,
       colaboradorId: "",
-      nomeColaborador: "Trabalhador do RDO legado",
-      selected: false,
-      availability: "UNAVAILABLE",
+      nomeColaborador: "Maria Servente",
+      selected: true,
+      availability: "AVAILABLE",
+    });
+  });
+
+  it("preserva manual legado com disponibilidade desconhecida no fallback", () => {
+    const [row] = carryForwardWorkforce(
+      [
+        previous(null, {
+          sourceItemId: "legacy-manual-source",
+          nameSnapshot: "José Ajudante",
+          availability: "UNKNOWN",
+        }),
+      ],
+      [],
+      () => "legacy-manual-next-rdo",
+    );
+
+    expect(row).toMatchObject({
+      localId: "legacy-manual-next-rdo",
+      origemItemId: "legacy-manual-source",
+      colaboradorId: "",
+      nomeColaborador: "José Ajudante",
+      selected: true,
+      availability: "AVAILABLE",
     });
   });
 

@@ -306,6 +306,13 @@ public class RdoService {
             BigDecimal quantidade = valorOuUm(item.quantidade());
             String tipoVinculo = primeiroNaoVazio(item.tipoVinculo(), "CONTRATADO");
             String colaboradorId = nuloSeVazio(item.colaboradorId());
+            String nomeColaborador = colaboradorId == null
+                    ? textoLimitadoObrigatorio(
+                            item.nomeColaborador(),
+                            "maoObra.nomeColaborador",
+                            255
+                    )
+                    : item.nomeColaborador();
 
             jdbcTemplate.update(
                     """
@@ -326,7 +333,7 @@ public class RdoService {
                     id,
                     rdoId,
                     colaboradorId,
-                    item.nomeColaborador(),
+                    nomeColaborador,
                     item.cargo(),
                     tipoVinculo,
                     quantidade,
@@ -339,7 +346,7 @@ public class RdoService {
             response.add(new RdoResponse.MaoObraItem(
                     id,
                     colaboradorId,
-                    item.nomeColaborador(),
+                    nomeColaborador,
                     item.cargo(),
                     tipoVinculo,
                     quantidade,
@@ -682,14 +689,22 @@ public class RdoService {
                         "maoObra contém IDs duplicados."
                 );
             }
-            String collaboratorId = requireText(item.colaboradorId(), "maoObra.colaboradorId");
-            if (!collaboratorIds.add(collaboratorId)) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "maoObra contém colaborador duplicado."
+            String collaboratorId = nuloSeVazio(item.colaboradorId());
+            if (collaboratorId == null) {
+                textoLimitadoObrigatorio(
+                        item.nomeColaborador(),
+                        "maoObra.nomeColaborador",
+                        255
                 );
+            } else {
+                if (!collaboratorIds.add(collaboratorId)) {
+                    throw new ResponseStatusException(
+                            HttpStatus.BAD_REQUEST,
+                            "maoObra contém colaborador duplicado."
+                    );
+                }
+                validarColaboradorDaObra(collaboratorId, obraId);
             }
-            validarColaboradorDaObra(collaboratorId, obraId);
             validarOrigemItem(
                     nuloSeVazio(item.origemItemId()),
                     previousRdoId,
@@ -766,7 +781,7 @@ public class RdoService {
                     JOIN rdo source_rdo ON source_rdo.id = source_item.rdo_id
                     WHERE source_item.id = ?
                       AND source_item.rdo_id = ?
-                      AND source_item.colaborador_id = ?
+                      AND source_item.colaborador_id IS NOT DISTINCT FROM ?
                       AND source_rdo.obra_id = ?
                 ) THEN 1 ELSE 0 END
                 """,
@@ -869,7 +884,10 @@ public class RdoService {
     }
 
     private String textoLimitadoOpcional(String value, String fieldName, int maxLength) {
-        String normalized = nuloSeVazio(value);
+        String normalized = value == null ? null : value.strip();
+        if (normalized != null && normalized.isEmpty()) {
+            normalized = null;
+        }
         if (normalized != null && normalized.length() > maxLength) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,

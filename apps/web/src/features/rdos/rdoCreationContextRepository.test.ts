@@ -142,7 +142,7 @@ afterEach(async () => {
   databaseNames.clear();
 });
 
-describe("IndexedDB v20 para criação de RDO", () => {
+describe("IndexedDB v21 para criação de RDO", () => {
   it("preserva outbox e Memória ao migrar v15 e cria o cache de contexto", async () => {
     const name = await databaseNameForScope(ownerId, `BETA:${WORKSITE_A}`);
     const legacy = await openDB(name, 15, {
@@ -181,7 +181,7 @@ describe("IndexedDB v20 para criação de RDO", () => {
 
     const database = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(20);
+    expect(CORTEX_DATABASE_VERSION).toBe(21);
     expect(database.objectStoreNames.contains("rdo_creation_contexts")).toBe(true);
     expect(await database.get("outbox_mutations", "pending-v15")).toMatchObject({
       status: "PENDING",
@@ -279,6 +279,65 @@ describe("cache autorizado obra-data", () => {
       requireRdoCreationContext(WORKSITE_A, "2026-07-21", false),
     ).rejects.toThrow(RDO_CONTEXT_OFFLINE_MISSING);
   });
+
+  it.each(["LOCAL_PENDING", "SYNCED"] as const)(
+    "encadeia o RDO local anterior em estado %s ao criar o seguinte offline",
+    async (syncStatus) => {
+    await putRdoCreationContext(fixture());
+    const database = await getCortexDb();
+    await database.put("rdos", {
+      id: "00000000-0000-4000-8000-000000000071",
+      obraId: WORKSITE_A,
+      programacaoId: null,
+      numeroRdo: "RDO-LOCAL-1",
+      dataRdo: "2026-07-21",
+      statusRdo: "RASCUNHO",
+      syncStatus,
+      versaoEntidade: null,
+      payload: {
+        maoObra: [
+          {
+            localId: "00000000-0000-4000-8000-000000000072",
+            selected: true,
+            colaboradorId: "",
+            nomeColaborador: "Maria Servente",
+            cargo: "Servente",
+            tipoVinculo: "CONTRATADO",
+            quantidade: 1,
+            horaInicio: "07:00",
+            horaFim: "17:00",
+            observacoes: "",
+          },
+        ],
+      },
+      createdAt: "2026-07-21T18:00:00.000Z",
+      updatedAt: "2026-07-21T18:00:00.000Z",
+    });
+
+    await expect(
+      requireRdoDraftCreationContext(WORKSITE_A, "2026-07-22", false),
+    ).resolves.toMatchObject({
+      kind: "LOCAL_PENDING",
+      source: "LOCAL_CHAIN",
+      context: {
+        previousRdo: {
+          id: "00000000-0000-4000-8000-000000000071",
+          numeroRdo: "RDO-LOCAL-1",
+          dataRdo: "2026-07-21",
+        },
+        previousWorkforce: [
+          {
+            sourceItemId: "00000000-0000-4000-8000-000000000072",
+            sourceRdoId: "00000000-0000-4000-8000-000000000071",
+            collaboratorId: null,
+            nameSnapshot: "Maria Servente",
+            availability: "AVAILABLE",
+          },
+        ],
+      },
+    });
+    },
+  );
 
   it("retorna fallback legado como LOCAL_PENDING sem gravá-lo no cache canônico", async () => {
     const remote = async () => ({

@@ -424,6 +424,235 @@ class PostgresqlCortex3FlowIT {
                 .doesNotContain("receita_operacional_estimativa");
     }
 
+    @Test
+    void offlineManualWorkforceReplaysOnceAndCarriesForwardWithoutGrantingAccess()
+            throws Exception {
+        String worksiteId = id();
+        jdbc.update(
+                "INSERT INTO obra (id, codigo_contrato, nome) VALUES (?, ?, ?)",
+                worksiteId,
+                "CTR-MANUAL-" + worksiteId,
+                "Obra com equipe manual"
+        );
+        String actorId = insertCollaborator("Apontador da equipe manual", "BETA");
+        linkToWorksite(actorId, worksiteId, "APONTADOR");
+        authenticate(actorId);
+
+        CurrentUserService currentUsers = new CurrentUserService(
+                jdbc, new MockEnvironment(), false
+        );
+        CortexOperationalMemoryService memory = new CortexOperationalMemoryService(
+                jdbc,
+                mapper,
+                mock(ApplicationEventPublisher.class)
+        );
+        SyncService sync = syncService(
+                currentUsers,
+                mock(FinancialAccessService.class),
+                memory
+        );
+        String deviceId = id();
+        sync.registrarDispositivo(new SyncDeviceRequest(
+                deviceId, "Dispositivo da equipe manual", "WEB", actorId
+        ));
+
+        int collaboratorsBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM colaborador",
+                Integer.class
+        );
+        int linksBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM vinculo_colaborador_obra",
+                Integer.class
+        );
+        int identitiesBefore = jdbc.queryForObject(
+                "SELECT count(*) FROM auth_identity",
+                Integer.class
+        );
+        RdoContextService contextService = new RdoContextService(jdbc, mapper);
+        RdoContextResponse firstContext = contextService.buscarContexto(
+                worksiteId,
+                FLOW_DATE
+        );
+        assertThat(firstContext.previousRdo()).isNull();
+
+        String firstRdoId = id();
+        String firstWorkforceItemId = id();
+        SyncPushRequest firstRequest = canonicalCreateRequest(
+                deviceId,
+                actorId,
+                worksiteId,
+                firstRdoId,
+                manualWorkforcePayload(
+                        firstRdoId,
+                        worksiteId,
+                        null,
+                        firstContext.provenance().receiptVersion(),
+                        FLOW_DATE,
+                        firstWorkforceItemId,
+                        null
+                )
+        );
+
+        SyncPushResponse first = sync.push(firstRequest);
+        SyncPushResponse firstReplay = sync.push(firstRequest);
+
+        assertApplied(first, firstRdoId);
+        assertApplied(firstReplay, firstRdoId);
+        assertThat(firstReplay.resultados().getFirst().eventoServidorCommitSeq())
+                .isEqualTo(first.resultados().getFirst().eventoServidorCommitSeq());
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM rdo WHERE id = ?",
+                Integer.class,
+                firstRdoId
+        )).isOne();
+        assertThat(jdbc.queryForMap("""
+                SELECT colaborador_id, nome_colaborador, cargo, origem_item_id
+                FROM rdo_mao_obra
+                WHERE id = ? AND rdo_id = ?
+                """, firstWorkforceItemId, firstRdoId)).satisfies(row -> {
+            assertThat(row.get("colaborador_id")).isNull();
+            assertThat(row.get("nome_colaborador")).isEqualTo("Maria Servente");
+            assertThat(row.get("cargo")).isEqualTo("SERVENTE");
+            assertThat(row.get("origem_item_id")).isNull();
+        });
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ? AND client_mutation_id = ?
+                """,
+                Integer.class,
+                actorId,
+                firstRequest.mutacoes().getFirst().clientMutationId()
+        )).isOne();
+
+        RdoContextResponse nextContext = contextService.buscarContexto(
+                worksiteId,
+                FLOW_DATE.plusDays(1)
+        );
+        assertThat(nextContext.previousRdo().id()).isEqualTo(firstRdoId);
+        assertThat(nextContext.previousWorkforce())
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.sourceItemId()).isEqualTo(firstWorkforceItemId);
+                    assertThat(item.collaboratorId()).isNull();
+                    assertThat(item.nameSnapshot()).isEqualTo("Maria Servente");
+                    assertThat(item.availability()).isEqualTo("AVAILABLE");
+                });
+
+        String secondRdoId = id();
+        String secondWorkforceItemId = id();
+        SyncPushRequest secondRequest = canonicalCreateRequest(
+                deviceId,
+                actorId,
+                worksiteId,
+                secondRdoId,
+                manualWorkforcePayload(
+                        secondRdoId,
+                        worksiteId,
+                        firstRdoId,
+                        nextContext.provenance().receiptVersion(),
+                        FLOW_DATE.plusDays(1),
+                        secondWorkforceItemId,
+                        firstWorkforceItemId
+                )
+        );
+
+        SyncPushResponse second = sync.push(secondRequest);
+        SyncPushResponse secondReplay = sync.push(secondRequest);
+
+        assertApplied(second, secondRdoId);
+        assertApplied(secondReplay, secondRdoId);
+        assertThat(secondReplay.resultados().getFirst().eventoServidorCommitSeq())
+                .isEqualTo(second.resultados().getFirst().eventoServidorCommitSeq());
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM rdo_mao_obra
+                WHERE id = ? AND rdo_id = ?
+                  AND colaborador_id IS NULL
+                  AND nome_colaborador = 'Maria Servente'
+                  AND origem_item_id = ?
+                """,
+                Integer.class,
+                secondWorkforceItemId,
+                secondRdoId,
+                firstWorkforceItemId
+        )).isOne();
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ?
+                  AND client_mutation_id IN (?, ?)
+                """,
+                Integer.class,
+                actorId,
+                firstRequest.mutacoes().getFirst().clientMutationId(),
+                secondRequest.mutacoes().getFirst().clientMutationId()
+        )).isEqualTo(2);
+
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM cortex_relacao
+                WHERE origem_tipo = 'RDO'
+                  AND destino_tipo = 'RDO_MAO_OBRA'
+                  AND tipo_relacao = 'REGISTRA_MAO_DE_OBRA'
+                  AND ativa = TRUE
+                  AND (
+                      (origem_id = ? AND destino_id = ?)
+                      OR (origem_id = ? AND destino_id = ?)
+                  )
+                """,
+                Integer.class,
+                firstRdoId,
+                firstWorkforceItemId,
+                secondRdoId,
+                secondWorkforceItemId
+        )).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM cortex_relacao
+                WHERE origem_tipo = 'RDO_MAO_OBRA'
+                  AND origem_id IN (?, ?)
+                  AND tipo_relacao = 'REFERENCIA_COLABORADOR'
+                  AND ativa = TRUE
+                """,
+                Integer.class,
+                firstWorkforceItemId,
+                secondWorkforceItemId
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT count(*)
+                FROM cortex_relacao
+                WHERE origem_tipo = 'RDO_MAO_OBRA'
+                  AND origem_id = ?
+                  AND destino_tipo = 'RDO_MAO_OBRA'
+                  AND destino_id = ?
+                  AND tipo_relacao = 'DERIVADO_DE'
+                  AND ativa = TRUE
+                """,
+                Integer.class,
+                secondWorkforceItemId,
+                firstWorkforceItemId
+        )).isOne();
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM colaborador",
+                Integer.class
+        )).isEqualTo(collaboratorsBefore);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM vinculo_colaborador_obra",
+                Integer.class
+        )).isEqualTo(linksBefore);
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM auth_identity",
+                Integer.class
+        )).isEqualTo(identitiesBefore);
+    }
+
     private static SyncService syncService(
             CurrentUserService currentUsers,
             FinancialAccessService financialAccess,
@@ -509,6 +738,41 @@ class PostgresqlCortex3FlowIT {
                 .put("statusValidacao", "VALIDADA")
                 .put("turno", "DIURNO")
                 .put("unidade", price.unit());
+        payload.put("turno", "DIURNO");
+        return payload;
+    }
+
+    private static ObjectNode manualWorkforcePayload(
+            String rdoId,
+            String worksiteId,
+            String previousRdoId,
+            long contextVersion,
+            LocalDate date,
+            String workforceItemId,
+            String originItemId
+    ) {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("creationContextVersion", contextVersion);
+        payload.put("dataRdo", date.toString());
+        payload.put("id", rdoId);
+        payload.put("obraId", worksiteId);
+        if (previousRdoId == null) {
+            payload.putNull("previousRdoId");
+        } else {
+            payload.put("previousRdoId", previousRdoId);
+        }
+        ObjectNode workforceItem = payload.putArray("maoObra").addObject();
+        workforceItem.put("cargo", "SERVENTE");
+        workforceItem.putNull("colaboradorId");
+        workforceItem.put("id", workforceItemId);
+        workforceItem.put("nomeColaborador", "Maria Servente");
+        workforceItem.put("quantidade", BigDecimal.ONE);
+        workforceItem.put("tipoVinculo", "CONTRATADO");
+        if (originItemId == null) {
+            workforceItem.putNull("origemItemId");
+        } else {
+            workforceItem.put("origemItemId", originItemId);
+        }
         payload.put("turno", "DIURNO");
         return payload;
     }

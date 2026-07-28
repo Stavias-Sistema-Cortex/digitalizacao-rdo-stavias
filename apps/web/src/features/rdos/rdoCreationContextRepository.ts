@@ -1,5 +1,6 @@
 import { getCortexDb } from "../../lib/db/cortexDb";
 import type {
+  LocalRdoRecord,
   ObraLocalRecord,
   RdoCreationContextCacheRecord,
 } from "../../lib/db/db.types";
@@ -9,6 +10,7 @@ import {
   type AuthProfile,
 } from "../auth/authSession";
 import { RDO_CONTEXT_OFFLINE_MISSING } from "./rdoCreationContext";
+import { localRecordToDraft } from "./localRecordToDraft";
 import {
   assertRdoCreationContextLookup,
   buscarContextoDeCriacaoRdo,
@@ -35,7 +37,7 @@ export type ResolvedRdoDraftCreationContext =
     }
   | {
       kind: "LOCAL_PENDING";
-      source: "LEGACY_SERVER";
+      source: "LEGACY_SERVER" | "LOCAL_CHAIN";
       cachedAt: string;
       context: RdoLocalPendingCreationContextLookup;
     };
@@ -145,6 +147,110 @@ function assertWorksiteScope(
     throw new Error("Obra fora do escopo da sessão.");
   }
   return session;
+}
+
+const LOCAL_RDO_CHAIN_STATUSES = new Set<LocalRdoRecord["syncStatus"]>([
+  "LOCAL_ONLY",
+  "LOCAL_PENDING",
+  "PENDING_SYNC",
+  "SYNCING",
+  "SYNCED",
+]);
+
+async function localPendingChainContext(
+  context: RdoCreationContextLookup,
+  guard: RdoContextSessionGuard,
+): Promise<RdoLocalPendingCreationContextLookup | null> {
+  const database = await getCortexDb();
+  assertContextSession(guard);
+  const localRdos = await database.getAllFromIndex(
+    "rdos",
+    "by-obra-id",
+    context.obra.id,
+  );
+  assertContextSession(guard);
+  const localPrevious = localRdos
+    .filter(
+      (rdo) =>
+        rdo.dataRdo < context.data &&
+        LOCAL_RDO_CHAIN_STATUSES.has(rdo.syncStatus),
+    )
+    .sort(
+      (left, right) =>
+        right.dataRdo.localeCompare(left.dataRdo) ||
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        right.id.localeCompare(left.id),
+    )[0];
+  if (!localPrevious) return null;
+
+  const canonicalPrevious = context.previousRdo;
+  if (
+    canonicalPrevious &&
+    localPrevious.dataRdo <= canonicalPrevious.dataRdo
+  ) {
+    return null;
+  }
+
+  const authorizedIds = new Set(
+    context.colaboradores
+      .map((collaborator) => collaborator.id.trim())
+      .filter(Boolean),
+  );
+  const previousDraft = localRecordToDraft(localPrevious);
+  return {
+    obra: {
+      id: context.obra.id,
+      codigoContrato: context.obra.codigoContrato,
+      codigoCw: context.obra.codigoCw,
+      nome: context.obra.nome,
+      cliente: context.obra.cliente,
+      cidade: context.obra.cidade,
+      uf: context.obra.uf,
+      rodovia: context.obra.rodovia,
+      status: context.obra.status,
+    },
+    data: context.data,
+    previousRdo: {
+      id: localPrevious.id,
+      numeroRdo: localPrevious.numeroRdo,
+      dataRdo: localPrevious.dataRdo,
+      status: localPrevious.statusRdo,
+    },
+    previousWorkforce: previousDraft.maoObra
+      .filter(
+        (item) =>
+          item.selected &&
+          Boolean(
+            item.colaboradorId.trim() ||
+            item.nomeColaborador.trim(),
+          ),
+      )
+      .map((item) => {
+        const collaboratorId = item.colaboradorId.trim() || null;
+        return {
+          sourceItemId: item.localId,
+          sourceRdoId: localPrevious.id,
+          collaboratorId,
+          nameSnapshot: item.nomeColaborador.trim() || null,
+          roleSnapshot: item.cargo.trim() || null,
+          linkType: item.tipoVinculo.trim() || null,
+          quantity:
+            typeof item.quantidade === "number"
+              ? item.quantidade
+              : null,
+          startTime: item.horaInicio.trim() || null,
+          endTime: item.horaFim.trim() || null,
+          observations: item.observacoes.trim() || null,
+          availability: collaboratorId === null ||
+              authorizedIds.has(collaboratorId)
+            ? "AVAILABLE"
+            : "UNAVAILABLE",
+        };
+      }),
+    programacoes: context.programacoes,
+    colaboradores: context.colaboradores,
+    equipamentos: context.equipamentos,
+  };
 }
 
 function text(value: string | null): string {
@@ -376,6 +482,18 @@ export async function requireRdoDraftCreationContext(
   assertContextSession(guard);
   if (!online) {
     if (!cached) throw new Error(RDO_CONTEXT_OFFLINE_MISSING);
+    const localChain = await localPendingChainContext(
+      cached.context,
+      guard,
+    );
+    if (localChain) {
+      return {
+        kind: "LOCAL_PENDING",
+        source: "LOCAL_CHAIN",
+        cachedAt: cached.cachedAt,
+        context: localChain,
+      };
+    }
     return {
       kind: "CANONICAL",
       source: "CACHE",
@@ -393,6 +511,18 @@ export async function requireRdoDraftCreationContext(
         new Date().toISOString(),
         guard,
       );
+      const localChain = await localPendingChainContext(
+        resolved.context,
+        guard,
+      );
+      if (localChain) {
+        return {
+          kind: "LOCAL_PENDING",
+          source: "LOCAL_CHAIN",
+          cachedAt: stored.cachedAt,
+          context: localChain,
+        };
+      }
       return {
         kind: "CANONICAL",
         source: "SERVER",
@@ -409,6 +539,18 @@ export async function requireRdoDraftCreationContext(
       );
     }
     if (cached) {
+      const localChain = await localPendingChainContext(
+        cached.context,
+        guard,
+      );
+      if (localChain) {
+        return {
+          kind: "LOCAL_PENDING",
+          source: "LOCAL_CHAIN",
+          cachedAt: cached.cachedAt,
+          context: localChain,
+        };
+      }
       return {
         kind: "CANONICAL",
         source: "CACHE",
@@ -425,6 +567,18 @@ export async function requireRdoDraftCreationContext(
   } catch (error) {
     assertContextSession(guard);
     if (cached) {
+      const localChain = await localPendingChainContext(
+        cached.context,
+        guard,
+      );
+      if (localChain) {
+        return {
+          kind: "LOCAL_PENDING",
+          source: "LOCAL_CHAIN",
+          cachedAt: cached.cachedAt,
+          context: localChain,
+        };
+      }
       return {
         kind: "CANONICAL",
         source: "CACHE",

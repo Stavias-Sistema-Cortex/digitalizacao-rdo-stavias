@@ -13,6 +13,7 @@ import {
   setRosterApontador,
   setRosterSelected,
 } from "./rdoCreationContext";
+import { createEmptyMaoObra } from "./createEmptyRdo";
 import type { MaoObraDraft, RdoDraft } from "./rdo.types";
 import type { RdoContextCollaborator } from "./rdoLookupApi";
 
@@ -37,7 +38,9 @@ export function RdoWorkforceEditor({
   const [collaboratorQuery, setCollaboratorQuery] = useState("");
   const [isCatalogOpen, setIsCatalogOpen] = useState(false);
   const [activeCatalogIndex, setActiveCatalogIndex] = useState(0);
+  const [newCollaboratorName, setNewCollaboratorName] = useState("");
   const catalogListId = useId();
+  const newCollaboratorId = useId();
   const checkboxRefs = useRef<Array<HTMLInputElement | null>>([]);
   const existingIds = useMemo(
     () => new Set(draft.maoObra.map((row) => row.colaboradorId)),
@@ -69,7 +72,10 @@ export function RdoWorkforceEditor({
     );
   }, [additions, collaboratorQuery]);
   const selected = draft.maoObra.filter(
-    (row) => row.selected && row.availability !== "UNAVAILABLE",
+    (row) =>
+      row.selected &&
+      row.availability !== "UNAVAILABLE" &&
+      row.colaboradorId.trim(),
   );
 
   function updateRow(localId: string, patch: Partial<MaoObraDraft>) {
@@ -100,6 +106,24 @@ export function RdoWorkforceEditor({
     setCollaboratorQuery("");
     setIsCatalogOpen(false);
     setActiveCatalogIndex(0);
+  }
+
+  function addNewCollaborator() {
+    const normalizedName = newCollaboratorName.trim().replace(/\s+/g, " ");
+    if (!normalizedName) return;
+
+    onChange({
+      ...draft,
+      maoObra: [
+        ...draft.maoObra,
+        {
+          ...createEmptyMaoObra(),
+          nomeColaborador: normalizedName,
+          availability: "AVAILABLE",
+        },
+      ],
+    });
+    setNewCollaboratorName("");
   }
 
   function handleCatalogKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -242,6 +266,31 @@ export function RdoWorkforceEditor({
           </select>
         </label>
       </div>
+
+      <form
+        className="rdo-workforce-manual-add"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addNewCollaborator();
+        }}
+      >
+        <label htmlFor={newCollaboratorId}>
+          Novo colaborador
+        </label>
+        <input
+          id={newCollaboratorId}
+          maxLength={255}
+          value={newCollaboratorName}
+          onChange={(event) => setNewCollaboratorName(event.target.value)}
+        />
+        <button
+          type="submit"
+          className="add-button"
+          disabled={!newCollaboratorName.trim()}
+        >
+          Adicionar novo
+        </button>
+      </form>
 
       {catalogUnavailableMessage ? (
         <p className="rdo-workforce-catalog-unavailable" role="status">

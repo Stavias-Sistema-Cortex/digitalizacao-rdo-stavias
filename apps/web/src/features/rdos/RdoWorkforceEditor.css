@@ -16,6 +16,28 @@
   white-space: nowrap;
 }
 
+.rdo-workforce-manual-add {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  max-width: 620px;
+  margin-top: 10px;
+}
+
+.rdo-workforce-manual-add > label {
+  grid-column: 1 / -1;
+}
+
+.rdo-workforce-manual-add > input {
+  width: 100%;
+}
+
+.rdo-workforce-manual-add .add-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
 .rdo-workforce-catalog-picker {
   position: relative;
   min-width: 0;
@@ -238,8 +260,18 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .rdo-workforce-controls .add-button {
+  .rdo-workforce-controls .add-button,
+  .rdo-workforce-manual-add .add-button {
     width: 100%;
+  }
+
+  .rdo-workforce-manual-add {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+
+  .rdo-workforce-manual-add > label {
+    grid-column: auto;
   }
 }
 

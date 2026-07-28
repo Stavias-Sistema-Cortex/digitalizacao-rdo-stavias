@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
 } from "react";
 
 import { InstitutionalPageHeader } from "../../components/institutional/InstitutionalPageHeader";
@@ -43,7 +44,6 @@ import type { RdoSyncStatus } from "./rdo.types";
 import { processRdoPhoto } from "./rdoPhotoService";
 import {
   buscarAssets,
-  buscarColaboradores,
   type AssetLookup,
   type ColaboradorLookup,
 } from "./rdoLookupApi";
@@ -249,6 +249,7 @@ function LookupField<TItem>({
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [items, setItems] = useState<TItem[]>([]);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [error, setError] = useState<string | null>(null);
   const searchTimeoutRef = useRef<number | null>(null);
   const blurTimeoutRef = useRef<number | null>(null);
@@ -267,6 +268,7 @@ function LookupField<TItem>({
         }
 
         setItems(results);
+        setActiveIndex(-1);
       })
       .catch((unknownError) => {
         if (requestIdRef.current !== requestId) {
@@ -312,6 +314,42 @@ function LookupField<TItem>({
     }, 120);
   };
 
+  const selectItem = (item: TItem) => {
+    onSelect(item);
+    setIsOpen(false);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      setIsOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setIsOpen(true);
+      if (items.length === 0) return;
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => {
+        if (current < 0) {
+          return event.key === "ArrowDown" ? 0 : items.length - 1;
+        }
+        return (current + direction + items.length) % items.length;
+      });
+      return;
+    }
+    if (
+      event.key === "Enter" &&
+      isOpen &&
+      !isLoading &&
+      !error
+    ) {
+      const selectedItem = items[activeIndex];
+      if (!selectedItem) return;
+      event.preventDefault();
+      selectItem(selectedItem);
+    }
+  };
+
   return (
     <div className="lookup-field">
       <label htmlFor={inputId}>
@@ -324,11 +362,19 @@ function LookupField<TItem>({
           value={value}
           placeholder={placeholder}
           autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
           aria-expanded={isOpen}
           aria-controls={`${inputId}-options`}
+          aria-activedescendant={
+            isOpen && items[activeIndex]
+              ? `${inputId}-option-${activeIndex}`
+              : undefined
+          }
           disabled={disabled}
           onFocus={handleFocus}
           onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
           onChange={(event) => {
             onQueryChange(event.target.value);
             setIsOpen(true);
@@ -361,17 +407,23 @@ function LookupField<TItem>({
             ) : null}
 
             {!isLoading && !error
-              ? items.map((item) => (
+              ? items.map((item, index) => (
                   <button
                     key={getKey(item)}
+                    id={`${inputId}-option-${index}`}
                     type="button"
-                    className="lookup-option"
+                    className={
+                      index === activeIndex
+                        ? "lookup-option is-active"
+                        : "lookup-option"
+                    }
                     role="option"
+                    aria-selected={index === activeIndex}
+                    onMouseEnter={() => setActiveIndex(index)}
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      onSelect(item);
-                      setIsOpen(false);
                     }}
+                    onClick={() => selectItem(item)}
                   >
                     <span className="lookup-title">
                       {getTitle(item)}
@@ -504,6 +556,63 @@ export function RdoCreatePage({
     : "Catálogo parcial ou indisponível. Sincronize o contexto antes de selecionar um preço.";
   const buscarTiposServico = (query: string): Promise<RdoServiceType[]> =>
     Promise.resolve(searchRdoServiceTypes(serviceCatalog, query));
+  const rateioCollaborators = useMemo<ColaboradorLookup[]>(() => {
+    const collaboratorsById = new Map<string, ColaboradorLookup>();
+    const authorizedIds = new Set(
+      (activeCreationContext?.colaboradores ?? [])
+        .map((collaborator) => collaborator.id.trim())
+        .filter(Boolean),
+    );
+
+    for (const row of draft.maoObra) {
+      const collaboratorId = row.colaboradorId.trim();
+      if (
+        !row.selected ||
+        row.availability !== "AVAILABLE" ||
+        !collaboratorId ||
+        !authorizedIds.has(collaboratorId)
+      ) {
+        continue;
+      }
+      collaboratorsById.set(collaboratorId, {
+        id: collaboratorId,
+        codigoColaborador: null,
+        cpfMascarado: null,
+        nome: row.nomeColaborador.trim() || null,
+        email: null,
+        nomeGrupo: null,
+        nomePerfil: row.cargo.trim() || null,
+        ativo: true,
+        atualizadoEm: null,
+      });
+    }
+
+    return [...collaboratorsById.values()];
+  }, [activeCreationContext?.colaboradores, draft.maoObra]);
+  const buscarColaboradoresDaEquipe = (
+    query: string,
+  ): Promise<ColaboradorLookup[]> => {
+    const normalizedQuery = query
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .trim()
+      .toLocaleLowerCase("pt-BR");
+    if (!normalizedQuery) {
+      return Promise.resolve(rateioCollaborators);
+    }
+
+    return Promise.resolve(
+      rateioCollaborators.filter((collaborator) =>
+        [collaborator.nome, collaborator.nomePerfil, collaborator.id]
+          .filter(Boolean)
+          .join(" ")
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "")
+          .toLocaleLowerCase("pt-BR")
+          .includes(normalizedQuery),
+      ),
+    );
+  };
 
   const photoCount = draft.attachments.filter(
     (attachment) => attachment.removedAt === null,
@@ -2061,9 +2170,9 @@ export function RdoCreatePage({
                       item.localId
                     ] ?? item.colaboradorId
                   }
-                  placeholder="Digite nome, codigo, email ou equipe"
-                  emptyMessage="Nenhum colaborador encontrado. Confira se a base Academy foi sincronizada."
-                  search={buscarColaboradores}
+                  placeholder="Buscar na equipe do RDO"
+                  emptyMessage="Nenhum integrante canônico selecionado na equipe."
+                  search={buscarColaboradoresDaEquipe}
                   onQueryChange={(value) => {
                     setAlocacaoColaboradorLabels(
                       (current) => ({

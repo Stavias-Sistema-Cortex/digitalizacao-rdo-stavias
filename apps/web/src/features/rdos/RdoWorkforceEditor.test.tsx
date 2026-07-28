@@ -58,6 +58,71 @@ function draft() {
 afterEach(cleanup);
 
 describe("editor da equipe carregada", () => {
+  it("adiciona mão de obra nova no próprio RDO sem criar acesso à obra", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [] }}
+        collaborators={catalog}
+        sourceRdoNumber={null}
+        onChange={onChange}
+      />,
+    );
+
+    const newCollaborator = screen.getByRole("textbox", {
+      name: "Novo colaborador",
+    });
+    expect(newCollaborator).toHaveAttribute("maxLength", "255");
+    await user.type(newCollaborator, "  Maria   Servente  ");
+    await user.click(
+      screen.getByRole("button", { name: "Adicionar novo" }),
+    );
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maoObra: [
+          expect.objectContaining({
+            colaboradorId: "",
+            nomeColaborador: "Maria Servente",
+            origin: "MANUAL",
+            availability: "AVAILABLE",
+            selected: true,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("adiciona a mão de obra manual ao pressionar Enter", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <RdoWorkforceEditor
+        draft={{ ...draft(), maoObra: [] }}
+        collaborators={catalog}
+        sourceRdoNumber={null}
+        onChange={onChange}
+      />,
+    );
+
+    const newCollaborator = screen.getByRole("textbox", {
+      name: "Novo colaborador",
+    });
+    await user.type(newCollaborator, "Maria Servente{Enter}");
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maoObra: [
+          expect.objectContaining({
+            colaboradorId: "",
+            nomeColaborador: "Maria Servente",
+          }),
+        ],
+      }),
+    );
+  });
+
   it("preserva indisponível desmarcado e permite desmarcar o disponível", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -183,9 +248,19 @@ describe("editor da equipe carregada", () => {
   it("mantém apontador nulo, trocável e derivado apenas da equipe selecionada", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
+    const manual = {
+      ...draft().maoObra[0],
+      localId: "row-manual",
+      origemItemId: "",
+      sourceRdoId: "",
+      origin: "MANUAL" as const,
+      colaboradorId: "",
+      nomeColaborador: "Maria Servente",
+      cargo: "Servente",
+    };
     render(
       <RdoWorkforceEditor
-        draft={draft()}
+        draft={{ ...draft(), maoObra: [...draft().maoObra, manual] }}
         collaborators={catalog}
         sourceRdoNumber={null}
         onChange={onChange}
@@ -194,6 +269,8 @@ describe("editor da equipe carregada", () => {
     const select = screen.getByLabelText("Apontador do RDO");
     expect(select).toHaveValue("");
     expect(screen.queryByRole("option", { name: "Histórico" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Maria Servente" }))
+      .not.toBeInTheDocument();
     await user.selectOptions(select, "worker-a");
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ apontadorColaboradorId: "worker-a" }),

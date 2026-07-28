@@ -1472,6 +1472,28 @@ export function validateRdoDraftForSync(draft: RdoDraft): void {
   const selectedCollaboratorIds = draft.maoObra
     .filter((item) => item.selected && item.colaboradorId.trim())
     .map((item) => item.colaboradorId.trim());
+  if (
+    draft.maoObra.some(
+      (item) =>
+        item.selected &&
+        !item.colaboradorId.trim() &&
+        !item.nomeColaborador.trim(),
+    )
+  ) {
+    throw new Error("Informe o nome da mão de obra manual.");
+  }
+  if (
+    draft.maoObra.some(
+      (item) =>
+        item.selected &&
+        !item.colaboradorId.trim() &&
+        item.nomeColaborador.trim().length > 255,
+    )
+  ) {
+    throw new Error(
+      "O nome da mão de obra manual deve ter no máximo 255 caracteres.",
+    );
+  }
   if (new Set(selectedCollaboratorIds).size !== selectedCollaboratorIds.length) {
     throw new Error("A equipe do RDO contém colaborador duplicado.");
   }

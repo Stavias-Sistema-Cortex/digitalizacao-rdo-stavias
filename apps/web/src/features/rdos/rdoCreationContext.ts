@@ -165,13 +165,23 @@ export function setRosterSelected(
   if (selected && target.availability === "UNAVAILABLE") {
     throw new Error("Colaborador indisponível não pode ser selecionado.");
   }
+  const detachedCollaboratorId = selected
+    ? ""
+    : target.colaboradorId.trim();
   const clearsApontador = !selected &&
-    target.colaboradorId === draft.apontadorColaboradorId;
+    Boolean(detachedCollaboratorId) &&
+    detachedCollaboratorId === draft.apontadorColaboradorId.trim();
   return {
     ...draft,
     maoObra: draft.maoObra.map((item) =>
       item.localId === localId ? { ...item, selected } : item,
     ),
+    alocacoesColaboradores: detachedCollaboratorId
+      ? draft.alocacoesColaboradores.filter(
+          (item) =>
+            item.colaboradorId.trim() !== detachedCollaboratorId,
+        )
+      : draft.alocacoesColaboradores,
     apontadorColaboradorId: clearsApontador
       ? ""
       : draft.apontadorColaboradorId,
@@ -185,12 +195,20 @@ export function removeRosterMember(
 ): RdoDraft {
   const target = draft.maoObra.find((item) => item.localId === localId);
   if (!target) return draft;
+  const removedCollaboratorId = target.colaboradorId.trim();
   const clearsApontador =
-    target.colaboradorId === draft.apontadorColaboradorId;
+    Boolean(removedCollaboratorId) &&
+    removedCollaboratorId === draft.apontadorColaboradorId.trim();
 
   return {
     ...draft,
     maoObra: draft.maoObra.filter((item) => item.localId !== localId),
+    alocacoesColaboradores: removedCollaboratorId
+      ? draft.alocacoesColaboradores.filter(
+          (item) =>
+            item.colaboradorId.trim() !== removedCollaboratorId,
+        )
+      : draft.alocacoesColaboradores,
     apontadorColaboradorId: clearsApontador
       ? ""
       : draft.apontadorColaboradorId,
