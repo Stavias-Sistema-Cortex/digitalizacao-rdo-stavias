@@ -307,6 +307,10 @@ if [[ "$(docker inspect --format '{{.State.Health.Status}}' "$postgres_container
   exit 1
 fi
 
+echo "Reconciling local PostgreSQL role credentials and least-privilege flags." >&2
+"${compose[@]}" exec -T cortex-postgres \
+  /docker-entrypoint-initdb.d/10-cortex-roles.sh
+
 target_table_count="$(
   "${compose[@]}" exec -T cortex-postgres \
     psql --username=cortex_admin --dbname=StaviasCortex --tuples-only --no-align \

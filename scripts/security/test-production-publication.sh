@@ -11,6 +11,7 @@ bash "$repo_root/scripts/security/test-github-actions-pinning-regressions.sh"
 bash "$repo_root/scripts/security/test-docker-base-image-pinning.sh"
 bash "$repo_root/scripts/security/test-neon-migration-contract.sh"
 bash "$repo_root/scripts/security/test-scan-cortex-secrets.sh"
+bash "$repo_root/scripts/security/test-postgres-role-reconciliation.sh"
 bash "$repo_root/scripts/deploy/test-run-neon-flyway.sh"
 bash "$repo_root/scripts/deploy/test-trigger-and-wait-render.sh"
 bash "$repo_root/scripts/deploy/test-deploy-and-verify-cloudflare-pages.sh"
@@ -40,6 +41,32 @@ bash -n "$prepare_script"
 grep -Fq 'A PostgreSQL 18 pg_dump client is required' "$prepare_script"
 grep -Fq 'install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE' \
   "$prepare_script"
+if [[ "$(grep -Fc 'ALTER ROLE %I WITH LOGIN PASSWORD %L' "$postgres_init_file")" -ne 2 ]]; then
+  echo "local PostgreSQL role credentials are not reconciled for both roles" >&2
+  exit 1
+fi
+grep -Fq 'PostgreSQL admin, migrator, and runtime roles must be distinct.' \
+  "$postgres_init_file"
+grep -Fq 'FROM pg_auth_members membership' "$postgres_init_file"
+grep -Fq "'REVOKE %I FROM %I;'" "$postgres_init_file"
+grep -Fq '/docker-entrypoint-initdb.d/10-cortex-roles.sh' "$prepare_script"
+reconcile_line="$(
+  grep -n -F '/docker-entrypoint-initdb.d/10-cortex-roles.sh' \
+    "$prepare_script" | cut -d: -f1
+)"
+table_count_line="$(
+  grep -n -F 'target_table_count="$(' "$prepare_script" | cut -d: -f1
+)"
+if [[ -z "$reconcile_line" || -z "$table_count_line" ]] ||
+  (( reconcile_line >= table_count_line )); then
+  echo "local PostgreSQL roles are not reconciled before restore inspection" >&2
+  exit 1
+fi
+if [[ "$(grep -Fc 'NOREPLICATION NOBYPASSRLS' "$postgres_init_file")" -lt 2 ]] ||
+  [[ "$(grep -Fc 'NOREPLICATION NOBYPASSRLS;' "$postgres_init_file")" -lt 2 ]]; then
+  echo "local PostgreSQL roles do not explicitly revoke replication or RLS bypass" >&2
+  exit 1
+fi
 if grep -Fq 'write_secret_value CORTEX_ACADEMY_DB_PASSWORD ' \
   "$prepare_script"; then
   echo "production preparation still accepts an inline Academy password" >&2
