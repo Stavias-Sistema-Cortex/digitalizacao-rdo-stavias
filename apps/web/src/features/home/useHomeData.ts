@@ -94,13 +94,16 @@ export function useHomeData(
       setIsLoading(true);
       setHasConfirmedRemoteHydration(false);
       let remoteHydrationConfirmed = false;
-      const canIncludeArchived =
+      const shouldHydrateArchived =
         options.includeArchived === true &&
         isAlfa(getSession());
 
       try {
         await hydrateObrasRelacionadas();
-        if (canIncludeArchived) {
+        if (
+          shouldHydrateArchived &&
+          isAlfa(getSession())
+        ) {
           await hydrateObrasArquivadas();
         }
         remoteHydrationConfirmed = true;
@@ -108,6 +111,9 @@ export function useHomeData(
         // Offline ou API indisponível: segue com o banco local.
       }
 
+      const canIncludeArchived =
+        options.includeArchived === true &&
+        isAlfa(getSession());
       const cached = await listObrasLocais({
         includeArchived: canIncludeArchived,
       });

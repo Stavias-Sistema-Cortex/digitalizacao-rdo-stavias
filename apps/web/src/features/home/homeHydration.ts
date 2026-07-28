@@ -11,7 +11,9 @@ import {
 import {
   assertSyncSession,
   captureOnlineSyncSession,
+  type SyncSessionGuard,
 } from "../../lib/sync/syncSession";
+import { getSession, isAlfa } from "../auth/authSession";
 import type {
   ObraLocalRecord,
   PrevisaoSnapshotRecord,
@@ -81,33 +83,58 @@ export function snapshotRecordFromApi(
 }
 
 export async function hydrateObrasRelacionadas(): Promise<number> {
+  const guard = captureOnlineSyncSession();
   const obras = await buscarObrasRelacionadas();
+  assertSyncSession(guard);
   const nowIso = new Date().toISOString();
 
   for (const obra of obras) {
-    await mergeObraLocal(obraRecordFromApi(obra, nowIso));
+    assertSyncSession(guard);
+    await mergeObraLocal(
+      obraRecordFromApi(obra, nowIso),
+      guard,
+    );
   }
 
+  assertSyncSession(guard);
   return obras.length;
 }
 
 export async function hydrateObrasArquivadas(): Promise<number> {
-  const guard = captureOnlineSyncSession();
+  const guard = captureAlfaSyncSession();
   const obras = await buscarObrasArquivadas();
-  assertSyncSession(guard);
+  assertAlfaSyncSession(guard);
   const nowIso = new Date().toISOString();
   let saved = 0;
 
   for (const obra of obras) {
-    assertSyncSession(guard);
+    assertAlfaSyncSession(guard);
     const record = obraRecordFromPayload({ ...obra }, nowIso);
     if (!record) continue;
     await mergeObraLocal(record, guard);
     saved += 1;
   }
 
-  assertSyncSession(guard);
+  assertAlfaSyncSession(guard);
   return saved;
+}
+
+function captureAlfaSyncSession(): SyncSessionGuard {
+  if (!isAlfa(getSession())) {
+    throw new Error(
+      "A Lixeira de obras está disponível apenas para perfis Alfa.",
+    );
+  }
+  return captureOnlineSyncSession();
+}
+
+function assertAlfaSyncSession(guard: SyncSessionGuard): void {
+  assertSyncSession(guard);
+  if (!isAlfa(getSession())) {
+    throw new Error(
+      "A Lixeira de obras está disponível apenas para perfis Alfa.",
+    );
+  }
 }
 
 export async function hydrateHistoricoObra(

@@ -2,6 +2,7 @@
 
 import type { PropsWithChildren } from "react";
 import {
+  act,
   cleanup,
   render,
   screen,
@@ -26,6 +27,7 @@ const state = vi.hoisted(() => ({
 const api = vi.hoisted(() => ({
   buscarTimelineObra: vi.fn(),
   buscarPdorAtual: vi.fn(),
+  setFocusedObraId: vi.fn(),
 }));
 
 const queues = vi.hoisted(() => ({
@@ -66,9 +68,7 @@ vi.mock("../home/useHomeData", () => ({
       (obra) => obra.id === state.focusedObraId,
     ) ?? null,
     focusedObraId: state.focusedObraId,
-    setFocusedObraId: (id: string) => {
-      state.focusedObraId = id;
-    },
+    setFocusedObraId: api.setFocusedObraId,
     events: state.events,
     isLoading: false,
     hasConfirmedRemoteHydration: true,
@@ -180,6 +180,9 @@ beforeEach(() => {
   state.events = [];
   api.buscarTimelineObra.mockResolvedValue([]);
   api.buscarPdorAtual.mockResolvedValue(null);
+  api.setFocusedObraId.mockImplementation((id: string) => {
+    state.focusedObraId = id;
+  });
   queues.update.mockImplementation(
     async (existing: ObraLocalRecord, input: { nome: string }) => ({
       ...existing,
@@ -483,6 +486,41 @@ describe("ObrasPage lifecycle Alfa", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("keeps the archive dialog modal while pending and focuses Trash after success", async () => {
+    const user = userEvent.setup();
+    let finishArchive: ((value: ObraLocalRecord) => void) | undefined;
+    queues.archive.mockImplementationOnce(
+      () => new Promise<ObraLocalRecord>((resolve) => {
+        finishArchive = resolve;
+      }),
+    );
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    const dialog = screen.getByRole("dialog", { name: "Excluir obra" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Excluir obra",
+    }));
+    await waitFor(() => expect(within(dialog).getByRole("button", {
+      name: "Excluindo…",
+    })).toBeDisabled());
+
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeInTheDocument();
+
+    await act(async () => {
+      finishArchive?.(obra({
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+        syncStatus: "PENDING_SYNC",
+      }));
+    });
+
+    const trash = await screen.findByRole("region", {
+      name: "Lixeira de obras",
+    });
+    await waitFor(() => expect(trash).toHaveFocus());
+  });
+
   it("never renders prior-worksite local events after a tab fallback offline", async () => {
     const user = userEvent.setup();
     state.obras = [
@@ -511,6 +549,39 @@ describe("ObrasPage lifecycle Alfa", () => {
       .toBeInTheDocument();
     expect(screen.queryByText(/Evento indevido da obra 1/))
       .not.toBeInTheDocument();
+  });
+
+  it("synchronizes fallback focus and then renders the new worksite local trace", async () => {
+    const user = userEvent.setup();
+    state.obras = [
+      obra(),
+      obra({
+        id: "obra-2",
+        nome: "Contorno Sul",
+        status: "INATIVA",
+      }),
+    ];
+    state.events = [operationalEvent("obra-1")];
+    api.buscarTimelineObra.mockRejectedValue(
+      new Error("Timeline offline."),
+    );
+    const rendered = render(<ObrasPage />);
+
+    await user.click(screen.getByRole("tab", { name: "Desativadas" }));
+    await waitFor(() => {
+      expect(api.setFocusedObraId).toHaveBeenCalledWith("obra-2");
+    });
+
+    state.events = [operationalEvent("obra-2", {
+      payload: { nome: "Evento local da obra 2" },
+    })];
+    rendered.rerender(<ObrasPage />);
+    await user.click(screen.getByRole("button", {
+      name: "Ontologia da obra",
+    }));
+
+    expect(screen.getByText("nome: Evento local da obra 2"))
+      .toBeInTheDocument();
   });
 
   it("unmounts ontology content and resets aria-expanded on tab changes", async () => {

@@ -21,12 +21,28 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
   ).filter((element) => !element.hasAttribute("hidden"));
 }
 
+function returnFocus(
+  primary: HTMLElement | null,
+  fallbackRef?: RefObject<HTMLElement | null>,
+): void {
+  queueMicrotask(() => {
+    const target = [primary, fallbackRef?.current].find(
+      (element) =>
+        element?.isConnected &&
+        !element.matches(":disabled"),
+    );
+    target?.focus();
+  });
+}
+
 export function ObraAccessibleDialog({
   children,
   className,
   labelledBy,
   initialFocusRef,
   returnFocusRef,
+  returnFallbackRef,
+  closeDisabled = false,
   onClose,
 }: {
   children: ReactNode;
@@ -34,6 +50,8 @@ export function ObraAccessibleDialog({
   labelledBy: string;
   initialFocusRef: RefObject<HTMLElement | null>;
   returnFocusRef: RefObject<HTMLElement | null>;
+  returnFallbackRef?: RefObject<HTMLElement | null>;
+  closeDisabled?: boolean;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -42,14 +60,16 @@ export function ObraAccessibleDialog({
     const returnFocusTarget = returnFocusRef.current;
     initialFocusRef.current?.focus();
     return () => {
-      queueMicrotask(() => returnFocusTarget?.focus());
+      returnFocus(returnFocusTarget, returnFallbackRef);
     };
-  }, [initialFocusRef, returnFocusRef]);
+  }, [initialFocusRef, returnFallbackRef, returnFocusRef]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
-      onClose();
+      if (!closeDisabled) {
+        onClose();
+      }
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;

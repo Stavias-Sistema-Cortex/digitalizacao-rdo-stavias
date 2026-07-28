@@ -518,6 +518,11 @@
   background: #f7f9f7;
 }
 
+.obras-trash:focus-visible {
+  outline: 2px solid #0c2623;
+  outline-offset: 2px;
+}
+
 .obras-trash-list {
   display: grid;
   gap: 0;

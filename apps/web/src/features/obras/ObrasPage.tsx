@@ -276,6 +276,7 @@ export function ObrasPage() {
   const editInitialFocusRef = useRef<HTMLInputElement>(null);
   const archiveInitialFocusRef =
     useRef<HTMLButtonElement>(null);
+  const trashRef = useRef<HTMLElement>(null);
   const canManageWorksites = isAlfa(getSession());
 
   const localObras = useMemo(
@@ -379,6 +380,19 @@ export function ObrasPage() {
 
   const focusedObraId =
     view === "LIXEIRA" ? null : focusedObra?.id ?? null;
+
+  useEffect(() => {
+    if (
+      focusedObraId &&
+      focusedObraId !== hydratedFocusedObraId
+    ) {
+      setFocusedObraId(focusedObraId);
+    }
+  }, [
+    focusedObraId,
+    hydratedFocusedObraId,
+    setFocusedObraId,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -564,11 +578,13 @@ export function ObrasPage() {
   }
 
   function closeEdit() {
+    if (isMutating) return;
     setEditingObra(null);
     setActionError(null);
   }
 
   function closeArchive() {
+    if (isMutating) return;
     setArchiveCandidate(null);
     setActionError(null);
   }
@@ -737,8 +753,10 @@ export function ObrasPage() {
 
         {view === "LIXEIRA" && canManageWorksites ? (
           <section
+            ref={trashRef}
             className="obras-trash"
             aria-label="Lixeira de obras"
+            tabIndex={-1}
           >
             {actionError ? (
               <p className="obras-action-error" role="alert">
@@ -1130,6 +1148,7 @@ export function ObrasPage() {
               labelledBy="obras-edit-title"
               initialFocusRef={editInitialFocusRef}
               returnFocusRef={editTriggerRef}
+              closeDisabled={isMutating}
               onClose={closeEdit}
             >
               <header>
@@ -1137,6 +1156,7 @@ export function ObrasPage() {
                 <button
                   type="button"
                   aria-label="Fechar edição da obra"
+                  disabled={isMutating}
                   onClick={closeEdit}
                 >
                   ×
@@ -1258,6 +1278,7 @@ export function ObrasPage() {
                 <footer>
                   <button
                     type="button"
+                    disabled={isMutating}
                     onClick={closeEdit}
                   >
                     Cancelar
@@ -1283,6 +1304,8 @@ export function ObrasPage() {
               labelledBy="obras-archive-title"
               initialFocusRef={archiveInitialFocusRef}
               returnFocusRef={archiveTriggerRef}
+              returnFallbackRef={trashRef}
+              closeDisabled={isMutating}
               onClose={closeArchive}
             >
               <header>
@@ -1300,6 +1323,7 @@ export function ObrasPage() {
                 <button
                   ref={archiveInitialFocusRef}
                   type="button"
+                  disabled={isMutating}
                   onClick={closeArchive}
                 >
                   Cancelar

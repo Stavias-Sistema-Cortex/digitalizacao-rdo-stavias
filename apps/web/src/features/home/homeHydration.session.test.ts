@@ -1,15 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  alfa: true,
   current: "session-a",
   buscarObrasArquivadas: vi.fn(),
+  buscarObrasRelacionadas: vi.fn(),
   mergeObraLocal: vi.fn(),
 }));
 
 vi.mock("./homeApi", () => ({
   buscarObrasArquivadas: mocks.buscarObrasArquivadas,
-  buscarObrasRelacionadas: vi.fn(),
+  buscarObrasRelacionadas: mocks.buscarObrasRelacionadas,
   buscarHistoricoPrevisao: vi.fn(),
+}));
+
+vi.mock("../auth/authSession", () => ({
+  getSession: () => ({
+    papelAcesso: mocks.alfa ? "ALFA" : "BETA",
+  }),
+  isAlfa: (session: { papelAcesso?: string } | null) =>
+    session?.papelAcesso === "ALFA",
 }));
 
 vi.mock("../../lib/db/obraLocalRepository", () => ({
@@ -28,12 +38,54 @@ vi.mock("../../lib/sync/syncSession", () => ({
   },
 }));
 
-import { hydrateObrasArquivadas } from "./homeHydration";
+import {
+  hydrateObrasArquivadas,
+  hydrateObrasRelacionadas,
+} from "./homeHydration";
 
-describe("archived worksite hydration session boundary", () => {
+describe("worksite hydration session boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.alfa = true;
     mocks.current = "session-a";
+    mocks.buscarObrasArquivadas.mockResolvedValue([]);
+    mocks.buscarObrasRelacionadas.mockResolvedValue([]);
+  });
+
+  it("does not persist a related-worksite response after the session changes", async () => {
+    mocks.buscarObrasRelacionadas.mockImplementationOnce(async () => {
+      mocks.current = "session-b";
+      return [{
+        id: "obra-related",
+        codigoContrato: "CTR-RELATED",
+        nome: "Obra relacionada antiga",
+        cliente: null,
+        cidade: null,
+        uf: null,
+        rodovia: null,
+        status: "ATIVA",
+        observacoes: null,
+        latitude: null,
+        longitude: null,
+        valorContratual: null,
+        atualizadoEm: "2026-07-28T13:00:00.000Z",
+      }];
+    });
+
+    await expect(hydrateObrasRelacionadas()).rejects.toThrow(
+      "A sessão mudou durante a sincronização.",
+    );
+    expect(mocks.mergeObraLocal).not.toHaveBeenCalled();
+  });
+
+  it("never calls the archived endpoint for a Beta session", async () => {
+    mocks.alfa = false;
+
+    await expect(hydrateObrasArquivadas()).rejects.toThrow(
+      "A Lixeira de obras está disponível apenas para perfis Alfa.",
+    );
+    expect(mocks.buscarObrasArquivadas).not.toHaveBeenCalled();
+    expect(mocks.mergeObraLocal).not.toHaveBeenCalled();
   });
 
   it("does not persist an Alfa trash response after the session changes", async () => {

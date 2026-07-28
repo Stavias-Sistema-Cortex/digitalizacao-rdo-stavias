@@ -7,6 +7,7 @@ import {
   listObrasLocais,
 } from "../../lib/db/obraLocalRepository";
 import { filterOperationalObras } from "../../lib/db/obraSelectors";
+import type { LocalSyncStatus } from "../../lib/db/db.types";
 import {
   filtersFromSearchParams,
   filtersToSearchParams,
@@ -31,6 +32,14 @@ import { FinancePdorSection } from "./FinancePdorSection";
 import "./FinanceiroPage.css";
 
 const DEFAULT_SECTION: ActiveFinanceSection = "receita";
+const LOCAL_ARCHIVE_OVERRIDE_STATUSES = new Set<LocalSyncStatus>([
+  "LOCAL_ONLY",
+  "LOCAL_PENDING",
+  "PENDING_SYNC",
+  "SYNCING",
+  "ERROR",
+  "CONFLICT",
+]);
 
 function sectionFromParams(params: URLSearchParams): ActiveFinanceSection {
   const requested = params.get("secao");
@@ -87,7 +96,14 @@ export function FinanceiroPage() {
             });
             locallyArchivedIds = new Set(
               cached
-                .filter((obra) => obra.arquivadoEm != null)
+                .filter(
+                  (obra) =>
+                    obra.arquivadoEm != null &&
+                    obra.syncStatus !== undefined &&
+                    LOCAL_ARCHIVE_OVERRIDE_STATUSES.has(
+                      obra.syncStatus,
+                    ),
+                )
                 .map((obra) => obra.id),
             );
           } catch {

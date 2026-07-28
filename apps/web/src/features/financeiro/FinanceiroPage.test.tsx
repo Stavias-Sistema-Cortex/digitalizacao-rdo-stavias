@@ -327,6 +327,43 @@ describe("FinanceiroPage: superfície de receita", () => {
     });
   });
 
+  it("lets a current remote restore replace a stale synchronized archive tombstone", async () => {
+    fetchAuthorizedRevenueWorksites.mockResolvedValue([
+      {
+        id: "obra-restaurada",
+        codigoContrato: "CTR-REST",
+        nome: "Obra restaurada no servidor",
+        status: "ATIVA",
+      },
+    ]);
+    listObrasLocais.mockResolvedValue([
+      {
+        id: "obra-restaurada",
+        codigoContrato: "CTR-REST",
+        nome: "Tombstone sincronizado antigo",
+        cliente: null,
+        cidade: null,
+        uf: null,
+        rodovia: null,
+        status: "INATIVA",
+        observacoes: null,
+        latitude: null,
+        longitude: null,
+        valorContratual: null,
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+        syncStatus: "SYNCED",
+        updatedAt: "2026-07-28T13:00:00.000Z",
+      },
+    ]);
+
+    renderFinanceiro();
+
+    const selector = await screen.findByRole("combobox", {
+      name: "Obra em análise",
+    });
+    expect(selector).toHaveTextContent("Obra restaurada no servidor");
+  });
+
   it("consulta o PDOR somente por obra, sem fabricar uma janela a partir dos filtros da receita", async () => {
     const user = userEvent.setup();
     renderFinanceiro(

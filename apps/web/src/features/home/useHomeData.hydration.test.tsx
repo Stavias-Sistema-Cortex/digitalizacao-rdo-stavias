@@ -148,4 +148,24 @@ describe("useHomeData remote hydration truth", () => {
     });
     expect(result.current.obras).toEqual([]);
   });
+
+  it("revalidates Alfa after related hydration before requesting or reading Trash", async () => {
+    mocks.alfa = true;
+    mocks.hydrateObrasRelacionadas.mockImplementationOnce(async () => {
+      mocks.alfa = false;
+      return 0;
+    });
+
+    const { result } = renderHook(() =>
+      useHomeData({ includeArchived: true })
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(mocks.hydrateObrasArquivadas).not.toHaveBeenCalled();
+    expect(mocks.listObrasLocais).toHaveBeenCalledWith({
+      includeArchived: false,
+    });
+    expect(result.current.obras).toEqual([]);
+  });
 });
