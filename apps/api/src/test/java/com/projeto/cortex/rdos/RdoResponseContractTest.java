@@ -15,7 +15,8 @@ class RdoResponseContractTest {
                         "condicaoManha",
                         "condicaoTarde",
                         "condicaoNoite",
-                        "pluviometriaMm"
+                        "pluviometriaMm",
+                        "versaoEntidade"
                 );
     }
 

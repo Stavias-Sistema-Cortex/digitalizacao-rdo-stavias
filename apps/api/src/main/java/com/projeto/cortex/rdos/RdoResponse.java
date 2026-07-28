@@ -18,6 +18,7 @@ public record RdoResponse(
         String previousRdoId,
         Long creationContextVersion,
         String clientMutationId,
+        Long versaoEntidade,
         String apontadorColaboradorId,
         String diaSemana,
 
@@ -55,7 +56,6 @@ public record RdoResponse(
         List<AlocacaoColaboradorItem> alocacoesColaboradores,
         List<AttachmentItem> attachments
 ) {
-
     public record MaoObraItem(
             String id,
             String colaboradorId,

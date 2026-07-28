@@ -96,4 +96,65 @@ class ColaboradorDaObraControllerMockMvcTest {
 
         verify(service).listarPorObra("qualquer");
     }
+
+    @Test
+    void betaBloqueadoNoLookupAutorizadoSemVinculo() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-proibida", false);
+
+        mockMvc.perform(get(
+                        "/api/obras/obra-proibida/colaboradores/autorizados"
+                ).requestAttr(
+                        CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                        "beta"
+                ))
+                .andExpect(status().isForbidden());
+
+        verify(service, never()).listarAutorizados(anyString());
+    }
+
+    @Test
+    void betaVinculadoRecebeLookupAutorizado() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+        vinculo("beta", "obra-vinculada", true);
+        when(service.listarAutorizados("obra-vinculada")).thenReturn(
+                new ColaboradoresAutorizadosObraResponse(
+                        List.of("col-1"),
+                        1,
+                        true
+                )
+        );
+
+        mockMvc.perform(get(
+                        "/api/obras/obra-vinculada/colaboradores/autorizados"
+                ).requestAttr(
+                        CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                        "beta"
+                ))
+                .andExpect(status().isOk());
+
+        verify(service).listarAutorizados("obra-vinculada");
+    }
+
+    @Test
+    void alfaRecebeLookupAutorizadoDeQualquerObra() throws Exception {
+        papel("alfa", PapelAcesso.ALFA);
+        when(service.listarAutorizados("qualquer")).thenReturn(
+                new ColaboradoresAutorizadosObraResponse(
+                        List.of(),
+                        0,
+                        true
+                )
+        );
+
+        mockMvc.perform(get(
+                        "/api/obras/qualquer/colaboradores/autorizados"
+                ).requestAttr(
+                        CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                        "alfa"
+                ))
+                .andExpect(status().isOk());
+
+        verify(service).listarAutorizados("qualquer");
+    }
 }

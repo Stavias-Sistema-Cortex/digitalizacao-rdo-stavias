@@ -61,4 +61,46 @@ public class ColaboradorDaObraService {
                 obraId
         );
     }
+
+    public ColaboradoresAutorizadosObraResponse listarAutorizados(
+            String obraId
+    ) {
+        Integer total = jdbcTemplate.queryForObject(
+                """
+                SELECT count(DISTINCT c.id)
+                FROM colaborador c
+                JOIN vinculo_colaborador_obra link
+                  ON link.colaborador_id = c.id
+                 AND link.obra_id = ?
+                 AND link.status = 'ATIVO'
+                WHERE c.ativo = TRUE
+                  AND c.deletado_em IS NULL
+                """,
+                Integer.class,
+                obraId
+        );
+        List<String> ids = jdbcTemplate.queryForList(
+                """
+                SELECT DISTINCT c.id
+                FROM colaborador c
+                JOIN vinculo_colaborador_obra link
+                  ON link.colaborador_id = c.id
+                 AND link.obra_id = ?
+                 AND link.status = 'ATIVO'
+                WHERE c.ativo = TRUE
+                  AND c.deletado_em IS NULL
+                ORDER BY c.id
+                LIMIT 501
+                """,
+                String.class,
+                obraId
+        );
+        int exactTotal = total == null ? 0 : total;
+        boolean complete = exactTotal <= 500 && ids.size() == exactTotal;
+        return new ColaboradoresAutorizadosObraResponse(
+                ids.stream().limit(500).toList(),
+                exactTotal,
+                complete
+        );
+    }
 }

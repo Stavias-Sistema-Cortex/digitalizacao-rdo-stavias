@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   repairMaoObra: vi.fn(async () => 0),
   hydrateRdo: vi.fn(async () => 0),
   repairRdo: vi.fn(async () => 0),
+  recoverRejectedRdo: vi.fn(async () => 0),
   resolveUploads: vi.fn(async () => 0),
   recoverConflicts: vi.fn(async () => 0),
   ensureDevice: vi.fn(async () => "device"),
@@ -70,6 +71,7 @@ vi.mock("./syncStorage", () => ({
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: mocks.hydrateRdo,
   repairRdoCreateMutationsForSync: mocks.repairRdo,
+  recoverRejectedRdoMutationsForSync: mocks.recoverRejectedRdo,
 }));
 vi.mock("./registerDevice", () => ({
   ensureRegisteredDevice: mocks.ensureDevice,
@@ -158,6 +160,17 @@ describe("session-scoped sync single flight", () => {
     expect(mocks.repairObra).toHaveBeenCalledWith(expectedGuard);
     expect(mocks.repairMaoObra).toHaveBeenCalledWith(expectedGuard);
     expect(mocks.repairRdo).toHaveBeenCalledWith(expectedGuard);
+    expect(mocks.recoverRejectedRdo).toHaveBeenCalledWith(
+      expectedGuard,
+      {
+        executionLease: expect.objectContaining({
+          ownerToken: "owner-test",
+        }),
+      },
+    );
+    expect(
+      mocks.recoverRejectedRdo.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.push.mock.invocationCallOrder[0]);
   });
 
   it("announces completion once only after the guarded durable state is written", async () => {

@@ -315,7 +315,7 @@ async function putCanonicalEvent(
   await transaction.objectStore("operational_events").put(event);
 }
 
-async function assertCanonicalMutationEventProvenance(
+export async function assertCanonicalMutationEventProvenance(
   mutation: CanonicalOutboxMutationRecord,
   event: CanonicalOperationalEventRecord,
 ): Promise<void> {

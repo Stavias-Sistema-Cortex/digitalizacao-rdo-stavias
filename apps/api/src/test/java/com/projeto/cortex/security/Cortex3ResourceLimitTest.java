@@ -282,7 +282,7 @@ class Cortex3ResourceLimitTest {
                 )).toList();
         return new RdoResponse(
                 "rdo-1", "obra-1", null, "RDO-0001", LocalDate.of(2026, 7, 22),
-                null, null, null, null, null, null, null, "BR-101", null, null,
+                null, null, null, 0L, null, null, null, null, "BR-101", null, null,
                 null, null, null, null, null, null, null, null, null, null, null,
                 "RASCUNHO", observations, null, null, null, null, workforce, List.of(),
                 materials, List.of(), services, List.of(), List.of()

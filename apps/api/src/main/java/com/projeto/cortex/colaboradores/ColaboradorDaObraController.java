@@ -30,4 +30,12 @@ public class ColaboradorDaObraController {
         currentUserService.requireWorksiteAccess(obraId);
         return service.listarPorObra(obraId);
     }
+
+    @GetMapping("/api/obras/{obraId}/colaboradores/autorizados")
+    public ColaboradoresAutorizadosObraResponse listarAutorizados(
+            @PathVariable String obraId
+    ) {
+        currentUserService.requireWorksiteAccess(obraId);
+        return service.listarAutorizados(obraId);
+    }
 }

@@ -2,6 +2,7 @@ import { processObjectUploads } from "../../features/mensagens/objectUploadSync"
 import { refreshMessagingAfterPull } from "../../features/mensagens/mensagensHydration";
 import {
   hydrateBlockedRdoCreationContextsForSync,
+  recoverRejectedRdoMutationsForSync,
   repairRdoCreateMutationsForSync,
 } from "../db/localRdoService";
 import { updateSyncState } from "../db/syncStateRepository";
@@ -62,6 +63,10 @@ async function executeSync(
     await hydrateBlockedRdoCreationContextsForSync(guard);
     await assertSyncExecution(guard, lease);
     await repairRdoCreateMutationsForSync(guard);
+    await assertSyncExecution(guard, lease);
+    await recoverRejectedRdoMutationsForSync(guard, {
+      executionLease: lease,
+    });
     await assertSyncExecution(guard, lease);
 
     const deviceId = await ensureRegisteredDevice(guard);

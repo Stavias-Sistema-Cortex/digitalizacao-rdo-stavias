@@ -266,6 +266,7 @@ public class RdoService {
                 nuloSeVazio(request.previousRdoId()),
                 request.creationContextVersion(),
                 clientMutationId,
+                0L,
                 nuloSeVazio(request.apontadorColaboradorId()),
                 diaSemana,
                 cliente,
@@ -720,7 +721,11 @@ public class RdoService {
 
         String apontadorId = nuloSeVazio(request.apontadorColaboradorId());
         if (apontadorId == null) {
-            return null;
+            return textoLimitadoOpcional(
+                    request.apontadorRdo(),
+                    "apontadorRdo",
+                    255
+            );
         }
         if (!collaboratorIds.contains(apontadorId)) {
             throw new ResponseStatusException(

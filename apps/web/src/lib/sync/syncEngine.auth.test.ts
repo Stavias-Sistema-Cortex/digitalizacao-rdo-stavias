@@ -27,6 +27,7 @@ vi.mock("./registerDevice", () => ({
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: vi.fn(),
   repairRdoCreateMutationsForSync: vi.fn(),
+  recoverRejectedRdoMutationsForSync: vi.fn(),
 }));
 vi.mock("./ackCursor", () => ({ acknowledgeCurrentCursor: vi.fn() }));
 vi.mock("./pullEvents", () => ({ pullEvents: vi.fn() }));

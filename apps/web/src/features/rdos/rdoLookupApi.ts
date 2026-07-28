@@ -299,19 +299,281 @@ export interface RdoAuthorizedWorksiteLookup {
   atualizadoEm: string | null;
 }
 
+export type AuthoritativeRdoLookup =
+  | {
+      kind: "FOUND";
+      rdo: Record<string, unknown>;
+      version: number;
+    }
+  | { kind: "MISSING" }
+  | { kind: "INCOMPLETE" };
+
+export class RdoLookupHttpError extends Error {
+  readonly status: number;
+
+  constructor(
+    message: string,
+    status: number,
+  ) {
+    super(message);
+    this.name = "RdoLookupHttpError";
+    this.status = status;
+  }
+}
+
+export class RdoLookupPayloadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RdoLookupPayloadError";
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   const data = await readResponseBody(response);
 
   if (!response.ok) {
-    throw new Error(
+    throw new RdoLookupHttpError(
       responseErrorMessage(
         data,
         response.status,
       ),
+      response.status,
     );
   }
 
   return data as T;
+}
+
+function isCompleteAuthoritativeRdo(
+  data: Record<string, unknown>,
+  rdoId: string,
+): boolean {
+  const nullableStringFields = [
+    "programacaoId",
+    "previousRdoId",
+    "apontadorColaboradorId",
+    "diaSemana",
+    "cliente",
+    "contrato",
+    "rodovia",
+    "cidade",
+    "uf",
+    "kmInicialProgramado",
+    "kmFinalProgramado",
+    "kmInicialInterditado",
+    "kmFinalInterditado",
+    "turno",
+    "horaInicio",
+    "horaFim",
+    "condicaoManha",
+    "condicaoTarde",
+    "condicaoNoite",
+    "observacoes",
+    "preenchidoPor",
+    "apontadorRdo",
+    "encarregadoObra",
+    "fiscalizacaoCampo",
+  ];
+  const hasOwn = (field: string) =>
+    Object.prototype.hasOwnProperty.call(data, field);
+  const isIsoDate = (value: unknown) => {
+    if (typeof value !== "string") return false;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    const date = new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    );
+    return date.toISOString().slice(0, 10) === value;
+  };
+  const itemMatches = (
+    value: unknown,
+    stringFields: readonly string[],
+    numberFields: readonly string[],
+    booleanFields: readonly string[] = [],
+    recordFields: readonly string[] = [],
+  ) => {
+    if (
+      !isRecord(value) ||
+      typeof value.id !== "string" ||
+      !value.id.trim() ||
+      value.id !== value.id.trim()
+    ) {
+      return false;
+    }
+    const owns = (field: string) =>
+      Object.prototype.hasOwnProperty.call(value, field);
+    return stringFields.every(
+      (field) =>
+        owns(field) &&
+        (value[field] === null || typeof value[field] === "string"),
+    ) &&
+      numberFields.every(
+        (field) =>
+          owns(field) &&
+          (
+            value[field] === null ||
+            (
+              typeof value[field] === "number" &&
+              Number.isFinite(value[field])
+            )
+          ),
+      ) &&
+      booleanFields.every(
+        (field) => owns(field) && typeof value[field] === "boolean",
+      ) &&
+      recordFields.every(
+        (field) => owns(field) && isRecord(value[field]),
+      );
+  };
+  const collectionSchemas = {
+    maoObra: (item: unknown) => itemMatches(
+      item,
+      [
+        "colaboradorId", "nomeColaborador", "cargo", "tipoVinculo",
+        "horaInicio", "horaFim", "observacoes", "origemItemId",
+      ],
+      ["quantidade"],
+    ),
+    equipamentos: (item: unknown) => itemMatches(
+      item,
+      [
+        "assetId", "prefixo", "descricao", "tipoEquipamento",
+        "tipoVinculo", "horaInicio", "horaFim", "observacoes",
+      ],
+      ["quantidade"],
+    ),
+    materiais: (item: unknown) => itemMatches(
+      item,
+      [
+        "materialNome", "unidade", "notaFiscal", "fornecedor",
+        "observacoes",
+      ],
+      [
+        "quantidadePrevista", "quantidadeUsinada",
+        "quantidadeAplicada", "quantidadeSobra",
+      ],
+    ),
+    controlesGeometricos: (item: unknown) => itemMatches(
+      item,
+      [
+        "subtrecho", "numero", "estacaInicial", "estacaFinal",
+        "kmInicial", "kmFinal", "pista", "faixa", "ordemServico",
+        "atividadeObservacoes", "observacoes",
+      ],
+      [
+        "comprimentoM", "larguraM", "espessura1Cm", "espessura2Cm",
+        "espessura3Cm", "espessuraMediaCm", "areaM2", "volumeM3",
+        "densidade", "massaTonelada",
+      ],
+    ),
+    servicosExecutados: (item: unknown) => itemMatches(
+      item,
+      [
+        "serviceId", "priceVersionId", "servicoNome", "itemContratualId",
+        "unidade", "trechoInicial", "trechoFinal", "localizacao", "turno",
+        "statusValidacao", "estadoReceita", "revenueCoverageCode",
+        "revenueEvidenceId", "revenueEventId", "acceptedAt", "observacoes",
+      ],
+      ["quantidadeExecutada"],
+      ["retrabalho", "producaoRejeitada"],
+    ),
+    alocacoesColaboradores: (item: unknown) => itemMatches(
+      item,
+      [
+        "colaboradorId", "equipe", "servicoNome", "horaInicio", "horaFim",
+        "turno", "funcao", "centroCusto", "tipoAlocacao", "fonte",
+        "status", "observacoes",
+      ],
+      ["minutos", "percentualDia"],
+    ),
+    attachments: (item: unknown) => itemMatches(
+      item,
+      [
+        "rdoId", "obraId", "tipo", "nome", "nomeOriginal", "mimeType",
+        "syncStatus", "createdAt", "updatedAt", "removedAt",
+      ],
+      [
+        "tamanhoOriginalBytes", "tamanhoComprimidoBytes", "tamanhoBytes",
+      ],
+      [],
+      ["metadata"],
+    ),
+  };
+  const collectionComplete = (
+    field: string,
+    validate: (value: unknown) => boolean,
+  ) => {
+    const values = data[field];
+    if (!hasOwn(field) || !Array.isArray(values)) return false;
+    const ids = values
+      .filter(isRecord)
+      .map((item) => item.id);
+    return values.every(validate) &&
+      ids.length === values.length &&
+      new Set(ids).size === ids.length;
+  };
+  return data.id === rdoId &&
+    typeof data.obraId === "string" &&
+    Boolean(data.obraId.trim()) &&
+    typeof data.numeroRdo === "string" &&
+    Boolean(data.numeroRdo.trim()) &&
+    isIsoDate(data.dataRdo) &&
+    typeof data.clientMutationId === "string" &&
+    Boolean(data.clientMutationId.trim()) &&
+    typeof data.status === "string" &&
+    Boolean(data.status.trim()) &&
+    nullableStringFields.every(
+      (field) =>
+        hasOwn(field) &&
+        (data[field] === null || typeof data[field] === "string"),
+    ) &&
+    hasOwn("creationContextVersion") &&
+    typeof data.creationContextVersion === "number" &&
+    Number.isSafeInteger(data.creationContextVersion) &&
+    data.creationContextVersion > 0 &&
+    hasOwn("pluviometriaMm") &&
+    (
+      data.pluviometriaMm === null ||
+      (
+        typeof data.pluviometriaMm === "number" &&
+        Number.isFinite(data.pluviometriaMm)
+      )
+    ) &&
+    Object.entries(collectionSchemas).every(([field, validate]) =>
+      collectionComplete(field, validate)
+    );
+}
+
+export async function buscarRdoAutoritativoPorId(
+  rdoId: string,
+): Promise<AuthoritativeRdoLookup> {
+  const response = await apiFetch(
+    `/rdos/${encodeURIComponent(rdoId)}`,
+  );
+  const data = await readResponseBody(response);
+  if (response.status === 404) {
+    return { kind: "MISSING" };
+  }
+  if (!response.ok) {
+    throw new RdoLookupHttpError(
+      responseErrorMessage(data, response.status),
+      response.status,
+    );
+  }
+  if (
+    !isRecord(data) ||
+    !isCompleteAuthoritativeRdo(data, rdoId) ||
+    typeof data.versaoEntidade !== "number" ||
+    !Number.isSafeInteger(data.versaoEntidade) ||
+    data.versaoEntidade < 0
+  ) {
+    return { kind: "INCOMPLETE" };
+  }
+  return {
+    kind: "FOUND",
+    rdo: data,
+    version: data.versaoEntidade,
+  };
 }
 
 export async function buscarColaboradores(
@@ -347,7 +609,80 @@ export async function buscarColaboradoresDaObra(
   const response = await apiFetch(
     `/obras/${encodeURIComponent(obraId)}/colaboradores`,
   );
-  return readJson<ColaboradorDaObra[]>(response);
+  const data = await readJson<unknown>(response);
+  if (!Array.isArray(data)) {
+    throw new RdoLookupPayloadError(
+      "A lista de colaboradores da obra está incompleta.",
+    );
+  }
+  const ids = new Set<string>();
+  const nullableStrings = [
+    "nome",
+    "cpfMascarado",
+    "nomePerfil",
+    "nomeGrupo",
+  ];
+  for (const item of data) {
+    if (
+      !isRecord(item) ||
+      typeof item.id !== "string" ||
+      !item.id.trim() ||
+      ids.has(item.id) ||
+      nullableStrings.some(
+        (field) =>
+          !Object.prototype.hasOwnProperty.call(item, field) ||
+          (
+            item[field] !== null &&
+            typeof item[field] !== "string"
+          ),
+      )
+    ) {
+      throw new RdoLookupPayloadError(
+        "A lista de colaboradores da obra está incompleta.",
+      );
+    }
+    ids.add(item.id);
+  }
+  return data as ColaboradorDaObra[];
+}
+
+export interface ColaboradoresAutorizadosObra {
+  ids: string[];
+  total: number;
+  complete: boolean;
+}
+
+export async function buscarColaboradoresAutorizadosDaObra(
+  obraId: string,
+): Promise<ColaboradoresAutorizadosObra> {
+  const response = await apiFetch(
+    `/obras/${encodeURIComponent(obraId)}/colaboradores/autorizados`,
+  );
+  const data = await readJson<unknown>(response);
+  if (
+    !isRecord(data) ||
+    !Array.isArray(data.ids) ||
+    !data.ids.every(
+      (id) =>
+        typeof id === "string" &&
+        Boolean(id.trim()) &&
+        id === id.trim(),
+    ) ||
+    new Set(data.ids).size !== data.ids.length ||
+    typeof data.total !== "number" ||
+    !Number.isSafeInteger(data.total) ||
+    data.total < data.ids.length ||
+    typeof data.complete !== "boolean" ||
+    (
+      data.complete &&
+      data.total !== data.ids.length
+    )
+  ) {
+    throw new RdoLookupPayloadError(
+      "A cobertura de colaboradores autorizados está incompleta.",
+    );
+  }
+  return data as unknown as ColaboradoresAutorizadosObra;
 }
 
 export async function buscarAssets(

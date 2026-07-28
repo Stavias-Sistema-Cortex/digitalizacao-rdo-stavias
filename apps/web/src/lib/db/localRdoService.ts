@@ -11,6 +11,11 @@ import type {
 import { localRecordToDraft } from "../../features/rdos/localRecordToDraft";
 import {
   buscarContextoDeCriacaoRdo,
+  buscarColaboradoresAutorizadosDaObra,
+  buscarRdoAutoritativoPorId,
+  type AuthoritativeRdoLookup,
+  RdoLookupHttpError,
+  RdoLookupPayloadError,
   type RdoContextCoverageSection,
   type RdoCreationContextLookup,
 } from "../../features/rdos/rdoLookupApi";
@@ -21,6 +26,7 @@ import {
 } from "../../features/rdos/rdoCreationContextRepository";
 import { getCortexDb } from "./cortexDb";
 import type {
+  CanonicalOperationalEventRecord,
   CanonicalOutboxMutationRecord,
   LocalRdoChildRecord,
   LocalRdoRecord,
@@ -28,6 +34,7 @@ import type {
   OperationalEntityRef,
   OperationalEventRecord,
   OutboxMutationRecord,
+  RdoAttachmentRecord,
   RdoCreationContextCacheRecord,
 } from "./db.types";
 import {
@@ -35,6 +42,7 @@ import {
   queryOperationalEvents,
 } from "./operationalEventRepository";
 import {
+  buildCanonicalMutation,
   canonicalMutationJson,
   isCanonicalOutboxMutation,
 } from "../sync/mutationEnvelope";
@@ -44,6 +52,13 @@ import {
   captureOnlineSyncSession,
   type SyncSessionGuard,
 } from "../sync/syncSession";
+import {
+  SyncLeaseLostError,
+  type SyncExecutionLease,
+} from "../sync/syncExecutionLease";
+import {
+  assertCanonicalMutationEventProvenance,
+} from "../sync/syncStorage";
 import { getSession } from "../../features/auth/authSession";
 import {
   getSyncState,
@@ -100,6 +115,19 @@ interface RdoChildWriteTransaction {
   objectStore: (
     name: RdoChildStoreName,
   ) => RdoChildStoreWriter;
+}
+
+interface RdoAttachmentStoreWriter {
+  index: (name: "by-rdo-id") => {
+    getAll: (query: string) => Promise<RdoAttachmentRecord[]>;
+  };
+  put: (value: RdoAttachmentRecord) => Promise<string>;
+}
+
+interface RdoAttachmentWriteTransaction {
+  objectStore: (
+    name: "rdo_attachments",
+  ) => RdoAttachmentStoreWriter;
 }
 
 function nowUtc(): string {
@@ -1413,6 +1441,27 @@ async function replaceChildRecords(
   ]);
 }
 
+async function reopenUnsyncedRdoAttachments(
+  transaction: RdoAttachmentWriteTransaction,
+  rdoId: string,
+  timestamp: string,
+): Promise<void> {
+  const store = transaction.objectStore("rdo_attachments");
+  const attachments = await store.index("by-rdo-id").getAll(rdoId);
+  await Promise.all(
+    attachments
+      .filter((attachment) => attachment.syncStatus !== "SYNCED")
+      .map((attachment) =>
+        store.put({
+          ...attachment,
+          syncStatus: "PENDING_SYNC",
+          ultimoErro: null,
+          updatedAt: timestamp,
+        })
+      ),
+  );
+}
+
 export function validateRdoDraftForSync(draft: RdoDraft): void {
   if (!draft.id.trim()) {
     throw new Error(
@@ -2147,6 +2196,1461 @@ export async function repairRdoCreateMutationsForSync(
   }
 
   return repaired;
+}
+
+const RDO_WORKFORCE_LINK_REJECTION =
+  "colaborador nao esta ativo e vinculado a obra do rdo";
+
+export interface RdoRejectedMutationRecoveryOptions {
+  now?: () => string;
+  clientMutationIdFactory?: () => string;
+  ontologyEventIdFactory?: () => string;
+  loadAuthorizedCollaboratorIds?: (
+    obraId: string,
+    dataRdo: string,
+  ) => Promise<ReadonlySet<string>>;
+  lookupAuthoritativeRdo?: (
+    rdoId: string,
+  ) => Promise<AuthoritativeRdoLookup>;
+  executionLease?: SyncExecutionLease;
+}
+
+export class RdoWorkforceContextUnverifiedError extends Error {
+  constructor() {
+    super("O contexto atual de colaboradores está parcial ou incompatível.");
+    this.name = "RdoWorkforceContextUnverifiedError";
+  }
+}
+
+function isPermanentRecoveryLookupError(error: unknown): boolean {
+  return error instanceof RdoLookupHttpError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    ![401, 403, 408, 425, 429].includes(error.status);
+}
+
+function normalizedServerMessage(value: string | null): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[.\s]+$/g, "")
+    .trim();
+}
+
+function isRecoverableRejectedRdoCreate(
+  mutation: OutboxMutationRecord,
+): mutation is CanonicalOutboxMutationRecord {
+  if (
+    !isCanonicalOutboxMutation(mutation) ||
+    mutation.entidadeTipo !== "RDO" ||
+    mutation.operation !== "CREATE" ||
+    mutation.operacao !== "CRIAR_RDO" ||
+    mutation.status !== "REJECTED"
+  ) {
+    return false;
+  }
+  return mutation.lastSafeCode === "IDEMPOTENCY_MISMATCH" ||
+    (
+      mutation.lastSafeCode === "VALIDATION_OR_AUTHORIZATION" &&
+      normalizedServerMessage(mutation.ultimoErro) ===
+        RDO_WORKFORCE_LINK_REJECTION
+    );
+}
+
+async function currentAuthorizedCollaboratorIds(
+  obraId: string,
+): Promise<ReadonlySet<string>> {
+  let collaborators;
+  try {
+    collaborators = await buscarColaboradoresAutorizadosDaObra(obraId);
+  } catch (error: unknown) {
+    if (error instanceof RdoLookupPayloadError) {
+      throw new RdoWorkforceContextUnverifiedError();
+    }
+    throw error;
+  }
+  if (!collaborators.complete) {
+    throw new RdoWorkforceContextUnverifiedError();
+  }
+  return new Set(collaborators.ids);
+}
+
+function repairInvalidWorkforceLinks(
+  draft: RdoDraft,
+  authorizedIds: ReadonlySet<string>,
+): {
+  draft: RdoDraft;
+  changed: boolean;
+  hasInvalidIds: boolean;
+  unresolvedInvalidIds: string[];
+} {
+  const referencedIds = new Set<string>();
+  for (const item of draft.maoObra) {
+    if (item.selected && item.colaboradorId.trim()) {
+      referencedIds.add(item.colaboradorId.trim());
+    }
+  }
+  for (const item of draft.alocacoesColaboradores) {
+    if (item.colaboradorId.trim()) {
+      referencedIds.add(item.colaboradorId.trim());
+    }
+  }
+  if (draft.apontadorColaboradorId.trim()) {
+    referencedIds.add(draft.apontadorColaboradorId.trim());
+  }
+  const invalidIds = new Set(
+    [...referencedIds].filter((id) => !authorizedIds.has(id)),
+  );
+  const unresolvedInvalidIds = new Set<string>();
+  const maoObra = draft.maoObra.map((item) => {
+    const collaboratorId = item.colaboradorId.trim();
+    if (
+      !item.selected ||
+      !collaboratorId ||
+      !invalidIds.has(collaboratorId)
+    ) {
+      return item;
+    }
+    if (!item.nomeColaborador.trim()) {
+      unresolvedInvalidIds.add(collaboratorId);
+      return item;
+    }
+    return {
+      ...item,
+      origemItemId: "",
+      sourceRdoId: "",
+      origin: "MANUAL" as const,
+      availability: "UNKNOWN" as const,
+      colaboradorId: "",
+    };
+  });
+  const alocacoesColaboradores = draft.alocacoesColaboradores.filter(
+    (item) => !invalidIds.has(item.colaboradorId.trim()),
+  );
+  const clearsApontador = invalidIds.has(
+    draft.apontadorColaboradorId.trim(),
+  );
+  const changed =
+    invalidIds.size > 0 &&
+    unresolvedInvalidIds.size === 0 &&
+    (
+      maoObra.some((item, index) => item !== draft.maoObra[index]) ||
+      alocacoesColaboradores.length !==
+        draft.alocacoesColaboradores.length ||
+      clearsApontador
+    );
+  return {
+    draft: changed
+      ? {
+          ...draft,
+          maoObra,
+          alocacoesColaboradores,
+          apontadorColaboradorId: clearsApontador
+            ? ""
+            : draft.apontadorColaboradorId,
+          apontadorRdo: draft.apontadorRdo,
+        }
+      : draft,
+    changed,
+    hasInvalidIds: invalidIds.size > 0,
+    unresolvedInvalidIds: [...unresolvedInvalidIds],
+  };
+}
+
+function replacementCanonicalEvent(
+  original: CanonicalOperationalEventRecord,
+  built: Awaited<ReturnType<typeof buildCanonicalMutation>>,
+): CanonicalOperationalEventRecord {
+  const { mutation } = built;
+  return {
+    ...original,
+    id: mutation.trace.ontologyEventId,
+    type: mutation.entityType === "RDO"
+      ? mutation.operation === "CREATE"
+        ? "RDO_CRIADO"
+        : mutation.operation === "UPDATE"
+          ? "RDO_EDITADO"
+          : original.type
+      : original.type,
+    occurredAt: mutation.occurredAt,
+    syncedAt: null,
+    payload: built.nextSnapshot,
+    syncStatus: "PENDING_SYNC",
+    clientMutationId: mutation.clientMutationId,
+    deviceId: mutation.deviceId,
+    correlationId: mutation.correlationId,
+    causationId: mutation.causationId,
+    previousState: built.previousSnapshot,
+    newState: built.nextSnapshot,
+    result: "PENDING",
+    errorCategory: null,
+    entityVersion: mutation.baseVersion,
+  };
+}
+
+function pendingCanonicalEvent(
+  event: CanonicalOperationalEventRecord,
+): CanonicalOperationalEventRecord {
+  return {
+    ...event,
+    syncedAt: null,
+    syncStatus: "PENDING_SYNC",
+    result: "PENDING",
+    errorCategory: null,
+  };
+}
+
+function rewireLegacyDependencies(
+  mutation: OutboxMutationRecord,
+  replacements: ReadonlyMap<string, string>,
+): OutboxMutationRecord | null {
+  if (
+    isCanonicalOutboxMutation(mutation) ||
+    !["PENDING", "ERROR"].includes(mutation.status) ||
+    !mutation.dependsOnMutationIds?.some((id) => replacements.has(id))
+  ) {
+    return null;
+  }
+  const dependsOnMutationIds = [
+    ...new Set(
+      mutation.dependsOnMutationIds.map((dependencyId) =>
+        replacements.get(dependencyId) ?? dependencyId
+      ),
+    ),
+  ];
+  return {
+    ...mutation,
+    dependsOnMutationIds,
+  };
+}
+
+interface RejectedRecoverySnapshot {
+  mutation: CanonicalOutboxMutationRecord;
+  event: CanonicalOperationalEventRecord;
+}
+
+interface TerminalizableRejectedRecoverySnapshot {
+  mutation: CanonicalOutboxMutationRecord;
+  event: CanonicalOperationalEventRecord | null;
+}
+
+interface RecoveryDecisionSnapshot {
+  allMutations: readonly OutboxMutationRecord[];
+  allEvents: readonly OperationalEventRecord[];
+  rdoId?: string;
+  rdo?: LocalRdoRecord | null;
+}
+
+async function assertRecoveryLease(
+  lease: SyncExecutionLease | undefined,
+): Promise<void> {
+  if (lease) await lease.assertOwned();
+}
+
+async function assertRecoveryLeaseInTransaction(
+  transaction: ReturnType<
+    Awaited<ReturnType<typeof getCortexDb>>["transaction"]
+  >,
+  lease: SyncExecutionLease | undefined,
+): Promise<void> {
+  if (!lease) return;
+  const state = await transaction.objectStore("sync_state").get("default");
+  const durableLease = state?.syncExecutionLease;
+  const expiry = durableLease
+    ? Date.parse(durableLease.expiresAt)
+    : Number.NaN;
+  if (
+    !durableLease ||
+    durableLease.ownerToken !== lease.ownerToken ||
+    !Number.isFinite(expiry) ||
+    expiry <= Date.now()
+  ) {
+    transaction.abort();
+    throw new SyncLeaseLostError();
+  }
+}
+
+async function terminalizeRejectedRecovery(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
+  guard: SyncSessionGuard,
+  snapshots: readonly TerminalizableRejectedRecoverySnapshot[],
+  safeCode: string,
+  message: string,
+  lease: SyncExecutionLease | undefined,
+  decisionSnapshot?: RecoveryDecisionSnapshot,
+): Promise<void> {
+  if (snapshots.length === 0) return;
+  await assertRecoveryLease(lease);
+  const entityId = snapshots[0].mutation.entityId;
+  const expectedEntityMutations = await database.getAllFromIndex(
+    "outbox_mutations",
+    "by-entity-id",
+    entityId,
+  );
+  assertSyncSession(guard);
+  await assertRecoveryLease(lease);
+  const guarded = guardSyncTransaction(
+    database.transaction(
+      ["outbox_mutations", "operational_events", "rdos", "sync_state"],
+      "readwrite",
+    ),
+    guard,
+  );
+  const transaction = guarded.transaction;
+  const outbox = transaction.objectStore("outbox_mutations");
+  const events = transaction.objectStore("operational_events");
+  const currentEntityMutations = await outbox
+    .index("by-entity-id")
+    .getAll(entityId);
+  if (
+    canonicalMutationJson(currentEntityMutations) !==
+      canonicalMutationJson(expectedEntityMutations)
+  ) {
+    await guarded.complete();
+    return;
+  }
+  if (
+    decisionSnapshot &&
+    (
+      canonicalMutationJson(await outbox.getAll()) !==
+        canonicalMutationJson(decisionSnapshot.allMutations) ||
+      canonicalMutationJson(await events.getAll()) !==
+        canonicalMutationJson(decisionSnapshot.allEvents)
+      ||
+      (
+        decisionSnapshot.rdoId !== undefined &&
+        canonicalMutationJson(
+          (await transaction.objectStore("rdos").get(
+            decisionSnapshot.rdoId,
+          )) ?? null,
+        ) !== canonicalMutationJson(decisionSnapshot.rdo ?? null)
+      )
+    )
+  ) {
+    await guarded.complete();
+    return;
+  }
+  for (const snapshot of snapshots) {
+    const current = await outbox.get(snapshot.mutation.clientMutationId);
+    const currentEvent = snapshot.event
+      ? await events.get(snapshot.event.id)
+      : null;
+    if (
+      !current ||
+      canonicalMutationJson(current) !==
+        canonicalMutationJson(snapshot.mutation) ||
+      (
+        snapshot.event &&
+        (
+          !currentEvent ||
+          canonicalMutationJson(currentEvent) !==
+            canonicalMutationJson(snapshot.event)
+        )
+      )
+    ) {
+      await guarded.complete();
+      return;
+    }
+  }
+  await assertRecoveryLeaseInTransaction(transaction, lease);
+  const timestamp = nowUtc();
+  for (const snapshot of snapshots) {
+    await outbox.put({
+      ...snapshot.mutation,
+      status: "REJECTED",
+      nextAttemptAt: null,
+      lastSafeCode: safeCode,
+      blockedReason: safeCode,
+      ultimoErro: message,
+      updatedAt: timestamp,
+    });
+    if (snapshot.event) {
+      await events.put({
+        ...snapshot.event,
+        result: "REJECTED",
+        syncStatus: "SYNC_FAILED",
+        errorCategory: safeCode,
+      });
+    }
+  }
+  await guarded.complete();
+}
+
+async function deferRejectedRecovery(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
+  guard: SyncSessionGuard,
+  snapshot: RejectedRecoverySnapshot,
+  deferredAt: string,
+  lease: SyncExecutionLease | undefined,
+): Promise<void> {
+  await assertRecoveryLease(lease);
+  const guarded = guardSyncTransaction(
+    database.transaction(
+      ["outbox_mutations", "sync_state"],
+      "readwrite",
+    ),
+    guard,
+  );
+  const transaction = guarded.transaction;
+  const outbox = transaction.objectStore("outbox_mutations");
+  const current = await outbox.get(snapshot.mutation.clientMutationId);
+  if (
+    !current ||
+    canonicalMutationJson(current) !==
+      canonicalMutationJson(snapshot.mutation)
+  ) {
+    await guarded.complete();
+    return;
+  }
+  await assertRecoveryLeaseInTransaction(transaction, lease);
+  const parsed = Date.parse(deferredAt);
+  const baseTime = Number.isFinite(parsed) ? parsed : Date.now();
+  const attempts = snapshot.mutation.tentativas + 1;
+  const delay = Math.min(
+    60 * 60 * 1000,
+    60_000 * (2 ** Math.min(Math.max(attempts - 1, 0), 6)),
+  );
+  await outbox.put({
+    ...snapshot.mutation,
+    tentativas: attempts,
+    nextAttemptAt: new Date(baseTime + delay).toISOString(),
+    updatedAt: deferredAt,
+  });
+  await guarded.complete();
+}
+
+async function canonicalEventSnapshot(
+  database: Awaited<ReturnType<typeof getCortexDb>>,
+  mutation: CanonicalOutboxMutationRecord,
+): Promise<CanonicalOperationalEventRecord | null> {
+  const events = await database.getAllFromIndex(
+    "operational_events",
+    "by-client-mutation-id",
+    mutation.clientMutationId,
+  );
+  return events.length === 1 && events[0].schemaVersion === 13
+    ? events[0] as CanonicalOperationalEventRecord
+    : null;
+}
+
+function canonicalEventFromSnapshot(
+  events: readonly OperationalEventRecord[],
+  mutation: CanonicalOutboxMutationRecord,
+): CanonicalOperationalEventRecord | null {
+  const matches = events.filter(
+    (event) =>
+      event.clientMutationId === mutation.clientMutationId,
+  );
+  return matches.length === 1 && matches[0].schemaVersion === 13
+    ? matches[0] as CanonicalOperationalEventRecord
+    : null;
+}
+
+function affectedCanonicalDependents(
+  allMutations: readonly OutboxMutationRecord[],
+  rootIds: ReadonlySet<string>,
+): CanonicalOutboxMutationRecord[] {
+  const maximumDependents = 64;
+  const allDependentIds = allDependentMutationIds(
+    allMutations,
+    rootIds,
+  );
+  if (allDependentIds.size > maximumDependents) {
+    throw new Error(
+      "A cadeia de dependências excede o limite seguro de recuperação.",
+    );
+  }
+  const allMutationsById = new Map(
+    allMutations.map((mutation) => [
+      mutation.clientMutationId,
+      mutation,
+    ]),
+  );
+  const allGraphIds = new Set([...rootIds, ...allDependentIds]);
+  const unresolvedGraph = new Set(allGraphIds);
+  const resolvedGraph = new Set<string>();
+  for (const mutationId of allGraphIds) {
+    const mutation = allMutationsById.get(mutationId);
+    if (!mutation) {
+      throw new Error("A cadeia de dependências possui nó ausente.");
+    }
+    for (const dependencyId of mutation.dependsOnMutationIds ?? []) {
+      if (dependencyId === mutationId) {
+        throw new Error("A cadeia de dependências contém autodependência.");
+      }
+      const dependency = allMutationsById.get(dependencyId);
+      if (!dependency) {
+        throw new Error("A cadeia de dependências possui dependência ausente.");
+      }
+      if (
+        !allGraphIds.has(dependencyId) &&
+        (
+          dependency.status !== "SYNCED" ||
+          (
+            isCanonicalOutboxMutation(mutation) &&
+            (
+              !isCanonicalOutboxMutation(dependency) ||
+              dependency.userId !== mutation.userId ||
+              dependency.obraId !== mutation.obraId
+            )
+          )
+        )
+      ) {
+        throw new Error(
+          "A cadeia de dependências possui dependência externa não aplicada.",
+        );
+      }
+    }
+  }
+  while (unresolvedGraph.size > 0) {
+    const ready = [...unresolvedGraph].filter((mutationId) => {
+      const mutation = allMutationsById.get(mutationId)!;
+      return (mutation.dependsOnMutationIds ?? [])
+        .filter((dependencyId) => allGraphIds.has(dependencyId))
+        .every((dependencyId) => resolvedGraph.has(dependencyId));
+    });
+    if (ready.length === 0) {
+      throw new Error("A cadeia de dependências contém um ciclo.");
+    }
+    for (const mutationId of ready) {
+      unresolvedGraph.delete(mutationId);
+      resolvedGraph.add(mutationId);
+    }
+  }
+  const affected = new Set(rootIds);
+  const result: CanonicalOutboxMutationRecord[] = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const mutation of allMutations) {
+      if (
+        !isCanonicalOutboxMutation(mutation) ||
+        !["PENDING", "ERROR"].includes(mutation.status) ||
+        affected.has(mutation.clientMutationId) ||
+        !(mutation.dependsOnMutationIds ?? []).some(
+          (id) => affected.has(id),
+        )
+      ) {
+        continue;
+      }
+      affected.add(mutation.clientMutationId);
+      result.push(mutation);
+      if (result.length > maximumDependents) {
+        throw new Error(
+          "A cadeia de dependências excede o limite seguro de recuperação.",
+        );
+      }
+      changed = true;
+    }
+  }
+  const affectedIds = new Set([
+    ...rootIds,
+    ...result.map((mutation) => mutation.clientMutationId),
+  ]);
+  for (const descendantId of allDependentMutationIds(
+    allMutations,
+    rootIds,
+  )) {
+    const descendant = allMutations.find(
+      (mutation) => mutation.clientMutationId === descendantId,
+    );
+    if (
+      descendant &&
+      isCanonicalOutboxMutation(descendant) &&
+      !affectedIds.has(descendantId)
+    ) {
+      throw new Error(
+        "A cadeia canônica atravessa uma dependência legada.",
+      );
+    }
+  }
+  const mutationsById = new Map(
+    allMutations.map((mutation) => [
+      mutation.clientMutationId,
+      mutation,
+    ]),
+  );
+  const roots = [...rootIds].map((rootId) => {
+    const root = mutationsById.get(rootId);
+    if (!root || !isCanonicalOutboxMutation(root)) {
+      throw new Error("A raiz canônica da recuperação está ausente.");
+    }
+    return root;
+  });
+  const nodes = [...roots, ...result];
+  for (const mutation of nodes) {
+    for (const dependencyId of mutation.dependsOnMutationIds ?? []) {
+      if (dependencyId === mutation.clientMutationId) {
+        throw new Error("A cadeia canônica contém autodependência.");
+      }
+      const dependency = mutationsById.get(dependencyId);
+      if (!dependency) {
+        throw new Error("A cadeia canônica possui dependência ausente.");
+      }
+      if (
+        !affectedIds.has(dependencyId) &&
+        (
+          !isCanonicalOutboxMutation(dependency) ||
+          dependency.status !== "SYNCED" ||
+          dependency.userId !== mutation.userId ||
+          dependency.obraId !== mutation.obraId
+        )
+      ) {
+        throw new Error(
+          "A cadeia canônica possui dependência externa não aplicada.",
+        );
+      }
+    }
+  }
+  const resolved = new Set<string>();
+  const pending = new Map(
+    nodes.map((mutation) => [mutation.clientMutationId, mutation]),
+  );
+  const ordered: CanonicalOutboxMutationRecord[] = [];
+  while (pending.size > 0) {
+    const ready = [...pending.values()].filter((mutation) =>
+      (mutation.dependsOnMutationIds ?? [])
+        .filter((id) => affectedIds.has(id))
+        .every((id) => resolved.has(id))
+    );
+    if (ready.length === 0) {
+      throw new Error(
+        "A cadeia canônica de dependências contém um ciclo.",
+      );
+    }
+    ready.sort((left, right) =>
+      left.occurredAt.localeCompare(right.occurredAt)
+    );
+    for (const mutation of ready) {
+      pending.delete(mutation.clientMutationId);
+      resolved.add(mutation.clientMutationId);
+      if (!rootIds.has(mutation.clientMutationId)) {
+        ordered.push(mutation);
+      }
+    }
+  }
+  return ordered;
+}
+
+function allCanonicalDependents(
+  allMutations: readonly OutboxMutationRecord[],
+  rootIds: ReadonlySet<string>,
+): CanonicalOutboxMutationRecord[] {
+  const affected = new Set(rootIds);
+  const dependents: CanonicalOutboxMutationRecord[] = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const mutation of allMutations) {
+      if (
+        !isCanonicalOutboxMutation(mutation) ||
+        affected.has(mutation.clientMutationId) ||
+        !(mutation.dependsOnMutationIds ?? []).some(
+          (dependencyId) => affected.has(dependencyId),
+        )
+      ) {
+        continue;
+      }
+      affected.add(mutation.clientMutationId);
+      dependents.push(mutation);
+      changed = true;
+    }
+  }
+  return dependents;
+}
+
+function allDependentMutationIds(
+  allMutations: readonly OutboxMutationRecord[],
+  rootIds: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const affected = new Set(rootIds);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const mutation of allMutations) {
+      if (
+        affected.has(mutation.clientMutationId) ||
+        !(mutation.dependsOnMutationIds ?? []).some(
+          (dependencyId) => affected.has(dependencyId),
+        )
+      ) {
+        continue;
+      }
+      affected.add(mutation.clientMutationId);
+      changed = true;
+    }
+  }
+  for (const rootId of rootIds) affected.delete(rootId);
+  return affected;
+}
+
+type RecoveryAncestryState = "CLEAR" | "RECOVERED" | "INVALID";
+
+function localEditSupersededAncestorIds(
+  mutation: CanonicalOutboxMutationRecord,
+  entityMutations: readonly OutboxMutationRecord[],
+): ReadonlySet<string> {
+  const byId = new Map(
+    entityMutations.map((candidate) => [
+      candidate.clientMutationId,
+      candidate,
+    ]),
+  );
+  const ancestors = new Set<string>();
+  let child = mutation;
+  while (child.causationId && !ancestors.has(child.causationId)) {
+    const ancestor = byId.get(child.causationId);
+    if (
+      !ancestor ||
+      !isCanonicalOutboxMutation(ancestor) ||
+      ancestor.userId !== mutation.userId ||
+      ancestor.obraId !== mutation.obraId ||
+      ancestor.status !== "REJECTED" ||
+      ancestor.lastSafeCode !== "SUPERSEDED_BY_LOCAL_EDIT" ||
+      ancestor.blockedReason !==
+        `SUPERSEDED_BY:${child.clientMutationId}`
+    ) {
+      break;
+    }
+    ancestors.add(ancestor.clientMutationId);
+    child = ancestor;
+  }
+  return ancestors;
+}
+
+function recoveryAncestryState(
+  mutation: CanonicalOutboxMutationRecord,
+  entityMutations: readonly OutboxMutationRecord[],
+): RecoveryAncestryState {
+  const byId = new Map(
+    entityMutations.map((candidate) => [
+      candidate.clientMutationId,
+      candidate,
+    ]),
+  );
+  const visited = new Set<string>();
+  let ancestorId = mutation.causationId;
+  while (ancestorId) {
+    if (visited.has(ancestorId)) return "INVALID";
+    visited.add(ancestorId);
+    const ancestor = byId.get(ancestorId);
+    if (!ancestor) return "INVALID";
+    if (
+      ancestor.lastSafeCode ===
+        "SUPERSEDED_BY_IDEMPOTENCY_RECOVERY" ||
+      ancestor.lastSafeCode ===
+        "SUPERSEDED_BY_WORKFORCE_RECOVERY" ||
+      ancestor.lastSafeCode ===
+        "SUPERSEDED_BY_DEPENDENCY_REWIRE"
+    ) {
+      return "RECOVERED";
+    }
+    if (
+      !isCanonicalOutboxMutation(ancestor) ||
+      ancestor.userId !== mutation.userId ||
+      ancestor.obraId !== mutation.obraId
+    ) {
+      return "INVALID";
+    }
+    ancestorId = ancestor.causationId;
+  }
+  return "CLEAR";
+}
+
+export async function recoverRejectedRdoMutationsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+  options: RdoRejectedMutationRecoveryOptions = {},
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const now = options.now ?? nowUtc;
+  const scanTime = Date.parse(now());
+  const candidates = (
+    await database.getAllFromIndex(
+      "outbox_mutations",
+      "by-status",
+      "REJECTED",
+    )
+  )
+    .filter(isRecoverableRejectedRdoCreate)
+    .filter((mutation) => {
+      const nextAttempt = Date.parse(mutation.nextAttemptAt ?? "");
+      return !Number.isFinite(nextAttempt) ||
+        !Number.isFinite(scanTime) ||
+        nextAttempt <= scanTime;
+    })
+    .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  const mutationIdFactory =
+    options.clientMutationIdFactory ?? (() => crypto.randomUUID());
+  const eventIdFactory =
+    options.ontologyEventIdFactory ?? (() => crypto.randomUUID());
+  const loadAuthorizedIds =
+    options.loadAuthorizedCollaboratorIds ??
+      currentAuthorizedCollaboratorIds;
+  const lookupAuthoritativeRdo =
+    options.lookupAuthoritativeRdo ??
+      buscarRdoAutoritativoPorId;
+  let recovered = 0;
+  const visitedEntities = new Set<string>();
+
+  for (const candidate of candidates) {
+    assertSyncSession(guard);
+    if (visitedEntities.has(candidate.entityId)) continue;
+    visitedEntities.add(candidate.entityId);
+    const candidateMutationSnapshot = await database.getAll(
+      "outbox_mutations",
+    );
+    const candidateEventSnapshot = await database.getAll(
+      "operational_events",
+    );
+    const entityMutations = candidateMutationSnapshot.filter(
+      (mutation) => mutation.entidadeId === candidate.entityId,
+    );
+    const rejectedCreates = entityMutations
+      .filter(isRecoverableRejectedRdoCreate)
+      .sort((left, right) =>
+        right.occurredAt.localeCompare(left.occurredAt)
+    );
+    const original = rejectedCreates[0];
+    if (!original || original.userId !== guard.userId) continue;
+    const rootIds = new Set(
+      rejectedCreates.map((mutation) => mutation.clientMutationId),
+    );
+    const rejectedSnapshots = rejectedCreates.map(
+      (mutation) => ({
+        mutation,
+        event: canonicalEventFromSnapshot(
+          candidateEventSnapshot,
+          mutation,
+        ),
+      }),
+    );
+    if (rejectedCreates.length > 1) {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        rejectedSnapshots,
+        "DUPLICATE_REJECTED_RDO_CREATE_REQUIRES_REVIEW",
+        "Há mais de um CREATE rejeitado para o mesmo RDO.",
+        options.executionLease,
+        {
+          allMutations: candidateMutationSnapshot,
+          allEvents: candidateEventSnapshot,
+        },
+      );
+      continue;
+    }
+    const originalEvent = rejectedSnapshots[0]?.event ?? null;
+    const allMutations = candidateMutationSnapshot;
+    const allEvents = candidateEventSnapshot;
+    const rdo = await database.get("rdos", original.entidadeId);
+    assertSyncSession(guard);
+    if (
+      !rdo ||
+      !originalEvent ||
+      rdo.id !== original.entityId ||
+      rdo.obraId !== original.obraId
+    ) {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        rejectedSnapshots,
+        "RDO_RECOVERY_LOCAL_STATE_INVALID",
+        "O RDO rejeitado não possui estado e evento locais únicos.",
+        options.executionLease,
+        {
+          allMutations,
+          allEvents,
+          rdoId: original.entidadeId,
+          rdo: rdo ?? null,
+        },
+      );
+      continue;
+    }
+    const snapshot = { mutation: original, event: originalEvent };
+    const recoveryDecisionSnapshot = {
+      allMutations,
+      allEvents,
+      rdoId: original.entidadeId,
+      rdo,
+    };
+    try {
+      await assertCanonicalMutationEventProvenance(
+        original,
+        pendingCanonicalEvent(originalEvent),
+      );
+    } catch {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "CANONICAL_RECOVERY_PROVENANCE_INVALID",
+        "A mutação rejeitada perdeu a coerência canônica local.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    const ancestryState = recoveryAncestryState(
+      original,
+      entityMutations,
+    );
+    if (ancestryState === "RECOVERED") {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "AUTO_RECOVERY_LIMIT_REACHED",
+        "A autorrecuperação já foi tentada uma vez; revise o RDO.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    if (ancestryState === "INVALID") {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "CAUSAL_CHAIN_INVALID",
+        "A cadeia causal local está ausente ou contém um ciclo.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    const transitiveDependentIds = allDependentMutationIds(
+      candidateMutationSnapshot,
+      rootIds,
+    );
+    const localEditAncestorIds = localEditSupersededAncestorIds(
+      original,
+      entityMutations,
+    );
+    const transitiveDependents = candidateMutationSnapshot.filter(
+      (mutation) =>
+        transitiveDependentIds.has(mutation.clientMutationId),
+    );
+    if (
+      transitiveDependents.some(
+        (mutation) => mutation.status === "SYNCING",
+      )
+    ) {
+      continue;
+    }
+    if (
+      transitiveDependents.some(
+        (mutation) =>
+          !["PENDING", "ERROR"].includes(mutation.status),
+      )
+    ) {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "DEPENDENCY_RECOVERY_REQUIRES_REVIEW",
+        "Uma dependência transitiva já está em estado terminal.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    const otherSameEntityMutations = entityMutations.filter(
+      (mutation) =>
+        mutation.clientMutationId !== original.clientMutationId &&
+        !localEditAncestorIds.has(mutation.clientMutationId),
+    );
+    if (
+      otherSameEntityMutations.some(
+        (mutation) => mutation.status === "SYNCING",
+      )
+    ) {
+      continue;
+    }
+    const competingActiveMutations = entityMutations.filter(
+      (mutation) =>
+        mutation.clientMutationId !== original.clientMutationId &&
+        !localEditAncestorIds.has(mutation.clientMutationId) &&
+        !(
+          mutation.operacao !== "CRIAR_RDO" &&
+          transitiveDependentIds.has(mutation.clientMutationId) &&
+          ["PENDING", "ERROR"].includes(mutation.status)
+        )
+    );
+    if (competingActiveMutations.length > 0) {
+      const competingDecisionSnapshot = {
+        allMutations: candidateMutationSnapshot,
+        allEvents: candidateEventSnapshot,
+      };
+      const onlyCreates = competingActiveMutations.every(
+        (mutation) => mutation.operacao === "CRIAR_RDO",
+      );
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        rejectedSnapshots,
+        onlyCreates
+          ? "COMPETING_RDO_CREATE_REQUIRES_REVIEW"
+          : "COMPETING_RDO_MUTATION_REQUIRES_REVIEW",
+        onlyCreates
+          ? "Já existe outro CREATE ativo para o mesmo RDO."
+          : "Já existe outra alteração ativa e independente para o mesmo RDO.",
+        options.executionLease,
+        competingDecisionSnapshot,
+      );
+      continue;
+    }
+    const canonicalDependents = allCanonicalDependents(
+      allMutations,
+      rootIds,
+    );
+    if (
+      canonicalDependents.some(
+        (dependent) => dependent.status === "SYNCING",
+      )
+    ) {
+      continue;
+    }
+    if (
+      canonicalDependents.some(
+        (dependent) =>
+          !["PENDING", "ERROR"].includes(dependent.status),
+      )
+    ) {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "DEPENDENCY_RECOVERY_REQUIRES_REVIEW",
+        "Uma dependência canônica já está em estado terminal.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    let dependents: CanonicalOutboxMutationRecord[];
+    try {
+      dependents = affectedCanonicalDependents(allMutations, rootIds);
+    } catch {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "DEPENDENCY_RECOVERY_REQUIRES_REVIEW",
+        "A cadeia canônica de dependências é inválida ou excede o limite.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    const workforceRecovery =
+      original.lastSafeCode === "VALIDATION_OR_AUTHORIZATION";
+    let repairedDraft = rdoDraftFromLocalRecord(rdo);
+    let previousSnapshot = originalEvent.previousState;
+    let nextPayload: Record<string, unknown>;
+    let replacementOperation = original.operation;
+    let replacementTransportOperation = original.operacao;
+    let replacementBaseVersion = original.baseVersion;
+    let authoritativeRdo: LocalRdoRecord | null = null;
+    if (workforceRecovery) {
+      let authorizedIds: ReadonlySet<string>;
+      await assertRecoveryLease(options.executionLease);
+      try {
+        authorizedIds = await loadAuthorizedIds(rdo.obraId, rdo.dataRdo);
+      } catch (error: unknown) {
+        assertSyncSession(guard);
+        await assertRecoveryLease(options.executionLease);
+        if (
+          error instanceof RdoWorkforceContextUnverifiedError ||
+          isPermanentRecoveryLookupError(error)
+        ) {
+          await terminalizeRejectedRecovery(
+            database,
+            guard,
+            [snapshot],
+            "WORKFORCE_RECOVERY_CONTEXT_UNVERIFIED",
+            "O contexto atual de colaboradores não pôde ser comprovado.",
+            options.executionLease,
+            recoveryDecisionSnapshot,
+          );
+        } else {
+          await deferRejectedRecovery(
+            database,
+            guard,
+            snapshot,
+            now(),
+            options.executionLease,
+          );
+        }
+        continue;
+      }
+      assertSyncSession(guard);
+      await assertRecoveryLease(options.executionLease);
+      const repaired = repairInvalidWorkforceLinks(
+        repairedDraft,
+        authorizedIds,
+      );
+      if (repaired.hasInvalidIds && !repaired.changed) {
+        await terminalizeRejectedRecovery(
+          database,
+          guard,
+          [snapshot],
+          "WORKFORCE_RECOVERY_REQUIRES_REVIEW",
+          repaired.unresolvedInvalidIds.length > 0
+            ? "Há vínculo inválido sem nome nominal para recuperação segura."
+            : "O contexto atual ainda autoriza todos os vínculos locais.",
+          options.executionLease,
+          recoveryDecisionSnapshot,
+        );
+        continue;
+      }
+      repairedDraft = repaired.draft;
+      nextPayload = buildRdoSyncPayload(repairedDraft);
+    } else {
+      let authoritative: AuthoritativeRdoLookup;
+      await assertRecoveryLease(options.executionLease);
+      try {
+        authoritative = await lookupAuthoritativeRdo(original.entityId);
+      } catch (error: unknown) {
+        assertSyncSession(guard);
+        await assertRecoveryLease(options.executionLease);
+        if (isPermanentRecoveryLookupError(error)) {
+          await terminalizeRejectedRecovery(
+            database,
+            guard,
+            [snapshot],
+            "IDEMPOTENCY_RECONCILIATION_REQUIRED",
+            "A reconciliação autoritativa foi recusada permanentemente.",
+            options.executionLease,
+            recoveryDecisionSnapshot,
+          );
+        } else {
+          await deferRejectedRecovery(
+            database,
+            guard,
+            snapshot,
+            now(),
+            options.executionLease,
+          );
+        }
+        continue;
+      }
+      assertSyncSession(guard);
+      await assertRecoveryLease(options.executionLease);
+      if (authoritative.kind === "FOUND") {
+        if (
+          authoritative.rdo.obraId !== rdo.obraId ||
+          authoritative.rdo.clientMutationId !==
+            original.clientMutationId ||
+          authoritative.rdo.status !== "RASCUNHO"
+        ) {
+          await terminalizeRejectedRecovery(
+            database,
+            guard,
+            [snapshot],
+            "IDEMPOTENCY_RECONCILIATION_REQUIRED",
+            "O RDO autoritativo pertence a outra obra.",
+            options.executionLease,
+            recoveryDecisionSnapshot,
+          );
+          continue;
+        }
+        const reconciledRdo: LocalRdoRecord = {
+          ...rdo,
+          programacaoId:
+            typeof authoritative.rdo.programacaoId === "string"
+              ? authoritative.rdo.programacaoId
+              : null,
+          numeroRdo:
+            typeof authoritative.rdo.numeroRdo === "string"
+              ? authoritative.rdo.numeroRdo
+              : rdo.numeroRdo,
+          dataRdo:
+            typeof authoritative.rdo.dataRdo === "string"
+              ? authoritative.rdo.dataRdo
+              : rdo.dataRdo,
+          statusRdo: "RASCUNHO",
+          versaoEntidade: authoritative.version,
+          payload: authoritative.rdo,
+          syncStatus: "SYNCED",
+          updatedAt: now(),
+        };
+        authoritativeRdo = reconciledRdo;
+        const authoritativeDraft =
+          rdoDraftFromLocalRecord(reconciledRdo);
+        previousSnapshot = buildRdoSyncPayload(authoritativeDraft);
+        nextPayload = buildRdoSyncPayload(repairedDraft);
+        replacementOperation = "UPDATE";
+        replacementTransportOperation = "ATUALIZAR_RDO_RASCUNHO";
+        replacementBaseVersion = authoritative.version;
+      } else if (authoritative.kind === "MISSING") {
+        nextPayload = buildRdoSyncPayload(repairedDraft);
+      } else {
+        await deferRejectedRecovery(
+          database,
+          guard,
+          snapshot,
+          now(),
+          options.executionLease,
+        );
+        continue;
+      }
+    }
+
+    const timestamp = now();
+    const replacementIds = new Map<string, string>();
+    const rootReplacementId = mutationIdFactory();
+    for (const rootId of rootIds) {
+      replacementIds.set(rootId, rootReplacementId);
+    }
+    for (const dependent of dependents) {
+      replacementIds.set(
+        dependent.clientMutationId,
+        mutationIdFactory(),
+      );
+    }
+    const built = await buildCanonicalMutation({
+      clientMutationId: rootReplacementId,
+      ontologyEventId: eventIdFactory(),
+      deviceId: original.deviceId,
+      userId: original.userId,
+      obraId: original.obraId,
+      entityType: original.entityType,
+      entityId: original.entityId,
+      operation: replacementOperation,
+      transportOperation: replacementTransportOperation,
+      baseVersion: replacementBaseVersion,
+      occurredAt: timestamp,
+      previousSnapshot,
+      nextSnapshot: nextPayload,
+      authorizationScope: original.trace.authorizationScope,
+      correlationId: original.correlationId,
+      causationId: original.clientMutationId,
+      transport: original.transport,
+      dependsOnMutationIds: original.dependsOnMutationIds,
+      relatedEntities: original.relatedEntities,
+    });
+    const replacementEvent = replacementCanonicalEvent(
+      originalEvent,
+      built,
+    );
+    const dependentReplacements = [];
+    let dependentInvalid = false;
+    for (const dependent of dependents) {
+      const event = await canonicalEventSnapshot(database, dependent);
+      if (
+        !event ||
+        dependent.userId !== original.userId ||
+        dependent.obraId !== original.obraId
+      ) {
+        dependentInvalid = true;
+        break;
+      }
+      try {
+        await assertCanonicalMutationEventProvenance(
+          dependent,
+          pendingCanonicalEvent(event),
+        );
+      } catch {
+        dependentInvalid = true;
+        break;
+      }
+      const dependentBuilt = await buildCanonicalMutation({
+        clientMutationId: replacementIds.get(
+          dependent.clientMutationId,
+        ),
+        ontologyEventId: eventIdFactory(),
+        deviceId: dependent.deviceId,
+        userId: dependent.userId,
+        obraId: dependent.obraId,
+        entityType: dependent.entityType,
+        entityId: dependent.entityId,
+        operation: dependent.operation,
+        transportOperation: dependent.operacao,
+        baseVersion: dependent.baseVersion,
+        occurredAt: timestamp,
+        previousSnapshot: event.previousState,
+        nextSnapshot: dependent.payload,
+        authorizationScope: dependent.trace.authorizationScope,
+        correlationId: dependent.correlationId,
+        causationId: dependent.clientMutationId,
+        transport: dependent.transport,
+        dependsOnMutationIds: [
+          ...new Set(
+            (dependent.dependsOnMutationIds ?? []).map(
+              (id) => replacementIds.get(id) ?? id,
+            ),
+          ),
+        ],
+        relatedEntities: dependent.relatedEntities,
+      });
+      dependentReplacements.push({
+        original: dependent,
+        originalEvent: event,
+        built: dependentBuilt,
+        event: replacementCanonicalEvent(event, dependentBuilt),
+      });
+    }
+    if (dependentInvalid) {
+      await terminalizeRejectedRecovery(
+        database,
+        guard,
+        [snapshot],
+        "DEPENDENCY_RECOVERY_REQUIRES_REVIEW",
+        "Uma dependência canônica não possui evento local íntegro.",
+        options.executionLease,
+        recoveryDecisionSnapshot,
+      );
+      continue;
+    }
+    assertSyncSession(guard);
+    await assertRecoveryLease(options.executionLease);
+
+    const guardedTransaction = guardSyncTransaction(
+      database.transaction(
+        [
+          "rdos",
+          "outbox_mutations",
+          "operational_events",
+          "rdoMaoObra",
+          "rdoEquipamentos",
+          "rdoMateriais",
+          "rdoControlesGeometricos",
+          "rdo_attachments",
+          "sync_state",
+        ],
+        "readwrite",
+      ),
+      guard,
+    );
+    const transaction = guardedTransaction.transaction;
+    const outboxStore = transaction.objectStore("outbox_mutations");
+    const eventStore = transaction.objectStore("operational_events");
+    const rdoStore = transaction.objectStore("rdos");
+    const currentOriginal = await outboxStore.get(
+      original.clientMutationId,
+    );
+    const currentRdo = await rdoStore.get(rdo.id);
+    const currentEvents = await eventStore
+      .index("by-client-mutation-id")
+      .getAll(original.clientMutationId);
+    const currentDependentEventGroups = await Promise.all(
+      dependentReplacements.map((dependent) =>
+        eventStore
+          .index("by-client-mutation-id")
+          .getAll(dependent.original.clientMutationId)
+      ),
+    );
+    if (
+      !currentOriginal ||
+      !currentRdo ||
+      currentEvents.length !== 1 ||
+      canonicalMutationJson(currentOriginal) !==
+        canonicalMutationJson(original) ||
+      canonicalMutationJson(currentRdo) !== canonicalMutationJson(rdo) ||
+      canonicalMutationJson(currentEvents[0]) !==
+        canonicalMutationJson(originalEvent) ||
+      dependentReplacements.some(
+        (dependent, index) =>
+          currentDependentEventGroups[index]?.length !== 1 ||
+          canonicalMutationJson(currentDependentEventGroups[index][0]) !==
+            canonicalMutationJson(dependent.originalEvent),
+      ) ||
+      canonicalMutationJson(
+        await outboxStore.index("by-entity-id").getAll(original.entityId),
+      ) !== canonicalMutationJson(entityMutations) ||
+      canonicalMutationJson(await outboxStore.getAll()) !==
+        canonicalMutationJson(allMutations)
+    ) {
+      await guardedTransaction.complete();
+      continue;
+    }
+
+    const safeCode = workforceRecovery
+      ? "SUPERSEDED_BY_WORKFORCE_RECOVERY"
+      : "SUPERSEDED_BY_IDEMPOTENCY_RECOVERY";
+    await assertRecoveryLeaseInTransaction(
+      transaction,
+      options.executionLease,
+    );
+    await outboxStore.put({
+      ...currentOriginal,
+      status: "REJECTED",
+      nextAttemptAt: null,
+      lastSafeCode: safeCode,
+      blockedReason:
+        `SUPERSEDED_BY:${built.mutation.clientMutationId}`,
+      ultimoErro:
+        "Envelope rejeitado substituído por nova mutação canônica.",
+      updatedAt: timestamp,
+    });
+    await eventStore.put({
+      ...currentEvents[0],
+      result: "REJECTED",
+      syncStatus: "SYNC_FAILED",
+      errorCategory: safeCode,
+    } as CanonicalOperationalEventRecord);
+    await outboxStore.add(built.mutation);
+    await eventStore.add(replacementEvent);
+    for (const dependent of dependentReplacements) {
+      await outboxStore.put({
+        ...dependent.original,
+        status: "REJECTED",
+        nextAttemptAt: null,
+        lastSafeCode: "SUPERSEDED_BY_DEPENDENCY_REWIRE",
+        blockedReason:
+          `SUPERSEDED_BY:${dependent.built.mutation.clientMutationId}`,
+        ultimoErro:
+          "Dependência canônica religada por envelope substituto.",
+        updatedAt: timestamp,
+      });
+      await eventStore.put({
+        ...dependent.originalEvent,
+        result: "REJECTED",
+        syncStatus: "SYNC_FAILED",
+        errorCategory: "SUPERSEDED_BY_DEPENDENCY_REWIRE",
+      });
+      await outboxStore.add(dependent.built.mutation);
+      await eventStore.add(dependent.event);
+    }
+
+    for (const queued of await outboxStore.getAll()) {
+      const rewired = rewireLegacyDependencies(
+        queued,
+        replacementIds,
+      );
+      if (rewired) {
+        await outboxStore.put(rewired);
+      }
+    }
+
+    const updatedRdo: LocalRdoRecord = {
+      ...currentRdo,
+      payload: buildRdoLocalPayload(repairedDraft),
+      versaoEntidade:
+        authoritativeRdo?.versaoEntidade ?? currentRdo.versaoEntidade,
+      syncStatus: "PENDING_SYNC",
+      updatedAt: timestamp,
+    };
+    await rdoStore.put(updatedRdo);
+    await replaceChildRecords(
+      transaction,
+      repairedDraft,
+      "PENDING_SYNC",
+      timestamp,
+    );
+    await reopenUnsyncedRdoAttachments(
+      transaction,
+      rdo.id,
+      timestamp,
+    );
+    await guardedTransaction.complete();
+    recovered += 1;
+  }
+
+  return recovered;
 }
 
 export async function saveExistingRdoDraftAtomically(

@@ -15,7 +15,7 @@ final class RdoExportTestFixtures {
     static RdoResponse populatedRdo(String id, String numero) {
         return new RdoResponse(
                 id, "obra-7", null, numero, LocalDate.of(2026, 7, 22),
-                "rdo-41", 9L, "mutation-42", "col-ana", "quarta-feira",
+                "rdo-41", 9L, "mutation-42", 4L, "col-ana", "quarta-feira",
                 "Cliente Rodovias", "CTR-9", "BR-101", "Joinville", "SC",
                 "10+000", "11+000", "10+200", "10+800", "DIURNO",
                 LocalTime.of(7, 30), LocalTime.of(17, 15), "BOM", "CHUVA",
@@ -77,7 +77,7 @@ final class RdoExportTestFixtures {
     static RdoResponse emptyRdo(String id, String numero) {
         return new RdoResponse(
                 id, "obra-7", null, numero, LocalDate.of(2026, 7, 22),
-                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, 0L, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
                 null, "RASCUNHO", null, null, null, null, null,
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),

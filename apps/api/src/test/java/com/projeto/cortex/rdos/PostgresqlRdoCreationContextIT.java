@@ -931,6 +931,7 @@ class PostgresqlRdoCreationContextIT {
                 null
         ));
         manualJson.putNull("apontadorColaboradorId");
+        manualJson.put("apontadorRdo", "  Mestre Nominal  ");
         ObjectNode manualItem = (ObjectNode) manualJson
                 .withArray("maoObra")
                 .get(0);
@@ -959,6 +960,11 @@ class PostgresqlRdoCreationContextIT {
                     .isEqualTo("Maria Servente");
             assertThat(row.get("cargo")).isEqualTo("Servente");
         });
+        assertThat(jdbc.queryForObject(
+                "SELECT apontador_rdo FROM rdo WHERE id = ?",
+                String.class,
+                rdoId
+        )).isEqualTo("Mestre Nominal");
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM colaborador",
                 Integer.class

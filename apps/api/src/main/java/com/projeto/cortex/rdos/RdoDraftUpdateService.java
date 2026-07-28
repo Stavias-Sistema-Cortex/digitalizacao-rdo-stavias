@@ -130,7 +130,8 @@ public class RdoDraftUpdateService {
         String apontadorNome = validarEquipeEApontador(
                 request.obraId(),
                 request.maoObra(),
-                request.apontadorColaboradorId()
+                request.apontadorColaboradorId(),
+                request.apontadorRdo()
         );
         assetEligibilityService.requireEligible(
                 request.obraId(),
@@ -514,7 +515,8 @@ public class RdoDraftUpdateService {
     private String validarEquipeEApontador(
             String obraId,
             List<RdoCreateRequest.MaoObraItem> itens,
-            String apontadorId
+            String apontadorId,
+            String apontadorRdo
     ) {
         Set<String> collaborators = new HashSet<>();
         for (RdoCreateRequest.MaoObraItem item : listaSegura(itens)) {
@@ -538,7 +540,7 @@ public class RdoDraftUpdateService {
         }
         String normalizedApontador = nuloSeVazio(apontadorId);
         if (normalizedApontador == null) {
-            return null;
+            return optionalTextLimitado(apontadorRdo, "apontadorRdo", 255);
         }
         if (!collaborators.contains(normalizedApontador)) {
             throw new ResponseStatusException(
@@ -552,6 +554,21 @@ public class RdoDraftUpdateService {
                 String.class,
                 normalizedApontador
         );
+    }
+
+    private String optionalTextLimitado(
+            String value,
+            String fieldName,
+            int maxLength
+    ) {
+        String normalized = nuloSeVazio(value);
+        if (normalized != null && normalized.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    fieldName + " excede " + maxLength + " caracteres."
+            );
+        }
+        return normalized;
     }
 
     private void validarColaboradorDaObra(String collaboratorId, String obraId) {
