@@ -41,10 +41,9 @@ public class AcademySyncScheduler {
             logger.info(
                     "Finished automatic collaborator sync from Academy."
             );
-        } catch (Exception exception) {
+        } catch (Exception ignored) {
             logger.error(
-                    "Automatic collaborator sync from Academy failed.",
-                    exception
+                    "Automatic collaborator sync from Academy failed."
             );
         }
     }

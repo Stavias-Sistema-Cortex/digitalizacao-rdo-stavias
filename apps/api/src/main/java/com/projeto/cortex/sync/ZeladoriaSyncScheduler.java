@@ -35,11 +35,8 @@ public class ZeladoriaSyncScheduler {
             logger.info("Starting automatic asset sync from ZLD.");
             assetImportService.importFromZldAtivos();
             logger.info("Finished automatic asset sync from ZLD.");
-        } catch (Exception exception) {
-            logger.error(
-                    "Automatic asset sync from ZLD failed.",
-                    exception
-            );
+        } catch (Exception ignored) {
+            logger.error("Automatic asset sync from ZLD failed.");
         }
     }
 }
