@@ -16,6 +16,7 @@ const WEB_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
 const CSS = [
   "src/index.css",
   "src/components/shell/CortexShell.css",
+  "src/components/workspace/OperationalWorkspace.css",
   "src/components/institutional/institutional.css",
   "src/features/rdos/RdoWorkspacePage.css",
 ]
@@ -59,6 +60,7 @@ const SCENARIOS = [
   { viewport: 1000, sidebar: 360 },
   { viewport: 1100, sidebar: 360 },
   { viewport: 620, sidebar: 360 },
+  { viewport: 390, sidebar: 360 },
   { viewport: 375, sidebar: 360 },
 ];
 
@@ -263,6 +265,40 @@ function fixtureHtml(sidebar) {
           <div class="rdo-filter-grid">${filters}</div>
         </section>
       </main>
+      <main class="operational-workspace home-dashboard">
+        <section class="operational-workspace__content">
+          <div class="home-overview">
+            <section class="home-obra-card">
+              <div class="home-obra-body">
+                <dl class="home-obra-infos">
+                  <div><dt>Contrato</dt><dd>QA-20260728</dd></div>
+                  <div><dt>Localização</dt><dd>São Paulo/SP · BR-116</dd></div>
+                  <div><dt>Observações operacionais</dt><dd>Validação responsiva</dd></div>
+                </dl>
+                <div class="home-obra-chart">
+                  <div class="progress-chart">
+                    <div class="progress-chart-controls">
+                      <div class="progress-chart-legend" role="group" aria-label="Séries do gráfico">
+                        <button class="legend-item"><span class="legend-swatch"></span>Avanço físico</button>
+                        <button class="legend-item"><span class="legend-swatch"></span>Receita PDOR vs contrato</button>
+                      </div>
+                      <div class="progress-chart-periods" role="group" aria-label="Período">
+                        <button class="period-pill">3m</button>
+                        <button class="period-pill period-pill--active">6m</button>
+                        <button class="period-pill">12m</button>
+                        <button class="period-pill">Tudo</button>
+                      </div>
+                    </div>
+                    <div class="progress-chart-plot">
+                      <svg viewBox="0 0 480 240" role="img"></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
   <pre id="geometry-result" hidden></pre>
@@ -330,6 +366,11 @@ function fixtureHtml(sidebar) {
       badgeStrip: document.querySelector(".badge-strip"),
       filterRegion: document.querySelector(".rdo-filter-region"),
       filterGrid: document.querySelector(".rdo-filter-grid"),
+      homeWorkspace: document.querySelector(".home-dashboard"),
+      homeCard: document.querySelector(".home-obra-card"),
+      homeBody: document.querySelector(".home-obra-body"),
+      homeChart: document.querySelector(".home-obra-chart"),
+      homePeriods: document.querySelector(".progress-chart-periods"),
       ...Object.fromEntries(
         filterLabels
           .map((element, index) => ["filter" + index, element]),
@@ -394,6 +435,18 @@ function fixtureHtml(sidebar) {
         lastFilter: contained(
           ".rdo-filter-grid label:last-child",
           ".rdo-filter-grid",
+        ),
+        homeCard: contained(
+          ".home-obra-card",
+          ".operational-workspace__content",
+        ),
+        homeChart: contained(
+          ".home-obra-chart",
+          ".home-obra-card",
+        ),
+        homePeriods: contained(
+          ".progress-chart-periods",
+          ".home-obra-chart",
         ),
         ...Object.fromEntries(
           filterControls.map((element, index) => [

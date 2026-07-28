@@ -445,7 +445,7 @@ describe("polimento visual da plataforma autenticada", () => {
       );
 
       expect(output).toContain(
-        "Operational layout verified: 5 scenarios",
+        "Operational layout verified: 6 scenarios",
       );
     },
     30_000,

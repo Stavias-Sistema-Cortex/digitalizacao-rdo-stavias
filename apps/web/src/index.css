@@ -2381,6 +2381,10 @@ textarea:focus {
     width: 100%;
   }
 
+  .home-obra-body {
+    flex-direction: column;
+  }
+
   .rdo-command-actions,
   .rdo-command-actions button,
   .action-bar .button {
