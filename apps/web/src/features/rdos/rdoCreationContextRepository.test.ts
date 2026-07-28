@@ -249,6 +249,7 @@ describe("cache autorizado obra-data", () => {
         longitude: null,
         valorContratual: null,
         atualizadoEm: "2026-07-22T10:00:00.000Z",
+        versaoLinha: 3,
       },
       {
         id: WORKSITE_B,
@@ -264,6 +265,7 @@ describe("cache autorizado obra-data", () => {
         longitude: null,
         valorContratual: null,
         atualizadoEm: null,
+        versaoLinha: 1,
       },
     ]);
 
@@ -403,6 +405,7 @@ describe("cache autorizado obra-data", () => {
         longitude: null,
         valorContratual: null,
         atualizadoEm: "2026-07-22T11:00:00.000Z",
+        versaoLinha: 7,
       },
     ]);
 
@@ -423,6 +426,148 @@ describe("cache autorizado obra-data", () => {
     });
     expect(await database.get("obras", WORKSITE_D)).toBeUndefined();
     expect(visible.map((obra) => obra.id)).toEqual([WORKSITE_C]);
+  });
+
+  it("mantém o registro sincronizado v8 inteiro diante de resposta remota v7 atrasada", async () => {
+    const database = await getCortexDb();
+    const localV8 = {
+      id: WORKSITE_A,
+      codigoContrato: "CTR-V8",
+      nome: "Edição Alfa confirmada",
+      cliente: "DNIT",
+      cidade: "Campo Grande",
+      uf: "MS",
+      rodovia: "BR-262",
+      status: "INATIVA",
+      observacoes: "Estado confirmado na versão 8",
+      latitude: -20.4697,
+      longitude: -54.6201,
+      valorContratual: 1_500_000,
+      versaoEntidade: 8,
+      arquivadoEm: null,
+      syncStatus: "SYNCED" as const,
+      ultimoErro: null,
+      updatedAt: "2026-07-28T15:00:00.000Z",
+    };
+    await database.put("obras", localV8);
+
+    await replaceCachedAuthorizedRdoWorksites([
+      {
+        id: WORKSITE_A,
+        codigoContrato: "CTR-V7",
+        nome: "Estado remoto atrasado",
+        cliente: "Cliente antigo",
+        cidade: "Três Lagoas",
+        uf: "MS",
+        rodovia: "BR-158",
+        status: "ATIVA",
+        observacoes: "Resposta iniciada antes da edição Alfa",
+        latitude: -20.78,
+        longitude: -51.7,
+        valorContratual: 1_200_000,
+        atualizadoEm: "2026-07-28T14:59:59.000Z",
+        versaoLinha: 7,
+      },
+    ]);
+
+    expect(await database.get("obras", WORKSITE_A)).toEqual(localV8);
+  });
+
+  it("preserva integralmente a alteração local pendente mesmo diante de resposta remota mais nova", async () => {
+    const database = await getCortexDb();
+    const pending = {
+      id: WORKSITE_A,
+      codigoContrato: "CTR-LOCAL",
+      nome: "Edição offline",
+      cliente: null,
+      cidade: "Campinas",
+      uf: "SP",
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: "Ainda não sincronizada",
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 8,
+      arquivadoEm: null,
+      syncStatus: "PENDING_SYNC" as const,
+      ultimoErro: null,
+      updatedAt: "2026-07-28T15:00:00.000Z",
+    };
+    await database.put("obras", pending);
+
+    await replaceCachedAuthorizedRdoWorksites([
+      {
+        id: WORKSITE_A,
+        codigoContrato: "CTR-V9",
+        nome: "Servidor v9",
+        cliente: "DNIT",
+        cidade: "São Paulo",
+        uf: "SP",
+        rodovia: "SP-270",
+        status: "ATIVA",
+        observacoes: "Resposta remota",
+        latitude: -23.55,
+        longitude: -46.63,
+        valorContratual: 2_000_000,
+        atualizadoEm: "2026-07-28T15:01:00.000Z",
+        versaoLinha: 9,
+      },
+    ]);
+
+    expect(await database.get("obras", WORKSITE_A)).toEqual(pending);
+  });
+
+  it("substitui o cache sincronizado quando a resposta remota tem versão mais nova", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", {
+      id: WORKSITE_A,
+      codigoContrato: "CTR-V7",
+      nome: "Estado anterior",
+      cliente: null,
+      cidade: "Campinas",
+      uf: "SP",
+      rodovia: null,
+      status: "ATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: 1_000_000,
+      versaoEntidade: 7,
+      arquivadoEm: null,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+      updatedAt: "2026-07-28T14:00:00.000Z",
+    });
+
+    await replaceCachedAuthorizedRdoWorksites([
+      {
+        id: WORKSITE_A,
+        codigoContrato: "CTR-V8",
+        nome: "Estado remoto atual",
+        cliente: "DNIT",
+        cidade: "Campinas",
+        uf: "SP",
+        rodovia: "SP-270",
+        status: "INATIVA",
+        observacoes: "Atualizado no servidor",
+        latitude: -22.9,
+        longitude: -47.06,
+        valorContratual: 1_500_000,
+        atualizadoEm: "2026-07-28T15:00:00.000Z",
+        versaoLinha: 8,
+      },
+    ]);
+
+    expect(await database.get("obras", WORKSITE_A)).toMatchObject({
+      codigoContrato: "CTR-V8",
+      nome: "Estado remoto atual",
+      status: "INATIVA",
+      observacoes: "Atualizado no servidor",
+      versaoEntidade: 8,
+      syncStatus: "SYNCED",
+      updatedAt: "2026-07-28T15:00:00.000Z",
+    });
   });
 
   it("usa o contexto completo do cache offline e falha com a cópia literal sem fonte", async () => {

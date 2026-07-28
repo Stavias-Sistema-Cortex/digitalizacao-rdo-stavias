@@ -18,6 +18,7 @@ export interface ObraRelacionadaApi {
   longitude: number | string | null;
   valorContratual: number | string | null;
   atualizadoEm: string | null;
+  versaoLinha?: number | null;
 }
 
 export interface ObraArquivadaApi {

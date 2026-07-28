@@ -297,6 +297,7 @@ export interface RdoAuthorizedWorksiteLookup {
   longitude: number | string | null;
   valorContratual: number | string | null;
   atualizadoEm: string | null;
+  versaoLinha: number;
 }
 
 export type AuthoritativeRdoLookup =

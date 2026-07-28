@@ -48,6 +48,7 @@ export function obraRecordFromApi(
     longitude: toNumberOrNull(api.longitude),
     valorContratual: toNumberOrNull(api.valorContratual),
     arquivadoEm: null,
+    versaoEntidade: api.versaoLinha ?? null,
     updatedAt: textOrNull(api.atualizadoEm) ?? nowIso,
   };
 }

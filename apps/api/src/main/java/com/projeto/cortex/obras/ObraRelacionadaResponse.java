@@ -16,6 +16,7 @@ public record ObraRelacionadaResponse(
         BigDecimal latitude,
         BigDecimal longitude,
         BigDecimal valorContratual,
-        LocalDateTime atualizadoEm
+        LocalDateTime atualizadoEm,
+        long versaoLinha
 ) {
 }

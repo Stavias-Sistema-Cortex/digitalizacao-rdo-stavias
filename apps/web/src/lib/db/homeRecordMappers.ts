@@ -93,6 +93,15 @@ export function mergeObraRecords(
   if (existing.syncStatus !== undefined && existing.syncStatus !== "SYNCED") {
     return existing;
   }
+  if (
+    typeof existing.versaoEntidade === "number" &&
+    Number.isSafeInteger(existing.versaoEntidade) &&
+    typeof incoming.versaoEntidade === "number" &&
+    Number.isSafeInteger(incoming.versaoEntidade) &&
+    incoming.versaoEntidade < existing.versaoEntidade
+  ) {
+    return existing;
+  }
 
   return {
     ...incoming,

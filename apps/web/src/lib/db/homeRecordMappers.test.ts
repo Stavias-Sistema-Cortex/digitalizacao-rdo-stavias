@@ -223,6 +223,40 @@ describe("mergeObraRecords", () => {
     expect(mergeObraRecords(pending, remote)).toEqual(pending);
   });
 
+  it("ignora hidratação REST atrasada quando o cache sincronizado tem versão maior", () => {
+    const existing: ObraLocalRecord = {
+      id: "obra-1",
+      codigoContrato: "CT-V8",
+      nome: "Edição Alfa confirmada",
+      cliente: "DNIT",
+      cidade: "Campo Grande",
+      uf: "MS",
+      rodovia: "BR-262",
+      status: "INATIVA",
+      observacoes: "Estado confirmado na versão 8",
+      latitude: -20.4697,
+      longitude: -54.6201,
+      valorContratual: 1_500_000,
+      versaoEntidade: 8,
+      arquivadoEm: null,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+      updatedAt: "2026-07-28T15:00:00.000Z",
+    };
+    const delayedRemote: ObraLocalRecord = {
+      ...existing,
+      codigoContrato: "CT-V7",
+      nome: "Estado remoto atrasado",
+      status: "ATIVA",
+      observacoes: "Resposta iniciada antes da edição Alfa",
+      valorContratual: 1_200_000,
+      versaoEntidade: 7,
+      updatedAt: "2026-07-28T14:59:59.000Z",
+    };
+
+    expect(mergeObraRecords(existing, delayedRemote)).toEqual(existing);
+  });
+
   it("preserva arquivamento sincronizado quando a hidratação omite lifecycle", () => {
     const existing: ObraLocalRecord = {
       id: "obra-1",

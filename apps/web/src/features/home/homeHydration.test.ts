@@ -24,6 +24,7 @@ describe("obraRecordFromApi", () => {
         longitude: "-54.6201",
         valorContratual: "1500000.00",
         atualizadoEm: "2026-07-06T10:00:00",
+        versaoLinha: 7,
       },
       NOW,
     );
@@ -31,6 +32,7 @@ describe("obraRecordFromApi", () => {
     expect(record.valorContratual).toBe(1500000);
     expect(record.latitude).toBe(-20.4697);
     expect(record.nome).toBe("Obra BR-262");
+    expect(record.versaoEntidade).toBe(7);
     expect(record).toHaveProperty("arquivadoEm", null);
   });
 });

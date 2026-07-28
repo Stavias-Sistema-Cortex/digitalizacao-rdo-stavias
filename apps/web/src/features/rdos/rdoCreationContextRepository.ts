@@ -282,6 +282,7 @@ function worksiteRecord(
     latitude: numberOrNull(value.latitude),
     longitude: numberOrNull(value.longitude),
     valorContratual: numberOrNull(value.valorContratual),
+    versaoEntidade: value.versaoLinha,
     updatedAt: text(value.atualizadoEm) || cachedAt,
   };
 }

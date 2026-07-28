@@ -50,6 +50,7 @@ public class ObrasRelacionadasService {
                     o.latitude,
                     o.longitude,
                     o.atualizado_em,
+                    o.versao_linha,
                     NULL AS valor_contratual
                 FROM obra o
                 WHERE o.arquivado_em IS NULL
@@ -81,7 +82,8 @@ public class ObrasRelacionadasService {
                         rs.getBigDecimal("valor_contratual"),
                         rs.getTimestamp("atualizado_em") == null
                                 ? null
-                                : rs.getTimestamp("atualizado_em").toLocalDateTime()
+                                : rs.getTimestamp("atualizado_em").toLocalDateTime(),
+                        rs.getLong("versao_linha")
                 ),
                 isAdmin, userId
         );
@@ -133,7 +135,8 @@ public class ObrasRelacionadasService {
                     obra.latitude(),
                     obra.longitude(),
                     contractualByWorksite.get(obra.id()),
-                    obra.atualizadoEm()
+                    obra.atualizadoEm(),
+                    obra.versaoLinha()
             ));
         }
         return List.copyOf(scoped);
