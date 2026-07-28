@@ -12,6 +12,7 @@ import com.projeto.cortex.auth.postgresql.PostgresqlAuthPersistenceTestSupport;
 import com.projeto.cortex.colaboradores.AcademyCollaboratorIdentity;
 import com.projeto.cortex.colaboradores.ColaboradorImportService;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
+import com.projeto.cortex.integracoes.AcademyUserSnapshot;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -98,7 +99,8 @@ class PostgresqlAcademyCpfLoginIT
 
             AcademySourceAdapter academy =
                     mock(AcademySourceAdapter.class);
-            when(academy.fetchUsers(anyInt())).thenReturn(List.of(
+            when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                    AcademyUserSnapshot.complete(List.of(
                     academyUser(
                             PENDING_SOURCE_ID,
                             PENDING_CPF,
@@ -141,7 +143,7 @@ class PostgresqlAcademyCpfLoginIT
                             "academy.historical@fixture.invalid",
                             false
                     )
-            ));
+            )));
 
             AuthIdentityRepository identities =
                     new AuthIdentityRepository(jdbc, digests);

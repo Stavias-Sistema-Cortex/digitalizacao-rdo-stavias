@@ -3,8 +3,11 @@ package com.projeto.cortex.integracoes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +30,71 @@ class AcademySourceAdapterBootstrapTest {
     private static final String JDBC_URL = "jdbc:academy-bootstrap-test";
     private static final String USERNAME = "academy-test-user";
     private static final String CREDENTIAL = "academy-test-credential";
+
+    @Test
+    void completeSnapshotUsesOneConsistentReadOnlyKeysetTransaction()
+            throws Exception {
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        ResultSet firstPage = mock(ResultSet.class);
+        ResultSet finalPage = mock(ResultSet.class);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(firstPage, finalPage);
+        when(firstPage.next()).thenReturn(true, true, false);
+        when(firstPage.getInt("id_usuario")).thenReturn(907_101, 907_102);
+        when(finalPage.next()).thenReturn(true, false);
+        when(finalPage.getInt("id_usuario")).thenReturn(907_103);
+
+        AcademyUserSnapshot snapshot = executeCompleteSnapshot(connection, 2);
+
+        assertThat(snapshot.complete()).isTrue();
+        assertThat(snapshot.users())
+                .extracting(AcademySourceAdapter.UsuarioAcademyRecord::idUsuario)
+                .containsExactly(907_101, 907_102, 907_103);
+        assertThat(snapshotSql())
+                .contains("WHERE u.id_usuario > ?")
+                .contains("ORDER BY u.id_usuario")
+                .contains("LIMIT ?");
+        verify(connection).setReadOnly(true);
+        verify(connection).setTransactionIsolation(
+                Connection.TRANSACTION_REPEATABLE_READ
+        );
+        verify(connection).setAutoCommit(false);
+        verify(statement).setInt(1, Integer.MIN_VALUE);
+        verify(statement).setInt(1, 907_102);
+        verify(statement, times(2)).setInt(2, 2);
+        verify(statement, never()).setMaxRows(anyInt());
+        verify(connection).commit();
+        verify(connection, never()).rollback();
+        verify(connection).close();
+    }
+
+    @Test
+    void completeSnapshotRollsBackAndRedactsAnIntermediatePageFailure()
+            throws Exception {
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        ResultSet firstPage = mock(ResultSet.class);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery())
+                .thenReturn(firstPage)
+                .thenThrow(new SQLException(
+                        "driver detail: " + canonicalSyntheticCpf()
+                ));
+        when(firstPage.next()).thenReturn(true, true, false);
+        when(firstPage.getInt("id_usuario")).thenReturn(907_201, 907_202);
+
+        assertThatThrownBy(() -> executeCompleteSnapshot(connection, 2))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage(
+                        "Falha ao ler snapshot completo da Academy em modo somente leitura."
+                )
+                .hasNoCause();
+
+        verify(connection).rollback();
+        verify(connection, never()).commit();
+        verify(connection).close();
+    }
 
     @Test
     void lookupSqlIsReadOnlyParameterizedAndDoesNotSelectProtectedColumns()
@@ -234,6 +302,44 @@ class AcademySourceAdapterBootstrapTest {
 
             return adapter.findSingleActiveUserForBootstrap(canonicalCpf);
         }
+    }
+
+    private AcademyUserSnapshot executeCompleteSnapshot(
+            Connection connection,
+            int pageSize
+    ) throws Exception {
+        AcademySourceAdapter adapter = new AcademySourceAdapter(
+                JDBC_URL,
+                USERNAME,
+                CREDENTIAL
+        );
+
+        try (MockedStatic<DriverManager> driverManager =
+                     Mockito.mockStatic(DriverManager.class)) {
+            driverManager.when(() -> DriverManager.getConnection(
+                    JDBC_URL,
+                    USERNAME,
+                    CREDENTIAL
+            )).thenReturn(connection);
+
+            try {
+                return adapter.fetchCompleteSnapshot(pageSize);
+            } finally {
+                driverManager.verify(() -> DriverManager.getConnection(
+                        JDBC_URL,
+                        USERNAME,
+                        CREDENTIAL
+                ), times(1));
+            }
+        }
+    }
+
+    private String snapshotSql() throws Exception {
+        Field field = AcademySourceAdapter.class.getDeclaredField(
+                "SQL_SELECT_USUARIOS"
+        );
+        field.setAccessible(true);
+        return (String) field.get(null);
     }
 
     private String bootstrapLookupSql() throws Exception {

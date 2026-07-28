@@ -9,6 +9,7 @@ import com.projeto.cortex.auth.identity.AuthIdentityRepository;
 import com.projeto.cortex.colaboradores.ColaboradorImportService;
 import com.projeto.cortex.colaboradores.CpfHasher;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
+import com.projeto.cortex.integracoes.AcademyUserSnapshot;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -46,10 +47,16 @@ class ColaboradorImportServiceMysqlIntegrationTest {
         AuthIdentityRepository authIdentities =
                 mock(AuthIdentityRepository.class);
 
-        when(academy.fetchUsers(anyInt())).thenReturn(
-                List.of(academyUser(FIRST_SYNTHETIC_CPF)),
-                List.of(academyUser(SECOND_SYNTHETIC_CPF)),
-                List.of(academyUser(FIRST_SYNTHETIC_CPF))
+        when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(
+                AcademyUserSnapshot.complete(
+                        List.of(academyUser(FIRST_SYNTHETIC_CPF))
+                ),
+                AcademyUserSnapshot.complete(
+                        List.of(academyUser(SECOND_SYNTHETIC_CPF))
+                ),
+                AcademyUserSnapshot.complete(
+                        List.of(academyUser(FIRST_SYNTHETIC_CPF))
+                )
         );
         ColaboradorImportService service = new ColaboradorImportService(
                 jdbc,

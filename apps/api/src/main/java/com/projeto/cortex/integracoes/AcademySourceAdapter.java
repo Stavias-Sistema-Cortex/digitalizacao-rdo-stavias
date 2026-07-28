@@ -17,7 +17,9 @@ import java.util.Optional;
 public class AcademySourceAdapter {
 
     private static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 30;
-    private static final int DEFAULT_MAX_ROWS = 10_000;
+    private static final int DEFAULT_PAGE_SIZE = 500;
+    private static final String SNAPSHOT_READ_FAILURE =
+            "Falha ao ler snapshot completo da Academy em modo somente leitura.";
 
     private static final class AmbiguousBootstrapSourceException
             extends IllegalStateException {
@@ -44,7 +46,9 @@ public class AcademySourceAdapter {
                 ON g.id_grupo = u.id_grupo
             LEFT JOIN perfil p
                 ON p.id_perfil = u.id_perfil
+            WHERE u.id_usuario > ?
             ORDER BY u.id_usuario
+            LIMIT ?
             """;
 
     private static final String SQL_SELECT_BOOTSTRAP_USER = """
@@ -83,49 +87,82 @@ public class AcademySourceAdapter {
         this.password = password;
     }
 
-    public List<UsuarioAcademyRecord> fetchUsers(int maxRows) {
+    public AcademyUserSnapshot fetchCompleteSnapshot(int pageSize) {
         validateConfig();
 
-        int safeMaxRows =
-                safeMaxRows(maxRows);
-
-        List<UsuarioAcademyRecord> users =
-                new ArrayList<>();
+        int safePageSize = safePageSize(pageSize);
 
         try (
-                Connection connection =
-                        DriverManager.getConnection(
-                                url,
-                                username,
-                                password
-                        )
+                Connection connection = DriverManager.getConnection(
+                        url,
+                        username,
+                        password
+                )
         ) {
-            connection.setReadOnly(true);
+            try {
+                connection.setReadOnly(true);
+                connection.setTransactionIsolation(
+                        Connection.TRANSACTION_REPEATABLE_READ
+                );
+                connection.setAutoCommit(false);
 
-            try (
-                    PreparedStatement statement =
-                            connection.prepareStatement(
-                                    SQL_SELECT_USUARIOS
-                            )
-            ) {
-                statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
-                statement.setMaxRows(safeMaxRows);
-                statement.setFetchSize(Math.min(safeMaxRows, 500));
+                List<UsuarioAcademyRecord> users = readAllPages(
+                        connection,
+                        safePageSize
+                );
+                connection.commit();
+                return AcademyUserSnapshot.complete(users);
+            } catch (Exception ignored) {
+                rollbackQuietly(connection);
+                throw new SnapshotReadException();
+            }
+        } catch (SnapshotReadException exception) {
+            throw exception;
+        } catch (Exception ignored) {
+            throw new SnapshotReadException();
+        }
+    }
 
+    private List<UsuarioAcademyRecord> readAllPages(
+            Connection connection,
+            int pageSize
+    ) throws Exception {
+        List<UsuarioAcademyRecord> users = new ArrayList<>();
+        int lastSourceId = Integer.MIN_VALUE;
+
+        try (
+                PreparedStatement statement = connection.prepareStatement(
+                        SQL_SELECT_USUARIOS
+                )
+        ) {
+            statement.setQueryTimeout(DEFAULT_QUERY_TIMEOUT_SECONDS);
+            statement.setFetchSize(Math.min(pageSize, DEFAULT_PAGE_SIZE));
+
+            while (true) {
+                statement.setInt(1, lastSourceId);
+                statement.setInt(2, pageSize);
+
+                List<UsuarioAcademyRecord> page = new ArrayList<>(pageSize);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     while (resultSet.next()) {
-                        users.add(readUser(resultSet));
+                        page.add(readUser(resultSet));
                     }
                 }
-            }
-        } catch (Exception exception) {
-            throw new IllegalStateException(
-                    "Falha ao ler usuarios da Academy em modo somente leitura.",
-                    exception
-            );
-        }
 
-        return List.copyOf(users);
+                users.addAll(page);
+                if (page.size() < pageSize) {
+                    return List.copyOf(users);
+                }
+
+                int nextSourceId = page.get(page.size() - 1).idUsuario();
+                if (nextSourceId <= lastSourceId) {
+                    throw new IllegalStateException(
+                            "Paginação Academy sem avanço de id de origem."
+                    );
+                }
+                lastSourceId = nextSourceId;
+            }
+        }
     }
 
     /**
@@ -248,12 +285,16 @@ public class AcademySourceAdapter {
         }
     }
 
-    private int safeMaxRows(int maxRows) {
-        if (maxRows <= 0) {
-            return DEFAULT_MAX_ROWS;
-        }
+    private int safePageSize(int pageSize) {
+        return pageSize <= 0 ? DEFAULT_PAGE_SIZE : pageSize;
+    }
 
-        return Math.min(maxRows, DEFAULT_MAX_ROWS);
+    private void rollbackQuietly(Connection connection) {
+        try {
+            connection.rollback();
+        } catch (Exception ignored) {
+            // The redacted snapshot failure remains the externally visible signal.
+        }
     }
 
     private String nullableString(
@@ -266,6 +307,14 @@ public class AcademySourceAdapter {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static final class SnapshotReadException
+            extends IllegalStateException {
+
+        private SnapshotReadException() {
+            super(SNAPSHOT_READ_FAILURE);
+        }
     }
 
     public record UsuarioAcademyRecord(

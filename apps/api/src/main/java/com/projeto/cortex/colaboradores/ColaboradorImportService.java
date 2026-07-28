@@ -3,17 +3,27 @@ package com.projeto.cortex.colaboradores;
 import com.projeto.cortex.auth.identity.AuthIdentityRepository;
 import com.projeto.cortex.auth.identity.CpfNormalizer;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
+import com.projeto.cortex.integracoes.AcademyUserSnapshot;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class ColaboradorImportService {
@@ -21,23 +31,79 @@ public class ColaboradorImportService {
     private static final String CONNECTOR_NAME = "acad_colaborador_import";
     private static final String BANCO_ORIGEM = "dbstavias_acad";
     private static final String TABELA_ORIGEM = "usuarios";
-    private static final int MAX_IMPORT_ROWS = 10_000;
+    private static final int SNAPSHOT_PAGE_SIZE = 500;
+    private static final long DEFAULT_MISSING_GRACE_HOURS = 24;
+    private static final String SOURCE_FAILURE_MESSAGE =
+            "Falha ao ler snapshot completo da Academy.";
+    private static final String APPLY_FAILURE_MESSAGE =
+            "Falha ao aplicar snapshot Academy.";
 
     private final JdbcTemplate jdbcTemplate;
     private final AcademySourceAdapter academySourceAdapter;
     private final CortexOperationalMemoryService memoryService;
     private final AuthIdentityRepository authIdentityRepository;
+    private final TransactionTemplate applyTransactions;
+    private final long missingGraceHours;
 
+    @Autowired
+    public ColaboradorImportService(
+            JdbcTemplate jdbcTemplate,
+            AcademySourceAdapter academySourceAdapter,
+            CortexOperationalMemoryService memoryService,
+            AuthIdentityRepository authIdentityRepository,
+            PlatformTransactionManager transactionManager,
+            @Value("${cortex.sync.academy.missing-grace-hours:24}")
+            long missingGraceHours
+    ) {
+        this(
+                jdbcTemplate,
+                academySourceAdapter,
+                memoryService,
+                authIdentityRepository,
+                new TransactionTemplate(transactionManager),
+                missingGraceHours
+        );
+    }
+
+    /**
+     * Compatibility constructor for isolated integrations that instantiate
+     * the service without a Spring context.
+     */
     public ColaboradorImportService(
             JdbcTemplate jdbcTemplate,
             AcademySourceAdapter academySourceAdapter,
             CortexOperationalMemoryService memoryService,
             AuthIdentityRepository authIdentityRepository
     ) {
+        this(
+                jdbcTemplate,
+                academySourceAdapter,
+                memoryService,
+                authIdentityRepository,
+                transactionTemplateFor(jdbcTemplate),
+                DEFAULT_MISSING_GRACE_HOURS
+        );
+    }
+
+    ColaboradorImportService(
+            JdbcTemplate jdbcTemplate,
+            AcademySourceAdapter academySourceAdapter,
+            CortexOperationalMemoryService memoryService,
+            AuthIdentityRepository authIdentityRepository,
+            TransactionTemplate applyTransactions,
+            long missingGraceHours
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.academySourceAdapter = academySourceAdapter;
         this.memoryService = memoryService;
         this.authIdentityRepository = authIdentityRepository;
+        this.applyTransactions = applyTransactions;
+        if (missingGraceHours < 0) {
+            throw new IllegalArgumentException(
+                    "A carencia de ausentes Academy nao pode ser negativa."
+            );
+        }
+        this.missingGraceHours = missingGraceHours;
     }
 
     public ColaboradorImportResult importarUsuariosDaAcademy() {
@@ -47,64 +113,27 @@ public class ColaboradorImportService {
         criarExecucaoSync(syncRunId, iniciadoEm);
 
         int registrosLidos = 0;
-        int registrosInseridos = 0;
-        int registrosAtualizados = 0;
+        String safeFailureMessage = SOURCE_FAILURE_MESSAGE;
 
         try {
-            for (AcademySourceAdapter.UsuarioAcademyRecord sourceUser
-                    : academySourceAdapter.fetchUsers(MAX_IMPORT_ROWS)) {
-                UsuarioAcademy usuario = lerUsuario(sourceUser);
-                registrosLidos++;
-
-                String hashOrigem = gerarHash(usuario);
-                String hashExistente =
-                        buscarHashExistente(usuario.pkOrigem());
-
-                if (hashExistente == null) {
-                    registrosInseridos++;
-                } else if (!hashExistente.equals(hashOrigem)) {
-                    registrosAtualizados++;
-                }
-
-                salvarOuAtualizar(usuario, hashOrigem);
-                if (usuario.ativo()
-                        && usuario.cpfNormalizado() != null) {
-                    authIdentityRepository.upsertAcademyIdentity(
-                            usuario.id(),
-                            usuario.cpfNormalizado(),
-                            usuario.email()
+            AcademyUserSnapshot snapshot =
+                    academySourceAdapter.fetchCompleteSnapshot(
+                            SNAPSHOT_PAGE_SIZE
                     );
-                }
+            registrosLidos = snapshot == null
+                    ? 0
+                    : snapshot.users().size();
+            PreparedSnapshot preparedSnapshot =
+                    validarEPrepararSnapshot(snapshot);
+            safeFailureMessage = APPLY_FAILURE_MESSAGE;
 
-                registrarColaboradorNaMemoria(
-                        syncRunId,
-                        usuario,
-                        hashOrigem,
-                        hashExistente == null,
-                        hashExistente != null
-                                && !hashExistente.equals(hashOrigem)
-                );
-            }
-
-            int registrosDesativados = desativarAusentes(iniciadoEm);
-
-            finalizarExecucaoComSucesso(
-                    syncRunId,
-                    registrosLidos,
-                    registrosInseridos,
-                    registrosAtualizados,
-                    registrosDesativados
-            );
-
-            atualizarCheckpointComSucesso();
-            registrarImportacaoNaMemoria(
-                    syncRunId,
-                    "SUCCESS",
-                    registrosLidos,
-                    registrosInseridos,
-                    registrosAtualizados,
-                    registrosDesativados,
-                    null
+            ImportApplicationResult applied = Objects.requireNonNull(
+                    applyTransactions.execute(status -> aplicarSnapshot(
+                            syncRunId,
+                            iniciadoEm,
+                            preparedSnapshot
+                    )),
+                    "resultado da transacao de importacao"
             );
 
             return new ColaboradorImportResult(
@@ -114,32 +143,207 @@ public class ColaboradorImportService {
                     "SUCCESS",
                     registrosLidos,
                     registrosLidos,
-                    registrosInseridos,
-                    registrosAtualizados,
-                    registrosDesativados,
+                    applied.registrosInseridos(),
+                    applied.registrosAtualizados(),
+                    applied.registrosDesativados(),
                     null
             );
-        } catch (Exception exception) {
-            String mensagemErro = limitarTexto(mensagemRaiz(exception), 1000);
-            finalizarExecucaoComFalha(syncRunId, mensagemErro);
-            atualizarCheckpointComFalha(mensagemErro);
-            registrarImportacaoNaMemoria(
+        } catch (SnapshotValidationException exception) {
+            safeFailureMessage = exception.getMessage();
+            registrarExecucaoComFalha(
                     syncRunId,
-                    "FAILED",
                     registrosLidos,
-                    registrosInseridos,
-                    registrosAtualizados,
-                    0,
-                    mensagemErro
+                    safeFailureMessage
+            );
+            throw new RuntimeException(
+                    "Falha ao importar colaboradores da Academy."
+            );
+        } catch (Exception exception) {
+            registrarExecucaoComFalha(
+                    syncRunId,
+                    registrosLidos,
+                    safeFailureMessage
+            );
+            throw new RuntimeException(
+                    "Falha ao importar colaboradores da Academy."
+            );
+        }
+    }
+
+    private ImportApplicationResult aplicarSnapshot(
+            String syncRunId,
+            LocalDateTime iniciadoEm,
+            PreparedSnapshot snapshot
+    ) {
+        int registrosInseridos = 0;
+        int registrosAtualizados = 0;
+
+        for (UsuarioAcademy usuario : snapshot.users()) {
+            String hashOrigem = gerarHash(usuario);
+            String hashExistente = buscarHashExistente(
+                    usuario.pkOrigem()
             );
 
-            throw new RuntimeException("Falha ao importar colaboradores da Academy.", exception);
+            if (hashExistente == null) {
+                registrosInseridos++;
+            } else if (!hashExistente.equals(hashOrigem)) {
+                registrosAtualizados++;
+            }
+
+            salvarOuAtualizar(usuario, hashOrigem);
+            if (usuario.ativo() && usuario.cpfNormalizado() != null) {
+                authIdentityRepository.upsertAcademyIdentity(
+                        usuario.id(),
+                        usuario.cpfNormalizado(),
+                        usuario.email()
+                );
+            }
+
+            registrarColaboradorNaMemoria(
+                    syncRunId,
+                    usuario,
+                    hashOrigem,
+                    hashExistente == null,
+                    hashExistente != null
+                            && !hashExistente.equals(hashOrigem)
+            );
         }
+
+        LocalDateTime missingCutoff = iniciadoEm.minusHours(
+                missingGraceHours
+        );
+        int registrosDesativados = desativarAusentes(missingCutoff);
+
+        finalizarExecucaoComSucesso(
+                syncRunId,
+                snapshot.users().size(),
+                registrosInseridos,
+                registrosAtualizados,
+                registrosDesativados
+        );
+        atualizarCheckpointComSucesso();
+        registrarImportacaoNaMemoria(
+                syncRunId,
+                "SUCCESS",
+                snapshot.users().size(),
+                registrosInseridos,
+                registrosAtualizados,
+                registrosDesativados,
+                null
+        );
+
+        return new ImportApplicationResult(
+                registrosInseridos,
+                registrosAtualizados,
+                registrosDesativados
+        );
+    }
+
+    private PreparedSnapshot validarEPrepararSnapshot(
+            AcademyUserSnapshot snapshot
+    ) {
+        if (snapshot == null || !snapshot.complete()) {
+            throw snapshotConflict(1, "completude");
+        }
+
+        List<AcademySourceAdapter.UsuarioAcademyRecord> sourceUsers =
+                snapshot.users();
+        Map<Integer, Integer> sourceIdCounts = new HashMap<>();
+        int invalidSourceIds = 0;
+        for (AcademySourceAdapter.UsuarioAcademyRecord sourceUser
+                : sourceUsers) {
+            if (sourceUser.idUsuario() <= 0) {
+                invalidSourceIds++;
+            } else {
+                sourceIdCounts.merge(
+                        sourceUser.idUsuario(),
+                        1,
+                        Integer::sum
+                );
+            }
+        }
+        int sourceIdConflicts = invalidSourceIds
+                + duplicatedRecordCount(sourceIdCounts);
+        if (sourceIdConflicts > 0) {
+            throw snapshotConflict(
+                    sourceIdConflicts,
+                    "id de origem"
+            );
+        }
+
+        Map<String, Integer> activeCpfCounts = new HashMap<>();
+        Map<String, Integer> eligibleEmailCounts = new HashMap<>();
+        for (AcademySourceAdapter.UsuarioAcademyRecord sourceUser
+                : sourceUsers) {
+            if (!sourceUser.ativo()) {
+                continue;
+            }
+            String canonicalCpf = cpfValidoOuNulo(sourceUser.cpf());
+            if (canonicalCpf == null) {
+                continue;
+            }
+            activeCpfCounts.merge(canonicalCpf, 1, Integer::sum);
+
+            String normalizedEmail = normalizeEmail(sourceUser.email());
+            if (normalizedEmail != null) {
+                eligibleEmailCounts.merge(
+                        normalizedEmail,
+                        1,
+                        Integer::sum
+                );
+            }
+        }
+
+        int cpfConflicts = duplicatedRecordCount(activeCpfCounts);
+        if (cpfConflicts > 0) {
+            throw snapshotConflict(cpfConflicts, "CPF ativo");
+        }
+
+        int emailConflicts = duplicatedRecordCount(
+                eligibleEmailCounts
+        );
+        if (emailConflicts > 0) {
+            throw snapshotConflict(
+                    emailConflicts,
+                    "email de autenticacao"
+            );
+        }
+
+        return new PreparedSnapshot(
+                sourceUsers.stream().map(this::lerUsuario).toList()
+        );
+    }
+
+    private <T> int duplicatedRecordCount(Map<T, Integer> counts) {
+        return counts.values().stream()
+                .filter(count -> count > 1)
+                .mapToInt(Integer::intValue)
+                .sum();
+    }
+
+    private SnapshotValidationException snapshotConflict(
+            int count,
+            String type
+    ) {
+        return new SnapshotValidationException(
+                "Snapshot Academy invalido: "
+                        + count
+                        + " conflitos de "
+                        + type
+                        + "."
+        );
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     private UsuarioAcademy lerUsuario(
             AcademySourceAdapter.UsuarioAcademyRecord sourceUser
-    ) throws Exception {
+    ) {
         int idUsuario = sourceUser.idUsuario();
         String pkOrigem = String.valueOf(idUsuario);
 
@@ -274,8 +478,9 @@ public class ColaboradorImportService {
         return hashes.isEmpty() ? null : hashes.get(0);
     }
 
-    private int desativarAusentes(LocalDateTime iniciadoEm) {
-        List<ColaboradorAusente> ausentes = buscarColaboradoresAusentes(iniciadoEm);
+    private int desativarAusentes(LocalDateTime missingCutoff) {
+        List<ColaboradorAusente> ausentes =
+                buscarColaboradoresAusentes(missingCutoff);
 
         int total = jdbcTemplate.update("""
                 UPDATE colaborador
@@ -287,11 +492,12 @@ public class ColaboradorImportService {
                 WHERE banco_origem = ?
                   AND tabela_origem = ?
                   AND visto_por_ultimo_em < ?
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 """,
                 BANCO_ORIGEM,
                 TABELA_ORIGEM,
-                iniciadoEm
+                missingCutoff
         );
 
         for (ColaboradorAusente ausente : ausentes) {
@@ -302,7 +508,7 @@ public class ColaboradorImportService {
     }
 
     private List<ColaboradorAusente> buscarColaboradoresAusentes(
-            LocalDateTime iniciadoEm
+            LocalDateTime missingCutoff
     ) {
         return jdbcTemplate.query(
                 """
@@ -316,6 +522,7 @@ public class ColaboradorImportService {
                 WHERE banco_origem = ?
                   AND tabela_origem = ?
                   AND visto_por_ultimo_em < ?
+                  AND ativo = TRUE
                   AND deletado_em IS NULL
                 """,
                 (resultSet, rowNumber) ->
@@ -330,7 +537,7 @@ public class ColaboradorImportService {
                         ),
                 BANCO_ORIGEM,
                 TABELA_ORIGEM,
-                iniciadoEm
+                missingCutoff
         );
     }
 
@@ -380,20 +587,56 @@ public class ColaboradorImportService {
         );
     }
 
-    private void finalizarExecucaoComFalha(String syncRunId, String mensagemErro) {
+    private void finalizarExecucaoComFalha(
+            String syncRunId,
+            int registrosLidos,
+            String mensagemErro
+    ) {
         try {
             jdbcTemplate.update("""
                     UPDATE source_sync_run
                     SET
                         finished_at = CURRENT_TIMESTAMP(6),
                         status = 'FAILED',
+                        records_read = ?,
+                        records_inserted = 0,
+                        records_updated = 0,
+                        records_deactivated = 0,
                         error_message = ?
                     WHERE id = ?
                     """,
+                    registrosLidos,
                     mensagemErro,
                     syncRunId
             );
         } catch (Exception ignored) {
+        }
+    }
+
+    private void registrarExecucaoComFalha(
+            String syncRunId,
+            int registrosLidos,
+            String mensagemErro
+    ) {
+        String safeMessage = limitarTexto(mensagemErro, 1000);
+        finalizarExecucaoComFalha(
+                syncRunId,
+                registrosLidos,
+                safeMessage
+        );
+        atualizarCheckpointComFalha(safeMessage);
+        try {
+            registrarImportacaoNaMemoria(
+                    syncRunId,
+                    "FAILED",
+                    registrosLidos,
+                    0,
+                    0,
+                    0,
+                    safeMessage
+            );
+        } catch (Exception ignored) {
+            // The durable FAILED run remains the authoritative failure signal.
         }
     }
 
@@ -449,7 +692,7 @@ public class ColaboradorImportService {
         }
     }
 
-    private String gerarHash(UsuarioAcademy usuario) throws Exception {
+    private String gerarHash(UsuarioAcademy usuario) {
         String valor = String.join("|",
                 nullToEmpty(usuario.pkOrigem()),
                 nullToEmpty(usuario.codigoColaborador()),
@@ -464,9 +707,17 @@ public class ColaboradorImportService {
                 usuario.criadoEmOrigem() == null ? "" : usuario.criadoEmOrigem().toString()
         );
 
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(valor.getBytes(StandardCharsets.UTF_8));
-        return HexFormat.of().formatHex(hash);
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(
+                    valor.getBytes(StandardCharsets.UTF_8)
+            );
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException ignored) {
+            throw new IllegalStateException(
+                    "Falha ao preparar hash do snapshot Academy."
+            );
+        }
     }
 
     private void registrarColaboradorNaMemoria(
@@ -649,16 +900,6 @@ public class ColaboradorImportService {
         ).toString();
     }
 
-    private String mensagemRaiz(Throwable throwable) {
-        Throwable current = throwable;
-
-        while (current.getCause() != null) {
-            current = current.getCause();
-        }
-
-        return current.getMessage() == null ? current.toString() : current.getMessage();
-    }
-
     private String limitarTexto(String value, int maxLength) {
         if (value == null || value.length() <= maxLength) {
             return value;
@@ -670,6 +911,40 @@ public class ColaboradorImportService {
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
     }
+
+    private static TransactionTemplate transactionTemplateFor(
+            JdbcTemplate jdbcTemplate
+    ) {
+        return new TransactionTemplate(
+                new DataSourceTransactionManager(
+                        Objects.requireNonNull(
+                                jdbcTemplate.getDataSource(),
+                                "JdbcTemplate sem DataSource transacional"
+                        )
+                )
+        );
+    }
+
+    private static final class SnapshotValidationException
+            extends IllegalStateException {
+
+        private SnapshotValidationException(String message) {
+            super(message);
+        }
+    }
+
+    private record PreparedSnapshot(List<UsuarioAcademy> users) {
+
+        private PreparedSnapshot {
+            users = List.copyOf(users);
+        }
+    }
+
+    private record ImportApplicationResult(
+            int registrosInseridos,
+            int registrosAtualizados,
+            int registrosDesativados
+    ) {}
 
     private record UsuarioAcademy(
             String id,

@@ -11,7 +11,7 @@ class ExternalSourceAdapterTest {
         AcademySourceAdapter adapter =
                 new AcademySourceAdapter("", "", "");
 
-        assertThatThrownBy(() -> adapter.fetchUsers(10))
+        assertThatThrownBy(() -> adapter.fetchCompleteSnapshot(10))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("CORTEX_ACADEMY_DB_URL")
                 .hasMessageContaining("CORTEX_ACADEMY_DB_USER")
