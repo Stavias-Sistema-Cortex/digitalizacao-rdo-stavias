@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -15,6 +16,8 @@ import com.projeto.cortex.auth.identity.AuthIdentityRepository;
 import com.projeto.cortex.integracoes.AcademySourceAdapter;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -28,7 +31,7 @@ class ColaboradorImportServiceTest {
     private static final String SECOND_SYNTHETIC_CPF = "90000007935";
 
     @Test
-    void neverPublishesCpfHashToOperationalEvidenceOrLegacySnapshot() {
+    void neverPublishesCpfRepresentationsOrDigestsToOperationalMemory() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
         CortexOperationalMemoryService memory =
@@ -71,6 +74,12 @@ class ColaboradorImportServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> legacySnapshot =
                 ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> objectPayloads =
+                ArgumentCaptor.forClass(Map.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> eventPayloads =
+                ArgumentCaptor.forClass(Map.class);
 
         verify(memory).registrarEvidencias(
                 eq("COLABORADOR"),
@@ -88,6 +97,23 @@ class ColaboradorImportServiceTest {
                 anyString(),
                 legacySnapshot.capture()
         );
+        verify(memory, times(2)).registrarObjeto(
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                objectPayloads.capture()
+        );
+        verify(memory, times(2)).registrarEvento(
+                anyString(),
+                anyString(),
+                anyString(),
+                anyString(),
+                eventPayloads.capture()
+        );
 
         assertThat(evidenceFields.getValue())
                 .containsKey("cpf_mascarado")
@@ -101,6 +127,17 @@ class ColaboradorImportServiceTest {
                 .doesNotContainValue(
                         CpfHasher.hashDeDigitos(FIRST_SYNTHETIC_CPF)
                 );
+        List<Object> memoryCallArgumentsAndPayloads = new ArrayList<>();
+        for (var invocation : mockingDetails(memory).getInvocations()) {
+            memoryCallArgumentsAndPayloads.addAll(
+                    Arrays.asList(invocation.getArguments())
+            );
+        }
+        assertThat(containsCpfRepresentation(
+                memoryCallArgumentsAndPayloads
+        ))
+                .as("memory calls must not expose CPF representations")
+                .isFalse();
         verify(authIdentities).upsertAcademyIdentity(
                 anyString(),
                 eq("11144477735"),
@@ -295,5 +332,26 @@ class ColaboradorImportServiceTest {
             assertThat(projection.values())
                     .doesNotContainAnyElementsOf(cpfDigests);
         }
+    }
+
+    private boolean containsCpfRepresentation(Object value) {
+        if (value instanceof String text) {
+            return text.contains("111.444.777-35")
+                    || text.contains(FIRST_SYNTHETIC_CPF);
+        }
+        if (value instanceof Map<?, ?> map) {
+            return map.entrySet().stream().anyMatch(entry ->
+                    containsCpfRepresentation(entry.getKey())
+                            || containsCpfRepresentation(entry.getValue())
+            );
+        }
+        if (value instanceof Iterable<?> values) {
+            for (Object item : values) {
+                if (containsCpfRepresentation(item)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }
