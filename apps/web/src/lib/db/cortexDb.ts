@@ -40,7 +40,7 @@ import type {
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 20;
+export const CORTEX_DATABASE_VERSION = 21;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -656,6 +656,35 @@ export async function getCortexDb(): Promise<
 
           obraStore.createIndex("by-updated-at", "updatedAt");
           obraStore.createIndex("by-status", "status");
+        }
+        if (oldVersion < 21) {
+          const obraStore = unwrap(transaction.objectStore("obras"));
+          const request = obraStore.openCursor();
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) return;
+            const current = cursor.value as Record<string, unknown>;
+            cursor.update({
+              ...current,
+              versaoEntidade:
+                typeof current.versaoEntidade === "number"
+                  ? current.versaoEntidade
+                  : null,
+              arquivadoEm:
+                typeof current.arquivadoEm === "string"
+                  ? current.arquivadoEm
+                  : null,
+              syncStatus:
+                typeof current.syncStatus === "string"
+                  ? current.syncStatus
+                  : "SYNCED",
+              ultimoErro:
+                typeof current.ultimoErro === "string"
+                  ? current.ultimoErro
+                  : null,
+            });
+            cursor.continue();
+          };
         }
 
         if (

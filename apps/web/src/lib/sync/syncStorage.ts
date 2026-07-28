@@ -473,6 +473,7 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "mensagem_anexos",
   "service_catalog",
   "service_price_versions",
+  "obras",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -516,6 +517,21 @@ function isTaskMutation(mutation: OutboxMutationRecord): boolean {
 
 function isRdoMutation(mutation: OutboxMutationRecord): boolean {
   return mutation.entidadeTipo === "RDO";
+}
+
+function isObraMutation(mutation: OutboxMutationRecord): boolean {
+  return mutation.entidadeTipo === "OBRA";
+}
+
+async function obraSyncStatusFromOutbox(
+  store: OutboxEntityMutationStore,
+  obraId: string,
+): Promise<LocalSyncStatus> {
+  return localSyncStatusFromMutations(
+    (await store.index("by-entity-id").getAll(obraId)).filter(
+      (mutation) => mutation.entidadeTipo === "OBRA",
+    ),
+  );
 }
 
 function isDefinitelyNonAppliedSuperseded(
@@ -1080,6 +1096,7 @@ export async function recoverInterruptedMutations(
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
   const taskStore = transaction.objectStore("tarefas");
+  const obraStore = transaction.objectStore("obras");
 
   const syncingMutations =
     await outboxStore.index("by-status").getAll("SYNCING");
@@ -1185,6 +1202,20 @@ export async function recoverInterruptedMutations(
           updatedAt: timestamp,
         };
         await taskStore.put(recoveredTask);
+      }
+    }
+    if (isObraMutation(mutation)) {
+      const obra = await obraStore.get(mutation.entidadeId);
+      if (obra) {
+        await obraStore.put({
+          ...obra,
+          syncStatus: await obraSyncStatusFromOutbox(
+            outboxStore,
+            mutation.entidadeId,
+          ),
+          ultimoErro: updatedMutation.ultimoErro,
+          updatedAt: timestamp,
+        });
       }
     }
 
@@ -1824,6 +1855,7 @@ export async function markMutationAsSyncing(
     transaction.objectStore("outbox_mutations");
   const rdoStore = transaction.objectStore("rdos");
   const taskStore = transaction.objectStore("tarefas");
+  const obraStore = transaction.objectStore("obras");
 
   const currentMutation = await outboxStore.get(
     mutation.clientMutationId,
@@ -1935,6 +1967,20 @@ export async function markMutationAsSyncing(
       });
     }
   }
+  if (isObraMutation(currentMutation)) {
+    const obra = await obraStore.get(currentMutation.entidadeId);
+    if (obra) {
+      await obraStore.put({
+        ...obra,
+        syncStatus: await obraSyncStatusFromOutbox(
+          outboxStore,
+          currentMutation.entidadeId,
+        ),
+        ultimoErro: null,
+        updatedAt: timestamp,
+      });
+    }
+  }
 
   await guardedTransaction.complete();
   return syncingMutation;
@@ -1970,6 +2016,26 @@ export function rdoAfterConflict(
   };
 }
 
+export function obraAfterConflict(
+  obra: ObraLocalRecord,
+  result: SyncPushMutationResult,
+  timestamp: string,
+): ObraLocalRecord {
+  const candidateVersion = result.conflito?.versaoAtual;
+  const serverVersion =
+    typeof candidateVersion === "number" &&
+      Number.isFinite(candidateVersion)
+      ? candidateVersion
+      : null;
+  return {
+    ...obra,
+    versaoEntidade: serverVersion ?? obra.versaoEntidade,
+    syncStatus: "CONFLICT",
+    ultimoErro: result.erro ?? "Conflito informado pelo servidor.",
+    updatedAt: timestamp,
+  };
+}
+
 export async function applyPushResultAtomically(
   result: SyncPushMutationResult,
   guard: SyncSessionGuard = captureOnlineSyncSession(),
@@ -1989,6 +2055,7 @@ export async function applyPushResultAtomically(
   const rdoStore = transaction.objectStore("rdos");
   const taskStore = transaction.objectStore("tarefas");
   const messageStore = transaction.objectStore("mensagens");
+  const obraStore = transaction.objectStore("obras");
 
   const mutation = await outboxStore.get(
     result.clientMutationId,
@@ -2017,6 +2084,9 @@ export async function applyPushResultAtomically(
   const task = isTaskMutation(mutation)
     ? await taskStore.get(mutation.entidadeId)
     : undefined;
+  const obra = isObraMutation(mutation)
+    ? await obraStore.get(mutation.entidadeId)
+    : undefined;
   const timestamp = nowUtc();
   const canonicalEvent = isCanonicalOutboxMutation(mutation)
     ? await exactCanonicalEvent(transaction, mutation.clientMutationId)
@@ -2026,8 +2096,12 @@ export async function applyPushResultAtomically(
     result.resultado &&
     typeof result.resultado.versaoEntidade === "number"
       ? result.resultado.versaoEntidade
+      : result.resultado &&
+          typeof result.resultado.versaoLinha === "number"
+        ? result.resultado.versaoLinha
       : rdo?.versaoEntidade ??
         task?.versaoEntidade ??
+        obra?.versaoEntidade ??
         canonicalEvent?.entityVersion ??
         null;
   const authoritativeRdoNumber =
@@ -2158,6 +2232,38 @@ export async function applyPushResultAtomically(
         updatedAt: timestamp,
       });
     }
+    if (obra) {
+      const aggregateSyncStatus = await obraSyncStatusFromOutbox(
+        outboxStore,
+        mutation.entidadeId,
+      );
+      const authoritative = result.resultado
+        ? obraRecordFromPayload(
+            {
+              ...result.resultado,
+              id: result.resultado.id ?? mutation.entidadeId,
+              obraId: mutation.entidadeId,
+              versaoEntidade: resultVersion,
+            },
+            timestamp,
+          )
+        : null;
+      await obraStore.put(
+        aggregateSyncStatus === "SYNCED" && authoritative
+          ? {
+              ...authoritative,
+              valorContratual:
+                authoritative.valorContratual ?? obra.valorContratual,
+            }
+          : {
+              ...obra,
+              versaoEntidade: resultVersion,
+              syncStatus: aggregateSyncStatus,
+              ultimoErro: null,
+              updatedAt: timestamp,
+            },
+      );
+    }
   } else if (
     result.status === "DESCARTADA" ||
     result.status === "CONFLITO"
@@ -2264,6 +2370,11 @@ export async function applyPushResultAtomically(
             : task.versaoEntidade,
         updatedAt: timestamp,
       });
+    }
+    if (obra) {
+      await obraStore.put(
+        obraAfterConflict(obra, result, timestamp),
+      );
     }
   } else {
     const messageText = result.erro ?? "Erro informado pelo servidor.";
@@ -2375,6 +2486,17 @@ export async function applyPushResultAtomically(
         updatedAt: timestamp,
       });
     }
+    if (obra) {
+      await obraStore.put({
+        ...obra,
+        syncStatus: await obraSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        ultimoErro: messageText,
+        updatedAt: timestamp,
+      });
+    }
   }
 
   await guardedTransaction.complete();
@@ -2456,6 +2578,10 @@ export async function reconcileCanonicalConflict(
     serverVersion as number,
     occurredAt,
   );
+  const transportSnapshot =
+    original.entityType === "OBRA"
+      ? { ...resolution.merged }
+      : nextSnapshot;
   const built = await buildCanonicalMutation({
     clientMutationId: replacementMutationId,
     ontologyEventId: replacementEventId,
@@ -2469,7 +2595,7 @@ export async function reconcileCanonicalConflict(
     baseVersion: serverVersion as number,
     occurredAt,
     previousSnapshot: remote.snapshot,
-    nextSnapshot,
+    nextSnapshot: transportSnapshot,
     authorizationScope: original.trace.authorizationScope,
     correlationId: original.correlationId,
     causationId: original.clientMutationId,
@@ -2510,6 +2636,7 @@ export async function reconcileCanonicalConflict(
         "mensagem_anexos",
         "service_catalog",
         "service_price_versions",
+        "obras",
       ],
       "readwrite",
     ),
@@ -2739,6 +2866,7 @@ export async function resolveCanonicalUploadReplacements(
             "mensagem_anexos",
             "service_catalog",
             "service_price_versions",
+            "obras",
           ],
           "readwrite",
         ),
@@ -2880,19 +3008,42 @@ function replacementDomainSnapshot(
       lastError: null,
     };
   }
+  if (mutation.entityType === "OBRA") {
+    const record = obraRecordFromPayload(
+      {
+        ...merged,
+        id: mutation.entityId,
+        obraId: mutation.entityId,
+        versaoEntidade: serverVersion,
+      },
+      occurredAt,
+    );
+    if (!record) {
+      throw new Error(
+        "O snapshot remoto não corresponde à obra canônica.",
+      );
+    }
+    return {
+      ...record,
+      syncStatus: "PENDING_SYNC",
+      ultimoErro: null,
+      updatedAt: occurredAt,
+    };
+  }
   return { ...merged };
 }
 
 function principalStoreFor(
   entityType: string,
 ): "rdos" | "mensagens" | "mensagem_conversas" | "mensagem_anexos" |
-  "service_catalog" | "service_price_versions" {
+  "service_catalog" | "service_price_versions" | "obras" {
   if (entityType === "RDO") return "rdos";
   if (entityType === "MENSAGEM") return "mensagens";
   if (entityType === "CONVERSA") return "mensagem_conversas";
   if (entityType === "MENSAGEM_ANEXO") return "mensagem_anexos";
   if (entityType === "SERVICE") return "service_catalog";
   if (entityType === "SERVICE_PRICE_VERSION") return "service_price_versions";
+  if (entityType === "OBRA") return "obras";
   throw new Error(
     `entityType ${entityType} não possui snapshot local reconciliável.`,
   );
@@ -3020,6 +3171,21 @@ export async function rejectMutationLocally(
       });
     }
   }
+  if (isObraMutation(mutation)) {
+    const obraStore = transaction.objectStore("obras");
+    const obra = await obraStore.get(mutation.entidadeId);
+    if (obra) {
+      await obraStore.put({
+        ...obra,
+        syncStatus: await obraSyncStatusFromOutbox(
+          outbox,
+          mutation.entidadeId,
+        ),
+        ultimoErro: message,
+        updatedAt: timestamp,
+      });
+    }
+  }
   await guardedTransaction.complete();
 }
 
@@ -3044,6 +3210,7 @@ export async function returnMutationToPending(
   const rdoStore = transaction.objectStore("rdos");
   const taskStore = transaction.objectStore("tarefas");
   const messageStore = transaction.objectStore("mensagens");
+  const obraStore = transaction.objectStore("obras");
 
   const mutation = await outboxStore.get(clientMutationId);
 
@@ -3133,6 +3300,20 @@ export async function returnMutationToPending(
           outboxStore,
           mutation.entidadeId,
         ),
+        updatedAt: timestamp,
+      });
+    }
+  }
+  if (isObraMutation(mutation)) {
+    const obra = await obraStore.get(mutation.entidadeId);
+    if (obra) {
+      await obraStore.put({
+        ...obra,
+        syncStatus: await obraSyncStatusFromOutbox(
+          outboxStore,
+          mutation.entidadeId,
+        ),
+        ultimoErro: errorMessage,
         updatedAt: timestamp,
       });
     }
@@ -3363,11 +3544,22 @@ export async function applyPulledEventsAtomically(
 
     if (
       event.entidadeTipo === "OBRA" &&
-      event.tipoEvento === "OBRA_ATUALIZADA" &&
+      [
+        "OBRA_ATUALIZADA",
+        "OBRA_DESATIVADA",
+        "OBRA_ARQUIVADA",
+        "OBRA_RESTAURADA",
+      ].includes(event.tipoEvento) &&
       event.payload
     ) {
       const incoming = obraRecordFromPayload(
-        event.payload,
+        {
+          ...event.payload,
+          versaoEntidade:
+            event.versaoEntidade ??
+            event.payload.versaoEntidade ??
+            event.payload.versaoLinha,
+        },
         nowUtc(),
       );
 

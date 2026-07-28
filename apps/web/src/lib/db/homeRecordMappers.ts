@@ -22,11 +22,19 @@ function toTextOrNull(value: unknown): string | null {
     : null;
 }
 
+function toSafeIntegerOrNull(value: unknown): number | null {
+  return typeof value === "number" &&
+      Number.isSafeInteger(value) &&
+      value >= 0
+    ? value
+    : null;
+}
+
 export function obraRecordFromPayload(
   payload: Record<string, unknown>,
   fallbackNowIso: string,
 ): ObraLocalRecord | null {
-  const id = toTextOrNull(payload.obraId);
+  const id = toTextOrNull(payload.obraId) ?? toTextOrNull(payload.id);
   const nome = toTextOrNull(payload.nome);
 
   if (!id || !nome) {
@@ -36,17 +44,29 @@ export function obraRecordFromPayload(
   return {
     id,
     codigoContrato: toTextOrNull(payload.codigoContrato) ?? "",
+    codigoInterno: toTextOrNull(payload.codigoInterno),
     nome,
     cliente: toTextOrNull(payload.cliente),
+    descricao: toTextOrNull(payload.descricao),
     cidade: toTextOrNull(payload.cidade),
     uf: toTextOrNull(payload.uf),
     rodovia: toTextOrNull(payload.rodovia),
+    fonteArquivo: toTextOrNull(payload.fonteArquivo),
     status: toTextOrNull(payload.status) ?? "ATIVA",
     observacoes: toTextOrNull(payload.observacoes),
     latitude: toNumberOrNull(payload.latitude),
     longitude: toNumberOrNull(payload.longitude),
     valorContratual: toNumberOrNull(payload.valorContratual),
-    updatedAt: toTextOrNull(payload.atualizadoEm) ?? fallbackNowIso,
+    versaoEntidade:
+      toSafeIntegerOrNull(payload.versaoEntidade) ??
+      toSafeIntegerOrNull(payload.versaoLinha),
+    arquivadoEm: toTextOrNull(payload.arquivadoEm),
+    syncStatus: "SYNCED",
+    ultimoErro: null,
+    updatedAt:
+      toTextOrNull(payload.atualizadoEm) ??
+      toTextOrNull(payload.updatedAt) ??
+      fallbackNowIso,
   };
 }
 
@@ -57,9 +77,14 @@ export function mergeObraRecords(
   if (!existing) {
     return incoming;
   }
+  if (existing.syncStatus !== undefined && existing.syncStatus !== "SYNCED") {
+    return existing;
+  }
 
   return {
     ...incoming,
+    versaoEntidade:
+      incoming.versaoEntidade ?? existing.versaoEntidade ?? null,
     valorContratual:
       incoming.valorContratual ?? existing.valorContratual,
   };

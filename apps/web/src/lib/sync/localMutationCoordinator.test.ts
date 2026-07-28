@@ -103,6 +103,81 @@ afterEach(async () => {
 });
 
 describe("canonical local mutation coordinator", () => {
+  it("commits an OBRA snapshot and lifecycle event only in the obras store", async () => {
+    setSession({
+      colaboradorId: userId,
+      nome: "Administrador",
+      papelAcesso: "ALFA",
+      escopoGlobal: true,
+      obraIds: [],
+      expiraEm: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const obra = {
+      id: OBRA_ID,
+      codigoContrato: "CT-1",
+      nome: "Obra Alfa",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "ATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 3,
+      arquivadoEm: OCCURRED_AT,
+      syncStatus: "PENDING_SYNC",
+      ultimoErro: null,
+      updatedAt: OCCURRED_AT,
+    };
+    const payload = {
+      id: OBRA_ID,
+      obraId: OBRA_ID,
+      codigoContrato: "CT-1",
+      nome: "Obra Alfa",
+      status: "ATIVA",
+      arquivadoEm: OCCURRED_AT,
+    };
+
+    const committed = await commitLocalMutation({
+      clientMutationId: crypto.randomUUID(),
+      ontologyEventId: crypto.randomUUID(),
+      deviceId: DEVICE_ID,
+      userId,
+      obraId: OBRA_ID,
+      entityType: "OBRA",
+      entityId: OBRA_ID,
+      entityName: obra.nome,
+      operation: "DELETE",
+      transportOperation: "ARQUIVAR_OBRA",
+      baseVersion: 3,
+      occurredAt: OCCURRED_AT,
+      previousSnapshot: { ...payload, arquivadoEm: null },
+      nextSnapshot: payload,
+      principalSnapshot: obra,
+      expectedPrincipalSnapshot: null,
+      expectedActiveMutationIds: [],
+      eventType: "OBRA_ARQUIVADA",
+      write: () => [{
+        store: "obras",
+        value: obra,
+        principal: true,
+        insertOnly: true,
+      }],
+    });
+
+    const database = await getCortexDb();
+    expect(await database.get("obras", OBRA_ID)).toEqual(obra);
+    expect(committed.mutation.trace.authorizationScope).toEqual([
+      "ALFA:GLOBAL",
+    ]);
+    expect(committed.event).toMatchObject({
+      type: "OBRA_ARQUIVADA",
+      principalEntity: { tipo: "OBRA", id: OBRA_ID },
+    });
+  });
+
   it("hashes recursively sorted JSON deterministically", async () => {
     expect(
       await mutationPayloadHash({ z: [{ b: 2, a: 1 }], a: true }),

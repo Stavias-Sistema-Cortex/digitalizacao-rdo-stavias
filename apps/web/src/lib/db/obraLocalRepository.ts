@@ -23,8 +23,12 @@ export async function mergeObraLocal(
 ): Promise<void> {
   const database = await getCortexDb();
   const existing = await database.get("obras", record.id);
-  await database.put(
-    "obras",
-    mergeObraRecords(existing, record),
-  );
+  const normalized: ObraLocalRecord = {
+    ...record,
+    versaoEntidade: record.versaoEntidade ?? null,
+    arquivadoEm: record.arquivadoEm ?? null,
+    syncStatus: record.syncStatus ?? "SYNCED",
+    ultimoErro: record.ultimoErro ?? null,
+  };
+  await database.put("obras", mergeObraRecords(existing, normalized));
 }

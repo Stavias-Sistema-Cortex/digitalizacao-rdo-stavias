@@ -67,6 +67,7 @@ export interface SyncMutationEntityResult
   extends Record<string, unknown> {
   id?: string;
   versaoEntidade?: number;
+  versaoLinha?: number;
   
 }export interface SyncPushMutationResult {
   clientMutationId: string;

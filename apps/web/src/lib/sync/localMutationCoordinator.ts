@@ -63,6 +63,10 @@ const OPERATIONAL_EVENT_TYPES = [
   "SERVICE_PRICE_VERSION_PUBLISHED",
   "SERVICE_PRICE_VERSION_SUPERSEDED",
   "SERVICE_PRICE_VERSION_CANCELLED",
+  "OBRA_ATUALIZADA",
+  "OBRA_DESATIVADA",
+  "OBRA_ARQUIVADA",
+  "OBRA_RESTAURADA",
 ] as const satisfies readonly OperationalEventType[];
 
 type CanonicalWriteStore = "outbox_mutations" | "operational_events";
@@ -77,6 +81,7 @@ const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
   SERVICE: "service_catalog",
   SERVICE_PRICE_VERSION: "service_price_versions",
   EQUIPE: "teams",
+  OBRA: "obras",
 } as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
 const OUTBOX_ONLY_ENTITY_TYPES = new Set<SyncEntityType>([
@@ -594,6 +599,11 @@ function prepareWrites<TStore extends LocalDomainStore>(
   ) {
     throw new TypeError(
       `Principal ${entityType} obraId must equal envelope obraId.`,
+    );
+  }
+  if (entityType === "OBRA" && principalValue.id !== obraId) {
+    throw new TypeError(
+      "Principal OBRA id must equal envelope obraId.",
     );
   }
   if (

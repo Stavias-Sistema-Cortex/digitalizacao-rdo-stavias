@@ -39,7 +39,11 @@ export type OperationalEventType =
   | "SERVICE_CREATED"
   | "SERVICE_PRICE_VERSION_PUBLISHED"
   | "SERVICE_PRICE_VERSION_SUPERSEDED"
-  | "SERVICE_PRICE_VERSION_CANCELLED";
+  | "SERVICE_PRICE_VERSION_CANCELLED"
+  | "OBRA_ATUALIZADA"
+  | "OBRA_DESATIVADA"
+  | "OBRA_ARQUIVADA"
+  | "OBRA_RESTAURADA";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -122,6 +126,7 @@ export type SyncEntityType =
   | "SERVICE"
   | "SERVICE_PRICE_VERSION"
   | "EQUIPE"
+  | "OBRA"
   | "VINCULO_OBRA"
   | "SOLICITACAO_INTEGRACAO";
 
@@ -157,6 +162,10 @@ export type SyncOperation =
   | "ATUALIZAR_EQUIPE"
   | "ARQUIVAR_EQUIPE"
   | "ALTERAR_VINCULO_EQUIPE"
+  | "ATUALIZAR_OBRA"
+  | "DESATIVAR_OBRA"
+  | "ARQUIVAR_OBRA"
+  | "RESTAURAR_OBRA"
   | "VINCULAR_COLABORADOR_OBRA"
   | "REVOGAR_VINCULO_COLABORADOR_OBRA"
   | "SOLICITAR_INTEGRACAO";
@@ -518,16 +527,23 @@ export interface RdoAttachmentRecord {
 export interface ObraLocalRecord {
   id: string;
   codigoContrato: string;
+  codigoInterno?: string | null;
   nome: string;
   cliente: string | null;
+  descricao?: string | null;
   cidade: string | null;
   uf: string | null;
   rodovia: string | null;
+  fonteArquivo?: string | null;
   status: string;
   observacoes: string | null;
   latitude: number | null;
   longitude: number | null;
   valorContratual: number | null;
+  versaoEntidade?: number | null;
+  arquivadoEm?: string | null;
+  syncStatus?: LocalSyncStatus;
+  ultimoErro?: string | null;
   updatedAt: string;
 }
 

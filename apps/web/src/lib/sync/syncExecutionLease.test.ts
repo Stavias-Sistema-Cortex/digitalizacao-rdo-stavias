@@ -79,8 +79,8 @@ describe("durable sync execution lease", () => {
 
     const upgraded = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(20);
-    expect(upgraded.version).toBe(20);
+    expect(CORTEX_DATABASE_VERSION).toBe(21);
+    expect(upgraded.version).toBe(21);
     expect(
       await upgraded.get("sync_state", "default"),
     ).toMatchObject({

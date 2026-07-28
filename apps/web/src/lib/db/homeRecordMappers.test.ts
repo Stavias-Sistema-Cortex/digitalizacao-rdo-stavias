@@ -35,6 +35,8 @@ describe("obraRecordFromPayload", () => {
         observacoes: "Frente ativa",
         latitude: -20.4697,
         longitude: -54.6201,
+        arquivadoEm: "2026-07-06T09:00:00",
+        versaoLinha: 7,
         atualizadoEm: "2026-07-06T10:00:00",
       },
       NOW,
@@ -44,6 +46,35 @@ describe("obraRecordFromPayload", () => {
     expect(record?.id).toBe("obra-1");
     expect(record?.valorContratual).toBeNull();
     expect(record?.latitude).toBe(-20.4697);
+    expect(record).toMatchObject({
+      arquivadoEm: "2026-07-06T09:00:00",
+      versaoEntidade: 7,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+    });
+  });
+
+  it("mapeia resposta REST por id e versaoEntidade", () => {
+    expect(
+      obraRecordFromPayload(
+        {
+          id: "obra-rest",
+          nome: "Obra REST",
+          status: "INATIVA",
+          arquivadoEm: null,
+          versaoEntidade: 11,
+          atualizadoEm: "2026-07-06T11:00:00",
+        },
+        NOW,
+      ),
+    ).toMatchObject({
+      id: "obra-rest",
+      status: "INATIVA",
+      arquivadoEm: null,
+      versaoEntidade: 11,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+    });
   });
 
   it("retorna null sem obraId ou nome", () => {
@@ -67,6 +98,10 @@ describe("mergeObraRecords", () => {
       latitude: null,
       longitude: null,
       valorContratual: 1000000,
+      versaoEntidade: 4,
+      arquivadoEm: null,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
       updatedAt: NOW,
     };
     const incoming: ObraLocalRecord = {
@@ -95,10 +130,48 @@ describe("mergeObraRecords", () => {
       latitude: null,
       longitude: null,
       valorContratual: 2000000,
+      versaoEntidade: 2,
+      arquivadoEm: null,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
       updatedAt: NOW,
     };
 
     expect(mergeObraRecords(undefined, incoming).valorContratual).toBe(2000000);
+  });
+
+  it("não sobrescreve snapshot otimista com hidratação REST", () => {
+    const pending: ObraLocalRecord = {
+      id: "obra-1",
+      codigoContrato: "CT-LOCAL",
+      nome: "Nome local",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 4,
+      arquivadoEm: "2026-07-06T10:00:00",
+      syncStatus: "CONFLICT",
+      ultimoErro: "Conflito preservado",
+      updatedAt: NOW,
+    };
+    const remote: ObraLocalRecord = {
+      ...pending,
+      codigoContrato: "CT-REMOTO",
+      nome: "Nome remoto",
+      status: "ATIVA",
+      arquivadoEm: null,
+      versaoEntidade: 5,
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+    };
+
+    expect(mergeObraRecords(pending, remote)).toEqual(pending);
   });
 });
 

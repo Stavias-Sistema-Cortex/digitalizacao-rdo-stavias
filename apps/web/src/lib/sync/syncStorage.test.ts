@@ -5,6 +5,7 @@ import {
   mutationAfterObraReferenceRepair,
   mutationAfterErroredRetry,
   mutationAfterResolvableConflict,
+  obraAfterConflict,
   rdoAfterMaoObraReferenceRepair,
   rdoAfterObraReferenceRepair,
   rdoAfterConflict,
@@ -66,6 +67,49 @@ describe("rdoAfterConflict", () => {
         "t",
       ).versaoEntidade,
     ).toBe(3);
+  });
+});
+
+describe("obraAfterConflict", () => {
+  it("preserva o snapshot otimista e registra versão/erro do conflito", () => {
+    const obra: ObraLocalRecord = {
+      id: "obra-1",
+      codigoContrato: "CT-1",
+      nome: "Obra local",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 3,
+      arquivadoEm: null,
+      syncStatus: "SYNCING",
+      ultimoErro: null,
+      updatedAt: "2026-07-02T10:00:00.000Z",
+    };
+
+    expect(
+      obraAfterConflict(
+        obra,
+        {
+          clientMutationId: "m-obra",
+          status: "CONFLITO",
+          conflito: { versaoAtual: 9 },
+          erro: "Conflito concorrente.",
+        },
+        "2026-07-02T11:00:00.000Z",
+      ),
+    ).toEqual({
+      ...obra,
+      versaoEntidade: 9,
+      syncStatus: "CONFLICT",
+      ultimoErro: "Conflito concorrente.",
+      updatedAt: "2026-07-02T11:00:00.000Z",
+    });
   });
 });
 
@@ -230,6 +274,10 @@ const currentInterviasObra: ObraLocalRecord = {
   latitude: null,
   longitude: null,
   valorContratual: null,
+  versaoEntidade: null,
+  arquivadoEm: null,
+  syncStatus: "SYNCED",
+  ultimoErro: null,
   updatedAt: "2026-07-08T12:00:00.000Z",
 };
 
