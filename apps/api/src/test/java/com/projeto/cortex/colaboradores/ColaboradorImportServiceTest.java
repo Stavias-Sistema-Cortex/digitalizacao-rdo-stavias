@@ -217,6 +217,50 @@ class ColaboradorImportServiceTest {
         );
     }
 
+    @Test
+    void importsInactiveAcademyUserWithoutCreatingAnAuthenticationIdentity() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        AuthIdentityRepository authIdentities =
+                mock(AuthIdentityRepository.class);
+
+        when(academy.fetchUsers(anyInt())).thenReturn(List.of(
+                new AcademySourceAdapter.UsuarioAcademyRecord(
+                        900_000_004,
+                        "529.982.247-25",
+                        "Colaborador Inativo Sintético",
+                        "inativo@example.invalid",
+                        false,
+                        "grupo-teste",
+                        "Operacional",
+                        "perfil-teste",
+                        "Operacional",
+                        LocalDateTime.of(2026, 1, 1, 0, 0)
+                )
+        ));
+
+        ColaboradorImportService service = new ColaboradorImportService(
+                jdbc,
+                academy,
+                memory,
+                authIdentities
+        );
+
+        ColaboradorImportResult result =
+                service.importarUsuariosDaAcademy();
+
+        assertThat(result.status()).isEqualTo("SUCCESS");
+        assertThat(result.registrosLidos()).isEqualTo(1);
+        assertThat(result.registrosProcessados()).isEqualTo(1);
+        verify(authIdentities, never()).upsertAcademyIdentity(
+                anyString(),
+                anyString(),
+                anyString()
+        );
+    }
+
     private AcademySourceAdapter.UsuarioAcademyRecord academyUser(String cpf) {
         return new AcademySourceAdapter.UsuarioAcademyRecord(
                 900_000_003,

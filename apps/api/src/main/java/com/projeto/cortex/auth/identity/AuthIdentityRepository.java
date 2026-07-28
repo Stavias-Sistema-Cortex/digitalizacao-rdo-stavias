@@ -355,7 +355,7 @@ public class AuthIdentityRepository {
                             status
                         ) VALUES (
                             ?, ?, ?, NULLIF(TRIM(?), ''),
-                            NULL, 'ACADEMY', 'PENDENTE'
+                            NULL, 'ACADEMY', 'ATIVA'
                         )
                         """,
                         colaboradorId,
@@ -391,6 +391,10 @@ public class AuthIdentityRepository {
                             WHEN NULLIF(TRIM(?), '') IS NOT NULL
                                 THEN 'ACADEMY'
                             ELSE email_fonte
+                        END,
+                        status = CASE
+                            WHEN status = 'BLOQUEADA' THEN status
+                            ELSE 'ATIVA'
                         END,
                         versao_linha = versao_linha + 1
                     WHERE colaborador_id = ?

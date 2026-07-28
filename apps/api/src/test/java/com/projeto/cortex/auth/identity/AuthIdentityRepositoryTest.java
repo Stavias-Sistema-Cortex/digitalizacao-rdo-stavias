@@ -366,9 +366,37 @@ class AuthIdentityRepositoryTest {
                 .contains("email_verificado_em IS NOT NULL")
                 .contains("'MANUAL_VERIFICADO'")
                 .contains("'MANUAL_PENDENTE'")
+                .contains("WHEN status = 'BLOQUEADA'")
+                .contains("ELSE 'ATIVA'")
                 .contains("WHERE colaborador_id = ?")
                 .doesNotContain("ON DUPLICATE KEY UPDATE")
                 .doesNotContain("cpf_hash");
+    }
+
+    @Test
+    void academyInsertCreatesAnActiveIdentity() {
+        when(digests.current(SYNTHETIC_CPF)).thenReturn(CURRENT);
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", false);
+
+        repository.upsertAcademyIdentity(
+                "alfa-sintetico",
+                SYNTHETIC_CPF,
+                "academy@example.invalid"
+        );
+
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(
+                sql.capture(),
+                eq("alfa-sintetico"),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq("academy@example.invalid")
+        );
+        assertThat(sql.getValue())
+                .startsWith("INSERT INTO auth_identity")
+                .contains("NULL, 'ACADEMY', 'ATIVA'")
+                .doesNotContain("'PENDENTE'");
     }
 
     @Test

@@ -67,7 +67,8 @@ public class ColaboradorImportService {
                 }
 
                 salvarOuAtualizar(usuario, hashOrigem);
-                if (usuario.cpfNormalizado() != null) {
+                if (usuario.ativo()
+                        && usuario.cpfNormalizado() != null) {
                     authIdentityRepository.upsertAcademyIdentity(
                             usuario.id(),
                             usuario.cpfNormalizado(),
