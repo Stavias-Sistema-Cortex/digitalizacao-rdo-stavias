@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
+import com.projeto.cortex.obras.ObraService;
 import com.projeto.cortex.rdos.RdoCreateRequest;
 import com.projeto.cortex.rdos.RdoDraftUpdateService;
 import com.projeto.cortex.rdos.RdoQueryService;
@@ -91,5 +92,58 @@ class SyncServiceAuthorizationTest {
         verify(rdoService).criarRascunho(argThat(request ->
                 "cli-mut-1".equals(request.clientMutationId())
         ));
+    }
+
+    @Test
+    void replayDeObraRevalidaAlfaAntesDeQualquerMutacaoDeDominio() {
+        ObraService obraService = mock(ObraService.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        doThrow(new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "A operação exige perfil administrativo (Alfa)."
+        )).when(currentUser).requireAlfa();
+        ObraSyncOperationHandler obraHandler =
+                new ObraSyncOperationHandler(
+                        obraService,
+                        currentUser,
+                        objectMapper
+                );
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("id", "obra-1")
+                .put("obraId", "obra-1")
+                .put("status", "ATIVA");
+        SyncPushRequest.MutacaoCliente mutation =
+                new SyncPushRequest.MutacaoCliente(
+                        "mut-obra-1",
+                        "OBRA",
+                        "obra-1",
+                        "ARQUIVAR_OBRA",
+                        1L,
+                        payload,
+                        LocalDateTime.now(),
+                        "corr-obra-1",
+                        13,
+                        "device",
+                        "usuario",
+                        "obra-1",
+                        "OBRA",
+                        "obra-1",
+                        "DELETE",
+                        1L,
+                        java.util.List.of(),
+                        "2026-07-28T15:00:00.000Z",
+                        null,
+                        null,
+                        java.util.List.of(),
+                        java.util.List.of()
+                );
+
+        assertThatThrownBy(() -> obraHandler.apply(
+                mutation,
+                new SyncMutationContext("usuario", "device")
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Alfa");
+
+        verify(obraService, never()).arquivarObra(any(), any(), any());
     }
 }

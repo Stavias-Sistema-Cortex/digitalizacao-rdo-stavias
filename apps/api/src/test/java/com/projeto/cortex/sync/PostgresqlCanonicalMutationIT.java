@@ -10,6 +10,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraResponse;
+import com.projeto.cortex.obras.ObraService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
@@ -23,9 +25,13 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -64,6 +70,247 @@ class PostgresqlCanonicalMutationIT {
         );
         jdbc = new JdbcTemplate(dataSource);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+    }
+
+    @ParameterizedTest(name = "{0} -> {1}")
+    @MethodSource("obraTransportMappings")
+    void allObraTransportOperationsUseTheirCanonicalMappings(
+            String operation,
+            String canonicalOperation,
+            String eventType
+    ) throws Exception {
+        String ownerId = collaborator();
+        String obraId = worksite();
+        String deviceId = device(ownerId);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(ownerId);
+        when(currentUser.allowedObraIds(ownerId))
+                .thenReturn(Optional.empty());
+        CortexOperationalMemoryService memory =
+                new CortexOperationalMemoryService(
+                        jdbc,
+                        mapper,
+                        mock(ApplicationEventPublisher.class)
+                );
+        recordObraEvent(
+                memory,
+                ownerId,
+                obraId,
+                "OBRA_CRIADA",
+                Map.of(
+                        "id", obraId,
+                        "status", "ATIVA",
+                        "versaoLinha", 1L
+                )
+        );
+        ObraService obraService = mock(ObraService.class);
+        stubObraOperation(
+                obraService,
+                memory,
+                ownerId,
+                obraId,
+                operation,
+                eventType
+        );
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                transactions,
+                new SyncOperationRegistry(List.of(
+                        new ObraSyncOperationHandler(
+                                obraService,
+                                currentUser,
+                                mapper
+                        )
+                )),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+        SyncPushRequest.MutacaoCliente mutation = canonicalObraMutation(
+                ownerId,
+                deviceId,
+                obraId,
+                UUID.randomUUID().toString(),
+                operation,
+                canonicalOperation,
+                1L
+        );
+
+        SyncPushResponse response = service.push(
+                new SyncPushRequest(deviceId, List.of(mutation))
+        );
+
+        assertThat(response.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("APLICADA");
+            assertThat(result.operacao()).isEqualTo(operation);
+        });
+        assertThat(jdbc.queryForMap(
+                """
+                SELECT operacao_canonica, status
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ? AND client_mutation_id = ?
+                """,
+                ownerId,
+                mutation.clientMutationId()
+        )).containsEntry("operacao_canonica", canonicalOperation)
+                .containsEntry("status", "APLICADA");
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT tipo_evento
+                FROM cortex_evento_operacional
+                WHERE client_mutation_id = ?
+                """,
+                String.class,
+                mutation.clientMutationId()
+        )).isEqualTo(eventType);
+    }
+
+    @Test
+    void obraMutationIsIdempotentRechecksAlfaAndPersistsVersionConflict()
+            throws Exception {
+        String ownerId = collaborator();
+        String obraId = worksite();
+        String deviceId = device(ownerId);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(ownerId);
+        when(currentUser.allowedObraIds(ownerId))
+                .thenReturn(Optional.empty());
+        CortexOperationalMemoryService memory =
+                new CortexOperationalMemoryService(
+                        jdbc,
+                        mapper,
+                        mock(ApplicationEventPublisher.class)
+                );
+        recordObraEvent(
+                memory,
+                ownerId,
+                obraId,
+                "OBRA_CRIADA",
+                Map.of(
+                        "id", obraId,
+                        "status", "ATIVA",
+                        "versaoLinha", 1L
+                )
+        );
+
+        AtomicInteger domainWrites = new AtomicInteger();
+        ObraService obraService = mock(ObraService.class);
+        when(obraService.arquivarObra(
+                org.mockito.ArgumentMatchers.eq(obraId),
+                org.mockito.ArgumentMatchers.argThat(
+                        request -> request.baseVersion() == 1L
+                ),
+                org.mockito.ArgumentMatchers.eq(ownerId)
+        )).thenAnswer(invocation -> {
+            domainWrites.incrementAndGet();
+            recordObraEvent(
+                    memory,
+                    ownerId,
+                    obraId,
+                    "OBRA_ARQUIVADA",
+                    Map.of(
+                            "id", obraId,
+                            "status", "ATIVA",
+                            "arquivadoEm", "2026-07-28T15:00:00",
+                            "versaoLinha", 2L
+                    )
+            );
+            return obraResponse(
+                    obraId,
+                    LocalDateTime.of(2026, 7, 28, 15, 0),
+                    2L
+            );
+        });
+        ObraSyncOperationHandler handler = new ObraSyncOperationHandler(
+                obraService,
+                currentUser,
+                mapper
+        );
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                transactions,
+                new SyncOperationRegistry(List.of(handler)),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+        SyncPushRequest.MutacaoCliente mutation = canonicalObraArchiveMutation(
+                ownerId,
+                deviceId,
+                obraId,
+                UUID.randomUUID().toString(),
+                1L
+        );
+
+        SyncPushResponse first = service.push(
+                new SyncPushRequest(deviceId, List.of(mutation))
+        );
+        SyncPushResponse replay = service.push(
+                new SyncPushRequest(deviceId, List.of(mutation))
+        );
+
+        assertThat(first.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("APLICADA");
+            assertThat(result.resultado().path("versaoLinha").asLong())
+                    .isEqualTo(2L);
+            assertThat(result.resultado().path("versaoEntidade").asLong())
+                    .isEqualTo(2L);
+        });
+        assertThat(replay.resultados().getFirst().eventoServidorCommitSeq())
+                .isEqualTo(first.resultados().getFirst().eventoServidorCommitSeq());
+        assertThat(domainWrites).hasValue(1);
+
+        when(currentUser.allowedObraIds(ownerId))
+                .thenReturn(Optional.of(Set.of()));
+        SyncPushResponse revokedReplay = service.push(
+                new SyncPushRequest(deviceId, List.of(mutation))
+        );
+        assertRejected(revokedReplay, "AUTHORIZATION_SCOPE_MISMATCH");
+        assertThat(jdbc.queryForObject(
+                "SELECT status FROM sync_mutacao_cliente "
+                        + "WHERE proprietario_id = ? AND client_mutation_id = ?",
+                String.class,
+                ownerId,
+                mutation.clientMutationId()
+        )).isEqualTo("APLICADA");
+        assertThat(domainWrites).hasValue(1);
+
+        when(currentUser.allowedObraIds(ownerId))
+                .thenReturn(Optional.empty());
+        SyncPushRequest.MutacaoCliente stale =
+                canonicalObraArchiveMutation(
+                        ownerId,
+                        deviceId,
+                        obraId,
+                        UUID.randomUUID().toString(),
+                        1L
+                );
+        SyncPushResponse conflict = service.push(
+                new SyncPushRequest(deviceId, List.of(stale))
+        );
+
+        assertThat(conflict.resultados()).singleElement().satisfies(result -> {
+            assertThat(result.status()).isEqualTo("DESCARTADA");
+            assertThat(result.conflito().path("baseVersao").asLong())
+                    .isEqualTo(1L);
+            assertThat(result.conflito().path("versaoAtual").asLong())
+                    .isEqualTo(2L);
+        });
+        assertThat(jdbc.queryForMap(
+                """
+                SELECT status, erro_categoria,
+                       conflito_json ->> 'baseVersao' AS base_version,
+                       conflito_json ->> 'versaoAtual' AS current_version
+                FROM sync_mutacao_cliente
+                WHERE proprietario_id = ? AND client_mutation_id = ?
+                """,
+                ownerId,
+                stale.clientMutationId()
+        )).containsEntry("status", "DESCARTADA")
+                .containsEntry("erro_categoria", "VERSION_CONFLICT")
+                .containsEntry("base_version", "1")
+                .containsEntry("current_version", "2");
+        assertThat(domainWrites).hasValue(1);
     }
 
     @Test
@@ -856,6 +1103,131 @@ class PostgresqlCanonicalMutationIT {
         );
     }
 
+    private SyncPushRequest.MutacaoCliente canonicalObraArchiveMutation(
+            String ownerId,
+            String deviceId,
+            String obraId,
+            String clientMutationId,
+            long baseVersion
+    ) throws Exception {
+        return canonicalObraMutation(
+                ownerId,
+                deviceId,
+                obraId,
+                clientMutationId,
+                "ARQUIVAR_OBRA",
+                "DELETE",
+                baseVersion
+        );
+    }
+
+    private SyncPushRequest.MutacaoCliente canonicalObraMutation(
+            String ownerId,
+            String deviceId,
+            String obraId,
+            String clientMutationId,
+            String operation,
+            String canonicalOperation,
+            long baseVersion
+    ) throws Exception {
+        ObjectNode payload = mapper.createObjectNode();
+        payload.put("id", obraId);
+        payload.put("obraId", obraId);
+        if ("ATUALIZAR_OBRA".equals(operation)) {
+            payload.put("codigoContrato", "CAN-" + obraId);
+            payload.put("nome", "Obra canônica atualizada");
+        } else {
+            payload.putNull("arquivadoEm");
+            payload.put("status", "ATIVA");
+        }
+        String correlationId = UUID.randomUUID().toString();
+        List<String> changedFields = new ArrayList<>();
+        payload.fieldNames().forEachRemaining(changedFields::add);
+        changedFields.sort(String::compareTo);
+        return new SyncPushRequest.MutacaoCliente(
+                clientMutationId,
+                "OBRA",
+                obraId,
+                operation,
+                baseVersion,
+                payload,
+                LocalDateTime.parse("2026-07-28T15:00:00"),
+                correlationId,
+                13,
+                deviceId,
+                ownerId,
+                obraId,
+                "OBRA",
+                obraId,
+                canonicalOperation,
+                baseVersion,
+                changedFields,
+                "2026-07-28T15:00:00.000Z",
+                new SyncPushRequest.MutationTrace(
+                        ownerId,
+                        deviceId,
+                        List.of("ALFA:GLOBAL"),
+                        correlationId,
+                        null,
+                        UUID.randomUUID().toString(),
+                        hash(payload)
+                ),
+                new SyncPushRequest.FieldPatch(
+                        payload.deepCopy(),
+                        mapper.createObjectNode()
+                ),
+                List.of(),
+                List.of()
+        );
+    }
+
+    private void stubObraOperation(
+            ObraService service,
+            CortexOperationalMemoryService memory,
+            String ownerId,
+            String obraId,
+            String operation,
+            String eventType
+    ) {
+        org.mockito.stubbing.Answer<ObraResponse> answer = invocation -> {
+            recordObraEvent(
+                    memory,
+                    ownerId,
+                    obraId,
+                    eventType,
+                    Map.of(
+                            "id", obraId,
+                            "status", "ATIVA",
+                            "versaoLinha", 2L
+                    )
+            );
+            return obraResponse(obraId, null, 2L);
+        };
+        switch (operation) {
+            case "ATUALIZAR_OBRA" -> when(service.atualizarObra(
+                    org.mockito.ArgumentMatchers.eq(obraId),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(ownerId)
+            )).thenAnswer(answer);
+            case "DESATIVAR_OBRA" -> when(service.desativarObra(
+                    org.mockito.ArgumentMatchers.eq(obraId),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(ownerId)
+            )).thenAnswer(answer);
+            case "ARQUIVAR_OBRA" -> when(service.arquivarObra(
+                    org.mockito.ArgumentMatchers.eq(obraId),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(ownerId)
+            )).thenAnswer(answer);
+            case "RESTAURAR_OBRA" -> when(service.restaurarObra(
+                    org.mockito.ArgumentMatchers.eq(obraId),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.eq(ownerId)
+            )).thenAnswer(answer);
+            default -> throw new IllegalArgumentException(operation);
+        }
+    }
+
     private SyncPushRequest.MutacaoCliente legacyMutation(
             Setup setup,
             String clientId,
@@ -1026,6 +1398,94 @@ class PostgresqlCanonicalMutationIT {
                 id
         );
         return id;
+    }
+
+    private void recordObraEvent(
+            CortexOperationalMemoryService memory,
+            String ownerId,
+            String obraId,
+            String eventType,
+            Map<String, Object> state
+    ) {
+        memory.registrarEventoAuditado(
+                null,
+                "OBRA",
+                obraId,
+                eventType,
+                "POSTGRESQL_IT",
+                obraId,
+                null,
+                ownerId,
+                List.of(),
+                "ONLINE",
+                "SYNCED",
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                13,
+                state,
+                ownerId,
+                null,
+                UUID.randomUUID().toString(),
+                null,
+                Map.of(),
+                state,
+                "SUCESSO",
+                null
+        );
+    }
+
+    private ObraResponse obraResponse(
+            String obraId,
+            LocalDateTime archivedAt,
+            long version
+    ) {
+        return new ObraResponse(
+                obraId,
+                "CAN-" + obraId,
+                null,
+                null,
+                "Obra canônica",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "ATIVA",
+                "MANUAL",
+                null,
+                null,
+                LocalDateTime.of(2026, 7, 20, 8, 0),
+                LocalDateTime.of(2026, 7, 28, 15, 0),
+                archivedAt,
+                version
+        );
+    }
+
+    private static Stream<Arguments> obraTransportMappings() {
+        return Stream.of(
+                Arguments.of(
+                        "ATUALIZAR_OBRA",
+                        "UPDATE",
+                        "OBRA_ATUALIZADA"
+                ),
+                Arguments.of(
+                        "DESATIVAR_OBRA",
+                        "TRANSITION",
+                        "OBRA_DESATIVADA"
+                ),
+                Arguments.of(
+                        "ARQUIVAR_OBRA",
+                        "DELETE",
+                        "OBRA_ARQUIVADA"
+                ),
+                Arguments.of(
+                        "RESTAURAR_OBRA",
+                        "TRANSITION",
+                        "OBRA_RESTAURADA"
+                )
+        );
     }
 
     private String worksite() {

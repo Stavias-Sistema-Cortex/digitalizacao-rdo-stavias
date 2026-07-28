@@ -17,6 +17,7 @@ import com.projeto.cortex.equipes.EquipeService;
 import com.projeto.cortex.integracoes.IntegracaoActionResponse;
 import com.projeto.cortex.integracoes.IntegracaoAdminService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraService;
 import com.projeto.cortex.obras.VinculoColaboradorObraService;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -56,9 +57,14 @@ class CanonicalOperationsCoverageTest {
                         mapper,
                         true
                 );
+        ObraSyncOperationHandler worksites = new ObraSyncOperationHandler(
+                mock(ObraService.class),
+                mock(CurrentUserService.class),
+                mapper
+        );
 
         SyncOperationRegistry registry = new SyncOperationRegistry(
-                List.of(teams, worksiteLinks, integrations)
+                List.of(teams, worksiteLinks, integrations, worksites)
         );
 
         assertThat(registry.operations()).containsExactlyInAnyOrder(
@@ -68,7 +74,11 @@ class CanonicalOperationsCoverageTest {
                 "ALTERAR_VINCULO_EQUIPE",
                 "VINCULAR_COLABORADOR_OBRA",
                 "REVOGAR_VINCULO_COLABORADOR_OBRA",
-                "SOLICITAR_INTEGRACAO"
+                "SOLICITAR_INTEGRACAO",
+                "ATUALIZAR_OBRA",
+                "DESATIVAR_OBRA",
+                "ARQUIVAR_OBRA",
+                "RESTAURAR_OBRA"
         );
         assertThat(registry.require("SOLICITAR_INTEGRACAO"))
                 .isSameAs(integrations);

@@ -44,6 +44,7 @@ public class SyncService {
     private static final int MAX_DEPENDENCIAS_POR_MUTACAO = 64;
     private static final int CANONICAL_SCHEMA_VERSION = 13;
     private static final Set<String> CANONICAL_ENTITY_TYPES = Set.of(
+            "OBRA",
             "RDO",
             "TAREFA",
             "CONVERSA",
@@ -74,6 +75,10 @@ public class SyncService {
             "COLABORADOR"
     );
     private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
+            Map.entry("ATUALIZAR_OBRA", "UPDATE"),
+            Map.entry("DESATIVAR_OBRA", "TRANSITION"),
+            Map.entry("ARQUIVAR_OBRA", "DELETE"),
+            Map.entry("RESTAURAR_OBRA", "TRANSITION"),
             Map.entry("CRIAR_RDO", "CREATE"),
             Map.entry("ATUALIZAR_RDO_RASCUNHO", "UPDATE"),
             Map.entry("ENVIAR_RDO", "TRANSITION"),
