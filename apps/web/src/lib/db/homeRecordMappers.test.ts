@@ -77,6 +77,23 @@ describe("obraRecordFromPayload", () => {
     });
   });
 
+  it("não inventa estado de ciclo de vida quando o payload REST é esparso", () => {
+    const record = obraRecordFromPayload(
+      {
+        id: "obra-rest-esparsa",
+        nome: "Obra REST esparsa",
+        status: "ATIVA",
+      },
+      NOW,
+    );
+
+    expect(record).not.toBeNull();
+    expect(record).not.toHaveProperty("versaoEntidade");
+    expect(record).not.toHaveProperty("arquivadoEm");
+    expect(record).not.toHaveProperty("syncStatus");
+    expect(record).not.toHaveProperty("ultimoErro");
+  });
+
   it("retorna null sem obraId ou nome", () => {
     expect(obraRecordFromPayload({ nome: "X" }, NOW)).toBeNull();
     expect(obraRecordFromPayload({ obraId: "1" }, NOW)).toBeNull();
@@ -172,6 +189,52 @@ describe("mergeObraRecords", () => {
     };
 
     expect(mergeObraRecords(pending, remote)).toEqual(pending);
+  });
+
+  it("preserva arquivamento sincronizado quando a hidratação omite lifecycle", () => {
+    const existing: ObraLocalRecord = {
+      id: "obra-1",
+      codigoContrato: "CT-LOCAL",
+      nome: "Nome arquivado",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 8,
+      arquivadoEm: "2026-07-06T10:00:00.000Z",
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+      updatedAt: NOW,
+    };
+    const remote: ObraLocalRecord = {
+      id: "obra-1",
+      codigoContrato: "CT-REMOTO",
+      nome: "Nome remoto",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      updatedAt: NOW,
+    };
+
+    expect(mergeObraRecords(existing, remote)).toMatchObject({
+      codigoContrato: "CT-REMOTO",
+      nome: "Nome remoto",
+      versaoEntidade: 8,
+      arquivadoEm: "2026-07-06T10:00:00.000Z",
+      syncStatus: "SYNCED",
+      ultimoErro: null,
+    });
   });
 });
 

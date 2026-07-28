@@ -1,4 +1,5 @@
 import { getCortexDb } from "../../lib/db/cortexDb";
+import { mergeObraRecords } from "../../lib/db/homeRecordMappers";
 import type {
   LocalRdoRecord,
   ObraLocalRecord,
@@ -327,17 +328,23 @@ export async function replaceCachedAuthorizedRdoWorksites(
   const store = transaction.objectStore("obras");
   const incoming = new Set(allowed.map((item) => item.id));
   const existing = await store.getAll();
+  const existingById = new Map(existing.map((item) => [item.id, item]));
   for (const item of existing) {
     if (
       (session.escopoGlobal || session.obraIds.includes(item.id)) &&
-      !incoming.has(item.id)
+      !incoming.has(item.id) &&
+      item.arquivadoEm == null &&
+      (item.syncStatus ?? "SYNCED") === "SYNCED"
     ) {
       await store.delete(item.id);
     }
   }
-  for (const item of allowed) await store.put(item);
+  const mergedAllowed = allowed.map((item) =>
+    mergeObraRecords(existingById.get(item.id), item)
+  );
+  for (const item of mergedAllowed) await store.put(item);
   await guarded.complete();
-  return allowed;
+  return mergedAllowed;
 }
 
 export async function refreshAuthorizedRdoWorksites(): Promise<

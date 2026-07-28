@@ -30,6 +30,8 @@ import * as rdoLookupApi from "./rdoLookupApi";
 
 const WORKSITE_A = "00000000-0000-4000-8000-000000000001";
 const WORKSITE_B = "00000000-0000-4000-8000-000000000002";
+const WORKSITE_C = "00000000-0000-4000-8000-000000000003";
+const WORKSITE_D = "00000000-0000-4000-8000-000000000004";
 let ownerId = "";
 const databaseNames = new Set<string>();
 
@@ -268,6 +270,109 @@ describe("cache autorizado obra-data", () => {
     expect(await listCachedAuthorizedRdoWorksites()).toEqual([
       expect.objectContaining({ id: WORKSITE_A, nome: "Obra A" }),
     ]);
+  });
+
+  it("preserva lifecycle local ausente do endpoint e só remove obra sincronizada comum", async () => {
+    await closeCortexDb();
+    setSession(session(ownerId, [
+      WORKSITE_A,
+      WORKSITE_B,
+      WORKSITE_C,
+      WORKSITE_D,
+    ]));
+    databaseNames.add(
+      await databaseNameForScope(
+        ownerId,
+        `BETA:${[
+          WORKSITE_A,
+          WORKSITE_B,
+          WORKSITE_C,
+          WORKSITE_D,
+        ].sort().join(",")}`,
+      ),
+    );
+    const database = await getCortexDb();
+    const common = {
+      codigoContrato: "CTR",
+      nome: "Obra",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "INATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 7,
+      ultimoErro: null,
+      updatedAt: "2026-07-22T10:00:00.000Z",
+    };
+    await database.put("obras", {
+      ...common,
+      id: WORKSITE_A,
+      nome: "Arquivada sincronizada",
+      arquivadoEm: "2026-07-22T09:00:00.000Z",
+      syncStatus: "SYNCED",
+    });
+    await database.put("obras", {
+      ...common,
+      id: WORKSITE_B,
+      nome: "Arquivamento pendente",
+      arquivadoEm: "2026-07-22T09:30:00.000Z",
+      syncStatus: "PENDING",
+    });
+    await database.put("obras", {
+      ...common,
+      id: WORKSITE_C,
+      nome: "Restauração pendente",
+      status: "ATIVA",
+      arquivadoEm: null,
+      syncStatus: "PENDING",
+    });
+    await database.put("obras", {
+      ...common,
+      id: WORKSITE_D,
+      nome: "Sincronizada comum",
+      status: "ATIVA",
+      arquivadoEm: null,
+      syncStatus: "SYNCED",
+    });
+
+    await replaceCachedAuthorizedRdoWorksites([
+      {
+        id: WORKSITE_A,
+        codigoContrato: "CTR-REMOTO",
+        nome: "Arquivada sincronizada remota",
+        cliente: null,
+        cidade: null,
+        uf: null,
+        rodovia: null,
+        status: "INATIVA",
+        observacoes: null,
+        latitude: null,
+        longitude: null,
+        valorContratual: null,
+        atualizadoEm: "2026-07-22T11:00:00.000Z",
+      },
+    ]);
+
+    expect(await database.get("obras", WORKSITE_A)).toMatchObject({
+      codigoContrato: "CTR-REMOTO",
+      nome: "Arquivada sincronizada remota",
+      arquivadoEm: "2026-07-22T09:00:00.000Z",
+      versaoEntidade: 7,
+      syncStatus: "SYNCED",
+    });
+    expect(await database.get("obras", WORKSITE_B)).toMatchObject({
+      arquivadoEm: "2026-07-22T09:30:00.000Z",
+      syncStatus: "PENDING",
+    });
+    expect(await database.get("obras", WORKSITE_C)).toMatchObject({
+      arquivadoEm: null,
+      syncStatus: "PENDING",
+    });
+    expect(await database.get("obras", WORKSITE_D)).toBeUndefined();
   });
 
   it("usa o contexto completo do cache offline e falha com a cópia literal sem fonte", async () => {

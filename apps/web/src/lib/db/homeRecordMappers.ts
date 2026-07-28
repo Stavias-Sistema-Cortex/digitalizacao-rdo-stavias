@@ -30,6 +30,13 @@ function toSafeIntegerOrNull(value: unknown): number | null {
     : null;
 }
 
+function hasOwn(
+  value: Record<string, unknown> | ObraLocalRecord,
+  property: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(value, property);
+}
+
 export function obraRecordFromPayload(
   payload: Record<string, unknown>,
   fallbackNowIso: string,
@@ -41,7 +48,7 @@ export function obraRecordFromPayload(
     return null;
   }
 
-  return {
+  const record: ObraLocalRecord = {
     id,
     codigoContrato: toTextOrNull(payload.codigoContrato) ?? "",
     codigoInterno: toTextOrNull(payload.codigoInterno),
@@ -57,17 +64,24 @@ export function obraRecordFromPayload(
     latitude: toNumberOrNull(payload.latitude),
     longitude: toNumberOrNull(payload.longitude),
     valorContratual: toNumberOrNull(payload.valorContratual),
-    versaoEntidade:
-      toSafeIntegerOrNull(payload.versaoEntidade) ??
-      toSafeIntegerOrNull(payload.versaoLinha),
-    arquivadoEm: toTextOrNull(payload.arquivadoEm),
-    syncStatus: "SYNCED",
-    ultimoErro: null,
     updatedAt:
       toTextOrNull(payload.atualizadoEm) ??
       toTextOrNull(payload.updatedAt) ??
       fallbackNowIso,
   };
+  const hasLifecycle =
+    hasOwn(payload, "versaoEntidade") ||
+    hasOwn(payload, "versaoLinha") ||
+    hasOwn(payload, "arquivadoEm");
+  if (hasLifecycle) {
+    record.versaoEntidade =
+      toSafeIntegerOrNull(payload.versaoEntidade) ??
+      toSafeIntegerOrNull(payload.versaoLinha);
+    record.arquivadoEm = toTextOrNull(payload.arquivadoEm);
+    record.syncStatus = "SYNCED";
+    record.ultimoErro = null;
+  }
+  return record;
 }
 
 export function mergeObraRecords(
@@ -85,6 +99,15 @@ export function mergeObraRecords(
     ...incoming,
     versaoEntidade:
       incoming.versaoEntidade ?? existing.versaoEntidade ?? null,
+    arquivadoEm: hasOwn(incoming, "arquivadoEm")
+      ? incoming.arquivadoEm ?? null
+      : existing.arquivadoEm ?? null,
+    syncStatus: hasOwn(incoming, "syncStatus")
+      ? incoming.syncStatus
+      : existing.syncStatus,
+    ultimoErro: hasOwn(incoming, "ultimoErro")
+      ? incoming.ultimoErro
+      : existing.ultimoErro,
     valorContratual:
       incoming.valorContratual ?? existing.valorContratual,
   };

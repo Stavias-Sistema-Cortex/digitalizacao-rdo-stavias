@@ -528,8 +528,10 @@ async function obraSyncStatusFromOutbox(
   obraId: string,
 ): Promise<LocalSyncStatus> {
   return localSyncStatusFromMutations(
-    (await store.index("by-entity-id").getAll(obraId)).filter(
-      (mutation) => mutation.entidadeTipo === "OBRA",
+    effectiveObraMutations(
+      (await store.index("by-entity-id").getAll(obraId)).filter(
+        (mutation) => mutation.entidadeTipo === "OBRA",
+      ),
     ),
   );
 }
@@ -588,6 +590,38 @@ function effectiveRdoMutations(
     }
   }
 
+  return mutations.filter(
+    (mutation) => !supersededIds.has(mutation.clientMutationId),
+  );
+}
+
+function effectiveObraMutations(
+  mutations: OutboxMutationRecord[],
+): OutboxMutationRecord[] {
+  const byId = new Map(
+    mutations.map((mutation) => [
+      mutation.clientMutationId,
+      mutation,
+    ]),
+  );
+  const supersededIds = new Set<string>();
+  for (const mutation of mutations) {
+    const replacementId = typeof mutation.blockedReason === "string"
+      ? /^SUPERSEDED_BY:([^\s:]+)$/.exec(
+          mutation.blockedReason.trim(),
+        )?.[1]
+      : undefined;
+    const replacement = replacementId
+      ? byId.get(replacementId)
+      : undefined;
+    if (
+      replacement &&
+      replacement.entidadeTipo === "OBRA" &&
+      replacement.entidadeId === mutation.entidadeId
+    ) {
+      supersededIds.add(mutation.clientMutationId);
+    }
+  }
   return mutations.filter(
     (mutation) => !supersededIds.has(mutation.clientMutationId),
   );
@@ -2534,14 +2568,45 @@ export async function reconcileCanonicalConflict(
   if (original.entityType === "TAREFA") {
     return null;
   }
-  const existingReplacement = (await database.getAll("outbox_mutations"))
-    .find(
-      (candidate): candidate is CanonicalOutboxMutationRecord =>
-        isCanonicalOutboxMutation(candidate) &&
-        candidate.causationId === original.clientMutationId,
-    );
+  const allMutations = await database.getAll("outbox_mutations");
+  const aliasedReplacementId = original.entityType === "OBRA" &&
+      typeof original.blockedReason === "string"
+    ? /^SUPERSEDED_BY:([^\s:]+)$/.exec(
+        original.blockedReason.trim(),
+      )?.[1]
+    : undefined;
+  const existingReplacement = allMutations.find(
+    (candidate): candidate is CanonicalOutboxMutationRecord =>
+      isCanonicalOutboxMutation(candidate) &&
+      (
+        original.entityType === "OBRA"
+          ? candidate.clientMutationId === aliasedReplacementId
+          : candidate.causationId === original.clientMutationId
+      ),
+  );
   if (existingReplacement) {
     return existingReplacement;
+  }
+  if (
+    original.entityType === "OBRA" &&
+    allMutations.some(
+      (candidate) =>
+        isCanonicalOutboxMutation(candidate) &&
+        candidate.entidadeTipo === "OBRA" &&
+        candidate.entidadeId === original.entidadeId &&
+        ["PENDING", "ERROR", "SYNCING"].includes(candidate.status) &&
+        (
+          candidate.causationId === original.clientMutationId ||
+          candidate.dependsOnMutationIds?.includes(
+            original.clientMutationId,
+          )
+        ),
+    )
+  ) {
+    // Replacing the ancestor without rebasing immutable descendants would
+    // either overwrite their optimistic projection or send a stale base.
+    // Keep the complete chain terminal for explicit recovery instead.
+    return null;
   }
   const events = await database.getAllFromIndex(
     "operational_events",
@@ -2655,11 +2720,33 @@ export async function reconcileCanonicalConflict(
   ).find(
     (candidate): candidate is CanonicalOutboxMutationRecord =>
       isCanonicalOutboxMutation(candidate) &&
-      candidate.causationId === original.clientMutationId,
+      (
+        original.entityType === "OBRA"
+          ? candidate.clientMutationId === aliasedReplacementId
+          : candidate.causationId === original.clientMutationId
+      ),
   );
   if (concurrentReplacement) {
     await guardedTransaction.complete();
     return concurrentReplacement;
+  }
+  if (original.entityType === "OBRA") {
+    await transaction.objectStore("outbox_mutations").put({
+      ...original,
+      status: "REJECTED",
+      nextAttemptAt: null,
+      lastSafeCode: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
+      blockedReason: `SUPERSEDED_BY:${built.mutation.clientMutationId}`,
+      ultimoErro:
+        "Conflito substituído por envelope canônico reconciliado.",
+      updatedAt: occurredAt,
+    });
+    await transaction.objectStore("operational_events").put({
+      ...originalEvent,
+      result: "REJECTED",
+      syncStatus: "SYNC_FAILED",
+      errorCategory: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
+    });
   }
   await transaction.objectStore("outbox_mutations").add(built.mutation);
   await transaction

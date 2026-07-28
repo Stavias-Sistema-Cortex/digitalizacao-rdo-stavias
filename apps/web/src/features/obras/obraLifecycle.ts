@@ -63,15 +63,18 @@ async function obraMutationIdentity(): Promise<ObraMutationIdentity> {
 
 async function activeObraMutations(
   obraId: string,
+  authoritativeVersion: number,
 ): Promise<CanonicalOutboxMutationRecord[]> {
   const mutations = await (await getCortexDb()).getAllFromIndex(
     "outbox_mutations",
     "by-entity-id",
     obraId,
   );
-  const conflict = mutations.find(
+  const entityMutations = mutations.filter(
+    (mutation) => mutation.entidadeTipo === "OBRA",
+  );
+  const conflict = entityMutations.find(
     (mutation) =>
-      mutation.entidadeTipo === "OBRA" &&
       mutation.status === "CONFLICT",
   );
   if (conflict) {
@@ -79,24 +82,68 @@ async function activeObraMutations(
       "A obra possui um conflito pendente de reconciliação.",
     );
   }
-  return mutations
-    .filter(
-      (mutation) =>
-        mutation.entidadeTipo === "OBRA" &&
-        ["PENDING", "ERROR", "SYNCING"].includes(mutation.status),
-    )
-    .map((mutation) => {
-      if (!isCanonicalOutboxMutation(mutation)) {
-        throw new Error(
-          "A obra possui uma mutação legada que exige revisão.",
-        );
-      }
-      return mutation;
-    })
-    .sort((left, right) =>
-      left.occurredAt.localeCompare(right.occurredAt) ||
-      left.clientMutationId.localeCompare(right.clientMutationId)
+  const active = entityMutations.filter((mutation) =>
+    ["PENDING", "ERROR", "SYNCING"].includes(mutation.status)
+  );
+  const canonical = active.map((mutation) => {
+    if (!isCanonicalOutboxMutation(mutation)) {
+      throw new Error(
+        "A obra possui uma mutação legada que exige revisão.",
+      );
+    }
+    return mutation;
+  });
+  if (canonical.some((mutation) => mutation.status === "ERROR")) {
+    throw new Error(
+      "A obra possui uma mutação com erro não aplicado. Faça a recuperação explícita antes de editar novamente.",
     );
+  }
+  if (canonical.some((mutation) => mutation.status === "SYNCING")) {
+    throw new Error(
+      "A obra está sendo sincronizada. Aguarde a confirmação antes de editar novamente.",
+    );
+  }
+  const pending = canonical.filter(
+    (mutation) => mutation.status === "PENDING",
+  );
+  if (pending.length === 0) return [];
+
+  const ordered = [...pending].sort(
+    (left, right) =>
+      (left.baseVersion ?? -1) - (right.baseVersion ?? -1),
+  );
+  const ids = new Set(ordered.map((mutation) => mutation.clientMutationId));
+  const referencedPredecessors = new Set<string>();
+  for (const mutation of ordered) {
+    for (const dependencyId of mutation.dependsOnMutationIds ?? []) {
+      if (ids.has(dependencyId)) referencedPredecessors.add(dependencyId);
+    }
+    if (mutation.causationId && ids.has(mutation.causationId)) {
+      referencedPredecessors.add(mutation.causationId);
+    }
+  }
+  const tails = ordered.filter(
+    (mutation) => !referencedPredecessors.has(mutation.clientMutationId),
+  );
+  const hasValidLinearChain = ordered.every((mutation, index) => {
+    if (mutation.baseVersion !== authoritativeVersion + index) return false;
+    if (index === 0) return true;
+    const predecessor = ordered[index - 1];
+    return mutation.causationId === predecessor.clientMutationId &&
+      (mutation.dependsOnMutationIds ?? []).includes(
+        predecessor.clientMutationId,
+      );
+  });
+  if (
+    tails.length !== 1 ||
+    tails[0] !== ordered.at(-1) ||
+    !hasValidLinearChain
+  ) {
+    throw new Error(
+      "A cadeia local da obra está ambígua e precisa de revisão antes de receber outra edição.",
+    );
+  }
+  return ordered;
 }
 
 function requiredBaseVersion(obra: ObraLocalRecord): number {
@@ -158,7 +205,10 @@ async function queueObraMutation(
 ): Promise<ObraLocalRecord> {
   const identity = await obraMutationIdentity();
   const authoritativeVersion = requiredBaseVersion(existing);
-  const pending = await activeObraMutations(existing.id);
+  const pending = await activeObraMutations(
+    existing.id,
+    authoritativeVersion,
+  );
   const tail = pending.at(-1) ?? null;
   const clientMutationId = crypto.randomUUID();
 
@@ -171,7 +221,9 @@ async function queueObraMutation(
     entityName: next.nome,
     operation: contract.operation,
     transportOperation: contract.transportOperation,
-    baseVersion: authoritativeVersion + pending.length,
+    baseVersion: tail === null
+      ? authoritativeVersion
+      : (tail.baseVersion as number) + 1,
     occurredAt: next.updatedAt,
     previousSnapshot: obraTransportSnapshot(existing),
     nextSnapshot: obraTransportSnapshot(next),
