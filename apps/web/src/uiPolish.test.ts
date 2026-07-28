@@ -419,7 +419,10 @@ describe("polimento visual da plataforma autenticada", () => {
     );
     expect(fields).toContain("min-inline-size: 0;");
     expect(rdoWorkspaceCss).toMatch(
-      /@container rdo-filters \(max-width: 32rem\)[\s\S]*?\.rdo-filter-grid\s*\{[\s\S]*?padding:\s*10px;/,
+      /@container rdo-filters \(max-width: 32rem\)[\s\S]*?\.rdo-filter-grid\s*\{[\s\S]*?padding:\s*12px;/,
+    );
+    expect(rdoWorkspaceCss).toMatch(
+      /@media \(max-width: 620px\)[\s\S]*?\.rdo-document-surface\s*\{[\s\S]*?padding:\s*12px;/,
     );
     expect(globalCss).not.toMatch(/\.rdo-filter-grid\s*\{/);
   });
@@ -467,6 +470,30 @@ describe("polimento visual da plataforma autenticada", () => {
 
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("sobreposição");
+    },
+    30_000,
+  );
+
+  it.runIf(Boolean(browser))(
+    "rejeita respiro menor que 12px nos filtros e status estreitos",
+    () => {
+      const result = spawnSync(
+        process.execPath,
+        [operationalLayoutScript],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CORTEX_BROWSER_BIN: browser,
+            CORTEX_OPERATIONAL_LAYOUT_MUTANT: "tight-insets",
+          },
+          encoding: "utf8",
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("filtros ficaram");
+      expect(result.stderr).toContain("status ficou");
     },
     30_000,
   );

@@ -8,7 +8,10 @@ const DEFAULT_CSS_PATH = path.join(
   WEB_ROOT,
   "src/features/mensagens/MensagensPage.css",
 );
-const DEFAULT_SHELL_CSS_PATH = path.join(WEB_ROOT, "src/index.css");
+const DEFAULT_SHELL_CSS_PATH = path.join(
+  WEB_ROOT,
+  "src/components/shell/CortexShell.css",
+);
 
 export const VIEWPORTS = [
   { name: "mobile", width: 390, height: 844 },
@@ -73,7 +76,7 @@ export function readGeometryTokens(
   return {
     shellBreakpoint: number(
       shellCss,
-      /@media \(max-width:\s*(\d+)px\)\s*\{\s*\/\* Em telas estreitas a sidebar/,
+      /@media \(max-width:\s*(\d+)px\)\s*\{\s*\.cortex-shell,\s*\.cortex-shell--collapsed\s*\{/,
       "shell breakpoint",
     ),
     sidebarWidth: number(

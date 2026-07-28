@@ -322,7 +322,7 @@ describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
 
     expect(
       screen.getByText(
-        "Até 5 fotos por RDO, salvas localmente e comprimidas no navegador quando necessário.",
+        "Adicione até 5 fotos deste RDO.",
       ),
     ).toBeVisible();
     expect(
@@ -491,7 +491,7 @@ describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
       screen.getByText("Definido automaticamente pela obra selecionada."),
     ).toBeVisible();
     expect(
-      screen.getByText("Gerado automaticamente pelo contexto canônico do RDO."),
+      screen.getByText("O número é preenchido automaticamente."),
     ).toBeVisible();
   });
 

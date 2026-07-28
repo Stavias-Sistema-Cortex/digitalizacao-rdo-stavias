@@ -6,23 +6,60 @@ function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), "utf8");
 }
 
+function selectorMembers(selector: string): string[] {
+  return selector
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(",")
+    .map((member) => member.trim().replace(/\s+/g, " "))
+    .filter(Boolean);
+}
+
+function rules(css: string, selector: string): string[] {
+  const target = selectorMembers(selector);
+  const matches: string[] = [];
+  const openings = /([^{}]+)\{/g;
+
+  for (const opening of css.matchAll(openings)) {
+    const members = selectorMembers(opening[1]);
+    if (
+      members.length !== target.length ||
+      !target.every((member) => members.includes(member))
+    ) {
+      continue;
+    }
+
+    const start = opening.index + opening[0].lastIndexOf("{");
+    let depth = 1;
+    let end = start + 1;
+    while (end < css.length && depth > 0) {
+      if (css[end] === "{") depth += 1;
+      if (css[end] === "}") depth -= 1;
+      end += 1;
+    }
+    if (depth !== 0) {
+      throw new Error(`Regra CSS sem fechamento: ${selector}`);
+    }
+    matches.push(css.slice(opening.index, end));
+  }
+
+  return matches;
+}
+
 function lastRule(css: string, selector: string): string {
-  const start = css.lastIndexOf(`${selector} {`);
-  if (start < 0) throw new Error(`Regra CSS ausente: ${selector}`);
-  const end = css.indexOf("\n}", start);
-  if (end < 0) throw new Error(`Regra CSS sem fechamento: ${selector}`);
-  return css.slice(start, end + 2);
+  const matches = rules(css, selector);
+  const match = matches.at(-1);
+  if (!match) throw new Error(`Regra CSS ausente: ${selector}`);
+  return match;
 }
 
 function rule(css: string, selector: string): string {
-  const start = css.indexOf(`${selector} {`);
-  if (start < 0) throw new Error(`Regra CSS ausente: ${selector}`);
-  const end = css.indexOf("\n}", start);
-  if (end < 0) throw new Error(`Regra CSS sem fechamento: ${selector}`);
-  return css.slice(start, end + 2);
+  const match = rules(css, selector)[0];
+  if (!match) throw new Error(`Regra CSS ausente: ${selector}`);
+  return match;
 }
 
 const globalCss = source("./index.css");
+const shellCss = source("./components/shell/CortexShell.css");
 const headerCss = source("./components/header/CortexPageHeader.css");
 const workspaceCss = source("./components/workspace/OperationalWorkspace.css");
 const rdoCss = source("./features/rdos/RdoWorkspacePage.css");
@@ -55,9 +92,9 @@ describe("Cortex 3 institutional visual policy", () => {
   });
 
   it("keeps desktop chrome in normal document flow with a sticky full-height sidebar", () => {
-    const shell = rule(globalCss, ".cortex-shell");
-    const sidebar = rule(globalCss, ".cortex-sidebar");
-    const content = rule(globalCss, ".cortex-shell-content");
+    const shell = rule(shellCss, ".cortex-shell");
+    const sidebar = rule(shellCss, ".cortex-sidebar");
+    const content = rule(shellCss, ".cortex-shell-content");
 
     expect(shell).toContain("min-height: 100dvh;");
     expect(shell).not.toMatch(/(?:^|\n)\s*height:\s*100dvh;/);
@@ -76,13 +113,15 @@ describe("Cortex 3 institutional visual policy", () => {
   });
 
   it("returns shell, content, and sidebar to normal flow below 900px", () => {
-    const mobileCss = globalCss.slice(globalCss.indexOf("@media (max-width: 900px)"));
+    const mobileCss = shellCss.slice(
+      shellCss.indexOf("@media (max-width: 900px)"),
+    );
     const shell = rule(
       mobileCss,
       "  .cortex-shell,\n  .cortex-shell--collapsed",
     );
     const content = rule(mobileCss, "  .cortex-shell-content");
-    const sidebar = rule(mobileCss, "  .cortex-sidebar,\n  .rdo-side-panel");
+    const sidebar = rule(mobileCss, "  .cortex-sidebar");
 
     expect(shell).toContain("height: auto;");
     expect(shell).toContain("overflow: visible;");
@@ -94,26 +133,34 @@ describe("Cortex 3 institutional visual policy", () => {
   });
 
   it("keeps the selected sidebar item on the dark rail with a yellow locator", () => {
-    const active = lastRule(globalCss, ".sidebar-nav-item.active");
-    const locator = lastRule(globalCss, ".sidebar-nav-item.active::before");
-    const icon = lastRule(globalCss, ".sidebar-nav-item.active img");
+    const active = lastRule(shellCss, ".sidebar-nav-item.active");
+    const locator = lastRule(shellCss, ".sidebar-nav-item.active::before");
+    const icon = rule(
+      shellCss,
+      ".sidebar-nav-item img,\n.sidebar-footer button img",
+    );
+    const activeIcon = lastRule(
+      shellCss,
+      ".sidebar-nav-item.active img",
+    );
 
-    expect(active).toContain("background: rgb(255 255 255 / 10%);");
+    expect(active).toContain("background: rgb(255 255 255 / 8%);");
     expect(active).toContain("color: #eef7ef;");
     expect(active).not.toContain("background: #fff;");
     expect(locator).toContain('content: "";');
+    expect(locator).toContain("width: 1px;");
     expect(locator).toContain("background: var(--color-brand-yellow);");
     expect(icon).toContain("filter: grayscale(1) brightness(0) invert(1);");
+    expect(activeIcon).toContain("opacity: 0.86;");
   });
 
-  it("keeps one intentional square black profile control instead of a later teal override", () => {
-    const avatarRules =
-      globalCss.match(/^\.avatar-button \{/gm) ?? [];
-    const avatar = lastRule(globalCss, ".avatar-button");
+  it("keeps one intentional dark profile control owned by the shell", () => {
+    const avatarRules = rules(`${globalCss}\n${shellCss}`, ".avatar-button");
+    const avatar = lastRule(shellCss, ".avatar-button");
 
     expect(avatarRules).toHaveLength(1);
-    expect(avatar).toContain("border-radius: 0;");
-    expect(avatar).toContain("background: #101112;");
+    expect(avatar).toContain("border-radius: var(--radius-control);");
+    expect(avatar).toContain("background: #0c2623;");
     expect(avatar).toContain("color: #fff;");
   });
 
@@ -261,8 +308,9 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(financeNavigation).toContain("overflow-x: auto;");
     expect(financeNavigationActive).toContain("background: #e4efea;");
     expect(financeNavigationActive).toContain(
-      "box-shadow: inset 0 -2px var(--finance-yellow);",
+      "border-bottom: 1px solid var(--finance-yellow);",
     );
+    expect(financeNavigationActive).toContain("box-shadow: none;");
     expect(financeNavigationLabel).toContain("color: var(--finance-muted);");
     expect(financeScopeLabel).toContain("color: var(--finance-muted);");
     expect(financeHeaderDatum).toContain("color: #cbd8d2;");

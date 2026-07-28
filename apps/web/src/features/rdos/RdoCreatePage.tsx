@@ -1314,7 +1314,7 @@ export function RdoCreatePage({
             />
 
             <small>
-              Gerado automaticamente pelo contexto canônico do RDO.
+              O número é preenchido automaticamente.
             </small>
           </label>
 
@@ -1688,8 +1688,7 @@ export function RdoCreatePage({
 
           <div className="section-actions">
             <p>
-              Até 5 fotos por RDO, salvas localmente e
-              comprimidas no navegador quando necessário.
+              Adicione até 5 fotos deste RDO.
             </p>
 
             <button

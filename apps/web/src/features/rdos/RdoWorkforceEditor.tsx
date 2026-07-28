@@ -275,7 +275,7 @@ export function RdoWorkforceEditor({
         }}
       >
         <label htmlFor={newCollaboratorId}>
-          Novo colaborador
+          Adicionar trabalhador ao RDO
         </label>
         <input
           id={newCollaboratorId}
@@ -288,7 +288,7 @@ export function RdoWorkforceEditor({
           className="add-button"
           disabled={!newCollaboratorName.trim()}
         >
-          Adicionar novo
+          Adicionar
         </button>
       </form>
 

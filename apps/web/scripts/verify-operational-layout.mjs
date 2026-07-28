@@ -34,8 +34,9 @@ const BROWSER = [
 ]
   .filter(Boolean)
   .find(existsSync);
+const MUTATION = process.env.CORTEX_OPERATIONAL_LAYOUT_MUTANT;
 const MUTATION_CSS =
-  process.env.CORTEX_OPERATIONAL_LAYOUT_MUTANT === "translate-filter"
+  MUTATION === "translate-filter"
     ? `
       @media (max-width: 400px) {
         .rdo-filter-grid label:nth-child(2) {
@@ -43,6 +44,15 @@ const MUTATION_CSS =
         }
       }
     `
+    : MUTATION === "tight-insets"
+      ? `
+        @media (max-width: 620px) {
+          .rdo-filter-grid,
+          .badge-strip {
+            padding: 8px !important;
+          }
+        }
+      `
     : "";
 const SCENARIOS = [
   { viewport: 901, sidebar: 360 },
@@ -156,6 +166,16 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
   }
   if (measurement.badgeInset < 12) {
     violations.push(`badge ficou a ${measurement.badgeInset}px da borda`);
+  }
+  if (viewport <= 620 && measurement.filterContentInset < 12) {
+    violations.push(
+      `filtros ficaram a ${measurement.filterContentInset}px da borda`,
+    );
+  }
+  if (viewport <= 620 && measurement.statusContentInset < 12) {
+    violations.push(
+      `status ficou a ${measurement.statusContentInset}px da borda`,
+    );
   }
   if (measurement.errorOverflowWrap !== "anywhere") {
     violations.push(
@@ -322,6 +342,27 @@ function fixtureHtml(sidebar) {
     const errorStripRect = rect(".rdo-canonical-sync");
     const badgeRect = rect(".badge-strip .institutional-status");
     const badgeStripRect = rect(".badge-strip");
+    const bounds = (elements) => {
+      const rectangles = elements.map(rect);
+      return {
+        left: Math.min(...rectangles.map((box) => box.left)),
+        right: Math.max(...rectangles.map((box) => box.right)),
+        top: Math.min(...rectangles.map((box) => box.top)),
+        bottom: Math.max(...rectangles.map((box) => box.bottom)),
+      };
+    };
+    const minimumInset = (content, container) =>
+      Math.round(Math.min(
+        content.left - container.left,
+        container.right - content.right,
+        content.top - container.top,
+        container.bottom - content.bottom,
+      ));
+    const filterGridRect = rect(".rdo-filter-grid");
+    const filterContentBounds = bounds(filterLabels);
+    const statusContentBounds = bounds([
+      ...document.querySelector(".badge-strip").children,
+    ]);
     const measurement = {
       boxes: Object.fromEntries(
         Object.entries(boxes).map(([name, element]) => [
@@ -369,6 +410,14 @@ function fixtureHtml(sidebar) {
       ],
       errorInset: Math.round(errorRect.left - errorStripRect.left),
       badgeInset: Math.round(badgeRect.left - badgeStripRect.left),
+      filterContentInset: minimumInset(
+        filterContentBounds,
+        filterGridRect,
+      ),
+      statusContentInset: minimumInset(
+        statusContentBounds,
+        badgeStripRect,
+      ),
       errorOverflowWrap: errorStyle.overflowWrap,
       errorWhiteSpace: errorStyle.whiteSpace,
       filterCount: document.querySelectorAll(".rdo-filter-grid label").length,

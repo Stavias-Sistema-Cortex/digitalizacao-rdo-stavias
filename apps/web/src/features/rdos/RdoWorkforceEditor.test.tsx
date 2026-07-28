@@ -71,12 +71,12 @@ describe("editor da equipe carregada", () => {
     );
 
     const newCollaborator = screen.getByRole("textbox", {
-      name: "Novo colaborador",
+      name: "Adicionar trabalhador ao RDO",
     });
     expect(newCollaborator).toHaveAttribute("maxLength", "255");
     await user.type(newCollaborator, "  Maria   Servente  ");
     await user.click(
-      screen.getByRole("button", { name: "Adicionar novo" }),
+      screen.getByRole("button", { name: "Adicionar" }),
     );
 
     expect(onChange).toHaveBeenCalledWith(
@@ -107,7 +107,7 @@ describe("editor da equipe carregada", () => {
     );
 
     const newCollaborator = screen.getByRole("textbox", {
-      name: "Novo colaborador",
+      name: "Adicionar trabalhador ao RDO",
     });
     await user.type(newCollaborator, "Maria Servente{Enter}");
 
