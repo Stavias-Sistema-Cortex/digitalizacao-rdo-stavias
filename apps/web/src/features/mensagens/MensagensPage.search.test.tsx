@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import type { PropsWithChildren } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   listLocalMessages: vi.fn(),
   searchLocalMessages: vi.fn(),
   searchMessagesApi: vi.fn(),
+  hasOnlineSession: vi.fn(),
+  refreshConversationList: vi.fn(),
 }));
 
 vi.mock("../../components/shell/CortexShell", () => ({
@@ -36,7 +44,7 @@ vi.mock("../../lib/sync/useSyncStatus", () => ({
 
 vi.mock("../auth/authSession", () => ({
   getSession: () => null,
-  hasOnlineSession: () => false,
+  hasOnlineSession: mocks.hasOnlineSession,
   isAlfa: () => false,
 }));
 
@@ -47,7 +55,7 @@ vi.mock("./mensagensApi", () => ({
 
 vi.mock("./mensagensHydration", () => ({
   refreshConversationHistory: vi.fn(),
-  refreshConversationList: vi.fn(),
+  refreshConversationList: mocks.refreshConversationList,
 }));
 
 vi.mock("./mensagensRepository", () => ({
@@ -102,6 +110,8 @@ beforeEach(() => {
   mocks.listLocalMessages.mockResolvedValue([]);
   mocks.searchLocalMessages.mockResolvedValue([]);
   mocks.searchMessagesApi.mockResolvedValue([]);
+  mocks.hasOnlineSession.mockReturnValue(true);
+  mocks.refreshConversationList.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -122,15 +132,132 @@ describe("MensagensPage search", () => {
     ).toBeInTheDocument();
     expect(mocks.searchLocalMessages).not.toHaveBeenCalled();
     expect(mocks.searchMessagesApi).not.toHaveBeenCalled();
+    expect(mocks.refreshConversationList).toHaveBeenCalledOnce();
   });
 
-  it("queries local messages when an authorized conversation exists", async () => {
+  it("does not submit a search while conversations are loading", () => {
+    mocks.listLocalConversations.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    const searchInput = screen.getByLabelText("Buscar no histórico");
+    expect(searchInput).toBeDisabled();
+
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(mocks.searchLocalMessages).not.toHaveBeenCalled();
+    expect(mocks.searchMessagesApi).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("Crie uma conversa primeiro."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("preserves a local-list failure without rendering an empty state", async () => {
+    mocks.listLocalConversations.mockRejectedValue(
+      new Error("Falha ao ler conversas locais."),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Falha ao ler conversas locais.");
+    expect(screen.getByLabelText("Buscar no histórico")).toBeDisabled();
+
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Falha ao ler conversas locais.",
+    );
+    expect(
+      screen.queryByText("Nenhuma conversa autorizada foi encontrada."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Crie uma conversa primeiro."),
+    ).not.toBeInTheDocument();
+    expect(mocks.searchLocalMessages).not.toHaveBeenCalled();
+    expect(mocks.searchMessagesApi).not.toHaveBeenCalled();
+  });
+
+  it("preserves a remote refresh failure after a search submission", async () => {
+    mocks.refreshConversationList.mockRejectedValue(
+      new Error("Falha ao atualizar conversas remotas."),
+    );
+    renderPage();
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Falha ao atualizar conversas remotas.");
+    expect(screen.getByLabelText("Buscar no histórico")).toBeDisabled();
+
+    fireEvent.submit(screen.getByRole("search"));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Falha ao atualizar conversas remotas.",
+    );
+    expect(
+      screen.queryByText("Nenhuma conversa autorizada foi encontrada."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Crie uma conversa primeiro."),
+    ).not.toBeInTheDocument();
+    expect(mocks.searchLocalMessages).not.toHaveBeenCalled();
+    expect(mocks.searchMessagesApi).not.toHaveBeenCalled();
+  });
+
+  it("hides an existing empty-search state when a later reload fails", async () => {
     const user = userEvent.setup();
+    mocks.hasOnlineSession.mockReturnValue(false);
+    renderPage();
+
+    await screen.findByText("Nenhuma conversa autorizada foi encontrada.");
+    await user.type(screen.getByLabelText("Buscar no histórico"), "medição");
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+    await screen.findByText("Crie uma conversa primeiro.");
+
+    mocks.listLocalConversations.mockRejectedValue(
+      new Error("Falha ao recarregar conversas."),
+    );
+    window.dispatchEvent(new Event("cortex:test-messages-changed"));
+
+    expect(
+      await screen.findByRole("alert"),
+    ).toHaveTextContent("Falha ao recarregar conversas.");
+    expect(
+      screen.queryByText("Crie uma conversa primeiro."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("0 resultado(s)")).not.toBeInTheDocument();
+  });
+
+  it("searches cached conversations while offline", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
     mocks.listLocalConversations.mockResolvedValue([conversation]);
     renderPage();
 
     await screen.findByText("1 conversas autorizadas");
     await user.type(screen.getByLabelText("Buscar no histórico"), "medição");
+    await user.click(screen.getByRole("button", { name: "Buscar" }));
+
+    await waitFor(() =>
+      expect(mocks.searchLocalMessages).toHaveBeenCalledWith("medição"),
+    );
+    expect(mocks.searchMessagesApi).not.toHaveBeenCalled();
+  });
+
+  it("searches after the conversation list changes from empty to populated", async () => {
+    const user = userEvent.setup();
+    mocks.hasOnlineSession.mockReturnValue(false);
+    renderPage();
+
+    await screen.findByText("Nenhuma conversa autorizada foi encontrada.");
+    await user.type(screen.getByLabelText("Buscar no histórico"), "medição");
+
+    mocks.listLocalConversations.mockResolvedValue([conversation]);
+    window.dispatchEvent(new Event("cortex:test-messages-changed"));
+
+    await screen.findByText("1 conversas autorizadas");
     await user.click(screen.getByRole("button", { name: "Buscar" }));
 
     await waitFor(() =>

@@ -1,22 +1,31 @@
 package com.projeto.cortex.mensagens;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.mensagens.api.MessageResponse;
+import com.projeto.cortex.mensagens.api.MensagensController;
 import com.projeto.cortex.mensagens.domain.ConversaAccessPolicy;
 import com.projeto.cortex.mensagens.domain.MensagemService;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -33,6 +42,7 @@ class PostgresqlMessagingSearchIT {
 
     private static JdbcTemplate jdbc;
     private static MensagemService messages;
+    private static CurrentUserService currentUser;
 
     @BeforeAll
     static void migrateAndCreateService() {
@@ -50,7 +60,7 @@ class PostgresqlMessagingSearchIT {
                 DATABASE.getUsername(),
                 DATABASE.getPassword()
         ));
-        CurrentUserService currentUser = new CurrentUserService(
+        currentUser = new CurrentUserService(
                 jdbc,
                 new MockEnvironment(),
                 false
@@ -82,6 +92,25 @@ class PostgresqlMessagingSearchIT {
     }
 
     @Test
+    void serializesEmptySearchAsHttp200JsonArray() throws Exception {
+        String userId = collaborator("Sem conversa HTTP");
+        authenticate(userId);
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
+                new MensagensController(null, messages, currentUser)
+        ).build();
+
+        mockMvc.perform(get("/api/mensagens/busca")
+                        .param("q", "marcador")
+                        .param("limit", "20")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                userId
+                        ))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
     void findsAuthorizedMessageRegardlessOfTextCase() {
         String participantId = collaborator("Participante");
         String authorId = collaborator("Autora");
@@ -110,6 +139,100 @@ class PostgresqlMessagingSearchIT {
         authenticate(formerParticipantId);
 
         assertThat(messages.search("segredo", 20)).isEmpty();
+    }
+
+    @Test
+    void treatsPercentUnderscoreAndEscapeMarkerAsLiteralText() {
+        String participantId = collaborator("Participante de curingas");
+        String authorId = collaborator("Autora de curingas");
+        String conversationId = conversation(authorId);
+        activeParticipant(conversationId, participantId, authorId);
+        String percentId = message(
+                conversationId,
+                authorId,
+                "Avanço 100% concluído"
+        );
+        message(conversationId, authorId, "Avanço 1000 concluído");
+        String underscoreId = message(
+                conversationId,
+                authorId,
+                "Código lote_A liberado"
+        );
+        message(conversationId, authorId, "Código loteXA liberado");
+        String escapeMarkerId = message(
+                conversationId,
+                authorId,
+                "Alerta A!B registrado"
+        );
+        message(conversationId, authorId, "Alerta AB registrado");
+        authenticate(participantId);
+
+        assertThat(messages.search("100%", 20))
+                .extracting(MessageResponse::id)
+                .containsExactly(percentId);
+        assertThat(messages.search("lote_A", 20))
+                .extracting(MessageResponse::id)
+                .containsExactly(underscoreId);
+        assertThat(messages.search("A!B", 20))
+                .extracting(MessageResponse::id)
+                .containsExactly(escapeMarkerId);
+    }
+
+    @Test
+    void installsAndUsesPartialTrigramIndexForMessageBodySearch() {
+        String indexDefinition = jdbc.queryForObject(
+                """
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND indexname = 'idx_mensagem_corpo_busca'
+                """,
+                String.class
+        );
+
+        assertThat(indexDefinition).isNotNull();
+        String normalizedDefinition = indexDefinition.toLowerCase(Locale.ROOT);
+        assertThat(normalizedDefinition)
+                .contains("using gin")
+                .contains("lower(coalesce")
+                .contains("gin_trgm_ops")
+                .contains("where")
+                .contains("status")
+                .contains("excluida");
+
+        List<String> plan = jdbc.execute(
+                (ConnectionCallback<List<String>>) connection -> {
+                    try (var settings = connection.createStatement()) {
+                        settings.execute("SET enable_seqscan = off");
+                    }
+                    try (var explain = connection.prepareStatement(
+                            """
+                            EXPLAIN
+                            SELECT id
+                            FROM mensagem
+                            WHERE status <> 'EXCLUIDA'
+                              AND LOWER(COALESCE(corpo, ''))
+                                  LIKE LOWER(CONCAT('%', ?, '%')) ESCAPE '!'
+                            """
+                    )) {
+                        explain.setString(1, "planejamento");
+                        try (var rows = explain.executeQuery()) {
+                            List<String> lines = new ArrayList<>();
+                            while (rows.next()) {
+                                lines.add(rows.getString(1));
+                            }
+                            return lines;
+                        }
+                    } finally {
+                        try (var settings = connection.createStatement()) {
+                            settings.execute("RESET enable_seqscan");
+                        }
+                    }
+                }
+        );
+
+        assertThat(String.join("\n", plan))
+                .contains("idx_mensagem_corpo_busca");
     }
 
     private static String collaborator(String name) {

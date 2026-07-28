@@ -250,7 +250,7 @@ public class MensagemService {
             arguments.add(userId);
             arguments.add(userId);
         }
-        arguments.add(normalized);
+        arguments.add(escapeLikeLiteral(normalized));
         arguments.add(limit);
 
         return jdbcTemplate.query(
@@ -263,13 +263,20 @@ public class MensagemService {
                   AND m.status <> 'EXCLUIDA'
                 """ + access + """
                   AND LOWER(COALESCE(m.corpo, ''))
-                      LIKE LOWER(CONCAT('%', ?, '%'))
+                      LIKE LOWER(CONCAT('%', ?, '%')) ESCAPE '!'
                 ORDER BY m.criado_em DESC, m.id DESC
                 LIMIT ?
                 """,
                 (rs, rowNum) -> mapMessage(rs),
                 arguments.toArray()
         );
+    }
+
+    private static String escapeLikeLiteral(String value) {
+        return value
+                .replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
     }
 
     @Transactional

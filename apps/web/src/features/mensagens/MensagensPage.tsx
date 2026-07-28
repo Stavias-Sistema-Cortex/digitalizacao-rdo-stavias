@@ -56,6 +56,7 @@ import {
 import "./MensagensPage.css";
 
 const INFO_COLLAPSED_KEY = "cortex.ui.mensagensContextoRecolhido";
+type ConversationLoadState = "loading" | "ready" | "failed";
 
 export function MensagensPage() {
   const session = getSession();
@@ -66,7 +67,8 @@ export function MensagensPage() {
   const [messages, setMessages] = useState<MensagemComAnexos[]>([]);
   const [previews, setPreviews] = useState<Record<string, ConversationPreview>>({});
   const [worksites, setWorksites] = useState<ObraLocalRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [conversationLoadState, setConversationLoadState] =
+    useState<ConversationLoadState>("loading");
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -96,16 +98,16 @@ export function MensagensPage() {
     setConversations(localConversations);
     setPreviews(localPreviews);
     setWorksites(localWorksites);
-      setSelectedId((current) => {
-        if (
-          requestedConversationId &&
-          localConversations.some(
-            (conversation) => conversation.id === requestedConversationId,
-          )
-        ) {
-          return requestedConversationId;
-        }
-        if (current && localConversations.some((item) => item.id === current)) {
+    setSelectedId((current) => {
+      if (
+        requestedConversationId &&
+        localConversations.some(
+          (conversation) => conversation.id === requestedConversationId,
+        )
+      ) {
+        return requestedConversationId;
+      }
+      if (current && localConversations.some((item) => item.id === current)) {
         return current;
       }
       return localConversations[0]?.id ?? null;
@@ -127,13 +129,13 @@ export function MensagensPage() {
           await refreshConversationList();
           await loadLocal();
         }
+        if (!cancelled) {
+          setConversationLoadState("ready");
+        }
       } catch (cause: unknown) {
         if (!cancelled) {
           setError(messageFrom(cause));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setConversationLoadState("failed");
         }
       }
     }
@@ -165,12 +167,20 @@ export function MensagensPage() {
   }, [loadMessages, selectedId]);
 
   useEffect(() => {
-    function changed() {
-      void loadLocal();
-      void loadMessages(selectedId);
+    async function changed() {
+      setConversationLoadState("loading");
+      try {
+        await loadLocal();
+        await loadMessages(selectedId);
+        setConversationLoadState("ready");
+      } catch (cause: unknown) {
+        setError(messageFrom(cause));
+        setConversationLoadState("failed");
+      }
     }
-    window.addEventListener(MESSAGES_CHANGED_EVENT, changed);
-    return () => window.removeEventListener(MESSAGES_CHANGED_EVENT, changed);
+    const handleChanged = () => void changed();
+    window.addEventListener(MESSAGES_CHANGED_EVENT, handleChanged);
+    return () => window.removeEventListener(MESSAGES_CHANGED_EVENT, handleChanged);
   }, [loadLocal, loadMessages, selectedId]);
 
   const selected = useMemo(
@@ -249,9 +259,23 @@ export function MensagensPage() {
 
   async function handleSearch(event: FormEvent) {
     event.preventDefault();
+    if (
+      conversationLoadState === "loading" ||
+      (conversationLoadState === "failed" && conversations.length === 0)
+    ) {
+      return;
+    }
     const query = search.trim();
     if (!query) {
       setSearchResults(null);
+      return;
+    }
+    if (conversationLoadState === "failed") {
+      try {
+        setSearchResults(await searchLocalMessages(query));
+      } catch (cause: unknown) {
+        setError(messageFrom(cause));
+      }
       return;
     }
     setError("");
@@ -387,7 +411,7 @@ export function MensagensPage() {
           aria-label="Mensagens"
         >
           <ConversationsPane
-            loading={loading}
+            loadState={conversationLoadState}
             conversations={conversations}
             previews={previews}
             selectedId={selectedId}

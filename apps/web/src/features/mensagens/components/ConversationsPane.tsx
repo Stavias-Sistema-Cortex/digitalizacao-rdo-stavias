@@ -14,7 +14,7 @@ import { ConversationAvatar, PersonAvatar } from "./Avatar";
 import { IconClose } from "./icons";
 
 export interface ConversationsPaneProps {
-  loading: boolean;
+  loadState: "loading" | "ready" | "failed";
   conversations: ConversaLocalRecord[];
   previews: Record<string, ConversationPreview>;
   selectedId: string | null;
@@ -31,6 +31,11 @@ export interface ConversationsPaneProps {
 }
 
 export function ConversationsPane(props: ConversationsPaneProps) {
+  const searchDisabled =
+    props.loadState === "loading" ||
+    (props.loadState === "failed" && props.conversations.length === 0);
+  const visibleSearchResults = searchDisabled ? null : props.searchResults;
+
   return (
     <aside className="mensagens-conversations">
       <header className="mensagens-pane-heading">
@@ -45,14 +50,16 @@ export function ConversationsPane(props: ConversationsPaneProps) {
             value={props.search}
             onChange={(event) => props.onSearchChange(event.target.value)}
             placeholder="Mensagem, medição, ocorrência"
+            disabled={searchDisabled}
           />
-          <button type="submit">Buscar</button>
+          <button type="submit" disabled={searchDisabled}>Buscar</button>
           {props.search ? (
             <button
               type="button"
               className="mensagens-search-clear"
               onClick={props.onCloseSearch}
               aria-label="Limpar busca"
+              disabled={searchDisabled}
             >
               <IconClose />
             </button>
@@ -60,18 +67,18 @@ export function ConversationsPane(props: ConversationsPaneProps) {
         </div>
       </form>
 
-      {props.searchResults !== null && props.conversations.length === 0 ? (
+      {visibleSearchResults !== null && props.conversations.length === 0 ? (
         <p className="mensagens-list-status">Crie uma conversa primeiro.</p>
-      ) : props.searchResults ? (
+      ) : visibleSearchResults !== null ? (
         <SearchResults
-          results={props.searchResults}
+          results={visibleSearchResults}
           conversations={props.conversations}
           onChoose={props.onChooseSearchResult}
           onClose={props.onCloseSearch}
         />
       ) : (
         <ConversationList
-          loading={props.loading}
+          loadState={props.loadState}
           conversations={props.conversations}
           selectedId={props.selectedId}
           currentUserId={props.currentUserId}
@@ -85,7 +92,7 @@ export function ConversationsPane(props: ConversationsPaneProps) {
 }
 
 function ConversationList(props: {
-  loading: boolean;
+  loadState: "loading" | "ready" | "failed";
   conversations: ConversaLocalRecord[];
   selectedId: string | null;
   currentUserId: string;
@@ -93,7 +100,12 @@ function ConversationList(props: {
   now: Date;
   onSelect: (id: string) => void;
 }) {
-  if (props.loading) return <p className="mensagens-list-status">Carregando conversas…</p>;
+  if (props.loadState === "loading") {
+    return <p className="mensagens-list-status">Carregando conversas…</p>;
+  }
+  if (props.loadState === "failed" && props.conversations.length === 0) {
+    return null;
+  }
   if (props.conversations.length === 0) {
     return (
       <p className="mensagens-list-status">
