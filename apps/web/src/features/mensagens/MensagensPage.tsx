@@ -93,7 +93,7 @@ export function MensagensPage() {
     const [localConversations, localPreviews, localWorksites] = await Promise.all([
       listLocalConversations(),
       listLocalConversationPreviews(),
-      listObrasLocais(),
+      listObrasLocais({ includeArchived: true }),
     ]);
     setConversations(localConversations);
     setPreviews(localPreviews);

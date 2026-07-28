@@ -13,6 +13,7 @@ import { getSession } from "../auth/authSession";
 import {
   listObrasLocais,
 } from "../../lib/db/obraLocalRepository";
+import { filterOperationalObras } from "../../lib/db/obraSelectors";
 import { listLocalRdosByObra } from "../../lib/db/rdoRepository";
 import {
   createTarefa,
@@ -294,7 +295,9 @@ export function TarefasPage() {
         // Offline ou API indisponível: segue com o banco local.
       }
 
-      const local = await listObrasLocais();
+      const local = filterOperationalObras(
+        await listObrasLocais(),
+      );
 
       if (cancelled) {
         return;
@@ -326,7 +329,10 @@ export function TarefasPage() {
   }, [reloadTick]);
 
   useEffect(() => {
-    if (!focusedObraId) {
+    if (
+      !focusedObraId ||
+      !obras.some((obra) => obra.id === focusedObraId)
+    ) {
       return;
     }
 
@@ -366,7 +372,7 @@ export function TarefasPage() {
     return () => {
       cancelled = true;
     };
-  }, [focusedObraId, reloadTick]);
+  }, [focusedObraId, obras, reloadTick]);
 
   const isDetalhesLoading =
     Boolean(focusedObraId) &&

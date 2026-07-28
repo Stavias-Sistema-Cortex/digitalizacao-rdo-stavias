@@ -6,11 +6,13 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TeamDto, TeamPageDto } from "./teamApi";
+import type { ObraLocalRecord } from "../../lib/db/db.types";
 
 const mocks = vi.hoisted(() => ({
   fetchTeams: vi.fn(),
   fetchOperationalRoles: vi.fn(),
   hydrateObrasRelacionadas: vi.fn(),
+  listObrasLocais: vi.fn(),
   listLocalTeams: vi.fn(),
   listLocalOperationalRoles: vi.fn(),
   replaceLocalTeams: vi.fn(),
@@ -33,7 +35,10 @@ vi.mock("../home/homeHydration", () => ({
 }));
 
 vi.mock("../../lib/db/obraLocalRepository", () => ({
-  listObrasLocais: vi.fn().mockResolvedValue([]),
+  filterOperationalObras: (
+    obras: Array<{ arquivadoEm?: string | null }>,
+  ) => obras.filter((obra) => obra.arquivadoEm == null),
+  listObrasLocais: mocks.listObrasLocais,
 }));
 
 vi.mock("./teamApi", () => ({
@@ -80,6 +85,29 @@ const cachedTeam: TeamDto = {
   membros: [],
 };
 
+function obra(
+  id: string,
+  values: Partial<ObraLocalRecord> = {},
+): ObraLocalRecord {
+  return {
+    id,
+    codigoContrato: id,
+    nome: id,
+    cliente: null,
+    cidade: null,
+    uf: null,
+    rodovia: null,
+    status: "ATIVA",
+    observacoes: null,
+    latitude: null,
+    longitude: null,
+    valorContratual: null,
+    arquivadoEm: null,
+    updatedAt: "2026-07-28T12:00:00.000Z",
+    ...values,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -105,6 +133,7 @@ beforeEach(() => {
   });
   vi.clearAllMocks();
   mocks.listLocalTeams.mockResolvedValue([cachedTeam]);
+  mocks.listObrasLocais.mockResolvedValue([]);
   mocks.listLocalOperationalRoles.mockResolvedValue([]);
   mocks.fetchOperationalRoles.mockResolvedValue([]);
   mocks.hydrateObrasRelacionadas.mockResolvedValue(0);
@@ -160,5 +189,26 @@ describe("EquipesPage sync truth", () => {
         "LOCAL",
       ),
     );
+  });
+
+  it("omits archived worksites from the team filter while keeping inactive operational ones", async () => {
+    mocks.listObrasLocais.mockResolvedValue([
+      obra("Obra ativa"),
+      obra("Obra inativa", { status: "INATIVA" }),
+      obra("Obra arquivada", {
+        status: "INATIVA",
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+      }),
+    ]);
+    mocks.fetchTeams.mockRejectedValueOnce(new Error("offline"));
+
+    renderPage();
+
+    const selector = await screen.findByRole("combobox", {
+      name: "Filtrar por obra",
+    });
+    expect(selector).toHaveTextContent("Obra ativa");
+    expect(selector).toHaveTextContent("Obra inativa");
+    expect(selector).not.toHaveTextContent("Obra arquivada");
   });
 });

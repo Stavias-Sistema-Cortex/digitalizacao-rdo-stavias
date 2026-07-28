@@ -1,16 +1,31 @@
 // @vitest-environment jsdom
 
 import type { PropsWithChildren } from "react";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ObraLocalRecord } from "../../lib/db/db.types";
+import type {
+  ObraLocalRecord,
+  OperationalEventRecord,
+} from "../../lib/db/db.types";
 
 const state = vi.hoisted(() => ({
   alfa: true,
   obras: [] as ObraLocalRecord[],
+  events: [] as OperationalEventRecord[],
   focusedObraId: "obra-1",
+}));
+
+const api = vi.hoisted(() => ({
+  buscarTimelineObra: vi.fn(),
+  buscarPdorAtual: vi.fn(),
 }));
 
 const queues = vi.hoisted(() => ({
@@ -54,7 +69,7 @@ vi.mock("../home/useHomeData", () => ({
     setFocusedObraId: (id: string) => {
       state.focusedObraId = id;
     },
-    events: [],
+    events: state.events,
     isLoading: false,
     hasConfirmedRemoteHydration: true,
     reload: vi.fn(),
@@ -62,8 +77,8 @@ vi.mock("../home/useHomeData", () => ({
 }));
 
 vi.mock("./obrasApi", () => ({
-  buscarTimelineObra: vi.fn().mockResolvedValue([]),
-  buscarPdorAtual: vi.fn().mockResolvedValue(null),
+  buscarTimelineObra: api.buscarTimelineObra,
+  buscarPdorAtual: api.buscarPdorAtual,
 }));
 
 vi.mock("./obraLifecycle", () => ({
@@ -71,6 +86,32 @@ vi.mock("./obraLifecycle", () => ({
   queueDeactivateObra: queues.deactivate,
   queueArchiveObra: queues.archive,
   queueRestoreObra: queues.restore,
+}));
+
+vi.mock("./gestao/NovaObraForm", () => ({
+  NovaObraForm: ({
+    onCreated,
+  }: {
+    onCreated: (created: { id: string }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        state.obras = [
+          obra({
+            id: "obra-created",
+            nome: "Nova ponte",
+            codigoContrato: "CTR-NEW",
+            updatedAt: "2026-07-28T15:00:00.000Z",
+          }),
+          ...state.obras,
+        ];
+        onCreated({ id: "obra-created" });
+      }}
+    >
+      Confirmar criação teste
+    </button>
+  ),
 }));
 
 import { ObrasPage } from "./ObrasPage";
@@ -103,10 +144,42 @@ function obra(
   };
 }
 
+function operationalEvent(
+  obraId: string,
+  values: Partial<OperationalEventRecord> = {},
+): OperationalEventRecord {
+  return {
+    id: `event-${obraId}`,
+    type: "OBRA_ATUALIZADA",
+    principalEntity: {
+      tipo: "OBRA",
+      id: obraId,
+      nome: obraId,
+    },
+    principalEntityKey: `OBRA:${obraId}`,
+    relatedEntities: [],
+    obraId,
+    rdoId: null,
+    colaboradorId: null,
+    occurredAt: "2026-07-28T12:00:00.000Z",
+    syncedAt: null,
+    origin: "OFFLINE",
+    responsibleUserId: null,
+    responsibleUserName: null,
+    payload: { nome: `Evento ${obraId}` },
+    syncStatus: "PENDING_SYNC",
+    schemaVersion: 13,
+    ...values,
+  };
+}
+
 beforeEach(() => {
   state.alfa = true;
   state.focusedObraId = "obra-1";
   state.obras = [obra()];
+  state.events = [];
+  api.buscarTimelineObra.mockResolvedValue([]);
+  api.buscarPdorAtual.mockResolvedValue(null);
   queues.update.mockImplementation(
     async (existing: ObraLocalRecord, input: { nome: string }) => ({
       ...existing,
@@ -176,6 +249,21 @@ describe("ObrasPage lifecycle Alfa", () => {
 
     expect(screen.getAllByText("Duplicação BR-163").length).toBeGreaterThan(0);
     expect(screen.getByText("Pendente")).toBeInTheDocument();
+    expect(queues.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "obra-1" }),
+      {
+        codigoContrato: "CTR-1",
+        codigoInterno: "INT-1",
+        nome: "Duplicação BR-163",
+        cliente: "DNIT",
+        descricao: "Duplicação e restauração",
+        cidade: "Campo Grande",
+        uf: "MS",
+        rodovia: "BR-262",
+        fonteArquivo: null,
+        observacoes: "Trecho norte",
+      },
+    );
   });
 
   it("abandona o override otimista quando o cache recebe a confirmação autoritativa", async () => {
@@ -244,5 +332,237 @@ describe("ObrasPage lifecycle Alfa", () => {
 
     expect(screen.getByText("INATIVA")).toBeInTheDocument();
     expect(screen.getByText("Pendente")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["LOCAL_ONLY", "Pendente"],
+    ["SYNCING", "Sincronizando"],
+    ["CONFLICT", "Conflito"],
+    ["ERROR", "Erro"],
+  ] as const)(
+    "renders the %s lifecycle state as %s",
+    (syncStatus, label) => {
+      state.obras = [obra({ syncStatus })];
+      render(<ObrasPage />);
+
+      expect(screen.getByText(label)).toBeInTheDocument();
+    },
+  );
+
+  it("keeps edit and archive failures in their active modal surfaces", async () => {
+    const user = userEvent.setup();
+    queues.update.mockRejectedValueOnce(
+      new Error("Falha ao salvar a obra."),
+    );
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("button", { name: "Editar" }));
+    let dialog = screen.getByRole("dialog", { name: "Editar obra" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Salvar alterações",
+    }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Falha ao salvar a obra.",
+    );
+    expect(dialog).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", {
+      name: "Cancelar",
+    }));
+    queues.archive.mockRejectedValueOnce(
+      new Error("Falha ao excluir a obra."),
+    );
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    dialog = screen.getByRole("dialog", { name: "Excluir obra" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Excluir obra",
+    }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Falha ao excluir a obra.",
+    );
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("keeps restore errors and archived items visible inside Trash", async () => {
+    const user = userEvent.setup();
+    state.obras = [obra({
+      arquivadoEm: "2026-07-28T13:00:00.000Z",
+    })];
+    queues.restore.mockRejectedValueOnce(
+      new Error("Falha ao restaurar a obra."),
+    );
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("tab", { name: "Lixeira" }));
+    const trash = screen.getByRole("region", {
+      name: "Lixeira de obras",
+    });
+    await user.click(within(trash).getByRole("button", {
+      name: "Restaurar",
+    }));
+
+    expect(await within(trash).findByRole("alert")).toHaveTextContent(
+      "Falha ao restaurar a obra.",
+    );
+    expect(trash).toHaveTextContent("Duplicação BR-262");
+  });
+
+  it("keeps deactivate failures visible in the detail without moving the worksite", async () => {
+    const user = userEvent.setup();
+    queues.deactivate.mockRejectedValueOnce(
+      new Error("Falha ao desativar a obra."),
+    );
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("button", { name: "Desativar" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Falha ao desativar a obra.",
+    );
+    expect(screen.getByRole("tab", { name: "Ativas" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("ATIVA")).toBeInTheDocument();
+  });
+
+  it("traps edit focus, closes on Escape, and returns focus to Edit", async () => {
+    const user = userEvent.setup();
+    render(<ObrasPage />);
+
+    const trigger = screen.getByRole("button", { name: "Editar" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Editar obra" });
+    const firstInput = within(dialog).getByRole("textbox", {
+      name: "Código do contrato",
+    });
+    const close = within(dialog).getByRole("button", {
+      name: "Fechar edição da obra",
+    });
+    const submit = within(dialog).getByRole("button", {
+      name: "Salvar alterações",
+    });
+
+    await waitFor(() => expect(firstInput).toHaveFocus());
+    submit.focus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    close.focus();
+    await user.tab({ shift: true });
+    expect(submit).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Editar obra" }))
+      .not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("traps archive focus, closes on Escape, and returns focus to Excluir", async () => {
+    const user = userEvent.setup();
+    render(<ObrasPage />);
+
+    const trigger = screen.getByRole("button", { name: "Excluir" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Excluir obra" });
+    const cancel = within(dialog).getByRole("button", {
+      name: "Cancelar",
+    });
+    const confirm = within(dialog).getByRole("button", {
+      name: "Excluir obra",
+    });
+
+    await waitFor(() => expect(cancel).toHaveFocus());
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Excluir obra" }))
+      .not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("never renders prior-worksite local events after a tab fallback offline", async () => {
+    const user = userEvent.setup();
+    state.obras = [
+      obra(),
+      obra({
+        id: "obra-2",
+        nome: "Contorno Sul",
+        status: "INATIVA",
+      }),
+    ];
+    state.events = [operationalEvent("obra-1", {
+      type: "OBRA_DESATIVADA",
+      payload: { nome: "Evento indevido da obra 1" },
+    })];
+    api.buscarTimelineObra.mockRejectedValue(
+      new Error("Timeline offline."),
+    );
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("tab", { name: "Desativadas" }));
+    await user.click(screen.getByRole("button", {
+      name: "Ontologia da obra",
+    }));
+
+    expect(screen.getByText("Nenhum evento operacional registrado."))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/Evento indevido da obra 1/))
+      .not.toBeInTheDocument();
+  });
+
+  it("unmounts ontology content and resets aria-expanded on tab changes", async () => {
+    const user = userEvent.setup();
+    state.obras = [
+      obra(),
+      obra({
+        id: "obra-2",
+        nome: "Contorno Sul",
+        status: "INATIVA",
+      }),
+    ];
+    render(<ObrasPage />);
+
+    const activeToggle = screen.getByRole("button", {
+      name: "Ontologia da obra",
+    });
+    await user.click(activeToggle);
+    expect(activeToggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Rastreabilidade Cortex"))
+      .toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Desativadas" }));
+    const inactiveToggle = screen.getByRole("button", {
+      name: "Ontologia da obra",
+    });
+    expect(inactiveToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Rastreabilidade Cortex"))
+      .not.toBeInTheDocument();
+  });
+
+  it("returns to Ativas and focuses the newly created worksite", async () => {
+    const user = userEvent.setup();
+    state.obras = [
+      obra(),
+      obra({
+        id: "obra-archived",
+        nome: "Obra antiga",
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+      }),
+    ];
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("tab", { name: "Lixeira" }));
+    await user.click(screen.getByRole("button", { name: "Criar obra" }));
+    await user.click(screen.getByRole("button", {
+      name: "Confirmar criação teste",
+    }));
+
+    expect(screen.getByRole("tab", { name: "Ativas" }))
+      .toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Nova ponte" }))
+      .toBeInTheDocument();
   });
 });

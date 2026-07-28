@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -35,6 +36,7 @@ import {
   queueUpdateObra,
   type UpdateObraInput,
 } from "./obraLifecycle";
+import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
 import "./gestao/gestaoObras.css";
 
 type ObrasView = "ATIVAS" | "DESATIVADAS" | "LIXEIRA";
@@ -245,6 +247,8 @@ export function ObrasPage() {
   const [timeline, setTimeline] = useState<
     ObraTimelineEvent[]
   >([]);
+  const [timelineObraId, setTimelineObraId] =
+    useState<string | null>(null);
   const [timelineError, setTimelineError] =
     useState<string | null>(null);
   const [isTimelineLoading, setIsTimelineLoading] =
@@ -267,6 +271,11 @@ export function ObrasPage() {
     useState<string | null>(null);
   const [isOntologyOpen, setIsOntologyOpen] =
     useState(false);
+  const editTriggerRef = useRef<HTMLButtonElement>(null);
+  const archiveTriggerRef = useRef<HTMLButtonElement>(null);
+  const editInitialFocusRef = useRef<HTMLInputElement>(null);
+  const archiveInitialFocusRef =
+    useRef<HTMLButtonElement>(null);
   const canManageWorksites = isAlfa(getSession());
 
   const localObras = useMemo(
@@ -377,6 +386,7 @@ export function ObrasPage() {
       queueMicrotask(() => {
         if (!cancelled) {
           setTimeline([]);
+          setTimelineObraId(null);
           setTimelineError(null);
           setIsTimelineLoading(false);
         }
@@ -397,11 +407,13 @@ export function ObrasPage() {
       .then((items) => {
         if (!cancelled) {
           setTimeline(items);
+          setTimelineObraId(focusedObraId);
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
           setTimeline([]);
+          setTimelineObraId(focusedObraId);
           setTimelineError(
             error instanceof Error
               ? error.message
@@ -470,13 +482,30 @@ export function ObrasPage() {
   }, [focusedObraId]);
 
   const localTrace = useMemo(
-    () => events.map(localEventToTrace),
-    [events],
+    () =>
+      focusedObraId
+        ? events
+          .filter(
+            (event) =>
+              event.obraId === focusedObraId ||
+              (
+                event.principalEntity.tipo === "OBRA" &&
+                event.principalEntity.id === focusedObraId
+              ),
+          )
+          .map(localEventToTrace)
+        : [],
+    [events, focusedObraId],
+  );
+  const focusedTimeline = useMemo(
+    () =>
+      focusedObraId === timelineObraId ? timeline : [],
+    [focusedObraId, timeline, timelineObraId],
   );
   const traceEvents =
-    timeline.length > 0 ? timeline : localTrace;
+    focusedTimeline.length > 0 ? focusedTimeline : localTrace;
   const traceSource =
-    timeline.length > 0
+    focusedTimeline.length > 0
       ? "Cortex online"
       : localTrace.length > 0
         ? "Cortex local"
@@ -526,6 +555,21 @@ export function ObrasPage() {
   function beginEdit(obra: ObraLocalRecord) {
     setEditingObra(obra);
     setEditInput(updateInputFromObra(obra));
+    setActionError(null);
+  }
+
+  function beginArchive(obra: ObraLocalRecord) {
+    setArchiveCandidate(obra);
+    setActionError(null);
+  }
+
+  function closeEdit() {
+    setEditingObra(null);
+    setActionError(null);
+  }
+
+  function closeArchive() {
+    setArchiveCandidate(null);
     setActionError(null);
   }
 
@@ -696,6 +740,11 @@ export function ObrasPage() {
             className="obras-trash"
             aria-label="Lixeira de obras"
           >
+            {actionError ? (
+              <p className="obras-action-error" role="alert">
+                {actionError}
+              </p>
+            ) : null}
             {archivedObras.length === 0 ? (
               <p className="obras-empty">
                 Nenhuma obra na Lixeira.
@@ -796,6 +845,7 @@ export function ObrasPage() {
                       aria-label="Ações da obra"
                     >
                       <button
+                        ref={editTriggerRef}
                         type="button"
                         disabled={isMutating}
                         onClick={() => beginEdit(focusedObra)}
@@ -813,12 +863,11 @@ export function ObrasPage() {
                         Desativar
                       </button>
                       <button
+                        ref={archiveTriggerRef}
                         type="button"
                         className="is-danger"
                         disabled={isMutating}
-                        onClick={() =>
-                          setArchiveCandidate(focusedObra)
-                        }
+                        onClick={() => beginArchive(focusedObra)}
                       >
                         Excluir
                       </button>
@@ -826,7 +875,9 @@ export function ObrasPage() {
                   ) : null}
                 </div>
 
-                {actionError ? (
+                {actionError &&
+                !editingObra &&
+                !archiveCandidate ? (
                   <p className="obras-action-error" role="alert">
                     {actionError}
                   </p>
@@ -1074,18 +1125,19 @@ export function ObrasPage() {
             className="nova-obra-dialog-backdrop"
             role="presentation"
           >
-            <section
+            <ObraAccessibleDialog
               className="nova-obra-dialog obras-edit-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="obras-edit-title"
+              labelledBy="obras-edit-title"
+              initialFocusRef={editInitialFocusRef}
+              returnFocusRef={editTriggerRef}
+              onClose={closeEdit}
             >
               <header>
                 <h2 id="obras-edit-title">Editar obra</h2>
                 <button
                   type="button"
                   aria-label="Fechar edição da obra"
-                  onClick={() => setEditingObra(null)}
+                  onClick={closeEdit}
                 >
                   ×
                 </button>
@@ -1098,6 +1150,7 @@ export function ObrasPage() {
                   <label>
                     Código do contrato
                     <input
+                      ref={editInitialFocusRef}
                       value={editInput.codigoContrato}
                       onChange={(event) =>
                         patchEdit({
@@ -1197,10 +1250,15 @@ export function ObrasPage() {
                     />
                   </label>
                 </div>
+                {actionError ? (
+                  <p className="obras-action-error" role="alert">
+                    {actionError}
+                  </p>
+                ) : null}
                 <footer>
                   <button
                     type="button"
-                    onClick={() => setEditingObra(null)}
+                    onClick={closeEdit}
                   >
                     Cancelar
                   </button>
@@ -1211,7 +1269,7 @@ export function ObrasPage() {
                   </button>
                 </footer>
               </form>
-            </section>
+            </ObraAccessibleDialog>
           </div>
         ) : null}
 
@@ -1220,11 +1278,12 @@ export function ObrasPage() {
             className="nova-obra-dialog-backdrop"
             role="presentation"
           >
-            <section
+            <ObraAccessibleDialog
               className="nova-obra-dialog obras-confirm-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="obras-archive-title"
+              labelledBy="obras-archive-title"
+              initialFocusRef={archiveInitialFocusRef}
+              returnFocusRef={archiveTriggerRef}
+              onClose={closeArchive}
             >
               <header>
                 <h2 id="obras-archive-title">Excluir obra</h2>
@@ -1232,10 +1291,16 @@ export function ObrasPage() {
               <p>
                 A obra poderá ser restaurada na Lixeira.
               </p>
+              {actionError ? (
+                <p className="obras-action-error" role="alert">
+                  {actionError}
+                </p>
+              ) : null}
               <footer>
                 <button
+                  ref={archiveInitialFocusRef}
                   type="button"
-                  onClick={() => setArchiveCandidate(null)}
+                  onClick={closeArchive}
                 >
                   Cancelar
                 </button>
@@ -1248,7 +1313,7 @@ export function ObrasPage() {
                   {isMutating ? "Excluindo…" : "Excluir obra"}
                 </button>
               </footer>
-            </section>
+            </ObraAccessibleDialog>
           </div>
         ) : null}
 
@@ -1288,6 +1353,8 @@ export function ObrasPage() {
                 onCancel={() => setShowCreateWorksite(false)}
                 onCreated={(created) => {
                   setShowCreateWorksite(false);
+                  setView("ATIVAS");
+                  setSelectedObraId(created.id);
                   setFocusedObraId(created.id);
                   reload();
                 }}

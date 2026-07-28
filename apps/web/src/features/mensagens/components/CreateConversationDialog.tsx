@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
 import type { ConversaTipo, ObraLocalRecord } from "../../../lib/db/db.types";
+import { filterOperationalObras } from "../../../lib/db/obraSelectors";
 import {
   buscarColaboradores,
   buscarColaboradoresDaObra,
@@ -39,7 +40,10 @@ export function CreateConversationDialog(props: {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    void props.obrasPromise.then(setObras).catch((cause) => setError(messageFrom(cause)));
+    void props.obrasPromise
+      .then(filterOperationalObras)
+      .then(setObras)
+      .catch((cause) => setError(messageFrom(cause)));
   }, [props.obrasPromise]);
 
   async function searchPeople() {

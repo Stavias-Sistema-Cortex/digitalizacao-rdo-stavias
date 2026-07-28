@@ -31,6 +31,7 @@ describe("obraRecordFromApi", () => {
     expect(record.valorContratual).toBe(1500000);
     expect(record.latitude).toBe(-20.4697);
     expect(record.nome).toBe("Obra BR-262");
+    expect(record).toHaveProperty("arquivadoEm", null);
   });
 });
 

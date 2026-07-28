@@ -12,7 +12,10 @@ import type {
   ColaboradorLocalRecord,
   ObraLocalRecord,
 } from "../../lib/db/db.types";
-import { listObrasLocais } from "../../lib/db/obraLocalRepository";
+import {
+  listObrasLocais,
+} from "../../lib/db/obraLocalRepository";
+import { filterOperationalObras } from "../../lib/db/obraSelectors";
 import {
   getSession,
   hasOnlineSession,
@@ -198,7 +201,7 @@ export function EquipesPage() {
       if (!cancelled) {
         setTeams(localTeams);
         setRoles(localRoles);
-        setObras(localObras);
+        setObras(filterOperationalObras(localObras));
         setIsLoading(false);
       }
       if (!navigator.onLine || !hasAuthenticatedConnection) return;
@@ -219,7 +222,9 @@ export function EquipesPage() {
         if (!cancelled) {
           setTeams(remoteTeams);
           setRoles(remoteRoles);
-          setObras(await listObrasLocais());
+          setObras(
+            filterOperationalObras(await listObrasLocais()),
+          );
           setHasConfirmedRemoteHydration(true);
         }
       } catch (loadError: unknown) {

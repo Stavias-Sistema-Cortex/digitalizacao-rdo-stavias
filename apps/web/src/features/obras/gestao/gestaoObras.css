@@ -120,7 +120,6 @@
 .gestao-obras-item.ativo {
   background: #f7f9f7;
   box-shadow: inset 3px 0 0 var(--color-brand-yellow);
-  outline: none;
 }
 
 .gestao-obras-item.ativo:focus-visible {
@@ -424,6 +423,10 @@
   justify-content: flex-end;
 }
 
+.obras-create-action {
+  font-weight: 600;
+}
+
 .obras-lifecycle-actions button,
 .obras-trash button,
 .obras-ontology-toggle,
@@ -443,13 +446,24 @@
 }
 
 .obras-lifecycle-actions button:hover,
-.obras-lifecycle-actions button:focus-visible,
 .obras-trash button:hover,
-.obras-trash button:focus-visible,
-.obras-ontology-toggle:hover,
-.obras-ontology-toggle:focus-visible {
+.obras-ontology-toggle:hover {
   border-color: #0c2623;
-  outline: none;
+}
+
+.obras-lifecycle-actions button:focus-visible {
+  border-color: #0c2623;
+  outline: 2px solid #0c2623;
+  outline-offset: 2px;
+}
+
+.obras-trash button:focus-visible,
+.obras-ontology-toggle:focus-visible,
+.obras-edit-form button:focus-visible,
+.obras-confirm-dialog button:focus-visible {
+  border-color: #0c2623;
+  outline: 2px solid #0c2623;
+  outline-offset: 2px;
 }
 
 .obras-lifecycle-actions .is-danger,
@@ -493,6 +507,9 @@
 }
 
 .obras-trash {
+  container-type: inline-size;
+  inline-size: 100%;
+  max-inline-size: 100%;
   min-width: 0;
   padding: 16px;
   border: 1px solid #d4deda;
@@ -511,7 +528,8 @@
 
 .obras-trash-list li {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   gap: 12px;
   align-items: center;
   padding: 11px 0;
@@ -577,6 +595,7 @@
 .obras-edit-form {
   display: grid;
   gap: 16px;
+  padding: 20px;
 }
 
 .obras-edit-grid {
@@ -634,8 +653,27 @@
 
 .obras-confirm-dialog > p {
   margin: 0 0 18px;
+  padding: 0 20px;
   color: #46534f;
   font-size: 0.84rem;
+}
+
+.obras-confirm-dialog > .obras-action-error {
+  color: #a43a3a;
+}
+
+.obras-confirm-dialog footer {
+  padding: 0 20px 20px;
+}
+
+@container (max-width: 680px) {
+  .obras-trash-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .obras-trash-list li > :not(:first-child) {
+    justify-self: start;
+  }
 }
 
 @media (max-width: 680px) {
@@ -645,14 +683,6 @@
 
   .obras-lifecycle-actions {
     justify-content: flex-start;
-  }
-
-  .obras-trash-list li {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .obras-trash-list li > :not(:first-child) {
-    justify-self: start;
   }
 
   .obras-edit-grid {

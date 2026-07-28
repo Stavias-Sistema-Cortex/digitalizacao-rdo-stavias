@@ -3,7 +3,10 @@ import { useSearchParams } from "react-router";
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
-import { listObrasLocais } from "../../lib/db/obraLocalRepository";
+import {
+  listObrasLocais,
+} from "../../lib/db/obraLocalRepository";
+import { filterOperationalObras } from "../../lib/db/obraSelectors";
 import {
   filtersFromSearchParams,
   filtersToSearchParams,
@@ -77,8 +80,26 @@ export function FinanceiroPage() {
       if (navigator.onLine) {
         try {
           const remote = await fetchAuthorizedRevenueWorksites();
+          let locallyArchivedIds = new Set<string>();
+          try {
+            const cached = await listObrasLocais({
+              includeArchived: true,
+            });
+            locallyArchivedIds = new Set(
+              cached
+                .filter((obra) => obra.arquivadoEm != null)
+                .map((obra) => obra.id),
+            );
+          } catch {
+            // O catálogo remoto continua autoritativo quando o cache local
+            // não pode ser consultado.
+          }
           if (!cancelled) {
-            setWorksites(remote);
+            setWorksites(
+              remote.filter(
+                (obra) => !locallyArchivedIds.has(obra.id),
+              ),
+            );
           }
           return;
         } catch (reason: unknown) {
@@ -93,7 +114,9 @@ export function FinanceiroPage() {
       try {
         const local = await listObrasLocais();
         if (!cancelled) {
-          setWorksites(local.map(localWorksiteUnit));
+          setWorksites(
+            filterOperationalObras(local).map(localWorksiteUnit),
+          );
         }
       } catch (reason: unknown) {
         if (!cancelled) {

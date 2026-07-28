@@ -1,4 +1,7 @@
 import type { ObraLocalRecord } from "../../lib/db/db.types";
+import { filterOperationalObras } from "../../lib/db/obraSelectors";
+
+export { filterOperationalObras } from "../../lib/db/obraSelectors";
 
 export type ObraStatusChip =
   | "TODAS"
@@ -34,12 +37,6 @@ function normalizeStatus(status: string): string {
     .replace(/\p{Diacritic}/gu, "")
     .toUpperCase()
     .trim();
-}
-
-export function filterOperationalObras(
-  obras: readonly ObraLocalRecord[],
-): ObraLocalRecord[] {
-  return obras.filter((obra) => obra.arquivadoEm == null);
 }
 
 export function filterObrasByChip(

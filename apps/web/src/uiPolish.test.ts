@@ -517,7 +517,7 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(active).toContain(
       "box-shadow: inset 3px 0 0 var(--color-brand-yellow);",
     );
-    expect(active).toContain("outline: none;");
+    expect(active).not.toContain("outline: none;");
 
     const activeFocus = rule(
       gestaoObrasCss,

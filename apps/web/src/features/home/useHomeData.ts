@@ -5,7 +5,7 @@ import {
   useState,
 } from "react";
 
-import { getSession } from "../auth/authSession";
+import { getSession, isAlfa } from "../auth/authSession";
 import {
   listObrasLocais,
 } from "../../lib/db/obraLocalRepository";
@@ -24,6 +24,7 @@ import type {
 } from "../../lib/db/db.types";
 import {
   hydrateHistoricoObra,
+  hydrateObrasArquivadas,
   hydrateObrasRelacionadas,
 } from "./homeHydration";
 import {
@@ -93,15 +94,23 @@ export function useHomeData(
       setIsLoading(true);
       setHasConfirmedRemoteHydration(false);
       let remoteHydrationConfirmed = false;
+      const canIncludeArchived =
+        options.includeArchived === true &&
+        isAlfa(getSession());
 
       try {
         await hydrateObrasRelacionadas();
+        if (canIncludeArchived) {
+          await hydrateObrasArquivadas();
+        }
         remoteHydrationConfirmed = true;
       } catch {
         // Offline ou API indisponível: segue com o banco local.
       }
 
-      const cached = await listObrasLocais();
+      const cached = await listObrasLocais({
+        includeArchived: canIncludeArchived,
+      });
 
       if (cancelled) {
         return;
@@ -110,7 +119,7 @@ export function useHomeData(
       cached.sort((a, b) =>
         a.updatedAt < b.updatedAt ? 1 : -1,
       );
-      const local = options.includeArchived
+      const local = canIncludeArchived
         ? cached
         : filterOperationalObras(cached);
       setObras(local);

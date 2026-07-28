@@ -75,6 +75,9 @@ vi.mock("../../components/workspace/OperationalWorkspace", () => ({
 }));
 
 vi.mock("../../lib/db/obraLocalRepository", () => ({
+  filterOperationalObras: (
+    obras: Array<{ arquivadoEm?: string | null }>,
+  ) => obras.filter((obra) => obra.arquivadoEm == null),
   listObrasLocais,
 }));
 
@@ -139,6 +142,10 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  Object.defineProperty(navigator, "onLine", {
+    configurable: true,
+    value: true,
+  });
   fetchAuthorizedRevenueWorksites.mockResolvedValue([]);
   listObrasLocais.mockResolvedValue([]);
   resolveFinanceCapabilities.mockResolvedValue({
@@ -220,6 +227,104 @@ describe("FinanceiroPage: superfície de receita", () => {
     }));
 
     await waitFor(() => expect(revenueMounts).toHaveBeenCalledTimes(2));
+  });
+
+  it("omite obras arquivadas do seletor no fallback local offline", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      value: false,
+    });
+    listObrasLocais.mockResolvedValue([
+      {
+        id: "obra-ativa",
+        codigoContrato: "CTR-ATIVA",
+        nome: "Obra ativa",
+        cliente: null,
+        cidade: null,
+        uf: null,
+        rodovia: null,
+        status: "ATIVA",
+        observacoes: null,
+        latitude: null,
+        longitude: null,
+        valorContratual: null,
+        arquivadoEm: null,
+        updatedAt: "2026-07-28T12:00:00.000Z",
+      },
+      {
+        id: "obra-arquivada",
+        codigoContrato: "CTR-ARQ",
+        nome: "Obra arquivada",
+        cliente: null,
+        cidade: null,
+        uf: null,
+        rodovia: null,
+        status: "INATIVA",
+        observacoes: null,
+        latitude: null,
+        longitude: null,
+        valorContratual: null,
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+        updatedAt: "2026-07-28T13:00:00.000Z",
+      },
+    ]);
+
+    renderFinanceiro();
+
+    const selector = await screen.findByRole("combobox", {
+      name: "Obra em análise",
+    });
+    expect(selector).toHaveTextContent("Obra ativa");
+    expect(selector).not.toHaveTextContent("Obra arquivada");
+  });
+
+  it("reconciles the online selector with a pending local archive tombstone", async () => {
+    fetchAuthorizedRevenueWorksites.mockResolvedValue([
+      {
+        id: "obra-ativa",
+        codigoContrato: "CTR-ATIVA",
+        nome: "Obra ativa",
+        status: "ATIVA",
+      },
+      {
+        id: "obra-arquivada",
+        codigoContrato: "CTR-ARQ",
+        nome: "Obra ainda ativa no servidor",
+        status: "ATIVA",
+      },
+    ]);
+    listObrasLocais.mockResolvedValue([
+      {
+        id: "obra-arquivada",
+        codigoContrato: "CTR-ARQ",
+        nome: "Obra arquivada localmente",
+        cliente: null,
+        cidade: null,
+        uf: null,
+        rodovia: null,
+        status: "ATIVA",
+        observacoes: null,
+        latitude: null,
+        longitude: null,
+        valorContratual: null,
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+        syncStatus: "PENDING_SYNC",
+        updatedAt: "2026-07-28T13:00:00.000Z",
+      },
+    ]);
+
+    renderFinanceiro();
+
+    const selector = await screen.findByRole("combobox", {
+      name: "Obra em análise",
+    });
+    expect(selector).toHaveTextContent("Obra ativa");
+    expect(selector).not.toHaveTextContent(
+      "Obra ainda ativa no servidor",
+    );
+    expect(listObrasLocais).toHaveBeenCalledWith({
+      includeArchived: true,
+    });
   });
 
   it("consulta o PDOR somente por obra, sem fabricar uma janela a partir dos filtros da receita", async () => {

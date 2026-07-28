@@ -20,6 +20,29 @@ export interface ObraRelacionadaApi {
   atualizadoEm: string | null;
 }
 
+export interface ObraArquivadaApi {
+  id: string;
+  codigoContrato: string | null;
+  codigoCw: string | null;
+  codigoInterno: string | null;
+  nome: string | null;
+  cliente: string | null;
+  descricao: string | null;
+  cidade: string | null;
+  uf: string | null;
+  rodovia: string | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  status: string | null;
+  fonteCriacao: string | null;
+  fonteArquivo: string | null;
+  observacoes: string | null;
+  criadoEm: string | null;
+  atualizadoEm: string | null;
+  arquivadoEm: string | null;
+  versaoLinha: number | null;
+}
+
 export interface PrevisaoHistoricoApi {
   id: string;
   obraId: string;
@@ -49,6 +72,13 @@ export async function buscarObrasRelacionadas(): Promise<
 > {
   const response = await apiFetch("/obras/relacionadas");
   return readJson<ObraRelacionadaApi[]>(response);
+}
+
+export async function buscarObrasArquivadas(): Promise<
+  ObraArquivadaApi[]
+> {
+  const response = await apiFetch("/obras/arquivadas");
+  return readJson<ObraArquivadaApi[]>(response);
 }
 
 export async function buscarHistoricoPrevisao(

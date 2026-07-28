@@ -1,4 +1,5 @@
 import {
+  obraRecordFromPayload,
   toNumberOrNull,
 } from "../../lib/db/homeRecordMappers";
 import {
@@ -7,12 +8,17 @@ import {
 import {
   putPrevisaoSnapshot,
 } from "../../lib/db/previsaoSnapshotRepository";
+import {
+  assertSyncSession,
+  captureOnlineSyncSession,
+} from "../../lib/sync/syncSession";
 import type {
   ObraLocalRecord,
   PrevisaoSnapshotRecord,
 } from "../../lib/db/db.types";
 import {
   buscarHistoricoPrevisao,
+  buscarObrasArquivadas,
   buscarObrasRelacionadas,
   type ObraRelacionadaApi,
   type PrevisaoHistoricoApi,
@@ -39,6 +45,7 @@ export function obraRecordFromApi(
     latitude: toNumberOrNull(api.latitude),
     longitude: toNumberOrNull(api.longitude),
     valorContratual: toNumberOrNull(api.valorContratual),
+    arquivadoEm: null,
     updatedAt: textOrNull(api.atualizadoEm) ?? nowIso,
   };
 }
@@ -82,6 +89,25 @@ export async function hydrateObrasRelacionadas(): Promise<number> {
   }
 
   return obras.length;
+}
+
+export async function hydrateObrasArquivadas(): Promise<number> {
+  const guard = captureOnlineSyncSession();
+  const obras = await buscarObrasArquivadas();
+  assertSyncSession(guard);
+  const nowIso = new Date().toISOString();
+  let saved = 0;
+
+  for (const obra of obras) {
+    assertSyncSession(guard);
+    const record = obraRecordFromPayload({ ...obra }, nowIso);
+    if (!record) continue;
+    await mergeObraLocal(record, guard);
+    saved += 1;
+  }
+
+  assertSyncSession(guard);
+  return saved;
 }
 
 export async function hydrateHistoricoObra(
