@@ -1,6 +1,7 @@
 package com.projeto.cortex.mensagens;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +11,7 @@ import com.projeto.cortex.mensagens.api.MessageResponse;
 import com.projeto.cortex.mensagens.api.MensagensController;
 import com.projeto.cortex.mensagens.domain.ConversaAccessPolicy;
 import com.projeto.cortex.mensagens.domain.MensagemService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,7 +73,8 @@ class PostgresqlMessagingSearchIT {
                 new ConversaAccessPolicy(jdbc, currentUser),
                 null,
                 null,
-                null
+                null,
+                mock(ObraOperabilityGuard.class)
         );
     }
 

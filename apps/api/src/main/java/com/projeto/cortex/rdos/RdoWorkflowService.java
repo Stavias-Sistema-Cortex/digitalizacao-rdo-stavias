@@ -1,6 +1,7 @@
 package com.projeto.cortex.rdos;
 
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,17 +16,20 @@ public class RdoWorkflowService {
     private final RdoQueryService queryService;
     private final RdoMemoryPublisher memoryPublisher;
     private final PrevisaoFinanceiraService previsaoFinanceiraService;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public RdoWorkflowService(
             JdbcTemplate jdbcTemplate,
             RdoQueryService queryService,
             RdoMemoryPublisher memoryPublisher,
-            PrevisaoFinanceiraService previsaoFinanceiraService
+            PrevisaoFinanceiraService previsaoFinanceiraService,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
         this.memoryPublisher = memoryPublisher;
         this.previsaoFinanceiraService = previsaoFinanceiraService;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Transactional
@@ -42,6 +46,7 @@ public class RdoWorkflowService {
                     "Apenas RDO em RASCUNHO pode ser enviado."
             );
         }
+        obraOperabilityGuard.requireWritable(buscarObraId(rdoId));
 
         int updated = jdbcTemplate.update(
                 """
@@ -96,6 +101,21 @@ public class RdoWorkflowService {
             );
         } catch (DataAccessException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "RDO não encontrado: " + rdoId);
+        }
+    }
+
+    private String buscarObraId(String rdoId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT obra_id FROM rdo WHERE id = ?",
+                    String.class,
+                    rdoId
+            );
+        } catch (DataAccessException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "RDO não encontrado: " + rdoId
+            );
         }
     }
 }

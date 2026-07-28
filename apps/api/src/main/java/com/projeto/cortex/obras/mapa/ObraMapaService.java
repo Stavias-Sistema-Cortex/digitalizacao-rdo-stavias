@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,25 +36,28 @@ public class ObraMapaService {
     private final CurrentUserService currentUserService;
     private final ObraGeometriaMemoryPublisher memoryPublisher;
     private final ObjectMapper objectMapper;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public ObraMapaService(
             ObraRepository obraRepository,
             ObraGeometriaRepository featureRepository,
             CurrentUserService currentUserService,
             ObraGeometriaMemoryPublisher memoryPublisher,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.obraRepository = obraRepository;
         this.featureRepository = featureRepository;
         this.currentUserService = currentUserService;
         this.memoryPublisher = memoryPublisher;
         this.objectMapper = objectMapper;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional(readOnly = true)
     public ObraMapaResponse buscarMapa(String obraId) {
         currentUserService.requireWorksiteAccess(obraId);
-        Obra obra = requireWorksite(obraId);
+        Obra obra = requireWorksiteForRead(obraId);
         return new ObraMapaResponse(
                 new ObraMapaResponse.ObraLocalizacaoResponse(
                         obra.getId(), obra.getNome(), obra.getLatitude(), obra.getLongitude()
@@ -69,8 +73,8 @@ public class ObraMapaService {
     @Transactional
     public ObraGeometriaResponse criar(String obraId, ObraGeometriaRequest request) {
         currentUserService.requireAlfa();
-        requireWorksite(obraId);
         NormalizedRequest normalized = normalize(request, obraId, false);
+        operabilityGuard.requireWritable(obraId);
         String actorId = currentUserService.requireUserId();
         ObraGeometria saved = featureRepository.saveAndFlush(ObraGeometria.criar(
                 obraId, normalized.category(), normalized.objectType(), normalized.objectId(),
@@ -94,6 +98,7 @@ public class ObraMapaService {
         requireMatchingVersion(feature, baseVersion);
         String reason = requiredText(request.motivo(), "Motivo da alteração geográfica obrigatório.");
         NormalizedRequest normalized = normalize(request, obraId, true);
+        operabilityGuard.requireWritable(obraId);
         String actorId = currentUserService.requireUserId();
         ObraGeometriaResponse before = toResponse(feature);
         feature.atualizar(
@@ -126,6 +131,7 @@ public class ObraMapaService {
                     HttpStatus.BAD_REQUEST, "Fim da vigência não pode anteceder seu início."
             );
         }
+        operabilityGuard.requireWritable(obraId);
         String actorId = currentUserService.requireUserId();
         ObraGeometriaResponse before = toResponse(feature);
         feature.encerrar(validUntil, reason, actorId);
@@ -208,9 +214,8 @@ public class ObraMapaService {
         }
     }
 
-    private Obra requireWorksite(String obraId) {
+    private Obra requireWorksiteForRead(String obraId) {
         return obraRepository.findById(obraId)
-                .filter(obra -> obra.getArquivadoEm() == null)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Obra não encontrada."));
     }
 

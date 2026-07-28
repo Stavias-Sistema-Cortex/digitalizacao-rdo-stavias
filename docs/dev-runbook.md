@@ -23,7 +23,7 @@ arquivos protegidos:
 cp .env.example .env
 ```
 
-O runtime normal usa `local,postgresql` e falha fechado sem schema V61, ALFA
+O runtime normal usa `local,postgresql` e falha fechado sem schema V63, ALFA
 real ativo e o gate explícito. A sequência completa é:
 
 ```bash
@@ -124,9 +124,17 @@ explícita por `start-postgres-activation.sh`.
 `CORTEX_IMPORT_ENABLED=false` é o padrão. Bootstrap e sincronização de
 Academy/Zeladoria só funcionam depois de configurar e verificar explicitamente
 URL, usuário com `SELECT` apenas no schema autorizado e arquivo de senha próprio
-para cada fonte. `CORTEX_SYNC_ENABLED=true` sozinho não cria essas credenciais
-nem comprova que a sincronização funciona. Nunca copie credenciais das fontes
-para Compose, documentação, logs ou fixtures.
+para cada fonte. As flags `CORTEX_SYNC_ACADEMY_ENABLED` e
+`CORTEX_SYNC_ZELADORIA_ENABLED` são independentes e não criam essas credenciais
+nem comprovam que a sincronização funciona. Em produção, a Academy exige
+`CORTEX_ACADEMY_DB_PASSWORD_FILE` e URL JDBC MySQL com
+`sslMode=VERIFY_IDENTITY`; senha inline é exclusiva dos perfis local/test.
+Quando o scheduler Academy está ativo, readiness exige que a execução mais
+recente de `acad_colaborador_import` esteja `SUCCESS`, finalizada e dentro de
+`CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão `900000`, três intervalos
+de cinco minutos). Com o scheduler desligado, esse gate não consulta
+`source_sync_run`.
+Nunca copie credenciais das fontes para Compose, documentação, logs ou fixtures.
 
 ## Testes
 

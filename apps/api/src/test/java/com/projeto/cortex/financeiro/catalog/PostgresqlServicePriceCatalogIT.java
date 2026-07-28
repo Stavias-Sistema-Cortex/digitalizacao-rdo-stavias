@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.ontology.graph.GraphProjectionCatchUpService;
 import com.projeto.cortex.ontology.graph.GraphProjectionService;
 import com.projeto.cortex.ontology.graph.OperationalGraphProjector;
@@ -286,6 +287,59 @@ class PostgresqlServicePriceCatalogIT {
     }
 
     @Test
+    void archivedWorksiteKeepsHistoricalCatalogReadAndExactReplay() {
+        String obra = insertWorksite("ARCHIVED-HISTORY");
+        String actor = insertActor("Archived History Owner");
+        ServicePriceCatalogService service = service(
+                org.mockito.Mockito.mock(ServiceCatalogOntologyPublisher.class)
+        );
+        CreateServiceCommand command = serviceCommand(
+                "CAT-ARCHIVED-HISTORY",
+                "CAT.ARCHIVED.HISTORY"
+        );
+        ServiceCatalogEntry created = inTx(() ->
+                service.createService(obra, actor, command)
+        );
+        ServicePriceVersion price = inTx(() -> service.createPrice(
+                obra,
+                actor,
+                created.id(),
+                priceCommand(
+                        "PRICE-ARCHIVED-HISTORY",
+                        "125.0000",
+                        LocalDate.of(2026, 1, 1),
+                        null
+                )
+        ));
+        jdbc.update(
+                "UPDATE obra SET arquivado_em = CURRENT_TIMESTAMP WHERE id = ?",
+                obra
+        );
+
+        ServiceCatalogPage historical = service.list(
+                obra,
+                "CAT.ARCHIVED.HISTORY",
+                null,
+                50
+        );
+        assertThat(historical.items())
+                .extracting(item -> item.service().id())
+                .containsExactly(created.id());
+        assertThat(inTx(() -> service.createService(obra, actor, command)).id())
+                .isEqualTo(created.id());
+        assertThat(inTx(() -> service.cancelPrice(
+                obra,
+                actor,
+                price.id(),
+                new CancelServicePriceCommand(
+                        "PRICE-ARCHIVED-CANCEL",
+                        LocalDate.of(2026, 2, 1),
+                        "Encerramento histórico após arquivamento"
+                )
+        )).status()).isEqualTo("CANCELLED");
+    }
+
+    @Test
     void exactNumericMaximumPersistsAndFirstOverflowIsSafeBadRequest() {
         String obra = insertWorksite("PRICE-BOUNDARY");
         String actor = insertActor("Price Boundary Owner");
@@ -549,6 +603,7 @@ class PostgresqlServicePriceCatalogIT {
         ServicePriceCatalogService olderClockService = new ServicePriceCatalogService(
                 repository(),
                 org.mockito.Mockito.mock(ServiceCatalogOntologyPublisher.class),
+                org.mockito.Mockito.mock(ObraOperabilityGuard.class),
                 Clock.fixed(NOW.minusSeconds(600), ZoneOffset.UTC)
         );
         ServiceCatalogEntry firstCatalog = inTx(() -> currentService.createService(
@@ -915,6 +970,7 @@ class PostgresqlServicePriceCatalogIT {
         return new ServicePriceCatalogService(
                 repository(),
                 publisher,
+                org.mockito.Mockito.mock(ObraOperabilityGuard.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }

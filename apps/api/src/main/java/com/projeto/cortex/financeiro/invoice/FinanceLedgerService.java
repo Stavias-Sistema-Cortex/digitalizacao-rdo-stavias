@@ -8,6 +8,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.core.FinanceValidation;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -56,17 +57,20 @@ public class FinanceLedgerService {
     private final CurrentUserService currentUser;
     private final FinanceOntologyProjector ontology;
     private final ObjectMapper objectMapper;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public FinanceLedgerService(
             JdbcTemplate jdbc,
             CurrentUserService currentUser,
             FinanceOntologyProjector ontology,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbc = jdbc;
         this.currentUser = currentUser;
         this.ontology = ontology;
         this.objectMapper = objectMapper;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Transactional
@@ -88,6 +92,7 @@ public class FinanceLedgerService {
             }
             return replay;
         }
+        obraOperabilityGuard.requireWritable(input.worksiteId());
         LedgerResponse previous = findLedger(input.id());
         boolean created = previous == null;
         requireLedgerStatus(input.worksiteId(), input.statusId());
@@ -321,6 +326,7 @@ public class FinanceLedgerService {
             }
             return replay;
         }
+        obraOperabilityGuard.requireWritable(input.worksiteId());
         SettlementResponse previous = findSettlement(input.id());
         boolean created = previous == null;
         boolean willApply = input.status().equals("EFETIVADA")

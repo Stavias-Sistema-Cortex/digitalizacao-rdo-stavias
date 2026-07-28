@@ -1,6 +1,7 @@
 package com.projeto.cortex.rdos;
 
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import org.springframework.http.HttpStatus;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,6 +31,7 @@ public class RdoDraftUpdateService {
     private final RdoAttachmentService attachmentService;
     private final RdoOperationalEventService operationalEventService;
     private final PrevisaoFinanceiraService previsaoFinanceiraService;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public RdoDraftUpdateService(
             JdbcTemplate jdbcTemplate,
@@ -40,7 +42,8 @@ public class RdoDraftUpdateService {
             RdoOperationalDetailService operationalDetailService,
             RdoAttachmentService attachmentService,
             RdoOperationalEventService operationalEventService,
-            PrevisaoFinanceiraService previsaoFinanceiraService
+            PrevisaoFinanceiraService previsaoFinanceiraService,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.queryService = queryService;
@@ -51,6 +54,7 @@ public class RdoDraftUpdateService {
         this.attachmentService = attachmentService;
         this.operationalEventService = operationalEventService;
         this.previsaoFinanceiraService = previsaoFinanceiraService;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Transactional
@@ -88,6 +92,7 @@ public class RdoDraftUpdateService {
                     "A obra de um RDO existente não pode ser alterada."
             );
         }
+        obraOperabilityGuard.requireWritable(estadoAnterior.obraId());
         validarProvenienciaImutavelEData(
                 rdoId,
                 request,

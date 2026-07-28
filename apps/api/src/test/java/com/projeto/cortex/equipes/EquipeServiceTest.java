@@ -1,6 +1,7 @@
 package com.projeto.cortex.equipes;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.VinculoColaboradorObraService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,11 +35,14 @@ class EquipeServiceTest {
     private final EquipeMemoryPublisher memoryPublisher = mock(EquipeMemoryPublisher.class);
     private final VinculoColaboradorObraService vinculoService =
             mock(VinculoColaboradorObraService.class);
+    private final ObraOperabilityGuard obraOperabilityGuard =
+            mock(ObraOperabilityGuard.class);
     private final EquipeService service = new EquipeService(
             jdbcTemplate,
             currentUserService,
             memoryPublisher,
-            vinculoService
+            vinculoService,
+            obraOperabilityGuard
     );
 
     @BeforeEach
@@ -93,11 +98,6 @@ class EquipeServiceTest {
         );
 
         when(currentUserService.requireUserId()).thenReturn("alfa-1");
-        when(jdbcTemplate.queryForObject(
-                contains("FROM obra"),
-                eq(Integer.class),
-                eq("obra-1")
-        )).thenReturn(1);
         when(jdbcTemplate.query(
                 contains("FROM equipe WHERE id"),
                 any(RowMapper.class),
@@ -119,6 +119,7 @@ class EquipeServiceTest {
         assertThat(created).isEqualTo(expected);
         verify(currentUserService).requireAlfa();
         verify(currentUserService, atLeastOnce()).requireWorksiteAccess("obra-1");
+        verify(obraOperabilityGuard).requireWritable("obra-1");
         verify(jdbcTemplate).update(
                 contains("obra_id, obra_principal_id"),
                 eq("equipe-1"),
@@ -140,6 +141,82 @@ class EquipeServiceTest {
         );
         verify(memoryPublisher).equipeCriada(expected, "alfa-1");
         verify(vinculoService, never()).vincular(any(), any(), any(), any());
+    }
+
+    @Test
+    void replayingExistingTeamSkipsArchivedWorksiteGuardAndWrites() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 15, 7, 30);
+        EquipeCreateRequest request = new EquipeCreateRequest(
+                "equipe-1",
+                "obra-1",
+                "Equipe Norte",
+                null,
+                startedAt
+        );
+        EquipeResponse expected = new EquipeResponse(
+                "equipe-1", "obra-1", "Obra 1", "Equipe Norte",
+                null, "ATIVA", startedAt, null, 1,
+                startedAt, startedAt, List.of()
+        );
+        when(jdbcTemplate.query(
+                contains("FROM equipe WHERE id"),
+                any(RowMapper.class),
+                eq("equipe-1")
+        )).thenReturn(List.of(new EquipeService.TeamIdentity(
+                "equipe-1",
+                "obra-1",
+                "Equipe Norte",
+                "ATIVA",
+                1
+        )));
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"),
+                any(RowMapper.class),
+                eq("equipe-1")
+        )).thenReturn(List.of(expected));
+        when(jdbcTemplate.query(
+                contains("FROM equipe_membro em"),
+                any(RowMapper.class),
+                eq("equipe-1")
+        )).thenReturn(List.of());
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(obraOperabilityGuard).requireWritable("obra-1");
+
+        assertThat(service.criar(request)).isEqualTo(expected);
+
+        verify(obraOperabilityGuard, never()).requireWritable(any());
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+    }
+
+    @Test
+    void archivedWorksiteBlocksNewTeamBeforeInsert() {
+        EquipeCreateRequest request = new EquipeCreateRequest(
+                "equipe-1",
+                "obra-1",
+                "Equipe Norte",
+                null,
+                null
+        );
+        when(jdbcTemplate.query(
+                contains("FROM equipe WHERE id"),
+                any(RowMapper.class),
+                eq("equipe-1")
+        )).thenReturn(List.of());
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(obraOperabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.criar(request))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(exception.getReason()).isEqualTo("Obra não encontrada ou arquivada.");
+                });
+
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+        verify(memoryPublisher, never()).equipeCriada(any(), any());
     }
 
     @Test
@@ -175,6 +252,51 @@ class EquipeServiceTest {
 
         verify(jdbcTemplate, never()).update(contains("UPDATE equipe"), any(Object[].class));
         verify(memoryPublisher, never()).equipeAtualizada(any(), any(), any(), anyLong(), any());
+    }
+
+    @Test
+    void archivedPrincipalWorksiteBlocksTeamUpdateBeforeAnyWrite() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 15, 7, 30);
+        when(jdbcTemplate.query(
+                contains("FROM equipe WHERE id"),
+                any(RowMapper.class),
+                eq("equipe-1")
+        )).thenReturn(List.of(new EquipeService.TeamIdentity(
+                "equipe-1",
+                "obra-1",
+                "Equipe Norte",
+                "ATIVA",
+                4
+        )));
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(obraOperabilityGuard).requireWritable("obra-1");
+        EquipeUpdateRequest request = new EquipeUpdateRequest(
+                "Equipe Norte B",
+                "Novo escopo",
+                "ATIVA",
+                startedAt,
+                null,
+                4L,
+                "Ajuste operacional"
+        );
+
+        assertThatThrownBy(() -> service.atualizar("equipe-1", request))
+                .isInstanceOfSatisfying(
+                        ResponseStatusException.class,
+                        exception -> assertThat(exception.getStatusCode())
+                                .isEqualTo(HttpStatus.NOT_FOUND)
+                );
+
+        verify(obraOperabilityGuard).requireWritable("obra-1");
+        verify(jdbcTemplate, never()).update(
+                contains("UPDATE equipe"),
+                any(Object[].class)
+        );
+        verify(memoryPublisher, never()).equipeAtualizada(
+                any(), any(), any(), anyLong(), any()
+        );
     }
 
     @Test
@@ -249,6 +371,7 @@ class EquipeServiceTest {
         EquipeMemberResponse created = service.adicionarMembro("equipe-1", request);
 
         assertThat(created).isEqualTo(member);
+        verify(obraOperabilityGuard).requireWritable("obra-1");
         verify(jdbcTemplate).update(
                 contains("adicionado_por, atribuido_por"),
                 eq("participacao-1"),
@@ -263,6 +386,54 @@ class EquipeServiceTest {
         );
         verify(vinculoService, never()).vincular(any(), any(), any(), any());
         verify(memoryPublisher).membroAdicionado(team, member, "alfa-1");
+    }
+
+    @Test
+    void replayingActiveMemberSkipsArchivedWorksiteGuardAndValidationWrites() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 15, 8, 0);
+        EquipeResponse team = new EquipeResponse(
+                "equipe-1", "obra-1", "Obra 1", "Equipe Norte",
+                null, "ATIVA", startedAt, null, 1,
+                startedAt, startedAt, List.of()
+        );
+        EquipeMemberResponse existing = new EquipeMemberResponse(
+                "participacao-1", "equipe-1", "colab-1", "Ana",
+                "funcao-1", "OPERADOR", "Operador", false,
+                "ATIVO", startedAt, null, null, 1,
+                startedAt, startedAt
+        );
+        EquipeMemberRequest request = new EquipeMemberRequest(
+                "outra-participacao", "colab-1", "funcao-inativa",
+                false, startedAt, null, null, true
+        );
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of(team));
+        when(jdbcTemplate.query(
+                contains("WHERE em.equipe_id = ?"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of());
+        when(jdbcTemplate.query(
+                contains("em.colaborador_id = ?"),
+                any(RowMapper.class),
+                eq("equipe-1"),
+                eq("colab-1")
+        )).thenReturn(List.of(existing));
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(obraOperabilityGuard).requireWritable("obra-1");
+
+        assertThat(service.adicionarMembro("equipe-1", request)).isEqualTo(existing);
+
+        verify(obraOperabilityGuard, never()).requireWritable(any());
+        verify(jdbcTemplate, never()).queryForObject(
+                contains("FROM funcao_operacional"), eq(Integer.class), any()
+        );
+        verify(jdbcTemplate, never()).queryForObject(
+                contains("FROM colaborador"), eq(Integer.class), any()
+        );
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+        verify(vinculoService, never()).vincular(any(), any(), any(), any());
     }
 
     @Test
@@ -455,6 +626,63 @@ class EquipeServiceTest {
     }
 
     @Test
+    void archivedPrincipalWorksiteBlocksMemberUpdateBeforeAnyWrite() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 1, 8, 0);
+        EquipeResponse team = new EquipeResponse(
+                "equipe-1", "obra-1", "Duplicação SP-000", "Equipe Norte",
+                null, "ATIVA", startedAt, null, 2,
+                startedAt, startedAt, List.of()
+        );
+        EquipeMemberResponse before = new EquipeMemberResponse(
+                "participacao-1", "equipe-1", "colab-1", "Ana Operadora",
+                "funcao-1", "OPERADOR", "Operador", false,
+                "ATIVO", startedAt, null, null, 3,
+                startedAt, startedAt
+        );
+        EquipeMemberRequest request = new EquipeMemberRequest(
+                null, "colab-1", "funcao-2", true,
+                startedAt, 3L, "Mudança de responsabilidade", false
+        );
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of(team));
+        when(jdbcTemplate.query(
+                contains("WHERE em.equipe_id = ?"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of());
+        when(jdbcTemplate.query(
+                contains("WHERE em.id = ?"), any(RowMapper.class), eq("participacao-1")
+        )).thenReturn(List.of(before));
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(obraOperabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.atualizarMembro(
+                "equipe-1",
+                "participacao-1",
+                request
+        )).isInstanceOfSatisfying(
+                ResponseStatusException.class,
+                exception -> assertThat(exception.getStatusCode())
+                        .isEqualTo(HttpStatus.NOT_FOUND)
+        );
+
+        verify(obraOperabilityGuard).requireWritable("obra-1");
+        verify(jdbcTemplate, never()).queryForObject(
+                contains("FROM funcao_operacional"),
+                eq(Integer.class),
+                any()
+        );
+        verify(jdbcTemplate, never()).update(
+                contains("UPDATE equipe_membro"),
+                any(Object[].class)
+        );
+        verify(memoryPublisher, never()).membroAtualizado(
+                any(), any(), any(), any(), anyLong(), any()
+        );
+    }
+
+    @Test
     void alfaCreatesConfigurableOperationalFunctionWithoutSeedData() {
         LocalDateTime createdAt = LocalDateTime.of(2026, 7, 15, 11, 30);
         FuncaoOperacionalRequest request = new FuncaoOperacionalRequest(
@@ -597,9 +825,6 @@ class EquipeServiceTest {
         when(jdbcTemplate.query(
                 contains("WHERE em.equipe_id = ?"), any(RowMapper.class), eq("equipe-1")
         )).thenReturn(List.of());
-        when(jdbcTemplate.queryForObject(
-                contains("FROM obra"), eq(Integer.class), eq("obra-secundaria")
-        )).thenReturn(1);
         when(jdbcTemplate.query(
                 contains("eo.obra_id = ?"),
                 any(RowMapper.class),
@@ -615,6 +840,7 @@ class EquipeServiceTest {
         EquipeWorksiteResponse created = service.adicionarObra("equipe-1", request);
 
         assertThat(created).isEqualTo(link);
+        verify(obraOperabilityGuard).requireWritable("obra-secundaria");
         verify(jdbcTemplate).update(
                 contains("versao_linha"),
                 eq("alocacao-2"),
@@ -624,5 +850,45 @@ class EquipeServiceTest {
                 eq("alfa-1")
         );
         verify(memoryPublisher).obraAssociada(team, link, "alfa-1");
+    }
+
+    @Test
+    void replayingActiveWorksiteLinkSkipsArchivedWorksiteGuardAndInsert() {
+        LocalDateTime startedAt = LocalDateTime.of(2026, 7, 15, 12, 0);
+        EquipeResponse team = new EquipeResponse(
+                "equipe-1", "obra-principal", "Obra principal", "Equipe móvel",
+                null, "ATIVA", startedAt, null, 2,
+                startedAt, startedAt, List.of()
+        );
+        EquipeWorksiteResponse existing = new EquipeWorksiteResponse(
+                "alocacao-2", "equipe-1", "obra-secundaria", "Obra secundária",
+                "ATIVO", startedAt, null, null, 1,
+                startedAt, startedAt
+        );
+        EquipeWorksiteRequest request = new EquipeWorksiteRequest(
+                "alocacao-nova", "obra-secundaria", startedAt
+        );
+        when(jdbcTemplate.query(
+                contains("FROM equipe e"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of(team));
+        when(jdbcTemplate.query(
+                contains("WHERE em.equipe_id = ?"), any(RowMapper.class), eq("equipe-1")
+        )).thenReturn(List.of());
+        when(jdbcTemplate.query(
+                contains("eo.obra_id = ?"),
+                any(RowMapper.class),
+                eq("equipe-1"),
+                eq("obra-secundaria")
+        )).thenReturn(List.of(existing));
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(obraOperabilityGuard).requireWritable("obra-secundaria");
+
+        assertThat(service.adicionarObra("equipe-1", request)).isEqualTo(existing);
+
+        verify(obraOperabilityGuard, never()).requireWritable(any());
+        verify(jdbcTemplate, never()).update(any(String.class), any(Object[].class));
+        verify(memoryPublisher, never()).obraAssociada(any(), any(), any());
     }
 }

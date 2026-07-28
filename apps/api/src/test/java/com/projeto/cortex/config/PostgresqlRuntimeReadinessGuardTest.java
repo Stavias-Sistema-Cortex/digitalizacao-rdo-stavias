@@ -1,9 +1,14 @@
 package com.projeto.cortex.config;
 
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.core.Ordered;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,19 +18,15 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class PostgresqlRuntimeReadinessGuardTest {
 
     @Test
-    void configuredRuntimeRequiresTheCompleteV61Chain() throws Exception {
-        var field = PostgresqlRuntimeReadinessGuard.class.getDeclaredField(
-                "CLEAN_START_REQUIRED_SCHEMA_VERSION"
-        );
-        field.setAccessible(true);
-
-        assertThat(field.get(null)).isEqualTo("61");
+    void configuredRuntimeRequiresTheCompleteV63Chain() throws Exception {
+        assertThat(PostgresqlSchemaVersion.REQUIRED).isEqualTo("63");
     }
 
     @Test
@@ -97,14 +98,14 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void refusesWhenTheExplicitV61RowIsAbsent() {
+    void refusesWhenTheExplicitV63RowIsAbsent() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(0);
 
         assertThatThrownBy(() -> guard(jdbcTemplate, true, released()).verifyReadiness())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cadeia de migrações até V61");
-        verify(jdbcTemplate).queryForObject(contains("version = '61'"), eq(Integer.class));
+                .hasMessageContaining("cadeia de migrações até V63");
+        verify(jdbcTemplate).queryForObject(contains("version = '63'"), eq(Integer.class));
     }
 
     @Test
@@ -119,7 +120,7 @@ class PostgresqlRuntimeReadinessGuardTest {
     }
 
     @Test
-    void acceptsOnlyV61AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
+    void acceptsOnlyV63AcademyIdentityOwnerFlagAndReleasedSurfaceTogether() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
 
@@ -160,13 +161,194 @@ class PostgresqlRuntimeReadinessGuardTest {
                 .verifyRuntimeReadiness()).doesNotThrowAnyException();
     }
 
+    @Test
+    void disabledAcademySchedulerDoesNotRequireOrQuerySyncFreshness() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+
+        assertThatCode(() -> guardWithAcademySync(
+                jdbcTemplate,
+                false,
+                900_000L
+        ).verifyRuntimeReadiness()).doesNotThrowAnyException();
+
+        verify(jdbcTemplate, never()).queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        );
+    }
+
+    @Test
+    void enabledAcademySchedulerMayStartBeforeItsFirstCompletedRun() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+
+        assertThatCode(() -> guardWithAcademySync(
+                jdbcTemplate,
+                true,
+                900_000L
+        ).verifyReadiness()).doesNotThrowAnyException();
+
+        verify(jdbcTemplate, never()).queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        );
+    }
+
+    @Test
+    void endpointReadinessRefusesWhenThereIsNoCompletedRun() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+        when(jdbcTemplate.queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        )).thenReturn(List.of());
+
+        assertThatThrownBy(() -> guardWithAcademySync(
+                jdbcTemplate,
+                true,
+                900_000L
+        ).verifyRuntimeReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sincronização Academy")
+                .hasMessageContaining("recente")
+                .hasMessageContaining("bem-sucedida");
+    }
+
+    @Test
+    void enabledAcademySchedulerRefusesAStaleSuccessfulRun() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+        LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
+        when(jdbcTemplate.queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        )).thenReturn(List.of(academyRun(
+                "SUCCESS",
+                databaseNow.minusMinutes(16),
+                databaseNow
+        )));
+
+        assertThatThrownBy(() -> guardWithAcademySync(
+                jdbcTemplate,
+                true,
+                900_000L
+        ).verifyRuntimeReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sincronização Academy")
+                .hasMessageContaining("recente");
+    }
+
+    @Test
+    void enabledAcademySchedulerAcceptsAFreshSuccessfulRun() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+        LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
+        when(jdbcTemplate.queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        )).thenReturn(List.of(academyRun(
+                "SUCCESS",
+                databaseNow.minusMinutes(5),
+                databaseNow
+        )));
+
+        assertThatCode(() -> guardWithAcademySync(
+                jdbcTemplate,
+                true,
+                900_000L
+        ).verifyRuntimeReadiness()).doesNotThrowAnyException();
+
+        verify(jdbcTemplate).queryForList(
+                contains("ORDER BY started_at DESC, id DESC"),
+                eq("acad_colaborador_import")
+        );
+    }
+
+    @Test
+    void enabledAcademySchedulerFailsClosedAndRedactsQueryErrors() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+        when(jdbcTemplate.queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        )).thenThrow(new DataAccessResourceFailureException(
+                "jdbc:mysql://academy.invalid/db?password=do-not-leak"
+        ));
+
+        assertThatThrownBy(() -> guardWithAcademySync(
+                jdbcTemplate,
+                true,
+                900_000L
+        ).verifyRuntimeReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("PostgreSQL Córtex não está pronto para validar a sincronização Academy.")
+                .hasMessageNotContaining("jdbc:mysql")
+                .hasMessageNotContaining("do-not-leak")
+                .hasNoCause();
+    }
+
+    @Test
+    void endpointReadinessRefusesAFutureSuccessfulRun() {
+        JdbcTemplate jdbcTemplate = readyPostgresql();
+        LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
+        when(jdbcTemplate.queryForList(
+                contains("source_sync_run"),
+                eq("acad_colaborador_import")
+        )).thenReturn(List.of(academyRun(
+                "SUCCESS",
+                databaseNow.plusSeconds(1),
+                databaseNow
+        )));
+
+        assertThatThrownBy(() -> guardWithAcademySync(
+                jdbcTemplate,
+                true,
+                900_000L
+        ).verifyRuntimeReadiness())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sincronização Academy")
+                .hasMessageContaining("recente");
+    }
+
     private PostgresqlRuntimeReadinessGuard guard(
             JdbcTemplate jdbcTemplate,
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry registry
     ) {
         return new PostgresqlRuntimeReadinessGuard(
-                jdbcTemplate, "61", runtimeReady, registry
+                jdbcTemplate, "63", runtimeReady, registry
+        );
+    }
+
+    private PostgresqlRuntimeReadinessGuard guardWithAcademySync(
+            JdbcTemplate jdbcTemplate,
+            boolean academySyncEnabled,
+            long readinessMaxAgeMs
+    ) {
+        return new PostgresqlRuntimeReadinessGuard(
+                jdbcTemplate,
+                "63",
+                true,
+                released(),
+                academySyncEnabled,
+                readinessMaxAgeMs
+        );
+    }
+
+    private JdbcTemplate readyPostgresql() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(
+                "SELECT TRUE",
+                Boolean.class
+        )).thenReturn(true);
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1);
+        return jdbcTemplate;
+    }
+
+    private Map<String, Object> academyRun(
+            String status,
+            LocalDateTime finishedAt,
+            LocalDateTime databaseNow
+    ) {
+        return Map.of(
+                "status", status,
+                "finished_at", Timestamp.valueOf(finishedAt),
+                "database_now", Timestamp.valueOf(databaseNow)
         );
     }
 

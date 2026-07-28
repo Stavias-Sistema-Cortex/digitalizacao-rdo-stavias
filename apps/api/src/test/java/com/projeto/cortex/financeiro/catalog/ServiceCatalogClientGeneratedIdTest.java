@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.financeiro.catalog.ServicePriceCatalogRepository.CreatePriceRecord;
 import com.projeto.cortex.financeiro.catalog.ServicePriceCatalogRepository.CreateServiceRecord;
 import java.math.BigDecimal;
@@ -42,6 +43,7 @@ class ServiceCatalogClientGeneratedIdTest {
         service = new ServicePriceCatalogService(
                 repository,
                 mock(ServiceCatalogOntologyPublisher.class),
+                mock(ObraOperabilityGuard.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }

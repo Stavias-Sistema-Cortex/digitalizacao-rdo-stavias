@@ -12,8 +12,8 @@ repo_root="$(cd "$(git rev-parse --show-toplevel)" && pwd -P)"
 runtime_password="$CORTEX_NEON_RUNTIME_PASSWORD"
 migrator_role="$CORTEX_NEON_MIGRATOR_ROLE"
 
-[[ "$migrator_role" =~ ^[a-z_][a-z0-9_]*$ ]] || {
-  echo "Neon migrator role must be a lowercase PostgreSQL identifier." >&2
+[[ "$migrator_role" == "cortex_migrator" ]] || {
+  echo "Neon migrator role must be exactly cortex_migrator." >&2
   exit 1
 }
 

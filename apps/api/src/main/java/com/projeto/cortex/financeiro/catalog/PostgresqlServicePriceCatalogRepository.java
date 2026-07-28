@@ -119,7 +119,7 @@ public class PostgresqlServicePriceCatalogRepository
     public boolean worksiteExists(String obraId) {
         Integer count = jdbc.queryForObject("""
                 SELECT count(*) FROM obra
-                WHERE id = ? AND arquivado_em IS NULL
+                WHERE id = ?
                 """, Integer.class, obraId);
         return count != null && count == 1;
     }

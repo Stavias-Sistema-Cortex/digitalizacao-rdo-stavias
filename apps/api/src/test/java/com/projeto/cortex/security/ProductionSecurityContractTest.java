@@ -32,8 +32,12 @@ class ProductionSecurityContractTest {
                 "CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE:",
                 "CORTEX_ACADEMY_DB_URL:",
                 "CORTEX_ACADEMY_DB_USER:",
-                "target: CORTEX_ACADEMY_DB_PASSWORD",
+                "CORTEX_ACADEMY_DB_PASSWORD_FILE: /run/secrets/cortex_academy_password",
+                "target: cortex_academy_password",
                 "CORTEX_ACADEMY_DB_PASSWORD_FILE:",
+                "CORTEX_SYNC_ACADEMY_ENABLED:",
+                "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:",
+                "CORTEX_SYNC_ZELADORIA_ENABLED:",
                 "CORTEX_ZELADORIA_DB_URL:",
                 "CORTEX_ZELADORIA_DB_USER:",
                 "target: CORTEX_ZELADORIA_DB_PASSWORD",
@@ -47,6 +51,8 @@ class ProductionSecurityContractTest {
                 "\n      CORTEX_POSTGRES_PASSWORD:",
                 "\n      CORTEX_ACADEMY_DB_PASSWORD:",
                 "\n      CORTEX_ZELADORIA_DB_PASSWORD:",
+                "target: CORTEX_ACADEMY_DB_PASSWORD",
+                "CORTEX_SYNC_ENABLED:",
                 "CORTEX_POSTGRES_PASSWORD_SECRET_FILE",
                 "CORTEX_MEMORY_CURSOR_HMAC_SECRET_FILE",
                 "\n      AWS_SECRET_ACCESS_KEY:"
@@ -70,12 +76,42 @@ class ProductionSecurityContractTest {
                 "CORTEX_ACADEMY_DB_URL=",
                 "CORTEX_ACADEMY_DB_USER=",
                 "CORTEX_ACADEMY_DB_PASSWORD_FILE=",
+                "CORTEX_SYNC_ACADEMY_ENABLED=false",
+                "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000",
+                "CORTEX_SYNC_ZELADORIA_ENABLED=false",
                 "CORTEX_ZELADORIA_DB_URL=",
                 "CORTEX_ZELADORIA_DB_USER=",
                 "CORTEX_ZELADORIA_DB_PASSWORD_FILE="
         ).doesNotContain(
                 "CORTEX_DB_PASSWORD=",
-                "CORTEX_POSTGRES_PASSWORD_SECRET_FILE="
+                "CORTEX_POSTGRES_PASSWORD_SECRET_FILE=",
+                "CORTEX_SYNC_ENABLED="
+        );
+    }
+
+    @Test
+    void academyLeafPinIsAHostMountedUntrackedRenderSecret() throws Exception {
+        String gitignore = Files.readString(REPOSITORY_ROOT.resolve(".gitignore"));
+        String render = Files.readString(REPOSITORY_ROOT.resolve("render.yaml"));
+        String runbook = Files.readString(
+                REPOSITORY_ROOT.resolve(
+                        "docs/operations/cortex-hosted-pilot.md"
+                )
+        );
+
+        assertThat(gitignore).contains("*.p12", "*.pfx", "*.jks");
+        assertThat(render).contains(
+                "/etc/secrets/cortex-academy-truststore.p12"
+        );
+        assertThat(runbook).contains(
+                "sslMode=VERIFY_IDENTITY",
+                "sslMode=VERIFY_CA",
+                "trustCertificateKeyStoreUrl=file:/etc/secrets/"
+                        + "cortex-academy-truststore.p12",
+                "trustCertificateKeyStoreType=PKCS12",
+                "fallbackToSystemTrustStore=false",
+                "uma entrada confiável",
+                "certificado folha não-CA"
         );
     }
 

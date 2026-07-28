@@ -12,6 +12,7 @@ import com.projeto.cortex.auth.session.IssuedAuthSession;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import com.projeto.cortex.obras.ObraSeedImportService;
 import com.projeto.cortex.programacoes.ProgramacaoSeedImportService;
@@ -247,7 +248,8 @@ class PdorCw38386MysqlIntegrationTest {
                 objectMapper,
                 mock(CortexOperationalMemoryService.class),
                 new PdorContextBuilder(),
-                engine
+                engine,
+                mock(ObraOperabilityGuard.class)
         );
 
         PdorResultadoResponse response =
@@ -269,7 +271,8 @@ class PdorCw38386MysqlIntegrationTest {
                 objectMapper,
                 mock(CortexOperationalMemoryService.class),
                 new PdorContextBuilder(),
-                new PdorEngine()
+                new PdorEngine(),
+                mock(ObraOperabilityGuard.class)
         );
         MockMvc raceMvc = MockMvcBuilders
                 .standaloneSetup(new PdorController(

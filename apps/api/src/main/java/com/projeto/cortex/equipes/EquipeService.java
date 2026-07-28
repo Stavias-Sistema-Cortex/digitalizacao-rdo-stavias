@@ -1,6 +1,7 @@
 package com.projeto.cortex.equipes;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.VinculoColaboradorObraService;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,17 +29,20 @@ public class EquipeService {
     private final CurrentUserService currentUserService;
     private final EquipeMemoryPublisher memoryPublisher;
     private final VinculoColaboradorObraService vinculoService;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public EquipeService(
             JdbcTemplate jdbcTemplate,
             CurrentUserService currentUserService,
             EquipeMemoryPublisher memoryPublisher,
-            VinculoColaboradorObraService vinculoService
+            VinculoColaboradorObraService vinculoService,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
         this.memoryPublisher = memoryPublisher;
         this.vinculoService = vinculoService;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     public EquipePageResponse listar(EquipeFilter requestedFilter) {
@@ -186,7 +190,6 @@ public class EquipeService {
         }
         String worksiteId = requireId(request.obraId(), "obraId");
         currentUserService.requireWorksiteAccess(worksiteId);
-        requireExistingWorksite(worksiteId);
 
         List<EquipeWorksiteResponse> existing = jdbcTemplate.query(
                 worksiteSelect()
@@ -200,6 +203,7 @@ public class EquipeService {
         if (!existing.isEmpty()) {
             return existing.getFirst();
         }
+        obraOperabilityGuard.requireWritable(worksiteId);
 
         String linkId = request.id() == null || request.id().isBlank()
                 ? UUID.randomUUID().toString()
@@ -316,6 +320,7 @@ public class EquipeService {
         if (identity.version() != baseVersion) {
             throw teamVersionConflict();
         }
+        obraOperabilityGuard.requireWritable(identity.worksiteId());
 
         String name = requireText(request.nome(), "nome", 160);
         String description = trimToNull(request.descricao());
@@ -410,13 +415,13 @@ public class EquipeService {
                 : request.inicioEm();
         boolean responsible = Boolean.TRUE.equals(request.responsavel());
 
-        requireActiveFunction(functionId);
-        requireActiveCollaborator(collaboratorId);
-
         EquipeMemberResponse existing = findActiveMember(team.id(), collaboratorId);
         if (existing != null) {
             return existing;
         }
+        obraOperabilityGuard.requireWritable(team.obraPrincipalId());
+        requireActiveFunction(functionId);
+        requireActiveCollaborator(collaboratorId);
 
         jdbcTemplate.update(
                 """
@@ -493,6 +498,7 @@ public class EquipeService {
                     "O colaborador de uma participação não pode ser substituído."
             );
         }
+        obraOperabilityGuard.requireWritable(team.obraPrincipalId());
         String functionId = requireId(request.funcaoOperacionalId(), "funcaoOperacionalId");
         requireActiveFunction(functionId);
         LocalDateTime start = request.inicioEm() == null ? before.inicioEm() : request.inicioEm();
@@ -903,7 +909,6 @@ public class EquipeService {
                 : request.inicioValidadeEm();
 
         currentUserService.requireWorksiteAccess(worksiteId);
-        requireExistingWorksite(worksiteId);
 
         TeamIdentity existing = findIdentity(id);
         if (existing != null) {
@@ -915,6 +920,7 @@ public class EquipeService {
             }
             return buscarPorId(id);
         }
+        obraOperabilityGuard.requireWritable(worksiteId);
 
         jdbcTemplate.update(
                 """
@@ -1157,17 +1163,6 @@ public class EquipeService {
                 toLocalDateTime(rs.getTimestamp("atualizado_em")),
                 List.of()
         );
-    }
-
-    private void requireExistingWorksite(String worksiteId) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM obra WHERE id = ? AND arquivado_em IS NULL",
-                Integer.class,
-                worksiteId
-        );
-        if (count == null || count == 0) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Obra não encontrada ou arquivada.");
-        }
     }
 
     private void requireTeamReadAccess(String teamId) {

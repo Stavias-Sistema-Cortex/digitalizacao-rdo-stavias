@@ -3,12 +3,14 @@ package com.projeto.cortex.obras.mapa;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,7 +18,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,13 +33,16 @@ class ObraMapaServiceTest {
     private final CurrentUserService currentUserService = mock(CurrentUserService.class);
     private final ObraGeometriaMemoryPublisher memoryPublisher =
             mock(ObraGeometriaMemoryPublisher.class);
+    private final ObraOperabilityGuard operabilityGuard =
+            mock(ObraOperabilityGuard.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ObraMapaService service = new ObraMapaService(
             obraRepository,
             featureRepository,
             currentUserService,
             memoryPublisher,
-            objectMapper
+            objectMapper,
+            operabilityGuard
     );
 
     @Test
@@ -57,6 +65,25 @@ class ObraMapaServiceTest {
     }
 
     @Test
+    void readKeepsArchivedWorksiteHistoryAvailable() {
+        Obra obra = mock(Obra.class);
+        when(obra.getId()).thenReturn("obra-archived");
+        when(obra.getNome()).thenReturn("Obra arquivada");
+        when(obra.getArquivadoEm()).thenReturn(LocalDateTime.now());
+        when(obraRepository.findById("obra-archived"))
+                .thenReturn(Optional.of(obra));
+        when(featureRepository.findByObraIdAndStatusOrderByValidoDesdeAscIdAsc(
+                "obra-archived",
+                "ATIVA"
+        )).thenReturn(List.of());
+
+        ObraMapaResponse response = service.buscarMapa("obra-archived");
+
+        assertThat(response.obra().id()).isEqualTo("obra-archived");
+        verify(operabilityGuard, never()).requireWritable(any());
+    }
+
+    @Test
     void createPersistsValidatedGeoJsonAndPublishesOntology() throws Exception {
         Obra obra = mock(Obra.class);
         when(obraRepository.findById("obra-1")).thenReturn(Optional.of(obra));
@@ -76,6 +103,7 @@ class ObraMapaServiceTest {
                 )
         );
 
+        verify(operabilityGuard).requireWritable("obra-1");
         ArgumentCaptor<ObraGeometria> captor =
                 ArgumentCaptor.forClass(ObraGeometria.class);
         verify(featureRepository).saveAndFlush(captor.capture());
@@ -106,5 +134,98 @@ class ObraMapaServiceTest {
         assertThatThrownBy(() -> service.atualizar("obra-1", existing.getId(), request))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("alterada por outra operação");
+    }
+
+    @Test
+    void archivedWorksiteRejectsCreateBeforePersistence() throws Exception {
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND
+        )).when(operabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.criar(
+                "obra-1",
+                validRequest(null)
+        )).isInstanceOf(ResponseStatusException.class);
+
+        verify(featureRepository, never()).saveAndFlush(any());
+        verify(memoryPublisher, never()).criada(any(), any(), any());
+    }
+
+    @Test
+    void archivedWorksiteRejectsUpdateBeforePersistence() throws Exception {
+        ObraGeometria existing = existingFeature();
+        when(featureRepository.findByIdAndObraId(existing.getId(), "obra-1"))
+                .thenReturn(Optional.of(existing));
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND
+        )).when(operabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.atualizar(
+                "obra-1",
+                existing.getId(),
+                validRequest(0L)
+        )).isInstanceOf(ResponseStatusException.class);
+
+        verify(featureRepository, never()).saveAndFlush(any());
+        verify(memoryPublisher, never()).atualizada(
+                any(), any(), any(), any(), anyLong(), any()
+        );
+    }
+
+    @Test
+    void archivedWorksiteRejectsEndBeforePersistence() {
+        ObraGeometria existing = existingFeature();
+        when(featureRepository.findByIdAndObraId(existing.getId(), "obra-1"))
+                .thenReturn(Optional.of(existing));
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND
+        )).when(operabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.encerrar(
+                "obra-1",
+                existing.getId(),
+                new ObraGeometriaEndRequest(
+                        0L,
+                        "Encerramento",
+                        null
+                )
+        )).isInstanceOf(ResponseStatusException.class);
+
+        verify(featureRepository, never()).saveAndFlush(any());
+        verify(memoryPublisher, never()).encerrada(
+                any(), any(), any(), any(), anyLong(), any()
+        );
+    }
+
+    private ObraGeometria existingFeature() {
+        return ObraGeometria.criar(
+                "obra-1",
+                "TRECHO",
+                "TRECHO",
+                "trecho-1",
+                "LINESTRING",
+                "{\"type\":\"LineString\",\"coordinates\":[[-54.65,-20.44],[-54.63,-20.43]]}",
+                "{}",
+                "CAMPO",
+                null,
+                "alfa-1"
+        );
+    }
+
+    private ObraGeometriaRequest validRequest(Long baseVersion)
+            throws Exception {
+        return new ObraGeometriaRequest(
+                "TRECHO",
+                "TRECHO",
+                "trecho-1",
+                objectMapper.readTree("""
+                        {"type":"LineString","coordinates":[[-54.66,-20.45],[-54.62,-20.42]]}
+                        """),
+                Map.of(),
+                "CAMPO",
+                null,
+                baseVersion,
+                "Correção topográfica"
+        );
     }
 }

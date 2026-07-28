@@ -19,6 +19,7 @@ import com.projeto.cortex.financeiro.core.FinanceCatalogService;
 import com.projeto.cortex.financeiro.core.FinanceDtos;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.core.FinancePurchaseService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.sql.ResultSet;
@@ -63,7 +64,8 @@ class FinanceStoredWorksiteAuthorizationTest {
                 currentUser,
                 access,
                 mock(FinanceOntologyProjector.class),
-                new ObjectMapper()
+                new ObjectMapper(),
+                mock(ObraOperabilityGuard.class)
         );
         FinanceAuditContext audit = FinanceAuditContext.online(ACTOR, "security-test");
 
@@ -100,7 +102,8 @@ class FinanceStoredWorksiteAuthorizationTest {
                 currentUser,
                 access,
                 mock(FinanceOntologyProjector.class),
-                new ObjectMapper()
+                new ObjectMapper(),
+                mock(ObraOperabilityGuard.class)
         );
 
         assertThatThrownBy(() -> service.archivePurchase(
@@ -147,7 +150,8 @@ class FinanceStoredWorksiteAuthorizationTest {
                 currentUser,
                 access,
                 mock(FinanceOntologyProjector.class),
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
         FinanceDtos.PurchaseRequest changedPayload = new FinanceDtos.PurchaseRequest(
                 PURCHASE_ID,
@@ -189,6 +193,79 @@ class FinanceStoredWorksiteAuthorizationTest {
                 FinanceAuditContext.online(ACTOR, "security-test")
         )).isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("outro conteúdo");
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void archivedWorksiteBlocksPurchaseCreationAndDecisionBeforeWrites() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        FinancialAccessService access = mock(FinancialAccessService.class);
+        ObraOperabilityGuard guard = mock(ObraOperabilityGuard.class);
+        when(currentUser.requireUserId()).thenReturn(ACTOR);
+        when(jdbc.query(anyString(), any(RowMapper.class), eq(PURCHASE_ID)))
+                .thenReturn(List.of(purchase()));
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(guard).requireWritable(WORKSITE_A);
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(guard).requireWritable(WORKSITE_B);
+        FinancePurchaseService service = new FinancePurchaseService(
+                jdbc,
+                currentUser,
+                access,
+                mock(FinanceOntologyProjector.class),
+                new ObjectMapper().findAndRegisterModules(),
+                guard
+        );
+        FinanceDtos.PurchaseRequest create = new FinanceDtos.PurchaseRequest(
+                PURCHASE_ID,
+                "purchase-create-archived",
+                null,
+                WORKSITE_A,
+                "00000000-0000-4000-8000-000000000501",
+                "00000000-0000-4000-8000-000000000502",
+                "00000000-0000-4000-8000-000000000503",
+                ACTOR,
+                STATUS_ID,
+                "PED-SEC-1",
+                "Compra arquivada",
+                "MEDIA",
+                "BRL",
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                BigDecimal.ZERO,
+                LocalDate.of(2026, 7, 28),
+                LocalDate.of(2026, 8, 10),
+                List.of(),
+                null
+        );
+        FinanceAuditContext audit = FinanceAuditContext.online(
+                ACTOR,
+                "archived-worksite"
+        );
+
+        assertThatThrownBy(() -> service.savePurchase(create, audit))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("arquivada");
+        assertThatThrownBy(() -> service.decidePurchase(
+                PURCHASE_ID,
+                new FinanceDtos.ApprovalDecisionRequest(
+                        "APROVAR",
+                        null,
+                        "purchase-decision-archived"
+                ),
+                audit
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("arquivada");
+
+        verify(guard).requireWritable(WORKSITE_A);
+        verify(guard).requireWritable(WORKSITE_B);
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 

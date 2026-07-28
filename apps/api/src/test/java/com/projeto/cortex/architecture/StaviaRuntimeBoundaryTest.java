@@ -206,6 +206,11 @@ class StaviaRuntimeBoundaryTest {
                     "dbstavias_acad",
                     "SET banco_origem = 'dbstavias_acad',"),
             sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/auth/"
+                            + "PostgresqlAcademyCpfLoginIT.java",
+                    "dbstavias_acad",
+                    "?, 'dbstavias_acad', 'usuarios', ?, ?,"),
+            sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/colaboradores/"
                             + "ColaboradorImportService.java",
                     "dbstavias_acad",
@@ -232,6 +237,15 @@ class StaviaRuntimeBoundaryTest {
                     "eq(\"dbstavias_acad\")",
                     "eq(\"dbstavias_acad\")"),
             sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/colaboradores/"
+                            + "PostgresqlAcademyImportAtomicityIT.java",
+                    "dbstavias_acad",
+                    "WHERE banco_origem = 'dbstavias_acad'",
+                    "WHERE banco_origem = 'dbstavias_acad'",
+                    "VALUES (?, 'dbstavias_acad', 'usuarios', ?, ?, ?,",
+                    "WHERE banco_origem = 'dbstavias_acad'",
+                    "WHERE banco_origem = 'dbstavias_acad'"),
+            sourceReference(
                     "apps/api/src/test/java/com/projeto/cortex/auth/bootstrap/"
                             + "PostgresqlInitialAlfaBootstrapRepositoryIT.java",
                     "dbstavias_acad",
@@ -253,10 +267,22 @@ class StaviaRuntimeBoundaryTest {
                     "dbstavias_acad",
                     "contains(\"c.banco_origem = 'dbstavias_acad'\")"),
             sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/colaboradores/"
+                            + "AcademyLiveAggregateCoverageIT.java",
+                    "dbstavias_acad",
+                    "SOURCE_DATABASE = \"dbstavias_acad\"",
+                    "WHERE colaborador.banco_origem = 'dbstavias_acad'"),
+            sourceReference(
                     "apps/api/src/test/java/com/projeto/cortex/integracoes/"
                             + "AcademyJdbcRuntimeContractTest.java",
                     "dbstavias_acad",
                     "\"jdbc:mysql://127.0.0.1:3306/dbstavias_acad\""),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/integracoes/"
+                            + "AcademySourceAdapterMysqlSnapshotIT.java",
+                    "dbstavias_acad",
+                    ".withDatabaseName(\"dbstavias_acad\")",
+                    "\"GRANT SELECT ON dbstavias_acad.* TO '\""),
             sourceReference(
                     "apps/api/src/main/java/com/projeto/cortex/assets/AssetImportService.java",
                     "dbstavias_zld",

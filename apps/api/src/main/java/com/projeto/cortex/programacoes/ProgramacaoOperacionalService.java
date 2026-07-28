@@ -1,11 +1,13 @@
 package com.projeto.cortex.programacoes;
 
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
@@ -20,15 +22,18 @@ public class ProgramacaoOperacionalService {
     private final ProgramacaoOperacionalRepository programacaoRepository;
     private final ObraRepository obraRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public ProgramacaoOperacionalService(
             ProgramacaoOperacionalRepository programacaoRepository,
             ObraRepository obraRepository,
-            JdbcTemplate jdbcTemplate
+            JdbcTemplate jdbcTemplate,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.programacaoRepository = programacaoRepository;
         this.obraRepository = obraRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.operabilityGuard = operabilityGuard;
     }
 
     public List<ProgramacaoOperacionalResponse> listarProgramacoes(String query) {
@@ -45,7 +50,10 @@ public class ProgramacaoOperacionalService {
                 .toList();
     }
 
-    public ProgramacaoOperacionalResponse criarProgramacao(ProgramacaoOperacionalRequest request) {
+    @Transactional
+    public ProgramacaoOperacionalResponse criarProgramacao(
+            ProgramacaoOperacionalRequest request
+    ) {
         if (isBlank(request.obraId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campo obrigatório ausente: obraId");
         }
@@ -54,6 +62,7 @@ public class ProgramacaoOperacionalService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Campo obrigatório ausente: dataProgramacao");
         }
 
+        operabilityGuard.requireWritable(request.obraId());
         Obra obra = obraRepository.findById(request.obraId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Obra não encontrada."));
 

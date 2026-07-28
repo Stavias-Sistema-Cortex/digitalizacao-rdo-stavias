@@ -18,7 +18,7 @@ cp .env.example .env
 - readiness com banco: `http://127.0.0.1:8081/api/readiness`
 
 `compose.local.yml` usa somente o runtime PostgreSQL canônico. Ele não cria
-ALFA, obra, RDO ou receita fictícios: migrações até V61, bootstrap de uma identidade
+ALFA, obra, RDO ou receita fictícios: migrações até V63, bootstrap de uma identidade
 real e o preflight de release devem ser concluídos antes de definir
 `CORTEX_POSTGRES_RUNTIME_READY=true`.
 

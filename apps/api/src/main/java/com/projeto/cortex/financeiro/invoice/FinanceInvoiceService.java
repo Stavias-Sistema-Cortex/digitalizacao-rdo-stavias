@@ -9,6 +9,7 @@ import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.core.FinanceOntologyRelation;
 import com.projeto.cortex.financeiro.core.FinanceValidation;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -58,17 +59,20 @@ public class FinanceInvoiceService {
     private final CurrentUserService currentUser;
     private final FinanceOntologyProjector ontology;
     private final ObjectMapper objectMapper;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public FinanceInvoiceService(
             JdbcTemplate jdbc,
             CurrentUserService currentUser,
             FinanceOntologyProjector ontology,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbc = jdbc;
         this.currentUser = currentUser;
         this.ontology = ontology;
         this.objectMapper = objectMapper;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Transactional
@@ -88,6 +92,7 @@ public class FinanceInvoiceService {
             }
             return replay;
         }
+        obraOperabilityGuard.requireWritable(input.obraId());
 
         InvoiceResponse previous = find(input.id());
         boolean created = previous == null;
@@ -292,6 +297,7 @@ public class FinanceInvoiceService {
             }
             return replay;
         }
+        obraOperabilityGuard.requireWritable(invoice.obraId());
 
         FiscalDocumentTrace trace = fiscalDocumentTrace(
                 extractionJobId, objectId, invoice.obraId()

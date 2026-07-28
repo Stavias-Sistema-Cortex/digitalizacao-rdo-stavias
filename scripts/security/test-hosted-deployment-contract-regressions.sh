@@ -25,7 +25,7 @@ assert_rejected() {
   fi
 }
 
-for case_name in profile readiness sse dev-admin provisioning jdbc-url postgres-password; do
+for case_name in branch profile readiness sse dev-admin provisioning jdbc-url postgres-password; do
   fixture="$fixture_dir/$case_name.yaml"
   cp "$repo_root/render.yaml" "$fixture"
   python3 - "$fixture" "$case_name" <<'PY'
@@ -37,6 +37,10 @@ case_name = sys.argv[2]
 text = path.read_text()
 
 replacements = {
+    "branch": (
+        "branch: develop",
+        "branch: main",
+    ),
     "profile": (
         "value: production,postgresql",
         "value: production",

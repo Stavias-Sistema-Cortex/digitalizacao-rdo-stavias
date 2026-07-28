@@ -9,6 +9,7 @@ import com.projeto.cortex.financeiro.access.FinancialGrantService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
 import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -58,7 +59,8 @@ class FinancialGrantServiceMysqlIntegrationTest {
         FinancialGrantService service = new FinancialGrantService(
                 new FinancialGrantRepository(jdbc),
                 new FinancialUnitRepository(jdbc),
-                mock(CortexOperationalMemoryService.class)
+                mock(CortexOperationalMemoryService.class),
+                mock(ObraOperabilityGuard.class)
         );
         FinancialGrantResponse granted = service.grantUnit(
                 unitId,

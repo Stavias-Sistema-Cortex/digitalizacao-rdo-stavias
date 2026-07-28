@@ -345,7 +345,7 @@ run_case() {
     CORTEX_SOURCE_PGURI="${CASE_SOURCE_URI:-$source_uri}" \
     CORTEX_NEON_ADMIN_PGURI="${CASE_ADMIN_URI:-$admin_uri}" \
     CORTEX_NEON_RUNTIME_PASSWORD="$fixture_runtime_password" \
-    CORTEX_NEON_MIGRATOR_ROLE=cortex_migrator \
+    CORTEX_NEON_MIGRATOR_ROLE="${CASE_MIGRATOR_ROLE:-cortex_migrator}" \
     CORTEX_NEON_ROLLBACK_DIR="$rollback_dir" \
     TMPDIR="${CASE_TMPDIR:-${TMPDIR:-/tmp}}" \
     PGHOST=ambient.fixture.invalid \
@@ -365,6 +365,21 @@ run_case() {
     FAKE_REQUIRE_STDIN_MIGRATOR_QUERY="${FAKE_REQUIRE_STDIN_MIGRATOR_QUERY:-false}" \
     bash "$script"
 }
+
+prepare_case wrong-migrator-role
+CASE_MIGRATOR_ROLE=another_migrator
+set +e
+wrong_migrator_output="$(run_case 2>&1)"
+wrong_migrator_status=$?
+set -e
+unset CASE_MIGRATOR_ROLE
+[[ $wrong_migrator_status -ne 0 &&
+  "$wrong_migrator_output" == "Neon migrator role must be exactly cortex_migrator." &&
+  ! -s "$operation_log" ]] || {
+  echo "Migration contract did not reject a divergent migrator role" >&2
+  exit 1
+}
+assert_redacted "$wrong_migrator_output"
 
 prepare_case duplicate-tls
 CASE_ADMIN_URI="${admin_uri}&sslmode=disable"

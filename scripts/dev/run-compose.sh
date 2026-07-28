@@ -24,7 +24,7 @@ if [[ ! "${CORTEX_POSTGRES_DOCKER_URL:-}" =~ ^jdbc:postgresql://([^/:?]+)(:([0-9
 fi
 
 if [[ "${CORTEX_POSTGRES_RUNTIME_READY:-false}" != "true" ]]; then
-  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V61 and a real ALFA bootstrap." >&2
+  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V63 and a real ALFA bootstrap." >&2
   exit 1
 fi
 
@@ -36,6 +36,33 @@ cortex_require_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE
 cortex_require_text CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID
 cortex_require_secret_file CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE
 cortex_require_text VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256
+
+academy_sync_enabled="${CORTEX_SYNC_ACADEMY_ENABLED:-false}"
+case "$academy_sync_enabled" in
+  true)
+    cortex_require_text CORTEX_ACADEMY_DB_URL
+    cortex_require_text CORTEX_ACADEMY_DB_USER
+    cortex_require_text CORTEX_ACADEMY_DB_PASSWORD
+    if [[ -n "${CORTEX_ACADEMY_DB_PASSWORD_FILE:-}" ]]; then
+      echo "Local Academy QA requires only CORTEX_ACADEMY_DB_PASSWORD; unset CORTEX_ACADEMY_DB_PASSWORD_FILE." >&2
+      exit 1
+    fi
+    ;;
+  false)
+    CORTEX_ACADEMY_DB_URL=""
+    CORTEX_ACADEMY_DB_USER=""
+    CORTEX_ACADEMY_DB_PASSWORD=""
+    ;;
+  *)
+    echo "CORTEX_SYNC_ACADEMY_ENABLED must be true or false." >&2
+    exit 1
+    ;;
+esac
+export \
+  CORTEX_SYNC_ACADEMY_ENABLED="$academy_sync_enabled" \
+  CORTEX_ACADEMY_DB_URL \
+  CORTEX_ACADEMY_DB_USER \
+  CORTEX_ACADEMY_DB_PASSWORD
 
 CORTEX_WEB_PORT="${CORTEX_WEB_PORT:-5173}"
 CORTEX_API_PORT="${CORTEX_API_PORT:-8081}"

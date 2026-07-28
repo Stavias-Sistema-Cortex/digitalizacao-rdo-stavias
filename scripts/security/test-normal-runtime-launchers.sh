@@ -49,7 +49,15 @@ done
 
 canonical_database="Sta""vias""Cortex"
 activation_marker="activation-marker"
-cat > "$mirror_root/.env" <<EOF
+academy_url_marker="jdbc:mysql://academy.local.invalid:3306/academy"
+academy_user_marker="academy-local-contract-user"
+academy_password_marker="academy-local-contract-password-do-not-log"
+
+write_contract_environment() {
+  local academy_enabled="$1"
+  local academy_password="$2"
+
+  cat > "$mirror_root/.env" <<EOF
 CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/$canonical_database
 CORTEX_POSTGRES_DOCKER_URL=jdbc:postgresql://host.docker.internal:5432/$canonical_database
 CORTEX_POSTGRES_USER=contract_user
@@ -69,7 +77,11 @@ PORT=18092
 CORTEX_PUBLIC_ORIGIN=http://localhost:15473
 CORTEX_CORS_ALLOWED_ORIGINS=http://localhost:5174
 CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5174
-CORTEX_SYNC_ENABLED=true
+CORTEX_SYNC_ACADEMY_ENABLED=$academy_enabled
+CORTEX_ACADEMY_DB_URL=$academy_url_marker
+CORTEX_ACADEMY_DB_USER=$academy_user_marker
+CORTEX_ACADEMY_DB_PASSWORD=$academy_password
+CORTEX_SYNC_ZELADORIA_ENABLED=true
 OTP=$activation_marker
 VENDOR_OTP_SECRET=$activation_marker
 CORTEX_AUTH_OTP_ROTATION_TOKEN=$activation_marker
@@ -77,6 +89,9 @@ CORTEX_EMAIL_PROVIDER=smtp
 CORTEX_SMTP_HOST=smtp.invalid
 CORTEX_FINANCE_EMAIL_ENABLED=true
 EOF
+}
+
+write_contract_environment true "$academy_password_marker"
 
 cat > "$fake_bin/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -143,7 +158,9 @@ run_contract() {
     CORTEX_CONTRACT_DESCENDANT_CONFIG="$descendant_config" \
     CORTEX_CONTRACT_ENVIRONMENT="$environment" \
     CORTEX_CONTRACT_SERVER_PORT="$server_port" \
-    bash "$mirror_root/$launcher" > "$capture_root/$name.stdout"
+    bash "$mirror_root/$launcher" \
+      > "$capture_root/$name.stdout" \
+      2> "$capture_root/$name.stderr"
 }
 
 run_contract scripts/dev/run-compose.sh compose
@@ -160,6 +177,23 @@ for (const [serviceName, service] of Object.entries(rendered.services ?? {})) {
 }
 ' "$capture_root/compose.descendant-config.json" \
   > "$capture_root/compose.descendant-environment"
+
+node -e '
+const { readFileSync } = require("node:fs");
+const rendered = JSON.parse(readFileSync(process.argv[1], "utf8"));
+const environment = rendered.services?.["cortex-api"]?.environment ?? {};
+if (
+  environment.CORTEX_ACADEMY_DB_URL !== process.argv[2]
+  || environment.CORTEX_ACADEMY_DB_USER !== process.argv[3]
+  || environment.CORTEX_ACADEMY_DB_PASSWORD !== process.argv[4]
+) {
+  process.exit(1);
+}
+' \
+  "$capture_root/compose.descendant-config.json" \
+  "$academy_url_marker" \
+  "$academy_user_marker" \
+  "$academy_password_marker"
 
 for environment_file in "$capture_root"/*.environment; do
   if grep -Eqi '(^|_)OTP(_|$)|^CORTEX_EMAIL_|^CORTEX_SMTP_|^CORTEX_FINANCE_EMAIL_' \
@@ -180,10 +214,75 @@ grep -Fq $'docker\tcompose\t-f\t'"$mirror_root/compose.local.yml"$'\tup\t--build
 grep -Fq $'selected-ports\t15473\t18091' "$capture_root/compose.arguments"
 grep -Fq 'CORTEX_WEB_PORT' "$capture_root/compose.environment"
 grep -Fq 'CORTEX_API_PORT' "$capture_root/compose.environment"
-grep -Fq 'CORTEX_SYNC_ENABLED' "$capture_root/compose.environment"
+grep -Fq 'CORTEX_SYNC_ACADEMY_ENABLED' "$capture_root/compose.environment"
+grep -Fq 'CORTEX_SYNC_ZELADORIA_ENABLED' "$capture_root/compose.environment"
+if grep -Fq 'CORTEX_SYNC_ENABLED' "$capture_root/compose.environment"; then
+  echo "normal Compose runtime still depends on the removed global sync flag" >&2
+  exit 1
+fi
 
 grep -Fq $'\t-p\t127.0.0.1:18091:8080' "$capture_root/docker.arguments"
 grep -Fq $'\t-e\tCORTEX_WEB_PORT=15473' "$capture_root/docker.arguments"
+for academy_variable in \
+  CORTEX_ACADEMY_DB_URL \
+  CORTEX_ACADEMY_DB_USER \
+  CORTEX_ACADEMY_DB_PASSWORD; do
+  grep -Fq $'\t-e\t'"$academy_variable"$'\t' \
+    "$capture_root/docker.arguments"
+  if grep -Fq "${academy_variable}=" "$capture_root/docker.arguments"; then
+    echo "local Docker launcher placed an Academy value in argv" >&2
+    exit 1
+  fi
+done
+
+for captured_file in \
+  "$capture_root/compose.arguments" \
+  "$capture_root/compose.stdout" \
+  "$capture_root/compose.stderr" \
+  "$capture_root/docker.arguments" \
+  "$capture_root/docker.stdout" \
+  "$capture_root/docker.stderr"; do
+  if grep -Fq "$academy_url_marker" "$captured_file" \
+    || grep -Fq "$academy_user_marker" "$captured_file" \
+    || grep -Fq "$academy_password_marker" "$captured_file"; then
+    echo "local Academy QA credentials leaked through launcher output or argv" >&2
+    exit 1
+  fi
+done
+
+write_contract_environment false "$academy_password_marker"
+run_contract scripts/dev/run-compose.sh compose-disabled
+run_contract scripts/dev/run-api-docker.sh docker-disabled
+
+node -e '
+const { readFileSync } = require("node:fs");
+const rendered = JSON.parse(readFileSync(process.argv[1], "utf8"));
+const environment = rendered.services?.["cortex-api"]?.environment ?? {};
+for (const name of [
+  "CORTEX_ACADEMY_DB_URL",
+  "CORTEX_ACADEMY_DB_USER",
+  "CORTEX_ACADEMY_DB_PASSWORD",
+]) {
+  if (environment[name] !== "") process.exit(1);
+}
+' "$capture_root/compose-disabled.descendant-config.json"
+
+if grep -Fq 'CORTEX_ACADEMY_DB_' "$capture_root/docker-disabled.arguments"; then
+  echo "disabled local Docker runtime still forwarded Academy credentials" >&2
+  exit 1
+fi
+
+write_contract_environment true ""
+if run_contract scripts/dev/run-api-docker.sh docker-incomplete; then
+  echo "local Docker launcher accepted incomplete Academy QA credentials" >&2
+  exit 1
+fi
+grep -Fxq 'CORTEX_ACADEMY_DB_PASSWORD must be configured.' \
+  "$capture_root/docker-incomplete.stderr"
+if [[ -s "$capture_root/docker-incomplete.arguments" ]]; then
+  echo "local Docker launcher invoked Docker before Academy QA preflight" >&2
+  exit 1
+fi
 
 sed -n '1p' "$capture_root/api.server-port" | grep -Fxq '18092'
 sed -n '2p' "$capture_root/api.server-port" |

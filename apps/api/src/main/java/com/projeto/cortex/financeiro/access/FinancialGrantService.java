@@ -4,6 +4,7 @@ import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
 import com.projeto.cortex.financeiro.unit.FinancialUnitRepository.FinancialUnitScope;
 import com.projeto.cortex.financeiro.unit.FinancialUnitType;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,15 +27,18 @@ public class FinancialGrantService {
     private final FinancialGrantRepository repository;
     private final FinancialUnitRepository unitRepository;
     private final CortexOperationalMemoryService memoryService;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public FinancialGrantService(
             FinancialGrantRepository repository,
             FinancialUnitRepository unitRepository,
-            CortexOperationalMemoryService memoryService
+            CortexOperationalMemoryService memoryService,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.memoryService = memoryService;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     public List<FinancialGrantResponse> list(String obraId) {
@@ -120,6 +124,9 @@ public class FinancialGrantService {
         ).orElse(null);
         if (existing != null && "ATIVA".equals(existing.status())) {
             return FinancialGrantResponse.from(existing);
+        }
+        if (scope.type() == FinancialUnitType.OBRA) {
+            obraOperabilityGuard.requireWritable(scope.worksiteId());
         }
 
         LocalDateTime now = repository.databaseNow();

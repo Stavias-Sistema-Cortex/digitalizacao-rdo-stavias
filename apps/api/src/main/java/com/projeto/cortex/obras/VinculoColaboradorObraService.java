@@ -32,17 +32,20 @@ public class VinculoColaboradorObraService {
 
     private final JdbcTemplate jdbcTemplate;
     private final CortexOperationalMemoryService memoryService;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public VinculoColaboradorObraService(
             JdbcTemplate jdbcTemplate,
-            CortexOperationalMemoryService memoryService
+            CortexOperationalMemoryService memoryService,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryService = memoryService;
+        this.operabilityGuard = operabilityGuard;
     }
 
     public List<VinculoColaboradorObraResponse> listarPorObra(String obraId) {
-        String normalizedObraId = exigirObra(obraId);
+        String normalizedObraId = exigirObraExistente(obraId);
 
         return jdbcTemplate.query(
                 """
@@ -110,8 +113,11 @@ public class VinculoColaboradorObraService {
             String papelNaObra,
             String atribuidoPor
     ) {
-        String normalizedObraId = exigirObra(obraId);
-        String normalizedColaboradorId = exigirColaborador(colaboradorId);
+        String normalizedObraId = normalizarId(obraId, "obraId");
+        String normalizedColaboradorId = normalizarId(
+                colaboradorId,
+                "colaboradorId"
+        );
         String papel = normalizarPapel(papelNaObra);
         String canonicalRequestedId = requestedVinculoId == null
                 ? null
@@ -130,6 +136,9 @@ public class VinculoColaboradorObraService {
             }
             return carregar(atual.id());
         }
+
+        operabilityGuard.requireWritable(normalizedObraId);
+        normalizedColaboradorId = exigirColaborador(normalizedColaboradorId);
 
         String vinculoId;
         String estadoAnterior;
@@ -207,7 +216,7 @@ public class VinculoColaboradorObraService {
             String colaboradorId,
             String revogadoPor
     ) {
-        String normalizedObraId = exigirObra(obraId);
+        String normalizedObraId = exigirObraExistente(obraId);
         String normalizedColaboradorId = normalizarId(colaboradorId, "colaboradorId");
 
         VinculoAtual atual = buscarVinculo(normalizedColaboradorId, normalizedObraId);
@@ -372,12 +381,12 @@ public class VinculoColaboradorObraService {
         }
     }
 
-    private String exigirObra(String obraId) {
+    private String exigirObraExistente(String obraId) {
         String normalized = normalizarId(obraId, "obraId");
         Integer existe = jdbcTemplate.queryForObject(
                 """
                 SELECT CASE WHEN EXISTS (
-                    SELECT 1 FROM obra WHERE id = ? AND arquivado_em IS NULL
+                    SELECT 1 FROM obra WHERE id = ?
                 ) THEN 1 ELSE 0 END
                 """,
                 Integer.class,

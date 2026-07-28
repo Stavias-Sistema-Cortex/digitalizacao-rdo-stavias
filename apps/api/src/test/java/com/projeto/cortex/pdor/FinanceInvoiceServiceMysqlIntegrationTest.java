@@ -288,7 +288,10 @@ class FinanceInvoiceServiceMysqlIntegrationTest {
                 jdbc,
                 currentUser,
                 new FinanceOntologyProjector(memory),
-                mapper
+                mapper,
+                org.mockito.Mockito.mock(
+                        com.projeto.cortex.obras.ObraOperabilityGuard.class
+                )
         );
     }
 

@@ -19,7 +19,7 @@
     "preview:local": "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8080 vite preview --host localhost --port 4173",
     "preview:compose": "VITE_CORTEX_AUTH_MODE=postgresql CORTEX_API_TARGET=http://127.0.0.1:8081 vite preview --host localhost --port 4173",
     "typecheck:functions": "tsc -p tsconfig.functions.json",
-    "build:functions": "wrangler pages functions build --outdir=./dist/functions-worker"
+    "build:functions": "wrangler pages functions build --outdir=./.wrangler/functions-worker"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",

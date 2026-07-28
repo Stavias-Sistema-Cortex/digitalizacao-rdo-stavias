@@ -21,6 +21,7 @@ import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.core.FinanceOntologyRelation;
 import com.projeto.cortex.financeiro.unit.FinancialUnitType;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -49,17 +50,20 @@ public class FinanceAllocationService {
     private final FinancialAccessService access;
     private final FinanceOntologyProjector ontology;
     private final ObjectMapper objectMapper;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public FinanceAllocationService(
             FinanceAllocationRepository repository,
             FinancialAccessService access,
             FinanceOntologyProjector ontology,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.repository = repository;
         this.access = access;
         this.ontology = ontology;
         this.objectMapper = objectMapper;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional
@@ -78,6 +82,15 @@ public class FinanceAllocationService {
         if (repeated.isPresent()) {
             return repeated.orElseThrow();
         }
+
+        AllocationSource source = repository.lockSource(
+                request.origemTipo(),
+                request.origemId()
+        ).orElseThrow(() -> notFound("Origem financeira não encontrada."));
+        if (source.archived()) {
+            throw badRequest("Não é possível ratear uma origem arquivada.");
+        }
+        operabilityGuard.requireWritable(source.worksiteId());
         try {
             repository.claimMutation(
                     actorId,
@@ -91,14 +104,6 @@ public class FinanceAllocationService {
                             "A mutação idempotente concorrente não pôde ser recuperada."
                     )
             );
-        }
-
-        AllocationSource source = repository.lockSource(
-                request.origemTipo(),
-                request.origemId()
-        ).orElseThrow(() -> notFound("Origem financeira não encontrada."));
-        if (source.archived()) {
-            throw badRequest("Não é possível ratear uma origem arquivada.");
         }
         BigDecimal authoritativeTotal = exactValue(source.total(), "valor da origem");
         if (authoritativeTotal.signum() <= 0) {

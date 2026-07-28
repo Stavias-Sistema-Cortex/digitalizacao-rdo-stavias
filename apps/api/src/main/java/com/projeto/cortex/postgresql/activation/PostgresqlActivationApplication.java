@@ -27,6 +27,7 @@ import com.projeto.cortex.common.LocalCorsConfiguration;
 import com.projeto.cortex.common.PostgresqlActivationGateConfiguration;
 import com.projeto.cortex.common.PostgresqlActivationReadiness;
 import com.projeto.cortex.common.ReadinessController;
+import com.projeto.cortex.common.RuntimeRevision;
 import com.projeto.cortex.config.PostgresqlModeConfigurationGuard;
 import com.projeto.cortex.config.PostgresqlSchemaReadinessGuard;
 import com.projeto.cortex.email.EmailConfiguration;
@@ -55,6 +56,7 @@ import org.springframework.context.annotation.Import;
         LocalCorsConfiguration.class,
         HealthController.class,
         ReadinessController.class,
+        RuntimeRevision.class,
         AuthController.class,
         EmailOtpAuthenticationPolicy.class,
         DirectCpfLoginPolicy.class,

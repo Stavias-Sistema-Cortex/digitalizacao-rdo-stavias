@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,6 +15,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -1190,9 +1192,23 @@ class PostgresqlRdoCreationContextIT {
         RdoCreateRequest request = request(
                 rdoId, obraId, mutationId, 1L, null, colaborador, id(), null
         );
+        RdoCreateRequest newMutation = request(
+                id(),
+                obraId,
+                id(),
+                1L,
+                null,
+                colaborador,
+                id(),
+                null
+        );
         RdoService service = service(colaborador);
 
         RdoResponse first = transactions.execute(status -> service.criarRascunho(request));
+        jdbc.update(
+                "UPDATE obra SET arquivado_em = CURRENT_TIMESTAMP WHERE id = ?",
+                obraId
+        );
         RdoResponse replay = transactions.execute(status -> service.criarRascunho(request));
 
         assertThat(replay.id()).isEqualTo(first.id());
@@ -1213,6 +1229,11 @@ class PostgresqlRdoCreationContextIT {
             assertThat(row.get("creation_payload_hash").toString())
                     .matches("[0-9a-f]{64}");
         });
+
+        assertThatThrownBy(() -> transactions.execute(
+                status -> service.criarRascunho(newMutation)
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("arquivada");
 
         ObjectNode mismatchedJson = mapper.valueToTree(request);
         ((ObjectNode) mismatchedJson.withArray("maoObra").get(0))
@@ -1950,8 +1971,36 @@ class PostgresqlRdoCreationContextIT {
                         serviceJdbc,
                         details,
                         attachments
-                )
+                ),
+                operabilityGuard(serviceJdbc)
         );
+    }
+
+    private ObraOperabilityGuard operabilityGuard(
+            JdbcTemplate serviceJdbc
+    ) {
+        ObraOperabilityGuard guard = mock(ObraOperabilityGuard.class);
+        doAnswer(invocation -> {
+            String obraId = invocation.getArgument(0);
+            Integer writable = serviceJdbc.queryForObject(
+                    """
+                    SELECT COUNT(*)
+                    FROM obra
+                    WHERE id = ?
+                      AND arquivado_em IS NULL
+                    """,
+                    Integer.class,
+                    obraId
+            );
+            if (writable == null || writable == 0) {
+                throw new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Obra não encontrada ou arquivada."
+                );
+            }
+            return null;
+        }).when(guard).requireWritable(any());
+        return guard;
     }
 
     private RdoDraftUpdateService draftService() {
@@ -1973,7 +2022,8 @@ class PostgresqlRdoCreationContextIT {
                 details,
                 attachments,
                 mock(RdoOperationalEventService.class),
-                mock(PrevisaoFinanceiraService.class)
+                mock(PrevisaoFinanceiraService.class),
+                operabilityGuard(jdbc)
         );
     }
 

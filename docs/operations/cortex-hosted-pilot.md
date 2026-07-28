@@ -43,13 +43,33 @@ valores de segredo, URL de conexão, identificador de conta ou endpoint.
   `CORTEX_STORAGE_S3_PREFIX`, `CORTEX_STORAGE_S3_PATH_STYLE`,
   `CORTEX_STORAGE_S3_SEND_SSE_HEADER`, `AWS_ACCESS_KEY_ID` e
   `AWS_SECRET_ACCESS_KEY`.
-- Disabled remote pulls: `CORTEX_IMPORT_ENABLED` e `CORTEX_SYNC_ENABLED`.
+- Fontes remotas: `CORTEX_IMPORT_ENABLED`,
+  `CORTEX_SYNC_ACADEMY_ENABLED` e `CORTEX_SYNC_ZELADORIA_ENABLED`. Cada
+  scheduler permanece desligado até sua fonte passar a validação QA.
+
+### GitHub Actions — environment `production`
+
+- Secrets: `CORTEX_NEON_MIGRATION_PASSWORD`, `RENDER_DEPLOY_HOOK_URL` e
+  `CLOUDFLARE_API_TOKEN`.
+- Variables protegidas: `CORTEX_NEON_MIGRATION_URL`,
+  `CORTEX_NEON_MIGRATION_USER=cortex_migrator`, `CORTEX_RENDER_ORIGIN`,
+  `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PAGES_PROJECT_NAME` e
+  `VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256`. A origem Render deve ser
+  HTTPS direta `*.onrender.com`, sem path, query ou credenciais.
+
+Proteja o environment com aprovação e restrição à branch `develop`. Valores de
+segredo não são argumentos de shell, logs, outputs ou artefatos.
 
 ### Neon
 
 - Provide the TLS JDBC connection only through `CORTEX_POSTGRES_URL`.
 - Provide the least-privilege runtime account only through
   `CORTEX_POSTGRES_USER` and `CORTEX_POSTGRES_PASSWORD`.
+- Mantenha uma conta de login migradora estável e separada do runtime. Ela deve
+  ser `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOREPLICATION` e
+  `NOBYPASSRLS`, ter `CONNECT`, ser dona do schema/objetos que Flyway precisa
+  alterar e conceder ao runtime somente DML, sequences e functions necessários.
+  Não use a conta runtime para DDL.
 - Use project `Sistema Córtex`, PostgreSQL 18, region Ohio, and branch
   `production`. Confirm all four values in the Neon console before migration;
   do not infer the project or branch from a copied connection string.
@@ -63,12 +83,29 @@ valores de segredo, URL de conexão, identificador de conta ou endpoint.
 
 ## 3. Arquivos secretos do Render
 
-Configure estes quatro arquivos secretos exatamente sob `/etc/secrets`:
+Configure estes cinco arquivos secretos exatamente sob `/etc/secrets`:
 
 - `/etc/secrets/cortex-cpf-hmac`
 - `/etc/secrets/cortex-offline-private.pem`
 - `/etc/secrets/cortex-offline-public.pem`
 - `/etc/secrets/cortex-memory-cursor-hmac`
+- `/etc/secrets/cortex-academy-password`
+
+`sslMode=VERIFY_IDENTITY` é o padrão preferido da Academy. Somente quando o
+servidor legado não fornecer identidade de hostname, adicione também o secret
+file binário `/etc/secrets/cortex-academy-truststore.p12`. Ele deve ser PKCS12
+e conter exatamente uma entrada confiável com o certificado folha não-CA
+apresentado pela Academy; não inclua cadeia, CA, chave privada ou segunda
+entrada. A URL usa exatamente `sslMode=VERIFY_CA`,
+`trustCertificateKeyStoreUrl=file:/etc/secrets/cortex-academy-truststore.p12`,
+`trustCertificateKeyStoreType=PKCS12` e
+`fallbackToSystemTrustStore=false`. A senha opcional do PKCS12 pode permanecer
+na URL protegida `CORTEX_ACADEMY_DB_URL`; nunca a imprima.
+
+A imagem executa como usuário não-root membro do GID 1000, exigido para ler os
+secret files montados pelo Render. O gate de release testa a imagem publicada
+com um arquivo `root:1000` e modo `0440`; não altere essa permissão para
+contornar falhas de leitura.
 
 ## 4. Migração guardada do PostgreSQL local para Neon
 
@@ -80,9 +117,10 @@ release, configure no ambiente do operador, sem imprimir os valores:
 - `CORTEX_NEON_ADMIN_PGURI`: URI owner do projeto Neon com
   `sslmode=require`, `verify-ca` ou `verify-full`, sem parâmetros duplicados.
 - `CORTEX_NEON_RUNTIME_PASSWORD`: senha nova da role `cortex_runtime`.
-- `CORTEX_NEON_MIGRATOR_ROLE`: nome não secreto, em minúsculas, da role
-  migradora que criará objetos futuros. Ela deve existir e a conta owner deve
-  ser membro; o script verifica as duas condições antes do dump.
+- `CORTEX_NEON_MIGRATOR_ROLE=cortex_migrator`: nome não secreto e único da
+  role migradora que criará objetos futuros. Ela deve existir e a conta owner
+  deve ser membro; o script rejeita qualquer outro nome e verifica as duas
+  condições antes do dump.
 - `CORTEX_NEON_ROLLBACK_DIR`: diretório absoluto, protegido e fora do checkout
   para o dump local de rollback.
 
@@ -135,102 +173,86 @@ Neon vazio pelo control plane sob aprovação operacional. Nunca adicione
 a migração falha; não habilite banco local, dados falsos ou outro fallback no
 serviço hospedado.
 
-## 5. Binding da release e Flyway antes do deploy
+## 5. Release vinculada ao SHA exato
 
-### Gate obrigatório da Task 8
+Somente `develop` publica produção. A revisão precisa estar mergeada, com
+worktree limpo, e passar os gates API/PostgreSQL 18, PWA e publicação. O job
+protegido `production` vincula o checkout a `GITHUB_SHA`; não existe ref fixa,
+branch candidata paralela ou SHA histórico aprovado para releases futuras.
 
-O único source aprovado para provisionar ou fazer deploy do piloto é:
+O workflow executa esta cadeia, em ordem e com falha fechada:
 
-- ref: `feat/cortex-hosted-candidate-2026-07-27-v2`;
-- commit: `0f09f61cc3e8d5b763681fe5e567292f52ff790c`.
+1. constrói a imagem API e registra seu digest imutável;
+2. testa a imagem real como usuário não-root lendo um secret file
+   `root:1000`, modo `0440`;
+3. executa `scripts/deploy/run-neon-flyway.sh` com
+   `imagem@sha256:digest`, conexão Neon TLS canônica e conta migradora;
+4. aciona `RENDER_DEPLOY_HOOK_URL` com `ref=GITHUB_SHA`;
+5. aguarda a API Render expor o mesmo SHA em `/api/health` e
+   `/api/readiness`, respectivamente `UP` e `READY`;
+6. constrói PWA e Functions com os valores de produção, confirma que o projeto
+   Pages tem `develop` como branch de produção, grava `CORTEX_API_ORIGIN`
+   diretamente da variável protegida do Render e publica `dist` por Wrangler
+   com o mesmo SHA;
+7. confirma que o deployment mais recente é de produção, veio de `develop`,
+   concluiu com sucesso e aponta para o mesmo SHA; por fim, valida `UP` e
+   `READY` através da origem `pages.dev`.
 
-Commits posteriores em `feat/cortex-render-cloudflare-deploy` registram
-evidência ou documentação e não são build source. Não use o HEAD dessa branch
-para criar o serviço Render, o projeto Pages, uma imagem release ou um deploy.
+Render Free não executa pre-deploy command. A migração, portanto, roda no
+GitHub antes do deploy Render, usando a imagem API por digest. O wrapper cria
+um arquivo temporário modo `0600`, monta-o como Config Tree somente no
+container migrador, remove-o ao sair e rejeita URL sem TLS, banco diferente de
+`StaviasCortex`, imagem mutável ou credencial embutida na URL. A senha
+migradora não pertence ao environment do serviço Render e nunca fica
+disponível no processo web.
 
-Antes de qualquer push da ref dedicada, criação de serviço ou configuração de
-Git integration, execute no checkout revisado:
+As três configurações `CORTEX_NEON_MIGRATION_*` pertencem somente ao
+environment protegido `production`; apenas a senha é secret. A role é estável
+porque objetos Flyway precisam de um
+dono durável; criar/apagar roles pelo control plane a cada release deixaria
+ownership pendente e exigiria privilégio amplo. Após a migração, o runtime
+continua conectado exclusivamente como `cortex_runtime`, sem `CREATE` no
+schema e sem herdar a role migradora.
 
-```bash
-candidate_ref=refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2
-candidate_sha=0f09f61cc3e8d5b763681fe5e567292f52ff790c
-
-test "$(git rev-parse "$candidate_ref")" = "$candidate_sha"
-git diff --quiet "$candidate_sha"..HEAD -- apps/api apps/web render.yaml
-test -z "$(git diff --name-only \
-  "$candidate_sha"..HEAD -- apps/api apps/web render.yaml)"
-```
-
-Os três checks devem sair com status zero e o último não pode produzir saída.
-Eles provam que `apps/api`, `apps/web` e `render.yaml` não mudaram entre o
-candidato que passou nos gates e o HEAD documental. Se qualquer check falhar,
-interrompa: um novo SHA de aplicação exige novamente os gates completos.
-
-Na Task 8, envie explicitamente a ref dedicada sem trocar o checkout e confirme
-o remoto antes de provisionar:
-
-```bash
-git push origin \
-  refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2:refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2
-test "$(
-  git ls-remote --exit-code --heads origin \
-    refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2 |
-    awk '{print $1}'
-)" = "0f09f61cc3e8d5b763681fe5e567292f52ff790c"
-```
-
-Esse push não faz parte da Task 6. Configure Pages e Render para essa ref e
-confirme no provedor que o commit selecionado/deployado é exatamente
-`0f09f61cc3e8d5b763681fe5e567292f52ff790c`. Divergência de ref ou SHA é falha
-de release; não prossiga para credenciais, migração, Flyway ou smoke.
-
-### Flyway explícito
-
-Render Free não executa pre-deploy command. Após criar a imagem da revisão,
-execute a migração com um arquivo de ambiente exclusivo de migração, antes de
-liberar a API. Esse arquivo não é o conjunto de ambiente do runtime e usa uma
-conta PostgreSQL migradora dedicada, nunca a conta runtime.
-
-O arquivo protegido `cortex-render-migration.env` contém estes nomes (os
-valores não são exibidos, versionados ou impressos):
-
-- `SPRING_PROFILES_ACTIVE=postgresql-migrate`
-- `CORTEX_POSTGRES_RUNTIME_READY=false`
-- `CORTEX_POSTGRES_URL` com o datasource Neon TLS canônico `StaviasCortex`
-- `CORTEX_POSTGRES_USER` com o usuário migrador dedicado
-- `CORTEX_POSTGRES_PASSWORD` com a credencial migradora dedicada
-- `CORTEX_MAIN_CLASS=com.projeto.cortex.postgresql.migrate.PostgresqlMigrationApplication`
-
-Execute:
-
-```bash
-docker run --rm \
-  --env-file /absolute/path/to/cortex-render-migration.env \
-  cortex-api:release
-```
-
-O arquivo informado é local, protegido e não é versionado. Não use `set -x`,
-não imprima variáveis e interrompa o release se Flyway falhar. Só então faça o
-deploy manual do `cortex-api`; `autoDeployTrigger` permanece desligado.
+O deploy hook deve devolver HTTP 200 com identificador. HTTP 202 significa que
+a revisão ficou apenas enfileirada atrás de outro deploy, sem ID rastreável; o
+workflow falha fechado nesse caso e deve ser reexecutado quando o deploy em
+curso terminar. Isso evita aceitar o SHA que ainda está ao vivo antes de um
+deploy intermediário e da revisão solicitada. Resposta sem identificador,
+revisão divergente, health sem `UP`, readiness sem `READY` ou timeout também
+interrompem o workflow antes do Pages. `autoDeployTrigger` permanece desligado.
 
 ## 6. Build do Pages
 
-No Cloudflare Pages, configure root `apps/web`, comando `npm ci && npm run
-build` e output `dist`. Mantenha a Function e as regras de proxy Pages atuais;
-o navegador continua usando a mesma origem Pages para `/api`.
+Desligue o deploy automático da branch de produção no Cloudflare Pages. A
+integração Git pode continuar conectada, mas a produção é um Direct Upload do
+workflow por Wrangler, somente depois de Render confirmar o SHA:
+
+```text
+wrangler pages deploy dist --branch develop --commit-hash "$GITHUB_SHA"
+```
+
+O build usa `apps/web`, executa testes de contrato antes da release e, no job
+de publicação, faz `npm ci`, valida argumentos, constrói PWA e Functions e
+escaneia os artefatos. Preserve a Function e as regras de proxy Pages atuais;
+o navegador usa a mesma origem Pages para `/api`. O wrapper de release grava
+`CORTEX_API_ORIGIN` como secret do projeto Pages usando apenas
+`CORTEX_RENDER_ORIGIN`, uma variável protegida que aponta para a origem HTTPS
+direta do Render.
 
 ## 7. Smoke test
 
-Após o Render informar que a release está pronta, verifique:
+Antes do Pages, o workflow já precisa ter verificado:
 
 ```text
-/api/health
-/api/readiness
+/api/health     -> {"status":"UP","revision":"<GITHUB_SHA>"}
+/api/readiness  -> {"status":"READY","revision":"<GITHUB_SHA>",...}
 ```
 
-Depois do deploy Pages, execute o smoke na origem Pages e confirme uma sessão
-QA real para login, autorização, upload/download autorizado em R2 e os fluxos
-offline. Falha de Neon, Render ou R2 é falha visível, não motivo para fallback.
+O próprio wrapper repete health e readiness pela origem Pages e exige o mesmo
+SHA. Depois dele, confirme com uma sessão QA real login, autorização,
+upload/download autorizado em R2 e os fluxos offline. Falha de Neon, Render ou
+R2 é falha visível, não motivo para fallback.
 
 ## 8. Rollback
 
@@ -240,10 +262,11 @@ configurado por `CORTEX_NEON_ROLLBACK_DIR`; não o mova para o checkout, não o
 anexe a tickets e não reduza suas permissões. Guarde também o PostgreSQL local
 intacto.
 
-Para reverter, preserve o serviço e a build Pages anteriores, restaure o dump
-somente em um banco de recuperação revisado e faça deploy manual da revisão
-anterior no Render e no Pages. Não apague migrations nem execute `flyway
-repair` para ocultar um checksum divergente.
+Para reverter, preserve o serviço, digest API e deployment Pages anteriores.
+Restaure o dump somente em um banco de recuperação revisado. Uma revisão
+anterior só pode voltar se tolerar as migrations aditivas já aplicadas; use o
+mesmo vínculo de SHA no Render e no Pages. Não apague migrations nem execute
+`flyway repair` para ocultar um checksum divergente.
 
 ## 9. Limites de passkeys
 
@@ -252,6 +275,35 @@ uma origem final, valide novamente RP ID, origem WebAuthn e as credenciais.
 
 ## 10. Academy e Zeladoria
 
-Academy e Zeladoria permanecem com pulls desabilitados até que seus bancos
-somente leitura estejam publicamente alcançáveis por um caminho seguro. Não
-habilite importação ou sync para compensar indisponibilidade dessas fontes.
+Mantenha `CORTEX_SYNC_ACADEMY_ENABLED=false` e
+`CORTEX_SYNC_ZELADORIA_ENABLED=false` até concluir o QA de cada fonte. No
+Render, configure a Academy com usuário `SELECT`-only,
+`CORTEX_ACADEMY_DB_PASSWORD_FILE=/etc/secrets/cortex-academy-password` e URL
+JDBC MySQL contendo preferencialmente `sslMode=VERIFY_IDENTITY`. A exceção
+`VERIFY_CA` só é válida com o leaf pin PKCS12 exato descrito na seção 3. Os
+arquivos secretos são criados no dashboard do Render e nunca são copiados para
+variáveis de ambiente.
+
+A role Academy deve ter `SELECT` somente em `usuarios`, `grupos` e `perfil`.
+Antes de habilitar, teste a conexão e compare somente contagens agregadas,
+sem imprimir CPF, e-mail ou nome. Habilite uma fonte por vez. Para Academy,
+o último `source_sync_run` de `acad_colaborador_import` deve estar `SUCCESS`,
+finalizado há no máximo `CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão
+`900000`). Esse gate é exigido somente enquanto
+`CORTEX_SYNC_ACADEMY_ENABLED=true`. Não habilite importação ou sync para
+compensar indisponibilidade da Academy ou da Zeladoria.
+
+Na raiz do checkout, o gate QA opt-in é:
+
+```bash
+bash -lc '
+  source scripts/dev/load-local-env.sh
+  export CORTEX_ACADEMY_QA_ENABLED=true
+  cd apps/api
+  exec ./mvnw -q -Dtest=AcademyLiveAggregateCoverageIT test
+'
+```
+
+Docker é obrigatório. O teste lê a fonte somente em `SELECT`, reexecuta o
+snapshot em PostgreSQL 18 descartável, emite apenas agregados/hash e falha
+fechado se houver `GRANT OPTION`, role ou privilégio mais amplo.

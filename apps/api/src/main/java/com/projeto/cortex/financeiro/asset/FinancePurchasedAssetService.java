@@ -20,6 +20,7 @@ import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.core.FinanceOntologyRelation;
 import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.FinancialUnitResponse;
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -45,19 +46,22 @@ public class FinancePurchasedAssetService {
     private final FinancialAccessService access;
     private final FinanceOntologyProjector ontology;
     private final ObjectMapper objectMapper;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public FinancePurchasedAssetService(
             FinancePurchasedAssetRepository repository,
             FinancialUnitService units,
             FinancialAccessService access,
             FinanceOntologyProjector ontology,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.repository = repository;
         this.units = units;
         this.access = access;
         this.ontology = ontology;
         this.objectMapper = objectMapper;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional
@@ -82,6 +86,12 @@ public class FinancePurchasedAssetService {
         if (repeated.isPresent()) {
             return repeated.orElseThrow();
         }
+
+        PurchasedItem item = repository.lockItem(
+                normalizedPurchaseId,
+                normalizedItemId
+        ).orElseThrow(() -> notFound("Item de compra não encontrado."));
+        operabilityGuard.requireWritable(item.worksiteId());
         try {
             repository.claimMutation(
                     audit.actorId(),
@@ -100,10 +110,6 @@ public class FinancePurchasedAssetService {
             ));
         }
 
-        PurchasedItem item = repository.lockItem(
-                normalizedPurchaseId,
-                normalizedItemId
-        ).orElseThrow(() -> notFound("Item de compra não encontrado."));
         access.requirePermission(
                 item.worksiteId(),
                 FinancialPermission.FINANCEIRO_OPERAR

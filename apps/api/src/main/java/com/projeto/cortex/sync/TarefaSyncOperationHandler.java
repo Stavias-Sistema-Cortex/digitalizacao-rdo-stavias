@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -34,22 +35,30 @@ public class TarefaSyncOperationHandler implements SyncOperationHandler {
             "REABRIR_TAREFA",
             "EXCLUIR_TAREFA"
     );
+    private static final Set<String> OPERABILITY_REQUIRED_OPERATIONS = Set.of(
+            "CRIAR_TAREFA",
+            "ATUALIZAR_TAREFA",
+            "REABRIR_TAREFA"
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final CortexOperationalMemoryService memoryService;
     private final CurrentUserService currentUserService;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public TarefaSyncOperationHandler(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
             CortexOperationalMemoryService memoryService,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.memoryService = memoryService;
         this.currentUserService = currentUserService;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Override
@@ -83,6 +92,9 @@ public class TarefaSyncOperationHandler implements SyncOperationHandler {
         requirePayloadUuid(payload, "obraId", worksiteId);
         requireSameInstant(payload, "updatedAt", occurredAt);
         currentUserService.requireWorksiteAccess(worksiteId);
+        if (OPERABILITY_REQUIRED_OPERATIONS.contains(mutation.operacao())) {
+            obraOperabilityGuard.requireWritable(worksiteId);
+        }
 
         String eventType = switch (mutation.operacao()) {
             case "CRIAR_TAREFA" -> {

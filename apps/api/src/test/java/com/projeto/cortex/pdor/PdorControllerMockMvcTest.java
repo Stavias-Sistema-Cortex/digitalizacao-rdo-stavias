@@ -5,6 +5,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,9 @@ class PdorControllerMockMvcTest {
     private ObraRepository obraRepository;
 
     @MockBean
+    private ObraOperabilityGuard operabilityGuard;
+
+    @MockBean
     private CurrentUserService currentUserService;
 
     @MockBean
@@ -103,7 +107,7 @@ class PdorControllerMockMvcTest {
                 null
         );
 
-        when(obraRepository.findAtivasByIdentificador("CW38386"))
+        when(obraRepository.findByIdentificador("CW38386"))
                 .thenReturn(List.of(obra));
         when(initiatorResolver.resolve())
                 .thenReturn(new PdorExecutionInitiator("usuario-teste", "USER"));
@@ -167,7 +171,7 @@ class PdorControllerMockMvcTest {
 
     @Test
     void shouldReturn404ForMissingWorksite() throws Exception {
-        when(obraRepository.findAtivasByIdentificador("NAO-EXISTE"))
+        when(obraRepository.findByIdentificador("NAO-EXISTE"))
                 .thenReturn(List.of());
 
         mockMvc.perform(post("/api/obras/{obraId}/pdor/calcular", "NAO-EXISTE"))
@@ -194,7 +198,7 @@ class PdorControllerMockMvcTest {
                 null,
                 null
         );
-        when(obraRepository.findAtivasByIdentificador("AMBIGUA"))
+        when(obraRepository.findByIdentificador("AMBIGUA"))
                 .thenReturn(List.of(obra, outra));
 
         mockMvc.perform(post("/api/obras/{obraId}/pdor/calcular", "AMBIGUA"))

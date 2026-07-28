@@ -152,6 +152,7 @@ cortex:
       enabled: ${CORTEX_SYNC_ACADEMY_ENABLED:false}
       initial-delay-ms: ${CORTEX_SYNC_ACADEMY_INITIAL_DELAY_MS:60000}
       fixed-delay-ms: ${CORTEX_SYNC_ACADEMY_FIXED_DELAY_MS:300000}
+      readiness-max-age-ms: ${CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:900000}
     zeladoria:
       enabled: ${CORTEX_SYNC_ZELADORIA_ENABLED:false}
       initial-delay-ms: ${CORTEX_SYNC_ZELADORIA_INITIAL_DELAY_MS:60000}
@@ -167,6 +168,7 @@ cortex:
       url: ${CORTEX_ACADEMY_DB_URL:${ACAD_DB_URL:}}
       username: ${CORTEX_ACADEMY_DB_USER:${ACAD_DB_USER:}}
       password: ${CORTEX_ACADEMY_DB_PASSWORD:${ACAD_DB_PASSWORD:}}
+      password-file: ${CORTEX_ACADEMY_DB_PASSWORD_FILE:}
 
     zld:
       url: ${ZLD_DB_URL:}

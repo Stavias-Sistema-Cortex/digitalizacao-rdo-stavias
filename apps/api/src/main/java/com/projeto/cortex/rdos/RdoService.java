@@ -3,6 +3,7 @@ package com.projeto.cortex.rdos;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,6 +35,7 @@ public class RdoService {
     private final RdoOperationalEventService operationalEventService;
     private final PrevisaoFinanceiraService previsaoFinanceiraService;
     private final RdoQueryService queryService;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public RdoService(
             JdbcTemplate jdbcTemplate,
@@ -45,7 +47,8 @@ public class RdoService {
             RdoAttachmentService attachmentService,
             RdoOperationalEventService operationalEventService,
             PrevisaoFinanceiraService previsaoFinanceiraService,
-            RdoQueryService queryService
+            RdoQueryService queryService,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
@@ -57,6 +60,7 @@ public class RdoService {
         this.operationalEventService = operationalEventService;
         this.previsaoFinanceiraService = previsaoFinanceiraService;
         this.queryService = queryService;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional
@@ -97,6 +101,7 @@ public class RdoService {
             return queryService.buscarPorId(replay.id());
         }
 
+        operabilityGuard.requireWritable(obraId);
         ObraDados obra = buscarObra(obraId);
         ProgramacaoDados programacao = buscarProgramacaoOpcional(request.programacaoId(), obraId);
 
@@ -921,7 +926,6 @@ public class RdoService {
                         rodovia
                     FROM obra
                     WHERE id = ?
-                      AND arquivado_em IS NULL
                     """,
                     (rs, rowNum) -> new ObraDados(
                             rs.getString("id"),

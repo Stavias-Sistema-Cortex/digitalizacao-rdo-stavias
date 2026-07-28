@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
 import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetRepository.AssetRecord;
+import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetRepository.PurchasedAssetMutation;
 import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetRepository.PurchasedItem;
 import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetRepository.PurchasedLinkWrite;
 import com.projeto.cortex.financeiro.asset.FinancePurchasedAssetRepository.PurchasedLinkHistoryWrite;
@@ -22,6 +24,7 @@ import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.unit.FinancialUnitDtos.FinancialUnitResponse;
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.financeiro.unit.FinancialUnitType;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +40,7 @@ class FinancePurchasedAssetServiceTest {
     private FinancialUnitService units;
     private FinancialAccessService access;
     private FinanceOntologyProjector ontology;
+    private ObraOperabilityGuard operabilityGuard;
     private FinancePurchasedAssetService service;
 
     @BeforeEach
@@ -45,12 +49,14 @@ class FinancePurchasedAssetServiceTest {
         units = mock(FinancialUnitService.class);
         access = mock(FinancialAccessService.class);
         ontology = mock(FinanceOntologyProjector.class);
+        operabilityGuard = mock(ObraOperabilityGuard.class);
         service = new FinancePurchasedAssetService(
                 repository,
                 units,
                 access,
                 ontology,
-                new ObjectMapper().findAndRegisterModules()
+                new ObjectMapper().findAndRegisterModules(),
+                operabilityGuard
         );
         when(repository.findMutation("alfa-1", "asset-mutation-1"))
                 .thenReturn(Optional.empty());
@@ -211,6 +217,49 @@ class FinancePurchasedAssetServiceTest {
                 unitAudit.capture()
         );
         assertThat(unitAudit.getAllValues()).containsOnly(audit());
+    }
+
+    @Test
+    void archivedWorksiteRejectsConfirmationBeforeMutationClaim() {
+        doThrow(new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "A obra está arquivada."
+        )).when(operabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.confirm(
+                "purchase-1", "item-1", request(existingTargets()), audit()
+        )).isInstanceOfSatisfying(
+                ResponseStatusException.class,
+                exception -> assertThat(exception.getStatusCode())
+                        .isEqualTo(HttpStatus.CONFLICT)
+        );
+
+        verify(repository, never()).claimMutation(any(), any(), any());
+        verify(repository, never()).insertLink(any());
+    }
+
+    @Test
+    void exactReplayRemainsAvailableAfterWorksiteArchive() {
+        when(repository.findMutation("alfa-1", "asset-mutation-1"))
+                .thenReturn(Optional.of(new PurchasedAssetMutation(
+                        "item-1",
+                        true
+                )));
+        when(repository.findItem("purchase-1", "item-1"))
+                .thenReturn(Optional.of(item("CAPITALIZAVEL", "2.0000", 5L)));
+        doThrow(new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "A obra está arquivada."
+        )).when(operabilityGuard).requireWritable("obra-1");
+
+        PurchasedAssetResponse replay = service.confirm(
+                "purchase-1", "item-1", request(existingTargets()), audit()
+        );
+
+        assertThat(replay.versaoItem()).isEqualTo(5L);
+        verify(operabilityGuard, never()).requireWritable(any());
+        verify(repository, never()).lockItem(any(), any());
+        verify(repository, never()).claimMutation(any(), any(), any());
     }
 
     private ConfirmPurchasedAssetsRequest request(

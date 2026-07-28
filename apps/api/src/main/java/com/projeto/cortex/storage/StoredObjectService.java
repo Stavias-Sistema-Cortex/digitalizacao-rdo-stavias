@@ -1,6 +1,7 @@
 package com.projeto.cortex.storage;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -16,6 +17,9 @@ import java.util.List;
 import java.util.function.Consumer;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -26,13 +30,17 @@ public class StoredObjectService {
     private final StoredObjectContentInspector inspector;
     private final CurrentUserService currentUserService;
     private final List<StoredObjectDomainAccessGuard> domainAccessGuards;
+    private final ObraOperabilityGuard obraOperabilityGuard;
+    private final TransactionTemplate reservationTransactions;
 
     public StoredObjectService(
             StoredObjectRepository repository,
             ObjectStorage storage,
             StoredObjectContentInspector inspector,
             CurrentUserService currentUserService,
-            List<StoredObjectDomainAccessGuard> domainAccessGuards
+            List<StoredObjectDomainAccessGuard> domainAccessGuards,
+            ObraOperabilityGuard obraOperabilityGuard,
+            PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
         this.storage = storage;
@@ -41,6 +49,12 @@ public class StoredObjectService {
         this.domainAccessGuards = domainAccessGuards == null
                 ? List.of()
                 : List.copyOf(domainAccessGuards);
+        this.obraOperabilityGuard = obraOperabilityGuard;
+        this.reservationTransactions =
+                new TransactionTemplate(transactionManager);
+        this.reservationTransactions.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        );
     }
 
     public StoredObjectUploadResult upload(
@@ -92,13 +106,12 @@ public class StoredObjectService {
                 LocalDateTime.now(ZoneOffset.UTC)
         );
 
-        if (!repository.reserve(reserved)) {
-            return repository.findAvailableByDedupeKey(dedupeKey)
-                    .map(value -> new StoredObjectUploadResult(value, false))
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.CONFLICT,
-                            "Este arquivo já possui um upload em andamento."
-                    ));
+        StoredObjectUploadResult duplicate =
+                reservationTransactions.execute(
+                        status -> reserveOrFindDuplicate(reserved)
+                );
+        if (duplicate != null) {
+            return duplicate;
         }
 
         try {
@@ -109,6 +122,23 @@ public class StoredObjectService {
             quarantine(reserved);
             throw exception;
         }
+    }
+
+    private StoredObjectUploadResult reserveOrFindDuplicate(
+            StoredObjectRecord reserved
+    ) {
+        if (reserved.obraId() != null) {
+            obraOperabilityGuard.requireWritable(reserved.obraId());
+        }
+        if (repository.reserve(reserved)) {
+            return null;
+        }
+        return repository.findAvailableByDedupeKey(reserved.dedupeKey())
+                .map(value -> new StoredObjectUploadResult(value, false))
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "Este arquivo já possui um upload em andamento."
+                ));
     }
 
     public StoredObjectDownload download(String objectId) {

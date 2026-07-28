@@ -17,7 +17,7 @@ services:
       SPRING_CONFIG_IMPORT: configtree:/run/secrets/
       CORTEX_POSTGRES_URL: ${CORTEX_POSTGRES_URL:?Set the production PostgreSQL JDBC URL}
       CORTEX_POSTGRES_USER: ${CORTEX_POSTGRES_USER:?Set the least-privilege database user}
-      CORTEX_POSTGRES_RUNTIME_READY: ${CORTEX_POSTGRES_RUNTIME_READY:?Set true only after V61 and the real ALFA bootstrap}
+      CORTEX_POSTGRES_RUNTIME_READY: ${CORTEX_POSTGRES_RUNTIME_READY:?Set true only after V63 and the real ALFA bootstrap}
       CORTEX_POSTGRES_SCHEMA_READINESS_ENABLED: "true"
 
       CORTEX_CORS_ALLOWED_ORIGINS: ${CORTEX_PUBLIC_ORIGIN:?Set the exact HTTPS public origin}
@@ -47,18 +47,22 @@ services:
       CORTEX_STORAGE_S3_PATH_STYLE: ${CORTEX_STORAGE_S3_PATH_STYLE:-false}
 
       CORTEX_IMPORT_ENABLED: "false"
-      CORTEX_SYNC_ENABLED: ${CORTEX_SYNC_ENABLED:-false}
+      CORTEX_SYNC_ACADEMY_ENABLED: ${CORTEX_SYNC_ACADEMY_ENABLED:-false}
+      CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS: ${CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:-900000}
+      CORTEX_SYNC_ZELADORIA_ENABLED: ${CORTEX_SYNC_ZELADORIA_ENABLED:-false}
       # Academy and Zeladoria are source-only integrations. The database role
       # behind each URL must be restricted to SELECT on its own source schema.
+      # Production Academy URLs must use sslMode=VERIFY_IDENTITY.
       CORTEX_ACADEMY_DB_URL: ${CORTEX_ACADEMY_DB_URL:?Set the Academy read-only JDBC URL}
       CORTEX_ACADEMY_DB_USER: ${CORTEX_ACADEMY_DB_USER:?Set the Academy read-only database user}
+      CORTEX_ACADEMY_DB_PASSWORD_FILE: /run/secrets/cortex_academy_password
       CORTEX_ZELADORIA_DB_URL: ${CORTEX_ZELADORIA_DB_URL:?Set the Zeladoria read-only JDBC URL}
       CORTEX_ZELADORIA_DB_USER: ${CORTEX_ZELADORIA_DB_USER:?Set the Zeladoria read-only database user}
     secrets:
       - source: cortex_postgres_password
         target: CORTEX_POSTGRES_PASSWORD
       - source: cortex_academy_password
-        target: CORTEX_ACADEMY_DB_PASSWORD
+        target: cortex_academy_password
       - source: cortex_zeladoria_password
         target: CORTEX_ZELADORIA_DB_PASSWORD
       - cortex_cpf_hmac

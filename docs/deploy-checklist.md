@@ -9,9 +9,9 @@ somente com evidência da mesma revisão que será publicada.
 ## 1. Banco e migrações
 
 - [ ] Backup restaurável do banco atual foi criado e testado.
-- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V61 sem `repair` ou edição de
+- [ ] Um PostgreSQL 18 vazio aplicou Flyway V44–V63 sem `repair` ou edição de
   migration.
-- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V61.
+- [ ] Uma cópia representativa de `StaviasCortex` atualizou até V63.
 - [ ] O usuário da API tem somente os privilégios necessários no schema.
 - [ ] `CORTEX_POSTGRES_URL`, `CORTEX_POSTGRES_USER` e
   `CORTEX_POSTGRES_PASSWORD_FILE` apontam para o PostgreSQL canônico; nenhum
@@ -99,10 +99,10 @@ estado; `/api/health` mede somente o processo.
 - [ ] Memória e grafo retornam somente eventos/arestas autorizados, com
   cobertura e frescor explícitos; fatos apenas locais não são apresentados como
   confirmados pelo servidor.
-- [ ] `CORTEX_SYNC_ENABLED` foi deixado `false` até validar uma importação QA;
-  as URLs, usuários `SELECT`-only e arquivos de senha de cada fonte foram
-  verificados explicitamente antes de habilitá-lo, e os resultados aparecem em
-  `source_sync_run` no PostgreSQL.
+- [ ] `CORTEX_SYNC_ACADEMY_ENABLED` e `CORTEX_SYNC_ZELADORIA_ENABLED`
+  permaneceram `false` até a validação QA de cada fonte; URLs TLS, usuários
+  `SELECT`-only e arquivos de senha foram verificados antes de habilitar cada
+  scheduler, e seus resultados aparecem em `source_sync_run` no PostgreSQL.
 - [ ] O replay offline da PWA foi exercitado com o app aberto e uma sessão
   online ativa em escrita local/reconexão/abertura/foreground. Não foi registrada
   promessa de execução universal com navegador ou PWA fechados.
@@ -117,16 +117,24 @@ export VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256="$(
     openssl dgst -sha256 -binary |
     openssl base64 -A |
     tr '+/' '-_' |
-    tr -d '='
+  tr -d '='
 )"
+export VITE_CORTEX_API_BASE_URL=/api
+export VITE_CORTEX_AUTH_MODE=postgresql
+export VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES=26214400
 
 cd apps/api
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./mvnw test
 
 cd ../web
 npm test -- --run
+npm run verify:operational-layout
 npm run lint
+sh ./validate-docker-build-args.sh
 npm run build
+npm run typecheck:functions
+npm run build:functions
+node scripts/verify-stavia-boundary.mjs
 
 cd ../..
 docker build -t cortex-api:release apps/api
@@ -136,12 +144,13 @@ docker build -t cortex-web:release \
     VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256="${VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256:?Calcule e exporte o fingerprint SHA-256 base64url da chave pública offline}" \
   apps/web
 ./scripts/security/test-local-compose-security.sh
+./scripts/security/test-production-publication.sh
 docker compose -f compose.production.example.yml config
 git diff --check
 ```
 
 - [ ] Maven completo passou em JDK 21.
-- [ ] PostgreSQL 18 descartável passou com migrations V44–V61 e os fluxos
+- [ ] PostgreSQL 18 descartável passou com migrations V44–V63 e os fluxos
   Cortex 3.0.
 - [ ] O contrato de Compose de produção passou com secrets temporários, fontes
   MySQL somente leitura e porta web loopback.
@@ -153,18 +162,24 @@ git diff --check
 
 ## 7. Publicação e smoke
 
-1. Publique primeiro a API; aguarde `/api/readiness` responder `READY`.
-2. Publique a PWA com `/api` na mesma origem e o fingerprint correto.
-3. Execute `CORTEX_BASE_URL=https://host ./scripts/smoke-deploy.sh`.
-4. Com uma sessão QA real, repita passando `CORTEX_SMOKE_COOKIE_JAR` e
+1. Faça merge em `develop` somente depois dos três gates. Registre o SHA exato.
+2. Publique a imagem API e use seu digest imutável para executar Flyway no
+   Neon com a conta migradora isolada.
+3. Acione o deploy hook do Render com `ref=$GITHUB_SHA`; aguarde
+   `/api/health` e `/api/readiness` devolverem a mesma `revision`, com
+   `status=UP` e `status=READY`.
+4. Somente então construa e publique Pages por Wrangler com
+   `--branch develop --commit-hash "$GITHUB_SHA"`.
+5. Execute `CORTEX_BASE_URL=https://host ./scripts/smoke-deploy.sh`.
+6. Com uma sessão QA real, repita passando `CORTEX_SMOKE_COOKIE_JAR` e
    `CORTEX_SMOKE_OBRA_ID` para validar o escopo financeiro.
-5. Monitore login, 401/403, sync, rastreio de receita, PDOR, latência e storage.
+7. Monitore login, 401/403, sync, rastreio de receita, PDOR, latência e storage.
 
 ## 8. Rollback
 
 - Preserve a imagem anterior e o backup pré-migração.
 - Não altere nem apague migrations aplicadas. Rollback de aplicação só é seguro
-  se a versão anterior tolerar as tabelas aditivas V45–V61.
+  se a versão anterior tolerar as tabelas aditivas V45–V63.
 - Nunca use `flyway repair` para mascarar checksum divergente.
 
 ## 9. Piloto Cloudflare Pages, Render, Neon e R2
@@ -172,22 +187,41 @@ git diff --check
 - [ ] O banco canônico é exatamente `StaviasCortex`, com TLS Neon e usuário de
   menor privilégio configurados apenas como secrets do Render.
 - [ ] `cortex-api` está no Render como web service Docker `free` na região
-  `ohio`, com `autoDeployTrigger` desligado e health check
+  `ohio`, branch `develop`, `autoDeployTrigger` desligado e health check
   `/api/readiness`.
-- [ ] Flyway foi executado e confirmado antes de cada deploy manual da API;
-  Render Free não tem pre-deploy command.
+- [ ] O environment protegido `production` do GitHub possui os secrets
+  `CORTEX_NEON_MIGRATION_PASSWORD`, `RENDER_DEPLOY_HOOK_URL` e
+  `CLOUDFLARE_API_TOKEN`; URL Neon sem credencial, usuário migrador,
+  `CORTEX_RENDER_ORIGIN`, conta/projeto Cloudflare e fingerprint público são
+  variables protegidas. `CORTEX_RENDER_ORIGIN` aponta diretamente para o
+  serviço Render.
+- [ ] A role migradora é estável, dona dos objetos que Flyway altera e possui
+  `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOREPLICATION` e
+  `NOBYPASSRLS`; `cortex_runtime` não herda essa role nem recebe DDL.
+- [ ] Flyway foi executado com a imagem API por digest e a credencial migradora
+  existiu somente no processo isolado. Render Free não tem pre-deploy command
+  e o processo web não recebeu essa credencial.
+- [ ] O usuário não-root da imagem API pertence ao GID 1000 e lê os arquivos
+  secretos do Render sem torná-los públicos ou alterar seu modo.
+- [ ] O deploy hook recebeu o SHA completo de `develop`; health e readiness
+  confirmaram `revision == GITHUB_SHA` antes de publicar a PWA.
 - [ ] O Pages mantém `/api/*` na mesma origem através da Function existente;
-  `CORTEX_API_ORIGIN` é secret e nenhum proxy adicional foi publicado.
-- [ ] A build Pages usa root `apps/web`, comando `npm ci && npm run build` e
-  output `dist`.
+  o workflow grava `CORTEX_API_ORIGIN` como secret a partir da variável
+  protegida `CORTEX_RENDER_ORIGIN` e nenhum proxy adicional foi publicado.
+- [ ] O deploy automático de produção do Pages está desligado. O workflow
+  constrói `apps/web/dist`, valida Functions, confirma `develop` como branch
+  de produção e publica o SHA exato por Wrangler.
+- [ ] O deployment Pages verificado é de produção, veio de `develop`, concluiu
+  com sucesso e expõe o mesmo SHA em `/api/health` e `/api/readiness`.
 - [ ] Novos anexos usam bucket Cloudflare R2 Standard privado. O endpoint
   HTTPS R2 foi validado, `CORTEX_STORAGE_S3_SEND_SSE_HEADER=false` foi usado
   somente para ele e as credenciais R2 existem apenas como secrets do Render.
 - [ ] Sem Neon, Render ou R2, a API falha fechada: não há storage local,
   provider fake, dados fabricados ou fallback de conexão.
-- [ ] Academy e Zeladoria permanecem com `CORTEX_IMPORT_ENABLED=false` e
-  `CORTEX_SYNC_ENABLED=false` até que suas fontes read-only tenham um caminho
-  público seguro.
+- [ ] Academy e Zeladoria permanecem com `CORTEX_IMPORT_ENABLED=false`,
+  `CORTEX_SYNC_ACADEMY_ENABLED=false` e
+  `CORTEX_SYNC_ZELADORIA_ENABLED=false` até que cada fonte read-only tenha um
+  caminho público seguro e passe sua validação QA.
 
 ## Limite de evidência externa
 

@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.ontology.graph.GraphProjectionCatchUpService;
 import com.projeto.cortex.ontology.graph.GraphProjectionService;
 import com.projeto.cortex.ontology.graph.OperationalGraphProjector;
@@ -98,6 +99,7 @@ class PostgresqlServicePriceSyncAuthorityIT {
         ServicePriceCatalogService catalogService = new ServicePriceCatalogService(
                 new PostgresqlServicePriceCatalogRepository(jdbc),
                 new PostgresqlServiceCatalogOntologyPublisher(memory),
+                mock(ObraOperabilityGuard.class),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
         ServiceCatalogEntry catalog = transactions.execute(status ->

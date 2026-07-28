@@ -76,7 +76,6 @@ const CORPORATE_SOURCE_LINES = new Map([
     "apps/web/src/features/auth/LoginPage.tsx",
     [
       "alt=\"Stavias Córtex\"",
-      "© 2026 Stavias · Sistema Córtex · Ambiente operacional restrito",
     ],
   ],
   [
@@ -492,7 +491,6 @@ const CORPORATE_DIST_PATTERNS = [
   /(?<![\p{L}\p{N}_$])alt:`Stavias`/gu,
   /(?<![\p{L}\p{N}_$])alt:`Stavias Córtex`/gu,
   /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias — Sistema Córtex`/gu,
-  /(?<![\p{L}\p{N}_$])children:`© 2026 Stavias · Sistema Córtex · Ambiente operacional restrito`/gu,
   /(?<![\p{L}\p{N}_$])children:`Stavias Córtex · Ambiente institucional restrito`/gu,
   /(?<![\p{L}\p{N}_$])[$\w]+\([\$\w]+,`STAVIAS`,[$\w]+,14,`bold`,16\)/gu,
 ];
@@ -786,7 +784,7 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
   ["typecheck:functions", "tsc -p tsconfig.functions.json"],
   [
     PAGES_FUNCTION_BUILD_SCRIPT,
-    "wrangler pages functions build --outdir=./dist/functions-worker",
+    "wrangler pages functions build --outdir=./.wrangler/functions-worker",
   ],
   ["preview", "vite preview"],
   [

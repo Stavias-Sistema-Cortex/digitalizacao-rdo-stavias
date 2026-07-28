@@ -1448,7 +1448,7 @@ describe("StavIA runtime boundary", () => {
       "tsc -p tsconfig.functions.json",
     );
     expect(scripts["build:functions"]).toBe(
-      "wrangler pages functions build --outdir=./dist/functions-worker",
+      "wrangler pages functions build --outdir=./.wrangler/functions-worker",
     );
     expect(scripts["verify:operational-layout"]).toBe(
       "node scripts/verify-operational-layout.mjs",
@@ -1472,14 +1472,14 @@ describe("StavIA runtime boundary", () => {
       inspectPackageBuildScripts({
         ...scripts,
         "build:functions":
-          "wrangler pages functions build --outdir=./dist/other-worker",
+          "wrangler pages functions build --outdir=./.wrangler/other-worker",
       }),
     ).not.toEqual([]);
     expect(
       inspectPackageBuildScripts({
         ...scripts,
         "build:unverified":
-          "wrangler pages functions build --outdir=./dist/other-worker",
+          "wrangler pages functions build --outdir=./.wrangler/other-worker",
       }),
     ).not.toEqual([]);
     for (const unsafeCommand of [

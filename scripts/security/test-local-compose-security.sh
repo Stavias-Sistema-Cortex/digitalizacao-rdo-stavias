@@ -104,7 +104,7 @@ assert_production_compose_renders_from_documented_contract() {
     CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID='memory-contract-key' \
     CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE="$contract_secret_dir/memory_cursor_hmac" \
     VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256='contract-public-key-fingerprint' \
-    CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy' \
+    CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy?sslMode=VERIFY_IDENTITY' \
     CORTEX_ACADEMY_DB_USER='academy_readonly' \
     CORTEX_ACADEMY_DB_PASSWORD_FILE="$contract_secret_dir/academy" \
     CORTEX_ZELADORIA_DB_URL='jdbc:mysql://zeladoria.contract.internal:3306/zeladoria' \
@@ -117,7 +117,11 @@ assert_production_compose_renders_from_documented_contract() {
 
   grep -Fq 'host_ip: 127.0.0.1' <<< "$rendered"
   grep -Fq 'published: "8080"' <<< "$rendered"
-  grep -Fq 'target: CORTEX_ACADEMY_DB_PASSWORD' <<< "$rendered"
+  grep -Fq 'CORTEX_ACADEMY_DB_PASSWORD_FILE: /run/secrets/cortex_academy_password' <<< "$rendered"
+  grep -Fq 'target: cortex_academy_password' <<< "$rendered"
+  grep -Fq 'CORTEX_SYNC_ACADEMY_ENABLED: "false"' <<< "$rendered"
+  grep -Fq 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS: "900000"' <<< "$rendered"
+  grep -Fq 'CORTEX_SYNC_ZELADORIA_ENABLED: "false"' <<< "$rendered"
   grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' <<< "$rendered"
   if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac|CORTEX_EMAIL_|CORTEX_SMTP_|cortex_smtp_password|CORTEX_FINANCE_EMAIL_' <<< "$rendered"; then
     echo "rendered normal production compose still contains activation OTP or legacy e-mail delivery" >&2
@@ -165,8 +169,14 @@ grep -Fq 'CORTEX_POSTGRES_PASSWORD_FILE' \
   "$production_compose_file"
 grep -Fq 'CORTEX_ACADEMY_DB_URL:' "$production_compose_file"
 grep -Fq 'CORTEX_ACADEMY_DB_USER:' "$production_compose_file"
-grep -Fq 'target: CORTEX_ACADEMY_DB_PASSWORD' "$production_compose_file"
+grep -Fq 'CORTEX_ACADEMY_DB_PASSWORD_FILE: /run/secrets/cortex_academy_password' \
+  "$production_compose_file"
+grep -Fq 'target: cortex_academy_password' "$production_compose_file"
 grep -Fq 'CORTEX_ACADEMY_DB_PASSWORD_FILE' "$production_compose_file"
+grep -Fq 'CORTEX_SYNC_ACADEMY_ENABLED:' "$production_compose_file"
+grep -Fq 'CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:' \
+  "$production_compose_file"
+grep -Fq 'CORTEX_SYNC_ZELADORIA_ENABLED:' "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_URL:' "$production_compose_file"
 grep -Fq 'CORTEX_ZELADORIA_DB_USER:' "$production_compose_file"
 grep -Fq 'target: CORTEX_ZELADORIA_DB_PASSWORD' "$production_compose_file"
@@ -188,6 +198,9 @@ for documented_variable in \
   CORTEX_ACADEMY_DB_URL \
   CORTEX_ACADEMY_DB_USER \
   CORTEX_ACADEMY_DB_PASSWORD_FILE \
+  CORTEX_SYNC_ACADEMY_ENABLED \
+  CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS \
+  CORTEX_SYNC_ZELADORIA_ENABLED \
   CORTEX_ZELADORIA_DB_URL \
   CORTEX_ZELADORIA_DB_USER \
   CORTEX_ZELADORIA_DB_PASSWORD_FILE; do
@@ -196,6 +209,12 @@ for documented_variable in \
     exit 1
   }
 done
+
+if grep -Fq 'CORTEX_SYNC_ENABLED' \
+  "$compose_file" "$production_compose_file" "$postgresql_env_template"; then
+  echo "runtime configuration still depends on the removed global sync flag" >&2
+  exit 1
+fi
 
 if grep -Eq 'CORTEX_AUTH_OTP_HMAC_KEY_FILE|cortex_otp_hmac' \
   "$production_compose_file"; then

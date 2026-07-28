@@ -1,8 +1,10 @@
 package com.projeto.cortex.programacoes;
 
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -25,15 +27,19 @@ public class ProgramacaoSeedImportService {
 
     private final ProgramacaoOperacionalRepository programacaoRepository;
     private final ObraRepository obraRepository;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public ProgramacaoSeedImportService(
             ProgramacaoOperacionalRepository programacaoRepository,
-            ObraRepository obraRepository
+            ObraRepository obraRepository,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.programacaoRepository = programacaoRepository;
         this.obraRepository = obraRepository;
+        this.operabilityGuard = operabilityGuard;
     }
 
+    @Transactional
     public ProgramacaoSeedImportResult importarSeedPadrao() {
         return importar(encontrarSeedPath());
     }
@@ -50,7 +56,7 @@ public class ProgramacaoSeedImportService {
         );
     }
 
-    private ProgramacaoSeedImportResult importar(Path path) {
+    ProgramacaoSeedImportResult importar(Path path) {
         int registrosLidos = 0;
         int registrosInseridos = 0;
         int registrosAtualizados = 0;
@@ -137,6 +143,7 @@ public class ProgramacaoSeedImportService {
                             continue;
                         }
 
+                        operabilityGuard.requireWritable(obra.getId());
                         programacao.atualizarDeSeed(
                                 obra.getId(),
                                 obra.getCodigoContrato(),
@@ -174,6 +181,7 @@ public class ProgramacaoSeedImportService {
                         continue;
                     }
 
+                    operabilityGuard.requireWritable(obra.getId());
                     ProgramacaoOperacional programacao = ProgramacaoOperacional.criarComChaveNegocio(
                             obra.getId(),
                             obra.getCodigoContrato(),

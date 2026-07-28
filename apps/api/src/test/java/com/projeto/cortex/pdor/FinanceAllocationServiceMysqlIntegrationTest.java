@@ -17,6 +17,7 @@ import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +92,8 @@ class FinanceAllocationServiceMysqlIntegrationTest {
                 repository,
                 access,
                 ontology,
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
         FinanceAuditContext audit = new FinanceAuditContext(
                 seed.actorId(),
@@ -294,7 +296,8 @@ class FinanceAllocationServiceMysqlIntegrationTest {
                 repository,
                 mock(FinancialAccessService.class),
                 ontology,
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
         SaveAllocationRequest request = request(
                 "allocation-concurrent-same",
@@ -392,7 +395,8 @@ class FinanceAllocationServiceMysqlIntegrationTest {
                 repository,
                 access,
                 ontology,
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -487,7 +491,8 @@ class FinanceAllocationServiceMysqlIntegrationTest {
                 repository,
                 mock(FinancialAccessService.class),
                 failingOntology,
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
 
         assertThatThrownBy(() -> transactions.execute(status -> failingService.save(

@@ -1,5 +1,6 @@
 package com.projeto.cortex.common;
 
+import com.projeto.cortex.config.PostgresqlSchemaVersion;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,9 +14,9 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
     private static final String CURRENT_SCHEMA_COMPLETED_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
-            WHERE version = '61'
+            WHERE version = '%s'
               AND success = TRUE
-            """;
+            """.formatted(PostgresqlSchemaVersion.REQUIRED);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -51,7 +52,8 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
 
     private IllegalStateException unavailable() {
         return new IllegalStateException(
-                "Ativação PostgreSQL indisponível até a cadeia V61."
+                "Ativação PostgreSQL indisponível até a cadeia V"
+                        + PostgresqlSchemaVersion.REQUIRED + "."
         );
     }
 }

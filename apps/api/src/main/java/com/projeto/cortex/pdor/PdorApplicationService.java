@@ -7,6 +7,7 @@ import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
@@ -78,57 +79,18 @@ public class PdorApplicationService {
         );
     }
 
-    /**
-     * Mantém a construção explícita usada por integrações fora do contexto
-     * Spring; em runtime o construtor autowired usa o publicador transacional
-     * proxied pelo container.
-     */
-    public PdorApplicationService(
-            ObraRepository obraRepository,
-            PdorInputLoader inputLoader,
-            PdorSnapshotRepository snapshotRepository,
-            ObjectMapper objectMapper,
-            CortexOperationalMemoryService memoryService,
-            PdorExecutionInitiatorResolver initiatorResolver
-    ) {
-        this(
-                obraRepository,
-                inputLoader,
-                snapshotRepository,
-                new PdorSnapshotPublicationService(snapshotRepository),
-                objectMapper,
-                memoryService,
-                new PdorContextBuilder(),
-                new PdorEngine(),
-                initiatorResolver
-        );
-    }
-
-    PdorApplicationService(
-            ObraRepository obraRepository,
-            PdorInputLoader inputLoader,
-            PdorSnapshotRepository snapshotRepository,
-            ObjectMapper objectMapper,
-            CortexOperationalMemoryService memoryService
-    ) {
-        this(
-                obraRepository, inputLoader, snapshotRepository, objectMapper,
-                memoryService, new PdorContextBuilder(), new PdorEngine(), null
-        );
-    }
-
     PdorApplicationService(
             ObraRepository obraRepository,
             PdorInputLoader inputLoader,
             PdorSnapshotRepository snapshotRepository,
             ObjectMapper objectMapper,
             CortexOperationalMemoryService memoryService,
-            PdorContextBuilder contextBuilder,
-            PdorEngine engine
+            ObraOperabilityGuard operabilityGuard
     ) {
         this(
                 obraRepository, inputLoader, snapshotRepository, objectMapper,
-                memoryService, contextBuilder, engine, null
+                memoryService, new PdorContextBuilder(), new PdorEngine(),
+                operabilityGuard, null
         );
     }
 
@@ -140,13 +102,33 @@ public class PdorApplicationService {
             CortexOperationalMemoryService memoryService,
             PdorContextBuilder contextBuilder,
             PdorEngine engine,
+            ObraOperabilityGuard operabilityGuard
+    ) {
+        this(
+                obraRepository, inputLoader, snapshotRepository, objectMapper,
+                memoryService, contextBuilder, engine, operabilityGuard, null
+        );
+    }
+
+    PdorApplicationService(
+            ObraRepository obraRepository,
+            PdorInputLoader inputLoader,
+            PdorSnapshotRepository snapshotRepository,
+            ObjectMapper objectMapper,
+            CortexOperationalMemoryService memoryService,
+            PdorContextBuilder contextBuilder,
+            PdorEngine engine,
+            ObraOperabilityGuard operabilityGuard,
             PdorExecutionInitiatorResolver initiatorResolver
     ) {
         this(
                 obraRepository,
                 inputLoader,
                 snapshotRepository,
-                new PdorSnapshotPublicationService(snapshotRepository),
+                new PdorSnapshotPublicationService(
+                        snapshotRepository,
+                        operabilityGuard
+                ),
                 objectMapper,
                 memoryService,
                 contextBuilder,
@@ -686,15 +668,19 @@ public class PdorApplicationService {
                 ? PdorTriggerType.MANUAL
                 : triggerType;
         try {
-            snapshotRepository.recordFailureAndMarkCurrentStale(
-                    correlationId,
-                    obra.getId(),
-                    previous == null ? null : previous.id(),
-                    inputs.evidenceHighWaterMark(),
-                    normalizedTrigger,
-                    initiator.id(),
-                    Instant.now().truncatedTo(ChronoUnit.MICROS)
+            publicationService.recordFailure(obra.getId(), () ->
+                    snapshotRepository.recordFailureAndMarkCurrentStale(
+                            correlationId,
+                            obra.getId(),
+                            previous == null ? null : previous.id(),
+                            inputs.evidenceHighWaterMark(),
+                            normalizedTrigger,
+                            initiator.id(),
+                            Instant.now().truncatedTo(ChronoUnit.MICROS)
+                    )
             );
+        } catch (ResponseStatusException worksiteUnavailable) {
+            throw worksiteUnavailable;
         } catch (RuntimeException auditFailure) {
             exception.addSuppressed(auditFailure);
         }
@@ -716,7 +702,7 @@ public class PdorApplicationService {
 
         String normalizedIdentifier = identifier.trim();
         List<Obra> obras =
-                obraRepository.findAtivasByIdentificador(normalizedIdentifier);
+                obraRepository.findByIdentificador(normalizedIdentifier);
 
         if (obras.isEmpty()) {
             throw new ResponseStatusException(

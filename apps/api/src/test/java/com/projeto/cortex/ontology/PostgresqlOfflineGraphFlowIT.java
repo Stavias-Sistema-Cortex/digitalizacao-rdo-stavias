@@ -10,6 +10,7 @@ import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.PrevisaoFinanceiraService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.ontology.graph.GraphProjectionAfterCommitListener;
 import com.projeto.cortex.ontology.graph.GraphProjectionCatchUpService;
 import com.projeto.cortex.ontology.graph.GraphProjectionRecoveryScheduler;
@@ -501,7 +502,8 @@ class PostgresqlOfflineGraphFlowIT {
                 attachments,
                 new RdoOperationalEventService(memory),
                 finance,
-                query
+                query,
+                mock(ObraOperabilityGuard.class)
         );
         RdoSyncOperationHandler handler = new RdoSyncOperationHandler(
                 jdbc,

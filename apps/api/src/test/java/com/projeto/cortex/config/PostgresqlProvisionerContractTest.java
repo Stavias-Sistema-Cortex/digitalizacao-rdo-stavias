@@ -54,8 +54,18 @@ class PostgresqlProvisionerContractTest {
         assertTrue(template.contains("CORTEX_POSTGRES_USER=<POSTGRES_ROLE>"));
         assertTrue(template.contains("CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/StaviasCortex"));
         assertTrue(template.contains("CORTEX_POSTGRES_PASSWORD_FILE=<ABSOLUTE_PATH_TO_POSTGRES_PASSWORD_FILE>"));
-        assertTrue(template.contains("CORTEX_ACADEMY_DB_URL=<ACADEMY_READ_ONLY_JDBC_URL>"));
+        assertTrue(template.contains(
+                "CORTEX_ACADEMY_DB_URL=jdbc:mysql://"
+                        + "<ACADEMY_HOST>:3306/<ACADEMY_DATABASE>"
+                        + "?sslMode=VERIFY_IDENTITY"
+        ));
         assertTrue(template.contains("CORTEX_ZELADORIA_DB_URL=<ZELADORIA_READ_ONLY_JDBC_URL>"));
+        assertTrue(template.contains("CORTEX_SYNC_ACADEMY_ENABLED=false"));
+        assertTrue(template.contains(
+                "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000"
+        ));
+        assertTrue(template.contains("CORTEX_SYNC_ZELADORIA_ENABLED=false"));
+        assertFalse(template.contains("CORTEX_SYNC_ENABLED="));
         assertFalse(template.contains("joaolucas"),
                 "the example must not embed a local operator identity");
         assertFalse(template.contains("CORTEX_POSTGRES_PASSWORD="),

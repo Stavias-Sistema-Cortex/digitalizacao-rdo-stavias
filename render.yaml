@@ -6,6 +6,7 @@ services:
     region: ohio
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: ./apps/api
+    branch: develop
     autoDeployTrigger: off
     healthCheckPath: /api/readiness
     envVars:
@@ -69,5 +70,17 @@ services:
         sync: false
       - key: CORTEX_IMPORT_ENABLED
         value: "false"
-      - key: CORTEX_SYNC_ENABLED
+      # Preferred: sslMode=VERIFY_IDENTITY. The documented VERIFY_CA
+      # exception requires /etc/secrets/cortex-academy-truststore.p12.
+      - key: CORTEX_ACADEMY_DB_URL
+        sync: false
+      - key: CORTEX_ACADEMY_DB_USER
+        sync: false
+      - key: CORTEX_ACADEMY_DB_PASSWORD_FILE
+        value: /etc/secrets/cortex-academy-password
+      - key: CORTEX_SYNC_ACADEMY_ENABLED
+        value: "false"
+      - key: CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS
+        value: "900000"
+      - key: CORTEX_SYNC_ZELADORIA_ENABLED
         value: "false"

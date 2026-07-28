@@ -2,6 +2,7 @@ package com.projeto.cortex.financeiro;
 
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -27,15 +28,18 @@ public class ItemContratualService {
     private final JdbcTemplate jdbcTemplate;
     private final ObraRepository obraRepository;
     private final CortexOperationalMemoryService memoryService;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public ItemContratualService(
             JdbcTemplate jdbcTemplate,
             ObraRepository obraRepository,
-            CortexOperationalMemoryService memoryService
+            CortexOperationalMemoryService memoryService,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.obraRepository = obraRepository;
         this.memoryService = memoryService;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Transactional
@@ -45,6 +49,7 @@ public class ItemContratualService {
     ) {
         Obra obra = localizarObra(obraIdentifier);
         validar(request);
+        obraOperabilityGuard.requireWritable(obra.getId());
 
         BigDecimal quantidade =
                 escala3(request.quantidadeContratada());
@@ -184,7 +189,7 @@ public class ItemContratualService {
         }
 
         List<Obra> obras =
-                obraRepository.findAtivasByIdentificador(identifier.trim());
+                obraRepository.findByIdentificador(identifier.trim());
 
         if (obras.isEmpty()) {
             throw new ResponseStatusException(

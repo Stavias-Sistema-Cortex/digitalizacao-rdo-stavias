@@ -22,6 +22,18 @@ public interface ObraRepository extends JpaRepository<Obra, String> {
     @Query("SELECT o FROM Obra o WHERE o.id = :id")
     Optional<Obra> findByIdForUpdate(@Param("id") String id);
 
+    @Query(
+            value = """
+                    SELECT o.id
+                    FROM obra o
+                    WHERE o.id = :id
+                      AND o.arquivado_em IS NULL
+                    FOR SHARE
+                    """,
+            nativeQuery = true
+    )
+    Optional<String> findWritableIdForShare(@Param("id") String id);
+
     @Query("""
             SELECT o
             FROM Obra o
@@ -34,6 +46,16 @@ public interface ObraRepository extends JpaRepository<Obra, String> {
               )
             """)
     List<Obra> findAtivasByIdentificador(String identificador);
+
+    @Query("""
+            SELECT o
+            FROM Obra o
+            WHERE o.id = :identificador
+               OR o.codigoContrato = :identificador
+               OR o.codigoCw = :identificador
+               OR o.codigoInterno = :identificador
+            """)
+    List<Obra> findByIdentificador(@Param("identificador") String identificador);
 
     @Query("""
             SELECT o

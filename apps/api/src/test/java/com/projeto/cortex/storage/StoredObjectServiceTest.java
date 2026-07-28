@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -19,7 +22,10 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 class StoredObjectServiceTest {
@@ -31,6 +37,10 @@ class StoredObjectServiceTest {
             mock(CurrentUserService.class);
     private final StoredObjectDomainAccessGuard domainGuard =
             mock(StoredObjectDomainAccessGuard.class);
+    private final ObraOperabilityGuard operabilityGuard =
+            mock(ObraOperabilityGuard.class);
+    private final PlatformTransactionManager transactionManager =
+            mock(PlatformTransactionManager.class);
     private StoredObjectService service;
 
     @BeforeEach
@@ -45,7 +55,9 @@ class StoredObjectServiceTest {
                         Set.of("text/plain")
                 ),
                 currentUser,
-                List.of(domainGuard)
+                List.of(domainGuard),
+                operabilityGuard,
+                transactionManager
         );
     }
 
@@ -72,6 +84,8 @@ class StoredObjectServiceTest {
         assertThat(result.created()).isFalse();
         assertThat(result.object().id()).isEqualTo("object-existing");
         verify(currentUser).requireWorksiteAccess("obra-1");
+        verify(operabilityGuard, never()).requireWritable(any());
+        verify(transactionManager, never()).getTransaction(any());
         verify(repository, never()).reserve(any());
         verify(storage, never()).put(any(), any(), any(Long.class), any());
     }
@@ -179,6 +193,84 @@ class StoredObjectServiceTest {
         verify(domainGuard).authorize(record);
         verify(storage, never()).get(any());
         verify(currentUser, never()).requireWorksiteAccess(any());
+    }
+
+    @Test
+    void archivedWorksiteRejectsUploadBeforeReservationOrObjectWrite() {
+        byte[] body = "evidencia".getBytes(StandardCharsets.UTF_8);
+        when(repository.findAvailableByDedupeKey(any()))
+                .thenReturn(Optional.empty());
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(operabilityGuard).requireWritable("obra-1");
+
+        assertThatThrownBy(() -> service.upload(
+                "obra-1",
+                "evidencia.txt",
+                "text/plain",
+                body.length,
+                () -> new ByteArrayInputStream(body)
+        )).isInstanceOfSatisfying(
+                ResponseStatusException.class,
+                exception -> {
+                    assertThat(exception.getStatusCode())
+                            .isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(exception.getReason())
+                            .isEqualTo("Obra não encontrada ou arquivada.");
+                }
+        );
+
+        verify(repository, never()).reserve(any());
+        verify(storage, never()).put(
+                any(), any(), any(Long.class), any()
+        );
+    }
+
+    @Test
+    void reservationTransactionCommitsBeforeObjectStorageWrite() {
+        byte[] body = "evidencia".getBytes(StandardCharsets.UTF_8);
+        TransactionStatus transaction = mock(TransactionStatus.class);
+        when(transactionManager.getTransaction(any()))
+                .thenReturn(transaction);
+        when(repository.findAvailableByDedupeKey(any()))
+                .thenReturn(Optional.empty());
+        when(repository.reserve(any())).thenReturn(true);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            invocation.<java.io.InputStream>getArgument(1).readAllBytes();
+            return null;
+        }).when(storage).put(
+                any(),
+                any(),
+                eq((long) body.length),
+                eq("text/plain")
+        );
+
+        StoredObjectUploadResult result = service.upload(
+                "obra-1",
+                "evidencia.txt",
+                "text/plain",
+                body.length,
+                () -> new ByteArrayInputStream(body)
+        );
+
+        assertThat(result.created()).isTrue();
+        InOrder order = inOrder(
+                transactionManager,
+                operabilityGuard,
+                repository,
+                storage
+        );
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(operabilityGuard).requireWritable("obra-1");
+        order.verify(repository).reserve(any());
+        order.verify(transactionManager).commit(transaction);
+        order.verify(storage).put(
+                any(),
+                any(),
+                eq((long) body.length),
+                eq("text/plain")
+        );
     }
 
     private StoredObjectRecord availableRecord(

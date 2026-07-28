@@ -81,7 +81,14 @@ class FinancePurchaseServiceMysqlIntegrationTest {
                 jdbc, currentUser, serviceAccess, ontology
         );
         FinancePurchaseService purchases = new FinancePurchaseService(
-                jdbc, currentUser, serviceAccess, ontology, mapper
+                jdbc,
+                currentUser,
+                serviceAccess,
+                ontology,
+                mapper,
+                org.mockito.Mockito.mock(
+                        com.projeto.cortex.obras.ObraOperabilityGuard.class
+                )
         );
         FinanceAuditContext audit = FinanceAuditContext.online(
                 actorId, "finance-integration"

@@ -20,7 +20,7 @@ cortex_require_text CORTEX_POSTGRES_USER
 cortex_prepare_postgres_password
 
 if [[ "${CORTEX_POSTGRES_RUNTIME_READY:-false}" != "true" ]]; then
-  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V61 and a real ALFA bootstrap in the canonical database." >&2
+  echo "CORTEX_POSTGRES_RUNTIME_READY must be true only after V63 and a real ALFA bootstrap in the canonical database." >&2
   exit 1
 fi
 
@@ -35,7 +35,8 @@ cortex_preflight_operational_memory_cursor_hmac
 cd "$ROOT_DIR/apps/api"
 
 export CORTEX_IMPORT_ENABLED="false"
-export CORTEX_SYNC_ENABLED="${CORTEX_SYNC_ENABLED:-true}"
+export CORTEX_SYNC_ACADEMY_ENABLED="${CORTEX_SYNC_ACADEMY_ENABLED:-false}"
+export CORTEX_SYNC_ZELADORIA_ENABLED="${CORTEX_SYNC_ZELADORIA_ENABLED:-false}"
 export CORTEX_AUTH_DEV_ADMIN_ENABLED="false"
 export CORTEX_AUTH_PROVISIONING_ENABLED="false"
 export SPRING_PROFILES_ACTIVE="local,postgresql"

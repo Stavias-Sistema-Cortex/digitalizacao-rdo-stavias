@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+script="$repo_root/scripts/deploy/run-neon-flyway.sh"
+fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/cortex-neon-flyway-test.XXXXXX")"
+
+cleanup() {
+  find "$fixture_root" -type f -delete 2>/dev/null || true
+  find "$fixture_root" -depth -type d -exec rmdir {} \; 2>/dev/null || true
+}
+trap cleanup EXIT
+
+fake_bin="$fixture_root/bin"
+mkdir -p "$fake_bin"
+
+cat > "$fake_bin/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+capture_dir="${CORTEX_TEST_CAPTURE_DIR:?}"
+[[ -z "${CORTEX_NEON_MIGRATION_URL:-}" ]]
+[[ -z "${CORTEX_NEON_MIGRATION_USER:-}" ]]
+[[ -z "${CORTEX_NEON_MIGRATION_PASSWORD:-}" ]]
+printf '%s\0' "$@" > "$capture_dir/docker-args"
+
+secret_mount=""
+previous=""
+for argument in "$@"; do
+  if [[ "$previous" == "--mount" && "$argument" == type=bind,src=*,dst=/run/secrets,readonly ]]; then
+    secret_mount="${argument#type=bind,src=}"
+    secret_mount="${secret_mount%%,dst=/run/secrets,readonly}"
+  fi
+  previous="$argument"
+done
+
+[[ -n "$secret_mount" ]]
+for entry in \
+  "CORTEX_POSTGRES_URL=${CORTEX_TEST_EXPECTED_URL:?}" \
+  "CORTEX_POSTGRES_USER=${CORTEX_TEST_EXPECTED_USER:?}" \
+  "CORTEX_POSTGRES_PASSWORD=${CORTEX_TEST_EXPECTED_PASSWORD:?}"; do
+  file_name="${entry%%=*}"
+  expected="${entry#*=}"
+  secret_file="$secret_mount/$file_name"
+  [[ -f "$secret_file" && ! -L "$secret_file" ]]
+  [[ "$(stat -f '%Lp' "$secret_file" 2>/dev/null || stat -c '%a' "$secret_file")" == "600" ]]
+  [[ "$(<"$secret_file")" == "$expected" ]]
+done
+SH
+chmod +x "$fake_bin/docker"
+
+registry_namespace='stavi''as'
+valid_digest="ghcr.io/${registry_namespace}/cortex-api@sha256:$(printf 'a%.0s' {1..64})"
+canonical_database='Sta''viasCortex'
+valid_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=require"
+fixture_credential=local
+
+run_success_case() {
+  local capture_dir="$fixture_root/success"
+  mkdir -p "$capture_dir"
+
+  env \
+    PATH="$fake_bin:$PATH" \
+    CORTEX_TEST_CAPTURE_DIR="$capture_dir" \
+    CORTEX_TEST_EXPECTED_URL="$valid_url" \
+    CORTEX_TEST_EXPECTED_USER='cortex_migrator' \
+    CORTEX_TEST_EXPECTED_PASSWORD="$fixture_credential" \
+    CORTEX_API_IMAGE_DIGEST="$valid_digest" \
+    CORTEX_NEON_MIGRATION_URL="$valid_url" \
+    CORTEX_NEON_MIGRATION_USER='cortex_migrator' \
+    CORTEX_NEON_MIGRATION_PASSWORD="$fixture_credential" \
+    bash "$script"
+
+  python3 - "$capture_dir/docker-args" "$valid_digest" "$valid_url" <<'PY'
+import pathlib
+import sys
+
+arguments = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
+arguments = [item.decode() for item in arguments if item]
+image, url = sys.argv[2:]
+
+required = {
+    "--rm",
+    "--read-only",
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges:true",
+    "SPRING_PROFILES_ACTIVE=postgresql-migrate",
+    "CORTEX_POSTGRES_RUNTIME_READY=false",
+    "SPRING_CONFIG_IMPORT=configtree:/run/secrets/",
+    image,
+}
+missing = sorted(required - set(arguments))
+assert not missing, f"safe Flyway invocation is missing: {missing}"
+serialized = "\n".join(arguments)
+assert "local" not in serialized
+assert "cortex_migrator" not in serialized
+assert url not in serialized
+assert ":production" not in serialized
+PY
+}
+
+assert_rejected() {
+  local name="$1"
+  local image="$2"
+  local url="$3"
+  local migration_user="${4:-cortex_migrator}"
+  local capture_dir="$fixture_root/$name"
+  mkdir -p "$capture_dir"
+
+  if env \
+    PATH="$fake_bin:$PATH" \
+    CORTEX_TEST_CAPTURE_DIR="$capture_dir" \
+    CORTEX_TEST_EXPECTED_URL="$url" \
+    CORTEX_TEST_EXPECTED_USER="$migration_user" \
+    CORTEX_TEST_EXPECTED_PASSWORD="$fixture_credential" \
+    CORTEX_API_IMAGE_DIGEST="$image" \
+    CORTEX_NEON_MIGRATION_URL="$url" \
+    CORTEX_NEON_MIGRATION_USER="$migration_user" \
+    CORTEX_NEON_MIGRATION_PASSWORD="$fixture_credential" \
+    bash "$script" >/dev/null 2>&1; then
+    echo "Flyway release wrapper accepted invalid case: $name" >&2
+    exit 1
+  fi
+}
+
+run_success_case
+assert_rejected mutable-image "ghcr.io/${registry_namespace}/cortex-api:production" "$valid_url"
+assert_rejected weak-tls "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=disable"
+assert_rejected unbound-require "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require"
+assert_rejected weak-channel-binding "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=prefer"
+assert_rejected duplicate-channel-binding "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=require&channelBinding=require"
+assert_rejected wrong-database "$valid_digest" \
+  'jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/postgres?sslmode=require'
+assert_rejected runtime-user "$valid_digest" "$valid_url" cortex_runtime
+
+echo "Neon Flyway release wrapper contract passed."

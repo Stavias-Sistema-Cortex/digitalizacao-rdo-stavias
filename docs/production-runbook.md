@@ -87,18 +87,48 @@ API; PIN, e-mail e OTP não são fallbacks offline.
    `docker compose --env-file .env.production -f compose.production.example.yml config`.
    O primeiro comando usa arquivos temporários sem conteúdo real e verifica o
    contrato de secrets, fontes e porta loopback.
-6. Inicie com `CORTEX_SYNC_ENABLED=false`, aguarde `/api/readiness`, faça login
+6. Inicie com `CORTEX_SYNC_ACADEMY_ENABLED=false` e
+   `CORTEX_SYNC_ZELADORIA_ENABLED=false`, aguarde `/api/readiness`, faça login
    direto por CPF canônico, valide a passkey como alternativa e exercite
    separadamente o grant colaborativo e uma passkey PRF registrada.
 7. Inicie a PWA e execute `scripts/smoke-deploy.sh` na origem HTTPS final.
 8. Depois de configurar e validar explicitamente as URLs, usuários
-   `SELECT`-only, arquivos de senha e uma importação QA, habilite
-   `CORTEX_SYNC_ENABLED=true`; acompanhe `source_sync_run` no PostgreSQL antes
-   de considerar a sincronização de Academy/Zeladoria operacional.
+   `SELECT`-only, arquivos de senha e uma importação QA, habilite somente a
+   flag da fonte validada: `CORTEX_SYNC_ACADEMY_ENABLED=true` ou
+   `CORTEX_SYNC_ZELADORIA_ENABLED=true`. Para Academy, confirme que a role
+   possui `SELECT` somente em `usuarios`, `grupos` e `perfil`; execute o teste
+   de conexão e compare apenas contagens agregadas, sem CPF, e-mail ou nome.
+   Antes de habilitar, registre uma execução QA recente e bem-sucedida. Com
+   Academy ativa, `/api/readiness` exige que o último
+   `source_sync_run.connector_name=acad_colaborador_import` esteja `SUCCESS`,
+   tenha `finished_at` e não seja mais antigo que
+   `CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão `900000`). Com Academy
+   desativada, esse requisito de frescor não é aplicado.
 
-`CORTEX_SYNC_ENABLED` controla somente os pulls programados de Academy e
-Zeladoria e não substitui as credenciais read-only verificadas. Ele não desliga
-o replay da outbox offline da PWA. Esse replay é solicitado em escrita local,
+   Execute o gate agregado, sem imprimir dados pessoais, a partir da raiz do
+   checkout:
+
+   ```bash
+   bash -lc '
+     source scripts/dev/load-local-env.sh
+     export CORTEX_ACADEMY_QA_ENABLED=true
+     cd apps/api
+     exec ./mvnw -q -Dtest=AcademyLiveAggregateCoverageIT test
+   '
+   ```
+
+   Docker é obrigatório. O gate lê a Academy somente em `SELECT`, grava apenas
+   em um PostgreSQL 18 descartável e falha se a conta tiver qualquer
+   privilégio além de `USAGE` e `SELECT` individual nas três tabelas.
+
+As flags separadas controlam somente os pulls programados e não substituem as
+credenciais read-only verificadas. A Academy exige senha montada em arquivo e,
+em produção, URL JDBC MySQL com `sslMode=VERIFY_IDENTITY`. Para o servidor
+legado sem identidade de hostname, a única exceção é `VERIFY_CA` com o PKCS12
+de um único certificado folha montado exatamente em
+`/etc/secrets/cortex-academy-truststore.p12`, tipo `PKCS12` e fallback ao
+truststore do sistema desativado. As flags não desligam o replay da outbox
+offline da PWA. Esse replay é solicitado em escrita local,
 abertura, reconexão, retorno ao foreground, mudança de sessão e timers somente
 enquanto a aplicação executa, está online e possui sessão online ativa; não há
 garantia universal de background sync com navegador ou PWA fechados.

@@ -29,8 +29,6 @@ import org.springframework.stereotype.Component;
 public final class PostgresqlSchemaReadinessGuard
         implements BeanFactoryPostProcessor, EnvironmentAware, PriorityOrdered {
 
-    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "61";
-
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
             FROM flyway_schema_history
@@ -67,7 +65,7 @@ public final class PostgresqlSchemaReadinessGuard
             throws BeansException {
         verifyReadiness(
                 postgresqlJdbcTemplate(),
-                CLEAN_START_REQUIRED_SCHEMA_VERSION
+                PostgresqlSchemaVersion.REQUIRED
         );
     }
 

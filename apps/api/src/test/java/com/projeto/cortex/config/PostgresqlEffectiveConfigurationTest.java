@@ -49,6 +49,27 @@ class PostgresqlEffectiveConfigurationTest {
     }
 
     @Test
+    void resolvesAcademyReadinessFreshnessDefaultAndOverride() {
+        contextRunner("postgresql").run(context -> assertThat(
+                context.getEnvironment().getProperty(
+                        "cortex.sync.academy.readiness-max-age-ms",
+                        Long.class
+                )
+        ).isEqualTo(900_000L));
+
+        contextRunner("postgresql")
+                .withPropertyValues(
+                        "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=420000"
+                )
+                .run(context -> assertThat(
+                        context.getEnvironment().getProperty(
+                                "cortex.sync.academy.readiness-max-age-ms",
+                                Long.class
+                        )
+                ).isEqualTo(420_000L));
+    }
+
+    @Test
     void resolvesLocalRuntimeThroughTheSamePostgresqlReleaseGuards() {
         contextRunner("local,postgresql")
                 .withPropertyValues("CORTEX_POSTGRES_RUNTIME_READY=true")
@@ -75,7 +96,7 @@ class PostgresqlEffectiveConfigurationTest {
                     ).verifyConfiguration())
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("required-schema-version")
-                            .hasMessageContaining("61");
+                            .hasMessageContaining("63");
                 });
     }
 

@@ -18,6 +18,7 @@ import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -91,7 +92,8 @@ class FinancePurchasedAssetServiceMysqlIntegrationTest {
                 unitService,
                 access,
                 ontology,
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
         FinanceAuditContext audit = new FinanceAuditContext(
                 seed.actorId(),
@@ -228,7 +230,8 @@ class FinancePurchasedAssetServiceMysqlIntegrationTest {
                 unitService,
                 access,
                 failing,
-                mapper
+                mapper,
+                mock(ObraOperabilityGuard.class)
         );
         ConfirmPurchasedAssetsRequest request = new ConfirmPurchasedAssetsRequest(
                 "asset-confirmation-rollback",

@@ -21,12 +21,14 @@ class PostgresqlLocalRuntimeContractTest {
                 "SPRING_CONFIG_IMPORT: configtree:/run/secrets/",
                 "CORTEX_POSTGRES_DOCKER_URL:",
                 "CORTEX_POSTGRES_RUNTIME_READY:",
-                "only after V61 and a real ALFA bootstrap",
+                "only after V63 and a real ALFA bootstrap",
                 "target: CORTEX_POSTGRES_PASSWORD",
                 "CORTEX_AUTH_DEV_ADMIN_ENABLED: \"false\"",
                 "CORTEX_AUTH_PROVISIONING_ENABLED: \"false\"",
                 "CORTEX_IMPORT_ENABLED: \"false\"",
-                "CORTEX_SYNC_ENABLED: \"true\"",
+                "CORTEX_SYNC_ACADEMY_ENABLED:",
+                "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS:",
+                "CORTEX_SYNC_ZELADORIA_ENABLED:",
                 "VITE_CORTEX_AUTH_MODE: postgresql",
                 "127.0.0.1:${CORTEX_API_PORT:-8081}:8080",
                 "127.0.0.1:${CORTEX_WEB_PORT:-5173}:8080"
@@ -132,7 +134,9 @@ class PostgresqlLocalRuntimeContractTest {
                 "VITE_CORTEX_AUTH_MODE=postgresql",
                 "CORTEX_IMPORT_ENABLED=false",
                 "CORTEX_AUTH_DEV_ADMIN_ENABLED=false",
-                "CORTEX_SYNC_ENABLED=true"
+                "CORTEX_SYNC_ACADEMY_ENABLED=false",
+                "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS=900000",
+                "CORTEX_SYNC_ZELADORIA_ENABLED=false"
         ).doesNotContain(
                 "CORTEX_AUTH_OTP_",
                 "CORTEX_DB_URL=",
@@ -145,6 +149,9 @@ class PostgresqlLocalRuntimeContractTest {
                 "CORTEX_EMAIL_SENDER_PROFILE_KEY=",
                 "CORTEX_SMTP_",
                 "CORTEX_FINANCE_EMAIL_"
+        );
+        assertThat(rootEnvironment).doesNotContain(
+                "CORTEX_SYNC_ENABLED="
         );
         assertThat(webEnvironment)
                 .contains("VITE_CORTEX_AUTH_MODE=postgresql")

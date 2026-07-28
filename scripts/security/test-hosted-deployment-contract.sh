@@ -4,9 +4,11 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 render_file="${CORTEX_HOSTED_RENDER_FILE:-$repo_root/render.yaml}"
 pages_root="$repo_root/apps/web"
+hosted_runbook="$repo_root/docs/operations/cortex-hosted-pilot.md"
 
 for required in \
   "$render_file" \
+  "$hosted_runbook" \
   "$pages_root/functions/api/[[path]].ts" \
   "$pages_root/public/_routes.json" \
   "$pages_root/public/_headers" \
@@ -61,6 +63,7 @@ expected_service = {
   "region" => "ohio",
   "dockerfilePath" => "./apps/api/Dockerfile",
   "dockerContext" => "./apps/api",
+  "branch" => "develop",
   "autoDeployTrigger" => false,
   "healthCheckPath" => "/api/readiness"
 }
@@ -103,7 +106,12 @@ expected_env = {
   "AWS_ACCESS_KEY_ID" => { "sync" => false },
   "AWS_SECRET_ACCESS_KEY" => { "sync" => false },
   "CORTEX_IMPORT_ENABLED" => { "value" => "false" },
-  "CORTEX_SYNC_ENABLED" => { "value" => "false" }
+  "CORTEX_ACADEMY_DB_URL" => { "sync" => false },
+  "CORTEX_ACADEMY_DB_USER" => { "sync" => false },
+  "CORTEX_ACADEMY_DB_PASSWORD_FILE" => { "value" => "/etc/secrets/cortex-academy-password" },
+  "CORTEX_SYNC_ACADEMY_ENABLED" => { "value" => "false" },
+  "CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS" => { "value" => "900000" },
+  "CORTEX_SYNC_ZELADORIA_ENABLED" => { "value" => "false" }
 }
 
 env_vars = service["envVars"]
@@ -134,5 +142,13 @@ inline_connection = env_vars.any? do |entry|
 end
 fail_contract("inline database connection values are forbidden") if inline_connection
 RUBY
+
+grep -Fq '/etc/secrets/cortex-academy-truststore.p12' "$render_file"
+grep -Fq '/etc/secrets/cortex-academy-truststore.p12' "$hosted_runbook"
+grep -Fq 'fallbackToSystemTrustStore=false' "$hosted_runbook"
+if [[ -n "$(git -C "$repo_root" ls-files '*.p12' '*.pfx' '*.jks')" ]]; then
+  echo "hosted deployment contract forbids tracked truststore material" >&2
+  exit 1
+fi
 
 echo "Hosted Render and Cloudflare contracts passed."

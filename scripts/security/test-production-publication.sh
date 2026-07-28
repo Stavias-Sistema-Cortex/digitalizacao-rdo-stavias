@@ -4,6 +4,16 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 bash "$repo_root/scripts/security/test-hosted-deployment-contract.sh"
 bash "$repo_root/scripts/security/test-hosted-deployment-contract-regressions.sh"
+bash "$repo_root/scripts/security/test-production-workflow-contract.sh"
+bash "$repo_root/scripts/security/test-production-workflow-contract-regressions.sh"
+bash "$repo_root/scripts/security/test-github-actions-pinning.sh"
+bash "$repo_root/scripts/security/test-github-actions-pinning-regressions.sh"
+bash "$repo_root/scripts/security/test-docker-base-image-pinning.sh"
+bash "$repo_root/scripts/security/test-neon-migration-contract.sh"
+bash "$repo_root/scripts/security/test-scan-cortex-secrets.sh"
+bash "$repo_root/scripts/deploy/test-run-neon-flyway.sh"
+bash "$repo_root/scripts/deploy/test-trigger-and-wait-render.sh"
+bash "$repo_root/scripts/deploy/test-deploy-and-verify-cloudflare-pages.sh"
 workflow_file="$repo_root/.github/workflows/production.yml"
 ci_workflow_file="$repo_root/.github/workflows/api-ci.yml"
 compose_file="$repo_root/deploy/production/compose.yml"
@@ -28,6 +38,13 @@ done
 
 bash -n "$prepare_script"
 grep -Fq 'A PostgreSQL 18 pg_dump client is required' "$prepare_script"
+grep -Fq 'install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE' \
+  "$prepare_script"
+if grep -Fq 'write_secret_value CORTEX_ACADEMY_DB_PASSWORD ' \
+  "$prepare_script"; then
+  echo "production preparation still accepts an inline Academy password" >&2
+  exit 1
+fi
 
 grep -Fq 'environment: production' "$workflow_file"
 grep -Fq 'packages: write' "$workflow_file"
@@ -35,11 +52,14 @@ grep -Fq 'attestations: write' "$workflow_file"
 grep -Fq 'docker/build-push-action@' "$workflow_file"
 grep -Fq 'push: true' "$workflow_file"
 grep -Fq 'persist-credentials: false' "$workflow_file"
-grep -Fq 'github.ref_name == '\''develop'\''' "$workflow_file"
+grep -Fq 'github.ref == '\''refs/heads/develop'\''' "$workflow_file"
 grep -Fq -- '--build-arg VITE_CORTEX_API_BASE_URL=/api' "$ci_workflow_file"
 grep -Fq -- '--build-arg VITE_CORTEX_AUTH_MODE=postgresql' "$ci_workflow_file"
 grep -Eq -- '--build-arg VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=[A-Za-z0-9_-]{43}' \
   "$ci_workflow_file"
+grep -Fq 'npm run typecheck:functions' "$workflow_file"
+grep -Fq 'npm run build:functions' "$workflow_file"
+grep -Fq 'bash ../../scripts/security/scan-cortex-secrets.sh' "$workflow_file"
 
 if grep -Eq 'pull_request_target|secrets:[[:space:]]*inherit' "$workflow_file"; then
   echo "production publication workflow exposes an unsafe trigger or inherited secrets" >&2
@@ -101,7 +121,7 @@ env \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_ID='memory-contract-v1' \
   CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE="$contract_dir/memory_cursor_hmac" \
   VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256='contract-public-key-fingerprint' \
-  CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy' \
+  CORTEX_ACADEMY_DB_URL='jdbc:mysql://academy.contract.internal:3306/academy?sslMode=VERIFY_IDENTITY' \
   CORTEX_ACADEMY_DB_USER='academy_readonly' \
   CORTEX_ACADEMY_DB_PASSWORD_FILE="$contract_dir/academy" \
   CORTEX_ZELADORIA_DB_URL='jdbc:mysql://zeladoria.contract.internal:3306/zeladoria' \
@@ -150,11 +170,24 @@ api_environment = services["cortex-api"]["environment"]
 assert api_environment["SPRING_PROFILES_ACTIVE"] == "production,postgresql"
 assert api_environment["CORTEX_POSTGRES_USER"] == "cortex_runtime"
 assert api_environment["CORTEX_POSTGRES_RUNTIME_READY"] == "true"
-assert api_environment["CORTEX_SYNC_ENABLED"] == "false"
+assert api_environment["CORTEX_ACADEMY_DB_PASSWORD_FILE"] == (
+    "/run/secrets/cortex_academy_password"
+)
+assert api_environment["CORTEX_SYNC_ACADEMY_ENABLED"] == "false"
+assert api_environment["CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS"] == "900000"
+assert api_environment["CORTEX_SYNC_ZELADORIA_ENABLED"] == "false"
+assert "CORTEX_SYNC_ENABLED" not in api_environment
 assert api_environment["CORTEX_CORS_ALLOWED_ORIGINS"] == "https://cortex.localhost:18443"
 assert api_environment["CORTEX_AUTH_WEBAUTHN_ALLOWED_ORIGINS"] == "https://cortex.localhost:18443"
 assert api_environment["CORTEX_AUTH_DEV_ADMIN_ENABLED"] == "false"
 assert api_environment["CORTEX_AUTH_PROVISIONING_ENABLED"] == "false"
+
+api_secrets = services["cortex-api"].get("secrets", [])
+assert any(
+    secret.get("source") == "cortex_academy_password"
+    and secret.get("target") == "cortex_academy_password"
+    for secret in api_secrets
+), "Academy password must be mounted at the explicit file-backed path"
 
 migrate_environment = services["cortex-migrate"]["environment"]
 assert migrate_environment["CORTEX_POSTGRES_USER"] == "cortex_migrator"

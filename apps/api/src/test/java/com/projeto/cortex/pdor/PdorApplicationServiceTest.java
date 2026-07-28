@@ -10,12 +10,14 @@ import com.projeto.cortex.intelligence.PdorEngine;
 import com.projeto.cortex.intelligence.PdorContextBuilder;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -34,6 +36,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
@@ -47,6 +50,7 @@ class PdorApplicationServiceTest {
     private MutableInputLoader inputLoader;
     private InMemorySnapshotRepository snapshotRepository;
     private CortexOperationalMemoryService memoryService;
+    private ObraOperabilityGuard operabilityGuard;
     private PdorApplicationService service;
 
     @BeforeEach
@@ -72,17 +76,19 @@ class PdorApplicationServiceTest {
         inputLoader = new MutableInputLoader(validBundle(obra, "350000.00"));
         snapshotRepository = new InMemorySnapshotRepository(objectMapper);
         memoryService = mock(CortexOperationalMemoryService.class);
+        operabilityGuard = mock(ObraOperabilityGuard.class);
         service = new PdorApplicationService(
                 obraRepository,
                 inputLoader,
                 snapshotRepository,
                 objectMapper,
-                memoryService
+                memoryService,
+                operabilityGuard
         );
 
-        when(obraRepository.findAtivasByIdentificador("CW38386"))
+        when(obraRepository.findByIdentificador("CW38386"))
                 .thenReturn(List.of(obra));
-        when(obraRepository.findAtivasByIdentificador(obra.getId()))
+        when(obraRepository.findByIdentificador(obra.getId()))
                 .thenReturn(List.of(obra));
     }
 
@@ -247,7 +253,8 @@ class PdorApplicationServiceTest {
                 objectMapper,
                 memoryService,
                 new PdorContextBuilder(),
-                failingEngine
+                failingEngine,
+                operabilityGuard
         );
 
         Logger logger = (Logger) LoggerFactory.getLogger(
@@ -299,6 +306,78 @@ class PdorApplicationServiceTest {
         assertThat(second.id()).isEqualTo(first.id());
         assertThat(second.snapshotExistente()).isTrue();
         assertThat(snapshotRepository.size()).isEqualTo(1);
+    }
+
+    @Test
+    void archivedWorksiteKeepsExactSnapshotReplayAvailable() {
+        PdorResultadoResponse first =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        obra.arquivar();
+        when(obraRepository.findByIdentificador("CW38386"))
+                .thenReturn(List.of(obra));
+        doThrow(archivedWorksite()).when(operabilityGuard)
+                .requireWritable(obra.getId());
+
+        PdorResultadoResponse replay =
+                service.calcular("CW38386", null, PdorTriggerType.API, "evento-1");
+
+        assertThat(replay.id()).isEqualTo(first.id());
+        assertThat(replay.snapshotExistente()).isTrue();
+        assertThat(snapshotRepository.size()).isEqualTo(1);
+    }
+
+    @Test
+    void archivedWorksiteRejectsNewSnapshotWithoutChangingHistory() {
+        PdorResultadoResponse first =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        obra.arquivar();
+        inputLoader.bundle = validBundle(obra, "390000.00");
+        doThrow(archivedWorksite()).when(operabilityGuard)
+                .requireWritable(obra.getId());
+
+        assertThatThrownBy(() ->
+                service.calcular("CW38386", null, PdorTriggerType.API, "evento-2")
+        )
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404 NOT_FOUND");
+        assertThat(snapshotRepository.size()).isEqualTo(1);
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .map(PdorSnapshot::id)
+                .contains(first.id());
+    }
+
+    @Test
+    void archivedWorksiteRejectsFailureAuditWithoutStalingCurrentSnapshot() {
+        PdorResultadoResponse first =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        obra.arquivar();
+        inputLoader.bundle = validBundle(obra, "390000.00");
+        PdorEngine failingEngine = mock(PdorEngine.class);
+        when(failingEngine.calculate(any(), any()))
+                .thenThrow(new IllegalStateException("failure"));
+        PdorApplicationService failingService = new PdorApplicationService(
+                obraRepository,
+                inputLoader,
+                snapshotRepository,
+                objectMapper,
+                memoryService,
+                new PdorContextBuilder(),
+                failingEngine,
+                operabilityGuard
+        );
+        doThrow(archivedWorksite()).when(operabilityGuard)
+                .requireWritable(obra.getId());
+
+        assertThatThrownBy(() ->
+                failingService.calcular(
+                        "CW38386", null, PdorTriggerType.API, "evento-2"
+                )
+        )
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("404 NOT_FOUND");
+        assertThat(snapshotRepository.findCurrentByObraId(obra.getId()))
+                .map(PdorSnapshot::id)
+                .contains(first.id());
     }
 
     @Test
@@ -376,7 +455,7 @@ class PdorApplicationServiceTest {
 
     @Test
     void shouldReturnNotFoundForMissingWorksite() {
-        when(obraRepository.findAtivasByIdentificador("NAO-EXISTE"))
+        when(obraRepository.findByIdentificador("NAO-EXISTE"))
                 .thenReturn(List.of());
 
         assertThatThrownBy(() ->
@@ -415,7 +494,7 @@ class PdorApplicationServiceTest {
                 null,
                 null
         );
-        when(obraRepository.findAtivasByIdentificador("AMBIGUA"))
+        when(obraRepository.findByIdentificador("AMBIGUA"))
                 .thenReturn(List.of(obra, outra));
 
         assertThatThrownBy(() ->
@@ -450,6 +529,20 @@ class PdorApplicationServiceTest {
                 .containsExactly(third.id(), second.id());
         assertThat(page.items()).extracting(PdorResultadoResponse::id)
                 .doesNotContain(first.id());
+    }
+
+    @Test
+    void archivedWorksiteKeepsCurrentAndHistoryReadable() {
+        PdorResultadoResponse current =
+                service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
+        obra.arquivar();
+        when(obraRepository.findByIdentificador("CW38386"))
+                .thenReturn(List.of(obra));
+
+        assertThat(service.buscarAtual("CW38386").id()).isEqualTo(current.id());
+        assertThat(service.buscarHistorico("CW38386", 0, 10).items())
+                .extracting(PdorResultadoResponse::id)
+                .containsExactly(current.id());
     }
 
     @Test
@@ -740,6 +833,13 @@ class PdorApplicationServiceTest {
         return new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    }
+
+    private static ResponseStatusException archivedWorksite() {
+        return new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        );
     }
 
     private static final class MutableInputLoader implements PdorInputLoader {

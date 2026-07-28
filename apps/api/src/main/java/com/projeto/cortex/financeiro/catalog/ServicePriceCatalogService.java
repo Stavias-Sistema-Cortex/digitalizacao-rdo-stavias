@@ -4,6 +4,7 @@ import com.projeto.cortex.financeiro.catalog.ServicePriceCatalogRepository.Cance
 import com.projeto.cortex.financeiro.catalog.ServicePriceCatalogRepository.CreatePriceRecord;
 import com.projeto.cortex.financeiro.catalog.ServicePriceCatalogRepository.CreateServiceRecord;
 import com.projeto.cortex.financeiro.core.FinanceValidation;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -35,23 +36,27 @@ public class ServicePriceCatalogService {
 
     private final ServicePriceCatalogRepository repository;
     private final ServiceCatalogOntologyPublisher ontology;
+    private final ObraOperabilityGuard operabilityGuard;
     private final Clock clock;
 
     @Autowired
     public ServicePriceCatalogService(
             ServicePriceCatalogRepository repository,
-            ServiceCatalogOntologyPublisher ontology
+            ServiceCatalogOntologyPublisher ontology,
+            ObraOperabilityGuard operabilityGuard
     ) {
-        this(repository, ontology, Clock.systemUTC());
+        this(repository, ontology, operabilityGuard, Clock.systemUTC());
     }
 
     ServicePriceCatalogService(
             ServicePriceCatalogRepository repository,
             ServiceCatalogOntologyPublisher ontology,
+            ObraOperabilityGuard operabilityGuard,
             Clock clock
     ) {
         this.repository = repository;
         this.ontology = ontology;
+        this.operabilityGuard = operabilityGuard;
         this.clock = clock;
     }
 
@@ -72,6 +77,7 @@ public class ServicePriceCatalogService {
         if (replay.isPresent()) {
             return replayService(replay.orElseThrow(), hash);
         }
+        operabilityGuard.requireWritable(worksite);
 
         String id = normalized.id() == null
                 ? UUID.randomUUID().toString()
@@ -119,6 +125,7 @@ public class ServicePriceCatalogService {
         if (replay.isPresent()) {
             return replayPrice(worksite, replay.orElseThrow(), hash);
         }
+        operabilityGuard.requireWritable(worksite);
 
         ServicePriceVersion created;
         try {
@@ -169,6 +176,7 @@ public class ServicePriceCatalogService {
         if (replay.isPresent()) {
             return replayPrice(worksite, replay.orElseThrow(), hash);
         }
+        operabilityGuard.requireWritable(worksite);
         ServiceCatalogEntry catalogService = repository.findService(previous.serviceId())
                 .orElseThrow(() -> notFound("SERVICE_CATALOG_NOT_FOUND"));
 

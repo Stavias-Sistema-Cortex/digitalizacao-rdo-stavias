@@ -16,9 +16,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
@@ -49,7 +53,11 @@ class TarefaSyncOperationHandlerTest {
                 mock(CortexOperationalMemoryService.class);
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
         TarefaSyncOperationHandler handler = new TarefaSyncOperationHandler(
-                jdbc, mapper, memory, currentUser
+                jdbc,
+                mapper,
+                memory,
+                currentUser,
+                mock(ObraOperabilityGuard.class)
         );
 
         AppliedSyncMutation applied = handler.apply(
@@ -85,7 +93,11 @@ class TarefaSyncOperationHandlerTest {
                 mock(CortexOperationalMemoryService.class);
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
         TarefaSyncOperationHandler handler = new TarefaSyncOperationHandler(
-                jdbc, mapper, memory, currentUser
+                jdbc,
+                mapper,
+                memory,
+                currentUser,
+                mock(ObraOperabilityGuard.class)
         );
 
         handler.apply(
@@ -154,7 +166,11 @@ class TarefaSyncOperationHandlerTest {
                 mock(CortexOperationalMemoryService.class);
         when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
         TarefaSyncOperationHandler handler = new TarefaSyncOperationHandler(
-                jdbc, mapper, memory, currentUser
+                jdbc,
+                mapper,
+                memory,
+                currentUser,
+                mock(ObraOperabilityGuard.class)
         );
         ObjectNode payload = transitionPayload(false, null, null);
         payload.put("titulo", "Sinalizar desvio atualizado");
@@ -185,7 +201,11 @@ class TarefaSyncOperationHandlerTest {
         CortexOperationalMemoryService memory =
                 mock(CortexOperationalMemoryService.class);
         TarefaSyncOperationHandler handler = new TarefaSyncOperationHandler(
-                jdbc, mapper, memory, currentUser
+                jdbc,
+                mapper,
+                memory,
+                currentUser,
+                mock(ObraOperabilityGuard.class)
         );
         ObjectNode wrongIdentity = createPayload();
         wrongIdentity.put(
@@ -228,7 +248,11 @@ class TarefaSyncOperationHandlerTest {
                 "Obra fora do escopo."
         )).when(currentUser).requireWorksiteAccess(WORKSITE);
         TarefaSyncOperationHandler handler = new TarefaSyncOperationHandler(
-                jdbc, mapper, memory, currentUser
+                jdbc,
+                mapper,
+                memory,
+                currentUser,
+                mock(ObraOperabilityGuard.class)
         );
 
         assertThatThrownBy(() -> handler.apply(
@@ -252,7 +276,8 @@ class TarefaSyncOperationHandlerTest {
                 jdbc,
                 mapper,
                 mock(CortexOperationalMemoryService.class),
-                mock(CurrentUserService.class)
+                mock(CurrentUserService.class),
+                mock(ObraOperabilityGuard.class)
         );
 
         assertThatThrownBy(() -> handler.apply(
@@ -265,6 +290,120 @@ class TarefaSyncOperationHandlerTest {
                 new SyncMutationContext(ACTOR, DEVICE)
         )).isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("estado");
+    }
+
+    @Nested
+    class ArchivedWorksitePolicy {
+
+        private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        private final ObjectMapper objectMapper =
+                new ObjectMapper().findAndRegisterModules();
+        private final CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        private final CurrentUserService currentUser =
+                mock(CurrentUserService.class);
+        private final ObraOperabilityGuard operabilityGuard =
+                mock(ObraOperabilityGuard.class);
+        private final TarefaSyncOperationHandler handler =
+                new TarefaSyncOperationHandler(
+                        jdbc,
+                        objectMapper,
+                        memory,
+                        currentUser,
+                        operabilityGuard
+                );
+
+        @ParameterizedTest(name = "{0} exige obra operacional")
+        @ValueSource(strings = {
+                "CRIAR_TAREFA",
+                "ATUALIZAR_TAREFA",
+                "REABRIR_TAREFA"
+        })
+        void archivedWorksiteBlocksOperationalTaskMutationBeforeWrites(
+                String operation
+        ) {
+            rejectArchivedWorksite();
+            boolean creation = "CRIAR_TAREFA".equals(operation);
+            String canonicalOperation = switch (operation) {
+                case "CRIAR_TAREFA" -> "CREATE";
+                case "ATUALIZAR_TAREFA" -> "UPDATE";
+                default -> "TRANSITION";
+            };
+
+            assertArchivedRejection(
+                    mutation(
+                            operation,
+                            canonicalOperation,
+                            creation ? null : 1L,
+                            creation
+                                    ? createPayload()
+                                    : transitionPayload(false, null, null)
+                    )
+            );
+        }
+
+        @ParameterizedTest(name = "{0} preserva fechamento histórico")
+        @ValueSource(strings = {
+                "CONCLUIR_TAREFA",
+                "EXCLUIR_TAREFA"
+        })
+        void archivedWorksiteStillAllowsHistoricalCompletionOrClosure(
+                String operation
+        ) {
+            rejectArchivedWorksite();
+            when(jdbc.update(anyString(), any(Object[].class))).thenReturn(1);
+            boolean completion = "CONCLUIR_TAREFA".equals(operation);
+
+            handler.apply(
+                    mutation(
+                            operation,
+                            completion ? "TRANSITION" : "DELETE",
+                            1L,
+                            transitionPayload(
+                                    completion,
+                                    completion ? OCCURRED_AT : null,
+                                    completion ? null : OCCURRED_AT
+                            )
+                    ),
+                    new SyncMutationContext(ACTOR, DEVICE)
+            );
+
+            verify(operabilityGuard, never()).requireWritable(anyString());
+            verify(jdbc).update(anyString(), any(Object[].class));
+        }
+
+        private void rejectArchivedWorksite() {
+            doThrow(new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Obra não encontrada ou arquivada."
+            )).when(operabilityGuard).requireWritable(WORKSITE);
+        }
+
+        private void assertArchivedRejection(
+                SyncPushRequest.MutacaoCliente mutation
+        ) {
+            assertThatThrownBy(() -> handler.apply(
+                    mutation,
+                    new SyncMutationContext(ACTOR, DEVICE)
+            )).isInstanceOfSatisfying(
+                    ResponseStatusException.class,
+                    exception -> {
+                        assertThat(exception.getStatusCode())
+                                .isEqualTo(HttpStatus.NOT_FOUND);
+                        assertThat(exception.getReason())
+                                .isEqualTo("Obra não encontrada ou arquivada.");
+                    }
+            );
+
+            verify(jdbc, never()).update(
+                    anyString(),
+                    any(Object[].class)
+            );
+            verify(memory, never()).registrarEvento(
+                    anyString(), anyString(), anyString(), anyString(),
+                    anyString(), any()
+            );
+        }
     }
 
     private ObjectNode createPayload() {

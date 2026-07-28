@@ -235,13 +235,15 @@ class PostgresqlSyncFinanceRuntimeIT {
                 jdbc,
                 currentUser,
                 projector,
-                mapper
+                mapper,
+                mock(com.projeto.cortex.obras.ObraOperabilityGuard.class)
         );
         FinanceLedgerService ledgerService = new FinanceLedgerService(
                 jdbc,
                 currentUser,
                 projector,
-                mapper
+                mapper,
+                mock(com.projeto.cortex.obras.ObraOperabilityGuard.class)
         );
         FinanceAuditContext audit = FinanceAuditContext.online(
                 actorId,

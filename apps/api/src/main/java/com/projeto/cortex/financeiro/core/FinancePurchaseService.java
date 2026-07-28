@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -78,19 +79,22 @@ public class FinancePurchaseService {
     private final FinancialAccessService financialAccess;
     private final FinanceOntologyProjector ontology;
     private final ObjectMapper objectMapper;
+    private final ObraOperabilityGuard obraOperabilityGuard;
 
     public FinancePurchaseService(
             JdbcTemplate jdbc,
             CurrentUserService currentUser,
             FinancialAccessService financialAccess,
             FinanceOntologyProjector ontology,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ObraOperabilityGuard obraOperabilityGuard
     ) {
         this.jdbc = jdbc;
         this.currentUser = currentUser;
         this.financialAccess = financialAccess;
         this.ontology = ontology;
         this.objectMapper = objectMapper;
+        this.obraOperabilityGuard = obraOperabilityGuard;
     }
 
     @Transactional
@@ -138,6 +142,7 @@ public class FinancePurchaseService {
             }
             return existing;
         }
+        obraOperabilityGuard.requireWritable(input.obraId());
 
         String id = input.id();
         SolicitationResponse previous = findSolicitation(id);
@@ -301,6 +306,7 @@ public class FinancePurchaseService {
             }
             return existing;
         }
+        obraOperabilityGuard.requireWritable(input.obraId());
         String id = input.id();
         PurchaseResponse previous = findPurchase(id);
         if (previous != null && !previous.obraId().equals(input.obraId())) {
@@ -465,6 +471,7 @@ public class FinancePurchaseService {
             );
             return statusResponse(purchase, true, null, null);
         }
+        obraOperabilityGuard.requireWritable(purchase.obraId());
         Transition transition = transition(
                 purchase.obraId(), "COMPRA", purchase.statusId(), target
         );
@@ -589,6 +596,7 @@ public class FinancePurchaseService {
             );
             return replay.response();
         }
+        obraOperabilityGuard.requireWritable(purchase.obraId());
         Approval approval = pendingApproval(purchase.id());
         if (approval == null) {
             throw new ResponseStatusException(

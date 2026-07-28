@@ -1,4 +1,4 @@
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+FROM maven:3.9.9-eclipse-temurin-21@sha256:5a8b906c4faa11d33f6c74758f67db8eac25441e14b0729f6d50ff78992be58a AS build
 
 WORKDIR /app
 
@@ -7,15 +7,21 @@ COPY src ./src
 
 RUN mvn clean package -DskipTests
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre-alpine@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c
 
 WORKDIR /app
 
 RUN apk add --no-cache wget \
     && addgroup -S cortex \
     && adduser -S cortex -G cortex \
+    && render_secret_group="$(getent group 1000 | cut -d: -f1)" \
+    && if [ -z "$render_secret_group" ]; then \
+         addgroup -S -g 1000 render-secrets; \
+         render_secret_group=render-secrets; \
+       fi \
+    && addgroup cortex "$render_secret_group" \
     && mkdir -p /var/lib/cortex/objects \
-    && chown -R cortex:cortex /app /var/lib/cortex
+    && chown -R cortex:cortex /var/lib/cortex
 
 # A container without an explicit override must start in the fail-closed mode.
 ENV SPRING_PROFILES_ACTIVE=production

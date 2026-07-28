@@ -135,7 +135,8 @@ fi
 install_secret_file CORTEX_AUTH_OFFLINE_GRANT_PRIVATE_KEY_FILE "$offline_private_secret"
 install_secret_file CORTEX_AUTH_OFFLINE_GRANT_PUBLIC_KEY_FILE "$offline_public_secret"
 install_secret_file CORTEX_MEMORY_CURSOR_HMAC_CURRENT_KEY_FILE "$memory_cursor_secret"
-write_secret_value CORTEX_ACADEMY_DB_PASSWORD "$academy_secret"
+install_secret_file CORTEX_ACADEMY_DB_PASSWORD_FILE "$academy_secret"
+unset CORTEX_ACADEMY_DB_PASSWORD ACAD_DB_PASSWORD
 write_secret_value CORTEX_ZELADORIA_DB_PASSWORD "$zeladoria_secret"
 
 for key_file in "$cpf_hmac_secret" "$memory_cursor_secret"; do
@@ -214,7 +215,8 @@ runtime_env_tmp="$(mktemp "$runtime_dir/production.env.XXXXXX")"
   printf 'CORTEX_ZELADORIA_DB_URL=%s\n' "$CORTEX_ZELADORIA_DB_URL"
   printf 'CORTEX_ZELADORIA_DB_USER=%s\n' "$CORTEX_ZELADORIA_DB_USER"
   printf 'CORTEX_ZELADORIA_DB_PASSWORD_FILE=%s\n' "$zeladoria_secret"
-  printf 'CORTEX_SYNC_ENABLED=false\n'
+  printf 'CORTEX_SYNC_ACADEMY_ENABLED=false\n'
+  printf 'CORTEX_SYNC_ZELADORIA_ENABLED=false\n'
 } > "$runtime_env_tmp"
 chmod 600 "$runtime_env_tmp"
 mv "$runtime_env_tmp" "$runtime_env"
@@ -290,7 +292,8 @@ unset \
   CORTEX_ZELADORIA_DB_USER \
   CORTEX_ZELADORIA_DB_PASSWORD \
   CORTEX_ZELADORIA_DB_PASSWORD_FILE \
-  CORTEX_SYNC_ENABLED
+  CORTEX_SYNC_ACADEMY_ENABLED \
+  CORTEX_SYNC_ZELADORIA_ENABLED
 
 "${compose[@]}" up -d cortex-postgres
 postgres_container="$("${compose[@]}" ps -q cortex-postgres)"

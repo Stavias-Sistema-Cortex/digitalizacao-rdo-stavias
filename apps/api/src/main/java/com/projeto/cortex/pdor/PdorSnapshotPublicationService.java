@@ -1,5 +1,6 @@
 package com.projeto.cortex.pdor;
 
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,11 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class PdorSnapshotPublicationService {
 
     private final PdorSnapshotRepository snapshotRepository;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public PdorSnapshotPublicationService(
-            PdorSnapshotRepository snapshotRepository
+            PdorSnapshotRepository snapshotRepository,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.snapshotRepository = snapshotRepository;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional
@@ -26,12 +30,22 @@ public class PdorSnapshotPublicationService {
             PdorSnapshot snapshot,
             Runnable ontologyPublication
     ) {
+        operabilityGuard.requireWritable(snapshot.obraId());
         if (snapshot.current()) {
             snapshotRepository.replaceCurrent(snapshot);
         } else {
             snapshotRepository.insert(snapshot);
         }
         ontologyPublication.run();
+    }
+
+    @Transactional
+    public void recordFailure(
+            String obraId,
+            Runnable failurePersistence
+    ) {
+        operabilityGuard.requireWritable(obraId);
+        failurePersistence.run();
     }
 
     /**

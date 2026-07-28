@@ -5,6 +5,7 @@ import com.projeto.cortex.mensagens.api.ConversationCreateRequest;
 import com.projeto.cortex.mensagens.api.ConversationResponse;
 import com.projeto.cortex.mensagens.api.ParticipantChangeRequest;
 import com.projeto.cortex.mensagens.api.ParticipantResponse;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -35,17 +36,20 @@ public class ConversaService {
     private final CurrentUserService currentUserService;
     private final ConversaAccessPolicy accessPolicy;
     private final MessagingOperationalEventService eventService;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public ConversaService(
             JdbcTemplate jdbcTemplate,
             CurrentUserService currentUserService,
             ConversaAccessPolicy accessPolicy,
-            MessagingOperationalEventService eventService
+            MessagingOperationalEventService eventService,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
         this.accessPolicy = accessPolicy;
         this.eventService = eventService;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional
@@ -69,6 +73,9 @@ public class ConversaService {
         );
 
         validateShape(type, title, obraId, teamId, participants);
+        if (conversationExists(id)) {
+            return get(id);
+        }
         validateScope(type, obraId, teamId, actorId);
         for (String participantId : participants) {
             validateParticipantScope(
@@ -78,9 +85,8 @@ public class ConversaService {
                     participantId
             );
         }
-
-        if (conversationExists(id)) {
-            return get(id);
+        if (obraId != null) {
+            operabilityGuard.requireWritable(obraId);
         }
 
         String directKey = type == ConversationType.DIRETA
@@ -255,6 +261,7 @@ public class ConversaService {
                 scope.teamId(),
                 participantId
         );
+        requireWritable(scope);
 
         int updated = jdbcTemplate.update(
                 """
@@ -282,6 +289,12 @@ public class ConversaService {
                 Map.of("colaboradorId", participantId, "papel", role)
         );
         return participant(scope.id(), participantId);
+    }
+
+    private void requireWritable(ConversationScope scope) {
+        if (scope.obraId() != null) {
+            operabilityGuard.requireWritable(scope.obraId());
+        }
     }
 
     @Transactional

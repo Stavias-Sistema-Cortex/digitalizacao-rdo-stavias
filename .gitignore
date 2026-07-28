@@ -24,6 +24,10 @@ var/cortex-attachments/
 # Local Git worktrees
 .worktrees/
 .superpowers/
+apps/web/.wrangler/
 
 # Generated production runtime, backups and mounted secret material
 .runtime/
+*.p12
+*.pfx
+*.jks

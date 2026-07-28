@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -24,6 +25,7 @@ import com.projeto.cortex.financeiro.allocation.FinanceAllocationRepository.Allo
 import com.projeto.cortex.financeiro.core.FinanceAuditContext;
 import com.projeto.cortex.financeiro.core.FinanceOntologyProjector;
 import com.projeto.cortex.financeiro.unit.FinancialUnitType;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -42,6 +44,7 @@ class FinanceAllocationServiceTest {
     private FinanceAllocationRepository repository;
     private FinancialAccessService access;
     private FinanceOntologyProjector ontology;
+    private ObraOperabilityGuard operabilityGuard;
     private FinanceAllocationService service;
 
     @BeforeEach
@@ -49,11 +52,13 @@ class FinanceAllocationServiceTest {
         repository = mock(FinanceAllocationRepository.class);
         access = mock(FinancialAccessService.class);
         ontology = mock(FinanceOntologyProjector.class);
+        operabilityGuard = mock(ObraOperabilityGuard.class);
         service = new FinanceAllocationService(
                 repository,
                 access,
                 ontology,
-                new ObjectMapper().findAndRegisterModules()
+                new ObjectMapper().findAndRegisterModules(),
+                operabilityGuard
         );
         when(repository.findMutation("alfa-1", "mutation-1"))
                 .thenReturn(Optional.empty());
@@ -192,6 +197,10 @@ class FinanceAllocationServiceTest {
                 )));
         when(repository.findById(stored.header().id()))
                 .thenReturn(Optional.of(stored));
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(operabilityGuard).requireWritable("obra-1");
 
         AllocationResponse response = service.save(
                 request(items("40.0000", "60.0000")),
@@ -200,8 +209,39 @@ class FinanceAllocationServiceTest {
 
         assertThat(response.id()).isEqualTo("rateio-1");
         assertThat(response.versao()).isEqualTo(2L);
+        verify(operabilityGuard, never()).requireWritable(any());
         verify(repository, never()).lockSource(any(), any());
         verify(repository, never()).insertHeader(any());
+    }
+
+    @Test
+    void archivedSourceWorksiteRejectsAllocationBeforeMutationClaim() {
+        when(repository.lockSource(
+                AllocationSourceType.COMPRA,
+                "compra-1"
+        )).thenReturn(Optional.of(new AllocationSource(
+                "compra-1",
+                AllocationSourceType.COMPRA,
+                "obra-arquivada",
+                "BRL",
+                new BigDecimal("100.0000"),
+                false
+        )));
+        doThrow(new ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(operabilityGuard).requireWritable("obra-arquivada");
+
+        assertThatThrownBy(() ->
+                service.save(request(items("40.0000", "60.0000")), audit())
+        ).isInstanceOfSatisfying(
+                ResponseStatusException.class,
+                error -> assertThat(error.getStatusCode())
+                        .isEqualTo(HttpStatus.NOT_FOUND)
+        );
+        verify(repository, never()).claimMutation(any(), any(), any(), any());
+        verify(repository, never()).insertHeader(any());
+        verify(repository, never()).insertHistory(any());
     }
 
     @Test

@@ -216,7 +216,7 @@ public class IntegracaoAdminService {
                 latestRun == null ? 0 : latestRun.recordsUpdated(),
                 latestRun == null ? 0 : latestRun.recordsDeactivated(),
                 error,
-                "Manual ou agendada pelo CORTEX_SYNC_FIXED_DELAY_MS",
+                "Manual ou automática",
                 defasagem(lastSuccess)
         );
     }

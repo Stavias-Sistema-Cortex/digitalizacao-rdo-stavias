@@ -24,6 +24,7 @@ import com.projeto.cortex.financeiro.catalog.ServicePriceVersion;
 import com.projeto.cortex.financeiro.unit.FinancialUnitRepository;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import com.projeto.cortex.obras.Obra;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.obras.ObraRepository;
 import com.projeto.cortex.ontology.graph.GraphProjectionCatchUpService;
 import com.projeto.cortex.ontology.graph.GraphProjectionService;
@@ -34,6 +35,7 @@ import com.projeto.cortex.pdor.PdorApplicationService;
 import com.projeto.cortex.pdor.PdorController;
 import com.projeto.cortex.pdor.PdorExecutionInitiatorResolver;
 import com.projeto.cortex.pdor.PdorResultadoResponse;
+import com.projeto.cortex.pdor.PdorSnapshotPublicationService;
 import com.projeto.cortex.pdor.PdorSnapshotRepository;
 import com.projeto.cortex.pdor.RealPdorInputLoader;
 import com.projeto.cortex.rdos.RdoAssetEligibilityService;
@@ -168,7 +170,8 @@ class PostgresqlCortex3FlowIT {
         );
         ServicePriceCatalogService catalog = new ServicePriceCatalogService(
                 new PostgresqlServicePriceCatalogRepository(jdbc),
-                new PostgresqlServiceCatalogOntologyPublisher(memory)
+                new PostgresqlServiceCatalogOntologyPublisher(memory),
+                mock(ObraOperabilityGuard.class)
         );
         String serviceId = id();
         String priceId = id();
@@ -359,12 +362,20 @@ class PostgresqlCortex3FlowIT {
                 Long.class
         );
         ObraRepository worksites = mock(ObraRepository.class);
-        when(worksites.findAtivasByIdentificador(worksite.getId()))
+        when(worksites.findByIdentificador(worksite.getId()))
                 .thenReturn(List.of(worksite));
+        PdorSnapshotRepository snapshots = new PdorSnapshotRepository(
+                jdbc,
+                mapper
+        );
         PdorApplicationService pdorService = new PdorApplicationService(
                 worksites,
                 new RealPdorInputLoader(jdbc),
-                new PdorSnapshotRepository(jdbc, mapper),
+                snapshots,
+                new PdorSnapshotPublicationService(
+                        snapshots,
+                        mock(ObraOperabilityGuard.class)
+                ),
                 mapper,
                 memory,
                 new PdorExecutionInitiatorResolver(currentUsers)
@@ -673,7 +684,8 @@ class PostgresqlCortex3FlowIT {
                 attachments,
                 new RdoOperationalEventService(memory),
                 mock(PrevisaoFinanceiraService.class),
-                query
+                query,
+                mock(ObraOperabilityGuard.class)
         );
         RdoSyncOperationHandler rdoHandler = new RdoSyncOperationHandler(
                 jdbc,

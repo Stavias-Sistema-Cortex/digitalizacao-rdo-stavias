@@ -1,6 +1,11 @@
 package com.projeto.cortex.config;
 
 import com.projeto.cortex.common.RuntimeReadiness;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -23,7 +28,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
         PriorityOrdered,
         RuntimeReadiness {
 
-    private static final String CLEAN_START_REQUIRED_SCHEMA_VERSION = "61";
+    static final long DEFAULT_ACADEMY_READINESS_MAX_AGE_MS = 900_000L;
+    private static final String ACADEMY_CONNECTOR_NAME = "acad_colaborador_import";
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
@@ -45,10 +51,23 @@ public final class PostgresqlRuntimeReadinessGuard implements
               AND ai.cpf_lookup_hmac IS NOT NULL
             """;
 
+    private static final String LATEST_ACADEMY_SYNC_RUN_SQL = """
+            SELECT
+                status,
+                finished_at,
+                LOCALTIMESTAMP AS database_now
+            FROM source_sync_run
+            WHERE connector_name = ?
+            ORDER BY started_at DESC, id DESC
+            LIMIT 1
+            """;
+
     private final JdbcTemplate testJdbcTemplate;
     private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
+    private final Boolean testAcademySyncEnabled;
+    private final Long testAcademyReadinessMaxAgeMs;
     private Environment environment;
 
     public PostgresqlRuntimeReadinessGuard() {
@@ -56,6 +75,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
         this.testRequiredSchemaVersion = null;
         this.testRuntimeReady = null;
         this.testSurfaceRegistry = null;
+        this.testAcademySyncEnabled = null;
+        this.testAcademyReadinessMaxAgeMs = null;
     }
 
     PostgresqlRuntimeReadinessGuard(
@@ -64,10 +85,30 @@ public final class PostgresqlRuntimeReadinessGuard implements
             boolean runtimeReady,
             PostgresqlRuntimeSurfaceRegistry surfaceRegistry
     ) {
+        this(
+                jdbcTemplate,
+                requiredSchemaVersion,
+                runtimeReady,
+                surfaceRegistry,
+                false,
+                DEFAULT_ACADEMY_READINESS_MAX_AGE_MS
+        );
+    }
+
+    PostgresqlRuntimeReadinessGuard(
+            JdbcTemplate jdbcTemplate,
+            String requiredSchemaVersion,
+            boolean runtimeReady,
+            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
+            boolean academySyncEnabled,
+            long academyReadinessMaxAgeMs
+    ) {
         this.testJdbcTemplate = jdbcTemplate;
         this.testRequiredSchemaVersion = requiredSchemaVersion;
         this.testRuntimeReady = runtimeReady;
         this.testSurfaceRegistry = surfaceRegistry;
+        this.testAcademySyncEnabled = academySyncEnabled;
+        this.testAcademyReadinessMaxAgeMs = academyReadinessMaxAgeMs;
     }
 
     @Override
@@ -83,15 +124,34 @@ public final class PostgresqlRuntimeReadinessGuard implements
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory)
             throws BeansException {
-        verifyConfiguredReadiness();
+        verifyConfiguredStartupReadiness();
     }
 
-    private void verifyConfiguredReadiness() {
+    private void verifyConfiguredStartupReadiness() {
         verifyReadiness(
                 postgresqlJdbcTemplate(),
-                CLEAN_START_REQUIRED_SCHEMA_VERSION,
+                PostgresqlSchemaVersion.REQUIRED,
                 environment.getProperty("cortex.postgresql.runtime-ready", Boolean.class, false),
                 new PostgresqlRuntimeSurfaceRegistry()
+        );
+    }
+
+    private void verifyConfiguredRuntimeReadiness() {
+        JdbcTemplate jdbcTemplate = postgresqlJdbcTemplate();
+        verifyReadiness(
+                jdbcTemplate,
+                PostgresqlSchemaVersion.REQUIRED,
+                environment.getProperty("cortex.postgresql.runtime-ready", Boolean.class, false),
+                new PostgresqlRuntimeSurfaceRegistry()
+        );
+        verifyAcademySyncReadiness(
+                jdbcTemplate,
+                environment.getProperty("cortex.sync.academy.enabled", Boolean.class, false),
+                environment.getProperty(
+                        "cortex.sync.academy.readiness-max-age-ms",
+                        Long.class,
+                        DEFAULT_ACADEMY_READINESS_MAX_AGE_MS
+                )
         );
     }
 
@@ -99,7 +159,9 @@ public final class PostgresqlRuntimeReadinessGuard implements
         if (testJdbcTemplate == null
                 || testRequiredSchemaVersion == null
                 || testRuntimeReady == null
-                || testSurfaceRegistry == null) {
+                || testSurfaceRegistry == null
+                || testAcademySyncEnabled == null
+                || testAcademyReadinessMaxAgeMs == null) {
             throw new IllegalStateException(
                     "A verificação de runtime PostgreSQL exige o perfil postgresql."
             );
@@ -122,9 +184,14 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
         if (testJdbcTemplate != null) {
             verifyReadiness();
+            verifyAcademySyncReadiness(
+                    testJdbcTemplate,
+                    testAcademySyncEnabled,
+                    testAcademyReadinessMaxAgeMs
+            );
             return;
         }
-        verifyConfiguredReadiness();
+        verifyConfiguredRuntimeReadiness();
     }
 
     private JdbcTemplate effectiveJdbcTemplate() {
@@ -199,5 +266,95 @@ public final class PostgresqlRuntimeReadinessGuard implements
                             + "com HMAC atual de CPF."
             );
         }
+    }
+
+    private static void verifyAcademySyncReadiness(
+            JdbcTemplate jdbcTemplate,
+            boolean academySyncEnabled,
+            long academyReadinessMaxAgeMs
+    ) {
+        if (!academySyncEnabled) {
+            return;
+        }
+        if (academyReadinessMaxAgeMs <= 0) {
+            throw new IllegalStateException(
+                    "Runtime PostgreSQL exige cortex.sync.academy.readiness-max-age-ms "
+                            + "maior que zero."
+            );
+        }
+
+        List<Map<String, Object>> rows;
+        try {
+            rows = jdbcTemplate.queryForList(
+                    LATEST_ACADEMY_SYNC_RUN_SQL,
+                    ACADEMY_CONNECTOR_NAME
+            );
+        } catch (DataAccessException exception) {
+            throw redactedAcademyReadinessFailure();
+        }
+
+        if (rows.isEmpty()) {
+            throw academySyncNotReady();
+        }
+
+        AcademySyncRun latestRun;
+        try {
+            Map<String, Object> row = rows.getFirst();
+            latestRun = new AcademySyncRun(
+                    String.valueOf(row.get("status")),
+                    toLocalDateTime(row.get("finished_at")),
+                    toLocalDateTime(row.get("database_now"))
+            );
+        } catch (RuntimeException exception) {
+            throw redactedAcademyReadinessFailure();
+        }
+        if (latestRun.databaseNow() == null) {
+            throw redactedAcademyReadinessFailure();
+        }
+
+        LocalDateTime cutoff = latestRun.databaseNow().minus(
+                academyReadinessMaxAgeMs,
+                ChronoUnit.MILLIS
+        );
+        if (!"SUCCESS".equals(latestRun.status())
+                || latestRun.finishedAt() == null
+                || latestRun.finishedAt().isAfter(
+                        latestRun.databaseNow()
+                )
+                || latestRun.finishedAt().isBefore(cutoff)) {
+            throw academySyncNotReady();
+        }
+    }
+
+    private static LocalDateTime toLocalDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime;
+        }
+        if (value instanceof Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        throw new IllegalArgumentException("Tipo temporal inesperado.");
+    }
+
+    private static IllegalStateException academySyncNotReady() {
+        return new IllegalStateException(
+                "Runtime PostgreSQL exige uma sincronização Academy recente e bem-sucedida."
+        );
+    }
+
+    private static IllegalStateException redactedAcademyReadinessFailure() {
+        return new IllegalStateException(
+                "PostgreSQL Córtex não está pronto para validar a sincronização Academy."
+        );
+    }
+
+    private record AcademySyncRun(
+            String status,
+            LocalDateTime finishedAt,
+            LocalDateTime databaseNow
+    ) {
     }
 }

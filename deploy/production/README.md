@@ -69,9 +69,19 @@ contrato que esse host deve executar.
 
 ## Operação
 
-`CORTEX_SYNC_ENABLED=false` permanece como padrão. Isso não desliga a outbox
-offline da PWA. Habilite os pulls programados somente depois de validar usuários
-MySQL `SELECT`-only e uma importação QA registrada em `source_sync_run`.
+`CORTEX_SYNC_ACADEMY_ENABLED=false` e
+`CORTEX_SYNC_ZELADORIA_ENABLED=false` permanecem como padrão. Isso não desliga
+a outbox offline da PWA. Habilite uma fonte por vez, somente depois de validar
+o usuário MySQL `SELECT`-only e uma importação QA registrada em
+`source_sync_run`. A Academy usa senha montada em arquivo e JDBC MySQL com
+`sslMode=VERIFY_IDENTITY`. Quando habilitada, readiness exige que o último
+`acad_colaborador_import` esteja `SUCCESS`, finalizado e dentro de
+`CORTEX_SYNC_ACADEMY_READINESS_MAX_AGE_MS` (padrão `900000`).
+
+No Render, o único fallback para um servidor sem identidade de hostname é
+`sslMode=VERIFY_CA` com `/etc/secrets/cortex-academy-truststore.p12`: PKCS12,
+uma única entrada confiável de certificado folha não-CA e
+`fallbackToSystemTrustStore=false`. O arquivo não faz parte do repositório.
 
 Para inspecionar sem revelar segredos:
 

@@ -6,6 +6,7 @@ import com.projeto.cortex.mensagens.api.AttachmentReferenceRequest;
 import com.projeto.cortex.mensagens.api.MessageCreateRequest;
 import com.projeto.cortex.mensagens.api.MessageEditRequest;
 import com.projeto.cortex.mensagens.api.MessageResponse;
+import com.projeto.cortex.obras.ObraOperabilityGuard;
 import com.projeto.cortex.storage.StoredObjectDownload;
 import com.projeto.cortex.storage.StoredObjectRecord;
 import com.projeto.cortex.storage.StoredObjectRepository;
@@ -43,6 +44,7 @@ public class MensagemService {
     private final StoredObjectRepository objectRepository;
     private final StoredObjectService objectService;
     private final MessagingOperationalEventService eventService;
+    private final ObraOperabilityGuard operabilityGuard;
 
     public MensagemService(
             JdbcTemplate jdbcTemplate,
@@ -50,7 +52,8 @@ public class MensagemService {
             ConversaAccessPolicy accessPolicy,
             StoredObjectRepository objectRepository,
             StoredObjectService objectService,
-            MessagingOperationalEventService eventService
+            MessagingOperationalEventService eventService,
+            ObraOperabilityGuard operabilityGuard
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserService = currentUserService;
@@ -58,6 +61,7 @@ public class MensagemService {
         this.objectRepository = objectRepository;
         this.objectService = objectService;
         this.eventService = eventService;
+        this.operabilityGuard = operabilityGuard;
     }
 
     @Transactional
@@ -104,6 +108,7 @@ public class MensagemService {
             }
             return existing;
         }
+        requireWritable(scope);
 
         List<StoredObjectRecord> objects = attachmentReferences.stream()
                 .map(reference -> requireAttachableObject(
@@ -302,6 +307,7 @@ public class MensagemService {
                     "Mensagem excluída não pode ser editada."
             );
         }
+        requireWritable(scope);
         jdbcTemplate.update(
                 """
                 UPDATE mensagem
@@ -380,6 +386,7 @@ public class MensagemService {
         String actorId = currentUserService.requireUserId();
         requireActor(audit, actorId);
         requireAuthorOrAlfa(message, actorId);
+        requireWritable(scope);
         StoredObjectRecord object = requireAttachableObject(
                 objectId,
                 requireSha256(expectedSha256),
@@ -403,6 +410,12 @@ public class MensagemService {
                 audit
         );
         return attachment(attachmentId);
+    }
+
+    private void requireWritable(ConversationScope scope) {
+        if (scope.obraId() != null) {
+            operabilityGuard.requireWritable(scope.obraId());
+        }
     }
 
     public StoredObjectDownload downloadAttachment(String attachmentId) {
