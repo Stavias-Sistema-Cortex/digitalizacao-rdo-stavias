@@ -251,7 +251,6 @@ public class MensagemService {
             arguments.add(userId);
         }
         arguments.add(normalized);
-        arguments.add(normalized);
         arguments.add(limit);
 
         return jdbcTemplate.query(
@@ -263,10 +262,8 @@ public class MensagemService {
                 WHERE cv.status = 'ATIVA' AND cv.deletado_em IS NULL
                   AND m.status <> 'EXCLUIDA'
                 """ + access + """
-                  AND (
-                    MATCH(m.corpo) AGAINST (? IN NATURAL LANGUAGE MODE)
-                    OR m.corpo LIKE CONCAT('%', ?, '%')
-                  )
+                  AND LOWER(COALESCE(m.corpo, ''))
+                      LIKE LOWER(CONCAT('%', ?, '%'))
                 ORDER BY m.criado_em DESC, m.id DESC
                 LIMIT ?
                 """,
