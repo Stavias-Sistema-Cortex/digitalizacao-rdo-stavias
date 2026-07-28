@@ -148,9 +148,14 @@ cortex:
     enabled: ${CORTEX_IMPORT_ENABLED:false}
 
   sync:
-    enabled: ${CORTEX_SYNC_ENABLED:false}
-    initial-delay-ms: ${CORTEX_SYNC_INITIAL_DELAY_MS:60000}
-    fixed-delay-ms: ${CORTEX_SYNC_FIXED_DELAY_MS:300000}
+    academy:
+      enabled: ${CORTEX_SYNC_ACADEMY_ENABLED:false}
+      initial-delay-ms: ${CORTEX_SYNC_ACADEMY_INITIAL_DELAY_MS:60000}
+      fixed-delay-ms: ${CORTEX_SYNC_ACADEMY_FIXED_DELAY_MS:300000}
+    zeladoria:
+      enabled: ${CORTEX_SYNC_ZELADORIA_ENABLED:false}
+      initial-delay-ms: ${CORTEX_SYNC_ZELADORIA_INITIAL_DELAY_MS:60000}
+      fixed-delay-ms: ${CORTEX_SYNC_ZELADORIA_FIXED_DELAY_MS:300000}
 
   sources:
     zeladoria:
