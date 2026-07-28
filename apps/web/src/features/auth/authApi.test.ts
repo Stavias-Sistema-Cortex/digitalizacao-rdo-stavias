@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  ApiError: class ApiError extends Error {
+    readonly status: number;
+    readonly code: string | null;
+
+    constructor(message: string, status: number, code: string | null) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.code = code;
+    }
+  },
   apiError: vi.fn(),
   apiFetch: vi.fn(),
   fetchFreshCpfOfflineGrant: vi.fn(),
@@ -11,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/api/apiClient", () => ({
+  ApiError: mocks.ApiError,
   apiError: mocks.apiError,
   apiFetch: mocks.apiFetch,
   fetchFreshCpfOfflineGrant: mocks.fetchFreshCpfOfflineGrant,
@@ -84,6 +96,22 @@ describe("authApi", () => {
         body: JSON.stringify({ cpf: "11144477735" }),
       },
     );
+  });
+
+  it("reports a rejected CPF login as invalid access instead of an expired session", async () => {
+    mocks.freshAuthenticationFetch.mockResolvedValue(response(401));
+    mocks.readResponseBody.mockResolvedValue({
+      message: "Autenticação necessária ou sessão expirada.",
+    });
+
+    await expect(loginWithCpf("11144477735")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 401,
+      code: null,
+      message: "CPF ou acesso inválido.",
+    });
+
+    expect(mocks.apiError).not.toHaveBeenCalled();
   });
 
   it("obtém somente o envelope assinado exato do grant offline", async () => {

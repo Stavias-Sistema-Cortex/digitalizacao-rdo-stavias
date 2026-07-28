@@ -1,4 +1,5 @@
 import {
+  ApiError,
   apiError,
   apiFetch,
   fetchFreshCpfOfflineGrant,
@@ -23,6 +24,9 @@ export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
   });
   const body = await readResponseBody(response);
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new ApiError("CPF ou acesso inválido.", 401, null);
+    }
     throw responseError(body, response.status);
   }
   return parseAuthProfile(body);
