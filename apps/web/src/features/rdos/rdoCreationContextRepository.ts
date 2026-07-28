@@ -295,9 +295,18 @@ export async function listCachedAuthorizedRdoWorksites(): Promise<
   assertContextSession(guard);
   const worksites = await database.getAll("obras");
   assertContextSession(guard);
+  return operationalAuthorizedWorksites(worksites, session);
+}
+
+function operationalAuthorizedWorksites(
+  worksites: readonly ObraLocalRecord[],
+  session: AuthProfile,
+): ObraLocalRecord[] {
   return worksites
     .filter(
-      (item) => session.escopoGlobal || session.obraIds.includes(item.id),
+      (item) =>
+        item.arquivadoEm == null &&
+        (session.escopoGlobal || session.obraIds.includes(item.id)),
     )
     .sort((left, right) =>
       (left.nome || left.codigoContrato).localeCompare(
@@ -344,7 +353,10 @@ export async function replaceCachedAuthorizedRdoWorksites(
   );
   for (const item of mergedAllowed) await store.put(item);
   await guarded.complete();
-  return mergedAllowed;
+  assertContextSession(guard);
+  const retained = await database.getAll("obras");
+  assertContextSession(guard);
+  return operationalAuthorizedWorksites(retained, session);
 }
 
 export async function refreshAuthorizedRdoWorksites(): Promise<

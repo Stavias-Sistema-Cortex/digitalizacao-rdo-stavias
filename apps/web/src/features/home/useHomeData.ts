@@ -31,6 +31,7 @@ import {
   getLastAccessedObraId,
   setLastAccessedObraId,
 } from "./lastAccessedObra";
+import { filterOperationalObras } from "./homeFilters";
 
 export interface HomeData {
   obras: ObraLocalRecord[];
@@ -46,7 +47,9 @@ export interface HomeData {
   reload: () => void;
 }
 
-export function useHomeData(): HomeData {
+export function useHomeData(
+  options: { includeArchived?: boolean } = {},
+): HomeData {
   const storageKey = useMemo(
     () => colaboradorStorageKey(getSession()),
     [],
@@ -98,15 +101,18 @@ export function useHomeData(): HomeData {
         // Offline ou API indisponível: segue com o banco local.
       }
 
-      const local = await listObrasLocais();
+      const cached = await listObrasLocais();
 
       if (cancelled) {
         return;
       }
 
-      local.sort((a, b) =>
+      cached.sort((a, b) =>
         a.updatedAt < b.updatedAt ? 1 : -1,
       );
+      const local = options.includeArchived
+        ? cached
+        : filterOperationalObras(cached);
       setObras(local);
       setHasConfirmedRemoteHydration(
         remoteHydrationConfirmed,
@@ -130,7 +136,7 @@ export function useHomeData(): HomeData {
     return () => {
       cancelled = true;
     };
-  }, [reloadTick]);
+  }, [options.includeArchived, reloadTick]);
 
   useEffect(() => {
     if (!focusedObraId) {

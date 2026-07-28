@@ -36,17 +36,24 @@ function normalizeStatus(status: string): string {
     .trim();
 }
 
+export function filterOperationalObras(
+  obras: readonly ObraLocalRecord[],
+): ObraLocalRecord[] {
+  return obras.filter((obra) => obra.arquivadoEm == null);
+}
+
 export function filterObrasByChip(
   obras: ObraLocalRecord[],
   chip: ObraStatusChip,
 ): ObraLocalRecord[] {
+  const operational = filterOperationalObras(obras);
   if (chip === "TODAS") {
-    return obras;
+    return operational;
   }
 
   const allowed = CHIP_STATUSES[chip];
 
-  return obras.filter((obra) =>
+  return operational.filter((obra) =>
     allowed.includes(normalizeStatus(obra.status)),
   );
 }
@@ -58,10 +65,10 @@ export function filterObrasByUf(
   const needle = uf.trim().toUpperCase();
 
   if (!needle) {
-    return obras;
+    return filterOperationalObras(obras);
   }
 
-  return obras.filter(
+  return filterOperationalObras(obras).filter(
     (obra) => (obra.uf ?? "").toUpperCase() === needle,
   );
 }
@@ -73,10 +80,10 @@ export function filterObrasByRodovia(
   const needle = rodovia.trim().toUpperCase();
 
   if (!needle) {
-    return obras;
+    return filterOperationalObras(obras);
   }
 
-  return obras.filter(
+  return filterOperationalObras(obras).filter(
     (obra) =>
       (obra.rodovia ?? "").toUpperCase() === needle,
   );

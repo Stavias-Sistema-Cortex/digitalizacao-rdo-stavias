@@ -5,6 +5,7 @@ import { OperationalWorkspace } from "../../../components/workspace/OperationalW
 
 import {
   alterarPapelColaborador,
+  filtrarObrasOperacionais,
   listarColaboradores,
   listarObrasAdmin,
   listarVinculos,
@@ -71,7 +72,13 @@ export function GestaoObrasPage() {
     listarObrasAdmin(obraQueryAtiva)
       .then((dados) => {
         if (!cancelado) {
-          setObras(dados);
+          const operacionais = filtrarObrasOperacionais(dados);
+          setObras(operacionais);
+          setObraSelecionadaId((selecionada) =>
+            operacionais.some((obra) => obra.id === selecionada)
+              ? selecionada
+              : null
+          );
           setObrasErro(null);
         }
       })

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { validarNovaObra } from "./gestaoObrasApi";
+import {
+  filtrarObrasOperacionais,
+  validarNovaObra,
+  type ObraAdminApi,
+} from "./gestaoObrasApi";
 
 describe("validarNovaObra", () => {
   it("aceita uma obra mínima válida", () => {
@@ -28,5 +32,34 @@ describe("validarNovaObra", () => {
     expect(
       validarNovaObra({ codigoContrato: "CW1", nome: "Obra", uf: "" }),
     ).toEqual([]);
+  });
+});
+
+describe("filtrarObrasOperacionais", () => {
+  it("remove arquivadas do seletor sem apagar ou alterar a resposta", () => {
+    const base: ObraAdminApi = {
+      id: "obra-1",
+      codigoContrato: "CTR-1",
+      codigoCw: null,
+      codigoInterno: null,
+      nome: "Obra 1",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "ATIVA",
+      atualizadoEm: "2026-07-28T12:00:00.000Z",
+      arquivadoEm: null,
+      versaoLinha: 3,
+    };
+    const archived: ObraAdminApi = {
+      ...base,
+      id: "obra-2",
+      arquivadoEm: "2026-07-28T13:00:00.000Z",
+    };
+    const response = [base, archived];
+
+    expect(filtrarObrasOperacionais(response)).toEqual([base]);
+    expect(response).toEqual([base, archived]);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ObraLocalRecord } from "../../lib/db/db.types";
 import {
+  filterOperationalObras,
   filterObrasByChip,
   filterObrasByRodovia,
   filterObrasByUf,
@@ -52,6 +53,29 @@ describe("filterObrasByChip", () => {
     const exoticas = [obra("9", "PAUSADA")];
     expect(filterObrasByChip(exoticas, "EM_EXECUCAO")).toHaveLength(0);
     expect(filterObrasByChip(exoticas, "TODAS")).toHaveLength(1);
+  });
+
+  it("não inclui obra arquivada em nenhum filtro operacional", () => {
+    const archived = {
+      ...obra("6", "ATIVA"),
+      arquivadoEm: "2026-07-28T12:00:00.000Z",
+    };
+    expect(filterObrasByChip([archived], "TODAS")).toEqual([]);
+    expect(filterObrasByChip([archived], "EM_EXECUCAO")).toEqual([]);
+  });
+});
+
+describe("filterOperationalObras", () => {
+  it("omite arquivadas sem alterar o cache recebido", () => {
+    const active = { ...obra("1", "ATIVA"), arquivadoEm: null };
+    const archived = {
+      ...obra("2", "INATIVA"),
+      arquivadoEm: "2026-07-28T12:00:00.000Z",
+    };
+    const cached = [active, archived];
+
+    expect(filterOperationalObras(cached)).toEqual([active]);
+    expect(cached).toEqual([active, archived]);
   });
 });
 

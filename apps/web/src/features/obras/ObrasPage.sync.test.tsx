@@ -2,6 +2,7 @@
 
 import type { PropsWithChildren } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const homeData = vi.hoisted(() => ({
@@ -50,8 +51,16 @@ vi.mock("../home/useHomeData", () => ({
 }));
 
 vi.mock("../auth/authSession", () => ({
+  AUTH_SESSION_CHANGED_EVENT: "cortex-auth-session-changed",
   getSession: () => null,
   isAlfa: () => false,
+}));
+
+vi.mock("./obraLifecycle", () => ({
+  queueUpdateObra: vi.fn(),
+  queueDeactivateObra: vi.fn(),
+  queueArchiveObra: vi.fn(),
+  queueRestoreObra: vi.fn(),
 }));
 
 import { ObrasPage } from "./ObrasPage";
@@ -90,12 +99,28 @@ describe("ObrasPage sync truth", () => {
   it("mantém a ontologia recolhida até a pessoa abrir a lista", () => {
     render(<ObrasPage />);
 
-    const toggle = screen.getByText("Ontologia e rastreabilidade");
-    const details = toggle.closest("details");
+    const toggle = screen.getByRole("button", {
+      name: "Ontologia da obra",
+    });
 
-    expect(details).not.toHaveAttribute("open");
-    expect(details).toContainElement(
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByText("Rastreabilidade Cortex"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("monta a ontologia somente depois da abertura explícita", async () => {
+    const user = userEvent.setup();
+    render(<ObrasPage />);
+
+    const toggle = screen.getByRole("button", {
+      name: "Ontologia da obra",
+    });
+    await user.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(
       screen.getByText("Rastreabilidade Cortex"),
-    );
+    ).toBeInTheDocument();
   });
 });

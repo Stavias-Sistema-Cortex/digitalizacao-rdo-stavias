@@ -86,8 +86,9 @@
   border: none;
   border-radius: 8px;
   padding: 8px 14px;
-  background: #fed203;
-  font-weight: 700;
+  background: #0c2623;
+  color: #fff;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -313,7 +314,7 @@
   background: #eef2ef;
   color: #526159;
   font-size: 0.66rem;
-  font-weight: 750;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -368,7 +369,8 @@
 .gestao-obras-coluna,
 .gestao-papeis {
   border-radius: var(--radius-container);
-  box-shadow: var(--glass-shadow);
+  background: #f7f9f7;
+  box-shadow: none;
 }
 
 .gestao-obras-aviso,
@@ -395,7 +397,7 @@
 .gestao-obras-item.ativo {
   border-color: var(--color-border-strong);
   background: var(--color-surface);
-  box-shadow: inset 3px 0 0 var(--color-brand-yellow);
+  box-shadow: inset 1px 0 0 #f2c300;
 }
 
 .gestao-papeis-atual,
@@ -403,4 +405,261 @@
   border: 1px solid var(--color-border);
   background: #fff;
   color: var(--color-ink);
+}
+
+.obras-detail-header {
+  padding-top: 14px;
+  border-top: 1px solid #f2c300;
+}
+
+.obras-detail-state,
+.obras-lifecycle-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.obras-lifecycle-actions {
+  justify-content: flex-end;
+}
+
+.obras-lifecycle-actions button,
+.obras-trash button,
+.obras-ontology-toggle,
+.obras-edit-form footer button,
+.obras-confirm-dialog footer button {
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid #d4deda;
+  border-radius: 6px;
+  background: #f7f9f7;
+  color: #18211f;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.obras-lifecycle-actions button:hover,
+.obras-lifecycle-actions button:focus-visible,
+.obras-trash button:hover,
+.obras-trash button:focus-visible,
+.obras-ontology-toggle:hover,
+.obras-ontology-toggle:focus-visible {
+  border-color: #0c2623;
+  outline: none;
+}
+
+.obras-lifecycle-actions .is-danger,
+.obras-confirm-dialog .is-danger {
+  border-color: #a43a3a;
+  color: #a43a3a;
+}
+
+.obras-lifecycle-actions button:disabled,
+.obras-trash button:disabled,
+.obras-edit-form button:disabled,
+.obras-confirm-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.obras-sync-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid #d4deda;
+  border-radius: 999px;
+  background: #f7f9f7;
+  color: #46534f;
+  font-size: 0.68rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.obras-sync-state.is-conflict,
+.obras-sync-state.is-error {
+  border-color: #a43a3a;
+  color: #a43a3a;
+}
+
+.obras-action-error {
+  margin: 8px 0 0;
+  color: #a43a3a;
+  font-size: 0.76rem;
+}
+
+.obras-trash {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #d4deda;
+  border-top-color: #f2c300;
+  border-radius: 8px;
+  background: #f7f9f7;
+}
+
+.obras-trash-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.obras-trash-list li {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 0;
+  border-bottom: 1px solid #d4deda;
+}
+
+.obras-trash-list li:last-child {
+  border-bottom: 0;
+}
+
+.obras-trash-list li > div {
+  display: grid;
+  min-width: 0;
+}
+
+.obras-trash-list strong {
+  overflow: hidden;
+  color: #18211f;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obras-trash-id {
+  overflow: hidden;
+  color: #5c6965;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obras-trash-status,
+.obras-trash time {
+  color: #46534f;
+  font-size: 0.72rem;
+}
+
+.obras-ontology {
+  margin-top: 14px;
+  border-top: 1px solid #d4deda;
+  padding-top: 10px;
+}
+
+.obras-ontology-toggle {
+  width: 100%;
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+
+.obras-ontology-toggle span {
+  width: 1rem;
+  color: #0c2623;
+}
+
+.obras-edit-dialog {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.obras-edit-form {
+  display: grid;
+  gap: 16px;
+}
+
+.obras-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.obras-edit-grid label {
+  display: grid;
+  gap: 5px;
+  color: #46534f;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.obras-edit-grid .is-wide {
+  grid-column: 1 / -1;
+}
+
+.obras-edit-grid input,
+.obras-edit-grid textarea {
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #d4deda;
+  border-radius: 6px;
+  background: #fff;
+  color: #18211f;
+  font: inherit;
+  font-weight: 400;
+}
+
+.obras-edit-grid textarea {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.obras-edit-form footer,
+.obras-confirm-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.obras-edit-form footer button[type="submit"] {
+  border-color: #0c2623;
+  background: #0c2623;
+  color: #fff;
+}
+
+.obras-confirm-dialog {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.obras-confirm-dialog > p {
+  margin: 0 0 18px;
+  color: #46534f;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 680px) {
+  .obras-detail-header {
+    align-items: flex-start;
+  }
+
+  .obras-lifecycle-actions {
+    justify-content: flex-start;
+  }
+
+  .obras-trash-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .obras-trash-list li > :not(:first-child) {
+    justify-self: start;
+  }
+
+  .obras-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .obras-edit-grid .is-wide {
+    grid-column: auto;
+  }
 }

@@ -272,6 +272,55 @@ describe("cache autorizado obra-data", () => {
     ]);
   });
 
+  it("omite obra arquivada do seletor RDO sem apagá-la do IndexedDB", async () => {
+    await closeCortexDb();
+    setSession(session(ownerId, [WORKSITE_A, WORKSITE_B]));
+    databaseNames.add(
+      await databaseNameForScope(
+        ownerId,
+        `BETA:${[WORKSITE_A, WORKSITE_B].sort().join(",")}`,
+      ),
+    );
+    const database = await getCortexDb();
+    const common = {
+      codigoContrato: "CTR",
+      nome: "Obra",
+      cliente: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      status: "ATIVA",
+      observacoes: null,
+      latitude: null,
+      longitude: null,
+      valorContratual: null,
+      versaoEntidade: 3,
+      syncStatus: "SYNCED" as const,
+      ultimoErro: null,
+      updatedAt: "2026-07-28T12:00:00.000Z",
+    };
+    await database.put("obras", {
+      ...common,
+      id: WORKSITE_A,
+      nome: "Obra operacional",
+      arquivadoEm: null,
+    });
+    await database.put("obras", {
+      ...common,
+      id: WORKSITE_B,
+      nome: "Obra na Lixeira",
+      arquivadoEm: "2026-07-28T13:00:00.000Z",
+    });
+
+    expect(
+      (await listCachedAuthorizedRdoWorksites()).map((obra) => obra.id),
+    ).toEqual([WORKSITE_A]);
+    expect(await database.get("obras", WORKSITE_B)).toMatchObject({
+      nome: "Obra na Lixeira",
+      arquivadoEm: "2026-07-28T13:00:00.000Z",
+    });
+  });
+
   it("preserva lifecycle local ausente do endpoint e só remove obra sincronizada comum", async () => {
     await closeCortexDb();
     setSession(session(ownerId, [
@@ -339,7 +388,7 @@ describe("cache autorizado obra-data", () => {
       syncStatus: "SYNCED",
     });
 
-    await replaceCachedAuthorizedRdoWorksites([
+    const visible = await replaceCachedAuthorizedRdoWorksites([
       {
         id: WORKSITE_A,
         codigoContrato: "CTR-REMOTO",
@@ -373,6 +422,7 @@ describe("cache autorizado obra-data", () => {
       syncStatus: "PENDING",
     });
     expect(await database.get("obras", WORKSITE_D)).toBeUndefined();
+    expect(visible.map((obra) => obra.id)).toEqual([WORKSITE_C]);
   });
 
   it("usa o contexto completo do cache offline e falha com a cópia literal sem fonte", async () => {

@@ -20,6 +20,8 @@ export interface ObraAdminApi {
   rodovia: string | null;
   status: string | null;
   atualizadoEm: string | null;
+  arquivadoEm: string | null;
+  versaoLinha: number | null;
 }
 
 export interface ColaboradorApi {
@@ -104,7 +106,16 @@ export async function listarObrasAdmin(
   const sufixo = query?.trim()
     ? `?query=${encodeURIComponent(query.trim())}`
     : "";
-  return readJson<ObraAdminApi[]>(await apiFetch(`/obras${sufixo}`));
+  const response = await readJson<ObraAdminApi[]>(
+    await apiFetch(`/obras${sufixo}`),
+  );
+  return filtrarObrasOperacionais(response);
+}
+
+export function filtrarObrasOperacionais(
+  obras: readonly ObraAdminApi[],
+): ObraAdminApi[] {
+  return obras.filter((obra) => obra.arquivadoEm == null);
 }
 
 export async function criarObra(

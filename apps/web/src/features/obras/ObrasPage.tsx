@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 
 import { CortexShell } from "../../components/shell/CortexShell";
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
@@ -10,6 +15,7 @@ import {
   filterObrasByChip,
   filterObrasByRodovia,
   filterObrasByUf,
+  filterOperationalObras,
   OBRA_STATUS_CHIPS,
   type ObraStatusChip,
 } from "../home/homeFilters";
@@ -22,6 +28,29 @@ import {
   type ObraTimelineEvent,
 } from "./obrasApi";
 import { NovaObraForm } from "./gestao/NovaObraForm";
+import {
+  queueArchiveObra,
+  queueDeactivateObra,
+  queueRestoreObra,
+  queueUpdateObra,
+  type UpdateObraInput,
+} from "./obraLifecycle";
+import "./gestao/gestaoObras.css";
+
+type ObrasView = "ATIVAS" | "DESATIVADAS" | "LIXEIRA";
+
+const EMPTY_UPDATE: UpdateObraInput = {
+  codigoContrato: "",
+  codigoInterno: null,
+  nome: "",
+  cliente: null,
+  descricao: null,
+  cidade: null,
+  uf: null,
+  rodovia: null,
+  fonteArquivo: null,
+  observacoes: null,
+};
 
 const TRACE_KEYS = [
   "codigoContrato",
@@ -158,17 +187,57 @@ function obraSubtitle(obra: ObraLocalRecord): string {
     .join(" · ");
 }
 
+function syncLabel(obra: ObraLocalRecord): string | null {
+  switch (obra.syncStatus) {
+    case "LOCAL_ONLY":
+    case "LOCAL_PENDING":
+    case "PENDING_SYNC":
+      return "Pendente";
+    case "SYNCING":
+      return "Sincronizando";
+    case "CONFLICT":
+      return "Conflito";
+    case "ERROR":
+      return "Erro";
+    default:
+      return null;
+  }
+}
+
+function updateInputFromObra(
+  obra: ObraLocalRecord,
+): UpdateObraInput {
+  return {
+    codigoContrato: obra.codigoContrato,
+    codigoInterno: obra.codigoInterno ?? null,
+    nome: obra.nome,
+    cliente: obra.cliente,
+    descricao: obra.descricao ?? null,
+    cidade: obra.cidade,
+    uf: obra.uf,
+    rodovia: obra.rodovia,
+    fonteArquivo: obra.fonteArquivo ?? null,
+    observacoes: obra.observacoes,
+  };
+}
+
 export function ObrasPage() {
   const {
     obras,
-    focusedObra,
-    focusedObraId,
+    focusedObraId: hydratedFocusedObraId,
     setFocusedObraId,
     events,
     isLoading,
     hasConfirmedRemoteHydration,
     reload,
-  } = useHomeData();
+  } = useHomeData({ includeArchived: true });
+  const [obraOverrides, setObraOverrides] = useState<
+    Record<string, ObraLocalRecord>
+  >({});
+  const [selectedObraId, setSelectedObraId] = useState(
+    hydratedFocusedObraId,
+  );
+  const [view, setView] = useState<ObrasView>("ATIVAS");
   const [chip, setChip] =
     useState<ObraStatusChip>("TODAS");
   const [ufFilter, setUfFilter] = useState("");
@@ -187,37 +256,120 @@ export function ObrasPage() {
     useState(false);
   const [showCreateWorksite, setShowCreateWorksite] =
     useState(false);
-  const canCreateWorksite = isAlfa(getSession());
+  const [editingObra, setEditingObra] =
+    useState<ObraLocalRecord | null>(null);
+  const [editInput, setEditInput] =
+    useState<UpdateObraInput>(EMPTY_UPDATE);
+  const [archiveCandidate, setArchiveCandidate] =
+    useState<ObraLocalRecord | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
+  const [actionError, setActionError] =
+    useState<string | null>(null);
+  const [isOntologyOpen, setIsOntologyOpen] =
+    useState(false);
+  const canManageWorksites = isAlfa(getSession());
+
+  const localObras = useMemo(
+    () =>
+      obras.map((obra) => {
+        const override = obraOverrides[obra.id];
+        if (!override) return obra;
+        const cachedVersion = obra.versaoEntidade ?? -1;
+        const optimisticVersion =
+          override.versaoEntidade ?? -1;
+        if (
+          cachedVersion > optimisticVersion ||
+          obra.updatedAt >= override.updatedAt
+        ) {
+          return obra;
+        }
+        return override;
+      }),
+    [obraOverrides, obras],
+  );
+
+  const operationalObras = useMemo(
+    () => filterOperationalObras(localObras),
+    [localObras],
+  );
+  const archivedObras = useMemo(
+    () => localObras.filter((obra) => obra.arquivadoEm != null),
+    [localObras],
+  );
 
   const ufs = useMemo(
     () =>
-      [...new Set(obras.map((obra) => obra.uf))].filter(
+      [...new Set(operationalObras.map((obra) => obra.uf))].filter(
         (uf): uf is string => Boolean(uf),
       ),
-    [obras],
+    [operationalObras],
   );
 
   const rodovias = useMemo(
     () =>
       [
-        ...new Set(obras.map((obra) => obra.rodovia)),
+        ...new Set(operationalObras.map((obra) => obra.rodovia)),
       ].filter((rodovia): rodovia is string =>
         Boolean(rodovia),
       ),
-    [obras],
+    [operationalObras],
   );
 
   const filteredObras = useMemo(
-    () =>
+    () => {
+      const inactiveIds = new Set(
+        filterObrasByChip(
+          operationalObras,
+          "DESATIVADAS",
+        ).map((obra) => obra.id),
+      );
+      const byView = view === "DESATIVADAS"
+        ? operationalObras.filter((obra) =>
+            inactiveIds.has(obra.id)
+          )
+        : operationalObras.filter((obra) =>
+            !inactiveIds.has(obra.id)
+          );
+      const byChip = view === "ATIVAS"
+        ? filterObrasByChip(byView, chip)
+        : byView;
+      return (
       filterObrasByRodovia(
         filterObrasByUf(
-          filterObrasByChip(obras, chip),
+            byChip,
           ufFilter,
         ),
         rodoviaFilter,
-      ),
-    [obras, chip, ufFilter, rodoviaFilter],
+        )
+      );
+    },
+    [
+      operationalObras,
+      view,
+      chip,
+      ufFilter,
+      rodoviaFilter,
+    ],
   );
+
+  const focusedObra = useMemo(
+    () => {
+      const candidates =
+        view === "LIXEIRA" ? archivedObras : filteredObras;
+      return candidates.find(
+        (obra) => obra.id === selectedObraId,
+      ) ?? candidates[0] ?? null;
+    },
+    [
+      archivedObras,
+      filteredObras,
+      selectedObraId,
+      view,
+    ],
+  );
+
+  const focusedObraId =
+    view === "LIXEIRA" ? null : focusedObra?.id ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -330,6 +482,92 @@ export function ObrasPage() {
         ? "Cortex local"
         : "Sem eventos";
 
+  function selectObra(obraId: string) {
+    setSelectedObraId(obraId);
+    setFocusedObraId(obraId);
+    setIsOntologyOpen(false);
+    setActionError(null);
+  }
+
+  function replaceLocalObra(updated: ObraLocalRecord) {
+    setObraOverrides((current) => ({
+      ...current,
+      [updated.id]: updated,
+    }));
+    setSelectedObraId(updated.id);
+    reload();
+  }
+
+  async function applyLifecycleMutation(
+    operation: () => Promise<ObraLocalRecord>,
+    nextView?: ObrasView,
+  ) {
+    setIsMutating(true);
+    setActionError(null);
+    try {
+      const updated = await operation();
+      replaceLocalObra(updated);
+      if (nextView) {
+        setView(nextView);
+      }
+      return true;
+    } catch (error: unknown) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível alterar a obra.",
+      );
+      return false;
+    } finally {
+      setIsMutating(false);
+    }
+  }
+
+  function beginEdit(obra: ObraLocalRecord) {
+    setEditingObra(obra);
+    setEditInput(updateInputFromObra(obra));
+    setActionError(null);
+  }
+
+  function patchEdit(values: Partial<UpdateObraInput>) {
+    setEditInput((current) => ({ ...current, ...values }));
+  }
+
+  async function submitEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingObra) return;
+    const completed = await applyLifecycleMutation(
+      () => queueUpdateObra(editingObra, editInput),
+    );
+    if (completed) {
+      setEditingObra(null);
+    }
+  }
+
+  async function deactivate(obra: ObraLocalRecord) {
+    await applyLifecycleMutation(
+      () => queueDeactivateObra(obra),
+      "DESATIVADAS",
+    );
+  }
+
+  async function confirmArchive() {
+    if (!archiveCandidate) return;
+    const completed = await applyLifecycleMutation(
+      () => queueArchiveObra(archiveCandidate),
+      "LIXEIRA",
+    );
+    if (completed) {
+      setArchiveCandidate(null);
+    }
+  }
+
+  async function restore(obra: ObraLocalRecord) {
+    await applyLifecycleMutation(
+      () => queueRestoreObra(obra),
+    );
+  }
+
   return (
     <CortexShell
       active="obras"
@@ -340,7 +578,7 @@ export function ObrasPage() {
         className="obras-page"
         eyebrow="Obras · Escopo operacional"
         title="Obras"
-        actions={canCreateWorksite ? (
+        actions={canManageWorksites ? (
             <button
               type="button"
               className="obras-create-action"
@@ -349,13 +587,41 @@ export function ObrasPage() {
               Criar obra
             </button>
           ) : null}
+        tabs={[
+          {
+            id: "ATIVAS",
+            label: "Ativas",
+            active: view === "ATIVAS",
+          },
+          {
+            id: "DESATIVADAS",
+            label: "Desativadas",
+            active: view === "DESATIVADAS",
+          },
+          ...(canManageWorksites
+            ? [{
+                id: "LIXEIRA",
+                label: "Lixeira",
+                active: view === "LIXEIRA",
+              }]
+            : []),
+        ]}
+        onTabChange={(id) => {
+          setView(id as ObrasView);
+          setIsOntologyOpen(false);
+          setActionError(null);
+        }}
         status={{
           code: isLoading
             ? "SYNCING"
             : hasConfirmedRemoteHydration
               ? "SYNCED"
               : "LOCAL",
-          label: isLoading ? "Atualizando obras" : `${filteredObras.length} obras visíveis`,
+          label: isLoading
+            ? "Atualizando obras"
+            : view === "LIXEIRA"
+              ? `${archivedObras.length} obras na Lixeira`
+              : `${filteredObras.length} obras visíveis`,
           detail: hasConfirmedRemoteHydration
             ? focusedObra
               ? `Foco: ${focusedObra.nome}`
@@ -365,13 +631,17 @@ export function ObrasPage() {
               : "Dados preservados neste dispositivo",
         }}
       >
+        {view !== "LIXEIRA" ? (
         <section className="obras-filter-bar" aria-label="Filtros de obras">
+          {view === "ATIVAS" ? (
           <div
             className="home-chips"
             role="group"
             aria-label="Filtrar obras por status"
           >
-            {OBRA_STATUS_CHIPS.map((option) => (
+            {OBRA_STATUS_CHIPS
+              .filter((option) => option.value !== "DESATIVADAS")
+              .map((option) => (
               <button
                 key={option.value}
                 type="button"
@@ -384,8 +654,9 @@ export function ObrasPage() {
               >
                 {option.label}
               </button>
-            ))}
+              ))}
           </div>
+          ) : null}
           <div className="home-uf-filter">
             <span>Filtrar por:</span>
             <select
@@ -418,7 +689,53 @@ export function ObrasPage() {
             </select>
           </div>
         </section>
+        ) : null}
 
+        {view === "LIXEIRA" && canManageWorksites ? (
+          <section
+            className="obras-trash"
+            aria-label="Lixeira de obras"
+          >
+            {archivedObras.length === 0 ? (
+              <p className="obras-empty">
+                Nenhuma obra na Lixeira.
+              </p>
+            ) : (
+              <ul className="obras-trash-list">
+                {archivedObras.map((obra) => (
+                  <li key={obra.id}>
+                    <div>
+                      <strong>{obra.nome || obra.codigoContrato}</strong>
+                      <span className="obras-trash-id">
+                        {obra.codigoContrato || obra.id}
+                      </span>
+                    </div>
+                    <span className="obras-trash-status">
+                      {obra.status}
+                    </span>
+                    <time dateTime={obra.arquivadoEm ?? undefined}>
+                      {formatDateOnly(obra.arquivadoEm ?? null) || "-"}
+                    </time>
+                    {syncLabel(obra) ? (
+                      <span
+                        className={`obras-sync-state is-${obra.syncStatus?.toLowerCase()}`}
+                      >
+                        {syncLabel(obra)}
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={isMutating}
+                      onClick={() => void restore(obra)}
+                    >
+                      Restaurar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : (
         <section className="obras-workspace">
           <aside
             className="obras-list"
@@ -440,7 +757,7 @@ export function ObrasPage() {
                       ? "obras-list-item active"
                       : "obras-list-item"
                   }
-                  onClick={() => setFocusedObraId(obra.id)}
+                  onClick={() => selectObra(obra.id)}
                 >
                   <span className="obras-list-title">
                     {obra.nome}
@@ -458,13 +775,62 @@ export function ObrasPage() {
               <>
                 <div className="obras-detail-header">
                   <div>
-                    <span className="home-obra-pill">
-                      {focusedObra.status}
-                    </span>
+                    <div className="obras-detail-state">
+                      <span className="home-obra-pill">
+                        {focusedObra.status}
+                      </span>
+                      {syncLabel(focusedObra) ? (
+                        <span
+                          className={`obras-sync-state is-${focusedObra.syncStatus?.toLowerCase()}`}
+                        >
+                          {syncLabel(focusedObra)}
+                        </span>
+                      ) : null}
+                    </div>
                     <h2>{focusedObra.nome}</h2>
                     <p>{obraSubtitle(focusedObra) || "-"}</p>
                   </div>
+                  {canManageWorksites ? (
+                    <div
+                      className="obras-lifecycle-actions"
+                      aria-label="Ações da obra"
+                    >
+                      <button
+                        type="button"
+                        disabled={isMutating}
+                        onClick={() => beginEdit(focusedObra)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          isMutating ||
+                          focusedObra.status === "INATIVA"
+                        }
+                        onClick={() => void deactivate(focusedObra)}
+                      >
+                        Desativar
+                      </button>
+                      <button
+                        type="button"
+                        className="is-danger"
+                        disabled={isMutating}
+                        onClick={() =>
+                          setArchiveCandidate(focusedObra)
+                        }
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
+
+                {actionError ? (
+                  <p className="obras-action-error" role="alert">
+                    {actionError}
+                  </p>
+                ) : null}
 
                 <dl className="obras-facts">
                   <div>
@@ -615,9 +981,26 @@ export function ObrasPage() {
                   )}
                 </section>
 
-                <details className="obras-ontology">
-                  <summary>Ontologia e rastreabilidade</summary>
-                  <section className="obras-trace">
+                <div className="obras-ontology">
+                  <button
+                    type="button"
+                    className="obras-ontology-toggle"
+                    aria-expanded={isOntologyOpen}
+                    aria-controls="obras-ontology-content"
+                    onClick={() =>
+                      setIsOntologyOpen((current) => !current)
+                    }
+                  >
+                    <span aria-hidden="true">
+                      {isOntologyOpen ? "▾" : "▸"}
+                    </span>
+                    Ontologia da obra
+                  </button>
+                  {isOntologyOpen ? (
+                  <section
+                    id="obras-ontology-content"
+                    className="obras-trace"
+                  >
                     <div className="obras-trace-header">
                       <div>
                         <h3>Rastreabilidade Cortex</h3>
@@ -674,7 +1057,8 @@ export function ObrasPage() {
                       </ol>
                     )}
                   </section>
-                </details>
+                  ) : null}
+                </div>
               </>
             ) : (
               <p className="obras-empty">
@@ -683,6 +1067,190 @@ export function ObrasPage() {
             )}
           </section>
         </section>
+        )}
+
+        {editingObra ? (
+          <div
+            className="nova-obra-dialog-backdrop"
+            role="presentation"
+          >
+            <section
+              className="nova-obra-dialog obras-edit-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="obras-edit-title"
+            >
+              <header>
+                <h2 id="obras-edit-title">Editar obra</h2>
+                <button
+                  type="button"
+                  aria-label="Fechar edição da obra"
+                  onClick={() => setEditingObra(null)}
+                >
+                  ×
+                </button>
+              </header>
+              <form
+                className="obras-edit-form"
+                onSubmit={(event) => void submitEdit(event)}
+              >
+                <div className="obras-edit-grid">
+                  <label>
+                    Código do contrato
+                    <input
+                      value={editInput.codigoContrato}
+                      onChange={(event) =>
+                        patchEdit({
+                          codigoContrato: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Código interno
+                    <input
+                      value={editInput.codigoInterno ?? ""}
+                      onChange={(event) =>
+                        patchEdit({
+                          codigoInterno: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="is-wide">
+                    Nome
+                    <input
+                      value={editInput.nome}
+                      onChange={(event) =>
+                        patchEdit({ nome: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="is-wide">
+                    Cliente
+                    <input
+                      value={editInput.cliente ?? ""}
+                      onChange={(event) =>
+                        patchEdit({ cliente: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Cidade
+                    <input
+                      value={editInput.cidade ?? ""}
+                      onChange={(event) =>
+                        patchEdit({ cidade: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    UF
+                    <input
+                      maxLength={2}
+                      value={editInput.uf ?? ""}
+                      onChange={(event) =>
+                        patchEdit({
+                          uf: event.target.value.toUpperCase(),
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="is-wide">
+                    Rodovia
+                    <input
+                      value={editInput.rodovia ?? ""}
+                      onChange={(event) =>
+                        patchEdit({ rodovia: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="is-wide">
+                    Descrição
+                    <textarea
+                      value={editInput.descricao ?? ""}
+                      onChange={(event) =>
+                        patchEdit({ descricao: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="is-wide">
+                    Fonte do arquivo
+                    <input
+                      value={editInput.fonteArquivo ?? ""}
+                      onChange={(event) =>
+                        patchEdit({
+                          fonteArquivo: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="is-wide">
+                    Observações
+                    <textarea
+                      value={editInput.observacoes ?? ""}
+                      onChange={(event) =>
+                        patchEdit({
+                          observacoes: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <footer>
+                  <button
+                    type="button"
+                    onClick={() => setEditingObra(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={isMutating}>
+                    {isMutating
+                      ? "Salvando…"
+                      : "Salvar alterações"}
+                  </button>
+                </footer>
+              </form>
+            </section>
+          </div>
+        ) : null}
+
+        {archiveCandidate ? (
+          <div
+            className="nova-obra-dialog-backdrop"
+            role="presentation"
+          >
+            <section
+              className="nova-obra-dialog obras-confirm-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="obras-archive-title"
+            >
+              <header>
+                <h2 id="obras-archive-title">Excluir obra</h2>
+              </header>
+              <p>
+                A obra poderá ser restaurada na Lixeira.
+              </p>
+              <footer>
+                <button
+                  type="button"
+                  onClick={() => setArchiveCandidate(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="is-danger"
+                  disabled={isMutating}
+                  onClick={() => void confirmArchive()}
+                >
+                  {isMutating ? "Excluindo…" : "Excluir obra"}
+                </button>
+              </footer>
+            </section>
+          </div>
+        ) : null}
 
         {showCreateWorksite ? (
           <div
