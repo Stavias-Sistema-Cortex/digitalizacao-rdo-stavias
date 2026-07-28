@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
  * Córtex administrator. It deliberately excludes protected source identifiers.
  */
 public record AcademyBootstrapUser(
-        int sourceUserId,
+        long sourceUserId,
         String nome,
         String email,
         boolean ativo,

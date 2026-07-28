@@ -1,5 +1,6 @@
 package com.projeto.cortex.auth.otp;
 
+import com.projeto.cortex.auth.identity.PostgresqlAuthIdentityMutationLock;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -171,6 +172,7 @@ public class PostgresqlEmailOtpChallengeRepository
 
     @Override
     public int activateIdentity(String collaboratorId, String authenticationEmail) {
+        PostgresqlAuthIdentityMutationLock.acquire(jdbcTemplate);
         return jdbcTemplate.update("""
                 UPDATE auth_identity identity
                 SET status = 'ATIVA',

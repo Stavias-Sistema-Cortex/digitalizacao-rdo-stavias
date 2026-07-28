@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.colaboradores.CpfHasher;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +23,7 @@ import org.mockito.InOrder;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class AuthIdentityRepositoryTest {
 
@@ -37,9 +39,15 @@ class AuthIdentityRepositoryTest {
 
     @BeforeEach
     void setUp() {
+        TransactionSynchronizationManager.setActualTransactionActive(true);
         jdbc = mock(JdbcTemplate.class);
         digests = mock(CpfLookupDigestService.class);
         repository = new AuthIdentityRepository(jdbc, digests);
+    }
+
+    @AfterEach
+    void clearTransactionMarker() {
+        TransactionSynchronizationManager.setActualTransactionActive(false);
     }
 
     @Test

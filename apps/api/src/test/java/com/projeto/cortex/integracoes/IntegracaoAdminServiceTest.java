@@ -32,8 +32,12 @@ class IntegracaoAdminServiceTest {
 
         assertThat(response.status()).isEqualTo("FAILED");
         assertThat(response.mensagem())
-                .contains("Sincronizacao Academy falhou")
-                .contains("Configuracao Academy incompleta");
+                .isEqualTo(
+                        "Sincronizacao Academy falhou. "
+                                + "Consulte o relatório da integração "
+                                + "para detalhes."
+                )
+                .doesNotContain("Configuracao Academy incompleta");
     }
 
     @Test
@@ -56,6 +60,25 @@ class IntegracaoAdminServiceTest {
         assertThat(response.mensagem())
                 .contains("Sincronizacao Zeladoria falhou")
                 .contains("Configuracao Zeladoria incompleta");
+    }
+
+    @Test
+    void academyStatusRedactsHistoricalPersistedDriverDetails() {
+        String historical = "SQL exception for CPF 11144477735 "
+                + "and owner@example.invalid";
+
+        assertThat(IntegracaoAdminService.safeStatusError(
+                "academy",
+                historical
+        ))
+                .isEqualTo(
+                        "Sincronizacao Academy falhou. "
+                                + "Consulte o relatório da integração "
+                                + "para detalhes."
+                )
+                .doesNotContain("11144477735")
+                .doesNotContain("owner@example.invalid")
+                .doesNotContain("SQL exception");
     }
 
     private IntegracaoAdminService service(

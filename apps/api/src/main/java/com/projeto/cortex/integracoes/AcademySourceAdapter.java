@@ -18,6 +18,7 @@ public class AcademySourceAdapter {
 
     private static final int DEFAULT_QUERY_TIMEOUT_SECONDS = 30;
     private static final int DEFAULT_PAGE_SIZE = 500;
+    private static final int MAX_PAGE_SIZE = 2_000;
     private static final String SNAPSHOT_READ_FAILURE =
             "Falha ao ler snapshot completo da Academy em modo somente leitura.";
 
@@ -41,14 +42,26 @@ public class AcademySourceAdapter {
                 u.id_perfil,
                 p.nome_perfil,
                 u.criado_em
-            FROM usuarios u
+            FROM (
+                SELECT
+                    source.id_usuario,
+                    source.cpf,
+                    source.nome,
+                    source.email,
+                    source.ativo,
+                    source.id_grupo,
+                    source.id_perfil,
+                    source.criado_em
+                FROM usuarios source
+                WHERE source.id_usuario > ?
+                ORDER BY source.id_usuario
+                LIMIT ?
+            ) u
             LEFT JOIN grupos g
                 ON g.id_grupo = u.id_grupo
             LEFT JOIN perfil p
                 ON p.id_perfil = u.id_perfil
-            WHERE u.id_usuario > ?
             ORDER BY u.id_usuario
-            LIMIT ?
             """;
 
     private static final String SQL_SELECT_BOOTSTRAP_USER = """
@@ -76,15 +89,31 @@ public class AcademySourceAdapter {
     private final String url;
     private final String username;
     private final String password;
+    private final AcademyConnectionFactory connectionFactory;
 
     public AcademySourceAdapter(
             @Value("${cortex.sources.academy.url:}") String url,
             @Value("${cortex.sources.academy.username:}") String username,
             @Value("${cortex.sources.academy.password:}") String password
     ) {
+        this(
+                url,
+                username,
+                password,
+                () -> DriverManager.getConnection(url, username, password)
+        );
+    }
+
+    AcademySourceAdapter(
+            String url,
+            String username,
+            String password,
+            AcademyConnectionFactory connectionFactory
+    ) {
         this.url = url;
         this.username = username;
         this.password = password;
+        this.connectionFactory = connectionFactory;
     }
 
     public AcademyUserSnapshot fetchCompleteSnapshot(int pageSize) {
@@ -93,11 +122,7 @@ public class AcademySourceAdapter {
         int safePageSize = safePageSize(pageSize);
 
         try (
-                Connection connection = DriverManager.getConnection(
-                        url,
-                        username,
-                        password
-                )
+                Connection connection = connectionFactory.open()
         ) {
             try {
                 connection.setReadOnly(true);
@@ -128,7 +153,7 @@ public class AcademySourceAdapter {
             int pageSize
     ) throws Exception {
         List<UsuarioAcademyRecord> users = new ArrayList<>();
-        int lastSourceId = Integer.MIN_VALUE;
+        long lastSourceId = 0L;
 
         try (
                 PreparedStatement statement = connection.prepareStatement(
@@ -139,7 +164,7 @@ public class AcademySourceAdapter {
             statement.setFetchSize(Math.min(pageSize, DEFAULT_PAGE_SIZE));
 
             while (true) {
-                statement.setInt(1, lastSourceId);
+                statement.setLong(1, lastSourceId);
                 statement.setInt(2, pageSize);
 
                 List<UsuarioAcademyRecord> page = new ArrayList<>(pageSize);
@@ -154,7 +179,7 @@ public class AcademySourceAdapter {
                     return List.copyOf(users);
                 }
 
-                int nextSourceId = page.get(page.size() - 1).idUsuario();
+                long nextSourceId = page.get(page.size() - 1).idUsuario();
                 if (nextSourceId <= lastSourceId) {
                     throw new IllegalStateException(
                             "Paginação Academy sem avanço de id de origem."
@@ -219,12 +244,7 @@ public class AcademySourceAdapter {
     private Connection openReadOnlyConnection() throws Exception {
         validateConfig();
 
-        Connection connection =
-                DriverManager.getConnection(
-                        url,
-                        username,
-                        password
-                );
+        Connection connection = connectionFactory.open();
 
         try {
             connection.setReadOnly(true);
@@ -245,7 +265,7 @@ public class AcademySourceAdapter {
                 resultSet.getTimestamp("criado_em");
 
         return new UsuarioAcademyRecord(
-                resultSet.getInt("id_usuario"),
+                resultSet.getLong("id_usuario"),
                 resultSet.getString("cpf"),
                 resultSet.getString("nome"),
                 resultSet.getString("email"),
@@ -265,7 +285,7 @@ public class AcademySourceAdapter {
         Timestamp criadoEm = resultSet.getTimestamp("criado_em");
 
         return new AcademyBootstrapUser(
-                resultSet.getInt("id_usuario"),
+                resultSet.getLong("id_usuario"),
                 resultSet.getString("nome"),
                 resultSet.getString("email"),
                 resultSet.getBoolean("ativo"),
@@ -286,7 +306,10 @@ public class AcademySourceAdapter {
     }
 
     private int safePageSize(int pageSize) {
-        return pageSize <= 0 ? DEFAULT_PAGE_SIZE : pageSize;
+        if (pageSize <= 0) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(pageSize, MAX_PAGE_SIZE);
     }
 
     private void rollbackQuietly(Connection connection) {
@@ -317,8 +340,14 @@ public class AcademySourceAdapter {
         }
     }
 
+    @FunctionalInterface
+    interface AcademyConnectionFactory {
+
+        Connection open() throws Exception;
+    }
+
     public record UsuarioAcademyRecord(
-            int idUsuario,
+            long idUsuario,
             String cpf,
             String nome,
             String email,

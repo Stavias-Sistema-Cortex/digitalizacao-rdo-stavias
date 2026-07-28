@@ -12,10 +12,12 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -42,8 +45,9 @@ public class ColaboradorImportService {
     private final AcademySourceAdapter academySourceAdapter;
     private final CortexOperationalMemoryService memoryService;
     private final AuthIdentityRepository authIdentityRepository;
-    private final TransactionTemplate applyTransactions;
+    private final TransactionTemplate requiresNewTransactions;
     private final long missingGraceHours;
+    private final AcademyImportRunLock runLock;
 
     @Autowired
     public ColaboradorImportService(
@@ -60,8 +64,9 @@ public class ColaboradorImportService {
                 academySourceAdapter,
                 memoryService,
                 authIdentityRepository,
-                new TransactionTemplate(transactionManager),
-                missingGraceHours
+                requiresNewTransactionTemplate(transactionManager),
+                missingGraceHours,
+                postgresqlRunLock(jdbcTemplate)
         );
     }
 
@@ -81,7 +86,8 @@ public class ColaboradorImportService {
                 memoryService,
                 authIdentityRepository,
                 transactionTemplateFor(jdbcTemplate),
-                DEFAULT_MISSING_GRACE_HOURS
+                DEFAULT_MISSING_GRACE_HOURS,
+                postgresqlRunLock(jdbcTemplate)
         );
     }
 
@@ -93,11 +99,35 @@ public class ColaboradorImportService {
             TransactionTemplate applyTransactions,
             long missingGraceHours
     ) {
+        this(
+                jdbcTemplate,
+                academySourceAdapter,
+                memoryService,
+                authIdentityRepository,
+                applyTransactions,
+                missingGraceHours,
+                postgresqlRunLock(jdbcTemplate)
+        );
+    }
+
+    ColaboradorImportService(
+            JdbcTemplate jdbcTemplate,
+            AcademySourceAdapter academySourceAdapter,
+            CortexOperationalMemoryService memoryService,
+            AuthIdentityRepository authIdentityRepository,
+            TransactionTemplate applyTransactions,
+            long missingGraceHours,
+            AcademyImportRunLock runLock
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.academySourceAdapter = academySourceAdapter;
         this.memoryService = memoryService;
         this.authIdentityRepository = authIdentityRepository;
-        this.applyTransactions = applyTransactions;
+        this.requiresNewTransactions = applyTransactions;
+        this.requiresNewTransactions.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        );
+        this.runLock = runLock;
         if (missingGraceHours < 0) {
             throw new IllegalArgumentException(
                     "A carencia de ausentes Academy nao pode ser negativa."
@@ -107,15 +137,26 @@ public class ColaboradorImportService {
     }
 
     public ColaboradorImportResult importarUsuariosDaAcademy() {
+        try (AcademyImportRunLock.LockHandle ignored = runLock.acquire()) {
+            return importarComLockAdquirido();
+        } catch (Exception ignored) {
+            throw publicImportFailure();
+        }
+    }
+
+    private ColaboradorImportResult importarComLockAdquirido() {
         String syncRunId = UUID.randomUUID().toString();
         LocalDateTime iniciadoEm = LocalDateTime.now();
-
-        criarExecucaoSync(syncRunId, iniciadoEm);
-
         int registrosLidos = 0;
         String safeFailureMessage = SOURCE_FAILURE_MESSAGE;
+        boolean runCreated = false;
 
         try {
+            executeRequiresNew(() ->
+                    criarExecucaoSync(syncRunId, iniciadoEm)
+            );
+            runCreated = true;
+
             AcademyUserSnapshot snapshot =
                     academySourceAdapter.fetchCompleteSnapshot(
                             SNAPSHOT_PAGE_SIZE
@@ -128,7 +169,7 @@ public class ColaboradorImportService {
             safeFailureMessage = APPLY_FAILURE_MESSAGE;
 
             ImportApplicationResult applied = Objects.requireNonNull(
-                    applyTransactions.execute(status -> aplicarSnapshot(
+                    requiresNewTransactions.execute(status -> aplicarSnapshot(
                             syncRunId,
                             iniciadoEm,
                             preparedSnapshot
@@ -150,24 +191,18 @@ public class ColaboradorImportService {
             );
         } catch (SnapshotValidationException exception) {
             safeFailureMessage = exception.getMessage();
+        } catch (Exception ignored) {
+            // The durable run stores only the phase-specific safe message.
+        }
+
+        if (runCreated) {
             registrarExecucaoComFalha(
                     syncRunId,
                     registrosLidos,
                     safeFailureMessage
-            );
-            throw new RuntimeException(
-                    "Falha ao importar colaboradores da Academy."
-            );
-        } catch (Exception exception) {
-            registrarExecucaoComFalha(
-                    syncRunId,
-                    registrosLidos,
-                    safeFailureMessage
-            );
-            throw new RuntimeException(
-                    "Falha ao importar colaboradores da Academy."
             );
         }
+        throw publicImportFailure();
     }
 
     private ImportApplicationResult aplicarSnapshot(
@@ -175,6 +210,34 @@ public class ColaboradorImportService {
             LocalDateTime iniciadoEm,
             PreparedSnapshot snapshot
     ) {
+        LocalDateTime missingCutoff = iniciadoEm.minusHours(
+                missingGraceHours
+        );
+        List<ColaboradorAusente> staleMissing =
+                buscarColaboradoresAusentes(missingCutoff);
+        Set<String> releasedIdentityOwners = new LinkedHashSet<>(
+                buscarIdentidadesAcademyJaInelegiveis()
+        );
+        staleMissing.stream()
+                .map(ColaboradorAusente::id)
+                .forEach(releasedIdentityOwners::add);
+        snapshot.users().stream()
+                .filter(user ->
+                        !user.ativo()
+                                || user.cpfNormalizado() == null
+                )
+                .map(UsuarioAcademy::id)
+                .forEach(releasedIdentityOwners::add);
+
+        authIdentityRepository.validateAcademyIdentityBatch(
+                snapshot.identityCandidates(),
+                releasedIdentityOwners
+        );
+        releasedIdentityOwners.forEach(
+                authIdentityRepository::revokeAcademyCpfLogin
+        );
+        limparCpfDeColaboradoresJaInelegiveis();
+
         int registrosInseridos = 0;
         int registrosAtualizados = 0;
 
@@ -197,6 +260,10 @@ public class ColaboradorImportService {
                         usuario.cpfNormalizado(),
                         usuario.email()
                 );
+            } else if (usuario.ativo()) {
+                authIdentityRepository.revokeAcademyCpfLogin(
+                        usuario.id()
+                );
             }
 
             registrarColaboradorNaMemoria(
@@ -209,10 +276,10 @@ public class ColaboradorImportService {
             );
         }
 
-        LocalDateTime missingCutoff = iniciadoEm.minusHours(
-                missingGraceHours
+        int registrosDesativados = desativarAusentes(
+                missingCutoff,
+                staleMissing
         );
-        int registrosDesativados = desativarAusentes(missingCutoff);
 
         finalizarExecucaoComSucesso(
                 syncRunId,
@@ -248,7 +315,7 @@ public class ColaboradorImportService {
 
         List<AcademySourceAdapter.UsuarioAcademyRecord> sourceUsers =
                 snapshot.users();
-        Map<Integer, Integer> sourceIdCounts = new HashMap<>();
+        Map<Long, Integer> sourceIdCounts = new HashMap<>();
         int invalidSourceIds = 0;
         for (AcademySourceAdapter.UsuarioAcademyRecord sourceUser
                 : sourceUsers) {
@@ -309,9 +376,21 @@ public class ColaboradorImportService {
             );
         }
 
-        return new PreparedSnapshot(
-                sourceUsers.stream().map(this::lerUsuario).toList()
-        );
+        List<UsuarioAcademy> users =
+                sourceUsers.stream().map(this::lerUsuario).toList();
+        List<AuthIdentityRepository.AcademyIdentityCandidate>
+                identityCandidates = users.stream()
+                .filter(UsuarioAcademy::ativo)
+                .filter(user -> user.cpfNormalizado() != null)
+                .map(user ->
+                        new AuthIdentityRepository.AcademyIdentityCandidate(
+                                user.id(),
+                                user.cpfNormalizado(),
+                                user.email()
+                        )
+                )
+                .toList();
+        return new PreparedSnapshot(users, identityCandidates);
     }
 
     private <T> int duplicatedRecordCount(Map<T, Integer> counts) {
@@ -344,10 +423,12 @@ public class ColaboradorImportService {
     private UsuarioAcademy lerUsuario(
             AcademySourceAdapter.UsuarioAcademyRecord sourceUser
     ) {
-        int idUsuario = sourceUser.idUsuario();
+        long idUsuario = sourceUser.idUsuario();
         String pkOrigem = String.valueOf(idUsuario);
 
-        String cpfNormalizado = cpfValidoOuNulo(sourceUser.cpf());
+        String cpfNormalizado = sourceUser.ativo()
+                ? cpfValidoOuNulo(sourceUser.cpf())
+                : null;
         LocalDateTime criadoEmOrigem = sourceUser.criadoEm();
 
         return new UsuarioAcademy(
@@ -399,10 +480,17 @@ public class ColaboradorImportService {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'BETA', ?, ?, NULL, ?, CURRENT_TIMESTAMP(6), NULL)
                 ON CONFLICT (banco_origem, tabela_origem, pk_origem) DO UPDATE SET
                     codigo_colaborador = EXCLUDED.codigo_colaborador,
-                    cpf_mascarado = COALESCE(
-                        EXCLUDED.cpf_mascarado,
-                        colaborador.cpf_mascarado
-                    ),
+                    cpf_mascarado = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM auth_identity protected_identity
+                            WHERE protected_identity.colaborador_id =
+                                      colaborador.id
+                              AND protected_identity.status = 'BLOQUEADA'
+                        )
+                            THEN colaborador.cpf_mascarado
+                        ELSE EXCLUDED.cpf_mascarado
+                    END,
                     nome = EXCLUDED.nome,
                     email = EXCLUDED.email,
                     id_grupo_origem = EXCLUDED.id_grupo_origem,
@@ -415,20 +503,45 @@ public class ColaboradorImportService {
                     atualizado_em_origem = EXCLUDED.atualizado_em_origem,
                     atualizado_em = CASE
                         WHEN colaborador.hash_origem IS DISTINCT FROM EXCLUDED.hash_origem
-                            OR colaborador.cpf_hash IS DISTINCT FROM EXCLUDED.cpf_hash
+                            OR (
+                                NOT EXISTS (
+                                    SELECT 1
+                                    FROM auth_identity protected_identity
+                                    WHERE protected_identity.colaborador_id =
+                                              colaborador.id
+                                      AND protected_identity.status = 'BLOQUEADA'
+                                )
+                                AND colaborador.cpf_hash IS DISTINCT FROM EXCLUDED.cpf_hash
+                            )
                         THEN CURRENT_TIMESTAMP(6)
                         ELSE colaborador.atualizado_em
                     END,
                     versao_linha = CASE
                         WHEN colaborador.hash_origem IS DISTINCT FROM EXCLUDED.hash_origem
-                            OR colaborador.cpf_hash IS DISTINCT FROM EXCLUDED.cpf_hash
+                            OR (
+                                NOT EXISTS (
+                                    SELECT 1
+                                    FROM auth_identity protected_identity
+                                    WHERE protected_identity.colaborador_id =
+                                              colaborador.id
+                                      AND protected_identity.status = 'BLOQUEADA'
+                                )
+                                AND colaborador.cpf_hash IS DISTINCT FROM EXCLUDED.cpf_hash
+                            )
                         THEN colaborador.versao_linha + 1
                         ELSE colaborador.versao_linha
                     END,
-                    cpf_hash = COALESCE(
-                        EXCLUDED.cpf_hash,
-                        colaborador.cpf_hash
-                    ),
+                    cpf_hash = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM auth_identity protected_identity
+                            WHERE protected_identity.colaborador_id =
+                                      colaborador.id
+                              AND protected_identity.status = 'BLOQUEADA'
+                        )
+                            THEN colaborador.cpf_hash
+                        ELSE EXCLUDED.cpf_hash
+                    END,
                     hash_origem = EXCLUDED.hash_origem,
                     visto_por_ultimo_em = CURRENT_TIMESTAMP(6),
                     deletado_em = NULL
@@ -478,15 +591,37 @@ public class ColaboradorImportService {
         return hashes.isEmpty() ? null : hashes.get(0);
     }
 
-    private int desativarAusentes(LocalDateTime missingCutoff) {
-        List<ColaboradorAusente> ausentes =
-                buscarColaboradoresAusentes(missingCutoff);
-
+    private int desativarAusentes(
+            LocalDateTime missingCutoff,
+            List<ColaboradorAusente> ausentes
+    ) {
         int total = jdbcTemplate.update("""
                 UPDATE colaborador
                 SET
                     ativo = FALSE,
                     deletado_em = COALESCE(deletado_em, CURRENT_TIMESTAMP(6)),
+                    cpf_hash = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM auth_identity protected_identity
+                            WHERE protected_identity.colaborador_id =
+                                      colaborador.id
+                              AND protected_identity.status = 'BLOQUEADA'
+                        )
+                            THEN colaborador.cpf_hash
+                        ELSE NULL
+                    END,
+                    cpf_mascarado = CASE
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM auth_identity protected_identity
+                            WHERE protected_identity.colaborador_id =
+                                      colaborador.id
+                              AND protected_identity.status = 'BLOQUEADA'
+                        )
+                            THEN colaborador.cpf_mascarado
+                        ELSE NULL
+                    END,
                     atualizado_em = CURRENT_TIMESTAMP(6),
                     versao_linha = versao_linha + 1
                 WHERE banco_origem = ?
@@ -505,6 +640,53 @@ public class ColaboradorImportService {
         }
 
         return total;
+    }
+
+    private List<String> buscarIdentidadesAcademyJaInelegiveis() {
+        return jdbcTemplate.query("""
+                SELECT id
+                FROM colaborador
+                WHERE banco_origem = ?
+                  AND tabela_origem = ?
+                  AND (
+                      ativo = FALSE
+                      OR deletado_em IS NOT NULL
+                  )
+                """,
+                (resultSet, rowNumber) -> resultSet.getString("id"),
+                BANCO_ORIGEM,
+                TABELA_ORIGEM
+        );
+    }
+
+    private void limparCpfDeColaboradoresJaInelegiveis() {
+        jdbcTemplate.update("""
+                UPDATE colaborador
+                SET cpf_hash = NULL,
+                    cpf_mascarado = NULL,
+                    atualizado_em = CURRENT_TIMESTAMP(6),
+                    versao_linha = versao_linha + 1
+                WHERE banco_origem = ?
+                  AND tabela_origem = ?
+                  AND (
+                      ativo = FALSE
+                      OR deletado_em IS NOT NULL
+                  )
+                  AND (
+                      cpf_hash IS NOT NULL
+                      OR cpf_mascarado IS NOT NULL
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM auth_identity protected_identity
+                      WHERE protected_identity.colaborador_id =
+                                colaborador.id
+                        AND protected_identity.status = 'BLOQUEADA'
+                  )
+                """,
+                BANCO_ORIGEM,
+                TABELA_ORIGEM
+        );
     }
 
     private List<ColaboradorAusente> buscarColaboradoresAusentes(
@@ -592,25 +774,22 @@ public class ColaboradorImportService {
             int registrosLidos,
             String mensagemErro
     ) {
-        try {
-            jdbcTemplate.update("""
-                    UPDATE source_sync_run
-                    SET
-                        finished_at = CURRENT_TIMESTAMP(6),
-                        status = 'FAILED',
-                        records_read = ?,
-                        records_inserted = 0,
-                        records_updated = 0,
-                        records_deactivated = 0,
-                        error_message = ?
-                    WHERE id = ?
-                    """,
-                    registrosLidos,
-                    mensagemErro,
-                    syncRunId
-            );
-        } catch (Exception ignored) {
-        }
+        jdbcTemplate.update("""
+                UPDATE source_sync_run
+                SET
+                    finished_at = CURRENT_TIMESTAMP(6),
+                    status = 'FAILED',
+                    records_read = ?,
+                    records_inserted = 0,
+                    records_updated = 0,
+                    records_deactivated = 0,
+                    error_message = ?
+                WHERE id = ?
+                """,
+                registrosLidos,
+                mensagemErro,
+                syncRunId
+        );
     }
 
     private void registrarExecucaoComFalha(
@@ -619,14 +798,18 @@ public class ColaboradorImportService {
             String mensagemErro
     ) {
         String safeMessage = limitarTexto(mensagemErro, 1000);
-        finalizarExecucaoComFalha(
-                syncRunId,
-                registrosLidos,
-                safeMessage
+        executeRequiresNewBestEffort(() ->
+                finalizarExecucaoComFalha(
+                        syncRunId,
+                        registrosLidos,
+                        safeMessage
+                )
         );
-        atualizarCheckpointComFalha(safeMessage);
-        try {
-            registrarImportacaoNaMemoria(
+        executeRequiresNewBestEffort(() ->
+                atualizarCheckpointComFalha(safeMessage)
+        );
+        executeRequiresNewBestEffort(() ->
+                registrarImportacaoNaMemoria(
                     syncRunId,
                     "FAILED",
                     registrosLidos,
@@ -634,10 +817,8 @@ public class ColaboradorImportService {
                     0,
                     0,
                     safeMessage
-            );
-        } catch (Exception ignored) {
-            // The durable FAILED run remains the authoritative failure signal.
-        }
+                )
+        );
     }
 
     private void atualizarCheckpointComSucesso() {
@@ -667,29 +848,26 @@ public class ColaboradorImportService {
     }
 
     private void atualizarCheckpointComFalha(String mensagemErro) {
-        try {
-            jdbcTemplate.update("""
-                    INSERT INTO source_sync_checkpoint (
-                        id,
-                        connector_name,
-                        source_database,
-                        source_table,
-                        last_error_at,
-                        last_error_message
-                    )
-                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?)
-                    ON CONFLICT (connector_name, source_database, source_table) DO UPDATE SET
-                        last_error_at = EXCLUDED.last_error_at,
-                        last_error_message = EXCLUDED.last_error_message
-                    """,
-                    stableCheckpointId(),
-                    CONNECTOR_NAME,
-                    BANCO_ORIGEM,
-                    TABELA_ORIGEM,
-                    mensagemErro
-            );
-        } catch (Exception ignored) {
-        }
+        jdbcTemplate.update("""
+                INSERT INTO source_sync_checkpoint (
+                    id,
+                    connector_name,
+                    source_database,
+                    source_table,
+                    last_error_at,
+                    last_error_message
+                )
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(6), ?)
+                ON CONFLICT (connector_name, source_database, source_table) DO UPDATE SET
+                    last_error_at = EXCLUDED.last_error_at,
+                    last_error_message = EXCLUDED.last_error_message
+                """,
+                stableCheckpointId(),
+                CONNECTOR_NAME,
+                BANCO_ORIGEM,
+                TABELA_ORIGEM,
+                mensagemErro
+        );
     }
 
     private String gerarHash(UsuarioAcademy usuario) {
@@ -912,16 +1090,61 @@ public class ColaboradorImportService {
         return value == null ? "" : value;
     }
 
+    private void executeRequiresNew(Runnable action) {
+        requiresNewTransactions.execute(status -> {
+            action.run();
+            return null;
+        });
+    }
+
+    private void executeRequiresNewBestEffort(Runnable action) {
+        try {
+            executeRequiresNew(action);
+        } catch (Exception ignored) {
+            // A later failure signal cannot expose or replace the safe error.
+        }
+    }
+
+    private RuntimeException publicImportFailure() {
+        return new RuntimeException(
+                "Falha ao importar colaboradores da Academy."
+        );
+    }
+
     private static TransactionTemplate transactionTemplateFor(
             JdbcTemplate jdbcTemplate
     ) {
-        return new TransactionTemplate(
+        return requiresNewTransactionTemplate(
                 new DataSourceTransactionManager(
                         Objects.requireNonNull(
                                 jdbcTemplate.getDataSource(),
                                 "JdbcTemplate sem DataSource transacional"
                         )
                 )
+        );
+    }
+
+    private static TransactionTemplate requiresNewTransactionTemplate(
+            PlatformTransactionManager transactionManager
+    ) {
+        TransactionTemplate transactions = new TransactionTemplate(
+                transactionManager
+        );
+        transactions.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        );
+        return transactions;
+    }
+
+    private static AcademyImportRunLock postgresqlRunLock(
+            JdbcTemplate jdbcTemplate
+    ) {
+        return new PostgresqlAcademyImportRunLock(
+                Objects.requireNonNull(
+                        jdbcTemplate.getDataSource(),
+                        "JdbcTemplate sem DataSource para lock Academy"
+                ),
+                CONNECTOR_NAME
         );
     }
 
@@ -933,10 +1156,15 @@ public class ColaboradorImportService {
         }
     }
 
-    private record PreparedSnapshot(List<UsuarioAcademy> users) {
+    private record PreparedSnapshot(
+            List<UsuarioAcademy> users,
+            List<AuthIdentityRepository.AcademyIdentityCandidate>
+                    identityCandidates
+    ) {
 
         private PreparedSnapshot {
             users = List.copyOf(users);
+            identityCandidates = List.copyOf(identityCandidates);
         }
     }
 

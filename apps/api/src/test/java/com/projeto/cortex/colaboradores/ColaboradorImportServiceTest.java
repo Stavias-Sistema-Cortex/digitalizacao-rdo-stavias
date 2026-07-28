@@ -12,6 +12,7 @@ import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.projeto.cortex.auth.identity.AuthIdentityRepository;
@@ -410,7 +411,8 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 transactions,
-                24
+                24,
+                AcademyImportRunLock.noOp()
         );
 
         assertThatThrownBy(service::importarUsuariosDaAcademy)
@@ -418,7 +420,6 @@ class ColaboradorImportServiceTest {
                 .hasMessage("Falha ao importar colaboradores da Academy.")
                 .hasNoCause();
 
-        verify(transactions, never()).execute(any());
         verify(authIdentities, never()).upsertAcademyIdentity(
                 anyString(),
                 anyString(),
@@ -447,7 +448,8 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 transactions,
-                24
+                24,
+                AcademyImportRunLock.noOp()
         );
 
         assertThatThrownBy(service::importarUsuariosDaAcademy)
@@ -455,7 +457,6 @@ class ColaboradorImportServiceTest {
                 .hasMessage("Falha ao importar colaboradores da Academy.")
                 .hasNoCause();
 
-        verify(transactions, never()).execute(any());
         verify(authIdentities, never()).upsertAcademyIdentity(
                 anyString(),
                 anyString(),
@@ -466,6 +467,34 @@ class ColaboradorImportServiceTest {
                         assertThat(Arrays.asList(invocation.getArguments()))
                                 .doesNotContain(FIRST_SYNTHETIC_CPF)
                 );
+    }
+
+    @Test
+    void runningCreationFailureIsGenericAndNeverReadsOrMutatesProtectedData() {
+        JdbcTemplate jdbc = new RunningCreationFailingJdbcTemplate();
+        AcademySourceAdapter academy = mock(AcademySourceAdapter.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        AuthIdentityRepository authIdentities =
+                mock(AuthIdentityRepository.class);
+
+        ColaboradorImportService service = new ColaboradorImportService(
+                jdbc,
+                academy,
+                memory,
+                authIdentities,
+                immediateTransactions(),
+                24,
+                AcademyImportRunLock.noOp()
+        );
+
+        assertThatThrownBy(service::importarUsuariosDaAcademy)
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Falha ao importar colaboradores da Academy.")
+                .hasNoCause();
+
+        verify(academy, never()).fetchCompleteSnapshot(anyInt());
+        verifyNoInteractions(memory, authIdentities);
     }
 
     private void assertSnapshotRejectedBeforeDomainWrites(
@@ -489,7 +518,8 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 transactions,
-                24
+                24,
+                AcademyImportRunLock.noOp()
         );
 
         assertThatThrownBy(service::importarUsuariosDaAcademy)
@@ -497,7 +527,6 @@ class ColaboradorImportServiceTest {
                 .hasMessage("Falha ao importar colaboradores da Academy.")
                 .hasNoCause();
 
-        verify(transactions, never()).execute(any());
         verify(authIdentities, never()).upsertAcademyIdentity(
                 anyString(),
                 anyString(),
@@ -535,7 +564,8 @@ class ColaboradorImportServiceTest {
                 memory,
                 authIdentities,
                 immediateTransactions(),
-                24
+                24,
+                AcademyImportRunLock.noOp()
         );
     }
 
@@ -617,5 +647,19 @@ class ColaboradorImportServiceTest {
             }
         }
         return false;
+    }
+
+    private static final class RunningCreationFailingJdbcTemplate
+            extends JdbcTemplate {
+
+        @Override
+        public int update(String sql, Object... args) {
+            if (sql.contains("INSERT INTO source_sync_run")) {
+                throw new IllegalStateException(
+                        "driver detail: 11144477735 protected@example.invalid"
+                );
+            }
+            return 0;
+        }
     }
 }

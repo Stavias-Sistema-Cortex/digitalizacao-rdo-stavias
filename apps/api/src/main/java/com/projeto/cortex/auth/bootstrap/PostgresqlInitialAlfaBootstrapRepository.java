@@ -1,6 +1,7 @@
 package com.projeto.cortex.auth.bootstrap;
 
 import com.projeto.cortex.auth.identity.CpfLookupDigest;
+import com.projeto.cortex.auth.identity.PostgresqlAuthIdentityMutationLock;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -112,6 +113,7 @@ public final class PostgresqlInitialAlfaBootstrapRepository {
             throw new IllegalStateException("Bootstrap PostgreSQL exige transação ativa.");
         }
 
+        PostgresqlAuthIdentityMutationLock.acquire(jdbcTemplate);
         // The receipt is derived from a protected HMAC, never raw identity data.
         jdbcTemplate.queryForObject(
                 SERIALIZE_RECEIPT_SQL,

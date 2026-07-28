@@ -204,7 +204,7 @@ class PostgresqlAcademyCpfLoginIT
             assertThat(identityStatus(
                     jdbc,
                     collaboratorId(HISTORICAL_ACTIVE_SOURCE_ID)
-            )).isEqualTo("ATIVA");
+            )).isEqualTo("PENDENTE");
             assertThat(identityCount(
                     jdbc,
                     collaboratorId(HISTORICAL_ACTIVE_SOURCE_ID)

@@ -16,6 +16,10 @@ import java.util.Objects;
 @Service
 public class IntegracaoAdminService {
 
+    private static final String ACADEMY_STATUS_FAILURE =
+            "Sincronizacao Academy falhou. "
+                    + "Consulte o relatório da integração para detalhes.";
+
     private final JdbcTemplate jdbcTemplate;
     private final AcademySourceAdapter academySourceAdapter;
     private final ZeladoriaSourceAdapter zeladoriaSourceAdapter;
@@ -90,11 +94,11 @@ public class IntegracaoAdminService {
                                     result.mensagemErro()
                             )
                     );
-                } catch (Exception exception) {
-                    yield failedAction(
+                } catch (Exception ignored) {
+                    yield new IntegracaoActionResponse(
                             integrationId,
-                            "Sincronizacao Academy",
-                            exception
+                            "FAILED",
+                            ACADEMY_STATUS_FAILURE
                     );
                 }
             }
@@ -199,6 +203,7 @@ public class IntegracaoAdminService {
                         : checkpoint == null
                                 ? null
                                 : checkpoint.lastErrorMessage();
+        error = safeStatusError(id, error);
 
         return new IntegracaoStatusResponse(
                 id,
@@ -214,6 +219,18 @@ public class IntegracaoAdminService {
                 "Manual ou agendada pelo CORTEX_SYNC_FIXED_DELAY_MS",
                 defasagem(lastSuccess)
         );
+    }
+
+    static String safeStatusError(
+            String integrationId,
+            String persistedError
+    ) {
+        if (persistedError == null || persistedError.isBlank()) {
+            return null;
+        }
+        return "academy".equals(integrationId)
+                ? ACADEMY_STATUS_FAILURE
+                : persistedError;
     }
 
     private SyncRun latestRun(String connector) {

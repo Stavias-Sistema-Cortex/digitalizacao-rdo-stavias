@@ -11,7 +11,7 @@ public final class AcademyCollaboratorIdentity {
     private AcademyCollaboratorIdentity() {
     }
 
-    public static String fromAcademyUserId(int sourceUserId) {
+    public static String fromAcademyUserId(long sourceUserId) {
         return UUID.nameUUIDFromBytes(
                 (SOURCE_NAMESPACE + sourceUserId).getBytes(StandardCharsets.UTF_8)
         ).toString();

@@ -113,7 +113,7 @@ public final class PostgresqlInitialAlfaBootstrapService {
             }
             return new BootstrapProjection(
                     AcademyCollaboratorIdentity.fromAcademyUserId(user.sourceUserId()),
-                    Integer.toString(user.sourceUserId()),
+                    Long.toString(user.sourceUserId()),
                     requiredText(user.nome(), 255),
                     normalizedEmail(user.email()),
                     optionalText(user.idGrupo(), 128),

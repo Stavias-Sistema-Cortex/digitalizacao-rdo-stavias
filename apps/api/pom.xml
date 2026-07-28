@@ -138,6 +138,12 @@
             <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -164,7 +170,7 @@
     </build>
 
     <profiles>
-        <!-- PostgreSQL containers are opt-in; each IT owns its Spring profile. -->
+        <!-- Disposable database containers are opt-in; each IT owns its profile. -->
         <profile>
             <id>postgresql-it</id>
             <build>

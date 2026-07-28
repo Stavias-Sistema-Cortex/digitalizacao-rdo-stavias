@@ -41,32 +41,67 @@ class AcademySourceAdapterBootstrapTest {
         when(connection.prepareStatement(anyString())).thenReturn(statement);
         when(statement.executeQuery()).thenReturn(firstPage, finalPage);
         when(firstPage.next()).thenReturn(true, true, false);
-        when(firstPage.getInt("id_usuario")).thenReturn(907_101, 907_102);
+        when(firstPage.getLong("id_usuario"))
+                .thenReturn(907_101L, 907_102L);
         when(finalPage.next()).thenReturn(true, false);
-        when(finalPage.getInt("id_usuario")).thenReturn(907_103);
+        when(finalPage.getLong("id_usuario")).thenReturn(907_103L);
 
         AcademyUserSnapshot snapshot = executeCompleteSnapshot(connection, 2);
 
         assertThat(snapshot.complete()).isTrue();
         assertThat(snapshot.users())
                 .extracting(AcademySourceAdapter.UsuarioAcademyRecord::idUsuario)
-                .containsExactly(907_101, 907_102, 907_103);
+                .containsExactly(907_101L, 907_102L, 907_103L);
         assertThat(snapshotSql())
-                .contains("WHERE u.id_usuario > ?")
-                .contains("ORDER BY u.id_usuario")
-                .contains("LIMIT ?");
+                .contains("WHERE source.id_usuario > ?")
+                .contains("ORDER BY source.id_usuario")
+                .contains("LIMIT ?")
+                .contains("FROM (")
+                .contains(") u")
+                .contains("LEFT JOIN grupos");
         verify(connection).setReadOnly(true);
         verify(connection).setTransactionIsolation(
                 Connection.TRANSACTION_REPEATABLE_READ
         );
         verify(connection).setAutoCommit(false);
-        verify(statement).setInt(1, Integer.MIN_VALUE);
-        verify(statement).setInt(1, 907_102);
+        verify(statement).setLong(1, 0L);
+        verify(statement).setLong(1, 907_102L);
         verify(statement, times(2)).setInt(2, 2);
         verify(statement, never()).setMaxRows(anyInt());
         verify(connection).commit();
         verify(connection, never()).rollback();
         verify(connection).close();
+    }
+
+    @Test
+    void completeSnapshotCapsUntrustedPageSizesBeforeAllocatingOrQuerying()
+            throws Exception {
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(false);
+
+        executeCompleteSnapshot(connection, Integer.MAX_VALUE);
+
+        verify(statement).setInt(2, 2_000);
+        verify(statement).setFetchSize(500);
+    }
+
+    @Test
+    void completeSnapshotUsesSafeDefaultForNonPositivePageSize()
+            throws Exception {
+        Connection connection = mock(Connection.class);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(false);
+
+        executeCompleteSnapshot(connection, 0);
+
+        verify(statement).setInt(2, 500);
     }
 
     @Test
@@ -82,7 +117,8 @@ class AcademySourceAdapterBootstrapTest {
                         "driver detail: " + canonicalSyntheticCpf()
                 ));
         when(firstPage.next()).thenReturn(true, true, false);
-        when(firstPage.getInt("id_usuario")).thenReturn(907_201, 907_202);
+        when(firstPage.getLong("id_usuario"))
+                .thenReturn(907_201L, 907_202L);
 
         assertThatThrownBy(() -> executeCompleteSnapshot(connection, 2))
                 .isInstanceOf(IllegalStateException.class)
@@ -156,7 +192,7 @@ class AcademySourceAdapterBootstrapTest {
         );
 
         assertThat(result).hasValueSatisfying(user -> {
-            assertThat(user.sourceUserId()).isEqualTo(907_001);
+            assertThat(user.sourceUserId()).isEqualTo(907_001L);
             assertThat(user.nome()).isEqualTo("Usuário Academy Sintético");
             assertThat(user.email()).isEqualTo("academy-bootstrap@example.invalid");
             assertThat(user.ativo()).isTrue();
@@ -351,7 +387,7 @@ class AcademySourceAdapterBootstrapTest {
     }
 
     private void stubFirstUser(ResultSet resultSet) throws Exception {
-        when(resultSet.getInt("id_usuario")).thenReturn(907_001);
+        when(resultSet.getLong("id_usuario")).thenReturn(907_001L);
         when(resultSet.getString("nome")).thenReturn("Usuário Academy Sintético");
         when(resultSet.getString("email")).thenReturn(
                 "academy-bootstrap@example.invalid"
