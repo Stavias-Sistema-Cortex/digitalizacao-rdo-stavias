@@ -19,7 +19,7 @@
   border-radius: 4px;
   background: #fff;
   color: #171b19;
-  box-shadow: 0 24px 70px rgb(23 27 25 / 24%);
+  box-shadow: var(--shadow-overlay);
   animation: rdo-dialog-reveal 140ms ease-out;
 }
 
@@ -43,7 +43,7 @@
 
 .rdo-creation-header h2 {
   font-size: 1.35rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rdo-creation-header p {
@@ -99,7 +99,7 @@
 
 .rdo-selected-worksite[data-selected="true"] {
   border-color: #9db8ae;
-  box-shadow: inset 3px 0 var(--color-brand-teal);
+  border-left: 3px solid var(--color-brand-teal);
 }
 
 .rdo-selected-worksite span,
@@ -112,7 +112,7 @@
 .rdo-selected-worksite span {
   color: #5e6863;
   font-size: 0.62rem;
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -120,7 +120,7 @@
 .rdo-selected-worksite strong {
   margin-top: 2px;
   font-size: 0.76rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .rdo-selected-worksite small {
@@ -155,7 +155,7 @@
 }
 
 .rdo-worksite-option--selected {
-  box-shadow: inset 3px 0 var(--color-brand-teal);
+  border-left: 3px solid var(--color-brand-teal);
   background: #f4f6f4;
 }
 

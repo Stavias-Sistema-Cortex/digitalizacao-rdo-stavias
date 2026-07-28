@@ -59,7 +59,7 @@
   overflow-y: auto;
   border: 1px solid #171b19;
   background: #fff;
-  box-shadow: 0 12px 28px rgb(18 24 21 / 16%);
+  box-shadow: var(--shadow-overlay);
 }
 
 .rdo-workforce-catalog-results > p {
@@ -87,8 +87,9 @@
 
 .rdo-workforce-catalog-option:hover,
 .rdo-workforce-catalog-option.is-active {
+  border-left: 1px solid var(--color-brand-yellow);
   background: #edf1ee;
-  box-shadow: inset 4px 0 #f2c800;
+  box-shadow: none;
 }
 
 .rdo-workforce-catalog-option strong,
@@ -109,7 +110,7 @@
   background: #fbf0f0;
   color: #782d2d;
   font-size: 0.76rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .rdo-workforce-empty {
@@ -160,7 +161,7 @@
   background: #f4f6f4;
   color: #2c3330;
   font-size: 0.66rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -209,11 +210,12 @@
   margin-top: 3px;
   color: #8b2f2f;
   font-size: 0.64rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rdo-workforce-row--carried > th[scope="row"] {
-  box-shadow: inset 4px 0 #f2c800;
+  border-left: 1px solid var(--color-brand-yellow);
+  box-shadow: none;
   padding-left: 12px;
 }
 

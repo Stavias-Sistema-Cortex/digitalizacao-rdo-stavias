@@ -38,22 +38,6 @@
   src: url("/fonts/poppins-600-italic.ttf") format("truetype");
 }
 
-@font-face {
-  font-family: "Poppins";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("/fonts/poppins-700.ttf") format("truetype");
-}
-
-@font-face {
-  font-family: "Poppins";
-  font-style: normal;
-  font-weight: 800;
-  font-display: swap;
-  src: url("/fonts/poppins-800.ttf") format("truetype");
-}
-
 :root {
   font-family: "Poppins", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -62,25 +46,24 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  --color-ink: #111312;
-  --color-graphite: #292d2b;
+  --color-ink: #18211f;
+  --color-graphite: #313a37;
   --color-text: var(--color-ink);
-  --color-brand-teal: #124e4a;
-  --color-brand-teal-strong: #0d3f3c;
-  --color-brand-green: #123a37;
-  --color-brand-yellow: #f2c800;
-  --color-canvas: #edf2ef;
-  --color-surface: #f8fbf9;
-  --color-border: rgb(18 58 55 / 14%);
-  --color-border-strong: rgb(18 58 55 / 22%);
+  --color-brand-teal: #0c2623;
+  --color-brand-teal-strong: #081d1a;
+  --color-brand-green: #13332f;
+  --color-brand-yellow: #f2c300;
+  --color-canvas: #eef2f0;
+  --color-surface: #f7f9f7;
+  --color-border: #d4deda;
+  --color-border-strong: #bccac5;
+  --color-danger: #a43a3a;
   --color-muted: #66706b;
   --color-focus: #2f6f68;
-  --surface-glass: rgb(255 255 255 / 78%);
-  --surface-glass-fallback: #f8fbf9;
+  --surface-glass: var(--color-surface);
+  --surface-glass-fallback: var(--color-surface);
   --surface-glass-active: var(--surface-glass-fallback);
-  --glass-shadow:
-    0 14px 36px rgb(15 45 42 / 8%),
-    inset 0 1px 0 rgb(255 255 255 / 72%);
+  --glass-shadow: none;
   --radius-control: 8px;
   --radius-container: 14px;
   --radius-sm: var(--radius-control);
@@ -124,6 +107,11 @@ h6 {
   font-weight: 600;
 }
 
+strong,
+b {
+  font-weight: 600;
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -131,13 +119,6 @@ select:focus-visible,
 textarea:focus-visible,
 [role="separator"]:focus-visible {
   outline: 3px solid var(--color-focus);
-  outline-offset: 2px;
-}
-
-.cortex-sidebar button:focus-visible,
-.cortex-sidebar a:focus-visible,
-.cortex-sidebar [role="separator"]:focus-visible {
-  outline: 3px solid var(--color-brand-yellow);
   outline-offset: 2px;
 }
 
@@ -164,7 +145,7 @@ textarea:focus-visible,
   border-radius: var(--radius-container);
   background: var(--surface-glass-fallback);
   background: var(--surface-glass-active);
-  box-shadow: var(--glass-shadow);
+  box-shadow: none;
 }
 
 .institutional-frame--strong {
@@ -245,7 +226,7 @@ h1 {
   background: #eef1ef;
   color: #46534c;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .status-badge::before {
@@ -420,7 +401,7 @@ h1 {
   border-radius: var(--radius-sm);
   background: white;
   color: #243e30;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .add-button:hover {
@@ -439,13 +420,13 @@ label {
   gap: 7px;
   color: #34443b;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 label small {
   color: #839087;
   font-size: 0.72rem;
-  font-weight: 450;
+  font-weight: 400;
   line-height: 1.4;
 }
 
@@ -500,7 +481,7 @@ textarea:focus {
   gap: 7px;
   color: #34443b;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .lookup-field > label {
@@ -558,20 +539,20 @@ textarea:focus {
 
 .lookup-title {
   font-size: 0.86rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .lookup-subtitle {
   color: #69766e;
   font-size: 0.75rem;
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .lookup-state {
   padding: 12px;
   color: #69766e;
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .full-width {
@@ -614,7 +595,7 @@ textarea:focus {
 .calculated-metric span {
   color: #718078;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .calculated-metric strong {
@@ -636,7 +617,7 @@ textarea:focus {
   background: transparent;
   color: #a33b3b;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .json-preview pre {
@@ -663,303 +644,18 @@ textarea:focus {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  box-shadow: 0 8px 24px rgb(24 35 31 / 10%);
+  box-shadow: none;
 }
 
 .button {
   min-height: 44px;
   padding: 0 18px;
   border-radius: 999px;
-  font-weight: 750;
+  font-weight: 600;
   transition:
     background 140ms ease,
     border-color 140ms ease,
     transform 140ms ease;
-}
-
-.cortex-shell {
-  --cortex-shell-chrome-surface: linear-gradient(
-    135deg,
-    #101312 0%,
-    #0f2d2a 48%,
-    #124e4a 100%
-  );
-  --cortex-sidebar-edge: var(--sidebar-width, 248px);
-  position: relative;
-  display: grid;
-  grid-template-columns: var(--sidebar-width, 248px) minmax(0, 1fr);
-  gap: 0;
-  min-height: 100dvh;
-  background: var(--cortex-shell-chrome-surface);
-  background-attachment: fixed;
-  background-size: 100vw 100dvh;
-  background-position: 0 0;
-  transition: grid-template-columns 220ms ease;
-}
-
-.cortex-shell-content {
-  min-width: 0;
-  min-height: 100dvh;
-}
-
-/* Durante o arrasto: sem transição (borracha) e sem seleção de texto. */
-.cortex-shell.is-resizing {
-  transition: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* Modo compacto: só o tile da Stavias e os ícones dos botões. */
-.cortex-shell--collapsed {
-  --cortex-sidebar-edge: 84px;
-  grid-template-columns: 84px minmax(0, 1fr);
-}
-
-/* A sidebar ocupa a lateral inteira: colada nas bordas, do topo ao rodapé. */
-.cortex-sidebar {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-  height: 100dvh;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 25px 40px 10px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: #eef7ef;
-}
-
-/* Alça de recolher/expandir na borda da sidebar. */
-.sidebar-toggle {
-  position: absolute;
-  top: 30px;
-  right: -14px;
-  z-index: 5;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 1px solid rgb(255 255 255 / 34%);
-  border-radius: var(--radius-control);
-  background: #123a37;
-  color: #eef7ef;
-  box-shadow: none;
-  transition:
-    background-color var(--transition-functional),
-    border-color var(--transition-functional),
-    color var(--transition-functional);
-}
-
-.sidebar-toggle:hover {
-  border-color: rgb(255 255 255 / 52%);
-  background: rgb(255 255 255 / 10%);
-}
-
-.sidebar-toggle svg {
-  width: 20px;
-  height: 20px;
-  transition: transform 220ms ease;
-}
-
-.cortex-shell--collapsed .sidebar-toggle svg {
-  transform: rotate(180deg);
-}
-
-/* Alça de redimensionar na borda direita da sidebar. */
-.sidebar-resizer {
-  position: absolute;
-  top: 0;
-  right: -3px;
-  z-index: 4;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  background: transparent;
-  touch-action: none;
-}
-
-.sidebar-resizer:hover,
-.sidebar-resizer:focus-visible,
-.cortex-shell.is-resizing .sidebar-resizer {
-  background: rgb(255 255 255 / 24%);
-}
-
-.cortex-shell--collapsed .sidebar-resizer {
-  display: none;
-}
-
-.sidebar-brand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgb(255 255 255 / 28%);
-  overflow: hidden;
-}
-
-/* o lockup ocupa a faixa central do PNG; cover + scale enquadram só ele */
-.sidebar-brand-lockup {
-  display: block;
-  width: 100%;
-  max-width: 240px;
-  aspect-ratio: 3 / 1;
-  object-fit: cover;
-  object-position: center 49%;
-  transform: scale(1.45);
-  pointer-events: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-/* Tile "S" exibido no modo compacto. */
-.sidebar-brand-mark {
-  display: none;
-  width: 44px;
-  height: auto;
-  border-radius: var(--radius-control);
-  pointer-events: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.cortex-shell--collapsed .cortex-sidebar {
-  padding-inline: 14px;
-}
-
-.cortex-shell--collapsed .sidebar-brand-lockup {
-  display: none;
-}
-
-.cortex-shell--collapsed .sidebar-brand-mark {
-  display: block;
-}
-
-.cortex-shell--collapsed .sidebar-label {
-  display: none;
-}
-
-.cortex-shell--collapsed .sidebar-nav-item {
-  justify-content: center;
-  width: 46px;
-  min-height: 46px;
-  margin-inline: auto;
-  padding: 0;
-}
-
-.cortex-shell--collapsed .sidebar-footer button {
-  width: 46px;
-  min-height: 42px;
-  justify-content: center;
-  margin-inline: auto;
-  padding: 0;
-}
-
-.sidebar-nav,
-.sidebar-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.sidebar-nav {
-  margin-block: auto;
-}
-
-.sidebar-footer {
-  gap: 6px;
-}
-
-/* Nav minimalista: botões chatos, ativo assinado pela barra amarela. */
-.sidebar-nav-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: #eef7ef;
-  font-size: 0.92rem;
-  font-weight: 500;
-  text-align: left;
-  transition:
-    background-color var(--transition-functional),
-    border-color var(--transition-functional),
-    color var(--transition-functional);
-}
-
-.sidebar-nav-item img,
-.sidebar-footer button img {
-  flex: none;
-  width: 19px;
-  height: 19px;
-  filter: grayscale(1) brightness(0) invert(1);
-  opacity: 0.72;
-}
-
-.sidebar-nav-item img {
-  position: relative;
-}
-
-.sidebar-nav-item:hover {
-  border-color: rgb(255 255 255 / 34%);
-  background: rgb(255 255 255 / 6%);
-}
-
-.sidebar-nav-item.active {
-  border-color: transparent;
-  background: rgb(255 255 255 / 10%);
-  font-weight: 500;
-}
-
-/* Item ativo: barra amarela de pista na lateral. */
-.sidebar-nav-item.active::before {
-  content: "";
-  position: absolute;
-  top: 20%;
-  bottom: 20%;
-  left: 0;
-  width: 3px;
-  background: var(--color-brand-yellow);
-}
-
-.sidebar-footer button {
-  display: flex;
-  align-items: center;
-  justify-content: left;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #eef7ef;
-  font-size: 0.9rem;
-  font-weight: 500;
-  text-align: left;
-  border-radius: var(--radius-control);
-  transition:
-    background-color var(--transition-functional),
-    border-color var(--transition-functional),
-    color var(--transition-functional);
-}
-
-.sidebar-footer button:hover {
-  border-color: rgb(255 255 255 / 34%);
-  background: rgb(255 255 255 / 6%);
-}
-
-.sidebar-footer button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .rdo-dashboard {
@@ -1032,7 +728,7 @@ textarea:focus {
 .metric-card span {
   color: #145a55;
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
   text-align: left;
@@ -1042,7 +738,7 @@ textarea:focus {
   margin-top: 6px;
   color: #123331;
   font-size: 1.6rem;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
 }
@@ -1103,7 +799,7 @@ textarea:focus {
   border: 0;
   background: transparent;
   color: #164e4c;
-  font-weight: 800;
+  font-weight: 600;
   text-align: left;
 }
 
@@ -1138,7 +834,7 @@ textarea:focus {
 .rdo-fact small {
   color: #68756e;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -1146,7 +842,7 @@ textarea:focus {
 .rdo-fact strong {
   color: #164e4c;
   font-size: 1rem;
-  font-weight: 850;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1166,7 +862,7 @@ textarea:focus {
   background: #ffffff;
   color: #284834;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .rdo-card-actions {
@@ -1285,7 +981,7 @@ textarea:focus {
 .timeline-item small {
   margin-top: 4px;
   color: #557062;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .muted-text {
@@ -1319,7 +1015,7 @@ textarea:focus {
 .profile-drawer-header span {
   color: #69766e;
   font-size: 0.72rem;
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -1340,7 +1036,7 @@ textarea:focus {
   background: #ffffff;
   color: #203429;
   font-size: 1.2rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .profile-summary-grid {
@@ -1391,7 +1087,7 @@ textarea:focus {
   padding: 16px;
   color: #68756e;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
   text-align: center;
 }
 
@@ -1421,59 +1117,6 @@ textarea:focus {
 }
 
 @media (max-width: 900px) {
-  /* Em telas estreitas a sidebar vira faixa superior: o modo compacto
-     não se aplica e a alça de recolher some. */
-  .cortex-shell,
-  .cortex-shell--collapsed {
-    grid-template-columns: 1fr;
-    align-content: start;
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-  }
-
-  .cortex-shell-content {
-    height: auto;
-    min-height: 0;
-    overflow-y: visible;
-  }
-
-  .sidebar-toggle,
-  .sidebar-resizer {
-    display: none;
-  }
-
-  .cortex-shell--collapsed .sidebar-brand-lockup {
-    display: block;
-  }
-
-  .cortex-shell--collapsed .sidebar-brand-mark {
-    display: none;
-  }
-
-  .cortex-shell--collapsed .sidebar-label {
-    display: inline;
-  }
-
-  .cortex-shell--collapsed .cortex-sidebar {
-    padding-inline: 18px;
-  }
-
-  .cortex-shell--collapsed .sidebar-nav-item {
-    width: auto;
-    min-height: 40px;
-    padding: 0 4px;
-  }
-
-  .cortex-shell--collapsed .sidebar-footer button {
-    width: auto;
-    min-height: 40px;
-    justify-content: center;
-    margin-inline: 0;
-    padding: 0 4px;
-  }
-
-  .cortex-sidebar,
   .rdo-side-panel {
     position: static;
     height: auto;
@@ -1481,70 +1124,8 @@ textarea:focus {
     overflow-y: visible;
   }
 
-  .cortex-sidebar {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-    gap: 8px;
-    padding: 8px 10px;
-  }
-
   .rdo-dashboard {
     padding-top: 24px;
-  }
-
-  .sidebar-nav,
-  .sidebar-footer {
-    display: grid;
-  }
-
-  .sidebar-nav {
-    margin-block: 0;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
-  }
-
-  .sidebar-footer {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-  }
-
-  .sidebar-nav-item {
-    justify-content: center;
-    gap: 5px;
-    width: 100%;
-    min-height: 40px;
-    margin-inline: 0;
-    padding: 0 4px;
-    font-size: 0.72rem;
-    line-height: 1.1;
-  }
-
-  .sidebar-footer button {
-    justify-content: center;
-    gap: 5px;
-    width: 100%;
-    min-height: 40px;
-    padding: 0 4px;
-    font-size: 0.68rem;
-    line-height: 1.1;
-  }
-
-  .sidebar-brand {
-    min-height: 68px;
-    align-items: flex-start;
-    padding: 0 100px 8px 8px;
-    border-bottom-width: 2px;
-  }
-
-  .sidebar-brand-lockup {
-    max-width: 180px;
-  }
-
-  .sidebar-nav-item img,
-  .sidebar-footer button img {
-    width: 16px;
-    height: 16px;
   }
 
   .rdo-command-band,
@@ -1585,12 +1166,6 @@ textarea:focus {
 
   .add-button {
     width: fit-content;
-  }
-}
-
-@media (max-width: 340px) {
-  .sidebar-brand-lockup {
-    max-width: 160px;
   }
 }
 
@@ -1640,91 +1215,6 @@ textarea:focus {
   .button {
     width: 100%;
   }
-}
-
-/* Córtex 3 · chrome institucional preto e compacto. */
-.cortex-sidebar {
-  gap: 18px;
-  padding: 20px 24px 12px;
-  z-index: 1;
-  background: transparent;
-}
-
-.sidebar-toggle {
-  top: 26px;
-  right: auto;
-  left: calc(var(--cortex-sidebar-edge) - 22px);
-  width: 44px;
-  height: 48px;
-  border: 2px solid var(--color-brand-yellow);
-  border-radius: 0 var(--radius-control) var(--radius-control) 0;
-  background: var(--color-brand-yellow);
-  color: #111312;
-  box-shadow: 0 8px 18px rgb(0 0 0 / 28%);
-  transition:
-    background-color var(--transition-functional),
-    border-color var(--transition-functional),
-    color var(--transition-functional),
-    transform var(--transition-functional);
-}
-
-.sidebar-toggle:hover {
-  border-color: #ffdd3a;
-  background: #ffdd3a;
-  transform: translateX(2px);
-}
-
-.sidebar-toggle:focus-visible {
-  outline: 3px solid var(--color-brand-yellow);
-  outline-offset: 3px;
-}
-
-.sidebar-brand {
-  border-bottom-color: #424745;
-}
-
-.sidebar-nav,
-.sidebar-footer {
-  gap: 5px;
-}
-
-.sidebar-nav-item,
-.sidebar-footer button {
-  min-height: 40px;
-  border-radius: 0;
-}
-
-.sidebar-nav-item.active {
-  border-color: transparent;
-  background: rgb(255 255 255 / 10%);
-  color: #eef7ef;
-}
-
-.sidebar-nav-item.active::before {
-  content: "";
-  position: absolute;
-  top: 20%;
-  bottom: 20%;
-  left: 0;
-  width: 3px;
-  background: var(--color-brand-yellow);
-}
-
-.sidebar-nav-item.active img {
-  filter: grayscale(1) brightness(0) invert(1);
-  opacity: 0.82;
-}
-
-.avatar-button {
-  width: 40px;
-  height: 40px;
-  border: 1px solid #101112;
-  border-radius: 0;
-  background: #101112;
-  color: #fff;
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
 }
 
 .workspace-header__actions > :is(button, a),
@@ -1826,21 +1316,13 @@ textarea:focus {
   background: var(--color-surface);
   color: #243e30;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   box-shadow: none;
 }
 
 .logout-button:hover {
   background: #ffffff;
   border-color: #FED203;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cortex-shell,
-  .sidebar-toggle,
-  .sidebar-toggle svg {
-    transition: none;
-  }
 }
 
 .visually-hidden {
@@ -1864,90 +1346,6 @@ textarea:focus {
   .computed-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* --- Shell: menu de perfil e badges --- */
-.profile-menu-anchor {
-  position: relative;
-}
-
-.profile-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  min-width: 200px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-overlay);
-  padding: 12px;
-  z-index: 40;
-}
-
-.profile-menu-name {
-  margin: 0;
-  font-weight: 700;
-  font-size: 0.85rem;
-}
-
-.profile-menu-cpf {
-  margin: 2px 0 6px;
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.profile-menu-scope {
-  margin: 0 0 10px;
-  padding: 2px 8px;
-  align-self: flex-start;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #334155;
-  font-size: 0.7rem;
-  font-weight: 600;
-}
-
-.profile-menu-logout,
-.profile-menu-security {
-  width: 100%;
-  border: none;
-  border-radius: 8px;
-  padding: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.profile-menu-security {
-  margin-bottom: 7px;
-  background: #edf3f1;
-  color: #174b43;
-}
-
-.profile-menu-logout {
-  background: #fed203;
-}
-
-.profile-menu-error {
-  max-width: 240px;
-  margin: 8px 0 0;
-  color: #9f2d23;
-  font-size: 0.75rem;
-  line-height: 1.4;
-}
-
-.badge-soon {
-  margin-left: auto;
-  font-size: 0.55rem;
-  font-weight: 700;
-  background: #fed203;
-  color: #0a423d;
-  border-radius: 8px;
-  padding: 2px 6px;
-  text-transform: lowercase;
-}
-
-.cortex-shell--collapsed .badge-soon {
-  display: none;
 }
 
 /* --- Home: gráfico de progressão --- */
@@ -2007,7 +1405,7 @@ textarea:focus {
 .period-pill--active {
   background: #fed203;
   border-color: #fed203;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .progress-chart-plot {
@@ -2067,7 +1465,7 @@ textarea:focus {
 .home-page-heading span {
   color: var(--color-brand-teal);
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -2102,7 +1500,7 @@ textarea:focus {
   background: transparent;
   color: var(--color-muted);
   font-size: 0.76rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home-subnav [role="tab"][aria-selected="true"] {
@@ -2205,7 +1603,7 @@ textarea:focus {
 .home-topbar h2 {
   margin: 0 8px 0 0;
   font-size: 1.35rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home-memory-card p {
@@ -2217,7 +1615,7 @@ textarea:focus {
 
 .home-memory-card a {
   color: var(--color-brand-teal-strong);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home-chips {
@@ -2238,7 +1636,7 @@ textarea:focus {
 .chip--active {
   border-color: #d6b000;
   background: var(--color-brand-yellow);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home-uf-filter {
@@ -2286,7 +1684,7 @@ textarea:focus {
 
 .home-obra-pill {
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 600;
   color: #0e5e57;
   border: 1.5px solid #fed203;
   border-radius: 999px;
@@ -2296,7 +1694,7 @@ textarea:focus {
 
 .home-obra-status {
   font-size: 0.6rem;
-  font-weight: 700;
+  font-weight: 600;
   background: #e8f5f2;
   color: #0e5e57;
   padding: 3px 8px;
@@ -2443,7 +1841,7 @@ textarea:focus {
 .home-finance-error button {
   color: var(--color-brand-teal-strong);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home-finance-card h3 > span {
@@ -2473,7 +1871,7 @@ textarea:focus {
   overflow: hidden;
   font-size: 0.76rem;
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2549,7 +1947,7 @@ textarea:focus {
   color: #fff;
   font: inherit;
   font-size: 0.76rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .obras-create-action:hover,
@@ -2572,7 +1970,7 @@ textarea:focus {
   background: var(--surface-glass-active);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--glass-shadow);
+  box-shadow: none;
 }
 
 .obras-list {
@@ -2621,7 +2019,7 @@ textarea:focus {
 
 .obras-list-title {
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .obras-list-meta {
@@ -2685,7 +2083,7 @@ textarea:focus {
   margin: 0;
   color: #25342d;
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -2829,7 +2227,7 @@ textarea:focus {
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 0.66rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   background: #eef5f2;
   color: #0e5e57;
@@ -2915,7 +2313,7 @@ textarea:focus {
   margin: 0;
   color: #25342d;
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
@@ -2997,37 +2395,6 @@ textarea:focus {
   }
 }
 
-/* Camada final Cortex 3: chrome compacto sem uma faixa de controles separada. */
-
-.profile-menu {
-  border-radius: var(--radius-container);
-  box-shadow: none;
-}
-
-.profile-menu-name,
-.profile-menu-scope,
-.profile-menu-logout,
-.profile-menu-security {
-  font-weight: 500;
-}
-
-.profile-menu-scope,
-.profile-menu-logout,
-.profile-menu-security {
-  border-radius: var(--radius-control);
-}
-
-.profile-menu-logout,
-.profile-menu-security {
-  border: 1px solid var(--color-border);
-}
-
-.profile-menu-logout {
-  border-color: var(--color-ink);
-  background: var(--color-ink);
-  color: #fff;
-}
-
 .home-dashboard {
   padding: 0;
 }
@@ -3065,7 +2432,7 @@ textarea:focus {
 .obras-list,
 .obras-detail {
   border-radius: var(--radius-container);
-  box-shadow: var(--glass-shadow);
+  box-shadow: none;
 }
 
 .home-obra-card,
@@ -3147,56 +2514,6 @@ textarea:focus {
   border: 1px solid var(--color-border);
   border-top: 3px solid var(--color-brand-yellow);
   background: var(--color-surface);
-}
-
-@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  :root {
-    --surface-glass-active: var(--surface-glass);
-  }
-
-  .institutional-frame,
-  .home-obra-card,
-  .home-card,
-  .obras-list,
-  .obras-detail,
-  .rdo-document-surface,
-  .integracoes-table-card,
-  .integracoes-report,
-  .teams-workspace .teams-page,
-  .teams-modal,
-  .gestao-obras-coluna,
-  .gestao-papeis,
-  .workspace-status-rail,
-  .finance-scope-bar,
-  .finance-pdor-section .obras-pdor {
-    -webkit-backdrop-filter: blur(14px) saturate(112%);
-    backdrop-filter: blur(14px) saturate(112%);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  :root {
-    --surface-glass-active: var(--surface-glass-fallback);
-  }
-
-  .institutional-frame,
-  .home-obra-card,
-  .home-card,
-  .obras-list,
-  .obras-detail,
-  .rdo-document-surface,
-  .integracoes-table-card,
-  .integracoes-report,
-  .teams-workspace .teams-page,
-  .teams-modal,
-  .gestao-obras-coluna,
-  .gestao-papeis,
-  .workspace-status-rail,
-  .finance-scope-bar,
-  .finance-pdor-section .obras-pdor {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 
 @media (max-width: 620px) {

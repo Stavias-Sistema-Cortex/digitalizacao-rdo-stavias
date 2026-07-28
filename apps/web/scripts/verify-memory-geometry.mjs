@@ -14,6 +14,21 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const WEB_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
 const SHELL_CSS = readFileSync(path.join(WEB_ROOT, "src/index.css"), "utf8");
+const COMPONENT_SHELL_CSS_PATH = path.join(
+  WEB_ROOT,
+  "src/components/shell/CortexShell.css",
+);
+const COMPONENT_SHELL_CSS = existsSync(COMPONENT_SHELL_CSS_PATH)
+  ? readFileSync(COMPONENT_SHELL_CSS_PATH, "utf8")
+  : "";
+const HEADER_CSS = readFileSync(
+  path.join(WEB_ROOT, "src/components/header/CortexPageHeader.css"),
+  "utf8",
+);
+const WORKSPACE_CSS = readFileSync(
+  path.join(WEB_ROOT, "src/components/workspace/OperationalWorkspace.css"),
+  "utf8",
+);
 const MEMORY_CSS = readFileSync(
   path.join(WEB_ROOT, "src/features/home/memory/MemoryLedger.css"),
   "utf8",
@@ -121,6 +136,44 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
       `Memory overflow at viewport ${viewport}px/sidebar ${sidebar}px: ${overflow.join(", ")}`,
     );
   }
+  const invalidDesktopToggle = viewport > 900 && (
+    measurements.toggle.width < 34 ||
+    measurements.toggle.width > 36 ||
+    measurements.toggle.height < 34 ||
+    measurements.toggle.height > 36
+  );
+  if (invalidDesktopToggle) {
+    throw new Error(
+      `Sidebar toggle geometry at ${viewport}px/sidebar ${sidebar}px: ` +
+        `${measurements.toggle.width}x${measurements.toggle.height}`,
+    );
+  }
+  if (
+    viewport <= 900 &&
+    (measurements.toggle.width !== 0 || measurements.toggle.height !== 0)
+  ) {
+    throw new Error(
+      `Sidebar toggle must stay out of the mobile document flow at ${viewport}px.`,
+    );
+  }
+  if (measurements.badge.edgeGap < 12) {
+    throw new Error(
+      `Memory status badge is ${measurements.badge.edgeGap}px from its surface edge ` +
+        `at viewport ${viewport}px/sidebar ${sidebar}px.`,
+    );
+  }
+  if (measurements.status.edgeGap < 12) {
+    throw new Error(
+      `Operational status is ${measurements.status.edgeGap}px from its surface edge ` +
+        `at viewport ${viewport}px/sidebar ${sidebar}px.`,
+    );
+  }
+  if (measurements.header.borderBottomWidth !== 1) {
+    throw new Error(
+      `Header brand line is ${measurements.header.borderBottomWidth}px ` +
+        `at viewport ${viewport}px/sidebar ${sidebar}px.`,
+    );
+  }
 }
 
 async function readDevToolsPort(profile, browser) {
@@ -201,12 +254,27 @@ function pageFixture(sidebar) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>${SHELL_CSS}\n${MEMORY_CSS}</style>
+  <style>${SHELL_CSS}\n${COMPONENT_SHELL_CSS}\n${HEADER_CSS}\n${WORKSPACE_CSS}\n${MEMORY_CSS}</style>
 </head>
 <body>
   <div class="cortex-shell" style="--sidebar-width:${sidebar}px">
+    <button class="sidebar-toggle" aria-label="Recolher menu">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6 9 12l5.5 6"></path></svg>
+    </button>
     <aside class="cortex-sidebar">Menu</aside>
     <main class="home-dashboard">
+      <header class="cortex-page-header">
+        <div class="cortex-page-header__copy">
+          <p class="cortex-page-header__eyebrow">Memória</p>
+          <h1>Registro operacional</h1>
+        </div>
+      </header>
+      <section class="workspace-status-rail">
+        <span class="workspace-status-rail__state" data-status="SYNCED">
+          <span class="workspace-status-rail__marker"></span>
+          <span>Sincronizado</span>
+        </span>
+      </section>
       <section role="tabpanel">
         <div class="memory-ledger">
           <header class="memory-ledger__header">
@@ -260,6 +328,18 @@ function pageFixture(sidebar) {
         scrollWidth: element.scrollWidth
       }])
     );
+    const toggle = document.querySelector('.sidebar-toggle').getBoundingClientRect();
+    const badge = document.querySelector('.memory-entry__title > span').getBoundingClientRect();
+    const badgeSurface = document.querySelector('.memory-entry__body').getBoundingClientRect();
+    const header = document.querySelector('.cortex-page-header');
+    const status = document.querySelector('.workspace-status-rail__state').getBoundingClientRect();
+    const statusSurface = document.querySelector('.workspace-status-rail').getBoundingClientRect();
+    measurements.toggle = { width: toggle.width, height: toggle.height };
+    measurements.badge = { edgeGap: badgeSurface.right - badge.right };
+    measurements.header = {
+      borderBottomWidth: Number.parseFloat(getComputedStyle(header).borderBottomWidth)
+    };
+    measurements.status = { edgeGap: status.left - statusSurface.left };
     document.getElementById('geometry-result').textContent = JSON.stringify(measurements);
   </script>
 </body>

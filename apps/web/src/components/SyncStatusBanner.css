@@ -63,7 +63,7 @@
   background: var(--sync-color);
   color: #ffffff;
   font-size: 0.62rem;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 16px;
   text-align: center;
 }
@@ -129,7 +129,7 @@
   height: 9px;
   border-radius: 999px;
   background: var(--sync-color);
-  box-shadow: 0 0 0 4px
+  outline: 3px solid
     color-mix(in srgb, var(--sync-color) 16%, transparent);
 }
 
@@ -164,7 +164,7 @@
   background: #ffffff;
   color: #17504d;
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 600;
   transition:
     background 140ms ease,
     border-color 140ms ease;

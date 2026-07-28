@@ -31,7 +31,7 @@
   margin: 0 0 3px;
   color: #5c6d64;
   font-size: 0.66rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -155,7 +155,7 @@
   border-radius: 11px;
   background: #dce9e3;
   color: #17504b;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .teams-list-marker {
@@ -202,7 +202,7 @@
   padding: 4px 7px;
   border-radius: 999px;
   font-size: 0.59rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: none;
 }
 
@@ -281,7 +281,7 @@
   background: #fff;
   color: #255d56;
   font-size: 0.67rem;
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -548,7 +548,7 @@
   background: #f4f7f5;
   color: #76837b;
   font-size: 0.59rem;
-  font-weight: 650;
+  font-weight: 600;
   text-transform: uppercase;
 }
 
@@ -583,7 +583,7 @@
   border: 2px solid #fff;
   border-radius: 50%;
   background: #3e786d;
-  box-shadow: 0 0 0 1px #3e786d;
+  outline: 1px solid #3e786d;
 }
 
 .teams-audit li > div {
@@ -750,7 +750,7 @@
   height: 100%;
   padding: 25px;
   background: #fff;
-  box-shadow: -18px 0 55px rgb(14 45 38 / 18%);
+  box-shadow: var(--shadow-overlay);
   overflow-y: auto;
 }
 
@@ -819,7 +819,7 @@
   background: #fff;
   color: #245d55;
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .teams-member-drawer footer button.is-danger {
@@ -839,7 +839,7 @@
   border: 1px solid #ccd7d0;
   border-radius: 14px;
   background: #fff;
-  box-shadow: 0 24px 70px rgb(13 44 39 / 22%);
+  box-shadow: var(--shadow-overlay);
   overflow-y: auto;
 }
 
@@ -875,7 +875,7 @@
   gap: 5px;
   color: #44534b;
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .teams-modal input,
@@ -933,7 +933,7 @@
   background: #fff;
   color: #3f5148;
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .teams-modal form > footer button.is-primary {
@@ -1146,9 +1146,10 @@
 
 .teams-list-item.is-active {
   border-color: var(--color-border-strong);
+  border-left: 1px solid var(--color-brand-yellow);
   background: var(--color-surface);
   color: var(--color-ink);
-  box-shadow: inset 3px 0 0 var(--color-brand-yellow);
+  box-shadow: none;
 }
 
 .teams-list-marker,
@@ -1210,7 +1211,7 @@
   border-radius: 0;
   background: var(--surface-glass-fallback);
   background: var(--surface-glass-active);
-  box-shadow: var(--glass-shadow);
+  box-shadow: none;
 }
 
 .teams-workspace .teams-catalog,

@@ -43,7 +43,7 @@
 .operational-map-controls label > span {
   color: #7b8881;
   font-size: 0.61rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -57,7 +57,7 @@
   color: #2f4037;
   font: inherit;
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .operational-map-controls select {
@@ -129,11 +129,10 @@
   place-content: center;
   gap: 6px;
   padding: 28px;
-  background: rgb(238 243 240 / 86%);
+  background: #eef3f0;
   color: #46564d;
   font-size: 0.78rem;
   text-align: center;
-  backdrop-filter: blur(2px);
 }
 
 .operational-map-overlay--error strong {
@@ -219,7 +218,7 @@
   color: #53645b;
   padding: 4px 8px;
   font-size: 0.58rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: lowercase;
 }
 

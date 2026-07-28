@@ -28,7 +28,7 @@
   margin: 0 0 6px;
   color: #606664;
   font-size: 0.7rem;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -105,12 +105,12 @@
   justify-content: space-between;
   gap: 12px;
   margin: 12px var(--workspace-gutter) 0;
-  padding: 8px 10px;
+  padding: 12px;
   border: 1px solid #d7dad8;
   border-radius: var(--radius-control);
   background: var(--surface-glass-fallback);
   background: var(--surface-glass-active);
-  box-shadow: var(--glass-shadow);
+  box-shadow: none;
 }
 
 .workspace-status-rail__state {

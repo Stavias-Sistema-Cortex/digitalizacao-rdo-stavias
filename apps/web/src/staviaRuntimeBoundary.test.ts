@@ -1450,7 +1450,24 @@ describe("StavIA runtime boundary", () => {
     expect(scripts["build:functions"]).toBe(
       "wrangler pages functions build --outdir=./dist/functions-worker",
     );
+    expect(scripts["verify:operational-layout"]).toBe(
+      "node scripts/verify-operational-layout.mjs",
+    );
     expect(inspectPackageBuildScripts(scripts)).toEqual([]);
+    expect(
+      inspectPackageBuildScripts({
+        ...scripts,
+        "verify:operational-layout":
+          "node scripts/verify-memory-geometry.mjs",
+      }),
+    ).not.toEqual([]);
+    expect(
+      inspectPackageBuildScripts({
+        ...scripts,
+        "verify:operational-layout:copy":
+          "node scripts/verify-operational-layout.mjs",
+      }),
+    ).not.toEqual([]);
     expect(
       inspectPackageBuildScripts({
         ...scripts,

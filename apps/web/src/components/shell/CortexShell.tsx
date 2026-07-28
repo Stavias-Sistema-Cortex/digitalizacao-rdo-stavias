@@ -23,6 +23,7 @@ import {
   readStoredSidebarWidth,
 } from "./sidebarWidth";
 import { CortexShellChromeProvider } from "./CortexShellChromeContext";
+import "./CortexShell.css";
 
 const SIDEBAR_COLLAPSED_KEY = "cortex.ui.sidebarRecolhida";
 

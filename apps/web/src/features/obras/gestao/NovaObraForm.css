@@ -8,7 +8,15 @@
 .nova-obra-form footer button { min-height: 39px; padding: 0 14px; border: 1px solid #ccd5d0; border-radius: 7px; background: #fff; color: #31443b; font-weight: 600; }
 .nova-obra-form footer .nova-obra-form__submit { border-color: var(--color-brand-teal); background: var(--color-brand-teal); color: #fff; }
 .nova-obra-dialog-backdrop { position: fixed; z-index: 1200; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(15 28 23 / 46%); }
-.nova-obra-dialog { width: min(640px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; border: 1px solid var(--color-border); border-radius: 10px; background: #fff; box-shadow: var(--shadow-overlay); }
+.nova-obra-dialog {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-overlay);
+}
 .nova-obra-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 18px 20px; border-bottom: 1px solid var(--color-border); }
 .nova-obra-dialog > header h2 { margin: 0; font-size: 1.1rem; }
 .nova-obra-dialog > header p { margin: 5px 0 0; color: var(--color-muted); font-size: 0.72rem; }

@@ -33,6 +33,7 @@ function lastRule(css: string, selector: string): string {
 }
 
 const globalCss = readCss("./index.css");
+const shellCss = readCss("./components/shell/CortexShell.css");
 const institutionalCss = readCss(
   "./components/institutional/institutional.css",
 );
@@ -90,24 +91,22 @@ const rdoLocalListSource = readFileSync(
 );
 
 describe("polimento visual da plataforma autenticada", () => {
-  it("centraliza a paleta de campo e a escala moderna de superfícies", () => {
-    expect(rule(globalCss, ":root")).toContain("--color-ink: #111312;");
+  it("centraliza a paleta de campo e a escala opaca de superfícies", () => {
+    expect(rule(globalCss, ":root")).toContain("--color-ink: #18211f;");
     expect(rule(globalCss, ":root")).toContain(
       "--color-text: var(--color-ink);",
     );
-    expect(rule(globalCss, ":root")).toContain("--color-brand-teal: #124e4a;");
-    expect(rule(globalCss, ":root")).toContain("--color-brand-yellow: #f2c800;");
-    expect(rule(globalCss, ":root")).toContain("--color-canvas: #edf2ef;");
+    expect(rule(globalCss, ":root")).toContain("--color-brand-teal: #0c2623;");
+    expect(rule(globalCss, ":root")).toContain("--color-brand-yellow: #f2c300;");
+    expect(rule(globalCss, ":root")).toContain("--color-canvas: #eef2f0;");
+    expect(rule(globalCss, ":root")).toContain("--color-border: #d4deda;");
     expect(rule(globalCss, ":root")).toContain(
-      "--color-border: rgb(18 58 55 / 14%);",
+      "--surface-glass: var(--color-surface);",
     );
     expect(rule(globalCss, ":root")).toContain(
-      "--surface-glass: rgb(255 255 255 / 78%);",
+      "--surface-glass-fallback: var(--color-surface);",
     );
-    expect(rule(globalCss, ":root")).toContain(
-      "--surface-glass-fallback: #f8fbf9;",
-    );
-    expect(rule(globalCss, ":root")).toContain("--glass-shadow:");
+    expect(rule(globalCss, ":root")).toContain("--glass-shadow: none;");
     expect(rule(globalCss, ":root")).toContain("--radius-control: 8px;");
     expect(rule(globalCss, ":root")).toContain("--radius-container: 14px;");
     expect(rule(globalCss, ":root")).toContain(
@@ -118,7 +117,7 @@ describe("polimento visual da plataforma autenticada", () => {
     );
   });
 
-  it("aplica vidro líquido somente nas superfícies externas com fallback opaco", () => {
+  it("mantém superfícies operacionais opacas sem blur ou sombra", () => {
     const institutionalFrame = rule(globalCss, ".institutional-frame");
     const documentSurface = rule(rdoWorkspaceCss, ".rdo-document-surface");
     const integrationCard = rule(
@@ -146,25 +145,15 @@ describe("polimento visual da plataforma autenticada", () => {
       financeScope,
     ]) {
       expect(surface).toContain("background: var(--surface-glass-fallback);");
-      expect(surface).toContain("box-shadow: var(--glass-shadow);");
     }
     expect(teamsFrame).not.toContain("overflow: hidden;");
-
-    expect(globalCss).toContain(
-      "@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
-    );
-    expect(globalCss).toContain("backdrop-filter: blur(14px) saturate(112%);");
-    expect(globalCss).toContain(
-      "@media (prefers-reduced-transparency: reduce)",
-    );
-    expect(globalCss).not.toMatch(
-      /(?:@supports|prefers-reduced-transparency)[\s\S]*?\.offline-unlock__card,/,
-    );
+    expect(rule(globalCss, ":root")).toContain("--glass-shadow: none;");
+    expect(globalCss).not.toContain("backdrop-filter:");
   });
 
   it("usa uma única superfície contínua para sidebar e cabeçalhos", () => {
-    const sidebar = lastRule(globalCss, ".cortex-sidebar");
-    const shell = rule(globalCss, ".cortex-shell");
+    const sidebar = rule(shellCss, ".cortex-sidebar");
+    const shell = rule(shellCss, ".cortex-shell");
     const header = rule(headerCss, ".cortex-page-header");
     const compatibilityHeader = rule(
       headerCss,
@@ -211,11 +200,11 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("mantém a alavanca de recolher visível e sinalizada", () => {
-    const sidebar = lastRule(globalCss, ".cortex-sidebar");
-    const shell = rule(globalCss, ".cortex-shell");
-    const collapsedShell = rule(globalCss, ".cortex-shell--collapsed");
-    const toggle = lastRule(globalCss, ".sidebar-toggle");
-    const toggleFocus = rule(globalCss, ".sidebar-toggle:focus-visible");
+    const sidebar = rule(shellCss, ".cortex-sidebar");
+    const shell = rule(shellCss, ".cortex-shell");
+    const collapsedShell = rule(shellCss, ".cortex-shell--collapsed");
+    const toggle = rule(shellCss, ".sidebar-toggle");
+    const toggleFocus = rule(shellCss, ".sidebar-toggle:focus-visible");
 
     expect(sidebar).toContain("z-index: 1;");
     expect(shell).toContain("position: relative;");
@@ -223,12 +212,12 @@ describe("polimento visual da plataforma autenticada", () => {
       "--cortex-sidebar-edge: var(--sidebar-width, 248px);",
     );
     expect(collapsedShell).toContain("--cortex-sidebar-edge: 84px;");
-    expect(toggle).toContain("width: 44px;");
-    expect(toggle).toContain("height: 48px;");
-    expect(toggle).toContain("left: calc(var(--cortex-sidebar-edge) - 22px);");
+    expect(toggle).toContain("width: 36px;");
+    expect(toggle).toContain("height: 36px;");
+    expect(toggle).toContain("left: calc(var(--cortex-sidebar-edge) - 18px);");
     expect(toggle).toContain("right: auto;");
-    expect(toggle).toContain("background: var(--color-brand-yellow);");
-    expect(toggle).toContain("color: #111312;");
+    expect(toggle).toContain("background: #0c2623;");
+    expect(toggle).toContain("color: var(--color-brand-yellow);");
     expect(toggleFocus).toContain(
       "outline: 3px solid var(--color-brand-yellow);",
     );
@@ -260,7 +249,7 @@ describe("polimento visual da plataforma autenticada", () => {
 
   it("usa foco amarelo de alto contraste nos controles da sidebar", () => {
     const sidebarFocus = rule(
-      globalCss,
+      shellCss,
       [
         ".cortex-sidebar button:focus-visible,",
         ".cortex-sidebar a:focus-visible,",
@@ -347,13 +336,13 @@ describe("polimento visual da plataforma autenticada", () => {
     );
     expect(rule(syncCss, ".sync-chip__button")).toContain("width: 40px;");
     expect(rule(syncCss, ".sync-chip__button")).toContain("height: 40px;");
-    const avatar = rule(globalCss, ".avatar-button");
+    const avatar = rule(shellCss, ".avatar-button");
     expect(avatar).toContain("width: 40px;");
     expect(avatar).toContain("height: 40px;");
-    expect(avatar).toContain("border: 1px solid #101112;");
-    expect(avatar).toContain("border-radius: 0;");
-    expect(avatar).toContain("background: #101112;");
-    expect(rule(globalCss, "\n.sidebar-footer button")).toContain(
+    expect(avatar).toContain("border: 1px solid #35514d;");
+    expect(avatar).toContain("border-radius: var(--radius-control);");
+    expect(avatar).toContain("background: #0c2623;");
+    expect(rule(shellCss, "\n.sidebar-footer button")).toContain(
       "min-height: 40px;",
     );
     expect(
@@ -499,9 +488,9 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("compacta o shell móvel em grades com rótulos e alvos de 40px", () => {
-    const mobileShellCss = globalCss.slice(
-      globalCss.indexOf("@media (max-width: 900px)"),
-      globalCss.indexOf("@media (max-width: 620px)"),
+    const mobileShellCss = shellCss.slice(
+      shellCss.indexOf("@media (max-width: 900px)"),
+      shellCss.indexOf("@media (max-width: 340px)"),
     );
 
     expect(
@@ -523,18 +512,20 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(mobileShellCss, "  .sidebar-footer")).toContain(
       "grid-template-columns: repeat(3, minmax(0, 1fr));",
     );
-    expect(rule(mobileShellCss, "  .sidebar-nav-item")).toContain(
-      "min-height: 40px;",
-    );
-    expect(rule(mobileShellCss, "  .sidebar-footer button")).toContain(
+    expect(
+      rule(
+        mobileShellCss,
+        "  .sidebar-nav-item,\n  .sidebar-footer button",
+      ),
+    ).toContain(
       "min-height: 40px;",
     );
   });
 
   it("limita o lockup abaixo de 340px para não invadir o cluster fixo", () => {
-    const extraNarrowCss = globalCss.slice(
-      globalCss.indexOf("@media (max-width: 340px)"),
-      globalCss.indexOf("@media (max-width: 620px)"),
+    const extraNarrowCss = shellCss.slice(
+      shellCss.indexOf("@media (max-width: 340px)"),
+      shellCss.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
 
     expect(rule(extraNarrowCss, "  .sidebar-brand-lockup")).toContain(
@@ -576,7 +567,7 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(surfaces).toContain("border: 1px solid var(--color-border);");
     expect(surfaces).toContain("border-radius: var(--radius-lg);");
     expect(surfaces).toContain("background: var(--surface-glass-fallback);");
-    expect(surfaces).toContain("box-shadow: var(--glass-shadow);");
+    expect(surfaces).toContain("box-shadow: none;");
 
     const nestedPdor = rule(globalCss, ".obras-pdor");
     expect(nestedPdor).toContain("border: 0;");

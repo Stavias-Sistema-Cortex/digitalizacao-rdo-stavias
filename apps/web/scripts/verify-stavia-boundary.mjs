@@ -116,7 +116,7 @@ const CORPORATE_SOURCE_LINES = new Map([
     ],
   ],
   [
-    "apps/web/src/index.css",
+    "apps/web/src/components/shell/CortexShell.css",
     [
       "/* Modo compacto: só o tile da Stavias e os ícones dos botões. */",
     ],
@@ -773,6 +773,10 @@ const EXPECTED_PACKAGE_SCRIPTS = new Map([
   [
     "verify:mensagens-geometry",
     "node scripts/verify-mensagens-geometry.mjs",
+  ],
+  [
+    "verify:operational-layout",
+    "node scripts/verify-operational-layout.mjs",
   ],
   [
     "verify:retired-runtime-boundary",
