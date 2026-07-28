@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -395,19 +396,22 @@ class OperationalMemoryQueryServiceIT {
 
     @Test
     void interpretsLegacyWallClockEventsInThePostgresqlMachineTimezone() {
-        DriverManagerDataSource saoPauloDataSource = new DriverManagerDataSource(
-                DATABASE.getJdbcUrl()
-                        + "&options=-c%20TimeZone%3DAmerica%2FSao_Paulo",
-                DATABASE.getUsername(),
-                DATABASE.getPassword()
-        );
+        SingleConnectionDataSource saoPauloDataSource =
+                new SingleConnectionDataSource(
+                        DATABASE.getJdbcUrl(),
+                        DATABASE.getUsername(),
+                        DATABASE.getPassword(),
+                        true
+                );
         JdbcTemplate saoPauloJdbc = new JdbcTemplate(saoPauloDataSource);
         OperationalMemoryQueryService saoPauloService =
                 new OperationalMemoryQueryService(saoPauloJdbc, CURSOR_SIGNER);
-        assertThat(saoPauloJdbc.queryForObject("SHOW TIME ZONE", String.class))
-                .isEqualTo("America/Sao_Paulo");
 
         try {
+            saoPauloJdbc.execute("SET TIME ZONE 'America/Sao_Paulo'");
+            assertThat(saoPauloJdbc.queryForObject("SHOW TIME ZONE", String.class))
+                    .isEqualTo("America/Sao_Paulo");
+
             saoPauloJdbc.update("""
                     UPDATE cortex_evento_commit_sequence
                     SET ultima_commit_seq = 107
@@ -491,16 +495,20 @@ class OperationalMemoryQueryServiceIT {
                             .isEqualTo(Instant.parse("2026-07-21T10:04:00Z"))
             );
         } finally {
-            saoPauloJdbc.update(
-                    "DELETE FROM cortex_evento_operacional WHERE id IN (?, ?)",
-                    eventId(106),
-                    eventId(107)
-            );
-            saoPauloJdbc.update("""
-                    UPDATE cortex_evento_commit_sequence
-                    SET ultima_commit_seq = 105
-                    WHERE id = 1
-                    """);
+            try {
+                saoPauloJdbc.update(
+                        "DELETE FROM cortex_evento_operacional WHERE id IN (?, ?)",
+                        eventId(106),
+                        eventId(107)
+                );
+                saoPauloJdbc.update("""
+                        UPDATE cortex_evento_commit_sequence
+                        SET ultima_commit_seq = 105
+                        WHERE id = 1
+                        """);
+            } finally {
+                saoPauloDataSource.destroy();
+            }
         }
     }
 
