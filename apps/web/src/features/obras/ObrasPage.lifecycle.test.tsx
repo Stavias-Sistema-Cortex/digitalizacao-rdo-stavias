@@ -102,6 +102,8 @@ vi.mock("./gestao/NovaObraForm", () => ({
             id: "obra-created",
             nome: "Nova ponte",
             codigoContrato: "CTR-NEW",
+            uf: "SP",
+            rodovia: "BR-101",
             updatedAt: "2026-07-28T15:00:00.000Z",
           }),
           ...state.obras,
@@ -171,6 +173,17 @@ function operationalEvent(
     schemaVersion: 13,
     ...values,
   };
+}
+
+function moveFocusToDocumentBody() {
+  const previousTabIndex = document.body.getAttribute("tabindex");
+  document.body.setAttribute("tabindex", "-1");
+  document.body.focus();
+  if (previousTabIndex === null) {
+    document.body.removeAttribute("tabindex");
+  } else {
+    document.body.setAttribute("tabindex", previousTabIndex);
+  }
 }
 
 beforeEach(() => {
@@ -486,6 +499,53 @@ describe("ObrasPage lifecycle Alfa", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("recaptures focus after a disabled edit submit and returns it after failure", async () => {
+    const user = userEvent.setup();
+    let failUpdate: ((reason: Error) => void) | undefined;
+    queues.update.mockImplementationOnce(
+      () => new Promise<ObraLocalRecord>((_resolve, reject) => {
+        failUpdate = reject;
+      }),
+    );
+    render(<ObrasPage />);
+
+    const trigger = screen.getByRole("button", { name: "Editar" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Editar obra" });
+    await user.click(within(dialog).getByRole("button", {
+      name: "Salvar alterações",
+    }));
+    const pendingSubmit = await within(dialog).findByRole("button", {
+      name: "Salvando…",
+    });
+    expect(pendingSubmit).toBeDisabled();
+
+    moveFocusToDocumentBody();
+    await user.keyboard("{Escape}");
+
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+
+    await act(async () => {
+      failUpdate?.(new Error("Falha ao salvar a obra."));
+    });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Falha ao salvar a obra.",
+    );
+    expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+
+    moveFocusToDocumentBody();
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Editar obra" }))
+      .not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it("keeps the archive dialog modal while pending and focuses Trash after success", async () => {
     const user = userEvent.setup();
     let finishArchive: ((value: ObraLocalRecord) => void) | undefined;
@@ -504,6 +564,12 @@ describe("ObrasPage lifecycle Alfa", () => {
     await waitFor(() => expect(within(dialog).getByRole("button", {
       name: "Excluindo…",
     })).toBeDisabled());
+
+    moveFocusToDocumentBody();
+    await user.tab();
+    expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
 
     await user.keyboard("{Escape}");
     expect(dialog).toBeInTheDocument();
@@ -635,5 +701,47 @@ describe("ObrasPage lifecycle Alfa", () => {
       .toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: "Nova ponte" }))
       .toBeInTheDocument();
+  });
+
+  it("clears operational filters so a newly created worksite is visible", async () => {
+    const user = userEvent.setup();
+    state.obras = [
+      obra(),
+      obra({
+        id: "obra-archived",
+        nome: "Obra antiga",
+        arquivadoEm: "2026-07-28T13:00:00.000Z",
+      }),
+    ];
+    render(<ObrasPage />);
+
+    await user.click(screen.getByRole("button", {
+      name: "Concluídas",
+    }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Filtrar por UF" }),
+      "MS",
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", {
+        name: "Filtrar por rodovia",
+      }),
+      "BR-262",
+    );
+    await user.click(screen.getByRole("tab", { name: "Lixeira" }));
+    await user.click(screen.getByRole("button", { name: "Criar obra" }));
+    await user.click(screen.getByRole("button", {
+      name: "Confirmar criação teste",
+    }));
+
+    expect(screen.getByRole("heading", { name: "Nova ponte" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Todas" }))
+      .toHaveClass("chip--active");
+    expect(screen.getByRole("combobox", { name: "Filtrar por UF" }))
+      .toHaveValue("");
+    expect(screen.getByRole("combobox", {
+      name: "Filtrar por rodovia",
+    })).toHaveValue("");
   });
 });

@@ -8,6 +8,7 @@ import {
   assertSyncSession,
   type SyncSessionGuard,
 } from "../sync/syncSession";
+import { guardSyncTransaction } from "../sync/guardedSyncTransaction";
 
 export { filterOperationalObras } from "./obraSelectors";
 
@@ -37,15 +38,43 @@ export async function mergeObraLocal(
   if (guard) assertSyncSession(guard);
   const database = await getCortexDb();
   if (guard) assertSyncSession(guard);
+
+  if (guard) {
+    const guardedTransaction = guardSyncTransaction(
+      database.transaction("obras", "readwrite"),
+      guard,
+    );
+    const store = guardedTransaction.transaction.objectStore(
+      "obras",
+    );
+    try {
+      const existing = await store.get(record.id);
+      await store.put(mergedObraForStorage(existing, record));
+    } catch (error: unknown) {
+      await guardedTransaction.complete();
+      throw error;
+    }
+    await guardedTransaction.complete();
+    return;
+  }
+
   const existing = await database.get("obras", record.id);
-  if (guard) assertSyncSession(guard);
+  await database.put(
+    "obras",
+    mergedObraForStorage(existing, record),
+  );
+}
+
+function mergedObraForStorage(
+  existing: ObraLocalRecord | undefined,
+  record: ObraLocalRecord,
+): ObraLocalRecord {
   const merged = mergeObraRecords(existing, record);
-  await database.put("obras", {
+  return {
     ...merged,
     versaoEntidade: merged.versaoEntidade ?? null,
     arquivadoEm: merged.arquivadoEm ?? null,
     syncStatus: merged.syncStatus ?? "SYNCED",
     ultimoErro: merged.ultimoErro ?? null,
-  });
-  if (guard) assertSyncSession(guard);
+  };
 }

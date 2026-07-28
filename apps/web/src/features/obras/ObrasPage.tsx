@@ -1378,6 +1378,9 @@ export function ObrasPage() {
                 onCreated={(created) => {
                   setShowCreateWorksite(false);
                   setView("ATIVAS");
+                  setChip("TODAS");
+                  setUfFilter("");
+                  setRodoviaFilter("");
                   setSelectedObraId(created.id);
                   setFocusedObraId(created.id);
                   reload();

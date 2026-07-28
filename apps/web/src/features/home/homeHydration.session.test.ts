@@ -3,15 +3,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   alfa: true,
   current: "session-a",
+  buscarHistoricoPrevisao: vi.fn(),
   buscarObrasArquivadas: vi.fn(),
   buscarObrasRelacionadas: vi.fn(),
   mergeObraLocal: vi.fn(),
+  putPrevisaoSnapshot: vi.fn(),
 }));
 
 vi.mock("./homeApi", () => ({
   buscarObrasArquivadas: mocks.buscarObrasArquivadas,
   buscarObrasRelacionadas: mocks.buscarObrasRelacionadas,
-  buscarHistoricoPrevisao: vi.fn(),
+  buscarHistoricoPrevisao: mocks.buscarHistoricoPrevisao,
 }));
 
 vi.mock("../auth/authSession", () => ({
@@ -24,6 +26,10 @@ vi.mock("../auth/authSession", () => ({
 
 vi.mock("../../lib/db/obraLocalRepository", () => ({
   mergeObraLocal: mocks.mergeObraLocal,
+}));
+
+vi.mock("../../lib/db/previsaoSnapshotRepository", () => ({
+  putPrevisaoSnapshot: mocks.putPrevisaoSnapshot,
 }));
 
 vi.mock("../../lib/sync/syncSession", () => ({
@@ -39,6 +45,7 @@ vi.mock("../../lib/sync/syncSession", () => ({
 }));
 
 import {
+  hydrateHistoricoObra,
   hydrateObrasArquivadas,
   hydrateObrasRelacionadas,
 } from "./homeHydration";
@@ -48,6 +55,7 @@ describe("worksite hydration session boundary", () => {
     vi.clearAllMocks();
     mocks.alfa = true;
     mocks.current = "session-a";
+    mocks.buscarHistoricoPrevisao.mockResolvedValue([]);
     mocks.buscarObrasArquivadas.mockResolvedValue([]);
     mocks.buscarObrasRelacionadas.mockResolvedValue([]);
   });
@@ -103,5 +111,27 @@ describe("worksite hydration session boundary", () => {
       "A sessão mudou durante a sincronização.",
     );
     expect(mocks.mergeObraLocal).not.toHaveBeenCalled();
+  });
+
+  it("does not persist forecast history after the session changes", async () => {
+    mocks.buscarHistoricoPrevisao.mockImplementationOnce(async () => {
+      mocks.current = "session-b";
+      return [{
+        id: "snapshot-old-session",
+        obraId: "obra-1",
+        dataReferencia: "2026-07-28",
+        statusExecucao: "CALCULADO",
+        producaoPlanejada: 10,
+        producaoRealizada: 8,
+        custoRealizado: null,
+        custoPrevistoFinal: null,
+        receitaPrevistaFinal: 1200,
+      }];
+    });
+
+    await expect(hydrateHistoricoObra("obra-1")).rejects.toThrow(
+      "A sessão mudou durante a sincronização.",
+    );
+    expect(mocks.putPrevisaoSnapshot).not.toHaveBeenCalled();
   });
 });

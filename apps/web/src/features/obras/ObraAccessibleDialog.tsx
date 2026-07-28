@@ -1,7 +1,6 @@
 import {
   useEffect,
   useRef,
-  type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -64,36 +63,86 @@ export function ObraAccessibleDialog({
     };
   }, [initialFocusRef, returnFallbackRef, returnFocusRef]);
 
-  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      if (!closeDisabled) {
-        onClose();
+  useEffect(() => {
+    const currentDialog = dialogRef.current;
+    if (!currentDialog) return;
+    const dialog: HTMLElement = currentDialog;
+
+    function focusInside(preferLast = false) {
+      const focusable = focusableElements(dialog);
+      const target = preferLast
+        ? focusable.at(-1)
+        : focusable[0];
+      (target ?? dialog).focus();
+    }
+
+    function containsActiveFocus(): boolean {
+      const active = document.activeElement;
+      return active instanceof HTMLElement &&
+        dialog.contains(active) &&
+        !active.matches(":disabled");
+    }
+
+    function handleFocusIn(event: FocusEvent) {
+      if (
+        !(event.target instanceof Node) ||
+        !dialog.contains(event.target)
+      ) {
+        focusInside();
       }
-      return;
-    }
-    if (event.key !== "Tab" || !dialogRef.current) return;
-
-    const focusable = focusableElements(dialogRef.current);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      dialogRef.current.focus();
-      return;
     }
 
-    const first = focusable[0];
-    const last = focusable.at(-1) as HTMLElement;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (
-      !event.shiftKey &&
-      document.activeElement === last
-    ) {
-      event.preventDefault();
-      first.focus();
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (closeDisabled) {
+          if (!containsActiveFocus()) {
+            focusInside();
+          }
+        } else {
+          onClose();
+        }
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = focusableElements(dialog);
+      const active = document.activeElement;
+      const activeIndex = active instanceof HTMLElement
+        ? focusable.indexOf(active)
+        : -1;
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      if (activeIndex === -1) {
+        event.preventDefault();
+        focusInside(event.shiftKey);
+        return;
+      }
+
+      const atBoundary = event.shiftKey
+        ? activeIndex === 0
+        : activeIndex === focusable.length - 1;
+      if (atBoundary) {
+        event.preventDefault();
+        focusInside(event.shiftKey);
+      }
     }
-  }
+
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    if (!containsActiveFocus()) {
+      focusInside();
+    }
+
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [closeDisabled, onClose]);
 
   return (
     <section
@@ -103,7 +152,6 @@ export function ObraAccessibleDialog({
       aria-modal="true"
       aria-labelledby={labelledBy}
       tabIndex={-1}
-      onKeyDown={handleKeyDown}
     >
       {children}
     </section>

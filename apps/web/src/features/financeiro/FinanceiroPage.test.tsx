@@ -10,8 +10,12 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  OutboxMutationRecord,
+  OutboxMutationStatus,
+} from "../../lib/db/db.types";
 
 const {
   buscarCobrancas,
@@ -21,8 +25,10 @@ const {
   buscarRelatorio,
   buscarVisaoGeral,
   fetchAuthorizedRevenueWorksites,
+  listOutboxMutations,
   listObrasLocais,
   pdorSections,
+  servicePriceMounts,
   revenueMounts,
   resolveFinanceCapabilities,
 } = vi.hoisted(() => ({
@@ -33,8 +39,10 @@ const {
   buscarRelatorio: vi.fn(),
   buscarVisaoGeral: vi.fn(),
   fetchAuthorizedRevenueWorksites: vi.fn(),
+  listOutboxMutations: vi.fn(),
   listObrasLocais: vi.fn(),
   pdorSections: vi.fn(),
+  servicePriceMounts: vi.fn(),
   revenueMounts: vi.fn(),
   resolveFinanceCapabilities: vi.fn(),
 }));
@@ -81,6 +89,10 @@ vi.mock("../../lib/db/obraLocalRepository", () => ({
   listObrasLocais,
 }));
 
+vi.mock("../../lib/db/outboxRepository", () => ({
+  listOutboxMutations,
+}));
+
 vi.mock("./financeiroApi", () => ({
   buscarCobrancas,
   buscarCompras,
@@ -103,8 +115,8 @@ vi.mock("./FinanceRevenueTracePage", async () => {
   return {
     FinanceRevenueTracePage: ({ obraId }: { obraId: string }) => {
       useEffect(() => {
-        revenueMounts();
-      }, []);
+        revenueMounts(obraId);
+      }, [obraId]);
       return (
         <section data-testid="revenue-trace">
           Rastreio de receita ativo · {obraId || "consolidado autorizado"}
@@ -114,9 +126,17 @@ vi.mock("./FinanceRevenueTracePage", async () => {
   };
 });
 
-vi.mock("./ServicePriceCatalogPage", () => ({
-  ServicePriceCatalogPage: () => <section>Catálogo de preços versionados</section>,
-}));
+vi.mock("./ServicePriceCatalogPage", async () => {
+  const { useEffect } = await import("react");
+  return {
+    ServicePriceCatalogPage: ({ obraId }: { obraId: string }) => {
+      useEffect(() => {
+        servicePriceMounts(obraId);
+      }, [obraId]);
+      return <section>Catálogo de preços versionados</section>;
+    },
+  };
+});
 
 vi.mock("../obras/obrasApi", () => ({
   buscarPdorAtual: vi.fn().mockResolvedValue(null),
@@ -146,7 +166,15 @@ beforeEach(() => {
     configurable: true,
     value: true,
   });
-  fetchAuthorizedRevenueWorksites.mockResolvedValue([]);
+  fetchAuthorizedRevenueWorksites.mockResolvedValue([
+    {
+      id: "obra-1",
+      codigoContrato: "CTR-001",
+      nome: "Obra principal",
+      status: "ATIVA",
+    },
+  ]);
+  listOutboxMutations.mockResolvedValue([]);
   listObrasLocais.mockResolvedValue([]);
   resolveFinanceCapabilities.mockResolvedValue({
     obraId: "obra-1",
@@ -158,8 +186,43 @@ function renderFinanceiro(route = "/financeiro") {
   return render(
     <MemoryRouter initialEntries={[route]}>
       <FinanceiroPage />
+      <RouteProbe />
     </MemoryRouter>,
   );
+}
+
+function RouteProbe() {
+  const location = useLocation();
+  return <output data-testid="finance-route">{location.search}</output>;
+}
+
+function archiveMutation(
+  status: OutboxMutationStatus,
+  obraId = "obra-arquivada",
+): OutboxMutationRecord {
+  return {
+    clientMutationId: `mutation-${status.toLowerCase()}`,
+    entidadeTipo: "OBRA",
+    entidadeId: obraId,
+    operacao: "ARQUIVAR_OBRA",
+    baseVersao: 4,
+    payload: {
+      id: obraId,
+      arquivadoEm: "2026-07-28T13:00:00.000Z",
+    },
+    status,
+    tentativas: status === "PENDING" ? 0 : 1,
+    ultimaTentativaEm: null,
+    ultimoErro: null,
+    conflito: null,
+    criadaNoClienteEm: "2026-07-28T13:00:00.000Z",
+    updatedAt: "2026-07-28T13:00:00.000Z",
+    transport: "SYNC_PUSH",
+    dependsOnMutationIds: [],
+    correlationId: `correlation-${status.toLowerCase()}`,
+    retryAttempt: 0,
+    lastSafeCode: null,
+  };
 }
 
 import { FinanceiroPage } from "./FinanceiroPage";
@@ -312,6 +375,9 @@ describe("FinanceiroPage: superfície de receita", () => {
         updatedAt: "2026-07-28T13:00:00.000Z",
       },
     ]);
+    listOutboxMutations.mockResolvedValue([
+      archiveMutation("PENDING"),
+    ]);
 
     renderFinanceiro();
 
@@ -362,6 +428,119 @@ describe("FinanceiroPage: superfície de receita", () => {
       name: "Obra em análise",
     });
     expect(selector).toHaveTextContent("Obra restaurada no servidor");
+  });
+
+  it.each([
+    ["without an outbox mutation", []],
+    ["after an outbox error", [archiveMutation("ERROR")]],
+    ["after an outbox conflict", [archiveMutation("CONFLICT")]],
+    ["after an outbox rejection", [archiveMutation("REJECTED")]],
+  ])(
+    "does not let an archived local row hide a remote restore %s",
+    async (_label, mutations) => {
+      fetchAuthorizedRevenueWorksites.mockResolvedValue([
+        {
+          id: "obra-arquivada",
+          codigoContrato: "CTR-ARQ",
+          nome: "Obra restaurada autoritativamente",
+          status: "ATIVA",
+        },
+      ]);
+      listObrasLocais.mockResolvedValue([
+        {
+          id: "obra-arquivada",
+          codigoContrato: "CTR-ARQ",
+          nome: "Arquivo local não autoritativo",
+          cliente: null,
+          cidade: null,
+          uf: null,
+          rodovia: null,
+          status: "INATIVA",
+          observacoes: null,
+          latitude: null,
+          longitude: null,
+          valorContratual: null,
+          arquivadoEm: "2026-07-28T13:00:00.000Z",
+          syncStatus: "PENDING_SYNC",
+          updatedAt: "2026-07-28T13:00:00.000Z",
+        },
+      ]);
+      listOutboxMutations.mockResolvedValue(mutations);
+
+      renderFinanceiro();
+
+      const selector = await screen.findByRole("combobox", {
+        name: "Obra em análise",
+      });
+      expect(selector).toHaveTextContent(
+        "Obra restaurada autoritativamente",
+      );
+    },
+  );
+
+  it.each([
+    "receita",
+    "servicos-precos",
+    "pdor",
+  ])(
+    "clears an unavailable worksite from the %s URL before authorization or data mounts",
+    async (section) => {
+      fetchAuthorizedRevenueWorksites.mockResolvedValue([
+        {
+          id: "obra-ativa",
+          codigoContrato: "CTR-ATIVA",
+          nome: "Obra ativa",
+          status: "ATIVA",
+        },
+      ]);
+
+      renderFinanceiro(
+        `/financeiro?obra=obra-arquivada&secao=${section}`,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("finance-route"))
+          .not.toHaveTextContent("obra=obra-arquivada");
+      });
+      expect(resolveFinanceCapabilities)
+        .not.toHaveBeenCalledWith("obra-arquivada");
+      expect(revenueMounts).not.toHaveBeenCalledWith(
+        "obra-arquivada",
+      );
+      expect(servicePriceMounts).not.toHaveBeenCalledWith(
+        "obra-arquivada",
+      );
+      expect(pdorSections).not.toHaveBeenCalledWith(
+        expect.objectContaining({ obraId: "obra-arquivada" }),
+      );
+    },
+  );
+
+  it("preserves a selected scope when neither remote nor local catalog can validate it", async () => {
+    fetchAuthorizedRevenueWorksites.mockRejectedValueOnce(
+      new Error("Catálogo remoto indisponível."),
+    );
+    listObrasLocais.mockRejectedValueOnce(
+      new Error("Cache local indisponível."),
+    );
+
+    renderFinanceiro(
+      "/financeiro?obra=obra-1&secao=receita",
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Cache local indisponível.",
+    );
+    expect(await screen.findByText(
+      /O escopo selecionado foi preservado/,
+    )).toBeVisible();
+    expect(screen.getByTestId("finance-route")).toHaveTextContent(
+      "obra=obra-1",
+    );
+    expect(resolveFinanceCapabilities).not.toHaveBeenCalled();
+    expect(revenueMounts).not.toHaveBeenCalled();
+    expect(servicePriceMounts).not.toHaveBeenCalled();
+    expect(pdorSections).not.toHaveBeenCalled();
   });
 
   it("consulta o PDOR somente por obra, sem fabricar uma janela a partir dos filtros da receita", async () => {

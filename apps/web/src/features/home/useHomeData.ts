@@ -33,6 +33,12 @@ import {
   setLastAccessedObraId,
 } from "./lastAccessedObra";
 import { filterOperationalObras } from "./homeFilters";
+import { syncSessionFingerprint } from "../../lib/sync/syncSession";
+
+function currentSessionFingerprint(): string | null {
+  const session = getSession();
+  return session ? syncSessionFingerprint(session) : null;
+}
 
 export interface HomeData {
   obras: ObraLocalRecord[];
@@ -93,32 +99,88 @@ export function useHomeData(
     async function loadObras() {
       setIsLoading(true);
       setHasConfirmedRemoteHydration(false);
-      let remoteHydrationConfirmed = false;
-      const shouldHydrateArchived =
-        options.includeArchived === true &&
-        isAlfa(getSession());
+      const relatedSessionFingerprint =
+        currentSessionFingerprint();
+      let relatedHydrationSucceeded = false;
 
       try {
         await hydrateObrasRelacionadas();
-        if (
-          shouldHydrateArchived &&
-          isAlfa(getSession())
-        ) {
-          await hydrateObrasArquivadas();
-        }
-        remoteHydrationConfirmed = true;
+        if (cancelled) return;
+        relatedHydrationSucceeded = true;
       } catch {
+        if (cancelled) return;
         // Offline ou API indisponível: segue com o banco local.
+      }
+      if (
+        currentSessionFingerprint() !==
+          relatedSessionFingerprint
+      ) {
+        clearSessionBoundState();
+        return;
+      }
+      const relatedHydrationConfirmed =
+        relatedHydrationSucceeded;
+
+      const shouldHydrateArchived =
+        options.includeArchived === true &&
+        isAlfa(getSession());
+      let archivedHydrationConfirmed =
+        !shouldHydrateArchived;
+      if (shouldHydrateArchived) {
+        const archivedSessionFingerprint =
+          currentSessionFingerprint();
+        try {
+          await hydrateObrasArquivadas();
+          if (cancelled) return;
+          if (
+            currentSessionFingerprint() !==
+              archivedSessionFingerprint
+          ) {
+            clearSessionBoundState();
+            return;
+          }
+          archivedHydrationConfirmed = true;
+        } catch {
+          if (cancelled) return;
+          if (
+            currentSessionFingerprint() !==
+              archivedSessionFingerprint
+          ) {
+            clearSessionBoundState();
+            return;
+          }
+          // A Lixeira remota falhou; o cache Alfa continua disponível.
+        }
       }
 
       const canIncludeArchived =
         options.includeArchived === true &&
         isAlfa(getSession());
-      const cached = await listObrasLocais({
-        includeArchived: canIncludeArchived,
-      });
+      const localReadSessionFingerprint =
+        currentSessionFingerprint();
+      let cached: ObraLocalRecord[];
+      try {
+        cached = await listObrasLocais({
+          includeArchived: canIncludeArchived,
+        });
+      } catch {
+        if (cancelled) return;
+        if (
+          currentSessionFingerprint() !==
+            localReadSessionFingerprint
+        ) {
+          clearSessionBoundState();
+          return;
+        }
+        cached = [];
+      }
 
-      if (cancelled) {
+      if (cancelled) return;
+      if (
+        currentSessionFingerprint() !==
+          localReadSessionFingerprint
+      ) {
+        clearSessionBoundState();
         return;
       }
 
@@ -130,7 +192,8 @@ export function useHomeData(
         : filterOperationalObras(cached);
       setObras(local);
       setHasConfirmedRemoteHydration(
-        remoteHydrationConfirmed,
+        relatedHydrationConfirmed &&
+          archivedHydrationConfirmed,
       );
 
       setFocusedObraIdState((current) => {
@@ -144,6 +207,18 @@ export function useHomeData(
       });
 
       setIsLoading(false);
+
+      function clearSessionBoundState(): void {
+        if (!cancelled) {
+          setObras([]);
+          setFocusedObraIdState(null);
+          setSnapshots([]);
+          setEvents([]);
+          setLatestRdo(null);
+          setHasConfirmedRemoteHydration(false);
+          setIsLoading(false);
+        }
+      }
     }
 
     void loadObras();
@@ -159,45 +234,81 @@ export function useHomeData(
     }
 
     let cancelled = false;
+    const detailSessionFingerprint =
+      currentSessionFingerprint();
 
-    async function loadLocalDetails(obraId: string) {
-      const [obraSnapshots, obraEvents, rdos] =
-        await Promise.all([
+    function detailContextChanged(): boolean {
+      if (cancelled) return true;
+      if (
+        currentSessionFingerprint() ===
+          detailSessionFingerprint
+      ) {
+        return false;
+      }
+      setObras([]);
+      setFocusedObraIdState(null);
+      setSnapshots([]);
+      setEvents([]);
+      setLatestRdo(null);
+      setHasConfirmedRemoteHydration(false);
+      setIsLoading(false);
+      return true;
+    }
+
+    async function loadLocalDetails(
+      obraId: string,
+    ): Promise<boolean> {
+      try {
+        const [obraSnapshots, obraEvents, rdos] = await Promise.all([
           listSnapshotsByObra(obraId),
           listOperationalEventsForObra(obraId),
           listLocalRdos(),
         ]);
 
-      if (cancelled) {
-        return;
-      }
+        if (detailContextChanged()) {
+          return false;
+        }
 
-      setSnapshots(obraSnapshots);
+        setSnapshots(obraSnapshots);
 
-      obraEvents.sort((a, b) =>
-        a.occurredAt < b.occurredAt ? 1 : -1,
-      );
-      setEvents(obraEvents);
-
-      const obraRdos = rdos
-        .filter((rdo) => rdo.obraId === obraId)
-        .sort((a, b) =>
-          a.dataRdo < b.dataRdo ? 1 : -1,
+        obraEvents.sort((a, b) =>
+          a.occurredAt < b.occurredAt ? 1 : -1,
         );
-      setLatestRdo(obraRdos[0] ?? null);
+        setEvents(obraEvents);
+
+        const obraRdos = rdos
+          .filter((rdo) => rdo.obraId === obraId)
+          .sort((a, b) =>
+            a.dataRdo < b.dataRdo ? 1 : -1,
+          );
+        setLatestRdo(obraRdos[0] ?? null);
+        return true;
+      } catch {
+        if (detailContextChanged()) {
+          return false;
+        }
+        setSnapshots([]);
+        setEvents([]);
+        setLatestRdo(null);
+        return false;
+      }
     }
 
     async function loadObraDetails(obraId: string) {
       // Primeiro o que já existe localmente: a troca de obra é imediata,
       // sem exibir dados da obra anterior enquanto a rede responde.
-      await loadLocalDetails(obraId);
+      const loadedLocalDetails =
+        await loadLocalDetails(obraId);
+      if (!loadedLocalDetails) return;
 
       try {
         await hydrateHistoricoObra(obraId);
       } catch {
+        if (detailContextChanged()) return;
         // Offline: fica com o que havia localmente.
         return;
       }
+      if (detailContextChanged()) return;
 
       await loadLocalDetails(obraId);
     }

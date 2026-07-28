@@ -140,19 +140,23 @@ function assertAlfaSyncSession(guard: SyncSessionGuard): void {
 export async function hydrateHistoricoObra(
   obraId: string,
 ): Promise<number> {
+  const guard = captureOnlineSyncSession();
   const historico = await buscarHistoricoPrevisao(obraId);
+  assertSyncSession(guard);
   const nowIso = new Date().toISOString();
 
   let saved = 0;
 
   for (const item of historico) {
+    assertSyncSession(guard);
     const record = snapshotRecordFromApi(item, nowIso);
 
     if (record) {
-      await putPrevisaoSnapshot(record);
+      await putPrevisaoSnapshot(record, guard);
       saved += 1;
     }
   }
 
+  assertSyncSession(guard);
   return saved;
 }

@@ -6,8 +6,10 @@ import { OperationalWorkspace } from "../../components/workspace/OperationalWork
 import {
   listObrasLocais,
 } from "../../lib/db/obraLocalRepository";
+import { listOutboxMutations } from "../../lib/db/outboxRepository";
 import { filterOperationalObras } from "../../lib/db/obraSelectors";
-import type { LocalSyncStatus } from "../../lib/db/db.types";
+import type { OutboxMutationRecord } from "../../lib/db/db.types";
+import { effectiveObraMutations } from "../../lib/sync/syncStorage";
 import {
   filtersFromSearchParams,
   filtersToSearchParams,
@@ -32,13 +34,11 @@ import { FinancePdorSection } from "./FinancePdorSection";
 import "./FinanceiroPage.css";
 
 const DEFAULT_SECTION: ActiveFinanceSection = "receita";
-const LOCAL_ARCHIVE_OVERRIDE_STATUSES = new Set<LocalSyncStatus>([
-  "LOCAL_ONLY",
-  "LOCAL_PENDING",
-  "PENDING_SYNC",
+const PENDING_ARCHIVE_STATUSES = new Set<
+  OutboxMutationRecord["status"]
+>([
+  "PENDING",
   "SYNCING",
-  "ERROR",
-  "CONFLICT",
 ]);
 
 function sectionFromParams(params: URLSearchParams): ActiveFinanceSection {
@@ -59,11 +59,37 @@ function localWorksiteUnit(
   };
 }
 
+function pendingArchiveMutationIds(
+  mutations: OutboxMutationRecord[],
+): Set<string> {
+  return new Set(
+    effectiveObraMutations(
+      mutations.filter(
+        (mutation) => mutation.entidadeTipo === "OBRA",
+      ),
+    )
+      .filter(
+        (mutation) =>
+          mutation.operacao === "ARQUIVAR_OBRA" &&
+          PENDING_ARCHIVE_STATUSES.has(mutation.status),
+      )
+      .map((mutation) => mutation.entidadeId),
+  );
+}
+
 export function FinanceiroPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [worksites, setWorksites] = useState<RevenueWorksite[]>([]);
   const [worksiteError, setWorksiteError] = useState("");
   const [accessVersion, setAccessVersion] = useState(0);
+  const [
+    loadedWorksitesVersion,
+    setLoadedWorksitesVersion,
+  ] = useState<number | null>(null);
+  const [
+    failedWorksitesVersion,
+    setFailedWorksitesVersion,
+  ] = useState<number | null>(null);
   const [accessState, setAccessState] = useState<{
     obraId: string;
     capabilities: FinanceCapabilities | null;
@@ -80,65 +106,90 @@ export function FinanceiroPage() {
     () => filtersFromSearchParams(searchParams),
     [searchParams],
   );
+  const worksitesLoaded =
+    loadedWorksitesVersion === accessVersion;
+  const worksitesFailed =
+    failedWorksitesVersion === accessVersion;
+  const selectedWorksite = worksites.find(
+    (unit) => unit.id === filters.obraId,
+  );
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadWorksites() {
       setWorksiteError("");
-      if (navigator.onLine) {
-        try {
-          const remote = await fetchAuthorizedRevenueWorksites();
-          let locallyArchivedIds = new Set<string>();
+      let catalogResolved = false;
+      try {
+        if (navigator.onLine) {
           try {
-            const cached = await listObrasLocais({
-              includeArchived: true,
-            });
-            locallyArchivedIds = new Set(
-              cached
-                .filter(
-                  (obra) =>
-                    obra.arquivadoEm != null &&
-                    obra.syncStatus !== undefined &&
-                    LOCAL_ARCHIVE_OVERRIDE_STATUSES.has(
-                      obra.syncStatus,
-                    ),
-                )
-                .map((obra) => obra.id),
-            );
-          } catch {
-            // O catálogo remoto continua autoritativo quando o cache local
-            // não pode ser consultado.
+            const remote = await fetchAuthorizedRevenueWorksites();
+            let locallyArchivedIds = new Set<string>();
+            try {
+              const [cached, outbox] = await Promise.all([
+                listObrasLocais({
+                  includeArchived: true,
+                }),
+                listOutboxMutations(),
+              ]);
+              const pendingArchiveIds =
+                pendingArchiveMutationIds(outbox);
+              locallyArchivedIds = new Set(
+                cached
+                  .filter(
+                    (obra) =>
+                      obra.arquivadoEm != null &&
+                      pendingArchiveIds.has(obra.id),
+                  )
+                  .map((obra) => obra.id),
+              );
+            } catch {
+              // O catálogo remoto continua autoritativo quando cache e
+              // outbox não comprovam juntos um arquivamento pendente.
+            }
+            if (!cancelled) {
+              setWorksites(
+                remote.filter(
+                  (obra) => !locallyArchivedIds.has(obra.id),
+                ),
+              );
+            }
+            catalogResolved = true;
+            return;
+          } catch (reason: unknown) {
+            if (!cancelled) {
+              setWorksiteError(reason instanceof Error
+                ? reason.message
+                : "Não foi possível atualizar a lista de obras autorizadas.");
+            }
           }
+        }
+
+        try {
+          const local = await listObrasLocais();
           if (!cancelled) {
             setWorksites(
-              remote.filter(
-                (obra) => !locallyArchivedIds.has(obra.id),
-              ),
+              filterOperationalObras(local).map(localWorksiteUnit),
             );
           }
-          return;
+          catalogResolved = true;
         } catch (reason: unknown) {
           if (!cancelled) {
             setWorksiteError(reason instanceof Error
               ? reason.message
-              : "Não foi possível atualizar a lista de obras autorizadas.");
+              : "Não foi possível carregar as obras armazenadas neste dispositivo.");
           }
         }
-      }
-
-      try {
-        const local = await listObrasLocais();
+      } finally {
         if (!cancelled) {
-          setWorksites(
-            filterOperationalObras(local).map(localWorksiteUnit),
-          );
-        }
-      } catch (reason: unknown) {
-        if (!cancelled) {
-          setWorksiteError(reason instanceof Error
-            ? reason.message
-            : "Não foi possível carregar as obras armazenadas neste dispositivo.");
+          if (catalogResolved) {
+            setLoadedWorksitesVersion(accessVersion);
+            setFailedWorksitesVersion(null);
+          } else {
+            setWorksites([]);
+            setLoadedWorksitesVersion(null);
+            setFailedWorksitesVersion(accessVersion);
+          }
         }
       }
     }
@@ -162,6 +213,31 @@ export function FinanceiroPage() {
             error: "",
           });
         }
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!worksitesLoaded) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!selectedWorksite) {
+      queueMicrotask(() => {
+        if (cancelled) return;
+        const params = filtersToSearchParams({
+          ...filters,
+          obraId: "",
+        });
+        params.set("secao", section);
+        setSearchParams(params, { replace: true });
+        setAccessState({
+          obraId: "",
+          capabilities: null,
+          loading: false,
+          error: "",
+        });
       });
       return () => {
         cancelled = true;
@@ -204,7 +280,14 @@ export function FinanceiroPage() {
     return () => {
       cancelled = true;
     };
-  }, [accessVersion, filters.obraId]);
+  }, [
+    accessVersion,
+    filters,
+    section,
+    selectedWorksite,
+    setSearchParams,
+    worksitesLoaded,
+  ]);
 
   function applyParams(
     nextFilters: FinanceFilters,
@@ -223,9 +306,6 @@ export function FinanceiroPage() {
     applyParams({ ...filters, obraId });
   }
 
-  const selectedWorksite = worksites.find(
-    (unit) => unit.id === filters.obraId,
-  );
   const currentAccess = accessState.obraId === filters.obraId
     ? accessState
     : null;
@@ -234,6 +314,8 @@ export function FinanceiroPage() {
     permissions.includes("FINANCEIRO_VISUALIZAR");
   const selectedWorksitePending = Boolean(
     filters.obraId && (
+      !worksitesLoaded ||
+      !selectedWorksite ||
       currentAccess === null ||
       currentAccess.loading
     ),
@@ -380,6 +462,13 @@ export function FinanceiroPage() {
                 onChange={(event) => selectWorksite(event.target.value)}
               >
                 <option value="">Consolidado autorizado</option>
+                {worksitesFailed &&
+                    filters.obraId &&
+                    !selectedWorksite ? (
+                  <option value={filters.obraId}>
+                    Obra selecionada · validação indisponível
+                  </option>
+                  ) : null}
                 {worksites.map((unit) => (
                   <option
                     key={unit.id}
@@ -396,7 +485,12 @@ export function FinanceiroPage() {
           </div>
         </section>
 
-        {currentAccess?.error && filters.obraId ? (
+        {worksitesFailed && filters.obraId ? (
+          <div className="finance-loading" role="status">
+            O escopo selecionado foi preservado porque o catálogo
+            autorizado não pôde ser validado. Tente atualizar novamente.
+          </div>
+        ) : currentAccess?.error && filters.obraId ? (
           <div className="finance-error-state" role="alert">
             <div>
               <strong>Não foi possível validar o acesso desta obra.</strong>
