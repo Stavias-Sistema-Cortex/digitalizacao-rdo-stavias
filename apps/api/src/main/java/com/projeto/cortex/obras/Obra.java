@@ -109,7 +109,7 @@ public class Obra {
         this.observacoes = observacoes;
         this.criadoEm = agora;
         this.atualizadoEm = agora;
-        this.versaoLinha = 0;
+        this.versaoLinha = 1;
     }
 
     public static Obra criar(
@@ -142,6 +142,72 @@ public class Obra {
                 fonteArquivo,
                 observacoes
         );
+    }
+
+    public void editar(
+            String codigoContrato,
+            String codigoCw,
+            String codigoInterno,
+            String nome,
+            String cliente,
+            String descricao,
+            String cidade,
+            String uf,
+            String rodovia,
+            String fonteArquivo,
+            String observacoes
+    ) {
+        exigirNaoArquivada();
+        this.codigoContrato = codigoContrato;
+        this.codigoCw = codigoCw;
+        this.codigoInterno = codigoInterno;
+        this.nome = nome;
+        this.cliente = cliente;
+        this.descricao = descricao;
+        this.cidade = cidade;
+        this.uf = uf;
+        this.rodovia = rodovia;
+        this.fonteArquivo = fonteArquivo;
+        this.observacoes = observacoes;
+        tocar();
+    }
+
+    public void desativar() {
+        exigirNaoArquivada();
+        this.status = "INATIVA";
+        tocar();
+    }
+
+    public void arquivar() {
+        exigirNaoArquivada();
+        LocalDateTime agora = LocalDateTime.now();
+        this.arquivadoEm = agora;
+        tocar(agora);
+    }
+
+    public void restaurar() {
+        if (arquivadoEm == null) {
+            throw new IllegalStateException("A obra não está arquivada.");
+        }
+        this.arquivadoEm = null;
+        tocar();
+    }
+
+    private void exigirNaoArquivada() {
+        if (arquivadoEm != null) {
+            throw new IllegalStateException(
+                    "A obra arquivada aceita apenas restauração."
+            );
+        }
+    }
+
+    private void tocar() {
+        tocar(LocalDateTime.now());
+    }
+
+    private void tocar(LocalDateTime agora) {
+        this.atualizadoEm = agora;
+        this.versaoLinha++;
     }
 
     public String getId() {

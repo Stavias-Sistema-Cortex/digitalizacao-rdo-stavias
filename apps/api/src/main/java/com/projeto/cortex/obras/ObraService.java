@@ -10,6 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 public class ObraService {
@@ -42,12 +43,32 @@ public class ObraService {
                 .toList();
     }
 
+    public List<ObraResponse> listarObrasArquivadas(
+            String query,
+            String actorId
+    ) {
+        normalizarObrigatorio(actorId, "actorId");
+        List<Obra> obras;
+
+        if (isBlank(query)) {
+            obras = obraRepository.listarArquivadas(PageRequest.of(0, 100));
+        } else {
+            obras = obraRepository.buscarArquivadas(
+                    query.trim(),
+                    PageRequest.of(0, 100)
+            );
+        }
+
+        return obras.stream()
+                .map(ObraResponse::from)
+                .toList();
+    }
+
     @Transactional
     public ObraResponse criarObra(ObraRequest request, String actorId) {
-        String codigoContrato = normalizarObrigatorio(request.codigoContrato(), "codigoContrato");
-        String nome = normalizarObrigatorio(request.nome(), "nome");
+        CadastroNormalizado cadastro = normalizarCadastro(request);
 
-        if (obraRepository.existsByCodigoContrato(codigoContrato)) {
+        if (obraRepository.existsByCodigoContrato(cadastro.codigoContrato())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "Já existe uma obra com esse código de contrato."
@@ -63,19 +84,19 @@ public class ObraService {
                 : request.fonteCriacao().trim().toUpperCase(Locale.ROOT);
 
         Obra obra = Obra.criar(
-                codigoContrato,
-                extrairCodigoCw(codigoContrato),
-                normalizarOpcional(request.codigoInterno()),
-                nome,
-                normalizarOpcional(request.cliente()),
-                normalizarOpcional(request.descricao()),
-                normalizarOpcional(request.cidade()),
-                normalizarUf(request.uf()),
-                normalizarOpcional(request.rodovia()),
+                cadastro.codigoContrato(),
+                extrairCodigoCw(cadastro.codigoContrato()),
+                cadastro.codigoInterno(),
+                cadastro.nome(),
+                cadastro.cliente(),
+                cadastro.descricao(),
+                cadastro.cidade(),
+                cadastro.uf(),
+                cadastro.rodovia(),
                 status,
                 fonteCriacao,
-                normalizarOpcional(request.fonteArquivo()),
-                normalizarOpcional(request.observacoes())
+                cadastro.fonteArquivo(),
+                cadastro.observacoes()
         );
 
         Obra salva = obraRepository.saveAndFlush(obra);
@@ -84,6 +105,195 @@ public class ObraService {
         financialUnitService.ensureWorksiteUnit(salva.getId(), actorId);
 
         return ObraResponse.from(salva);
+    }
+
+    @Transactional
+    public ObraResponse atualizarObra(
+            String obraId,
+            ObraUpdateRequest request,
+            String actorId
+    ) {
+        if (request == null) {
+            throw badRequest("Corpo da atualização é obrigatório.");
+        }
+        String ator = normalizarObrigatorio(actorId, "actorId");
+        Obra obra = requireObraParaMutacao(obraId);
+        requireMatchingVersion(obra, request.baseVersion());
+        CadastroNormalizado cadastro = normalizarCadastro(request);
+        if (obraRepository.existsByCodigoContratoAndIdNot(
+                cadastro.codigoContrato(),
+                obra.getId()
+        )) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Já existe uma obra com esse código de contrato."
+            );
+        }
+
+        Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
+        executarTransicao(() -> obra.editar(
+                cadastro.codigoContrato(),
+                extrairCodigoCw(cadastro.codigoContrato()),
+                cadastro.codigoInterno(),
+                cadastro.nome(),
+                cadastro.cliente(),
+                cadastro.descricao(),
+                cadastro.cidade(),
+                cadastro.uf(),
+                cadastro.rodovia(),
+                cadastro.fonteArquivo(),
+                cadastro.observacoes()
+        ));
+        return persistirMutacao(
+                obra,
+                ator,
+                ObraSyncEvento.TIPO_EVENTO,
+                estadoAnterior
+        );
+    }
+
+    @Transactional
+    public ObraResponse desativarObra(
+            String obraId,
+            ObraVersionRequest request,
+            String actorId
+    ) {
+        String ator = normalizarObrigatorio(actorId, "actorId");
+        Obra obra = requireObraParaMutacao(obraId);
+        requireMatchingVersion(
+                obra,
+                request == null ? null : request.baseVersion()
+        );
+        Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
+        executarTransicao(obra::desativar);
+        return persistirMutacao(
+                obra,
+                ator,
+                ObraSyncEvento.EVENTO_DESATIVADA,
+                estadoAnterior
+        );
+    }
+
+    @Transactional
+    public ObraResponse arquivarObra(
+            String obraId,
+            ObraVersionRequest request,
+            String actorId
+    ) {
+        String ator = normalizarObrigatorio(actorId, "actorId");
+        Obra obra = requireObraParaMutacao(obraId);
+        requireMatchingVersion(
+                obra,
+                request == null ? null : request.baseVersion()
+        );
+        Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
+        executarTransicao(obra::arquivar);
+        return persistirMutacao(
+                obra,
+                ator,
+                ObraSyncEvento.EVENTO_ARQUIVADA,
+                estadoAnterior
+        );
+    }
+
+    @Transactional
+    public ObraResponse restaurarObra(
+            String obraId,
+            ObraVersionRequest request,
+            String actorId
+    ) {
+        String ator = normalizarObrigatorio(actorId, "actorId");
+        Obra obra = requireObraParaMutacao(obraId);
+        requireMatchingVersion(
+                obra,
+                request == null ? null : request.baseVersion()
+        );
+        Map<String, Object> estadoAnterior = ObraSyncEvento.payload(obra);
+        executarTransicao(obra::restaurar);
+        return persistirMutacao(
+                obra,
+                ator,
+                ObraSyncEvento.EVENTO_RESTAURADA,
+                estadoAnterior
+        );
+    }
+
+    private ObraResponse persistirMutacao(
+            Obra obra,
+            String actorId,
+            String tipoEvento,
+            Map<String, Object> estadoAnterior
+    ) {
+        Obra salva = obraRepository.saveAndFlush(obra);
+        ObraSyncEvento.registrarMutacao(
+                memoryService,
+                salva,
+                actorId,
+                tipoEvento,
+                estadoAnterior
+        );
+        return ObraResponse.from(salva);
+    }
+
+    private Obra requireObraParaMutacao(String obraId) {
+        if (isBlank(obraId)) {
+            throw badRequest("obraId é obrigatório.");
+        }
+        return obraRepository.findByIdForUpdate(obraId.trim())
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Obra não encontrada."
+                ));
+    }
+
+    private void requireMatchingVersion(Obra obra, Long baseVersion) {
+        if (baseVersion == null || baseVersion < 0) {
+            throw badRequest(
+                    "baseVersion é obrigatório e não pode ser negativo."
+            );
+        }
+        if (obra.getVersaoLinha() != baseVersion) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "A obra foi alterada por outra operação. "
+                            + "Recarregue antes de continuar."
+            );
+        }
+    }
+
+    private void executarTransicao(Runnable transicao) {
+        try {
+            transicao.run();
+        } catch (IllegalStateException error) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    error.getMessage(),
+                    error
+            );
+        }
+    }
+
+    private CadastroNormalizado normalizarCadastro(
+            ObraCadastroRequest request
+    ) {
+        if (request == null) {
+            throw badRequest("Dados cadastrais da obra são obrigatórios.");
+        }
+        return new CadastroNormalizado(
+                normalizarObrigatorio(
+                        request.codigoContrato(),
+                        "codigoContrato"
+                ),
+                normalizarOpcional(request.codigoInterno()),
+                normalizarObrigatorio(request.nome(), "nome"),
+                normalizarOpcional(request.cliente()),
+                normalizarOpcional(request.descricao()),
+                normalizarOpcional(request.cidade()),
+                normalizarUf(request.uf()),
+                normalizarOpcional(request.rodovia()),
+                normalizarOpcional(request.fonteArquivo()),
+                normalizarOpcional(request.observacoes())
+        );
     }
 
     private String extrairCodigoCw(String codigoContrato) {
@@ -102,10 +312,7 @@ public class ObraService {
 
     private String normalizarObrigatorio(String value, String fieldName) {
         if (isBlank(value)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Campo obrigatório ausente: " + fieldName
-            );
+            throw badRequest("Campo obrigatório ausente: " + fieldName);
         }
 
         return value.trim();
@@ -138,5 +345,23 @@ public class ObraService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private ResponseStatusException badRequest(String message) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    }
+
+    private record CadastroNormalizado(
+            String codigoContrato,
+            String codigoInterno,
+            String nome,
+            String cliente,
+            String descricao,
+            String cidade,
+            String uf,
+            String rodovia,
+            String fonteArquivo,
+            String observacoes
+    ) {
     }
 }

@@ -21,7 +21,9 @@ public record ObraResponse(
         String fonteArquivo,
         String observacoes,
         LocalDateTime criadoEm,
-        LocalDateTime atualizadoEm
+        LocalDateTime atualizadoEm,
+        LocalDateTime arquivadoEm,
+        long versaoLinha
 ) {
     public static ObraResponse from(Obra obra) {
         return new ObraResponse(
@@ -42,7 +44,9 @@ public record ObraResponse(
                 obra.getFonteArquivo(),
                 obra.getObservacoes(),
                 obra.getCriadoEm(),
-                obra.getAtualizadoEm()
+                obra.getAtualizadoEm(),
+                obra.getArquivadoEm(),
+                obra.getVersaoLinha()
         );
     }
 }

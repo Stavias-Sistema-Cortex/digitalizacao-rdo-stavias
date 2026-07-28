@@ -12,6 +12,9 @@ final class ObraSyncEvento {
 
     static final String TIPO_ENTIDADE = "OBRA";
     static final String TIPO_EVENTO = "OBRA_ATUALIZADA";
+    static final String EVENTO_DESATIVADA = "OBRA_DESATIVADA";
+    static final String EVENTO_ARQUIVADA = "OBRA_ARQUIVADA";
+    static final String EVENTO_RESTAURADA = "OBRA_RESTAURADA";
 
     private ObraSyncEvento() {
     }
@@ -21,15 +24,27 @@ final class ObraSyncEvento {
         payload.put("schemaVersion", 1);
         payload.put("obraId", obra.getId());
         payload.put("codigoContrato", obra.getCodigoContrato());
+        payload.put("codigoCw", obra.getCodigoCw());
+        payload.put("codigoInterno", obra.getCodigoInterno());
         payload.put("nome", obra.getNome());
         payload.put("cliente", obra.getCliente());
+        payload.put("descricao", obra.getDescricao());
         payload.put("cidade", obra.getCidade());
         payload.put("uf", obra.getUf());
         payload.put("rodovia", obra.getRodovia());
         payload.put("status", obra.getStatus());
+        payload.put("fonteCriacao", obra.getFonteCriacao());
+        payload.put("fonteArquivo", obra.getFonteArquivo());
         payload.put("observacoes", obra.getObservacoes());
         payload.put("latitude", obra.getLatitude());
         payload.put("longitude", obra.getLongitude());
+        payload.put(
+                "arquivadoEm",
+                obra.getArquivadoEm() == null
+                        ? null
+                        : obra.getArquivadoEm().toString()
+        );
+        payload.put("versaoLinha", obra.getVersaoLinha());
         payload.put(
                 "atualizadoEm",
                 obra.getAtualizadoEm() == null
@@ -80,6 +95,7 @@ final class ObraSyncEvento {
         );
         LocalDateTime now = LocalDateTime.now();
         Map<String, Object> state = payload(obra);
+        Map<String, Object> eventPayload = payloadComAtor(obra, actorId);
         memoryService.registrarEventoAuditado(
                 null,
                 TIPO_ENTIDADE,
@@ -99,7 +115,7 @@ final class ObraSyncEvento {
                 now,
                 now,
                 1,
-                state,
+                eventPayload,
                 actorId,
                 null,
                 UUID.randomUUID().toString(),
@@ -109,6 +125,56 @@ final class ObraSyncEvento {
                 "SUCESSO",
                 null
         );
+    }
+
+    static void registrarMutacao(
+            CortexOperationalMemoryService memoryService,
+            Obra obra,
+            String actorId,
+            String tipoEvento,
+            Map<String, Object> estadoAnterior
+    ) {
+        registrarObjetoEvidencias(memoryService, obra);
+        LocalDateTime now = LocalDateTime.now();
+        Map<String, Object> estadoNovo = payload(obra);
+        memoryService.registrarEventoAuditado(
+                null,
+                TIPO_ENTIDADE,
+                obra.getId(),
+                tipoEvento,
+                "OBRAS",
+                obra.getId(),
+                null,
+                actorId,
+                List.of(Map.of(
+                        "tipo", "PESSOA",
+                        "id", actorId,
+                        "relacao", "ALTEROU"
+                )),
+                "ONLINE",
+                "SYNCED",
+                now,
+                now,
+                1,
+                payloadComAtor(obra, actorId),
+                actorId,
+                null,
+                UUID.randomUUID().toString(),
+                null,
+                estadoAnterior,
+                estadoNovo,
+                "SUCESSO",
+                null
+        );
+    }
+
+    private static Map<String, Object> payloadComAtor(
+            Obra obra,
+            String actorId
+    ) {
+        Map<String, Object> payload = new LinkedHashMap<>(payload(obra));
+        payload.put("actorId", actorId);
+        return payload;
     }
 
     private static void registrarObjetoEvidencias(

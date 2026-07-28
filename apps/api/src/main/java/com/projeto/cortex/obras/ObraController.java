@@ -39,6 +39,69 @@ public class ObraController {
         );
     }
 
+    @PatchMapping("/api/obras/{obraId}")
+    public ObraResponse atualizarObra(
+            @PathVariable String obraId,
+            @RequestBody ObraUpdateRequest request
+    ) {
+        currentUserService.requireAlfa();
+        return obraService.atualizarObra(
+                obraId,
+                request,
+                currentUserService.requireUserId()
+        );
+    }
+
+    @PostMapping("/api/obras/{obraId}/desativar")
+    public ObraResponse desativarObra(
+            @PathVariable String obraId,
+            @RequestBody ObraVersionRequest request
+    ) {
+        currentUserService.requireAlfa();
+        return obraService.desativarObra(
+                obraId,
+                request,
+                currentUserService.requireUserId()
+        );
+    }
+
+    @PostMapping("/api/obras/{obraId}/arquivar")
+    public ObraResponse arquivarObra(
+            @PathVariable String obraId,
+            @RequestBody ObraVersionRequest request
+    ) {
+        currentUserService.requireAlfa();
+        return obraService.arquivarObra(
+                obraId,
+                request,
+                currentUserService.requireUserId()
+        );
+    }
+
+    @PostMapping("/api/obras/{obraId}/restaurar")
+    public ObraResponse restaurarObra(
+            @PathVariable String obraId,
+            @RequestBody ObraVersionRequest request
+    ) {
+        currentUserService.requireAlfa();
+        return obraService.restaurarObra(
+                obraId,
+                request,
+                currentUserService.requireUserId()
+        );
+    }
+
+    @GetMapping("/api/obras/arquivadas")
+    public List<ObraResponse> listarObrasArquivadas(
+            @RequestParam(required = false) String query
+    ) {
+        currentUserService.requireAlfa();
+        return obraService.listarObrasArquivadas(
+                query,
+                currentUserService.requireUserId()
+        );
+    }
+
     @GetMapping("/api/obras/relacionadas")
     public List<ObraRelacionadaResponse> listarObrasRelacionadas() {
         return obrasRelacionadasService.listarParaColaborador();
