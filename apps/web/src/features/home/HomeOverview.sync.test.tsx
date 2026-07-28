@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { SyncStatusSnapshot } from "../../lib/sync/useSyncStatus";
 import type { HomeData } from "./useHomeData";
 import { HomeOverview } from "./HomeOverview";
 
@@ -20,7 +26,7 @@ const syncStatus = vi.hoisted(() => ({
     lastSyncCompletedAt: "2026-07-23T12:00:00.000Z",
     lastSyncError: null,
     isLoading: false,
-  },
+  } as SyncStatusSnapshot,
   refresh: vi.fn(),
 }));
 
@@ -47,6 +53,19 @@ vi.mock("./TimeCard", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  Object.assign(syncStatus.snapshot, {
+    status: "REVIEW",
+    isOnline: true,
+    pendingCount: 2,
+    syncingCount: 1,
+    errorCount: 4,
+    conflictCount: 3,
+    reviewCount: 5,
+    reviewReason: "Contexto canônico necessário",
+    lastSyncCompletedAt: "2026-07-23T12:00:00.000Z",
+    lastSyncError: null,
+    isLoading: false,
+  } satisfies SyncStatusSnapshot);
 });
 
 function renderOverview() {
@@ -117,5 +136,34 @@ describe("HomeOverview sync truth", () => {
       register.compareDocumentPosition(worksite) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("keeps a long failure separate from the sync facts for assistive technology", () => {
+    const failure =
+      "Colaborador não está ativo e vinculado à obra do RDO " +
+      "porque o identificador operacional precisa ser reconciliado.";
+    Object.assign(syncStatus.snapshot, {
+      status: "ERROR",
+      errorCount: 1,
+      reviewCount: 0,
+      reviewReason: null,
+      lastSyncError: failure,
+    } satisfies Partial<SyncStatusSnapshot>);
+
+    renderOverview();
+
+    const strip = screen.getByRole("region", {
+      name: "Estado de sincronização",
+    });
+    const status = within(strip).getByRole("status");
+    const facts = within(strip).getByRole("group", {
+      name: "Indicadores de sincronização",
+    });
+
+    expect(status).toHaveTextContent(failure);
+    expect(facts).toHaveTextContent("Fila local");
+    expect(facts).toHaveTextContent("Conflitos");
+    expect(facts).toHaveTextContent("Última sincronização");
+    expect(facts).not.toContainElement(status);
   });
 });

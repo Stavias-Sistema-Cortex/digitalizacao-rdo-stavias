@@ -75,7 +75,11 @@ export function SyncStateFacts({
   );
 
   return (
-    <dl className={classNames}>
+    <dl
+      aria-label="Indicadores de sincronização"
+      className={classNames}
+      role="group"
+    >
       <div>
         <dt>Fila local</dt>
         {isChecking ? (

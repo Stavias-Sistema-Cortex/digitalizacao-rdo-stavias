@@ -61,6 +61,115 @@
 .institutional-status[data-state="CONFLICT"],
 .institutional-status[data-state="REJECTED"] { color: #9b3232; }
 
+.institutional-sync-state {
+  container: sync-state / inline-size;
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  align-items: stretch;
+  gap: 12px;
+  min-inline-size: 0;
+  padding: 12px;
+}
+
+.institutional-sync-state >
+  :is(
+    .institutional-status,
+    .institutional-sync-state__checking,
+    .institutional-sync-state__error
+  ) {
+  align-self: center;
+  justify-self: start;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  margin: 0;
+}
+
+.institutional-sync-state > .institutional-status {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.institutional-sync-state__checking {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.institutional-sync-state__error {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+  color: #8f2f2f;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.institutional-sync-state__error span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.institutional-sync-state__error span:not(:first-child) {
+  color: var(--color-muted);
+}
+
+.institutional-sync-state__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border-inline-start: 1px solid var(--color-border);
+}
+
+.institutional-sync-state__facts > div {
+  min-inline-size: 0;
+  padding: 10px 12px;
+}
+
+.institutional-sync-state__facts > div + div {
+  border-inline-start: 1px solid var(--color-border);
+}
+
+.institutional-sync-state__facts dt,
+.institutional-sync-state__facts dd {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.institutional-sync-state__facts dt {
+  color: var(--color-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.institutional-sync-state__facts dd {
+  margin-block-start: 4px;
+  color: var(--color-ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+@container sync-state (max-width: 34rem) {
+  .institutional-sync-state__facts {
+    grid-template-columns: 1fr;
+    border-block-start: 1px solid var(--color-border);
+    border-inline-start: 0;
+  }
+
+  .institutional-sync-state__facts > div + div {
+    border-block-start: 1px solid var(--color-border);
+    border-inline-start: 0;
+  }
+}
+
 .trace-reference {
   display: inline-flex;
   align-items: baseline;

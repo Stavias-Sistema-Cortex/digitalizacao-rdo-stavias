@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -31,6 +33,9 @@ function lastRule(css: string, selector: string): string {
 }
 
 const globalCss = readCss("./index.css");
+const institutionalCss = readCss(
+  "./components/institutional/institutional.css",
+);
 const headerCss = readCss("./components/header/CortexPageHeader.css");
 const syncCss = readCss("./components/SyncStatusBanner.css");
 const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
@@ -47,6 +52,12 @@ const rdoWorkspaceCss = readCss("./features/rdos/RdoWorkspacePage.css");
 const deviceSecurityCss = readCss("./features/auth/DeviceSecurityPage.css");
 const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
 const equipesCss = readCss("./features/equipes/EquipesPage.css");
+const browserCandidates = [
+  process.env.CORTEX_BROWSER_BIN,
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+].filter((candidate): candidate is string => Boolean(candidate));
+const browser = browserCandidates.find(existsSync);
 
 describe("polimento visual da plataforma autenticada", () => {
   it("centraliza a paleta de campo e a escala moderna de superfícies", () => {
@@ -280,7 +291,7 @@ describe("polimento visual da plataforma autenticada", () => {
   });
 
   it("alinha à esquerda e contém a hierarquia operacional dos RDOs", () => {
-    const filterLabel = rule(globalCss, ".rdo-filter-grid label");
+    const filterLabel = rule(rdoWorkspaceCss, ".rdo-filter-grid label");
     expect(filterLabel).toContain("letter-spacing: 0;");
     expect(filterLabel).toContain("text-transform: none;");
 
@@ -316,9 +327,89 @@ describe("polimento visual da plataforma autenticada", () => {
       "min-height: 40px;",
     );
     expect(
-      rule(globalCss, ".rdo-filter-grid input,\n.rdo-filter-grid select"),
+      rule(
+        rdoWorkspaceCss,
+        ".rdo-filter-grid input,\n.rdo-filter-grid select",
+      ),
     ).toContain("min-height: 40px;");
   });
+
+  it("faz o SyncStateStrip ser dono do grid, respiro e quebra de conteúdo", () => {
+    const strip = rule(institutionalCss, ".institutional-sync-state");
+    const error = rule(
+      institutionalCss,
+      ".institutional-sync-state__error",
+    );
+    const facts = rule(
+      institutionalCss,
+      ".institutional-sync-state__facts",
+    );
+    const terms = rule(
+      institutionalCss,
+      ".institutional-sync-state__facts dt,\n" +
+        ".institutional-sync-state__facts dd",
+    );
+
+    expect(strip).toContain("container: sync-state / inline-size;");
+    expect(strip).toContain("display: grid;");
+    expect(strip).toContain("padding: 12px;");
+    expect(strip).toContain(
+      "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+    );
+    expect(error).toContain("min-inline-size: 0;");
+    expect(error).toContain("overflow-wrap: anywhere;");
+    expect(error).toContain("white-space: normal;");
+    expect(facts).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
+    expect(facts).toContain("margin: 0;");
+    expect(facts).toContain("padding: 0;");
+    expect(terms).toContain("margin: 0;");
+    expect(institutionalCss).toMatch(
+      /@container sync-state \(max-width: 34rem\)[\s\S]*?\.institutional-sync-state__facts\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
+    );
+    expect(globalCss).not.toMatch(
+      /\.home-exception-register__sync\s*>\s*\.institutional-/,
+    );
+  });
+
+  it("faz os seis filtros RDO responderem à largura do próprio container", () => {
+    const region = rule(rdoWorkspaceCss, ".rdo-filter-region");
+    const filters = rule(rdoWorkspaceCss, ".rdo-filter-grid");
+    const fields = rule(
+      rdoWorkspaceCss,
+      ".rdo-filter-grid input,\n.rdo-filter-grid select",
+    );
+
+    expect(region).toContain("container: rdo-filters / inline-size;");
+    expect(region).toContain("min-inline-size: 0;");
+    expect(filters).toContain(
+      "repeat(auto-fit, minmax(min(100%, 11rem), 1fr))",
+    );
+    expect(fields).toContain("min-inline-size: 0;");
+    expect(rdoWorkspaceCss).toMatch(
+      /@container rdo-filters \(max-width: 32rem\)[\s\S]*?\.rdo-filter-grid\s*\{[\s\S]*?padding:\s*10px;/,
+    );
+    expect(globalCss).not.toMatch(/\.rdo-filter-grid\s*\{/);
+  });
+
+  it.runIf(Boolean(browser))(
+    "não cria overflow no strip ou nos seis filtros com sidebar máxima",
+    () => {
+      const script = path.resolve(
+        process.cwd(),
+        "scripts/verify-operational-layout.mjs",
+      );
+      const output = execFileSync(process.execPath, [script], {
+        cwd: process.cwd(),
+        env: { ...process.env, CORTEX_BROWSER_BIN: browser },
+        encoding: "utf8",
+      });
+
+      expect(output).toContain(
+        "Operational layout verified: 5 scenarios",
+      );
+    },
+    30_000,
+  );
 
   it("compacta o shell móvel em grades com rótulos e alvos de 40px", () => {
     const mobileShellCss = globalCss.slice(

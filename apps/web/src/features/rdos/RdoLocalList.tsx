@@ -735,78 +735,83 @@ export function RdoLocalList({
         className="rdo-canonical-sync"
       />
 
-      <section className="rdo-filter-grid">
-        <label>
-          Obra
-          <input
-            value={obraFilter}
-            onChange={(event) => setObraFilter(event.target.value)}
-            placeholder="ID, contrato, cidade ou cliente"
-          />
-        </label>
+      <section
+        className="rdo-filter-region"
+        aria-label="Filtros de RDO"
+      >
+        <div className="rdo-filter-grid">
+          <label>
+            Obra
+            <input
+              value={obraFilter}
+              onChange={(event) => setObraFilter(event.target.value)}
+              placeholder="ID, contrato, cidade ou cliente"
+            />
+          </label>
 
-        <label>
-          Período
-          <select
-            value={periodFilter}
-            onChange={(event) =>
-              setPeriodFilter(event.target.value as PeriodFilter)
-            }
-          >
-            <option value="TODOS">Todos</option>
-            <option value="HOJE">Hoje</option>
-            <option value="7_DIAS">Últimos 7 dias</option>
-            <option value="30_DIAS">Últimos 30 dias</option>
-          </select>
-        </label>
+          <label>
+            Período
+            <select
+              value={periodFilter}
+              onChange={(event) =>
+                setPeriodFilter(event.target.value as PeriodFilter)
+              }
+            >
+              <option value="TODOS">Todos</option>
+              <option value="HOJE">Hoje</option>
+              <option value="7_DIAS">Últimos 7 dias</option>
+              <option value="30_DIAS">Últimos 30 dias</option>
+            </select>
+          </label>
 
-        <label>
-          Status
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="">Todos</option>
-            <option value="RASCUNHO">Rascunho</option>
-            <option value="ENVIADO">Enviado</option>
-          </select>
-        </label>
+          <label>
+            Status
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="RASCUNHO">Rascunho</option>
+              <option value="ENVIADO">Enviado</option>
+            </select>
+          </label>
 
-        <label>
-          Colaborador
-          <input
-            value={collaboratorFilter}
-            onChange={(event) =>
-              setCollaboratorFilter(event.target.value)
-            }
-            placeholder="Nome, equipe ou ID"
-          />
-        </label>
+          <label>
+            Colaborador
+            <input
+              value={collaboratorFilter}
+              onChange={(event) =>
+                setCollaboratorFilter(event.target.value)
+              }
+              placeholder="Nome, equipe ou ID"
+            />
+          </label>
 
-        <label>
-          Trecho
-          <input
-            value={trechoFilter}
-            onChange={(event) => setTrechoFilter(event.target.value)}
-            placeholder="Subtrecho, caixa, KM, pista"
-          />
-        </label>
+          <label>
+            Trecho
+            <input
+              value={trechoFilter}
+              onChange={(event) => setTrechoFilter(event.target.value)}
+              placeholder="Subtrecho, caixa, KM, pista"
+            />
+          </label>
 
-        <label>
-          Sync
-          <select
-            value={syncFilter}
-            onChange={(event) => setSyncFilter(event.target.value)}
-          >
-            <option value="">Todos</option>
-            <option value="LOCAL_ONLY">Somente local</option>
-            <option value="PENDING_SYNC">Pendente</option>
-            <option value="SYNCING">Sincronizando</option>
-            <option value="SYNCED">Sincronizado</option>
-            <option value="ERROR">Erro</option>
-            <option value="CONFLICT">Conflito</option>
-          </select>
-        </label>
+          <label>
+            Sync
+            <select
+              value={syncFilter}
+              onChange={(event) => setSyncFilter(event.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="LOCAL_ONLY">Somente local</option>
+              <option value="PENDING_SYNC">Pendente</option>
+              <option value="SYNCING">Sincronizando</option>
+              <option value="SYNCED">Sincronizado</option>
+              <option value="ERROR">Erro</option>
+              <option value="CONFLICT">Conflito</option>
+            </select>
+          </label>
+        </div>
       </section>
 
       {error && <div className="notice notice-error">{error}</div>}
