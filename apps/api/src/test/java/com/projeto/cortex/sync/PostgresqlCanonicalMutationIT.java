@@ -1,7 +1,10 @@
 package com.projeto.cortex.sync;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -70,6 +73,101 @@ class PostgresqlCanonicalMutationIT {
         );
         jdbc = new JdbcTemplate(dataSource);
         transactions = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+    }
+
+    @ParameterizedTest(name = "schemaVersion={0}")
+    @MethodSource("nonCanonicalObraSchemaVersions")
+    void nonV13ObraEnvelopeNeverFallsBackToTheLegacyMutationPath(
+            Integer schemaVersion
+    ) throws Exception {
+        String ownerId = collaborator();
+        String obraId = worksite();
+        String deviceId = device(ownerId);
+        CurrentUserService currentUser = mock(CurrentUserService.class);
+        when(currentUser.requireUserId()).thenReturn(ownerId);
+        when(currentUser.allowedObraIds(ownerId))
+                .thenReturn(Optional.empty());
+        CortexOperationalMemoryService memory =
+                new CortexOperationalMemoryService(
+                        jdbc,
+                        mapper,
+                        mock(ApplicationEventPublisher.class)
+                );
+        recordObraEvent(
+                memory,
+                ownerId,
+                obraId,
+                "OBRA_CRIADA",
+                Map.of(
+                        "id", obraId,
+                        "status", "ATIVA",
+                        "versaoLinha", 1L
+                )
+        );
+        ObraService obraService = mock(ObraService.class);
+        stubObraOperation(
+                obraService,
+                memory,
+                ownerId,
+                obraId,
+                "ARQUIVAR_OBRA",
+                "OBRA_ARQUIVADA"
+        );
+        SyncService service = new SyncService(
+                jdbc,
+                mapper,
+                transactions,
+                new SyncOperationRegistry(List.of(
+                        new ObraSyncOperationHandler(
+                                obraService,
+                                currentUser,
+                                mapper
+                        )
+                )),
+                currentUser,
+                mock(FinancialAccessService.class)
+        );
+        String clientMutationId = UUID.randomUUID().toString();
+        SyncPushRequest.MutacaoCliente mutation = withSchemaVersion(
+                canonicalObraArchiveMutation(
+                        ownerId,
+                        deviceId,
+                        obraId,
+                        clientMutationId,
+                        1L
+                ),
+                schemaVersion
+        );
+
+        assertThatThrownBy(() -> service.push(
+                new SyncPushRequest(deviceId, List.of(mutation))
+        )).isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("schemaVersion 13");
+
+        verify(obraService, never()).arquivarObra(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any()
+        );
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM cortex_evento_operacional
+                WHERE entidade_id = ?
+                  AND tipo_evento = 'OBRA_ARQUIVADA'
+                """,
+                Integer.class,
+                obraId
+        )).isZero();
+        assertThat(jdbc.queryForObject(
+                """
+                SELECT COUNT(*)
+                FROM sync_mutacao_cliente
+                WHERE client_mutation_id = ?
+                """,
+                Integer.class,
+                clientMutationId
+        )).isZero();
     }
 
     @ParameterizedTest(name = "{0} -> {1}")
@@ -1121,6 +1219,36 @@ class PostgresqlCanonicalMutationIT {
         );
     }
 
+    private SyncPushRequest.MutacaoCliente withSchemaVersion(
+            SyncPushRequest.MutacaoCliente original,
+            Integer schemaVersion
+    ) {
+        return new SyncPushRequest.MutacaoCliente(
+                original.clientMutationId(),
+                original.entidadeTipo(),
+                original.entidadeId(),
+                original.operacao(),
+                original.baseVersao(),
+                original.payload(),
+                original.criadaNoClienteEm(),
+                original.correlacaoId(),
+                schemaVersion,
+                original.deviceId(),
+                original.userId(),
+                original.obraId(),
+                original.entityType(),
+                original.entityId(),
+                original.operation(),
+                original.baseVersion(),
+                original.changedFields(),
+                original.occurredAt(),
+                original.trace(),
+                original.fieldPatch(),
+                original.relatedEntities(),
+                original.dependsOnMutationIds()
+        );
+    }
+
     private SyncPushRequest.MutacaoCliente canonicalObraMutation(
             String ownerId,
             String deviceId,
@@ -1485,6 +1613,13 @@ class PostgresqlCanonicalMutationIT {
                         "TRANSITION",
                         "OBRA_RESTAURADA"
                 )
+        );
+    }
+
+    private static Stream<Arguments> nonCanonicalObraSchemaVersions() {
+        return Stream.of(
+                Arguments.of((Integer) null),
+                Arguments.of(12)
         );
     }
 

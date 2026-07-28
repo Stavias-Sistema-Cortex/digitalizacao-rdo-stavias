@@ -74,6 +74,13 @@ public class SyncService {
             "SOLICITACAO_INTEGRACAO",
             "COLABORADOR"
     );
+    private static final Set<String> CANONICAL_ONLY_TRANSPORT_OPERATIONS =
+            Set.of(
+                    "ATUALIZAR_OBRA",
+                    "DESATIVAR_OBRA",
+                    "ARQUIVAR_OBRA",
+                    "RESTAURAR_OBRA"
+            );
     private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
             Map.entry("ATUALIZAR_OBRA", "UPDATE"),
             Map.entry("DESATIVAR_OBRA", "TRANSITION"),
@@ -417,6 +424,8 @@ public class SyncService {
             );
         }
 
+        mutacoes.forEach(this::validarOperacaoExclusivaCanonica);
+
         List<SyncPushResponse.ResultadoMutacao> resultados = new ArrayList<>();
 
         for (SyncPushRequest.MutacaoCliente mutacao : mutacoes) {
@@ -452,6 +461,23 @@ public class SyncService {
                 Instant.now(),
                 resultados
         );
+    }
+
+    private void validarOperacaoExclusivaCanonica(
+            SyncPushRequest.MutacaoCliente mutacao
+    ) {
+        if (mutacao != null
+                && CANONICAL_ONLY_TRANSPORT_OPERATIONS.contains(
+                        mutacao.operacao()
+                )
+                && !Integer.valueOf(CANONICAL_SCHEMA_VERSION).equals(
+                        mutacao.schemaVersion()
+                )) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Operações de ciclo de vida de obra exigem schemaVersion 13."
+            );
+        }
     }
 
     private SyncPushResponse.ResultadoMutacao processarMutacaoComSeguranca(
