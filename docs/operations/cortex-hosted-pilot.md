@@ -141,8 +141,8 @@ serviço hospedado.
 
 O único source aprovado para provisionar ou fazer deploy do piloto é:
 
-- ref: `feat/cortex-hosted-candidate-2026-07-27`;
-- commit: `21d64c1bf5e930eae1968fb7e6d86090aac657cd`.
+- ref: `feat/cortex-hosted-candidate-2026-07-27-v2`;
+- commit: `0f09f61cc3e8d5b763681fe5e567292f52ff790c`.
 
 Commits posteriores em `feat/cortex-render-cloudflare-deploy` registram
 evidência ou documentação e não são build source. Não use o HEAD dessa branch
@@ -152,8 +152,8 @@ Antes de qualquer push da ref dedicada, criação de serviço ou configuração 
 Git integration, execute no checkout revisado:
 
 ```bash
-candidate_ref=refs/heads/feat/cortex-hosted-candidate-2026-07-27
-candidate_sha=21d64c1bf5e930eae1968fb7e6d86090aac657cd
+candidate_ref=refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2
+candidate_sha=0f09f61cc3e8d5b763681fe5e567292f52ff790c
 
 test "$(git rev-parse "$candidate_ref")" = "$candidate_sha"
 git diff --quiet "$candidate_sha"..HEAD -- apps/api apps/web render.yaml
@@ -171,17 +171,17 @@ o remoto antes de provisionar:
 
 ```bash
 git push origin \
-  refs/heads/feat/cortex-hosted-candidate-2026-07-27:refs/heads/feat/cortex-hosted-candidate-2026-07-27
+  refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2:refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2
 test "$(
   git ls-remote --exit-code --heads origin \
-    refs/heads/feat/cortex-hosted-candidate-2026-07-27 |
+    refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2 |
     awk '{print $1}'
-)" = "21d64c1bf5e930eae1968fb7e6d86090aac657cd"
+)" = "0f09f61cc3e8d5b763681fe5e567292f52ff790c"
 ```
 
 Esse push não faz parte da Task 6. Configure Pages e Render para essa ref e
 confirme no provedor que o commit selecionado/deployado é exatamente
-`21d64c1bf5e930eae1968fb7e6d86090aac657cd`. Divergência de ref ou SHA é falha
+`0f09f61cc3e8d5b763681fe5e567292f52ff790c`. Divergência de ref ou SHA é falha
 de release; não prossiga para credenciais, migração, Flyway ou smoke.
 
 ### Flyway explícito

@@ -1,9 +1,10 @@
 # Hosted pilot local release evidence
 
-- Verified release candidate: `21d64c1bf5e930eae1968fb7e6d86090aac657cd`
-- Dedicated deploy ref: `feat/cortex-hosted-candidate-2026-07-27`
+- Verified release candidate: `0f09f61cc3e8d5b763681fe5e567292f52ff790c`
+- Dedicated deploy ref: `feat/cortex-hosted-candidate-2026-07-27-v2`
 - Requested base candidate: `6f7ce4769ffcefa77ae6f5cf225a2d01cb00c191`
 - Captured: `2026-07-27T18:58:40-03:00`
+- Revalidated: `2026-07-27T21:19:29-03:00`
 - Machine timezone: `America/Sao_Paulo` (`UTC-03:00`)
 
 The requested base candidate failed the strict Java and web source-boundary
@@ -12,33 +13,40 @@ database name `StaviasCortex`. Commit `21d64c1` adds exact line/count-scoped
 allowlist entries and classifies tracked SQL as text in the web verifier. The
 base SHA must not be published without that correction.
 
+The first dedicated candidate, `21d64c1`, passed local gates but its exact
+GitHub run exposed a timezone-dependent integration-test fixture on the UTC
+runner. Candidate `0f09f61` keeps the production query behavior unchanged and
+uses one dedicated PostgreSQL test connection with an explicit
+`America/Sao_Paulo` session timezone. The previous ref remains preserved; the
+v2 ref was created and fully revalidated instead of rewriting it.
+
 ## Exact build-source binding
 
 The reviewed build source for the hosted pilot is immutable:
 
-- Ref: `refs/heads/feat/cortex-hosted-candidate-2026-07-27`
-- SHA: `21d64c1bf5e930eae1968fb7e6d86090aac657cd`
+- Ref: `refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2`
+- SHA: `0f09f61cc3e8d5b763681fe5e567292f52ff790c`
 
 The local ref was created without switching the active checkout. The checkout
-remained on the documentation branch at `67730a5` during ref creation, while
-the dedicated ref resolved exactly to `21d64c1`.
+remained on the documentation branch at `0f09f61` during ref creation, while
+the dedicated v2 ref resolved exactly to the same commit.
 
 These read-only checks exited `0`:
 
 ```bash
-test "$(git rev-parse refs/heads/feat/cortex-hosted-candidate-2026-07-27)" \
-  = "21d64c1bf5e930eae1968fb7e6d86090aac657cd"
+test "$(git rev-parse refs/heads/feat/cortex-hosted-candidate-2026-07-27-v2)" \
+  = "0f09f61cc3e8d5b763681fe5e567292f52ff790c"
 git diff --quiet \
-  21d64c1bf5e930eae1968fb7e6d86090aac657cd..HEAD \
+  0f09f61cc3e8d5b763681fe5e567292f52ff790c..HEAD \
   -- apps/api apps/web render.yaml
 test -z "$(git diff --name-only \
-  21d64c1bf5e930eae1968fb7e6d86090aac657cd..HEAD \
+  0f09f61cc3e8d5b763681fe5e567292f52ff790c..HEAD \
   -- apps/api apps/web render.yaml)"
 ```
 
 Therefore `apps/api`, `apps/web`, and `render.yaml` are byte-for-byte unchanged
-between the verified candidate and the documentation HEAD. The heavy suites
-were not rerun because their complete build inputs did not change.
+between the verified candidate and the documentation HEAD. The API, PostgreSQL,
+web, deployment, migration, image, and secret gates were all rerun for v2.
 
 Task 8 must push and provision Cloudflare Pages and Render from this dedicated
 ref at this exact SHA. Later commits on
@@ -65,12 +73,32 @@ All commands below exited `0` on the corrected candidate tree.
 | Hosted contract | repository root | `bash scripts/security/test-hosted-deployment-contract.sh` | Passed |
 | Neon migration contract | repository root | `bash scripts/security/test-neon-migration-contract.sh` | Static and behavioral contracts passed |
 | Secret scan | repository root | `bash scripts/security/scan-cortex-secrets.sh` | No unreviewed literal candidates |
-| API image | repository root | `docker build -t cortex-api:hosted-candidate apps/api` | Built as user `cortex`; 166,751,238 bytes; image `sha256:07602b01191ce88a1f13e726ce8546da9d4b5fc4f9993c58ed1c2390e324936c` |
-| Web image | repository root | `docker build -t cortex-web:hosted-candidate --build-arg VITE_CORTEX_API_BASE_URL=/api --build-arg VITE_CORTEX_AUTH_MODE=postgresql --build-arg VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=y4dPPatQjmG1FsEkgmK9vpzULEIIXq0aunFfyBvNIyw apps/web` | Built as user `nginx`; 24,586,657 bytes; image `sha256:2b364eb4bc940d81ec2d7dbdca4542f2c678e70f1272cc64983aed84c8549eb1` |
+| API image | repository root | `docker build -t cortex-api:hosted-candidate-v2 apps/api` | Built as user `cortex`; 166,750,544 bytes; image `sha256:f0622cec081826be62b4ee9d8753b074004dc5b14019cfe2d690b09038a16480` |
+| Web image | repository root | `docker build -t cortex-web:hosted-candidate-v2 --build-arg VITE_CORTEX_API_BASE_URL=/api --build-arg VITE_CORTEX_AUTH_MODE=postgresql --build-arg VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256=y4dPPatQjmG1FsEkgmK9vpzULEIIXq0aunFfyBvNIyw apps/web` | Built as user `nginx`; 24,586,657 bytes; image `sha256:97f0b974824dccc5d0225a1e2467d6684199f00aa5877652b7e0419686170d1e` |
 
 The web image fingerprint is a public SHA-256 value already tracked by the CI
 workflow. No private key, credential, connection string, or ignored environment
 file was used or recorded.
+
+## Exact remote gates
+
+GitHub Actions run
+[`30316655562`](https://github.com/Stavias-Sistema-Cortex/digitalizacao-rdo-stavias/actions/runs/30316655562)
+completed successfully against ref
+`feat/cortex-hosted-candidate-2026-07-27-v2` and exact head SHA
+`0f09f61cc3e8d5b763681fe5e567292f52ff790c`.
+
+| Remote job | Result | Duration |
+| --- | --- | ---: |
+| Release gate · API and PostgreSQL 18 | Passed | 5 minutes 32 seconds |
+| Release gate · PWA | Passed | 1 minute 31 seconds |
+| Release gate · deployment and secrets | Passed | 26 seconds |
+| Publish immutable production images | Skipped as required outside `develop` | 0 seconds |
+
+Both the documentation branch and the dedicated v2 deploy ref were resolved
+from the remote at the exact candidate SHA before this run. No production image
+was published and no Render, Cloudflare Pages, or R2 resource was created by
+the workflow.
 
 ## Local PostgreSQL snapshot
 
@@ -147,10 +175,10 @@ otherwise replaced.
 
 ## Scope and remaining live proof
 
-A live Neon rehearsal has now passed. No Render deployment, Cloudflare
-Pages/R2 action, or hosted application smoke test has happened. The next phase
-must verify the dedicated ref and exact reviewed SHA remotely before
-provisioning those services.
+A live Neon rehearsal and the exact remote release gates have now passed. No
+Render deployment, Cloudflare Pages/R2 action, or hosted application smoke test
+has happened. The next phase requires explicit confirmation immediately before
+creating persistent R2 credentials and handing Neon/R2 secrets to Render.
 
 Non-blocking warnings observed:
 
