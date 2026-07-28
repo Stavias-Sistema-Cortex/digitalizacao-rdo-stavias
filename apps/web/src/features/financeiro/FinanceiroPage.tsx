@@ -320,10 +320,6 @@ export function FinanceiroPage() {
       currentAccess.loading
     ),
   );
-  const selectedSectionLabel = FINANCE_SECTIONS.find(
-    (item) => item.id === section,
-  )?.label ?? "Rastreio de receita";
-
   function renderSelectedSection() {
     if (section === "receita") {
       return (
@@ -369,10 +365,7 @@ export function FinanceiroPage() {
           <div className="finance-empty-mark" aria-hidden="true">↳</div>
           <div>
             <h2>Selecione uma obra</h2>
-            <p>
-              Preços versionados e PDOR preservam o vínculo com uma obra
-              específica.
-            </p>
+            <p>Selecione uma obra para ver preços e PDOR.</p>
           </div>
         </section>
       );
@@ -404,30 +397,8 @@ export function FinanceiroPage() {
     >
       <OperationalWorkspace
         className="finance-page"
-        eyebrow="Operação · Evidência de receita"
+        eyebrow="Receita"
         title="Financeiro"
-        description="Receita reconhecida a partir do trabalho aceito nos RDOs, dos preços versionados e da evidência preservada na ontologia."
-        actions={(
-          <dl
-            className="finance-command-context"
-            aria-label="Contexto de receita ativo"
-          >
-            <div>
-              <dt>Visão</dt>
-              <dd>{selectedSectionLabel}</dd>
-            </div>
-            <div>
-              <dt>Obra</dt>
-              <dd>
-                {selectedWorksite?.nome ??
-                  selectedWorksite?.codigoContrato ??
-                  (filters.obraId
-                    ? "Obra selecionada"
-                    : "Consolidado autorizado")}
-              </dd>
-            </div>
-          </dl>
-        )}
       >
         <FinanceSectionIndex
           activeSection={section}
@@ -445,7 +416,7 @@ export function FinanceiroPage() {
           aria-label="Escopo da receita"
         >
           <div className="finance-scope-bar__identity">
-            <span>Perímetro da evidência</span>
+            <span>Escopo</span>
             <strong>
               {selectedWorksite?.nome ??
                 selectedWorksite?.codigoContrato ??

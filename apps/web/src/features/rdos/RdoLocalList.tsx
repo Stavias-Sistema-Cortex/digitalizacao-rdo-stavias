@@ -67,10 +67,71 @@ type RdoExportNotice = {
   message: string;
   isError: boolean;
 };
+type RdoExportSummary = {
+  parts: string[];
+  isError: boolean;
+};
 type ProfileTarget =
   | { type: "OBRA"; id: string; label: string }
   | { type: "RDO"; id: string; label: string }
   | { type: "COLABORADOR"; id: string; label: string };
+
+function exportStateSummary(
+  record: LocalRdoRecord,
+  xlsxAvailability: RdoExportAvailability | undefined,
+  pdfAvailability: RdoExportAvailability | undefined,
+  notices: Partial<Record<RdoExportFormat, RdoExportNotice>> | undefined,
+): RdoExportSummary {
+  const formats = [
+    { format: "XLSX", availability: xlsxAvailability },
+    { format: "PDF", availability: pdfAvailability },
+  ] as const;
+  const origin =
+    record.syncStatus === "SYNCED" && record.versaoEntidade !== null
+      ? "Origem da exportação · Servidor · cópia local disponível offline"
+      : "Origem da exportação · Dados locais pendentes · disponível offline";
+  const allReady = formats.every(({ availability }) => availability?.ready);
+  const allUnavailable = formats.every(
+    ({ availability }) => !availability?.ready,
+  );
+  const unavailableMessages = formats.map(
+    ({ availability }) =>
+      availability?.message ?? "Exportação indisponível",
+  );
+  const sharedUnavailableMessage =
+    allUnavailable &&
+    unavailableMessages[0] === unavailableMessages[1]
+      ? unavailableMessages[0]
+      : null;
+
+  let availabilityParts: string[];
+  if (allReady) {
+    availabilityParts = ["XLSX e PDF disponíveis"];
+  } else if (sharedUnavailableMessage) {
+    availabilityParts = [
+      `XLSX e PDF indisponíveis: ${sharedUnavailableMessage}`,
+    ];
+  } else {
+    availabilityParts = formats.map(({ format, availability }) =>
+      availability?.ready
+        ? `${format} disponível`
+        : `${format} indisponível: ${
+            availability?.message ?? "Exportação indisponível"
+          }`,
+    );
+  }
+  const noticeParts = formats.flatMap(({ format }) => {
+    const notice = notices?.[format];
+    return notice ? [notice.message] : [];
+  });
+
+  return {
+    parts: [origin, ...availabilityParts, ...noticeParts],
+    isError: formats.some(
+      ({ format }) => notices?.[format]?.isError === true,
+    ),
+  };
+}
 
 function formatDate(value: string): string {
   const parts = value.split("-");
@@ -682,9 +743,8 @@ export function RdoLocalList({
   return (
     <main className="rdo-dashboard">
       <InstitutionalPageHeader
-        eyebrow="Operação de campo · Documentos"
+        eyebrow="Operação de campo"
         title="Relatórios Diários de Obra"
-        description="Registros locais de execução, equipe, materiais, medições e evidências de campo."
         actions={(
           <div className="rdo-command-actions">
             <button
@@ -894,8 +954,13 @@ export function RdoLocalList({
               )[0];
             const exportAvailability = exportAvailabilityByRdo.get(record.id);
             const pdfExportAvailability = pdfExportAvailabilityByRdo.get(record.id);
-            const xlsxExportNotice = exportNotices[record.id]?.XLSX;
-            const pdfExportNotice = exportNotices[record.id]?.PDF;
+            const exportState = exportStateSummary(
+              record,
+              exportAvailability,
+              pdfExportAvailability,
+              exportNotices[record.id],
+            );
+            const exportStateId = `rdo-export-state-${record.id}`;
 
             return (
               <article className="rdo-operational-card" key={record.id}>
@@ -986,6 +1051,7 @@ export function RdoLocalList({
                     <button
                       type="button"
                       className="secondary-button"
+                      aria-describedby={exportStateId}
                       onClick={() => void handleExport(record, "XLSX")}
                       disabled={!exportAvailability?.ready || Boolean(exporting)}
                       title={exportAvailability?.message}
@@ -994,28 +1060,10 @@ export function RdoLocalList({
                         ? "Gerando XLSX…"
                         : "Exportar XLSX"}
                     </button>
-                    <small
-                      className={
-                        xlsxExportNotice?.isError
-                          ? "rdo-export-state rdo-export-state--error"
-                          : "rdo-export-state"
-                      }
-                      aria-live="polite"
-                    >
-                      {xlsxExportNotice
-                        ? xlsxExportNotice.message
-                        :
-                        (exportAvailability?.ready
-                          ? record.syncStatus === "SYNCED" &&
-                            record.versaoEntidade !== null
-                            ? "XLSX · Servidor autoritativo · cópia local pronta offline"
-                            : "XLSX · Dados locais pendentes · exportação offline"
-                          : exportAvailability?.message ??
-                            "Exportação XLSX indisponível")}
-                    </small>
                     <button
                       type="button"
                       className="secondary-button"
+                      aria-describedby={exportStateId}
                       onClick={() => void handleExport(record, "PDF")}
                       disabled={!pdfExportAvailability?.ready || Boolean(exporting)}
                       title={pdfExportAvailability?.message}
@@ -1025,23 +1073,16 @@ export function RdoLocalList({
                         : "Exportar PDF"}
                     </button>
                     <small
+                      id={exportStateId}
+                      data-testid={exportStateId}
                       className={
-                        pdfExportNotice?.isError
+                        exportState.isError
                           ? "rdo-export-state rdo-export-state--error"
                           : "rdo-export-state"
-                      }
+                    }
                       aria-live="polite"
                     >
-                      {pdfExportNotice
-                        ? pdfExportNotice.message
-                        :
-                        (pdfExportAvailability?.ready
-                          ? record.syncStatus === "SYNCED" &&
-                            record.versaoEntidade !== null
-                            ? "PDF · Servidor autoritativo · cópia local pronta offline"
-                            : "PDF · Dados locais pendentes · exportação offline"
-                          : pdfExportAvailability?.message ??
-                            "Exportação PDF indisponível")}
+                      {exportState.parts.join(" · ")}
                     </small>
                   </div>
                   <button
@@ -1095,10 +1136,6 @@ export function RdoLocalList({
           <section className="rdo-memory-link-panel">
             <span className="eyebrow">Registro central</span>
             <h2>Memória operacional</h2>
-            <p className="muted-text">
-              Consulte autores, estados e commits de todos os RDOs no
-              registro ontológico centralizado.
-            </p>
             <a href={memoryHref()}>Abrir Memória</a>
           </section>
         </aside>

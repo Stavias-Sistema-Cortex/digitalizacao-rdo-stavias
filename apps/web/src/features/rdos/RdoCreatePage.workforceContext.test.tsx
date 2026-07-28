@@ -309,6 +309,33 @@ describe("reconciliação da identificação canônica", () => {
 afterEach(cleanup);
 
 describe("catálogo contextual de mão de obra em RDO legado/importado", () => {
+  it("keeps actionable field and file guidance without generic section write-ups", () => {
+    render(
+      <RdoCreatePage
+        initialDraft={legacyDraft()}
+        isExisting={false}
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Até 5 fotos por RDO, salvas localmente e comprimidas no navegador quando necessário.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Registro operacional editável sem conexão/),
+    ).toBeNull();
+    expect(
+      screen.queryByText("Dados que vinculam o RDO à obra e à programação."),
+    ).toBeNull();
+    expect(
+      screen.queryByText("Equipamentos utilizados durante a execução."),
+    ).toBeNull();
+  });
+
   it("limita o rateio aos colaboradores canônicos selecionados na equipe do RDO", async () => {
     const draft = legacyDraft();
     draft.maoObra = [

@@ -742,9 +742,8 @@ export function TarefasPage() {
     >
       <OperationalWorkspace
         className="tarefas-page"
-        eyebrow="Operação · Coordenação de campo"
+        eyebrow="Coordenação de campo"
         title="Tarefas"
-        description="Pendências, responsáveis e conclusão rastreável por obra e equipe."
         status={isLoading
           ? { code: "SYNCING", label: "Carregando tarefas locais" }
           : loadError
@@ -830,9 +829,7 @@ export function TarefasPage() {
               <p>Carregando obras…</p>
             ) : (
               <p>
-                Nenhuma obra disponível ainda. Conecte-se
-                uma vez para carregar suas obras
-                relacionadas.
+                Nenhuma obra disponível. Conecte-se uma vez para carregar suas obras.
               </p>
             )}
           </section>
@@ -916,10 +913,8 @@ export function TarefasPage() {
                 </p>
               ) : equipes.length === 0 ? (
                 <p className="tarefas-vazio">
-                  Esta obra ainda não tem equipes. Elas
-                  aparecem aqui a partir das alocações dos
-                  RDOs — ou crie uma agora em “+ Nova
-                  equipe”.
+                  Nenhuma equipe nesta obra. Elas aparecem após alocações de
+                  RDO; use “+ Nova equipe” para criar uma.
                 </p>
               ) : (
                 <>

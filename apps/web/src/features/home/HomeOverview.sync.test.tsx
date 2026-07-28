@@ -42,10 +42,6 @@ vi.mock("./FinanceHomeCard", () => ({
   FinanceHomeCard: () => <section>Financeiro</section>,
 }));
 
-vi.mock("./MensagensCard", () => ({
-  MensagensCard: () => <section>Mensagens</section>,
-}));
-
 vi.mock("./TimeCard", () => ({
   TimeCard: () => <section>Equipe</section>,
 }));
@@ -68,7 +64,9 @@ afterEach(() => {
   } satisfies SyncStatusSnapshot);
 });
 
-function renderOverview() {
+function renderOverview(
+  events: HomeData["events"] = [],
+) {
   const obra: HomeData["focusedObra"] = {
     id: "OBRA:1",
     nome: "Obra real",
@@ -90,7 +88,7 @@ function renderOverview() {
     focusedObra: obra,
     setFocusedObraId: vi.fn(),
     snapshots: [],
-    events: [],
+    events,
     latestRdo: null,
     isLoading: false,
     hasConfirmedRemoteHydration: true,
@@ -109,17 +107,59 @@ function renderOverview() {
 }
 
 describe("HomeOverview sync truth", () => {
-  it("shows device-wide queue and exception totals from persisted sync state", () => {
-    renderOverview();
+  it("shows each global sync fact once and preserves simultaneous exceptions", () => {
+    renderOverview([{
+      id: "event-1",
+      type: "RDO_EDITADO",
+      principalEntity: {
+        tipo: "RDO",
+        id: "rdo-1",
+        nome: "RDO-1",
+      },
+      principalEntityKey: "RDO:rdo-1",
+      relatedEntities: [],
+      obraId: "OBRA:1",
+      rdoId: "rdo-1",
+      colaboradorId: null,
+      occurredAt: "2026-07-23T12:00:00.000Z",
+      syncedAt: null,
+      origin: "OFFLINE",
+      responsibleUserId: null,
+      responsibleUserName: null,
+      payload: {},
+      syncStatus: "PENDING_SYNC",
+      schemaVersion: 13,
+    }]);
 
     const register = screen.getByRole("region", {
       name: "Exceções de sincronização",
     });
 
-    expect(register).toHaveTextContent("3");
-    expect(register).toHaveTextContent("4");
-    expect(register).toHaveTextContent("5");
+    expect(within(register).getAllByText("Fila local")).toHaveLength(1);
+    expect(within(register).getAllByText("Conflitos")).toHaveLength(1);
+    expect(within(register).getAllByText("Última sincronização")).toHaveLength(1);
     expect(register).toHaveTextContent("Contexto canônico necessário");
+    const exceptionFacts = register.querySelector(
+      ".home-exception-register__facts",
+    );
+    expect(exceptionFacts).not.toBeNull();
+    expect(exceptionFacts).toHaveTextContent("Falhas");
+    expect(exceptionFacts).toHaveTextContent("4");
+    expect(exceptionFacts).toHaveTextContent("Revisões");
+    expect(exceptionFacts).toHaveTextContent("5");
+    expect(exceptionFacts).toHaveTextContent("Aguardando nesta obra");
+    expect(exceptionFacts).toHaveTextContent("1");
+    expect(exceptionFacts).not.toHaveTextContent("Fila local");
+    expect(exceptionFacts).not.toHaveTextContent("Conflitos");
+    expect(within(register).queryByText(/Atualização local/)).toBeNull();
+    expect(
+      within(register).queryByRole("link", { name: "Ver memória" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Histórico local não equivale à confirmação do servidor.",
+      ),
+    ).toBeVisible();
   });
 
   it("places sync exceptions before the focused worksite", () => {

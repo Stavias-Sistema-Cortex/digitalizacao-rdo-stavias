@@ -12,7 +12,7 @@ const browser = browserCandidates.find(existsSync);
 
 describe("Memory real-browser geometry", () => {
   it.runIf(Boolean(browser))(
-    "keeps page, query, filters and long evidence within 901/1000/1100/620",
+    "keeps shell and memory within 1440/248, 1440/360, 901/248, 901/360 and 375/0",
     () => {
       const script = path.resolve(
         process.cwd(),
@@ -23,7 +23,10 @@ describe("Memory real-browser geometry", () => {
         env: { ...process.env, CORTEX_BROWSER_BIN: browser },
         encoding: "utf8",
       });
-      expect(output).toContain("Memory geometry verified: 4 scenarios");
+      expect(output).toContain(
+        "Memory geometry verified: 5 scenarios " +
+          "[1440/248, 1440/360, 901/248, 901/360, 375/0]",
+      );
     },
     30_000,
   );

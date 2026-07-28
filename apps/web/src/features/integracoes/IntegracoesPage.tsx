@@ -169,9 +169,8 @@ export function IntegracoesPage({
   return (
     <OperationalWorkspace
       className="integracoes-page"
-      eyebrow="Administração · Transporte de dados"
+      eyebrow="Administração"
       title="Integrações"
-      description="Fontes autorizadas, execução real e estado de sincronização do espelho operacional."
       actions={(
         <>
           <button

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -25,6 +25,8 @@ const syncCss = readCss("./components/SyncStatusBanner.css");
 const operationalWorkspaceCss = readCss(
   "./components/workspace/OperationalWorkspace.css",
 );
+const loginCss = readCss("./features/auth/LoginPage.css");
+const mensagensCss = readCss("./features/mensagens/MensagensPage.css");
 const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
 const equipesCss = readCss("./features/equipes/EquipesPage.css");
 const workforceCss = readCss("./features/rdos/RdoWorkforceEditor.css");
@@ -39,6 +41,8 @@ const taskTypographyCss = [
   headerCss,
   syncCss,
   operationalWorkspaceCss,
+  loginCss,
+  mensagensCss,
   financeiroCss,
   equipesCss,
   workforceCss,
@@ -62,6 +66,16 @@ describe("shell e superfícies operacionais", () => {
     expect(root).toContain("--glass-shadow: none;");
     expect(globalCss).not.toContain("/fonts/poppins-700.ttf");
     expect(globalCss).not.toContain("/fonts/poppins-800.ttf");
+    expect(
+      existsSync(
+        new URL("../public/fonts/poppins-700.ttf", import.meta.url),
+      ),
+    ).toBe(false);
+    expect(
+      existsSync(
+        new URL("../public/fonts/poppins-800.ttf", import.meta.url),
+      ),
+    ).toBe(false);
   });
 
   it("limita a tipografia operacional a 400, 500 e 600", () => {
@@ -107,6 +121,25 @@ describe("shell e superfícies operacionais", () => {
     expect(rule(headerCss, ".cortex-page-header__eyebrow")).toContain(
       "font-weight: 500;",
     );
+  });
+
+  it("quebra o estado operacional sem truncar label ou detalhe", () => {
+    const state = rule(
+      operationalWorkspaceCss,
+      ".workspace-status-rail__state",
+    );
+    const copy = rule(
+      operationalWorkspaceCss,
+      ".workspace-status-rail__state > strong,\n" +
+        ".workspace-status-rail__state > span:last-child",
+    );
+
+    expect(state).toContain("flex-wrap: wrap;");
+    expect(copy).toContain("min-inline-size: 0;");
+    expect(copy).toContain("overflow-wrap: anywhere;");
+    expect(copy).toContain("white-space: normal;");
+    expect(copy).not.toContain("overflow: hidden;");
+    expect(copy).not.toContain("text-overflow: ellipsis;");
   });
 
   it("remove blur e sombras das superfícies sem achatar overlays", () => {

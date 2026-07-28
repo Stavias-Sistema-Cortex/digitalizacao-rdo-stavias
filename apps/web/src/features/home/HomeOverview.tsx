@@ -31,7 +31,6 @@ export function HomeOverview({
     events,
     latestRdo,
     isLoading,
-    dataUpdatedAt,
   } = data;
   const { snapshot } = useSyncStatus();
   const [chip, setChip] = useState<ObraStatusChip>("TODAS");
@@ -61,26 +60,9 @@ export function HomeOverview({
     }
     return [focusedObra, ...obraOptions];
   }, [focusedObra, obraOptions]);
-  const deviceQueueCount =
-    snapshot.pendingCount + snapshot.syncingCount;
   const focusedWorksiteQueueCount = events.filter(
     (event) => event.syncStatus !== "SYNCED",
   ).length;
-  const localUpdateLabel = useMemo(() => {
-    if (!dataUpdatedAt) {
-      return "Não registrada";
-    }
-
-    const date = new Date(dataUpdatedAt);
-    if (Number.isNaN(date.getTime())) {
-      return "Registro local disponível";
-    }
-
-    return new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(date);
-  }, [dataUpdatedAt]);
 
   return (
     <div className="home-overview">
@@ -126,20 +108,7 @@ export function HomeOverview({
         className="home-exception-register"
       >
         <header className="home-exception-register__heading">
-          <div>
-            <h2>Sincronização</h2>
-          </div>
-          <p>
-            Atualização local
-            {dataUpdatedAt ? (
-              <>
-                {" · "}
-                <time dateTime={dataUpdatedAt}>{localUpdateLabel}</time>
-              </>
-            ) : (
-              ` · ${localUpdateLabel}`
-            )}
-          </p>
+          <h2>Sincronização</h2>
         </header>
 
         <SyncStateStrip
@@ -149,14 +118,6 @@ export function HomeOverview({
 
         <dl className="home-exception-register__facts">
           <div>
-            <dt>Na fila</dt>
-            <dd>{snapshot.isLoading ? "—" : deviceQueueCount}</dd>
-          </div>
-          <div>
-            <dt>Conflitos</dt>
-            <dd>{snapshot.isLoading ? "—" : snapshot.conflictCount}</dd>
-          </div>
-          <div>
             <dt>Falhas</dt>
             <dd>{snapshot.isLoading ? "—" : snapshot.errorCount}</dd>
           </div>
@@ -165,14 +126,10 @@ export function HomeOverview({
             <dd>{snapshot.isLoading ? "—" : snapshot.reviewCount}</dd>
           </div>
           <div>
-            <dt>Aguardando</dt>
+            <dt>Aguardando nesta obra</dt>
             <dd>{focusedWorksiteQueueCount}</dd>
           </div>
         </dl>
-
-        <Link to="/home?tab=memory">
-          Ver memória
-        </Link>
       </section>
 
       {focusedObra ? (

@@ -5,10 +5,9 @@ export function MensagensCard() {
     <section className="home-card">
       <h3>Mensagens</h3>
       <p className="home-card-muted">
-        Converse com a equipe neste dispositivo. O histórico local não é
-        apresentado como mensagem confirmada pelo servidor.
+        Histórico local não equivale à confirmação do servidor.
       </p>
-      <Link to="/mensagens">Abrir mensagens locais</Link>
+      <Link to="/mensagens">Abrir mensagens</Link>
     </section>
   );
 }

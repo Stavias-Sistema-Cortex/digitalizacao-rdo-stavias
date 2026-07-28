@@ -146,6 +146,20 @@ afterEach(() => {
 });
 
 describe("EquipesPage sync truth", () => {
+  it("keeps operational status without a generic header description", async () => {
+    mocks.fetchTeams.mockRejectedValueOnce(new Error("offline"));
+
+    const view = renderPage();
+
+    await screen.findByText("Equipe cacheada");
+    expect(
+      view.container.querySelector(".cortex-page-header__description"),
+    ).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Dados preservados neste dispositivo",
+    );
+  });
+
   it("stays local until the remote catalog has actually hydrated", async () => {
     const remote = deferred<TeamPageDto>();
     mocks.fetchTeams.mockReturnValueOnce(remote.promise);

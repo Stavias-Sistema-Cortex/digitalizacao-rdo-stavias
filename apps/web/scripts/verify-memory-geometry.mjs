@@ -39,10 +39,11 @@ const BROWSER = process.env.CORTEX_BROWSER_BIN ?? [
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ].find(existsSync);
 const SCENARIOS = [
+  { viewport: 1440, sidebar: 248 },
+  { viewport: 1440, sidebar: 360 },
   { viewport: 901, sidebar: 248 },
-  { viewport: 1000, sidebar: 360 },
-  { viewport: 1100, sidebar: 360 },
-  { viewport: 620, sidebar: 248 },
+  { viewport: 901, sidebar: 360 },
+  { viewport: 375, sidebar: 0 },
 ];
 
 if (!BROWSER) {
@@ -80,7 +81,12 @@ try {
   protocol.close();
   await stopBrowser(browser);
   browserProcess = undefined;
-  process.stdout.write(`Memory geometry verified: ${SCENARIOS.length} scenarios\n`);
+  const scenarioSummary = SCENARIOS
+    .map(({ viewport, sidebar }) => `${viewport}/${sidebar}`)
+    .join(", ");
+  process.stdout.write(
+    `Memory geometry verified: ${SCENARIOS.length} scenarios [${scenarioSummary}]\n`,
+  );
 } finally {
   await stopBrowser(browserProcess);
   rmSync(temporaryDirectory, {
@@ -114,7 +120,7 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
     width: viewport,
     height: 900,
     deviceScaleFactor: 1,
-    mobile: false,
+    mobile: viewport <= 620,
   });
   const loaded = protocol.waitFor("Page.loadEventFired");
   await protocol.send("Page.navigate", { url: pathToFileURL(fixture).href });
@@ -165,7 +171,18 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
   if (measurements.status.edgeGap < 12) {
     throw new Error(
       `Operational status is ${measurements.status.edgeGap}px from its surface edge ` +
-        `at viewport ${viewport}px/sidebar ${sidebar}px.`,
+      `at viewport ${viewport}px/sidebar ${sidebar}px.`,
+    );
+  }
+  if (measurements.status.whiteSpace === "nowrap") {
+    throw new Error(
+      `Operational status does not wrap at viewport ${viewport}px/sidebar ${sidebar}px.`,
+    );
+  }
+  if (measurements.status.overflowWrap !== "anywhere") {
+    throw new Error(
+      `Operational status cannot break long content at viewport ${viewport}px/` +
+        `sidebar ${sidebar}px.`,
     );
   }
   if (measurements.header.borderBottomWidth !== 1) {
@@ -272,7 +289,8 @@ function pageFixture(sidebar) {
       <section class="workspace-status-rail">
         <span class="workspace-status-rail__state" data-status="SYNCED">
           <span class="workspace-status-rail__marker"></span>
-          <span>Sincronizado</span>
+          <strong>Sincronização operacional confirmada</strong>
+          <span>${longId}</span>
         </span>
       </section>
       <section role="tabpanel">
@@ -320,7 +338,8 @@ function pageFixture(sidebar) {
       ledger: document.querySelector('.memory-ledger'),
       query: document.querySelector('.memory-query'),
       filters: document.querySelector('.memory-query__filters'),
-      evidence: document.querySelector('.memory-entry__evidence')
+      evidence: document.querySelector('.memory-entry__evidence'),
+      statusText: document.querySelector('.workspace-status-rail__state > span:last-child')
     };
     const measurements = Object.fromEntries(
       Object.entries(targets).map(([name, element]) => [name, {
@@ -333,13 +352,22 @@ function pageFixture(sidebar) {
     const badgeSurface = document.querySelector('.memory-entry__body').getBoundingClientRect();
     const header = document.querySelector('.cortex-page-header');
     const status = document.querySelector('.workspace-status-rail__state').getBoundingClientRect();
+    const statusText = document.querySelector('.workspace-status-rail__state > span:last-child');
+    const statusTextStyle = getComputedStyle(statusText);
     const statusSurface = document.querySelector('.workspace-status-rail').getBoundingClientRect();
     measurements.toggle = { width: toggle.width, height: toggle.height };
     measurements.badge = { edgeGap: badgeSurface.right - badge.right };
     measurements.header = {
       borderBottomWidth: Number.parseFloat(getComputedStyle(header).borderBottomWidth)
     };
-    measurements.status = { edgeGap: status.left - statusSurface.left };
+    measurements.status = {
+      edgeGap: Math.min(
+        status.left - statusSurface.left,
+        statusSurface.right - status.right
+      ),
+      overflowWrap: statusTextStyle.overflowWrap,
+      whiteSpace: statusTextStyle.whiteSpace
+    };
     document.getElementById('geometry-result').textContent = JSON.stringify(measurements);
   </script>
 </body>

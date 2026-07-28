@@ -604,9 +604,8 @@ export function EquipesPage() {
     >
       <OperationalWorkspace
         className="teams-workspace"
-        eyebrow="Ontologia · Estrutura operacional"
+        eyebrow="Estrutura operacional"
         title="Equipes"
-        description="Pessoas, funções, vigências e relações com obras preservadas por identidade e evento."
         actions={alfa ? (
           <button type="button" onClick={openCreateTeam}>Criar equipe</button>
         ) : null}
@@ -650,7 +649,7 @@ export function EquipesPage() {
         </aside>
 
         <section className="teams-detail">
-          {!selectedTeamId || !selectedTeam ? <div className="teams-detail-empty"><div><i /><i /><i /></div><h2>Selecione uma equipe</h2><p>Consulte pessoas, vigências, vínculos e mudanças rastreadas pela ontologia.</p></div> : <>
+          {!selectedTeamId || !selectedTeam ? <div className="teams-detail-empty"><div><i /><i /><i /></div><h2>Selecione uma equipe</h2><p>Escolha uma equipe para ver os detalhes.</p></div> : <>
             <header className="teams-detail-header">
               <button className="teams-mobile-back" type="button" onClick={() => setSearchParams({})} aria-label="Voltar às equipes">‹</button>
               <div className="teams-title-mark">{participantInitials(selectedTeam.nome)}</div>

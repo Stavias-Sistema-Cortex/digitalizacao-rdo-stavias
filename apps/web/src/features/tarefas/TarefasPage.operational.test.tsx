@@ -113,6 +113,18 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("TarefasPage operational worksite selector", () => {
+  it("explains that one connection hydrates the offline worksite scope", async () => {
+    mocks.listObrasLocais.mockResolvedValue([]);
+
+    render(<TarefasPage />);
+
+    expect(
+      await screen.findByText(
+        "Nenhuma obra disponível. Conecte-se uma vez para carregar suas obras.",
+      ),
+    ).toBeVisible();
+  });
+
   it("drops an archived stored focus before loading details and keeps inactive operational tabs", async () => {
     render(<TarefasPage />);
 

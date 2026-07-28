@@ -71,7 +71,7 @@
   border: 0;
   background: transparent;
   color: inherit;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 /*
@@ -291,7 +291,7 @@
   background: #fff;
   color: #2f4e43;
   font-size: 0.8rem;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .mensagens-list-status {
@@ -422,7 +422,7 @@
 
 .mensagens-conversation-list small {
   margin-top: 3px;
-  font-weight: 450;
+  font-weight: 400;
 }
 
 .mensagens-conversation-list time {
@@ -741,7 +741,7 @@
   background: transparent;
   color: #a3312a;
   font-size: inherit;
-  font-weight: 650;
+  font-weight: 500;
   text-decoration: underline;
   cursor: pointer;
 }
@@ -914,7 +914,7 @@
   background: transparent;
   color: #a2352d;
   font-size: 0.68rem;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .mensagens-spin {
@@ -1008,7 +1008,7 @@
   background: transparent;
   color: #758079;
   font-size: 0.65rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   cursor: pointer;
@@ -1226,7 +1226,7 @@
   gap: 6px;
   color: #4a5851;
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .mensagens-dialog input,
@@ -1248,7 +1248,7 @@
   border-radius: 999px;
   background: #fff;
   color: #315047;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .mensagens-dialog fieldset {
@@ -1264,7 +1264,7 @@
   padding: 0 5px;
   color: #4f5d56;
   font-size: 0.74rem;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .mensagens-dialog fieldset > p {

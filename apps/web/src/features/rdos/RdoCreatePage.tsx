@@ -1140,13 +1140,12 @@ export function RdoCreatePage({
       </datalist>
 
       <InstitutionalPageHeader
-        eyebrow="Operação de campo · Documento diário"
+        eyebrow="Operação de campo"
         title={
           isExisting
             ? "Editar Relatório Diário de Obra"
             : "Novo Relatório Diário de Obra"
         }
-        description="Registro operacional editável sem conexão, com persistência local e confirmação do servidor identificadas separadamente."
         actions={(
           <button
             type="button"
@@ -1276,11 +1275,6 @@ export function RdoCreatePage({
           <div>
             <h2>Identificação</h2>
           </div>
-
-          <p>
-            Dados que vinculam o RDO à obra e à
-            programação.
-          </p>
         </div>
 
         <div className="form-grid">
@@ -1598,11 +1592,6 @@ export function RdoCreatePage({
           <div>
             <h2>Condições do dia</h2>
           </div>
-
-          <p>
-            Condições climáticas e interferências
-            operacionais.
-          </p>
         </div>
 
         <div className="form-grid">
@@ -1796,7 +1785,6 @@ export function RdoCreatePage({
           <section className="form-card" id="rdo-servicos">
         <CollectionHeader
           title="Serviços executados"
-          description="Serviços, quantidades, preço versionado e item contratual executado."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -2125,7 +2113,6 @@ export function RdoCreatePage({
           <section className="form-card" id="rdo-rateio">
         <CollectionHeader
           title="Rateio de colaboradores"
-          description="Horas, percentual e origem da alocação operacional."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -2472,7 +2459,6 @@ export function RdoCreatePage({
           <section className="form-card" id="rdo-equipamentos">
         <CollectionHeader
           title="Equipamentos"
-          description="Equipamentos utilizados durante a execução."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -2706,7 +2692,6 @@ export function RdoCreatePage({
           <section className="form-card" id="rdo-materiais">
         <CollectionHeader
           title="Materiais"
-          description="Materiais previstos, usinados e aplicados."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -2908,7 +2893,6 @@ export function RdoCreatePage({
           <section className="form-card" id="rdo-controle-geometrico">
         <CollectionHeader
           title="Controle geométrico"
-          description="Medições e dimensões dos trechos executados."
           onAdd={() =>
             setDraft((current) => ({
               ...current,
@@ -3253,11 +3237,6 @@ export function RdoCreatePage({
             <div>
               <h2>Payload gerado</h2>
             </div>
-
-            <p>
-              Estrutura que será enviada ao mecanismo de
-              sincronização.
-            </p>
           </div>
 
           <pre>
@@ -3329,13 +3308,11 @@ export function RdoCreatePage({
 
 interface CollectionHeaderProps {
   title: string;
-  description: string;
   onAdd: () => void;
 }
 
 function CollectionHeader({
   title,
-  description,
   onAdd,
 }: CollectionHeaderProps) {
   return (
@@ -3345,8 +3322,6 @@ function CollectionHeader({
       </div>
 
       <div className="section-actions">
-        <p>{description}</p>
-
         <button
           type="button"
           className="add-button"

@@ -53,6 +53,7 @@ const rdoWorkspaceCss = readCss("./features/rdos/RdoWorkspacePage.css");
 const deviceSecurityCss = readCss("./features/auth/DeviceSecurityPage.css");
 const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
 const equipesCss = readCss("./features/equipes/EquipesPage.css");
+const loginCss = readCss("./features/auth/LoginPage.css");
 const browserCandidates = [
   process.env.CORTEX_BROWSER_BIN,
   "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
@@ -307,6 +308,19 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(rule(globalCss, ".home-updated-at")).toContain(
       "color: var(--color-muted);",
     );
+  });
+
+  it("centra a marca do login quando o painel institucional não tem write-up", () => {
+    const identity = rule(loginCss, ".login__identity");
+    const brand = rule(loginCss, ".login__brand");
+
+    expect(identity).toContain("justify-content: center;");
+    expect(brand).toContain("padding-bottom: 0;");
+    expect(brand).toContain("border-bottom: 0;");
+    expect(loginCss).not.toContain(".login__identity-copy");
+    expect(loginCss).not.toContain(".login__security-note");
+    expect(loginCss).not.toContain(".login__footer");
+    expect(loginCss).not.toContain(".login__classification");
   });
 
   it("alinha à esquerda e contém a hierarquia operacional dos RDOs", () => {

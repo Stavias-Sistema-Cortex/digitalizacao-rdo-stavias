@@ -105,7 +105,7 @@ export function LoginPage() {
     <main className="cortex-login">
       <section
         className="login__stage"
-        aria-labelledby="login-system-title"
+        aria-labelledby="login-title"
       >
         <div className="login__identity">
           <div className="login__brand">
@@ -116,28 +116,14 @@ export function LoginPage() {
               draggable={false}
             />
           </div>
-
-          <div className="login__identity-copy">
-            <p className="login__classification">Sistema Córtex</p>
-            <h1 id="login-system-title">Acesso institucional</h1>
-            <p>
-              Ambiente operacional para gestão rastreável de obras,
-              registros de campo e decisões de infraestrutura.
-            </p>
-          </div>
-
-          <p className="login__security-note">
-            <span aria-hidden="true" />
-            Ambiente monitorado. Use somente suas credenciais individuais.
-          </p>
         </div>
 
         <div className="login__card">
           <header className="login__card-header">
             <p className="login__eyebrow">Área restrita</p>
-            <h2>Entrar no sistema</h2>
+            <h1 id="login-title">Entrar no sistema</h1>
             <p className="login__subtitle">
-              Informe seu CPF para autenticar seu vínculo ativo de colaborador.
+              Use seu CPF ou uma passkey para entrar.
             </p>
           </header>
 
@@ -242,15 +228,10 @@ export function LoginPage() {
           </form>
 
           <p className="login__hint">
-            Acesso destinado a colaboradores autorizados. As ações realizadas
-            no sistema são vinculadas à identidade autenticada.
+            Apenas colaboradores autorizados. Ações vinculadas à sua identidade.
           </p>
         </div>
       </section>
-
-      <p className="login__footer">
-        © 2026 Stavias · Sistema Córtex · Ambiente operacional restrito
-      </p>
     </main>
   );
 }

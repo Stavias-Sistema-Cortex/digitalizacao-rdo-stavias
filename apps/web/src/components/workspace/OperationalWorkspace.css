@@ -116,16 +116,18 @@
 .workspace-status-rail__state {
   min-inline-size: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   color: #4d5350;
   font-size: 0.78rem;
 }
 
+.workspace-status-rail__state > strong,
 .workspace-status-rail__state > span:last-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .workspace-status-rail__marker {

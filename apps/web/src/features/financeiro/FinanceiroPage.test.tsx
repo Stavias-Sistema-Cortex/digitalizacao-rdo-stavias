@@ -229,7 +229,7 @@ import { FinanceiroPage } from "./FinanceiroPage";
 
 describe("FinanceiroPage: superfície de receita", () => {
   it("abre o rastreio consolidado e não expõe módulos de custo ou contabilidade", () => {
-    renderFinanceiro();
+    const view = renderFinanceiro();
 
     expect(screen.getByRole("heading", {
       level: 1,
@@ -249,6 +249,14 @@ describe("FinanceiroPage: superfície de receita", () => {
     expect(document.body).not.toHaveTextContent(
       /previsto|comprometido|liquidado|a pagar|compras|notas fiscais|pagamentos|rateios|centros de custo/i,
     );
+    expect(
+      view.container.querySelector(".cortex-page-header__description"),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Somente trabalho aceito em RDO e ligado ao preço vigente entra na receita.",
+      ),
+    ).toBeVisible();
   });
 
   it("trata seções contábeis antigas como rastreio de receita", () => {

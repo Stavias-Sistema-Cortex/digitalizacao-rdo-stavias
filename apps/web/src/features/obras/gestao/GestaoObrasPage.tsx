@@ -253,9 +253,8 @@ export function GestaoObrasPage() {
   return (
     <OperationalWorkspace
       className="gestao-obras"
-      eyebrow="Administração Alfa · Escopo global"
+      eyebrow="Administração Alfa"
       title="Gestão de obras"
-      description="Cadastro, vínculos de acesso e papéis preservados com identidade e justificativa."
       status={{
         code: carregandoObras ? "SYNCING" : obrasErro ? "REJECTED" : "SYNCED",
         label: carregandoObras ? "Carregando obras" : `${obras.length} obras no escopo global`,
@@ -429,8 +428,7 @@ export function GestaoObrasPage() {
             <h2 id="gestao-papeis-title">Papéis Alfa e Beta</h2>
           </div>
           <p>
-            Toda mudança exige justificativa, preserva os vínculos existentes
-            e entra no histórico do Cortex.
+            Mudanças exigem justificativa e ficam no histórico.
           </p>
         </header>
 

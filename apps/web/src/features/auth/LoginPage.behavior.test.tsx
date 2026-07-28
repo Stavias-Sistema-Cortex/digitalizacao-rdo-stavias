@@ -41,6 +41,23 @@ afterEach(() => {
 });
 
 describe("LoginPage access methods", () => {
+  it("keeps one action instruction and one security note without marketing copy", () => {
+    const view = render(<LoginPage />);
+
+    expect(screen.getByText("Use seu CPF ou uma passkey para entrar."))
+      .toBeVisible();
+    expect(
+      screen.getByText(
+        "Apenas colaboradores autorizados. Ações vinculadas à sua identidade.",
+      ),
+    ).toBeVisible();
+    expect(view.container.querySelectorAll(".login__subtitle")).toHaveLength(1);
+    expect(view.container.querySelectorAll(".login__hint")).toHaveLength(1);
+    expect(view.container.querySelector(".login__identity-copy")).toBeNull();
+    expect(view.container.querySelector(".login__security-note")).toBeNull();
+    expect(view.container.querySelector(".login__footer")).toBeNull();
+  });
+
   it("offers direct CPF first and passkey as the explicit secondary production action", () => {
     vi.stubEnv("DEV", false);
     vi.stubEnv("PROD", true);
