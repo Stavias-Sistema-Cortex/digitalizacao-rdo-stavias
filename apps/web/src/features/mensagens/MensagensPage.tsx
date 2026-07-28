@@ -255,6 +255,10 @@ export function MensagensPage() {
       return;
     }
     setError("");
+    if (conversations.length === 0) {
+      setSearchResults([]);
+      return;
+    }
     try {
       let results = await searchLocalMessages(query);
       if (navigator.onLine && hasOnlineSession()) {

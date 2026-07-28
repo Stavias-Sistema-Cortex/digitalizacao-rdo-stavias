@@ -60,7 +60,9 @@ export function ConversationsPane(props: ConversationsPaneProps) {
         </div>
       </form>
 
-      {props.searchResults ? (
+      {props.searchResults !== null && props.conversations.length === 0 ? (
+        <p className="mensagens-list-status">Crie uma conversa primeiro.</p>
+      ) : props.searchResults ? (
         <SearchResults
           results={props.searchResults}
           conversations={props.conversations}
