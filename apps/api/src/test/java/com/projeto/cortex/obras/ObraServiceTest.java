@@ -3,12 +3,18 @@ package com.projeto.cortex.obras;
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.memory.CortexOperationalMemoryService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -345,20 +351,155 @@ class ObraServiceTest {
                 .thenReturn(Optional.of(obra));
 
         ObraService service = new ObraService(repository, memory, financialUnits);
-        org.springframework.web.server.ResponseStatusException error = assertThrows(
-                org.springframework.web.server.ResponseStatusException.class,
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
                 () -> service.arquivarObra(
                         obra.getId(), new ObraVersionRequest(0L), "alfa-1"
                 )
         );
 
-        assertEquals(org.springframework.http.HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        verifySemPersistenciaNemAuditoria(repository, memory);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidBaseVersions")
+    void versaoAusenteOuNegativaRetornaBadRequestSemPersistirNemAuditar(
+            String scenario,
+            ObraVersionRequest request
+    ) {
+        ObraRepository repository = mock(ObraRepository.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        FinancialUnitService financialUnits = mock(FinancialUnitService.class);
+        Obra obra = novaObra("ATIVA");
+        when(repository.findByIdForUpdate(obra.getId()))
+                .thenReturn(Optional.of(obra));
+
+        ObraService service = new ObraService(repository, memory, financialUnits);
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> service.desativarObra(obra.getId(), request, "alfa-1")
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        assertEquals(1L, obra.getVersaoLinha());
+        verifySemPersistenciaNemAuditoria(repository, memory);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidTransitions")
+    void transicaoInvalidaRetornaConflitoSemPersistirNemAuditar(
+            String scenario,
+            InvalidTransition transition
+    ) {
+        ObraRepository repository = mock(ObraRepository.class);
+        CortexOperationalMemoryService memory =
+                mock(CortexOperationalMemoryService.class);
+        FinancialUnitService financialUnits = mock(FinancialUnitService.class);
+        Obra obra = novaObra("ATIVA");
+        if (transition != InvalidTransition.RESTORE_ACTIVE) {
+            obra.arquivar();
+        }
+        long versionBefore = obra.getVersaoLinha();
+        when(repository.findByIdForUpdate(obra.getId()))
+                .thenReturn(Optional.of(obra));
+
+        ObraService service = new ObraService(repository, memory, financialUnits);
+        ResponseStatusException error = assertThrows(
+                ResponseStatusException.class,
+                () -> executeInvalidTransition(service, obra, transition)
+        );
+
+        assertEquals(HttpStatus.CONFLICT, error.getStatusCode());
+        assertEquals(versionBefore, obra.getVersaoLinha());
+        verifySemPersistenciaNemAuditoria(repository, memory);
+    }
+
+    private void executeInvalidTransition(
+            ObraService service,
+            Obra obra,
+            InvalidTransition transition
+    ) {
+        long baseVersion = obra.getVersaoLinha();
+        switch (transition) {
+            case EDIT_ARCHIVED -> service.atualizarObra(
+                    obra.getId(),
+                    new ObraUpdateRequest(
+                            "CT-2", null, "Outra obra", null, null,
+                            null, null, null, null, null, baseVersion
+                    ),
+                    "alfa-1"
+            );
+            case DEACTIVATE_ARCHIVED -> service.desativarObra(
+                    obra.getId(),
+                    new ObraVersionRequest(baseVersion),
+                    "alfa-1"
+            );
+            case ARCHIVE_ARCHIVED -> service.arquivarObra(
+                    obra.getId(),
+                    new ObraVersionRequest(baseVersion),
+                    "alfa-1"
+            );
+            case RESTORE_ACTIVE -> service.restaurarObra(
+                    obra.getId(),
+                    new ObraVersionRequest(baseVersion),
+                    "alfa-1"
+            );
+        }
+    }
+
+    private void verifySemPersistenciaNemAuditoria(
+            ObraRepository repository,
+            CortexOperationalMemoryService memory
+    ) {
         verify(repository, never()).saveAndFlush(any(Obra.class));
         verify(memory, never()).registrarEventoAuditado(
                 any(), any(), any(), any(), any(), any(), any(), any(),
                 anyList(), any(), any(), any(), any(), any(), anyMap(),
                 any(), any(), any(), any(), anyMap(), anyMap(), any(), any()
         );
+    }
+
+    private static Stream<Arguments> invalidBaseVersions() {
+        return Stream.of(
+                Arguments.of(
+                        "baseVersion ausente",
+                        new ObraVersionRequest(null)
+                ),
+                Arguments.of(
+                        "baseVersion negativa",
+                        new ObraVersionRequest(-1L)
+                )
+        );
+    }
+
+    private static Stream<Arguments> invalidTransitions() {
+        return Stream.of(
+                Arguments.of(
+                        "obra arquivada rejeita edição",
+                        InvalidTransition.EDIT_ARCHIVED
+                ),
+                Arguments.of(
+                        "obra arquivada rejeita desativação",
+                        InvalidTransition.DEACTIVATE_ARCHIVED
+                ),
+                Arguments.of(
+                        "obra arquivada rejeita novo arquivamento",
+                        InvalidTransition.ARCHIVE_ARCHIVED
+                ),
+                Arguments.of(
+                        "obra ativa rejeita restauração",
+                        InvalidTransition.RESTORE_ACTIVE
+                )
+        );
+    }
+
+    private enum InvalidTransition {
+        EDIT_ARCHIVED,
+        DEACTIVATE_ARCHIVED,
+        ARCHIVE_ARCHIVED,
+        RESTORE_ACTIVE
     }
 
     private Obra novaObra(String status) {
