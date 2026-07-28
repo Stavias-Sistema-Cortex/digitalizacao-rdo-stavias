@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -56,8 +56,38 @@ const browserCandidates = [
   process.env.CORTEX_BROWSER_BIN,
   "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
 ].filter((candidate): candidate is string => Boolean(candidate));
 const browser = browserCandidates.find(existsSync);
+const operationalLayoutScript = path.resolve(
+  process.cwd(),
+  "scripts/verify-operational-layout.mjs",
+);
+const webPackage = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+) as { scripts?: Record<string, string> };
+const productionWorkflow = readFileSync(
+  path.resolve(process.cwd(), "../../.github/workflows/production.yml"),
+  "utf8",
+);
+const apiCiWorkflow = readFileSync(
+  path.resolve(process.cwd(), "../../.github/workflows/api-ci.yml"),
+  "utf8",
+);
+const syncStateStripSource = readFileSync(
+  new URL(
+    "./components/institutional/SyncStateStrip.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const rdoLocalListSource = readFileSync(
+  new URL("./features/rdos/RdoLocalList.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("polimento visual da plataforma autenticada", () => {
   it("centraliza a paleta de campo e a escala moderna de superfícies", () => {
@@ -391,18 +421,22 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(globalCss).not.toMatch(/\.rdo-filter-grid\s*\{/);
   });
 
-  it.runIf(Boolean(browser))(
+  it.runIf(Boolean(browser) || process.env.CI === "true")(
     "não cria overflow no strip ou nos seis filtros com sidebar máxima",
     () => {
-      const script = path.resolve(
-        process.cwd(),
-        "scripts/verify-operational-layout.mjs",
+      expect(
+        browser,
+        "O gate CI exige Chrome ou Chromium para medir a geometria real.",
+      ).toBeDefined();
+      const output = execFileSync(
+        process.execPath,
+        [operationalLayoutScript],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, CORTEX_BROWSER_BIN: browser },
+          encoding: "utf8",
+        },
       );
-      const output = execFileSync(process.execPath, [script], {
-        cwd: process.cwd(),
-        env: { ...process.env, CORTEX_BROWSER_BIN: browser },
-        encoding: "utf8",
-      });
 
       expect(output).toContain(
         "Operational layout verified: 5 scenarios",
@@ -410,6 +444,59 @@ describe("polimento visual da plataforma autenticada", () => {
     },
     30_000,
   );
+
+  it.runIf(Boolean(browser))(
+    "rejeita interseção real mesmo quando transform não altera scrollWidth",
+    () => {
+      const result = spawnSync(
+        process.execPath,
+        [operationalLayoutScript],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CORTEX_BROWSER_BIN: browser,
+            CORTEX_OPERATIONAL_LAYOUT_MUTANT: "translate-filter",
+          },
+          encoding: "utf8",
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("sobreposição");
+    },
+    30_000,
+  );
+
+  it("mantém o verificador como gate explícito de CI e release", () => {
+    expect(webPackage.scripts?.["verify:operational-layout"]).toBe(
+      "node scripts/verify-operational-layout.mjs",
+    );
+    expect(apiCiWorkflow).toContain(
+      "run: npm run verify:operational-layout",
+    );
+    expect(productionWorkflow).toContain(
+      "run: npm run verify:operational-layout",
+    );
+    for (const workflow of [apiCiWorkflow, productionWorkflow]) {
+      expect(workflow).toContain("command -v google-chrome");
+      expect(workflow).toContain(
+        'echo "CORTEX_BROWSER_BIN=$browser" >> "$GITHUB_ENV"',
+      );
+    }
+  });
+
+  it("mantém a fixture geométrica alinhada às classes dos componentes reais", () => {
+    for (const className of [
+      "institutional-sync-state",
+      "institutional-sync-state__error",
+      "institutional-sync-state__facts",
+    ]) {
+      expect(syncStateStripSource).toContain(className);
+    }
+    expect(rdoLocalListSource).toContain('className="rdo-filter-region"');
+    expect(rdoLocalListSource).toContain('className="rdo-filter-grid"');
+  });
 
   it("compacta o shell móvel em grades com rótulos e alvos de 40px", () => {
     const mobileShellCss = globalCss.slice(

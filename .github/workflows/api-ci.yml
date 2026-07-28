@@ -44,7 +44,25 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
+      - name: Resolve browser for geometry gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser="$(
+            command -v google-chrome ||
+            command -v google-chrome-stable ||
+            command -v chromium ||
+            command -v chromium-browser ||
+            true
+          )"
+          if [[ -z "$browser" ]]; then
+            echo "Chrome or Chromium is required for the operational geometry gate." >&2
+            exit 1
+          fi
+          echo "CORTEX_BROWSER_BIN=$browser" >> "$GITHUB_ENV"
       - run: npm test -- --run
+      - name: Verify operational layout geometry
+        run: npm run verify:operational-layout
       - run: npm run lint
       - run: npm run build
 

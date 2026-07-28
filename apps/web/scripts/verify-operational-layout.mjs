@@ -15,16 +15,35 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const WEB_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
 const CSS = [
   "src/index.css",
+  "src/components/shell/CortexShell.css",
   "src/components/institutional/institutional.css",
   "src/features/rdos/RdoWorkspacePage.css",
 ]
+  .filter((file) => existsSync(path.join(WEB_ROOT, file)))
   .map((file) => readFileSync(path.join(WEB_ROOT, file), "utf8"))
   .join("\n");
-const BROWSER = process.env.CORTEX_BROWSER_BIN ?? [
+const BROWSER = [
+  process.env.CORTEX_BROWSER_BIN,
   "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",
-].find(existsSync);
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+]
+  .filter(Boolean)
+  .find(existsSync);
+const MUTATION_CSS =
+  process.env.CORTEX_OPERATIONAL_LAYOUT_MUTANT === "translate-filter"
+    ? `
+      @media (max-width: 400px) {
+        .rdo-filter-grid label:nth-child(2) {
+          transform: translateY(-48px);
+        }
+      }
+    `
+    : "";
 const SCENARIOS = [
   { viewport: 901, sidebar: 360 },
   { viewport: 1000, sidebar: 360 },
@@ -129,6 +148,9 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
       violations.push(`${name} saiu do container`);
     }
   }
+  for (const overlap of measurement.overlaps) {
+    violations.push(`sobreposição: ${overlap}`);
+  }
   if (measurement.errorInset < 12) {
     violations.push(`erro ficou a ${measurement.errorInset}px da borda`);
   }
@@ -185,7 +207,7 @@ function fixtureHtml(sidebar) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>${CSS}</style>
+  <style>${CSS}\n${MUTATION_CSS}</style>
 </head>
 <body>
   <div class="cortex-shell" style="--sidebar-width:${sidebar}px">
@@ -225,13 +247,58 @@ function fixtureHtml(sidebar) {
   </div>
   <pre id="geometry-result" hidden></pre>
   <script>
-    const rect = (selector) =>
-      document.querySelector(selector).getBoundingClientRect();
+    const rect = (target) =>
+      (typeof target === "string" ? document.querySelector(target) : target)
+        .getBoundingClientRect();
     const contained = (childSelector, parentSelector) => {
       const child = rect(childSelector);
       const parent = rect(parentSelector);
-      return child.left >= parent.left - 1 && child.right <= parent.right + 1;
+      return (
+        child.left >= parent.left - 1 &&
+        child.right <= parent.right + 1 &&
+        child.top >= parent.top - 1 &&
+        child.bottom <= parent.bottom + 1
+      );
     };
+    const intersects = (left, right) =>
+      left.left < right.right &&
+      left.right > right.left &&
+      left.top < right.bottom &&
+      left.bottom > right.top;
+    const overlappingPairs = (elements, prefix) => {
+      const overlaps = [];
+      for (let leftIndex = 0; leftIndex < elements.length; leftIndex += 1) {
+        for (
+          let rightIndex = leftIndex + 1;
+          rightIndex < elements.length;
+          rightIndex += 1
+        ) {
+          if (intersects(rect(elements[leftIndex]), rect(elements[rightIndex]))) {
+            overlaps.push(
+              prefix + leftIndex + " sobrepõe " + prefix + rightIndex,
+            );
+          }
+        }
+      }
+      return overlaps;
+    };
+    const filterLabels = [...document.querySelectorAll(".rdo-filter-grid label")];
+    const filterControls = [
+      ...document.querySelectorAll(".rdo-filter-grid :is(input, select)"),
+    ];
+    const stripOverlaps = [
+      ...document.querySelectorAll(".institutional-sync-state"),
+    ].flatMap((strip, index) =>
+      overlappingPairs([...strip.children], "strip" + index + "-item"),
+    );
+    const sectionOverlaps = overlappingPairs(
+      [
+        ...document.querySelectorAll(
+          ".rdo-dashboard > :is(.institutional-sync-state, .rdo-filter-region)",
+        ),
+      ],
+      "section",
+    );
     const boxes = {
       document: document.documentElement,
       shell: document.querySelector(".cortex-shell"),
@@ -244,7 +311,7 @@ function fixtureHtml(sidebar) {
       filterRegion: document.querySelector(".rdo-filter-region"),
       filterGrid: document.querySelector(".rdo-filter-grid"),
       ...Object.fromEntries(
-        [...document.querySelectorAll(".rdo-filter-grid label")]
+        filterLabels
           .map((element, index) => ["filter" + index, element]),
       ),
     };
@@ -287,7 +354,19 @@ function fixtureHtml(sidebar) {
           ".rdo-filter-grid label:last-child",
           ".rdo-filter-grid",
         ),
+        ...Object.fromEntries(
+          filterControls.map((element, index) => [
+            "control" + index,
+            contained(element, element.closest("label")),
+          ]),
+        ),
       },
+      overlaps: [
+        ...stripOverlaps,
+        ...sectionOverlaps,
+        ...overlappingPairs(filterLabels, "filter"),
+        ...overlappingPairs(filterControls, "control"),
+      ],
       errorInset: Math.round(errorRect.left - errorStripRect.left),
       badgeInset: Math.round(badgeRect.left - badgeStripRect.left),
       errorOverflowWrap: errorStyle.overflowWrap,

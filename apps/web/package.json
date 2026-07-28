@@ -12,6 +12,7 @@
     "build:compose": "tsc -b && VITE_CORTEX_AUTH_MODE=postgresql VITE_CORTEX_API_BASE_URL=/api vite build && node scripts/verify-stavia-boundary.mjs --dist",
     "lint": "eslint .",
     "verify:mensagens-geometry": "node scripts/verify-mensagens-geometry.mjs",
+    "verify:operational-layout": "node scripts/verify-operational-layout.mjs",
     "verify:retired-runtime-boundary": "node scripts/verify-stavia-boundary.mjs",
     "test": "vitest run",
     "preview": "vite preview",
