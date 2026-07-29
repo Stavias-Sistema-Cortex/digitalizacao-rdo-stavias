@@ -68,6 +68,7 @@ valid_digest="ghcr.io/${registry_namespace}/cortex-api@sha256:$(printf 'a%.0s' {
 canonical_database='Sta''viasCortex'
 valid_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require"
 valid_snake_case_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channel_binding=require"
+java_trust_url="${valid_url}&sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory"
 fixture_credential=local
 valid_release_sha="$(printf 'b%.0s' {1..40})"
 valid_release_marker="$(printf 'A%.0s' {1..43})"
@@ -155,8 +156,8 @@ assert_rejected() {
   fi
 }
 
-run_success_case success-camel-case "$valid_url"
-run_success_case success-snake-case "$valid_snake_case_url" "$valid_url"
+run_success_case success-camel-case "$valid_url" "$java_trust_url"
+run_success_case success-snake-case "$valid_snake_case_url" "$java_trust_url"
 assert_rejected mutable-image "ghcr.io/${registry_namespace}/cortex-api:production" "$valid_url"
 assert_rejected weak-tls "$valid_digest" \
   "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=disable"

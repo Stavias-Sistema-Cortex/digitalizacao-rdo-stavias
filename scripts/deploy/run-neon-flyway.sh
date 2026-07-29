@@ -90,7 +90,8 @@ if [[ "$channel_binding_count" -ne 1 || "$channel_binding_value" != "require" ]]
   exit 1
 fi
 normalized_query="$(IFS='&'; printf '%s' "${normalized_query_parts[*]}")"
-CORTEX_NEON_MIGRATION_URL="${neon_url_base}?${normalized_query}"
+java_ssl_factory='org.postgresql.ssl.DefaultJavaSSLFactory'
+CORTEX_NEON_MIGRATION_URL="${neon_url_base}?${normalized_query}&sslfactory=${java_ssl_factory}"
 
 command -v docker >/dev/null 2>&1 || {
   echo "docker is required for the isolated Flyway release step." >&2
