@@ -1,0 +1,56 @@
+.pwa-update-prompt {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 110;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px 12px 12px 14px;
+  border: 1px solid var(--color-border-strong, #bccac5);
+  border-left: 4px solid var(--color-brand-yellow, #f2c300);
+  border-radius: var(--radius-control, 8px);
+  background: #fffef6;
+  color: var(--color-ink, #18211f);
+  font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  box-shadow: none;
+}
+
+.pwa-update-prompt__message {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.pwa-update-prompt__action {
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 1px solid var(--color-brand-teal, #0c2623);
+  border-radius: var(--radius-control, 8px);
+  background: var(--color-brand-teal, #0c2623);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.pwa-update-prompt__action:hover {
+  border-color: var(--color-brand-green, #13332f);
+  background: var(--color-brand-green, #13332f);
+}
+
+@media (max-width: 480px) {
+  .pwa-update-prompt {
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    grid-template-columns: 1fr;
+    width: calc(100vw - 24px);
+  }
+
+  .pwa-update-prompt__action {
+    width: 100%;
+  }
+}

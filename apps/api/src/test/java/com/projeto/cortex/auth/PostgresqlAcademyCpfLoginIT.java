@@ -96,7 +96,6 @@ class PostgresqlAcademyCpfLoginIT
                     historicalDigest.value(),
                     collaboratorId(HISTORICAL_ACTIVE_SOURCE_ID)
             );
-
             AcademySourceAdapter academy =
                     mock(AcademySourceAdapter.class);
             when(academy.fetchCompleteSnapshot(anyInt())).thenReturn(

@@ -126,6 +126,9 @@ class OfflineGrantKeyConfigurationTest {
                             .isEqualTo(pair.getPublic().getEncoded());
                     assertThat(fingerprint(loaded.publicKey()))
                             .isEqualTo(fingerprint(pair.getPublic()));
+                    assertThat(context.getBean(
+                            OfflineGrantPublicKeyFingerprint.class
+                    ).value()).isEqualTo(fingerprint(pair.getPublic()));
                 });
     }
 

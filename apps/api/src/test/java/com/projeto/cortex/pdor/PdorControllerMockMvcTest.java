@@ -18,8 +18,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,8 +33,11 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -167,6 +172,88 @@ class PdorControllerMockMvcTest {
         assertThat(snapshotCaptor.getValue().executionStatus())
                 .isEqualTo(PdorExecutionStatus.INSUFFICIENT_DATA);
         assertThat(snapshotCaptor.getValue().revenueP50()).isNull();
+    }
+
+    @Test
+    void httpCalculationAttributesThePdorEventToTheAuthenticatedUser()
+            throws Exception {
+        when(inputLoader.load(any(Obra.class), nullable(LocalDate.class)))
+                .thenReturn(insufficientBundle());
+        when(snapshotRepository.findByIdempotencyKey(anyString()))
+                .thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/obras/{obraId}/pdor/calcular", "CW38386"))
+                .andExpect(status().isOk());
+
+        verify(memoryService).registrarEventoAuditado(
+                anyString(),
+                eq("PDOR"),
+                anyString(),
+                eq("PDOR_INSUFICIENTE"),
+                eq("PDOR"),
+                eq(obra.getId()),
+                isNull(),
+                isNull(),
+                anyList(),
+                eq("ONLINE"),
+                eq("SYNCED"),
+                any(),
+                any(),
+                eq(2),
+                anyMap(),
+                eq("usuario-teste"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(Map.of()),
+                eq(Map.of()),
+                eq("SUCESSO"),
+                isNull()
+        );
+    }
+
+    @Test
+    void httpCalculationStoresThePdorSynchronizationClockInUtc()
+            throws Exception {
+        when(inputLoader.load(any(Obra.class), nullable(LocalDate.class)))
+                .thenReturn(insufficientBundle());
+        when(snapshotRepository.findByIdempotencyKey(anyString()))
+                .thenReturn(Optional.empty());
+        Instant before = Instant.now().minusSeconds(1);
+
+        mockMvc.perform(post("/api/obras/{obraId}/pdor/calcular", "CW38386"))
+                .andExpect(status().isOk());
+
+        Instant after = Instant.now().plusSeconds(1);
+        ArgumentCaptor<LocalDateTime> synchronizedAt =
+                ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(memoryService).registrarEventoAuditado(
+                anyString(),
+                eq("PDOR"),
+                anyString(),
+                eq("PDOR_INSUFICIENTE"),
+                eq("PDOR"),
+                eq(obra.getId()),
+                isNull(),
+                isNull(),
+                anyList(),
+                eq("ONLINE"),
+                eq("SYNCED"),
+                any(),
+                synchronizedAt.capture(),
+                eq(2),
+                anyMap(),
+                eq("usuario-teste"),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(Map.of()),
+                eq(Map.of()),
+                eq("SUCESSO"),
+                isNull()
+        );
+        assertThat(synchronizedAt.getValue().toInstant(ZoneOffset.UTC))
+                .isBetween(before, after);
     }
 
     @Test

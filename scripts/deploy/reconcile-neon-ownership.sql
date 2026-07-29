@@ -118,7 +118,46 @@ BEGIN
     RAISE EXCEPTION 'cortex_runtime is missing or has unsafe attributes';
   END IF;
 
-  IF (
+  IF EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'cloud_admin'
+  ) THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_roles
+      WHERE rolname = 'cloud_admin'
+        AND rolsuper
+        AND rolcreaterole
+        AND rolcanlogin
+    ) OR (
+      SELECT count(*)
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_migrator'::regrole
+        AND m.member = current_user::regrole
+    ) <> 2 OR (
+      SELECT count(*)
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_migrator'::regrole
+        AND m.member = current_user::regrole
+        AND m.grantor = current_user::regrole
+        AND NOT m.admin_option
+        AND NOT m.inherit_option
+        AND m.set_option
+    ) <> 1 OR (
+      SELECT count(*)
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_migrator'::regrole
+        AND m.member = current_user::regrole
+        AND m.grantor = 'cloud_admin'::regrole
+        AND m.admin_option
+        AND NOT m.inherit_option
+        AND NOT m.set_option
+    ) <> 1 THEN
+      RAISE EXCEPTION
+        'database owner membership in cortex_migrator is unsafe';
+    END IF;
+  ELSIF (
     SELECT count(*)
     FROM pg_auth_members m
     WHERE m.roleid = 'cortex_migrator'::regrole
@@ -126,8 +165,14 @@ BEGIN
   ) <> 1 OR NOT EXISTS (
     SELECT 1
     FROM pg_auth_members m
+    JOIN pg_roles grantor_role
+      ON grantor_role.oid = m.grantor
     WHERE m.roleid = 'cortex_migrator'::regrole
       AND m.member = current_user::regrole
+      AND (
+        m.grantor = current_user::regrole
+        OR grantor_role.rolsuper
+      )
       AND NOT m.admin_option
       AND NOT m.inherit_option
       AND m.set_option
@@ -137,6 +182,28 @@ BEGIN
   END IF;
 
   IF EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'cloud_admin'
+  ) THEN
+    IF (
+      SELECT count(*)
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_runtime'::regrole
+    ) <> 1 OR NOT EXISTS (
+      SELECT 1
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_runtime'::regrole
+        AND m.member = current_user::regrole
+        AND m.grantor = 'cloud_admin'::regrole
+        AND m.admin_option
+        AND NOT m.inherit_option
+        AND NOT m.set_option
+    ) THEN
+      RAISE EXCEPTION
+        'database owner membership in cortex_runtime is unsafe';
+    END IF;
+  ELSIF EXISTS (
     SELECT 1
     FROM pg_auth_members m
     WHERE m.roleid = 'cortex_runtime'::regrole
@@ -577,7 +644,10 @@ BEGIN
       app_relation.nspname,
       app_relation.relname
     );
-    IF app_relation.relname = 'flyway_schema_history' THEN
+    IF app_relation.relname IN (
+      'flyway_schema_history',
+      'cortex_release_marker'
+    ) THEN
       EXECUTE format(
         'GRANT SELECT ON TABLE %I.%I TO cortex_runtime',
         app_relation.nspname,
@@ -987,7 +1057,10 @@ BEGIN
     AND (
       NOT has_table_privilege('cortex_runtime', c.oid, 'SELECT')
       OR (
-        c.relname = 'flyway_schema_history'
+        c.relname IN (
+          'flyway_schema_history',
+          'cortex_release_marker'
+        )
         AND (
           has_table_privilege('cortex_runtime', c.oid, 'INSERT')
           OR has_table_privilege('cortex_runtime', c.oid, 'UPDATE')
@@ -995,7 +1068,10 @@ BEGIN
         )
       )
       OR (
-        c.relname <> 'flyway_schema_history'
+        c.relname NOT IN (
+          'flyway_schema_history',
+          'cortex_release_marker'
+        )
         AND (
           NOT has_table_privilege('cortex_runtime', c.oid, 'INSERT')
           OR NOT has_table_privilege('cortex_runtime', c.oid, 'UPDATE')
@@ -1037,11 +1113,17 @@ BEGIN
         AND NOT acl.is_grantable
         AND (
           (
-            c.relname = 'flyway_schema_history'
+            c.relname IN (
+              'flyway_schema_history',
+              'cortex_release_marker'
+            )
             AND acl.privilege_type = 'SELECT'
           )
           OR (
-            c.relname <> 'flyway_schema_history'
+            c.relname NOT IN (
+              'flyway_schema_history',
+              'cortex_release_marker'
+            )
             AND acl.privilege_type IN (
               'SELECT',
               'INSERT',

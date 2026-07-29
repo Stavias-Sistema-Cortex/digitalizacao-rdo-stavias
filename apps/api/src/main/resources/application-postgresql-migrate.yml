@@ -14,3 +14,5 @@ cortex:
     schema-readiness:
       enabled: false
     runtime-ready: false
+    release-marker:
+      write-enabled: ${CORTEX_POSTGRES_RELEASE_MARKER_WRITE_ENABLED:false}

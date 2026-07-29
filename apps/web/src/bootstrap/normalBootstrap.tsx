@@ -3,19 +3,17 @@ import type { Root } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 
 import App from "../App";
+import { PwaUpdatePrompt } from "../components/PwaUpdatePrompt";
+import {
+  createPwaUpdatePromptController,
+} from "../components/pwaUpdatePromptController";
 import { initializeAuthSession } from "../features/auth/authService";
 import { initializeCortexDb } from "../lib/db/cortexDb";
 
 export async function mountNormalCortex(root: Root): Promise<void> {
-  registerSW({
-    immediate: true,
-    onRegisterError(error: unknown) {
-      console.warn(
-        "Não foi possível registrar o modo offline da aplicação.",
-        error,
-      );
-    },
-  });
+  const pwaUpdateController =
+    createPwaUpdatePromptController();
+  pwaUpdateController.register(registerSW);
 
   let authUnavailable = false;
   try {
@@ -31,6 +29,7 @@ export async function mountNormalCortex(root: Root): Promise<void> {
   root.render(
     <StrictMode>
       <App initialAuthUnavailable={authUnavailable} />
+      <PwaUpdatePrompt controller={pwaUpdateController} />
     </StrictMode>,
   );
 }

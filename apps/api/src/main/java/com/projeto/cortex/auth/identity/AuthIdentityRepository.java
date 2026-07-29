@@ -4,6 +4,7 @@ import com.projeto.cortex.colaboradores.CpfHasher;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -95,10 +96,16 @@ public class AuthIdentityRepository {
     }
 
     /**
-     * Read-only local-development authentication lookup restricted to an
-     * already active Academy identity. It deliberately excludes legacy SHA
-     * material and never upgrades persisted HMAC data.
+     * Authentication lookup restricted to active Academy collaborators.
+     *
+     * <p>A missing protected identity can be repaired from the legacy SHA
+     * already stored in PostgreSQL. The repair remains source-scoped,
+     * fail-closed for ambiguous or blocked owners, and never consults the
+     * Academy database during login. A unique active protected identity may
+     * authenticate without a legacy SHA; this is the privacy-preserving shape
+     * created by the initial ALFA bootstrap.</p>
      */
+    @Transactional
     public Optional<AuthIdentity> findActiveAcademyByCpf(String cpfRaw) {
         AuthChallengeLookupMaterial material =
                 digestService.challengeLookup(cpfRaw);
@@ -106,7 +113,61 @@ public class AuthIdentityRepository {
         CpfLookupDigest previous = material.candidates().size() == 2
                 ? material.candidates().get(1)
                 : current;
-        List<AuthIdentity> identities = jdbcTemplate.query("""
+        List<AuthIdentity> globalLegacyOwners = findLegacyCpfOwners(
+                material.legacyDigest(),
+                false
+        );
+        if (globalLegacyOwners.size() > 1) {
+            return Optional.empty();
+        }
+        String legacyOwnerId = globalLegacyOwners.isEmpty()
+                ? null
+                : globalLegacyOwners.get(0).colaboradorId();
+
+        Set<String> rotationOwners = findRotationDigestOwnerIds(
+                material.candidates(),
+                false
+        );
+        if (rotationOwners.size() > 1
+                || (legacyOwnerId != null
+                && rotationOwners.stream().anyMatch(
+                        owner -> !legacyOwnerId.equals(owner)
+                ))) {
+            return Optional.empty();
+        }
+
+        List<AuthIdentity> identities = findActiveAcademyByRotationHmacs(
+                current,
+                previous
+        );
+        if (identities.size() == 1) {
+            AuthIdentity identity = identities.get(0);
+            return rotationOwners.size() == 1
+                    && rotationOwners.contains(identity.colaboradorId())
+                    && (legacyOwnerId == null
+                    || legacyOwnerId.equals(identity.colaboradorId()))
+                    ? Optional.of(identity)
+                    : Optional.empty();
+        }
+        if (!identities.isEmpty()) {
+            return Optional.empty();
+        }
+        if (legacyOwnerId == null) {
+            return Optional.empty();
+        }
+        return selfHealAcademyIdentity(
+                material.legacyDigest(),
+                current,
+                material.candidates(),
+                legacyOwnerId
+        );
+    }
+
+    private List<AuthIdentity> findActiveAcademyByRotationHmacs(
+            CpfLookupDigest current,
+            CpfLookupDigest previous
+    ) {
+        return jdbcTemplate.query("""
                 SELECT
                     colaborador.id AS colaborador_id,
                     colaborador.nome,
@@ -138,9 +199,6 @@ public class AuthIdentityRepository {
                 previous.keyId(),
                 previous.value()
         );
-        return identities.size() == 1
-                ? Optional.of(identities.get(0))
-                : Optional.empty();
     }
 
     @Transactional
@@ -623,70 +681,255 @@ public class AuthIdentityRepository {
             CpfLookupDigest digest,
             String academyEmail
     ) {
-        executeProtectedWrite(colaboradorId, digest, exists -> {
-            if (!exists) {
-                jdbcTemplate.update("""
-                        INSERT INTO auth_identity (
-                            colaborador_id,
-                            cpf_lookup_hmac,
-                            cpf_lookup_key_id,
-                            email_autenticacao,
-                            email_verificado_em,
-                            email_fonte,
-                            status
-                        ) VALUES (
-                            ?, ?, ?, NULLIF(TRIM(?), ''),
-                            NULL, 'ACADEMY', 'ATIVA'
-                        )
-                        """,
+        executeProtectedWrite(
+                colaboradorId,
+                digest,
+                exists -> persistAcademyIdentity(
+                        exists,
                         colaboradorId,
-                        digest.value(),
-                        digest.keyId(),
+                        digest,
                         academyEmail
-                );
-                return;
+                )
+        );
+    }
+
+    private Optional<AuthIdentity> selfHealAcademyIdentity(
+            String legacyDigest,
+            CpfLookupDigest current,
+            List<CpfLookupDigest> rotationDigests,
+            String collaboratorId
+    ) {
+        List<AuthIdentity> eligible = findEligibleAcademyLegacyOwner(
+                collaboratorId,
+                legacyDigest,
+                false
+        );
+        if (eligible.size() != 1) {
+            return Optional.empty();
+        }
+
+        boolean[] repaired = new boolean[1];
+        try {
+            executeProtectedWrite(
+                    collaboratorId,
+                    current,
+                    exists -> {
+                        List<AuthIdentity> lockedGlobalOwners =
+                                findLegacyCpfOwners(
+                                        legacyDigest,
+                                        true
+                                );
+                        if (lockedGlobalOwners.size() != 1
+                                || !collaboratorId.equals(
+                                        lockedGlobalOwners.get(0)
+                                            .colaboradorId()
+                                )) {
+                            return;
+                        }
+                        Set<String> lockedRotationOwners =
+                                findRotationDigestOwnerIds(
+                                        rotationDigests,
+                                        true
+                                );
+                        if (lockedRotationOwners.stream().anyMatch(
+                                owner -> !collaboratorId.equals(owner)
+                        )) {
+                            return;
+                        }
+                        List<AuthIdentity> lockedEligible =
+                                findEligibleAcademyLegacyOwner(
+                                        collaboratorId,
+                                        legacyDigest,
+                                        true
+                                );
+                        if (lockedEligible.size() != 1) {
+                            return;
+                        }
+                        AuthIdentity owner = lockedEligible.get(0);
+                        persistAcademyIdentity(
+                                exists,
+                                owner.colaboradorId(),
+                                current,
+                                owner.emailAutenticacao()
+                        );
+                        repaired[0] = true;
+                    }
+            );
+        } catch (IdentityOwnershipConflictException conflict) {
+            return Optional.empty();
+        }
+        if (!repaired[0]) {
+            return Optional.empty();
+        }
+
+        List<AuthIdentity> persisted =
+                findActiveAcademyByRotationHmacs(current, current);
+        return persisted.size() == 1
+                && collaboratorId.equals(
+                        persisted.get(0).colaboradorId()
+                )
+                ? Optional.of(persisted.get(0))
+                : Optional.empty();
+    }
+
+    private Set<String> findRotationDigestOwnerIds(
+            List<CpfLookupDigest> digests,
+            boolean lock
+    ) {
+        Set<String> queried = new LinkedHashSet<>();
+        Set<String> owners = new LinkedHashSet<>();
+        for (CpfLookupDigest digest : digests) {
+            if (!queried.add(digest.keyId() + "\n" + digest.value())) {
+                continue;
             }
+            String sql = """
+                    SELECT colaborador_id
+                    FROM auth_identity
+                    WHERE cpf_lookup_key_id = ?
+                      AND cpf_lookup_hmac = ?
+                    """ + (lock ? " FOR UPDATE" : "");
+            owners.addAll(jdbcTemplate.query(
+                    sql,
+                    (resultSet, rowNumber) -> resultSet.getString(1),
+                    digest.keyId(),
+                    digest.value()
+            ));
+        }
+        return owners;
+    }
+
+    private List<AuthIdentity> findLegacyCpfOwners(
+            String legacyDigest,
+            boolean lock
+    ) {
+        String sql = """
+                SELECT
+                    colaborador.id AS colaborador_id,
+                    colaborador.nome,
+                    COALESCE(
+                        NULLIF(TRIM(identity.email_autenticacao), ''),
+                        NULLIF(TRIM(colaborador.email), '')
+                    ) AS email_autenticacao,
+                    colaborador.papel_acesso
+                FROM colaborador
+                LEFT JOIN auth_identity identity
+                    ON identity.colaborador_id = colaborador.id
+                WHERE colaborador.cpf_hash = ?
+                ORDER BY colaborador.id
+                LIMIT 2
+                """ + (lock ? " FOR UPDATE OF colaborador" : "");
+        return jdbcTemplate.query(
+                sql,
+                IDENTITY_ROW_MAPPER,
+                legacyDigest
+        );
+    }
+
+    private List<AuthIdentity> findEligibleAcademyLegacyOwner(
+            String collaboratorId,
+            String legacyDigest,
+            boolean lock
+    ) {
+        String sql = """
+                SELECT
+                    colaborador.id AS colaborador_id,
+                    colaborador.nome,
+                    COALESCE(
+                        NULLIF(TRIM(identity.email_autenticacao), ''),
+                        NULLIF(TRIM(colaborador.email), '')
+                    ) AS email_autenticacao,
+                    colaborador.papel_acesso
+                FROM colaborador
+                LEFT JOIN auth_identity identity
+                    ON identity.colaborador_id = colaborador.id
+                WHERE colaborador.id = ?
+                  AND colaborador.cpf_hash = ?
+                  AND colaborador.banco_origem = 'dbstavias_acad'
+                  AND colaborador.tabela_origem = 'usuarios'
+                  AND colaborador.ativo = TRUE
+                  AND colaborador.deletado_em IS NULL
+                  AND colaborador.papel_acesso IN ('ALFA', 'BETA')
+                  AND (
+                      identity.status IS NULL
+                      OR identity.status <> 'BLOQUEADA'
+                  )
+                """ + (lock ? " FOR UPDATE OF colaborador" : "");
+        return jdbcTemplate.query(
+                sql,
+                IDENTITY_ROW_MAPPER,
+                collaboratorId,
+                legacyDigest
+        );
+    }
+
+    private void persistAcademyIdentity(
+            boolean exists,
+            String colaboradorId,
+            CpfLookupDigest digest,
+            String academyEmail
+    ) {
+        if (!exists) {
             jdbcTemplate.update("""
-                    UPDATE auth_identity
-                    SET cpf_lookup_hmac = ?,
-                        cpf_lookup_key_id = ?,
-                        email_autenticacao = CASE
-                            WHEN email_verificado_em IS NOT NULL
-                              OR email_fonte IN (
-                                  'MANUAL_VERIFICADO',
-                                  'MANUAL_PENDENTE'
-                              )
-                                THEN email_autenticacao
-                            ELSE COALESCE(
-                                NULLIF(TRIM(?), ''),
-                                email_autenticacao
-                            )
-                        END,
-                        email_fonte = CASE
-                            WHEN email_verificado_em IS NOT NULL
-                              OR email_fonte IN (
-                                  'MANUAL_VERIFICADO',
-                                  'MANUAL_PENDENTE'
-                              )
-                                THEN email_fonte
-                            WHEN NULLIF(TRIM(?), '') IS NOT NULL
-                                THEN 'ACADEMY'
-                            ELSE email_fonte
-                        END,
-                        status = CASE
-                            WHEN status = 'BLOQUEADA' THEN status
-                            ELSE 'ATIVA'
-                        END,
-                        versao_linha = versao_linha + 1
-                    WHERE colaborador_id = ?
+                    INSERT INTO auth_identity (
+                        colaborador_id,
+                        cpf_lookup_hmac,
+                        cpf_lookup_key_id,
+                        email_autenticacao,
+                        email_verificado_em,
+                        email_fonte,
+                        status
+                    ) VALUES (
+                        ?, ?, ?, NULLIF(TRIM(?), ''),
+                        NULL, 'ACADEMY', 'ATIVA'
+                    )
                     """,
+                    colaboradorId,
                     digest.value(),
                     digest.keyId(),
-                    academyEmail,
-                    academyEmail,
-                    colaboradorId
+                    academyEmail
             );
-        });
+            return;
+        }
+        jdbcTemplate.update("""
+                UPDATE auth_identity
+                SET cpf_lookup_hmac = ?,
+                    cpf_lookup_key_id = ?,
+                    email_autenticacao = CASE
+                        WHEN email_verificado_em IS NOT NULL
+                          OR email_fonte IN (
+                              'MANUAL_VERIFICADO',
+                              'MANUAL_PENDENTE'
+                          )
+                            THEN email_autenticacao
+                        ELSE COALESCE(
+                            NULLIF(TRIM(?), ''),
+                            email_autenticacao
+                        )
+                    END,
+                    email_fonte = CASE
+                        WHEN email_verificado_em IS NOT NULL
+                          OR email_fonte IN (
+                              'MANUAL_VERIFICADO',
+                              'MANUAL_PENDENTE'
+                          )
+                            THEN email_fonte
+                        WHEN NULLIF(TRIM(?), '') IS NOT NULL
+                            THEN 'ACADEMY'
+                        ELSE email_fonte
+                    END,
+                    status = CASE
+                        WHEN status = 'BLOQUEADA' THEN status
+                        ELSE 'ATIVA'
+                    END,
+                    versao_linha = versao_linha + 1
+                WHERE colaborador_id = ?
+                """,
+                digest.value(),
+                digest.keyId(),
+                academyEmail,
+                academyEmail,
+                colaboradorId
+        );
     }
 
     private void executeProtectedWrite(
@@ -710,7 +953,7 @@ public class AuthIdentityRepository {
             if (digestOwners.stream().anyMatch(
                     ownerId -> !colaboradorId.equals(ownerId)
             )) {
-                throw identityConflict();
+                throw identityOwnershipConflict();
             }
 
             List<String> collaboratorRows = jdbcTemplate.query("""
@@ -725,12 +968,18 @@ public class AuthIdentityRepository {
             write.execute(!collaboratorRows.isEmpty());
         } catch (DataIntegrityViolationException
                  | PessimisticLockingFailureException exception) {
-            throw identityConflict();
+            throw identityOwnershipConflict();
         }
     }
 
     private IllegalStateException identityConflict() {
         return new IllegalStateException(IDENTITY_CONFLICT_MESSAGE);
+    }
+
+    private IdentityOwnershipConflictException identityOwnershipConflict() {
+        return new IdentityOwnershipConflictException(
+                IDENTITY_CONFLICT_MESSAGE
+        );
     }
 
     private IllegalStateException unavailableForProvisioning() {
@@ -767,6 +1016,14 @@ public class AuthIdentityRepository {
     }
 
     private record DigestOwnerKey(String keyId, String hmac) {}
+
+    private static final class IdentityOwnershipConflictException
+            extends IllegalStateException {
+
+        private IdentityOwnershipConflictException(String message) {
+            super(message);
+        }
+    }
 
     @FunctionalInterface
     private interface IdentityWrite {

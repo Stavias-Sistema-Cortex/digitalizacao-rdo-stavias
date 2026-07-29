@@ -20,6 +20,8 @@ services:
         sync: false
       - key: CORTEX_POSTGRES_RUNTIME_READY
         value: "true"
+      - key: CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED
+        value: "true"
       - key: CORTEX_CORS_ALLOWED_ORIGINS
         sync: false
       - key: CORTEX_AUTH_COOKIE_SECURE

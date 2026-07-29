@@ -81,6 +81,7 @@ expected_env = {
   "CORTEX_POSTGRES_USER" => { "sync" => false },
   "CORTEX_POSTGRES_PASSWORD" => { "sync" => false },
   "CORTEX_POSTGRES_RUNTIME_READY" => { "value" => "true" },
+  "CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED" => { "value" => "true" },
   "CORTEX_CORS_ALLOWED_ORIGINS" => { "sync" => false },
   "CORTEX_AUTH_COOKIE_SECURE" => { "value" => "true" },
   "CORTEX_AUTH_COOKIE_SAME_SITE" => { "value" => "Lax" },

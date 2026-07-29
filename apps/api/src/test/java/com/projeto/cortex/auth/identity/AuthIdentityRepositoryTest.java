@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
@@ -23,6 +24,7 @@ import org.mockito.InOrder;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class AuthIdentityRepositoryTest {
@@ -289,6 +291,15 @@ class AuthIdentityRepositoryTest {
                 eq(PREVIOUS.keyId()),
                 eq(PREVIOUS.value())
         )).thenReturn(List.of(activeIdentity()));
+        stubDigestOwners(CURRENT, List.of("alfa-sintetico"));
+        stubDigestOwners(PREVIOUS, List.of());
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq("c".repeat(64))
+        )).thenReturn(List.of(activeIdentity()));
 
         assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
                 .contains(activeIdentity());
@@ -309,6 +320,38 @@ class AuthIdentityRepositoryTest {
                 .contains("colaborador.papel_acesso IN ('ALFA', 'BETA')")
                 .doesNotContain("cpf_hash");
         verify(digests, never()).candidates(anyString());
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginAllowsOneProtectedOnlyAcademyOwner() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        legacyDigest
+                )
+        );
+        stubDigestOwners(CURRENT, List.of("alfa-sintetico"));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(List.of());
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .contains(activeIdentity());
         verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 
@@ -340,9 +383,374 @@ class AuthIdentityRepositoryTest {
                         )
                 )
         );
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq("c".repeat(64))
+        )).thenReturn(List.of(activeIdentity()));
 
         assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
                 .isEmpty();
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginRejectsActiveHmacWhenLegacyCpfIsGloballyAmbiguous() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        AuthIdentity blockedOwner = new AuthIdentity(
+                "blocked-sintetico",
+                "Colaborador bloqueado",
+                "blocked@example.invalid",
+                "BETA"
+        );
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        legacyDigest
+                )
+        );
+        stubDigestOwners(CURRENT, List.of("alfa-sintetico"));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(activeIdentity()));
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(List.of(activeIdentity(), blockedOwner));
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginFailsClosedWhenCurrentHmacOwnershipChangesDuringSelfHeal() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        legacyDigest
+                )
+        );
+        stubDigestOwners(CURRENT, List.of());
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of());
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(List.of(activeIdentity()));
+        stubEligibleAcademyLegacyOwner(
+                "alfa-sintetico",
+                legacyDigest,
+                activeIdentity()
+        );
+        stubDigestOwnerForUpdate(
+                CURRENT,
+                List.of("outro-sintetico")
+        );
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginFailsClosedOnConcurrentIdentityInsertConflict() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        legacyDigest
+                )
+        );
+        stubDigestOwners(CURRENT, List.of());
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of());
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(
+                List.of(activeIdentity()),
+                List.of(activeIdentity())
+        );
+        stubEligibleAcademyLegacyOwner(
+                "alfa-sintetico",
+                legacyDigest,
+                activeIdentity()
+        );
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", false);
+        when(jdbc.update(
+                contains("INSERT INTO auth_identity"),
+                eq("alfa-sintetico"),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq("alfa@example.invalid")
+        )).thenThrow(new DuplicateKeyException(
+                "Concurrent protected identity owner"
+        ));
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginSelfHealsOneEligibleLegacyAcademyOwner() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        AuthIdentity persistedIdentity = new AuthIdentity(
+                "alfa-sintetico",
+                "Colaborador ALFA persistido",
+                "persisted@example.invalid",
+                "ALFA"
+        );
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT, PREVIOUS),
+                        legacyDigest
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(PREVIOUS.keyId()),
+                eq(PREVIOUS.value())
+        )).thenReturn(List.of());
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of(persistedIdentity));
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(
+                List.of(activeIdentity()),
+                List.of(activeIdentity())
+        );
+        stubEligibleAcademyLegacyOwner(
+                "alfa-sintetico",
+                legacyDigest,
+                activeIdentity()
+        );
+        stubDigestOwnerForUpdate(CURRENT, List.of());
+        stubDigestOwnerForUpdate(PREVIOUS, List.of());
+        stubCollaboratorIdentityForUpdate("alfa-sintetico", false);
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .contains(persistedIdentity);
+
+        ArgumentCaptor<String> legacySql =
+                ArgumentCaptor.forClass(String.class);
+        verify(jdbc, times(2)).query(
+                legacySql.capture(),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        );
+        assertThat(legacySql.getAllValues().get(0))
+                .contains("colaborador.cpf_hash = ?")
+                .contains("ORDER BY colaborador.id")
+                .contains("LIMIT 2")
+                .doesNotContain("colaborador.banco_origem")
+                .doesNotContain("colaborador.ativo = TRUE")
+                .doesNotContain("identity.status")
+                .doesNotContain("FOR UPDATE");
+        assertThat(legacySql.getAllValues().get(1))
+                .contains("FOR UPDATE OF colaborador");
+
+        ArgumentCaptor<String> eligibilitySql =
+                ArgumentCaptor.forClass(String.class);
+        verify(jdbc, times(2)).query(
+                eligibilitySql.capture(),
+                any(RowMapper.class),
+                eq("alfa-sintetico"),
+                eq(legacyDigest)
+        );
+        assertThat(eligibilitySql.getAllValues().get(0))
+                .contains("colaborador.banco_origem = 'dbstavias_acad'")
+                .contains("colaborador.tabela_origem = 'usuarios'")
+                .contains("colaborador.ativo = TRUE")
+                .contains("colaborador.deletado_em IS NULL")
+                .contains("colaborador.papel_acesso IN ('ALFA', 'BETA')")
+                .contains("identity.status IS NULL")
+                .contains("identity.status <> 'BLOQUEADA'")
+                .doesNotContain("FOR UPDATE");
+        assertThat(eligibilitySql.getAllValues().get(1))
+                .contains("FOR UPDATE OF colaborador");
+
+        ArgumentCaptor<String> insertSql =
+                ArgumentCaptor.forClass(String.class);
+        verify(jdbc).update(
+                insertSql.capture(),
+                eq("alfa-sintetico"),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq("alfa@example.invalid")
+        );
+        assertThat(insertSql.getValue())
+                .startsWith("INSERT INTO auth_identity")
+                .contains("NULL, 'ACADEMY', 'ATIVA'");
+        verify(jdbc).query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        );
+    }
+
+    @Test
+    void directCpfLoginSelfHealDeclaresATransactionBoundary()
+            throws NoSuchMethodException {
+        assertThat(AuthIdentityRepository.class
+                .getMethod("findActiveAcademyByCpf", String.class)
+                .getAnnotation(Transactional.class))
+                .isNotNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginRejectsEligibleLegacyOwnerWhenCpfHashIsGloballyAmbiguous() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        AuthIdentity blockedOwner = new AuthIdentity(
+                "blocked-sintetico",
+                "Colaborador bloqueado",
+                "blocked@example.invalid",
+                "BETA"
+        );
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        legacyDigest
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of());
+        stubDigestOwners(CURRENT, List.of());
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(List.of(blockedOwner, activeIdentity()));
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginRejectsLegacyCandidateOwnedByAnotherRotationHmac() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT, PREVIOUS),
+                        legacyDigest
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(PREVIOUS.keyId()),
+                eq(PREVIOUS.value())
+        )).thenReturn(List.of());
+        stubDigestOwners(CURRENT, List.of());
+        stubDigestOwners(PREVIOUS, List.of("outro-sintetico"));
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && !sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(List.of(activeIdentity()));
+
+        assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
+                .isEmpty();
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void directCpfLoginDoesNotSelfHealAmbiguousLegacyAcademyOwners() {
+        String legacyDigest = CpfHasher.hashDeDigitos(SYNTHETIC_CPF);
+        when(digests.challengeLookup(SYNTHETIC_CPF)).thenReturn(
+                new AuthChallengeLookupMaterial(
+                        List.of(CURRENT),
+                        legacyDigest
+                )
+        );
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value()),
+                eq(CURRENT.keyId()),
+                eq(CURRENT.value())
+        )).thenReturn(List.of());
+        when(jdbc.query(
+                anyString(),
+                any(RowMapper.class),
+                eq(legacyDigest)
+        )).thenReturn(List.of(
+                activeIdentity(),
+                new AuthIdentity(
+                        "beta-sintetico",
+                        "Colaborador BETA Sintético",
+                        "beta@example.invalid",
+                        "BETA"
+                )
+        ));
+
         assertThat(repository.findActiveAcademyByCpf(SYNTHETIC_CPF))
                 .isEmpty();
         verify(jdbc, never()).update(anyString(), any(Object[].class));
@@ -585,6 +993,38 @@ class AuthIdentityRepositoryTest {
                 eq(digest.keyId()),
                 eq(digest.value())
         )).thenReturn(owners);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubDigestOwners(
+            CpfLookupDigest digest,
+            List<String> owners
+    ) {
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("cpf_lookup_key_id = ?")
+                        && !sql.contains("FOR UPDATE")),
+                any(RowMapper.class),
+                eq(digest.keyId()),
+                eq(digest.value())
+        )).thenReturn(owners);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubEligibleAcademyLegacyOwner(
+            String colaboradorId,
+            String legacyDigest,
+            AuthIdentity identity
+    ) {
+        when(jdbc.query(
+                argThat(sql -> sql != null
+                        && sql.contains("colaborador.id = ?")
+                        && sql.contains("colaborador.cpf_hash = ?")
+                        && sql.contains("colaborador.banco_origem")),
+                any(RowMapper.class),
+                eq(colaboradorId),
+                eq(legacyDigest)
+        )).thenReturn(List.of(identity));
     }
 
     @SuppressWarnings("unchecked")

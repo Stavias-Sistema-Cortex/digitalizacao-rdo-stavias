@@ -25,7 +25,7 @@ assert_rejected() {
   fi
 }
 
-for case_name in branch profile readiness sse dev-admin provisioning jdbc-url postgres-password; do
+for case_name in branch profile readiness release-marker sse dev-admin provisioning jdbc-url postgres-password; do
   fixture="$fixture_dir/$case_name.yaml"
   cp "$repo_root/render.yaml" "$fixture"
   python3 - "$fixture" "$case_name" <<'PY'
@@ -48,6 +48,10 @@ replacements = {
     "readiness": (
         'CORTEX_POSTGRES_RUNTIME_READY\n        value: "true"',
         'CORTEX_POSTGRES_RUNTIME_READY\n        value: "false"',
+    ),
+    "release-marker": (
+        'CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED\n        value: "true"',
+        'CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED\n        value: "false"',
     ),
     "sse": (
         'CORTEX_STORAGE_S3_SEND_SSE_HEADER\n        value: "false"',

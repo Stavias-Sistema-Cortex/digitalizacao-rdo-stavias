@@ -133,7 +133,7 @@ class PdorApplicationServiceTest {
     }
 
     @Test
-    void snapshotCalculadoRegistraObraEPdorNoGrafoOntologico() {
+    void snapshotDeProcessoRegistraOEventoPdorSemAtribuirUmUsuario() {
         service.calcular("CW38386", null, PdorTriggerType.MANUAL, null);
 
         verify(memoryService).registrarObjeto(
@@ -168,7 +168,7 @@ class PdorApplicationServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Map<String, Object>>> related =
                 ArgumentCaptor.forClass(List.class);
-        verify(memoryService).registrarEventoDetalhado(
+        verify(memoryService).registrarEventoAuditado(
                 any(String.class),
                 eq("PDOR"),
                 any(String.class),
@@ -183,7 +183,15 @@ class PdorApplicationServiceTest {
                 any(),
                 any(),
                 eq(2),
-                payload.capture()
+                payload.capture(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(Map.of()),
+                eq(Map.of()),
+                eq("SUCESSO"),
+                isNull()
         );
 
         assertThat(related.getValue())
@@ -391,7 +399,7 @@ class PdorApplicationServiceTest {
 
         assertThat(reused.id()).isEqualTo(first.id());
         assertThat(reused.snapshotExistente()).isTrue();
-        verify(memoryService).registrarEventoDetalhado(
+        verify(memoryService).registrarEventoAuditado(
                 eq(first.id()),
                 eq("PDOR"),
                 eq(first.id()),
@@ -406,7 +414,15 @@ class PdorApplicationServiceTest {
                 any(),
                 any(),
                 eq(2),
-                any()
+                any(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(Map.of()),
+                eq(Map.of()),
+                eq("SUCESSO"),
+                isNull()
         );
     }
 

@@ -1,9 +1,12 @@
 package com.projeto.cortex.config;
 
 import com.projeto.cortex.auth.AuthReadinessIndicator;
+import com.projeto.cortex.auth.offline.OfflineGrantPublicKeyFingerprint;
 import com.projeto.cortex.common.ReadinessController;
+import com.projeto.cortex.common.RuntimeInstanceFingerprint;
 import com.projeto.cortex.common.RuntimeReadiness;
 import com.projeto.cortex.common.RuntimeRevision;
+import com.projeto.cortex.storage.ObjectStorageReadiness;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,7 +42,7 @@ class PostgresqlProfileModesContractTest {
                 "${CORTEX_POSTGRES_USER:joaolucas}",
                 "${CORTEX_POSTGRES_PASSWORD:}",
                 "classpath:db/migration-postgresql",
-                "required-schema-version: 63"
+                "required-schema-version: 64"
         );
         assertThat(common).doesNotContain("schema-readiness:", "runtime-ready:");
         assertThat(common).doesNotContain("${CORTEX_POSTGRES_URL:");
@@ -113,7 +116,13 @@ class PostgresqlProfileModesContractTest {
         assertThat(ReadinessController.class.getDeclaredConstructors())
                 .singleElement()
                 .satisfies(constructor -> assertThat(constructor.getParameterTypes())
-                        .containsExactly(RuntimeReadiness.class, RuntimeRevision.class));
+                        .containsExactly(
+                                RuntimeReadiness.class,
+                                RuntimeRevision.class,
+                                RuntimeInstanceFingerprint.class,
+                                OfflineGrantPublicKeyFingerprint.class,
+                                ObjectStorageReadiness.class
+                        ));
     }
 
     private String profile(String name) throws IOException {

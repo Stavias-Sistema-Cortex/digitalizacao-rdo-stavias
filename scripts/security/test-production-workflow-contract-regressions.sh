@@ -89,6 +89,31 @@ replacements = {
         "run: bash scripts/deploy/trigger-and-wait-render.sh",
         'run: "true"',
     ),
+    "capture-render-command": (
+        "run: bash scripts/deploy/capture-render-instance-fingerprint.sh",
+        'run: "true"',
+    ),
+    "render-api-token": (
+        "          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}",
+        "          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}\n"
+        "          CORTEX_RENDER_API_TOKEN: ${{ secrets.RENDER_API_TOKEN }}",
+    ),
+    "render-instance-proof": (
+        "CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256: ${{ steps.render_before.outputs.previous_render_instance_sha256 }}",
+        "CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256: none",
+    ),
+    "deterministic-marker": (
+        "cortex-release-v1:%s",
+        "cortex-release-v2:%s",
+    ),
+    "release-evidence": (
+        "CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}",
+        "CORTEX_DATABASE_RELEASE_MARKER: stale-marker",
+    ),
+    "offline-key-evidence": (
+        "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}",
+        "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ),
     "pages-command": (
         "run: bash scripts/deploy/deploy-and-verify-cloudflare-pages.sh",
         'run: "true"',
@@ -109,7 +134,29 @@ if case_name == "reordered":
     migration = text[migration_start:render_start]
     render = text[render_start:render_end]
     path.write_text(text[:migration_start] + render + migration + text[render_end:])
-elif case_name in {"pages-build-command", "pages-build-directory"}:
+elif case_name in {
+    "pages-build-command",
+    "pages-build-directory",
+    "remote-head-images",
+}:
+    if case_name.startswith("remote-head-"):
+        suffix = case_name.removeprefix("remote-head-")
+        labels = {"images": "image publication"}
+        start = text.index(
+            "      - name: Confirm develop still points to the release before "
+            + labels[suffix]
+        )
+        end = text.index(
+            "      - name: Build and publish API",
+            start,
+        )
+        block = text[start:end]
+        before = 'test "$remote_sha" = "$GITHUB_SHA"'
+        if before not in block:
+            raise SystemExit(f"fixture setup failed for {case_name}")
+        block = block.replace(before, "true", 1)
+        path.write_text(text[:start] + block + text[end:])
+        raise SystemExit(0)
     pages_start = text.index(
         "      - name: Build production Cloudflare Pages artifact"
     )
@@ -128,6 +175,19 @@ elif case_name in {"pages-build-command", "pages-build-directory"}:
         raise SystemExit(f"fixture setup failed for {case_name}")
     pages = pages.replace(before, after, 1)
     path.write_text(text[:pages_start] + pages + text[pages_end:])
+elif case_name == "late-remote-head":
+    mutation = "      - name: Migrate Neon with the immutable API image"
+    late_check = """      - name: Abort stale release after publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          remote_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/develop" --jq '.object.sha')"
+          test "$remote_sha" = "$GITHUB_SHA"
+"""
+    if mutation not in text:
+        raise SystemExit("fixture setup failed for late-remote-head")
+    path.write_text(text.replace(mutation, late_check + mutation, 1))
 else:
     before, after = replacements[case_name]
     if before not in text:
@@ -159,6 +219,14 @@ for case_name in \
   secret-file-digest \
   migration-command \
   render-command \
+  capture-render-command \
+  render-api-token \
+  render-instance-proof \
+  deterministic-marker \
+  release-evidence \
+  offline-key-evidence \
+  remote-head-images \
+  late-remote-head \
   pages-command \
   pages-build-directory \
   pages-build-command \

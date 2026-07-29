@@ -77,9 +77,11 @@ fail_contract("release must fail closed outside develop") unless \
 steps = release.fetch("steps")
 names = steps.map { |step| step["name"] }.compact
 required_order = [
+  "Confirm develop still points to the release before image publication",
   "Build and publish API",
   "Verify Render secret-file access",
   "Migrate Neon with the immutable API image",
+  "Capture the current Render instance fingerprint",
   "Deploy and verify the exact Render revision",
   "Build production Cloudflare Pages artifact",
   "Deploy and verify exact Cloudflare Pages revision"
@@ -94,6 +96,13 @@ fail_contract("release steps are not ordered fail-closed") unless positions == p
 by_name = steps.select { |step| step["name"] }.to_h do |step|
   [step["name"], step]
 end
+check_name =
+  "Confirm develop still points to the release before image publication"
+check_position = steps.index(by_name.fetch(check_name))
+first_mutation_position = steps.index(by_name.fetch("Build and publish API"))
+fail_contract("#{check_name} must be immediately before the first mutation") unless \
+  first_mutation_position == check_position + 1
+
 api = by_name.fetch("Build and publish API")
 api_with = api.fetch("with")
 fail_contract("API publication must expose the immutable digest output as id api") unless \
@@ -121,6 +130,43 @@ fail_contract("secret-file access gate must pull and test the published image") 
 binding = by_name.fetch("Bind release to checked-out develop revision")
 fail_contract("release shell must require the develop branch ref") unless \
   binding.fetch("run").include?('test "$GITHUB_REF" = refs/heads/develop')
+release_coordinates = by_name.fetch("Derive immutable image coordinates")
+release_coordinates_run = release_coordinates.fetch("run")
+fail_contract("release marker must be deterministic and domain-separated by SHA") unless \
+  release_coordinates_run.include?(
+    'cortex-release-v1:%s'
+  ) &&
+    release_coordinates_run.include?('"$GITHUB_SHA"') &&
+    release_coordinates_run.include?("openssl dgst -sha256 -binary") &&
+    release_coordinates_run.include?("openssl base64 -A") &&
+    release_coordinates_run.include?("database_release_marker=")
+fail_contract("release marker must not change across a rerun of the same SHA") if \
+  release_coordinates_run.include?("openssl rand")
+fail_contract("release must expose the public database marker as an output") unless \
+  release_coordinates_run.include?(
+    'echo "database_release_marker=${database_release_marker}"'
+  )
+
+remote_head = by_name.fetch(check_name)
+fail_contract("#{check_name} must re-check the remote develop head") unless \
+  remote_head.fetch("run").include?("git/ref/heads/develop") &&
+    remote_head.fetch("run").include?('test "$remote_sha" = "$GITHUB_SHA"')
+fail_contract("#{check_name} must use the scoped workflow token") unless \
+  remote_head.fetch("env").fetch("GH_TOKEN") == "${{ github.token }}"
+
+# Once the first external mutation begins, the queued release must finish
+# Neon, Render, and Pages for one coherent SHA. A later branch-head abort would
+# strand production in a partial state while the next run is still queued.
+steps[(first_mutation_position + 1)..].each do |step|
+  command = step["run"].to_s
+  if command.include?("git/ref/heads/develop") ||
+      command.include?('test "$remote_sha" = "$GITHUB_SHA"')
+    fail_contract(
+      "release must not abort on a newer develop head after publication starts"
+    )
+  end
+end
+
 migration = by_name.fetch("Migrate Neon with the immutable API image")
 migration_env = migration.fetch("env")
 fail_contract("migration must execute the reviewed wrapper") unless \
@@ -133,6 +179,24 @@ fail_contract("migration password must come from the protected secret") unless \
   migration_env.fetch("CORTEX_NEON_MIGRATION_PASSWORD") == "${{ secrets.CORTEX_NEON_MIGRATION_PASSWORD }}"
 fail_contract("migration user must come from the protected variable") unless \
   migration_env.fetch("CORTEX_NEON_MIGRATION_USER") == "${{ vars.CORTEX_NEON_MIGRATION_USER }}"
+fail_contract("migration marker must be bound to the workflow SHA") unless \
+  migration_env.fetch("CORTEX_RELEASE_SHA") == "${{ github.sha }}"
+fail_contract("migration must receive the deterministic database marker") unless \
+  migration_env.fetch("CORTEX_DATABASE_RELEASE_MARKER") ==
+    "${{ steps.release.outputs.database_release_marker }}"
+
+render_before = by_name.fetch("Capture the current Render instance fingerprint")
+render_before_env = render_before.fetch("env")
+fail_contract("Render fingerprint capture must expose a workflow output") unless \
+  render_before.fetch("id") == "render_before"
+fail_contract("Render fingerprint capture must use the reviewed wrapper") unless \
+  render_before.fetch("run") ==
+    "bash scripts/deploy/capture-render-instance-fingerprint.sh"
+fail_contract("Render fingerprint capture must target the workflow SHA") unless \
+  render_before_env.fetch("CORTEX_RELEASE_SHA") == "${{ github.sha }}"
+fail_contract("Render fingerprint capture must use the direct protected origin") unless \
+  render_before_env.fetch("CORTEX_RENDER_ORIGIN") ==
+    "${{ vars.CORTEX_RENDER_ORIGIN }}"
 
 render = by_name.fetch("Deploy and verify the exact Render revision")
 render_env = render.fetch("env")
@@ -144,6 +208,17 @@ fail_contract("Render hook must remain a protected secret") unless \
   render_env.fetch("CORTEX_RENDER_DEPLOY_HOOK_URL") == "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
 fail_contract("Render origin must come from the protected-environment variable") unless \
   render_env.fetch("CORTEX_RENDER_ORIGIN") == "${{ vars.CORTEX_RENDER_ORIGIN }}"
+fail_contract("Render release must not require an API token") if \
+  render_env.key?("CORTEX_RENDER_API_TOKEN")
+fail_contract("Render must prove that a new runtime instance took over") unless \
+  render_env.fetch("CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256") ==
+    "${{ steps.render_before.outputs.previous_render_instance_sha256 }}"
+fail_contract("Render must verify the loaded offline public-key fingerprint") unless \
+  render_env.fetch("CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256") ==
+    "${{ steps.release.outputs.offline_public_key_fingerprint }}"
+fail_contract("Render must verify the database migrated by this run") unless \
+  render_env.fetch("CORTEX_DATABASE_RELEASE_MARKER") ==
+    "${{ steps.release.outputs.database_release_marker }}"
 
 pages_build = by_name.fetch("Build production Cloudflare Pages artifact")
 pages_build_env = pages_build.fetch("env")
@@ -155,7 +230,7 @@ fail_contract("Pages build must use PostgreSQL auth mode") unless \
   pages_build_env.fetch("VITE_CORTEX_AUTH_MODE") == "postgresql"
 fail_contract("Pages build fingerprint must come from the protected variable") unless \
   pages_build_env.fetch("VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256") ==
-    "${{ vars.VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 }}"
+    "${{ steps.release.outputs.offline_public_key_fingerprint }}"
 pages_build_commands = pages_build.fetch("run").lines.map(&:strip).reject(&:empty?)
 fail_contract("Pages build must install, build, typecheck Functions, and scan in order") unless \
   pages_build_commands == [
@@ -176,6 +251,12 @@ fail_contract("Pages must deploy the workflow SHA") unless \
   pages_env.fetch("CORTEX_RELEASE_SHA") == "${{ github.sha }}"
 fail_contract("Pages must bind the trusted Render origin") unless \
   pages_env.fetch("CORTEX_RENDER_ORIGIN") == "${{ vars.CORTEX_RENDER_ORIGIN }}"
+fail_contract("Pages must re-verify the loaded offline public-key fingerprint") unless \
+  pages_env.fetch("CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256") ==
+    "${{ steps.release.outputs.offline_public_key_fingerprint }}"
+fail_contract("Pages must re-verify the database migrated by this run") unless \
+  pages_env.fetch("CORTEX_DATABASE_RELEASE_MARKER") ==
+    "${{ steps.release.outputs.database_release_marker }}"
 fail_contract("Cloudflare token must remain a protected secret") unless \
   pages_env.fetch("CLOUDFLARE_API_TOKEN") == "${{ secrets.CLOUDFLARE_API_TOKEN }}"
 for variable in ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_PAGES_PROJECT_NAME"]

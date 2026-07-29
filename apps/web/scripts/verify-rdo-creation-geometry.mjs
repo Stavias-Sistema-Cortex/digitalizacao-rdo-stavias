@@ -27,6 +27,16 @@ const SCENARIOS = [
   { width: 1280, height: 720 },
   { width: 390, height: 844 },
 ];
+const USE_PROCESS_GROUP = process.platform !== "win32";
+const CDP_REQUEST_TIMEOUT_MS = 10_000;
+const TARGET_DISCOVERY_TIMEOUT_MS = 10_000;
+const WINDOWS_TASKKILL_TIMEOUT_MS = 5_000;
+const RETRYABLE_CLEANUP_CODES = new Set([
+  "EACCES",
+  "EBUSY",
+  "ENOTEMPTY",
+  "EPERM",
+]);
 
 if (!BROWSER) {
   throw new Error(
@@ -38,6 +48,9 @@ const temporaryDirectory = mkdtempSync(
   path.join(os.tmpdir(), "cortex-rdo-creation-geometry-"),
 );
 let browserProcess;
+let protocol;
+let report = [];
+let executionError;
 
 try {
   const profile = path.join(temporaryDirectory, "browser-profile");
@@ -50,50 +63,226 @@ try {
     "--remote-debugging-port=0",
     `--user-data-dir=${profile}`,
     "about:blank",
-  ], { stdio: "ignore" });
+  ], {
+    detached: USE_PROCESS_GROUP,
+    stdio: "ignore",
+  });
   browserProcess = browser;
   const port = await readDevToolsPort(profile, browser);
-  const targets = await fetch(`http://127.0.0.1:${port}/json/list`)
+  const targets = await fetch(`http://127.0.0.1:${port}/json/list`, {
+    signal: AbortSignal.timeout(TARGET_DISCOVERY_TIMEOUT_MS),
+  })
     .then((response) => response.json());
   const page = targets.find((target) => target.type === "page");
   if (!page?.webSocketDebuggerUrl) {
     throw new Error("O browser não expôs uma página para verificar o RDO.");
   }
-  const protocol = await connectDevTools(page.webSocketDebuggerUrl);
-  const report = [];
+  protocol = await connectDevTools(page.webSocketDebuggerUrl);
   for (const scenario of SCENARIOS) {
     report.push(await verifyScenario(scenario, protocol));
   }
-  protocol.close();
-  await stopBrowser(browser);
-  browserProcess = undefined;
-  process.stdout.write(
-    `RDO creation geometry verified: ${SCENARIOS.length} scenarios\n`,
-  );
-  if (process.env.RDO_GEOMETRY_JSON === "1") {
-    process.stdout.write(`${JSON.stringify({ scenarios: report }, null, 2)}\n`);
+} catch (error) {
+  executionError = error;
+}
+
+const cleanupErrors = [];
+try {
+  await stopBrowser(browserProcess, protocol);
+} catch (error) {
+  cleanupErrors.push(error);
+}
+try {
+  await removeTemporaryDirectory(temporaryDirectory);
+} catch (error) {
+  cleanupErrors.push(error);
+}
+
+if (executionError) {
+  if (cleanupErrors.length > 0) {
+    process.stderr.write(
+      `A limpeza também falhou: ${cleanupErrors.map(errorMessage).join("; ")}\n`,
+    );
   }
-} finally {
-  await stopBrowser(browserProcess);
-  rmSync(temporaryDirectory, {
-    recursive: true,
-    force: true,
-    maxRetries: 10,
-    retryDelay: 100,
+  throw executionError;
+}
+if (cleanupErrors.length > 0) {
+  throw new AggregateError(
+    cleanupErrors,
+    "Não foi possível encerrar e limpar o browser de geometria do RDO.",
+  );
+}
+
+process.stdout.write(
+  `RDO creation geometry verified: ${SCENARIOS.length} scenarios\n`,
+);
+if (process.env.RDO_GEOMETRY_JSON === "1") {
+  process.stdout.write(
+    `${JSON.stringify({ scenarios: report }, null, 2)}\n`,
+  );
+}
+
+async function stopBrowser(browser, devTools) {
+  if (devTools) {
+    try {
+      await devTools.send("Browser.close", {}, 2_000);
+    } catch {
+      // The socket may close before Chromium acknowledges Browser.close.
+    }
+    try {
+      await devTools.close();
+    } catch {
+      // Process-group termination below is the authoritative fallback.
+    }
+  }
+  if (!browser?.pid) return;
+
+  const childClosed = waitForChildClose(browser);
+  if (!USE_PROCESS_GROUP) {
+    await stopWindowsBrowserTree(browser);
+  } else {
+    if (!(await waitForBrowserTreeExit(browser, 3_000))) {
+      signalBrowserTree(browser, "SIGTERM");
+    }
+    if (!(await waitForBrowserTreeExit(browser, 3_000))) {
+      signalBrowserTree(browser, "SIGKILL");
+    }
+  }
+  if (!(await waitForBrowserTreeExit(browser, 2_000))) {
+    throw new Error(`O processo do browser ${browser.pid} não encerrou.`);
+  }
+  await withTimeout(
+    childClosed,
+    2_000,
+    `O processo do browser ${browser.pid} não confirmou o encerramento.`,
+  );
+}
+
+async function stopWindowsBrowserTree(browser) {
+  try {
+    const exitCode = await runWindowsTaskkill(browser.pid);
+    if (exitCode === 0) return;
+    if (await waitForBrowserTreeExit(browser, 250)) return;
+    throw new Error(
+      `taskkill não encerrou a árvore do browser ${browser.pid} (código ${exitCode}).`,
+    );
+  } catch (error) {
+    if (await waitForBrowserTreeExit(browser, 250)) return;
+    try {
+      browser.kill("SIGKILL");
+    } catch (fallbackError) {
+      if (fallbackError?.code !== "ESRCH") throw fallbackError;
+    }
+    throw error;
+  }
+}
+
+function runWindowsTaskkill(pid) {
+  return new Promise((resolve, reject) => {
+    const taskkill = spawn(
+      "taskkill",
+      ["/PID", String(pid), "/T", "/F"],
+      { stdio: "ignore", windowsHide: true },
+    );
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      taskkill.kill("SIGKILL");
+      reject(new Error(`taskkill excedeu o limite ao encerrar o browser ${pid}.`));
+    }, WINDOWS_TASKKILL_TIMEOUT_MS);
+    const settle = (error, exitCode) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve(exitCode);
+    };
+    taskkill.once("error", (error) => settle(error));
+    taskkill.once("close", (exitCode) => settle(undefined, exitCode));
   });
 }
 
-async function stopBrowser(browser) {
-  if (!browser || browser.exitCode !== null) return;
-  const exited = new Promise((resolve) => {
-    browser.once("exit", resolve);
+function waitForChildClose(browser) {
+  if (hasChildExited(browser)) return Promise.resolve();
+  return new Promise((resolve) => {
+    browser.once("close", resolve);
   });
-  browser.kill("SIGTERM");
-  await Promise.race([exited, delay(2_000)]);
-  if (browser.exitCode === null) {
-    browser.kill("SIGKILL");
-    await Promise.race([exited, delay(1_000)]);
+}
+
+function hasChildExited(browser) {
+  return browser.exitCode !== null || browser.signalCode !== null;
+}
+
+async function waitForBrowserTreeExit(browser, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (browserTreeIsRunning(browser)) {
+    if (Date.now() >= deadline) return false;
+    await delay(50);
   }
+  return true;
+}
+
+function browserTreeIsRunning(browser) {
+  if (!USE_PROCESS_GROUP) return !hasChildExited(browser);
+  try {
+    process.kill(-browser.pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    if (error?.code === "EPERM") return !hasChildExited(browser);
+    throw error;
+  }
+}
+
+function signalBrowserTree(browser, signal) {
+  try {
+    if (USE_PROCESS_GROUP) process.kill(-browser.pid, signal);
+    else browser.kill(signal);
+  } catch (error) {
+    if (error?.code === "EPERM" && !hasChildExited(browser)) {
+      browser.kill(signal);
+      return;
+    }
+    if (error?.code !== "ESRCH" && error?.code !== "EPERM") throw error;
+  }
+}
+
+async function removeTemporaryDirectory(directory) {
+  let lastError;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      rmSync(directory, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 50,
+      });
+      await delay(50);
+      if (!existsSync(directory)) return;
+      lastError = Object.assign(
+        new Error(`O diretório temporário ${directory} foi recriado pelo browser.`),
+        { code: "ENOTEMPTY" },
+      );
+    } catch (error) {
+      if (!RETRYABLE_CLEANUP_CODES.has(error?.code)) throw error;
+      lastError = error;
+    }
+    await delay(Math.min(50 * (attempt + 1), 500));
+  }
+  throw lastError;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise])
+    .finally(() => clearTimeout(timeout));
 }
 
 async function verifyScenario({ width, height }, protocol) {
@@ -110,8 +299,10 @@ async function verifyScenario({ width, height }, protocol) {
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
   });
   const loaded = protocol.waitFor("Page.loadEventFired");
-  await protocol.send("Page.navigate", { url: pathToFileURL(fixture).href });
-  await loaded;
+  await Promise.all([
+    loaded,
+    protocol.send("Page.navigate", { url: pathToFileURL(fixture).href }),
+  ]);
   const evaluation = await protocol.send("Runtime.evaluate", {
     expression: "document.getElementById('geometry-result').textContent",
     returnByValue: true,
@@ -173,18 +364,33 @@ async function readDevToolsPort(profile, browser) {
 
 async function connectDevTools(url) {
   const socket = new WebSocket(url);
-  await Promise.race([
+  await withTimeout(
     new Promise((resolve, reject) => {
       socket.addEventListener("open", resolve, { once: true });
       socket.addEventListener("error", reject, { once: true });
     }),
-    delay(10_000).then(() => {
-      throw new Error("O protocolo do browser não conectou em 10 segundos.");
-    }),
-  ]);
+    10_000,
+    "O protocolo do browser não conectou em 10 segundos.",
+  );
   let sequence = 0;
   const pending = new Map();
   const eventWaiters = new Map();
+  const closed = new Promise((resolve) => {
+    if (socket.readyState === WebSocket.CLOSED) resolve();
+    else socket.addEventListener("close", resolve, { once: true });
+  });
+  socket.addEventListener("close", () => {
+    const error = new Error("O protocolo do browser foi encerrado.");
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
+    for (const waiters of eventWaiters.values()) {
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timeout);
+        waiter.reject(error);
+      }
+    }
+    eventWaiters.clear();
+  });
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
     if (message.id !== undefined) {
@@ -197,25 +403,62 @@ async function connectDevTools(url) {
     }
     const waiters = eventWaiters.get(message.method) ?? [];
     eventWaiters.delete(message.method);
-    for (const resolve of waiters) resolve(message.params);
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timeout);
+      waiter.resolve(message.params);
+    }
   });
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
+  const send = (
+    method,
+    params = {},
+    timeoutMs = CDP_REQUEST_TIMEOUT_MS,
+  ) => {
     const id = ++sequence;
-    pending.set(id, { resolve, reject });
-    socket.send(JSON.stringify({ id, method, params }));
-  });
+    const request = new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      socket.send(JSON.stringify({ id, method, params }));
+    });
+    return withTimeout(
+      request,
+      timeoutMs,
+      `A requisição CDP ${method} não respondeu em ${timeoutMs} ms.`,
+    ).finally(() => pending.delete(id));
+  };
   await send("Page.enable");
   return {
     send,
-    waitFor(method) {
-      return new Promise((resolve) => {
+    waitFor(method, timeoutMs = 10_000) {
+      return new Promise((resolve, reject) => {
         const waiters = eventWaiters.get(method) ?? [];
-        waiters.push(resolve);
+        const waiter = {
+          resolve,
+          reject,
+          timeout: setTimeout(() => {
+            const activeWaiters = eventWaiters.get(method) ?? [];
+            const remainingWaiters = activeWaiters.filter(
+              (candidate) => candidate !== waiter,
+            );
+            if (remainingWaiters.length > 0) {
+              eventWaiters.set(method, remainingWaiters);
+            } else {
+              eventWaiters.delete(method);
+            }
+            reject(new Error(`O evento ${method} não ocorreu em ${timeoutMs} ms.`));
+          }, timeoutMs),
+        };
+        waiters.push(waiter);
         eventWaiters.set(method, waiters);
       });
     },
-    close() {
-      socket.close();
+    async close() {
+      if (socket.readyState === WebSocket.OPEN) socket.close();
+      if (socket.readyState !== WebSocket.CLOSED) {
+        await withTimeout(
+          closed,
+          2_000,
+          "O protocolo do browser não confirmou o encerramento.",
+        );
+      }
     },
   };
 }

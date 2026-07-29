@@ -513,6 +513,120 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
+    void recoversHistoricalActorOnlyFromStrictSchema2UserPdorMetadata() {
+        try {
+            jdbc.update("""
+                    UPDATE cortex_evento_commit_sequence
+                    SET ultima_commit_seq = 110
+                    WHERE id = 1
+                    """);
+            insertHistoricalActorEvent(
+                    106,
+                    "PDOR",
+                    2,
+                    "{\"tipoIniciador\":\"USER\",\"iniciadoPor\":\""
+                            + ACTOR_A + "\"}"
+            );
+            insertHistoricalActorEvent(
+                    107,
+                    "PDOR",
+                    2,
+                    "{\"tipoIniciador\":\"PROCESS\",\"iniciadoPor\":\""
+                            + ACTOR_A + "\"}"
+            );
+            insertHistoricalActorEvent(
+                    108,
+                    "PDOR",
+                    2,
+                    "{\"tipoIniciador\":\"USER\",\"iniciadoPor\":"
+                            + "\"ator-inexistente\"}"
+            );
+            insertHistoricalActorEvent(
+                    109,
+                    "RDO",
+                    2,
+                    "{\"tipoIniciador\":\"USER\",\"iniciadoPor\":\""
+                            + ACTOR_A + "\"}"
+            );
+            insertHistoricalActorEvent(
+                    110,
+                    "PDOR",
+                    13,
+                    "{\"tipoIniciador\":\"USER\",\"iniciadoPor\":\""
+                            + ACTOR_A + "\"}"
+            );
+
+            OperationalMemoryScope scope = OperationalMemoryScope.beta(
+                    ACTOR_A,
+                    Set.of(WORKSITE_A),
+                    Set.of(WORKSITE_A),
+                    Set.of()
+            );
+            OperationalMemoryPageResponse page = service.search(
+                    scope,
+                    OperationalMemoryFilter.empty(),
+                    100,
+                    null
+            );
+
+            OperationalMemoryEventResponse historicalUser = page.items()
+                    .stream()
+                    .filter(item -> item.eventId().equals(eventId(106)))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(historicalUser.actorId()).isEqualTo(ACTOR_A);
+            assertThat(historicalUser.actorName()).isEqualTo("Pessoa Privada A");
+
+            assertThat(page.items().stream()
+                    .filter(item -> Set.of(
+                            eventId(107),
+                            eventId(108),
+                            eventId(109),
+                            eventId(110)
+                    ).contains(item.eventId())))
+                    .allSatisfy(item -> {
+                        assertThat(item.actorId()).isNull();
+                        assertThat(item.actorName()).isNull();
+                    });
+
+            OperationalMemoryFilter actorFilter =
+                    new OperationalMemoryFilter(
+                            null,
+                            null,
+                            null,
+                            WORKSITE_A,
+                            null,
+                            ACTOR_A,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null
+                    );
+            assertThat(service.search(scope, actorFilter, 100, null).items())
+                    .extracting(OperationalMemoryEventResponse::eventId)
+                    .contains(eventId(106))
+                    .doesNotContain(
+                            eventId(107),
+                            eventId(108),
+                            eventId(109),
+                            eventId(110)
+                    );
+        } finally {
+            jdbc.update(
+                    "DELETE FROM cortex_evento_operacional "
+                            + "WHERE commit_seq BETWEEN 106 AND 110"
+            );
+            jdbc.update("""
+                    UPDATE cortex_evento_commit_sequence
+                    SET ultima_commit_seq = 105
+                    WHERE id = 1
+                    """);
+        }
+    }
+
+    @Test
     void timelineIgnoresLegacyRelatedEntityObjectsInsteadOfFailing() {
         OperationalTimelineService timelineService =
                 new OperationalTimelineService(jdbc, new ObjectMapper());
@@ -863,6 +977,34 @@ class OperationalMemoryQueryServiceIT {
                 commitSequence,
                 payload,
                 time
+        );
+    }
+
+    private static void insertHistoricalActorEvent(
+            long commitSequence,
+            String entityType,
+            int schemaVersion,
+            String payload
+    ) {
+        jdbc.update("""
+                INSERT INTO cortex_evento_operacional (
+                    id, commit_seq, tipo_entidade, entidade_id, obra_id,
+                    tipo_evento, fonte, origem, sync_status, resultado,
+                    schema_version, payload_json, ocorrido_em, sincronizado_em
+                ) VALUES (
+                    ?, ?, ?, ?, ?, 'PDOR_INSUFICIENTE', 'PDOR', 'ONLINE',
+                    'SYNCED', 'SUCESSO', ?, ?::jsonb,
+                    timestamp '2026-07-21 10:03:00',
+                    timestamp '2026-07-21 10:03:01'
+                )
+                """,
+                eventId(commitSequence),
+                commitSequence,
+                entityType,
+                "historical-actor-" + commitSequence,
+                WORKSITE_A,
+                schemaVersion,
+                payload
         );
     }
 

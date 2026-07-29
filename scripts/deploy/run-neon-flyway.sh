@@ -14,12 +14,22 @@ for name in \
   CORTEX_API_IMAGE_DIGEST \
   CORTEX_NEON_MIGRATION_URL \
   CORTEX_NEON_MIGRATION_USER \
-  CORTEX_NEON_MIGRATION_PASSWORD; do
+  CORTEX_NEON_MIGRATION_PASSWORD \
+  CORTEX_RELEASE_SHA \
+  CORTEX_DATABASE_RELEASE_MARKER; do
   require_value "$name"
 done
 
 if [[ ! "$CORTEX_API_IMAGE_DIGEST" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]]; then
   echo "CORTEX_API_IMAGE_DIGEST must be an immutable GHCR sha256 reference." >&2
+  exit 1
+fi
+if [[ ! "$CORTEX_RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+  echo "CORTEX_RELEASE_SHA must be a full Git commit SHA." >&2
+  exit 1
+fi
+if [[ ! "$CORTEX_DATABASE_RELEASE_MARKER" =~ ^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$ ]]; then
+  echo "CORTEX_DATABASE_RELEASE_MARKER is invalid." >&2
   exit 1
 fi
 
@@ -124,5 +134,8 @@ docker run \
   --env SPRING_CONFIG_IMPORT=configtree:/run/secrets/ \
   --env SPRING_PROFILES_ACTIVE=postgresql-migrate \
   --env CORTEX_POSTGRES_RUNTIME_READY=false \
+  --env CORTEX_POSTGRES_RELEASE_MARKER_WRITE_ENABLED=true \
+  --env CORTEX_RELEASE_REVISION="$CORTEX_RELEASE_SHA" \
+  --env CORTEX_RELEASE_MARKER="$CORTEX_DATABASE_RELEASE_MARKER" \
   --env CORTEX_MAIN_CLASS=com.projeto.cortex.postgresql.migrate.PostgresqlMigrationApplication \
   "$CORTEX_API_IMAGE_DIGEST"

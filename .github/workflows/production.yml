@@ -135,8 +135,19 @@ jobs:
         run: |
           set -euo pipefail
           repository_lower="$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
-          if [[ ! "$OFFLINE_PUBLIC_KEY_FINGERPRINT" =~ ^[A-Za-z0-9_-]{43}$ ]]; then
+          if [[ ! "$OFFLINE_PUBLIC_KEY_FINGERPRINT" =~ ^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$ ]]; then
             echo "The production offline public-key fingerprint is missing or invalid." >&2
+            exit 1
+          fi
+          database_release_marker="$(
+            printf 'cortex-release-v1:%s' "$GITHUB_SHA" |
+              openssl dgst -sha256 -binary |
+              openssl base64 -A |
+              tr '+/' '-_' |
+              tr -d '='
+          )"
+          if [[ ! "$database_release_marker" =~ ^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$ ]]; then
+            echo "Unable to derive the public database release marker." >&2
             exit 1
           fi
           {
@@ -144,7 +155,19 @@ jobs:
             echo "web_image=ghcr.io/${repository_lower}-web"
             echo "sha_tag=sha-${GITHUB_SHA:0:12}"
             echo "offline_public_key_fingerprint=${OFFLINE_PUBLIC_KEY_FINGERPRINT}"
+            echo "database_release_marker=${database_release_marker}"
           } >> "$GITHUB_OUTPUT"
+      - name: Confirm develop still points to the release before image publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          remote_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/develop" \
+              --jq '.object.sha'
+          )"
+          test "$remote_sha" = "$GITHUB_SHA"
       - name: Build and publish API
         id: api
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -203,13 +226,25 @@ jobs:
           CORTEX_NEON_MIGRATION_URL: ${{ vars.CORTEX_NEON_MIGRATION_URL }}
           CORTEX_NEON_MIGRATION_USER: ${{ vars.CORTEX_NEON_MIGRATION_USER }}
           CORTEX_NEON_MIGRATION_PASSWORD: ${{ secrets.CORTEX_NEON_MIGRATION_PASSWORD }}
+          CORTEX_RELEASE_SHA: ${{ github.sha }}
+          CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}
         run: bash scripts/deploy/run-neon-flyway.sh
+      - name: Capture the current Render instance fingerprint
+        id: render_before
+        shell: bash
+        env:
+          CORTEX_RELEASE_SHA: ${{ github.sha }}
+          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
+        run: bash scripts/deploy/capture-render-instance-fingerprint.sh
       - name: Deploy and verify the exact Render revision
         shell: bash
         env:
           CORTEX_RELEASE_SHA: ${{ github.sha }}
           CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
+          CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256: ${{ steps.render_before.outputs.previous_render_instance_sha256 }}
+          CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
+          CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}
         run: bash scripts/deploy/trigger-and-wait-render.sh
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
@@ -222,7 +257,7 @@ jobs:
         env:
           VITE_CORTEX_API_BASE_URL: /api
           VITE_CORTEX_AUTH_MODE: postgresql
-          VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ vars.VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 }}
+          VITE_CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
           VITE_CORTEX_MESSAGE_MAX_ATTACHMENT_BYTES: "26214400"
         run: |
           set -euo pipefail
@@ -237,6 +272,8 @@ jobs:
         env:
           CORTEX_RELEASE_SHA: ${{ github.sha }}
           CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
+          CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256: ${{ steps.release.outputs.offline_public_key_fingerprint }}
+          CORTEX_DATABASE_RELEASE_MARKER: ${{ steps.release.outputs.database_release_marker }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME }}
@@ -252,6 +289,9 @@ jobs:
             echo "- PWA: \`${{ steps.release.outputs.web_image }}@${{ steps.web.outputs.digest }}\`"
             echo "- Render: revision \`${GITHUB_SHA}\` verified READY before Pages"
             echo "- Cloudflare Pages: revision \`${GITHUB_SHA}\` uploaded from \`develop\`"
+            echo "- Offline key: public SHA-256 matched the key loaded by the API"
+            echo "- Database: deterministic release marker matched through readiness"
+            echo "- Object storage: reversible write/read/delete probe passed"
             echo "- Canonical database: PostgreSQL \`StaviasCortex\`"
             echo "- Authentication: CPF; passkey remains the alternative"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -49,6 +49,14 @@ public class OfflineGrantKeyConfiguration {
         return productionKey(properties);
     }
 
+    @Bean
+    OfflineGrantPublicKeyFingerprint offlineGrantPublicKeyFingerprint(
+            OfflineGrantSigningKey signingKey
+    ) {
+        String fingerprint = publicKeyFingerprint(signingKey.publicKey());
+        return () -> fingerprint;
+    }
+
     private boolean hasConfiguredKeyMaterial(
             OfflineGrantProperties properties
     ) {
@@ -66,9 +74,7 @@ public class OfflineGrantKeyConfiguration {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(MINIMUM_RSA_BITS);
             KeyPair pair = generator.generateKeyPair();
-            String fingerprint = Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(MessageDigest.getInstance("SHA-256")
-                            .digest(pair.getPublic().getEncoded()));
+            String fingerprint = publicKeyFingerprint(pair.getPublic());
             return new OfflineGrantSigningKey(
                     "ephemeral-" + fingerprint.substring(0, 16),
                     pair.getPrivate(),
@@ -77,6 +83,20 @@ public class OfflineGrantKeyConfiguration {
         } catch (Exception exception) {
             throw new IllegalStateException(
                     "Não foi possível criar a chave efêmera de grant offline.",
+                    exception
+            );
+        }
+    }
+
+    private String publicKeyFingerprint(PublicKey publicKey) {
+        try {
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(publicKey.getEncoded())
+            );
+        } catch (Exception exception) {
+            throw new IllegalStateException(
+                    "Não foi possível derivar a impressão pública do grant offline.",
                     exception
             );
         }

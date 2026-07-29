@@ -77,10 +77,10 @@ class PostgresqlMinimalLauncherContractTest {
         assertThat(activation).contains(
                 "PostgresqlSchemaReadinessGuard.class",
                 "PostgresqlActivationReadiness.class",
+                "PostgresqlActivationReadinessController.class",
                 "RuntimeRevision.class",
                 "LocalCorsConfiguration.class",
                 "HealthController.class",
-                "ReadinessController.class",
                 "AuthController.class",
                 "EmailOtpAuthenticationPolicy.class",
                 "PostgresqlActivationSessionProfileResolver.class",

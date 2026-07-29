@@ -15,7 +15,10 @@ import org.springframework.context.annotation.Import;
         HibernateJpaAutoConfiguration.class,
         JpaRepositoriesAutoConfiguration.class
 })
-@Import(PostgresqlModeConfigurationGuard.class)
+@Import({
+        PostgresqlModeConfigurationGuard.class,
+        PostgresqlReleaseMarkerWriter.class
+})
 public class PostgresqlMigrationApplication {
 
     private PostgresqlMigrationApplication() {

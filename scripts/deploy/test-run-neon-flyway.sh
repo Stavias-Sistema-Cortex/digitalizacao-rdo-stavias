@@ -69,6 +69,8 @@ canonical_database='Sta''viasCortex'
 valid_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require"
 valid_snake_case_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channel_binding=require"
 fixture_credential=local
+valid_release_sha="$(printf 'b%.0s' {1..40})"
+valid_release_marker="$(printf 'A%.0s' {1..43})"
 
 run_success_case() {
   local name="$1"
@@ -87,15 +89,18 @@ run_success_case() {
     CORTEX_NEON_MIGRATION_URL="$input_url" \
     CORTEX_NEON_MIGRATION_USER='cortex_migrator' \
     CORTEX_NEON_MIGRATION_PASSWORD="$fixture_credential" \
+    CORTEX_RELEASE_SHA="$valid_release_sha" \
+    CORTEX_DATABASE_RELEASE_MARKER="$valid_release_marker" \
     bash "$script"
 
-  python3 - "$capture_dir/docker-args" "$valid_digest" "$expected_url" <<'PY'
+  python3 - "$capture_dir/docker-args" "$valid_digest" "$expected_url" \
+    "$valid_release_sha" "$valid_release_marker" <<'PY'
 import pathlib
 import sys
 
 arguments = pathlib.Path(sys.argv[1]).read_bytes().split(b"\0")
 arguments = [item.decode() for item in arguments if item]
-image, url = sys.argv[2:]
+image, url, release_sha, release_marker = sys.argv[2:]
 
 required = {
     "--rm",
@@ -106,6 +111,9 @@ required = {
     "no-new-privileges:true",
     "SPRING_PROFILES_ACTIVE=postgresql-migrate",
     "CORTEX_POSTGRES_RUNTIME_READY=false",
+    "CORTEX_POSTGRES_RELEASE_MARKER_WRITE_ENABLED=true",
+    f"CORTEX_RELEASE_REVISION={release_sha}",
+    f"CORTEX_RELEASE_MARKER={release_marker}",
     "SPRING_CONFIG_IMPORT=configtree:/run/secrets/",
     image,
 }
@@ -124,6 +132,8 @@ assert_rejected() {
   local image="$2"
   local url="$3"
   local migration_user="${4:-cortex_migrator}"
+  local release_sha="${5-$valid_release_sha}"
+  local release_marker="${6-$valid_release_marker}"
   local capture_dir="$fixture_root/$name"
   mkdir -p "$capture_dir"
 
@@ -137,6 +147,8 @@ assert_rejected() {
     CORTEX_NEON_MIGRATION_URL="$url" \
     CORTEX_NEON_MIGRATION_USER="$migration_user" \
     CORTEX_NEON_MIGRATION_PASSWORD="$fixture_credential" \
+    CORTEX_RELEASE_SHA="$release_sha" \
+    CORTEX_DATABASE_RELEASE_MARKER="$release_marker" \
     bash "$script" >/dev/null 2>&1; then
     echo "Flyway release wrapper accepted invalid case: $name" >&2
     exit 1
@@ -173,5 +185,13 @@ assert_rejected multiple-hosts "$valid_digest" \
 assert_rejected wrong-database "$valid_digest" \
   'jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/postgres?sslmode=verify-full&channelBinding=require'
 assert_rejected runtime-user "$valid_digest" "$valid_url" cortex_runtime
+assert_rejected missing-release-sha "$valid_digest" "$valid_url" \
+  cortex_migrator "" "$valid_release_marker"
+assert_rejected short-release-sha "$valid_digest" "$valid_url" \
+  cortex_migrator abc "$valid_release_marker"
+assert_rejected missing-release-marker "$valid_digest" "$valid_url" \
+  cortex_migrator "$valid_release_sha" ""
+assert_rejected noncanonical-release-marker "$valid_digest" "$valid_url" \
+  cortex_migrator "$valid_release_sha" "$(printf 'A%.0s' {1..42})B"
 
 echo "Neon Flyway release wrapper contract passed."

@@ -1,11 +1,17 @@
 package com.projeto.cortex.config;
 
+import com.projeto.cortex.common.RuntimeReleaseEvidence;
 import com.projeto.cortex.common.RuntimeReadiness;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongSupplier;
+import java.util.regex.Pattern;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -29,7 +35,12 @@ public final class PostgresqlRuntimeReadinessGuard implements
         RuntimeReadiness {
 
     static final long DEFAULT_ACADEMY_READINESS_MAX_AGE_MS = 900_000L;
+    static final long RUNTIME_SNAPSHOT_TTL_NANOS =
+            TimeUnit.SECONDS.toNanos(1L);
+    static final long RUNTIME_FAILURE_BACKOFF_NANOS =
+            TimeUnit.MILLISECONDS.toNanos(250L);
     private static final String ACADEMY_CONNECTOR_NAME = "acad_colaborador_import";
+    private static final Pattern FULL_GIT_REVISION = Pattern.compile("[0-9a-f]{40}");
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
@@ -62,13 +73,25 @@ public final class PostgresqlRuntimeReadinessGuard implements
             LIMIT 1
             """;
 
+    private static final String RELEASE_EVIDENCE_SQL = """
+            SELECT revision, marker
+            FROM cortex_release_marker
+            WHERE revision = ?
+            """;
+
     private final JdbcTemplate testJdbcTemplate;
     private final String testRequiredSchemaVersion;
     private final Boolean testRuntimeReady;
     private final PostgresqlRuntimeSurfaceRegistry testSurfaceRegistry;
     private final Boolean testAcademySyncEnabled;
     private final Long testAcademyReadinessMaxAgeMs;
+    private final LongSupplier nanoTime;
+    private final ReentrantLock runtimeEvaluationLock = new ReentrantLock();
     private Environment environment;
+    private volatile ConfigurableListableBeanFactory beanFactory;
+    private volatile JdbcTemplate managedJdbcTemplate;
+    private volatile RuntimeSnapshot runtimeSnapshot;
+    private volatile RuntimeFailureSnapshot runtimeFailureSnapshot;
 
     public PostgresqlRuntimeReadinessGuard() {
         this.testJdbcTemplate = null;
@@ -77,6 +100,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
         this.testSurfaceRegistry = null;
         this.testAcademySyncEnabled = null;
         this.testAcademyReadinessMaxAgeMs = null;
+        this.nanoTime = System::nanoTime;
     }
 
     PostgresqlRuntimeReadinessGuard(
@@ -91,7 +115,8 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 runtimeReady,
                 surfaceRegistry,
                 false,
-                DEFAULT_ACADEMY_READINESS_MAX_AGE_MS
+                DEFAULT_ACADEMY_READINESS_MAX_AGE_MS,
+                System::nanoTime
         );
     }
 
@@ -103,17 +128,40 @@ public final class PostgresqlRuntimeReadinessGuard implements
             boolean academySyncEnabled,
             long academyReadinessMaxAgeMs
     ) {
+        this(
+                jdbcTemplate,
+                requiredSchemaVersion,
+                runtimeReady,
+                surfaceRegistry,
+                academySyncEnabled,
+                academyReadinessMaxAgeMs,
+                System::nanoTime
+        );
+    }
+
+    PostgresqlRuntimeReadinessGuard(
+            JdbcTemplate jdbcTemplate,
+            String requiredSchemaVersion,
+            boolean runtimeReady,
+            PostgresqlRuntimeSurfaceRegistry surfaceRegistry,
+            boolean academySyncEnabled,
+            long academyReadinessMaxAgeMs,
+            LongSupplier nanoTime
+    ) {
         this.testJdbcTemplate = jdbcTemplate;
         this.testRequiredSchemaVersion = requiredSchemaVersion;
         this.testRuntimeReady = runtimeReady;
         this.testSurfaceRegistry = surfaceRegistry;
         this.testAcademySyncEnabled = academySyncEnabled;
         this.testAcademyReadinessMaxAgeMs = academyReadinessMaxAgeMs;
+        this.nanoTime = Objects.requireNonNull(nanoTime);
     }
 
     @Override
     public void setEnvironment(Environment environment) {
         this.environment = environment;
+        this.runtimeSnapshot = null;
+        this.runtimeFailureSnapshot = null;
     }
 
     @Override
@@ -124,20 +172,27 @@ public final class PostgresqlRuntimeReadinessGuard implements
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory)
             throws BeansException {
-        verifyConfiguredStartupReadiness();
+        this.beanFactory = beanFactory;
+        if (testJdbcTemplate == null) {
+            verifyConfiguredStartupReadiness();
+            return;
+        }
+        verifyReadiness();
+        verifyReleaseEvidenceIfRequired(testJdbcTemplate);
     }
 
     private void verifyConfiguredStartupReadiness() {
+        JdbcTemplate jdbcTemplate = postgresqlJdbcTemplate();
         verifyReadiness(
-                postgresqlJdbcTemplate(),
+                jdbcTemplate,
                 PostgresqlSchemaVersion.REQUIRED,
                 environment.getProperty("cortex.postgresql.runtime-ready", Boolean.class, false),
                 new PostgresqlRuntimeSurfaceRegistry()
         );
+        verifyReleaseEvidenceIfRequired(jdbcTemplate);
     }
 
-    private void verifyConfiguredRuntimeReadiness() {
-        JdbcTemplate jdbcTemplate = postgresqlJdbcTemplate();
+    private void verifyConfiguredRuntimeReadiness(JdbcTemplate jdbcTemplate) {
         verifyReadiness(
                 jdbcTemplate,
                 PostgresqlSchemaVersion.REQUIRED,
@@ -176,8 +231,91 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     @Override
     public void verifyRuntimeReadiness() {
+        verifiedRuntimeSnapshot();
+    }
+
+    @Override
+    public Map<String, String> verifiedPublicEvidence() {
+        return verifiedRuntimeSnapshot().publicEvidence();
+    }
+
+    @Override
+    public Map<String, String> publicEvidence() {
+        return verifiedRuntimeSnapshot().publicEvidence();
+    }
+
+    private RuntimeSnapshot verifiedRuntimeSnapshot() {
+        String releaseRevision = configuredReleaseRevision();
+        boolean markerRequired = releaseMarkerRequired();
+        long now = nanoTime.getAsLong();
+        RuntimeSnapshot snapshot = runtimeSnapshot;
+        if (snapshot != null
+                && snapshot.isValidFor(releaseRevision, markerRequired, now)) {
+            return snapshot;
+        }
+        RuntimeFailureSnapshot failureSnapshot = runtimeFailureSnapshot;
+        if (failureSnapshot != null
+                && failureSnapshot.isValidFor(
+                        releaseRevision,
+                        markerRequired,
+                        now
+                )) {
+            throw transientRuntimeReadinessFailure();
+        }
+
+        if (!runtimeEvaluationLock.tryLock()) {
+            throw transientRuntimeReadinessFailure();
+        }
+        try {
+            now = nanoTime.getAsLong();
+            snapshot = runtimeSnapshot;
+            if (snapshot != null
+                    && snapshot.isValidFor(releaseRevision, markerRequired, now)) {
+                return snapshot;
+            }
+            failureSnapshot = runtimeFailureSnapshot;
+            if (failureSnapshot != null
+                    && failureSnapshot.isValidFor(
+                            releaseRevision,
+                            markerRequired,
+                            now
+                    )) {
+                throw transientRuntimeReadinessFailure();
+            }
+            try {
+                RuntimeSnapshot verified = evaluateRuntimeReadiness(
+                        releaseRevision,
+                        markerRequired
+                );
+                runtimeSnapshot = verified;
+                runtimeFailureSnapshot = null;
+                return verified;
+            } catch (RuntimeException exception) {
+                runtimeFailureSnapshot = new RuntimeFailureSnapshot(
+                        releaseRevision,
+                        markerRequired,
+                        nanoTime.getAsLong() + RUNTIME_FAILURE_BACKOFF_NANOS
+                );
+                throw exception;
+            }
+        } finally {
+            runtimeEvaluationLock.unlock();
+        }
+    }
+
+    private RuntimeSnapshot evaluateRuntimeReadiness(
+            String releaseRevision,
+            boolean markerRequired
+    ) {
         JdbcTemplate jdbcTemplate = effectiveJdbcTemplate();
-        Boolean databaseReady = jdbcTemplate.queryForObject("SELECT TRUE", Boolean.class);
+        Boolean databaseReady;
+        try {
+            databaseReady = jdbcTemplate.queryForObject("SELECT TRUE", Boolean.class);
+        } catch (DataAccessException exception) {
+            throw new IllegalStateException(
+                    "PostgreSQL indisponível para readiness."
+            );
+        }
         if (!Boolean.TRUE.equals(databaseReady)) {
             throw new IllegalStateException("PostgreSQL indisponível para readiness.");
         }
@@ -189,13 +327,44 @@ public final class PostgresqlRuntimeReadinessGuard implements
                     testAcademySyncEnabled,
                     testAcademyReadinessMaxAgeMs
             );
-            return;
+        } else {
+            verifyConfiguredRuntimeReadiness(jdbcTemplate);
         }
-        verifyConfiguredRuntimeReadiness();
+        RuntimeReleaseEvidence releaseEvidence = markerRequired
+                ? requireReleaseEvidence(jdbcTemplate, releaseRevision)
+                : null;
+        return new RuntimeSnapshot(
+                releaseRevision,
+                markerRequired,
+                releaseEvidence,
+                nanoTime.getAsLong() + RUNTIME_SNAPSHOT_TTL_NANOS
+        );
     }
 
     private JdbcTemplate effectiveJdbcTemplate() {
-        return testJdbcTemplate == null ? postgresqlJdbcTemplate() : testJdbcTemplate;
+        if (testJdbcTemplate != null) {
+            return testJdbcTemplate;
+        }
+        JdbcTemplate cached = managedJdbcTemplate;
+        if (cached != null) {
+            return cached;
+        }
+        ConfigurableListableBeanFactory currentBeanFactory = beanFactory;
+        if (currentBeanFactory == null) {
+            throw managedJdbcTemplateFailure();
+        }
+        try {
+            JdbcTemplate managed = currentBeanFactory
+                    .getBeanProvider(JdbcTemplate.class)
+                    .getIfAvailable();
+            if (managed == null) {
+                throw managedJdbcTemplateFailure();
+            }
+            managedJdbcTemplate = managed;
+            return managed;
+        } catch (BeansException exception) {
+            throw managedJdbcTemplateFailure();
+        }
     }
 
     private JdbcTemplate postgresqlJdbcTemplate() {
@@ -207,6 +376,128 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 environment.getProperty("spring.datasource.username", ""),
                 environment.getProperty("spring.datasource.password", "")
         ));
+    }
+
+    private boolean releaseMarkerRequired() {
+        if (environment == null) {
+            return false;
+        }
+        String releaseRevision = configuredReleaseRevision();
+        return environment.getProperty(
+                "cortex.postgresql.release-marker.required",
+                Boolean.class,
+                false
+        ) || (releaseRevision != null && !releaseRevision.isBlank());
+    }
+
+    private void verifyReleaseEvidenceIfRequired(JdbcTemplate jdbcTemplate) {
+        if (releaseMarkerRequired()) {
+            requireReleaseEvidence(jdbcTemplate, configuredReleaseRevision());
+        }
+    }
+
+    private String configuredReleaseRevision() {
+        if (environment == null) {
+            return null;
+        }
+        return environment.getProperty("RENDER_GIT_COMMIT");
+    }
+
+    private static RuntimeReleaseEvidence requireReleaseEvidence(
+            JdbcTemplate jdbcTemplate,
+            String expectedRevision
+    ) {
+        if (expectedRevision == null
+                || !FULL_GIT_REVISION.matcher(expectedRevision).matches()) {
+            throw releaseEvidenceFailure();
+        }
+
+        List<Map<String, Object>> rows;
+        try {
+            rows = jdbcTemplate.queryForList(
+                    RELEASE_EVIDENCE_SQL,
+                    expectedRevision
+            );
+        } catch (DataAccessException exception) {
+            throw releaseEvidenceFailure();
+        }
+        if (rows == null || rows.size() != 1) {
+            throw releaseEvidenceFailure();
+        }
+
+        try {
+            Map<String, Object> row = rows.getFirst();
+            if (!(row.get("revision") instanceof String revision)
+                    || !(row.get("marker") instanceof String marker)) {
+                throw releaseEvidenceFailure();
+            }
+            if (!expectedRevision.equals(revision)) {
+                throw releaseEvidenceFailure();
+            }
+            return new RuntimeReleaseEvidence(revision, marker);
+        } catch (RuntimeException exception) {
+            throw releaseEvidenceFailure();
+        }
+    }
+
+    private static IllegalStateException releaseEvidenceFailure() {
+        return new IllegalStateException(
+                "PostgreSQL Córtex não está pronto para validar "
+                        + "o marcador público de release."
+        );
+    }
+
+    private static IllegalStateException managedJdbcTemplateFailure() {
+        return new IllegalStateException(
+                "PostgreSQL indisponível para readiness."
+        );
+    }
+
+    private static IllegalStateException transientRuntimeReadinessFailure() {
+        return new IllegalStateException(
+                "PostgreSQL indisponível para readiness."
+        );
+    }
+
+    private record RuntimeSnapshot(
+            String releaseRevision,
+            boolean releaseMarkerRequired,
+            RuntimeReleaseEvidence releaseEvidence,
+            long expiresAtNanos
+    ) {
+
+        private boolean isValidFor(
+                String expectedRevision,
+                boolean expectedMarkerRequirement,
+                long now
+        ) {
+            return now < expiresAtNanos
+                    && releaseMarkerRequired == expectedMarkerRequirement
+                    && Objects.equals(releaseRevision, expectedRevision);
+        }
+
+        private Map<String, String> publicEvidence() {
+            return releaseEvidence == null
+                    ? Map.of()
+                    : releaseEvidence.asPublicEvidence();
+        }
+    }
+
+    private record RuntimeFailureSnapshot(
+            String releaseRevision,
+            boolean releaseMarkerRequired,
+            long retryAfterNanos
+    ) {
+
+        private boolean isValidFor(
+                String expectedRevision,
+                boolean expectedMarkerRequirement,
+                long now
+        ) {
+            return now < retryAfterNanos
+                    && releaseMarkerRequired == expectedMarkerRequirement
+                    && Objects.equals(releaseRevision, expectedRevision);
+        }
     }
 
     private static void verifyReadiness(

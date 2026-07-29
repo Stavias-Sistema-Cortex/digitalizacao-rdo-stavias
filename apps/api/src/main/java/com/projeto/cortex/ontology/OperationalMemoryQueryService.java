@@ -35,6 +35,24 @@ public class OperationalMemoryQueryService {
                 ELSE e.ocorrido_em AT TIME ZONE 'America/Sao_Paulo'
             END
             """;
+    private static final String EFFECTIVE_ACTOR_ID_SQL = """
+            COALESCE(
+                e.usuario_id,
+                CASE
+                    WHEN e.schema_version = 2
+                      AND upper(e.tipo_entidade) = 'PDOR'
+                      AND e.payload_json ->> 'tipoIniciador' = 'USER'
+                    THEN (
+                        SELECT historical_actor.id
+                        FROM colaborador historical_actor
+                        WHERE historical_actor.id =
+                            nullif(e.payload_json ->> 'iniciadoPor', '')
+                        LIMIT 1
+                    )
+                    ELSE NULL
+                END
+            )
+            """;
     private static final Pattern SAFE_GRAPH_ERROR = Pattern.compile(
             "[A-Z][A-Z0-9_]{0,119}"
     );
@@ -190,10 +208,10 @@ public class OperationalMemoryQueryService {
                     e.schema_version,
                     e.resultado,
                     e.erro_categoria,
-                    e.usuario_id AS actor_id,
+                    effective_actor.id AS actor_id,
                     actor.nome AS actor_name,
                     CASE
-                        WHEN e.usuario_id = ? THEN e.dispositivo_id
+                        WHEN effective_actor.id = ? THEN e.dispositivo_id
                         ELSE NULL
                     END AS owned_device_id,
                     e.client_mutation_id,
@@ -241,7 +259,14 @@ public class OperationalMemoryQueryService {
                 FROM cortex_evento_operacional e
                 LEFT JOIN obra worksite ON worksite.id = e.obra_id
                 LEFT JOIN rdo report ON report.id = e.rdo_id
-                LEFT JOIN colaborador actor ON actor.id = e.usuario_id
+                LEFT JOIN LATERAL (
+                    SELECT (
+                """);
+        sql.append(EFFECTIVE_ACTOR_ID_SQL);
+        sql.append("""
+                    ) AS id
+                ) effective_actor ON true
+                LEFT JOIN colaborador actor ON actor.id = effective_actor.id
                 LEFT JOIN LATERAL (
                     SELECT entity.id, entity.external_ref_id, entity.canonical_name
                     FROM ontology_entities entity
@@ -484,7 +509,7 @@ public class OperationalMemoryQueryService {
         }
         appendExact(sql, parameters, "e.obra_id", filter.worksiteId());
         appendExact(sql, parameters, "e.rdo_id", filter.rdoId());
-        appendExact(sql, parameters, "e.usuario_id", filter.actorId());
+        appendExact(sql, parameters, "effective_actor.id", filter.actorId());
         appendExact(sql, parameters, "e.dispositivo_id", filter.deviceId());
         appendExact(sql, parameters, "upper(e.tipo_evento)", filter.eventType());
         appendExact(sql, parameters, "upper(e.origem)", filter.origin());

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ObraLocalRecord } from "../../../lib/db/db.types";
@@ -61,13 +67,14 @@ describe("CreateConversationDialog worksite selector", () => {
     const selector = await screen.findByRole("combobox", {
       name: "Obra usada para consultar pessoas",
     });
-    const options = within(selector).getAllByRole("option");
-
-    expect(options.map((option) => option.textContent)).toEqual([
-      "Catálogo global",
-      "Obra ativa",
-      "Obra inativa",
-    ]);
+    await waitFor(() => {
+      const options = within(selector).getAllByRole("option");
+      expect(options.map((option) => option.textContent)).toEqual([
+        "Catálogo global",
+        "Obra ativa",
+        "Obra inativa",
+      ]);
+    });
     expect(selector).not.toHaveTextContent("Obra arquivada");
   });
 });

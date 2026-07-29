@@ -391,7 +391,7 @@ public class PdorApplicationService {
         payload.put("tipoIniciador", snapshot.initiatorType());
         payload.put("comparacaoAnterior", snapshot.previousComparison());
 
-        memoryService.registrarEventoDetalhado(
+        memoryService.registrarEventoAuditado(
                 snapshot.id(),
                 "PDOR",
                 snapshot.id(),
@@ -404,9 +404,20 @@ public class PdorApplicationService {
                 "ONLINE",
                 "SYNCED",
                 snapshot.executedAt(),
-                LocalDateTime.now(),
+                LocalDateTime.now(Clock.systemUTC())
+                        .truncatedTo(ChronoUnit.MICROS),
                 2,
-                payload
+                payload,
+                "USER".equals(snapshot.initiatorType())
+                        ? snapshot.initiatedBy()
+                        : null,
+                null,
+                null,
+                null,
+                Map.of(),
+                Map.of(),
+                "SUCESSO",
+                null
         );
 
         if (snapshot.executionStatus() == PdorExecutionStatus.SUCCESS) {

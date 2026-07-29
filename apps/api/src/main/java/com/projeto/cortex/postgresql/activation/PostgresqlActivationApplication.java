@@ -26,7 +26,7 @@ import com.projeto.cortex.common.HealthController;
 import com.projeto.cortex.common.LocalCorsConfiguration;
 import com.projeto.cortex.common.PostgresqlActivationGateConfiguration;
 import com.projeto.cortex.common.PostgresqlActivationReadiness;
-import com.projeto.cortex.common.ReadinessController;
+import com.projeto.cortex.common.PostgresqlActivationReadinessController;
 import com.projeto.cortex.common.RuntimeRevision;
 import com.projeto.cortex.config.PostgresqlModeConfigurationGuard;
 import com.projeto.cortex.config.PostgresqlSchemaReadinessGuard;
@@ -53,9 +53,9 @@ import org.springframework.context.annotation.Import;
         PostgresqlModeConfigurationGuard.class,
         PostgresqlSchemaReadinessGuard.class,
         PostgresqlActivationReadiness.class,
+        PostgresqlActivationReadinessController.class,
         LocalCorsConfiguration.class,
         HealthController.class,
-        ReadinessController.class,
         RuntimeRevision.class,
         AuthController.class,
         EmailOtpAuthenticationPolicy.class,

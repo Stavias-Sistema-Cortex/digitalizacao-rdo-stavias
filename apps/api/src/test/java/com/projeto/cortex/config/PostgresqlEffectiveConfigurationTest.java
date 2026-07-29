@@ -19,6 +19,27 @@ class PostgresqlEffectiveConfigurationTest {
     }
 
     @Test
+    void resolvesMigrationReleaseMarkerWriterFromItsDedicatedEnvironmentProperty() {
+        contextRunner("postgresql-migrate").run(context -> assertThat(
+                context.getEnvironment().getProperty(
+                        "cortex.postgresql.release-marker.write-enabled",
+                        Boolean.class
+                )
+        ).isFalse());
+
+        contextRunner("postgresql-migrate")
+                .withPropertyValues(
+                        "CORTEX_POSTGRES_RELEASE_MARKER_WRITE_ENABLED=true"
+                )
+                .run(context -> assertThat(
+                        context.getEnvironment().getProperty(
+                                "cortex.postgresql.release-marker.write-enabled",
+                                Boolean.class
+                        )
+                ).isTrue());
+    }
+
+    @Test
     void resolvesBootstrapModeWithSchemaReadinessOnly() {
         withProfile("postgresql-bootstrap", context -> assertResolved(
                 context, "none", false, true, false
@@ -46,6 +67,27 @@ class PostgresqlEffectiveConfigurationTest {
                 .run(context -> assertResolved(
                         context, "servlet", false, true, true
                 ));
+    }
+
+    @Test
+    void resolvesReleaseMarkerRequirementFromItsDedicatedEnvironmentProperty() {
+        contextRunner("postgresql").run(context -> assertThat(
+                context.getEnvironment().getProperty(
+                        "cortex.postgresql.release-marker.required",
+                        Boolean.class
+                )
+        ).isFalse());
+
+        contextRunner("postgresql")
+                .withPropertyValues(
+                        "CORTEX_POSTGRES_RELEASE_MARKER_REQUIRED=true"
+                )
+                .run(context -> assertThat(
+                        context.getEnvironment().getProperty(
+                                "cortex.postgresql.release-marker.required",
+                                Boolean.class
+                        )
+                ).isTrue());
     }
 
     @Test
@@ -96,7 +138,7 @@ class PostgresqlEffectiveConfigurationTest {
                     ).verifyConfiguration())
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("required-schema-version")
-                            .hasMessageContaining("63");
+                            .hasMessageContaining("64");
                 });
     }
 

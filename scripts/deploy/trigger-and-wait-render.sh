@@ -13,15 +13,35 @@ require_value() {
 for name in \
   CORTEX_RELEASE_SHA \
   CORTEX_RENDER_DEPLOY_HOOK_URL \
-  CORTEX_RENDER_ORIGIN; do
+  CORTEX_RENDER_ORIGIN \
+  CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256 \
+  CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 \
+  CORTEX_DATABASE_RELEASE_MARKER; do
   require_value "$name"
 done
+
+is_sha256_base64url() {
+  [[ "$1" =~ ^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$ ]]
+}
 
 if [[ ! "$CORTEX_RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]; then
   echo "CORTEX_RELEASE_SHA must be a full Git commit SHA." >&2
   exit 1
 fi
-if [[ ! "$CORTEX_RENDER_DEPLOY_HOOK_URL" =~ ^https://api\.render\.com/deploy/[A-Za-z0-9_-]+\?key=[A-Za-z0-9_-]+$ ]]; then
+if ! is_sha256_base64url "$CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256"; then
+  echo "CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256 is invalid." >&2
+  exit 1
+fi
+if ! is_sha256_base64url "$CORTEX_DATABASE_RELEASE_MARKER"; then
+  echo "CORTEX_DATABASE_RELEASE_MARKER is invalid." >&2
+  exit 1
+fi
+if [[ "$CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256" != "none" ]] \
+  && ! is_sha256_base64url "$CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256"; then
+  echo "CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256 is invalid." >&2
+  exit 1
+fi
+if [[ ! "$CORTEX_RENDER_DEPLOY_HOOK_URL" =~ ^https://api\.render\.com/deploy/srv-[a-z0-9]+\?key=[A-Za-z0-9_-]+$ ]]; then
   echo "CORTEX_RENDER_DEPLOY_HOOK_URL is not a valid Render deploy hook." >&2
   exit 1
 fi
@@ -64,6 +84,7 @@ umask 077
 printf 'url = "%s&ref=%s"\n' \
   "$CORTEX_RENDER_DEPLOY_HOOK_URL" \
   "$CORTEX_RELEASE_SHA" > "$hook_config"
+chmod 600 "$hook_config"
 unset CORTEX_RENDER_DEPLOY_HOOK_URL
 
 hook_status="$(
@@ -81,21 +102,23 @@ hook_status="$(
   echo "Render deploy hook request failed." >&2
   exit 1
 }
-if [[ "$hook_status" != "200" ]]; then
+if [[ "$hook_status" != "200" && "$hook_status" != "202" ]]; then
   echo "Render deploy hook did not start an identifiable deployment." >&2
   exit 1
 fi
 
-if ! python3 - "$response_file" <<'PY' >/dev/null; then
+if [[ "$hook_status" == "200" ]] \
+  && ! python3 - "$response_file" <<'PY' >/dev/null; then
 import json
 import pathlib
+import re
 import sys
 
 document = json.loads(pathlib.Path(sys.argv[1]).read_text())
 deploy_id = document.get("id")
 if not deploy_id and isinstance(document.get("deploy"), dict):
     deploy_id = document["deploy"].get("id")
-if not isinstance(deploy_id, str) or not deploy_id.strip():
+if not isinstance(deploy_id, str) or not re.fullmatch(r"dep-[a-z0-9]+", deploy_id):
     raise SystemExit(1)
 PY
   echo "Render deploy hook response did not contain a deploy identifier." >&2
@@ -145,14 +168,48 @@ PY
     )" || readiness_status="000"
 
     if [[ "$readiness_status" == "200" ]] \
-      && python3 - "$response_file" "$CORTEX_RELEASE_SHA" <<'PY' >/dev/null 2>&1; then
+      && python3 - "$response_file" "$CORTEX_RELEASE_SHA" \
+        "$CORTEX_PREVIOUS_RENDER_INSTANCE_SHA256" \
+        "$CORTEX_OFFLINE_GRANT_PUBLIC_KEY_SHA256" \
+        "$CORTEX_DATABASE_RELEASE_MARKER" <<'PY' >/dev/null 2>&1; then
+import base64
 import json
 import pathlib
+import re
 import sys
 
 document = json.loads(pathlib.Path(sys.argv[1]).read_text())
 expected_revision = sys.argv[2]
-if document.get("status") != "READY" or document.get("revision") != expected_revision:
+previous_runtime_instance = sys.argv[3]
+expected_offline_fingerprint = sys.argv[4]
+expected_database_marker = sys.argv[5]
+runtime_instance = document.get("runtimeInstanceSha256")
+
+def is_canonical_sha256(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", value):
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(value + "=")
+    except (ValueError, TypeError):
+        return False
+    return (
+        len(decoded) == 32
+        and base64.urlsafe_b64encode(decoded).decode().rstrip("=") == value
+    )
+
+if (
+    document.get("status") != "READY"
+    or document.get("revision") != expected_revision
+    or not is_canonical_sha256(runtime_instance)
+    or (
+        previous_runtime_instance != "none"
+        and runtime_instance == previous_runtime_instance
+    )
+    or document.get("offlineGrantPublicKeySha256") != expected_offline_fingerprint
+    or document.get("objectStorage") != "READY"
+    or document.get("databaseReleaseRevision") != expected_revision
+    or document.get("databaseReleaseMarker") != expected_database_marker
+):
     raise SystemExit(1)
 PY
       echo "Render is serving the requested revision and is READY."

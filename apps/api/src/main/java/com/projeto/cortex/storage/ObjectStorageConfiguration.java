@@ -3,6 +3,7 @@ package com.projeto.cortex.storage;
 import com.projeto.cortex.common.SecurityRuntimeMode;
 import java.net.URI;
 import java.nio.file.Path;
+import java.time.Duration;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.EnvironmentAware;
@@ -10,6 +11,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -17,6 +19,11 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 
 @Configuration(proxyBeanMethods = false)
 public class ObjectStorageConfiguration implements EnvironmentAware {
+
+    private static final Duration S3_API_CALL_ATTEMPT_TIMEOUT =
+            Duration.ofSeconds(10);
+    private static final Duration S3_API_CALL_TIMEOUT =
+            Duration.ofSeconds(30);
 
     private Environment environment;
 
@@ -67,6 +74,12 @@ public class ObjectStorageConfiguration implements EnvironmentAware {
                 .region(Region.of(configuration.getRegion().strip()))
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .httpClientBuilder(UrlConnectionHttpClient.builder())
+                .overrideConfiguration(ClientOverrideConfiguration.builder()
+                        .apiCallAttemptTimeout(
+                                S3_API_CALL_ATTEMPT_TIMEOUT
+                        )
+                        .apiCallTimeout(S3_API_CALL_TIMEOUT)
+                        .build())
                 .serviceConfiguration(S3Configuration.builder()
                         .pathStyleAccessEnabled(configuration.isPathStyle())
                         .build());

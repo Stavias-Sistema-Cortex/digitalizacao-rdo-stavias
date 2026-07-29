@@ -63,7 +63,7 @@ export default defineConfig({
     stripSourceMapReferencesPlugin(),
 
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "prompt",
 
       includeAssets: [
         "favicon.png",
@@ -109,8 +109,7 @@ export default defineConfig({
       },
 
       workbox: {
-        navigateFallback: "/index.html",
-
+        navigateFallback: null,
         globPatterns: [
           "**/*.{js,mjs,css,html,svg,png,ico,webp,woff,woff2,ttf,xlsx}",
         ],
@@ -123,14 +122,18 @@ export default defineConfig({
 
         runtimeCaching: [
           {
-            urlPattern: ({ request }) =>
-              request.mode === "navigate",
+            urlPattern: ({ request, url }) =>
+              request.mode === "navigate" &&
+              !/^\/api(?:\/|$)/.test(url.pathname),
 
             handler: "NetworkFirst",
 
             options: {
               cacheName: "cortex-pages",
               networkTimeoutSeconds: 3,
+              precacheFallback: {
+                fallbackURL: "/index.html",
+              },
             },
           },
 

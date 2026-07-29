@@ -247,17 +247,30 @@ class StaviaRuntimeBoundaryTest {
                     "apps/api/src/main/java/com/projeto/cortex/auth/identity/"
                             + "AuthIdentityRepository.java",
                     "dbstavias_acad",
+                    "colaborador.banco_origem = 'dbstavias_acad'",
                     "colaborador.banco_origem = 'dbstavias_acad'"),
             sourceReference(
                     "apps/api/src/test/java/com/projeto/cortex/auth/identity/"
                             + "AuthIdentityRepositoryTest.java",
                     "dbstavias_acad",
+                    ".contains(\"colaborador.banco_origem = 'dbstavias_acad'\")",
                     ".contains(\"colaborador.banco_origem = 'dbstavias_acad'\")"),
             sourceReference(
                     "apps/api/src/test/java/com/projeto/cortex/auth/postgresql/"
                             + "PostgresqlAcademyDirectCpfLoginIT.java",
                     "dbstavias_acad",
+                    "SET banco_origem = 'dbstavias_acad',",
+                    "SET banco_origem = 'dbstavias_acad',",
+                    "SET banco_origem = 'dbstavias_acad',",
+                    "SET banco_origem = 'dbstavias_acad',",
+                    "SET banco_origem = 'dbstavias_acad',",
+                    "SET banco_origem = 'dbstavias_acad',",
                     "SET banco_origem = 'dbstavias_acad',"),
+            sourceReference(
+                    "apps/api/src/test/java/com/projeto/cortex/postgresql/"
+                            + "PostgresqlReleaseMarkerIT.java",
+                    "StaviasCortex",
+                    ".withDatabaseName(\"StaviasCortex\"))"),
             sourceReference(
                     "apps/api/src/test/java/com/projeto/cortex/auth/"
                             + "PostgresqlAcademyCpfLoginIT.java",
@@ -386,7 +399,7 @@ class StaviaRuntimeBoundaryTest {
             compiledReference(
                     "target/classes/com/projeto/cortex/auth/identity/"
                             + "AuthIdentityRepository.class",
-                    "dbstavias_acad", 1, "AuthIdentityRepository.java"),
+                    "dbstavias_acad", 2, "AuthIdentityRepository.java"),
             compiledReference(
                     "target/classes/com/projeto/cortex/colaboradores/"
                             + "ColaboradorImportService.class",

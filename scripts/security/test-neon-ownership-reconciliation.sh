@@ -32,6 +32,7 @@ for contract in \
   'GRANT CONNECT, CREATE' \
   'ON DATABASE "StaviasCortex" TO cortex_migrator' \
   'ALTER DEFAULT PRIVILEGES FOR ROLE cortex_migrator' \
+  'cortex_release_marker' \
   'COMMIT;'; do
   grep -Fq "$contract" "$sql" || {
     echo "Neon ownership reconciliation is missing a fail-closed contract." >&2
@@ -105,6 +106,15 @@ docker exec "$container_name" psql \
       version,
       success
     ) VALUES (1, '1', true);
+    CREATE TABLE public.cortex_release_marker (
+      revision varchar(40) PRIMARY KEY,
+      marker varchar(43) NOT NULL
+    );
+    INSERT INTO public.cortex_release_marker(revision, marker)
+    VALUES (
+      repeat('a', 40),
+      repeat('b', 43)
+    );
     CREATE VIEW public.contract_view AS
       SELECT id, payload FROM public.contract_row;
     CREATE MATERIALIZED VIEW public.contract_materialized AS
@@ -158,6 +168,10 @@ docker exec "$container_name" psql \
     GRANT SELECT, INSERT, UPDATE, DELETE,
       TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
       ON TABLE public.contract_row
+      TO cortex_runtime WITH GRANT OPTION;
+    GRANT SELECT, INSERT, UPDATE, DELETE,
+      TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+      ON TABLE public.cortex_release_marker
       TO cortex_runtime WITH GRANT OPTION;
     GRANT TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
       ON TABLE public.contract_row
@@ -755,6 +769,60 @@ flyway_runtime_acl="$(
   exit 1
 }
 
+release_marker_runtime_acl="$(
+  docker exec "$container_name" psql \
+    -U postgres \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        CASE WHEN has_table_privilege(
+          'cortex_runtime',
+          'public.cortex_release_marker',
+          'SELECT'
+        ) THEN '1' ELSE '0' END
+        || CASE WHEN has_table_privilege(
+          'cortex_runtime',
+          'public.cortex_release_marker',
+          'INSERT'
+        ) THEN '1' ELSE '0' END
+        || CASE WHEN has_table_privilege(
+          'cortex_runtime',
+          'public.cortex_release_marker',
+          'UPDATE'
+        ) THEN '1' ELSE '0' END
+        || CASE WHEN has_table_privilege(
+          'cortex_runtime',
+          'public.cortex_release_marker',
+          'DELETE'
+        ) THEN '1' ELSE '0' END;
+    "
+)"
+[[ "$release_marker_runtime_acl" == "1000" ]] || {
+  echo "cortex_runtime can mutate the database release marker." >&2
+  exit 1
+}
+
+set +e
+runtime_release_marker_insert_output="$(
+  docker exec "$container_name" psql \
+    -U cortex_runtime \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      INSERT INTO public.cortex_release_marker(revision, marker)
+      VALUES (repeat('c', 40), repeat('d', 43));
+    " 2>&1
+)"
+runtime_release_marker_insert_status=$?
+set -e
+[[ $runtime_release_marker_insert_status -ne 0 &&
+  "$runtime_release_marker_insert_output" == *"permission denied"* ]] || {
+  echo "cortex_runtime can insert a database release marker." >&2
+  exit 1
+}
+
 set +e
 runtime_truncate_output="$(
   docker exec "$container_name" psql \
@@ -1275,6 +1343,583 @@ docker exec "$container_name" psql \
   -c "
     REVOKE cortex_migrator FROM cortex_unexpected_member;
     DROP ROLE cortex_unexpected_member;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U postgres \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY postgres;
+    CREATE ROLE cortex_bootstrap_operator LOGIN SUPERUSER;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U cortex_bootstrap_operator \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    ALTER ROLE postgres RENAME TO cloud_admin;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U neondb_owner \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    SET createrole_self_grant = '';
+    CREATE ROLE cortex_pg18_creator_grant_probe NOLOGIN;
+  " >/dev/null
+pg18_creator_grant_state="$(
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        pg_get_userbyid(m.grantor)
+        || '|'
+        || CASE WHEN m.admin_option THEN '1' ELSE '0' END
+        || CASE WHEN m.inherit_option THEN '1' ELSE '0' END
+        || CASE WHEN m.set_option THEN '1' ELSE '0' END
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_pg18_creator_grant_probe'::regrole
+        AND m.member = 'neondb_owner'::regrole;
+    "
+)"
+[[ "$pg18_creator_grant_state" == 'cloud_admin|100' ]] || {
+  echo "PostgreSQL 18 did not materialize the expected creator grant." >&2
+  printf '%s\n' "$pg18_creator_grant_state" >&2
+  exit 1
+}
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "DROP ROLE cortex_pg18_creator_grant_probe;" >/dev/null
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d postgres \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
+    GRANT cortex_runtime TO neondb_owner
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
+    SET ROLE neondb_owner;
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+    RESET ROLE;
+  " >/dev/null
+neon_owner_membership_state="$(
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        pg_get_userbyid(m.grantor)
+        || '|'
+        || CASE WHEN m.admin_option THEN '1' ELSE '0' END
+        || CASE WHEN m.inherit_option THEN '1' ELSE '0' END
+        || CASE WHEN m.set_option THEN '1' ELSE '0' END
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_migrator'::regrole
+        AND m.member = 'neondb_owner'::regrole
+      ORDER BY pg_get_userbyid(m.grantor);
+    "
+)"
+[[ "$neon_owner_membership_state" == $'cloud_admin|100\nneondb_owner|001' ]] || {
+  echo "PostgreSQL 18 Neon membership fixture did not create the expected rows." >&2
+  printf '%s\n' "$neon_owner_membership_state" >&2
+  exit 1
+}
+neon_runtime_membership_state="$(
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        pg_get_userbyid(m.grantor)
+        || '|'
+        || CASE WHEN m.admin_option THEN '1' ELSE '0' END
+        || CASE WHEN m.inherit_option THEN '1' ELSE '0' END
+        || CASE WHEN m.set_option THEN '1' ELSE '0' END
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_runtime'::regrole
+        AND m.member = 'neondb_owner'::regrole
+      ORDER BY pg_get_userbyid(m.grantor);
+    "
+)"
+[[ "$neon_runtime_membership_state" == 'cloud_admin|100' ]] || {
+  echo "PostgreSQL 18 Neon runtime membership fixture did not create the expected row." >&2
+  printf '%s\n' "$neon_runtime_membership_state" >&2
+  exit 1
+}
+docker exec "$container_name" psql \
+  -U neondb_owner \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -f /tmp/reconcile-neon-ownership.sql >/dev/null
+neon_owner_membership_state_after="$(
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        pg_get_userbyid(m.grantor)
+        || '|'
+        || CASE WHEN m.admin_option THEN '1' ELSE '0' END
+        || CASE WHEN m.inherit_option THEN '1' ELSE '0' END
+        || CASE WHEN m.set_option THEN '1' ELSE '0' END
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_migrator'::regrole
+        AND m.member = 'neondb_owner'::regrole
+      ORDER BY pg_get_userbyid(m.grantor);
+    "
+)"
+[[ "$neon_owner_membership_state_after" == "$neon_owner_membership_state" ]] || {
+  echo "Neon ownership reconciliation did not preserve the exact managed owner memberships." >&2
+  exit 1
+}
+neon_runtime_membership_state_after="$(
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        pg_get_userbyid(m.grantor)
+        || '|'
+        || CASE WHEN m.admin_option THEN '1' ELSE '0' END
+        || CASE WHEN m.inherit_option THEN '1' ELSE '0' END
+        || CASE WHEN m.set_option THEN '1' ELSE '0' END
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_runtime'::regrole
+        AND m.member = 'neondb_owner'::regrole
+      ORDER BY pg_get_userbyid(m.grantor);
+    "
+)"
+[[ "$neon_runtime_membership_state_after" == \
+  "$neon_runtime_membership_state" ]] || {
+  echo "Neon ownership reconciliation did not preserve the managed runtime membership." >&2
+  exit 1
+}
+
+expect_neon_membership_rejected() {
+  local case_name="$1"
+  local expected_message="$2"
+  local output
+  local status
+
+  set +e
+  output="$(
+    docker exec "$container_name" psql \
+      -U neondb_owner \
+      -d "$database_name" \
+      -v ON_ERROR_STOP=1 \
+      -f /tmp/reconcile-neon-ownership.sql 2>&1
+  )"
+  status=$?
+  set -e
+
+  [[ $status -ne 0 && "$output" == *"$expected_message"* ]] || {
+    echo "Neon ownership reconciliation accepted $case_name." >&2
+    exit 1
+  }
+}
+
+cloud_admin_attribute_cases=(
+  "NOCREATEROLE|CREATEROLE"
+  "NOLOGIN|LOGIN"
+)
+for cloud_admin_attribute_case in "${cloud_admin_attribute_cases[@]}"; do
+  IFS='|' read -r unsafe_attribute restored_attribute \
+    <<< "$cloud_admin_attribute_case"
+  docker exec "$container_name" psql \
+    -U cortex_bootstrap_operator \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "ALTER ROLE cloud_admin $unsafe_attribute;" >/dev/null
+  expect_neon_membership_rejected \
+    "unsafe cloud_admin attributes" \
+    "database owner membership in cortex_migrator is unsafe"
+  docker exec "$container_name" psql \
+    -U cortex_bootstrap_operator \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "ALTER ROLE cloud_admin $restored_attribute;" >/dev/null
+done
+
+cloud_admin_membership_option_cases=(
+  "TRUE TRUE FALSE"
+  "TRUE FALSE TRUE"
+)
+for cloud_admin_membership_option_case in \
+  "${cloud_admin_membership_option_cases[@]}"; do
+  read -r membership_admin membership_inherit membership_set \
+    <<< "$cloud_admin_membership_option_case"
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      GRANT cortex_migrator TO neondb_owner
+        WITH ADMIN $membership_admin,
+          INHERIT $membership_inherit,
+          SET $membership_set
+        GRANTED BY cloud_admin;
+    " >/dev/null
+  expect_neon_membership_rejected \
+    "unsafe cloud_admin-managed membership options" \
+    "database owner membership in cortex_migrator is unsafe"
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      GRANT cortex_migrator TO neondb_owner
+        WITH ADMIN TRUE, INHERIT FALSE, SET FALSE
+        GRANTED BY cloud_admin;
+    " >/dev/null
+done
+
+cloud_admin_runtime_membership_option_cases=(
+  "FALSE FALSE FALSE"
+  "TRUE TRUE FALSE"
+  "TRUE FALSE TRUE"
+)
+for cloud_admin_runtime_membership_option_case in \
+  "${cloud_admin_runtime_membership_option_cases[@]}"; do
+  read -r membership_admin membership_inherit membership_set \
+    <<< "$cloud_admin_runtime_membership_option_case"
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      GRANT cortex_runtime TO neondb_owner
+        WITH ADMIN $membership_admin,
+          INHERIT $membership_inherit,
+          SET $membership_set
+        GRANTED BY cloud_admin;
+    " >/dev/null
+  expect_neon_membership_rejected \
+    "unsafe cloud_admin-managed runtime membership options" \
+    "database owner membership in cortex_runtime is unsafe"
+  docker exec "$container_name" psql \
+    -U cloud_admin \
+    -d "$database_name" \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      GRANT cortex_runtime TO neondb_owner
+        WITH ADMIN TRUE, INHERIT FALSE, SET FALSE
+        GRANTED BY cloud_admin;
+    " >/dev/null
+done
+
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_runtime
+      FROM neondb_owner
+      GRANTED BY cloud_admin;
+    CREATE ROLE cortex_unexpected_runtime_member NOLOGIN;
+    GRANT cortex_runtime TO cortex_unexpected_runtime_member
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "a runtime membership for the wrong member" \
+  "database owner membership in cortex_runtime is unsafe"
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_runtime
+      FROM cortex_unexpected_runtime_member
+      GRANTED BY cloud_admin;
+    GRANT cortex_runtime TO neondb_owner
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE
+      GRANTED BY cloud_admin;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    GRANT cortex_runtime TO cortex_unexpected_runtime_member
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "an extra cloud-admin runtime membership" \
+  "database owner membership in cortex_runtime is unsafe"
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_runtime
+      FROM cortex_unexpected_runtime_member
+      GRANTED BY cloud_admin;
+    DROP ROLE cortex_unexpected_runtime_member;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d postgres \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    SET ROLE neondb_owner;
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY neondb_owner;
+    RESET ROLE;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "a missing canonical owner membership" \
+  "database owner membership in cortex_migrator is unsafe"
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    SET ROLE neondb_owner;
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE
+      GRANTED BY neondb_owner;
+    RESET ROLE;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    CREATE ROLE cortex_membership_grantor NOLOGIN;
+    GRANT cortex_migrator TO cortex_membership_grantor
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
+    SET ROLE neondb_owner;
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY neondb_owner;
+    RESET ROLE;
+    SET ROLE cortex_membership_grantor;
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE
+      GRANTED BY cortex_membership_grantor;
+    RESET ROLE;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "a canonical membership from an alternate grantor" \
+  "database owner membership in cortex_migrator is unsafe"
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    SET ROLE neondb_owner;
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE
+      GRANTED BY neondb_owner;
+    RESET ROLE;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "an extra owner membership row" \
+  "database owner membership in cortex_migrator is unsafe"
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    SET ROLE cortex_membership_grantor;
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY cortex_membership_grantor;
+    RESET ROLE;
+    REVOKE cortex_migrator
+      FROM cortex_membership_grantor
+      GRANTED BY cloud_admin;
+    DROP ROLE cortex_membership_grantor;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    CREATE ROLE cortex_unexpected_member NOLOGIN;
+    GRANT cortex_migrator TO cortex_unexpected_member
+      WITH ADMIN FALSE, INHERIT FALSE, SET FALSE;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "an unexpected cloud-managed member" \
+  "cortex_migrator has an unexpected member"
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_migrator
+      FROM cortex_unexpected_member
+      GRANTED BY cloud_admin;
+    DROP ROLE cortex_unexpected_member;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    SET ROLE neondb_owner;
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY neondb_owner;
+    RESET ROLE;
+    SET ROLE cloud_admin;
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY cloud_admin;
+    REVOKE cortex_runtime
+      FROM neondb_owner
+      GRANTED BY cloud_admin;
+    RESET ROLE;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U cortex_bootstrap_operator \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    ALTER ROLE cloud_admin RENAME TO postgres;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U postgres \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    DROP ROLE cortex_bootstrap_operator;
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+  " >/dev/null
+
+docker exec "$container_name" psql \
+  -U postgres \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY postgres;
+    CREATE ROLE cloud_admin LOGIN CREATEROLE SUPERUSER;
+    GRANT cortex_migrator TO cloud_admin
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE
+      GRANTED BY postgres;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d postgres \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE
+      GRANTED BY cloud_admin;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U neondb_owner \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE
+      GRANTED BY neondb_owner;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U postgres \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    GRANT cortex_runtime TO neondb_owner
+      WITH ADMIN TRUE, INHERIT FALSE, SET FALSE
+      GRANTED BY postgres;
+  " >/dev/null
+runtime_alternate_grantor_state="$(
+  docker exec "$container_name" psql \
+    -U postgres \
+    -d "$database_name" \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -c "
+      SELECT
+        pg_get_userbyid(m.grantor)
+        || '|'
+        || CASE WHEN m.admin_option THEN '1' ELSE '0' END
+        || CASE WHEN m.inherit_option THEN '1' ELSE '0' END
+        || CASE WHEN m.set_option THEN '1' ELSE '0' END
+      FROM pg_auth_members m
+      WHERE m.roleid = 'cortex_runtime'::regrole
+        AND m.member = 'neondb_owner'::regrole;
+    "
+)"
+[[ "$runtime_alternate_grantor_state" == 'postgres|100' ]] || {
+  echo "Runtime alternate-grantor fixture did not create the expected row." >&2
+  printf '%s\n' "$runtime_alternate_grantor_state" >&2
+  exit 1
+}
+expect_neon_membership_rejected \
+  "a runtime membership from an alternate grantor" \
+  "database owner membership in cortex_runtime is unsafe"
+docker exec "$container_name" psql \
+  -U postgres \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_runtime
+      FROM neondb_owner
+      GRANTED BY postgres;
+    ALTER ROLE cloud_admin NOSUPERUSER;
+  " >/dev/null
+expect_neon_membership_rejected \
+  "a non-superuser cloud_admin grantor" \
+  "database owner membership in cortex_migrator is unsafe"
+docker exec "$container_name" psql \
+  -U neondb_owner \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY neondb_owner;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U cloud_admin \
+  -d postgres \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_migrator
+      FROM neondb_owner
+      GRANTED BY cloud_admin;
+  " >/dev/null
+docker exec "$container_name" psql \
+  -U postgres \
+  -d "$database_name" \
+  -v ON_ERROR_STOP=1 \
+  -c "
+    REVOKE cortex_migrator
+      FROM cloud_admin
+      GRANTED BY postgres;
+    DROP ROLE cloud_admin;
+    GRANT cortex_migrator TO neondb_owner
+      WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
   " >/dev/null
 
 owner_membership_cases=(
