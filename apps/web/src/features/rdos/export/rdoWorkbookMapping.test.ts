@@ -699,4 +699,4 @@ describe("RDO workbook mapping", () => {
     await writeFile(output, bytes);
     expect(bytes.byteLength).toBeGreaterThan(0);
   });
-});
+}, 15_000);

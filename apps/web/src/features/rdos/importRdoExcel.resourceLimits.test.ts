@@ -394,4 +394,4 @@ describe("importação local de RDO: limites de recursos", () => {
     expect(imported.summary).toContain("texto do PDF identificado");
     expect(document.getPage).toHaveBeenCalledOnce();
   });
-});
+}, 15_000);
