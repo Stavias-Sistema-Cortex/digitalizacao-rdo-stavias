@@ -338,10 +338,10 @@ public class RdoDraftUpdateService {
             );
         }
         if (persisted.previousRdoDate() != null
-                && !request.dataRdo().isAfter(persisted.previousRdoDate())) {
+                && request.dataRdo().isBefore(persisted.previousRdoDate())) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "A data do RDO deve ser posterior ao RDO de origem."
+                    "A data do RDO não pode ser anterior ao RDO de origem."
             );
         }
     }

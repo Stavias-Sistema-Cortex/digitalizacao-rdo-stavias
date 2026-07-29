@@ -214,7 +214,7 @@ class PostgresqlRdoCreationContextIT {
         inserirRdo(anterior, obraA, "RDO-0041",
                 SELECTED_DATE.minusDays(1), "ENVIADO", empate, empate);
         inserirRdo("00000000-0000-4000-8000-000000000999", obraA, "RDO-0999",
-                SELECTED_DATE, "RASCUNHO", empate.plusHours(1), empate.plusHours(1));
+                SELECTED_DATE, "CANCELADO", empate.plusHours(1), empate.plusHours(1));
         inserirRdo(id(), obraB, "RDO-9000",
                 SELECTED_DATE.minusDays(1), "ENVIADO", empate.plusHours(2), empate.plusHours(2));
         String assetA = inserirAsset("EQ-A");
@@ -256,6 +256,58 @@ class PostgresqlRdoCreationContextIT {
         assertThat(response.provenance().receiptVersion())
                 .isLessThanOrEqualTo(9_007_199_254_740_991L);
         assertThat(response.provenance().previousRdoId()).isEqualTo(anterior);
+    }
+
+    @Test
+    void usaRdoCausalMaisRecenteDoMesmoDiaSemSerReordenadoPorEdicao() {
+        String obraId = id();
+        inserirObra(obraId, "MESMO-DIA");
+        String anterior = id();
+        String primeiroDoDia = id();
+        String segundoDoDia = id();
+        String itemAnterior = id();
+        String itemSegundo = id();
+        LocalDateTime base = LocalDateTime.of(2026, 7, 22, 8, 0);
+
+        inserirRdo(
+                anterior, obraId, "RDO-0040", SELECTED_DATE.minusDays(1),
+                "ENVIADO", base.minusDays(1), base.minusDays(1)
+        );
+        inserirRdo(
+                primeiroDoDia, obraId, "RDO-0041", SELECTED_DATE,
+                "RASCUNHO", base, base.plusHours(8)
+        );
+        inserirRdo(
+                segundoDoDia, obraId, "RDO-0042", SELECTED_DATE,
+                "RASCUNHO", base.plusMinutes(1), base.plusMinutes(1)
+        );
+        jdbc.update(
+                "UPDATE rdo SET numero_sequencial = ? WHERE id = ?",
+                41L,
+                primeiroDoDia
+        );
+        jdbc.update(
+                "UPDATE rdo SET numero_sequencial = ? WHERE id = ?",
+                42L,
+                segundoDoDia
+        );
+        inserirMaoObra(itemAnterior, anterior, null, "Equipe anterior");
+        inserirMaoObra(itemSegundo, segundoDoDia, null, "Equipe atual");
+
+        RdoContextResponse response = new RdoContextService(jdbc)
+                .buscarContexto(obraId, SELECTED_DATE);
+
+        assertThat(response.previousRdo())
+                .isNotNull()
+                .extracting(RdoContextResponse.PreviousRdo::id)
+                .isEqualTo(segundoDoDia);
+        assertThat(response.previousWorkforce())
+                .singleElement()
+                .extracting(
+                        RdoContextResponse.PreviousWorkforceItem::sourceItemId,
+                        RdoContextResponse.PreviousWorkforceItem::roleSnapshot
+                )
+                .containsExactly(itemSegundo, "Equipe atual");
     }
 
     @Test
@@ -1092,7 +1144,7 @@ class PostgresqlRdoCreationContextIT {
     }
 
     @Test
-    void herdaMaoDeObraManualEPermiteEditarOuExcluirNoNovoRdo()
+    void herdaMaoDeObraManualDoMesmoDiaEPermiteEditarOuExcluirNoNovoRdo()
             throws Exception {
         String obraId = id();
         inserirObra(obraId, "MAO-OBRA-MANUAL-HERDADA");
@@ -1103,7 +1155,7 @@ class PostgresqlRdoCreationContextIT {
                 previousRdoId,
                 obraId,
                 "RDO-0001",
-                SELECTED_DATE.minusDays(1),
+                SELECTED_DATE,
                 "ENVIADO",
                 LocalDateTime.now().minusDays(1),
                 LocalDateTime.now().minusDays(1)
@@ -1912,7 +1964,7 @@ class PostgresqlRdoCreationContextIT {
         transactions.execute(status -> service(collaborator).criarRascunho(create));
         com.fasterxml.jackson.databind.node.ObjectNode invalidDateJson =
                 mapper.valueToTree(create);
-        invalidDateJson.put("dataRdo", SELECTED_DATE.minusDays(1).toString());
+        invalidDateJson.put("dataRdo", SELECTED_DATE.minusDays(2).toString());
         RdoCreateRequest invalidDate = mapper.treeToValue(
                 invalidDateJson,
                 RdoCreateRequest.class

@@ -639,6 +639,156 @@ describe("cache autorizado obra-data", () => {
     },
   );
 
+  it("encadeia o último RDO causal do mesmo dia sem deixar edição antiga vencer por updatedAt", async () => {
+    await putRdoCreationContext(fixture());
+    const database = await getCortexDb();
+    await database.put("rdos", {
+      id: "00000000-0000-4000-8000-000000000081",
+      obraId: WORKSITE_A,
+      programacaoId: null,
+      numeroRdo: "RDO-LOCAL-1",
+      dataRdo: "2026-07-22",
+      statusRdo: "RASCUNHO",
+      syncStatus: "LOCAL_PENDING",
+      versaoEntidade: null,
+      payload: {
+        previousRdoId: null,
+        maoObra: [{
+          localId: "00000000-0000-4000-8000-000000000082",
+          selected: true,
+          colaboradorId: "",
+          nomeColaborador: "Equipe primeira",
+          cargo: "Servente",
+          tipoVinculo: "CONTRATADO",
+          quantidade: 1,
+          horaInicio: "07:00",
+          horaFim: "17:00",
+          observacoes: "",
+        }],
+      },
+      createdAt: "2026-07-22T08:00:00.000Z",
+      updatedAt: "2026-07-22T18:00:00.000Z",
+    });
+    await database.put("rdos", {
+      id: "00000000-0000-4000-8000-000000000091",
+      obraId: WORKSITE_A,
+      programacaoId: null,
+      numeroRdo: "RDO-LOCAL-2",
+      dataRdo: "2026-07-22",
+      statusRdo: "RASCUNHO",
+      syncStatus: "LOCAL_PENDING",
+      versaoEntidade: null,
+      payload: {
+        previousRdoId: "00000000-0000-4000-8000-000000000081",
+        maoObra: [{
+          localId: "00000000-0000-4000-8000-000000000092",
+          selected: true,
+          colaboradorId: "",
+          nomeColaborador: "Equipe seguinte",
+          cargo: "Operador",
+          tipoVinculo: "CONTRATADO",
+          quantidade: 1,
+          horaInicio: "07:00",
+          horaFim: "17:00",
+          observacoes: "",
+        }],
+      },
+      createdAt: "2026-07-22T08:01:00.000Z",
+      updatedAt: "2026-07-22T08:01:00.000Z",
+    });
+
+    await expect(
+      requireRdoDraftCreationContext(WORKSITE_A, "2026-07-22", false),
+    ).resolves.toMatchObject({
+      kind: "LOCAL_PENDING",
+      source: "LOCAL_CHAIN",
+      context: {
+        previousRdo: {
+          id: "00000000-0000-4000-8000-000000000091",
+          numeroRdo: "RDO-LOCAL-2",
+          dataRdo: "2026-07-22",
+        },
+        previousWorkforce: [
+          {
+            sourceItemId: "00000000-0000-4000-8000-000000000092",
+            nameSnapshot: "Equipe seguinte",
+          },
+        ],
+      },
+    });
+  });
+
+  it("não usa commit de edição como se fosse a criação do RDO", async () => {
+    await putRdoCreationContext(fixture());
+    const database = await getCortexDb();
+    const baseRecord = {
+      obraId: WORKSITE_A,
+      programacaoId: null,
+      numeroRdo: "RDO-LOCAL",
+      dataRdo: "2026-07-22",
+      statusRdo: "RASCUNHO" as const,
+      syncStatus: "SYNCED" as const,
+      versaoEntidade: 2,
+      payload: { maoObra: [] },
+      createdAt: "2026-07-22T08:00:00.000Z",
+      updatedAt: "2026-07-22T08:00:00.000Z",
+    };
+    const editedId = "00000000-0000-4000-8000-0000000000a1";
+    const canonicalId = "00000000-0000-4000-8000-0000000000b1";
+    await database.put("rdos", { ...baseRecord, id: editedId });
+    await database.put("rdos", { ...baseRecord, id: canonicalId });
+    await database.put("processed_events", {
+      commitSeq: 99,
+      eventoId: "00000000-0000-4000-8000-0000000000c1",
+      tipoEvento: "RDO_EDITADO",
+      entidadeTipo: "RDO",
+      entidadeId: editedId,
+      aplicadoEm: "2026-07-22T18:00:00.000Z",
+    });
+
+    await expect(
+      requireRdoDraftCreationContext(WORKSITE_A, "2026-07-22", false),
+    ).resolves.toMatchObject({
+      kind: "LOCAL_PENDING",
+      context: { previousRdo: { id: canonicalId } },
+    });
+  });
+
+  it("desempata deterministicamente quando a cadeia local contém um ciclo", async () => {
+    await putRdoCreationContext(fixture());
+    const database = await getCortexDb();
+    const lowerId = "00000000-0000-4000-8000-0000000000a2";
+    const higherId = "00000000-0000-4000-8000-0000000000b2";
+    const baseRecord = {
+      obraId: WORKSITE_A,
+      programacaoId: null,
+      numeroRdo: "RDO-LOCAL",
+      dataRdo: "2026-07-22",
+      statusRdo: "RASCUNHO" as const,
+      syncStatus: "LOCAL_PENDING" as const,
+      versaoEntidade: null,
+      createdAt: "2026-07-22T08:00:00.000Z",
+      updatedAt: "2026-07-22T08:00:00.000Z",
+    };
+    await database.put("rdos", {
+      ...baseRecord,
+      id: lowerId,
+      payload: { previousRdoId: higherId, maoObra: [] },
+    });
+    await database.put("rdos", {
+      ...baseRecord,
+      id: higherId,
+      payload: { previousRdoId: lowerId, maoObra: [] },
+    });
+
+    await expect(
+      requireRdoDraftCreationContext(WORKSITE_A, "2026-07-22", false),
+    ).resolves.toMatchObject({
+      kind: "LOCAL_PENDING",
+      context: { previousRdo: { id: higherId } },
+    });
+  });
+
   it("retorna fallback legado como LOCAL_PENDING sem gravá-lo no cache canônico", async () => {
     const remote = async () => ({
       kind: "LOCAL_PENDING" as const,

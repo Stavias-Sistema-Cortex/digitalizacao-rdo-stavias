@@ -67,9 +67,10 @@ segredo não são argumentos de shell, logs, outputs ou artefatos.
   `CORTEX_POSTGRES_USER` and `CORTEX_POSTGRES_PASSWORD`.
 - Mantenha uma conta de login migradora estável e separada do runtime. Ela deve
   ser `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOREPLICATION` e
-  `NOBYPASSRLS`, ter `CONNECT`, ser dona do schema/objetos que Flyway precisa
-  alterar e conceder ao runtime somente DML, sequences e functions necessários.
-  Não use a conta runtime para DDL.
+  `NOBYPASSRLS`, ter somente `CONNECT, CREATE` no banco `StaviasCortex`, ser
+  dona do schema/objetos que Flyway precisa alterar e conceder ao runtime
+  somente DML, sequences e functions necessários. Não use a conta runtime para
+  DDL.
 - Use project `Sistema Córtex`, PostgreSQL 18, region Ohio, and branch
   `production`. Confirm all four values in the Neon console before migration;
   do not infer the project or branch from a copied connection string.
@@ -115,12 +116,16 @@ release, configure no ambiente do operador, sem imprimir os valores:
 
 - `CORTEX_SOURCE_PGURI`: URI PostgreSQL local para `StaviasCortex`.
 - `CORTEX_NEON_ADMIN_PGURI`: URI owner do projeto Neon com
-  `sslmode=require`, `verify-ca` ou `verify-full`, sem parâmetros duplicados.
+  exatamente `sslmode=verify-full` e `channel_binding=require`, sem parâmetros
+  duplicados.
 - `CORTEX_NEON_RUNTIME_PASSWORD`: senha nova da role `cortex_runtime`.
 - `CORTEX_NEON_MIGRATOR_ROLE=cortex_migrator`: nome não secreto e único da
   role migradora que criará objetos futuros. Ela deve existir e a conta owner
-  deve ser membro; o script rejeita qualquer outro nome e verifica as duas
-  condições antes do dump.
+  deve ter `SET` sobre ela; a role deve ser dona do schema `public` ou ter
+  `CREATE` nele, além de `CONNECT` e `CREATE` somente no banco
+  `StaviasCortex`. O `CREATE` no banco permite restaurar extensões confiáveis
+  como `pg_trgm` sem transferir o ownership do banco. O script rejeita qualquer
+  outro nome e verifica essas condições antes do dump.
 - `CORTEX_NEON_ROLLBACK_DIR`: diretório absoluto, protegido e fora do checkout
   para o dump local de rollback.
 
@@ -157,12 +162,25 @@ concorrentes sem exigir congelamento informal. O dump custom validado fica em
 `$CORTEX_NEON_ROLLBACK_DIR/StaviasCortex-pre-neon.dump`, com modo `0600`, e
 permanece preservado mesmo se uma etapa posterior falhar.
 
-O restore usa transação única. Somente depois dele uma segunda transação cria
-ou normaliza `cortex_runtime` como `NOSUPERUSER`, `NOCREATEDB`,
+O restore usa transação única e executa `SET ROLE cortex_migrator`, de modo que
+os objetos restaurados ficam sob ownership da mesma role durável usada pelo
+Flyway, sem transferir a propriedade do banco. Somente depois dele uma segunda
+transação cria ou normaliza `cortex_runtime` como `NOSUPERUSER`, `NOCREATEDB`,
 `NOCREATEROLE`, `NOREPLICATION` e `NOBYPASSRLS`, aplica os grants e configura
 default privileges `FOR ROLE` da role migradora. A saída normal contém somente
 `tabela|origem|alvo` para as dez tabelas centrais, todas qualificadas por
 `public`; qualquer divergência encerra com status não zero.
+
+Para um alvo já populado cujos objetos da aplicação ainda pertençam a
+`neondb_owner`, não use `REASSIGN OWNED`: ele também alcança objetos
+compartilhados, inclusive o banco. Depois de criar a role dedicada por um
+canal protegido, execute
+`scripts/deploy/reconcile-neon-ownership.sql` como `neondb_owner` no banco
+canônico. O SQL é transacional e idempotente, mantém o owner do banco, exclui
+membros de extensões, rejeita rotinas `SECURITY DEFINER` e classes de objeto
+não previstas, transfere o schema, relações, rotinas `SECURITY INVOKER` e
+estatísticas estendidas da aplicação e reaplica ACLs do runtime e default ACLs
+do migrador.
 
 Falha de restore deixa o alvo vazio e permite nova tentativa com um diretório
 de rollback novo, preservando o dump anterior. Falha posterior ao restore ou

@@ -168,7 +168,17 @@ const CORPORATE_SOURCE_LINES = new Map([
       "echo \"Target StaviasCortex database is not empty; migration stopped.\" >&2",
       "dump_file=\"$rollback_dir/StaviasCortex-pre-neon.dump\"",
       "dump_partial=\"$(mktemp \"$rollback_dir/.StaviasCortex-pre-neon.dump.XXXXXX\")\"",
-      "GRANT CONNECT ON DATABASE \"StaviasCortex\" TO cortex_runtime;",
+      ...Array(2).fill("current_database() = 'StaviasCortex'"),
+    ],
+  ],
+  [
+    "scripts/deploy/reconcile-neon-ownership.sql",
+    [
+      "IF current_database() <> 'StaviasCortex' THEN",
+      "RAISE EXCEPTION 'ownership reconciliation must target StaviasCortex';",
+      "ON DATABASE \"StaviasCortex\"",
+      "ON DATABASE \"StaviasCortex\" TO cortex_migrator;",
+      "ON DATABASE \"StaviasCortex\" TO cortex_runtime;",
     ],
   ],
   [
@@ -198,6 +208,25 @@ const CORPORATE_SOURCE_LINES = new Map([
       "\"$rerun_output\" == \"Target StaviasCortex database is not empty; migration stopped.\" &&",
       "[[ -f \"$rollback_dir/StaviasCortex-pre-neon.dump\" ]] || {",
       "rollback_mode=\"$(file_mode \"$rollback_dir/StaviasCortex-pre-neon.dump\")\"",
+      "\"$payload\" == *\"'StaviasCortex'\"* &&",
+      "StaviasCortex",
+      ...Array(17).fill(
+        "-X -v ON_ERROR_STOP=1 -U postgres -d StaviasCortex \\",
+      ),
+      "ON DATABASE \\\"StaviasCortex\\\" TO cortex_migrator;",
+      ...Array(9).fill(
+        "-X -v ON_ERROR_STOP=1 -U cortex_migrator -d StaviasCortex \\",
+      ),
+      "-d StaviasCortex",
+    ],
+  ],
+  [
+    "scripts/security/test-neon-ownership-reconciliation.sh",
+    [
+      "database_name=\"StaviasCortex\"",
+      "'current_database() <> '\\''StaviasCortex'\\''' \\",
+      "'ON DATABASE \"StaviasCortex\" TO cortex_migrator' \\",
+      ...Array(6).fill("ON DATABASE \\\"StaviasCortex\\\""),
     ],
   ],
   [

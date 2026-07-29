@@ -28,6 +28,9 @@ const mocks = vi.hoisted(() => ({
     errors: 0,
     retryableErrors: 0,
     conflicts: 0,
+    appliedMutationIds: [],
+    handledMutationIds: [],
+    errorMutationIds: [],
   })),
   pull: vi.fn(async () => ({ pulled: 0, messagingConversationIds: [] })),
   refresh: vi.fn(async () => undefined),
@@ -171,6 +174,261 @@ describe("session-scoped sync single flight", () => {
     expect(
       mocks.recoverRejectedRdo.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.push.mock.invocationCallOrder[0]);
+  });
+
+  it("recupera a primeira rejeição e faz no máximo um novo push no mesmo ciclo", async () => {
+    mocks.recoverRejectedRdo
+      .mockResolvedValueOnce(0)
+      .mockImplementationOnce(
+        async (
+          _guard: unknown,
+          options: {
+            recoveredReplacementIds?: Set<string>;
+            recoveredReplacementByOriginalId?: Map<string, string>;
+          },
+        ) => {
+          options.recoveredReplacementIds?.add("recovered-rdo");
+          options.recoveredReplacementByOriginalId?.set(
+            "original-rdo",
+            "recovered-rdo",
+          );
+          return 1;
+        },
+      );
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 1,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: ["original-rdo"],
+        errorMutationIds: ["original-rdo"],
+      })
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 1,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: ["recovered-rdo"],
+        handledMutationIds: ["recovered-rdo"],
+        errorMutationIds: [],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({
+      pushed: 2,
+      applied: 1,
+      errors: 0,
+      retryableErrors: 0,
+      conflicts: 0,
+    });
+
+    expect(mocks.recoverRejectedRdo).toHaveBeenCalledTimes(2);
+    expect(mocks.push).toHaveBeenCalledTimes(2);
+    expect(mocks.push.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.recoverRejectedRdo.mock.invocationCallOrder[1],
+    );
+    expect(mocks.recoverRejectedRdo.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.push.mock.invocationCallOrder[1],
+    );
+  });
+
+  it("não entra em loop quando a substituta também é rejeitada", async () => {
+    mocks.recoverRejectedRdo
+      .mockResolvedValueOnce(0)
+      .mockImplementationOnce(
+        async (
+          _guard: unknown,
+          options: {
+            recoveredReplacementIds?: Set<string>;
+            recoveredReplacementByOriginalId?: Map<string, string>;
+          },
+        ) => {
+          options.recoveredReplacementIds?.add("recovered-rdo");
+          options.recoveredReplacementByOriginalId?.set(
+            "original-rdo",
+            "recovered-rdo",
+          );
+          return 1;
+        },
+      );
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 1,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: ["original-rdo"],
+        errorMutationIds: ["original-rdo"],
+      })
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 1,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: ["recovered-rdo"],
+        errorMutationIds: ["recovered-rdo"],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({
+      pushed: 2,
+      applied: 0,
+      errors: 1,
+    });
+
+    expect(mocks.recoverRejectedRdo).toHaveBeenCalledTimes(2);
+    expect(mocks.push).toHaveBeenCalledTimes(2);
+  });
+
+  it("não oculta a rejeição quando a substituta não ficou pronta para envio", async () => {
+    mocks.recoverRejectedRdo
+      .mockResolvedValueOnce(0)
+      .mockImplementationOnce(
+        async (
+          _guard: unknown,
+          options: {
+            recoveredReplacementIds?: Set<string>;
+            recoveredReplacementByOriginalId?: Map<string, string>;
+          },
+        ) => {
+          options.recoveredReplacementIds?.add("recovered-rdo");
+          options.recoveredReplacementByOriginalId?.set(
+            "original-rdo",
+            "recovered-rdo",
+          );
+          return 1;
+        },
+      );
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 1,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: ["original-rdo"],
+        errorMutationIds: ["original-rdo"],
+      })
+      .mockResolvedValueOnce({
+        pushed: 0,
+        applied: 0,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: [],
+        errorMutationIds: [],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({
+      pushed: 1,
+      applied: 0,
+      errors: 1,
+    });
+    expect(mocks.push).toHaveBeenCalledTimes(2);
+  });
+
+  it("não atribui a uma substituta o sucesso de outra mutação enviada no mesmo retry", async () => {
+    mocks.recoverRejectedRdo
+      .mockResolvedValueOnce(0)
+      .mockImplementationOnce(
+        async (
+          _guard: unknown,
+          options: {
+            recoveredReplacementIds?: Set<string>;
+            recoveredReplacementByOriginalId?: Map<string, string>;
+          },
+        ) => {
+          options.recoveredReplacementIds?.add("recovered-rdo");
+          options.recoveredReplacementByOriginalId?.set(
+            "original-rdo",
+            "recovered-rdo",
+          );
+          return 1;
+        },
+      );
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 1,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: ["original-rdo"],
+        errorMutationIds: ["original-rdo"],
+      })
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 1,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: ["unrelated-old-mutation"],
+        handledMutationIds: ["unrelated-old-mutation"],
+        errorMutationIds: [],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({
+      pushed: 2,
+      applied: 1,
+      errors: 1,
+    });
+  });
+
+  it("não oculta erro atual quando uma rejeição antiga vence entre os dois recoveries", async () => {
+    mocks.recoverRejectedRdo
+      .mockResolvedValueOnce(0)
+      .mockImplementationOnce(
+        async (
+          _guard: unknown,
+          options: {
+            recoveredReplacementIds?: Set<string>;
+            recoveredReplacementByOriginalId?: Map<string, string>;
+          },
+        ) => {
+          options.recoveredReplacementIds?.add("old-replacement");
+          options.recoveredReplacementByOriginalId?.set(
+            "old-rejected-original",
+            "old-replacement",
+          );
+          return 1;
+        },
+      );
+    mocks.push
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 0,
+        errors: 1,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: [],
+        handledMutationIds: ["current-unrelated-error"],
+        errorMutationIds: ["current-unrelated-error"],
+      })
+      .mockResolvedValueOnce({
+        pushed: 1,
+        applied: 1,
+        errors: 0,
+        retryableErrors: 0,
+        conflicts: 0,
+        appliedMutationIds: ["old-replacement"],
+        handledMutationIds: ["old-replacement"],
+        errorMutationIds: [],
+      });
+
+    await expect(syncNow()).resolves.toMatchObject({
+      pushed: 2,
+      applied: 1,
+      errors: 1,
+    });
   });
 
   it("announces completion once only after the guarded durable state is written", async () => {

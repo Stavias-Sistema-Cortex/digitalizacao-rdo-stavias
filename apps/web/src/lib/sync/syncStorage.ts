@@ -2216,15 +2216,13 @@ export async function applyPushResultAtomically(
         aggregateSyncStatus,
         timestamp,
       );
-      if (!canonicalEvent) {
-        await updateRdoOperationalEventsSyncStatus(
-          transaction,
-          mutation.entidadeId,
-          "SYNCED",
-          timestamp,
-          mutationOperationalEventIds(mutation),
-        );
-      }
+      await updateRdoOperationalEventsSyncStatus(
+        transaction,
+        mutation.entidadeId,
+        "SYNCED",
+        timestamp,
+        mutationOperationalEventIds(mutation),
+      );
       await updateRdoAttachmentsSyncStatus(
         transaction,
         mutation.entidadeId,

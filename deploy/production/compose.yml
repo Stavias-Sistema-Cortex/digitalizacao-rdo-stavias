@@ -3,6 +3,8 @@ name: cortex-production
 services:
   cortex-postgres:
     image: postgres:18-alpine
+    entrypoint:
+      - /usr/local/bin/cortex-postgres-entrypoint.sh
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -28,6 +30,7 @@ services:
       # pg_upgrade can operate without crossing a mount boundary.
       - cortex_postgres_data:/var/lib/postgresql
       - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-cortex-roles.sh:ro
+      - ./postgres-entrypoint.sh:/usr/local/bin/cortex-postgres-entrypoint.sh:ro
     networks:
       - cortex_private
     healthcheck:

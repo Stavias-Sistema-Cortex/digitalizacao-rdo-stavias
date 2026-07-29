@@ -10,6 +10,7 @@ bash "$repo_root/scripts/security/test-github-actions-pinning.sh"
 bash "$repo_root/scripts/security/test-github-actions-pinning-regressions.sh"
 bash "$repo_root/scripts/security/test-docker-base-image-pinning.sh"
 bash "$repo_root/scripts/security/test-neon-migration-contract.sh"
+bash "$repo_root/scripts/security/test-neon-ownership-reconciliation.sh"
 bash "$repo_root/scripts/security/test-scan-cortex-secrets.sh"
 bash "$repo_root/scripts/security/test-postgres-role-reconciliation.sh"
 bash "$repo_root/scripts/deploy/test-run-neon-flyway.sh"
@@ -20,6 +21,7 @@ ci_workflow_file="$repo_root/.github/workflows/api-ci.yml"
 compose_file="$repo_root/deploy/production/compose.yml"
 caddy_file="$repo_root/deploy/production/Caddyfile"
 postgres_init_file="$repo_root/deploy/production/postgres-init.sh"
+postgres_entrypoint_file="$repo_root/deploy/production/postgres-entrypoint.sh"
 runbook_file="$repo_root/deploy/production/README.md"
 prepare_script="$repo_root/scripts/deploy/prepare-local-production.sh"
 
@@ -29,6 +31,7 @@ for required_file in \
   "$compose_file" \
   "$caddy_file" \
   "$postgres_init_file" \
+  "$postgres_entrypoint_file" \
   "$runbook_file" \
   "$prepare_script"; do
   [[ -f "$required_file" ]] || {
@@ -175,11 +178,19 @@ assert not missing, f"missing production services: {missing}"
 
 postgres = services["cortex-postgres"]
 assert postgres["image"].startswith("postgres:18"), postgres["image"]
+assert postgres["entrypoint"] == [
+    "/usr/local/bin/cortex-postgres-entrypoint.sh"
+], postgres["entrypoint"]
 assert not postgres.get("ports"), "PostgreSQL must never publish a host port"
 postgres_mounts = postgres.get("volumes", [])
 assert any(
     mount.get("target") == "/var/lib/postgresql" for mount in postgres_mounts
 ), "PostgreSQL 18 must persist the version-aware parent data directory"
+assert any(
+    mount.get("target") == "/usr/local/bin/cortex-postgres-entrypoint.sh"
+    and mount.get("read_only") is True
+    for mount in postgres_mounts
+), "PostgreSQL must stage mode-0600 secrets through the reviewed entrypoint"
 
 for private_service in ("cortex-api", "cortex-web"):
     assert not services[private_service].get("ports"), (

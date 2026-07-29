@@ -487,6 +487,19 @@
   .sidebar-brand-lockup {
     max-width: 160px;
   }
+
+  .sidebar-nav-item {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 52px;
+    padding: 4px 2px;
+    font-size: 0.66rem;
+  }
+
+  .sidebar-nav-item .sidebar-label {
+    max-width: 100%;
+    white-space: nowrap;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

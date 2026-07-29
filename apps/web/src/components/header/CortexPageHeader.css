@@ -159,6 +159,18 @@
     border-inline-start: 0;
   }
 
+  .cortex-page-header__global-controls {
+    flex: 1 0 100%;
+    inline-size: 100%;
+  }
+
+  .cortex-page-header__global-controls .sync-chip__popover,
+  .cortex-page-header__global-controls .profile-menu {
+    right: auto;
+    left: 0;
+    max-width: calc(100vw - 32px);
+  }
+
   .cortex-page-header.workspace-header,
   .cortex-page-header.institutional-page-header,
   .cortex-page-header.mensagens-header {

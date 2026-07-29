@@ -16,6 +16,8 @@ const WEB_ROOT = path.resolve(path.dirname(SCRIPT_PATH), "..");
 const CSS = [
   "src/index.css",
   "src/components/shell/CortexShell.css",
+  "src/components/header/CortexPageHeader.css",
+  "src/components/SyncStatusBanner.css",
   "src/components/workspace/OperationalWorkspace.css",
   "src/components/institutional/institutional.css",
   "src/features/rdos/RdoWorkspacePage.css",
@@ -54,6 +56,16 @@ const MUTATION_CSS =
           }
         }
       `
+      : MUTATION === "right-anchored-popovers"
+        ? `
+          @media (max-width: 760px) {
+            .cortex-page-header__global-controls .sync-chip__popover,
+            .cortex-page-header__global-controls .profile-menu {
+              right: 0 !important;
+              left: auto !important;
+            }
+          }
+        `
     : "";
 const SCENARIOS = [
   { viewport: 901, sidebar: 360 },
@@ -62,6 +74,7 @@ const SCENARIOS = [
   { viewport: 620, sidebar: 360 },
   { viewport: 390, sidebar: 360 },
   { viewport: 375, sidebar: 360 },
+  { viewport: 320, sidebar: 360 },
 ];
 
 if (!BROWSER) {
@@ -190,6 +203,41 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
   if (measurement.filterCount !== 6) {
     violations.push(`filtros renderizados: ${measurement.filterCount}`);
   }
+  for (const [name, overlay] of Object.entries(measurement.overlays)) {
+    if (!overlay.visible) {
+      violations.push(`${name} não abriu`);
+    }
+    if (overlay.viewportInset < 12) {
+      violations.push(
+        `${name} ficou a ${overlay.viewportInset}px da borda da viewport ` +
+          `(${overlay.left}..${overlay.right}; gatilho ${overlay.triggerLeft})`,
+      );
+    }
+    if (overlay.overlapsTrigger) {
+      violations.push(`${name} sobrepôs o próprio controle`);
+    }
+    if (overlay.maxFontWeight > 600) {
+      violations.push(
+        `${name} usa peso tipográfico ${overlay.maxFontWeight}`,
+      );
+    }
+  }
+  if (viewport === 320) {
+    if (measurement.mobileNav.columnCount !== 4) {
+      violations.push(
+        `navegação móvel usa ${measurement.mobileNav.columnCount} colunas`,
+      );
+    }
+    if (measurement.mobileNav.mensagensOverflow) {
+      violations.push("Mensagens transbordou sua coluna");
+    }
+    if (measurement.mobileNav.mensagensWrapped) {
+      violations.push("Mensagens quebrou em mais de uma linha");
+    }
+    for (const overlap of measurement.mobileNav.overlaps) {
+      violations.push(`sobreposição na navegação: ${overlap}`);
+    }
+  }
 
   if (violations.length > 0) {
     throw new Error(
@@ -233,8 +281,91 @@ function fixtureHtml(sidebar) {
 </head>
 <body>
   <div class="cortex-shell" style="--sidebar-width:${sidebar}px">
-    <aside class="cortex-sidebar">Menu operacional</aside>
+    <aside class="cortex-sidebar">
+      <div class="sidebar-brand">Menu operacional</div>
+      <nav class="sidebar-nav" aria-label="Navegação principal">
+        ${["Home", "RDO", "Obras", "Equipes", "Mensagens", "Tarefas", "Financeiro"]
+          .map(
+            (label) => `
+              <button class="sidebar-nav-item" type="button">
+                <img src="" alt="">
+                <span class="sidebar-label">${label}</span>
+              </button>
+            `,
+          )
+          .join("")}
+      </nav>
+      <div class="sidebar-footer"></div>
+    </aside>
     <div class="cortex-shell-content">
+      <header class="cortex-page-header">
+        <div class="cortex-page-header__copy">
+          <p class="cortex-page-header__eyebrow">Operação</p>
+          <h1>RDOs</h1>
+        </div>
+        <div class="cortex-page-header__right">
+          <div class="cortex-page-header__actions">
+            <button type="button">Adicionar colaborador</button>
+          </div>
+          <div class="cortex-page-header__global-controls">
+            <div role="group" aria-label="Controles globais">
+              <div class="sync-chip sync-chip--error">
+                <button
+                  class="sync-chip__button"
+                  type="button"
+                  aria-expanded="false"
+                  aria-haspopup="dialog"
+                >
+                  Sync
+                </button>
+                <div
+                  class="sync-chip__popover"
+                  role="dialog"
+                  aria-label="Estado da sincronização"
+                  hidden
+                >
+                  <div class="sync-chip__header">
+                    <span class="sync-chip__header-dot"></span>
+                    <strong>Falha na sincronização</strong>
+                  </div>
+                  <p class="sync-chip__description">
+                    Os dados continuam salvos neste dispositivo.
+                  </p>
+                  <p class="sync-chip__error">${longError}</p>
+                  <button class="sync-chip__action" type="button">
+                    Sincronizar agora
+                  </button>
+                </div>
+              </div>
+              <div class="profile-menu-anchor">
+                <button
+                  class="avatar-button"
+                  type="button"
+                  aria-expanded="false"
+                  aria-haspopup="dialog"
+                >
+                  JC
+                </button>
+                <div
+                  class="profile-menu"
+                  role="dialog"
+                  aria-label="Opções do perfil"
+                  hidden
+                >
+                  <p class="profile-menu-name">João Colaborador</p>
+                  <p class="profile-menu-scope">Escopo global (Alfa)</p>
+                  <button class="profile-menu-security" type="button">
+                    Segurança do dispositivo
+                  </button>
+                  <button class="profile-menu-logout" type="button">
+                    Sair
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
       <main class="rdo-dashboard">
         <section class="institutional-sync-state institutional-frame rdo-canonical-sync">
           <p class="institutional-sync-state__error" role="status">
@@ -404,7 +535,7 @@ function fixtureHtml(sidebar) {
     const statusContentBounds = bounds([
       ...document.querySelector(".badge-strip").children,
     ]);
-    const measurement = {
+    const baseMeasurement = {
       boxes: Object.fromEntries(
         Object.entries(boxes).map(([name, element]) => [
           name,
@@ -474,6 +605,75 @@ function fixtureHtml(sidebar) {
       errorOverflowWrap: errorStyle.overflowWrap,
       errorWhiteSpace: errorStyle.whiteSpace,
       filterCount: document.querySelectorAll(".rdo-filter-grid label").length,
+    };
+
+    const toggleOverlay = (buttonSelector, overlaySelector) => {
+      const button = document.querySelector(buttonSelector);
+      const overlay = document.querySelector(overlaySelector);
+      button.addEventListener("click", () => {
+        overlay.hidden = !overlay.hidden;
+        button.setAttribute("aria-expanded", String(!overlay.hidden));
+      });
+      button.click();
+      const overlayRect = rect(overlay);
+      const buttonRect = rect(button);
+      const fontWeights = [overlay, ...overlay.querySelectorAll("*")]
+        .map((element) => Number.parseInt(getComputedStyle(element).fontWeight, 10))
+        .filter(Number.isFinite);
+      const opened = {
+        visible: !overlay.hidden && getComputedStyle(overlay).display !== "none",
+        viewportInset: Math.round(
+          Math.min(
+            overlayRect.left,
+            document.documentElement.clientWidth - overlayRect.right,
+          ),
+        ),
+        left: Math.round(overlayRect.left),
+        right: Math.round(overlayRect.right),
+        triggerLeft: Math.round(buttonRect.left),
+        overlapsTrigger: intersects(overlayRect, buttonRect),
+        maxFontWeight: Math.max(...fontWeights),
+      };
+      button.click();
+      return opened;
+    };
+
+    const nav = document.querySelector(".sidebar-nav");
+    const navItems = [...nav.querySelectorAll(".sidebar-nav-item")];
+    const mensagensItem = navItems.find(
+      (item) => item.textContent.trim() === "Mensagens",
+    );
+    const mensagensLabel = mensagensItem.querySelector(".sidebar-label");
+    const mensagensLabelStyle = getComputedStyle(mensagensLabel);
+    const mensagensLineHeight = Number.parseFloat(
+      mensagensLabelStyle.lineHeight,
+    );
+    const mobileNav = {
+      columnCount: getComputedStyle(nav).gridTemplateColumns
+        .split(" ")
+        .filter(Boolean).length,
+      mensagensOverflow:
+        mensagensItem.scrollWidth > mensagensItem.clientWidth + 1 ||
+        mensagensLabel.scrollWidth > mensagensLabel.clientWidth + 1,
+      mensagensWrapped:
+        Number.isFinite(mensagensLineHeight) &&
+        mensagensLabel.getBoundingClientRect().height >
+          mensagensLineHeight * 1.25,
+      overlaps: overlappingPairs(navItems, "item"),
+    };
+    const measurement = {
+      ...baseMeasurement,
+      overlays: {
+        sync: toggleOverlay(
+          ".sync-chip__button",
+          ".sync-chip__popover",
+        ),
+        profile: toggleOverlay(
+          ".avatar-button",
+          ".profile-menu",
+        ),
+      },
+      mobileNav,
     };
     document.getElementById("geometry-result").textContent =
       JSON.stringify(measurement);

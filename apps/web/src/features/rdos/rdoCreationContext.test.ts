@@ -177,7 +177,7 @@ describe("contexto obra-data do novo RDO", () => {
     ]);
   });
 
-  it("não usa um RDO do mesmo dia como origem", () => {
+  it("usa o predecessor canônico do mesmo dia no RDO seguinte", () => {
     const sameDay = context({
       previousRdo: {
         id: "same-day",
@@ -186,8 +186,47 @@ describe("contexto obra-data do novo RDO", () => {
         status: "RASCUNHO",
         version: 1,
       },
+      previousWorkforce: [
+        {
+          ...context().previousWorkforce[0],
+          sourceItemId: "same-day-worker",
+          sourceRdoId: "same-day",
+        },
+      ],
+      provenance: {
+        ...context().provenance,
+        previousRdoId: "same-day",
+      },
     });
     const draft = applyRdoCreationContext(createEmptyRdo(), sameDay);
+
+    expect(draft.previousRdoId).toBe("same-day");
+    expect(draft.maoObra).toEqual([
+      expect.objectContaining({
+        origemItemId: "same-day-worker",
+        sourceRdoId: "same-day",
+      }),
+    ]);
+  });
+
+  it("não usa o próprio RDO aberto como origem ao reaplicar contexto", () => {
+    const current = createEmptyRdo();
+    current.id = "same-day";
+    const sameDay = context({
+      previousRdo: {
+        id: current.id,
+        numeroRdo: "RDO-0042-A",
+        dataRdo: "2026-07-22",
+        status: "RASCUNHO",
+        version: 1,
+      },
+      provenance: {
+        ...context().provenance,
+        previousRdoId: current.id,
+      },
+    });
+
+    const draft = applyRdoCreationContext(current, sameDay);
 
     expect(draft.previousRdoId).toBe("");
     expect(draft.maoObra).toEqual([]);

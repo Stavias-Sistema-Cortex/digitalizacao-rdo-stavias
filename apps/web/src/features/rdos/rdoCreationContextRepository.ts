@@ -158,6 +158,27 @@ const LOCAL_RDO_CHAIN_STATUSES = new Set<LocalRdoRecord["syncStatus"]>([
   "SYNCED",
 ]);
 
+function previousRdoId(record: LocalRdoRecord): string | null {
+  const value = record.payload.previousRdoId;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function follows(
+  candidate: LocalRdoRecord,
+  ancestor: LocalRdoRecord,
+  recordsById: ReadonlyMap<string, LocalRdoRecord>,
+): boolean {
+  const visited = new Set<string>();
+  let cursor = previousRdoId(candidate);
+  while (cursor && !visited.has(cursor)) {
+    if (cursor === ancestor.id) return true;
+    visited.add(cursor);
+    const previous = recordsById.get(cursor);
+    cursor = previous ? previousRdoId(previous) : null;
+  }
+  return false;
+}
+
 async function localPendingChainContext(
   context: RdoCreationContextLookup,
   guard: RdoContextSessionGuard,
@@ -170,24 +191,60 @@ async function localPendingChainContext(
     context.obra.id,
   );
   assertContextSession(guard);
+  const processedEvents = await database.getAll("processed_events");
+  assertContextSession(guard);
+  const creationCommitByRdoId = new Map<string, number>();
+  for (const event of processedEvents) {
+    if (
+      event.entidadeTipo !== "RDO" ||
+      event.tipoEvento !== "RDO_CRIADO"
+    ) continue;
+    const current = creationCommitByRdoId.get(event.entidadeId);
+    creationCommitByRdoId.set(
+      event.entidadeId,
+      current === undefined
+        ? event.commitSeq
+        : Math.min(current, event.commitSeq),
+    );
+  }
+  const recordsById = new Map(localRdos.map((record) => [record.id, record]));
   const localPrevious = localRdos
     .filter(
       (rdo) =>
-        rdo.dataRdo < context.data &&
+        rdo.dataRdo <= context.data &&
         LOCAL_RDO_CHAIN_STATUSES.has(rdo.syncStatus),
     )
-    .sort(
-      (left, right) =>
-        right.dataRdo.localeCompare(left.dataRdo) ||
-        right.updatedAt.localeCompare(left.updatedAt) ||
-        right.id.localeCompare(left.id),
-    )[0];
+    .sort((left, right) => {
+      const dateOrder = right.dataRdo.localeCompare(left.dataRdo);
+      if (dateOrder !== 0) return dateOrder;
+      const leftFollowsRight = follows(left, right, recordsById);
+      const rightFollowsLeft = follows(right, left, recordsById);
+      if (leftFollowsRight !== rightFollowsLeft) {
+        return leftFollowsRight ? -1 : 1;
+      }
+      const createdOrder = right.createdAt.localeCompare(left.createdAt);
+      if (createdOrder !== 0) return createdOrder;
+      const leftCommit = creationCommitByRdoId.get(left.id) ?? -1;
+      const rightCommit = creationCommitByRdoId.get(right.id) ?? -1;
+      if (leftCommit !== rightCommit) return rightCommit - leftCommit;
+      const versionOrder =
+        (right.versaoEntidade ?? -1) - (left.versaoEntidade ?? -1);
+      return versionOrder || right.id.localeCompare(left.id);
+    })[0];
   if (!localPrevious) return null;
 
   const canonicalPrevious = context.previousRdo;
   if (
     canonicalPrevious &&
-    localPrevious.dataRdo <= canonicalPrevious.dataRdo
+    (
+      localPrevious.id === canonicalPrevious.id ||
+      localPrevious.dataRdo < canonicalPrevious.dataRdo ||
+      (
+        localPrevious.dataRdo === canonicalPrevious.dataRdo &&
+        localPrevious.syncStatus === "SYNCED" &&
+        previousRdoId(localPrevious) !== canonicalPrevious.id
+      )
+    )
   ) {
     return null;
   }

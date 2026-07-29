@@ -35,6 +35,7 @@ if [[ ! "$CORTEX_NEON_MIGRATION_URL" =~ ^jdbc:postgresql://([A-Za-z0-9.-]+)(:[0-
 fi
 neon_host="${BASH_REMATCH[1]}"
 neon_query="${BASH_REMATCH[3]}"
+neon_url_base="${CORTEX_NEON_MIGRATION_URL%%\?*}"
 if [[ "$neon_host" != *.neon.tech ]]; then
   echo "CORTEX_NEON_MIGRATION_URL must use a Neon hostname." >&2
   exit 1
@@ -44,6 +45,7 @@ sslmode_count=0
 sslmode_value=""
 channel_binding_count=0
 channel_binding_value=""
+normalized_query_parts=()
 IFS='&' read -r -a query_parts <<< "$neon_query"
 for part in "${query_parts[@]}"; do
   key="${part%%=*}"
@@ -52,25 +54,33 @@ for part in "${query_parts[@]}"; do
     sslmode_count=$((sslmode_count + 1))
     sslmode_value="$value"
   fi
-  if [[ "$key" == "channelBinding" ]]; then
+  if [[ "$key" == "channelBinding" || "$key" == "channel_binding" ]]; then
     channel_binding_count=$((channel_binding_count + 1))
     channel_binding_value="$value"
+    part="channelBinding=$value"
   fi
   if [[ "$key" =~ ^(password|user)$ ]]; then
     echo "CORTEX_NEON_MIGRATION_URL must not embed database credentials." >&2
     exit 1
   fi
+  if [[ "$key" != "sslmode" &&
+    "$key" != "channelBinding" &&
+    "$key" != "channel_binding" ]]; then
+    echo "CORTEX_NEON_MIGRATION_URL contains an unreviewed JDBC property." >&2
+    exit 1
+  fi
+  normalized_query_parts+=("$part")
 done
-if [[ "$sslmode_count" -ne 1 || ! "$sslmode_value" =~ ^(require|verify-full)$ ]]; then
-  echo "CORTEX_NEON_MIGRATION_URL must declare one verified TLS policy." >&2
+if [[ "$sslmode_count" -ne 1 || "$sslmode_value" != "verify-full" ]]; then
+  echo "CORTEX_NEON_MIGRATION_URL must declare exactly one sslmode=verify-full." >&2
   exit 1
 fi
-if [[ "$channel_binding_count" -gt 1 ]] \
-  || [[ "$channel_binding_count" -eq 1 && "$channel_binding_value" != "require" ]] \
-  || [[ "$sslmode_value" == "require" && "$channel_binding_count" -ne 1 ]]; then
-  echo "CORTEX_NEON_MIGRATION_URL must require channel binding unless sslmode=verify-full." >&2
+if [[ "$channel_binding_count" -ne 1 || "$channel_binding_value" != "require" ]]; then
+  echo "CORTEX_NEON_MIGRATION_URL must declare exactly one channelBinding=require or channel_binding=require." >&2
   exit 1
 fi
+normalized_query="$(IFS='&'; printf '%s' "${normalized_query_parts[*]}")"
+CORTEX_NEON_MIGRATION_URL="${neon_url_base}?${normalized_query}"
 
 command -v docker >/dev/null 2>&1 || {
   echo "docker is required for the isolated Flyway release step." >&2

@@ -28,7 +28,12 @@ import {
   commitLocalMutation,
   type LocalMutationDomainWrite,
 } from "./localMutationCoordinator";
+import { mutationPayloadHash } from "./mutationEnvelope";
 import { selectReadyOutboxMutations } from "./outboxDependencies";
+import {
+  applyPushResultAtomically,
+  markMutationAsSyncing,
+} from "./syncStorage";
 import { captureOnlineSyncSession } from "./syncSession";
 
 const OBRA_ID = "00000000-0000-4000-8000-000000000101";
@@ -38,6 +43,14 @@ const ORIGINAL_ID = "00000000-0000-4000-8000-000000000104";
 const ORIGINAL_EVENT_ID = "00000000-0000-4000-8000-000000000105";
 const REPLACEMENT_ID = "00000000-0000-4000-8000-000000000106";
 const REPLACEMENT_EVENT_ID = "00000000-0000-4000-8000-000000000107";
+const PENDING_AUDIT_EVENT_ID =
+  "00000000-0000-4000-8000-000000000130";
+const PENDING_WORKFORCE_EVENT_ID =
+  "00000000-0000-4000-8000-000000000131";
+const PENDING_REMOVED_ALLOCATION_EVENT_ID =
+  "00000000-0000-4000-8000-000000000132";
+const CORRECTED_WORKFORCE_EVENT_ID =
+  "00000000-0000-4000-8000-000000000133";
 const DEPENDENT_ID = "00000000-0000-4000-8000-000000000108";
 const VALID_WORKER_ID = "00000000-0000-4000-8000-000000000109";
 const INVALID_WORKER_ID = "00000000-0000-4000-8000-000000000110";
@@ -73,11 +86,6 @@ function workforcePayload(): Record<string, unknown> {
       {
         id: "00000000-0000-4000-8000-000000000113",
         colaboradorId: VALID_WORKER_ID,
-        equipe: "Equipe A",
-      },
-      {
-        id: "00000000-0000-4000-8000-000000000114",
-        colaboradorId: INVALID_WORKER_ID,
         equipe: "Equipe A",
       },
     ],
@@ -117,6 +125,64 @@ function localRdo(payload: Record<string, unknown>): LocalRdoRecord {
   };
 }
 
+function pendingOperationalEvent(input: {
+  id: string;
+  type: OperationalEventRecord["type"];
+  colaboradorId?: string | null;
+  principalEntity?: OperationalEventRecord["principalEntity"];
+  payload?: Record<string, unknown>;
+}): OperationalEventRecord {
+  const principalEntity = input.principalEntity ?? {
+    tipo: "RDO",
+    id: RDO_ID,
+    nome: "RDO-0002",
+  };
+  return {
+    id: input.id,
+    type: input.type,
+    principalEntity,
+    principalEntityKey:
+      `${principalEntity.tipo}:${principalEntity.id}`,
+    relatedEntities: [
+      { tipo: "RDO", id: RDO_ID, nome: "RDO-0002" },
+      { tipo: "OBRA", id: OBRA_ID, nome: "Obra autorizada" },
+    ],
+    obraId: OBRA_ID,
+    rdoId: RDO_ID,
+    colaboradorId: input.colaboradorId ?? null,
+    occurredAt: OCCURRED_AT,
+    syncedAt: null,
+    origin: "OFFLINE",
+    responsibleUserId: userId,
+    responsibleUserName: "Encarregado",
+    payload: input.payload ?? { evidence: input.id },
+    syncStatus: "PENDING_SYNC",
+    schemaVersion: 1,
+  };
+}
+
+function serializedOperationalEvent(
+  event: OperationalEventRecord,
+): Record<string, unknown> {
+  return {
+    id: event.id,
+    type: event.type,
+    principalEntity: event.principalEntity,
+    relatedEntities: event.relatedEntities,
+    obraId: event.obraId,
+    rdoId: event.rdoId,
+    colaboradorId: event.colaboradorId,
+    occurredAt: event.occurredAt,
+    syncedAt: event.syncedAt,
+    origin: event.origin,
+    responsibleUserId: event.responsibleUserId,
+    responsibleUserName: event.responsibleUserName,
+    payload: event.payload,
+    syncStatus: event.syncStatus,
+    schemaVersion: event.schemaVersion,
+  };
+}
+
 async function seedCanonicalCreate(
   payload: Record<string, unknown>,
   dependsOnMutationIds: readonly string[] = [],
@@ -146,6 +212,97 @@ async function seedCanonicalCreate(
     dependsOnMutationIds,
     causationId,
     write: () => writes,
+  });
+}
+
+async function seedCanonicalUpdate(
+  payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown> = {
+    ...workforcePayload(),
+    observacoes: "estado sincronizado",
+  },
+  causationId: string | null = null,
+): Promise<void> {
+  const rdo = {
+    ...localRdo(payload),
+    versaoEntidade: 7,
+  };
+  const writes: readonly LocalMutationDomainWrite<"rdos">[] = [
+    { store: "rdos", value: rdo, principal: true },
+  ];
+  await commitLocalMutation({
+    clientMutationId: ORIGINAL_ID,
+    ontologyEventId: ORIGINAL_EVENT_ID,
+    deviceId: DEVICE_ID,
+    userId,
+    obraId: OBRA_ID,
+    entityType: "RDO",
+    entityId: RDO_ID,
+    entityName: "RDO-0002",
+    operation: "UPDATE",
+    transportOperation: "ATUALIZAR_RDO_RASCUNHO",
+    baseVersion: 7,
+    occurredAt: OCCURRED_AT,
+    previousSnapshot: previousPayload,
+    nextSnapshot: payload,
+    principalSnapshot: rdo,
+    eventType: "RDO_EDITADO",
+    causationId,
+    write: () => writes,
+  });
+}
+
+async function seedSyncedCanonicalHistory(
+  payload: Record<string, unknown>,
+  operation: "CREATE" | "TRANSITION" = "CREATE",
+): Promise<void> {
+  const rdo = {
+    ...localRdo(payload),
+    versaoEntidade: 7,
+    syncStatus: "SYNCED" as const,
+  };
+  const writes: readonly LocalMutationDomainWrite<"rdos">[] = [
+    { store: "rdos", value: rdo, principal: true },
+  ];
+  await commitLocalMutation({
+    clientMutationId: DEPENDENT_MUTATION_ID,
+    ontologyEventId: DEPENDENT_EVENT_ID,
+    deviceId: DEVICE_ID,
+    userId,
+    obraId: OBRA_ID,
+    entityType: "RDO",
+    entityId: RDO_ID,
+    entityName: "RDO-0002",
+    operation,
+    transportOperation:
+      operation === "CREATE" ? "CRIAR_RDO" : "ENVIAR_RDO",
+    baseVersion: operation === "CREATE" ? null : 7,
+    occurredAt: "2026-07-28T11:00:00.000Z",
+    previousSnapshot: operation === "CREATE" ? {} : payload,
+    nextSnapshot: payload,
+    principalSnapshot: rdo,
+    eventType:
+      operation === "CREATE" ? "RDO_CRIADO" : "RDO_SINCRONIZADO",
+    write: () => writes,
+  });
+  const database = await getCortexDb();
+  const mutation = await database.get(
+    "outbox_mutations",
+    DEPENDENT_MUTATION_ID,
+  );
+  const event = await database.get(
+    "operational_events",
+    DEPENDENT_EVENT_ID,
+  );
+  await database.put("outbox_mutations", {
+    ...mutation!,
+    status: "SYNCED",
+  });
+  await database.put("operational_events", {
+    ...event!,
+    result: "SYNCED",
+    syncStatus: "SYNCED",
+    entityVersion: 7,
   });
 }
 
@@ -378,6 +535,527 @@ afterEach(async () => {
 });
 
 describe("reparo canônico de RDO rejeitado", () => {
+  it("recupera UPDATE rejeitado por vínculo no mesmo contrato canônico", async () => {
+    const payload = workforcePayload();
+    await seedCanonicalUpdate(payload);
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "Colaborador não está ativo e vinculado à obra do RDO.",
+    );
+    const database = await getCortexDb();
+    const original = await database.get("outbox_mutations", ORIGINAL_ID);
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          now: () => RECOVERED_AT,
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          loadAuthorizedCollaboratorIds: async () =>
+            new Set([VALID_WORKER_ID]),
+        },
+      ),
+    ).toBe(1);
+
+    const replacement = await database.get(
+      "outbox_mutations",
+      REPLACEMENT_ID,
+    );
+    expect(replacement).toMatchObject({
+      status: "PENDING",
+      operation: "UPDATE",
+      operacao: "ATUALIZAR_RDO_RASCUNHO",
+      baseVersion: 7,
+      causationId: ORIGINAL_ID,
+      payload: {
+        apontadorColaboradorId: null,
+        alocacoesColaboradores: [
+          expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
+        ],
+        maoObra: [
+          expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
+          expect.objectContaining({
+            colaboradorId: null,
+            nomeColaborador: "Trabalhador nominal",
+          }),
+        ],
+      },
+    });
+    expect(replacement!.trace.payloadHash)
+      .not.toBe(original!.trace.payloadHash);
+    expect(await database.get("outbox_mutations", ORIGINAL_ID))
+      .toMatchObject({
+        lastSafeCode: "SUPERSEDED_BY_WORKFORCE_RECOVERY",
+        blockedReason: `SUPERSEDED_BY:${REPLACEMENT_ID}`,
+      });
+  });
+
+  it("carrega e confirma os eventos pendentes no UPDATE substituto após reparar a mão de obra", async () => {
+    const auditEvent = pendingOperationalEvent({
+      id: PENDING_AUDIT_EVENT_ID,
+      type: "RDO_SALVO_OFFLINE",
+    });
+    const workforceEvent = pendingOperationalEvent({
+      id: PENDING_WORKFORCE_EVENT_ID,
+      type: "COLABORADOR_ASSOCIADO_RDO",
+      colaboradorId: INVALID_WORKER_ID,
+      principalEntity: {
+        tipo: "COLABORADOR",
+        id: INVALID_WORKER_ID,
+        nome: "Trabalhador nominal",
+      },
+      payload: {
+        localId: "00000000-0000-4000-8000-000000000112",
+        nomeColaborador: "Trabalhador nominal",
+        cargo: "Servente",
+      },
+    });
+    const payload = {
+      ...workforcePayload(),
+      operationalEvents: [
+        serializedOperationalEvent(auditEvent),
+        serializedOperationalEvent(workforceEvent),
+      ],
+    };
+    const database = await getCortexDb();
+    await database.put("operational_events", auditEvent);
+    await database.put("operational_events", workforceEvent);
+    await seedCanonicalUpdate(payload);
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "Colaborador não está ativo e vinculado à obra do RDO.",
+    );
+    const recoveredReplacementIds = new Set<string>();
+    const recoveredReplacementByOriginalId =
+      new Map<string, string>();
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          now: () => RECOVERED_AT,
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          correctiveOperationalEventIdFactory: () =>
+            CORRECTED_WORKFORCE_EVENT_ID,
+          loadAuthorizedCollaboratorIds: async () =>
+            new Set([VALID_WORKER_ID]),
+          recoveredReplacementIds,
+          recoveredReplacementByOriginalId,
+        },
+      ),
+    ).toBe(1);
+    expect(recoveredReplacementIds).toEqual(new Set([REPLACEMENT_ID]));
+    expect(recoveredReplacementByOriginalId).toEqual(
+      new Map([[ORIGINAL_ID, REPLACEMENT_ID]]),
+    );
+
+    const replacement = await database.get(
+      "outbox_mutations",
+      REPLACEMENT_ID,
+    );
+    expect(replacement?.payload.operationalEvents).toEqual([
+      expect.objectContaining({
+        id: PENDING_AUDIT_EVENT_ID,
+        payload: { evidence: PENDING_AUDIT_EVENT_ID },
+      }),
+      expect.objectContaining({
+        id: CORRECTED_WORKFORCE_EVENT_ID,
+        colaboradorId: null,
+        principalEntity: expect.objectContaining({
+          tipo: "RDO_MAO_OBRA",
+          id: "00000000-0000-4000-8000-000000000112",
+          nome: "Trabalhador nominal",
+        }),
+        payload: expect.objectContaining({
+          localId: "00000000-0000-4000-8000-000000000112",
+          nomeColaborador: "Trabalhador nominal",
+          supersedesEventId: PENDING_WORKFORCE_EVENT_ID,
+          causationId: PENDING_WORKFORCE_EVENT_ID,
+          recoveryReason: "WORKFORCE_LINK_RECOVERED_AS_NOMINAL",
+        }),
+      }),
+    ]);
+    expect(
+      (
+        replacement?.payload.operationalEvents as
+          Record<string, unknown>[]
+      )[1],
+    ).not.toHaveProperty("causationId");
+    expect(
+      await database.get(
+        "operational_events",
+        PENDING_WORKFORCE_EVENT_ID,
+      ),
+    ).toEqual({
+      ...workforceEvent,
+      syncStatus: "SYNC_FAILED",
+      syncedAt: null,
+    });
+    const localCorrectiveEvent = await database.get(
+      "operational_events",
+      CORRECTED_WORKFORCE_EVENT_ID,
+    );
+    expect(localCorrectiveEvent).toMatchObject({
+      id: CORRECTED_WORKFORCE_EVENT_ID,
+      type: "COLABORADOR_ASSOCIADO_RDO",
+      colaboradorId: null,
+      principalEntity: {
+        tipo: "RDO_MAO_OBRA",
+        id: "00000000-0000-4000-8000-000000000112",
+        nome: "Trabalhador nominal",
+      },
+      principalEntityKey:
+        "RDO_MAO_OBRA:00000000-0000-4000-8000-000000000112",
+      payload: expect.objectContaining({
+        localId: "00000000-0000-4000-8000-000000000112",
+        nomeColaborador: "Trabalhador nominal",
+        supersedesEventId: PENDING_WORKFORCE_EVENT_ID,
+        causationId: PENDING_WORKFORCE_EVENT_ID,
+        recoveryReason: "WORKFORCE_LINK_RECOVERED_AS_NOMINAL",
+      }),
+      causationId: PENDING_WORKFORCE_EVENT_ID,
+      occurredAt: RECOVERED_AT,
+      syncStatus: "PENDING_SYNC",
+      syncedAt: null,
+    });
+    expect(serializedOperationalEvent(localCorrectiveEvent!)).toEqual(
+      (
+        replacement?.payload.operationalEvents as
+          Record<string, unknown>[]
+      )[1],
+    );
+    await markMutationAsSyncing(replacement!);
+    await applyPushResultAtomically({
+      clientMutationId: REPLACEMENT_ID,
+      status: "APLICADA",
+      resultado: { versaoEntidade: 8 },
+    });
+
+    expect(
+      await database.get("operational_events", PENDING_AUDIT_EVENT_ID),
+    ).toMatchObject({
+      syncStatus: "SYNCED",
+      syncedAt: expect.any(String),
+    });
+    expect(
+      await database.get(
+        "operational_events",
+        PENDING_WORKFORCE_EVENT_ID,
+      ),
+    ).toEqual({
+      ...workforceEvent,
+      syncStatus: "SYNC_FAILED",
+      syncedAt: null,
+    });
+    expect(
+      await database.get(
+        "operational_events",
+        CORRECTED_WORKFORCE_EVENT_ID,
+      ),
+    ).toMatchObject({
+      syncStatus: "SYNCED",
+      syncedAt: expect.any(String),
+    });
+  });
+
+  it.each([
+    {
+      scenario: "associação com localId divergente",
+      type: "COLABORADOR_ASSOCIADO_RDO" as const,
+      localId: "00000000-0000-4000-8000-000000000199",
+    },
+    {
+      scenario: "outro tipo de evento",
+      type: "RDO_SALVO_OFFLINE" as const,
+      localId: "00000000-0000-4000-8000-000000000112",
+    },
+  ])(
+    "terminaliza $scenario sem inventar correção operacional",
+    async ({ type, localId }) => {
+      const unmatchedAssociationEvent = pendingOperationalEvent({
+        id: PENDING_REMOVED_ALLOCATION_EVENT_ID,
+        type,
+        colaboradorId: INVALID_WORKER_ID,
+        principalEntity: {
+          tipo: "COLABORADOR",
+          id: INVALID_WORKER_ID,
+          nome: "Equipe A",
+        },
+        payload: {
+          localId,
+          nomeColaborador: "Equipe A",
+          equipe: "Equipe A",
+        },
+      });
+      const payload = {
+        ...workforcePayload(),
+        operationalEvents: [
+          serializedOperationalEvent(unmatchedAssociationEvent),
+        ],
+      };
+      const database = await getCortexDb();
+      await database.put(
+        "operational_events",
+        unmatchedAssociationEvent,
+      );
+      await seedCanonicalUpdate(payload);
+      await rejectOriginal(
+        "VALIDATION_OR_AUTHORIZATION",
+        "Colaborador não está ativo e vinculado à obra do RDO.",
+      );
+
+      expect(
+        await recoverRejectedRdoMutationsForSync(
+          captureOnlineSyncSession(),
+          {
+            now: () => RECOVERED_AT,
+            clientMutationIdFactory: () => REPLACEMENT_ID,
+            ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+            correctiveOperationalEventIdFactory: () =>
+              CORRECTED_WORKFORCE_EVENT_ID,
+            loadAuthorizedCollaboratorIds: async () =>
+              new Set([VALID_WORKER_ID]),
+          },
+        ),
+      ).toBe(0);
+
+      expect(
+        await database.get("outbox_mutations", ORIGINAL_ID),
+      ).toMatchObject({
+        status: "REJECTED",
+        lastSafeCode:
+          "WORKFORCE_OPERATIONAL_EVENT_RECOVERY_REQUIRES_REVIEW",
+      });
+      expect(
+        await database.get(
+          "operational_events",
+          PENDING_REMOVED_ALLOCATION_EVENT_ID,
+        ),
+      ).toEqual(unmatchedAssociationEvent);
+      expect(
+        await database.get("outbox_mutations", REPLACEMENT_ID),
+      ).toBeUndefined();
+      expect(
+        await database.get(
+          "operational_events",
+          CORRECTED_WORKFORCE_EVENT_ID,
+        ),
+      ).toBeUndefined();
+    },
+  );
+
+  it.each([
+    { scenario: "evento local já sincronizado", kind: "SYNCED" },
+    { scenario: "evento local fora do schema-v1", kind: "SCHEMA_2" },
+  ] as const)(
+    "terminaliza $scenario antes de criar o corretivo",
+    async ({ kind }) => {
+      const sourceEvent = pendingOperationalEvent({
+        id: PENDING_WORKFORCE_EVENT_ID,
+        type: "COLABORADOR_ASSOCIADO_RDO",
+        colaboradorId: INVALID_WORKER_ID,
+        principalEntity: {
+          tipo: "COLABORADOR",
+          id: INVALID_WORKER_ID,
+          nome: "Trabalhador nominal",
+        },
+        payload: {
+          localId: "00000000-0000-4000-8000-000000000112",
+          nomeColaborador: "Trabalhador nominal",
+          cargo: "Servente",
+        },
+      });
+      const localEvent: OperationalEventRecord = kind === "SYNCED"
+        ? {
+            ...sourceEvent,
+            syncStatus: "SYNCED",
+            syncedAt: OCCURRED_AT,
+          }
+        : {
+            ...sourceEvent,
+            schemaVersion: 2,
+          };
+      const serializedSourceEvent = {
+        ...serializedOperationalEvent(sourceEvent),
+        ...(kind === "SCHEMA_2" ? { schemaVersion: 2 } : {}),
+      };
+      const payload = {
+        ...workforcePayload(),
+        operationalEvents: [serializedSourceEvent],
+      };
+      const database = await getCortexDb();
+      await database.put("operational_events", localEvent);
+      await seedCanonicalUpdate(payload);
+      await rejectOriginal(
+        "VALIDATION_OR_AUTHORIZATION",
+        "Colaborador não está ativo e vinculado à obra do RDO.",
+      );
+
+      expect(
+        await recoverRejectedRdoMutationsForSync(
+          captureOnlineSyncSession(),
+          {
+            now: () => RECOVERED_AT,
+            clientMutationIdFactory: () => REPLACEMENT_ID,
+            ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+            correctiveOperationalEventIdFactory: () =>
+              CORRECTED_WORKFORCE_EVENT_ID,
+            loadAuthorizedCollaboratorIds: async () =>
+              new Set([VALID_WORKER_ID]),
+          },
+        ),
+      ).toBe(0);
+
+      expect(
+        await database.get("operational_events", localEvent.id),
+      ).toEqual(localEvent);
+      expect(
+        await database.get("outbox_mutations", REPLACEMENT_ID),
+      ).toBeUndefined();
+      expect(
+        await database.get(
+          "operational_events",
+          CORRECTED_WORKFORCE_EVENT_ID,
+        ),
+      ).toBeUndefined();
+      expect(
+        await database.get("outbox_mutations", ORIGINAL_ID),
+      ).toMatchObject({
+        lastSafeCode:
+          "WORKFORCE_OPERATIONAL_EVENT_RECOVERY_REQUIRES_REVIEW",
+      });
+    },
+  );
+
+  it("aceita o CREATE canônico SYNCED como ancestral causal do UPDATE", async () => {
+    const payload = workforcePayload();
+    await seedSyncedCanonicalHistory(payload);
+    await seedCanonicalUpdate(
+      payload,
+      { ...payload, observacoes: "estado sincronizado" },
+      DEPENDENT_MUTATION_ID,
+    );
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "Colaborador não está ativo e vinculado à obra do RDO.",
+    );
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          loadAuthorizedCollaboratorIds: async () =>
+            new Set([VALID_WORKER_ID]),
+        },
+      ),
+    ).toBe(1);
+
+    const database = await getCortexDb();
+    expect(
+      await database.get("outbox_mutations", DEPENDENT_MUTATION_ID),
+    ).toMatchObject({ status: "SYNCED" });
+    expect(await database.get("outbox_mutations", REPLACEMENT_ID))
+      .toMatchObject({
+        operation: "UPDATE",
+        causationId: ORIGINAL_ID,
+      });
+  });
+
+  it("não trata transição SYNCED como ancestral seguro do UPDATE", async () => {
+    const payload = workforcePayload();
+    await seedSyncedCanonicalHistory(payload, "TRANSITION");
+    await seedCanonicalUpdate(
+      payload,
+      { ...payload, observacoes: "estado sincronizado" },
+      DEPENDENT_MUTATION_ID,
+    );
+    await rejectOriginal(
+      "VALIDATION_OR_AUTHORIZATION",
+      "Colaborador não está ativo e vinculado à obra do RDO.",
+    );
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          loadAuthorizedCollaboratorIds: async () =>
+            new Set([VALID_WORKER_ID]),
+        },
+      ),
+    ).toBe(0);
+
+    const database = await getCortexDb();
+    expect(await database.get("outbox_mutations", ORIGINAL_ID))
+      .toMatchObject({
+        lastSafeCode: "COMPETING_RDO_MUTATION_REQUIRES_REVIEW",
+      });
+    expect(await database.get("outbox_mutations", REPLACEMENT_ID))
+      .toBeUndefined();
+  });
+
+  it("troca uma vez a identidade do UPDATE rejeitado por idempotência", async () => {
+    await seedCanonicalUpdate(workforcePayload());
+    await rejectOriginal(
+      "IDEMPOTENCY_MISMATCH",
+      "clientMutationId já foi usado com outro conteúdo ou rastro.",
+    );
+    const lookup = vi.fn(missingAuthoritativeRdo);
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        {
+          now: () => RECOVERED_AT,
+          clientMutationIdFactory: () => REPLACEMENT_ID,
+          ontologyEventIdFactory: () => REPLACEMENT_EVENT_ID,
+          lookupAuthoritativeRdo: lookup,
+        },
+      ),
+    ).toBe(1);
+    expect(lookup).not.toHaveBeenCalled();
+
+    const database = await getCortexDb();
+    expect(await database.get("outbox_mutations", REPLACEMENT_ID))
+      .toMatchObject({
+        operation: "UPDATE",
+        operacao: "ATUALIZAR_RDO_RASCUNHO",
+        baseVersion: 7,
+        causationId: ORIGINAL_ID,
+      });
+    const replacement = await database.get(
+      "outbox_mutations",
+      REPLACEMENT_ID,
+    );
+    expect(await mutationPayloadHash(replacement!.payload))
+      .toBe(replacement!.trace.payloadHash);
+    await rejectCanonicalMutation({
+      mutationId: REPLACEMENT_ID,
+      eventId: REPLACEMENT_EVENT_ID,
+      rdoId: RDO_ID,
+      safeCode: "IDEMPOTENCY_MISMATCH",
+      message: "clientMutationId já foi usado com outro conteúdo ou rastro.",
+    });
+    const nextMutationId = vi.fn(() => DEPENDENT_REPLACEMENT_ID);
+
+    expect(
+      await recoverRejectedRdoMutationsForSync(
+        captureOnlineSyncSession(),
+        { clientMutationIdFactory: nextMutationId },
+      ),
+    ).toBe(0);
+    expect(nextMutationId).not.toHaveBeenCalled();
+    expect(await database.get("outbox_mutations", REPLACEMENT_ID))
+      .toMatchObject({
+        lastSafeCode: "AUTO_RECOVERY_LIMIT_REACHED",
+      });
+  });
+
   it("troca a identidade após idempotency mismatch mesmo depois de reabrir o IndexedDB", async () => {
     const payload = workforcePayload();
     await seedCanonicalCreate(payload);
@@ -656,11 +1334,32 @@ describe("reparo canônico de RDO rejeitado", () => {
     ]);
   });
 
-  it("recupera rejeição causada apenas por alocação inválida", async () => {
+  it("preserva integralmente e bloqueia alocação estruturada sem vínculo para reatribuição explícita", async () => {
+    const invalidAllocation = {
+      id: "00000000-0000-4000-8000-000000000114",
+      colaboradorId: INVALID_WORKER_ID,
+      equipe: "Equipe de reparo",
+      servicoNome: "Fresagem",
+      horaInicio: "07:15",
+      horaFim: "16:45",
+      percentualDia: 62.5,
+      turno: "DIURNO",
+      funcao: "Operador",
+      centroCusto: "CC-401",
+      tipoAlocacao: "TRABALHO",
+      fonte: "RDO_OFFLINE",
+      status: "REGISTRADA",
+      observacoes: "Não descartar esta alocação.",
+    };
     const payload = {
       ...workforcePayload(),
       apontadorColaboradorId: VALID_WORKER_ID,
       apontadorRdo: "Colaborador válido",
+      alocacoesColaboradores: [
+        ...(workforcePayload().alocacoesColaboradores as
+          Array<Record<string, unknown>>),
+        invalidAllocation,
+      ],
       maoObra: [
         {
           id: "00000000-0000-4000-8000-000000000111",
@@ -676,6 +1375,8 @@ describe("reparo canônico de RDO rejeitado", () => {
       "Colaborador não está ativo e vinculado à obra do RDO.",
     );
 
+    await closeCortexDb();
+
     expect(
       await recoverRejectedRdoMutationsForSync(
         captureOnlineSyncSession(),
@@ -686,19 +1387,46 @@ describe("reparo canônico de RDO rejeitado", () => {
             new Set([VALID_WORKER_ID]),
         },
       ),
-    ).toBe(1);
+    ).toBe(0);
 
     const database = await getCortexDb();
-    const replacement = await database.get(
+    expect(await database.get(
       "outbox_mutations",
       REPLACEMENT_ID,
-    );
-    expect(replacement?.payload.maoObra).toEqual([
-      expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
-    ]);
-    expect(replacement?.payload.alocacoesColaboradores).toEqual([
-      expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
-    ]);
+    )).toBeUndefined();
+    expect(await database.get(
+      "outbox_mutations",
+      ORIGINAL_ID,
+    )).toMatchObject({
+      status: "REJECTED",
+      lastSafeCode:
+        "WORKFORCE_ALLOCATION_REASSIGNMENT_REQUIRED",
+      blockedReason:
+        "WORKFORCE_ALLOCATION_REASSIGNMENT_REQUIRED",
+      payload: {
+        alocacoesColaboradores: [
+          expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
+          invalidAllocation,
+        ],
+      },
+    });
+    expect(await database.get("rdos", RDO_ID)).toMatchObject({
+      syncStatus: "ERROR",
+      payload: {
+        alocacoesColaboradores: [
+          expect.objectContaining({ colaboradorId: VALID_WORKER_ID }),
+          invalidAllocation,
+        ],
+      },
+    });
+    expect(
+      await database.get("operational_events", ORIGINAL_EVENT_ID),
+    ).toMatchObject({
+      result: "REJECTED",
+      syncStatus: "SYNC_FAILED",
+      errorCategory:
+        "WORKFORCE_ALLOCATION_REASSIGNMENT_REQUIRED",
+    });
   });
 
   it("gera receipt novo uma vez quando todos os vínculos seguem autorizados", async () => {

@@ -551,9 +551,9 @@ public class RdoContextService {
     }
 
     /**
-     * The source is strictly before the selected date. Same-day RDOs are not a
-     * workforce source because the new report may itself be an offline replay
-     * for that date. Ties are resolved by persisted recency and finally by ID.
+     * The source is the latest causally-created RDO up to the selected date.
+     * Operational edits must not reorder reports, so atualizado_em is
+     * deliberately excluded from the ordering.
      */
     private RdoContextResponse.PreviousRdo buscarRdoAnterior(
             String obraId,
@@ -561,16 +561,31 @@ public class RdoContextService {
     ) {
         return jdbcTemplate.query(
                 """
-                SELECT id, numero_rdo, data_rdo, status, versao_linha
-                FROM rdo
-                WHERE obra_id = ?
-                  AND data_rdo < ?
-                  AND status <> 'CANCELADO'
-                  AND cancelado_em IS NULL
-                ORDER BY data_rdo DESC,
-                         atualizado_em DESC,
-                         criado_em DESC,
-                         id DESC
+                SELECT
+                    candidate.id,
+                    candidate.numero_rdo,
+                    candidate.data_rdo,
+                    candidate.status,
+                    candidate.versao_linha
+                FROM rdo candidate
+                LEFT JOIN LATERAL (
+                    SELECT MIN(event.commit_seq) AS creation_commit_seq
+                    FROM cortex_evento_operacional event
+                    WHERE event.tipo_entidade = 'RDO'
+                      AND event.entidade_id = candidate.id
+                      AND event.tipo_evento = 'RDO_CRIADO'
+                      AND event.resultado IN ('SUCESSO', 'CONCILIADA')
+                ) creation_event ON TRUE
+                WHERE candidate.obra_id = ?
+                  AND candidate.data_rdo <= ?
+                  AND candidate.status <> 'CANCELADO'
+                  AND candidate.cancelado_em IS NULL
+                ORDER BY candidate.data_rdo DESC,
+                         candidate.numero_sequencial DESC NULLS LAST,
+                         candidate.criado_em DESC,
+                         creation_event.creation_commit_seq DESC NULLS LAST,
+                         candidate.versao_linha DESC,
+                         candidate.id DESC
                 LIMIT 1
                 """,
                 rs -> rs.next()

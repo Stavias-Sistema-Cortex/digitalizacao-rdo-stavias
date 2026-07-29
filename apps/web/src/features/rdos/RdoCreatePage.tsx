@@ -21,7 +21,10 @@ import {
 import { getLocalRdo } from "../../lib/db/rdoRepository";
 import { formatLocalSyncStatus } from "../../lib/db/syncStatusLabels";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
-import type { RdoAttachmentRecord } from "../../lib/db/db.types";
+import type {
+  LocalRdoRecord,
+  RdoAttachmentRecord,
+} from "../../lib/db/db.types";
 import {
   createEmptyAlocacaoColaborador,
   createEmptyControleGeometrico,
@@ -64,6 +67,7 @@ import { requireRdoCreationContext } from "./rdoCreationContextRepository";
 import { RdoWorkforceEditor } from "./RdoWorkforceEditor";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import { RDO_WORKFORCE_CATALOG_OFFLINE_UNAVAILABLE } from "./rdoCreationContext";
+import { localRecordToDraft } from "./localRecordToDraft";
 
 interface RdoCreatePageProps {
   initialDraft: RdoDraft;
@@ -72,6 +76,91 @@ interface RdoCreatePageProps {
   creationContext?: RdoCreationContextLookup;
   onBackToList: () => void;
   onSaved: (savedObraId: string) => void;
+}
+
+type PersistedWorkforceSnapshot = Pick<
+  RdoDraft,
+  "maoObra" | "alocacoesColaboradores" | "apontadorColaboradorId"
+>;
+
+function persistedWorkforceSnapshot(
+  draft: RdoDraft,
+): PersistedWorkforceSnapshot {
+  return {
+    maoObra: draft.maoObra.map((item) => ({ ...item })),
+    alocacoesColaboradores: draft.alocacoesColaboradores.map(
+      (item) => ({ ...item }),
+    ),
+    apontadorColaboradorId: draft.apontadorColaboradorId,
+  };
+}
+
+function samePersistedItem(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function mergePersistedCollection<T extends { localId: string }>(
+  baseline: readonly T[],
+  current: readonly T[],
+  persisted: readonly T[],
+): T[] {
+  const baselineById = new Map(
+    baseline.map((item) => [item.localId, item]),
+  );
+  const persistedById = new Map(
+    persisted.map((item) => [item.localId, item]),
+  );
+  const currentIds = new Set(current.map((item) => item.localId));
+  const merged: T[] = [];
+
+  for (const currentItem of current) {
+    const baselineItem = baselineById.get(currentItem.localId);
+    if (
+      baselineItem === undefined ||
+      !samePersistedItem(currentItem, baselineItem)
+    ) {
+      merged.push(currentItem);
+      continue;
+    }
+    const persistedItem = persistedById.get(currentItem.localId);
+    if (persistedItem !== undefined) merged.push(persistedItem);
+  }
+  for (const persistedItem of persisted) {
+    if (
+      !currentIds.has(persistedItem.localId) &&
+      !baselineById.has(persistedItem.localId)
+    ) {
+      merged.push(persistedItem);
+    }
+  }
+  return merged;
+}
+
+function mergePersistedWorkforce(
+  current: RdoDraft,
+  baseline: PersistedWorkforceSnapshot,
+  persisted: RdoDraft,
+): RdoDraft {
+  return {
+    ...current,
+    numeroRdo: persisted.numeroRdo,
+    syncStatus: persisted.syncStatus,
+    maoObra: mergePersistedCollection(
+      baseline.maoObra,
+      current.maoObra,
+      persisted.maoObra,
+    ),
+    alocacoesColaboradores: mergePersistedCollection(
+      baseline.alocacoesColaboradores,
+      current.alocacoesColaboradores,
+      persisted.alocacoesColaboradores,
+    ),
+    apontadorColaboradorId:
+      current.apontadorColaboradorId ===
+          baseline.apontadorColaboradorId
+        ? persisted.apontadorColaboradorId
+        : current.apontadorColaboradorId,
+  };
 }
 
 function parseNumericInput(value: string): NumericInput {
@@ -525,6 +614,10 @@ export function RdoCreatePage({
   >({});
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlsRef = useRef<Set<string>>(new Set());
+  const persistedWorkforceRef = useRef<PersistedWorkforceSnapshot>(
+    persistedWorkforceSnapshot(initialDraft),
+  );
+  const persistedReadGenerationRef = useRef(0);
   const [
     alocacaoColaboradorLabels,
     setAlocacaoColaboradorLabels,
@@ -717,6 +810,16 @@ export function RdoCreatePage({
     draft.syncStatus !== "LOCAL_ONLY" ||
     persistenceMessage.startsWith("RDO salvo");
 
+  function applyPersistedRdo(persistedRdo: LocalRdoRecord) {
+    const persistedDraft = localRecordToDraft(persistedRdo);
+    const baseline = persistedWorkforceRef.current;
+    setDraft((current) =>
+      mergePersistedWorkforce(current, baseline, persistedDraft)
+    );
+    persistedWorkforceRef.current =
+      persistedWorkforceSnapshot(persistedDraft);
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -766,16 +869,17 @@ export function RdoCreatePage({
     let active = true;
 
     const reconcilePersistedRdo = () => {
+      const generation = ++persistedReadGenerationRef.current;
       void getLocalRdo(initialDraft.id)
         .then((persistedRdo) => {
-          if (!active || !persistedRdo) {
+          if (
+            !active ||
+            generation !== persistedReadGenerationRef.current ||
+            !persistedRdo
+          ) {
             return;
           }
-          setDraft((current) => ({
-            ...current,
-            numeroRdo: persistedRdo.numeroRdo,
-            syncStatus: persistedRdo.syncStatus,
-          }));
+          applyPersistedRdo(persistedRdo);
         })
         .catch(() => {
           // A próxima execução automática tentará novamente. A tela mantém
@@ -977,10 +1081,8 @@ export function RdoCreatePage({
         );
       }
 
-      setDraft((current) => ({
-        ...current,
-        syncStatus: persistedRdo.syncStatus,
-      }));
+      persistedReadGenerationRef.current += 1;
+      applyPersistedRdo(persistedRdo);
 
       onSaved(draft.obraId ?? "");
     } catch {
@@ -996,14 +1098,14 @@ export function RdoCreatePage({
       return;
     }
 
+    const generation = ++persistedReadGenerationRef.current;
     const persistedRdo = await getLocalRdo(draft.id);
 
-    if (persistedRdo) {
-      setDraft((current) => ({
-        ...current,
-        numeroRdo: persistedRdo.numeroRdo,
-        syncStatus: persistedRdo.syncStatus,
-      }));
+    if (
+      persistedRdo &&
+      generation === persistedReadGenerationRef.current
+    ) {
+      applyPersistedRdo(persistedRdo);
     }
   }
 

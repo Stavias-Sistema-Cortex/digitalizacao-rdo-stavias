@@ -5,6 +5,8 @@ migrator_user="${CORTEX_POSTGRES_MIGRATOR_USER:-cortex_migrator}"
 runtime_user="${CORTEX_POSTGRES_RUNTIME_USER:-cortex_runtime}"
 database_name="${POSTGRES_DB:-StaviasCortex}"
 admin_user="${POSTGRES_USER:-}"
+migrator_password_file="${CORTEX_POSTGRES_MIGRATOR_PASSWORD_FILE:-/run/secrets/postgres_migrator_password}"
+runtime_password_file="${CORTEX_POSTGRES_RUNTIME_PASSWORD_FILE:-/run/secrets/postgres_runtime_password}"
 
 for role_name in "$migrator_user" "$runtime_user"; do
   if [[ ! "$role_name" =~ ^[a-z_][a-z0-9_]*$ ]]; then
@@ -21,8 +23,15 @@ if [[ -z "$admin_user" ]] ||
   exit 1
 fi
 
-migrator_password="$(</run/secrets/postgres_migrator_password)"
-runtime_password="$(</run/secrets/postgres_runtime_password)"
+for password_file in "$migrator_password_file" "$runtime_password_file"; do
+  if [[ ! -f "$password_file" || -L "$password_file" || ! -r "$password_file" ]]; then
+    echo "PostgreSQL role password files must be readable regular files." >&2
+    exit 1
+  fi
+done
+
+migrator_password="$(<"$migrator_password_file")"
+runtime_password="$(<"$runtime_password_file")"
 
 if [[ -z "$migrator_password" || -z "$runtime_password" ]]; then
   echo "PostgreSQL role password files must not be empty." >&2

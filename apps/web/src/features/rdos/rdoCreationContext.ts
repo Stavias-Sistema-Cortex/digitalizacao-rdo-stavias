@@ -22,9 +22,14 @@ export type RdoContextTruthStatus =
 
 function validPreviousRdo(
   context: RdoCreationContextLookup,
+  currentRdoId = "",
 ): RdoCreationContextLookup["previousRdo"] {
   const previous = context.previousRdo;
-  if (!previous || previous.dataRdo >= context.data) return null;
+  if (
+    !previous ||
+    previous.id === currentRdoId ||
+    previous.dataRdo > context.data
+  ) return null;
   if (context.provenance.previousRdoId !== previous.id) return null;
   return previous;
 }
@@ -67,7 +72,7 @@ export function applyRdoCreationContext(
   ) {
     throw new Error("Proveniência do contexto de criação inválida.");
   }
-  const previous = validPreviousRdo(context);
+  const previous = validPreviousRdo(context, draft.id);
   const previousWorkforce = previous
     ? context.previousWorkforce.filter(
         (item) => item.sourceRdoId === previous.id,
@@ -105,7 +110,8 @@ export function applyLocalPendingRdoCreationContext(
   createId: () => string = () => crypto.randomUUID(),
 ): RdoDraft {
   const previous = context.previousRdo &&
-      context.previousRdo.dataRdo < context.data
+      context.previousRdo.id !== draft.id &&
+      context.previousRdo.dataRdo <= context.data
     ? context.previousRdo
     : null;
   const previousWorkforce = previous

@@ -203,6 +203,48 @@ describe("pushOutbox row isolation", () => {
     expect(summary).toMatchObject({ pushed: 2, applied: 1, errors: 1 });
   });
 
+  it("reports the exact mutation ids whose applied result was persisted locally", async () => {
+    const applied = mutation("applied", 13);
+    const rejected = mutation("rejected", 13);
+    const corrupt = mutation("corrupt-result", 13);
+    mocks.list.mockResolvedValue([applied, rejected, corrupt]);
+    mocks.serialize.mockImplementation(async (row: OutboxMutationRecord) => ({
+      clientMutationId: row.clientMutationId,
+    }));
+    mocks.api.mockResolvedValue({
+      resultados: [
+        { clientMutationId: "applied", status: "APLICADA" },
+        { clientMutationId: "rejected", status: "REJEITADA" },
+        { clientMutationId: "corrupt-result", status: "APLICADA" },
+      ],
+    });
+    mocks.apply.mockImplementation(async (result: {
+      clientMutationId: string;
+    }) => {
+      if (result.clientMutationId === "corrupt-result") {
+        throw new Error("resultado local inválido");
+      }
+    });
+
+    const summary = await pushOutbox("device-1");
+
+    expect(summary.appliedMutationIds).toEqual(["applied"]);
+    expect(summary.errorMutationIds).toEqual([
+      "rejected",
+      "corrupt-result",
+    ]);
+    expect(summary.handledMutationIds).toEqual([
+      "applied",
+      "rejected",
+      "corrupt-result",
+    ]);
+    expect(summary).toMatchObject({
+      pushed: 3,
+      applied: 1,
+      errors: 2,
+    });
+  });
+
   it.each([
     { status: 403, code: "ACCESS_DENIED" },
     { status: 422, code: "CANONICAL_INVALID" },

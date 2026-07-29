@@ -55,7 +55,10 @@ for entry in \
   secret_file="$secret_mount/$file_name"
   [[ -f "$secret_file" && ! -L "$secret_file" ]]
   [[ "$(file_mode "$secret_file")" == "600" ]]
-  [[ "$(<"$secret_file")" == "$expected" ]]
+  if [[ "$(<"$secret_file")" != "$expected" ]]; then
+    echo "Unexpected staged value for $file_name." >&2
+    exit 1
+  fi
 done
 SH
 chmod +x "$fake_bin/docker"
@@ -63,26 +66,30 @@ chmod +x "$fake_bin/docker"
 registry_namespace='stavi''as'
 valid_digest="ghcr.io/${registry_namespace}/cortex-api@sha256:$(printf 'a%.0s' {1..64})"
 canonical_database='Sta''viasCortex'
-valid_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=require"
+valid_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require"
+valid_snake_case_url="jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channel_binding=require"
 fixture_credential=local
 
 run_success_case() {
-  local capture_dir="$fixture_root/success"
+  local name="$1"
+  local input_url="$2"
+  local expected_url="${3:-$input_url}"
+  local capture_dir="$fixture_root/$name"
   mkdir -p "$capture_dir"
 
   env \
     PATH="$fake_bin:$PATH" \
     CORTEX_TEST_CAPTURE_DIR="$capture_dir" \
-    CORTEX_TEST_EXPECTED_URL="$valid_url" \
+    CORTEX_TEST_EXPECTED_URL="$expected_url" \
     CORTEX_TEST_EXPECTED_USER='cortex_migrator' \
     CORTEX_TEST_EXPECTED_PASSWORD="$fixture_credential" \
     CORTEX_API_IMAGE_DIGEST="$valid_digest" \
-    CORTEX_NEON_MIGRATION_URL="$valid_url" \
+    CORTEX_NEON_MIGRATION_URL="$input_url" \
     CORTEX_NEON_MIGRATION_USER='cortex_migrator' \
     CORTEX_NEON_MIGRATION_PASSWORD="$fixture_credential" \
     bash "$script"
 
-  python3 - "$capture_dir/docker-args" "$valid_digest" "$valid_url" <<'PY'
+  python3 - "$capture_dir/docker-args" "$valid_digest" "$expected_url" <<'PY'
 import pathlib
 import sys
 
@@ -136,18 +143,35 @@ assert_rejected() {
   fi
 }
 
-run_success_case
+run_success_case success-camel-case "$valid_url"
+run_success_case success-snake-case "$valid_snake_case_url" "$valid_url"
 assert_rejected mutable-image "ghcr.io/${registry_namespace}/cortex-api:production" "$valid_url"
 assert_rejected weak-tls "$valid_digest" \
   "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=disable"
-assert_rejected unbound-require "$valid_digest" \
-  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require"
+assert_rejected require-tls "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=require"
+assert_rejected verify-ca "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-ca&channelBinding=require"
+assert_rejected missing-channel-binding "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full"
 assert_rejected weak-channel-binding "$valid_digest" \
-  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=prefer"
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=prefer"
 assert_rejected duplicate-channel-binding "$valid_digest" \
-  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=require&channelBinding=require&channelBinding=require"
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require&channel_binding=require"
+assert_rejected duplicate-sslmode "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&sslmode=verify-full&channelBinding=require"
+assert_rejected tls-validation-override "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+assert_rejected hostname-validation-override "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require&sslhostnameverifier=org.postgresql.ssl.NonValidatingFactory"
+assert_rejected percent-encoded-property-key "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require&ssl%66actory=org.postgresql.ssl.NonValidatingFactory"
+assert_rejected unreviewed-jdbc-property "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require&options=-csearch_path%3Dpublic"
+assert_rejected multiple-hosts "$valid_digest" \
+  "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech,ep-other.us-east-2.aws.neon.tech/${canonical_database}?sslmode=verify-full&channelBinding=require"
 assert_rejected wrong-database "$valid_digest" \
-  'jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/postgres?sslmode=require'
+  'jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/postgres?sslmode=verify-full&channelBinding=require'
 assert_rejected runtime-user "$valid_digest" "$valid_url" cortex_runtime
 
 echo "Neon Flyway release wrapper contract passed."

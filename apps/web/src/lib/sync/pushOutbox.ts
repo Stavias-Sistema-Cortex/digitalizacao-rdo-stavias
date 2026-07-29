@@ -27,6 +27,9 @@ export interface PushOutboxSummary {
   errors: number;
   retryableErrors: number;
   conflicts: number;
+  appliedMutationIds: readonly string[];
+  handledMutationIds: readonly string[];
+  errorMutationIds: readonly string[];
 }
 
 interface PreparedMutation {
@@ -42,6 +45,8 @@ export async function pushOutbox(
   const pendingMutations = await listReadyPendingOutboxMutations(100);
   assertSyncSession(guard);
   const prepared: PreparedMutation[] = [];
+  const handledMutationIds: string[] = [];
+  const errorMutationIds: string[] = [];
   let localErrors = 0;
 
   for (const row of pendingMutations) {
@@ -61,6 +66,8 @@ export async function pushOutbox(
         message,
         guard,
       );
+      handledMutationIds.push(row.clientMutationId);
+      errorMutationIds.push(row.clientMutationId);
       localErrors += 1;
     }
   }
@@ -72,6 +79,9 @@ export async function pushOutbox(
       errors: localErrors,
       retryableErrors: 0,
       conflicts: 0,
+      appliedMutationIds: [],
+      handledMutationIds,
+      errorMutationIds,
     };
   }
 
@@ -96,6 +106,7 @@ export async function pushOutbox(
     let errors = localErrors;
     let retryableErrors = 0;
     let conflicts = 0;
+    const appliedMutationIds: string[] = [];
 
     for (const { row } of prepared) {
       assertSyncSession(guard);
@@ -108,6 +119,8 @@ export async function pushOutbox(
           guard,
         );
         handled.add(row.clientMutationId);
+        handledMutationIds.push(row.clientMutationId);
+        errorMutationIds.push(row.clientMutationId);
         errors += 1;
         retryableErrors += 1;
         continue;
@@ -136,19 +149,24 @@ export async function pushOutbox(
           guard,
         );
         handled.add(row.clientMutationId);
+        handledMutationIds.push(row.clientMutationId);
+        errorMutationIds.push(row.clientMutationId);
         errors += 1;
         continue;
       }
       handled.add(row.clientMutationId);
+      handledMutationIds.push(row.clientMutationId);
 
       if (result.status === "APLICADA") {
         applied += 1;
+        appliedMutationIds.push(row.clientMutationId);
       } else if (
         result.status === "DESCARTADA" ||
         result.status === "CONFLITO"
       ) {
         conflicts += 1;
       } else {
+        errorMutationIds.push(row.clientMutationId);
         errors += 1;
         if (retryDispositionForResult(result).retryable) {
           retryableErrors += 1;
@@ -162,6 +180,9 @@ export async function pushOutbox(
       errors,
       retryableErrors,
       conflicts,
+      appliedMutationIds,
+      handledMutationIds,
+      errorMutationIds,
     };
   } catch (error: unknown) {
     assertSyncSession(guard);

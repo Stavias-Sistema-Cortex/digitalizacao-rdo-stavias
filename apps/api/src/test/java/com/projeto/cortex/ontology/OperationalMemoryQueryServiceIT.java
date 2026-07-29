@@ -395,29 +395,29 @@ class OperationalMemoryQueryServiceIT {
     }
 
     @Test
-    void interpretsLegacyWallClockEventsInThePostgresqlMachineTimezone() {
-        SingleConnectionDataSource saoPauloDataSource =
+    void interpretsLegacyWallClockEventsInTheirOriginalSaoPauloTimezone() {
+        SingleConnectionDataSource utcDataSource =
                 new SingleConnectionDataSource(
                         DATABASE.getJdbcUrl(),
                         DATABASE.getUsername(),
                         DATABASE.getPassword(),
                         true
                 );
-        JdbcTemplate saoPauloJdbc = new JdbcTemplate(saoPauloDataSource);
-        OperationalMemoryQueryService saoPauloService =
-                new OperationalMemoryQueryService(saoPauloJdbc, CURSOR_SIGNER);
+        JdbcTemplate utcJdbc = new JdbcTemplate(utcDataSource);
+        OperationalMemoryQueryService utcService =
+                new OperationalMemoryQueryService(utcJdbc, CURSOR_SIGNER);
 
         try {
-            saoPauloJdbc.execute("SET TIME ZONE 'America/Sao_Paulo'");
-            assertThat(saoPauloJdbc.queryForObject("SHOW TIME ZONE", String.class))
-                    .isEqualTo("America/Sao_Paulo");
+            utcJdbc.execute("SET TIME ZONE 'UTC'");
+            assertThat(utcJdbc.queryForObject("SHOW TIME ZONE", String.class))
+                    .isEqualTo("UTC");
 
-            saoPauloJdbc.update("""
+            utcJdbc.update("""
                     UPDATE cortex_evento_commit_sequence
                     SET ultima_commit_seq = 107
                     WHERE id = 1
                     """);
-            saoPauloJdbc.update("""
+            utcJdbc.update("""
                     INSERT INTO cortex_evento_operacional (
                         id, commit_seq, tipo_entidade, entidade_id, obra_id,
                         tipo_evento, fonte, origem, sync_status, usuario_id,
@@ -429,7 +429,7 @@ class OperationalMemoryQueryServiceIT {
                         timestamp '2026-07-21 10:03:00'
                     )
                     """, eventId(106), WORKSITE_A, ACTOR_A);
-            saoPauloJdbc.update("""
+            utcJdbc.update("""
                     INSERT INTO cortex_evento_operacional (
                         id, commit_seq, tipo_entidade, entidade_id, obra_id,
                         tipo_evento, fonte, origem, sync_status, usuario_id,
@@ -457,7 +457,7 @@ class OperationalMemoryQueryServiceIT {
                     Instant.parse("2026-07-21T13:03:00Z")
             );
 
-            OperationalMemoryPageResponse page = saoPauloService.search(
+            OperationalMemoryPageResponse page = utcService.search(
                     OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
                     exactLocalInstant,
                     20,
@@ -485,7 +485,7 @@ class OperationalMemoryQueryServiceIT {
                             Instant.parse("2026-07-21T10:04:00Z"),
                             Instant.parse("2026-07-21T10:04:00Z")
                     );
-            assertThat(saoPauloService.search(
+            assertThat(utcService.search(
                     OperationalMemoryScope.beta(ACTOR_A, Set.of(WORKSITE_A)),
                     exactPdorUtcInstant,
                     20,
@@ -496,18 +496,18 @@ class OperationalMemoryQueryServiceIT {
             );
         } finally {
             try {
-                saoPauloJdbc.update(
+                utcJdbc.update(
                         "DELETE FROM cortex_evento_operacional WHERE id IN (?, ?)",
                         eventId(106),
                         eventId(107)
                 );
-                saoPauloJdbc.update("""
+                utcJdbc.update("""
                         UPDATE cortex_evento_commit_sequence
                         SET ultima_commit_seq = 105
                         WHERE id = 1
                         """);
             } finally {
-                saoPauloDataSource.destroy();
+                utcDataSource.destroy();
             }
         }
     }

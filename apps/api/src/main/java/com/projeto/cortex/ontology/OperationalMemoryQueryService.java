@@ -32,7 +32,7 @@ public class OperationalMemoryQueryService {
             CASE
                 WHEN e.schema_version = 2 OR e.schema_version >= 13
                     THEN e.ocorrido_em AT TIME ZONE 'UTC'
-                ELSE e.ocorrido_em AT TIME ZONE current_setting('TIMEZONE')
+                ELSE e.ocorrido_em AT TIME ZONE 'America/Sao_Paulo'
             END
             """;
     private static final Pattern SAFE_GRAPH_ERROR = Pattern.compile(
@@ -177,13 +177,13 @@ public class OperationalMemoryQueryService {
                     CASE
                         WHEN e.schema_version = 2 OR e.schema_version >= 13
                             THEN e.ocorrido_em AT TIME ZONE 'UTC'
-                        ELSE e.ocorrido_em AT TIME ZONE current_setting('TIMEZONE')
+                        ELSE e.ocorrido_em AT TIME ZONE 'America/Sao_Paulo'
                     END AS ocorrido_em_instant,
                     CASE
                         WHEN e.sincronizado_em IS NULL THEN NULL
                         WHEN e.schema_version = 2 OR e.schema_version >= 13
                             THEN e.sincronizado_em AT TIME ZONE 'UTC'
-                        ELSE e.sincronizado_em AT TIME ZONE current_setting('TIMEZONE')
+                        ELSE e.sincronizado_em AT TIME ZONE 'America/Sao_Paulo'
                     END AS sincronizado_em_instant,
                     e.origem,
                     e.sync_status,

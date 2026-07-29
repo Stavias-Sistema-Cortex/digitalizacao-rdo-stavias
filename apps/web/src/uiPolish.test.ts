@@ -445,8 +445,32 @@ describe("polimento visual da plataforma autenticada", () => {
       );
 
       expect(output).toContain(
-        "Operational layout verified: 6 scenarios",
+        "Operational layout verified: 7 scenarios",
       );
+    },
+    30_000,
+  );
+
+  it.runIf(Boolean(browser))(
+    "rejeita popovers ancorados para fora da viewport móvel",
+    () => {
+      const result = spawnSync(
+        process.execPath,
+        [operationalLayoutScript],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CORTEX_BROWSER_BIN: browser,
+            CORTEX_OPERATIONAL_LAYOUT_MUTANT: "right-anchored-popovers",
+          },
+          encoding: "utf8",
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("sync ficou a");
+      expect(result.stderr).toContain("profile ficou a");
     },
     30_000,
   );

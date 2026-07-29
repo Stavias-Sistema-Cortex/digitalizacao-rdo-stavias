@@ -79,6 +79,30 @@ async function executeSync(
     await assertSyncExecution(guard, lease);
     const pushSummary = await pushOutbox(deviceId, guard);
     await assertSyncExecution(guard, lease);
+    const recoveredReplacementIds = new Set<string>();
+    const recoveredReplacementByOriginalId =
+      new Map<string, string>();
+    const recoveredAfterPush = pushSummary.errors > 0
+      ? await recoverRejectedRdoMutationsForSync(guard, {
+          executionLease: lease,
+          recoveredReplacementIds,
+          recoveredReplacementByOriginalId,
+        })
+      : 0;
+    await assertSyncExecution(guard, lease);
+    const retryPushSummary = recoveredAfterPush > 0
+      ? await pushOutbox(deviceId, guard)
+      : {
+          pushed: 0,
+          applied: 0,
+          errors: 0,
+          retryableErrors: 0,
+          conflicts: 0,
+          appliedMutationIds: [],
+          handledMutationIds: [],
+          errorMutationIds: [],
+        };
+    await assertSyncExecution(guard, lease);
     const pullSummary = await pullEvents(deviceId, guard);
     await assertSyncExecution(guard, lease);
     await refreshMessagingAfterPull(
@@ -89,6 +113,18 @@ async function executeSync(
     const acknowledgedCommitSeq =
       await acknowledgeCurrentCursor(deviceId, guard);
     await assertSyncExecution(guard, lease);
+    const currentPushErrorIds = new Set(
+      pushSummary.errorMutationIds,
+    );
+    const retryHandledIds = new Set(
+      retryPushSummary.handledMutationIds,
+    );
+    const replacedCurrentPushErrorCount = [
+      ...recoveredReplacementByOriginalId,
+    ].filter(([originalId, replacementId]) =>
+      currentPushErrorIds.has(originalId) &&
+      retryHandledIds.has(replacementId)
+    ).length;
 
     await updateSyncState({
       isSyncing: false,
@@ -99,11 +135,29 @@ async function executeSync(
 
     const summary = {
       deviceId,
-      pushed: uploadSummary.pushed + pushSummary.pushed,
-      applied: uploadSummary.applied + pushSummary.applied,
-      errors: uploadSummary.errors + pushSummary.errors,
-      retryableErrors: pushSummary.retryableErrors,
-      conflicts: pushSummary.conflicts,
+      pushed:
+        uploadSummary.pushed +
+        pushSummary.pushed +
+        retryPushSummary.pushed,
+      applied:
+        uploadSummary.applied +
+        pushSummary.applied +
+        retryPushSummary.applied,
+      errors:
+        uploadSummary.errors +
+        Math.max(
+          0,
+          pushSummary.errors -
+            Math.min(
+              pushSummary.errors,
+              replacedCurrentPushErrorCount,
+            ),
+        ) +
+        retryPushSummary.errors,
+      retryableErrors:
+        pushSummary.retryableErrors +
+        retryPushSummary.retryableErrors,
+      conflicts: pushSummary.conflicts + retryPushSummary.conflicts,
       pulled: pullSummary.pulled,
       acknowledgedCommitSeq,
     };

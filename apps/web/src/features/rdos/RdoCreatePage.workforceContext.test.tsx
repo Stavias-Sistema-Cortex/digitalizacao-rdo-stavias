@@ -12,8 +12,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createEmptyRdo } from "./createEmptyRdo";
+import {
+  createEmptyAlocacaoColaborador,
+  createEmptyMaoObra,
+  createEmptyRdo,
+} from "./createEmptyRdo";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
+import type { RdoDraft } from "./rdo.types";
 import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 
 const mocks = vi.hoisted(() => ({
@@ -61,15 +66,59 @@ vi.mock("./rdoLookupApi", async (importOriginal) => {
 
 vi.mock("./RdoWorkforceEditor", () => ({
   RdoWorkforceEditor: ({
+    draft,
     collaborators,
     catalogUnavailableMessage,
+    onChange,
   }: {
+    draft: RdoDraft;
     collaborators: Array<{ nome: string }>;
     catalogUnavailableMessage?: string;
+    onChange: (draft: RdoDraft) => void;
   }) => (
     <section aria-label="Equipe contextual">
       {catalogUnavailableMessage ??
         collaborators.map((item) => item.nome).join(", ")}
+      <div aria-label="Equipe atual">
+        {draft.maoObra.map((item) => (
+          <output key={item.localId} data-testid={`worker-${item.localId}`}>
+            {[
+              item.colaboradorId,
+              item.nomeColaborador,
+              item.origin,
+              item.availability,
+            ].join("|")}
+          </output>
+        ))}
+      </div>
+      <output aria-label="Rateios atuais">
+        {draft.alocacoesColaboradores.length}
+      </output>
+      <output aria-label="Apontador atual">
+        {draft.apontadorColaboradorId}
+      </output>
+      <button
+        type="button"
+        onClick={() =>
+          onChange({
+            ...draft,
+            maoObra: [
+              ...draft.maoObra,
+              {
+                ...createEmptyMaoObra(),
+                localId: "concurrent-worker",
+                colaboradorId: "worker-a",
+                nomeColaborador: "Ana concorrente",
+                origin: "AUTHORIZED_CONTEXT",
+                availability: "AVAILABLE",
+                selected: true,
+              },
+            ],
+          })
+        }
+      >
+        Adicionar durante reidratação
+      </button>
     </section>
   ),
 }));
@@ -142,6 +191,67 @@ function legacyDraft() {
     id: "legacy-rdo",
     obraId: "obra-a",
     dataRdo: "2026-07-22",
+  };
+}
+
+function draftWithRejectedWorkforce(): RdoDraft {
+  const draft = legacyDraft();
+  draft.syncStatus = "PENDING_SYNC";
+  draft.apontadorColaboradorId = "foreign-worker";
+  draft.apontadorRdo = "Pessoa preservada por nome";
+  draft.maoObra = [{
+    ...createEmptyMaoObra(),
+    localId: "legacy-worker",
+    origemItemId: "source-item",
+    sourceRdoId: "source-rdo",
+    origin: "PREVIOUS_RDO",
+    availability: "AVAILABLE",
+    selected: true,
+    colaboradorId: "foreign-worker",
+    nomeColaborador: "Pessoa preservada por nome",
+    cargo: "Servente",
+  }];
+  draft.alocacoesColaboradores = [{
+    ...createEmptyAlocacaoColaborador(),
+    localId: "legacy-allocation",
+    colaboradorId: "foreign-worker",
+  }];
+  return draft;
+}
+
+function repairedLocalRecord(draft: RdoDraft) {
+  return {
+    id: draft.id,
+    obraId: draft.obraId,
+    programacaoId: null,
+    numeroRdo: "RDO-0042",
+    dataRdo: draft.dataRdo,
+    statusRdo: "RASCUNHO" as const,
+    syncStatus: "PENDING_SYNC" as const,
+    versaoEntidade: 7,
+    payload: {
+      apontadorColaboradorId: null,
+      apontadorRdo: "Pessoa preservada por nome",
+      alocacoesColaboradores: [],
+      maoObra: [{
+        id: "legacy-worker",
+        origemItemId: null,
+        sourceRdoId: null,
+        origin: "MANUAL",
+        availability: "UNKNOWN",
+        selected: true,
+        colaboradorId: null,
+        nomeColaborador: "Pessoa preservada por nome",
+        cargo: "Servente",
+        tipoVinculo: "OUTRO",
+        quantidade: 1,
+        horaInicio: null,
+        horaFim: null,
+        observacoes: null,
+      }],
+    },
+    createdAt: "2026-07-22T10:00:00.000Z",
+    updatedAt: "2026-07-22T10:02:00.000Z",
   };
 }
 
@@ -252,6 +362,81 @@ describe("reconciliação da identificação canônica", () => {
       expect(mocks.getLocalRdo).toHaveBeenCalledWith(draft.id);
       expect(screen.getByLabelText(/^Número do RDO/)).toHaveValue("RDO-0042");
       expect(screen.getByText("Confirmada")).toBeVisible();
+    });
+  });
+
+  it("rehydrates the repaired workforce after automatic synchronization", async () => {
+    const draft = draftWithRejectedWorkforce();
+    mocks.getLocalRdo.mockResolvedValue(repairedLocalRecord(draft));
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("worker-legacy-worker")).toHaveTextContent(
+      "foreign-worker|Pessoa preservada por nome|PREVIOUS_RDO|AVAILABLE",
+    );
+    await act(async () => {
+      window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("worker-legacy-worker")).toHaveTextContent(
+        "|Pessoa preservada por nome|MANUAL|UNKNOWN",
+      );
+      expect(screen.getByLabelText("Rateios atuais")).toHaveTextContent("0");
+      expect(screen.getByLabelText("Apontador atual")).toBeEmptyDOMElement();
+    });
+  });
+
+  it("preserves a concurrent workforce edit while applying the persisted repair", async () => {
+    const draft = draftWithRejectedWorkforce();
+    let resolvePersisted!: (
+      value: ReturnType<typeof repairedLocalRecord>,
+    ) => void;
+    mocks.getLocalRdo.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePersisted = resolve;
+      }),
+    );
+
+    render(
+      <RdoCreatePage
+        initialDraft={draft}
+        isExisting
+        creationContext={context()}
+        onBackToList={vi.fn()}
+        onSaved={vi.fn()}
+      />,
+    );
+
+    window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT));
+    await waitFor(() => {
+      expect(mocks.getLocalRdo).toHaveBeenCalledWith(draft.id);
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Adicionar durante reidratação",
+      }),
+    );
+    await act(async () => {
+      resolvePersisted(repairedLocalRecord(draft));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("worker-legacy-worker")).toHaveTextContent(
+        "|Pessoa preservada por nome|MANUAL|UNKNOWN",
+      );
+      expect(screen.getByTestId("worker-concurrent-worker")).toHaveTextContent(
+        "worker-a|Ana concorrente|AUTHORIZED_CONTEXT|AVAILABLE",
+      );
     });
   });
 

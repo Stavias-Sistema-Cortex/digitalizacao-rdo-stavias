@@ -2205,6 +2205,9 @@ export interface RdoRejectedMutationRecoveryOptions {
   now?: () => string;
   clientMutationIdFactory?: () => string;
   ontologyEventIdFactory?: () => string;
+  correctiveOperationalEventIdFactory?: () => string;
+  recoveredReplacementIds?: Set<string>;
+  recoveredReplacementByOriginalId?: Map<string, string>;
   loadAuthorizedCollaboratorIds?: (
     obraId: string,
     dataRdo: string,
@@ -2238,18 +2241,26 @@ function normalizedServerMessage(value: string | null): string {
     .trim();
 }
 
-function isRecoverableRejectedRdoCreate(
+function isRecoverableRejectedRdoMutation(
   mutation: OutboxMutationRecord,
 ): mutation is CanonicalOutboxMutationRecord {
   if (
     !isCanonicalOutboxMutation(mutation) ||
     mutation.entidadeTipo !== "RDO" ||
-    mutation.operation !== "CREATE" ||
-    mutation.operacao !== "CRIAR_RDO" ||
     mutation.status !== "REJECTED"
   ) {
     return false;
   }
+  const supportedRdoOperation =
+    (
+      mutation.operation === "CREATE" &&
+      mutation.operacao === "CRIAR_RDO"
+    ) ||
+    (
+      mutation.operation === "UPDATE" &&
+      mutation.operacao === "ATUALIZAR_RDO_RASCUNHO"
+    );
+  if (!supportedRdoOperation) return false;
   return mutation.lastSafeCode === "IDEMPOTENCY_MISMATCH" ||
     (
       mutation.lastSafeCode === "VALIDATION_OR_AUTHORIZATION" &&
@@ -2284,6 +2295,9 @@ function repairInvalidWorkforceLinks(
   changed: boolean;
   hasInvalidIds: boolean;
   unresolvedInvalidIds: string[];
+  invalidStructuredAllocationIds: string[];
+  repairedNominalWorkforceLinks:
+    readonly RepairedNominalWorkforceLink[];
 } {
   const referencedIds = new Set<string>();
   for (const item of draft.maoObra) {
@@ -2302,7 +2316,16 @@ function repairInvalidWorkforceLinks(
   const invalidIds = new Set(
     [...referencedIds].filter((id) => !authorizedIds.has(id)),
   );
+  const invalidStructuredAllocationIds = [
+    ...new Set(
+      draft.alocacoesColaboradores
+        .map((item) => item.colaboradorId.trim())
+        .filter((id) => id && invalidIds.has(id)),
+    ),
+  ];
   const unresolvedInvalidIds = new Set<string>();
+  const repairedNominalWorkforceLinks:
+    RepairedNominalWorkforceLink[] = [];
   const maoObra = draft.maoObra.map((item) => {
     const collaboratorId = item.colaboradorId.trim();
     if (
@@ -2316,6 +2339,14 @@ function repairInvalidWorkforceLinks(
       unresolvedInvalidIds.add(collaboratorId);
       return item;
     }
+    const localId = item.localId.trim();
+    if (localId) {
+      repairedNominalWorkforceLinks.push({
+        localId,
+        collaboratorId,
+        collaboratorName: item.nomeColaborador.trim(),
+      });
+    }
     return {
       ...item,
       origemItemId: "",
@@ -2325,9 +2356,6 @@ function repairInvalidWorkforceLinks(
       colaboradorId: "",
     };
   });
-  const alocacoesColaboradores = draft.alocacoesColaboradores.filter(
-    (item) => !invalidIds.has(item.colaboradorId.trim()),
-  );
   const clearsApontador = invalidIds.has(
     draft.apontadorColaboradorId.trim(),
   );
@@ -2336,8 +2364,6 @@ function repairInvalidWorkforceLinks(
     unresolvedInvalidIds.size === 0 &&
     (
       maoObra.some((item, index) => item !== draft.maoObra[index]) ||
-      alocacoesColaboradores.length !==
-        draft.alocacoesColaboradores.length ||
       clearsApontador
     );
   return {
@@ -2345,7 +2371,6 @@ function repairInvalidWorkforceLinks(
       ? {
           ...draft,
           maoObra,
-          alocacoesColaboradores,
           apontadorColaboradorId: clearsApontador
             ? ""
             : draft.apontadorColaboradorId,
@@ -2355,6 +2380,208 @@ function repairInvalidWorkforceLinks(
     changed,
     hasInvalidIds: invalidIds.size > 0,
     unresolvedInvalidIds: [...unresolvedInvalidIds],
+    invalidStructuredAllocationIds,
+    repairedNominalWorkforceLinks,
+  };
+}
+
+interface WorkforceOperationalEventRecovery {
+  events: unknown[];
+  corrections: readonly WorkforceOperationalEventCorrection[];
+  invalidReason: string | null;
+}
+
+interface WorkforceOperationalEventCorrection {
+  originalEventId: string;
+  correctiveEventId: string;
+  originalSerializedEvent: Readonly<Record<string, unknown>>;
+  type: OperationalEventRecord["type"];
+  colaboradorId: null;
+  principalEntity: OperationalEntityRef;
+  payload: Record<string, unknown>;
+}
+
+interface RepairedNominalWorkforceLink {
+  localId: string;
+  collaboratorId: string;
+  collaboratorName: string;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null &&
+      !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function nonBlankText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text || null;
+}
+
+function serializeOperationalEventForTransport(
+  event: OperationalEventRecord,
+): Record<string, unknown> {
+  return {
+    id: event.id,
+    type: event.type,
+    principalEntity: event.principalEntity,
+    relatedEntities: event.relatedEntities,
+    obraId: event.obraId,
+    rdoId: event.rdoId,
+    colaboradorId: event.colaboradorId,
+    occurredAt: event.occurredAt,
+    syncedAt: event.syncedAt,
+    origin: event.origin,
+    responsibleUserId: event.responsibleUserId,
+    responsibleUserName: event.responsibleUserName,
+    payload: event.payload,
+    syncStatus: event.syncStatus,
+    schemaVersion: event.schemaVersion,
+  };
+}
+
+function recoverWorkforceOperationalEvents(
+  payload: Readonly<Record<string, unknown>>,
+  authorizedIds: ReadonlySet<string>,
+  repairedNominalWorkforceLinks:
+    readonly RepairedNominalWorkforceLink[],
+  occurredAt: string,
+  correctiveEventIdFactory: () => string,
+): WorkforceOperationalEventRecovery {
+  const sourceEvents = Array.isArray(payload.operationalEvents)
+    ? payload.operationalEvents
+    : [];
+  const events: unknown[] = [];
+  const corrections: WorkforceOperationalEventCorrection[] = [];
+  const sourceEventIds = sourceEvents.flatMap((sourceEvent) => {
+    const eventId = nonBlankText(objectRecord(sourceEvent)?.id);
+    return eventId ? [eventId] : [];
+  });
+  const reservedEventIds = new Set(sourceEventIds);
+  if (reservedEventIds.size !== sourceEventIds.length) {
+    return {
+      events: [],
+      corrections: [],
+      invalidReason:
+        "Há IDs duplicados nos eventos operacionais do RDO.",
+    };
+  }
+
+  const appendCorrection = (
+    event: Record<string, unknown>,
+    originalEventId: string | null,
+    type: OperationalEventRecord["type"],
+    principalEntity: OperationalEntityRef,
+    correctionPayload: Record<string, unknown>,
+  ): string | null => {
+    if (!originalEventId) {
+      return "Evento operacional sem ID não pode ser corrigido com rastreabilidade.";
+    }
+    const correctiveEventId = nonBlankText(
+      correctiveEventIdFactory(),
+    );
+    if (
+      !correctiveEventId ||
+      reservedEventIds.has(correctiveEventId)
+    ) {
+      return "O ID do evento operacional corretivo é inválido ou duplicado.";
+    }
+    reservedEventIds.add(correctiveEventId);
+    const causalPayload = {
+      ...correctionPayload,
+      supersedesEventId: originalEventId,
+      causationId: originalEventId,
+      recoveryReason: "WORKFORCE_LINK_RECOVERED_AS_NOMINAL",
+    };
+    events.push({
+      id: correctiveEventId,
+      type,
+      principalEntity,
+      relatedEntities: event.relatedEntities,
+      obraId: event.obraId,
+      rdoId: event.rdoId,
+      colaboradorId: null,
+      occurredAt,
+      syncedAt: null,
+      origin: event.origin,
+      responsibleUserId: event.responsibleUserId,
+      responsibleUserName: event.responsibleUserName,
+      payload: causalPayload,
+      syncStatus: "PENDING_SYNC",
+      schemaVersion: 1,
+    });
+    corrections.push({
+      originalEventId,
+      correctiveEventId,
+      originalSerializedEvent: event,
+      type,
+      colaboradorId: null,
+      principalEntity,
+      payload: causalPayload,
+    });
+    return null;
+  };
+
+  for (const sourceEvent of sourceEvents) {
+    const event = objectRecord(sourceEvent);
+    const collaboratorId = nonBlankText(event?.colaboradorId);
+    if (
+      !event ||
+      !collaboratorId ||
+      authorizedIds.has(collaboratorId)
+    ) {
+      events.push(sourceEvent);
+      continue;
+    }
+
+    const eventId = nonBlankText(event.id);
+    const eventPayload = objectRecord(event.payload);
+    const localId = nonBlankText(eventPayload?.localId);
+    const collaboratorName =
+      nonBlankText(eventPayload?.nomeColaborador);
+    const principal = objectRecord(event.principalEntity);
+    const repairedLink = repairedNominalWorkforceLinks.find(
+      (link) =>
+        link.localId === localId &&
+        link.collaboratorId === collaboratorId &&
+        link.collaboratorName === collaboratorName,
+    );
+    if (
+      event.type !== "COLABORADOR_ASSOCIADO_RDO" ||
+      !repairedLink ||
+      principal?.tipo !== "COLABORADOR" ||
+      nonBlankText(principal.id) !== collaboratorId
+    ) {
+      return {
+        events: [],
+        corrections: [],
+        invalidReason:
+          "O evento operacional não corresponde exatamente à mão de obra nominal reparada.",
+      };
+    }
+    const principalEntity: OperationalEntityRef = {
+      tipo: "RDO_MAO_OBRA",
+      id: repairedLink.localId,
+      nome: repairedLink.collaboratorName,
+    };
+    const invalidReason = appendCorrection(
+      event,
+      eventId,
+      "COLABORADOR_ASSOCIADO_RDO",
+      principalEntity,
+      eventPayload ?? {},
+    );
+    if (invalidReason) {
+      return { events: [], corrections: [], invalidReason };
+    }
+  }
+
+  return {
+    events,
+    corrections,
+    invalidReason: null,
   };
 }
 
@@ -2958,6 +3185,53 @@ function recoveryAncestryState(
   return "CLEAR";
 }
 
+function syncedCanonicalCausalAncestorIds(
+  mutation: CanonicalOutboxMutationRecord,
+  entityMutations: readonly OutboxMutationRecord[],
+): ReadonlySet<string> {
+  if (mutation.operation !== "UPDATE") return new Set();
+  const byId = new Map(
+    entityMutations.map((candidate) => [
+      candidate.clientMutationId,
+      candidate,
+    ]),
+  );
+  const ancestors = new Set<string>();
+  const visited = new Set<string>();
+  let ancestorId = mutation.causationId;
+  while (ancestorId && !visited.has(ancestorId)) {
+    visited.add(ancestorId);
+    const ancestor = byId.get(ancestorId);
+    if (
+      !ancestor ||
+      !isCanonicalOutboxMutation(ancestor) ||
+      ancestor.entityId !== mutation.entityId ||
+      ancestor.userId !== mutation.userId ||
+      ancestor.obraId !== mutation.obraId
+    ) {
+      break;
+    }
+    if (
+      ancestor.status === "SYNCED" &&
+      ancestor.occurredAt <= mutation.occurredAt &&
+      (
+        (
+          ancestor.operation === "CREATE" &&
+          ancestor.operacao === "CRIAR_RDO"
+        ) ||
+        (
+          ancestor.operation === "UPDATE" &&
+          ancestor.operacao === "ATUALIZAR_RDO_RASCUNHO"
+        )
+      )
+    ) {
+      ancestors.add(ancestor.clientMutationId);
+    }
+    ancestorId = ancestor.causationId;
+  }
+  return ancestors;
+}
+
 export async function recoverRejectedRdoMutationsForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
   options: RdoRejectedMutationRecoveryOptions = {},
@@ -2974,7 +3248,7 @@ export async function recoverRejectedRdoMutationsForSync(
       "REJECTED",
     )
   )
-    .filter(isRecoverableRejectedRdoCreate)
+    .filter(isRecoverableRejectedRdoMutation)
     .filter((mutation) => {
       const nextAttempt = Date.parse(mutation.nextAttemptAt ?? "");
       return !Number.isFinite(nextAttempt) ||
@@ -2986,6 +3260,9 @@ export async function recoverRejectedRdoMutationsForSync(
     options.clientMutationIdFactory ?? (() => crypto.randomUUID());
   const eventIdFactory =
     options.ontologyEventIdFactory ?? (() => crypto.randomUUID());
+  const correctiveEventIdFactory =
+    options.correctiveOperationalEventIdFactory ??
+      (() => crypto.randomUUID());
   const loadAuthorizedIds =
     options.loadAuthorizedCollaboratorIds ??
       currentAuthorizedCollaboratorIds;
@@ -3008,17 +3285,17 @@ export async function recoverRejectedRdoMutationsForSync(
     const entityMutations = candidateMutationSnapshot.filter(
       (mutation) => mutation.entidadeId === candidate.entityId,
     );
-    const rejectedCreates = entityMutations
-      .filter(isRecoverableRejectedRdoCreate)
+    const rejectedMutations = entityMutations
+      .filter(isRecoverableRejectedRdoMutation)
       .sort((left, right) =>
         right.occurredAt.localeCompare(left.occurredAt)
     );
-    const original = rejectedCreates[0];
+    const original = rejectedMutations[0];
     if (!original || original.userId !== guard.userId) continue;
     const rootIds = new Set(
-      rejectedCreates.map((mutation) => mutation.clientMutationId),
+      rejectedMutations.map((mutation) => mutation.clientMutationId),
     );
-    const rejectedSnapshots = rejectedCreates.map(
+    const rejectedSnapshots = rejectedMutations.map(
       (mutation) => ({
         mutation,
         event: canonicalEventFromSnapshot(
@@ -3027,13 +3304,20 @@ export async function recoverRejectedRdoMutationsForSync(
         ),
       }),
     );
-    if (rejectedCreates.length > 1) {
+    if (rejectedMutations.length > 1) {
+      const onlyCreates = rejectedMutations.every(
+        (mutation) => mutation.operation === "CREATE",
+      );
       await terminalizeRejectedRecovery(
         database,
         guard,
         rejectedSnapshots,
-        "DUPLICATE_REJECTED_RDO_CREATE_REQUIRES_REVIEW",
-        "Há mais de um CREATE rejeitado para o mesmo RDO.",
+        onlyCreates
+          ? "DUPLICATE_REJECTED_RDO_CREATE_REQUIRES_REVIEW"
+          : "DUPLICATE_REJECTED_RDO_MUTATION_REQUIRES_REVIEW",
+        onlyCreates
+          ? "Há mais de um CREATE rejeitado para o mesmo RDO."
+          : "Há mais de uma alteração rejeitada para o mesmo RDO.",
         options.executionLease,
         {
           allMutations: candidateMutationSnapshot,
@@ -3129,6 +3413,10 @@ export async function recoverRejectedRdoMutationsForSync(
       original,
       entityMutations,
     );
+    const syncedCausalAncestorIds = syncedCanonicalCausalAncestorIds(
+      original,
+      entityMutations,
+    );
     const transitiveDependents = candidateMutationSnapshot.filter(
       (mutation) =>
         transitiveDependentIds.has(mutation.clientMutationId),
@@ -3173,6 +3461,7 @@ export async function recoverRejectedRdoMutationsForSync(
       (mutation) =>
         mutation.clientMutationId !== original.clientMutationId &&
         !localEditAncestorIds.has(mutation.clientMutationId) &&
+        !syncedCausalAncestorIds.has(mutation.clientMutationId) &&
         !(
           mutation.operacao !== "CRIAR_RDO" &&
           transitiveDependentIds.has(mutation.clientMutationId) &&
@@ -3254,6 +3543,11 @@ export async function recoverRejectedRdoMutationsForSync(
     let replacementTransportOperation = original.operacao;
     let replacementBaseVersion = original.baseVersion;
     let authoritativeRdo: LocalRdoRecord | null = null;
+    let workforceOperationalEventRecovery:
+      WorkforceOperationalEventRecovery | null = null;
+    let workforceCorrectionOriginalEvents:
+      OperationalEventRecord[] = [];
+    let recoveryTimestamp: string | null = null;
     if (workforceRecovery) {
       let authorizedIds: ReadonlySet<string>;
       await assertRecoveryLease(options.executionLease);
@@ -3292,6 +3586,18 @@ export async function recoverRejectedRdoMutationsForSync(
         repairedDraft,
         authorizedIds,
       );
+      if (repaired.invalidStructuredAllocationIds.length > 0) {
+        await terminalizeRejectedRecovery(
+          database,
+          guard,
+          [snapshot],
+          "WORKFORCE_ALLOCATION_REASSIGNMENT_REQUIRED",
+          "Reatribua ou remova a alocação sem vínculo ativo.",
+          options.executionLease,
+          recoveryDecisionSnapshot,
+        );
+        continue;
+      }
       if (repaired.hasInvalidIds && !repaired.changed) {
         await terminalizeRejectedRecovery(
           database,
@@ -3307,7 +3613,74 @@ export async function recoverRejectedRdoMutationsForSync(
         continue;
       }
       repairedDraft = repaired.draft;
-      nextPayload = buildRdoSyncPayload(repairedDraft);
+      recoveryTimestamp = now();
+      workforceOperationalEventRecovery =
+        recoverWorkforceOperationalEvents(
+          original.payload,
+          authorizedIds,
+          repaired.repairedNominalWorkforceLinks,
+          recoveryTimestamp,
+          correctiveEventIdFactory,
+        );
+      if (workforceOperationalEventRecovery.invalidReason) {
+        await terminalizeRejectedRecovery(
+          database,
+          guard,
+          [snapshot],
+          "WORKFORCE_OPERATIONAL_EVENT_RECOVERY_REQUIRES_REVIEW",
+          workforceOperationalEventRecovery.invalidReason,
+          options.executionLease,
+          recoveryDecisionSnapshot,
+        );
+        continue;
+      }
+      const correctionOriginals =
+        workforceOperationalEventRecovery.corrections.map(
+          (correction) =>
+            candidateEventSnapshot.find(
+              (event) => event.id === correction.originalEventId,
+            ),
+        );
+      const corrections =
+        workforceOperationalEventRecovery.corrections;
+      if (
+        correctionOriginals.some(
+          (event, index) =>
+            !event ||
+            event.schemaVersion !== 1 ||
+            ![
+              "PENDING_SYNC",
+              "SYNCING",
+              "SYNC_FAILED",
+            ].includes(event.syncStatus) ||
+            canonicalMutationJson(
+              serializeOperationalEventForTransport(event),
+            ) !==
+              canonicalMutationJson(
+                corrections[index].originalSerializedEvent,
+              ),
+        )
+      ) {
+        await terminalizeRejectedRecovery(
+          database,
+          guard,
+          [snapshot],
+          "WORKFORCE_OPERATIONAL_EVENT_RECOVERY_REQUIRES_REVIEW",
+          "O evento operacional original não está íntegro como registro local schema-v1.",
+          options.executionLease,
+          recoveryDecisionSnapshot,
+        );
+        continue;
+      }
+      workforceCorrectionOriginalEvents =
+        correctionOriginals as OperationalEventRecord[];
+      nextPayload = {
+        ...buildRdoSyncPayload(repairedDraft),
+        operationalEvents:
+          workforceOperationalEventRecovery.events,
+      };
+    } else if (original.operation === "UPDATE") {
+      nextPayload = original.payload as Record<string, unknown>;
     } else {
       let authoritative: AuthoritativeRdoLookup;
       await assertRecoveryLease(options.executionLease);
@@ -3399,7 +3772,7 @@ export async function recoverRejectedRdoMutationsForSync(
       }
     }
 
-    const timestamp = now();
+    const timestamp = recoveryTimestamp ?? now();
     const replacementIds = new Map<string, string>();
     const rootReplacementId = mutationIdFactory();
     for (const rootId of rootIds) {
@@ -3543,6 +3916,19 @@ export async function recoverRejectedRdoMutationsForSync(
           .getAll(dependent.original.clientMutationId)
       ),
     );
+    const currentWorkforceCorrectionOriginalEvents =
+      await Promise.all(
+        workforceCorrectionOriginalEvents.map((event) =>
+          eventStore.get(event.id)
+        ),
+      );
+    const existingCorrectiveEvents = await Promise.all(
+      (
+        workforceOperationalEventRecovery?.corrections ?? []
+      ).map((correction) =>
+        eventStore.get(correction.correctiveEventId)
+      ),
+    );
     if (
       !currentOriginal ||
       !currentRdo ||
@@ -3558,6 +3944,15 @@ export async function recoverRejectedRdoMutationsForSync(
           canonicalMutationJson(currentDependentEventGroups[index][0]) !==
             canonicalMutationJson(dependent.originalEvent),
       ) ||
+      currentWorkforceCorrectionOriginalEvents.some(
+        (event, index) =>
+          !event ||
+          canonicalMutationJson(event) !==
+            canonicalMutationJson(
+              workforceCorrectionOriginalEvents[index],
+            ),
+      ) ||
+      existingCorrectiveEvents.some((event) => event !== undefined) ||
       canonicalMutationJson(
         await outboxStore.index("by-entity-id").getAll(original.entityId),
       ) !== canonicalMutationJson(entityMutations) ||
@@ -3594,6 +3989,41 @@ export async function recoverRejectedRdoMutationsForSync(
     } as CanonicalOperationalEventRecord);
     await outboxStore.add(built.mutation);
     await eventStore.add(replacementEvent);
+    if (workforceOperationalEventRecovery) {
+      for (
+        const correction of
+          workforceOperationalEventRecovery.corrections
+      ) {
+        const currentEvent = await eventStore.get(
+          correction.originalEventId,
+        );
+        if (!currentEvent || currentEvent.schemaVersion !== 1) {
+          throw new Error(
+            "O evento operacional original mudou durante a recuperação.",
+          );
+        }
+        await eventStore.put({
+          ...currentEvent,
+          syncStatus: "SYNC_FAILED",
+          syncedAt: null,
+        });
+        await eventStore.add({
+          ...currentEvent,
+          id: correction.correctiveEventId,
+          type: correction.type,
+          colaboradorId: correction.colaboradorId,
+          principalEntity: correction.principalEntity,
+          principalEntityKey:
+            `${correction.principalEntity.tipo}:${correction.principalEntity.id}`,
+          payload: correction.payload,
+          occurredAt: timestamp,
+          syncStatus: "PENDING_SYNC",
+          syncedAt: null,
+          schemaVersion: 1,
+          causationId: correction.originalEventId,
+        });
+      }
+    }
     for (const dependent of dependentReplacements) {
       await outboxStore.put({
         ...dependent.original,
@@ -3647,6 +4077,13 @@ export async function recoverRejectedRdoMutationsForSync(
       timestamp,
     );
     await guardedTransaction.complete();
+    options.recoveredReplacementIds?.add(
+      built.mutation.clientMutationId,
+    );
+    options.recoveredReplacementByOriginalId?.set(
+      original.clientMutationId,
+      built.mutation.clientMutationId,
+    );
     recovered += 1;
   }
 

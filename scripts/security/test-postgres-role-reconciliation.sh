@@ -3,23 +3,53 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 postgres_init="$repo_root/deploy/production/postgres-init.sh"
+postgres_entrypoint="$repo_root/deploy/production/postgres-entrypoint.sh"
 contract_dir="$(mktemp -d "${TMPDIR:-/tmp}/cortex-role-reconciliation.XXXXXX")"
 container_name="cortex-role-reconciliation-$$"
 
 cleanup() {
-  docker rm -f "$container_name" >/dev/null 2>&1 || true
+  docker rm -f -v "$container_name" >/dev/null 2>&1 || true
   find "$contract_dir" -type f -delete 2>/dev/null || true
   rmdir "$contract_dir" 2>/dev/null || true
 }
 trap cleanup EXIT
 
+file_mode() {
+  local path="$1"
+  local mode
+
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)"; then
+    printf '%s' "$mode"
+    return
+  fi
+  stat -c '%a' "$path"
+}
+
+emit_sanitized_container_logs() {
+  docker logs "$container_name" 2>&1 |
+    sed \
+      -e 's/contract-admin/[REDACTED]/g' \
+      -e 's/contract-migrator/[REDACTED]/g' \
+      -e 's/contract-runtime/[REDACTED]/g' |
+    tail -n 80 >&2 || true
+}
+
 printf '%s' 'contract-admin' > "$contract_dir/admin"
 printf '%s' 'contract-migrator' > "$contract_dir/migrator"
 printf '%s' 'contract-runtime' > "$contract_dir/runtime"
+chmod 700 "$contract_dir"
 chmod 600 "$contract_dir/admin" "$contract_dir/migrator" "$contract_dir/runtime"
 
-docker run --detach --rm \
+for secret_file in admin migrator runtime; do
+  if [[ "$(file_mode "$contract_dir/$secret_file")" != "600" ]]; then
+    echo "PostgreSQL contract source secrets must remain mode 0600." >&2
+    exit 1
+  fi
+done
+
+docker run --detach \
   --name "$container_name" \
+  --entrypoint=/usr/local/bin/cortex-postgres-entrypoint.sh \
   --env POSTGRES_DB=cortex_contract \
   --env POSTGRES_USER=cortex_admin \
   --env POSTGRES_PASSWORD_FILE=/run/secrets/postgres_admin_password \
@@ -29,7 +59,10 @@ docker run --detach --rm \
   --mount "type=bind,src=$contract_dir/migrator,dst=/run/secrets/postgres_migrator_password,readonly" \
   --mount "type=bind,src=$contract_dir/runtime,dst=/run/secrets/postgres_runtime_password,readonly" \
   --mount "type=bind,src=$postgres_init,dst=/docker-entrypoint-initdb.d/10-cortex-roles.sh,readonly" \
-  postgres:18-alpine >/dev/null
+  --mount "type=bind,src=$postgres_entrypoint,dst=/usr/local/bin/cortex-postgres-entrypoint.sh,readonly" \
+  --tmpfs /run/postgresql:rw,noexec,nosuid,nodev,size=16m,mode=0775 \
+  postgres:18-alpine \
+  postgres >/dev/null
 
 for _ in $(seq 1 60); do
   role_count="$(
@@ -52,8 +85,22 @@ done
 
 if [[ "${role_count:-}" != "2" ]]; then
   echo "PostgreSQL role initialization did not complete." >&2
+  emit_sanitized_container_logs
   exit 1
 fi
+
+postgres_uid="$(docker exec "$container_name" id -u postgres)"
+postgres_gid="$(docker exec "$container_name" id -g postgres)"
+for secret_file in admin migrator runtime; do
+  staged_metadata="$(
+    docker exec "$container_name" \
+      stat -c '%a:%u:%g' "/run/postgresql/cortex-secrets/$secret_file"
+  )"
+  if [[ "$staged_metadata" != "600:$postgres_uid:$postgres_gid" ]]; then
+    echo "A staged PostgreSQL secret is not postgres-owned mode 0600." >&2
+    exit 1
+  fi
+done
 
 docker exec "$container_name" psql \
   --username=cortex_admin \

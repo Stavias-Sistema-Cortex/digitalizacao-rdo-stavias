@@ -248,19 +248,27 @@ def parse_uri(label, raw_uri, neon=False):
         options[key] = value
 
     if neon:
-        if not host.lower().endswith(".neon.tech"):
-            raise ContractError("Neon admin URI must target Neon.")
+        if not re.fullmatch(
+            (
+                r"(?:[A-Za-z0-9]"
+                r"(?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+"
+                r"neon\.tech"
+            ),
+            host,
+            flags=re.IGNORECASE,
+        ):
+            raise ContractError(
+                "Neon admin URI must target exactly one Neon host."
+            )
         if not password:
             raise ContractError("Neon admin URI must include owner credentials.")
-        if options.get("sslmode") not in {"require", "verify-ca", "verify-full"}:
-            raise ContractError("Neon admin URI must enforce TLS.")
-        if options.get("channel_binding") not in {
-            None,
-            "prefer",
-            "require",
-        }:
+        if options.get("sslmode") != "verify-full":
             raise ContractError(
-                "Neon admin URI has unsafe channel binding."
+                "Neon admin URI must use sslmode=verify-full."
+            )
+        if options.get("channel_binding") != "require":
+            raise ContractError(
+                "Neon admin URI must require channel binding."
             )
         if "options" in options and not re.fullmatch(
             r"endpoint=[A-Za-z0-9._-]+",
@@ -510,28 +518,209 @@ dump_file="$rollback_dir/StaviasCortex-pre-neon.dump"
   exit 1
 }
 
-if ! migrator_ready="$(
+if ! role_topology_ready="$(
   PGSERVICE=neon_target "$psql_bin" \
     -X -Atq -w -v ON_ERROR_STOP=1 \
     -v migrator_role="$migrator_role" \
     2>/dev/null <<'SQL'
-SELECT CASE
-  WHEN EXISTS (
-    SELECT 1 FROM pg_roles WHERE rolname = :'migrator_role'
+WITH database_context AS (
+  SELECT
+    d.datdba,
+    pg_get_userbyid(d.datdba) AS database_owner
+  FROM pg_database d
+  WHERE d.datname = current_database()
+),
+migrator AS (
+  SELECT *
+  FROM pg_roles
+  WHERE rolname = :'migrator_role'
+),
+runtime AS (
+  SELECT *
+  FROM pg_roles
+  WHERE rolname = 'cortex_runtime'
+)
+SELECT (
+  current_database() = 'StaviasCortex'
+  AND current_user = 'neondb_owner'
+  AND (
+    SELECT database_owner = 'neondb_owner'
+      AND datdba = current_user::regrole
+    FROM database_context
   )
-  THEN pg_has_role(current_user, :'migrator_role', 'MEMBER')::int
-  ELSE 0
-END;
+  AND (
+    SELECT count(*) = 1
+      AND bool_and(
+        rolcanlogin
+        AND rolinherit
+        AND NOT rolsuper
+        AND NOT rolcreatedb
+        AND NOT rolcreaterole
+        AND NOT rolreplication
+        AND NOT rolbypassrls
+      )
+    FROM migrator
+  )
+  AND has_database_privilege(
+    :'migrator_role',
+    current_database(),
+    'CONNECT'
+  )
+  AND has_database_privilege(
+    :'migrator_role',
+    current_database(),
+    'CREATE'
+  )
+  AND has_schema_privilege(:'migrator_role', 'public', 'CREATE')
+  AND (
+    SELECT count(*) = 1
+    FROM pg_auth_members membership
+    JOIN migrator ON migrator.oid = membership.roleid
+    WHERE membership.member = current_user::regrole
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM pg_auth_members membership
+    JOIN migrator ON migrator.oid = membership.roleid
+    WHERE membership.member = current_user::regrole
+      AND NOT membership.admin_option
+      AND NOT membership.inherit_option
+      AND membership.set_option
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_auth_members membership
+    JOIN migrator ON migrator.oid = membership.member
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_auth_members membership
+    JOIN migrator ON migrator.oid = membership.roleid
+    WHERE membership.member <> current_user::regrole
+  )
+  AND (
+    SELECT count(DISTINCT defaults.defaclobjtype) = 2
+    FROM pg_default_acl defaults
+    JOIN migrator ON migrator.oid = defaults.defaclrole
+    WHERE defaults.defaclnamespace = 0
+      AND defaults.defaclobjtype IN ('f', 'T')
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM pg_default_acl defaults
+    JOIN migrator ON migrator.oid = defaults.defaclrole
+    CROSS JOIN LATERAL aclexplode(defaults.defaclacl) acl
+    WHERE acl.grantee <> migrator.oid
+      AND NOT (
+        EXISTS (SELECT 1 FROM runtime)
+        AND acl.grantee = (SELECT oid FROM runtime)
+        AND acl.grantor = migrator.oid
+        AND NOT acl.is_grantable
+        AND defaults.defaclnamespace = 'public'::regnamespace
+        AND (
+          (
+            defaults.defaclobjtype = 'r'
+            AND acl.privilege_type IN (
+              'SELECT',
+              'INSERT',
+              'UPDATE',
+              'DELETE'
+            )
+          )
+          OR (
+            defaults.defaclobjtype = 'S'
+            AND acl.privilege_type IN (
+              'USAGE',
+              'SELECT',
+              'UPDATE'
+            )
+          )
+          OR (
+            defaults.defaclobjtype = 'f'
+            AND acl.privilege_type = 'EXECUTE'
+          )
+        )
+      )
+  )
+  AND (
+    SELECT count(*) = CASE
+      WHEN EXISTS (SELECT 1 FROM runtime) THEN 8
+      ELSE 0
+    END
+    FROM pg_default_acl defaults
+    JOIN migrator ON migrator.oid = defaults.defaclrole
+    CROSS JOIN LATERAL aclexplode(defaults.defaclacl) acl
+    WHERE EXISTS (SELECT 1 FROM runtime)
+      AND acl.grantee = (SELECT oid FROM runtime)
+      AND acl.grantor = migrator.oid
+      AND NOT acl.is_grantable
+      AND defaults.defaclnamespace = 'public'::regnamespace
+      AND (
+        (
+          defaults.defaclobjtype = 'r'
+          AND acl.privilege_type IN (
+            'SELECT',
+            'INSERT',
+            'UPDATE',
+            'DELETE'
+          )
+        )
+        OR (
+          defaults.defaclobjtype = 'S'
+          AND acl.privilege_type IN (
+            'USAGE',
+            'SELECT',
+            'UPDATE'
+          )
+        )
+        OR (
+          defaults.defaclobjtype = 'f'
+          AND acl.privilege_type = 'EXECUTE'
+        )
+      )
+  )
+  AND (
+    NOT EXISTS (SELECT 1 FROM runtime)
+    OR (
+      (
+        SELECT count(*) = 1
+          AND bool_and(
+            rolcanlogin
+            AND rolinherit
+            AND NOT rolsuper
+            AND NOT rolcreatedb
+            AND NOT rolcreaterole
+            AND NOT rolreplication
+            AND NOT rolbypassrls
+          )
+        FROM runtime
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_auth_members membership
+        JOIN runtime ON runtime.oid IN (
+          membership.member,
+          membership.roleid
+        )
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_default_acl defaults
+        JOIN runtime ON runtime.oid = defaults.defaclrole
+      )
+    )
+  )
+)::int;
 SQL
 )"; then
-  echo "Unable to verify the configured migrator role." >&2
+  echo "Unable to verify the Neon owner and role topology." >&2
   exit 1
 fi
-[[ "$migrator_ready" == "1" ]] || {
-  echo "Neon owner must be a member of the configured migrator role." >&2
+[[ "$role_topology_ready" == "1" ]] || {
+  echo "Neon owner, migrator, or runtime role topology is unsafe." >&2
   exit 1
 }
-unset migrator_ready
+unset role_topology_ready
 
 mkfifo "$snapshot_fifo"
 PGSERVICE=source "$psql_bin" \
@@ -643,6 +832,7 @@ release_snapshot
 
 if ! PGSERVICE=neon_target "$pg_restore_bin" \
   --dbname=service=neon_target \
+  --role="$migrator_role" \
   --no-password \
   --exit-on-error \
   --single-transaction \
@@ -654,10 +844,33 @@ if ! PGSERVICE=neon_target "$pg_restore_bin" \
   exit 1
 fi
 
+if ! database_owner_unchanged="$(
+  PGSERVICE=neon_target "$psql_bin" \
+    -X -Atq -w -v ON_ERROR_STOP=1 \
+    2>/dev/null <<'SQL'
+SELECT (
+  current_database() = 'StaviasCortex'
+  AND current_user = 'neondb_owner'
+  AND (
+    SELECT pg_get_userbyid(datdba) = 'neondb_owner'
+    FROM pg_database
+    WHERE datname = current_database()
+  )
+)::int;
+SQL
+)"; then
+  echo "Unable to verify the Neon database owner after restore." >&2
+  exit 1
+fi
+[[ "$database_owner_unchanged" == "1" ]] || {
+  echo "Neon database owner changed during restore; migration stopped." >&2
+  exit 1
+}
+unset database_owner_unchanged
+
 if ! CORTEX_RUNTIME_PASSWORD_INPUT="$runtime_password" \
   PGSERVICE=neon_target "$psql_bin" \
   -X -q -w -v ON_ERROR_STOP=1 \
-  -v migrator_role="$migrator_role" \
   > /dev/null 2>/dev/null <<'SQL'
 \getenv runtime_password CORTEX_RUNTIME_PASSWORD_INPUT
 BEGIN;
@@ -670,7 +883,14 @@ WHERE NOT EXISTS (
 )
 \gexec
 ALTER ROLE cortex_runtime WITH
-  LOGIN INHERIT PASSWORD :'runtime_password'; -- environment placeholder
+  LOGIN
+  INHERIT
+  NOSUPERUSER
+  NOCREATEDB
+  NOCREATEROLE
+  NOREPLICATION
+  NOBYPASSRLS
+  PASSWORD :'runtime_password'; -- environment placeholder
 DO $runtime_role_guard$
 BEGIN
   IF NOT EXISTS (
@@ -689,23 +909,18 @@ BEGIN
   END IF;
 END
 $runtime_role_guard$;
-GRANT CONNECT ON DATABASE "StaviasCortex" TO cortex_runtime;
-GRANT USAGE ON SCHEMA public TO cortex_runtime;
-GRANT SELECT, INSERT, UPDATE, DELETE
-  ON ALL TABLES IN SCHEMA public TO cortex_runtime;
-GRANT USAGE, SELECT, UPDATE
-  ON ALL SEQUENCES IN SCHEMA public TO cortex_runtime;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO cortex_runtime;
-ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cortex_runtime;
-ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public
-  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO cortex_runtime;
-ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public
-  GRANT EXECUTE ON FUNCTIONS TO cortex_runtime;
 COMMIT;
 SQL
 then
-  echo "Runtime role/grant transaction failed; target requires controlled reprovisioning." >&2
+  echo "Runtime role transaction failed; target requires controlled reprovisioning." >&2
+  exit 1
+fi
+
+if ! PGSERVICE=neon_target "$psql_bin" \
+  -X -q -w -v ON_ERROR_STOP=1 \
+  -f "$repo_root/scripts/deploy/reconcile-neon-ownership.sql" \
+  > /dev/null 2>/dev/null; then
+  echo "Final Neon ownership reconciliation failed; target requires controlled reprovisioning." >&2
   exit 1
 fi
 unset runtime_password
