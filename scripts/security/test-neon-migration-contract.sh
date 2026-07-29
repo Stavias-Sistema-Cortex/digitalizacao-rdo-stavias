@@ -59,11 +59,33 @@ trap cleanup EXIT
 fake_bin="$fixture_root/bin"
 mkdir -p "$fake_bin"
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" &&
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  stat -c '%a' "$path"
+}
+
 cat > "$fake_bin/pg-tool" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 
 tool_name="${0##*/}"
+
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" &&
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  stat -c '%a' "$path"
+}
 
 if [[ "${1:-}" == "--version" ]]; then
   printf '%s (PostgreSQL) 18.4 (contract fixture)\n' "$tool_name"
@@ -96,10 +118,8 @@ done
 
 [[ -f "${PGSERVICEFILE:-}" && -f "${PGPASSFILE:-}" ]] ||
   mark_failure missing-private-connection-files
-service_mode="$(stat -f '%Lp' "$PGSERVICEFILE" 2>/dev/null ||
-  stat -c '%a' "$PGSERVICEFILE")"
-pass_mode="$(stat -f '%Lp' "$PGPASSFILE" 2>/dev/null ||
-  stat -c '%a' "$PGPASSFILE")"
+service_mode="$(file_mode "$PGSERVICEFILE")"
+pass_mode="$(file_mode "$PGPASSFILE")"
 [[ "$service_mode" == "600" && "$pass_mode" == "600" ]] ||
   mark_failure unsafe-connection-file-mode
 
@@ -388,13 +408,17 @@ duplicate_output="$(run_case 2>&1)"
 duplicate_status=$?
 set -e
 unset CASE_ADMIN_URI
+assert_redacted "$duplicate_output"
 [[ $duplicate_status -ne 0 &&
   "$duplicate_output" == "Neon admin URI has duplicate query parameter." &&
   ! -s "$operation_log" ]] || {
+  printf 'status=%s output=%q operation-bytes=%s\n' \
+    "$duplicate_status" \
+    "$duplicate_output" \
+    "$(wc -c < "$operation_log")" >&2
   echo "Migration contract did not reject duplicate TLS parameters before PostgreSQL" >&2
   exit 1
 }
-assert_redacted "$duplicate_output"
 
 prepare_case weak-tls
 CASE_ADMIN_URI="${admin_uri/sslmode=require/sslmode=prefer}"
@@ -622,8 +646,7 @@ done <<< "$success_output"
   echo "Migration contract did not preserve the protected rollback dump" >&2
   exit 1
 }
-rollback_mode="$(stat -f '%Lp' "$rollback_dir/StaviasCortex-pre-neon.dump" 2>/dev/null ||
-  stat -c '%a' "$rollback_dir/StaviasCortex-pre-neon.dump")"
+rollback_mode="$(file_mode "$rollback_dir/StaviasCortex-pre-neon.dump")"
 [[ "$rollback_mode" == "600" ]] || {
   echo "Migration contract created an unsafe rollback dump mode" >&2
   exit 1

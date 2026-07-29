@@ -18,6 +18,17 @@ cat > "$fake_bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" &&
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  stat -c '%a' "$path"
+}
+
 capture_dir="${CORTEX_TEST_CAPTURE_DIR:?}"
 [[ -z "${CORTEX_NEON_MIGRATION_URL:-}" ]]
 [[ -z "${CORTEX_NEON_MIGRATION_USER:-}" ]]
@@ -43,7 +54,7 @@ for entry in \
   expected="${entry#*=}"
   secret_file="$secret_mount/$file_name"
   [[ -f "$secret_file" && ! -L "$secret_file" ]]
-  [[ "$(stat -f '%Lp' "$secret_file" 2>/dev/null || stat -c '%a' "$secret_file")" == "600" ]]
+  [[ "$(file_mode "$secret_file")" == "600" ]]
   [[ "$(<"$secret_file")" == "$expected" ]]
 done
 SH

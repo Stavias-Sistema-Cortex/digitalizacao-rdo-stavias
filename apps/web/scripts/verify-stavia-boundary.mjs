@@ -197,8 +197,7 @@ const CORPORATE_SOURCE_LINES = new Map([
       "rm -f \"$rollback_dir/StaviasCortex-pre-neon.dump\"",
       "\"$rerun_output\" == \"Target StaviasCortex database is not empty; migration stopped.\" &&",
       "[[ -f \"$rollback_dir/StaviasCortex-pre-neon.dump\" ]] || {",
-      "rollback_mode=\"$(stat -f '%Lp' \"$rollback_dir/StaviasCortex-pre-neon.dump\" 2>/dev/null ||",
-      "stat -c '%a' \"$rollback_dir/StaviasCortex-pre-neon.dump\")\"",
+      "rollback_mode=\"$(file_mode \"$rollback_dir/StaviasCortex-pre-neon.dump\")\"",
     ],
   ],
   [

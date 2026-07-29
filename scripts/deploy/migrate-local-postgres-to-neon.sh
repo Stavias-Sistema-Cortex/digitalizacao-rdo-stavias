@@ -22,6 +22,17 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" &&
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  stat -c '%a' "$path"
+}
+
 postgres_bin_dir="${CORTEX_POSTGRES_BIN_DIR:-}"
 if [[ -z "$postgres_bin_dir" ]]; then
   candidate_dirs=(
@@ -79,8 +90,7 @@ case "$rollback_dir/" in
     exit 1
     ;;
 esac
-rollback_mode="$(stat -f '%Lp' "$rollback_dir" 2>/dev/null ||
-  stat -c '%a' "$rollback_dir")"
+rollback_mode="$(file_mode "$rollback_dir")"
 [[ "$rollback_mode" =~ ^[0-7]{3,4}$ ]] &&
   (( (8#$rollback_mode & 8#77) == 0 )) || {
     echo "Rollback directory must deny group and other access." >&2

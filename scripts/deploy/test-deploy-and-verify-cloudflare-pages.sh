@@ -43,6 +43,17 @@ cat > "$fake_bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+file_mode() {
+  local path="$1"
+  local mode
+  if mode="$(stat -f '%Lp' "$path" 2>/dev/null)" &&
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s\n' "$mode"
+    return
+  fi
+  stat -c '%a' "$path"
+}
+
 [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]
 printf '%s\0' "$@" >> "${CORTEX_TEST_CAPTURE_DIR:?}/curl-args"
 output_file=""
@@ -62,7 +73,7 @@ revision="${CORTEX_TEST_PAGES_REVISION:-$sha}"
 case "$url" in
   "https://api.cloudflare.com/client/v4/accounts/"*"/pages/projects/"*"/deployments?env=production&per_page=1&page=1")
     [[ -n "$config_file" && -f "$config_file" ]]
-    [[ "$(stat -f '%Lp' "$config_file" 2>/dev/null || stat -c '%a' "$config_file")" == "600" ]]
+    [[ "$(file_mode "$config_file")" == "600" ]]
     cp "$config_file" "${CORTEX_TEST_CAPTURE_DIR:?}/cloudflare-auth-config"
     printf '%s' "$config_file" > "${CORTEX_TEST_CAPTURE_DIR}/cloudflare-auth-config-path"
     deployment_source_fragment=""
@@ -80,7 +91,7 @@ case "$url" in
     ;;
   "https://api.cloudflare.com/client/v4/accounts/"*"/pages/projects/"*)
     [[ -n "$config_file" && -f "$config_file" ]]
-    [[ "$(stat -f '%Lp' "$config_file" 2>/dev/null || stat -c '%a' "$config_file")" == "600" ]]
+    [[ "$(file_mode "$config_file")" == "600" ]]
     cp "$config_file" "${CORTEX_TEST_CAPTURE_DIR:?}/cloudflare-auth-config"
     printf '%s' "$config_file" > "${CORTEX_TEST_CAPTURE_DIR}/cloudflare-auth-config-path"
     printf '{"success":%s,"result":{"name":"%s","production_branch":"%s","subdomain":"%s.pages.dev"}}' \
