@@ -2,7 +2,7 @@
 
 Data: 30/07/2026
 
-Status: desenho aprovado em conversa, aguardando revisão da especificação
+Status: especificação aprovada em conversa em 30/07/2026
 
 ## Objetivo
 
@@ -145,6 +145,42 @@ O motor tenta enviar:
 `Sincronizar agora` permanece como reforço manual, não como requisito para
 consistência.
 
+### Chave idempotente
+
+Toda mutação RDO usa uma chave estável criada no cliente antes da primeira
+tentativa e reutilizada sem alteração em retry, replay ou retomada. No
+transporte `/api/sync/push`, a chave canônica continua sendo
+`clientMutationId` do envelope. Nos endpoints RDO mutáveis diretos, a chave é
+resolvida assim:
+
+1. `Idempotency-Key` é o contrato preferencial;
+2. `clientMutationId` no body continua aceito para clientes legados;
+3. quando header e campo estiverem presentes, os valores devem ser idênticos;
+4. ausência dos dois retorna HTTP 428 com código
+   `IDEMPOTENCY_KEY_REQUIRED`;
+5. divergência entre os dois ou reutilização da chave com operação, entidade
+   ou hash canônico diferente retorna HTTP 409 com código
+   `IDEMPOTENCY_MISMATCH`.
+
+O servidor nunca cria uma chave aleatória para completar uma mutação recebida
+sem chave. Repetir a mesma chave com o mesmo ator, dispositivo, operação,
+entidade e hash retorna o mesmo resultado e o mesmo evento autoritativo.
+Reutilizar a chave em outro dispositivo é incompatível e falha antes da
+escrita. Endpoints sem body,
+como Enviar, exigem `Idempotency-Key`; um PWA antigo sem essa precondição
+recebe o erro de atualização explícito e não aplica a mutação parcialmente.
+A compatibilidade com RDO nominal e com o campo legado é preservada sem
+enfraquecer a idempotência.
+
+Mutações REST online de RDO e Obras compartilham um receipt transacional
+genérico, único por ator e `clientMutationId`. O receipt é inserido ou
+bloqueado antes de chamar o serviço de domínio e registra operação, entidade,
+hash, dispositivo, estado, evento, horários, status HTTP e uma resposta segura
+limitada. Replay compatível retorna o receipt sem executar novamente a escrita;
+reuso incompatível falha antes da escrita. Receipt e mutação de domínio
+concluem na mesma transação, portanto rollback não deixa um sucesso órfão nem
+permite deduplicação tardia apenas pelo evento.
+
 ### Contrato do servidor
 
 `/api/sync/push`, `/api/sync/pull` e `/api/sync/ack` continuam exigindo sessão
@@ -233,6 +269,14 @@ reconciliado com uma identidade Academy após CPF verificado.
 Se o CPF já estiver associado a outro cadastro, a operação cria uma pendência
 de reconciliação explícita. Não ocorre merge silencioso.
 
+A pendência guarda somente um ID próprio, o par
+`colaborador_operacional_id`/`colaborador_academy_id`, estado
+`PENDENTE`/`RECONCILIADO`/`DESCARTADO`, ator ou canal de sistema, tempos e
+versão de linha. O par é único e idempotente. A estrutura não contém nome, CPF
+ou e-mail e não cria `auth_identity`, grant ou `vinculo_colaborador_obra`; a
+resolução ocorre em serviço próprio somente depois da verificação de CPF e
+gera evento autoritativo.
+
 Remover uma pessoa de um RDO não apaga o cadastro global nem sua história.
 
 ## Login Academy sob demanda
@@ -302,7 +346,7 @@ Credenciais Academy continuam:
 Toda mutação de domínio gera um evento imutável com:
 
 - usuário autor;
-- colaborador autor;
+- colaborador objeto da alteração, quando aplicável;
 - nome do autor em snapshot;
 - dispositivo;
 - canal (`ONLINE`, `OFFLINE_REPLAY`, `ACADEMY_JIT`, `SYSTEM`);
@@ -533,6 +577,8 @@ frontend.
 - IDs `null` históricos não são reescritos automaticamente.
 - A reconciliação para colaborador global é explícita e auditada.
 - Clientes antigos continuam podendo enviar pessoa nominal.
+- Clientes antigos que já enviam `clientMutationId` estável no body continuam
+  aceitos; a API não fabrica chave para clientes que omitem header e campo.
 - A API passa a aceitar, de forma aditiva, o comando de colaborador global.
 - A regra antiga de vínculo é removida somente dos handlers e consultas RDO.
 - `vinculo_colaborador_obra` continua sendo autorização para outros domínios.
@@ -644,9 +690,9 @@ Frontend:
 
 - `apps/web/src/lib/sync/syncEngine.ts`;
 - `apps/web/src/lib/db/localRdoService.ts`;
-- `apps/web/src/lib/auth/authSession.ts`;
+- `apps/web/src/features/auth/authSession.ts`;
 - `apps/web/src/lib/db/cortexDb.ts`;
-- `apps/web/src/components/sync/SyncStatusBanner.tsx`;
+- `apps/web/src/components/SyncStatusBanner.tsx`;
 - `apps/web/src/features/rdos/RdoWorkforceEditor.tsx`;
 - fluxos de login CPF/OTP;
 - timeline e lifecycle de Obras;
