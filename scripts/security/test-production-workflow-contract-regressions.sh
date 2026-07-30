@@ -93,6 +93,10 @@ replacements = {
         "run: bash scripts/deploy/capture-render-instance-fingerprint.sh",
         'run: "true"',
     ),
+    "capture-render-cold-start-window": (
+        'CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS: "300"',
+        'CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS: "90"',
+    ),
     "render-api-token": (
         "          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}",
         "          CORTEX_RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}\n"
@@ -220,6 +224,7 @@ for case_name in \
   migration-command \
   render-command \
   capture-render-command \
+  capture-render-cold-start-window \
   render-api-token \
   render-instance-proof \
   deterministic-marker \

@@ -197,6 +197,8 @@ fail_contract("Render fingerprint capture must target the workflow SHA") unless 
 fail_contract("Render fingerprint capture must use the direct protected origin") unless \
   render_before_env.fetch("CORTEX_RENDER_ORIGIN") ==
     "${{ vars.CORTEX_RENDER_ORIGIN }}"
+fail_contract("Render fingerprint capture must allow the observed free-tier cold start") unless \
+  render_before_env["CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS"] == "300"
 
 render = by_name.fetch("Deploy and verify the exact Render revision")
 render_env = render.fetch("env")

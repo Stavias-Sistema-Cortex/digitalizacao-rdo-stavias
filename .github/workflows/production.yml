@@ -235,6 +235,7 @@ jobs:
         env:
           CORTEX_RELEASE_SHA: ${{ github.sha }}
           CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
+          CORTEX_RENDER_CAPTURE_TIMEOUT_SECONDS: "300"
         run: bash scripts/deploy/capture-render-instance-fingerprint.sh
       - name: Deploy and verify the exact Render revision
         shell: bash
