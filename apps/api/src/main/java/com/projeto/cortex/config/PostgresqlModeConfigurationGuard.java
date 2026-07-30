@@ -77,6 +77,12 @@ public final class PostgresqlModeConfigurationGuard
         requireCanonicalPostgresqlDatasource(mode);
         require(mode, "spring.datasource.driver-class-name", "org.postgresql.Driver");
         requireExact(mode, "spring.datasource.hikari.schema", "public");
+        requireExact(
+                mode,
+                PostgresqlJdbcTlsPolicy.HIKARI_SSL_FACTORY_PROPERTY,
+                PostgresqlJdbcTlsPolicy.JAVA_SSL_FACTORY
+        );
+        requireEffectiveJavaTrustStore(mode);
         require(
                 mode,
                 "spring.flyway.locations",
@@ -109,6 +115,17 @@ public final class PostgresqlModeConfigurationGuard
                 || !urlWithoutQuery.endsWith("/StaviasCortex")) {
             throw new IllegalStateException(
                     "Modo " + mode + " exige datasource PostgreSQL canônico StaviasCortex."
+            );
+        }
+    }
+
+    private void requireEffectiveJavaTrustStore(String mode) {
+        String url = environment.getRequiredProperty("spring.datasource.url");
+        if (!PostgresqlJdbcTlsPolicy.usesJavaTrustStore(url)) {
+            throw new IllegalStateException(
+                    "Modo " + mode + " exige sslfactory="
+                            + PostgresqlJdbcTlsPolicy.JAVA_SSL_FACTORY
+                            + " efetiva na URL PostgreSQL."
             );
         }
     }

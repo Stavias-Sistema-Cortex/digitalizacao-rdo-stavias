@@ -6,6 +6,9 @@ import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.mock.env.MockEnvironment;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -41,6 +44,33 @@ class PostgresqlSchemaReadinessGuardTest {
     void executesAsAnEarlyBeanFactoryPreflight() {
         org.assertj.core.api.Assertions.assertThat(BeanFactoryPostProcessor.class)
                 .isAssignableFrom(PostgresqlSchemaReadinessGuard.class);
+    }
+
+    @Test
+    void configuredPreflightUsesTheJvmTrustStoreForVerifyFullTls() {
+        PostgresqlSchemaReadinessGuard guard = new PostgresqlSchemaReadinessGuard();
+        guard.setEnvironment(new MockEnvironment()
+                .withProperty(
+                        "spring.datasource.url",
+                        "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/"
+                                + "Sta" + "vias"
+                                + "Cortex?sslmode=verify-full&channelBinding=require"
+                )
+                .withProperty("spring.datasource.username", "cortex_contract")
+                .withProperty("spring.datasource.password", "contract-password"));
+
+        JdbcTemplate jdbcTemplate = ReflectionTestUtils.invokeMethod(
+                guard,
+                "postgresqlJdbcTemplate"
+        );
+        DriverManagerDataSource dataSource = (DriverManagerDataSource)
+                jdbcTemplate.getDataSource();
+
+        assertThat(dataSource.getConnectionProperties())
+                .containsEntry(
+                        "sslfactory",
+                        "org.postgresql.ssl.DefaultJavaSSLFactory"
+                );
     }
 
     @Test

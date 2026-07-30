@@ -11,7 +11,6 @@ import org.springframework.core.PriorityOrdered;
 import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
 
 /**
@@ -87,7 +86,11 @@ public final class PostgresqlSchemaReadinessGuard
         String username = environment.getProperty("spring.datasource.username", "");
         String password = environment.getProperty("spring.datasource.password", "");
 
-        return new JdbcTemplate(new DriverManagerDataSource(url, username, password));
+        return new JdbcTemplate(PostgresqlJdbcTlsPolicy.dataSource(
+                url,
+                username,
+                password
+        ));
     }
 
     private static void verifyReadiness(JdbcTemplate jdbcTemplate, String requiredSchemaVersion) {

@@ -22,7 +22,6 @@ import org.springframework.core.PriorityOrdered;
 import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.stereotype.Component;
 
 /** Refuses normal PostgreSQL runtime until every clean-start release gate is true. */
@@ -371,7 +370,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
         if (environment == null) {
             throw new IllegalStateException("Ambiente PostgreSQL indisponível para a verificação.");
         }
-        return new JdbcTemplate(new DriverManagerDataSource(
+        return new JdbcTemplate(PostgresqlJdbcTlsPolicy.dataSource(
                 environment.getRequiredProperty("spring.datasource.url"),
                 environment.getProperty("spring.datasource.username", ""),
                 environment.getProperty("spring.datasource.password", "")

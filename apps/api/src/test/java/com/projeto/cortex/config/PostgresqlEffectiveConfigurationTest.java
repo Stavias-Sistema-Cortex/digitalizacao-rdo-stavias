@@ -182,6 +182,9 @@ class PostgresqlEffectiveConfigurationTest {
                 .isEqualTo("org.postgresql.Driver");
         assertThat(context.getEnvironment().getProperty("spring.datasource.hikari.schema"))
                 .isEqualTo("public");
+        assertThat(context.getEnvironment().getProperty(
+                "spring.datasource.hikari.data-source-properties.sslfactory"
+        )).isEqualTo("org.postgresql.ssl.DefaultJavaSSLFactory");
         assertThat(context.getEnvironment().getProperty("spring.flyway.locations"))
                 .isEqualTo("classpath:db/migration-postgresql");
         if (flywayEnabled) {

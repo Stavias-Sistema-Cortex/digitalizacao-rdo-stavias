@@ -132,6 +132,41 @@ class PostgresqlModeConfigurationGuardTest {
     }
 
     @Test
+    void refusesAnSslFactoryThatBypassesTheJvmTrustStore() {
+        MockEnvironment hikariOverride = configuredEnvironment(
+                "postgresql", "servlet", false, true, true
+        );
+        hikariOverride.withProperty(
+                "spring.datasource.hikari.data-source-properties.sslfactory",
+                "org.postgresql.ssl.NonValidatingFactory"
+        );
+
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                hikariOverride
+        ).verifyConfiguration())
+                .hasMessageContaining(
+                        "spring.datasource.hikari.data-source-properties.sslfactory"
+                )
+                .hasMessageContaining("DefaultJavaSSLFactory");
+
+        MockEnvironment jdbcUrlOverride = configuredEnvironment(
+                "postgresql", "servlet", false, true, true
+        );
+        jdbcUrlOverride.withProperty(
+                "spring.datasource.url",
+                "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/"
+                        + "Sta" + "vias" + "Cortex?sslmode=verify-full"
+                        + "&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+        );
+
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                jdbcUrlOverride
+        ).verifyConfiguration())
+                .hasMessageContaining("sslfactory")
+                .hasMessageContaining("DefaultJavaSSLFactory");
+    }
+
+    @Test
     void refusesUnsafeFlywayMigrationOverrides() {
         MockEnvironment baselineEnvironment = configuredEnvironment(
                 "postgresql-migrate", "none", true, false, false
@@ -295,6 +330,10 @@ class PostgresqlModeConfigurationGuardTest {
                         "classpath:db/migration-postgresql"
                 )
                 .withProperty("spring.datasource.hikari.schema", "public")
+                .withProperty(
+                        "spring.datasource.hikari.data-source-properties.sslfactory",
+                        "org.postgresql.ssl.DefaultJavaSSLFactory"
+                )
                 .withProperty("spring.flyway.default-schema", "public")
                 .withProperty("spring.flyway.schemas", "public")
                 .withProperty("spring.flyway.create-schemas", "false")

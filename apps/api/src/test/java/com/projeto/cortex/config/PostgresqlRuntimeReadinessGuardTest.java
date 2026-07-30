@@ -20,6 +20,7 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.core.Ordered;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -49,6 +50,33 @@ class PostgresqlRuntimeReadinessGuardTest {
         assertThat(BeanFactoryPostProcessor.class)
                 .isAssignableFrom(PostgresqlRuntimeReadinessGuard.class);
         assertThat(guard.getOrder()).isEqualTo(Ordered.HIGHEST_PRECEDENCE + 2);
+    }
+
+    @Test
+    void configuredRuntimePreflightUsesTheJvmTrustStoreForVerifyFullTls() {
+        PostgresqlRuntimeReadinessGuard guard = new PostgresqlRuntimeReadinessGuard();
+        guard.setEnvironment(new MockEnvironment()
+                .withProperty(
+                        "spring.datasource.url",
+                        "jdbc:postgresql://ep-contract.us-east-2.aws.neon.tech/"
+                                + "Sta" + "vias"
+                                + "Cortex?sslmode=verify-full&channelBinding=require"
+                )
+                .withProperty("spring.datasource.username", "cortex_contract")
+                .withProperty("spring.datasource.password", "contract-password"));
+
+        JdbcTemplate jdbcTemplate = ReflectionTestUtils.invokeMethod(
+                guard,
+                "postgresqlJdbcTemplate"
+        );
+        DriverManagerDataSource dataSource = (DriverManagerDataSource)
+                jdbcTemplate.getDataSource();
+
+        assertThat(dataSource.getConnectionProperties())
+                .containsEntry(
+                        "sslfactory",
+                        "org.postgresql.ssl.DefaultJavaSSLFactory"
+                );
     }
 
     @Test
