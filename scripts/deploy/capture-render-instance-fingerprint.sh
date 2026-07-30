@@ -86,12 +86,17 @@ except (OSError, UnicodeError, json.JSONDecodeError):
     raise SystemExit(1)
 
 expected_revision = sys.argv[2]
-revision = document.get("revision")
-if (
-    document.get("status") != "READY"
-    or not isinstance(revision, str)
-    or not re.fullmatch(r"[a-f0-9]{40}", revision)
-):
+if document.get("status") != "READY":
+    raise SystemExit(1)
+
+if "revision" not in document:
+    if "runtimeInstanceSha256" in document:
+        raise SystemExit(1)
+    print("none")
+    raise SystemExit(0)
+
+revision = document["revision"]
+if not isinstance(revision, str) or not re.fullmatch(r"[a-f0-9]{40}", revision):
     raise SystemExit(1)
 
 if "runtimeInstanceSha256" not in document:

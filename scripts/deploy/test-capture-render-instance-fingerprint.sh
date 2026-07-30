@@ -54,6 +54,19 @@ case "${CORTEX_TEST_READINESS_MODE:?}" in
     printf '{"status":"READY","revision":"%s"}' "$old_sha" > "$output_file"
     printf '200'
     ;;
+  pre-evidence)
+    printf '{"status":"READY"}' > "$output_file"
+    printf '200'
+    ;;
+  pre-evidence-with-fingerprint)
+    printf '{"status":"READY","runtimeInstanceSha256":"%s"}' \
+      "$canonical_fingerprint" > "$output_file"
+    printf '200'
+    ;;
+  null-revision)
+    printf '{"status":"READY","revision":null}' > "$output_file"
+    printf '200'
+    ;;
   same-sha-missing)
     printf '{"status":"READY","revision":"%s"}' "$target_sha" > "$output_file"
     printf '200'
@@ -124,6 +137,10 @@ run_capture legacy legacy
 diff -u <(printf 'existing=value\nprevious_render_instance_sha256=none\n') \
   "$fixture_root/legacy/github-output"
 
+run_capture pre-evidence pre-evidence
+diff -u <(printf 'existing=value\nprevious_render_instance_sha256=none\n') \
+  "$fixture_root/pre-evidence/github-output"
+
 assert_rejected() {
   local name="$1"
   local mode="$2"
@@ -151,6 +168,8 @@ assert_rejected() {
 assert_rejected same-sha-missing same-sha-missing
 assert_rejected unavailable unavailable
 assert_rejected noncanonical noncanonical
+assert_rejected pre-evidence-with-fingerprint pre-evidence-with-fingerprint
+assert_rejected null-revision null-revision
 
 bash -n "$script"
 bash -n "$test_script"
