@@ -31,7 +31,7 @@ public final class PostgresqlSchemaReadinessGuard
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
-            FROM flyway_schema_history
+            FROM public.flyway_schema_history
             WHERE version = '%s'
               AND success = TRUE
             """;

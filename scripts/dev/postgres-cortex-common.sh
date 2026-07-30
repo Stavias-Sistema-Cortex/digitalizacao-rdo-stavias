@@ -111,7 +111,7 @@ cortex_verify_v44() {
   local database_name
   local completed
   database_name="$(cortex_postgres_database_name)"
-  completed="$("${PSQL_CONNECTION[@]}" -d "$database_name" -Atqc "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '44' AND success = TRUE")"
+  completed="$("${PSQL_CONNECTION[@]}" -d "$database_name" -Atqc "SELECT COUNT(*) FROM public.flyway_schema_history WHERE version = '44' AND success = TRUE")"
   if [[ "$completed" != "1" ]]; then
     echo "PostgreSQL Córtex baseline V44 must be complete before this transition." >&2
     exit 1

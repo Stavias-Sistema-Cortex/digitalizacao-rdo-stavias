@@ -130,6 +130,75 @@ class PostgresqlReleaseMarkerIT {
         }
     }
 
+    @Test
+    void migrationPinsTheCanonicalPublicSchemaWhenTheRoleDefaultsToPgCatalog() {
+        try (PostgreSQLContainer<?> database = new PostgreSQLContainer<>("postgres:18")
+                .withDatabaseName("Sta" + "viasCortex")) {
+            database.start();
+
+            String migratorPassword = "fixture-migrator-password";
+            String databaseName = database.getDatabaseName();
+            JdbcTemplate ownerJdbc = jdbcTemplate(database);
+            ownerJdbc.execute(
+                    "CREATE ROLE cortex_migrator LOGIN PASSWORD '" + migratorPassword + "'"
+            );
+            ownerJdbc.execute("ALTER SCHEMA public OWNER TO cortex_migrator");
+            ownerJdbc.execute("""
+                    GRANT CONNECT, CREATE
+                    ON DATABASE "%s"
+                    TO cortex_migrator
+                    """.formatted(databaseName));
+            ownerJdbc.execute("""
+                    ALTER ROLE cortex_migrator
+                    IN DATABASE "%s"
+                    SET search_path = pg_catalog
+                    """.formatted(databaseName));
+
+            JdbcTemplate migratorJdbc = new JdbcTemplate(new DriverManagerDataSource(
+                    database.getJdbcUrl(),
+                    "cortex_migrator",
+                    migratorPassword
+            ));
+            assertThat(migratorJdbc.queryForObject(
+                    "SELECT current_schema()",
+                    String.class
+            )).isEqualTo("pg_catalog");
+
+            runMigration(
+                    database,
+                    "cortex_migrator",
+                    migratorPassword,
+                    true,
+                    FIRST_REVISION,
+                    FIRST_MARKER
+            );
+
+            assertThat(ownerJdbc.queryForObject(
+                    "SELECT to_regclass('public.flyway_schema_history')::text",
+                    String.class
+            )).isEqualTo("flyway_schema_history");
+            assertThat(ownerJdbc.queryForObject("""
+                    SELECT COUNT(*)
+                    FROM pg_catalog.pg_tables
+                    WHERE schemaname = 'pg_catalog'
+                      AND tablename = 'flyway_schema_history'
+                    """, Integer.class)).isZero();
+            assertThat(ownerJdbc.queryForObject(
+                    "SELECT MAX(version) FROM public.flyway_schema_history WHERE success",
+                    String.class
+            )).isEqualTo("64");
+            assertThat(ownerJdbc.queryForObject(
+                    """
+                    SELECT marker
+                    FROM public.cortex_release_marker
+                    WHERE revision = ?
+                    """,
+                    String.class,
+                    FIRST_REVISION
+            )).isEqualTo(FIRST_MARKER);
+        }
+    }
+
     private void assertDatabaseConstraintsRejectNonCanonicalEvidence(
             JdbcTemplate jdbcTemplate
     ) {
@@ -202,10 +271,28 @@ class PostgresqlReleaseMarkerIT {
             String revision,
             String marker
     ) {
+        runMigration(
+                database,
+                database.getUsername(),
+                database.getPassword(),
+                writeEnabled,
+                revision,
+                marker
+        );
+    }
+
+    private void runMigration(
+            PostgreSQLContainer<?> database,
+            String username,
+            String password,
+            boolean writeEnabled,
+            String revision,
+            String marker
+    ) {
         List<String> arguments = new ArrayList<>(List.of(
                 "--spring.datasource.url=" + database.getJdbcUrl(),
-                "--spring.datasource.username=" + database.getUsername(),
-                "--spring.datasource.password=" + database.getPassword(),
+                "--spring.datasource.username=" + username,
+                "--spring.datasource.password=" + password,
                 "--cortex.postgresql.release-marker.write-enabled=" + writeEnabled
         ));
         if (revision != null) {

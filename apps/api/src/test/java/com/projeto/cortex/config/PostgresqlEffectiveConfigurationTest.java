@@ -180,8 +180,20 @@ class PostgresqlEffectiveConfigurationTest {
                 .contains("/StaviasCortex");
         assertThat(context.getEnvironment().getProperty("spring.datasource.driver-class-name"))
                 .isEqualTo("org.postgresql.Driver");
+        assertThat(context.getEnvironment().getProperty("spring.datasource.hikari.schema"))
+                .isEqualTo("public");
         assertThat(context.getEnvironment().getProperty("spring.flyway.locations"))
                 .isEqualTo("classpath:db/migration-postgresql");
+        if (flywayEnabled) {
+            assertThat(context.getEnvironment().getProperty("spring.flyway.default-schema"))
+                    .isEqualTo("public");
+            assertThat(context.getEnvironment().getProperty("spring.flyway.schemas"))
+                    .isEqualTo("public");
+            assertThat(context.getEnvironment().getProperty(
+                    "spring.flyway.create-schemas",
+                    Boolean.class
+            )).isFalse();
+        }
         assertThat(context.getEnvironment().getProperty(
                 "cortex.postgresql.schema-readiness.enabled",
                 Boolean.class

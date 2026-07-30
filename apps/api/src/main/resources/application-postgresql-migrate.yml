@@ -6,6 +6,9 @@ spring:
     web-application-type: none
   flyway:
     enabled: true
+    default-schema: public
+    schemas: public
+    create-schemas: false
     baseline-on-migrate: false
     clean-disabled: true
 

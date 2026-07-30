@@ -71,7 +71,10 @@ class PostgresqlSchemaReadinessGuardTest {
         assertThatThrownBy(guard::verifyReadiness)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cadeia de migrações até V64");
-        verify(jdbcTemplate).queryForObject(contains("version = '64'"), eq(Integer.class));
+        verify(jdbcTemplate).queryForObject(
+                contains("FROM public.flyway_schema_history"),
+                eq(Integer.class)
+        );
     }
 
     @Test

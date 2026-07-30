@@ -44,15 +44,15 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     private static final String COMPLETED_REQUIRED_VERSION_SQL = """
             SELECT COUNT(*)
-            FROM flyway_schema_history
+            FROM public.flyway_schema_history
             WHERE version = '%s'
               AND success = TRUE
             """;
 
     private static final String ACTIVE_ACADEMY_CPF_IDENTITY_COUNT_SQL = """
             SELECT COUNT(*)
-            FROM colaborador c
-            JOIN auth_identity ai ON ai.colaborador_id = c.id
+            FROM public.colaborador c
+            JOIN public.auth_identity ai ON ai.colaborador_id = c.id
             WHERE c.ativo = TRUE
               AND c.deletado_em IS NULL
               AND c.banco_origem = 'dbstavias_acad'
@@ -67,7 +67,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
                 status,
                 finished_at,
                 LOCALTIMESTAMP AS database_now
-            FROM source_sync_run
+            FROM public.source_sync_run
             WHERE connector_name = ?
             ORDER BY started_at DESC, id DESC
             LIMIT 1
@@ -75,7 +75,7 @@ public final class PostgresqlRuntimeReadinessGuard implements
 
     private static final String RELEASE_EVIDENCE_SQL = """
             SELECT revision, marker
-            FROM cortex_release_marker
+            FROM public.cortex_release_marker
             WHERE revision = ?
             """;
 

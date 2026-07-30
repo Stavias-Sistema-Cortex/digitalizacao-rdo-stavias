@@ -76,6 +76,7 @@ public final class PostgresqlModeConfigurationGuard
         );
         requireCanonicalPostgresqlDatasource(mode);
         require(mode, "spring.datasource.driver-class-name", "org.postgresql.Driver");
+        requireExact(mode, "spring.datasource.hikari.schema", "public");
         require(
                 mode,
                 "spring.flyway.locations",
@@ -93,6 +94,9 @@ public final class PostgresqlModeConfigurationGuard
             require(mode, "cortex.postgresql.runtime-ready", false);
         }
         if ("postgresql-migrate".equals(mode)) {
+            requireExact(mode, "spring.flyway.default-schema", "public");
+            requireExact(mode, "spring.flyway.schemas", "public");
+            require(mode, "spring.flyway.create-schemas", false);
             require(mode, "spring.flyway.baseline-on-migrate", false);
             require(mode, "spring.flyway.clean-disabled", true);
         }
@@ -112,6 +116,16 @@ public final class PostgresqlModeConfigurationGuard
     private void require(String mode, String property, Object expected) {
         String actual = environment.getProperty(property);
         if (actual == null || !expected.toString().equalsIgnoreCase(actual.trim())) {
+            throw new IllegalStateException(
+                    "Modo " + mode + " exige " + property + "=" + expected
+                            + " (encontrado " + actual + ")."
+            );
+        }
+    }
+
+    private void requireExact(String mode, String property, String expected) {
+        String actual = environment.getProperty(property);
+        if (!expected.equals(actual)) {
             throw new IllegalStateException(
                     "Modo " + mode + " exige " + property + "=" + expected
                             + " (encontrado " + actual + ")."

@@ -145,11 +145,11 @@ class PostgresqlRuntimeReadinessGuardTest {
     void readinessAcceptsOnlyAnActiveAcademyIdentityWithCurrentHmac() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         when(jdbcTemplate.queryForObject(
-                contains("flyway_schema_history"),
+                contains("FROM public.flyway_schema_history"),
                 eq(Integer.class)
         )).thenReturn(1);
         when(jdbcTemplate.queryForObject(
-                contains("ai.cpf_lookup_hmac IS NOT NULL"),
+                contains("FROM public.colaborador c"),
                 eq(Integer.class)
         )).thenReturn(1);
 
@@ -159,7 +159,23 @@ class PostgresqlRuntimeReadinessGuardTest {
         assertThatCode(readinessGuard::verifyReadiness)
                 .doesNotThrowAnyException();
         verify(jdbcTemplate).queryForObject(
+                contains("JOIN public.auth_identity ai"),
+                eq(Integer.class)
+        );
+        verify(jdbcTemplate).queryForObject(
                 contains("c.banco_origem = 'dbstavias_acad'"),
+                eq(Integer.class)
+        );
+        verify(jdbcTemplate).queryForObject(
+                contains("ai.status = 'ATIVA'"),
+                eq(Integer.class)
+        );
+        verify(jdbcTemplate).queryForObject(
+                contains("ai.cpf_lookup_key_id IS NOT NULL"),
+                eq(Integer.class)
+        );
+        verify(jdbcTemplate).queryForObject(
+                contains("ai.cpf_lookup_hmac IS NOT NULL"),
                 eq(Integer.class)
         );
     }
@@ -222,7 +238,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         String marker = releaseMarker(revision);
         JdbcTemplate jdbcTemplate = readyPostgresql();
         when(jdbcTemplate.queryForList(
-                contains("cortex_release_marker"),
+                contains("FROM public.cortex_release_marker"),
                 eq(revision)
         )).thenReturn(List.of(Map.of(
                 "revision", revision,
@@ -673,7 +689,7 @@ class PostgresqlRuntimeReadinessGuardTest {
         JdbcTemplate jdbcTemplate = readyPostgresql();
         LocalDateTime databaseNow = LocalDateTime.of(2026, 7, 28, 12, 0);
         when(jdbcTemplate.queryForList(
-                contains("source_sync_run"),
+                contains("FROM public.source_sync_run"),
                 eq("acad_colaborador_import")
         )).thenReturn(List.of(academyRun(
                 "SUCCESS",

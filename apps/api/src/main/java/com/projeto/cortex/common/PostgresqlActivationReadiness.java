@@ -13,7 +13,7 @@ public final class PostgresqlActivationReadiness implements RuntimeReadiness {
 
     private static final String CURRENT_SCHEMA_COMPLETED_SQL = """
             SELECT COUNT(*)
-            FROM flyway_schema_history
+            FROM public.flyway_schema_history
             WHERE version = '%s'
               AND success = TRUE
             """.formatted(PostgresqlSchemaVersion.REQUIRED);

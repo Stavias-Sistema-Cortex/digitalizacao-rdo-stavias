@@ -155,6 +155,87 @@ class PostgresqlModeConfigurationGuardTest {
     }
 
     @Test
+    void refusesAnySchemaOtherThanTheCanonicalPublicSchema() {
+        MockEnvironment datasourceSchemaEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        datasourceSchemaEnvironment.withProperty(
+                "spring.datasource.hikari.schema",
+                "pg_catalog"
+        );
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                datasourceSchemaEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.datasource.hikari.schema");
+
+        MockEnvironment uppercaseDatasourceSchemaEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        uppercaseDatasourceSchemaEnvironment.withProperty(
+                "spring.datasource.hikari.schema",
+                "PUBLIC"
+        );
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                uppercaseDatasourceSchemaEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.datasource.hikari.schema");
+
+        MockEnvironment paddedDatasourceSchemaEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        paddedDatasourceSchemaEnvironment.withProperty(
+                "spring.datasource.hikari.schema",
+                " public "
+        );
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                paddedDatasourceSchemaEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.datasource.hikari.schema");
+
+        MockEnvironment flywaySchemaEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        flywaySchemaEnvironment.withProperty("spring.flyway.default-schema", "pg_catalog");
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                flywaySchemaEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.flyway.default-schema");
+
+        MockEnvironment uppercaseFlywaySchemaEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        uppercaseFlywaySchemaEnvironment.withProperty(
+                "spring.flyway.default-schema",
+                "PUBLIC"
+        );
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                uppercaseFlywaySchemaEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.flyway.default-schema");
+
+        MockEnvironment managedSchemasEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        managedSchemasEnvironment.withProperty(
+                "spring.flyway.schemas",
+                "public,pg_catalog"
+        );
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                managedSchemasEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.flyway.schemas");
+
+        MockEnvironment createSchemasEnvironment = configuredEnvironment(
+                "postgresql-migrate", "none", true, false, false
+        );
+        createSchemasEnvironment.withProperty("spring.flyway.create-schemas", "true");
+        assertThatThrownBy(() -> new PostgresqlModeConfigurationGuard(
+                createSchemasEnvironment
+        ).verifyConfiguration())
+                .hasMessageContaining("spring.flyway.create-schemas");
+    }
+
+    @Test
     void refusesAnyCurrentSchemaVersionOtherThanV64() {
         MockEnvironment environment = configuredEnvironment(
                 "postgresql-activation", "servlet", false, true, false
@@ -213,6 +294,10 @@ class PostgresqlModeConfigurationGuardTest {
                         "spring.flyway.locations",
                         "classpath:db/migration-postgresql"
                 )
+                .withProperty("spring.datasource.hikari.schema", "public")
+                .withProperty("spring.flyway.default-schema", "public")
+                .withProperty("spring.flyway.schemas", "public")
+                .withProperty("spring.flyway.create-schemas", "false")
                 .withProperty("spring.flyway.baseline-on-migrate", "false")
                 .withProperty("spring.flyway.clean-disabled", "true")
                 .withProperty("cortex.postgresql.required-schema-version", "64")

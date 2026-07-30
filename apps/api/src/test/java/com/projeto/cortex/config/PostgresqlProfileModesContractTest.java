@@ -41,6 +41,7 @@ class PostgresqlProfileModesContractTest {
                 "${CORTEX_POSTGRES_URL}",
                 "${CORTEX_POSTGRES_USER:joaolucas}",
                 "${CORTEX_POSTGRES_PASSWORD:}",
+                "schema: public",
                 "classpath:db/migration-postgresql",
                 "required-schema-version: 64"
         );
@@ -61,6 +62,9 @@ class PostgresqlProfileModesContractTest {
                 "on-profile: postgresql-migrate",
                 "web-application-type: none",
                 "enabled: true",
+                "default-schema: public",
+                "schemas: public",
+                "create-schemas: false",
                 "baseline-on-migrate: false",
                 "clean-disabled: true",
                 "schema-readiness:",

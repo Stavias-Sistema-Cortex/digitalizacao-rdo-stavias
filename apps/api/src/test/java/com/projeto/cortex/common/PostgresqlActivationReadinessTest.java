@@ -28,7 +28,8 @@ class PostgresqlActivationReadinessTest {
         verify(jdbc).queryForObject("SELECT 1", Integer.class);
         verify(jdbc).queryForObject(
                 org.mockito.ArgumentMatchers.argThat(
-                        sql -> sql.contains("version = '64'")
+                        sql -> sql.contains("FROM public.flyway_schema_history")
+                                && sql.contains("version = '64'")
                 ),
                 eq(Integer.class)
         );

@@ -15,13 +15,13 @@ public final class PostgresqlReleaseMarkerWriter implements ApplicationRunner {
     private static final String REVISION_PROPERTY = "CORTEX_RELEASE_REVISION";
     private static final String MARKER_PROPERTY = "CORTEX_RELEASE_MARKER";
     private static final String INSERT_SQL = """
-            INSERT INTO cortex_release_marker (revision, marker)
+            INSERT INTO public.cortex_release_marker (revision, marker)
             VALUES (?, ?)
             ON CONFLICT (revision) DO NOTHING
             """;
     private static final String EXISTING_MARKER_SQL = """
             SELECT marker
-            FROM cortex_release_marker
+            FROM public.cortex_release_marker
             WHERE revision = ?
             """;
 
