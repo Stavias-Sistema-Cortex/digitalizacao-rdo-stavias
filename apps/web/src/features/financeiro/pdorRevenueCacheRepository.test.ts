@@ -329,20 +329,29 @@ describe("PDOR revenue cache", () => {
 
   it("descarta uma resposta remota se a sessão mudar durante a consulta", async () => {
     let resolveRemote: ((value: ObraPdor) => void) | undefined;
+    let signalFetchStarted: (() => void) | undefined;
+    const fetchStarted = new Promise<void>((resolve) => {
+      signalFetchStarted = resolve;
+    });
     const remote = new Promise<ObraPdor>((resolve) => {
       resolveRemote = resolve;
     });
     const pending = loadPdorRevenueSnapshot(request(), {
       online: true,
       now: FETCHED_AT_MS,
-      fetchCurrent: () => remote,
+      fetchCurrent: () => {
+        signalFetchStarted?.();
+        return remote;
+      },
     });
+    const rejection = expect(pending).rejects.toThrow(/sessão mudou/i);
 
+    await fetchStarted;
     setSession(profile(OWNER_B));
     await trackDatabase(OWNER_B, [WORKSITE_A, WORKSITE_B]);
     resolveRemote?.(PDOR);
 
-    await expect(pending).rejects.toThrow(/sessão mudou/i);
+    await rejection;
     const database = await getCortexDb();
     expect(await database.count("finance_pdor_revenue_cache")).toBe(0);
   });
