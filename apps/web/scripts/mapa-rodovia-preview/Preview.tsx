@@ -16,6 +16,7 @@ export function Preview() {
           obra={OBRA_FIXTURE}
           podeDesenhar
           operavelLocalmente
+          periodoInicial={{ de: "2026-03-02", ate: "2026-03-06" }}
         />
       </section>
 

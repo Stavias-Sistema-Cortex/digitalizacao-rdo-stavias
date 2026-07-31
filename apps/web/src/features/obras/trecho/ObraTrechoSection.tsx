@@ -7,6 +7,7 @@ import type { WorksiteMapPoint } from "../map/mapGeometry";
 import type { EnderecoDaObra } from "../map/enquadramentoAproximado";
 import { carregarTrechoDaObra, type LeituraTrecho } from "./obraTrechoApi";
 import { TrechoEsquematico } from "./TrechoEsquematico";
+import { TrechoReceitaSection } from "./TrechoReceitaSection";
 import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
 import { TrechoResumo } from "./TrechoResumo";
 import { recortarProjecao, type Periodo } from "./trechoGeometry";
@@ -23,6 +24,8 @@ interface ObraTrechoSectionProps {
   operavelLocalmente: boolean;
   /** Endereço cadastral, só para enquadrar o mapa antes da georreferência. */
   endereco?: EnderecoDaObra;
+  /** Período aberto de saída, por exemplo ao retomar uma leitura salva. */
+  periodoInicial?: Periodo;
 }
 
 type Estado =
@@ -66,10 +69,13 @@ export function ObraTrechoSection({
   podeDesenhar,
   operavelLocalmente,
   endereco,
+  periodoInicial,
 }: ObraTrechoSectionProps) {
   const [estado, setEstado] = useState<Estado>({ fase: "carregando" });
   const [ciclo, setCiclo] = useState(0);
-  const [periodo, setPeriodo] = useState<Periodo>(SEM_PERIODO);
+  const [periodo, setPeriodo] = useState<Periodo>(
+    periodoInicial ?? SEM_PERIODO,
+  );
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
 
   // Cada rodada de sincronização automática relê a projeção, que é como o
@@ -199,6 +205,7 @@ export function ObraTrechoSection({
           </header>
         </section>
       )}
+      <TrechoReceitaSection obraId={obra.id} periodo={recorte} />
     </div>
   );
 }

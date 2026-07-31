@@ -769,3 +769,184 @@
     transform: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Verificação PDOR — receita evidenciada do período                    *
+ * ------------------------------------------------------------------ */
+
+.trecho-receita {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  background: var(--color-surface);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.trecho-receita-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.trecho-receita-header h3 {
+  margin: 4px 0 6px;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+
+.trecho-receita-meta {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-receita-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-canvas);
+  padding: 10px 14px;
+}
+
+.trecho-receita-total > span {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.trecho-receita-total > strong {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-receita-atividades {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.trecho-receita-atividades li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.trecho-receita-atividades li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.trecho-receita-atividade-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trecho-receita-atividade-texto strong {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trecho-receita-atividade-texto span {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A barra compara as atividades do período entre si; o número é o dado. */
+.trecho-receita-atividade-valor {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 min(46%, 320px);
+  min-width: 0;
+}
+
+.trecho-receita-barra {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-brand-yellow) 78%, var(--color-ink));
+}
+
+.trecho-receita-atividade-valor > strong {
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-receita-vazio {
+  margin: 0;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--color-canvas);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  max-width: none;
+}
+
+.trecho-receita-notas {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.trecho-receita-notas small {
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.trecho-receita-nota-atencao {
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .trecho-receita {
+    padding: 16px;
+  }
+
+  .trecho-receita-atividades li {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .trecho-receita-atividade-valor {
+    flex-basis: auto;
+    justify-content: space-between;
+  }
+}

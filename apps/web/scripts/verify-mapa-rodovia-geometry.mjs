@@ -161,8 +161,20 @@ const MEASURE = `(() => {
         (node) => node.textContent?.replace(/\\s+/g, ' ').trim(),
       ),
     },
+    receita: {
+      quadro: rect('.trecho-receita', ativa),
+      atividades: [...ativa.querySelectorAll('.trecho-receita-atividades li')].map(
+        (node) => node.querySelector('strong')?.textContent?.trim() ?? null,
+      ),
+      total:
+        ativa.querySelector('.trecho-receita-total strong')?.textContent?.trim() ??
+        null,
+      periodo:
+        ativa.querySelector('.trecho-receita-meta')?.textContent?.trim() ?? null,
+    },
     desativada: {
       temResumo: Boolean(desativada.querySelector('.trecho-resumo')),
+      temReceita: Boolean(desativada.querySelector('.trecho-receita')),
       temMapa: Boolean(desativada.querySelector('.rodovia-workspace')),
       temEsquematico: Boolean(desativada.querySelector('.trecho-pista-quadro')),
       medidas: [...desativada.querySelectorAll('.trecho-resumo-grade dt')].map(

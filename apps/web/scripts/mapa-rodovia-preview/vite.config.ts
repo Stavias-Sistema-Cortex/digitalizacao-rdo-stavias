@@ -28,6 +28,14 @@ const SUBSTITUICOES: ReadonlyArray<readonly [string, string]> = [
     "src/features/obras/trecho/obraTrechoApi.ts",
     here("./obraTrechoApiFixture.ts"),
   ],
+  [
+    "src/features/financeiro/financeCapabilitiesResolver.ts",
+    here("./financeCapabilitiesFixture.ts"),
+  ],
+  [
+    "src/features/financeiro/revenueTraceCacheRepository.ts",
+    here("./revenueTraceFixture.ts"),
+  ],
 ];
 
 function fixtureDataLayer() {
