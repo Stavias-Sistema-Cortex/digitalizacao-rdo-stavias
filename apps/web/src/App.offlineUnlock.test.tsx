@@ -167,8 +167,14 @@ describe("App offline authentication entry", () => {
     await user.type(await screen.findByRole("textbox", { name: "CPF" }), "52998224725");
     await user.click(screen.getByRole("button", { name: "Desbloquear com CPF" }));
 
+    // A recusa continua a mesma; o texto passou a dizer o que resolve, porque
+    // quem lê isso está sem sinal e precisa saber que o login online que
+    // habilita o offline acontece antes de sair da base.
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "CPF não corresponde a um acesso offline válido neste dispositivo.",
+      /ainda não tem acesso offline neste aparelho/,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /login com internet uma vez neste mesmo aparelho/,
     );
     expect(mocks.unlockCollaborativeOfflineGrant).not.toHaveBeenCalled();
     expect(mocks.initializeCortexDb).not.toHaveBeenCalled();

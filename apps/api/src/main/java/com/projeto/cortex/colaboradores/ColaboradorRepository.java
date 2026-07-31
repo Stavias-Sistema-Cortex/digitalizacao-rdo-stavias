@@ -15,15 +15,6 @@ public interface ColaboradorRepository extends JpaRepository<Colaborador, String
     );
 
     @Query("""
-            SELECT c.cpfHash
-            FROM Colaborador c
-            WHERE c.ativo = true
-              AND c.deletadoEm IS NULL
-              AND c.cpfHash IS NOT NULL
-            """)
-    List<String> findHashesAtivos();
-
-    @Query("""
             SELECT c
             FROM Colaborador c
             WHERE c.deletadoEm IS NULL

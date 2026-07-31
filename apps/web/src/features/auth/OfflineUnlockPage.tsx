@@ -63,8 +63,14 @@ export function OfflineUnlockPage({
     try {
       const metadata = await loadCollaborativeOfflineGrant(canonicalCpf);
       if (!metadata) {
+        // O acesso offline nasce de um login online: é ali que o servidor
+        // assina o grant que fica guardado neste aparelho. Sem dizer isso, a
+        // pessoa fica tentando o mesmo CPF no meio da obra sem saber que o
+        // que falta aconteceu antes de sair da base.
         throw new Error(
-          "CPF não corresponde a um acesso offline válido neste dispositivo.",
+          "Este CPF ainda não tem acesso offline neste aparelho. " +
+            "Faça um login com internet uma vez neste mesmo aparelho e " +
+            "depois ele passa a abrir sem sinal.",
         );
       }
       await unlockCollaborativeOfflineGrant(canonicalCpf, metadata);
