@@ -19,12 +19,22 @@ import {
   CapturaDeCampoError,
   lerPosicaoDeCampo,
 } from "./capturaDeCampo";
+import {
+  buscarEnquadramentoAproximado,
+  type EnderecoDaObra,
+  type EnquadramentoAproximado,
+} from "./enquadramentoAproximado";
 import "./RodoviaWorkspace.css";
 
 interface RodoviaWorkspaceProps {
   obra: WorksiteMapPoint;
   /** Somente Alfa pode desenhar o trecho contratual. */
   podeDesenhar: boolean;
+  /**
+   * Endereço cadastral, usado apenas para abrir o mapa na região certa
+   * enquanto a obra não tem coordenada nem geometria.
+   */
+  endereco?: EnderecoDaObra;
 }
 
 type EstadoLeitura =
@@ -82,7 +92,11 @@ function formatarInstante(valor: string | null): string {
  * dois leem exatamente a mesma coleção autoritativa de geometrias, e a leitura
  * se atualiza a cada rodada de sincronização.
  */
-export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) {
+export function RodoviaWorkspace({
+  obra,
+  podeDesenhar,
+  endereco,
+}: RodoviaWorkspaceProps) {
   const [estado, setEstado] = useState<EstadoLeitura>({ fase: "carregando" });
   const [modoDesenho, setModoDesenho] = useState<"INATIVO" | "TRECHO">(
     "INATIVO",
@@ -90,6 +104,8 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
   const [pontosMarcados, setPontosMarcados] = useState(0);
   const [aviso, setAviso] = useState<string | null>(null);
   const [capturando, setCapturando] = useState(false);
+  const [aproximado, setAproximado] =
+    useState<EnquadramentoAproximado | null>(null);
   const [ciclo, setCiclo] = useState(0);
 
   const recarregar = useCallback(() => {
@@ -155,6 +171,34 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
         : primeiraCoordenada(colecao),
     [worksite, colecao],
   );
+
+  /*
+   * Sem coordenada e sem geometria, o mapa abre na região que o cadastro
+   * declara. É um enquadramento, não uma localização: nada disso é gravado, e
+   * a obra continua marcada como não georreferenciada até que alguém desenhe o
+   * trecho ou registre a posição em campo.
+   */
+  const precisaDeEnquadramento = estado.fase !== "carregando" && centro === null;
+  const cidade = endereco?.cidade ?? null;
+  const uf = endereco?.uf ?? null;
+  const rodovia = endereco?.rodovia ?? null;
+
+  useEffect(() => {
+    let cancelado = false;
+    // A consulta só acontece quando falta coordenada; o resultado é limpo no
+    // retorno do efeito, e não por uma escrita síncrona no corpo dele.
+    if (precisaDeEnquadramento) {
+      buscarEnquadramentoAproximado({ cidade, uf, rodovia })
+        .then((resultado) => {
+          if (!cancelado) setAproximado(resultado);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelado = true;
+      setAproximado(null);
+    };
+  }, [precisaDeEnquadramento, cidade, uf, rodovia]);
 
   // Soma o comprimento das linhas persistidas: é a extensão que a obra
   // realmente tem desenhada, distinta da extensão medida nos RDOs.
@@ -231,6 +275,10 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
       setCapturando(false);
     }
   }, [obraId, recarregar]);
+
+  const instrucaoDeGeorreferencia = podeDesenhar
+    ? "Use “Desenhar trecho” para marcar o início e o fim sobre a rodovia, ou “Registrar posição” para gravar onde a equipe está agora."
+    : "Use “Registrar posição” para gravar onde a equipe está agora; o trecho contratual é desenhado pela administração.";
 
   return (
     <section className="rodovia-workspace" aria-labelledby="rodovia-workspace-title">
@@ -315,6 +363,14 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
         </dl>
       ) : null}
 
+      {!centro && aproximado ? (
+        <p className="rodovia-workspace-aviso rodovia-workspace-aviso--aproximado">
+          <strong>Obra ainda não georreferenciada.</strong> O mapa está apenas
+          enquadrado em {aproximado.local}, a partir do endereço do cadastro.
+          Nada disso é gravado. {instrucaoDeGeorreferencia}
+        </p>
+      ) : null}
+
       {aviso ? <p className="rodovia-workspace-aviso">{aviso}</p> : null}
       {estado.fase === "erro" ? (
         <p className="rodovia-workspace-aviso">
@@ -328,10 +384,10 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
           <OperationalMap obra={worksite} />
         </div>
         <div className="rodovia-workspace-painel">
-          {centro ? (
+          {centro || aproximado ? (
             <LeafletTrechoMap
               features={colecao}
-              center={centro}
+              center={centro ?? (aproximado as EnquadramentoAproximado).centro}
               modo={modoDesenho}
               onTrechoDesenhado={aoDesenharTrecho}
               onPontoCapturado={setPontosMarcados}
@@ -339,11 +395,7 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
           ) : (
             <div className="rodovia-workspace-vazio">
               <strong>Obra ainda não georreferenciada</strong>
-              <p>
-                {podeDesenhar
-                  ? "Use “Desenhar trecho” para marcar o início e o fim sobre a rodovia, ou “Registrar posição” para gravar onde a equipe está agora."
-                  : "Use “Registrar posição” para gravar onde a equipe está agora; o trecho contratual é desenhado pela administração."}
-              </p>
+              <p>{instrucaoDeGeorreferencia}</p>
             </div>
           )}
         </div>

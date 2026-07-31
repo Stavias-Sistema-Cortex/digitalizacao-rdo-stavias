@@ -168,3 +168,14 @@
     transition: none;
   }
 }
+
+/* O enquadramento aproximado é um aviso, não uma confirmação: usa a borda de
+   atenção e nunca a de confirmação usada pelos registros gravados. */
+.rodovia-workspace-aviso--aproximado {
+  border-left-color: var(--color-focus);
+  color: var(--color-muted);
+}
+
+.rodovia-workspace-aviso--aproximado strong {
+  color: var(--color-ink);
+}

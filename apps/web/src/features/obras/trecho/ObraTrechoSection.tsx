@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SYNC_COMPLETED_EVENT } from "../../../lib/sync/syncEvents";
 import { RodoviaWorkspace } from "../map/RodoviaWorkspace";
 import type { WorksiteMapPoint } from "../map/mapGeometry";
+import type { EnderecoDaObra } from "../map/enquadramentoAproximado";
 import { buscarTrechoObra, type LeituraTrecho } from "./obraTrechoApi";
 import { TrechoEsquematico } from "./TrechoEsquematico";
 import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
@@ -19,6 +20,8 @@ interface ObraTrechoSectionProps {
    * quando nem a rede nem o cache respondem.
    */
   operavelLocalmente: boolean;
+  /** Endereço cadastral, só para enquadrar o mapa antes da georreferência. */
+  endereco?: EnderecoDaObra;
 }
 
 type Estado =
@@ -58,6 +61,7 @@ export function ObraTrechoSection({
   obra,
   podeDesenhar,
   operavelLocalmente,
+  endereco,
 }: ObraTrechoSectionProps) {
   const [estado, setEstado] = useState<Estado>({ fase: "carregando" });
   const [ciclo, setCiclo] = useState(0);
@@ -146,6 +150,7 @@ export function ObraTrechoSection({
         key={obra.id}
         obra={obra}
         podeDesenhar={podeDesenhar}
+        endereco={endereco}
       />
       {projecao && leitura ? (
         <TrechoEsquematico

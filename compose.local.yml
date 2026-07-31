@@ -81,6 +81,7 @@ services:
         VITE_MAPLIBRE_STYLE_URL: ${VITE_MAPLIBRE_STYLE_URL:-}
         VITE_MAPTILER_API_KEY: ${VITE_MAPTILER_API_KEY:-}
         VITE_MAPBOX_ACCESS_TOKEN: ${VITE_MAPBOX_ACCESS_TOKEN:-}
+        VITE_GEOCODER_URL: ${VITE_GEOCODER_URL:-}
     container_name: cortex-web-local
     security_opt:
       - no-new-privileges:true

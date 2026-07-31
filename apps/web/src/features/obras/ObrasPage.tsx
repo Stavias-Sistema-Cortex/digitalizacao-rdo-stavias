@@ -956,6 +956,11 @@ export function ObrasPage() {
                     longitude: focusedObra.longitude,
                   }}
                   podeDesenhar={canManageWorksites}
+                  endereco={{
+                    cidade: focusedObra.cidade,
+                    uf: focusedObra.uf,
+                    rodovia: focusedObra.rodovia,
+                  }}
                   operavelLocalmente={
                     !focusedObra.arquivadoEm &&
                     focusedObra.status !== "INATIVA"

@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_MAPLIBRE_STYLE_URL?: string;
   readonly VITE_MAPTILER_API_KEY?: string;
   readonly VITE_MAPBOX_ACCESS_TOKEN?: string;
+  readonly VITE_GEOCODER_URL?: string;
 }
 
 interface ImportMeta {
