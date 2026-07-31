@@ -114,6 +114,95 @@
   color: var(--color-ink);
 }
 
+/*
+ * Faixa de recorte das camadas.
+ *
+ * Fica acima da divisão porque o recorte vale para as duas metades: decidir de
+ * um lado só permitiria que os mapas mostrassem obras diferentes lado a lado.
+ */
+.rodovia-workspace-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-surface);
+  padding: 8px 10px;
+}
+
+.rodovia-workspace-filtros__camadas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rodovia-workspace-filtros__camadas button {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: transparent;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-ink);
+  cursor: pointer;
+  /* Desmarcada continua legível: some do mapa, não da barra. */
+  opacity: 0.45;
+}
+
+.rodovia-workspace-filtros__camadas button.is-ativa {
+  border-color: color-mix(in srgb, var(--color-brand-teal) 45%, transparent);
+  background: color-mix(in srgb, var(--color-brand-teal) 10%, transparent);
+  opacity: 1;
+}
+
+.rodovia-workspace-filtros__dia {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.rodovia-workspace-filtros__dia input {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: transparent;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--color-ink);
+}
+
+.rodovia-workspace-filtros__limpar {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-brand-teal);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rodovia-workspace-filtros small {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+@media (max-width: 720px) {
+  .rodovia-workspace-filtros small {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
 .rodovia-workspace-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

@@ -13,6 +13,11 @@ import {
 } from "./mapAdapter";
 import type { LeituraMapaObra } from "./obraMapApi";
 import {
+  FILTRO_VAZIO,
+  filtrarColecao,
+  type FiltroDoMapa,
+} from "./filtrosDoMapa";
+import {
   availableMapProviders,
   resolveMapProvider,
   resolveMapProviderForId,
@@ -33,6 +38,11 @@ interface OperationalMapProps {
   carregando: boolean;
   /** Falha da leitura compartilhada, já explicada no aviso do workspace. */
   erroLeitura: string | null;
+  /**
+   * Recorte decidido pelo workspace. Chega pronto para que esta metade e a
+   * metade Leaflet nunca mostrem obras diferentes lado a lado.
+   */
+  filtro?: FiltroDoMapa;
 }
 
 function firstCoordinate(
@@ -158,6 +168,7 @@ export function OperationalMap({
   leitura,
   carregando,
   erroLeitura,
+  filtro = FILTRO_VAZIO,
 }: OperationalMapProps) {
   const defaultProvider = useMemo(() => resolveMapProvider(), []);
   const providers = useMemo(() => availableMapProviders(), []);
@@ -173,11 +184,14 @@ export function OperationalMap({
   const authoritativeWorksite = leitura?.dados.obra ?? obra;
   const featureCollection = useMemo(
     () =>
-      buildOperationalFeatureCollection(
-        authoritativeWorksite,
-        leitura?.dados.features ?? [],
+      filtrarColecao(
+        buildOperationalFeatureCollection(
+          authoritativeWorksite,
+          leitura?.dados.features ?? [],
+        ),
+        filtro,
       ),
-    [authoritativeWorksite, leitura?.dados.features],
+    [authoritativeWorksite, filtro, leitura?.dados.features],
   );
   const center = useMemo(
     () =>
@@ -314,7 +328,7 @@ export function OperationalMap({
             ? "Consultando camadas autoritativas…"
             : erroLeitura
               ? "Camadas indisponíveis nesta leitura"
-              : `${leitura?.dados.features.length ?? 0} geometria(s) ontológica(s)`}
+              : `${featureCollection.features.length} geometria(s) em exibição`}
         </small>
       </footer>
     </section>

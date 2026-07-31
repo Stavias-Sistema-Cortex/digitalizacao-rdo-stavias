@@ -4,6 +4,14 @@ import { SYNC_COMPLETED_EVENT } from "../../../lib/sync/syncEvents";
 import { LeafletTrechoMap, type PontoGeografico } from "./LeafletTrechoMap";
 import { OperationalMap } from "./OperationalMap";
 import {
+  alternarCategoria,
+  categoriasDaColecao,
+  FILTRO_VAZIO,
+  filtrarColecao,
+  type FiltroDoMapa,
+} from "./filtrosDoMapa";
+import { rotuloDaCategoria } from "./mapCategories";
+import {
   buildOperationalFeatureCollection,
   comprimentoAproximadoM,
   isValidWorksiteCoordinate,
@@ -103,6 +111,7 @@ export function RodoviaWorkspace({
   );
   const [pontosMarcados, setPontosMarcados] = useState(0);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<FiltroDoMapa>(FILTRO_VAZIO);
   const [capturando, setCapturando] = useState(false);
   const [aproximado, setAproximado] =
     useState<EnquadramentoAproximado | null>(null);
@@ -159,10 +168,21 @@ export function RodoviaWorkspace({
       },
     [leitura?.dados.obra, obraId, obraNome, latitude, longitude],
   );
-  const colecao = useMemo(
+  const colecaoCompleta = useMemo(
     () =>
       buildOperationalFeatureCollection(worksite, leitura?.dados.features ?? []),
     [worksite, leitura?.dados.features],
+  );
+  // O recorte é decidido aqui, no pai dos dois mapas, e desce pronto para
+  // ambos: recortar em cada metade permitiria que elas mostrassem obras
+  // diferentes lado a lado.
+  const colecao = useMemo(
+    () => filtrarColecao(colecaoCompleta, filtro),
+    [colecaoCompleta, filtro],
+  );
+  const categorias = useMemo(
+    () => categoriasDaColecao(colecaoCompleta),
+    [colecaoCompleta],
   );
   const centro = useMemo(
     () =>
@@ -384,11 +404,70 @@ export function RodoviaWorkspace({
         </p>
       ) : null}
 
+      {categorias.length > 0 ? (
+        <div className="rodovia-workspace-filtros">
+          <div
+            className="rodovia-workspace-filtros__camadas"
+            role="group"
+            aria-label="Marcações exibidas no mapa"
+          >
+            {categorias.map((categoria) => {
+              const visivel = !filtro.categoriasOcultas.has(categoria);
+              return (
+                <button
+                  key={categoria}
+                  type="button"
+                  className={visivel ? "is-ativa" : ""}
+                  aria-pressed={visivel}
+                  onClick={() =>
+                    setFiltro((atual) => ({
+                      ...atual,
+                      categoriasOcultas: alternarCategoria(
+                        atual.categoriasOcultas,
+                        categoria,
+                      ),
+                    }))}
+                >
+                  {rotuloDaCategoria(categoria)}
+                </button>
+              );
+            })}
+          </div>
+          <label className="rodovia-workspace-filtros__dia">
+            <span>Ver o dia</span>
+            <input
+              type="date"
+              value={filtro.data}
+              onChange={(event) =>
+                setFiltro((atual) => ({
+                  ...atual,
+                  data: event.target.value,
+                }))}
+            />
+          </label>
+          {filtro.data || filtro.categoriasOcultas.size > 0 ? (
+            <button
+              type="button"
+              className="rodovia-workspace-filtros__limpar"
+              onClick={() => setFiltro(FILTRO_VAZIO)}
+            >
+              Mostrar tudo
+            </button>
+          ) : null}
+          <small role="status">
+            {filtro.data || filtro.categoriasOcultas.size > 0
+              ? `${colecao.features.length} de ${colecaoCompleta.features.length} marcação(ões)`
+              : "Sem recorte: o mapa mostra todo o histórico registrado."}
+          </small>
+        </div>
+      ) : null}
+
       <div className="rodovia-workspace-split">
         <div className="rodovia-workspace-painel">
           <OperationalMap
             obra={worksite}
             leitura={leitura}
+            filtro={filtro}
             carregando={estado.fase === "carregando"}
             erroLeitura={estado.fase === "erro" ? estado.mensagem : null}
           />

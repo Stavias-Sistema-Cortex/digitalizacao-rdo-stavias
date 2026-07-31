@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,27 +16,32 @@ const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
 const leaflet = vi.hoisted(() => ({
   ultimoModo: "INATIVO" as string,
   desenhar: null as ((pontos: unknown[]) => void) | null,
+  ultimasFeatures: { features: [] } as { features: { id: string }[] },
 }));
 
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({ registrarTrechoDesenhado }));
 const satelite = vi.hoisted(() => ({
   ultimaLeitura: undefined as unknown,
+  ultimoFiltro: undefined as unknown,
 }));
 
 vi.mock("./OperationalMap", () => ({
-  OperationalMap: (props: { leitura: unknown }) => {
+  OperationalMap: (props: { leitura: unknown; filtro?: unknown }) => {
     satelite.ultimaLeitura = props.leitura;
+    satelite.ultimoFiltro = props.filtro;
     return <div data-testid="mapa-satelite" />;
   },
 }));
 vi.mock("./LeafletTrechoMap", () => ({
   LeafletTrechoMap: (props: {
     modo: string;
+    features: { features: { id: string }[] };
     onTrechoDesenhado?: (pontos: unknown[]) => void;
   }) => {
     leaflet.ultimoModo = props.modo;
     leaflet.desenhar = props.onTrechoDesenhado ?? null;
+    leaflet.ultimasFeatures = props.features;
     return <div data-testid="mapa-leaflet" data-modo={props.modo} />;
   },
 }));
@@ -178,6 +189,72 @@ describe("RodoviaWorkspace", () => {
       expect(satelite.ultimaLeitura).toBe(compartilhada),
     );
     expect(carregarMapaObra).toHaveBeenCalledTimes(1);
+  });
+
+
+  it("recorta as marcações e o dia nas duas metades ao mesmo tempo", async () => {
+    const geo = (
+      id: string,
+      categoria: string,
+      validoDesde: string,
+      validoAte: string | null,
+    ) => ({
+      id,
+      categoria,
+      objetoTipo: "OBRA",
+      objetoId: obra.id,
+      geometry: { type: "Point" as const, coordinates: [-47.56, -22.43] },
+      properties: {},
+      fonte: "GESTAO_MAPA",
+      versao: 1,
+      validoDesde,
+      validoAte,
+    });
+    carregarMapaObra.mockResolvedValue(leitura({
+      dados: {
+        obra,
+        features: [
+          geo("t1", "TRECHO", "2026-07-20T10:00:00Z", null),
+          geo("p1", "PONTO_OPERACIONAL", "2026-07-28T08:00:00Z", null),
+        ],
+      },
+    }));
+
+    render(<RodoviaWorkspace obra={obra} podeDesenhar={false} />);
+    await screen.findByTestId("mapa-leaflet");
+    await waitFor(() =>
+      expect(leaflet.ultimasFeatures.features).toHaveLength(3),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "ponto operacional" }));
+
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.map((item) => item.id),
+      ).toEqual(["obra-1:localizacao", "t1"]),
+    );
+    // O painel satélite recorta com o mesmo filtro, senão as duas metades
+    // mostrariam obras diferentes lado a lado.
+    expect(satelite.ultimoFiltro).toMatchObject({
+      categoriasOcultas: new Set(["PONTO_OPERACIONAL"]),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /mostrar tudo/i }));
+    await waitFor(() =>
+      expect(leaflet.ultimasFeatures.features).toHaveLength(3),
+    );
+
+    // Só o dia, sem recorte de camada: o ponto de 28/07 ainda não existia em
+    // 21/07 e precisa sumir por vigência, não por categoria.
+    fireEvent.change(screen.getByLabelText("Ver o dia"), {
+      target: { value: "2026-07-21" },
+    });
+
+    await waitFor(() =>
+      expect(
+        leaflet.ultimasFeatures.features.map((item) => item.id),
+      ).toEqual(["obra-1:localizacao", "t1"]),
+    );
   });
 
   it("desliga o desenho e zera o rascunho quando a persistência falha", async () => {
