@@ -654,9 +654,14 @@ describe("polimento visual da plataforma autenticada", () => {
     expect(active).toContain("border-color: var(--color-border);");
     expect(active).toContain("background: #f7f9f7;");
 
+    // A seleção virou uma faixa horizontal de abas acima do painel, então o
+    // marcador é o sublinhado que liga a aba ao conteúdo — não mais a barra
+    // lateral. O que segue protegido é a cor: amarelo de marca, separado das
+    // cores semânticas do PDOR verificadas logo abaixo.
     const marker = rule(globalCss, ".obras-list-item.active::before");
     expect(marker).toContain('content: "";');
-    expect(marker).toContain("width: 3px;");
+    expect(marker).toContain("height: 2px;");
+    expect(marker).toContain("inset: auto 10px 0 10px;");
     expect(marker).toContain("background: var(--color-brand-yellow);");
 
     expect(rule(globalCss, ".obras-pdor-risk--alto")).toContain(
@@ -690,12 +695,16 @@ describe("polimento visual da plataforma autenticada", () => {
       ].join("\n"),
     );
 
-    const obrasResponsive = globalCss.slice(
-      globalCss.lastIndexOf("@media (max-width: 900px)"),
+    // O workspace de obras é de coluna única em qualquer largura, para o mapa
+    // da rodovia receber o painel inteiro. Isso é mais forte que o antigo
+    // override no breakpoint: não há largura em que ele volte a duas colunas.
+    expect(rule(globalCss, ".obras-workspace")).toContain(
+      "grid-template-columns: minmax(0, 1fr);",
     );
-    expect(rule(obrasResponsive, ".obras-workspace")).toContain(
-      "grid-template-columns: 1fr;",
-    );
+    // A faixa de abas rola em si mesma em vez de empurrar a página.
+    const abas = rule(globalCss, ".obras-list");
+    expect(abas).toContain("flex-direction: row;");
+    expect(abas).toContain("overflow-x: auto;");
   });
 
   it("achata os itens e controles de Tarefas sem perder as prioridades", () => {

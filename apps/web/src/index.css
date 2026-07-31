@@ -1982,10 +1982,14 @@ textarea:focus {
   background: #124e4a;
 }
 
+/* A seleção de obra ocupa uma faixa horizontal acima do detalhe: o mapa da
+   rodovia e o esquemático do trecho precisam da largura inteira do painel, e
+   uma coluna lateral fixa comprimia justamente a parte que se lê por extensão
+   quilométrica. */
 .obras-workspace {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-items: stretch;
 }
@@ -2001,20 +2005,26 @@ textarea:focus {
 }
 
 .obras-list {
-  min-height: 520px;
-  padding: 10px;
+  padding: 8px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  /* Muitas obras rolam na própria faixa em vez de empurrar o painel. */
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
 }
 
 .obras-list-item {
   position: relative;
-  width: 100%;
+  /* Não encolhe: o nome da obra é o que distingue uma aba da outra. */
+  flex: 0 0 auto;
+  max-width: 260px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
-  padding: 12px;
+  padding: 8px 14px 10px;
   color: #25342d;
   text-align: left;
 }
@@ -2030,11 +2040,13 @@ textarea:focus {
   background: #f7f9f7;
 }
 
+/* Sublinhado em vez de barra lateral: numa faixa horizontal é a borda de baixo
+   que liga visualmente a aba ao painel logo abaixo dela. */
 .obras-list-item.active::before {
   content: "";
   position: absolute;
-  inset: 8px auto 8px 0;
-  width: 3px;
+  inset: auto 10px 0 10px;
+  height: 2px;
   border-radius: 999px;
   background: var(--color-brand-yellow);
 }
@@ -2042,6 +2054,10 @@ textarea:focus {
 .obras-list-title,
 .obras-list-meta {
   display: block;
+  /* Nome longo corta em vez de alargar a aba e empurrar as vizinhas. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .obras-list-title {
@@ -2050,7 +2066,7 @@ textarea:focus {
 }
 
 .obras-list-meta {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #6f7d75;
   font-size: 0.68rem;
   line-height: 1.35;
@@ -2211,12 +2227,14 @@ textarea:focus {
 }
 
 @media (max-width: 900px) {
-  .obras-workspace {
-    grid-template-columns: 1fr;
+  /* A faixa já é horizontal e rolável em qualquer largura; no celular ela só
+     encosta nas bordas para caber mais uma aba na tela. */
+  .obras-list {
+    padding: 6px;
   }
 
-  .obras-list {
-    min-height: auto;
+  .obras-list-item {
+    max-width: 200px;
   }
 }
 

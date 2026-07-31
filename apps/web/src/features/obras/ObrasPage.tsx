@@ -807,7 +807,7 @@ export function ObrasPage() {
         <section className="obras-workspace">
           <aside
             className="obras-list"
-            aria-label="Obras relacionadas"
+            aria-label="Selecionar obra"
           >
             {isLoading && obras.length === 0 ? (
               <p className="obras-empty">Carregando obras...</p>
@@ -825,6 +825,10 @@ export function ObrasPage() {
                       ? "obras-list-item active"
                       : "obras-list-item"
                   }
+                  aria-current={
+                    obra.id === focusedObra?.id ? "true" : undefined
+                  }
+                  title={`${obra.nome} — ${obraSubtitle(obra) || obra.id}`}
                   onClick={() => selectObra(obra.id)}
                 >
                   <span className="obras-list-title">
