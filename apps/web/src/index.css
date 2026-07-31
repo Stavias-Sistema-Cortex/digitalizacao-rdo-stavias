@@ -71,6 +71,32 @@
   --radius-lg: var(--radius-container);
   --transition-functional: 160ms ease;
   --shadow-overlay: 0 18px 44px rgb(24 35 31 / 16%);
+
+  /*
+   * Semântica de cor das camadas geoespaciais, derivada dos tokens acima.
+   * É a única fonte para o mapa de satélite, o mapa Leaflet e o esquemático
+   * linear, de modo que os três leiam a mesma obra com a mesma cor.
+   */
+  --map-trecho: var(--color-brand-yellow);
+  --map-localizacao-obra: var(--color-ink);
+  --map-perimetro-obra: var(--color-focus);
+  --map-frente-trabalho: var(--color-danger);
+  --map-ponto-operacional: var(--color-brand-teal);
+  --map-equipamento: var(--color-graphite);
+  --map-evento: var(--color-brand-green);
+  --map-rdo: var(--color-focus);
+  --map-ocorrencia: var(--color-danger);
+  --map-programacao: var(--color-muted);
+
+  /*
+   * Estados de execução do trecho, na ordem em que a obra avança: programado,
+   * em rascunho no RDO do dia, executado, validado, rejeitado.
+   */
+  --execucao-programado: var(--color-graphite);
+  --execucao-rascunho: var(--color-muted);
+  --execucao-executado: var(--color-brand-yellow);
+  --execucao-validado: var(--color-focus);
+  --execucao-rejeitado: var(--color-danger);
 }
 
 * {

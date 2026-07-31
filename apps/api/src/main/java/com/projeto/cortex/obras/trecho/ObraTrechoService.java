@@ -50,7 +50,8 @@ public class ObraTrechoService {
             """;
 
     private static final String SEGMENTOS_CONTROLE_GEOMETRICO = """
-            SELECT c.id, c.rdo_id, r.numero_rdo, r.data_rdo, r.status,
+            SELECT c.id, c.rdo_id, r.numero_rdo, r.data_rdo,
+                   r.status AS rdo_status,
                    c.subtrecho, c.pista, c.faixa, c.km_inicial, c.km_final,
                    c.estaca_inicial, c.estaca_final, c.comprimento_m,
                    c.largura_m, c.area_m2, c.massa_tonelada,
@@ -58,19 +59,25 @@ public class ObraTrechoService {
               FROM rdo_controle_geometrico c
               JOIN rdo r ON r.id = c.rdo_id
              WHERE r.obra_id = ?
+               AND r.cancelado_em IS NULL
              ORDER BY r.data_rdo ASC, c.id ASC
             """;
 
     private static final String SEGMENTOS_EXECUCAO_SERVICO = """
-            SELECT e.id, e.rdo_id, r.numero_rdo, e.data_execucao, e.servico_nome,
+            SELECT e.id, e.rdo_id, r.numero_rdo, r.status AS rdo_status,
+                   e.data_execucao, e.servico_nome,
                    e.trecho_inicial, e.trecho_final, e.localizacao,
                    e.status_validacao, e.quantidade_executada, e.unidade_medida
               FROM execucao_servico_rdo e
               JOIN rdo r ON r.id = e.rdo_id
              WHERE e.obra_id = ?
                AND e.cancelada = false
+               AND r.cancelado_em IS NULL
              ORDER BY e.data_execucao ASC, e.id ASC
             """;
+
+    /** RDO ainda em preenchimento pelo apontador. */
+    private static final String RASCUNHO = "RASCUNHO";
 
     private static final String ULTIMA_ATUALIZACAO = """
             SELECT MAX(momento) FROM (
@@ -80,7 +87,8 @@ public class ObraTrechoService {
                 UNION ALL
                 SELECT MAX(c.atualizado_em)
                   FROM rdo_controle_geometrico c
-                  JOIN rdo r ON r.id = c.rdo_id WHERE r.obra_id = ?
+                  JOIN rdo r ON r.id = c.rdo_id
+                 WHERE r.obra_id = ? AND r.cancelado_em IS NULL
                 UNION ALL
                 SELECT MAX(e.atualizado_em)
                   FROM execucao_servico_rdo e WHERE e.obra_id = ?
@@ -260,12 +268,12 @@ public class ObraTrechoService {
                 rs.getBigDecimal("largura_m"),
                 rs.getBigDecimal("area_m2"),
                 rs.getBigDecimal("tonelada_massa"),
-                texto(rs.getString("status"))
+                texto(rs.getString("status")),
+                null
         );
     }
 
     private SegmentoTrecho mapControleGeometrico(ResultSet rs, int rowNum) throws SQLException {
-        String pista = texto(rs.getString("pista"));
         return new SegmentoTrecho(
                 rs.getString("id"),
                 Origem.RDO_CONTROLE,
@@ -274,8 +282,8 @@ public class ObraTrechoService {
                 localDate(rs, "data_rdo"),
                 texto(rs.getString("atividade_observacoes")),
                 texto(rs.getString("subtrecho")),
-                pista,
-                pista,
+                null,
+                texto(rs.getString("pista")),
                 texto(rs.getString("faixa")),
                 QuilometroParser.parse(rs.getString("km_inicial")),
                 QuilometroParser.parse(rs.getString("km_final")),
@@ -285,7 +293,8 @@ public class ObraTrechoService {
                 rs.getBigDecimal("largura_m"),
                 rs.getBigDecimal("area_m2"),
                 rs.getBigDecimal("massa_tonelada"),
-                texto(rs.getString("status"))
+                texto(rs.getString("rdo_status")),
+                texto(rs.getString("rdo_status"))
         );
     }
 
@@ -309,7 +318,8 @@ public class ObraTrechoService {
                 null,
                 null,
                 null,
-                texto(rs.getString("status_validacao"))
+                texto(rs.getString("status_validacao")),
+                texto(rs.getString("rdo_status"))
         );
     }
 
@@ -337,8 +347,13 @@ public class ObraTrechoService {
         LocalDate primeira = null;
         LocalDate ultima = null;
 
+        int rascunhos = 0;
         for (SegmentoTrecho segmento : segmentos) {
             if (segmento.origem() == Origem.PROGRAMACAO) {
+                continue;
+            }
+            if (RASCUNHO.equals(segmento.rdoStatus())) {
+                rascunhos += 1;
                 continue;
             }
             if (segmento.rdoId() != null) {
@@ -358,7 +373,8 @@ public class ObraTrechoService {
         }
 
         return new ResumoTrecho(
-                segmentos.size(), rdos.size(), extensao, area, massa, primeira, ultima
+                segmentos.size(), rdos.size(), rascunhos,
+                extensao, area, massa, primeira, ultima
         );
     }
 

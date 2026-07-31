@@ -92,7 +92,8 @@ class ObraTrechoServiceTest {
                 extensaoM == null ? null : new BigDecimal(extensaoM),
                 null, null,
                 massaTonelada == null ? null : new BigDecimal(massaTonelada),
-                "VALIDADA"
+                "VALIDADA",
+                origem == Origem.PROGRAMACAO ? null : "ENVIADO"
         );
     }
 

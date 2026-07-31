@@ -1,9 +1,9 @@
 .operational-map {
   margin: 18px 0;
-  border: 1px solid #dfe6e2;
-  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
   overflow: hidden;
-  background: #f8faf8;
+  background: var(--color-surface);
 }
 
 .operational-map-header {
@@ -12,18 +12,18 @@
   justify-content: space-between;
   gap: 16px;
   padding: 16px;
-  border-bottom: 1px solid #e3e9e5;
-  background: #fff;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .operational-map-header h3 {
   margin: 2px 0 3px;
-  color: #25342d;
+  color: var(--color-ink);
   font-size: 0.98rem;
 }
 
 .operational-map-header > div > span {
-  color: #718078;
+  color: var(--color-muted);
   font-size: 0.7rem;
 }
 
@@ -44,7 +44,7 @@
 }
 
 .operational-map-controls label > span {
-  color: #7b8881;
+  color: var(--color-muted);
   font-size: 0.61rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -55,9 +55,9 @@
 .operational-map-center-button,
 .operational-map-view-toggle button {
   min-height: 34px;
-  border: 1px solid #d8e1dc;
-  background: #fff;
-  color: #2f4037;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink);
   font: inherit;
   font-size: 0.7rem;
   font-weight: 600;
@@ -65,12 +65,12 @@
 
 .operational-map-controls select {
   max-width: 190px;
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 0 28px 0 9px;
 }
 
 .operational-map-center-button {
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 0 11px;
 }
 
@@ -84,19 +84,19 @@
 }
 
 .operational-map-view-toggle button:first-child {
-  border-radius: 8px 0 0 8px;
+  border-radius: 2px 0 0 2px;
 }
 
 .operational-map-view-toggle button:last-child {
   margin-left: -1px;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 2px 2px 0;
 }
 
 .operational-map-view-toggle button.active {
   z-index: 1;
-  border-color: #0e5e57;
-  background: #0e5e57;
-  color: #fff;
+  border-color: var(--color-focus);
+  background: var(--color-focus);
+  color: var(--color-surface);
 }
 
 .operational-map-controls button:disabled {
@@ -107,9 +107,9 @@
 .operational-map-notice {
   margin: 0;
   padding: 8px 16px;
-  border-bottom: 1px solid #eadfae;
-  background: #fff8d9;
-  color: #725d0c;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-brand-yellow) 42%, var(--color-surface));
+  background: color-mix(in srgb, var(--color-brand-yellow) 16%, var(--color-surface));
+  color: color-mix(in srgb, var(--color-brand-yellow) 34%, var(--color-ink));
   font-size: 0.68rem;
   line-height: 1.45;
 }
@@ -117,7 +117,29 @@
 .operational-map-canvas-wrap {
   position: relative;
   min-height: 390px;
-  background: #dfe7e2;
+  background: var(--color-canvas);
+}
+
+/*
+ * O `maplibre-gl.css` e o `mapbox-gl.css` fixam sua própria pilha de fontes nos
+ * controles e na atribuição. Sem isto, o canto do mapa lê em Helvetica dentro
+ * de uma tela inteira em Poppins.
+ */
+.operational-map .maplibregl-map,
+.operational-map .mapboxgl-map,
+.operational-map .maplibregl-ctrl,
+.operational-map .mapboxgl-ctrl,
+.operational-map .maplibregl-popup-content,
+.operational-map .mapboxgl-popup-content {
+  font-family: inherit;
+}
+
+.operational-map .maplibregl-ctrl-group,
+.operational-map .mapboxgl-ctrl-group {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  box-shadow: none;
+  background: var(--color-surface);
 }
 
 .operational-map-canvas {
@@ -132,19 +154,19 @@
   place-content: center;
   gap: 6px;
   padding: 28px;
-  background: #eef3f0;
-  color: #46564d;
+  background: var(--color-canvas);
+  color: var(--color-muted);
   font-size: 0.78rem;
   text-align: center;
 }
 
 .operational-map-overlay--error strong {
-  color: #8d3431;
+  color: var(--color-danger);
 }
 
 .operational-map-overlay--error span {
   max-width: 480px;
-  color: #6d5553;
+  color: color-mix(in srgb, var(--color-danger) 62%, var(--color-ink));
   font-size: 0.7rem;
 }
 
@@ -153,9 +175,9 @@
   inset: auto 12px 12px 12px;
   z-index: 3;
   margin: 0;
-  border-radius: 8px;
-  background: rgb(255 248 217 / 94%);
-  color: #725d0c;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-brand-yellow) 18%, var(--color-surface));
+  color: color-mix(in srgb, var(--color-brand-yellow) 34%, var(--color-ink));
   padding: 8px 10px;
   font-size: 0.66rem;
 }
@@ -167,17 +189,17 @@
   justify-items: center;
   gap: 6px;
   padding: 34px;
-  color: #5d6d64;
+  color: var(--color-muted);
   text-align: center;
 }
 
 .operational-map-empty > span {
-  color: #0e5e57;
+  color: var(--color-focus);
   font-size: 2rem;
 }
 
 .operational-map-empty strong {
-  color: #2f4037;
+  color: var(--color-ink);
   font-size: 0.85rem;
 }
 
@@ -190,7 +212,7 @@
 }
 
 .operational-map-empty--config > span {
-  color: #b28a00;
+  color: color-mix(in srgb, var(--color-brand-yellow) 76%, var(--color-ink));
 }
 
 .operational-map-footer {
@@ -199,13 +221,13 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  border-top: 1px solid #e3e9e5;
-  background: #fff;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .operational-map-footer small {
   flex: 0 0 auto;
-  color: #7c8982;
+  color: var(--color-muted);
   font-size: 0.62rem;
 }
 
@@ -216,9 +238,9 @@
 }
 
 .operational-map-legend span {
-  border-radius: 999px;
-  background: #eef4f1;
-  color: #53645b;
+  border-radius: 2px;
+  background: var(--color-canvas);
+  color: var(--color-muted);
   padding: 4px 8px;
   font-size: 0.58rem;
   font-weight: 600;
@@ -228,8 +250,7 @@
 .operational-map-popup {
   display: grid;
   gap: 3px;
-  color: #2c3d34;
-  font-family: Poppins, sans-serif;
+  color: var(--color-ink);
 }
 
 .operational-map-popup strong {
@@ -237,7 +258,7 @@
 }
 
 .operational-map-popup span {
-  color: #718078;
+  color: var(--color-muted);
   font-size: 0.62rem;
 }
 

@@ -3,6 +3,7 @@ import {
   readResponseBody,
   responseErrorMessage,
 } from "../../../lib/api/apiClient";
+import { falhaEhAusenciaDeRede } from "../map/leituraOffline";
 import {
   gravarTrechoEmCache,
   lerTrechoEmCache,
@@ -99,6 +100,7 @@ function segmentoFromApi(value: unknown): SegmentoTrecho | null {
     areaM2: nullableNumber(item.areaM2),
     massaTonelada: nullableNumber(item.massaTonelada),
     status: nullableString(item.status),
+    rdoStatus: nullableString(item.rdoStatus),
   };
 }
 
@@ -107,6 +109,7 @@ function resumoFromApi(value: unknown): ResumoTrecho {
   return {
     totalSegmentos: requiredNumber(resumo.totalSegmentos),
     totalRdos: requiredNumber(resumo.totalRdos),
+    totalRascunhos: requiredNumber(resumo.totalRascunhos),
     extensaoTotalM: requiredNumber(resumo.extensaoTotalM),
     areaTotalM2: requiredNumber(resumo.areaTotalM2),
     massaTotalTonelada: requiredNumber(resumo.massaTotalTonelada),
@@ -219,7 +222,9 @@ export async function buscarTrechoObra(
     }
     return { projecao, origem: "REDE", obtidoEm };
   } catch (reason) {
-    if (!semFiltro) {
+    // Um recorte de datas exige rede, e um erro do servidor precisa aparecer:
+    // apenas a leitura completa sem transporte cai para o cache local.
+    if (!semFiltro || !falhaEhAusenciaDeRede(reason)) {
       throw reason;
     }
     const cached = await lerTrechoEmCache(obraId).catch(() => null);

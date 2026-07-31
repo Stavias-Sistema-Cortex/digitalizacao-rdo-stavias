@@ -224,10 +224,9 @@ describe("generated PWA service worker contract", () => {
   });
 
   it("guarda apenas os tiles de mapa realmente exibidos, com validade limitada", () => {
-    // Tile buscado por `fetch`: modo cross-origin e destination vazio, que é
-    // exatamente o caso que nenhuma das outras regras alcança.
-    const contexto = (href: string) => ({
-      request: { mode: "no-cors", destination: "" },
+    // MapLibre e Mapbox buscam tile por `fetch`: destination vazio.
+    const contexto = (href: string, destination = "") => ({
+      request: { mode: "no-cors", destination },
       url: new URL(href),
     });
     const tileRoutes = worker.registrations.filter(({ route }) => {
@@ -266,5 +265,36 @@ describe("generated PWA service worker contract", () => {
       (candidate) => candidate.kind === "CacheableResponsePlugin",
     );
     expect(cacheable?.options).toMatchObject({ statuses: [0, 200] });
+  });
+
+  it("roteia o tile <img> do Leaflet para o cache de tiles, não para o de imagens", () => {
+    // O Leaflet carrega tile por <img>, então o pedido chega com
+    // destination "image". O Workbox usa o PRIMEIRO match: se a regra genérica
+    // de imagem vier antes, o tile disputa as 100 entradas do cache da
+    // aplicação e some do mapa offline.
+    const tileDeImagem = {
+      request: { mode: "no-cors", destination: "image" },
+      url: new URL("https://a.tile.openstreetmap.org/14/1/1.png"),
+    };
+
+    const primeiro = worker.registrations.find(
+      ({ route }) =>
+        typeof route === "function" &&
+        (route as (context: typeof tileDeImagem) => boolean)(tileDeImagem),
+    );
+
+    expect(primeiro?.strategy?.options.cacheName).toBe("cortex-map-tiles");
+
+    // E uma imagem da própria aplicação continua no cache de imagens.
+    const imagemDoApp = {
+      request: { mode: "no-cors", destination: "image" },
+      url: new URL("https://cortex-stavias.pages.dev/pwa-192x192.png"),
+    };
+    const paraImagem = worker.registrations.find(
+      ({ route }) =>
+        typeof route === "function" &&
+        (route as (context: typeof imagemDoApp) => boolean)(imagemDoApp),
+    );
+    expect(paraImagem?.strategy?.options.cacheName).toBe("cortex-images");
   });
 });

@@ -46,7 +46,7 @@
   border: 1px solid var(--color-border);
   border-radius: 2px;
   padding: 4px 8px;
-  background: #ffffff;
+  background: var(--color-surface);
 }
 
 .trecho-pista-quadro {
@@ -56,10 +56,18 @@
   --trecho-quadro-padding: 10px;
   --trecho-nome-gap: 8px;
 
+  /* O asfalto e seus contrastes saem do preto estrutural do sistema, para que
+     um ajuste de tema alcance o esquemático junto com o resto da interface. */
+  --trecho-asfalto: color-mix(in srgb, var(--color-ink) 94%, white);
+  --trecho-faixa: color-mix(in srgb, var(--color-ink) 88%, white);
+  --trecho-divisor: color-mix(in srgb, var(--color-ink) 74%, white);
+  --trecho-legenda: color-mix(in srgb, var(--color-surface) 70%, var(--color-ink));
+  --trecho-legenda-forte: color-mix(in srgb, var(--color-surface) 88%, var(--color-ink));
+
   position: relative;
   border: 1px solid var(--color-border-strong);
   border-radius: 4px;
-  background: #1c211f;
+  background: var(--trecho-asfalto);
   padding: 48px var(--trecho-quadro-padding) var(--trecho-quadro-padding);
   overflow-x: auto;
   display: flex;
@@ -84,7 +92,7 @@
   transform: translateX(-50%);
   font-size: 0.6875rem;
   font-weight: 500;
-  color: #b9c6c2;
+  color: var(--trecho-legenda);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   display: flex;
@@ -118,18 +126,18 @@
 }
 
 .trecho-acostamento {
-  border: 1px dashed #4a5a56;
+  border: 1px dashed var(--trecho-divisor);
   border-radius: 2px;
   padding: 3px 8px;
   font-size: 0.6875rem;
   font-weight: 500;
-  color: #8fa09b;
+  color: var(--trecho-legenda);
 }
 
 .trecho-canteiro {
   border-top: 2px solid var(--color-brand-yellow);
   border-bottom: 2px solid var(--color-brand-yellow);
-  background: #13332f;
+  background: color-mix(in srgb, var(--color-brand-green) 82%, black);
   padding: 3px 8px;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -144,14 +152,14 @@
   align-items: center;
   gap: var(--trecho-nome-gap);
   min-height: 34px;
-  border-top: 1px dashed #3a4744;
+  border-top: 1px dashed var(--trecho-divisor);
 }
 
 .trecho-pista-nome {
   flex: 0 0 var(--trecho-nome-largura);
   font-size: 0.6875rem;
   font-weight: 500;
-  color: #b9c6c2;
+  color: var(--trecho-legenda);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -162,7 +170,7 @@
   flex: 1 1 auto;
   min-width: 240px;
   height: 30px;
-  background: #222826;
+  background: var(--trecho-faixa);
   border-radius: 2px;
 }
 
@@ -210,30 +218,44 @@
   opacity: 0.8;
 }
 
+/* Programado: hachura, porque é intenção e não execução. */
 .trecho-bloco--programado {
   background: repeating-linear-gradient(
     135deg,
-    #3d4a47,
-    #3d4a47 6px,
-    #33403d 6px,
-    #33403d 12px
+    var(--execucao-programado),
+    var(--execucao-programado) 6px,
+    color-mix(in srgb, var(--execucao-programado) 70%, black) 6px,
+    color-mix(in srgb, var(--execucao-programado) 70%, black) 12px
   );
-  color: #d7e0dd;
+  color: var(--trecho-legenda-forte);
+}
+
+/* Rascunho: contorno vazado, porque a equipe ainda está lançando. */
+.trecho-bloco--rascunho {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 5px,
+    color-mix(in srgb, var(--execucao-executado) 45%, transparent) 5px,
+    color-mix(in srgb, var(--execucao-executado) 45%, transparent) 10px
+  );
+  border-color: var(--execucao-executado);
+  color: var(--trecho-legenda-forte);
 }
 
 .trecho-bloco--executado {
-  background: var(--color-brand-yellow);
+  background: var(--execucao-executado);
   color: var(--color-ink);
 }
 
 .trecho-bloco--validado {
-  background: #17a398;
-  color: #04211e;
+  background: var(--execucao-validado);
+  color: color-mix(in srgb, var(--color-surface) 92%, white);
 }
 
 .trecho-bloco--rejeitado {
-  background: var(--color-danger);
-  color: #ffffff;
+  background: var(--execucao-rejeitado);
+  color: color-mix(in srgb, var(--color-surface) 92%, white);
 }
 
 .trecho-bloco:hover {
@@ -244,7 +266,7 @@
   border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 16px;
-  background: #ffffff;
+  background: var(--color-surface);
 }
 
 .trecho-esquematico-vazio strong {
@@ -305,7 +327,7 @@
   gap: 10px;
   border: 1px solid var(--color-border);
   border-radius: 3px;
-  background: #ffffff;
+  background: var(--color-surface);
   padding: 10px;
 }
 
@@ -471,7 +493,7 @@
 .trecho-resumo-grade > div {
   border: 1px solid var(--color-border);
   border-radius: 3px;
-  background: #ffffff;
+  background: var(--color-surface);
   padding: 8px 10px;
   min-width: 0;
 }
@@ -511,4 +533,36 @@
   .trecho-bloco:hover {
     filter: none;
   }
+}
+
+.trecho-legenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.trecho-legenda li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
+.trecho-legenda-marca {
+  width: 18px;
+  height: 10px;
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+}
+
+.trecho-esquematico-notas {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
 }

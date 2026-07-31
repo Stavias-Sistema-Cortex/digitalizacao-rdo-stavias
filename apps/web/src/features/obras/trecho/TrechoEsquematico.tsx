@@ -30,6 +30,7 @@ interface TrechoEsquematicoProps {
 
 const ESTADO_LABEL: Record<string, string> = {
   PROGRAMADO: "Programado",
+  RASCUNHO: "RDO em preenchimento",
   EXECUTADO: "Executado",
   VALIDADO: "Validado",
   REJEITADO: "Rejeitado",
@@ -149,6 +150,16 @@ export function TrechoEsquematico({
   const temFiltroDePeriodo = Boolean(
     projecao.periodoAplicado.de || projecao.periodoAplicado.ate,
   );
+  // A legenda lista só os estados que a obra realmente tem no período.
+  const estadosPresentes = useMemo(
+    () =>
+      [
+        ...new Set(
+          segmentosPosicionaveis(projecao.segmentos).map(estadoDoSegmento),
+        ),
+      ].sort(),
+    [projecao.segmentos],
+  );
 
   return (
     <section
@@ -206,6 +217,20 @@ export function TrechoEsquematico({
         </div>
       )}
 
+      {escala ? (
+        <ul className="trecho-legenda" aria-label="Estados de execução">
+          {estadosPresentes.map((estado) => (
+            <li key={estado}>
+              <span
+                className={`trecho-legenda-marca trecho-bloco--${estado.toLowerCase()}`}
+                aria-hidden="true"
+              />
+              {ESTADO_LABEL[estado]}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       <footer className="trecho-esquematico-footer">
         <dl>
           <div>
@@ -233,12 +258,20 @@ export function TrechoEsquematico({
             </dd>
           </div>
         </dl>
-        {semMarcacao > 0 ? (
-          <small>
-            {semMarcacao} lançamento(s) sem km inicial e final não puderam ser
-            posicionados.
-          </small>
-        ) : null}
+        <div className="trecho-esquematico-notas">
+          {projecao.resumo.totalRascunhos > 0 ? (
+            <small>
+              {projecao.resumo.totalRascunhos} lançamento(s) em RDO ainda
+              aberto, fora do consolidado.
+            </small>
+          ) : null}
+          {semMarcacao > 0 ? (
+            <small>
+              {semMarcacao} lançamento(s) sem km inicial e final não puderam ser
+              posicionados.
+            </small>
+          ) : null}
+        </div>
       </footer>
     </section>
   );

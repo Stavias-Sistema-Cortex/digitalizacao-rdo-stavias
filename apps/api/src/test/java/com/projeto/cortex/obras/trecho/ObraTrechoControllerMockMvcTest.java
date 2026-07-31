@@ -57,7 +57,7 @@ class ObraTrechoControllerMockMvcTest {
                         new BigDecimal("172"), new BigDecimal("171"),
                         null, null,
                         new BigDecimal("1500"), null, null, new BigDecimal("380"),
-                        "VALIDADA"
+                        "VALIDADA", "ENVIADO"
                 )),
                 List.of(new ObraTrechoResponse.DiaExecutado(
                         LocalDate.of(2026, 3, 2), 1, 1,
@@ -65,7 +65,7 @@ class ObraTrechoControllerMockMvcTest {
                         new BigDecimal("171"), new BigDecimal("172")
                 )),
                 new ResumoTrecho(
-                        1, 1, new BigDecimal("1500"), BigDecimal.ZERO,
+                        1, 1, 0, new BigDecimal("1500"), BigDecimal.ZERO,
                         new BigDecimal("380"),
                         LocalDate.of(2026, 3, 2), LocalDate.of(2026, 3, 2)
                 )
@@ -101,8 +101,8 @@ class ObraTrechoControllerMockMvcTest {
                 new ObraTrechoResponse.Periodo(null, null),
                 List.of(), List.of(),
                 new ResumoTrecho(
-                        0, 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                        null, null
+                        0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO,
+                        BigDecimal.ZERO, null, null
                 )
         ));
 
@@ -126,7 +126,7 @@ class ObraTrechoControllerMockMvcTest {
                         new ObraTrechoResponse.Periodo(de, ate),
                         List.of(), List.of(),
                         new ResumoTrecho(
-                                0, 0, BigDecimal.ZERO, BigDecimal.ZERO,
+                                0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO,
                                 BigDecimal.ZERO, null, null
                         )
                 )

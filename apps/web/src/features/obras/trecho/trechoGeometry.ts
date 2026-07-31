@@ -32,11 +32,15 @@ export interface SegmentoTrecho {
   areaM2: number | null;
   massaTonelada: number | null;
   status: string | null;
+  /** Situação do RDO de origem: RASCUNHO enquanto o apontador preenche. */
+  rdoStatus: string | null;
 }
 
 export interface ResumoTrecho {
   totalSegmentos: number;
   totalRdos: number;
+  /** Lançamentos ainda em rascunho, fora do consolidado. */
+  totalRascunhos: number;
   extensaoTotalM: number;
   areaTotalM2: number;
   massaTotalTonelada: number;
@@ -334,7 +338,13 @@ export function ladosDoCanteiro(pistas: readonly PistaEsquematica[]): {
   temCanteiro: boolean;
 } {
   const sentidos = [...new Set(pistas.map((pista) => pista.sentido))];
-  if (sentidos.length !== 2) {
+  // O canteiro afirma que a rodovia é de pista dupla. Isso só pode ser dito
+  // quando os dois lados são sentidos realmente declarados: o balde de
+  // "sentido não declarado" é ausência de dado, não uma segunda pista.
+  if (
+    sentidos.length !== 2 ||
+    sentidos.includes(SENTIDO_NAO_DECLARADO)
+  ) {
     return { superior: [...pistas], inferior: [], temCanteiro: false };
   }
   return {
@@ -344,18 +354,33 @@ export function ladosDoCanteiro(pistas: readonly PistaEsquematica[]): {
   };
 }
 
-/** Classe semântica do bloco a partir do estado real do segmento. */
-export function estadoDoSegmento(
-  segmento: SegmentoTrecho,
-): "PROGRAMADO" | "EXECUTADO" | "VALIDADO" | "REJEITADO" {
+export type EstadoSegmento =
+  | "PROGRAMADO"
+  | "RASCUNHO"
+  | "EXECUTADO"
+  | "VALIDADO"
+  | "REJEITADO";
+
+/**
+ * Estado real do segmento.
+ *
+ * Um lançamento cujo RDO ainda está em rascunho é o que a equipe está fazendo
+ * agora — precisa aparecer, mas não pode ser lido como produção fechada. Só a
+ * validação do serviço promove o bloco a validado; o simples envio do RDO
+ * significa executado, não aprovado.
+ */
+export function estadoDoSegmento(segmento: SegmentoTrecho): EstadoSegmento {
   if (segmento.origem === "PROGRAMACAO") {
     return "PROGRAMADO";
+  }
+  if (segmento.rdoStatus?.toUpperCase() === "RASCUNHO") {
+    return "RASCUNHO";
   }
   const status = segmento.status?.toUpperCase() ?? "";
   if (status === "REJEITADA" || status === "CANCELADA") {
     return "REJEITADO";
   }
-  if (status === "VALIDADA" || status === "APROVADO" || status === "ENVIADO") {
+  if (status === "VALIDADA") {
     return "VALIDADO";
   }
   return "EXECUTADO";
@@ -439,8 +464,16 @@ export function recortarProjecao(
   const diasExecutados = projecao.diasExecutados.filter((dia) =>
     dentro(dia.data),
   );
+  // Mesma regra do servidor: rascunho aparece, mas não entra no consolidado.
   const executados = segmentos.filter(
-    (segmento) => segmento.origem !== "PROGRAMACAO",
+    (segmento) =>
+      segmento.origem !== "PROGRAMACAO" &&
+      segmento.rdoStatus?.toUpperCase() !== "RASCUNHO",
+  );
+  const rascunhos = segmentos.filter(
+    (segmento) =>
+      segmento.origem !== "PROGRAMACAO" &&
+      segmento.rdoStatus?.toUpperCase() === "RASCUNHO",
   );
   const somar = (valores: (number | null)[]): number =>
     valores.reduce<number>(
@@ -459,6 +492,7 @@ export function recortarProjecao(
     diasExecutados,
     resumo: {
       totalSegmentos: segmentos.length,
+      totalRascunhos: rascunhos.length,
       totalRdos: new Set(
         executados
           .map((segmento) => segmento.rdoId)

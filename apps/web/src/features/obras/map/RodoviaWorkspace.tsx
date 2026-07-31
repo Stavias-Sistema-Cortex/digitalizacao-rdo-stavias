@@ -11,7 +11,14 @@ import {
   type WorksiteMapPoint,
 } from "./mapGeometry";
 import { carregarMapaObra, type LeituraMapaObra } from "./obraMapApi";
-import { registrarTrechoDesenhado } from "./obraGeometriaMutations";
+import {
+  registrarPontoDeCampo,
+  registrarTrechoDesenhado,
+} from "./obraGeometriaMutations";
+import {
+  CapturaDeCampoError,
+  lerPosicaoDeCampo,
+} from "./capturaDeCampo";
 import "./RodoviaWorkspace.css";
 
 interface RodoviaWorkspaceProps {
@@ -82,6 +89,7 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
   );
   const [pontosMarcados, setPontosMarcados] = useState(0);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [capturando, setCapturando] = useState(false);
   const [ciclo, setCiclo] = useState(0);
 
   const recarregar = useCallback(() => {
@@ -97,9 +105,15 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
     };
   }, [recarregar]);
 
+  // As dependências são os campos da obra, não o objeto: a página monta um
+  // literal novo a cada render, e depender da identidade dele refaria a
+  // consulta e a transação no IndexedDB a cada tecla digitada na busca.
+  const { id: obraId, nome: obraNome } = obra;
+  const { latitude, longitude } = obra;
+
   useEffect(() => {
     let cancelado = false;
-    carregarMapaObra(obra)
+    carregarMapaObra({ id: obraId, nome: obraNome, latitude, longitude })
       .then((leitura) => {
         if (!cancelado) setEstado({ fase: "pronto", leitura });
       })
@@ -116,10 +130,19 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
     return () => {
       cancelado = true;
     };
-  }, [obra, ciclo]);
+  }, [obraId, obraNome, latitude, longitude, ciclo]);
 
   const leitura = estado.fase === "pronto" ? estado.leitura : null;
-  const worksite = leitura?.dados.obra ?? obra;
+  const worksite = useMemo(
+    () =>
+      leitura?.dados.obra ?? {
+        id: obraId,
+        nome: obraNome,
+        latitude,
+        longitude,
+      },
+    [leitura?.dados.obra, obraId, obraNome, latitude, longitude],
+  );
   const colecao = useMemo(
     () =>
       buildOperationalFeatureCollection(worksite, leitura?.dados.features ?? []),
@@ -169,6 +192,46 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
     [recarregar, obra.id, obra.nome],
   );
 
+  /**
+   * Registra onde a equipe está agora.
+   *
+   * A posição vem do sensor do aparelho e é gravada como ponto operacional
+   * ligado à obra, passando pela mesma fila de saída das demais mutações: o
+   * apontador registra em campo, sem rede, e a evidência sobe sozinha depois.
+   */
+  const aoCapturarPosicao = useCallback(async () => {
+    setAviso(null);
+    setCapturando(true);
+    try {
+      const posicao = await lerPosicaoDeCampo();
+      await registrarPontoDeCampo({
+        obraId,
+        objetoTipo: "OBRA",
+        objetoId: obraId,
+        latitude: posicao.latitude,
+        longitude: posicao.longitude,
+        precisaoM: posicao.precisaoM,
+        observadoEm: posicao.observadoEm,
+      });
+      setAviso(
+        posicao.precisaoM === null
+          ? "Posição registrada neste dispositivo."
+          : `Posição registrada com ${Math.round(
+              posicao.precisaoM,
+            )} m de precisão. Sobe na próxima sincronização.`,
+      );
+      recarregar();
+    } catch (motivo: unknown) {
+      setAviso(
+        motivo instanceof CapturaDeCampoError || motivo instanceof Error
+          ? motivo.message
+          : "Não foi possível registrar a posição.",
+      );
+    } finally {
+      setCapturando(false);
+    }
+  }, [obraId, recarregar]);
+
   return (
     <section className="rodovia-workspace" aria-labelledby="rodovia-workspace-title">
       <header className="rodovia-workspace-header">
@@ -183,8 +246,18 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
               : ""}
           </span>
         </div>
-        {podeDesenhar ? (
-          <div className="rodovia-workspace-acoes">
+        <div className="rodovia-workspace-acoes">
+          <button
+            type="button"
+            className="rodovia-desenho-botao"
+            disabled={capturando}
+            onClick={() => {
+              void aoCapturarPosicao();
+            }}
+          >
+            {capturando ? "Lendo o GPS…" : "Registrar posição"}
+          </button>
+          {podeDesenhar ? (
             <button
               type="button"
               className={
@@ -205,8 +278,8 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
                 ? `Cancelar desenho (${pontosMarcados}/2)`
                 : "Desenhar trecho"}
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </header>
 
       {centro ? (
@@ -268,8 +341,8 @@ export function RodoviaWorkspace({ obra, podeDesenhar }: RodoviaWorkspaceProps) 
               <strong>Obra ainda não georreferenciada</strong>
               <p>
                 {podeDesenhar
-                  ? "Use “Desenhar trecho” para marcar o início e o fim da obra sobre a rodovia, ou registre um ponto pela captura de campo."
-                  : "Nenhuma coordenada foi registrada para esta obra. A equipe de campo pode registrar um ponto pelo RDO."}
+                  ? "Use “Desenhar trecho” para marcar o início e o fim sobre a rodovia, ou “Registrar posição” para gravar onde a equipe está agora."
+                  : "Use “Registrar posição” para gravar onde a equipe está agora; o trecho contratual é desenhado pela administração."}
               </p>
             </div>
           )}

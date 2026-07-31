@@ -36,6 +36,7 @@ function segmento(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     areaM2: null,
     massaTonelada: null,
     status: "VALIDADA",
+    rdoStatus: "ENVIADO",
     ...overrides,
   };
 }

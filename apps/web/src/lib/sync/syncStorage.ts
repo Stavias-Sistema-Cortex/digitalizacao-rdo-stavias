@@ -2517,12 +2517,25 @@ export async function applyPushResultAtomically(
       );
     }
     if (isGeometriaMutation(mutation)) {
-      await markGeometriaMutationFailed(
-        transaction,
-        mutation,
-        "CONFLICT",
-        timestamp,
-      );
+      // DESCARTADA é o servidor dizendo que já aplicou esta mutação — a
+      // reentrega de um push cujo retorno se perdeu. Marcar isso como conflito
+      // travaria a geometria para sempre, porque encerrar exige um registro
+      // confirmado. Só CONFLITO é conflito de verdade.
+      if (result.status === "CONFLITO") {
+        await markGeometriaMutationFailed(
+          transaction,
+          mutation,
+          "CONFLICT",
+          timestamp,
+        );
+      } else {
+        await applyGeometriaPushResult(
+          transaction,
+          mutation,
+          result,
+          timestamp,
+        );
+      }
     }
   } else {
     const messageText = result.erro ?? "Erro informado pelo servidor.";

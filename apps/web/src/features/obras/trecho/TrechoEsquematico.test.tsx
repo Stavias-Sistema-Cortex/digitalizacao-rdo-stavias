@@ -27,6 +27,7 @@ function segmento(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     areaM2: null,
     massaTonelada: 380,
     status: "VALIDADA",
+    rdoStatus: "ENVIADO",
     ...overrides,
   };
 }
@@ -59,6 +60,7 @@ function projecao(overrides: Partial<ProjecaoTrecho> = {}): ProjecaoTrecho {
     resumo: {
       totalSegmentos: segmentos.length,
       totalRdos: 1,
+      totalRascunhos: 0,
       extensaoTotalM: 1500,
       areaTotalM2: 0,
       massaTotalTonelada: 380,
@@ -177,6 +179,7 @@ describe("TrechoResumo", () => {
           resumo: {
             totalSegmentos: 0,
             totalRdos: 0,
+            totalRascunhos: 0,
             extensaoTotalM: 0,
             areaTotalM2: 0,
             massaTotalTonelada: 0,
@@ -200,6 +203,7 @@ describe("TrechoResumo", () => {
           resumo: {
             totalSegmentos: 1,
             totalRdos: 1,
+            totalRascunhos: 0,
             extensaoTotalM: 1500,
             areaTotalM2: 0,
             massaTotalTonelada: 0,

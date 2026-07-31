@@ -83,13 +83,27 @@ public record ObraTrechoResponse(
             BigDecimal larguraM,
             BigDecimal areaM2,
             BigDecimal massaTonelada,
-            String status
+            String status,
+            /**
+             * Situação do RDO que originou o lançamento: `RASCUNHO` enquanto o
+             * apontador ainda preenche, `ENVIADO` depois de fechado. Nulo para
+             * o que veio da programação.
+             */
+            String rdoStatus
     ) {
     }
 
+    /**
+     * Consolidado da produção confirmada.
+     *
+     * Lançamento de RDO ainda em rascunho não entra nos totais: ele descreve o
+     * que a equipe está fazendo agora, não o que a obra já fechou. O
+     * {@code totalRascunhos} deixa essa parcela visível em vez de escondida.
+     */
     public record ResumoTrecho(
             int totalSegmentos,
             int totalRdos,
+            int totalRascunhos,
             BigDecimal extensaoTotalM,
             BigDecimal areaTotalM2,
             BigDecimal massaTotalTonelada,

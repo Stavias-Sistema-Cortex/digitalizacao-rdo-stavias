@@ -3,6 +3,7 @@ import {
   readResponseBody,
   responseErrorMessage,
 } from "../../../lib/api/apiClient";
+import { falhaEhAusenciaDeRede } from "./leituraOffline";
 import {
   featureDoRegistro,
   listarGeometriasLocais,
@@ -161,6 +162,11 @@ export async function carregarMapaObra(
       obtidoEm: agora,
     };
   } catch (reason) {
+    // Erro do servidor precisa subir: só a falta de transporte autoriza cair
+    // para o que o dispositivo já tinha.
+    if (!falhaEhAusenciaDeRede(reason)) {
+      throw reason;
+    }
     const locais = await listarGeometriasLocais(obra.id).catch(() => null);
     if (locais === null) {
       throw reason;

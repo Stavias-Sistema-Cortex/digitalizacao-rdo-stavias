@@ -150,6 +150,43 @@ export default defineConfig({
             },
           },
 
+          /*
+           * Tiles do mapa da rodovia.
+           *
+           * Precede a regra genérica de imagem porque o Workbox roteia pelo
+           * primeiro match e o Leaflet busca tile por `<img>`: sem esta ordem,
+           * os tiles cairiam no cache de imagens da aplicação e disputariam
+           * suas 100 entradas. MapLibre e Mapbox usam `fetch`, com destination
+           * vazio, e nenhuma outra regra os alcança.
+           *
+           * Só é guardado o tile que já foi realmente exibido: não há prefetch,
+           * e um tile nunca baixado permanece indisponível offline em vez de
+           * ser apresentado como conhecido.
+           */
+          {
+            urlPattern: ({ url }) =>
+              url.host === "tiles.openfreemap.org" ||
+              url.host === "api.maptiler.com" ||
+              url.host === "api.mapbox.com" ||
+              url.host.endsWith(".tile.openstreetmap.org") ||
+              url.host === "tile.openstreetmap.org",
+
+            handler: "CacheFirst",
+
+            options: {
+              cacheName: "cortex-map-tiles",
+
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 604800,
+              },
+            },
+          },
+
           {
             urlPattern: ({ request }) =>
               request.destination === "image",
@@ -178,37 +215,6 @@ export default defineConfig({
               expiration: {
                 maxEntries: 20,
                 maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-            },
-          },
-
-          /*
-           * Tiles do mapa da rodovia. MapLibre e Mapbox buscam tiles por
-           * `fetch`, então o `request.destination` fica vazio e nenhuma regra
-           * acima os alcança. Só é guardado o tile que já foi realmente
-           * exibido: não há prefetch, e um tile nunca baixado permanece
-           * indisponível offline em vez de ser apresentado como conhecido.
-           */
-          {
-            urlPattern: ({ url }) =>
-              url.host === "tiles.openfreemap.org" ||
-              url.host === "api.maptiler.com" ||
-              url.host === "api.mapbox.com" ||
-              url.host.endsWith(".tile.openstreetmap.org") ||
-              url.host === "tile.openstreetmap.org",
-
-            handler: "CacheFirst",
-
-            options: {
-              cacheName: "cortex-map-tiles",
-
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-
-              expiration: {
-                maxEntries: 500,
-                maxAgeSeconds: 604800,
               },
             },
           },

@@ -191,6 +191,82 @@ class ObraGeometriaSyncOperationHandlerTest {
                 .isEqualTo(LocalDateTime.of(2026, 7, 30, 18, 0));
     }
 
+    /**
+     * A PWA carimba as datas com `Date#toISOString`, sempre em UTC com sufixo
+     * `Z`. Recusar esse formato inutilizaria toda a escrita offline.
+     */
+    @Test
+    void acceptsTheUtcInstantThePwaActuallySends() {
+        when(service.registrarCapturaCampo(eq(OBRA_ID), any()))
+                .thenReturn(persisted("PONTO_OPERACIONAL", "CAPTURA_CAMPO", 0L));
+        ObjectNode payload = payload();
+        payload.put("validoDesde", "2026-07-28T15:30:00.000Z");
+
+        handler.apply(
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload),
+                new SyncMutationContext(ACTOR_ID, DEVICE_ID)
+        );
+
+        ArgumentCaptor<ObraGeometriaRequest> captor =
+                ArgumentCaptor.forClass(ObraGeometriaRequest.class);
+        verify(service).registrarCapturaCampo(eq(OBRA_ID), captor.capture());
+        assertThat(captor.getValue().validoDesde())
+                .isEqualTo(LocalDateTime.of(2026, 7, 28, 15, 30));
+    }
+
+    @Test
+    void convertsAnOffsetInstantToUtcBeforePersisting() {
+        when(service.registrarCapturaCampo(eq(OBRA_ID), any()))
+                .thenReturn(persisted("PONTO_OPERACIONAL", "CAPTURA_CAMPO", 0L));
+        ObjectNode payload = payload();
+        payload.put("validoDesde", "2026-07-28T12:30:00-03:00");
+
+        handler.apply(
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload),
+                new SyncMutationContext(ACTOR_ID, DEVICE_ID)
+        );
+
+        ArgumentCaptor<ObraGeometriaRequest> captor =
+                ArgumentCaptor.forClass(ObraGeometriaRequest.class);
+        verify(service).registrarCapturaCampo(eq(OBRA_ID), captor.capture());
+        assertThat(captor.getValue().validoDesde())
+                .isEqualTo(LocalDateTime.of(2026, 7, 28, 15, 30));
+    }
+
+    @Test
+    void stillAcceptsAnInstantWithoutZone() {
+        when(service.encerrar(eq(OBRA_ID), eq(FEATURE_ID), any()))
+                .thenReturn(persisted("TRECHO", "GESTAO_MAPA", 9L));
+        ObjectNode payload = payload();
+        payload.put("id", FEATURE_ID);
+        payload.put("motivo", "Trecho concluído");
+        payload.put("validoAte", "2026-07-30T18:00:00");
+
+        handler.apply(
+                mutation("ENCERRAR_GEOMETRIA_OBRA", 8L, FEATURE_ID, payload),
+                new SyncMutationContext(ACTOR_ID, DEVICE_ID)
+        );
+
+        ArgumentCaptor<ObraGeometriaEndRequest> captor =
+                ArgumentCaptor.forClass(ObraGeometriaEndRequest.class);
+        verify(service).encerrar(eq(OBRA_ID), eq(FEATURE_ID), captor.capture());
+        assertThat(captor.getValue().validoAte())
+                .isEqualTo(LocalDateTime.of(2026, 7, 30, 18, 0));
+    }
+
+    @Test
+    void rejectsATimestampThatIsNotAnInstant() {
+        ObjectNode payload = payload();
+        payload.put("validoDesde", "ontem de manhã");
+        SyncPushRequest.MutacaoCliente mutation =
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload);
+
+        assertThatThrownBy(() ->
+                handler.apply(mutation, new SyncMutationContext(ACTOR_ID, DEVICE_ID)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("payload.validoDesde");
+    }
+
     @Test
     void rejectsAPayloadIdentityThatDivergesFromTheEnvelope() {
         ObjectNode payload = payload();

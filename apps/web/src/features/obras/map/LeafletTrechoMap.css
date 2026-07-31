@@ -13,6 +13,37 @@
   inset: 0;
 }
 
+/*
+ * O `leaflet.css` fixa Helvetica no container e todo o chrome herda dali:
+ * popups, controles de zoom e atribuição. Sem esta linha, metade do que se lê
+ * nesta tela não está na tipografia do produto.
+ */
+.leaflet-trecho .leaflet-container,
+.leaflet-trecho .leaflet-container input,
+.leaflet-trecho .leaflet-container select,
+.leaflet-trecho .leaflet-container textarea,
+.leaflet-trecho .leaflet-control,
+.leaflet-trecho .leaflet-popup-content {
+  font-family: inherit;
+}
+
+.leaflet-trecho .leaflet-bar a {
+  border-radius: 0;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border-bottom-color: var(--color-border);
+}
+
+.leaflet-trecho .leaflet-bar a:hover {
+  background: var(--color-canvas);
+}
+
+.leaflet-trecho .leaflet-bar {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  box-shadow: none;
+}
+
 .leaflet-trecho-overlay {
   position: absolute;
   inset: 0;
@@ -63,10 +94,10 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 2px solid #ffffff;
+  border: 2px solid var(--color-surface);
   border-radius: 12px;
-  background: var(--pin-cor, #0e5e57);
-  color: #ffffff;
+  background: var(--pin-cor, var(--color-brand-teal));
+  color: var(--color-surface);
   font-size: 0.5625rem;
   font-weight: 600;
   letter-spacing: 0.02em;

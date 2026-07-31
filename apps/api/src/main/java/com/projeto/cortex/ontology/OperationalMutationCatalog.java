@@ -172,6 +172,18 @@ public final class OperationalMutationCatalog {
                         "versao_linha igual à baseVersao, conflito em 409",
                         "ator, estado anterior, estado novo e motivo declarado",
                         "com.projeto.cortex.obras.mapa.ObraMapaServiceTest"
+                ),
+                definition(
+                        "WORKSITE_GEOMETRY_END",
+                        ObraMapaService.class,
+                        "encerrar",
+                        "GEOMETRIA_ENCERRADA",
+                        "OperationalGraphProjector como WORKSITE_GEOMETRY",
+                        "papel ALFA com versão base conferida",
+                        "WORKSITE_SCOPE_AUTHORIZED_ONLY",
+                        "encerramento único: geometria já encerrada responde 409",
+                        "ator, motivo, fim de vigência e relações encerradas",
+                        "com.projeto.cortex.obras.mapa.ObraMapaServiceTest"
                 )
         );
     }

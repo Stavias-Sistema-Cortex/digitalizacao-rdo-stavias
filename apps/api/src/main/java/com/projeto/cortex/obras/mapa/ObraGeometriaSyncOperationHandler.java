@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
@@ -205,15 +207,32 @@ public class ObraGeometriaSyncOperationHandler implements SyncOperationHandler {
         return value.textValue();
     }
 
+    /**
+     * Lê um instante do envelope canônico.
+     *
+     * A PWA carimba as datas com {@code Date#toISOString}, que sempre termina em
+     * {@code Z}. Um instante com fuso é convertido para UTC antes de virar
+     * {@link LocalDateTime}, que é como o restante da coluna
+     * {@code obra_geometria} guarda vigência; sem isso toda geometria desenhada
+     * ou capturada offline seria recusada na subida.
+     */
     private LocalDateTime dateTime(ObjectNode payload, String field) {
         String value = text(payload, field);
         if (value == null || value.isBlank()) {
             return null;
         }
         try {
-            return LocalDateTime.parse(value);
-        } catch (DateTimeParseException error) {
-            throw badRequest("payload." + field + " deve ser um instante local ISO-8601.");
+            return OffsetDateTime.parse(value)
+                    .atZoneSameInstant(ZoneOffset.UTC)
+                    .toLocalDateTime();
+        } catch (DateTimeParseException semFuso) {
+            try {
+                return LocalDateTime.parse(value);
+            } catch (DateTimeParseException error) {
+                throw badRequest(
+                        "payload." + field + " deve ser um instante ISO-8601."
+                );
+            }
         }
     }
 

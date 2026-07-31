@@ -104,6 +104,7 @@ export function LeafletTrechoMap({
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const pontosRef = useRef<PontoGeografico[]>([]);
   const modoRef = useRef<ModoDesenho>(modo);
+  const enquadramentoRef = useRef<string | null>(null);
   const [estado, setEstado] = useState<"carregando" | "pronto" | "erro">(
     "carregando",
   );
@@ -198,12 +199,15 @@ export function LeafletTrechoMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // O centro só reposiciona quando a coordenada muda de fato; o enquadramento
+  // pela geometria, logo abaixo, tem precedência quando há trecho desenhado.
+  const [longitude, latitude] = center;
   useEffect(() => {
     const map = mapRef.current;
-    if (map && estado === "pronto") {
-      map.setView([center[1], center[0]], map.getZoom());
+    if (map && estado === "pronto" && enquadramentoRef.current === null) {
+      map.setView([latitude, longitude], map.getZoom());
     }
-  }, [center, estado]);
+  }, [latitude, longitude, estado]);
 
   useEffect(() => {
     const leaflet = leafletRef.current;
@@ -260,6 +264,17 @@ export function LeafletTrechoMap({
       },
     });
     geoJson.addTo(camada);
+
+    // O enquadramento só é refeito quando a geometria realmente muda. Cada
+    // rodada de sincronização recria a coleção, e reenquadrar por identidade de
+    // objeto jogaria fora o pan e o zoom de quem está lendo o mapa.
+    const assinatura = features.features
+      .map((feature) => `${feature.id}:${String(feature.properties.versao ?? "")}`)
+      .join("|");
+    if (enquadramentoRef.current === assinatura) {
+      return;
+    }
+    enquadramentoRef.current = assinatura;
 
     const bounds = geoJson.getBounds();
     if (bounds.isValid()) {
