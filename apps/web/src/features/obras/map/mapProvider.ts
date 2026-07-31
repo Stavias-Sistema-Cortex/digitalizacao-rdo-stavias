@@ -1,8 +1,9 @@
-export type MapProviderId = "maptiler" | "mapbox";
+export type MapProviderId = "maplibre" | "maptiler" | "mapbox";
 export type MapEngine = "maplibre" | "mapbox";
 
 export interface MapProviderEnvironment {
   VITE_MAP_PROVIDER?: string;
+  VITE_MAPLIBRE_STYLE_URL?: string;
   VITE_MAPTILER_API_KEY?: string;
   VITE_MAPBOX_ACCESS_TOKEN?: string;
 }
@@ -15,27 +16,65 @@ export interface MapProvider {
   styleUrl: string | null;
   missingConfiguration: string | null;
   fallbackReason: string | null;
+  /** Verdadeiro quando o provider não exige credencial alguma. */
+  keyless: boolean;
   capabilities: {
     perspective3d: boolean;
     geoJsonLayers: boolean;
     cameraControl: boolean;
+    /** Extrusão de edificações, disponível apenas em estilo vetorial. */
+    buildingExtrusion: boolean;
+    satellite: boolean;
   };
 }
 
-const CAPABILITIES = Object.freeze({
+/**
+ * Estilo vetorial aberto do OpenFreeMap, servido sem chave nem cadastro.
+ *
+ * É o padrão do produto: mantém o mapa operacional utilizável em qualquer
+ * instalação, inclusive antes de contratar qualquer provider.
+ */
+const MAPLIBRE_DEFAULT_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+
+const VECTOR_CAPABILITIES = Object.freeze({
   perspective3d: true,
   geoJsonLayers: true,
   cameraControl: true,
+  buildingExtrusion: true,
+  satellite: false,
+});
+
+const SATELLITE_CAPABILITIES = Object.freeze({
+  perspective3d: true,
+  geoJsonLayers: true,
+  cameraControl: true,
+  buildingExtrusion: false,
+  satellite: true,
 });
 
 function trimmed(value: string | undefined): string {
   return value?.trim() ?? "";
 }
 
-function mapTilerProvider(
+function mapLibreProvider(
   environment: MapProviderEnvironment,
   fallbackReason: string | null,
 ): MapProvider {
+  const style = trimmed(environment.VITE_MAPLIBRE_STYLE_URL);
+  return {
+    id: "maplibre",
+    label: "MapLibre (aberto)",
+    engine: "maplibre",
+    configured: true,
+    styleUrl: style || MAPLIBRE_DEFAULT_STYLE,
+    missingConfiguration: null,
+    fallbackReason,
+    keyless: true,
+    capabilities: VECTOR_CAPABILITIES,
+  };
+}
+
+function mapTilerProvider(environment: MapProviderEnvironment): MapProvider {
   const key = trimmed(environment.VITE_MAPTILER_API_KEY);
   const params = new URLSearchParams();
   if (key) {
@@ -44,7 +83,7 @@ function mapTilerProvider(
 
   return {
     id: "maptiler",
-    label: "MapTiler Satellite",
+    label: "MapTiler satélite",
     engine: "maplibre",
     configured: Boolean(key),
     styleUrl: key
@@ -52,30 +91,28 @@ function mapTilerProvider(
       : null,
     missingConfiguration: key
       ? null
-      : "Configure VITE_MAPTILER_API_KEY para carregar o mapa de satélite.",
-    fallbackReason,
-    capabilities: CAPABILITIES,
+      : "Configure VITE_MAPTILER_API_KEY para usar a imagem de satélite do MapTiler.",
+    fallbackReason: null,
+    keyless: false,
+    capabilities: SATELLITE_CAPABILITIES,
   };
 }
 
-function mapboxProvider(
-  environment: MapProviderEnvironment,
-): MapProvider {
+function mapboxProvider(environment: MapProviderEnvironment): MapProvider {
   const token = trimmed(environment.VITE_MAPBOX_ACCESS_TOKEN);
 
   return {
     id: "mapbox",
-    label: "Mapbox Satellite Streets",
+    label: "Mapbox satélite",
     engine: "mapbox",
     configured: Boolean(token),
-    styleUrl: token
-      ? "mapbox://styles/mapbox/satellite-streets-v12"
-      : null,
+    styleUrl: token ? "mapbox://styles/mapbox/satellite-streets-v12" : null,
     missingConfiguration: token
       ? null
       : "Configure VITE_MAPBOX_ACCESS_TOKEN para ativar o provider Mapbox.",
     fallbackReason: null,
-    capabilities: CAPABILITIES,
+    keyless: false,
+    capabilities: SATELLITE_CAPABILITIES,
   };
 }
 
@@ -83,9 +120,9 @@ export function resolveMapProviderForId(
   id: MapProviderId,
   environment: MapProviderEnvironment = import.meta.env,
 ): MapProvider {
-  return id === "mapbox"
-    ? mapboxProvider(environment)
-    : mapTilerProvider(environment, null);
+  if (id === "mapbox") return mapboxProvider(environment);
+  if (id === "maptiler") return mapTilerProvider(environment);
+  return mapLibreProvider(environment, null);
 }
 
 export function resolveMapProvider(
@@ -93,18 +130,35 @@ export function resolveMapProvider(
 ): MapProvider {
   const requested = trimmed(environment.VITE_MAP_PROVIDER).toLowerCase();
 
-  if (requested === "mapbox") {
-    return resolveMapProviderForId("mapbox", environment);
+  if (requested === "mapbox" || requested === "maptiler") {
+    const provider = resolveMapProviderForId(requested, environment);
+    // Provider pago pedido sem credencial cai para a malha aberta em vez de
+    // deixar a página sem mapa nenhum.
+    return provider.configured
+      ? provider
+      : mapLibreProvider(
+          environment,
+          `${provider.label} não está configurado; usando a malha aberta do MapLibre.`,
+        );
   }
 
-  if (requested && requested !== "maptiler") {
-    return mapTilerProvider(
+  if (requested && requested !== "maplibre") {
+    return mapLibreProvider(
       environment,
-      `Provider "${requested}" não reconhecido; usando o fallback MapTiler.`,
+      `Provider "${requested}" não reconhecido; usando a malha aberta do MapLibre.`,
     );
   }
 
-  return resolveMapProviderForId("maptiler", environment);
+  return mapLibreProvider(environment, null);
+}
+
+/** Providers oferecidos ao operador, na ordem em que aparecem no seletor. */
+export function availableMapProviders(
+  environment: MapProviderEnvironment = import.meta.env,
+): MapProvider[] {
+  return (["maplibre", "maptiler", "mapbox"] as const).map((id) =>
+    resolveMapProviderForId(id, environment),
+  );
 }
 
 export function mapboxAccessToken(

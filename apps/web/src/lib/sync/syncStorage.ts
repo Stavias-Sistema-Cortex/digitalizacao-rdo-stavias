@@ -5,6 +5,7 @@ import type {
   LocalRdoChildRecord,
   LocalRdoRecord,
   LocalSyncStatus,
+  ObraGeometriaLocalRecord,
   ObraLocalRecord,
   OperationalEventRecord,
   OutboxMutationRecord,
@@ -474,6 +475,7 @@ const RDO_SYNC_TRANSACTION_STORES = [
   "service_catalog",
   "service_price_versions",
   "obras",
+  "obra_geometrias",
   ...RDO_CHILD_STORE_NAMES,
 ] as const;
 
@@ -521,6 +523,97 @@ function isRdoMutation(mutation: OutboxMutationRecord): boolean {
 
 function isObraMutation(mutation: OutboxMutationRecord): boolean {
   return mutation.entidadeTipo === "OBRA";
+}
+
+function isGeometriaMutation(mutation: OutboxMutationRecord): boolean {
+  return mutation.entidadeTipo === "GEOMETRIA_OBRA";
+}
+
+/**
+ * Substitui o rascunho local de geometria pela versão que o servidor confirmou.
+ *
+ * O identificador autoritativo é gerado no servidor, então o registro desenhado
+ * offline é removido e regravado sob o id confirmado. Sem isso o mesmo trecho
+ * apareceria duas vezes no mapa: uma como rascunho pendente e outra como camada
+ * confirmada.
+ */
+async function applyGeometriaPushResult(
+  transaction: {
+    objectStore: (name: "obra_geometrias") => {
+      get: (key: string) => Promise<ObraGeometriaLocalRecord | undefined>;
+      put: (value: ObraGeometriaLocalRecord) => Promise<IDBValidKey>;
+      delete: (key: string) => Promise<void>;
+    };
+  },
+  mutation: OutboxMutationRecord,
+  result: SyncPushMutationResult,
+  timestamp: string,
+): Promise<void> {
+  const store = transaction.objectStore("obra_geometrias");
+  const local = await store.get(mutation.entidadeId);
+  if (!local) {
+    return;
+  }
+
+  const authoritative = objectValue(result.resultado);
+  const serverId =
+    typeof authoritative.id === "string" && authoritative.id
+      ? authoritative.id
+      : local.id;
+  const status =
+    authoritative.status === "ENCERRADA" ? "ENCERRADA" : local.status;
+
+  if (serverId !== local.id) {
+    await store.delete(local.id);
+  }
+
+  await store.put({
+    ...local,
+    id: serverId,
+    status,
+    geometry: authoritative.geometry ?? local.geometry,
+    fonte:
+      typeof authoritative.fonte === "string"
+        ? authoritative.fonte
+        : local.fonte,
+    validoDesde:
+      typeof authoritative.validoDesde === "string"
+        ? authoritative.validoDesde
+        : local.validoDesde,
+    validoAte:
+      typeof authoritative.validoAte === "string"
+        ? authoritative.validoAte
+        : status === "ENCERRADA"
+          ? local.validoAte ?? timestamp
+          : null,
+    versao:
+      typeof authoritative.versao === "number"
+        ? authoritative.versao
+        : local.versao,
+    syncStatus: "SYNCED",
+    fetchedAt: timestamp,
+    updatedAt: timestamp,
+  });
+}
+
+/** Marca o rascunho local quando o servidor recusou ou conflitou a geometria. */
+async function markGeometriaMutationFailed(
+  transaction: {
+    objectStore: (name: "obra_geometrias") => {
+      get: (key: string) => Promise<ObraGeometriaLocalRecord | undefined>;
+      put: (value: ObraGeometriaLocalRecord) => Promise<IDBValidKey>;
+    };
+  },
+  mutation: OutboxMutationRecord,
+  syncStatus: "CONFLICT" | "ERROR" | "PENDING_SYNC",
+  timestamp: string,
+): Promise<void> {
+  const store = transaction.objectStore("obra_geometrias");
+  const local = await store.get(mutation.entidadeId);
+  if (!local) {
+    return;
+  }
+  await store.put({ ...local, syncStatus, updatedAt: timestamp });
 }
 
 async function obraSyncStatusFromOutbox(
@@ -2303,6 +2396,14 @@ export async function applyPushResultAtomically(
             },
       );
     }
+    if (isGeometriaMutation(mutation)) {
+      await applyGeometriaPushResult(
+        transaction,
+        mutation,
+        result,
+        timestamp,
+      );
+    }
   } else if (
     result.status === "DESCARTADA" ||
     result.status === "CONFLITO"
@@ -2413,6 +2514,14 @@ export async function applyPushResultAtomically(
     if (obra) {
       await obraStore.put(
         obraAfterConflict(obra, result, timestamp),
+      );
+    }
+    if (isGeometriaMutation(mutation)) {
+      await markGeometriaMutationFailed(
+        transaction,
+        mutation,
+        "CONFLICT",
+        timestamp,
       );
     }
   } else {
@@ -2535,6 +2644,14 @@ export async function applyPushResultAtomically(
         ultimoErro: messageText,
         updatedAt: timestamp,
       });
+    }
+    if (isGeometriaMutation(mutation)) {
+      await markGeometriaMutationFailed(
+        transaction,
+        mutation,
+        disposition.retryable ? "PENDING_SYNC" : "ERROR",
+        timestamp,
+      );
     }
   }
 

@@ -71,6 +71,7 @@ function executeGeneratedWorker(workerSource: string): WorkerHarness {
 
   const workbox = {
     CacheFirst: strategy("CacheFirst"),
+    CacheableResponsePlugin: plugin("CacheableResponsePlugin"),
     ExpirationPlugin: plugin("ExpirationPlugin"),
     NavigationRoute: NavigationRouteDouble,
     NetworkFirst: strategy("NetworkFirst"),
@@ -220,5 +221,50 @@ describe("generated PWA service worker contract", () => {
         ({ route }) => route instanceof NavigationRouteDouble,
       ),
     ).toBe(false);
+  });
+
+  it("guarda apenas os tiles de mapa realmente exibidos, com validade limitada", () => {
+    // Tile buscado por `fetch`: modo cross-origin e destination vazio, que é
+    // exatamente o caso que nenhuma das outras regras alcança.
+    const contexto = (href: string) => ({
+      request: { mode: "no-cors", destination: "" },
+      url: new URL(href),
+    });
+    const tileRoutes = worker.registrations.filter(({ route }) => {
+      if (typeof route !== "function") return false;
+      const matches = route as (context: ReturnType<typeof contexto>) => boolean;
+      return matches(contexto("https://api.maptiler.com/maps/x.png"));
+    });
+    expect(tileRoutes).toHaveLength(1);
+
+    const [tiles] = tileRoutes;
+    const matches = tiles.route as (
+      context: ReturnType<typeof contexto>,
+    ) => boolean;
+    expect(matches(contexto("https://api.mapbox.com/v4/tile.pbf"))).toBe(true);
+    expect(
+      matches(contexto("https://a.tile.openstreetmap.org/14/1/1.png")),
+    ).toBe(true);
+    // A própria origem continua fora desta regra.
+    expect(matches(contexto("https://cortex-stavias.pages.dev/obras"))).toBe(
+      false,
+    );
+
+    expect(tiles.strategy?.kind).toBe("CacheFirst");
+    expect(tiles.strategy?.options.cacheName).toBe("cortex-map-tiles");
+
+    const plugins = (tiles.strategy?.options.plugins ?? []) as StrategyDouble[];
+    const expiration = plugins.find(
+      (candidate) => candidate.kind === "ExpirationPlugin",
+    );
+    expect(expiration?.options).toMatchObject({
+      maxEntries: 500,
+      maxAgeSeconds: 604800,
+    });
+    // Tiles cruzam origem e chegam opacos; sem status 0 nada seria guardado.
+    const cacheable = plugins.find(
+      (candidate) => candidate.kind === "CacheableResponsePlugin",
+    );
+    expect(cacheable?.options).toMatchObject({ statuses: [0, 200] });
   });
 });

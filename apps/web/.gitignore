@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Saída do harness de verificação visual quando CORTEX_GEOMETRY_OUTPUT_DIR
+# aponta para dentro do worktree; o padrão é o diretório temporário do sistema.
+.geometry-preview

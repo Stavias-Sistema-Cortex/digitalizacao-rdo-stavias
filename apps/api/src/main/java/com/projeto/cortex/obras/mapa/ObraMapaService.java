@@ -30,6 +30,14 @@ public class ObraMapaService {
             "LOCALIZACAO_OBRA", "PONTO_OPERACIONAL", "EQUIPAMENTO", "EVENTO",
             "RDO", "OCORRENCIA"
     );
+    /**
+     * Categorias que a equipe de campo pode registrar sem perfil Alfa. Trecho e
+     * perímetro definem o contorno contratual da obra e continuam restritos.
+     */
+    private static final Set<String> FIELD_CAPTURE_CATEGORIES = Set.of(
+            "PONTO_OPERACIONAL", "FRENTE_TRABALHO"
+    );
+    private static final String FIELD_CAPTURE_SOURCE = "CAPTURA_CAMPO";
 
     private final ObraRepository obraRepository;
     private final ObraGeometriaRepository featureRepository;
@@ -73,7 +81,47 @@ public class ObraMapaService {
     @Transactional
     public ObraGeometriaResponse criar(String obraId, ObraGeometriaRequest request) {
         currentUserService.requireAlfa();
-        NormalizedRequest normalized = normalize(request, obraId, false);
+        return persistirNova(obraId, normalize(request, obraId, false));
+    }
+
+    /**
+     * Registra uma geometria observada em campo pela PWA.
+     *
+     * <p>Autoriza por acesso à obra em vez de perfil Alfa, porque quem produz o
+     * dado é o apontador no canteiro. Em troca o escopo é estreito: só ponto
+     * operacional e frente de trabalho, sempre com a origem
+     * {@code CAPTURA_CAMPO}, sempre referenciando o objeto ontológico
+     * correspondente e sempre sujeito ao guarda de operabilidade da obra.</p>
+     */
+    @Transactional
+    public ObraGeometriaResponse registrarCapturaCampo(
+            String obraId,
+            ObraGeometriaRequest request
+    ) {
+        currentUserService.requireWorksiteAccess(obraId);
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geometria obrigatória.");
+        }
+        String category = requiredText(request.categoria(), "Categoria geoespacial obrigatória.")
+                .toUpperCase(Locale.ROOT);
+        if (!FIELD_CAPTURE_CATEGORIES.contains(category)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "A captura de campo registra apenas ponto operacional ou frente de trabalho."
+            );
+        }
+        return persistirNova(obraId, normalize(comOrigemDeCampo(request), obraId, false));
+    }
+
+    private ObraGeometriaRequest comOrigemDeCampo(ObraGeometriaRequest request) {
+        return new ObraGeometriaRequest(
+                request.categoria(), request.objetoTipo(), request.objetoId(),
+                request.geometry(), request.properties(), FIELD_CAPTURE_SOURCE,
+                request.validoDesde(), request.baseVersao(), request.motivo()
+        );
+    }
+
+    private ObraGeometriaResponse persistirNova(String obraId, NormalizedRequest normalized) {
         operabilityGuard.requireWritable(obraId);
         String actorId = currentUserService.requireUserId();
         ObraGeometria saved = featureRepository.saveAndFlush(ObraGeometria.criar(

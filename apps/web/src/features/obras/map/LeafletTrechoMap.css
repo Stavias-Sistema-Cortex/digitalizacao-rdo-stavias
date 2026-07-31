@@ -1,0 +1,109 @@
+.leaflet-trecho {
+  position: relative;
+  min-height: 320px;
+  height: 100%;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-canvas);
+}
+
+.leaflet-trecho-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.leaflet-trecho-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 16px;
+  text-align: center;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.leaflet-trecho-overlay strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.leaflet-trecho-overlay--erro {
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+
+.leaflet-trecho-instrucao {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 500;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+  background: var(--color-brand-yellow);
+  color: var(--color-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.leaflet-trecho-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ffffff;
+  border-radius: 12px;
+  background: var(--pin-cor, #0e5e57);
+  color: #ffffff;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.leaflet-trecho .leaflet-popup-content-wrapper {
+  border: 1px solid var(--color-ink);
+  border-radius: 3px;
+  box-shadow: none;
+  background: var(--color-surface);
+}
+
+.leaflet-trecho .leaflet-popup-content {
+  margin: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.leaflet-trecho .leaflet-popup-content strong {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.leaflet-trecho .leaflet-popup-tip {
+  border: 1px solid var(--color-ink);
+  box-shadow: none;
+  background: var(--color-surface);
+}
+
+.leaflet-trecho .leaflet-control-attribution {
+  font-size: 0.625rem;
+  font-weight: 400;
+  background: var(--color-surface);
+  color: var(--color-muted);
+}

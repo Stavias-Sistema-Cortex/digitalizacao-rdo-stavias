@@ -97,8 +97,8 @@ describe("canonical mutation IndexedDB contract", () => {
   it("upgrades v20 to v21 without deleting obra cache or queued data", async () => {
     const database = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(21);
-    expect(database.version).toBe(21);
+    expect(CORTEX_DATABASE_VERSION).toBe(22);
+    expect(database.version).toBe(22);
     expect(
       [...database.transaction("outbox_mutations").store.indexNames],
     ).toContain("by-next-attempt-at");

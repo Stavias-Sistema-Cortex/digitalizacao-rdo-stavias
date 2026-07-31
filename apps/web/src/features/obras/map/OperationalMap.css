@@ -38,6 +38,9 @@
 .operational-map-controls label {
   display: grid;
   gap: 3px;
+  /* O nome do provider precisa caber inteiro; sem largura mínima o seletor
+     encolhe e corta o rótulo no meio. */
+  min-width: 168px;
 }
 
 .operational-map-controls label > span {

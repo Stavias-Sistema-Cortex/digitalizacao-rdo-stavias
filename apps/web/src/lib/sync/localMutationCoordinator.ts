@@ -67,6 +67,9 @@ const OPERATIONAL_EVENT_TYPES = [
   "OBRA_DESATIVADA",
   "OBRA_ARQUIVADA",
   "OBRA_RESTAURADA",
+  "GEOMETRIA_CRIADA",
+  "GEOMETRIA_ATUALIZADA",
+  "GEOMETRIA_ENCERRADA",
 ] as const satisfies readonly OperationalEventType[];
 
 type CanonicalWriteStore = "outbox_mutations" | "operational_events";

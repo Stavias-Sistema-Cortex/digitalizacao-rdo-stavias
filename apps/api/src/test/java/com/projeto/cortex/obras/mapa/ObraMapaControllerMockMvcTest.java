@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -75,5 +76,33 @@ class ObraMapaControllerMockMvcTest {
                 .andExpect(status().isForbidden());
 
         verify(service, never()).criar(any(), any());
+    }
+
+    @Test
+    void fieldCaptureReachesTheScopedServiceWithoutTheAlfaGate() throws Exception {
+        when(service.registrarCapturaCampo(eq("obra-1"), any()))
+                .thenReturn(new ObraGeometriaResponse(
+                        "geo-1", "PONTO_OPERACIONAL", "RDO", "rdo-1",
+                        new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                                "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}"
+                        ),
+                        java.util.Map.of(), "CAPTURA_CAMPO", "ATIVA",
+                        java.time.LocalDateTime.of(2026, 7, 28, 12, 0), null, null, 0L,
+                        "apontador-1", "apontador-1",
+                        java.time.LocalDateTime.of(2026, 7, 28, 12, 0),
+                        java.time.LocalDateTime.of(2026, 7, 28, 12, 0)
+                ));
+
+        mockMvc.perform(post("/api/obras/obra-1/geometrias/campo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"categoria":"PONTO_OPERACIONAL","objetoTipo":"RDO",
+                                 "objetoId":"rdo-1",
+                                 "geometry":{"type":"Point","coordinates":[-54.65,-20.44]}}"""))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.fonte").value("CAPTURA_CAMPO"));
+
+        verify(currentUserService, never()).requireAlfa();
+        verify(service).registrarCapturaCampo(eq("obra-1"), any());
     }
 }

@@ -13,6 +13,7 @@ import {
 } from "./mapAdapter";
 import { buscarMapaObra, type ObraMapData } from "./obraMapApi";
 import {
+  availableMapProviders,
   resolveMapProvider,
   resolveMapProviderForId,
   type MapProvider,
@@ -245,13 +246,12 @@ export function OperationalMap({ obra }: OperationalMapProps) {
                 setProviderId(event.target.value as MapProviderId)
               }
             >
-              <option value="maptiler">MapTiler Satellite</option>
-              <option value="mapbox">
-                Mapbox Satellite
-                {resolveMapProviderForId("mapbox").configured
-                  ? ""
-                  : " · não configurado"}
-              </option>
+              {availableMapProviders().map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>
+                  {candidate.label}
+                  {candidate.configured ? "" : " · sem chave"}
+                </option>
+              ))}
             </select>
           </label>
           <div className="operational-map-view-toggle" role="group" aria-label="Visualização">

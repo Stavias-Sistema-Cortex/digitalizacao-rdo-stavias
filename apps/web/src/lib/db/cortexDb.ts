@@ -35,12 +35,14 @@ import type {
   ServicePriceVersionLocalRecord,
   FinanceCapabilitiesCacheRecord,
   FinancePdorRevenueCacheRecord,
+  ObraGeometriaLocalRecord,
+  ObraTrechoCacheRecord,
   FinanceRevenueTraceCacheRecord,
 } from "./db.types";
 import { AUTH_SESSION_CHANGED_EVENT } from "../../features/auth/authSession";
 import { currentDataDatabaseName } from "./localDataNamespace";
 
-export const CORTEX_DATABASE_VERSION = 21;
+export const CORTEX_DATABASE_VERSION = 22;
 const LEGACY_ASSISTANT_STORE = "stavia_snapshots";
 
 export interface CortexDbSchema extends DBSchema {
@@ -315,6 +317,25 @@ export interface CortexDbSchema extends DBSchema {
     indexes: {
       "by-owner": string;
       "by-owner-worksite": [string, string];
+      "by-fetched-at": string;
+    };
+  };
+
+  obra_geometrias: {
+    key: string;
+    value: ObraGeometriaLocalRecord;
+    indexes: {
+      "by-owner": string;
+      "by-owner-worksite": [string, string];
+      "by-updated-at": string;
+    };
+  };
+
+  obra_trechos: {
+    key: [string, string];
+    value: ObraTrechoCacheRecord;
+    indexes: {
+      "by-owner": string;
       "by-fetched-at": string;
     };
   };
@@ -943,6 +964,28 @@ export async function getCortexDb(): Promise<
             ["ownerId", "obraId"],
           );
           pdorRevenueStore.createIndex("by-fetched-at", "fetchedAt");
+        }
+
+        if (!database.objectStoreNames.contains("obra_geometrias")) {
+          const geometryStore = database.createObjectStore(
+            "obra_geometrias",
+            { keyPath: "id" },
+          );
+          geometryStore.createIndex("by-owner", "ownerId");
+          geometryStore.createIndex(
+            "by-owner-worksite",
+            ["ownerId", "obraId"],
+          );
+          geometryStore.createIndex("by-updated-at", "updatedAt");
+        }
+
+        if (!database.objectStoreNames.contains("obra_trechos")) {
+          const stretchStore = database.createObjectStore(
+            "obra_trechos",
+            { keyPath: "key" },
+          );
+          stretchStore.createIndex("by-owner", "ownerId");
+          stretchStore.createIndex("by-fetched-at", "fetchedAt");
         }
 
       },

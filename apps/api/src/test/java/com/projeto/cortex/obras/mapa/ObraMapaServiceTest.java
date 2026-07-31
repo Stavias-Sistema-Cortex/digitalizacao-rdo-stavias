@@ -114,6 +114,109 @@ class ObraMapaServiceTest {
     }
 
     @Test
+    void fieldCaptureAuthorizesByWorksiteAccessInsteadOfAlfa() throws Exception {
+        when(currentUserService.requireUserId()).thenReturn("apontador-1");
+        when(featureRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ObraGeometriaResponse response = service.registrarCapturaCampo(
+                "obra-1",
+                new ObraGeometriaRequest(
+                        "ponto_operacional", "RDO", "rdo-1",
+                        objectMapper.readTree(
+                                "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}"
+                        ),
+                        Map.of("precisaoM", 4.5),
+                        null, null, null, null
+                )
+        );
+
+        verify(currentUserService).requireWorksiteAccess("obra-1");
+        verify(currentUserService, never()).requireAlfa();
+        verify(operabilityGuard).requireWritable("obra-1");
+        verify(memoryPublisher).criada(response, "obra-1", "apontador-1");
+        assertThat(response.categoria()).isEqualTo("PONTO_OPERACIONAL");
+        assertThat(response.fonte()).isEqualTo("CAPTURA_CAMPO");
+    }
+
+    @Test
+    void fieldCaptureOverridesAnyClientSuppliedSource() throws Exception {
+        when(currentUserService.requireUserId()).thenReturn("apontador-1");
+        when(featureRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ObraGeometriaResponse response = service.registrarCapturaCampo(
+                "obra-1",
+                new ObraGeometriaRequest(
+                        "FRENTE_TRABALHO", "FRENTE_TRABALHO", "frente-1",
+                        objectMapper.readTree("""
+                                {"type":"LineString","coordinates":[[-54.65,-20.44],[-54.63,-20.43]]}
+                                """),
+                        Map.of(),
+                        "GESTAO_MAPA", null, null, null
+                )
+        );
+
+        assertThat(response.fonte()).isEqualTo("CAPTURA_CAMPO");
+    }
+
+    @Test
+    void fieldCaptureCannotRedrawTheContractualStretch() throws Exception {
+        ObraGeometriaRequest request = new ObraGeometriaRequest(
+                "TRECHO", "TRECHO", "trecho-1",
+                objectMapper.readTree("""
+                        {"type":"LineString","coordinates":[[-54.65,-20.44],[-54.63,-20.43]]}
+                        """),
+                Map.of(), null, null, null, null
+        );
+
+        assertThatThrownBy(() -> service.registrarCapturaCampo("obra-1", request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("ponto operacional ou frente de trabalho");
+
+        verify(featureRepository, never()).saveAndFlush(any());
+        verify(operabilityGuard, never()).requireWritable(any());
+    }
+
+    @Test
+    void fieldCaptureStillRequiresTheOntologicalObjectReference() throws Exception {
+        ObraGeometriaRequest request = new ObraGeometriaRequest(
+                "PONTO_OPERACIONAL", null, null,
+                objectMapper.readTree(
+                        "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}"
+                ),
+                Map.of(), null, null, null, null
+        );
+
+        assertThatThrownBy(() -> service.registrarCapturaCampo("obra-1", request))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("objeto ontológico");
+
+        verify(featureRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void fieldCaptureIsBlockedOnAnArchivedWorksite() throws Exception {
+        doThrow(new ResponseStatusException(
+                org.springframework.http.HttpStatus.NOT_FOUND,
+                "Obra não encontrada ou arquivada."
+        )).when(operabilityGuard).requireWritable("obra-arquivada");
+        ObraGeometriaRequest request = new ObraGeometriaRequest(
+                "PONTO_OPERACIONAL", "RDO", "rdo-1",
+                objectMapper.readTree(
+                        "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}"
+                ),
+                Map.of(), null, null, null, null
+        );
+
+        assertThatThrownBy(() ->
+                service.registrarCapturaCampo("obra-arquivada", request))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(featureRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
     void updateRejectsStaleBaseVersionBeforeWriting() throws Exception {
         ObraGeometria existing = ObraGeometria.criar(
                 "obra-1", "TRECHO", "TRECHO", "trecho-1", "LINESTRING",

@@ -43,7 +43,7 @@ describe("IndexedDB assistant cleanup", () => {
   it("creates a fresh v21 database with confirmed revenue caches and without the legacy assistant store", async () => {
     const fresh = await getCortexDb();
 
-    expect(fresh.version).toBe(21);
+    expect(fresh.version).toBe(22);
     expect(fresh.objectStoreNames.contains("finance_revenue_trace_cache")).toBe(true);
     expect(fresh.objectStoreNames.contains("finance_pdor_revenue_cache")).toBe(true);
     expect(fresh.objectStoreNames.contains("stavia_snapshots")).toBe(false);
@@ -88,7 +88,7 @@ describe("IndexedDB assistant cleanup", () => {
 
     const upgraded = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(21);
+    expect(CORTEX_DATABASE_VERSION).toBe(22);
     expect(
       upgraded.objectStoreNames.contains("finance_revenue_trace_cache"),
     ).toBe(true);

@@ -43,7 +43,10 @@ export type OperationalEventType =
   | "OBRA_ATUALIZADA"
   | "OBRA_DESATIVADA"
   | "OBRA_ARQUIVADA"
-  | "OBRA_RESTAURADA";
+  | "OBRA_RESTAURADA"
+  | "GEOMETRIA_CRIADA"
+  | "GEOMETRIA_ATUALIZADA"
+  | "GEOMETRIA_ENCERRADA";
 
 export type OperationalEventOrigin =
   | "ONLINE"
@@ -128,6 +131,7 @@ export type SyncEntityType =
   | "EQUIPE"
   | "OBRA"
   | "VINCULO_OBRA"
+  | "GEOMETRIA_OBRA"
   | "SOLICITACAO_INTEGRACAO";
 
 export type SyncOperation =
@@ -168,6 +172,10 @@ export type SyncOperation =
   | "RESTAURAR_OBRA"
   | "VINCULAR_COLABORADOR_OBRA"
   | "REVOGAR_VINCULO_COLABORADOR_OBRA"
+  | "REGISTRAR_GEOMETRIA_OBRA"
+  | "REGISTRAR_GEOMETRIA_CAMPO"
+  | "ATUALIZAR_GEOMETRIA_OBRA"
+  | "ENCERRAR_GEOMETRIA_OBRA"
   | "SOLICITAR_INTEGRACAO";
 
 export type OutboxTransport =
@@ -248,6 +256,43 @@ export interface FinanceRevenueTraceCacheRecord {
     evidenceCount: number;
   };
   response: unknown;
+}
+
+/**
+ * Uma camada geoespacial da obra no dispositivo.
+ *
+ * Guarda tanto o que o servidor confirmou quanto o que foi desenhado ou
+ * capturado em campo e ainda não subiu. `syncStatus` distingue os dois casos, e
+ * `fetchedAt` registra quando o servidor confirmou aquela versão, para que a
+ * interface consiga rotular a idade do dado offline em vez de apresentá-lo como
+ * atual.
+ */
+export interface ObraGeometriaLocalRecord {
+  id: string;
+  ownerId: string;
+  obraId: string;
+  categoria: string;
+  objetoTipo: string | null;
+  objetoId: string | null;
+  geometry: unknown;
+  properties: Record<string, unknown>;
+  fonte: string;
+  status: "ATIVA" | "ENCERRADA";
+  validoDesde: string;
+  validoAte: string | null;
+  versao: number;
+  syncStatus: LocalSyncStatus;
+  fetchedAt: string | null;
+  updatedAt: string;
+}
+
+/** Cache local da projeção linear do trecho, com a mesma disciplina de idade. */
+export interface ObraTrechoCacheRecord {
+  key: [string, string];
+  ownerId: string;
+  obraId: string;
+  fetchedAt: string;
+  payload: unknown;
 }
 
 export interface FinancePdorRevenueCacheRecord {

@@ -8,6 +8,7 @@ import com.projeto.cortex.financeiro.invoice.extraction.FiscalDocumentExtraction
 import com.projeto.cortex.financeiro.unit.FinancialUnitService;
 import com.projeto.cortex.mensagens.domain.MensagemService;
 import com.projeto.cortex.obras.ObraService;
+import com.projeto.cortex.obras.mapa.ObraMapaService;
 import java.util.List;
 
 /**
@@ -135,6 +136,42 @@ public final class OperationalMutationCatalog {
                         "papel anterior diferente do novo e transação serializada",
                         "ator, justificativa, sessão, histórico e relação",
                         "com.projeto.cortex.auth.roles.AdminRoleServiceTest"
+                ),
+                definition(
+                        "WORKSITE_GEOMETRY_REGISTER",
+                        ObraMapaService.class,
+                        "criar",
+                        "GEOMETRIA_CRIADA",
+                        "OperationalGraphProjector como WORKSITE_GEOMETRY",
+                        "papel ALFA para trecho e perímetro contratuais",
+                        "WORKSITE_SCOPE_AUTHORIZED_ONLY",
+                        "clientMutationId único por dispositivo no outbox",
+                        "ator, obra georreferenciada e objeto representado",
+                        "com.projeto.cortex.obras.mapa.ObraMapaServiceTest"
+                ),
+                definition(
+                        "WORKSITE_GEOMETRY_FIELD_CAPTURE",
+                        ObraMapaService.class,
+                        "registrarCapturaCampo",
+                        "GEOMETRIA_CRIADA",
+                        "OperationalGraphProjector como WORKSITE_GEOMETRY",
+                        "acesso à obra, restrito a ponto operacional e frente de trabalho",
+                        "WORKSITE_SCOPE_AUTHORIZED_ONLY",
+                        "clientMutationId único por dispositivo no outbox",
+                        "ator, origem CAPTURA_CAMPO e objeto observado em campo",
+                        "com.projeto.cortex.obras.mapa.ObraMapaServiceTest"
+                ),
+                definition(
+                        "WORKSITE_GEOMETRY_UPDATE",
+                        ObraMapaService.class,
+                        "atualizar",
+                        "GEOMETRIA_ATUALIZADA",
+                        "OperationalGraphProjector como WORKSITE_GEOMETRY",
+                        "papel ALFA com versão base conferida",
+                        "WORKSITE_SCOPE_AUTHORIZED_ONLY",
+                        "versao_linha igual à baseVersao, conflito em 409",
+                        "ator, estado anterior, estado novo e motivo declarado",
+                        "com.projeto.cortex.obras.mapa.ObraMapaServiceTest"
                 )
         );
     }

@@ -41,6 +41,15 @@ public class ObraMapaController {
         return service.criar(obraId, request);
     }
 
+    @PostMapping("/geometrias/campo")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ObraGeometriaResponse registrarCapturaCampo(
+            @PathVariable String obraId,
+            @RequestBody ObraGeometriaRequest request
+    ) {
+        return service.registrarCapturaCampo(obraId, request);
+    }
+
     @PutMapping("/geometrias/{featureId}")
     public ObraGeometriaResponse atualizar(
             @PathVariable String obraId,

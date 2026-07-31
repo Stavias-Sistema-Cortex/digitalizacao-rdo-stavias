@@ -86,6 +86,31 @@ docker compose -f compose.local.yml logs -f cortex-api cortex-web
 ./scripts/dev/stop-compose.sh
 ```
 
+## Mapa da rodovia
+
+O acompanhamento geoespacial da obra funciona sem credencial nenhuma. O padrão
+é MapLibre GL sobre a malha vetorial aberta do OpenFreeMap, com extrusão de
+edificações na visão 3D, e Leaflet sobre OpenStreetMap no painel ao lado.
+
+`VITE_MAP_PROVIDER=maplibre` é o valor de fábrica; `VITE_MAPLIBRE_STYLE_URL`
+aponta para um estilo próprio quando houver um. Imagem de satélite proprietária
+é opcional: preencha `VITE_MAPTILER_API_KEY` ou `VITE_MAPBOX_ACCESS_TOKEN` no
+`.env`, escolha o provider correspondente e reinicie. Sem a credencial, o
+provider pago não é oferecido como pronto e a malha aberta continua ativa.
+
+As chaves são tokens públicos de frontend e devem ser restringidas por origem
+no painel do provider. Tiles já exibidos ficam disponíveis offline por sete
+dias; tile nunca baixado permanece explicitamente indisponível.
+
+Para conferir a composição num navegador real, sem banco nem sessão:
+
+```bash
+cd apps/web && node scripts/verify-mapa-rodovia-geometry.mjs
+```
+
+O script mede a geometria e captura PNGs em 1440×900, 1280×720 e 390×844 a
+partir de fixtures de teste. Ele não usa e não produz dado operacional.
+
 ## Processos locais separados
 
 Use dois terminais no mesmo worktree e escolha portas livres. O backend recebe

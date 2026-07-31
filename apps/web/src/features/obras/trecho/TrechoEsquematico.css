@@ -1,0 +1,514 @@
+.obras-trecho {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.trecho-esquematico {
+  border: 2px solid var(--color-ink);
+  border-radius: 4px;
+  background: var(--color-surface);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.trecho-esquematico-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trecho-esquematico-header h3 {
+  margin: 2px 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.trecho-esquematico-header span {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-esquematico-procedencia {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  padding: 4px 8px;
+  background: #ffffff;
+}
+
+.trecho-pista-quadro {
+  /* A régua e as faixas compartilham a mesma origem horizontal: sem isso o
+     quilômetro rotulado não cai sobre o bloco que ele descreve. */
+  --trecho-nome-largura: 140px;
+  --trecho-quadro-padding: 10px;
+  --trecho-nome-gap: 8px;
+
+  position: relative;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: #1c211f;
+  padding: 48px var(--trecho-quadro-padding) var(--trecho-quadro-padding);
+  overflow-x: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trecho-regua {
+  position: absolute;
+  top: 0;
+  right: var(--trecho-quadro-padding);
+  left: calc(
+    var(--trecho-quadro-padding) + var(--trecho-nome-largura) +
+      var(--trecho-nome-gap)
+  );
+  height: 44px;
+}
+
+.trecho-marco {
+  position: absolute;
+  top: 5px;
+  transform: translateX(-50%);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #b9c6c2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+}
+
+.trecho-marco--borda-inicial {
+  transform: translateX(0);
+}
+
+.trecho-marco--borda-final {
+  transform: translateX(-100%);
+}
+
+.trecho-marco small {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--color-brand-yellow);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Os limites da obra ocupam a segunda linha da régua para não colidirem com o
+   marco inteiro mais próximo. */
+.trecho-marco--limite {
+  top: 22px;
+  color: var(--color-brand-yellow);
+  font-weight: 600;
+}
+
+.trecho-acostamento {
+  border: 1px dashed #4a5a56;
+  border-radius: 2px;
+  padding: 3px 8px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #8fa09b;
+}
+
+.trecho-canteiro {
+  border-top: 2px solid var(--color-brand-yellow);
+  border-bottom: 2px solid var(--color-brand-yellow);
+  background: #13332f;
+  padding: 3px 8px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-brand-yellow);
+  text-transform: uppercase;
+}
+
+.trecho-pista {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--trecho-nome-gap);
+  min-height: 34px;
+  border-top: 1px dashed #3a4744;
+}
+
+.trecho-pista-nome {
+  flex: 0 0 var(--trecho-nome-largura);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #b9c6c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trecho-pista-rolagem {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 240px;
+  height: 30px;
+  background: #222826;
+  border-radius: 2px;
+}
+
+.trecho-bloco {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-width: 6px;
+  transition: filter var(--transition-functional);
+}
+
+.trecho-bloco-rotulo {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* O nome encolhe e ganha reticências; a data do lançamento é curta e nunca é
+   cortada, porque é ela que responde "em que dia isso foi executado". */
+.trecho-bloco-rotulo > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trecho-bloco-rotulo em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 0.625rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.trecho-bloco--programado {
+  background: repeating-linear-gradient(
+    135deg,
+    #3d4a47,
+    #3d4a47 6px,
+    #33403d 6px,
+    #33403d 12px
+  );
+  color: #d7e0dd;
+}
+
+.trecho-bloco--executado {
+  background: var(--color-brand-yellow);
+  color: var(--color-ink);
+}
+
+.trecho-bloco--validado {
+  background: #17a398;
+  color: #04211e;
+}
+
+.trecho-bloco--rejeitado {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.trecho-bloco:hover {
+  filter: brightness(1.08);
+}
+
+.trecho-esquematico-vazio {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 16px;
+  background: #ffffff;
+}
+
+.trecho-esquematico-vazio strong {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.trecho-esquematico-vazio p {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  max-width: 62ch;
+}
+
+.trecho-esquematico-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trecho-esquematico-footer dl {
+  margin: 0;
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.trecho-esquematico-footer dt {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.trecho-esquematico-footer dd {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-esquematico-footer small {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.trecho-periodo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.trecho-periodo-campos {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.trecho-periodo-campos label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.trecho-periodo-campos input {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 7px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.trecho-periodo-campos input:focus-visible,
+.trecho-periodo-limpar:focus-visible,
+.trecho-dia:focus-visible {
+  outline: 3px solid var(--color-brand-yellow);
+  outline-offset: 2px;
+}
+
+.trecho-periodo-limpar {
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background var(--transition-functional);
+}
+
+.trecho-periodo-limpar:hover:not(:disabled) {
+  background: var(--color-canvas);
+}
+
+.trecho-periodo-limpar:disabled {
+  border-color: var(--color-border);
+  color: var(--color-muted);
+  cursor: default;
+}
+
+.trecho-periodo-extensao {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-periodo-vazio {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  max-width: 68ch;
+}
+
+.trecho-linha-tempo {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 2px;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+
+.trecho-dia {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 46px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  padding: 5px 4px;
+  cursor: pointer;
+  transition: border-color var(--transition-functional),
+    background var(--transition-functional);
+}
+
+.trecho-dia:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-canvas);
+}
+
+.trecho-dia--ativo {
+  border-color: var(--color-ink);
+  background: var(--color-brand-yellow);
+}
+
+/* A altura da barra é a extensão executada no dia, em relação ao maior dia do
+   período. Sem produção medida não há barra a desenhar. */
+.trecho-dia-barra {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 22px;
+}
+
+.trecho-dia-barra > span {
+  display: block;
+  width: 8px;
+  border-radius: 1px;
+  background: var(--color-focus);
+}
+
+.trecho-dia--ativo .trecho-dia-barra > span {
+  background: var(--color-ink);
+}
+
+.trecho-dia strong {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-dia small {
+  font-size: 0.5625rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+}
+
+.trecho-dia--ativo small {
+  color: var(--color-ink);
+}
+
+.trecho-resumo-grade {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.trecho-resumo-grade > div {
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: #ffffff;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.trecho-resumo-grade dt {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.trecho-resumo-grade dd {
+  margin: 3px 0 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .trecho-pista-quadro {
+    --trecho-nome-largura: 96px;
+  }
+
+  .trecho-pista-rolagem {
+    min-width: 180px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trecho-bloco {
+    transition: none;
+  }
+
+  .trecho-bloco:hover {
+    filter: none;
+  }
+}

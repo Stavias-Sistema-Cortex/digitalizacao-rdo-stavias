@@ -13,6 +13,58 @@ class OperationalGraphPayloadPolicyTest {
     private final OperationalGraphProjector projector = new OperationalGraphProjector();
 
     @Test
+    void geometryEventsCarryTheirHighwayDescriptorsButNeverTheCoordinates() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("categoria", "TRECHO");
+        payload.put("objetoTipo", "TRECHO");
+        payload.put("objetoId", "trecho-1");
+        payload.put("tipoGeometria", "LINESTRING");
+        payload.put("fonte", "CAPTURA_CAMPO");
+        payload.put("rodovia", "SP-310");
+        payload.put("sentido", "SUL");
+        payload.put("faixa", "1");
+        payload.put("kmInicial", "172");
+        payload.put("kmFinal", "171");
+        payload.put("extensaoM", 1500);
+        payload.put("obraId", "obra-1");
+        payload.put("geometry", Map.of(
+                "type", "LineString",
+                "coordinates", List.of(List.of(-54.65, -20.44), List.of(-54.63, -20.43))
+        ));
+        payload.put("coordinates", List.of(List.of(-54.65, -20.44)));
+
+        GraphProjectionBatch batch = projector.project(new CommittedOperationalEvent(
+                2L,
+                "event-geometry",
+                "GEOMETRIA_CRIADA",
+                new CommittedOperationalEvent.EntityRef(
+                        "GEOMETRIA_OPERACIONAL", "geo-1"
+                ),
+                List.of(new CommittedOperationalEvent.EntityRef("OBRA", "obra-1")),
+                Instant.parse("2026-07-22T12:00:00Z"),
+                payload,
+                "obra-1"
+        ));
+
+        assertThat(batch.events()).singleElement().satisfies(event ->
+                assertThat(event.payload())
+                        .containsEntry("categoria", "TRECHO")
+                        .containsEntry("rodovia", "SP-310")
+                        .containsEntry("sentido", "SUL")
+                        .containsEntry("faixa", "1")
+                        .containsEntry("kmInicial", "172")
+                        .containsEntry("kmFinal", "171")
+                        .containsEntry("extensaoM", 1500)
+                        .containsEntry("fonte", "CAPTURA_CAMPO")
+                        .doesNotContainKeys("geometry", "coordinates")
+        );
+
+        assertThat(batch.entities())
+                .anySatisfy(entity ->
+                        assertThat(entity.type()).isEqualTo("WORKSITE_GEOMETRY"));
+    }
+
+    @Test
     void keepsOnlyExplicitEventFieldsAndAcceptsCanonicalJsonNulls() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("numeroRdo", "RDO-0042");

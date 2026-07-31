@@ -215,6 +215,9 @@ public class OperationalGraphProjector {
                 return "USED_IN";
             }
         }
+        if ("WORKSITE_GEOMETRY".equals(sourceType)) {
+            return "REPRESENTS";
+        }
         if ("RDO_EXECUTION".equals(sourceType) && "SERVICE".equals(targetType)) {
             return "EXECUTES_SERVICE";
         }
@@ -354,6 +357,7 @@ public class OperationalGraphProjector {
             case "PRECO_SERVICO", "SERVICE_PRICE" -> "SERVICE_PRICE_VERSION";
             case "EXECUTION", "EXECUCAO_SERVICO_RDO", "RDO_SERVICE_EXECUTED" ->
                     "RDO_EXECUTION";
+            case "GEOMETRIA_OPERACIONAL", "OBRA_GEOMETRIA" -> "WORKSITE_GEOMETRY";
             default -> type;
         };
     }
@@ -367,6 +371,7 @@ public class OperationalGraphProjector {
             case "SERVICE" -> new String[]{
                     "serviceName", "servicoNome", "nomeServico", "name"
             };
+            case "WORKSITE_GEOMETRY" -> new String[]{"categoria", "name"};
             default -> new String[]{"name"};
         };
     }

@@ -1,4 +1,5 @@
-import type { OperationalFeatureCollection } from "./mapGeometry";
+import { categoryColorExpression } from "./mapCategories";
+import { limitesDaColecao, type OperationalFeatureCollection } from "./mapGeometry";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 
 export type MapViewMode = "2d" | "3d";
@@ -19,46 +20,128 @@ interface MountOptions {
 }
 
 const SOURCE_ID = "cortex-operational";
+const MAX_MENSAGEM_ERRO = 160;
 
-function categoryColorExpression(): unknown[] {
-  return [
-    "match",
-    ["get", "categoria"],
-    "LOCALIZACAO_OBRA",
-    "#fed203",
-    "PERIMETRO_OBRA",
-    "#17a398",
-    "TRECHO",
-    "#f7a531",
-    "FRENTE_TRABALHO",
-    "#ef6f6c",
-    "EQUIPAMENTO",
-    "#4e79a7",
-    "EVENTO",
-    "#8e6bbf",
-    "RDO",
-    "#35a853",
-    "OCORRENCIA",
-    "#d9534f",
-    "PROGRAMACAO",
-    "#6f7d75",
-    "#0e5e57",
-  ];
+/**
+ * A espessura acompanha o zoom para que o trecho continue legível de longe sem
+ * cobrir a pista quando a câmera se aproxima.
+ */
+const LARGURA_LINHA = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  2,
+  14,
+  5,
+  18,
+  12,
+];
+const LARGURA_LINHA_CASING = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  10,
+  4,
+  14,
+  9,
+  18,
+  18,
+];
+
+/**
+ * Traduz a falha do renderizador para uma frase utilizável.
+ *
+ * O erro cru do WebGL traz um despejo de atributos de contexto que não diz nada
+ * a quem está em campo; a causa conhecida vira instrução e o resto é truncado
+ * em vez de vazar para a tela.
+ */
+function mensagemDeFalha(bruta: string | undefined): string {
+  const texto = bruta?.trim();
+  if (!texto) {
+    return "Falha ao carregar o mapa.";
+  }
+  if (/webgl/i.test(texto)) {
+    return "Este navegador não conseguiu iniciar o WebGL, exigido pela visualização 3D. Use o painel Leaflet ao lado ou habilite a aceleração gráfica.";
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(texto)) {
+    return "Não foi possível baixar os tiles do mapa. Sem rede, apenas o que já foi visto fica disponível.";
+  }
+  return texto.length > MAX_MENSAGEM_ERRO
+    ? `${texto.slice(0, MAX_MENSAGEM_ERRO)}…`
+    : texto;
 }
 
+/**
+ * Enquadra a câmera na extensão real das geometrias da obra.
+ *
+ * Centrar num ponto e arbitrar um zoom deixa o trecho fora da tela sempre que
+ * ele é longo; o enquadramento pela extensão mostra a obra inteira e só ela.
+ * Uma obra representada por um único ponto não tem extensão, e aí o centro
+ * informado continua valendo.
+ */
+interface CameraEnquadravel {
+  fitBounds: (
+    bounds: [[number, number], [number, number]],
+    options: { padding: number; maxZoom: number; duration: number },
+  ) => unknown;
+}
+
+function enquadrar(
+  map: CameraEnquadravel,
+  features: OperationalFeatureCollection,
+): void {
+  const limites = limitesDaColecao(features);
+  if (!limites || (limites.oeste === limites.leste && limites.sul === limites.norte)) {
+    return;
+  }
+  map.fitBounds(
+    [
+      [limites.oeste, limites.sul],
+      [limites.leste, limites.norte],
+    ],
+    { padding: 48, maxZoom: 17, duration: 0 },
+  );
+}
+
+/**
+ * Detalhe da camada clicada.
+ *
+ * Mostra o que identifica a atividade no campo — serviço, RDO e data — antes de
+ * qualquer metadado técnico, e omite silenciosamente o que a geometria não
+ * registrou em vez de imprimir rótulos vazios.
+ */
 function popupContent(properties: Record<string, unknown>): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "operational-map-popup";
+
   const title = document.createElement("strong");
   title.textContent = String(
-    properties.nome ?? properties.categoria ?? "Elemento operacional",
+    properties.nome ??
+      properties.servicoNome ??
+      properties.categoria ??
+      "Elemento operacional",
   );
+
   const detail = document.createElement("span");
-  detail.textContent = [properties.categoria, properties.fonte]
+  detail.textContent = [
+    properties.numeroRdo ? `RDO ${String(properties.numeroRdo)}` : null,
+    properties.data ?? properties.validoDesde
+      ? String(properties.data ?? properties.validoDesde).slice(0, 10)
+      : null,
+    properties.categoria ? String(properties.categoria).replaceAll("_", " ") : null,
+  ]
     .filter(Boolean)
     .map(String)
     .join(" · ");
+
   container.append(title, detail);
+
+  if (properties.fonte) {
+    const origem = document.createElement("small");
+    origem.textContent = `origem ${String(properties.fonte).replaceAll("_", " ").toLowerCase()}`;
+    container.append(origem);
+  }
   return container;
 }
 
@@ -81,6 +164,24 @@ function addMapLibreLayers(
       "fill-opacity": 0.28,
     },
   });
+  // Contorno escuro sob a linha colorida: é o que faz o trecho ler como uma
+  // pista sobre a imagem, em vez de um risco solto por cima do mapa.
+  map.addLayer({
+    id: "cortex-lines-casing",
+    type: "line",
+    source: SOURCE_ID,
+    filter: [
+      "in",
+      ["geometry-type"],
+      ["literal", ["LineString", "Polygon"]],
+    ],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": "#18211f",
+      "line-width": LARGURA_LINHA_CASING as never,
+      "line-opacity": 0.85,
+    },
+  });
   map.addLayer({
     id: "cortex-lines",
     type: "line",
@@ -90,10 +191,11 @@ function addMapLibreLayers(
       ["geometry-type"],
       ["literal", ["LineString", "Polygon"]],
     ],
+    layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": categoryColorExpression() as never,
-      "line-width": 3,
-      "line-opacity": 0.9,
+      "line-width": LARGURA_LINHA as never,
+      "line-opacity": 0.95,
     },
   });
   map.addLayer({
@@ -126,6 +228,56 @@ function addMapLibreLayers(
   }
 }
 
+const BUILDING_LAYER_ID = "cortex-3d-buildings";
+
+/**
+ * Extrusão das edificações do estilo vetorial.
+ *
+ * Só é aplicada quando o estilo realmente traz a camada `building` com altura;
+ * em estilo raster ou satélite a inclinação da câmera continua funcionando sem
+ * volume, e nenhuma altura é inventada.
+ */
+function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
+  const style = map.getStyle();
+  const source = style?.layers?.find(
+    (layer) =>
+      "source-layer" in layer &&
+      layer["source-layer"] === "building" &&
+      "source" in layer,
+  );
+  if (!source || !("source" in source) || typeof source.source !== "string") {
+    return false;
+  }
+  if (map.getLayer(BUILDING_LAYER_ID)) {
+    return true;
+  }
+
+  map.addLayer({
+    id: BUILDING_LAYER_ID,
+    type: "fill-extrusion",
+    source: source.source,
+    "source-layer": "building",
+    minzoom: 14,
+    paint: {
+      "fill-extrusion-color": "#c7d2ce",
+      "fill-extrusion-opacity": 0.65,
+      "fill-extrusion-height": [
+        "coalesce",
+        ["get", "render_height"],
+        ["get", "height"],
+        6,
+      ],
+      "fill-extrusion-base": [
+        "coalesce",
+        ["get", "render_min_height"],
+        ["get", "min_height"],
+        0,
+      ],
+    } as never,
+  });
+  return true;
+}
+
 async function mountMapLibre(
   options: MountOptions,
 ): Promise<OperationalMapController> {
@@ -137,7 +289,7 @@ async function mountMapLibre(
     center: options.center,
     zoom: 14,
     pitch: options.mode === "3d" ? 52 : 0,
-    bearing: 0,
+    bearing: options.mode === "3d" ? -18 : 0,
     attributionControl: false,
   });
   map.addControl(new maplibre.NavigationControl(), "top-right");
@@ -158,17 +310,35 @@ async function mountMapLibre(
     map.once("load", () => {
       loaded = true;
       window.clearTimeout(timer);
+      let volume = false;
+      if (options.provider.capabilities.buildingExtrusion) {
+        try {
+          volume = addBuildingExtrusion(map);
+        } catch {
+          volume = false;
+        }
+      }
       addMapLibreLayers(map, options.features, maplibre);
+      enquadrar(map, options.features);
       resolve({
         centerOn: (longitude, latitude) =>
           map.easeTo({ center: [longitude, latitude], zoom: 15 }),
-        setViewMode: (mode) =>
-          map.easeTo({ pitch: mode === "3d" ? 52 : 0, bearing: 0 }),
+        setViewMode: (mode) => {
+          if (mode === "3d" && volume) {
+            map.setLayoutProperty(BUILDING_LAYER_ID, "visibility", "visible");
+          } else if (volume) {
+            map.setLayoutProperty(BUILDING_LAYER_ID, "visibility", "none");
+          }
+          map.easeTo({
+            pitch: mode === "3d" ? 52 : 0,
+            bearing: mode === "3d" ? -18 : 0,
+          });
+        },
         destroy: () => map.remove(),
       });
     });
     map.on("error", (event) => {
-      const message = event.error?.message ?? "Falha ao carregar o mapa.";
+      const message = mensagemDeFalha(event.error?.message);
       if (!loaded) {
         window.clearTimeout(timer);
         map.remove();
@@ -199,6 +369,24 @@ function addMapboxLayers(
       "fill-opacity": 0.28,
     },
   });
+  // Contorno escuro sob a linha colorida: é o que faz o trecho ler como uma
+  // pista sobre a imagem, em vez de um risco solto por cima do mapa.
+  map.addLayer({
+    id: "cortex-lines-casing",
+    type: "line",
+    source: SOURCE_ID,
+    filter: [
+      "in",
+      ["geometry-type"],
+      ["literal", ["LineString", "Polygon"]],
+    ],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: {
+      "line-color": "#18211f",
+      "line-width": LARGURA_LINHA_CASING as never,
+      "line-opacity": 0.85,
+    },
+  });
   map.addLayer({
     id: "cortex-lines",
     type: "line",
@@ -208,10 +396,11 @@ function addMapboxLayers(
       ["geometry-type"],
       ["literal", ["LineString", "Polygon"]],
     ],
+    layout: { "line-cap": "round", "line-join": "round" },
     paint: {
       "line-color": categoryColorExpression() as never,
-      "line-width": 3,
-      "line-opacity": 0.9,
+      "line-width": LARGURA_LINHA as never,
+      "line-opacity": 0.95,
     },
   });
   map.addLayer({
@@ -277,6 +466,7 @@ async function mountMapbox(
       loaded = true;
       window.clearTimeout(timer);
       addMapboxLayers(map, options.features, mapboxModule);
+      enquadrar(map, options.features);
       resolve({
         centerOn: (longitude, latitude) =>
           map.easeTo({ center: [longitude, latitude], zoom: 15 }),
@@ -286,7 +476,7 @@ async function mountMapbox(
       });
     });
     map.on("error", (event) => {
-      const message = event.error?.message ?? "Falha ao carregar o mapa.";
+      const message = mensagemDeFalha(event.error?.message);
       if (!loaded) {
         window.clearTimeout(timer);
         map.remove();
@@ -298,10 +488,22 @@ async function mountMapbox(
   });
 }
 
+/**
+ * O construtor do renderizador lança de forma síncrona quando o navegador não
+ * oferece WebGL, antes de qualquer evento de erro do mapa. A normalização fica
+ * aqui para que nenhum caminho de falha vaze o texto cru para a interface.
+ */
 export function mountOperationalMap(
   options: MountOptions,
 ): Promise<OperationalMapController> {
-  return options.provider.engine === "mapbox"
-    ? mountMapbox(options)
-    : mountMapLibre(options);
+  const montagem =
+    options.provider.engine === "mapbox"
+      ? mountMapbox(options)
+      : mountMapLibre(options);
+
+  return montagem.catch((motivo: unknown) => {
+    throw new Error(
+      mensagemDeFalha(motivo instanceof Error ? motivo.message : String(motivo)),
+    );
+  });
 }

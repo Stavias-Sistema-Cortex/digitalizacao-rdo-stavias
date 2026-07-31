@@ -1,0 +1,184 @@
+/**
+ * Fixtures do harness de verificação visual.
+ *
+ * Valores de teste, não dados operacionais. Existem apenas para exercitar a
+ * geometria dos componentes reais em um navegador headless.
+ */
+import type {
+  ObraMapFeature,
+  WorksiteMapPoint,
+} from "../../src/features/obras/map/mapGeometry";
+import type { ProjecaoTrecho } from "../../src/features/obras/trecho/trechoGeometry";
+
+export const OBRA_FIXTURE: WorksiteMapPoint = {
+  id: "00000000-0000-4000-8000-0000000000f1",
+  nome: "[FIXTURE] Recapeamento SP-310",
+  latitude: -22.4443,
+  longitude: -47.563,
+};
+
+export const FEATURES_FIXTURE: ObraMapFeature[] = [
+  {
+    id: "00000000-0000-4000-8000-0000000000f2",
+    categoria: "TRECHO",
+    objetoTipo: "TRECHO",
+    objetoId: "00000000-0000-4000-8000-0000000000f2",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [-47.567267, -22.439459],
+        [-47.563, -22.4443],
+        [-47.558866, -22.449263],
+      ],
+    },
+    properties: { nome: "[FIXTURE] Trecho km 172 ao 171" },
+    fonte: "GESTAO_MAPA",
+    versao: 1,
+    validoDesde: "2026-03-01T00:00:00",
+    validoAte: null,
+  },
+  {
+    id: "00000000-0000-4000-8000-0000000000f3",
+    categoria: "PONTO_OPERACIONAL",
+    objetoTipo: "RDO",
+    objetoId: "00000000-0000-4000-8000-0000000000f4",
+    geometry: { type: "Point", coordinates: [-47.5645, -22.4425] },
+    properties: { nome: "[FIXTURE] Frente de serviço", precisaoM: 4.5 },
+    fonte: "CAPTURA_CAMPO",
+    versao: 0,
+    validoDesde: "2026-03-02T07:00:00",
+    validoAte: null,
+  },
+];
+
+function segmento(
+  id: string,
+  overrides: Partial<ProjecaoTrecho["segmentos"][number]>,
+): ProjecaoTrecho["segmentos"][number] {
+  return {
+    id,
+    origem: "RDO_CONTROLE",
+    rdoId: "00000000-0000-4000-8000-0000000000f4",
+    numeroRdo: "0042",
+    data: "2026-03-02",
+    servicoNome: "Recapeamento",
+    subtrecho: null,
+    sentido: "SUL",
+    pista: "SUL",
+    faixa: "Faixa 1",
+    kmInicial: 172,
+    kmFinal: 171,
+    estacaInicial: null,
+    estacaFinal: null,
+    extensaoM: 1500,
+    larguraM: 3.5,
+    areaM2: 5250,
+    massaTonelada: 380,
+    status: "VALIDADA",
+    ...overrides,
+  };
+}
+
+export const PROJECAO_FIXTURE: ProjecaoTrecho = {
+  obraId: OBRA_FIXTURE.id,
+  obraNome: OBRA_FIXTURE.nome,
+  rodovia: "SP-310 — Rodovia Washington Luís",
+  operavel: true,
+  sentidos: ["NORTE", "SUL"],
+  faixas: ["Faixa 1", "Faixa 2"],
+  kmMin: 170.5,
+  kmMax: 174,
+  atualizadoEm: "2026-03-03T18:30:00",
+  periodoDisponivel: { de: "2026-03-02", ate: "2026-03-06" },
+  periodoAplicado: { de: null, ate: null },
+  diasExecutados: [
+    {
+      data: "2026-03-02",
+      totalSegmentos: 2,
+      totalRdos: 1,
+      extensaoM: 1500,
+      massaTonelada: 370,
+      kmMin: 170.5,
+      kmMax: 172,
+    },
+    {
+      data: "2026-03-04",
+      totalSegmentos: 1,
+      totalRdos: 1,
+      extensaoM: 1000,
+      massaTonelada: 260,
+      kmMin: 172,
+      kmMax: 173,
+    },
+    {
+      data: "2026-03-06",
+      totalSegmentos: 1,
+      totalRdos: 1,
+      extensaoM: 500,
+      massaTonelada: 90,
+      kmMin: 172,
+      kmMax: 172.5,
+    },
+  ],
+  segmentos: [
+    segmento("f-plan", {
+      origem: "PROGRAMACAO",
+      rdoId: null,
+      numeroRdo: null,
+      data: "2026-03-01",
+      servicoNome: "Fresagem programada",
+      kmInicial: 174,
+      kmFinal: 171,
+      extensaoM: 3000,
+      massaTonelada: null,
+      status: "PLANEJADA",
+    }),
+    segmento("f-1", {}),
+    segmento("f-2", {
+      faixa: "Faixa 2",
+      kmInicial: 171,
+      kmFinal: 170.5,
+      extensaoM: 500,
+      massaTonelada: 120,
+      status: "REGISTRADA",
+    }),
+    segmento("f-3", {
+      data: "2026-03-04",
+      numeroRdo: "0043",
+      sentido: "NORTE",
+      pista: "NORTE",
+      faixa: "Faixa 1",
+      kmInicial: 173,
+      kmFinal: 172,
+      extensaoM: 1000,
+      massaTonelada: 260,
+      status: "VALIDADA",
+    }),
+    segmento("f-4", {
+      data: "2026-03-06",
+      numeroRdo: "0044",
+      sentido: "NORTE",
+      pista: "NORTE",
+      faixa: "Faixa 2",
+      kmInicial: 172.5,
+      kmFinal: 172,
+      extensaoM: 500,
+      massaTonelada: 90,
+      status: "REJEITADA",
+    }),
+  ],
+  resumo: {
+    totalSegmentos: 5,
+    totalRdos: 1,
+    extensaoTotalM: 3500,
+    areaTotalM2: 12250,
+    massaTotalTonelada: 850,
+    primeiraExecucao: "2026-03-02",
+    ultimaExecucao: "2026-03-06",
+  },
+};
+
+export const PROJECAO_DESATIVADA_FIXTURE: ProjecaoTrecho = {
+  ...PROJECAO_FIXTURE,
+  operavel: false,
+};

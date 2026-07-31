@@ -31,6 +31,13 @@ const financeiroCss = readCss("./features/financeiro/FinanceiroPage.css");
 const equipesCss = readCss("./features/equipes/EquipesPage.css");
 const workforceCss = readCss("./features/rdos/RdoWorkforceEditor.css");
 const operationalMapCss = readCss("./features/obras/map/OperationalMap.css");
+const rodoviaWorkspaceCss = readCss(
+  "./features/obras/map/RodoviaWorkspace.css",
+);
+const leafletTrechoCss = readCss("./features/obras/map/LeafletTrechoMap.css");
+const trechoEsquematicoCss = readCss(
+  "./features/obras/trecho/TrechoEsquematico.css",
+);
 const rdoCreationCss = readCss("./features/rdos/RdoCreationDialog.css");
 const novaObraCss = readCss("./features/obras/gestao/NovaObraForm.css");
 const tarefasCss = readCss("./features/tarefas/TarefasPage.css");
@@ -47,6 +54,9 @@ const taskTypographyCss = [
   equipesCss,
   workforceCss,
   operationalMapCss,
+  rodoviaWorkspaceCss,
+  leafletTrechoCss,
+  trechoEsquematicoCss,
   rdoCreationCss,
   novaObraCss,
   tarefasCss,

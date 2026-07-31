@@ -37,6 +37,7 @@ import {
   type UpdateObraInput,
 } from "./obraLifecycle";
 import { ObraAccessibleDialog } from "./ObraAccessibleDialog";
+import { ObraTrechoSection } from "./trecho/ObraTrechoSection";
 import "./gestao/gestaoObras.css";
 
 type ObrasView = "ATIVAS" | "DESATIVADAS" | "LIXEIRA";
@@ -945,6 +946,21 @@ export function ObrasPage() {
                     </dd>
                   </div>
                 </dl>
+
+                <ObraTrechoSection
+                  key={focusedObra.id}
+                  obra={{
+                    id: focusedObra.id,
+                    nome: focusedObra.nome,
+                    latitude: focusedObra.latitude,
+                    longitude: focusedObra.longitude,
+                  }}
+                  podeDesenhar={canManageWorksites}
+                  operavelLocalmente={
+                    !focusedObra.arquivadoEm &&
+                    focusedObra.status !== "INATIVA"
+                  }
+                />
 
                 <section
                   className="obras-pdor"

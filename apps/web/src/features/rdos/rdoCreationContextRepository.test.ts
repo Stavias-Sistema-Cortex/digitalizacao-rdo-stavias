@@ -183,7 +183,7 @@ describe("IndexedDB v21 para criação de RDO", () => {
 
     const database = await getCortexDb();
 
-    expect(CORTEX_DATABASE_VERSION).toBe(21);
+    expect(CORTEX_DATABASE_VERSION).toBe(22);
     expect(database.objectStoreNames.contains("rdo_creation_contexts")).toBe(true);
     expect(await database.get("outbox_mutations", "pending-v15")).toMatchObject({
       status: "PENDING",

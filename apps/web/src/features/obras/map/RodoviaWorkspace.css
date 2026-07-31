@@ -1,0 +1,170 @@
+.rodovia-workspace {
+  border: 2px solid var(--color-ink);
+  border-radius: 4px;
+  background: var(--color-surface);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rodovia-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.rodovia-workspace-header h3 {
+  margin: 2px 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.rodovia-workspace-header span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rodovia-workspace-acoes {
+  display: flex;
+  gap: 8px;
+}
+
+.rodovia-desenho-botao {
+  border: 1px solid var(--color-ink);
+  border-radius: 2px;
+  background: #ffffff;
+  color: var(--color-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background var(--transition-functional),
+    color var(--transition-functional);
+}
+
+.rodovia-desenho-botao:hover {
+  background: var(--color-canvas);
+}
+
+.rodovia-desenho-botao--ativo {
+  background: var(--color-brand-yellow);
+  color: var(--color-ink);
+}
+
+.rodovia-desenho-botao:focus-visible {
+  outline: 3px solid var(--color-brand-yellow);
+  outline-offset: 2px;
+}
+
+.rodovia-workspace-ficha {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.rodovia-workspace-ficha > div {
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: #ffffff;
+  padding: 7px 10px;
+  min-width: 0;
+}
+
+.rodovia-workspace-ficha dt {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rodovia-workspace-ficha dd {
+  margin: 3px 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.rodovia-workspace-ficha dd small {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  font-variant-numeric: normal;
+}
+
+.rodovia-workspace-aviso {
+  margin: 0;
+  border: 1px solid var(--color-border-strong);
+  border-left: 4px solid var(--color-brand-yellow);
+  border-radius: 2px;
+  background: #ffffff;
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.rodovia-workspace-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.rodovia-workspace-painel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rodovia-workspace-painel > * {
+  flex: 1 1 auto;
+  min-height: 320px;
+}
+
+.rodovia-workspace-vazio {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: #ffffff;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.rodovia-workspace-vazio strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.rodovia-workspace-vazio p {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  max-width: 52ch;
+}
+
+@media (max-width: 900px) {
+  .rodovia-workspace-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rodovia-desenho-botao {
+    transition: none;
+  }
+}

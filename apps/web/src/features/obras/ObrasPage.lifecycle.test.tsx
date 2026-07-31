@@ -61,6 +61,12 @@ vi.mock("../auth/authSession", () => ({
     session?.papelAcesso === "ALFA",
 }));
 
+// O acompanhamento do trecho tem cobertura própria e abre IndexedDB e rede;
+// aqui interessa apenas o ciclo de vida da obra.
+vi.mock("./trecho/ObraTrechoSection", () => ({
+  ObraTrechoSection: () => null,
+}));
+
 vi.mock("../home/useHomeData", () => ({
   useHomeData: () => ({
     obras: state.obras,

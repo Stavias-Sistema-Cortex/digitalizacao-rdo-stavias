@@ -60,6 +60,25 @@ final class OperationalGraphPayloadPolicy {
             "currency",
             "revenueEvidenceId"
     );
+    /**
+     * Descritores estruturais da camada geoespacial. São escalares curtos que
+     * situam a geometria na rodovia; a lista de coordenadas em si nunca entra no
+     * grafo — permanece apenas no ledger canônico e em {@code obra_geometria}.
+     */
+    private static final Set<String> GEOMETRY_KEYS = Set.of(
+            "categoria",
+            "objetoTipo",
+            "objetoId",
+            "tipoGeometria",
+            "fonte",
+            "rodovia",
+            "sentido",
+            "faixa",
+            "pista",
+            "kmInicial",
+            "kmFinal",
+            "extensaoM"
+    );
     private static final Set<String> BUSINESS_LABEL_KEYS = Set.of(
             "name",
             "worksiteName",
@@ -120,6 +139,10 @@ final class OperationalGraphPayloadPolicy {
         if (event.contains("WORKSITE") || event.startsWith("OBRA_")
                 || Set.of("WORKSITE", "OBRA").contains(entity)) {
             keys.addAll(WORKSITE_KEYS);
+        }
+        if (event.startsWith("GEOMETRIA_")
+                || Set.of("GEOMETRIA_OPERACIONAL", "WORKSITE_GEOMETRY").contains(entity)) {
+            keys.addAll(GEOMETRY_KEYS);
         }
         if (event.contains("ASSET") || event.contains("EQUIPMENT")
                 || Set.of("ASSET", "ATIVO", "EQUIPAMENTO").contains(entity)) {
