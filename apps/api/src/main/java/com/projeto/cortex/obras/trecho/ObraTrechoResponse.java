@@ -61,7 +61,13 @@ public record ObraTrechoResponse(
         /** Controle geométrico executado, lançado no verso do RDO. */
         RDO_CONTROLE,
         /** Serviço executado com trecho inicial/final declarado no RDO. */
-        EXECUCAO_SERVICO
+        EXECUCAO_SERVICO,
+        /**
+         * Trecho declarado à mão sobre o mapa, em {@code obra_geometria}.
+         * É o combinado — a interdição acertada antes de qualquer apontamento —
+         * e convive com o apurado sem substituí-lo.
+         */
+        CADASTRO_MAPA
     }
 
     public record SegmentoTrecho(

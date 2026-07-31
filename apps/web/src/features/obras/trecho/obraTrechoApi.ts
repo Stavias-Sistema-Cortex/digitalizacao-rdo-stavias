@@ -22,11 +22,32 @@ import type {
   SegmentoTrecho,
 } from "./trechoGeometry";
 
-const ORIGENS = new Set<OrigemSegmento>([
+/**
+ * Origens aceitas na leitura do servidor.
+ *
+ * Era uma lista literal mantida à mão, e um segmento de origem ausente dela
+ * era descartado em silêncio — a projeção chegava correta e sumia antes de
+ * virar bloco. A checagem abaixo quebra a compilação quando o tipo ganha uma
+ * origem que este parser não conhece, em vez de deixar o dado evaporar.
+ */
+const ORIGENS_ACEITAS = [
   "PROGRAMACAO",
   "RDO_CONTROLE",
   "EXECUCAO_SERVICO",
-]);
+  "CADASTRO_MAPA",
+] as const satisfies readonly OrigemSegmento[];
+
+type OrigemSemLeitura = Exclude<
+  OrigemSegmento,
+  (typeof ORIGENS_ACEITAS)[number]
+>;
+
+const _TODA_ORIGEM_TEM_LEITURA: [OrigemSemLeitura] extends [never]
+  ? true
+  : never = true;
+void _TODA_ORIGEM_TEM_LEITURA;
+
+const ORIGENS = new Set<OrigemSegmento>(ORIGENS_ACEITAS);
 
 export type OrigemLeitura = "REDE" | "CACHE_LOCAL" | "DISPOSITIVO";
 
