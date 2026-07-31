@@ -31,3 +31,7 @@ apps/web/.wrangler/
 *.p12
 *.pfx
 *.jks
+
+# Debris de ferramentas locais
+.ua/
+xcrun_db
