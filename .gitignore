@@ -35,3 +35,6 @@ apps/web/.wrangler/
 # Debris de ferramentas locais
 .ua/
 xcrun_db
+
+# Cache do Vitest, commitado por engano
+node_modules/
