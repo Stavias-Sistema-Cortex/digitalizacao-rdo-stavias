@@ -97,6 +97,7 @@ function segmentoLocal(
     status: "RASCUNHO",
     rdoStatus: "RASCUNHO",
     procedencia: "DISPOSITIVO",
+    pistaInferida: false,
     ...overrides,
   };
 }

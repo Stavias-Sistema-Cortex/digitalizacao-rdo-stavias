@@ -5,6 +5,7 @@ import {
   calcularEscalaKm,
   estadoDoSegmento,
   formatarKm,
+  herdarPistaDoControle,
   ladosDoCanteiro,
   marcosDeLimite,
   marcosKm,
@@ -42,6 +43,7 @@ function segmento(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     status: "VALIDADA",
     rdoStatus: "ENVIADO",
     procedencia: "SERVIDOR",
+    pistaInferida: false,
     ...overrides,
   };
 }
@@ -319,6 +321,131 @@ describe("ladosDoCanteiro", () => {
     expect(lados.temCanteiro).toBe(false);
     expect(lados.superior).toHaveLength(2);
     expect(lados.inferior).toHaveLength(0);
+    expect(lados.indefinidas).toHaveLength(0);
+  });
+
+  it("mantém o canteiro quando sobra um lançamento sem sentido declarado", () => {
+    const pistas = pistasDoTrecho(
+      [
+        segmento({ id: "a", sentido: "NORTE", faixa: "1" }),
+        segmento({ id: "b", sentido: "SUL", faixa: "1" }),
+        segmento({
+          id: "c",
+          origem: "EXECUCAO_SERVICO",
+          sentido: null,
+          pista: null,
+          faixa: null,
+        }),
+      ],
+      escala,
+    );
+
+    const lados = ladosDoCanteiro(pistas);
+
+    // A pista sem sentido não some nem escolhe um lado: ela sai do par.
+    expect(lados.temCanteiro).toBe(true);
+    expect(lados.superior.map((pista) => pista.sentido)).toEqual(["NORTE"]);
+    expect(lados.inferior.map((pista) => pista.sentido)).toEqual(["SUL"]);
+    expect(lados.indefinidas).toHaveLength(1);
+  });
+
+  it("não perde as pistas indefinidas quando não há canteiro", () => {
+    const pistas = pistasDoTrecho(
+      [
+        segmento({ id: "a", sentido: "SUL", faixa: "1" }),
+        segmento({
+          id: "b",
+          origem: "EXECUCAO_SERVICO",
+          sentido: null,
+          pista: null,
+          faixa: null,
+        }),
+      ],
+      escala,
+    );
+
+    const lados = ladosDoCanteiro(pistas);
+
+    expect(lados.temCanteiro).toBe(false);
+    expect(
+      lados.superior.length + lados.indefinidas.length,
+    ).toBe(pistas.length);
+  });
+});
+
+describe("herdarPistaDoControle", () => {
+  function servicoSemPista(
+    overrides: Partial<SegmentoTrecho> = {},
+  ): SegmentoTrecho {
+    return segmento({
+      id: "exec-1",
+      origem: "EXECUCAO_SERVICO",
+      sentido: null,
+      pista: null,
+      faixa: null,
+      kmInicial: 171.2,
+      kmFinal: 171.8,
+      ...overrides,
+    });
+  }
+
+  it("herda a pista do controle que encosta nos quilômetros do serviço", () => {
+    const resultado = herdarPistaDoControle([
+      segmento({ id: "ctrl-1", pista: "NORTE", faixa: "1", kmInicial: 171, kmFinal: 172 }),
+      segmento({ id: "ctrl-2", pista: "SUL", faixa: "2", kmInicial: 175, kmFinal: 176 }),
+      servicoSemPista(),
+    ]);
+
+    const herdado = resultado.find((s) => s.id === "exec-1");
+    expect(herdado?.pista).toBe("NORTE");
+    expect(herdado?.faixa).toBe("1");
+    expect(herdado?.pistaInferida).toBe(true);
+  });
+
+  it("cai no consenso do RDO quando o serviço não tem quilômetros", () => {
+    const resultado = herdarPistaDoControle([
+      segmento({ id: "ctrl-1", pista: "NORTE", faixa: "1" }),
+      segmento({ id: "ctrl-2", pista: "NORTE", faixa: "2" }),
+      servicoSemPista({ kmInicial: null, kmFinal: null }),
+    ]);
+
+    const herdado = resultado.find((s) => s.id === "exec-1");
+    // A pista é unânime; a faixa diverge e fica ausente em vez de virar palpite.
+    expect(herdado?.pista).toBe("NORTE");
+    expect(herdado?.faixa).toBeNull();
+    expect(herdado?.pistaInferida).toBe(true);
+  });
+
+  it("não arrisca pista quando os controles divergem", () => {
+    const resultado = herdarPistaDoControle([
+      segmento({ id: "ctrl-1", pista: "NORTE", kmInicial: 171, kmFinal: 172 }),
+      segmento({ id: "ctrl-2", pista: "SUL", kmInicial: 171, kmFinal: 172 }),
+      servicoSemPista(),
+    ]);
+
+    const intocado = resultado.find((s) => s.id === "exec-1");
+    expect(intocado?.pista).toBeNull();
+    expect(intocado?.pistaInferida).toBe(false);
+  });
+
+  it("nunca empresta pista de controle de outro RDO", () => {
+    const resultado = herdarPistaDoControle([
+      segmento({ id: "ctrl-1", rdoId: "rdo-OUTRO", pista: "NORTE" }),
+      servicoSemPista(),
+    ]);
+
+    expect(resultado.find((s) => s.id === "exec-1")?.pista).toBeNull();
+  });
+
+  it("respeita a pista que o próprio serviço declarou", () => {
+    const resultado = herdarPistaDoControle([
+      segmento({ id: "ctrl-1", pista: "NORTE", kmInicial: 171, kmFinal: 172 }),
+      servicoSemPista({ pista: "SUL" }),
+    ]);
+
+    const declarado = resultado.find((s) => s.id === "exec-1");
+    expect(declarado?.pista).toBe("SUL");
+    expect(declarado?.pistaInferida).toBe(false);
   });
 });
 
@@ -419,6 +546,7 @@ function local(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     status: "RASCUNHO",
     rdoStatus: "RASCUNHO",
     procedencia: "DISPOSITIVO",
+    pistaInferida: false,
     ...overrides,
   });
 }

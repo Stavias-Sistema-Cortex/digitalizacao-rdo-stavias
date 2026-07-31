@@ -144,8 +144,44 @@ public record RdoResponse(
             Instant acceptedAt,
             boolean retrabalho,
             boolean producaoRejeitada,
-            String observacoes
+            String observacoes,
+            /** Pista e faixa declaradas para o serviço, quando o RDO as trouxe. */
+            String pista,
+            String faixa
     ) {
+
+        /** Assinatura anterior à captura de pista e faixa. */
+        public ServicoExecutadoItem(
+                String id,
+                String serviceId,
+                String priceVersionId,
+                String servicoNome,
+                String itemContratualId,
+                BigDecimal quantidadeExecutada,
+                String unidade,
+                String trechoInicial,
+                String trechoFinal,
+                String localizacao,
+                String turno,
+                String statusValidacao,
+                String estadoReceita,
+                String revenueCoverageCode,
+                String revenueEvidenceId,
+                String revenueEventId,
+                Instant acceptedAt,
+                boolean retrabalho,
+                boolean producaoRejeitada,
+                String observacoes
+        ) {
+            this(
+                    id, serviceId, priceVersionId, servicoNome, itemContratualId,
+                    quantidadeExecutada, unidade, trechoInicial, trechoFinal,
+                    localizacao, turno, statusValidacao, estadoReceita,
+                    revenueCoverageCode, revenueEvidenceId, revenueEventId,
+                    acceptedAt, retrabalho, producaoRejeitada, observacoes,
+                    null, null
+            );
+        }
     }
 
     public record AlocacaoColaboradorItem(

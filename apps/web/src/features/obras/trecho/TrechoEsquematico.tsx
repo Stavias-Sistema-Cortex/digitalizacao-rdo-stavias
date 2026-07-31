@@ -46,6 +46,11 @@ function Bloco({ bloco }: { bloco: BlocoSegmento }) {
       bloco.segmento.kmFinal,
     )}`,
     ESTADO_LABEL[estado],
+    // A posição na pista é conclusão tirada do controle geométrico do mesmo
+    // RDO, não declaração do apontador — o detalhe deixa isso dito.
+    bloco.segmento.pistaInferida
+      ? "pista herdada do controle geométrico"
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -225,6 +230,16 @@ export function TrechoEsquematico({
               {lados.inferior.map((pista) => (
                 <Pista key={pista.id} pista={pista} />
               ))}
+              {lados.indefinidas.length > 0 ? (
+                <>
+                  <div className="trecho-sem-pista">
+                    Sem pista declarada no lançamento
+                  </div>
+                  {lados.indefinidas.map((pista) => (
+                    <Pista key={pista.id} pista={pista} />
+                  ))}
+                </>
+              ) : null}
               <div className="trecho-acostamento trecho-acostamento--inferior">
                 <span>Acostamento</span>
               </div>

@@ -366,6 +366,8 @@ public class RdoOperationalDetailService {
                     unidade_medida,
                     trecho_inicial,
                     trecho_final,
+                    pista,
+                    faixa,
                     localizacao,
                     turno,
                     status_validacao,
@@ -404,7 +406,9 @@ public class RdoOperationalDetailService {
                                 : rs.getTimestamp("accepted_at").toInstant(),
                         rs.getBoolean("retrabalho"),
                         rs.getBoolean("producao_rejeitada"),
-                        rs.getString("observacoes")
+                        rs.getString("observacoes"),
+                        rs.getString("pista"),
+                        rs.getString("faixa")
                 ),
                 rdoId
         );
@@ -491,6 +495,8 @@ public class RdoOperationalDetailService {
                        execution.unidade_medida,
                        execution.trecho_inicial,
                        execution.trecho_final,
+                       execution.pista,
+                       execution.faixa,
                        execution.localizacao,
                        execution.turno,
                        execution.status_validacao,
@@ -541,7 +547,9 @@ public class RdoOperationalDetailService {
                                     rs.getString("revenue_event_id"),
                                     rs.getTimestamp("accepted_at").toInstant(),
                                     rs.getString("service_code"),
-                                    rs.getInt("price_version")
+                                    rs.getInt("price_version"),
+                                    rs.getString("pista"),
+                                    rs.getString("faixa")
                             );
                     result.put(execution.id(), execution);
                 },
@@ -580,6 +588,14 @@ public class RdoOperationalDetailService {
         }
     }
 
+    /**
+     * Pista e faixa ficam deliberadamente fora desta comparação e fora de
+     * {@code chave_execucao}: elas descrevem onde na rodovia o serviço foi
+     * feito, não o que a receita cobra. Incluí-las congelaria um campo
+     * puramente descritivo no contrato de imutabilidade e faria uma correção de
+     * pista conflitar com a execução já aceita. A linha aceita continua
+     * intocada de qualquer forma — o replay devolve o que está gravado.
+     */
     private boolean exactAcceptedReplay(
             ExistingAcceptedExecution accepted,
             RdoCreateRequest.ServicoExecutadoItem item
@@ -784,7 +800,8 @@ public class RdoOperationalDetailService {
                 execution.revenueState(), execution.coverageCode(),
                 execution.evidenceId(), execution.eventId(),
                 execution.acceptedAt(), execution.rework(),
-                execution.productionRejected(), execution.observations()
+                execution.productionRejected(), execution.observations(),
+                execution.roadway(), execution.lane()
         );
     }
 
@@ -884,6 +901,8 @@ public class RdoOperationalDetailService {
                         unidade_medida,
                         trecho_inicial,
                         trecho_final,
+                        pista,
+                        faixa,
                         localizacao,
                         data_execucao,
                         turno,
@@ -903,7 +922,8 @@ public class RdoOperationalDetailService {
                         accepted_at
                     ) VALUES (
                         ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, CASE WHEN ?::varchar IS NULL THEN NULL ELSE now() END
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        CASE WHEN ?::varchar IS NULL THEN NULL ELSE now() END
                     )
                     RETURNING accepted_at
                     """,
@@ -921,6 +941,8 @@ public class RdoOperationalDetailService {
                     prepared.unit(),
                     nuloSeVazio(item.trechoInicial()),
                     nuloSeVazio(item.trechoFinal()),
+                    nuloSeVazio(item.pista()),
+                    nuloSeVazio(item.faixa()),
                     nuloSeVazio(item.localizacao()),
                     dataRdo,
                     prepared.turn(),
@@ -971,7 +993,9 @@ public class RdoOperationalDetailService {
                     acceptedAt,
                     prepared.rework(),
                     prepared.productionRejected(),
-                    item.observacoes()
+                    item.observacoes(),
+                    nuloSeVazio(item.pista()),
+                    nuloSeVazio(item.faixa())
             ));
         }
 
@@ -1729,7 +1753,9 @@ public class RdoOperationalDetailService {
             String eventId,
             Instant acceptedAt,
             String serviceCode,
-            int priceVersion
+            int priceVersion,
+            String roadway,
+            String lane
     ) {
     }
 

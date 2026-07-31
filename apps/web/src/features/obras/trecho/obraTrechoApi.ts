@@ -108,6 +108,7 @@ function segmentoFromApi(value: unknown): SegmentoTrecho | null {
     rdoStatus: nullableString(item.rdoStatus),
     // Tudo que vem por esta porta é a projeção autoritativa do servidor.
     procedencia: "SERVIDOR",
+    pistaInferida: item.pistaInferida === true,
   };
 }
 

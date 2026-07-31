@@ -182,6 +182,8 @@ function mapServicosExecutados(
       unidade: asString(item.unidade),
       trechoInicial: asString(item.trechoInicial),
       trechoFinal: asString(item.trechoFinal),
+      pista: asString(item.pista),
+      faixa: asString(item.faixa),
       localizacao: asString(item.localizacao),
       turno: asString(
         item.turno,

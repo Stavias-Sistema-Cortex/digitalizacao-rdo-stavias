@@ -2140,6 +2140,38 @@ export function RdoCreatePage({
                 </label>
 
                 <label>
+                  Pista
+                  <input
+                    value={item.pista}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          pista:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
+                  Faixa
+                  <input
+                    value={item.faixa}
+                    onChange={(event) =>
+                      updateServicoExecutado(
+                        item.localId,
+                        {
+                          faixa:
+                            event.target.value,
+                        },
+                      )
+                    }
+                  />
+                </label>
+
+                <label>
                   Localização
                   <input
                     value={item.localizacao}

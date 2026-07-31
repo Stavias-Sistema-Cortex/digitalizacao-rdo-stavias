@@ -89,7 +89,14 @@ public record ObraTrechoResponse(
              * apontador ainda preenche, `ENVIADO` depois de fechado. Nulo para
              * o que veio da programação.
              */
-            String rdoStatus
+            String rdoStatus,
+            /**
+             * Verdadeiro quando a pista (e, junto dela, a faixa) não veio no
+             * próprio lançamento e foi herdada do controle geométrico do mesmo
+             * RDO. A projeção posiciona o segmento, mas quem lê precisa saber
+             * que a pista é conclusão e não declaração.
+             */
+            boolean pistaInferida
     ) {
     }
 

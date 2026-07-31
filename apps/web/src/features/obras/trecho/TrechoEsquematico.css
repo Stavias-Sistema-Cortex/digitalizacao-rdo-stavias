@@ -316,6 +316,20 @@
   color: color-mix(in srgb, var(--color-brand-yellow) 68%, transparent);
 }
 
+/* Separa o que não declarou pista das pistas de verdade: fica no leito, porque
+   é execução real, mas fora dos lados do canteiro — não dá para afirmar em que
+   sentido da rodovia aconteceu. */
+.trecho-sem-pista {
+  margin: 6px 0 2px;
+  padding: 4px 8px;
+  border-top: 1px dashed color-mix(in srgb, white 34%, transparent);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--trecho-legenda);
+}
+
 .trecho-bloco {
   position: absolute;
   top: 2px;

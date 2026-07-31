@@ -134,8 +134,42 @@ public record RdoCreateRequest(
             String statusValidacao,
             Boolean retrabalho,
             Boolean producaoRejeitada,
-            String observacoes
+            String observacoes,
+            /**
+             * Pista e faixa em que o serviço foi executado, no mesmo vocabulário
+             * livre que o apontador já usa no controle geométrico. Continuam
+             * opcionais: RDO que não declara a pista permanece sem ela, e o
+             * esquemático a infere do controle geométrico quando puder.
+             */
+            String pista,
+            String faixa
     ) {
+        /** Assinatura anterior à captura de pista e faixa. */
+        public ServicoExecutadoItem(
+                String id,
+                String serviceId,
+                String priceVersionId,
+                String servicoNome,
+                String itemContratualId,
+                BigDecimal quantidadeExecutada,
+                String unidade,
+                String trechoInicial,
+                String trechoFinal,
+                String localizacao,
+                String turno,
+                String statusValidacao,
+                Boolean retrabalho,
+                Boolean producaoRejeitada,
+                String observacoes
+        ) {
+            this(
+                    id, serviceId, priceVersionId, servicoNome, itemContratualId,
+                    quantidadeExecutada, unidade, trechoInicial, trechoFinal,
+                    localizacao, turno, statusValidacao, retrabalho,
+                    producaoRejeitada, observacoes, null, null
+            );
+        }
+
         public ServicoExecutadoItem(
                 String id,
                 String servicoNome,
@@ -155,7 +189,7 @@ public record RdoCreateRequest(
                     id, null, null, servicoNome, itemContratualId,
                     quantidadeExecutada, unidade, trechoInicial, trechoFinal,
                     localizacao, turno, statusValidacao, retrabalho,
-                    producaoRejeitada, observacoes
+                    producaoRejeitada, observacoes, null, null
             );
         }
     }

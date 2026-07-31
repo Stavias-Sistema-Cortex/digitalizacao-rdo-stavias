@@ -103,6 +103,9 @@ export interface ServicoExecutadoDraft {
   unidade: string;
   trechoInicial: string;
   trechoFinal: string;
+  /** Pista e faixa onde o serviço aconteceu, no vocabulário do controle geométrico. */
+  pista: string;
+  faixa: string;
   localizacao: string;
   turno: "" | TurnoRdo;
   statusValidacao: "" | "REGISTRADA" | "VALIDADA" | "REJEITADA";

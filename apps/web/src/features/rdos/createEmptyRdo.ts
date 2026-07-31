@@ -72,6 +72,8 @@ export function createEmptyServicoExecutado(): ServicoExecutadoDraft {
     unidade: "",
     trechoInicial: "",
     trechoFinal: "",
+    pista: "",
+    faixa: "",
     localizacao: "",
     turno: "",
     statusValidacao: "",

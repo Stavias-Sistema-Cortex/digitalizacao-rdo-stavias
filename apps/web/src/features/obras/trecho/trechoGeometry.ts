@@ -44,6 +44,12 @@ export interface SegmentoTrecho {
   /** Situação do RDO de origem: RASCUNHO enquanto o apontador preenche. */
   rdoStatus: string | null;
   procedencia: ProcedenciaSegmento;
+  /**
+   * Verdadeira quando a pista não veio do próprio lançamento e foi herdada do
+   * controle geométrico do mesmo RDO. O bloco é posicionado igual, mas o
+   * detalhe conta que a pista é conclusão, não declaração do apontador.
+   */
+  pistaInferida: boolean;
 }
 
 export interface ResumoTrecho {
@@ -343,25 +349,42 @@ export function pistasDoTrecho(
  * Divide as pistas em dois lados do canteiro central quando a obra declara
  * exatamente dois sentidos. Com um sentido só, ou com mais de dois, não há
  * canteiro a representar e todas as pistas ficam de um lado.
+ *
+ * O que não declarou sentido sai num grupo próprio, `indefinidas`, em vez de
+ * ser encostado num dos lados. Esse balde é ausência de dado: pôr essas pistas
+ * junto de um sentido afirmaria de que lado da rodovia o trabalho aconteceu, e
+ * mantê-las na conta dos sentidos apagava o canteiro de toda obra que tivesse
+ * um único lançamento sem pista — que é o caso de todo serviço executado
+ * anterior à captura de pista.
  */
 export function ladosDoCanteiro(pistas: readonly PistaEsquematica[]): {
   superior: PistaEsquematica[];
   inferior: PistaEsquematica[];
+  indefinidas: PistaEsquematica[];
   temCanteiro: boolean;
 } {
-  const sentidos = [...new Set(pistas.map((pista) => pista.sentido))];
-  // O canteiro afirma que a rodovia é de pista dupla. Isso só pode ser dito
-  // quando os dois lados são sentidos realmente declarados: o balde de
-  // "sentido não declarado" é ausência de dado, não uma segunda pista.
-  if (
-    sentidos.length !== 2 ||
-    sentidos.includes(SENTIDO_NAO_DECLARADO)
-  ) {
-    return { superior: [...pistas], inferior: [], temCanteiro: false };
+  const declaradas = pistas.filter(
+    (pista) => pista.sentido !== SENTIDO_NAO_DECLARADO,
+  );
+  const indefinidas = pistas.filter(
+    (pista) => pista.sentido === SENTIDO_NAO_DECLARADO,
+  );
+  const sentidos = [...new Set(declaradas.map((pista) => pista.sentido))];
+
+  // O canteiro afirma que a rodovia é de pista dupla, e isso só pode ser dito
+  // quando existem exatamente dois sentidos realmente declarados.
+  if (sentidos.length !== 2) {
+    return {
+      superior: [...declaradas],
+      inferior: [],
+      indefinidas,
+      temCanteiro: false,
+    };
   }
   return {
-    superior: pistas.filter((pista) => pista.sentido === sentidos[0]),
-    inferior: pistas.filter((pista) => pista.sentido === sentidos[1]),
+    superior: declaradas.filter((pista) => pista.sentido === sentidos[0]),
+    inferior: declaradas.filter((pista) => pista.sentido === sentidos[1]),
+    indefinidas,
     temCanteiro: true,
   };
 }
@@ -532,6 +555,87 @@ export function recortarProjecao(
       ultimaExecucao: datas.at(-1) ?? null,
     },
   };
+}
+
+/**
+ * Completa a pista do serviço executado com a do controle geométrico do mesmo
+ * RDO — espelho exato da regra do servidor (`ObraTrechoService`), aplicado ao
+ * que só existe neste aparelho e ainda não passou por lá.
+ *
+ * A conclusão é conservadora e sempre marcada em `pistaInferida`: vale o
+ * controle cuja faixa de quilômetros encosta na do serviço e, sem interseção,
+ * apenas o consenso de todos os controles daquele RDO. Divergência deixa o
+ * segmento sem pista — palpite errado o poria na pista contrária.
+ */
+export function herdarPistaDoControle(
+  segmentos: readonly SegmentoTrecho[],
+): SegmentoTrecho[] {
+  const controlesPorRdo = new Map<string, SegmentoTrecho[]>();
+  for (const segmento of segmentos) {
+    if (
+      segmento.origem === "RDO_CONTROLE" &&
+      segmento.rdoId &&
+      segmento.pista
+    ) {
+      const atual = controlesPorRdo.get(segmento.rdoId) ?? [];
+      atual.push(segmento);
+      controlesPorRdo.set(segmento.rdoId, atual);
+    }
+  }
+  if (controlesPorRdo.size === 0) {
+    return [...segmentos];
+  }
+
+  return segmentos.map((segmento) => {
+    if (
+      segmento.origem !== "EXECUCAO_SERVICO" ||
+      segmento.pista !== null ||
+      !segmento.rdoId
+    ) {
+      return segmento;
+    }
+    const candidatos = controlesPorRdo.get(segmento.rdoId);
+    if (!candidatos) {
+      return segmento;
+    }
+    const sobrepostos = candidatos.filter((controle) =>
+      sobrepoeEmKm(controle, segmento),
+    );
+    const base = sobrepostos.length > 0 ? sobrepostos : candidatos;
+    const pista = consenso(base, (controle) => controle.pista);
+    if (!pista) {
+      return segmento;
+    }
+    return {
+      ...segmento,
+      pista,
+      faixa: segmento.faixa ?? consenso(base, (controle) => controle.faixa),
+      pistaInferida: true,
+    };
+  });
+}
+
+/** Serviço sem os dois quilômetros não encosta em controle nenhum. */
+function sobrepoeEmKm(a: SegmentoTrecho, b: SegmentoTrecho): boolean {
+  if (!segmentoPosicionavel(a) || !segmentoPosicionavel(b)) {
+    return false;
+  }
+  const aMin = Math.min(a.kmInicial as number, a.kmFinal as number);
+  const aMax = Math.max(a.kmInicial as number, a.kmFinal as number);
+  const bMin = Math.min(b.kmInicial as number, b.kmFinal as number);
+  const bMax = Math.max(b.kmInicial as number, b.kmFinal as number);
+  return aMin <= bMax && bMin <= aMax;
+}
+
+/** O valor único declarado pelo grupo, ou nulo quando eles discordam. */
+function consenso(
+  segmentos: readonly SegmentoTrecho[],
+  campo: (segmento: SegmentoTrecho) => string | null,
+): string | null {
+  const valores = new Set(
+    segmentos.map(campo).filter((valor): valor is string => Boolean(valor)),
+  );
+  return valores.size === 1 ? [...valores][0] : null;
 }
 
 /** Chave do dia agregado, a partir da data do lançamento. */

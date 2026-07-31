@@ -77,6 +77,7 @@ function segmento(
     status: "VALIDADA",
     rdoStatus: "ENVIADO",
     procedencia: "SERVIDOR",
+    pistaInferida: false,
     ...overrides,
   };
 }
@@ -201,6 +202,40 @@ export const PROJECAO_FIXTURE: ProjecaoTrecho = {
       status: "RASCUNHO",
       rdoStatus: "RASCUNHO",
       procedencia: "DISPOSITIVO",
+      pistaInferida: false,
+    }),
+    // Serviço com a pista herdada do controle geométrico do mesmo RDO.
+    segmento("f-herdado", {
+      origem: "EXECUCAO_SERVICO",
+      data: "2026-03-04",
+      rdoId: "00000000-0000-4000-8000-0000000000f5",
+      numeroRdo: "0045",
+      servicoNome: "Fresagem descontínua",
+      sentido: null,
+      pista: "NORTE",
+      faixa: "Faixa 1",
+      kmInicial: 173.4,
+      kmFinal: 172.9,
+      extensaoM: 500,
+      massaTonelada: null,
+      status: "VALIDADA",
+      pistaInferida: true,
+    }),
+    // Serviço antigo sem pista em RDO nenhum: continua fora dos dois lados.
+    segmento("f-sem-pista", {
+      origem: "EXECUCAO_SERVICO",
+      data: "2026-03-05",
+      rdoId: "00000000-0000-4000-8000-0000000000f7",
+      numeroRdo: "0047",
+      servicoNome: "Sinalização horizontal",
+      sentido: null,
+      pista: null,
+      faixa: null,
+      kmInicial: 172.6,
+      kmFinal: 171.8,
+      extensaoM: 800,
+      massaTonelada: null,
+      status: "REGISTRADA",
     }),
   ],
   resumo: {

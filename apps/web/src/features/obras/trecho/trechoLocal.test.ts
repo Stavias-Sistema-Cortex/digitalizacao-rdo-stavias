@@ -86,6 +86,7 @@ describe("segmentosDoRdoLocal", () => {
     expect(segmentos[0]).toMatchObject({
       origem: "RDO_CONTROLE",
       procedencia: "DISPOSITIVO",
+      pistaInferida: false,
       rdoId: "rdo-local-1",
       numeroRdo: "RDO-118",
       data: "2026-03-09",
@@ -146,11 +147,70 @@ describe("segmentosDoRdoLocal", () => {
     expect(segmentos[0]).toMatchObject({
       origem: "EXECUCAO_SERVICO",
       procedencia: "DISPOSITIVO",
+      pistaInferida: false,
       servicoNome: "Fresagem",
       subtrecho: "Pista sul",
       kmInicial: 174,
       kmFinal: 173,
       status: "PENDENTE",
+    });
+  });
+
+  it("lê a pista e a faixa declaradas no próprio serviço", () => {
+    const [servico] = segmentosDoRdoLocal(
+      rdo({
+        payload: {
+          servicosExecutados: [
+            {
+              id: "serv-1",
+              servicoNome: "Fresagem",
+              trechoInicial: "174",
+              trechoFinal: "173",
+              pista: "NORTE",
+              faixa: "2",
+            },
+          ],
+        },
+      }),
+      [],
+    );
+
+    expect(servico).toMatchObject({
+      pista: "NORTE",
+      faixa: "2",
+      pistaInferida: false,
+    });
+  });
+
+  it("herda a pista do controle geométrico do mesmo RDO local", () => {
+    const segmentos = segmentosDoRdoLocal(
+      rdo({
+        payload: {
+          servicosExecutados: [
+            {
+              id: "serv-1",
+              servicoNome: "Fresagem",
+              trechoInicial: "173.5",
+              trechoFinal: "173",
+            },
+          ],
+        },
+      }),
+      [
+        controle(
+          { kmInicial: "174", kmFinal: "173", pista: "SUL", faixa: "1" },
+          "ctrl-a",
+        ),
+      ],
+    );
+
+    const servico = segmentos.find(
+      (item) => item.origem === "EXECUCAO_SERVICO",
+    );
+    expect(servico).toMatchObject({
+      pista: "SUL",
+      faixa: "1",
+      pistaInferida: true,
     });
   });
 

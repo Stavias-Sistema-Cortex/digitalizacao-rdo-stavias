@@ -67,6 +67,7 @@ public class ObraTrechoService {
             SELECT e.id, e.rdo_id, r.numero_rdo, r.status AS rdo_status,
                    e.data_execucao, e.servico_nome,
                    e.trecho_inicial, e.trecho_final, e.localizacao,
+                   e.pista, e.faixa,
                    e.status_validacao, e.quantidade_executada, e.unidade_medida
               FROM execucao_servico_rdo e
               JOIN rdo r ON r.id = e.rdo_id
@@ -142,6 +143,9 @@ public class ObraTrechoService {
         todos.addAll(jdbcTemplate.query(
                 SEGMENTOS_EXECUCAO_SERVICO, this::mapExecucaoServico, obraId
         ));
+        // Antes de qualquer recorte: a herança precisa enxergar todos os
+        // controles do RDO, inclusive os que um filtro de data removeria.
+        todos = inferirPistaDoControle(todos);
         todos.sort(
                 Comparator.comparing(
                         SegmentoTrecho::data,
@@ -170,6 +174,115 @@ public class ObraTrechoService {
                 diasExecutados(segmentos),
                 resumo(segmentos)
         );
+    }
+
+    /**
+     * Completa a pista do serviço executado com a do controle geométrico do
+     * mesmo RDO.
+     *
+     * <p>{@code execucao_servico_rdo} só passou a registrar pista e faixa a
+     * partir de V45, e todo o histórico veio sem elas. Um serviço sem pista cai
+     * numa faixa "não declarada" que não corresponde a lugar nenhum da rodovia,
+     * some do lado certo do canteiro e atrapalha a leitura do trecho. O
+     * controle geométrico do mesmo RDO descreve o mesmo dia e a mesma frente de
+     * trabalho — é a única fonte dentro do próprio registro capaz de dizer onde
+     * aquilo aconteceu.</p>
+     *
+     * <p>A conclusão é conservadora e sempre marcada em
+     * {@code pistaInferida}: vale o controle cuja faixa de quilômetros encosta
+     * na do serviço e, quando essa interseção não resolve, apenas o consenso de
+     * todos os controles daquele RDO. Qualquer divergência deixa o segmento sem
+     * pista, porque um palpite errado põe o serviço na pista contrária — o que
+     * é pior do que admitir que a pista não foi declarada.</p>
+     */
+    private List<SegmentoTrecho> inferirPistaDoControle(List<SegmentoTrecho> segmentos) {
+        Map<String, List<SegmentoTrecho>> controlesPorRdo = new java.util.HashMap<>();
+        for (SegmentoTrecho segmento : segmentos) {
+            if (segmento.origem() == Origem.RDO_CONTROLE
+                    && segmento.rdoId() != null
+                    && segmento.pista() != null) {
+                controlesPorRdo
+                        .computeIfAbsent(segmento.rdoId(), chave -> new ArrayList<>())
+                        .add(segmento);
+            }
+        }
+        if (controlesPorRdo.isEmpty()) {
+            return segmentos;
+        }
+
+        List<SegmentoTrecho> resultado = new ArrayList<>(segmentos.size());
+        for (SegmentoTrecho segmento : segmentos) {
+            resultado.add(herdarPista(segmento, controlesPorRdo));
+        }
+        return resultado;
+    }
+
+    private SegmentoTrecho herdarPista(
+            SegmentoTrecho segmento,
+            Map<String, List<SegmentoTrecho>> controlesPorRdo
+    ) {
+        if (segmento.origem() != Origem.EXECUCAO_SERVICO
+                || segmento.pista() != null
+                || segmento.rdoId() == null) {
+            return segmento;
+        }
+        List<SegmentoTrecho> candidatos = controlesPorRdo.get(segmento.rdoId());
+        if (candidatos == null) {
+            return segmento;
+        }
+        List<SegmentoTrecho> sobrepostos = candidatos.stream()
+                .filter(controle -> sobrepoeEmKm(controle, segmento))
+                .toList();
+        List<SegmentoTrecho> base = sobrepostos.isEmpty() ? candidatos : sobrepostos;
+
+        String pista = consenso(base, SegmentoTrecho::pista);
+        if (pista == null) {
+            return segmento;
+        }
+        String faixa = segmento.faixa() != null
+                ? segmento.faixa()
+                : consenso(base, SegmentoTrecho::faixa);
+
+        return new SegmentoTrecho(
+                segmento.id(), segmento.origem(), segmento.rdoId(),
+                segmento.numeroRdo(), segmento.data(), segmento.servicoNome(),
+                segmento.subtrecho(), segmento.sentido(), pista, faixa,
+                segmento.kmInicial(), segmento.kmFinal(),
+                segmento.estacaInicial(), segmento.estacaFinal(),
+                segmento.extensaoM(), segmento.larguraM(), segmento.areaM2(),
+                segmento.massaTonelada(), segmento.status(),
+                segmento.rdoStatus(), true
+        );
+    }
+
+    /**
+     * Um serviço sem os dois quilômetros não encosta em controle nenhum, e é aí
+     * que a decisão cai no consenso do RDO inteiro.
+     */
+    private static boolean sobrepoeEmKm(SegmentoTrecho a, SegmentoTrecho b) {
+        BigDecimal aMin = menorKm(List.of(a));
+        BigDecimal aMax = maiorKm(List.of(a));
+        BigDecimal bMin = menorKm(List.of(b));
+        BigDecimal bMax = maiorKm(List.of(b));
+        if (aMin == null || aMax == null || bMin == null || bMax == null) {
+            return false;
+        }
+        return aMin.compareTo(bMax) <= 0 && bMin.compareTo(aMax) <= 0;
+    }
+
+    /** O valor único declarado pelo grupo, ou nulo quando eles discordam. */
+    private static String consenso(
+            List<SegmentoTrecho> segmentos,
+            java.util.function.Function<SegmentoTrecho, String> campo
+    ) {
+        Set<String> valores = new LinkedHashSet<>();
+        for (SegmentoTrecho segmento : segmentos) {
+            String valor = campo.apply(segmento);
+            if (valor != null) {
+                valores.add(valor);
+            }
+        }
+        return valores.size() == 1 ? valores.iterator().next() : null;
     }
 
     /**
@@ -269,7 +382,8 @@ public class ObraTrechoService {
                 rs.getBigDecimal("area_m2"),
                 rs.getBigDecimal("tonelada_massa"),
                 texto(rs.getString("status")),
-                null
+                null,
+                false
         );
     }
 
@@ -294,7 +408,8 @@ public class ObraTrechoService {
                 rs.getBigDecimal("area_m2"),
                 rs.getBigDecimal("massa_tonelada"),
                 texto(rs.getString("rdo_status")),
-                texto(rs.getString("rdo_status"))
+                texto(rs.getString("rdo_status")),
+                false
         );
     }
 
@@ -308,8 +423,8 @@ public class ObraTrechoService {
                 texto(rs.getString("servico_nome")),
                 texto(rs.getString("localizacao")),
                 null,
-                null,
-                null,
+                texto(rs.getString("pista")),
+                texto(rs.getString("faixa")),
                 QuilometroParser.parse(rs.getString("trecho_inicial")),
                 QuilometroParser.parse(rs.getString("trecho_final")),
                 null,
@@ -319,7 +434,8 @@ public class ObraTrechoService {
                 null,
                 null,
                 texto(rs.getString("status_validacao")),
-                texto(rs.getString("rdo_status"))
+                texto(rs.getString("rdo_status")),
+                false
         );
     }
 

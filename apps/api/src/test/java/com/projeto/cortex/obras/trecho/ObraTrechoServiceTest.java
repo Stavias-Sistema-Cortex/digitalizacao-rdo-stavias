@@ -93,7 +93,8 @@ class ObraTrechoServiceTest {
                 null, null,
                 massaTonelada == null ? null : new BigDecimal(massaTonelada),
                 "VALIDADA",
-                origem == Origem.PROGRAMACAO ? null : "ENVIADO"
+                origem == Origem.PROGRAMACAO ? null : "ENVIADO",
+                false
         );
     }
 
@@ -339,6 +340,128 @@ class ObraTrechoServiceTest {
         assertThat(response.atualizadoEm()).isNull();
         assertThat(response.resumo().totalSegmentos()).isZero();
         assertThat(response.resumo().primeiraExecucao()).isNull();
+    }
+
+    private SegmentoTrecho execucaoSemPista(
+            String id,
+            String rdoId,
+            String kmInicial,
+            String kmFinal
+    ) {
+        return new SegmentoTrecho(
+                id, Origem.EXECUCAO_SERVICO, rdoId, "RDO-1",
+                LocalDate.of(2026, 3, 2), "Recapeamento", null,
+                null, null, null,
+                kmInicial == null ? null : new BigDecimal(kmInicial),
+                kmFinal == null ? null : new BigDecimal(kmFinal),
+                null, null, null, null, null, null,
+                "VALIDADA", "ENVIADO", false
+        );
+    }
+
+    private SegmentoTrecho controleComPista(
+            String id,
+            String rdoId,
+            String pista,
+            String faixa,
+            String kmInicial,
+            String kmFinal
+    ) {
+        return new SegmentoTrecho(
+                id, Origem.RDO_CONTROLE, rdoId, "RDO-1",
+                LocalDate.of(2026, 3, 2), "Recapeamento", null,
+                null, pista, faixa,
+                new BigDecimal(kmInicial), new BigDecimal(kmFinal),
+                null, null, new BigDecimal("1000"), null, null, null,
+                "VALIDADA", "ENVIADO", false
+        );
+    }
+
+    @Test
+    void serviceExecutionInheritsRoadwayFromOverlappingGeometricControl() {
+        when(obraRepository.findById(OBRA_ID)).thenReturn(Optional.of(obraAtiva()));
+        stubQueries(
+                List.of(),
+                List.of(
+                        controleComPista("ctrl-1", "rdo-1", "NORTE", "1", "170", "171"),
+                        controleComPista("ctrl-2", "rdo-1", "SUL", "2", "175", "176")
+                ),
+                List.of(execucaoSemPista("exec-1", "rdo-1", "170.2", "170.8")),
+                null
+        );
+
+        SegmentoTrecho herdado = service.buscarTrecho(OBRA_ID).segmentos().stream()
+                .filter(s -> s.id().equals("exec-1"))
+                .findFirst().orElseThrow();
+
+        // Só o ctrl-1 encosta nos km do serviço; a pista vem dele, marcada
+        // como conclusão e não como declaração do apontador.
+        assertThat(herdado.pista()).isEqualTo("NORTE");
+        assertThat(herdado.faixa()).isEqualTo("1");
+        assertThat(herdado.pistaInferida()).isTrue();
+    }
+
+    @Test
+    void serviceWithoutKilometresFallsBackToTheRdoConsensus() {
+        when(obraRepository.findById(OBRA_ID)).thenReturn(Optional.of(obraAtiva()));
+        stubQueries(
+                List.of(),
+                List.of(
+                        controleComPista("ctrl-1", "rdo-1", "NORTE", "1", "170", "171"),
+                        controleComPista("ctrl-2", "rdo-1", "NORTE", "2", "171", "172")
+                ),
+                List.of(execucaoSemPista("exec-1", "rdo-1", null, null)),
+                null
+        );
+
+        SegmentoTrecho herdado = service.buscarTrecho(OBRA_ID).segmentos().stream()
+                .filter(s -> s.id().equals("exec-1"))
+                .findFirst().orElseThrow();
+
+        // Todos os controles do RDO concordam na pista; a faixa diverge e
+        // permanece ausente em vez de virar palpite.
+        assertThat(herdado.pista()).isEqualTo("NORTE");
+        assertThat(herdado.faixa()).isNull();
+        assertThat(herdado.pistaInferida()).isTrue();
+    }
+
+    @Test
+    void divergingControlsLeaveTheServiceWithoutARoadwayGuess() {
+        when(obraRepository.findById(OBRA_ID)).thenReturn(Optional.of(obraAtiva()));
+        stubQueries(
+                List.of(),
+                List.of(
+                        controleComPista("ctrl-1", "rdo-1", "NORTE", "1", "170", "171"),
+                        controleComPista("ctrl-2", "rdo-1", "SUL", "1", "170", "171")
+                ),
+                List.of(execucaoSemPista("exec-1", "rdo-1", "170.2", "170.8")),
+                null
+        );
+
+        SegmentoTrecho segmento = service.buscarTrecho(OBRA_ID).segmentos().stream()
+                .filter(s -> s.id().equals("exec-1"))
+                .findFirst().orElseThrow();
+
+        assertThat(segmento.pista()).isNull();
+        assertThat(segmento.pistaInferida()).isFalse();
+    }
+
+    @Test
+    void controlsFromAnotherRdoNeverLendTheirRoadway() {
+        when(obraRepository.findById(OBRA_ID)).thenReturn(Optional.of(obraAtiva()));
+        stubQueries(
+                List.of(),
+                List.of(controleComPista("ctrl-1", "rdo-OUTRO", "NORTE", "1", "170", "171")),
+                List.of(execucaoSemPista("exec-1", "rdo-1", "170.2", "170.8")),
+                null
+        );
+
+        SegmentoTrecho segmento = service.buscarTrecho(OBRA_ID).segmentos().stream()
+                .filter(s -> s.id().equals("exec-1"))
+                .findFirst().orElseThrow();
+
+        assertThat(segmento.pista()).isNull();
+        assertThat(segmento.pistaInferida()).isFalse();
     }
 
     /**

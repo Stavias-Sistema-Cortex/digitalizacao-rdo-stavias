@@ -57,7 +57,7 @@ class ObraTrechoControllerMockMvcTest {
                         new BigDecimal("172"), new BigDecimal("171"),
                         null, null,
                         new BigDecimal("1500"), null, null, new BigDecimal("380"),
-                        "VALIDADA", "ENVIADO"
+                        "VALIDADA", "ENVIADO", false
                 )),
                 List.of(new ObraTrechoResponse.DiaExecutado(
                         LocalDate.of(2026, 3, 2), 1, 1,

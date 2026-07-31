@@ -29,6 +29,7 @@ function segmento(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     status: "VALIDADA",
     rdoStatus: "ENVIADO",
     procedencia: "SERVIDOR",
+    pistaInferida: false,
     ...overrides,
   };
 }
@@ -158,6 +159,7 @@ describe("TrechoEsquematico", () => {
               kmInicial: 173,
               kmFinal: 172,
               procedencia: "DISPOSITIVO",
+              pistaInferida: false,
             }),
           ],
           resumo: {

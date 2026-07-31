@@ -3,7 +3,7 @@ import type {
   LocalRdoControleGeometricoRecord,
   LocalRdoRecord,
 } from "../../../lib/db/db.types";
-import type { SegmentoTrecho } from "./trechoGeometry";
+import { herdarPistaDoControle, type SegmentoTrecho } from "./trechoGeometry";
 
 /**
  * O que o apontador lançou no RDO e ainda não subiu.
@@ -142,6 +142,7 @@ export function segmentosDoRdoLocal(
       areaM2: null,
       massaTonelada: null,
       status: rdo.statusRdo,
+      pistaInferida: false,
     } satisfies SegmentoTrecho;
   });
 
@@ -152,8 +153,8 @@ export function segmentosDoRdoLocal(
     servicoNome: texto(item.servicoNome),
     subtrecho: texto(item.localizacao),
     sentido: null,
-    pista: null,
-    faixa: null,
+    pista: texto(item.pista),
+    faixa: texto(item.faixa),
     kmInicial: quilometroDeTexto(item.trechoInicial),
     kmFinal: quilometroDeTexto(item.trechoFinal),
     estacaInicial: null,
@@ -163,9 +164,13 @@ export function segmentosDoRdoLocal(
     areaM2: null,
     massaTonelada: null,
     status: texto(item.statusValidacao),
+    pistaInferida: false,
   })) satisfies SegmentoTrecho[];
 
-  return [...doControle, ...doServico];
+  // Mesma regra do servidor: serviço sem pista herda a do controle geométrico
+  // deste mesmo RDO, marcado como inferência. Aplicada aqui porque estes
+  // segmentos ainda não passaram pela projeção autoritativa.
+  return herdarPistaDoControle([...doControle, ...doServico]);
 }
 
 /** Rodovia declarada pelo RDO mais recente que a informou. */
