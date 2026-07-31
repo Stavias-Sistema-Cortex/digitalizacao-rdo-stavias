@@ -28,6 +28,7 @@ function segmento(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     massaTonelada: 380,
     status: "VALIDADA",
     rdoStatus: "ENVIADO",
+    procedencia: "SERVIDOR",
     ...overrides,
   };
 }
@@ -61,6 +62,7 @@ function projecao(overrides: Partial<ProjecaoTrecho> = {}): ProjecaoTrecho {
       totalSegmentos: segmentos.length,
       totalRdos: 1,
       totalRascunhos: 0,
+      totalPendentes: 0,
       extensaoTotalM: 1500,
       areaTotalM2: 0,
       massaTotalTonelada: 380,
@@ -142,6 +144,46 @@ describe("TrechoEsquematico", () => {
     ).toBeInTheDocument();
   });
 
+  it("desenha o lançamento que só existe neste aparelho", () => {
+    const { container } = render(
+      <TrechoEsquematico
+        projecao={projecao({
+          segmentos: [
+            segmento(),
+            segmento({
+              id: "local:rdo-9:controle:c1",
+              rdoId: "rdo-9",
+              numeroRdo: "RDO-9",
+              data: "2026-03-09",
+              kmInicial: 173,
+              kmFinal: 172,
+              procedencia: "DISPOSITIVO",
+            }),
+          ],
+          resumo: {
+            totalSegmentos: 2,
+            totalRdos: 1,
+            totalRascunhos: 0,
+            totalPendentes: 1,
+            extensaoTotalM: 1500,
+            areaTotalM2: 0,
+            massaTotalTonelada: 380,
+            primeiraExecucao: "2026-03-02",
+            ultimaExecucao: "2026-03-02",
+          },
+        })}
+      />,
+    );
+
+    expect(
+      container.querySelector(".trecho-bloco--pendente"),
+    ).not.toBeNull();
+    expect(screen.getByText("Lançado neste aparelho")).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 lançamento\(s\) ainda só neste aparelho/),
+    ).toBeInTheDocument();
+  });
+
   it("exibe a procedência do dado quando informada", () => {
     render(
       <TrechoEsquematico
@@ -180,6 +222,7 @@ describe("TrechoResumo", () => {
             totalSegmentos: 0,
             totalRdos: 0,
             totalRascunhos: 0,
+            totalPendentes: 0,
             extensaoTotalM: 0,
             areaTotalM2: 0,
             massaTotalTonelada: 0,
@@ -204,6 +247,7 @@ describe("TrechoResumo", () => {
             totalSegmentos: 1,
             totalRdos: 1,
             totalRascunhos: 0,
+            totalPendentes: 0,
             extensaoTotalM: 1500,
             areaTotalM2: 0,
             massaTotalTonelada: 0,

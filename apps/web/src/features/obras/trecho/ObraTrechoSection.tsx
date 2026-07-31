@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { LOCAL_MUTATION_QUEUED_EVENT } from "../../../lib/sync/localMutationCoordinator";
 import { SYNC_COMPLETED_EVENT } from "../../../lib/sync/syncEvents";
 import { RodoviaWorkspace } from "../map/RodoviaWorkspace";
 import type { WorksiteMapPoint } from "../map/mapGeometry";
 import type { EnderecoDaObra } from "../map/enquadramentoAproximado";
-import { buscarTrechoObra, type LeituraTrecho } from "./obraTrechoApi";
+import { carregarTrechoDaObra, type LeituraTrecho } from "./obraTrechoApi";
 import { TrechoEsquematico } from "./TrechoEsquematico";
 import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
 import { TrechoResumo } from "./TrechoResumo";
@@ -34,6 +35,9 @@ const SEM_PERIODO: Periodo = { de: null, ate: null };
 function procedencia(leitura: LeituraTrecho): string | null {
   if (leitura.origem === "REDE") {
     return null;
+  }
+  if (leitura.origem === "DISPOSITIVO") {
+    return "Somente lançamentos deste aparelho";
   }
   const data = new Date(leitura.obtidoEm);
   if (Number.isNaN(data.getTime())) {
@@ -69,20 +73,28 @@ export function ObraTrechoSection({
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
 
   // Cada rodada de sincronização automática relê a projeção, que é como o
-  // acompanhamento se mantém atual sem canal dedicado de tempo real.
+  // acompanhamento se mantém atual sem canal dedicado de tempo real. A escrita
+  // local também relê: o RDO salvo agora neste aparelho desenha no trecho
+  // imediatamente, sem esperar a fila subir.
   useEffect(() => {
-    function aoSincronizar() {
+    function aoMudar() {
       setCiclo((anterior) => anterior + 1);
     }
-    window.addEventListener(SYNC_COMPLETED_EVENT, aoSincronizar);
+    window.addEventListener(SYNC_COMPLETED_EVENT, aoMudar);
+    window.addEventListener(LOCAL_MUTATION_QUEUED_EVENT, aoMudar);
     return () => {
-      window.removeEventListener(SYNC_COMPLETED_EVENT, aoSincronizar);
+      window.removeEventListener(SYNC_COMPLETED_EVENT, aoMudar);
+      window.removeEventListener(LOCAL_MUTATION_QUEUED_EVENT, aoMudar);
     };
   }, []);
 
   useEffect(() => {
     let cancelado = false;
-    buscarTrechoObra(obra.id)
+    carregarTrechoDaObra({
+      id: obra.id,
+      nome: obra.nome,
+      operavel: operavelLocalmente,
+    })
       .then((leitura) => {
         if (!cancelado) setEstado({ fase: "pronto", leitura });
       })
@@ -99,7 +111,7 @@ export function ObraTrechoSection({
     return () => {
       cancelado = true;
     };
-  }, [obra.id, ciclo]);
+  }, [obra.id, obra.nome, operavelLocalmente, ciclo]);
 
   const leitura = estado.fase === "pronto" ? estado.leitura : null;
   const recorte = useMemo<Periodo>(

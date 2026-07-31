@@ -17,3 +17,9 @@ export function buscarTrechoObra(obraId: string): Promise<LeituraTrecho> {
     obtidoEm: "2026-03-03T18:30:00.000Z",
   });
 }
+
+export function carregarTrechoDaObra(obra: {
+  id: string;
+}): Promise<LeituraTrecho> {
+  return buscarTrechoObra(obra.id);
+}

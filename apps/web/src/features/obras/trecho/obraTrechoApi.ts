@@ -8,6 +8,11 @@ import {
   gravarTrechoEmCache,
   lerTrechoEmCache,
 } from "../map/obraGeoCacheRepository";
+import {
+  mesclarLancamentosLocais,
+  projecaoDoDispositivo,
+} from "./trechoGeometry";
+import { lancamentosLocaisDaObra } from "./trechoLocal";
 import type {
   DiaExecutado,
   OrigemSegmento,
@@ -23,7 +28,7 @@ const ORIGENS = new Set<OrigemSegmento>([
   "EXECUCAO_SERVICO",
 ]);
 
-export type OrigemLeitura = "REDE" | "CACHE_LOCAL";
+export type OrigemLeitura = "REDE" | "CACHE_LOCAL" | "DISPOSITIVO";
 
 export interface LeituraTrecho {
   projecao: ProjecaoTrecho;
@@ -101,6 +106,8 @@ function segmentoFromApi(value: unknown): SegmentoTrecho | null {
     massaTonelada: nullableNumber(item.massaTonelada),
     status: nullableString(item.status),
     rdoStatus: nullableString(item.rdoStatus),
+    // Tudo que vem por esta porta é a projeção autoritativa do servidor.
+    procedencia: "SERVIDOR",
   };
 }
 
@@ -110,6 +117,8 @@ function resumoFromApi(value: unknown): ResumoTrecho {
     totalSegmentos: requiredNumber(resumo.totalSegmentos),
     totalRdos: requiredNumber(resumo.totalRdos),
     totalRascunhos: requiredNumber(resumo.totalRascunhos),
+    // Conceito do dispositivo: o servidor não tem o que ainda não recebeu.
+    totalPendentes: 0,
     extensaoTotalM: requiredNumber(resumo.extensaoTotalM),
     areaTotalM2: requiredNumber(resumo.areaTotalM2),
     massaTotalTonelada: requiredNumber(resumo.massaTotalTonelada),
@@ -236,5 +245,46 @@ export async function buscarTrechoObra(
       };
     }
     throw reason;
+  }
+}
+
+/**
+ * Projeção do trecho como o apontador precisa vê-la.
+ *
+ * É a leitura autoritativa do servidor somada ao que foi lançado neste
+ * aparelho e ainda não subiu — o RDO do dia, preenchido em campo, quase sempre
+ * sem rede. Sem essa soma o trecho só desenharia o trabalho de ontem.
+ *
+ * Quando nem a rede nem o cache respondem mas há lançamento local, a projeção é
+ * montada só com ele: é melhor mostrar o próprio trabalho marcado como
+ * pendente do que um erro.
+ */
+export async function carregarTrechoDaObra(obra: {
+  id: string;
+  nome: string;
+  operavel: boolean;
+}): Promise<LeituraTrecho> {
+  const locais = await lancamentosLocaisDaObra(obra.id).catch(() => ({
+    segmentos: [],
+    rodovia: null,
+  }));
+
+  try {
+    const leitura = await buscarTrechoObra(obra.id);
+    return {
+      ...leitura,
+      projecao: mesclarLancamentosLocais(leitura.projecao, locais.segmentos),
+    };
+  } catch (reason) {
+    // Erro do servidor continua subindo: só a falta de transporte autoriza
+    // apresentar a obra apenas com o que o aparelho tem.
+    if (locais.segmentos.length === 0 || !falhaEhAusenciaDeRede(reason)) {
+      throw reason;
+    }
+    return {
+      projecao: projecaoDoDispositivo(obra, locais.segmentos, locais.rodovia),
+      origem: "DISPOSITIVO",
+      obtidoEm: new Date().toISOString(),
+    };
   }
 }

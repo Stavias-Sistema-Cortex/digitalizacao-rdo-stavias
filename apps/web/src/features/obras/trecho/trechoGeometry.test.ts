@@ -9,9 +9,13 @@ import {
   marcosDeLimite,
   marcosKm,
   pistasDoTrecho,
+  mesclarLancamentosLocais,
   posicaoPercentual,
+  projecaoDoDispositivo,
+  recortarProjecao,
   rotuloDoSegmento,
   segmentosPosicionaveis,
+  type ProjecaoTrecho,
   type SegmentoTrecho,
 } from "./trechoGeometry";
 
@@ -37,6 +41,7 @@ function segmento(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
     massaTonelada: null,
     status: "VALIDADA",
     rdoStatus: "ENVIADO",
+    procedencia: "SERVIDOR",
     ...overrides,
   };
 }
@@ -356,5 +361,159 @@ describe("rótulos", () => {
     expect(formatarKm(null)).toBe("—");
     expect(formatarKm(0)).toBe("km 0");
     expect(formatarKm(309.04)).toBe("km 309,04");
+  });
+});
+
+function projecao(
+  segmentos: SegmentoTrecho[],
+  overrides: Partial<ProjecaoTrecho> = {},
+): ProjecaoTrecho {
+  return {
+    obraId: "obra-1",
+    obraNome: "Recapeamento SP-310",
+    rodovia: "SP-310",
+    operavel: true,
+    sentidos: ["SUL"],
+    faixas: ["1"],
+    kmMin: 171,
+    kmMax: 172,
+    atualizadoEm: "2026-03-02T18:30:00",
+    periodoDisponivel: { de: "2026-03-02", ate: "2026-03-02" },
+    periodoAplicado: { de: null, ate: null },
+    segmentos,
+    diasExecutados: [
+      {
+        data: "2026-03-02",
+        totalSegmentos: 1,
+        totalRdos: 1,
+        extensaoM: 1000,
+        massaTonelada: 0,
+        kmMin: 171,
+        kmMax: 172,
+      },
+    ],
+    resumo: {
+      totalSegmentos: segmentos.length,
+      totalRdos: 1,
+      totalRascunhos: 0,
+      totalPendentes: 0,
+      extensaoTotalM: 1000,
+      areaTotalM2: 0,
+      massaTotalTonelada: 0,
+      primeiraExecucao: "2026-03-02",
+      ultimaExecucao: "2026-03-02",
+    },
+    ...overrides,
+  };
+}
+
+function local(overrides: Partial<SegmentoTrecho> = {}): SegmentoTrecho {
+  return segmento({
+    id: "local:rdo-9:controle:c1",
+    rdoId: "rdo-9",
+    numeroRdo: "RDO-9",
+    data: "2026-03-09",
+    kmInicial: 176,
+    kmFinal: 174,
+    extensaoM: 2000,
+    status: "RASCUNHO",
+    rdoStatus: "RASCUNHO",
+    procedencia: "DISPOSITIVO",
+    ...overrides,
+  });
+}
+
+describe("estadoDoSegmento com lançamento local", () => {
+  it("marca como pendente o que só existe neste aparelho", () => {
+    expect(estadoDoSegmento(local())).toBe("PENDENTE");
+  });
+
+  it("mantém a precedência sobre rascunho e sobre a validação do serviço", () => {
+    expect(
+      estadoDoSegmento(local({ rdoStatus: "ENVIADO", status: "VALIDADA" })),
+    ).toBe("PENDENTE");
+  });
+});
+
+describe("mesclarLancamentosLocais", () => {
+  it("desenha o RDO do dia antes de ele subir", () => {
+    const mesclada = mesclarLancamentosLocais(projecao([segmento()]), [local()]);
+
+    expect(mesclada.segmentos).toHaveLength(2);
+    expect(mesclada.resumo.totalPendentes).toBe(1);
+    // A régua precisa alcançar o quilômetro lançado agora.
+    expect(mesclada.kmMax).toBe(176);
+    expect(mesclada.kmMin).toBe(171);
+  });
+
+  it("não soma o lançamento pendente ao consolidado", () => {
+    const mesclada = mesclarLancamentosLocais(projecao([segmento()]), [local()]);
+
+    expect(mesclada.resumo.extensaoTotalM).toBe(1000);
+    expect(mesclada.resumo.totalRdos).toBe(1);
+  });
+
+  it("abre no calendário o dia que ainda não sincronizou", () => {
+    const mesclada = mesclarLancamentosLocais(projecao([segmento()]), [local()]);
+
+    expect(mesclada.diasExecutados.map((dia) => dia.data)).toEqual([
+      "2026-03-02",
+      "2026-03-09",
+    ]);
+    expect(mesclada.periodoDisponivel).toEqual({
+      de: "2026-03-02",
+      ate: "2026-03-09",
+    });
+  });
+
+  it("descarta o lançamento local do RDO que o servidor já projetou", () => {
+    const mesclada = mesclarLancamentosLocais(
+      projecao([segmento({ rdoId: "rdo-9" })]),
+      [local()],
+    );
+
+    expect(mesclada.segmentos).toHaveLength(1);
+    expect(mesclada.resumo.totalPendentes).toBe(0);
+  });
+
+  it("devolve a projeção intocada quando nada há de local", () => {
+    const original = projecao([segmento()]);
+    expect(mesclarLancamentosLocais(original, [])).toBe(original);
+  });
+});
+
+describe("recortarProjecao com lançamento local", () => {
+  it("mantém o pendente visível no dia dele e fora do consolidado", () => {
+    const mesclada = mesclarLancamentosLocais(projecao([segmento()]), [local()]);
+    const recorte = recortarProjecao(mesclada, {
+      de: "2026-03-09",
+      ate: "2026-03-09",
+    });
+
+    expect(recorte.segmentos).toHaveLength(1);
+    expect(recorte.resumo.totalPendentes).toBe(1);
+    expect(recorte.resumo.extensaoTotalM).toBe(0);
+    expect(recorte.resumo.totalRdos).toBe(0);
+  });
+});
+
+describe("projecaoDoDispositivo", () => {
+  it("monta a projeção do aparelho quando nem rede nem cache respondem", () => {
+    const derivada = projecaoDoDispositivo(
+      { id: "obra-1", nome: "Recapeamento SP-310", operavel: true },
+      [local()],
+      "SP-310",
+    );
+
+    expect(derivada.rodovia).toBe("SP-310");
+    expect(derivada.kmMin).toBe(174);
+    expect(derivada.kmMax).toBe(176);
+    expect(derivada.resumo.totalPendentes).toBe(1);
+    // Nada foi confirmado pelo servidor: o consolidado é zero, não a produção.
+    expect(derivada.resumo.extensaoTotalM).toBe(0);
+    expect(derivada.resumo.totalRdos).toBe(0);
+    expect(derivada.diasExecutados.map((dia) => dia.data)).toEqual([
+      "2026-03-09",
+    ]);
   });
 });

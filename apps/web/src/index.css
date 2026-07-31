@@ -94,6 +94,7 @@
    */
   --execucao-programado: var(--color-graphite);
   --execucao-rascunho: var(--color-muted);
+  --execucao-pendente: var(--color-surface);
   --execucao-executado: var(--color-brand-yellow);
   --execucao-validado: var(--color-focus);
   --execucao-rejeitado: var(--color-danger);

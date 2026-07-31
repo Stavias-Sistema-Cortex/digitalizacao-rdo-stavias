@@ -12,6 +12,15 @@ export type OrigemSegmento =
   | "RDO_CONTROLE"
   | "EXECUCAO_SERVICO";
 
+/**
+ * De onde o segmento veio.
+ *
+ * `SERVIDOR` é a projeção autoritativa. `DISPOSITIVO` é o que o apontador
+ * lançou no RDO e ainda não subiu: aparece no trecho porque é o trabalho do
+ * dia, mas nunca entra no consolidado enquanto o servidor não confirmar.
+ */
+export type ProcedenciaSegmento = "SERVIDOR" | "DISPOSITIVO";
+
 export interface SegmentoTrecho {
   id: string;
   origem: OrigemSegmento;
@@ -34,6 +43,7 @@ export interface SegmentoTrecho {
   status: string | null;
   /** Situação do RDO de origem: RASCUNHO enquanto o apontador preenche. */
   rdoStatus: string | null;
+  procedencia: ProcedenciaSegmento;
 }
 
 export interface ResumoTrecho {
@@ -41,6 +51,8 @@ export interface ResumoTrecho {
   totalRdos: number;
   /** Lançamentos ainda em rascunho, fora do consolidado. */
   totalRascunhos: number;
+  /** Lançamentos que só existem neste aparelho, fora do consolidado. */
+  totalPendentes: number;
   extensaoTotalM: number;
   areaTotalM2: number;
   massaTotalTonelada: number;
@@ -356,6 +368,7 @@ export function ladosDoCanteiro(pistas: readonly PistaEsquematica[]): {
 
 export type EstadoSegmento =
   | "PROGRAMADO"
+  | "PENDENTE"
   | "RASCUNHO"
   | "EXECUTADO"
   | "VALIDADO"
@@ -364,12 +377,19 @@ export type EstadoSegmento =
 /**
  * Estado real do segmento.
  *
+ * Um lançamento que só existe neste aparelho é o mais recente de todos — é o
+ * que acabou de ser apontado em campo — e por isso vem antes de qualquer outra
+ * leitura: o servidor ainda não viu esse trabalho.
+ *
  * Um lançamento cujo RDO ainda está em rascunho é o que a equipe está fazendo
  * agora — precisa aparecer, mas não pode ser lido como produção fechada. Só a
  * validação do serviço promove o bloco a validado; o simples envio do RDO
  * significa executado, não aprovado.
  */
 export function estadoDoSegmento(segmento: SegmentoTrecho): EstadoSegmento {
+  if (segmento.procedencia === "DISPOSITIVO") {
+    return "PENDENTE";
+  }
   if (segmento.origem === "PROGRAMACAO") {
     return "PROGRAMADO";
   }
@@ -465,15 +485,21 @@ export function recortarProjecao(
     dentro(dia.data),
   );
   // Mesma regra do servidor: rascunho aparece, mas não entra no consolidado.
-  const executados = segmentos.filter(
+  // O que só existe neste aparelho fica de fora pelo mesmo motivo, com um
+  // grau a mais de distância — nem o servidor recebeu ainda.
+  const producao = segmentos.filter(
     (segmento) =>
       segmento.origem !== "PROGRAMACAO" &&
-      segmento.rdoStatus?.toUpperCase() !== "RASCUNHO",
+      segmento.procedencia !== "DISPOSITIVO",
   );
-  const rascunhos = segmentos.filter(
-    (segmento) =>
-      segmento.origem !== "PROGRAMACAO" &&
-      segmento.rdoStatus?.toUpperCase() === "RASCUNHO",
+  const executados = producao.filter(
+    (segmento) => segmento.rdoStatus?.toUpperCase() !== "RASCUNHO",
+  );
+  const rascunhos = producao.filter(
+    (segmento) => segmento.rdoStatus?.toUpperCase() === "RASCUNHO",
+  );
+  const pendentes = segmentos.filter(
+    (segmento) => segmento.procedencia === "DISPOSITIVO",
   );
   const somar = (valores: (number | null)[]): number =>
     valores.reduce<number>(
@@ -493,6 +519,7 @@ export function recortarProjecao(
     resumo: {
       totalSegmentos: segmentos.length,
       totalRascunhos: rascunhos.length,
+      totalPendentes: pendentes.length,
       totalRdos: new Set(
         executados
           .map((segmento) => segmento.rdoId)
@@ -503,6 +530,195 @@ export function recortarProjecao(
       massaTotalTonelada: somar(executados.map((s) => s.massaTonelada)),
       primeiraExecucao: datas.at(0) ?? null,
       ultimaExecucao: datas.at(-1) ?? null,
+    },
+  };
+}
+
+/** Chave do dia agregado, a partir da data do lançamento. */
+function diaDoSegmento(segmento: SegmentoTrecho): string | null {
+  return segmento.data;
+}
+
+function agregarDias(
+  segmentos: readonly SegmentoTrecho[],
+): Map<string, DiaExecutado> {
+  const porDia = new Map<string, DiaExecutado>();
+  for (const segmento of segmentos) {
+    const data = diaDoSegmento(segmento);
+    if (segmento.origem === "PROGRAMACAO" || !data) {
+      continue;
+    }
+    const atual = porDia.get(data);
+    const kms = [segmento.kmInicial, segmento.kmFinal].filter(finito);
+    porDia.set(data, {
+      data,
+      totalSegmentos: (atual?.totalSegmentos ?? 0) + 1,
+      totalRdos: atual?.totalRdos ?? 0,
+      extensaoM: (atual?.extensaoM ?? 0) + (finito(segmento.extensaoM) ? segmento.extensaoM : 0),
+      massaTonelada:
+        (atual?.massaTonelada ?? 0) +
+        (finito(segmento.massaTonelada) ? segmento.massaTonelada : 0),
+      kmMin: menorDefinido(atual?.kmMin ?? null, kms),
+      kmMax: maiorDefinido(atual?.kmMax ?? null, kms),
+    });
+  }
+  // O total de RDOs do dia é a contagem de RDOs distintos, não de segmentos.
+  for (const [data, dia] of porDia) {
+    const rdos = new Set(
+      segmentos
+        .filter(
+          (segmento) =>
+            segmento.origem !== "PROGRAMACAO" &&
+            segmento.data === data &&
+            segmento.rdoId,
+        )
+        .map((segmento) => segmento.rdoId as string),
+    );
+    porDia.set(data, { ...dia, totalRdos: rdos.size });
+  }
+  return porDia;
+}
+
+function menorDefinido(atual: number | null, valores: number[]): number | null {
+  const candidatos = atual === null ? valores : [atual, ...valores];
+  return candidatos.length > 0 ? Math.min(...candidatos) : null;
+}
+
+function maiorDefinido(atual: number | null, valores: number[]): number | null {
+  const candidatos = atual === null ? valores : [atual, ...valores];
+  return candidatos.length > 0 ? Math.max(...candidatos) : null;
+}
+
+/**
+ * Junta à projeção do servidor o que o apontador lançou e ainda não subiu.
+ *
+ * O RDO preenchido em campo é o trabalho do dia: ele precisa desenhar no
+ * trecho antes de sincronizar, ou o acompanhamento só serviria para quem está
+ * online. O que entra fica marcado como `DISPOSITIVO` e é somado ao dia
+ * correspondente — para o calendário poder selecioná-lo —, mas nunca ao
+ * consolidado, que continua sendo só o que o servidor confirmou.
+ *
+ * Um RDO que já subiu volta pela projeção autoritativa; por isso o lançamento
+ * local do mesmo RDO é descartado aqui, em vez de aparecer duas vezes.
+ */
+export function mesclarLancamentosLocais(
+  projecao: ProjecaoTrecho,
+  locais: readonly SegmentoTrecho[],
+): ProjecaoTrecho {
+  const conhecidos = new Set(
+    projecao.segmentos
+      .map((segmento) => segmento.rdoId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const novos = locais.filter(
+    (segmento) => !segmento.rdoId || !conhecidos.has(segmento.rdoId),
+  );
+  if (novos.length === 0) {
+    return projecao;
+  }
+
+  const segmentos = [...projecao.segmentos, ...novos];
+  const quilometros = segmentosPosicionaveis(novos).flatMap((segmento) => [
+    segmento.kmInicial as number,
+    segmento.kmFinal as number,
+  ]);
+  const dias = agregarDias(segmentos);
+
+  return {
+    ...projecao,
+    segmentos,
+    kmMin: menorDefinido(projecao.kmMin, quilometros),
+    kmMax: maiorDefinido(projecao.kmMax, quilometros),
+    diasExecutados: [...dias.values()].sort((a, b) =>
+      a.data.localeCompare(b.data),
+    ),
+    periodoDisponivel: ampliarPeriodo(projecao.periodoDisponivel, novos),
+    resumo: {
+      ...projecao.resumo,
+      totalSegmentos: segmentos.length,
+      totalPendentes: projecao.resumo.totalPendentes + novos.length,
+    },
+  };
+}
+
+/** O calendário precisa alcançar o dia lançado agora, ainda não sincronizado. */
+function ampliarPeriodo(
+  periodo: Periodo,
+  segmentos: readonly SegmentoTrecho[],
+): Periodo {
+  const datas = segmentos
+    .map((segmento) => segmento.data)
+    .filter((data): data is string => Boolean(data))
+    .sort();
+  if (datas.length === 0) {
+    return periodo;
+  }
+  const primeira = datas[0];
+  const ultima = datas[datas.length - 1];
+  return {
+    de: periodo.de && periodo.de < primeira ? periodo.de : primeira,
+    ate: periodo.ate && periodo.ate > ultima ? periodo.ate : ultima,
+  };
+}
+
+/**
+ * Projeção montada só com o que existe no aparelho.
+ *
+ * Usada quando nem a rede nem o cache respondem — aparelho novo cujo primeiro
+ * RDO foi preenchido em campo, sem nunca ter aberto a obra online. Sem isto o
+ * apontador veria um erro no lugar do próprio trabalho.
+ */
+export function projecaoDoDispositivo(
+  obra: { id: string; nome: string; operavel: boolean },
+  segmentos: readonly SegmentoTrecho[],
+  rodovia: string | null,
+): ProjecaoTrecho {
+  const posicionaveis = segmentosPosicionaveis(segmentos);
+  const quilometros = posicionaveis.flatMap((segmento) => [
+    segmento.kmInicial as number,
+    segmento.kmFinal as number,
+  ]);
+  const dias = agregarDias(segmentos);
+  const periodo = ampliarPeriodo({ de: null, ate: null }, segmentos);
+
+  return {
+    obraId: obra.id,
+    obraNome: obra.nome,
+    rodovia,
+    operavel: obra.operavel,
+    sentidos: [
+      ...new Set(
+        segmentos
+          .map((segmento) => segmento.sentido)
+          .filter((valor): valor is string => Boolean(valor)),
+      ),
+    ],
+    faixas: [
+      ...new Set(
+        segmentos
+          .map((segmento) => segmento.faixa)
+          .filter((valor): valor is string => Boolean(valor)),
+      ),
+    ],
+    kmMin: quilometros.length > 0 ? Math.min(...quilometros) : null,
+    kmMax: quilometros.length > 0 ? Math.max(...quilometros) : null,
+    atualizadoEm: null,
+    periodoDisponivel: periodo,
+    periodoAplicado: { de: null, ate: null },
+    segmentos: [...segmentos],
+    diasExecutados: [...dias.values()].sort((a, b) =>
+      a.data.localeCompare(b.data),
+    ),
+    resumo: {
+      totalSegmentos: segmentos.length,
+      totalRdos: 0,
+      totalRascunhos: 0,
+      totalPendentes: segmentos.length,
+      extensaoTotalM: 0,
+      areaTotalM2: 0,
+      massaTotalTonelada: 0,
+      primeiraExecucao: null,
+      ultimaExecucao: null,
     },
   };
 }

@@ -30,6 +30,7 @@ interface TrechoEsquematicoProps {
 
 const ESTADO_LABEL: Record<string, string> = {
   PROGRAMADO: "Programado",
+  PENDENTE: "Lançado neste aparelho",
   RASCUNHO: "RDO em preenchimento",
   EXECUTADO: "Executado",
   VALIDADO: "Validado",
@@ -285,6 +286,12 @@ export function TrechoEsquematico({
           </div>
         </dl>
         <div className="trecho-esquematico-notas">
+          {projecao.resumo.totalPendentes > 0 ? (
+            <small>
+              {projecao.resumo.totalPendentes} lançamento(s) ainda só neste
+              aparelho, fora do consolidado — sobem na próxima sincronização.
+            </small>
+          ) : null}
           {projecao.resumo.totalRascunhos > 0 ? (
             <small>
               {projecao.resumo.totalRascunhos} lançamento(s) em RDO ainda

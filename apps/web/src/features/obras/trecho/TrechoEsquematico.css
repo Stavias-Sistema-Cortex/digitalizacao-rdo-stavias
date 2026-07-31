@@ -381,6 +381,21 @@
   color: var(--trecho-legenda-forte);
 }
 
+/* Pendente: só existe neste aparelho. Contorno claro tracejado e superfície
+   neutra — é trabalho real, mas o servidor ainda não o viu. */
+.trecho-bloco--pendente {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--execucao-pendente) 46%, transparent),
+    color-mix(in srgb, var(--execucao-pendente) 46%, transparent) 5px,
+    color-mix(in srgb, var(--execucao-pendente) 24%, transparent) 5px,
+    color-mix(in srgb, var(--execucao-pendente) 24%, transparent) 10px
+  );
+  border-style: dashed;
+  border-color: color-mix(in srgb, white 62%, transparent);
+  color: var(--trecho-legenda-forte);
+}
+
 /* Rascunho: contorno vazado, porque a equipe ainda está lançando. */
 .trecho-bloco--rascunho {
   background: repeating-linear-gradient(
