@@ -297,7 +297,15 @@ export function EquipesPage() {
     if (!selectedTeam) return;
     try {
       if (navigator.onLine && hasAuthenticatedConnection) {
-        await hidratarColaboradoresAcademy("", selectedTeam.obraPrincipalId);
+        // Montar equipe é ação exclusiva do Alfa, e ele precisa alcançar quem
+        // ainda não tem vínculo nenhum com a obra — numa obra recém-criada não
+        // há ninguém ligado a ela, e a lista escopada viria vazia justamente
+        // no momento em que se quer formar a equipe. O Beta continua restrito
+        // ao conjunto da obra a que tem acesso.
+        await hidratarColaboradoresAcademy(
+          "",
+          alfa ? undefined : selectedTeam.obraPrincipalId,
+        );
       }
     } catch {
       // Mantém pessoas já conhecidas no dispositivo.
