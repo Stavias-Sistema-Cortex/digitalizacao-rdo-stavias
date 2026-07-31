@@ -10,6 +10,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,6 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Repository
 public class AuthIdentityRepository {
+
+    private static final Logger LOG = LoggerFactory.getLogger(
+            AuthIdentityRepository.class
+    );
 
     public static final String MANUAL_PENDING_SOURCE = "MANUAL_PENDENTE";
 
@@ -635,6 +641,20 @@ public class AuthIdentityRepository {
             owners.putIfAbsent(identity.colaboradorId(), identity);
         }
         if (owners.size() > 1) {
+            // A recusa é silenciosa para quem tenta entrar, de propósito: dizer
+            // "este CPF está duplicado" confirmaria que ele existe. Mas até
+            // aqui a condição também não deixava rastro nenhum no servidor, e
+            // quem está trancado fora do sistema — em campo, sem conseguir
+            // abrir o RDO — não tinha como ser descoberto por ninguém.
+            //
+            // Registra apenas os identificadores dos colaboradores em conflito.
+            // O CPF e o digest de busca nunca entram no log.
+            LOG.warn(
+                    "Identidade de autenticação ambígua: colaboradores {} "
+                            + "compartilham o mesmo identificador protegido. "
+                            + "Nenhum deles consegue entrar até que reste um.",
+                    owners.keySet()
+            );
             throw new AmbiguousAuthIdentityException(
                     AMBIGUOUS_IDENTITY_MESSAGE
             );

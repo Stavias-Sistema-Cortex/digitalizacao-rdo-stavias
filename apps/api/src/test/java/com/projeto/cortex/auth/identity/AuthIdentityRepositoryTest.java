@@ -14,8 +14,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.projeto.cortex.colaboradores.CpfHasher;
 import java.util.List;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -272,6 +276,65 @@ class AuthIdentityRepositoryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Identidade de autenticação ambígua.");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void ambiguidadeDeCpfDeixaRastroSemExporOProprioCpf() {
+        // A recusa continua silenciosa para quem tenta entrar — dizer que o CPF
+        // está duplicado confirmaria que ele existe. Mas quem ficou trancado
+        // fora precisa ser descoberto por alguém: sem este registro, a pessoa
+        // simplesmente não entra e nada no servidor explica por quê.
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(
+                        AuthIdentityRepository.class
+                );
+        ListAppender<ILoggingEvent> registros = new ListAppender<>();
+        registros.start();
+        logger.addAppender(registros);
+        try {
+            when(digests.candidates(SYNTHETIC_CPF)).thenReturn(List.of(CURRENT));
+            when(jdbc.query(
+                    anyString(),
+                    any(RowMapper.class),
+                    eq(CURRENT.keyId()),
+                    eq(CURRENT.value())
+            )).thenReturn(List.of());
+            when(jdbc.query(
+                    anyString(),
+                    any(RowMapper.class),
+                    eq(CpfHasher.hashDeDigitos(SYNTHETIC_CPF))
+            )).thenReturn(List.of(
+                    activeIdentity(),
+                    new AuthIdentity(
+                            "beta-sintetico",
+                            "Colaborador BETA Sintético",
+                            "beta@example.invalid",
+                            "BETA"
+                    )
+            ));
+
+            assertThatThrownBy(() -> repository.findActiveByCpf(SYNTHETIC_CPF))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(registros.list)
+                    .singleElement()
+                    .satisfies(evento -> {
+                        assertThat(evento.getLevel()).isEqualTo(Level.WARN);
+                        String texto = evento.getFormattedMessage();
+                        assertThat(texto).contains("beta-sintetico");
+                        // Nem o CPF nem o digest de busca podem entrar no log.
+                        assertThat(texto)
+                                .doesNotContain(SYNTHETIC_CPF)
+                                .doesNotContain(
+                                        CpfHasher.hashDeDigitos(SYNTHETIC_CPF)
+                                )
+                                .doesNotContain(CURRENT.value());
+                    });
+        } finally {
+            logger.detachAppender(registros);
+        }
     }
 
     @Test
