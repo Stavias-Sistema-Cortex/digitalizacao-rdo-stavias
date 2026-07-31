@@ -151,25 +151,66 @@ export default defineConfig({
           },
 
           /*
-           * Tiles do mapa da rodovia.
+           * Tiles do mapa da rodovia, em duas regras.
            *
-           * Precede a regra genérica de imagem porque o Workbox roteia pelo
-           * primeiro match e o Leaflet busca tile por `<img>`: sem esta ordem,
-           * os tiles cairiam no cache de imagens da aplicação e disputariam
-           * suas 100 entradas. MapLibre e Mapbox usam `fetch`, com destination
-           * vazio, e nenhuma outra regra os alcança.
+           * Ambas precedem a regra genérica de imagem porque o Workbox roteia
+           * pelo primeiro match e o Leaflet busca tile por `<img>`: sem esta
+           * ordem, os tiles cairiam no cache de imagens da aplicação e
+           * disputariam suas 100 entradas.
            *
            * Só é guardado o tile que já foi realmente exibido: não há prefetch,
            * e um tile nunca baixado permanece indisponível offline em vez de
            * ser apresentado como conhecido.
            */
+
+          /*
+           * Estilo, glifos e tiles vetoriais, buscados por `fetch`.
+           *
+           * O MapLibre precisa LER o corpo dessas respostas. Uma resposta
+           * opaca (status 0) não é legível, e guardá-la sob CacheFirst deixa o
+           * mapa em branco para sempre: o provider monta, reporta pronto e
+           * simplesmente não pinta, sem erro para o operador ver. Só resposta
+           * legível entra neste cache.
+           */
           {
-            urlPattern: ({ url }) =>
-              url.host === "tiles.openfreemap.org" ||
-              url.host === "api.maptiler.com" ||
-              url.host === "api.mapbox.com" ||
-              url.host.endsWith(".tile.openstreetmap.org") ||
-              url.host === "tile.openstreetmap.org",
+            urlPattern: ({ request, url }) =>
+              request.destination !== "image" &&
+              (url.host === "tiles.openfreemap.org" ||
+                url.host === "api.maptiler.com" ||
+                url.host === "api.mapbox.com" ||
+                url.host.endsWith(".tile.openstreetmap.org") ||
+                url.host === "tile.openstreetmap.org"),
+
+            handler: "CacheFirst",
+
+            options: {
+              cacheName: "cortex-map-vetorial",
+
+              cacheableResponse: {
+                statuses: [200],
+              },
+
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 604800,
+              },
+            },
+          },
+
+          /*
+           * Tiles raster do Leaflet, buscados por `<img>`.
+           *
+           * Aqui a resposta opaca é normal e renderiza mesmo assim, então
+           * status 0 continua guardável — é o que sustenta o mapa offline.
+           */
+          {
+            urlPattern: ({ request, url }) =>
+              request.destination === "image" &&
+              (url.host === "tiles.openfreemap.org" ||
+                url.host === "api.maptiler.com" ||
+                url.host === "api.mapbox.com" ||
+                url.host.endsWith(".tile.openstreetmap.org") ||
+                url.host === "tile.openstreetmap.org"),
 
             handler: "CacheFirst",
 

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   hydrateRdo: vi.fn(async () => 0),
   repairRdo: vi.fn(async () => 0),
   recoverRejectedRdo: vi.fn(async () => 0),
+  recoverRejectedGeometry: vi.fn(async () => 0),
   resolveUploads: vi.fn(async () => 0),
   recoverConflicts: vi.fn(async () => 0),
   ensureDevice: vi.fn(async () => "device"),
@@ -70,6 +71,7 @@ vi.mock("./syncStorage", () => ({
   repairMissingObraReferencesForSync: mocks.repairObra,
   resolveCanonicalUploadReplacements: mocks.resolveUploads,
   recoverCanonicalConflictReconciliations: mocks.recoverConflicts,
+  recoverRejectedGeometryMutationsForSync: mocks.recoverRejectedGeometry,
 }));
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: mocks.hydrateRdo,
@@ -171,8 +173,14 @@ describe("session-scoped sync single flight", () => {
         }),
       },
     );
+    expect(mocks.recoverRejectedGeometry).toHaveBeenCalledWith(expectedGuard);
     expect(
       mocks.recoverRejectedRdo.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.push.mock.invocationCallOrder[0]);
+    // A geometria recusada precisa voltar à fila antes do push, senão o ciclo
+    // sobe sem ela e o registro segue travando a revisão.
+    expect(
+      mocks.recoverRejectedGeometry.mock.invocationCallOrder[0],
     ).toBeLessThan(mocks.push.mock.invocationCallOrder[0]);
   });
 

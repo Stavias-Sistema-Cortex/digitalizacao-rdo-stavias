@@ -250,7 +250,7 @@ describe("generated PWA service worker contract", () => {
     );
 
     expect(tiles.strategy?.kind).toBe("CacheFirst");
-    expect(tiles.strategy?.options.cacheName).toBe("cortex-map-tiles");
+    expect(tiles.strategy?.options.cacheName).toBe("cortex-map-vetorial");
 
     const plugins = (tiles.strategy?.options.plugins ?? []) as StrategyDouble[];
     const expiration = plugins.find(
@@ -260,7 +260,29 @@ describe("generated PWA service worker contract", () => {
       maxEntries: 500,
       maxAgeSeconds: 604800,
     });
-    // Tiles cruzam origem e chegam opacos; sem status 0 nada seria guardado.
+    // O MapLibre precisa ler o corpo do estilo e do tile vetorial. Resposta
+    // opaca (status 0) não é legível e, guardada sob CacheFirst, deixaria o
+    // mapa em branco para sempre — montado, sem erro e sem pintar.
+    const cacheable = plugins.find(
+      (candidate) => candidate.kind === "CacheableResponsePlugin",
+    );
+    expect(cacheable?.options).toMatchObject({ statuses: [200] });
+  });
+
+  it("continua guardando o tile opaco do Leaflet, que renderiza mesmo assim", () => {
+    const tileDeImagem = {
+      request: { mode: "no-cors", destination: "image" },
+      url: new URL("https://a.tile.openstreetmap.org/14/1/1.png"),
+    };
+
+    const rota = worker.registrations.find(
+      ({ route }) =>
+        typeof route === "function" &&
+        (route as (context: typeof tileDeImagem) => boolean)(tileDeImagem),
+    );
+
+    expect(rota?.strategy?.options.cacheName).toBe("cortex-map-tiles");
+    const plugins = (rota?.strategy?.options.plugins ?? []) as StrategyDouble[];
     const cacheable = plugins.find(
       (candidate) => candidate.kind === "CacheableResponsePlugin",
     );

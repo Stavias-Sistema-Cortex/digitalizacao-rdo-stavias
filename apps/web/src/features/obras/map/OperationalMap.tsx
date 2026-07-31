@@ -160,6 +160,7 @@ export function OperationalMap({
   erroLeitura,
 }: OperationalMapProps) {
   const defaultProvider = useMemo(() => resolveMapProvider(), []);
+  const providers = useMemo(() => availableMapProviders(), []);
   const [providerId, setProviderId] =
     useState<MapProviderId>(defaultProvider.id);
   const [mode, setMode] = useState<MapViewMode>("2d");
@@ -217,22 +218,27 @@ export function OperationalMap({
           </span>
         </div>
         <div className="operational-map-controls">
-          <label>
-            <span>Provider</span>
-            <select
-              value={providerId}
-              onChange={(event) =>
-                setProviderId(event.target.value as MapProviderId)
-              }
-            >
-              {availableMapProviders().map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.label}
-                  {candidate.configured ? "" : " · sem chave"}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/*
+            Com um provider só não há escolha a fazer, e um seletor de uma
+            opção apenas ocupa a barra e sugere alternativas que não existem.
+          */}
+          {providers.length > 1 ? (
+            <label>
+              <span>Provider</span>
+              <select
+                value={providerId}
+                onChange={(event) =>
+                  setProviderId(event.target.value as MapProviderId)
+                }
+              >
+                {providers.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div className="operational-map-view-toggle" role="group" aria-label="Visualização">
             <button
               type="button"

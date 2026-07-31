@@ -152,13 +152,20 @@ export function resolveMapProvider(
   return mapLibreProvider(environment, null);
 }
 
-/** Providers oferecidos ao operador, na ordem em que aparecem no seletor. */
+/**
+ * Providers oferecidos ao operador, na ordem em que aparecem no seletor.
+ *
+ * Só entra o que está pronto para uso. Um provider pago sem credencial não
+ * desenha nada: escolhê-lo apagava o mapa e devolvia um pedido de configuração
+ * que o operador em campo não tem como atender. A malha aberta é keyless e
+ * está sempre presente, então a lista nunca fica vazia.
+ */
 export function availableMapProviders(
   environment: MapProviderEnvironment = import.meta.env,
 ): MapProvider[] {
-  return (["maplibre", "maptiler", "mapbox"] as const).map((id) =>
-    resolveMapProviderForId(id, environment),
-  );
+  return (["maplibre", "maptiler", "mapbox"] as const)
+    .map((id) => resolveMapProviderForId(id, environment))
+    .filter((provider) => provider.configured);
 }
 
 export function mapboxAccessToken(

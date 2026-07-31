@@ -37,6 +37,7 @@ vi.mock("./registerDevice", () => ({
 vi.mock("./syncStorage", () => ({
   recoverInterruptedMutations: vi.fn(async () => undefined),
   recoverCanonicalConflictReconciliations: vi.fn(async () => 0),
+  recoverRejectedGeometryMutationsForSync: vi.fn(async () => 0),
   repairMissingMaoObraReferencesForSync: vi.fn(async () => 0),
   repairMissingObraReferencesForSync: vi.fn(async () => 0),
   resolveCanonicalUploadReplacements: vi.fn(async () => 0),

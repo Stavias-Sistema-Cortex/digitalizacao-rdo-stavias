@@ -93,17 +93,24 @@ describe("resolveMapProviderForId", () => {
 });
 
 describe("availableMapProviders", () => {
-  it("oferece a malha aberta primeiro e os pagos como opção", () => {
+  it("oferece apenas a malha aberta quando nenhum provider pago tem chave", () => {
+    // Escolher um provider sem credencial apagava o mapa e devolvia um pedido
+    // de configuração que quem está em campo não tem como atender.
     const providers = availableMapProviders({});
+
+    expect(providers.map((provider) => provider.id)).toEqual(["maplibre"]);
+    expect(providers[0].configured).toBe(true);
+  });
+
+  it("passa a oferecer o provider pago assim que ele ganha credencial", () => {
+    const providers = availableMapProviders({
+      VITE_MAPTILER_API_KEY: "chave-de-teste",
+    });
 
     expect(providers.map((provider) => provider.id)).toEqual([
       "maplibre",
       "maptiler",
-      "mapbox",
     ]);
-    expect(providers[0].configured).toBe(true);
-    expect(providers.slice(1).every((provider) => !provider.configured)).toBe(
-      true,
-    );
+    expect(providers.every((provider) => provider.configured)).toBe(true);
   });
 });
