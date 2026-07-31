@@ -13,6 +13,11 @@ import {
   queueSupersedePrice,
   type LocalServiceCatalogRow,
 } from "./servicePriceRepository";
+import {
+  normalizarUnidade,
+  reconhecerServico,
+  sugerirCodigoDoServico,
+} from "./servicoCatalogoEntrada";
 
 interface ServicePriceCatalogPageProps {
   obraId: string;
@@ -53,6 +58,32 @@ function readText(form: FormData, key: string): string {
   return String(form.get(key) ?? "").trim();
 }
 
+function hojeIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+interface NovoServicoState {
+  code: string;
+  name: string;
+  description: string;
+  unit: string;
+  unitPrice: string;
+  contractedQuantity: string;
+  validFrom: string;
+  source: string;
+}
+
+const NOVO_SERVICO_VAZIO: NovoServicoState = {
+  code: "",
+  name: "",
+  description: "",
+  unit: "",
+  unitPrice: "",
+  contractedQuantity: "",
+  validFrom: "",
+  source: "CONTRATO_MEDIDO",
+};
+
 export function ServicePriceCatalogPage({
   obraId,
   permissions,
@@ -64,6 +95,12 @@ export function ServicePriceCatalogPage({
   const [notice, setNotice] = useState("");
   const [editor, setEditor] = useState<EditorState>(null);
   const [saving, setSaving] = useState(false);
+  const [novoServico, setNovoServico] =
+    useState<NovoServicoState>(NOVO_SERVICO_VAZIO);
+  // O código só é sugerido enquanto ninguém o escreveu à mão: a sugestão
+  // ajuda quem não tem a convenção na cabeça e nunca sobrescreve uma decisão.
+  const [codigoEditadoAMao, setCodigoEditadoAMao] = useState(false);
+  const [comPrecoInicial, setComPrecoInicial] = useState(false);
   const canAdmin = permissions.includes("FINANCEIRO_ADMINISTRAR");
 
   const loadLocal = useCallback(async (search = query) => {
@@ -139,6 +176,55 @@ export function ServicePriceCatalogPage({
     return rows.find((row) => row.service.id === editor.serviceId) ?? null;
   }, [editor, rows]);
 
+  const catalogoConhecido = useMemo(
+    () => rows.map((row) => ({
+      id: row.service.id,
+      code: row.service.code,
+      name: row.service.name,
+    })),
+    [rows],
+  );
+  /** Serviço que já existe com o nome/código que está sendo digitado. */
+  const servicoJaExistente = useMemo(
+    () => reconhecerServico(catalogoConhecido, novoServico.name) ??
+      reconhecerServico(catalogoConhecido, novoServico.code),
+    [catalogoConhecido, novoServico.code, novoServico.name],
+  );
+
+  function abrirNovoServico() {
+    setNovoServico({ ...NOVO_SERVICO_VAZIO, validFrom: hojeIso() });
+    setCodigoEditadoAMao(false);
+    setComPrecoInicial(false);
+    setEditor({ type: "service" });
+  }
+
+  /**
+   * Cria o serviço e, quando o custo foi informado, já publica o primeiro
+   * preço na mesma ação.
+   *
+   * O preço sai como uma segunda mutação, que a fila já sabe encadear atrás da
+   * criação do serviço. Se o preço falhar na validação, o serviço permanece
+   * criado e a tela leva direto ao editor de preço, em vez de perder o que foi
+   * digitado.
+   */
+  async function criarServico() {
+    const servico = await queueCreateService(obraId, {
+      code: novoServico.code,
+      name: novoServico.name,
+      description: novoServico.description,
+    });
+    if (!comPrecoInicial) return;
+    await queueCreatePrice(obraId, servico.entityId, {
+      unit: normalizarUnidade(novoServico.unit),
+      currency: "BRL",
+      unitPrice: novoServico.unitPrice,
+      contractedQuantity: novoServico.contractedQuantity,
+      validFrom: novoServico.validFrom,
+      validTo: "",
+      source: novoServico.source,
+    });
+  }
+
   async function submit(
     action: () => Promise<unknown>,
     successMessage: string,
@@ -171,7 +257,7 @@ export function ServicePriceCatalogPage({
           </p>
         </div>
         {canAdmin ? (
-          <button type="button" onClick={() => setEditor({ type: "service" })}>
+          <button type="button" onClick={abrirNovoServico}>
             Novo serviço
           </button>
         ) : null}
@@ -206,23 +292,193 @@ export function ServicePriceCatalogPage({
           className="finance-catalog-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            const form = new FormData(event.currentTarget);
             void submit(
-              () => queueCreateService(obraId, {
-                code: readText(form, "code"),
-                name: readText(form, "name"),
-                description: readText(form, "description"),
-              }),
-              "Serviço salvo localmente e incluído na sincronização automática.",
+              criarServico,
+              comPrecoInicial
+                ? "Serviço e primeiro preço salvos localmente e incluídos na sincronização automática."
+                : "Serviço salvo localmente e incluído na sincronização automática.",
             );
           }}
         >
           <header><div><span>Novo registro</span><h3>Criar serviço</h3></div><button type="button" onClick={() => setEditor(null)}>Fechar</button></header>
           <div className="finance-catalog-editor__grid">
-            <label>Código do serviço<input name="code" required maxLength={80} autoFocus /></label>
-            <label>Nome do serviço<input name="name" required maxLength={160} /></label>
-            <label className="is-wide">Descrição<textarea name="description" maxLength={500} rows={2} /></label>
+            <label>
+              Nome do serviço
+              <input
+                name="name"
+                aria-label="Nome do serviço"
+                required
+                maxLength={160}
+                autoFocus
+                value={novoServico.name}
+                placeholder="Fresagem"
+                onChange={(event) => {
+                  const name = event.target.value;
+                  setNovoServico((atual) => ({
+                    ...atual,
+                    name,
+                    code: codigoEditadoAMao
+                      ? atual.code
+                      : sugerirCodigoDoServico(name, catalogoConhecido),
+                  }));
+                }}
+              />
+              <small>
+                Escreva o nome do serviço. O código é proposto a partir dele.
+              </small>
+            </label>
+            <label>
+              Código do serviço
+              <input
+                name="code"
+                required
+                maxLength={80}
+                value={novoServico.code}
+                onChange={(event) => {
+                  setCodigoEditadoAMao(true);
+                  setNovoServico((atual) => ({
+                    ...atual,
+                    code: event.target.value,
+                  }));
+                }}
+              />
+            </label>
+            <label className="is-wide">
+              Descrição
+              <textarea
+                name="description"
+                maxLength={500}
+                rows={2}
+                value={novoServico.description}
+                onChange={(event) =>
+                  setNovoServico((atual) => ({
+                    ...atual,
+                    description: event.target.value,
+                  }))}
+              />
+            </label>
           </div>
+
+          {servicoJaExistente ? (
+            <p className="finance-service-catalog__notice" role="status">
+              <strong>{servicoJaExistente.code}</strong> — “
+              {servicoJaExistente.name}” já está no catálogo desta obra.
+              Publique um preço para ele em vez de criar um segundo registro
+              com o mesmo nome.{" "}
+              <button
+                type="button"
+                onClick={() => setEditor({
+                  type: "price",
+                  serviceId: servicoJaExistente.id,
+                })}
+              >
+                Abrir preço deste serviço
+              </button>
+            </p>
+          ) : null}
+
+          <label className="finance-catalog-editor__toggle">
+            <input
+              type="checkbox"
+              checked={comPrecoInicial}
+              onChange={(event) => setComPrecoInicial(event.target.checked)}
+            />
+            <span>Informar o custo agora</span>
+          </label>
+
+          {comPrecoInicial ? (
+            <div className="finance-catalog-editor__grid">
+              <label>
+                Unidade
+                <input
+                  name="unit"
+                  aria-label="Unidade"
+                  required
+                  maxLength={30}
+                  value={novoServico.unit}
+                  placeholder="m2, m3, ton, h"
+                  onChange={(event) =>
+                    setNovoServico((atual) => ({
+                      ...atual,
+                      unit: event.target.value,
+                    }))}
+                  onBlur={(event) =>
+                    setNovoServico((atual) => ({
+                      ...atual,
+                      unit: normalizarUnidade(event.target.value),
+                    }))}
+                />
+                <small>
+                  {novoServico.unit &&
+                    normalizarUnidade(novoServico.unit) !== novoServico.unit
+                    ? `Será gravado como ${normalizarUnidade(novoServico.unit)}.`
+                    : "Escreva como preferir: m2 vira M², ton vira T."}
+                </small>
+              </label>
+              <label>
+                Valor unitário
+                <input
+                  name="unitPrice"
+                  inputMode="decimal"
+                  required
+                  value={novoServico.unitPrice}
+                  onChange={(event) =>
+                    setNovoServico((atual) => ({
+                      ...atual,
+                      unitPrice: event.target.value,
+                    }))}
+                />
+              </label>
+              <label>
+                Quantidade contratada
+                <input
+                  name="contractedQuantity"
+                  inputMode="decimal"
+                  required
+                  value={novoServico.contractedQuantity}
+                  onChange={(event) =>
+                    setNovoServico((atual) => ({
+                      ...atual,
+                      contractedQuantity: event.target.value,
+                    }))}
+                />
+              </label>
+              <label>
+                Início da vigência
+                <input
+                  name="validFrom"
+                  aria-label="Início da vigência"
+                  type="date"
+                  required
+                  value={novoServico.validFrom}
+                  onChange={(event) =>
+                    setNovoServico((atual) => ({
+                      ...atual,
+                      validFrom: event.target.value,
+                    }))}
+                />
+                <small>
+                  A receita só reconhece execução a partir desta data.
+                </small>
+              </label>
+              <label>
+                Fonte do preço
+                <input
+                  name="source"
+                  required
+                  maxLength={80}
+                  value={novoServico.source}
+                  onChange={(event) =>
+                    setNovoServico((atual) => ({
+                      ...atual,
+                      source: event.target.value,
+                    }))}
+                />
+                <small>Use letras, números e apenas . _ : -</small>
+              </label>
+            </div>
+          ) : null}
+
           <button type="submit" disabled={saving}>Salvar offline</button>
         </form>
       ) : null}
@@ -235,7 +491,7 @@ export function ServicePriceCatalogPage({
             const form = new FormData(event.currentTarget);
             void submit(
               () => queueCreatePrice(obraId, selectedRow.service.id, {
-                unit: readText(form, "unit"),
+                unit: normalizarUnidade(readText(form, "unit")),
                 currency: readText(form, "currency"),
                 unitPrice: readText(form, "unitPrice"),
                 contractedQuantity: readText(form, "contractedQuantity"),
@@ -249,7 +505,17 @@ export function ServicePriceCatalogPage({
         >
           <header><div><span>{selectedRow.service.code}</span><h3>Publicar primeiro preço</h3></div><button type="button" onClick={() => setEditor(null)}>Fechar</button></header>
           <div className="finance-catalog-editor__grid">
-            <label>Unidade<input name="unit" required maxLength={30} placeholder="M2, M3, H" /></label>
+            <label>
+              Unidade
+              <input
+                name="unit"
+                aria-label="Unidade"
+                required
+                maxLength={30}
+                placeholder="m2, m3, ton, h"
+              />
+              <small>Escreva como preferir: m2 vira M², ton vira T.</small>
+            </label>
             <label>Moeda<input name="currency" required value="BRL" readOnly /></label>
             <label>Valor unitário<input name="unitPrice" inputMode="decimal" required /></label>
             <label>Quantidade contratada<input name="contractedQuantity" inputMode="decimal" required /></label>

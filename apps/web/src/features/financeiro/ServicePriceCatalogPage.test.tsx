@@ -2,8 +2,14 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   fetchCompleteServiceCatalog: vi.fn(),
@@ -48,6 +54,12 @@ const LOCAL_ROWS = [{
 }];
 
 describe("ServicePriceCatalogPage", () => {
+  // Sem desmontar entre os casos, cada render deixa a página anterior no DOM e
+  // as buscas por papel passam a encontrar o mesmo botão várias vezes.
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal("navigator", { onLine: false });
@@ -99,6 +111,82 @@ describe("ServicePriceCatalogPage", () => {
     ));
   });
 
+  it("propõe o código a partir do nome e reconhece o serviço que já existe", async () => {
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR", "FINANCEIRO_ADMINISTRAR"]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /novo serviço/i }));
+    fireEvent.change(screen.getByLabelText("Nome do serviço"), {
+      target: { value: "Microrrevestimento a frio" },
+    });
+    expect(screen.getByLabelText("Código do serviço")).toHaveValue(
+      "MICRORREVESTIMENTO-A-FRIO",
+    );
+
+    // Escrever o nome de um serviço que já está no catálogo precisa levar ao
+    // registro existente, não a um segundo com o mesmo nome.
+    fireEvent.change(screen.getByLabelText("Nome do serviço"), {
+      target: { value: "pavimentação cbuq" },
+    });
+    expect(
+      screen.getByRole("button", { name: /abrir preço deste serviço/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("cria o serviço e o primeiro preço na mesma ação", async () => {
+    render(
+      <ServicePriceCatalogPage
+        obraId={OBRA_ID}
+        permissions={["FINANCEIRO_VISUALIZAR", "FINANCEIRO_ADMINISTRAR"]}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /novo serviço/i }));
+    fireEvent.change(screen.getByLabelText("Nome do serviço"), {
+      target: { value: "Base graduada" },
+    });
+    fireEvent.click(screen.getByLabelText(/informar o custo agora/i));
+    fireEvent.change(screen.getByLabelText("Unidade"), {
+      target: { value: "m3" },
+    });
+    fireEvent.change(screen.getByLabelText("Valor unitário"), {
+      target: { value: "98,70" },
+    });
+    fireEvent.change(screen.getByLabelText("Quantidade contratada"), {
+      target: { value: "1200,000" },
+    });
+    fireEvent.change(screen.getByLabelText("Início da vigência"), {
+      target: { value: "2026-07-01" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /salvar offline/i }));
+
+    await waitFor(() => expect(mocks.queueCreateService).toHaveBeenCalledWith(
+      OBRA_ID,
+      {
+        code: "BASE-GRADUADA",
+        name: "Base graduada",
+        description: "",
+      },
+    ));
+    await waitFor(() => expect(mocks.queueCreatePrice).toHaveBeenCalledWith(
+      OBRA_ID,
+      expect.any(String),
+      {
+        unit: "M³",
+        currency: "BRL",
+        unitPrice: "98,70",
+        contractedQuantity: "1200,000",
+        validFrom: "2026-07-01",
+        validTo: "",
+        source: "CONTRATO_MEDIDO",
+      },
+    ));
+  });
+
   it("queues a BRL price with contracted quantity and a backend-valid source", async () => {
     render(
       <ServicePriceCatalogPage
@@ -130,11 +218,13 @@ describe("ServicePriceCatalogPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /salvar offline/i }));
 
+    // "M2" digitado vira o símbolo: quem lança medição escreve do teclado, e a
+    // unidade gravada precisa ser a mesma independente de como foi escrita.
     await waitFor(() => expect(mocks.queueCreatePrice).toHaveBeenCalledWith(
       OBRA_ID,
       LOCAL_ROWS[0].service.id,
       {
-        unit: "M2",
+        unit: "M²",
         currency: "BRL",
         unitPrice: "125,50",
         contractedQuantity: "800,000",
