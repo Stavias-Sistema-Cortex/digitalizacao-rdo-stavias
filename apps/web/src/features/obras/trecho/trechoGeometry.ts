@@ -10,7 +10,9 @@
 export type OrigemSegmento =
   | "PROGRAMACAO"
   | "RDO_CONTROLE"
-  | "EXECUCAO_SERVICO";
+  | "EXECUCAO_SERVICO"
+  /** Trecho declarado à mão sobre o mapa, antes ou ao lado do apontamento. */
+  | "CADASTRO_MAPA";
 
 /**
  * De onde o segmento veio.
@@ -395,7 +397,13 @@ export type EstadoSegmento =
   | "RASCUNHO"
   | "EXECUTADO"
   | "VALIDADO"
-  | "REJEITADO";
+  | "REJEITADO"
+  /**
+   * Trecho declarado à mão sobre o mapa. Tem estado próprio de propósito:
+   * pintá-lo de "executado" ou "validado" faria uma declaração de intenção
+   * parecer produção apurada, e "validado" aqui significa receita reconhecida.
+   */
+  | "DECLARADO";
 
 /**
  * Estado real do segmento.
@@ -410,6 +418,11 @@ export type EstadoSegmento =
  * significa executado, não aprovado.
  */
 export function estadoDoSegmento(segmento: SegmentoTrecho): EstadoSegmento {
+  if (segmento.origem === "CADASTRO_MAPA") {
+    // Vale mesmo antes de sincronizar: o que este bloco afirma é a declaração
+    // de alguém, e isso não muda quando o servidor confirma o registro.
+    return "DECLARADO";
+  }
   if (segmento.procedencia === "DISPOSITIVO") {
     return "PENDENTE";
   }

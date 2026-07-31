@@ -12,6 +12,17 @@ import {
 } from "./filtrosDoMapa";
 import { rotuloDaCategoria } from "./mapCategories";
 import {
+  CADASTRO_VAZIO,
+  divergenciasComORdo,
+  FAIXAS_INTERDITAVEIS,
+  propriedadesDoCadastro,
+  STATUS_DO_TRECHO,
+  validarCadastro,
+  type CadastroTrecho,
+  type StatusTrechoCadastrado,
+} from "../trecho/trechoCadastrado";
+import type { SegmentoTrecho } from "../trecho/trechoGeometry";
+import {
   buildOperationalFeatureCollection,
   comprimentoAproximadoM,
   isValidWorksiteCoordinate,
@@ -43,6 +54,11 @@ interface RodoviaWorkspaceProps {
    * enquanto a obra não tem coordenada nem geometria.
    */
   endereco?: EnderecoDaObra;
+  /**
+   * Segmentos que o RDO apurou. Servem só para confrontar o trecho declarado
+   * com o que foi executado no mesmo pedaço da pista; nada é sobrescrito.
+   */
+  segmentosDoRdo?: readonly SegmentoTrecho[];
 }
 
 type EstadoLeitura =
@@ -104,6 +120,7 @@ export function RodoviaWorkspace({
   obra,
   podeDesenhar,
   endereco,
+  segmentosDoRdo = [],
 }: RodoviaWorkspaceProps) {
   const [estado, setEstado] = useState<EstadoLeitura>({ fase: "carregando" });
   const [modoDesenho, setModoDesenho] = useState<"INATIVO" | "TRECHO">(
@@ -113,9 +130,20 @@ export function RodoviaWorkspace({
   const [aviso, setAviso] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<FiltroDoMapa>(FILTRO_VAZIO);
   const [capturando, setCapturando] = useState(false);
+  // Linha recém-desenhada, esperando ser descrita. Só vira geometria gravada
+  // depois que alguém diz o que ela representa.
+  const [linhaEmCadastro, setLinhaEmCadastro] =
+    useState<PontoGeografico[] | null>(null);
+  const [cadastro, setCadastro] = useState<CadastroTrecho>(CADASTRO_VAZIO);
+  const [salvandoCadastro, setSalvandoCadastro] = useState(false);
   const [aproximado, setAproximado] =
     useState<EnquadramentoAproximado | null>(null);
   const [ciclo, setCiclo] = useState(0);
+
+  // A rodovia do cadastro da obra abre o formulário já preenchida: quem
+  // desenha o trecho está na mesma rodovia que a obra declara, e redigitar o
+  // nome é onde nascem duas grafias para a mesma pista.
+  const rodoviaDaObra = endereco?.rodovia?.trim() || null;
 
   const recarregar = useCallback(() => {
     setCiclo((anterior) => anterior + 1);
@@ -230,36 +258,85 @@ export function RodoviaWorkspace({
     return total > 0 ? total : null;
   }, [colecao.features]);
 
+  /**
+   * A linha desenhada abre o cadastro em vez de virar geometria direto.
+   *
+   * Uma linha sozinha diz onde, e não o quê: sem rodovia, sentido, faixa e
+   * quilometragem o trecho não posiciona no esquemático nem descreve nada para
+   * a ontologia. Nada é gravado antes de alguém declarar isso.
+   */
   const aoDesenharTrecho = useCallback(
-    async (pontos: PontoGeografico[]) => {
-      try {
-        await registrarTrechoDesenhado({
-          obraId: obra.id,
-          objetoId: obra.id,
-          pontos,
-          propriedades: { nome: `Trecho de ${obra.nome}` },
-        });
-        setAviso(
-          "Trecho registrado neste dispositivo. Ele sobe sozinho na próxima sincronização.",
-        );
-        setModoDesenho("INATIVO");
-        setPontosMarcados(0);
-        recarregar();
-      } catch (motivo: unknown) {
-        // O rascunho não sobrevive à falha: sair do modo de desenho apaga os
-        // marcadores de início e fim, e a próxima tentativa começa do zero em
-        // vez de acumular pontos órfãos sobre o mapa.
-        setModoDesenho("INATIVO");
-        setPontosMarcados(0);
-        setAviso(
-          motivo instanceof Error
-            ? motivo.message
-            : "Não foi possível registrar o trecho.",
-        );
-      }
+    (pontos: PontoGeografico[]) => {
+      setLinhaEmCadastro(pontos);
+      setCadastro({
+        ...CADASTRO_VAZIO,
+        rodovia: rodoviaDaObra ?? "",
+      });
+      setModoDesenho("INATIVO");
+      setPontosMarcados(0);
+      setAviso(null);
     },
-    [recarregar, obra.id, obra.nome],
+    [rodoviaDaObra],
   );
+
+  const extensaoDaLinha = useMemo(
+    () =>
+      linhaEmCadastro && linhaEmCadastro.length >= 2
+        ? comprimentoAproximadoM({
+            type: "LineString",
+            coordinates: linhaEmCadastro.map((ponto) => [
+              ponto.lng,
+              ponto.lat,
+            ]),
+          })
+        : null,
+    [linhaEmCadastro],
+  );
+
+  const divergencias = useMemo(
+    () => divergenciasComORdo(cadastro, segmentosDoRdo),
+    [cadastro, segmentosDoRdo],
+  );
+
+  const cancelarCadastro = useCallback(() => {
+    setLinhaEmCadastro(null);
+    setCadastro(CADASTRO_VAZIO);
+    setAviso(null);
+  }, []);
+
+  const salvarCadastro = useCallback(async () => {
+    if (!linhaEmCadastro) return;
+    const problema = validarCadastro(cadastro);
+    if (problema) {
+      setAviso(problema);
+      return;
+    }
+    setSalvandoCadastro(true);
+    try {
+      await registrarTrechoDesenhado({
+        obraId: obra.id,
+        objetoId: obra.id,
+        pontos: linhaEmCadastro,
+        propriedades: propriedadesDoCadastro(cadastro, extensaoDaLinha),
+      });
+      setLinhaEmCadastro(null);
+      setCadastro(CADASTRO_VAZIO);
+      setAviso(
+        "Trecho registrado neste dispositivo. Ele sobe sozinho na próxima sincronização.",
+      );
+      recarregar();
+    } catch (motivo: unknown) {
+      // O que foi digitado permanece na tela: perder o preenchimento por uma
+      // falha de gravação obrigaria a redesenhar a linha inteira.
+      setAviso(
+        motivo instanceof Error
+          ? motivo.message
+          : "Não foi possível registrar o trecho.",
+      );
+    } finally {
+      setSalvandoCadastro(false);
+    }
+  }, [cadastro, extensaoDaLinha, linhaEmCadastro, obra.id, recarregar]);
 
   /**
    * Registra onde a equipe está agora.
@@ -402,6 +479,172 @@ export function RodoviaWorkspace({
           {estado.mensagem} Nenhuma camada foi encontrada neste dispositivo para
           esta obra.
         </p>
+      ) : null}
+
+      {linhaEmCadastro ? (
+        <form
+          className="rodovia-cadastro"
+          aria-label="Cadastro do trecho desenhado"
+          noValidate
+          onSubmit={(evento) => {
+            evento.preventDefault();
+            void salvarCadastro();
+          }}
+        >
+          <header>
+            <div>
+              <p className="eyebrow">Trecho desenhado</p>
+              <h3>Descreva o que esta linha representa</h3>
+            </div>
+            <span>
+              {extensaoDaLinha === null
+                ? "Extensão da linha indisponível"
+                : `${new Intl.NumberFormat("pt-BR", {
+                    maximumFractionDigits: 0,
+                  }).format(extensaoDaLinha)} m desenhados`}
+            </span>
+          </header>
+
+          <div className="rodovia-cadastro__grade">
+            <label>
+              Rodovia
+              <input
+                value={cadastro.rodovia}
+                maxLength={120}
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    rodovia: evento.target.value,
+                  }))}
+              />
+            </label>
+            <label>
+              Sentido
+              <input
+                value={cadastro.sentido}
+                maxLength={60}
+                placeholder="Norte, Sul, Leste…"
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    sentido: evento.target.value,
+                  }))}
+              />
+            </label>
+            <label>
+              Faixa interditada
+              <select
+                value={cadastro.faixa}
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    faixa: evento.target.value,
+                  }))}
+              >
+                <option value="">Não declarada</option>
+                {FAIXAS_INTERDITAVEIS.map((opcao) => (
+                  <option key={opcao.valor} value={opcao.valor}>
+                    {opcao.rotulo}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Km inicial
+              <input
+                value={cadastro.kmInicial}
+                inputMode="decimal"
+                placeholder="172 ou 309+400"
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    kmInicial: evento.target.value,
+                  }))}
+              />
+            </label>
+            <label>
+              Km final
+              <input
+                value={cadastro.kmFinal}
+                inputMode="decimal"
+                placeholder="171"
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    kmFinal: evento.target.value,
+                  }))}
+              />
+            </label>
+            <label>
+              Extensão medida (m)
+              <input
+                value={cadastro.extensaoM}
+                inputMode="decimal"
+                placeholder={
+                  extensaoDaLinha === null
+                    ? "opcional"
+                    : `${Math.round(extensaoDaLinha)} pela linha`
+                }
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    extensaoM: evento.target.value,
+                  }))}
+              />
+            </label>
+            <label>
+              Situação
+              <select
+                value={cadastro.status}
+                onChange={(evento) =>
+                  setCadastro((atual) => ({
+                    ...atual,
+                    status: evento.target.value as StatusTrechoCadastrado,
+                  }))}
+              >
+                {STATUS_DO_TRECHO.map((opcao) => (
+                  <option key={opcao.valor} value={opcao.valor}>
+                    {opcao.rotulo}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {divergencias.length > 0 ? (
+            <div className="rodovia-cadastro__divergencia" role="alert">
+              <strong>
+                O RDO apurou outra coisa neste mesmo pedaço da pista.
+              </strong>
+              <ul>
+                {divergencias.map((item) => (
+                  <li key={`${item.campo}:${item.apurado}`}>
+                    {item.campo}: você declarou <b>{item.cadastrado}</b> e o
+                    {item.numeroRdo ? ` ${item.numeroRdo}` : " RDO"} registrou{" "}
+                    <b>{item.apurado}</b>.
+                  </li>
+                ))}
+              </ul>
+              <small>
+                Nada é corrigido automaticamente. O cadastro é o combinado e o
+                RDO é o executado; salvar mantém os dois, lado a lado.
+              </small>
+            </div>
+          ) : null}
+
+          <footer>
+            <button type="button" onClick={cancelarCadastro}>
+              Descartar linha
+            </button>
+            <button
+              type="submit"
+              className="is-primary"
+              disabled={salvandoCadastro}
+            >
+              {salvandoCadastro ? "Registrando…" : "Registrar trecho"}
+            </button>
+          </footer>
+        </form>
       ) : null}
 
       {categorias.length > 0 ? (

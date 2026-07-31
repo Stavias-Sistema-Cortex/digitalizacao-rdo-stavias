@@ -120,6 +120,119 @@
  * Fica acima da divisão porque o recorte vale para as duas metades: decidir de
  * um lado só permitiria que os mapas mostrassem obras diferentes lado a lado.
  */
+/* Cadastro do trecho desenhado. Aparece entre o mapa e as camadas porque é o
+   passo seguinte ao desenho, não um painel paralelo. */
+.rodovia-cadastro {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--color-brand-yellow);
+  border-radius: 2px;
+  background: var(--color-surface);
+  padding: 14px;
+}
+
+.rodovia-cadastro > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rodovia-cadastro > header h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.rodovia-cadastro > header span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
+.rodovia-cadastro__grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.rodovia-cadastro__grade label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+.rodovia-cadastro__grade input,
+.rodovia-cadastro__grade select {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-canvas);
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--color-ink);
+}
+
+.rodovia-cadastro__divergencia {
+  border: 1px solid var(--color-danger);
+  border-left-width: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-danger) 6%, transparent);
+  padding: 10px 12px;
+  font-size: 0.8125rem;
+  color: var(--color-ink);
+}
+
+.rodovia-cadastro__divergencia ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+
+.rodovia-cadastro__divergencia small {
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+.rodovia-cadastro > footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.rodovia-cadastro > footer button {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: transparent;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.rodovia-cadastro > footer button.is-primary {
+  border-color: var(--color-brand-teal);
+  background: var(--color-brand-teal);
+  color: var(--color-surface);
+}
+
+.rodovia-cadastro > footer button[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 .rodovia-workspace-filtros {
   display: flex;
   flex-wrap: wrap;

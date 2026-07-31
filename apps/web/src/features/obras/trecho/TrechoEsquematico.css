@@ -384,6 +384,21 @@
 }
 
 /* Programado: hachura, porque é intenção e não execução. */
+/* Declarado: interdição combinada, desenhada sobre o mapa antes ou ao lado do
+   apontamento. Contorno contínuo forte e superfície vazada — afirma o acordo,
+   não a produção, e por isso não usa a trama dos estados de execução. */
+.trecho-bloco--declarado {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 5px,
+    color-mix(in srgb, var(--color-brand-yellow) 55%, transparent) 5px,
+    color-mix(in srgb, var(--color-brand-yellow) 55%, transparent) 10px
+  );
+  border: 2px solid var(--color-brand-yellow);
+  color: var(--trecho-legenda-forte);
+}
+
 .trecho-bloco--programado {
   background: repeating-linear-gradient(
     135deg,

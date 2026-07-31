@@ -117,7 +117,7 @@ describe("RodoviaWorkspace", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("alterna o modo de desenho e enfileira o trecho marcado", async () => {
+  it("abre o cadastro em vez de gravar a linha crua", async () => {
     const user = userEvent.setup();
     render(<RodoviaWorkspace obra={obra} podeDesenhar />);
     await screen.findByTestId("mapa-leaflet");
@@ -132,14 +132,119 @@ describe("RodoviaWorkspace", () => {
     await waitFor(() => expect(leaflet.desenhar).not.toBeNull());
     leaflet.desenhar?.(pontos);
 
+    // Uma linha diz onde, não o quê: sem km ela não posiciona no esquemático
+    // nem descreve nada para a ontologia, então nada é gravado ainda.
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+    expect(registrarTrechoDesenhado).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText("Rodovia"), "SP-310");
+    await user.type(screen.getByLabelText("Km inicial"), "172");
+    await user.type(screen.getByLabelText("Km final"), "171");
+    await user.selectOptions(
+      screen.getByLabelText("Faixa interditada"),
+      "DIREITA",
+    );
+    await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
+
     await waitFor(() =>
       expect(registrarTrechoDesenhado).toHaveBeenCalledWith(
-        expect.objectContaining({ obraId: "obra-1", pontos }),
+        expect.objectContaining({
+          obraId: "obra-1",
+          pontos,
+          propriedades: expect.objectContaining({
+            rodovia: "SP-310",
+            faixa: "DIREITA",
+            kmInicial: 172,
+            kmFinal: 171,
+            status: "PENDENTE",
+          }),
+        }),
       ),
     );
     expect(
       await screen.findByText(/sobe sozinho na próxima sincronização/),
     ).toBeInTheDocument();
+  });
+
+  it("recusa o cadastro sem os dois extremos e não grava nada", async () => {
+    const user = userEvent.setup();
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
+    await waitFor(() => expect(leaflet.desenhar).not.toBeNull());
+    leaflet.desenhar?.([
+      { lat: -22.43, lng: -47.56 },
+      { lat: -22.44, lng: -47.55 },
+    ]);
+
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+    await user.type(screen.getByLabelText("Rodovia"), "SP-310");
+    await user.type(screen.getByLabelText("Km inicial"), "172");
+    await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
+
+    expect(
+      await screen.findByText(/km inicial e o km final/i),
+    ).toBeInTheDocument();
+    expect(registrarTrechoDesenhado).not.toHaveBeenCalled();
+  });
+
+  it("avisa quando o RDO apurou outra faixa no mesmo pedaço da pista", async () => {
+    const user = userEvent.setup();
+    render(
+      <RodoviaWorkspace
+        obra={obra}
+        podeDesenhar
+        segmentosDoRdo={[{
+          id: "seg-1",
+          origem: "EXECUCAO_SERVICO",
+          rdoId: "rdo-1",
+          numeroRdo: "RDO-0042",
+          data: "2026-07-28",
+          servicoNome: "Fresagem",
+          subtrecho: null,
+          sentido: null,
+          pista: null,
+          faixa: "ESQUERDA",
+          kmInicial: 171.4,
+          kmFinal: 171.8,
+          estacaInicial: null,
+          estacaFinal: null,
+          extensaoM: null,
+          larguraM: null,
+          areaM2: null,
+          massaTonelada: null,
+          status: "VALIDADA",
+          rdoStatus: "ENVIADO",
+          procedencia: "SERVIDOR",
+          pistaInferida: false,
+        }]}
+      />,
+    );
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
+    await waitFor(() => expect(leaflet.desenhar).not.toBeNull());
+    leaflet.desenhar?.([
+      { lat: -22.43, lng: -47.56 },
+      { lat: -22.44, lng: -47.55 },
+    ]);
+
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+    await user.type(screen.getByLabelText("Km inicial"), "172");
+    await user.type(screen.getByLabelText("Km final"), "171");
+    await user.selectOptions(
+      screen.getByLabelText("Faixa interditada"),
+      "DIREITA",
+    );
+
+    // O aviso é informativo: nem o cadastro nem o RDO são corrigidos.
+    const alerta = await screen.findByRole("alert");
+    expect(alerta).toHaveTextContent(/RDO-0042/);
+    expect(alerta).toHaveTextContent(/ESQUERDA/);
+    expect(
+      screen.getByRole("button", { name: "Registrar trecho" }),
+    ).toBeEnabled();
   });
 
   it("declara a obra sem georreferência em vez de centrar num ponto inventado", async () => {
@@ -274,12 +379,19 @@ describe("RodoviaWorkspace", () => {
       { lat: -22.4501, lng: -47.5588 },
     ]);
 
-    // A falha aparece, o modo sai de desenho — o que apaga os marcadores de
-    // rascunho no mapa — e o botão volta ao estado inicial para nova tentativa.
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+    await user.type(screen.getByLabelText("Rodovia"), "SP-310");
+    await user.type(screen.getByLabelText("Km inicial"), "172");
+    await user.type(screen.getByLabelText("Km final"), "171");
+    await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
+
+    // A falha aparece e o formulário continua preenchido: perder o que foi
+    // digitado obrigaria a redesenhar a linha inteira por causa da gravação.
     await screen.findByText(/Não foi possível gravar a mutação\./);
     await waitFor(() => expect(leaflet.ultimoModo).toBe("INATIVO"));
+    expect(screen.getByLabelText("Rodovia")).toHaveValue("SP-310");
     expect(
-      screen.getByRole("button", { name: "Desenhar trecho" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Registrar trecho" }),
+    ).toBeEnabled();
   });
 });
