@@ -1,4 +1,8 @@
-import { categoryColorExpression, corDoToken } from "./mapCategories";
+import {
+  categoryColorExpression,
+  corDoToken,
+  rotuloDaFonte,
+} from "./mapCategories";
 import { limitesDaColecao, type OperationalFeatureCollection } from "./mapGeometry";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 
@@ -139,7 +143,7 @@ function popupContent(properties: Record<string, unknown>): HTMLDivElement {
 
   if (properties.fonte) {
     const origem = document.createElement("small");
-    origem.textContent = `origem ${String(properties.fonte).replaceAll("_", " ").toLowerCase()}`;
+    origem.textContent = `Origem: ${rotuloDaFonte(properties.fonte)}`;
     container.append(origem);
   }
   return container;

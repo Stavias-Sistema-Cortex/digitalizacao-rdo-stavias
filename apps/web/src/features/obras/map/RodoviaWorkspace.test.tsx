@@ -226,7 +226,7 @@ describe("RodoviaWorkspace", () => {
       expect(leaflet.ultimasFeatures.features).toHaveLength(3),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "ponto operacional" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ponto operacional" }));
 
     await waitFor(() =>
       expect(

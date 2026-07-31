@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { corDaCategoria, corDoToken, rotuloDaCategoria } from "./mapCategories";
+import {
+  corDaCategoria,
+  corDoToken,
+  rotuloDaCategoria,
+  rotuloDaFonte,
+} from "./mapCategories";
 import type { OperationalFeatureCollection } from "./mapGeometry";
 import "./LeafletTrechoMap.css";
 
@@ -76,10 +81,10 @@ function popupHtml(properties: Record<string, unknown>): string {
       ? `desde ${properties.validoDesde.slice(0, 10)}`
       : null,
     typeof properties.categoria === "string"
-      ? properties.categoria.replaceAll("_", " ").toLowerCase()
+      ? rotuloDaCategoria(properties.categoria)
       : null,
     typeof properties.fonte === "string"
-      ? properties.fonte.replaceAll("_", " ").toLowerCase()
+      ? rotuloDaFonte(properties.fonte)
       : null,
   ].filter((item): item is string => Boolean(item));
 

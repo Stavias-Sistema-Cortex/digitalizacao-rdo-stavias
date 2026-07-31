@@ -89,10 +89,37 @@ export function corDaCategoria(categoria: unknown): string {
   return valorDoToken(tokenDaCategoria(categoria));
 }
 
+/**
+ * Nome da camada como se escreve, não como está gravado.
+ *
+ * A categoria é persistida em caixa alta com sublinhado
+ * (`PONTO_OPERACIONAL`), o que serve ao banco e não ao texto. Passar tudo
+ * para minúscula resolvia a gritaria e criava outro erro: "ponto operacional"
+ * abrindo legenda e balão do mapa em caixa baixa. Caixa de sentença é a forma
+ * correta em português para rótulo de interface.
+ */
 export function rotuloDaCategoria(categoria: unknown): string {
-  return typeof categoria === "string"
-    ? categoria.replaceAll("_", " ").toLowerCase()
-    : "camada operacional";
+  return rotuloLegivel(categoria, "Camada operacional");
+}
+
+/** Origem do dado (`GESTAO_MAPA`, `CAPTURA_CAMPO`) escrita como texto. */
+export function rotuloDaFonte(fonte: unknown): string {
+  return rotuloLegivel(fonte, "Origem não declarada");
+}
+
+/**
+ * Converte um valor persistido em caixa alta para caixa de sentença.
+ *
+ * Só a primeira letra sobe: nomes de camada e de origem são substantivos
+ * comuns, e capitalizar cada palavra ("Ponto Operacional") é convenção de
+ * inglês, não de português.
+ */
+function rotuloLegivel(valor: unknown, padrao: string): string {
+  if (typeof valor !== "string" || !valor.trim()) {
+    return padrao;
+  }
+  const texto = valor.replaceAll("_", " ").trim().toLowerCase();
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
 /**
