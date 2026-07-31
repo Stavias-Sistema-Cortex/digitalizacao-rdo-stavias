@@ -82,28 +82,15 @@ function Pista({ pista }: { pista: PistaEsquematica }) {
 
 function Regua({
   escala,
-  projecao,
+  limites,
 }: {
   escala: EscalaKm;
-  projecao: ProjecaoTrecho;
+  limites: ReturnType<typeof marcosDeLimite>;
 }) {
   const marcos = useMemo(() => marcosKm(escala), [escala]);
-  const limites = useMemo(
-    () => marcosDeLimite(escala, projecao.segmentos),
-    [escala, projecao.segmentos],
-  );
 
   return (
     <div className="trecho-regua" aria-hidden="true">
-      {marcos.map((marco) => (
-        <span
-          key={marco.km}
-          className={`trecho-marco${bordaDaRegua(marco.posicao)}`}
-          style={{ left: `${marco.posicao}%` }}
-        >
-          km {marco.km}
-        </span>
-      ))}
       {limites.map((marco) => (
         <span
           key={`limite-${marco.limite}`}
@@ -114,6 +101,15 @@ function Regua({
         >
           <small>{marco.limite === "INICIO" ? "início" : "fim"}</small>
           km {formatarNumeroKm(marco.km)}
+        </span>
+      ))}
+      {marcos.map((marco) => (
+        <span
+          key={marco.km}
+          className={`trecho-marco${bordaDaRegua(marco.posicao)}`}
+          style={{ left: `${marco.posicao}%` }}
+        >
+          km {marco.km}
         </span>
       ))}
     </div>
@@ -144,6 +140,12 @@ export function TrechoEsquematico({
     [escala, projecao.segmentos],
   );
   const lados = useMemo(() => ladosDoCanteiro(pistas), [pistas]);
+  // Os limites da obra são anotados na régua e repetidos como guias verticais
+  // sobre o leito, para o olho ligar o rótulo ao ponto exato da pista.
+  const limites = useMemo(
+    () => (escala ? marcosDeLimite(escala, projecao.segmentos) : []),
+    [escala, projecao.segmentos],
+  );
   const semMarcacao =
     projecao.segmentos.length -
     segmentosPosicionaveis(projecao.segmentos).length;
@@ -172,12 +174,15 @@ export function TrechoEsquematico({
           <h3 id="trecho-esquematico-title">
             {projecao.rodovia ?? "Rodovia não informada"}
           </h3>
-          <span>
-            {escala
-              ? `${formatarKm(projecao.kmMin)} a ${formatarKm(projecao.kmMax)}`
-              : "Sem marcação quilométrica registrada"}
-            {" · "}
-            {formatarPeriodo(projecao.periodoAplicado)}
+          <span className="trecho-esquematico-meta">
+            <strong>
+              {escala
+                ? `${formatarKm(projecao.kmMin)} a ${formatarKm(
+                    projecao.kmMax,
+                  )}`
+                : "Sem marcação quilométrica registrada"}
+            </strong>
+            <span>{formatarPeriodo(projecao.periodoAplicado)}</span>
           </span>
         </div>
         {procedencia ? (
@@ -189,18 +194,39 @@ export function TrechoEsquematico({
 
       {escala ? (
         <div className="trecho-pista-quadro">
-          <Regua escala={escala} projecao={projecao} />
-          <div className="trecho-acostamento">Acostamento</div>
-          {lados.superior.map((pista) => (
-            <Pista key={pista.id} pista={pista} />
-          ))}
-          {lados.temCanteiro ? (
-            <div className="trecho-canteiro">Canteiro central divisor</div>
-          ) : null}
-          {lados.inferior.map((pista) => (
-            <Pista key={pista.id} pista={pista} />
-          ))}
-          <div className="trecho-acostamento">Acostamento</div>
+          {/* Régua e leito dividem o mesmo trilho: quando o esquemático rola,
+              os dois rolam juntos e o quilômetro continua sobre a pista. */}
+          <div className="trecho-trilho">
+            <Regua escala={escala} limites={limites} />
+            <div className="trecho-leito">
+              {limites.length > 0 ? (
+                <div className="trecho-guias" aria-hidden="true">
+                  {limites.map((marco) => (
+                    <span
+                      key={`guia-${marco.limite}`}
+                      className="trecho-guia"
+                      style={{ left: `${marco.posicao}%` }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <div className="trecho-acostamento trecho-acostamento--superior">
+                <span>Acostamento</span>
+              </div>
+              {lados.superior.map((pista) => (
+                <Pista key={pista.id} pista={pista} />
+              ))}
+              {lados.temCanteiro ? (
+                <div className="trecho-canteiro">Canteiro central divisor</div>
+              ) : null}
+              {lados.inferior.map((pista) => (
+                <Pista key={pista.id} pista={pista} />
+              ))}
+              <div className="trecho-acostamento trecho-acostamento--inferior">
+                <span>Acostamento</span>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="trecho-esquematico-vazio">

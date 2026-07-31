@@ -1,18 +1,18 @@
 .obras-trecho {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
 .trecho-esquematico {
-  border: 2px solid var(--color-ink);
-  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
   background: var(--color-surface);
-  padding: 14px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 18px;
   min-width: 0;
 }
 
@@ -20,85 +20,168 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
 .trecho-esquematico-header h3 {
-  margin: 2px 0;
-  font-size: 1rem;
+  margin: 4px 0 6px;
+  font-size: 1.0625rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--color-ink);
 }
 
-.trecho-esquematico-header span {
+/* O intervalo quilométrico é o dado; o período é a moldura dele. */
+.trecho-esquematico-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.trecho-esquematico-meta strong {
   font-size: 0.8125rem;
   font-weight: 500;
+  color: var(--color-graphite);
+}
+
+.trecho-esquematico-meta > span {
+  position: relative;
+  padding-left: 11px;
+  font-size: 0.8125rem;
+  font-weight: 400;
   color: var(--color-muted);
-  font-variant-numeric: tabular-nums;
+}
+
+.trecho-esquematico-meta > span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc(50% - 1px);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-border-strong);
 }
 
 .trecho-esquematico-procedencia {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 500;
-  color: var(--color-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  padding: 4px 8px;
-  background: var(--color-surface);
+  color: var(--color-graphite);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--color-canvas);
 }
 
+/* ------------------------------------------------------------------ *
+ * Leito da rodovia                                                     *
+ * ------------------------------------------------------------------ */
+
 .trecho-pista-quadro {
-  /* A régua e as faixas compartilham a mesma origem horizontal: sem isso o
-     quilômetro rotulado não cai sobre o bloco que ele descreve. */
-  --trecho-nome-largura: 140px;
-  --trecho-quadro-padding: 10px;
-  --trecho-nome-gap: 8px;
+  /* A régua, as guias e as faixas partem da mesma origem horizontal: sem isso
+     o quilômetro rotulado não cai sobre o bloco que ele descreve. */
+  --trecho-nome-largura: 128px;
+  --trecho-nome-gap: 12px;
+  --trecho-leito-padding: 12px;
+  --trecho-pista-min: 260px;
+  --trecho-pista-inicio: calc(
+    var(--trecho-leito-padding) + var(--trecho-nome-largura) +
+      var(--trecho-nome-gap)
+  );
 
-  /* O asfalto e seus contrastes saem do preto estrutural do sistema, para que
-     um ajuste de tema alcance o esquemático junto com o resto da interface. */
-  --trecho-asfalto: color-mix(in srgb, var(--color-ink) 94%, white);
-  --trecho-faixa: color-mix(in srgb, var(--color-ink) 88%, white);
-  --trecho-divisor: color-mix(in srgb, var(--color-ink) 74%, white);
-  --trecho-legenda: color-mix(in srgb, var(--color-surface) 70%, var(--color-ink));
-  --trecho-legenda-forte: color-mix(in srgb, var(--color-surface) 88%, var(--color-ink));
+  /* O asfalto e sua pintura saem do preto estrutural do sistema, para que um
+     ajuste de tema alcance o esquemático junto com o resto da interface. */
+  --trecho-asfalto-topo: color-mix(in srgb, var(--color-ink) 84%, white);
+  --trecho-asfalto-base: var(--color-ink);
+  --trecho-pintura: color-mix(in srgb, white 58%, transparent);
+  --trecho-legenda: color-mix(in srgb, white 52%, transparent);
+  --trecho-legenda-forte: color-mix(in srgb, white 92%, transparent);
 
-  position: relative;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  background: var(--trecho-asfalto);
-  padding: 48px var(--trecho-quadro-padding) var(--trecho-quadro-padding);
+  min-width: 0;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+
+/* Um trilho só para os dois: assim a régua nunca fica com uma largura útil
+   diferente da pista, mesmo quando o esquemático precisa rolar. */
+.trecho-trilho {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  min-width: max-content;
 }
 
 .trecho-regua {
-  position: absolute;
-  top: 0;
-  right: var(--trecho-quadro-padding);
-  left: calc(
-    var(--trecho-quadro-padding) + var(--trecho-nome-largura) +
-      var(--trecho-nome-gap)
-  );
-  height: 44px;
+  position: relative;
+  height: 46px;
+  min-width: var(--trecho-pista-min);
+  margin-left: var(--trecho-pista-inicio);
+  margin-right: var(--trecho-leito-padding);
 }
 
+/* Escala de contexto: rente ao asfalto, com um tique de 1px que aponta o
+   ponto exato — o rótulo sozinho flutuaria. */
 .trecho-marco {
   position: absolute;
-  top: 5px;
+  bottom: 0;
   transform: translateX(-50%);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--trecho-legenda);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
   display: flex;
   flex-direction: column;
   align-items: center;
-  line-height: 1.15;
+  gap: 4px;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+
+.trecho-marco::after {
+  content: "";
+  width: 1px;
+  height: 7px;
+  background: var(--color-border-strong);
+}
+
+.trecho-marco--borda-inicial:not(.trecho-marco--limite) {
+  align-items: flex-start;
+}
+
+.trecho-marco--borda-final:not(.trecho-marco--limite) {
+  align-items: flex-end;
+}
+
+/* Os limites da obra são anotação, não escala: sobem para a primeira linha e
+   viram pastilha. A ligação com a pista é feita pela guia vertical. */
+.trecho-marco--limite {
+  top: 0;
+  bottom: auto;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-brand-yellow) 26%, var(--color-surface));
+  color: var(--color-ink);
+  font-weight: 500;
+}
+
+.trecho-marco--limite::after {
+  display: none;
+}
+
+.trecho-marco--limite small {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--color-ink) 58%, var(--color-brand-yellow));
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 
 .trecho-marco--borda-inicial {
@@ -109,41 +192,69 @@
   transform: translateX(-100%);
 }
 
-.trecho-marco small {
-  font-size: 0.625rem;
-  font-weight: 500;
-  color: var(--color-brand-yellow);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* Uma peça só de asfalto, iluminada por cima, em vez de uma pilha de barras. */
+.trecho-leito {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: var(--trecho-leito-padding);
+  border-radius: 12px;
+  background: linear-gradient(
+    180deg,
+    var(--trecho-asfalto-topo),
+    var(--trecho-asfalto-base)
+  );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 9%, transparent),
+    0 1px 2px color-mix(in srgb, var(--color-ink) 14%, transparent);
 }
 
-/* Os limites da obra ocupam a segunda linha da régua para não colidirem com o
-   marco inteiro mais próximo. */
-.trecho-marco--limite {
-  top: 22px;
-  color: var(--color-brand-yellow);
-  font-weight: 600;
+.trecho-guias {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: var(--trecho-pista-inicio);
+  right: var(--trecho-leito-padding);
+  pointer-events: none;
+}
+
+.trecho-guia {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--color-brand-yellow) 72%, transparent);
 }
 
 .trecho-acostamento {
-  border: 1px dashed var(--trecho-divisor);
-  border-radius: 2px;
-  padding: 3px 8px;
-  font-size: 0.6875rem;
+  display: flex;
+  align-items: center;
+  height: 17px;
+  padding-inline: 5px;
+  border-radius: 3px;
+  font-size: 0.5625rem;
   font-weight: 500;
-  color: var(--trecho-legenda);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, white 44%, transparent);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 5px,
+    color-mix(in srgb, white 6%, transparent) 5px,
+    color-mix(in srgb, white 6%, transparent) 10px
+  );
 }
 
-.trecho-canteiro {
-  border-top: 2px solid var(--color-brand-yellow);
-  border-bottom: 2px solid var(--color-brand-yellow);
-  background: color-mix(in srgb, var(--color-brand-green) 82%, black);
-  padding: 3px 8px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--color-brand-yellow);
-  text-transform: uppercase;
+/* Linha de bordo contínua, como a pintura real separa pista de acostamento. */
+.trecho-acostamento--superior {
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--trecho-pintura);
+}
+
+.trecho-acostamento--inferior {
+  margin-top: 4px;
+  border-top: 1px solid var(--trecho-pintura);
 }
 
 .trecho-pista {
@@ -151,14 +262,32 @@
   display: flex;
   align-items: center;
   gap: var(--trecho-nome-gap);
-  min-height: 34px;
-  border-top: 1px dashed var(--trecho-divisor);
+  min-height: 32px;
+}
+
+/* Faixa tracejada entre pistas do mesmo sentido — separa sem desenhar caixa. */
+.trecho-pista + .trecho-pista::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(var(--trecho-nome-largura) + var(--trecho-nome-gap));
+  right: 0;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--trecho-pintura),
+    var(--trecho-pintura) 14px,
+    transparent 14px,
+    transparent 26px
+  );
 }
 
 .trecho-pista-nome {
   flex: 0 0 var(--trecho-nome-largura);
+  text-align: right;
   font-size: 0.6875rem;
   font-weight: 500;
+  letter-spacing: 0.02em;
   color: var(--trecho-legenda);
   white-space: nowrap;
   overflow: hidden;
@@ -168,35 +297,57 @@
 .trecho-pista-rolagem {
   position: relative;
   flex: 1 1 auto;
-  min-width: 240px;
-  height: 30px;
-  background: var(--trecho-faixa);
-  border-radius: 2px;
+  min-width: var(--trecho-pista-min);
+  height: 26px;
+  border-radius: 4px;
+  background: color-mix(in srgb, black 16%, transparent);
+}
+
+.trecho-canteiro {
+  margin: 6px 0;
+  padding: 5px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--color-brand-yellow) 76%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-brand-yellow) 76%, transparent);
+  background: color-mix(in srgb, var(--color-brand-green) 82%, black);
+  font-size: 0.5625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-brand-yellow) 68%, transparent);
 }
 
 .trecho-bloco {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
-  border: 1px solid var(--color-ink);
-  border-radius: 2px;
+  top: 2px;
+  bottom: 2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  min-width: 6px;
-  transition: filter var(--transition-functional);
+  min-width: 5px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 1px 2px color-mix(in srgb, black 26%, transparent);
+  transition: transform var(--transition-functional),
+    box-shadow var(--transition-functional);
+}
+
+.trecho-bloco:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
+    0 4px 10px color-mix(in srgb, black 32%, transparent);
 }
 
 .trecho-bloco-rotulo {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
   max-width: 100%;
   font-size: 0.6875rem;
-  font-weight: 600;
-  padding: 0 6px;
+  font-weight: 500;
+  padding: 0 8px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -213,9 +364,9 @@
   flex: 0 0 auto;
   font-style: normal;
   font-size: 0.625rem;
-  font-weight: 500;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
-  opacity: 0.8;
+  opacity: 0.72;
 }
 
 /* Programado: hachura, porque é intenção e não execução. */
@@ -236,37 +387,78 @@
     135deg,
     transparent,
     transparent 5px,
-    color-mix(in srgb, var(--execucao-executado) 45%, transparent) 5px,
-    color-mix(in srgb, var(--execucao-executado) 45%, transparent) 10px
+    color-mix(in srgb, var(--execucao-executado) 40%, transparent) 5px,
+    color-mix(in srgb, var(--execucao-executado) 40%, transparent) 10px
   );
-  border-color: var(--execucao-executado);
+  border-color: color-mix(in srgb, var(--execucao-executado) 76%, transparent);
   color: var(--trecho-legenda-forte);
 }
 
 .trecho-bloco--executado {
-  background: var(--execucao-executado);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--execucao-executado) 88%, white),
+    var(--execucao-executado)
+  );
   color: var(--color-ink);
 }
 
 .trecho-bloco--validado {
-  background: var(--execucao-validado);
-  color: color-mix(in srgb, var(--color-surface) 92%, white);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--execucao-validado) 86%, white),
+    var(--execucao-validado)
+  );
+  color: color-mix(in srgb, white 94%, transparent);
 }
 
 .trecho-bloco--rejeitado {
-  background: var(--execucao-rejeitado);
-  color: color-mix(in srgb, var(--color-surface) 92%, white);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--execucao-rejeitado) 88%, white),
+    var(--execucao-rejeitado)
+  );
+  color: color-mix(in srgb, white 94%, transparent);
 }
 
-.trecho-bloco:hover {
-  filter: brightness(1.08);
+/* ------------------------------------------------------------------ *
+ * Legenda, vazios e consolidado                                        *
+ * ------------------------------------------------------------------ */
+
+.trecho-legenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.trecho-legenda li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 7px;
+  border-radius: 999px;
+  background: var(--color-canvas);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-graphite);
+}
+
+.trecho-legenda-marca {
+  width: 12px;
+  height: 12px;
+  border: 1px solid color-mix(in srgb, var(--color-ink) 20%, transparent);
+  border-radius: 4px;
+  box-shadow: none;
 }
 
 .trecho-esquematico-vazio {
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 16px;
-  background: var(--color-surface);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 12px;
+  padding: 22px;
+  background: var(--color-canvas);
 }
 
 .trecho-esquematico-vazio strong {
@@ -288,29 +480,32 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
 }
 
 .trecho-esquematico-footer dl {
   margin: 0;
   display: flex;
-  gap: 18px;
+  gap: 32px;
   flex-wrap: wrap;
 }
 
 .trecho-esquematico-footer dt {
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   font-weight: 500;
   color: var(--color-muted);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.07em;
 }
 
 .trecho-esquematico-footer dd {
-  margin: 2px 0 0;
-  font-size: 0.875rem;
+  margin: 5px 0 0;
+  font-size: 1.125rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--color-ink);
   font-variant-numeric: tabular-nums;
 }
@@ -321,44 +516,55 @@
   color: var(--color-muted);
 }
 
+.trecho-esquematico-notas {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: right;
+}
+
+/* ------------------------------------------------------------------ *
+ * Filtro de período e linha do tempo                                   *
+ * ------------------------------------------------------------------ */
+
 .trecho-periodo {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   border: 1px solid var(--color-border);
-  border-radius: 3px;
-  background: var(--color-surface);
-  padding: 10px;
+  border-radius: 12px;
+  background: var(--color-canvas);
+  padding: 14px;
 }
 
 .trecho-periodo-campos {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .trecho-periodo-campos label {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 0.6875rem;
+  gap: 5px;
+  font-size: 0.625rem;
   font-weight: 500;
   color: var(--color-muted);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.07em;
 }
 
 .trecho-periodo-campos input {
   border: 1px solid var(--color-border-strong);
-  border-radius: 2px;
+  border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink);
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  padding: 5px 7px;
+  padding: 7px 10px;
   text-transform: none;
   letter-spacing: normal;
 }
@@ -371,18 +577,20 @@
 }
 
 .trecho-periodo-limpar {
-  border: 1px solid var(--color-ink);
-  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-ink);
   font-size: 0.75rem;
-  font-weight: 600;
-  padding: 6px 10px;
+  font-weight: 500;
+  padding: 8px 14px;
   cursor: pointer;
-  transition: background var(--transition-functional);
+  transition: background var(--transition-functional),
+    border-color var(--transition-functional);
 }
 
 .trecho-periodo-limpar:hover:not(:disabled) {
+  border-color: var(--color-ink);
   background: var(--color-canvas);
 }
 
@@ -395,7 +603,7 @@
 .trecho-periodo-extensao {
   margin-left: auto;
   font-size: 0.6875rem;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -411,25 +619,24 @@
 .trecho-linha-tempo {
   list-style: none;
   margin: 0;
-  padding: 0 0 2px;
+  padding: 14px 0 2px;
   display: flex;
-  gap: 4px;
+  gap: 6px;
   overflow-x: auto;
   border-top: 1px solid var(--color-border);
-  padding-top: 8px;
 }
 
 .trecho-dia {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 46px;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
+  gap: 4px;
+  min-width: 48px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: var(--color-surface);
   color: var(--color-ink);
-  padding: 5px 4px;
+  padding: 7px 5px 6px;
   cursor: pointer;
   transition: border-color var(--transition-functional),
     background var(--transition-functional);
@@ -437,7 +644,6 @@
 
 .trecho-dia:hover {
   border-color: var(--color-border-strong);
-  background: var(--color-canvas);
 }
 
 .trecho-dia--ativo {
@@ -452,13 +658,14 @@
   align-items: flex-end;
   justify-content: center;
   width: 100%;
-  height: 22px;
+  height: 24px;
 }
 
 .trecho-dia-barra > span {
   display: block;
-  width: 8px;
-  border-radius: 1px;
+  width: 6px;
+  min-height: 2px;
+  border-radius: 999px;
   background: var(--color-focus);
 }
 
@@ -477,6 +684,7 @@
   font-weight: 500;
   color: var(--color-muted);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .trecho-dia--ativo small {
@@ -487,82 +695,62 @@
   margin: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .trecho-resumo-grade > div {
   border: 1px solid var(--color-border);
-  border-radius: 3px;
-  background: var(--color-surface);
-  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--color-canvas);
+  padding: 12px 14px;
   min-width: 0;
 }
 
 .trecho-resumo-grade dt {
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   font-weight: 500;
   color: var(--color-muted);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.07em;
 }
 
 .trecho-resumo-grade dd {
-  margin: 3px 0 0;
-  font-size: 0.875rem;
+  margin: 5px 0 0;
+  font-size: 1rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--color-ink);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
-  .trecho-pista-quadro {
-    --trecho-nome-largura: 96px;
+  .trecho-esquematico {
+    padding: 16px;
   }
 
-  .trecho-pista-rolagem {
-    min-width: 180px;
+  /* Estreito demais para caber inteiro: o esquemático rola na horizontal em
+     vez de espremer a régua até os quilômetros se sobreporem. */
+  .trecho-pista-quadro {
+    --trecho-nome-largura: 104px;
+    --trecho-nome-gap: 8px;
+    --trecho-leito-padding: 8px;
+    --trecho-pista-min: 360px;
+  }
+
+  .trecho-esquematico-footer dl {
+    gap: 20px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .trecho-bloco {
+  .trecho-bloco,
+  .trecho-dia,
+  .trecho-periodo-limpar {
     transition: none;
   }
 
   .trecho-bloco:hover {
-    filter: none;
+    transform: none;
   }
-}
-
-.trecho-legenda {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.trecho-legenda li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--color-muted);
-}
-
-.trecho-legenda-marca {
-  width: 18px;
-  height: 10px;
-  border: 1px solid var(--color-ink);
-  border-radius: 2px;
-}
-
-.trecho-esquematico-notas {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: right;
 }
