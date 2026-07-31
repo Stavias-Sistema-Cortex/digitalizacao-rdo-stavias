@@ -7,6 +7,7 @@ import type {
   LocalSyncStatus,
   ObraGeometriaLocalRecord,
   ObraLocalRecord,
+  OperationalEntityRef,
   OperationalEventRecord,
   OutboxMutationRecord,
   ProcessedEventRecord,
@@ -1366,6 +1367,139 @@ export async function recoverInterruptedMutations(
   }
 
   await guardedTransaction.complete();
+}
+
+/**
+ * Tipos que o servidor sabe resolver como entidade relacionada da geometria.
+ *
+ * Espelha a lista canônica do sync: só entram tipos que têm tabela e obra
+ * própria para o servidor conferir o escopo.
+ */
+const RELACAO_CANONICA_DA_GEOMETRIA: ReadonlySet<string> = new Set([
+  "OBRA",
+  "RDO",
+  "TAREFA",
+]);
+
+export function geometryRelatedEntitiesAfterRepair(
+  mutation: Pick<
+    CanonicalOutboxMutationRecord,
+    "obraId" | "relatedEntities"
+  >,
+): OperationalEntityRef[] {
+  const obraId = mutation.obraId;
+  const aceitas: OperationalEntityRef[] = [];
+  for (const relacao of mutation.relatedEntities) {
+    if (!RELACAO_CANONICA_DA_GEOMETRIA.has(relacao.tipo)) {
+      continue;
+    }
+    if (aceitas.some((atual) => atual.tipo === relacao.tipo &&
+      atual.id === relacao.id)) {
+      continue;
+    }
+    aceitas.push({ ...relacao });
+  }
+  if (obraId && !aceitas.some((atual) => atual.tipo === "OBRA")) {
+    aceitas.unshift({ tipo: "OBRA", id: obraId, nome: null });
+  }
+  return aceitas;
+}
+
+/**
+ * Devolve à fila as geometrias recusadas por um contrato que o servidor não
+ * reconhecia.
+ *
+ * O trecho desenhado viajava com o assunto do desenho ("TRECHO") como entidade
+ * relacionada, e o servidor só resolve entidades que existem como tabela. O
+ * push inteiro era recusado, e cada trecho marcado virava um registro em
+ * revisão que jamais subiria — travando junto todo o resto da fila.
+ *
+ * A recusa é do envelope, não do desenho: as coordenadas seguem íntegras no
+ * dispositivo. Aqui o envelope é reescrito no formato aceito e a mutação volta
+ * a PENDING, preservando o trabalho de quem já marcou o trecho em campo. O hash
+ * canônico cobre apenas o payload, que não é tocado.
+ */
+export async function recoverRejectedGeometryMutationsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    guard,
+  );
+  const transaction = guardedTransaction.transaction;
+  const outboxStore = transaction.objectStore("outbox_mutations");
+  const geometryStore = transaction.objectStore("obra_geometrias");
+
+  const rejeitadas = await outboxStore
+    .index("by-status")
+    .getAll("REJECTED");
+  let recuperadas = 0;
+
+  for (const mutation of rejeitadas) {
+    if (
+      mutation.entidadeTipo !== "GEOMETRIA_OBRA" ||
+      !isCanonicalOutboxMutation(mutation)
+    ) {
+      continue;
+    }
+    const relacoes = geometryRelatedEntitiesAfterRepair(mutation);
+    if (
+      relacoes.length === mutation.relatedEntities.length &&
+      relacoes.every((relacao, indice) =>
+        relacao.tipo === mutation.relatedEntities[indice].tipo &&
+        relacao.id === mutation.relatedEntities[indice].id)
+    ) {
+      // O envelope já está no formato aceito: a recusa teve outra causa e
+      // reenviar às cegas só repetiria a rejeição.
+      continue;
+    }
+
+    const timestamp = nowUtc();
+    const updatedMutation: CanonicalOutboxMutationRecord = {
+      ...mutation,
+      relatedEntities: relacoes,
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      nextAttemptAt: null,
+      blockedReason: null,
+      retryAttempt: 0,
+      lastSafeCode: "GEOMETRY_RELATED_ENTITY_REPAIRED",
+      ultimoErro:
+        "Reenviando a geometria com as entidades relacionadas aceitas pelo servidor.",
+      conflito: null,
+      updatedAt: timestamp,
+    };
+    await outboxStore.put(updatedMutation);
+
+    const event = await exactCanonicalEvent(
+      transaction,
+      mutation.clientMutationId,
+    );
+    await putCanonicalEvent(transaction, {
+      ...event,
+      result: "PENDING",
+      syncStatus: "PENDING_SYNC",
+      errorCategory: "GEOMETRY_RELATED_ENTITY_REPAIRED",
+    });
+
+    const geometria = await geometryStore.get(mutation.entidadeId);
+    if (geometria) {
+      await geometryStore.put({
+        ...geometria,
+        syncStatus: "PENDING_SYNC",
+        updatedAt: timestamp,
+      });
+    }
+    recuperadas += 1;
+  }
+
+  await guardedTransaction.complete();
+  return recuperadas;
 }
 
 export async function repairMissingObraReferencesForSync(

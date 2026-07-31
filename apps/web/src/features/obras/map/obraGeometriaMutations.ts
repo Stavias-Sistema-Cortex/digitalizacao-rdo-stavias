@@ -63,6 +63,34 @@ interface NovaGeometriaInput {
   fonte: string;
 }
 
+/**
+ * Tipos que o sync sabe resolver como entidade relacionada.
+ *
+ * `objetoTipo` descreve o que a geometria representa, e nem todo valor é uma
+ * entidade persistida: "TRECHO" é uma categoria de desenho, sem tabela e sem
+ * obra própria para o servidor conferir. Mandá-la como entidade relacionada faz
+ * o push inteiro ser recusado, então o assunto do desenho viaja apenas no
+ * payload (`objetoTipo`/`objetoId`), que é onde a ontologia o lê.
+ */
+const RELACAO_CANONICA_DO_OBJETO: ReadonlySet<string> = new Set([
+  "OBRA",
+  "RDO",
+  "TAREFA",
+]);
+
+function entidadesRelacionadasDaGeometria(
+  input: NovaGeometriaInput,
+): { tipo: string; id: string }[] {
+  const relacoes = [{ tipo: "OBRA", id: input.obraId }];
+  if (
+    RELACAO_CANONICA_DO_OBJETO.has(input.objetoTipo) &&
+    input.objetoId !== input.obraId
+  ) {
+    relacoes.push({ tipo: input.objetoTipo, id: input.objetoId });
+  }
+  return relacoes;
+}
+
 async function enfileirarNovaGeometria(
   input: NovaGeometriaInput,
   transportOperation: "REGISTRAR_GEOMETRIA_OBRA" | "REGISTRAR_GEOMETRIA_CAMPO",
@@ -104,10 +132,7 @@ async function enfileirarNovaGeometria(
     expectedPrincipalSnapshot: null,
     eventType: "GEOMETRIA_CRIADA",
     colaboradorId: identity.userId,
-    relatedEntities: [
-      { tipo: "OBRA", id: input.obraId },
-      { tipo: input.objetoTipo, id: input.objetoId },
-    ],
+    relatedEntities: entidadesRelacionadasDaGeometria(input),
     write: () => [{ store: "obra_geometrias", value: registro, principal: true }],
   });
 

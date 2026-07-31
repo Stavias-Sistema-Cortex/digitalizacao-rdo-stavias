@@ -13,6 +13,7 @@ import { ensureRegisteredDevice } from "./registerDevice";
 import {
   recoverInterruptedMutations,
   recoverCanonicalConflictReconciliations,
+  recoverRejectedGeometryMutationsForSync,
   repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync,
   resolveCanonicalUploadReplacements,
@@ -67,6 +68,8 @@ async function executeSync(
     await recoverRejectedRdoMutationsForSync(guard, {
       executionLease: lease,
     });
+    await assertSyncExecution(guard, lease);
+    await recoverRejectedGeometryMutationsForSync(guard);
     await assertSyncExecution(guard, lease);
 
     const deviceId = await ensureRegisteredDevice(guard);

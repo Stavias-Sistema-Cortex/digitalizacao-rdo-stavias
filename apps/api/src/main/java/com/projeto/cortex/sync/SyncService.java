@@ -56,8 +56,17 @@ public class SyncService {
             "SERVICE_PRICE_VERSION",
             "EQUIPE",
             "VINCULO_OBRA",
+            "GEOMETRIA_OBRA",
             "SOLICITACAO_INTEGRACAO"
     );
+    /**
+     * Tipos aceitos no push canônico. Visível no pacote para o contrato que
+     * confere se a PWA consegue emitir algum tipo que o servidor recusaria.
+     */
+    static Set<String> canonicalEntityTypes() {
+        return CANONICAL_ENTITY_TYPES;
+    }
+
     private static final Set<String> CANONICAL_RELATED_ENTITY_TYPES = Set.of(
             "OBRA",
             "RDO",
@@ -1873,6 +1882,8 @@ public class SyncService {
                     "SELECT obra_principal_id FROM equipe WHERE id = ?";
             case "VINCULO_OBRA" ->
                     "SELECT obra_id FROM vinculo_colaborador_obra WHERE id = ?";
+            case "GEOMETRIA_OBRA" ->
+                    "SELECT obra_id FROM obra_geometria WHERE id = ?";
             default -> throw rejection(
                     "UNSUPPORTED_ENTITY_TYPE",
                     "Tipo de entidade não suportado pelo escopo canônico."

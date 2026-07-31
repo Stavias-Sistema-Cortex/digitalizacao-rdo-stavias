@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  geometryRelatedEntitiesAfterRepair,
   mutationAfterMaoObraReferenceRepair,
   mutationAfterObraReferenceRepair,
   mutationAfterErroredRetry,
@@ -494,5 +495,44 @@ describe("rdoAfterMaoObraReferenceRepair", () => {
         nomeColaborador: "Adalberto Canovas Neto",
       },
     ]);
+  });
+});
+
+describe("geometryRelatedEntitiesAfterRepair", () => {
+  it("descarta a categoria do desenho, que o servidor não sabe resolver", () => {
+    expect(
+      geometryRelatedEntitiesAfterRepair({
+        obraId: "obra-1",
+        relatedEntities: [
+          { tipo: "OBRA", id: "obra-1", nome: null },
+          { tipo: "TRECHO", id: "obra-1", nome: null },
+        ],
+      }),
+    ).toEqual([{ tipo: "OBRA", id: "obra-1", nome: null }]);
+  });
+
+  it("preserva as entidades que existem como tabela no servidor", () => {
+    expect(
+      geometryRelatedEntitiesAfterRepair({
+        obraId: "obra-1",
+        relatedEntities: [
+          { tipo: "OBRA", id: "obra-1", nome: null },
+          { tipo: "RDO", id: "rdo-9", nome: null },
+          { tipo: "PONTO_OPERACIONAL", id: "ponto-3", nome: null },
+        ],
+      }),
+    ).toEqual([
+      { tipo: "OBRA", id: "obra-1", nome: null },
+      { tipo: "RDO", id: "rdo-9", nome: null },
+    ]);
+  });
+
+  it("recoloca a obra quando o envelope antigo perdeu a única relação válida", () => {
+    expect(
+      geometryRelatedEntitiesAfterRepair({
+        obraId: "obra-1",
+        relatedEntities: [{ tipo: "TRECHO", id: "obra-1", nome: null }],
+      }),
+    ).toEqual([{ tipo: "OBRA", id: "obra-1", nome: null }]);
   });
 });

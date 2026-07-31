@@ -110,7 +110,7 @@ describe("registrarTrechoDesenhado", () => {
     expect(plano[0].principal).toBe(true);
   });
 
-  it("relaciona a geometria à obra e ao objeto ontológico representado", async () => {
+  it("relaciona a geometria à obra e mantém o assunto do desenho no payload", async () => {
     await registrarTrechoDesenhado({
       obraId: "obra-1",
       objetoId: "obra-1",
@@ -120,9 +120,30 @@ describe("registrarTrechoDesenhado", () => {
       ],
     });
 
+    // "TRECHO" é uma categoria de desenho: não tem tabela nem obra própria, e
+    // o servidor recusa o push inteiro ao recebê-la como entidade relacionada.
+    // O assunto continua descrito no payload, que é de onde a ontologia lê.
     expect(ultimaMutacao().relatedEntities).toEqual([
       { tipo: "OBRA", id: "obra-1" },
-      { tipo: "TRECHO", id: "obra-1" },
+    ]);
+    expect(ultimaMutacao().nextSnapshot).toMatchObject({
+      objetoTipo: "TRECHO",
+      objetoId: "obra-1",
+    });
+  });
+
+  it("mantém o RDO como entidade relacionada quando o desenho é dele", async () => {
+    await registrarPontoDeCampo({
+      obraId: "obra-1",
+      objetoTipo: "RDO",
+      objetoId: "rdo-9",
+      latitude: -22.43,
+      longitude: -47.56,
+    });
+
+    expect(ultimaMutacao().relatedEntities).toEqual([
+      { tipo: "OBRA", id: "obra-1" },
+      { tipo: "RDO", id: "rdo-9" },
     ]);
   });
 
