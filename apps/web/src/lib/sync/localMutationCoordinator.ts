@@ -85,14 +85,44 @@ const PRINCIPAL_STORE_BY_ENTITY_TYPE = {
   SERVICE_PRICE_VERSION: "service_price_versions",
   EQUIPE: "teams",
   OBRA: "obras",
+  GEOMETRIA_OBRA: "obra_geometrias",
 } as const satisfies Partial<Record<SyncEntityType, LocalDomainStore>>;
 
-const OUTBOX_ONLY_ENTITY_TYPES = new Set<SyncEntityType>([
+const OUTBOX_ONLY_ENTITY_TYPE_LIST = [
   "SOLICITACAO_COMPRA",
   "COMPRA",
   "VINCULO_OBRA",
   "SOLICITACAO_INTEGRACAO",
-]);
+] as const satisfies readonly SyncEntityType[];
+
+const OUTBOX_ONLY_ENTITY_TYPES = new Set<SyncEntityType>(
+  OUTBOX_ONLY_ENTITY_TYPE_LIST,
+);
+
+/**
+ * Toda entidade sincronizável precisa de uma decisão explícita: ou grava num
+ * store principal do dispositivo, ou trafega apenas pelo outbox.
+ *
+ * `GEOMETRIA_OBRA` ficou fora dos dois por engano e derrubava "Desenhar trecho"
+ * e "Registrar posição" em tempo de execução, com a falha aparecendo na tela do
+ * apontador. O erro só apareceu em produção porque o teste da feature
+ * substituía `commitLocalMutation` — justamente quem valida isso.
+ *
+ * A linha abaixo não compila enquanto algum tipo de `SyncEntityType` não
+ * estiver classificado, o que transforma esse esquecimento em erro de build.
+ */
+type EntidadeSemClassificacaoLocal = Exclude<
+  SyncEntityType,
+  | keyof typeof PRINCIPAL_STORE_BY_ENTITY_TYPE
+  | (typeof OUTBOX_ONLY_ENTITY_TYPE_LIST)[number]
+>;
+
+const _TODA_ENTIDADE_TEM_DESTINO_LOCAL: [
+  EntidadeSemClassificacaoLocal,
+] extends [never]
+  ? true
+  : never = true;
+void _TODA_ENTIDADE_TEM_DESTINO_LOCAL;
 
 type LocalMutationDomainPut<TStore extends LocalDomainStore> = {
   [Store in TStore]: {
