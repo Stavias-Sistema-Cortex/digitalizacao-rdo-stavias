@@ -14,8 +14,15 @@ const leaflet = vi.hoisted(() => ({
 
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
 vi.mock("./obraGeometriaMutations", () => ({ registrarTrechoDesenhado }));
+const satelite = vi.hoisted(() => ({
+  ultimaLeitura: undefined as unknown,
+}));
+
 vi.mock("./OperationalMap", () => ({
-  OperationalMap: () => <div data-testid="mapa-satelite" />,
+  OperationalMap: (props: { leitura: unknown }) => {
+    satelite.ultimaLeitura = props.leitura;
+    return <div data-testid="mapa-satelite" />;
+  },
 }));
 vi.mock("./LeafletTrechoMap", () => ({
   LeafletTrechoMap: (props: {
@@ -53,6 +60,7 @@ beforeEach(() => {
   registrarTrechoDesenhado.mockResolvedValue({ id: "geo-1" });
   leaflet.ultimoModo = "INATIVO";
   leaflet.desenhar = null;
+  satelite.ultimaLeitura = undefined;
 });
 
 afterEach(cleanup);
@@ -155,5 +163,46 @@ describe("RodoviaWorkspace", () => {
     window.dispatchEvent(new Event("cortex:sync-completed"));
 
     await waitFor(() => expect(carregarMapaObra).toHaveBeenCalledTimes(2));
+  });
+
+  it("alimenta o painel satélite com a mesma leitura do painel Leaflet", async () => {
+    const compartilhada = leitura({ origem: "CACHE_LOCAL" });
+    carregarMapaObra.mockResolvedValue(compartilhada);
+
+    render(<RodoviaWorkspace obra={obra} podeDesenhar={false} />);
+    await screen.findByTestId("mapa-leaflet");
+
+    // Uma única busca serve os dois painéis: offline ou após um desenho
+    // local, as duas metades continuam contando a mesma história.
+    await waitFor(() =>
+      expect(satelite.ultimaLeitura).toBe(compartilhada),
+    );
+    expect(carregarMapaObra).toHaveBeenCalledTimes(1);
+  });
+
+  it("desliga o desenho e zera o rascunho quando a persistência falha", async () => {
+    registrarTrechoDesenhado.mockRejectedValue(
+      new Error("Não foi possível gravar a mutação."),
+    );
+    const user = userEvent.setup();
+
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: "Desenhar trecho" }));
+    expect(leaflet.ultimoModo).toBe("TRECHO");
+
+    leaflet.desenhar?.([
+      { lat: -22.4394, lng: -47.5672 },
+      { lat: -22.4501, lng: -47.5588 },
+    ]);
+
+    // A falha aparece, o modo sai de desenho — o que apaga os marcadores de
+    // rascunho no mapa — e o botão volta ao estado inicial para nova tentativa.
+    await screen.findByText(/Não foi possível gravar a mutação\./);
+    await waitFor(() => expect(leaflet.ultimoModo).toBe("INATIVO"));
+    expect(
+      screen.getByRole("button", { name: "Desenhar trecho" }),
+    ).toBeInTheDocument();
   });
 });

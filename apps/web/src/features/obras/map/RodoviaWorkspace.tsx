@@ -226,6 +226,11 @@ export function RodoviaWorkspace({
         setPontosMarcados(0);
         recarregar();
       } catch (motivo: unknown) {
+        // O rascunho não sobrevive à falha: sair do modo de desenho apaga os
+        // marcadores de início e fim, e a próxima tentativa começa do zero em
+        // vez de acumular pontos órfãos sobre o mapa.
+        setModoDesenho("INATIVO");
+        setPontosMarcados(0);
         setAviso(
           motivo instanceof Error
             ? motivo.message
@@ -381,13 +386,19 @@ export function RodoviaWorkspace({
 
       <div className="rodovia-workspace-split">
         <div className="rodovia-workspace-painel">
-          <OperationalMap obra={worksite} />
+          <OperationalMap
+            obra={worksite}
+            leitura={leitura}
+            carregando={estado.fase === "carregando"}
+            erroLeitura={estado.fase === "erro" ? estado.mensagem : null}
+          />
         </div>
         <div className="rodovia-workspace-painel">
           {centro || aproximado ? (
             <LeafletTrechoMap
               features={colecao}
               center={centro ?? (aproximado as EnquadramentoAproximado).centro}
+              limitesIniciais={centro ? null : aproximado?.limites ?? null}
               modo={modoDesenho}
               onTrechoDesenhado={aoDesenharTrecho}
               onPontoCapturado={setPontosMarcados}

@@ -1,4 +1,4 @@
-import { categoryColorExpression } from "./mapCategories";
+import { categoryColorExpression, corDoToken } from "./mapCategories";
 import { limitesDaColecao, type OperationalFeatureCollection } from "./mapGeometry";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 
@@ -145,25 +145,53 @@ function popupContent(properties: Record<string, unknown>): HTMLDivElement {
   return container;
 }
 
-function addMapLibreLayers(
-  map: import("maplibre-gl").Map,
+/**
+ * O subconjunto de API usado pelas camadas operacionais é idêntico no MapLibre
+ * e no Mapbox; estes contratos estruturais mínimos permitem um único construtor
+ * de camadas para os dois runtimes. O popup é a única diferença real e fica a
+ * cargo de quem monta.
+ */
+interface GlEventoDeCamada {
+  features?: { properties?: Record<string, unknown> | null }[];
+  lngLat: { lng: number; lat: number };
+}
+
+interface GlCompativel {
+  addSource(id: string, source: never): unknown;
+  addLayer(layer: never): unknown;
+  on(
+    type: string,
+    layerId: string,
+    listener: (event: GlEventoDeCamada) => void,
+  ): unknown;
+  getCanvas(): HTMLCanvasElement;
+}
+
+interface GlPopupCompativel {
+  setLngLat(lngLat: { lng: number; lat: number }): GlPopupCompativel;
+  setDOMContent(node: Node): GlPopupCompativel;
+  addTo(map: never): unknown;
+}
+
+function addOperationalLayers(
+  map: GlCompativel,
   features: OperationalFeatureCollection,
-  maplibre: typeof import("maplibre-gl"),
+  criarPopup: () => GlPopupCompativel,
 ): void {
   map.addSource(SOURCE_ID, {
     type: "geojson",
-    data: features as never,
-  });
+    data: features,
+  } as never);
   map.addLayer({
     id: "cortex-polygons",
     type: "fill",
     source: SOURCE_ID,
     filter: ["==", ["geometry-type"], "Polygon"],
     paint: {
-      "fill-color": categoryColorExpression() as never,
+      "fill-color": categoryColorExpression(),
       "fill-opacity": 0.28,
     },
-  });
+  } as never);
   // Contorno escuro sob a linha colorida: é o que faz o trecho ler como uma
   // pista sobre a imagem, em vez de um risco solto por cima do mapa.
   map.addLayer({
@@ -177,11 +205,11 @@ function addMapLibreLayers(
     ],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": "#18211f",
-      "line-width": LARGURA_LINHA_CASING as never,
+      "line-color": corDoToken("--color-ink"),
+      "line-width": LARGURA_LINHA_CASING,
       "line-opacity": 0.85,
     },
-  });
+  } as never);
   map.addLayer({
     id: "cortex-lines",
     type: "line",
@@ -193,31 +221,31 @@ function addMapLibreLayers(
     ],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": categoryColorExpression() as never,
-      "line-width": LARGURA_LINHA as never,
+      "line-color": categoryColorExpression(),
+      "line-width": LARGURA_LINHA,
       "line-opacity": 0.95,
     },
-  });
+  } as never);
   map.addLayer({
     id: "cortex-points",
     type: "circle",
     source: SOURCE_ID,
     filter: ["==", ["geometry-type"], "Point"],
     paint: {
-      "circle-color": categoryColorExpression() as never,
+      "circle-color": categoryColorExpression(),
       "circle-radius": 7,
-      "circle-stroke-color": "#ffffff",
+      "circle-stroke-color": corDoToken("--color-surface"),
       "circle-stroke-width": 2,
     },
-  });
+  } as never);
 
   for (const layerId of ["cortex-polygons", "cortex-lines", "cortex-points"]) {
     map.on("click", layerId, (event) => {
       const properties = event.features?.[0]?.properties ?? {};
-      new maplibre.Popup({ closeButton: false, offset: 10 })
+      criarPopup()
         .setLngLat(event.lngLat)
         .setDOMContent(popupContent(properties))
-        .addTo(map);
+        .addTo(map as never);
     });
     map.on("mouseenter", layerId, () => {
       map.getCanvas().style.cursor = "pointer";
@@ -226,6 +254,22 @@ function addMapLibreLayers(
       map.getCanvas().style.cursor = "";
     });
   }
+}
+
+function addMapLibreLayers(
+  map: import("maplibre-gl").Map,
+  features: OperationalFeatureCollection,
+  maplibre: typeof import("maplibre-gl"),
+): void {
+  addOperationalLayers(
+    map as unknown as GlCompativel,
+    features,
+    () =>
+      new maplibre.Popup({
+        closeButton: false,
+        offset: 10,
+      }) as unknown as GlPopupCompativel,
+  );
 }
 
 const BUILDING_LAYER_ID = "cortex-3d-buildings";
@@ -259,7 +303,7 @@ function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
     "source-layer": "building",
     minzoom: 14,
     paint: {
-      "fill-extrusion-color": "#c7d2ce",
+      "fill-extrusion-color": corDoToken("--color-border-strong"),
       "fill-extrusion-opacity": 0.65,
       "fill-extrusion-height": [
         "coalesce",
@@ -355,81 +399,15 @@ function addMapboxLayers(
   features: OperationalFeatureCollection,
   mapbox: typeof import("mapbox-gl"),
 ): void {
-  map.addSource(SOURCE_ID, {
-    type: "geojson",
-    data: features as never,
-  });
-  map.addLayer({
-    id: "cortex-polygons",
-    type: "fill",
-    source: SOURCE_ID,
-    filter: ["==", ["geometry-type"], "Polygon"],
-    paint: {
-      "fill-color": categoryColorExpression() as never,
-      "fill-opacity": 0.28,
-    },
-  });
-  // Contorno escuro sob a linha colorida: é o que faz o trecho ler como uma
-  // pista sobre a imagem, em vez de um risco solto por cima do mapa.
-  map.addLayer({
-    id: "cortex-lines-casing",
-    type: "line",
-    source: SOURCE_ID,
-    filter: [
-      "in",
-      ["geometry-type"],
-      ["literal", ["LineString", "Polygon"]],
-    ],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": "#18211f",
-      "line-width": LARGURA_LINHA_CASING as never,
-      "line-opacity": 0.85,
-    },
-  });
-  map.addLayer({
-    id: "cortex-lines",
-    type: "line",
-    source: SOURCE_ID,
-    filter: [
-      "in",
-      ["geometry-type"],
-      ["literal", ["LineString", "Polygon"]],
-    ],
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": categoryColorExpression() as never,
-      "line-width": LARGURA_LINHA as never,
-      "line-opacity": 0.95,
-    },
-  });
-  map.addLayer({
-    id: "cortex-points",
-    type: "circle",
-    source: SOURCE_ID,
-    filter: ["==", ["geometry-type"], "Point"],
-    paint: {
-      "circle-color": categoryColorExpression() as never,
-      "circle-radius": 7,
-      "circle-stroke-color": "#ffffff",
-      "circle-stroke-width": 2,
-    },
-  });
-  for (const layerId of ["cortex-polygons", "cortex-lines", "cortex-points"]) {
-    map.on("click", layerId, (event) => {
-      const properties = event.features?.[0]?.properties ?? {};
-      new mapbox.Popup({ closeButton: false, offset: 10 })
-        .setLngLat(event.lngLat)
-        .setDOMContent(popupContent(properties))
-        .addTo(map);
-    });
-    map.on("mouseenter", layerId, () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", layerId, () => {
-      map.getCanvas().style.cursor = "";
-    });
-  }
+  addOperationalLayers(
+    map as unknown as GlCompativel,
+    features,
+    () =>
+      new mapbox.Popup({
+        closeButton: false,
+        offset: 10,
+      }) as unknown as GlPopupCompativel,
+  );
 }
 
 async function mountMapbox(

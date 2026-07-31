@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { corDaCategoria, rotuloDaCategoria } from "./mapCategories";
+import { corDaCategoria, corDoToken, rotuloDaCategoria } from "./mapCategories";
 import type { OperationalFeatureCollection } from "./mapGeometry";
 import "./LeafletTrechoMap.css";
 
@@ -15,6 +15,12 @@ interface LeafletTrechoMapProps {
   features: OperationalFeatureCollection;
   /** Centro no formato GeoJSON `[longitude, latitude]`. */
   center: [number, number];
+  /**
+   * Caixa delimitadora do enquadramento aproximado, `[[oeste, sul], [leste,
+   * norte]]`. Usada uma única vez, quando não há geometria: enquadra o
+   * município inteiro em vez de abrir num zoom arbitrário sobre o centro.
+   */
+  limitesIniciais?: [[number, number], [number, number]] | null;
   modo: ModoDesenho;
   /** Chamado quando o desenho fecha os dois extremos do trecho. */
   onTrechoDesenhado?: (pontos: PontoGeografico[]) => void;
@@ -93,6 +99,7 @@ function popupHtml(properties: Record<string, unknown>): string {
 export function LeafletTrechoMap({
   features,
   center,
+  limitesIniciais = null,
   modo,
   onTrechoDesenhado,
   onPontoCapturado,
@@ -152,7 +159,12 @@ export function LeafletTrechoMap({
         pontosRef.current = [...pontosRef.current, ponto];
         onPontoCapturado?.(pontosRef.current.length);
 
-        const cor = pontosRef.current.length === 1 ? "#f7a531" : "#a43a3a";
+        // As cores do rascunho saem do tema, como todas as outras: amarelo
+        // estrutural para o início, vermelho de alerta para o fim.
+        const cor =
+          pontosRef.current.length === 1
+            ? corDoToken("--color-brand-yellow")
+            : corDoToken("--color-danger");
         leaflet
           .marker([ponto.lat, ponto.lng], {
             icon: leaflet.divIcon({
@@ -209,6 +221,30 @@ export function LeafletTrechoMap({
     }
   }, [latitude, longitude, estado]);
 
+  // Sem geometria nenhuma, o enquadramento aproximado abre o município
+  // inteiro. Acontece uma única vez: assim que existir geometria real, o
+  // efeito de camadas assume o enquadramento e este não volta a rodar.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (
+      !map ||
+      estado !== "pronto" ||
+      !limitesIniciais ||
+      features.features.length > 0 ||
+      enquadramentoRef.current !== null
+    ) {
+      return;
+    }
+    enquadramentoRef.current = "enquadramento-aproximado";
+    map.fitBounds(
+      [
+        [limitesIniciais[0][1], limitesIniciais[0][0]],
+        [limitesIniciais[1][1], limitesIniciais[1][0]],
+      ],
+      { padding: [16, 16] },
+    );
+  }, [limitesIniciais, estado, features.features.length]);
+
   useEffect(() => {
     const leaflet = leafletRef.current;
     const camada = camadaRef.current;
@@ -223,7 +259,7 @@ export function LeafletTrechoMap({
     leaflet
       .geoJSON(features as never, {
         style: (feature) => ({
-          color: "#18211f",
+          color: corDoToken("--color-ink"),
           weight: feature?.properties?.categoria === "TRECHO" ? 10 : 6,
           opacity: 0.85,
           fill: false,

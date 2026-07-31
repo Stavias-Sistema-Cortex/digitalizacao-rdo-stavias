@@ -38,6 +38,11 @@ const FALLBACK: Readonly<Record<string, string>> = Object.freeze({
   "--map-ocorrencia": "#a43a3a",
   "--map-programacao": "#66706b",
   "--color-brand-teal": "#0c2623",
+  "--color-ink": "#18211f",
+  "--color-brand-yellow": "#f2c300",
+  "--color-danger": "#a43a3a",
+  "--color-surface": "#f7f9f7",
+  "--color-border-strong": "#bccac5",
 });
 
 const cache = new Map<string, string>();
@@ -63,6 +68,15 @@ function valorDoToken(token: string): string {
 /** Descarta as cores memorizadas, para quando o tema mudar em tempo de execução. */
 export function limparCacheDeCores(): void {
   cache.clear();
+}
+
+/**
+ * Resolve um token arbitrário do tema, com o mesmo cache e fallback das
+ * categorias. É o caminho para qualquer cor desenhada por JavaScript — pinos
+ * de rascunho, contorno de linha — continuar saindo de `index.css`.
+ */
+export function corDoToken(token: string): string {
+  return valorDoToken(token);
 }
 
 export function tokenDaCategoria(categoria: unknown): string {

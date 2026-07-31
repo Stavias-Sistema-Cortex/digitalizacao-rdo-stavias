@@ -11,7 +11,7 @@ import {
   type MapViewMode,
   type OperationalMapController,
 } from "./mapAdapter";
-import { buscarMapaObra, type ObraMapData } from "./obraMapApi";
+import type { LeituraMapaObra } from "./obraMapApi";
 import {
   availableMapProviders,
   resolveMapProvider,
@@ -23,12 +23,16 @@ import "./OperationalMap.css";
 
 interface OperationalMapProps {
   obra: WorksiteMapPoint;
-}
-
-interface RemoteState {
-  status: "loading" | "ready" | "error";
-  data: ObraMapData | null;
-  message: string | null;
+  /**
+   * Leitura geoespacial do workspace, cache-through e assinada a cada rodada
+   * de sincronização. Os dois painéis do mapa dividido leem exatamente o mesmo
+   * dado: este componente não faz nenhuma busca própria, senão a metade
+   * satélite discordaria da metade Leaflet offline e após um desenho local.
+   */
+  leitura: LeituraMapaObra | null;
+  carregando: boolean;
+  /** Falha da leitura compartilhada, já explicada no aviso do workspace. */
+  erroLeitura: string | null;
 }
 
 function firstCoordinate(
@@ -149,55 +153,30 @@ function MapCanvas({
   );
 }
 
-export function OperationalMap({ obra }: OperationalMapProps) {
+export function OperationalMap({
+  obra,
+  leitura,
+  carregando,
+  erroLeitura,
+}: OperationalMapProps) {
   const defaultProvider = useMemo(() => resolveMapProvider(), []);
   const [providerId, setProviderId] =
     useState<MapProviderId>(defaultProvider.id);
   const [mode, setMode] = useState<MapViewMode>("2d");
   const [centerRequest, setCenterRequest] = useState(0);
-  const [remote, setRemote] = useState<RemoteState>({
-    status: "loading",
-    data: null,
-    message: null,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    buscarMapaObra(obra.id)
-      .then((data) => {
-        if (!cancelled) {
-          setRemote({ status: "ready", data, message: null });
-        }
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) {
-          setRemote({
-            status: "error",
-            data: null,
-            message:
-              reason instanceof Error
-                ? reason.message
-                : "Camadas geoespaciais indisponíveis.",
-          });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [obra.id]);
 
   const provider = useMemo(
     () => resolveMapProviderForId(providerId),
     [providerId],
   );
-  const authoritativeWorksite = remote.data?.obra ?? obra;
+  const authoritativeWorksite = leitura?.dados.obra ?? obra;
   const featureCollection = useMemo(
     () =>
       buildOperationalFeatureCollection(
         authoritativeWorksite,
-        remote.data?.features ?? [],
+        leitura?.dados.features ?? [],
       ),
-    [authoritativeWorksite, remote.data?.features],
+    [authoritativeWorksite, leitura?.dados.features],
   );
   const center = useMemo(
     () =>
@@ -221,7 +200,7 @@ export function OperationalMap({ obra }: OperationalMapProps) {
       )],
     [featureCollection.features],
   );
-  const mapSignature = `${provider.id}:${remote.status}:${featureCollection.features
+  const mapSignature = `${provider.id}:${carregando ? "carregando" : "pronto"}:${featureCollection.features
     .map((feature) => `${feature.id}:${String(feature.properties.versao ?? "")}`)
     .join("|")}`;
 
@@ -285,11 +264,6 @@ export function OperationalMap({ obra }: OperationalMapProps) {
       {defaultProvider.fallbackReason ? (
         <p className="operational-map-notice">{defaultProvider.fallbackReason}</p>
       ) : null}
-      {remote.status === "error" ? (
-        <p className="operational-map-notice">
-          {remote.message} A localização salva no dispositivo continua disponível.
-        </p>
-      ) : null}
 
       {!provider.configured ? (
         <div className="operational-map-empty operational-map-empty--config">
@@ -330,9 +304,11 @@ export function OperationalMap({ obra }: OperationalMapProps) {
           )}
         </div>
         <small>
-          {remote.status === "loading"
+          {carregando
             ? "Consultando camadas autoritativas…"
-            : `${remote.data?.features.length ?? 0} geometria(s) ontológica(s)`}
+            : erroLeitura
+              ? "Camadas indisponíveis nesta leitura"
+              : `${leitura?.dados.features.length ?? 0} geometria(s) ontológica(s)`}
         </small>
       </footer>
     </section>

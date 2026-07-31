@@ -55,6 +55,8 @@ function Bloco({ bloco }: { bloco: BlocoSegmento }) {
       className={`trecho-bloco trecho-bloco--${estado.toLowerCase()}`}
       style={{ left: `${bloco.inicio}%`, width: `${bloco.largura}%` }}
       title={`${rotuloDoSegmento(bloco.segmento)} — ${detalhe}`}
+      role="img"
+      aria-label={`${rotuloDoSegmento(bloco.segmento)} — ${detalhe}`}
     >
       <span className="trecho-bloco-rotulo">
         <span>{rotuloDoSegmento(bloco.segmento)}</span>
