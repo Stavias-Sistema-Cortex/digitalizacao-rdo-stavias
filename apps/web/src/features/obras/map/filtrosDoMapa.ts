@@ -90,6 +90,37 @@ export function filtrarColecao(
   };
 }
 
+/**
+ * Recorte por janela de evolução: o que participou do período.
+ *
+ * Diferente de {@link vigenteEm}, que responde "o que valia NESTE dia", aqui a
+ * pergunta é "o que esteve vigente em ALGUM momento desde o início da
+ * janela" — a evolução de um semestre inclui o trecho aberto antes e ainda
+ * válido. Só fica de fora o que registra encerramento anterior ao início.
+ *
+ * Geometria sem `validoAte` legível é tratada como ainda vigente e participa
+ * de qualquer janela — é o caso do ponto da própria obra, que não tem
+ * vigência e não deve sumir por causa do recorte.
+ */
+export function recortarPorJanela(
+  collection: OperationalFeatureCollection,
+  inicio: string | null,
+): OperationalFeatureCollection {
+  if (!inicio) {
+    // Sem recorte pedido, a mesma referência: o mapa remonta quando a coleção
+    // muda de identidade, e remontar à toa apaga o enquadramento.
+    return collection;
+  }
+  return {
+    type: "FeatureCollection",
+    features: collection.features.filter((feature) => {
+      const valor = feature.properties.validoAte;
+      const ate = typeof valor === "string" ? valor.slice(0, 10) : "";
+      return !ate || ate >= inicio;
+    }),
+  };
+}
+
 export function alternarCategoria(
   ocultas: ReadonlySet<string>,
   categoria: string,

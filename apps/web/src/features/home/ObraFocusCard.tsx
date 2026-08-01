@@ -6,6 +6,7 @@ import type {
   OperationalEventRecord,
   PrevisaoSnapshotRecord,
 } from "../../lib/db/db.types";
+import { janelaDoGrafico } from "./evolucaoDaObra";
 import { ObraEvolucaoMapa } from "./ObraEvolucaoMapa";
 import { ProgressChart } from "./ProgressChart";
 import {
@@ -69,6 +70,13 @@ export function ObraFocusCard({
   const points = useMemo(
     () => filterByPeriod(allPoints, period),
     [allPoints, period],
+  );
+  // A janela do mapa nasce dos pontos que o gráfico exibe, não de uma conta
+  // própria: dois cálculos separados divergiriam sob o mesmo rótulo assim que
+  // o histórico ficasse defasado.
+  const janela = useMemo(
+    () => janelaDoGrafico(points, period),
+    [points, period],
   );
 
   const progressoGeral =
@@ -159,7 +167,7 @@ export function ObraFocusCard({
             O mapa acompanha o mesmo período do gráfico de avanço.
           </small>
         </header>
-        <ObraEvolucaoMapa obra={obra} period={period} />
+        <ObraEvolucaoMapa obra={obra} janela={janela} />
       </section>
 
       <dl className="home-obra-metrics">

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  janelaDoPeriodo,
-  participouDaJanela,
-  recortarEvolucao,
-} from "./evolucaoDaObra";
+import { janelaDoGrafico } from "./evolucaoDaObra";
+import { recortarPorJanela } from "../obras/map/filtrosDoMapa";
 import type {
   OperationalFeature,
   OperationalFeatureCollection,
 } from "../obras/map/mapGeometry";
+import type { MonthlyPoint } from "./progressSeries";
+
+function ponto(month: string): MonthlyPoint {
+  return { month, fisicoPct: 10, pdorPct: 10 };
+}
 
 function feature(
   id: string,
@@ -23,70 +25,59 @@ function feature(
   };
 }
 
-const HOJE = new Date("2026-08-01T12:00:00Z");
+const HOJE = new Date("2026-08-31T12:00:00Z");
 
-describe("janelaDoPeriodo", () => {
-  it("converte o período do gráfico na mesma janela de meses", () => {
-    expect(janelaDoPeriodo("3M", HOJE).inicio).toBe("2026-05-01");
-    expect(janelaDoPeriodo("6M", HOJE).inicio).toBe("2026-02-01");
-    expect(janelaDoPeriodo("12M", HOJE).inicio).toBe("2025-08-01");
+describe("janelaDoGrafico", () => {
+  it("ancora no primeiro mês que o gráfico está exibindo", () => {
+    // A janela nasce dos pontos visíveis: é isso que garante que gráfico e
+    // mapa mostram o mesmo período mesmo com histórico defasado.
+    const visiveis = [ponto("2025-12"), ponto("2026-01"), ponto("2026-02")];
+
+    expect(janelaDoGrafico(visiveis, "3M", HOJE).inicio).toBe("2025-12-01");
+  });
+
+  it("sem histórico, usa a mesma conta do gráfico sobre o mês corrente", () => {
+    // Granularidade de mês e N-1 para trás, como filterByPeriod — e sem
+    // aritmética de Date, que estoura no dia 31.
+    expect(janelaDoGrafico([], "3M", HOJE).inicio).toBe("2026-06-01");
+    expect(janelaDoGrafico([], "6M", HOJE).inicio).toBe("2026-03-01");
+    expect(janelaDoGrafico([], "12M", HOJE).inicio).toBe("2025-09-01");
   });
 
   it("não limita o passado quando o gráfico mostra tudo", () => {
-    expect(janelaDoPeriodo("ALL", HOJE).inicio).toBeNull();
+    expect(janelaDoGrafico([ponto("2026-01")], "ALL", HOJE).inicio)
+      .toBeNull();
   });
 });
 
-describe("participouDaJanela", () => {
-  const janela = janelaDoPeriodo("6M", HOJE);
-
-  it("mantém o que segue vigente, mesmo começado antes do período", () => {
-    // A evolução do semestre inclui o trecho aberto em janeiro que ainda
-    // vale: ele participou do período inteiro.
-    expect(participouDaJanela(feature("t", "2025-01-10", null), janela))
-      .toBe(true);
-  });
-
-  it("descarta o que foi encerrado antes do início do período", () => {
-    expect(
-      participouDaJanela(feature("t", "2025-01-10", "2025-12-01"), janela),
-    ).toBe(false);
-  });
-
-  it("mantém o que foi encerrado dentro do período", () => {
-    expect(
-      participouDaJanela(feature("t", "2025-01-10", "2026-03-15"), janela),
-    ).toBe(true);
-  });
-
-  it("nunca esconde a geometria sem vigência, como o ponto da obra", () => {
-    expect(participouDaJanela(feature("obra"), janela)).toBe(true);
-  });
-});
-
-describe("recortarEvolucao", () => {
+describe("recortarPorJanela", () => {
   const colecao: OperationalFeatureCollection = {
     type: "FeatureCollection",
     features: [
       feature("obra"),
       feature("antigo", "2025-01-10", "2025-11-30"),
       feature("vigente", "2025-03-01", null),
-      feature("do-semestre", "2026-04-02", "2026-06-20"),
+      feature("do-periodo", "2026-04-02", "2026-06-20"),
     ],
   };
 
-  it("devolve a mesma referência quando o gráfico mostra tudo", () => {
-    expect(recortarEvolucao(colecao, janelaDoPeriodo("ALL", HOJE)))
-      .toBe(colecao);
+  it("devolve a mesma referência quando não há recorte", () => {
+    expect(recortarPorJanela(colecao, null)).toBe(colecao);
   });
 
-  it("recorta a coleção pela mesma janela do gráfico", () => {
-    const recortada = recortarEvolucao(colecao, janelaDoPeriodo("6M", HOJE));
+  it("mantém o que participou do período: vigente ou encerrado dentro dele", () => {
+    const recortada = recortarPorJanela(colecao, "2026-02-01");
 
     expect(recortada.features.map((item) => item.id)).toEqual([
       "obra",
       "vigente",
-      "do-semestre",
+      "do-periodo",
     ]);
+  });
+
+  it("nunca esconde a geometria sem vigência, como o ponto da obra", () => {
+    expect(
+      recortarPorJanela(colecao, "2030-01-01").features.map((f) => f.id),
+    ).toEqual(["obra", "vigente"]);
   });
 });

@@ -75,7 +75,14 @@ export function buildMonthlySeries(
     }));
 }
 
-function shiftMonth(month: string, delta: number): string {
+/**
+ * Aritmética de mês sobre a própria string `YYYY-MM`.
+ *
+ * Exportada porque a janela do mapa de evolução precisa da MESMA conta do
+ * gráfico: refazer o deslocamento com `Date` reintroduz o estouro de fim de
+ * mês (31 de agosto menos 6 meses cai em 3 de março) que esta função evita.
+ */
+export function shiftMonth(month: string, delta: number): string {
   const [year, monthIndex] = month.split("-").map(Number);
   const total = year * 12 + (monthIndex - 1) + delta;
   const shiftedYear = Math.floor(total / 12);

@@ -1,19 +1,17 @@
-import type {
-  OperationalFeature,
-  OperationalFeatureCollection,
-} from "../obras/map/mapGeometry";
-import type { ChartPeriod } from "./progressSeries";
+import {
+  shiftMonth,
+  type ChartPeriod,
+  type MonthlyPoint,
+} from "./progressSeries";
 
 /**
- * Recorte da evolução geoespacial da obra pela janela do gráfico da Home.
+ * Janela geoespacial derivada do gráfico de avanço da Home.
  *
- * O card do empreendimento já filtra o avanço físico por 3, 6 ou 12 meses; o
- * mapa ao lado precisa contar a mesma história — mostrar tudo enquanto o
- * gráfico mostra um semestre faria os dois painéis discordarem na mesma tela.
- *
- * A janela é um intervalo, não um dia: entra a geometria que esteve vigente em
- * qualquer momento do período, porque a evolução é o que aconteceu ao longo
- * dele, inclusive o trecho que começou antes e ainda vale.
+ * O mapa do card promete acompanhar o mesmo período do gráfico, então a
+ * janela não é calculada por conta própria: ela nasce dos MESMOS pontos que o
+ * gráfico exibe. Calcular "6 meses a partir de hoje" aqui daria dois períodos
+ * diferentes sob o mesmo rótulo sempre que o histórico estivesse defasado —
+ * gráfico mostrando dez/2025–fev/2026 e mapa mostrando desde mai/2026.
  */
 export interface JanelaDeEvolucao {
   /** Primeiro dia considerado, ISO `YYYY-MM-DD`. Nulo não limita o passado. */
@@ -27,7 +25,16 @@ const MESES_POR_PERIODO: Readonly<Record<ChartPeriod, number | null>> = {
   ALL: null,
 };
 
-export function janelaDoPeriodo(
+function mesUtc(data: Date): string {
+  return data.toISOString().slice(0, 7);
+}
+
+/**
+ * @param pontosVisiveis os pontos que o gráfico está exibindo, já recortados
+ * pelo período — o primeiro deles é o início real da janela na tela.
+ */
+export function janelaDoGrafico(
+  pontosVisiveis: readonly MonthlyPoint[],
   period: ChartPeriod,
   hoje: Date = new Date(),
 ): JanelaDeEvolucao {
@@ -35,49 +42,11 @@ export function janelaDoPeriodo(
   if (meses === null) {
     return { inicio: null };
   }
-  const inicio = new Date(hoje.getTime());
-  inicio.setUTCMonth(inicio.getUTCMonth() - meses);
-  return { inicio: inicio.toISOString().slice(0, 10) };
-}
-
-function textoDaPropriedade(
-  feature: OperationalFeature,
-  chave: string,
-): string {
-  const valor = feature.properties[chave];
-  return typeof valor === "string" ? valor : "";
-}
-
-/**
- * Diz se a geometria participou do período observado.
- *
- * Geometria sem `validoDesde` legível é tratada como sempre presente — é o
- * caso do ponto da própria obra, que não tem vigência e não deve sumir do
- * mapa por causa do recorte do gráfico.
- */
-export function participouDaJanela(
-  feature: OperationalFeature,
-  janela: JanelaDeEvolucao,
-): boolean {
-  if (!janela.inicio) return true;
-  const ate = textoDaPropriedade(feature, "validoAte").slice(0, 10);
-  // O que segue vigente participou de qualquer janela que alcance o presente;
-  // só o que foi encerrado antes do início do período fica de fora.
-  return !ate || ate >= janela.inicio;
-}
-
-export function recortarEvolucao(
-  collection: OperationalFeatureCollection,
-  janela: JanelaDeEvolucao,
-): OperationalFeatureCollection {
-  if (!janela.inicio) {
-    // Sem recorte pedido, a mesma referência: o mapa remonta quando a coleção
-    // muda de identidade, e remontar à toa apaga o enquadramento.
-    return collection;
+  if (pontosVisiveis.length > 0) {
+    return { inicio: `${pontosVisiveis[0].month}-01` };
   }
-  return {
-    type: "FeatureCollection",
-    features: collection.features.filter((feature) =>
-      participouDaJanela(feature, janela)),
-  };
+  // Sem histórico de previsão o gráfico está vazio e não há âncora; a mesma
+  // conta do gráfico (granularidade de mês, N-1 para trás) aplicada ao mês
+  // corrente é o que ele mostraria se o primeiro ponto chegasse hoje.
+  return { inicio: `${shiftMonth(mesUtc(hoje), -(meses - 1))}-01` };
 }

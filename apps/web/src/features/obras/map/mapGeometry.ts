@@ -114,6 +114,25 @@ export function limitesDaColecao(
     : null;
 }
 
+/**
+ * Centro da caixa que envolve as geometrias, formato GeoJSON `[lng, lat]`.
+ *
+ * Serve de centro de mapa quando a obra não tem coordenada cadastrada. É
+ * deliberadamente o meio da extensão, não o primeiro vértice: o primeiro
+ * ponto de um trecho longo deixaria metade da obra fora do enquadramento
+ * inicial.
+ */
+export function centroDaColecao(
+  collection: OperationalFeatureCollection,
+): [number, number] | null {
+  const limites = limitesDaColecao(collection);
+  if (!limites) return null;
+  return [
+    (limites.oeste + limites.leste) / 2,
+    (limites.sul + limites.norte) / 2,
+  ];
+}
+
 /** Comprimento aproximado de uma linha, em metros, pela fórmula de Haversine. */
 export function comprimentoAproximadoM(geometry: OperationalGeometry): number | null {
   const linhas: [number, number][][] = [];
