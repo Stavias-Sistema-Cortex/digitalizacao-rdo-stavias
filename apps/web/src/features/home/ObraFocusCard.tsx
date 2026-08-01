@@ -6,6 +6,7 @@ import type {
   OperationalEventRecord,
   PrevisaoSnapshotRecord,
 } from "../../lib/db/db.types";
+import { ObraEvolucaoMapa } from "./ObraEvolucaoMapa";
 import { ProgressChart } from "./ProgressChart";
 import {
   buildMonthlySeries,
@@ -147,6 +148,19 @@ export function ObraFocusCard({
           />
         </div>
       </div>
+
+      <section
+        className="home-obra-evolucao"
+        aria-label="Evolução da obra no mapa"
+      >
+        <header>
+          <span className="home-section-index">Evolução no território</span>
+          <small>
+            O mapa acompanha o mesmo período do gráfico de avanço.
+          </small>
+        </header>
+        <ObraEvolucaoMapa obra={obra} period={period} />
+      </section>
 
       <dl className="home-obra-metrics">
         <div>

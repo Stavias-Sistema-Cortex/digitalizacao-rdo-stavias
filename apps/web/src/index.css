@@ -1795,6 +1795,56 @@ textarea:focus {
   min-width: 320px;
 }
 
+/* Evolução geoespacial do empreendimento em foco. O mapa divide o card com o
+   gráfico de avanço e obedece à mesma janela de período. */
+.home-obra-evolucao {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+.home-obra-evolucao > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-obra-evolucao > header small {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+}
+
+.home-evolucao-mapa {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Dentro do card a altura é mais contida que na aba de Obras: o mapa divide
+   espaço com o gráfico e as métricas, e 280px bastam para ler o trecho. */
+.home-evolucao-mapa .leaflet-trecho {
+  min-height: 280px;
+}
+
+.home-evolucao-mapa small {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+}
+
+.home-evolucao-vazio {
+  margin: 0;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 2px;
+  padding: 14px;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
 .home-cards-grid {
   display: grid;
   grid-template-columns: repeat(
