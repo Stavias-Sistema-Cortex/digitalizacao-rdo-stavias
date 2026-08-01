@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   geometryRelatedEntitiesAfterRepair,
+  isRejeicaoDeContratoJaCorrigida,
   mutationAfterMaoObraReferenceRepair,
   mutationAfterObraReferenceRepair,
   mutationAfterErroredRetry,
@@ -534,5 +535,29 @@ describe("geometryRelatedEntitiesAfterRepair", () => {
         relatedEntities: [{ tipo: "TRECHO", id: "obra-1", nome: null }],
       }),
     ).toEqual([{ tipo: "OBRA", id: "obra-1", nome: null }]);
+  });
+});
+
+describe("isRejeicaoDeContratoJaCorrigida", () => {
+  it("reconhece as duas recusas de contrato que o servidor já corrigiu", () => {
+    // São as mensagens exatas que as listas literais do servidor emitiam
+    // enquanto não conheciam a geometria. Uma mutação rejeitada com elas está
+    // correta no dispositivo e pode voltar à fila.
+    expect(
+      isRejeicaoDeContratoJaCorrigida("entityType canônico não suportado."),
+    ).toBe(true);
+    expect(
+      isRejeicaoDeContratoJaCorrigida(
+        " operacao não corresponde à operação canônica. ",
+      ),
+    ).toBe(true);
+  });
+
+  it("deixa parada qualquer outra rejeição, que se repetiria a cada ciclo", () => {
+    expect(
+      isRejeicaoDeContratoJaCorrigida("payload.geometry deve conter um GeoJSON."),
+    ).toBe(false);
+    expect(isRejeicaoDeContratoJaCorrigida(null)).toBe(false);
+    expect(isRejeicaoDeContratoJaCorrigida("")).toBe(false);
   });
 });

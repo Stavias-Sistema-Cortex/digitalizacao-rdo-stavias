@@ -1381,6 +1381,30 @@ const RELACAO_CANONICA_DA_GEOMETRIA: ReadonlySet<string> = new Set([
   "TAREFA",
 ]);
 
+/**
+ * Recusas do servidor causadas por lacuna de contrato que já foi fechada.
+ *
+ * A geometria foi recusada duas vezes por listas que o servidor mantinha à mão
+ * e não conheciam o tipo (`GEOMETRIA_OBRA`) nem as operações de geometria —
+ * com o handler pronto dos dois lados. As mensagens abaixo identificam
+ * exatamente essas recusas; uma mutação rejeitada com uma delas está correta
+ * no dispositivo e volta à fila, porque o servidor atual a aceita.
+ *
+ * A comparação é por texto exato de propósito: qualquer outra rejeição segue
+ * parada em revisão, já que reenviar às cegas repetiria a recusa a cada ciclo.
+ */
+const REJEICOES_DE_CONTRATO_CORRIGIDAS: ReadonlySet<string> = new Set([
+  "entityType canônico não suportado.",
+  "operacao não corresponde à operação canônica.",
+]);
+
+export function isRejeicaoDeContratoJaCorrigida(
+  ultimoErro: string | null,
+): boolean {
+  return ultimoErro !== null &&
+    REJEICOES_DE_CONTRATO_CORRIGIDAS.has(ultimoErro.trim());
+}
+
 export function geometryRelatedEntitiesAfterRepair(
   mutation: Pick<
     CanonicalOutboxMutationRecord,
@@ -1447,18 +1471,28 @@ export async function recoverRejectedGeometryMutationsForSync(
       continue;
     }
     const relacoes = geometryRelatedEntitiesAfterRepair(mutation);
-    if (
+    const envelopeJaAceito =
       relacoes.length === mutation.relatedEntities.length &&
       relacoes.every((relacao, indice) =>
         relacao.tipo === mutation.relatedEntities[indice].tipo &&
-        relacao.id === mutation.relatedEntities[indice].id)
+        relacao.id === mutation.relatedEntities[indice].id);
+    if (
+      envelopeJaAceito &&
+      !isRejeicaoDeContratoJaCorrigida(mutation.ultimoErro)
     ) {
-      // O envelope já está no formato aceito: a recusa teve outra causa e
-      // reenviar às cegas só repetiria a rejeição.
+      // O envelope já está no formato aceito e a recusa não é uma das
+      // lacunas de contrato conhecidas: reenviar às cegas só repetiria a
+      // rejeição.
       continue;
     }
 
     const timestamp = nowUtc();
+    // Cada ramo declara o que realmente aconteceu: rotular a volta à fila
+    // pós-correção do servidor como "entidades reparadas" afirmaria um
+    // conserto de envelope que não houve.
+    const safeCode = envelopeJaAceito
+      ? "GEOMETRY_SERVER_CONTRACT_REPAIRED"
+      : "GEOMETRY_RELATED_ENTITY_REPAIRED";
     const updatedMutation: CanonicalOutboxMutationRecord = {
       ...mutation,
       relatedEntities: relacoes,
@@ -1468,9 +1502,10 @@ export async function recoverRejectedGeometryMutationsForSync(
       nextAttemptAt: null,
       blockedReason: null,
       retryAttempt: 0,
-      lastSafeCode: "GEOMETRY_RELATED_ENTITY_REPAIRED",
-      ultimoErro:
-        "Reenviando a geometria com as entidades relacionadas aceitas pelo servidor.",
+      lastSafeCode: safeCode,
+      ultimoErro: envelopeJaAceito
+        ? "Reenviando a geometria depois da correção do contrato no servidor."
+        : "Reenviando a geometria com as entidades relacionadas aceitas pelo servidor.",
       conflito: null,
       updatedAt: timestamp,
     };
@@ -1484,7 +1519,7 @@ export async function recoverRejectedGeometryMutationsForSync(
       ...event,
       result: "PENDING",
       syncStatus: "PENDING_SYNC",
-      errorCategory: "GEOMETRY_RELATED_ENTITY_REPAIRED",
+      errorCategory: safeCode,
     });
 
     const geometria = await geometryStore.get(mutation.entidadeId);
