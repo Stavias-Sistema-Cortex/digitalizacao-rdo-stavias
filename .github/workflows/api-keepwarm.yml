@@ -1,0 +1,64 @@
+# Mantém a API acordada no plano gratuito do Render.
+#
+# O serviço hiberna após inatividade e o primeiro acesso paga o cold start
+# inteiro — medido por este repositório em até 300 segundos, que é o timeout
+# que o contrato de release precisou acomodar. Quem sente isso é o apontador
+# no primeiro login do dia.
+#
+# Este ping não substitui um plano pago: o agendador do GitHub Actions não é
+# pontual e pode atrasar além da janela de inatividade do Render. Ele reduz a
+# frequência do cold start, não o elimina.
+#
+# ATENÇÃO: gatilho `schedule` só dispara a partir do branch padrão do
+# repositório. Este arquivo precisa estar lá — em qualquer outro branch ele é
+# um arquivo inerte, e foi exatamente assim que passou a existir sem nunca
+# ter sido executado.
+name: Córtex keep-warm
+
+on:
+  schedule:
+    # A cada 10 minutos, para caber com folga na janela de inatividade.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cortex-keepwarm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Acordar a API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar o readiness público
+        env:
+          # A origem da API já é declarada para o deploy e verificada a cada
+          # release. Exigir uma segunda variável só para o aquecimento criou um
+          # botão que ninguém apertou: o workflow saía na primeira linha e o
+          # serviço seguia dormindo, sem que nada nos registros dissesse isso.
+          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
+          # Continua valendo como sobreposição explícita, para quando a API
+          # atender por outro endereço que não o do Render.
+          CORTEX_API_BASE_URL: ${{ vars.CORTEX_API_BASE_URL }}
+        run: |
+          set -uo pipefail
+          origem="${CORTEX_API_BASE_URL:-${CORTEX_RENDER_ORIGIN:-}}"
+          if [ -z "${origem}" ]; then
+            echo "::warning::Sem CORTEX_API_BASE_URL nem CORTEX_RENDER_ORIGIN: a API não será aquecida e o primeiro acesso vai pagar o cold start."
+            exit 0
+          fi
+          # O cold start pode levar minutos: espera-se pela subida em vez de
+          # desistir e deixar o serviço dormindo.
+          codigo=$(curl --silent --show-error --output /dev/null \
+            --write-out '%{http_code}' \
+            --max-time 300 --retry 2 --retry-delay 15 \
+            "${origem%/}/api/readiness" || echo "000")
+          echo "readiness respondeu ${codigo}"
+          # Qualquer resposta HTTP significa contêiner acordado. Só a ausência
+          # de resposta é falha — e nem essa deve derrubar o agendamento.
+          if [ "${codigo}" = "000" ]; then
+            echo "::warning::API não respondeu ao ping de aquecimento."
+          fi
