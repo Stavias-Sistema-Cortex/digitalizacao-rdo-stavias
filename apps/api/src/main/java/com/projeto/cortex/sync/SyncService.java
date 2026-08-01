@@ -67,6 +67,15 @@ public class SyncService {
         return CANONICAL_ENTITY_TYPES;
     }
 
+    /**
+     * Operação canônica esperada para cada operação de transporte. Visível no
+     * pacote pelo mesmo motivo do conjunto acima: é a segunda lista que a PWA
+     * precisa enxergar para não emitir algo que seria recusado.
+     */
+    static Map<String, String> canonicalOperationByTransport() {
+        return CANONICAL_OPERATION_BY_TRANSPORT;
+    }
+
     private static final Set<String> CANONICAL_RELATED_ENTITY_TYPES = Set.of(
             "OBRA",
             "RDO",
@@ -128,6 +137,10 @@ public class SyncService {
             Map.entry("ALTERAR_VINCULO_EQUIPE", "UPDATE"),
             Map.entry("VINCULAR_COLABORADOR_OBRA", "CREATE"),
             Map.entry("REVOGAR_VINCULO_COLABORADOR_OBRA", "DELETE"),
+            Map.entry("REGISTRAR_GEOMETRIA_OBRA", "CREATE"),
+            Map.entry("REGISTRAR_GEOMETRIA_CAMPO", "CREATE"),
+            Map.entry("ATUALIZAR_GEOMETRIA_OBRA", "UPDATE"),
+            Map.entry("ENCERRAR_GEOMETRIA_OBRA", "TRANSITION"),
             Map.entry("SOLICITAR_INTEGRACAO", "CREATE")
     );
 
