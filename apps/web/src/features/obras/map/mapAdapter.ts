@@ -358,6 +358,31 @@ async function mountMapLibre(
     map.once("load", () => {
       loaded = true;
       window.clearTimeout(timer);
+      /*
+       * Vigia o pior estado possível: o mapa reporta pronto e não pinta nada.
+       *
+       * Acontece quando o estilo carrega mas os tiles não chegam de forma
+       * legível — resposta guardada quebrada, host bloqueado na rede da obra —
+       * e o MapLibre não emite erro para todos esses casos. Sem esta checagem
+       * o operador fica diante de um retângulo cinza sem uma palavra, e nem
+       * ele nem o suporte conseguem dizer o que falhou.
+       */
+      const canvas = map.getCanvas();
+      if (canvas.width === 0 || canvas.height === 0) {
+        // Contêiner medido em zero na montagem: redimensionar é o que faz o
+        // canvas assumir o tamanho real em vez de ficar sem superfície.
+        map.resize();
+      }
+      window.setTimeout(() => {
+        if (map.areTilesLoaded()) {
+          return;
+        }
+        options.onRuntimeError(
+          "O mapa abriu, mas nenhum tile chegou. Pode ser a rede desta obra"
+            + " bloqueando o servidor de mapas, ou um arquivo guardado com"
+            + " defeito neste aparelho.",
+        );
+      }, 12_000);
       let volume = false;
       if (options.provider.capabilities.buildingExtrusion) {
         try {

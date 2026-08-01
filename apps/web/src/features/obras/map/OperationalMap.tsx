@@ -193,7 +193,22 @@ function MapCanvas({
         </div>
       ) : null}
       {status === "ready" && error ? (
-        <p className="operational-map-runtime-warning">{error}</p>
+        <div className="operational-map-runtime-warning" role="alert">
+          <span>{error}</span>
+          {/* O aviso pós-carga precisa da mesma saída do erro de montagem:
+              sem ela, o mapa que subiu e não pintou fica sem nenhuma ação
+              possível além de recarregar, que o cache torna inútil. */}
+          <button
+            type="button"
+            className="operational-map-retry"
+            disabled={limpando}
+            onClick={() => {
+              void tentarDeNovo();
+            }}
+          >
+            {limpando ? "Limpando…" : "Baixar de novo"}
+          </button>
+        </div>
       ) : null}
     </div>
   );

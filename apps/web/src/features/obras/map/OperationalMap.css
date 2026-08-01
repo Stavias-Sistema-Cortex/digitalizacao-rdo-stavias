@@ -192,6 +192,10 @@
 }
 
 .operational-map-runtime-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   position: absolute;
   inset: auto 12px 12px 12px;
   z-index: 3;
