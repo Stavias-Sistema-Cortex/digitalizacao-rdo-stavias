@@ -13,6 +13,8 @@ import {
   applyPushResultAtomically,
   markMutationAsSyncing,
   reconcileCanonicalConflict,
+  recoverRejectedArchivedObraMutationsForSync,
+  rejectMutationLocally,
   returnMutationToPending,
 } from "../../lib/sync/syncStorage";
 import {
@@ -660,5 +662,162 @@ describe("obra lifecycle queue", () => {
       syncStatus: "SYNCED",
     });
     expect(await database.getAll("processed_events")).toHaveLength(2);
+  });
+});
+
+describe("obra travada pela escrituração da sincronização", () => {
+  it("restaura a obra mesmo depois de a fila gravar a recusa no registro", async () => {
+    // Reproduz o impasse observado em produção: com a fila parada, cada rodada
+    // de sincronização carimba a recusa no registro da obra. A tela continua
+    // com o instantâneo anterior e toda ação passava a falhar com "a entidade
+    // local mudou" — inclusive a restauração, que era justamente o que
+    // desatolaria a fila.
+    const database = await getCortexDb();
+    const arquivada = obra({
+      arquivadoEm: "2026-07-28T10:00:00.000Z",
+      versaoEntidade: 7,
+    });
+    await database.put("obras", arquivada);
+
+    await database.put("obras", {
+      ...arquivada,
+      syncStatus: "ERROR",
+      ultimoErro: "Obra não encontrada ou arquivada.",
+      updatedAt: "2026-07-28T13:45:00.000Z",
+    });
+
+    const restaurada = await queueRestoreObra(arquivada);
+
+    expect(restaurada.arquivadoEm).toBeNull();
+    expect(
+      (await database.getAll("outbox_mutations")).map(
+        (mutation) => mutation.operacao,
+      ),
+    ).toEqual(["RESTAURAR_OBRA"]);
+  });
+
+  it("recusa a mutação quando o domínio realmente mudou", async () => {
+    const database = await getCortexDb();
+    const existente = obra();
+    await database.put("obras", existente);
+    await database.put("obras", { ...existente, nome: "Renomeada no servidor" });
+
+    await expect(queueDeactivateObra(existente)).rejects.toThrow(
+      /entidade local mudou/,
+    );
+  });
+});
+
+describe("recuperação das recusas por obra arquivada", () => {
+  async function filaRecusadaPorArquivamento(): Promise<string> {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    await queueUpdateObra(obra(), {
+      codigoContrato: "CT-9",
+      codigoInterno: null,
+      nome: "Obra editada em campo",
+      cliente: null,
+      descricao: null,
+      cidade: null,
+      uf: null,
+      rodovia: null,
+      fonteArquivo: null,
+      observacoes: null,
+    });
+    const [mutacao] = await database.getAll("outbox_mutations");
+    await markMutationAsSyncing(mutacao);
+    await rejectMutationLocally(
+      mutacao.clientMutationId,
+      "OBRA_ARQUIVADA",
+      "Obra não encontrada ou arquivada.",
+    );
+    return mutacao.clientMutationId;
+  }
+
+  it("mantém parado o que ainda não pode subir, com a obra arquivada", async () => {
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+    const atual = await database.get("obras", OBRA_ID);
+    await database.put("obras", {
+      ...atual!,
+      arquivadoEm: "2026-07-28T10:00:00.000Z",
+    });
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
+    expect(
+      (await database.get("outbox_mutations", clientMutationId))!.status,
+    ).toBe("REJECTED");
+  });
+
+  it("permite restaurar a obra travada pela própria recusa", async () => {
+    // O impasse era completo: a recusa só deixa de valer quando a obra volta
+    // a ficar ativa, e a obra só volta a ficar ativa por esta ação — que era
+    // barrada pela existência da recusa.
+    const database = await getCortexDb();
+    await filaRecusadaPorArquivamento();
+    const arquivada = {
+      ...(await database.get("obras", OBRA_ID))!,
+      arquivadoEm: "2026-07-28T10:00:00.000Z",
+    };
+    await database.put("obras", arquivada);
+
+    await expect(queueRestoreObra(arquivada)).resolves.toMatchObject({
+      arquivadoEm: null,
+    });
+  });
+
+  it("continua exigindo revisão para qualquer outra recusa", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    await queueDeactivateObra(obra());
+    const [mutacao] = await database.getAll("outbox_mutations");
+    await markMutationAsSyncing(mutacao);
+    await rejectMutationLocally(
+      mutacao.clientMutationId,
+      "PAYLOAD_INVALIDO",
+      "payload.nome deve ser texto.",
+    );
+    const arquivada = {
+      ...(await database.get("obras", OBRA_ID))!,
+      arquivadoEm: "2026-07-28T10:00:00.000Z",
+    };
+    await database.put("obras", arquivada);
+
+    await expect(queueRestoreObra(arquivada)).rejects.toThrow(
+      /mutação rejeitada não aplicada/,
+    );
+  });
+
+  it("devolve à fila quando a obra volta a ficar ativa", async () => {
+    // Sem isto, arquivar uma obra com lançamentos na fila os condenava a
+    // "revisão necessária" para sempre, travando junto todo o resto.
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(1);
+    const devolvida = await database.get("outbox_mutations", clientMutationId);
+    expect(devolvida).toMatchObject({
+      status: "PENDING",
+      retryAttempt: 0,
+      nextAttemptAt: null,
+      lastSafeCode: "OBRA_RESTAURADA",
+    });
+  });
+
+  it("espera a restauração ser aplicada antes de reenviar", async () => {
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+    const arquivada = {
+      ...(await database.get("obras", OBRA_ID))!,
+      arquivadoEm: "2026-07-28T10:00:00.000Z",
+    };
+    await database.put("obras", arquivada);
+    // Restauração ainda na fila: do lado do servidor a obra segue arquivada.
+    await queueRestoreObra(arquivada);
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
+    expect(
+      (await database.get("outbox_mutations", clientMutationId))!.status,
+    ).toBe("REJECTED");
   });
 });

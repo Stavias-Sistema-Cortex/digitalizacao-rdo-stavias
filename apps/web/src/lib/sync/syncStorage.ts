@@ -1537,6 +1537,135 @@ export async function recoverRejectedGeometryMutationsForSync(
   return recuperadas;
 }
 
+/**
+ * Recusa do servidor quando a obra alvo está arquivada.
+ *
+ * Texto exato, como as demais recusas reconhecidas: qualquer outra continua
+ * parada em revisão, porque reenviar às cegas repetiria a negativa a cada
+ * ciclo.
+ */
+const REJEICAO_DE_OBRA_ARQUIVADA = "Obra não encontrada ou arquivada.";
+
+export function isRejeicaoDeObraArquivada(
+  ultimoErro: string | null | undefined,
+): boolean {
+  return typeof ultimoErro === "string" &&
+    ultimoErro.trim() === REJEICAO_DE_OBRA_ARQUIVADA;
+}
+
+function obraAlvoDaMutacao(mutation: OutboxMutationRecord): string | null {
+  if (mutation.entidadeTipo === "OBRA") {
+    return mutation.entidadeId;
+  }
+  const obraId = isCanonicalOutboxMutation(mutation)
+    ? mutation.obraId
+    : null;
+  return obraId && obraId.trim() ? obraId : null;
+}
+
+/**
+ * Devolve à fila o que foi recusado só porque a obra estava arquivada.
+ *
+ * Arquivar uma obra com lançamentos ainda na fila deixava cada um deles
+ * recusado para sempre: o servidor não aceita escrita em obra arquivada, e uma
+ * mutação recusada nunca mais é tentada. A fila inteira ficava travada em
+ * "revisão necessária", inclusive para quem quisesse justamente restaurar a
+ * obra e destravá-la.
+ *
+ * A recusa é de circunstância, não de conteúdo. Quando a obra volta a estar
+ * ativa — e a restauração já foi confirmada, isto é, não há mais nada dela
+ * esperando na fila — o lançamento volta a PENDING e sobe. Enquanto a obra
+ * seguir arquivada, nada é reenviado: repetir a negativa a cada ciclo seria
+ * pior do que a espera.
+ */
+export async function recoverRejectedArchivedObraMutationsForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+
+  const guardedTransaction = guardSyncTransaction(
+    database.transaction(RDO_SYNC_TRANSACTION_STORES, "readwrite"),
+    guard,
+  );
+  const transaction = guardedTransaction.transaction;
+  const outboxStore = transaction.objectStore("outbox_mutations");
+  const obraStore = transaction.objectStore("obras");
+
+  const todas = await outboxStore.getAll();
+  const obrasComFilaAtiva = new Set(
+    todas
+      .filter((mutation) =>
+        ["PENDING", "SYNCING", "ERROR", "CONFLICT"].includes(mutation.status))
+      .map((mutation) => obraAlvoDaMutacao(mutation))
+      .filter((obraId): obraId is string => obraId !== null),
+  );
+
+  const timestamp = nowUtc();
+  let recuperadas = 0;
+
+  for (const mutation of todas) {
+    if (
+      mutation.status !== "REJECTED" ||
+      !isCanonicalOutboxMutation(mutation) ||
+      !isRejeicaoDeObraArquivada(mutation.ultimoErro)
+    ) {
+      continue;
+    }
+    const obraId = obraAlvoDaMutacao(mutation);
+    if (!obraId) {
+      continue;
+    }
+    const obra = await obraStore.get(obraId);
+    // Obra ausente ou ainda arquivada: o servidor recusaria de novo. A
+    // restauração ainda na fila também não vale — do lado de lá a obra
+    // continua arquivada até ela ser aplicada.
+    if (!obra || obra.arquivadoEm || obrasComFilaAtiva.has(obraId)) {
+      continue;
+    }
+
+    // O evento é lido antes da escrita: um registro sem evento único não pode
+    // derrubar a recuperação dos demais, porque esta rotina existe justamente
+    // para destravar uma fila já parada. Ele fica onde está, visível em
+    // revisão, que é a leitura verdadeira do que aconteceu com ele.
+    let event: CanonicalOperationalEventRecord;
+    try {
+      event = await exactCanonicalEvent(
+        transaction,
+        mutation.clientMutationId,
+      );
+    } catch {
+      continue;
+    }
+
+    await outboxStore.put({
+      ...mutation,
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      nextAttemptAt: null,
+      blockedReason: null,
+      retryAttempt: 0,
+      lastSafeCode: "OBRA_RESTAURADA",
+      ultimoErro:
+        "Reenviando depois que a obra voltou a ficar ativa.",
+      conflito: null,
+      updatedAt: timestamp,
+    });
+    await putCanonicalEvent(transaction, {
+      ...event,
+      result: "PENDING",
+      syncStatus: "PENDING_SYNC",
+      errorCategory: "OBRA_RESTAURADA",
+    });
+    recuperadas += 1;
+  }
+
+  await guardedTransaction.complete();
+  return recuperadas;
+}
+
 export async function repairMissingObraReferencesForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {

@@ -18,6 +18,7 @@ import type {
   SyncEntityType,
   SyncOperation,
 } from "../db/db.types";
+import { semEscrituracaoLocal } from "./escrituracaoLocal";
 import {
   buildCanonicalMutation,
   canonicalMutationJson,
@@ -289,9 +290,15 @@ export async function commitLocalMutation<TStore extends LocalDomainStore>(
         .get(prepared.envelope.entityId as never);
       const currentSnapshot =
         currentPrincipal === undefined ? null : currentPrincipal;
+      // A comparação é sobre o domínio, não sobre a escrituração da fila: o
+      // aviso que a sincronização grava no registro a cada recusa mudaria o
+      // instantâneo a todo ciclo e barraria qualquer ação do usuário — a
+      // começar pela que desatolaria a fila.
       if (
-        canonicalMutationJson(currentSnapshot) !==
-          canonicalMutationJson(prepared.expectedPrincipalSnapshot)
+        canonicalMutationJson(semEscrituracaoLocal(currentSnapshot)) !==
+          canonicalMutationJson(
+            semEscrituracaoLocal(prepared.expectedPrincipalSnapshot),
+          )
       ) {
         transaction.abort();
         throw new Error(

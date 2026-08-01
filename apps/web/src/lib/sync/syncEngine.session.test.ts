@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   repairRdo: vi.fn(async () => 0),
   recoverRejectedRdo: vi.fn(async () => 0),
   recoverRejectedGeometry: vi.fn(async () => 0),
+  recoverRejectedArchivedObra: vi.fn(async () => 0),
   resolveUploads: vi.fn(async () => 0),
   recoverConflicts: vi.fn(async () => 0),
   ensureDevice: vi.fn(async () => "device"),
@@ -72,6 +73,7 @@ vi.mock("./syncStorage", () => ({
   resolveCanonicalUploadReplacements: mocks.resolveUploads,
   recoverCanonicalConflictReconciliations: mocks.recoverConflicts,
   recoverRejectedGeometryMutationsForSync: mocks.recoverRejectedGeometry,
+  recoverRejectedArchivedObraMutationsForSync: mocks.recoverRejectedArchivedObra,
 }));
 vi.mock("../db/localRdoService", () => ({
   hydrateBlockedRdoCreationContextsForSync: mocks.hydrateRdo,

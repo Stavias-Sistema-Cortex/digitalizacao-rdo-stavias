@@ -6,7 +6,10 @@ import type {
 import { getSyncState, updateSyncState } from "../../lib/db/syncStateRepository";
 import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
 import { isCanonicalOutboxMutation } from "../../lib/sync/mutationEnvelope";
-import { effectiveObraMutations } from "../../lib/sync/syncStorage";
+import {
+  effectiveObraMutations,
+  isRejeicaoDeObraArquivada,
+} from "../../lib/sync/syncStorage";
 import { getSession } from "../auth/authSession";
 
 const UUID_PATTERN =
@@ -65,6 +68,7 @@ async function obraMutationIdentity(): Promise<ObraMutationIdentity> {
 async function activeObraMutations(
   obraId: string,
   authoritativeVersion: number,
+  operacao: string,
 ): Promise<CanonicalOutboxMutationRecord[]> {
   const mutations = await (await getCortexDb()).getAllFromIndex(
     "outbox_mutations",
@@ -86,7 +90,15 @@ async function activeObraMutations(
     );
   }
   const rejected = entityMutations.find(
-    (mutation) => mutation.status === "REJECTED",
+    (mutation) =>
+      mutation.status === "REJECTED" &&
+      // Restaurar é a saída para o que foi recusado por a obra estar
+      // arquivada. Barrar a restauração por causa dessa recusa fecharia a
+      // única porta que destrava a fila: o lançamento só volta a ser aceito
+      // depois que a obra volta a ficar ativa, e a obra só volta a ficar ativa
+      // por aqui. Qualquer outra recusa continua exigindo revisão.
+      !(operacao === "RESTAURAR_OBRA" &&
+        isRejeicaoDeObraArquivada(mutation.ultimoErro)),
   );
   if (rejected) {
     throw new Error(
@@ -219,6 +231,7 @@ async function queueObraMutation(
   const pending = await activeObraMutations(
     existing.id,
     authoritativeVersion,
+    contract.transportOperation,
   );
   const tail = pending.at(-1) ?? null;
   const clientMutationId = crypto.randomUUID();
