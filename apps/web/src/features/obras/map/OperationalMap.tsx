@@ -96,6 +96,24 @@ function MapCanvas({
   const [tentativa, setTentativa] = useState(0);
   const [limpando, setLimpando] = useState(false);
 
+  /*
+   * O renderizador é criado uma vez e depois atualizado.
+   *
+   * Geometria, centro e modo de câmera mudam a cada leitura sincronizada;
+   * tê-los como dependência da montagem derrubava e reconstruía o mapa inteiro
+   * a cada rodada de sincronização, e em campo ele nunca chegava a terminar de
+   * abrir. Os valores correntes ficam em referências para que a montagem use o
+   * mais recente sem depender da identidade deles.
+   */
+  const featuresRef = useRef(features);
+  const centerRef = useRef(center);
+  const modeRef = useRef(mode);
+  useEffect(() => {
+    featuresRef.current = features;
+    centerRef.current = center;
+    modeRef.current = mode;
+  });
+
   /**
    * Nova tentativa depois de descartar o que o service worker guardou.
    *
@@ -124,9 +142,9 @@ function MapCanvas({
     mountOperationalMap({
       container,
       provider,
-      features,
-      center,
-      mode,
+      features: featuresRef.current,
+      center: centerRef.current,
+      mode: modeRef.current,
       onRuntimeError: (message) => {
         if (!cancelled) setError(message);
       },
@@ -156,13 +174,25 @@ function MapCanvas({
       controllerRef.current = null;
       controller?.destroy();
     };
-  }, [center, features, mode, provider, tentativa]);
+  }, [provider, tentativa]);
+
+  // As geometrias novas entram na fonte que já está no mapa. `status` participa
+  // porque uma leitura pode chegar enquanto o mapa ainda abre: sem ele, a
+  // atualização seria perdida no controlador que ainda não existia.
+  useEffect(() => {
+    controllerRef.current?.setFeatures(features);
+  }, [features, status]);
+
+  useEffect(() => {
+    controllerRef.current?.setViewMode(mode);
+  }, [mode, status]);
 
   useEffect(() => {
     if (centerRequest > 0) {
-      controllerRef.current?.centerOn(center[0], center[1]);
+      const [longitude, latitude] = centerRef.current;
+      controllerRef.current?.centerOn(longitude, latitude);
     }
-  }, [center, centerRequest]);
+  }, [centerRequest]);
 
   return (
     <div className="operational-map-canvas-wrap">
@@ -266,10 +296,6 @@ export function OperationalMap({
       )],
     [featureCollection.features],
   );
-  const mapSignature = `${provider.id}:${carregando ? "carregando" : "pronto"}:${featureCollection.features
-    .map((feature) => `${feature.id}:${String(feature.properties.versao ?? "")}`)
-    .join("|")}`;
-
   return (
     <section className="operational-map" aria-labelledby="operational-map-title">
       <header className="operational-map-header">
@@ -355,7 +381,10 @@ export function OperationalMap({
         </div>
       ) : (
         <MapCanvas
-          key={mapSignature}
+          /* Só a troca de obra pede um mapa novo — é outra localidade, com
+             outro enquadramento. Trocar de provider e tentar de novo já são
+             tratados dentro do painel, sem descartar o que está na tela. */
+          key={authoritativeWorksite.id}
           provider={provider}
           features={featureCollection}
           center={center}

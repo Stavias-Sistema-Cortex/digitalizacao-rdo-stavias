@@ -1,4 +1,9 @@
 import {
+  falhaImpedeOMapa,
+  mensagemDeFalha,
+  type FalhaDoRenderizador,
+} from "./falhasDoMapa";
+import {
   categoryColorExpression,
   corDoToken,
   rotuloDaFonte,
@@ -11,6 +16,14 @@ export type MapViewMode = "2d" | "3d";
 export interface OperationalMapController {
   centerOn: (longitude: number, latitude: number) => void;
   setViewMode: (mode: MapViewMode) => void;
+  /**
+   * Troca as geometrias exibidas sem recriar o mapa.
+   *
+   * Cada rodada de sincronização relê as camadas da obra. Reconstruir o
+   * renderizador a cada leitura fazia o painel recomeçar do zero antes de
+   * terminar de abrir, e em campo ele nunca chegava a pintar.
+   */
+  setFeatures: (features: OperationalFeatureCollection) => void;
   destroy: () => void;
 }
 
@@ -24,7 +37,10 @@ interface MountOptions {
 }
 
 const SOURCE_ID = "cortex-operational";
-const MAX_MENSAGEM_ERRO = 160;
+/** Espera pelo estilo do provider — um JSON, não o mapa inteiro. */
+const LIMITE_ESTILO_MS = 25_000;
+/** Janela para o primeiro tile chegar depois que o estilo já está de pé. */
+const LIMITE_TILES_MS = 12_000;
 
 /**
  * A espessura acompanha o zoom para que o trecho continue legível de longe sem
@@ -54,50 +70,20 @@ const LARGURA_LINHA_CASING = [
 ];
 
 /**
- * Traduz a falha do renderizador para uma frase utilizável.
- *
- * O erro cru do WebGL traz um despejo de atributos de contexto que não diz nada
- * a quem está em campo; a causa conhecida vira instrução e o resto é truncado
- * em vez de vazar para a tela.
- */
-function mensagemDeFalha(bruta: string | undefined): string {
-  const texto = bruta?.trim();
-  if (!texto) {
-    return "Falha ao carregar o mapa.";
-  }
-  if (/webgl/i.test(texto)) {
-    return "Este navegador não conseguiu iniciar o WebGL, exigido pela visualização 3D. Use o painel Leaflet ao lado ou habilite a aceleração gráfica.";
-  }
-  if (/failed to fetch|networkerror|load failed/i.test(texto)) {
-    return "Não foi possível baixar os tiles do mapa. Sem rede, apenas o que já foi visto fica disponível.";
-  }
-  return texto.length > MAX_MENSAGEM_ERRO
-    ? `${texto.slice(0, MAX_MENSAGEM_ERRO)}…`
-    : texto;
-}
-
-/**
  * Enquadra a câmera na extensão real das geometrias da obra.
  *
  * Centrar num ponto e arbitrar um zoom deixa o trecho fora da tela sempre que
  * ele é longo; o enquadramento pela extensão mostra a obra inteira e só ela.
  * Uma obra representada por um único ponto não tem extensão, e aí o centro
- * informado continua valendo.
+ * informado continua valendo — daí o retorno, que diz se houve enquadramento.
  */
-interface CameraEnquadravel {
-  fitBounds: (
-    bounds: [[number, number], [number, number]],
-    options: { padding: number; maxZoom: number; duration: number },
-  ) => unknown;
-}
-
 function enquadrar(
-  map: CameraEnquadravel,
+  map: GlMapaOperacional,
   features: OperationalFeatureCollection,
-): void {
+): boolean {
   const limites = limitesDaColecao(features);
   if (!limites || (limites.oeste === limites.leste && limites.sul === limites.norte)) {
-    return;
+    return false;
   }
   map.fitBounds(
     [
@@ -106,6 +92,7 @@ function enquadrar(
     ],
     { padding: 48, maxZoom: 17, duration: 0 },
   );
+  return true;
 }
 
 /**
@@ -151,24 +138,44 @@ function popupContent(properties: Record<string, unknown>): HTMLDivElement {
 
 /**
  * O subconjunto de API usado pelas camadas operacionais é idêntico no MapLibre
- * e no Mapbox; estes contratos estruturais mínimos permitem um único construtor
- * de camadas para os dois runtimes. O popup é a única diferença real e fica a
- * cargo de quem monta.
+ * e no Mapbox; estes contratos estruturais mínimos permitem um único ciclo de
+ * montagem para os dois runtimes. O popup e o volume das edificações são as
+ * únicas diferenças reais e ficam a cargo de quem monta.
  */
 interface GlEventoDeCamada {
   features?: { properties?: Record<string, unknown> | null }[];
   lngLat: { lng: number; lat: number };
 }
 
-interface GlCompativel {
+interface GlFonteGeoJson {
+  setData(data: unknown): unknown;
+}
+
+interface GlMapaOperacional {
   addSource(id: string, source: never): unknown;
   addLayer(layer: never): unknown;
+  getSource(id: string): GlFonteGeoJson | undefined;
   on(
     type: string,
     layerId: string,
     listener: (event: GlEventoDeCamada) => void,
   ): unknown;
+  on(type: string, listener: (event: { error?: FalhaDoRenderizador }) => void): unknown;
+  once(type: string, listener: () => void): unknown;
   getCanvas(): HTMLCanvasElement;
+  resize(): unknown;
+  remove(): unknown;
+  areTilesLoaded(): boolean;
+  easeTo(options: {
+    center?: [number, number];
+    zoom?: number;
+    pitch?: number;
+    bearing?: number;
+  }): unknown;
+  fitBounds(
+    bounds: [[number, number], [number, number]],
+    options: { padding: number; maxZoom: number; duration: number },
+  ): unknown;
 }
 
 interface GlPopupCompativel {
@@ -178,7 +185,7 @@ interface GlPopupCompativel {
 }
 
 function addOperationalLayers(
-  map: GlCompativel,
+  map: GlMapaOperacional,
   features: OperationalFeatureCollection,
   criarPopup: () => GlPopupCompativel,
 ): void {
@@ -260,20 +267,145 @@ function addOperationalLayers(
   }
 }
 
-function addMapLibreLayers(
-  map: import("maplibre-gl").Map,
-  features: OperationalFeatureCollection,
-  maplibre: typeof import("maplibre-gl"),
-): void {
-  addOperationalLayers(
-    map as unknown as GlCompativel,
-    features,
-    () =>
-      new maplibre.Popup({
-        closeButton: false,
-        offset: 10,
-      }) as unknown as GlPopupCompativel,
-  );
+/** O que cada runtime acrescenta ao ciclo comum de montagem. */
+interface ExtensaoDoProvider {
+  criarPopup: () => GlPopupCompativel;
+  /** Chamada assim que o estilo carrega; diz se há volume a alternar. */
+  prepararVolume: () => boolean;
+  alternarVolume: (visivel: boolean) => void;
+}
+
+/**
+ * Ciclo de montagem comum aos dois renderizadores.
+ *
+ * A prontidão é medida pelo estilo, não pelo evento `load`. O `load` só dispara
+ * quando o sprite e **todos** os tiles em vista terminam de resolver; um único
+ * tile preso em `loading` — resposta guardada quebrada, host de mapa bloqueado
+ * na rede da obra — segura o evento para sempre, e o painel que já estava
+ * pintando era descartado por tempo esgotado. As camadas operacionais precisam
+ * do estilo, e só dele.
+ */
+function prepararMapa(
+  map: GlMapaOperacional,
+  options: MountOptions,
+  extensao: ExtensaoDoProvider,
+): Promise<OperationalMapController> {
+  return new Promise((resolve, reject) => {
+    let pronto = false;
+    let destruido = false;
+    let enquadrado = false;
+    let ultimaFalha: string | null = null;
+    const temporizadores: number[] = [];
+
+    const encerrar = () => {
+      if (destruido) return;
+      destruido = true;
+      for (const id of temporizadores) {
+        window.clearTimeout(id);
+      }
+      map.remove();
+    };
+
+    const desistir = (mensagem: string) => {
+      if (pronto || destruido) return;
+      encerrar();
+      reject(new Error(mensagem));
+    };
+
+    temporizadores.push(
+      window.setTimeout(() => {
+        desistir(
+          ultimaFalha ??
+            "O estilo do mapa não chegou a tempo. Verifique a conexão desta obra ou tente baixar de novo.",
+        );
+      }, LIMITE_ESTILO_MS),
+    );
+
+    map.once("style.load", () => {
+      if (destruido) return;
+      pronto = true;
+      for (const id of temporizadores.splice(0)) {
+        window.clearTimeout(id);
+      }
+
+      /*
+       * Vigia o pior estado possível: o estilo sobe e nada pinta.
+       *
+       * Acontece quando os tiles não chegam de forma legível e o renderizador
+       * não emite erro para todos esses casos. Sem esta checagem o operador
+       * fica diante de um retângulo cinza sem uma palavra, e nem ele nem o
+       * suporte conseguem dizer o que falhou.
+       */
+      const canvas = map.getCanvas();
+      if (canvas.width === 0 || canvas.height === 0) {
+        // Contêiner medido em zero na montagem: redimensionar é o que faz o
+        // canvas assumir o tamanho real em vez de ficar sem superfície.
+        map.resize();
+      }
+      temporizadores.push(
+        window.setTimeout(() => {
+          if (destruido || map.areTilesLoaded()) return;
+          options.onRuntimeError(
+            "O mapa abriu, mas nenhum tile chegou. Pode ser a rede desta obra"
+              + " bloqueando o servidor de mapas, ou um arquivo guardado com"
+              + " defeito neste aparelho.",
+          );
+        }, LIMITE_TILES_MS),
+      );
+
+      let volume = false;
+      try {
+        volume = extensao.prepararVolume();
+      } catch {
+        volume = false;
+      }
+      addOperationalLayers(map, options.features, extensao.criarPopup);
+      enquadrado = enquadrar(map, options.features);
+      if (options.mode === "3d" && volume) {
+        extensao.alternarVolume(true);
+      }
+
+      resolve({
+        centerOn: (longitude, latitude) => {
+          if (destruido) return;
+          map.easeTo({ center: [longitude, latitude], zoom: 15 });
+        },
+        setViewMode: (mode) => {
+          if (destruido) return;
+          if (volume) {
+            extensao.alternarVolume(mode === "3d");
+          }
+          map.easeTo({
+            pitch: mode === "3d" ? 52 : 0,
+            bearing: mode === "3d" ? -18 : 0,
+          });
+        },
+        setFeatures: (features) => {
+          if (destruido) return;
+          map.getSource(SOURCE_ID)?.setData(features);
+          // O enquadramento acontece uma vez, quando existe extensão para
+          // enquadrar. Refazê-lo a cada leitura arrancaria a câmera de onde o
+          // operador acabou de posicionar.
+          if (!enquadrado) {
+            enquadrado = enquadrar(map, features);
+          }
+        },
+        destroy: encerrar,
+      });
+    });
+
+    map.on("error", (event) => {
+      const mensagem = mensagemDeFalha(event.error?.message);
+      if (pronto) {
+        options.onRuntimeError(mensagem);
+        return;
+      }
+      ultimaFalha = mensagem;
+      if (falhaImpedeOMapa(event.error, options.provider.styleUrl)) {
+        desistir(mensagem);
+      }
+    });
+  });
 }
 
 const BUILDING_LAYER_ID = "cortex-3d-buildings";
@@ -306,6 +438,7 @@ function addBuildingExtrusion(map: import("maplibre-gl").Map): boolean {
     source: source.source,
     "source-layer": "building",
     minzoom: 14,
+    layout: { visibility: "none" },
     paint: {
       "fill-extrusion-color": corDoToken("--color-border-strong"),
       "fill-extrusion-opacity": 0.65,
@@ -346,97 +479,24 @@ async function mountMapLibre(
     "bottom-right",
   );
 
-  return new Promise((resolve, reject) => {
-    let loaded = false;
-    const timer = window.setTimeout(() => {
-      if (!loaded) {
-        map.remove();
-        reject(new Error("O provider demorou demais para carregar."));
-      }
-    }, 15_000);
-
-    map.once("load", () => {
-      loaded = true;
-      window.clearTimeout(timer);
-      /*
-       * Vigia o pior estado possível: o mapa reporta pronto e não pinta nada.
-       *
-       * Acontece quando o estilo carrega mas os tiles não chegam de forma
-       * legível — resposta guardada quebrada, host bloqueado na rede da obra —
-       * e o MapLibre não emite erro para todos esses casos. Sem esta checagem
-       * o operador fica diante de um retângulo cinza sem uma palavra, e nem
-       * ele nem o suporte conseguem dizer o que falhou.
-       */
-      const canvas = map.getCanvas();
-      if (canvas.width === 0 || canvas.height === 0) {
-        // Contêiner medido em zero na montagem: redimensionar é o que faz o
-        // canvas assumir o tamanho real em vez de ficar sem superfície.
-        map.resize();
-      }
-      window.setTimeout(() => {
-        if (map.areTilesLoaded()) {
-          return;
-        }
-        options.onRuntimeError(
-          "O mapa abriu, mas nenhum tile chegou. Pode ser a rede desta obra"
-            + " bloqueando o servidor de mapas, ou um arquivo guardado com"
-            + " defeito neste aparelho.",
-        );
-      }, 12_000);
-      let volume = false;
-      if (options.provider.capabilities.buildingExtrusion) {
-        try {
-          volume = addBuildingExtrusion(map);
-        } catch {
-          volume = false;
-        }
-      }
-      addMapLibreLayers(map, options.features, maplibre);
-      enquadrar(map, options.features);
-      resolve({
-        centerOn: (longitude, latitude) =>
-          map.easeTo({ center: [longitude, latitude], zoom: 15 }),
-        setViewMode: (mode) => {
-          if (mode === "3d" && volume) {
-            map.setLayoutProperty(BUILDING_LAYER_ID, "visibility", "visible");
-          } else if (volume) {
-            map.setLayoutProperty(BUILDING_LAYER_ID, "visibility", "none");
-          }
-          map.easeTo({
-            pitch: mode === "3d" ? 52 : 0,
-            bearing: mode === "3d" ? -18 : 0,
-          });
-        },
-        destroy: () => map.remove(),
-      });
-    });
-    map.on("error", (event) => {
-      const message = mensagemDeFalha(event.error?.message);
-      if (!loaded) {
-        window.clearTimeout(timer);
-        map.remove();
-        reject(new Error(message));
-      } else {
-        options.onRuntimeError(message);
-      }
-    });
-  });
-}
-
-function addMapboxLayers(
-  map: import("mapbox-gl").Map,
-  features: OperationalFeatureCollection,
-  mapbox: typeof import("mapbox-gl"),
-): void {
-  addOperationalLayers(
-    map as unknown as GlCompativel,
-    features,
-    () =>
-      new mapbox.Popup({
+  return prepararMapa(map as unknown as GlMapaOperacional, options, {
+    criarPopup: () =>
+      new maplibre.Popup({
         closeButton: false,
         offset: 10,
       }) as unknown as GlPopupCompativel,
-  );
+    prepararVolume: () =>
+      options.provider.capabilities.buildingExtrusion
+        ? addBuildingExtrusion(map)
+        : false,
+    alternarVolume: (visivel) => {
+      map.setLayoutProperty(
+        BUILDING_LAYER_ID,
+        "visibility",
+        visivel ? "visible" : "none",
+      );
+    },
+  });
 }
 
 async function mountMapbox(
@@ -461,37 +521,16 @@ async function mountMapbox(
     "bottom-right",
   );
 
-  return new Promise((resolve, reject) => {
-    let loaded = false;
-    const timer = window.setTimeout(() => {
-      if (!loaded) {
-        map.remove();
-        reject(new Error("O provider demorou demais para carregar."));
-      }
-    }, 15_000);
-    map.once("load", () => {
-      loaded = true;
-      window.clearTimeout(timer);
-      addMapboxLayers(map, options.features, mapboxModule);
-      enquadrar(map, options.features);
-      resolve({
-        centerOn: (longitude, latitude) =>
-          map.easeTo({ center: [longitude, latitude], zoom: 15 }),
-        setViewMode: (mode) =>
-          map.easeTo({ pitch: mode === "3d" ? 52 : 0, bearing: 0 }),
-        destroy: () => map.remove(),
-      });
-    });
-    map.on("error", (event) => {
-      const message = mensagemDeFalha(event.error?.message);
-      if (!loaded) {
-        window.clearTimeout(timer);
-        map.remove();
-        reject(new Error(message));
-      } else {
-        options.onRuntimeError(message);
-      }
-    });
+  return prepararMapa(map as unknown as GlMapaOperacional, options, {
+    criarPopup: () =>
+      new mapboxModule.Popup({
+        closeButton: false,
+        offset: 10,
+      }) as unknown as GlPopupCompativel,
+    // O provider Mapbox aqui é sempre satélite: não há camada `building`
+    // vetorial para extrudar, e inventar volume sobre a imagem seria falso.
+    prepararVolume: () => false,
+    alternarVolume: () => undefined,
   });
 }
 

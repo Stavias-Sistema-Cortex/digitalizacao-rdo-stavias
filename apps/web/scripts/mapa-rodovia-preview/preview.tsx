@@ -10,10 +10,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { RodoviaWorkspace } from "../../src/features/obras/map/RodoviaWorkspace";
-import { OBRA_FIXTURE } from "./fixtures";
+import { Preview } from "./Preview";
 import "../../src/index.css";
-import "./preview.css";
 
 const container = document.getElementById("root");
 if (!container) {
@@ -22,12 +20,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <main className="preview-root">
-      <RodoviaWorkspace
-        obra={OBRA_FIXTURE}
-        podeDesenhar
-        endereco={{ cidade: "Rio Claro", uf: "SP", rodovia: "SP-310" }}
-      />
-    </main>
+    <Preview />
   </StrictMode>,
 );

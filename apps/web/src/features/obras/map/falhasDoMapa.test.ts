@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+
+import { falhaImpedeOMapa, mensagemDeFalha } from "./falhasDoMapa";
+
+const ESTILO = "https://api.maptiler.com/maps/satellite/style.json?key=segredo";
+
+describe("falhaImpedeOMapa", () => {
+  it("derruba o mapa quando o próprio estilo não chega", () => {
+    expect(
+      falhaImpedeOMapa(
+        { message: "Failed to fetch (0)", url: ESTILO },
+        ESTILO,
+      ),
+    ).toBe(true);
+  });
+
+  it("reconhece o estilo mesmo quando a URL só aparece na mensagem", () => {
+    expect(
+      falhaImpedeOMapa({ message: `AJAXError: 404: ${ESTILO}` }, ESTILO),
+    ).toBe(true);
+  });
+
+  it("derruba o mapa quando o WebGL não inicia", () => {
+    expect(
+      falhaImpedeOMapa(
+        { message: "Failed to initialize WebGL context" },
+        ESTILO,
+      ),
+    ).toBe(true);
+  });
+
+  it("mantém o mapa de pé quando falta um ícone do sprite", () => {
+    // Era isto que apagava o painel inteiro: um ícone ausente do estilo do
+    // provider chega como `error` e não impede nada de ser desenhado.
+    expect(
+      falhaImpedeOMapa(
+        { message: 'Image "office" could not be loaded.' },
+        ESTILO,
+      ),
+    ).toBe(false);
+  });
+
+  it("mantém o mapa de pé quando um tile isolado falha", () => {
+    expect(
+      falhaImpedeOMapa(
+        {
+          message: "AJAXError: 404",
+          url: "https://tiles.example.org/planet/14/1/2.pbf",
+        },
+        "https://tiles.example.org/styles/liberty",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("mensagemDeFalha", () => {
+  it("nunca devolve a URL do estilo, que carrega a chave do provider", () => {
+    const mensagem = mensagemDeFalha(`Erro inesperado ao ler ${ESTILO}`);
+
+    expect(mensagem).not.toContain("segredo");
+    expect(mensagem).not.toContain("http");
+  });
+
+  it("explica a falta de WebGL em vez de despejar o contexto", () => {
+    expect(mensagemDeFalha("WebGL context could not be created")).toContain(
+      "aceleração gráfica",
+    );
+  });
+
+  it("explica a falha de rede sem repetir o texto do runtime", () => {
+    expect(mensagemDeFalha("Failed to fetch")).toContain("Sem rede");
+  });
+
+  it("devolve texto utilizável quando sobra apenas a URL", () => {
+    expect(mensagemDeFalha(ESTILO)).toBe("Falha ao carregar o mapa.");
+  });
+});
