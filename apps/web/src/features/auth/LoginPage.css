@@ -280,6 +280,17 @@
 }
 
 /* Mensagem de erro de autenticação (nível do formulário) */
+.login__aguardando {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgb(242 195 0 / 14%);
+  border: 1px solid rgb(242 195 0 / 45%);
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
 .login__alert {
   display: flex;
   align-items: center;

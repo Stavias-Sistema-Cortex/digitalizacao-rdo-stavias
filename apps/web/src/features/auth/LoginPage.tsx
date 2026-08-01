@@ -30,8 +30,27 @@ export function LoginPage() {
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [authError, setAuthError] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
+  const [subindo, setSubindo] = useState(false);
 
   const loading = status !== "idle";
+
+  /*
+   * A primeira entrada do dia pode encontrar a API fria e demorar.
+   *
+   * Sem dizer isso, a espera parece travamento: quem está em campo clica de
+   * novo, abandona a aba ou conclui que o sistema caiu — bem no momento em que
+   * o servidor estava subindo.
+   */
+  useEffect(() => {
+    if (status !== "cpf") {
+      return;
+    }
+    const id = window.setTimeout(() => setSubindo(true), 8_000);
+    return () => {
+      window.clearTimeout(id);
+      setSubindo(false);
+    };
+  }, [status]);
 
   useEffect(() => {
     function handleOnline() {
@@ -216,6 +235,14 @@ export function LoginPage() {
                 )}
               </button>
             </div>
+
+            {subindo && status === "cpf" ? (
+              <p className="login__aguardando" role="status">
+                O Córtex está subindo. A primeira entrada depois de um período
+                parado pode levar cerca de um minuto — não é preciso clicar de
+                novo.
+              </p>
+            ) : null}
 
             {authError ? (
               <p

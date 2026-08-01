@@ -1,5 +1,6 @@
 import {
   ApiError,
+  ApiTransportError,
   apiError,
   apiFetch,
   fetchFreshCpfOfflineGrant,
@@ -16,12 +17,47 @@ import type { SignedOfflineGrant } from "./offlineVault.types";
 
 export { parseAuthProfile } from "./authProfile";
 
-export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
-  const response = await freshAuthenticationFetch("/auth/login", {
+/**
+ * Prazo de uma primeira conexão, não de uma resposta quente.
+ *
+ * Entrar é a primeira coisa que alguém faz no dia, e é exatamente quando a API
+ * pode estar fria: o serviço sobe sob demanda e a subida foi medida neste
+ * repositório em até 300 segundos — é o prazo que o próprio ping de
+ * aquecimento reserva. Desistir aos 20 segundos do padrão devolvia um beco sem
+ * saída justamente enquanto o servidor estava subindo.
+ *
+ * Duas tentativas deste tamanho cobrem aquela medição inteira, e a primeira é
+ * o que aciona a subida.
+ */
+const PRAZO_DE_ENTRADA_MS = 150_000;
+
+function postLogin(cpf: string): Promise<Response> {
+  return freshAuthenticationFetch("/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cpf }),
+    timeoutMs: PRAZO_DE_ENTRADA_MS,
+    timeoutErrorMessage:
+      "O Córtex não respondeu a tempo. Ele pode estar subindo agora; tente entrar outra vez em alguns instantes.",
   });
+}
+
+export async function loginWithCpf(cpf: string): Promise<AuthProfile> {
+  let response: Response;
+  try {
+    response = await postLogin(cpf);
+  } catch (error: unknown) {
+    if (
+      !(error instanceof ApiTransportError) ||
+      error.kind !== "TIMEOUT"
+    ) {
+      throw error;
+    }
+    // A tentativa que estourou o prazo é justamente o que acorda um serviço
+    // parado; a segunda costuma responder de imediato. Repetir é seguro:
+    // uma entrada abortada não deixou sessão estabelecida neste dispositivo.
+    response = await postLogin(cpf);
+  }
   const body = await readResponseBody(response);
   if (!response.ok) {
     if (response.status === 401) {

@@ -12,6 +12,15 @@ const mocks = vi.hoisted(() => ({
       this.code = code;
     }
   },
+  ApiTransportError: class ApiTransportError extends Error {
+    readonly kind: string;
+
+    constructor(message: string, kind: string) {
+      super(message);
+      this.name = "ApiTransportError";
+      this.kind = kind;
+    }
+  },
   apiError: vi.fn(),
   apiFetch: vi.fn(),
   fetchFreshCpfOfflineGrant: vi.fn(),
@@ -23,6 +32,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../lib/api/apiClient", () => ({
   ApiError: mocks.ApiError,
+  ApiTransportError: mocks.ApiTransportError,
   apiError: mocks.apiError,
   apiFetch: mocks.apiFetch,
   fetchFreshCpfOfflineGrant: mocks.fetchFreshCpfOfflineGrant,
@@ -73,11 +83,11 @@ describe("authApi", () => {
 
     expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
       "/auth/login",
-      {
+      expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cpf: "11144477735" }),
-      },
+      }),
     );
   });
 
@@ -90,11 +100,11 @@ describe("authApi", () => {
     expect(mocks.apiFetch).not.toHaveBeenCalled();
     expect(mocks.freshAuthenticationFetch).toHaveBeenCalledWith(
       "/auth/login",
-      {
+      expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cpf: "11144477735" }),
-      },
+      }),
     );
   });
 
@@ -201,5 +211,46 @@ describe("authApi", () => {
     await expect(logoutOnline()).rejects.toThrow("Falha controlada.");
 
     expect(mocks.apiError).toHaveBeenCalledWith(body, 401);
+  });
+});
+
+describe("entrada por CPF com a API fria", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.readResponseBody.mockResolvedValue(profile);
+  });
+
+  it("reserva um prazo compatível com a subida do serviço", async () => {
+    mocks.freshAuthenticationFetch.mockResolvedValue(response(200));
+
+    await loginWithCpf("12345678901");
+
+    const [, opcoes] = mocks.freshAuthenticationFetch.mock.calls[0];
+    expect(opcoes.timeoutMs).toBeGreaterThanOrEqual(120_000);
+    expect(opcoes.timeoutErrorMessage).toMatch(/subindo/i);
+  });
+
+  it("insiste uma vez quando o prazo estoura, porque a primeira acorda o serviço", async () => {
+    // O padrão de 20 s desistia antes de a API terminar de subir e entregava
+    // um beco sem saída no primeiro acesso do dia.
+    mocks.freshAuthenticationFetch
+      .mockRejectedValueOnce(
+        new mocks.ApiTransportError("Tempo limite excedido.", "TIMEOUT"),
+      )
+      .mockResolvedValueOnce(response(200));
+
+    await expect(loginWithCpf("12345678901")).resolves.toMatchObject({
+      colaboradorId: profile.colaboradorId,
+    });
+    expect(mocks.freshAuthenticationFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("não insiste quando a falha não é de prazo", async () => {
+    mocks.freshAuthenticationFetch.mockRejectedValue(
+      new mocks.ApiTransportError("Sem conexão.", "CONNECTION"),
+    );
+
+    await expect(loginWithCpf("12345678901")).rejects.toThrow(/Sem conexão/);
+    expect(mocks.freshAuthenticationFetch).toHaveBeenCalledTimes(1);
   });
 });
