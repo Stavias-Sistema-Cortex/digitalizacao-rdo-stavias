@@ -32,27 +32,25 @@ jobs:
   ping:
     name: Acordar a API
     runs-on: ubuntu-latest
-    # A origem da API é variável do ambiente `production`, não do repositório:
-    # sem declarar o ambiente, `vars.CORTEX_RENDER_ORIGIN` chega vazia e o
-    # aquecimento sai sem fazer nada — foi o que a primeira execução mostrou.
-    environment: production
     steps:
       - name: Consultar o readiness público
         env:
-          # A origem da API já é declarada para o deploy e verificada a cada
-          # release no mesmo /api/readiness. Exigir uma segunda variável só
-          # para o aquecimento criou um botão que ninguém apertou: o workflow
-          # saía na primeira linha e o serviço seguia dormindo, sem que nada
-          # nos registros dissesse isso.
-          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
-          # Sobreposição explícita, para quando a API atender por outro
-          # endereço que não o do Render.
+          # Endereço a aquecer. Serve tanto a origem direta do Render quanto
+          # o endereço público do site: o Cloudflare Pages encaminha /api/*
+          # para a API, então bater no readiness por qualquer um dos dois
+          # acorda o mesmo contêiner.
+          #
+          # Precisa ser variável de repositório. `CORTEX_RENDER_ORIGIN` existe,
+          # mas pertence ao ambiente `production`, e esse ambiente tem política
+          # de branch que impede rodar a partir do branch padrão — onde o
+          # agendamento obrigatoriamente vive.
           CORTEX_API_BASE_URL: ${{ vars.CORTEX_API_BASE_URL }}
+          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
         run: |
           set -uo pipefail
           origem="${CORTEX_API_BASE_URL:-${CORTEX_RENDER_ORIGIN:-}}"
           if [ -z "${origem}" ]; then
-            echo "::warning::Sem CORTEX_API_BASE_URL nem CORTEX_RENDER_ORIGIN: a API não será aquecida e o primeiro acesso vai pagar o cold start."
+            echo "::warning::Defina a variável de repositório CORTEX_API_BASE_URL (origem do Render ou endereço público do site). Sem ela a API não é aquecida e o primeiro acesso paga o cold start."
             exit 0
           fi
           # O cold start pode levar minutos: espera-se pela subida em vez de
