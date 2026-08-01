@@ -167,7 +167,10 @@ export function ObraFocusCard({
             O mapa acompanha o mesmo período do gráfico de avanço.
           </small>
         </header>
-        <ObraEvolucaoMapa obra={obra} janela={janela} />
+        {/* O key remonta o mapa ao trocar de obra: o estado de carga volta na
+            hora, em vez de exibir os trechos da obra anterior sob o título
+            da nova enquanto a leitura não resolve. */}
+        <ObraEvolucaoMapa key={obra.id} obra={obra} janela={janela} />
       </section>
 
       <dl className="home-obra-metrics">

@@ -63,15 +63,12 @@ export function ObraEvolucaoMapa({ obra, janela }: ObraEvolucaoMapaProps) {
     };
   }, []);
 
+  // A troca de obra remonta o componente pelo `key` no pai, o que devolve o
+  // estado inicial de carga na hora — sem setState síncrono em efeito e sem
+  // exibir os trechos de uma obra sob o título de outra.
   const { id, nome, latitude, longitude } = obra;
   useEffect(() => {
     let cancelado = false;
-    // Trocar de obra volta ao estado de carga na hora: manter o mapa anterior
-    // sob o título novo mostraria os trechos de uma obra como sendo de outra.
-    setEstado((atual) =>
-      atual.fase === "pronto" && atual.leitura.dados.obra.id === id
-        ? atual
-        : { fase: "carregando" });
     carregarMapaObra({ id, nome, latitude, longitude })
       .then((leitura) => {
         if (!cancelado) setEstado({ fase: "pronto", leitura });
@@ -81,7 +78,7 @@ export function ObraEvolucaoMapa({ obra, janela }: ObraEvolucaoMapaProps) {
         setEstado((atual) =>
           // Uma releitura de sincronização que falha não apaga o mapa que já
           // está na tela: o dado anterior continua verdadeiro.
-          atual.fase === "pronto" && atual.leitura.dados.obra.id === id
+          atual.fase === "pronto"
             ? atual
             : {
                 fase: "erro",
