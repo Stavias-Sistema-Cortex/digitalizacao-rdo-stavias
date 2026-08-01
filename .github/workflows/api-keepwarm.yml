@@ -8,6 +8,11 @@
 # Este ping não substitui um plano pago: o agendador do GitHub Actions não é
 # pontual e pode atrasar além da janela de inatividade do Render. Ele reduz a
 # frequência do cold start, não o elimina.
+#
+# ATENÇÃO: gatilho `schedule` só dispara a partir do branch padrão do
+# repositório. Este arquivo precisa estar lá — em qualquer outro branch ele é
+# um arquivo inerte, e foi exatamente assim que passou a existir sem nunca
+# ter sido executado.
 name: Córtex keep-warm
 
 on:
@@ -30,11 +35,19 @@ jobs:
     steps:
       - name: Consultar o readiness público
         env:
+          # A origem da API já é declarada para o deploy e verificada a cada
+          # release. Exigir uma segunda variável só para o aquecimento criou um
+          # botão que ninguém apertou: o workflow saía na primeira linha e o
+          # serviço seguia dormindo, sem que nada nos registros dissesse isso.
+          CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
+          # Continua valendo como sobreposição explícita, para quando a API
+          # atender por outro endereço que não o do Render.
           CORTEX_API_BASE_URL: ${{ vars.CORTEX_API_BASE_URL }}
         run: |
           set -uo pipefail
-          if [ -z "${CORTEX_API_BASE_URL}" ]; then
-            echo "CORTEX_API_BASE_URL não configurada; nada a aquecer."
+          origem="${CORTEX_API_BASE_URL:-${CORTEX_RENDER_ORIGIN:-}}"
+          if [ -z "${origem}" ]; then
+            echo "::warning::Sem CORTEX_API_BASE_URL nem CORTEX_RENDER_ORIGIN: a API não será aquecida e o primeiro acesso vai pagar o cold start."
             exit 0
           fi
           # O cold start pode levar minutos: espera-se pela subida em vez de
@@ -42,7 +55,7 @@ jobs:
           codigo=$(curl --silent --show-error --output /dev/null \
             --write-out '%{http_code}' \
             --max-time 300 --retry 2 --retry-delay 15 \
-            "${CORTEX_API_BASE_URL%/}/api/readiness" || echo "000")
+            "${origem%/}/api/readiness" || echo "000")
           echo "readiness respondeu ${codigo}"
           # Qualquer resposta HTTP significa contêiner acordado. Só a ausência
           # de resposta é falha — e nem essa deve derrubar o agendamento.
