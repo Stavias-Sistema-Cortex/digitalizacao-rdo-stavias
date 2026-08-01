@@ -184,6 +184,79 @@
   color: var(--color-ink);
 }
 
+.rodovia-cadastro__extremos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.rodovia-cadastro__extremo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  padding: 10px;
+}
+
+.rodovia-cadastro__extremo legend {
+  padding: 0 4px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+.rodovia-cadastro__extremo-campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.rodovia-cadastro__extremo-campos label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--color-ink) 70%, transparent);
+}
+
+.rodovia-cadastro__extremo-campos input {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-canvas);
+  padding: 7px 8px;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+
+.rodovia-cadastro__extremo > button {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: var(--color-canvas);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.rodovia-cadastro__extremo > button.is-marcando {
+  border-color: var(--color-brand-yellow);
+  background: color-mix(in srgb, var(--color-brand-yellow) 22%, transparent);
+}
+
+.rodovia-cadastro > small {
+  font-size: 0.75rem;
+  color: color-mix(in srgb, var(--color-ink) 65%, transparent);
+}
+
 .rodovia-cadastro__divergencia {
   border: 1px solid var(--color-danger);
   border-left-width: 4px;

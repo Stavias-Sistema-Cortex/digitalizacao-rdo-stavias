@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,8 +15,14 @@ import type { LeituraMapaObra } from "./obraMapApi";
 const carregarMapaObra = vi.hoisted(() => vi.fn());
 const registrarTrechoDesenhado = vi.hoisted(() => vi.fn());
 const leaflet = vi.hoisted(() => ({
-  ultimoModo: "INATIVO" as string,
-  desenhar: null as ((pontos: unknown[]) => void) | null,
+  marcando: null as string | null,
+  ultimoRascunho: null as {
+    inicio: unknown;
+    fim: unknown;
+  } | null,
+  marcar: null as
+    | ((extremo: string, ponto: { lat: number; lng: number }) => void)
+    | null,
   ultimasFeatures: { features: [] } as { features: { id: string }[] },
 }));
 
@@ -34,16 +41,26 @@ vi.mock("./OperationalMap", () => ({
   },
 }));
 vi.mock("./LeafletTrechoMap", () => ({
-  LeafletTrechoMap: (props: {
-    modo: string;
-    features: { features: { id: string }[] };
-    onTrechoDesenhado?: (pontos: unknown[]) => void;
-  }) => {
-    leaflet.ultimoModo = props.modo;
-    leaflet.desenhar = props.onTrechoDesenhado ?? null;
-    leaflet.ultimasFeatures = props.features;
-    return <div data-testid="mapa-leaflet" data-modo={props.modo} />;
-  },
+    LeafletTrechoMap: (props: {
+      marcando?: string | null;
+      rascunho?: { inicio: unknown; fim: unknown };
+      features: { features: { id: string }[] };
+      onPontoMarcado?: (
+        extremo: string,
+        ponto: { lat: number; lng: number },
+      ) => void;
+    }) => {
+      leaflet.marcando = props.marcando ?? null;
+      leaflet.ultimoRascunho = props.rascunho ?? null;
+      leaflet.marcar = props.onPontoMarcado ?? null;
+      leaflet.ultimasFeatures = props.features;
+      return (
+        <div
+          data-testid="mapa-leaflet"
+          data-marcando={props.marcando ?? "nenhum"}
+        />
+      );
+    },
 }));
 
 const { RodoviaWorkspace } = await import("./RodoviaWorkspace");
@@ -54,6 +71,16 @@ const obra = {
   latitude: -22.4394,
   longitude: -47.5672,
 };
+
+const INICIO = { lat: -22.43, lng: -47.56 };
+const FIM = { lat: -22.44, lng: -47.55 };
+
+/** Marca um extremo como o painel Leaflet marcaria, ao clique no mapa. */
+function marcar(extremo: "INICIO" | "FIM", ponto: { lat: number; lng: number }) {
+  act(() => {
+    leaflet.marcar?.(extremo, ponto);
+  });
+}
 
 function leitura(overrides: Partial<LeituraMapaObra> = {}): LeituraMapaObra {
   return {
@@ -69,8 +96,9 @@ beforeEach(() => {
   registrarTrechoDesenhado.mockReset();
   carregarMapaObra.mockResolvedValue(leitura());
   registrarTrechoDesenhado.mockResolvedValue({ id: "geo-1" });
-  leaflet.ultimoModo = "INATIVO";
-  leaflet.desenhar = null;
+  leaflet.marcando = null;
+  leaflet.ultimoRascunho = null;
+  leaflet.marcar = null;
   satelite.ultimaLeitura = undefined;
 });
 
@@ -117,20 +145,84 @@ describe("RodoviaWorkspace", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("mantém o início na tela enquanto o fim é marcado", async () => {
+    const user = userEvent.setup();
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
+    expect(leaflet.marcando).toBe("INICIO");
+
+    marcar("INICIO", INICIO);
+
+    // O marco de início sumia da tela no instante em que o fim era marcado,
+    // porque o rascunho era zerado junto com o modo de desenho.
+    await waitFor(() => expect(leaflet.marcando).toBe("FIM"));
+    expect(leaflet.ultimoRascunho).toEqual({ inicio: INICIO, fim: null });
+
+    marcar("FIM", FIM);
+
+    await waitFor(() =>
+      expect(leaflet.ultimoRascunho).toEqual({ inicio: INICIO, fim: FIM }),
+    );
+    expect(leaflet.marcando).toBeNull();
+  });
+
+  it("remarca um extremo sem desfazer o outro", async () => {
+    const user = userEvent.setup();
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+
+    await user.click(
+      screen.getByRole("button", { name: /Remarcar o fim no mapa/i }),
+    );
+    const outroFim = { lat: -22.45, lng: -47.54 };
+    marcar("FIM", outroFim);
+
+    await waitFor(() =>
+      expect(leaflet.ultimoRascunho).toEqual({ inicio: INICIO, fim: outroFim }),
+    );
+  });
+
+  it("corrige a coordenada digitada sem apagar o extremo no meio do caminho", async () => {
+    const user = userEvent.setup();
+    render(<RodoviaWorkspace obra={obra} podeDesenhar />);
+    await screen.findByTestId("mapa-leaflet");
+
+    await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
+    marcar("INICIO", INICIO);
+    await screen.findByRole("form", { name: /Cadastro do trecho/i });
+
+    const latitude = screen.getByLabelText("Latitude do início");
+    await user.clear(latitude);
+
+    // Latitude vazia é meia coordenada: o ponto anterior permanece até que os
+    // dois valores fechem, senão o marcador pisca fora da tela a cada tecla.
+    expect(leaflet.ultimoRascunho?.inicio).toEqual(INICIO);
+
+    await user.type(latitude, "-22.4321");
+    await waitFor(() =>
+      expect(leaflet.ultimoRascunho?.inicio).toEqual({
+        lat: -22.4321,
+        lng: -47.56,
+      }),
+    );
+  });
+
   it("abre o cadastro em vez de gravar a linha crua", async () => {
     const user = userEvent.setup();
     render(<RodoviaWorkspace obra={obra} podeDesenhar />);
     await screen.findByTestId("mapa-leaflet");
 
     await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
-    expect(leaflet.ultimoModo).toBe("TRECHO");
-
-    const pontos = [
-      { lat: -22.43, lng: -47.56 },
-      { lat: -22.44, lng: -47.55 },
-    ];
-    await waitFor(() => expect(leaflet.desenhar).not.toBeNull());
-    leaflet.desenhar?.(pontos);
+    const pontos = [INICIO, FIM];
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
 
     // Uma linha diz onde, não o quê: sem km ela não posiciona no esquemático
     // nem descreve nada para a ontologia, então nada é gravado ainda.
@@ -172,11 +264,8 @@ describe("RodoviaWorkspace", () => {
     await screen.findByTestId("mapa-leaflet");
 
     await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
-    await waitFor(() => expect(leaflet.desenhar).not.toBeNull());
-    leaflet.desenhar?.([
-      { lat: -22.43, lng: -47.56 },
-      { lat: -22.44, lng: -47.55 },
-    ]);
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
 
     await screen.findByRole("form", { name: /Cadastro do trecho/i });
     await user.type(screen.getByLabelText("Rodovia"), "SP-310");
@@ -224,11 +313,8 @@ describe("RodoviaWorkspace", () => {
     await screen.findByTestId("mapa-leaflet");
 
     await user.click(screen.getByRole("button", { name: /Desenhar trecho/ }));
-    await waitFor(() => expect(leaflet.desenhar).not.toBeNull());
-    leaflet.desenhar?.([
-      { lat: -22.43, lng: -47.56 },
-      { lat: -22.44, lng: -47.55 },
-    ]);
+    marcar("INICIO", INICIO);
+    marcar("FIM", FIM);
 
     await screen.findByRole("form", { name: /Cadastro do trecho/i });
     await user.type(screen.getByLabelText("Km inicial"), "172");
@@ -362,7 +448,7 @@ describe("RodoviaWorkspace", () => {
     );
   });
 
-  it("desliga o desenho e zera o rascunho quando a persistência falha", async () => {
+  it("preserva o rascunho e o preenchimento quando a persistência falha", async () => {
     registrarTrechoDesenhado.mockRejectedValue(
       new Error("Não foi possível gravar a mutação."),
     );
@@ -372,12 +458,10 @@ describe("RodoviaWorkspace", () => {
     await screen.findByTestId("mapa-leaflet");
 
     await user.click(screen.getByRole("button", { name: "Desenhar trecho" }));
-    expect(leaflet.ultimoModo).toBe("TRECHO");
+    expect(leaflet.marcando).toBe("INICIO");
 
-    leaflet.desenhar?.([
-      { lat: -22.4394, lng: -47.5672 },
-      { lat: -22.4501, lng: -47.5588 },
-    ]);
+    marcar("INICIO", { lat: -22.4394, lng: -47.5672 });
+    marcar("FIM", { lat: -22.4501, lng: -47.5588 });
 
     await screen.findByRole("form", { name: /Cadastro do trecho/i });
     await user.type(screen.getByLabelText("Rodovia"), "SP-310");
@@ -385,10 +469,13 @@ describe("RodoviaWorkspace", () => {
     await user.type(screen.getByLabelText("Km final"), "171");
     await user.click(screen.getByRole("button", { name: "Registrar trecho" }));
 
-    // A falha aparece e o formulário continua preenchido: perder o que foi
-    // digitado obrigaria a redesenhar a linha inteira por causa da gravação.
+    // A falha aparece e o rascunho continua inteiro: perder o que foi marcado
+    // e digitado obrigaria a refazer a linha por causa da gravação.
     await screen.findByText(/Não foi possível gravar a mutação\./);
-    await waitFor(() => expect(leaflet.ultimoModo).toBe("INATIVO"));
+    expect(leaflet.ultimoRascunho).toEqual({
+      inicio: { lat: -22.4394, lng: -47.5672 },
+      fim: { lat: -22.4501, lng: -47.5588 },
+    });
     expect(screen.getByLabelText("Rodovia")).toHaveValue("SP-310");
     expect(
       screen.getByRole("button", { name: "Registrar trecho" }),

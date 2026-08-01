@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { SYNC_COMPLETED_EVENT } from "../../../lib/sync/syncEvents";
-import { LeafletTrechoMap, type PontoGeografico } from "./LeafletTrechoMap";
+import { CampoDeExtremo } from "./CampoDeExtremo";
+import { LeafletTrechoMap } from "./LeafletTrechoMap";
+import {
+  RASCUNHO_VAZIO,
+  type ExtremoDoTrecho,
+  type PontoGeografico,
+  type RascunhoDoTrecho,
+} from "./rascunhoDoTrecho";
 import { OperationalMap } from "./OperationalMap";
 import {
   alternarCategoria,
@@ -123,17 +130,22 @@ export function RodoviaWorkspace({
   segmentosDoRdo = [],
 }: RodoviaWorkspaceProps) {
   const [estado, setEstado] = useState<EstadoLeitura>({ fase: "carregando" });
-  const [modoDesenho, setModoDesenho] = useState<"INATIVO" | "TRECHO">(
-    "INATIVO",
-  );
-  const [pontosMarcados, setPontosMarcados] = useState(0);
   const [aviso, setAviso] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<FiltroDoMapa>(FILTRO_VAZIO);
   const [capturando, setCapturando] = useState(false);
-  // Linha recém-desenhada, esperando ser descrita. Só vira geometria gravada
-  // depois que alguém diz o que ela representa.
-  const [linhaEmCadastro, setLinhaEmCadastro] =
-    useState<PontoGeografico[] | null>(null);
+  /*
+   * Extremos marcados, ainda não gravados.
+   *
+   * Ficam aqui, e não dentro do mapa, porque são o mesmo dado que o formulário
+   * edita e que a linha desenhada representa. Antes o rascunho vivia no mapa e
+   * era zerado junto com o modo de desenho: marcar o fim apagava o início da
+   * tela sem que ninguém tivesse desistido dele.
+   */
+  const [rascunho, setRascunho] = useState<RascunhoDoTrecho>(RASCUNHO_VAZIO);
+  const [marcando, setMarcando] = useState<ExtremoDoTrecho | null>(null);
+  // Cada marcação no mapa remonta os campos de coordenada, que voltam a exibir
+  // o que foi clicado sem desfazer o que estivesse sendo digitado antes.
+  const [marcacoesNoMapa, setMarcacoesNoMapa] = useState(0);
   const [cadastro, setCadastro] = useState<CadastroTrecho>(CADASTRO_VAZIO);
   const [salvandoCadastro, setSalvandoCadastro] = useState(false);
   const [aproximado, setAproximado] =
@@ -258,39 +270,73 @@ export function RodoviaWorkspace({
     return total > 0 ? total : null;
   }, [colecao.features]);
 
+  const emCadastro =
+    marcando !== null || rascunho.inicio !== null || rascunho.fim !== null;
+
   /**
-   * A linha desenhada abre o cadastro em vez de virar geometria direto.
+   * Abre a marcação de um extremo.
    *
-   * Uma linha sozinha diz onde, e não o quê: sem rodovia, sentido, faixa e
-   * quilometragem o trecho não posiciona no esquemático nem descreve nada para
-   * a ontologia. Nada é gravado antes de alguém declarar isso.
+   * O cadastro é aberto junto, e não depois de fechar a linha: os campos
+   * precisam estar visíveis enquanto os pontos caem, para que dê para conferir
+   * a coordenada marcada e corrigi-la sem refazer o outro extremo.
    */
-  const aoDesenharTrecho = useCallback(
-    (pontos: PontoGeografico[]) => {
-      setLinhaEmCadastro(pontos);
-      setCadastro({
-        ...CADASTRO_VAZIO,
-        rodovia: rodoviaDaObra ?? "",
-      });
-      setModoDesenho("INATIVO");
-      setPontosMarcados(0);
+  const marcarExtremo = useCallback(
+    (extremo: ExtremoDoTrecho) => {
       setAviso(null);
+      setCadastro((atual) =>
+        atual.rodovia ? atual : { ...atual, rodovia: rodoviaDaObra ?? "" },
+      );
+      setMarcando((atual) => (atual === extremo ? null : extremo));
     },
     [rodoviaDaObra],
   );
 
+  /**
+   * Um extremo marcado no mapa.
+   *
+   * Marcado o início, o próximo clique cai naturalmente no fim; marcado o fim,
+   * a marcação encerra em vez de continuar armada, senão o clique seguinte
+   * moveria um ponto que já estava certo.
+   */
+  const aoMarcarPonto = useCallback(
+    (extremo: ExtremoDoTrecho, ponto: PontoGeografico) => {
+      setAviso(null);
+      setRascunho((atual) =>
+        extremo === "INICIO"
+          ? { ...atual, inicio: ponto }
+          : { ...atual, fim: ponto },
+      );
+      setMarcacoesNoMapa((anterior) => anterior + 1);
+      setMarcando(
+        extremo === "INICIO" && rascunho.fim === null ? "FIM" : null,
+      );
+    },
+    [rascunho.fim],
+  );
+
+  const alterarExtremo = useCallback(
+    (extremo: ExtremoDoTrecho, ponto: PontoGeografico | null) => {
+      setRascunho((atual) =>
+        extremo === "INICIO"
+          ? { ...atual, inicio: ponto }
+          : { ...atual, fim: ponto },
+      );
+    },
+    [],
+  );
+
   const extensaoDaLinha = useMemo(
     () =>
-      linhaEmCadastro && linhaEmCadastro.length >= 2
+      rascunho.inicio && rascunho.fim
         ? comprimentoAproximadoM({
             type: "LineString",
-            coordinates: linhaEmCadastro.map((ponto) => [
-              ponto.lng,
-              ponto.lat,
-            ]),
+            coordinates: [
+              [rascunho.inicio.lng, rascunho.inicio.lat],
+              [rascunho.fim.lng, rascunho.fim.lat],
+            ],
           })
         : null,
-    [linhaEmCadastro],
+    [rascunho.inicio, rascunho.fim],
   );
 
   const divergencias = useMemo(
@@ -299,13 +345,22 @@ export function RodoviaWorkspace({
   );
 
   const cancelarCadastro = useCallback(() => {
-    setLinhaEmCadastro(null);
+    setRascunho(RASCUNHO_VAZIO);
+    setMarcando(null);
     setCadastro(CADASTRO_VAZIO);
     setAviso(null);
   }, []);
 
   const salvarCadastro = useCallback(async () => {
-    if (!linhaEmCadastro) return;
+    const { inicio, fim } = rascunho;
+    if (!inicio || !fim) {
+      // Um extremo isolado é ponto, não trecho: sem os dois, não há linha a
+      // gravar nem extensão a declarar.
+      setAviso(
+        "Marque o início e o fim do trecho antes de registrar. Um extremo sozinho não descreve um trecho.",
+      );
+      return;
+    }
     const problema = validarCadastro(cadastro);
     if (problema) {
       setAviso(problema);
@@ -316,10 +371,11 @@ export function RodoviaWorkspace({
       await registrarTrechoDesenhado({
         obraId: obra.id,
         objetoId: obra.id,
-        pontos: linhaEmCadastro,
+        pontos: [inicio, fim],
         propriedades: propriedadesDoCadastro(cadastro, extensaoDaLinha),
       });
-      setLinhaEmCadastro(null);
+      setRascunho(RASCUNHO_VAZIO);
+      setMarcando(null);
       setCadastro(CADASTRO_VAZIO);
       setAviso(
         "Trecho registrado neste dispositivo. Ele sobe sozinho na próxima sincronização.",
@@ -327,7 +383,7 @@ export function RodoviaWorkspace({
       recarregar();
     } catch (motivo: unknown) {
       // O que foi digitado permanece na tela: perder o preenchimento por uma
-      // falha de gravação obrigaria a redesenhar a linha inteira.
+      // falha de gravação obrigaria a remarcar a linha inteira.
       setAviso(
         motivo instanceof Error
           ? motivo.message
@@ -336,7 +392,7 @@ export function RodoviaWorkspace({
     } finally {
       setSalvandoCadastro(false);
     }
-  }, [cadastro, extensaoDaLinha, linhaEmCadastro, obra.id, recarregar]);
+  }, [cadastro, extensaoDaLinha, obra.id, rascunho, recarregar]);
 
   /**
    * Registra onde a equipe está agora.
@@ -411,22 +467,26 @@ export function RodoviaWorkspace({
             <button
               type="button"
               className={
-                modoDesenho === "TRECHO"
+                marcando
                   ? "rodovia-desenho-botao rodovia-desenho-botao--ativo"
                   : "rodovia-desenho-botao"
               }
-              aria-pressed={modoDesenho === "TRECHO"}
+              aria-pressed={marcando !== null}
               onClick={() => {
-                setAviso(null);
-                setPontosMarcados(0);
-                setModoDesenho((atual) =>
-                  atual === "TRECHO" ? "INATIVO" : "TRECHO",
-                );
+                if (marcando) {
+                  setMarcando(null);
+                  return;
+                }
+                // Reabrir o desenho começa do início, mas não apaga o que já
+                // foi marcado: o rascunho só some por "Descartar".
+                marcarExtremo("INICIO");
               }}
             >
-              {modoDesenho === "TRECHO"
-                ? `Cancelar desenho (${pontosMarcados}/2)`
-                : "Desenhar trecho"}
+              {marcando
+                ? "Parar de marcar"
+                : emCadastro
+                  ? "Continuar o desenho"
+                  : "Desenhar trecho"}
             </button>
           ) : null}
         </div>
@@ -481,7 +541,7 @@ export function RodoviaWorkspace({
         </p>
       ) : null}
 
-      {linhaEmCadastro ? (
+      {emCadastro ? (
         <form
           className="rodovia-cadastro"
           aria-label="Cadastro do trecho desenhado"
@@ -498,12 +558,33 @@ export function RodoviaWorkspace({
             </div>
             <span>
               {extensaoDaLinha === null
-                ? "Extensão da linha indisponível"
+                ? "Marque os dois extremos para medir a linha"
                 : `${new Intl.NumberFormat("pt-BR", {
                     maximumFractionDigits: 0,
                   }).format(extensaoDaLinha)} m desenhados`}
             </span>
           </header>
+
+          {/* Os dois extremos ficam à vista o tempo todo. Cada um se remarca
+              sozinho, sem desfazer o outro nem obrigar a recomeçar a linha. */}
+          <div className="rodovia-cadastro__extremos">
+            <CampoDeExtremo
+              key={`INICIO:${marcacoesNoMapa}`}
+              extremo="INICIO"
+              valor={rascunho.inicio}
+              marcando={marcando === "INICIO"}
+              onAlterar={(ponto) => alterarExtremo("INICIO", ponto)}
+              onMarcarNoMapa={() => marcarExtremo("INICIO")}
+            />
+            <CampoDeExtremo
+              key={`FIM:${marcacoesNoMapa}`}
+              extremo="FIM"
+              valor={rascunho.fim}
+              marcando={marcando === "FIM"}
+              onAlterar={(ponto) => alterarExtremo("FIM", ponto)}
+              onMarcarNoMapa={() => marcarExtremo("FIM")}
+            />
+          </div>
 
           <div className="rodovia-cadastro__grade">
             <label>
@@ -644,6 +725,10 @@ export function RodoviaWorkspace({
               {salvandoCadastro ? "Registrando…" : "Registrar trecho"}
             </button>
           </footer>
+          <small>
+            Nada é gravado enquanto o trecho não for registrado. Marcar de novo
+            um extremo substitui apenas aquele ponto.
+          </small>
         </form>
       ) : null}
 
@@ -721,9 +806,9 @@ export function RodoviaWorkspace({
               features={colecao}
               center={centro ?? (aproximado as EnquadramentoAproximado).centro}
               limitesIniciais={centro ? null : aproximado?.limites ?? null}
-              modo={modoDesenho}
-              onTrechoDesenhado={aoDesenharTrecho}
-              onPontoCapturado={setPontosMarcados}
+              rascunho={rascunho}
+              marcando={podeDesenhar ? marcando : null}
+              onPontoMarcado={aoMarcarPonto}
             />
           ) : (
             <div className="rodovia-workspace-vazio">

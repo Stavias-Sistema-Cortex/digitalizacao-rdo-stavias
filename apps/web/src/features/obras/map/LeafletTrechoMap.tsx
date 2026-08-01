@@ -7,14 +7,19 @@ import {
   rotuloDaFonte,
 } from "./mapCategories";
 import type { OperationalFeatureCollection } from "./mapGeometry";
+import {
+  RASCUNHO_VAZIO,
+  type ExtremoDoTrecho,
+  type PontoGeografico,
+  type RascunhoDoTrecho,
+} from "./rascunhoDoTrecho";
 import "./LeafletTrechoMap.css";
 
-export interface PontoGeografico {
-  lat: number;
-  lng: number;
-}
-
-export type ModoDesenho = "INATIVO" | "TRECHO";
+export type {
+  ExtremoDoTrecho,
+  PontoGeografico,
+  RascunhoDoTrecho,
+} from "./rascunhoDoTrecho";
 
 interface LeafletTrechoMapProps {
   features: OperationalFeatureCollection;
@@ -26,11 +31,19 @@ interface LeafletTrechoMapProps {
    * município inteiro em vez de abrir num zoom arbitrário sobre o centro.
    */
   limitesIniciais?: [[number, number], [number, number]] | null;
-  modo: ModoDesenho;
-  /** Chamado quando o desenho fecha os dois extremos do trecho. */
-  onTrechoDesenhado?: (pontos: PontoGeografico[]) => void;
-  /** Progresso do desenho, para o container refletir no cabeçalho. */
-  onPontoCapturado?: (quantidade: number) => void;
+  /**
+   * Extremos que estão sendo marcados, ainda não gravados.
+   *
+   * Chegam prontos de quem monta o componente, e o mapa apenas os desenha. O
+   * rascunho já viveu aqui dentro, acumulado a cada clique, e qualquer coisa
+   * que zerasse o modo de desenho apagava o marco de início da tela sem que
+   * ninguém tivesse desistido dele.
+   */
+  rascunho?: RascunhoDoTrecho;
+  /** Extremo que o próximo clique no mapa define; `null` desliga a marcação. */
+  marcando?: ExtremoDoTrecho | null;
+  /** Coordenada realmente clicada, para o extremo em marcação. */
+  onPontoMarcado?: (extremo: ExtremoDoTrecho, ponto: PontoGeografico) => void;
 }
 
 const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -93,43 +106,53 @@ function popupHtml(properties: Record<string, unknown>): string {
   )}</span>`;
 }
 
+const APARENCIA_DO_EXTREMO: Readonly<
+  Record<ExtremoDoTrecho, { token: string; sigla: string; rotulo: string }>
+> = Object.freeze({
+  INICIO: {
+    token: "--color-brand-yellow",
+    sigla: "IN",
+    rotulo: "Início do trecho",
+  },
+  FIM: { token: "--color-danger", sigla: "FI", rotulo: "Fim do trecho" },
+});
+
 /**
  * Painel Leaflet do trecho.
  *
  * Usa exclusivamente as geometrias autoritativas recebidas por propriedade.
- * Quando o modo de desenho está ativo, dois cliques definem os extremos do
- * trecho e a persistência fica a cargo de quem monta o componente — aqui só se
- * captura a coordenada que a pessoa realmente marcou.
+ * A marcação dos extremos é controlada de fora: o mapa desenha o rascunho que
+ * recebe e devolve a coordenada clicada, sem guardar estado próprio. É o que
+ * mantém o marco de início na tela enquanto o de fim é escolhido, e o que
+ * permite remarcar um extremo sem refazer o outro.
  */
 export function LeafletTrechoMap({
   features,
   center,
   limitesIniciais = null,
-  modo,
-  onTrechoDesenhado,
-  onPontoCapturado,
+  rascunho = RASCUNHO_VAZIO,
+  marcando = null,
+  onPontoMarcado,
 }: LeafletTrechoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const camadaRef = useRef<import("leaflet").LayerGroup | null>(null);
   const rascunhoRef = useRef<import("leaflet").LayerGroup | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
-  const pontosRef = useRef<PontoGeografico[]>([]);
-  const modoRef = useRef<ModoDesenho>(modo);
+  const marcandoRef = useRef<ExtremoDoTrecho | null>(marcando);
+  const aoMarcarRef = useRef(onPontoMarcado);
   const enquadramentoRef = useRef<string | null>(null);
   const [estado, setEstado] = useState<"carregando" | "pronto" | "erro">(
     "carregando",
   );
   const [erro, setErro] = useState<string | null>(null);
 
+  // O mapa é montado uma vez, então o ouvinte de clique precisa ler o extremo
+  // e o destino correntes por referência, e não o que valia na montagem.
   useEffect(() => {
-    modoRef.current = modo;
-    if (modo === "INATIVO") {
-      pontosRef.current = [];
-      rascunhoRef.current?.clearLayers();
-      onPontoCapturado?.(0);
-    }
-  }, [modo, onPontoCapturado]);
+    marcandoRef.current = marcando;
+    aoMarcarRef.current = onPontoMarcado;
+  });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -156,39 +179,12 @@ export function LeafletTrechoMap({
       mapRef.current = map;
 
       map.on("click", (event: import("leaflet").LeafletMouseEvent) => {
-        if (modoRef.current !== "TRECHO") return;
-        const ponto = {
+        const extremo = marcandoRef.current;
+        if (!extremo) return;
+        aoMarcarRef.current?.(extremo, {
           lat: Number(event.latlng.lat.toFixed(6)),
           lng: Number(event.latlng.lng.toFixed(6)),
-        };
-        pontosRef.current = [...pontosRef.current, ponto];
-        onPontoCapturado?.(pontosRef.current.length);
-
-        // As cores do rascunho saem do tema, como todas as outras: amarelo
-        // estrutural para o início, vermelho de alerta para o fim.
-        const cor =
-          pontosRef.current.length === 1
-            ? corDoToken("--color-brand-yellow")
-            : corDoToken("--color-danger");
-        leaflet
-          .marker([ponto.lat, ponto.lng], {
-            icon: leaflet.divIcon({
-              className: "leaflet-trecho-divicon",
-              html: marcadorHtml(
-                cor,
-                pontosRef.current.length === 1 ? "IN" : "FI",
-              ),
-              iconSize: [24, 24],
-              iconAnchor: [12, 12],
-            }),
-          })
-          .addTo(rascunhoRef.current as import("leaflet").LayerGroup);
-
-        if (pontosRef.current.length >= 2) {
-          const capturados = pontosRef.current;
-          pontosRef.current = [];
-          onTrechoDesenhado?.(capturados);
-        }
+        });
       });
 
       setEstado("pronto");
@@ -323,6 +319,72 @@ export function LeafletTrechoMap({
     }
   }, [features, estado]);
 
+  /*
+   * Redesenha o rascunho a partir do que foi recebido.
+   *
+   * Sendo derivado, o marco só sai da tela quando o extremo deixa de existir
+   * de fato. A linha entre os dois aparece assim que ambos estão marcados,
+   * para que dê para conferir o trecho antes de registrar.
+   */
+  useEffect(() => {
+    const leaflet = leafletRef.current;
+    const camada = rascunhoRef.current;
+    if (!leaflet || !camada || estado !== "pronto") return;
+
+    camada.clearLayers();
+    const extremos: [ExtremoDoTrecho, PontoGeografico][] = [];
+    if (rascunho.inicio) extremos.push(["INICIO", rascunho.inicio]);
+    if (rascunho.fim) extremos.push(["FIM", rascunho.fim]);
+
+    if (rascunho.inicio && rascunho.fim) {
+      leaflet
+        .polyline(
+          [
+            [rascunho.inicio.lat, rascunho.inicio.lng],
+            [rascunho.fim.lat, rascunho.fim.lng],
+          ],
+          {
+            color: corDoToken("--color-brand-yellow"),
+            weight: 5,
+            opacity: 0.9,
+            dashArray: "8 6",
+            interactive: false,
+          },
+        )
+        .addTo(camada);
+    }
+
+    for (const [extremo, ponto] of extremos) {
+      const aparencia = APARENCIA_DO_EXTREMO[extremo];
+      leaflet
+        .marker([ponto.lat, ponto.lng], {
+          icon: leaflet.divIcon({
+            className: "leaflet-trecho-divicon",
+            html: marcadorHtml(
+              corDoToken(aparencia.token),
+              aparencia.sigla,
+            ),
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+          }),
+        })
+        .bindPopup(
+          `<strong>${aparencia.rotulo}</strong><span>${ponto.lat.toFixed(
+            6,
+          )}, ${ponto.lng.toFixed(6)}</span>`,
+          { closeButton: false },
+        )
+        .addTo(camada);
+    }
+  }, [rascunho, estado]);
+
+  // O cursor de mira é o que diz que o próximo clique vale como marcação.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || estado !== "pronto") return;
+    map.getContainer().style.cursor = marcando ? "crosshair" : "";
+  }, [marcando, estado]);
+
   return (
     <div className="leaflet-trecho">
       <div
@@ -341,9 +403,11 @@ export function LeafletTrechoMap({
           <span>{erro}</span>
         </div>
       ) : null}
-      {modo === "TRECHO" && estado === "pronto" ? (
-        <p className="leaflet-trecho-instrucao">
-          Marque o início e o fim do trecho sobre a rodovia.
+      {marcando && estado === "pronto" ? (
+        <p className="leaflet-trecho-instrucao" role="status">
+          {marcando === "INICIO"
+            ? "Clique sobre a rodovia para marcar o início do trecho."
+            : "Clique sobre a rodovia para marcar o fim do trecho."}
         </p>
       ) : null}
     </div>

@@ -168,7 +168,7 @@ export function ObraEvolucaoMapa({ obra, janela }: ObraEvolucaoMapaProps) {
 
   return (
     <div className="home-evolucao-mapa">
-      <LeafletTrechoMap features={colecao} center={centro} modo="INATIVO" />
+      <LeafletTrechoMap features={colecao} center={centro} />
       <small role="status">
         {janela.inicio
           ? `${totalNoPeriodo} de ${totalGeral} marcação(ões) participaram do período.`
