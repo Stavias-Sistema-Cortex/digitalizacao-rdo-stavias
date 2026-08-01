@@ -12,6 +12,7 @@ import {
   type OperationalMapController,
 } from "./mapAdapter";
 import type { LeituraMapaObra } from "./obraMapApi";
+import { descartarCacheDeMapa } from "./cacheDeTiles";
 import {
   FILTRO_VAZIO,
   filtrarColecao,
@@ -92,6 +93,27 @@ function MapCanvas({
     "loading",
   );
   const [error, setError] = useState<string | null>(null);
+  const [tentativa, setTentativa] = useState(0);
+  const [limpando, setLimpando] = useState(false);
+
+  /**
+   * Nova tentativa depois de descartar o que o service worker guardou.
+   *
+   * Um tile gravado quebrado é servido de novo a cada recarga, porque
+   * `CacheFirst` responde antes da rede. Sem apagar o cache, insistir no mesmo
+   * botão repetiria exatamente a mesma falha.
+   */
+  const tentarDeNovo = async () => {
+    setLimpando(true);
+    try {
+      await descartarCacheDeMapa();
+    } finally {
+      setLimpando(false);
+      setStatus("loading");
+      setError(null);
+      setTentativa((anterior) => anterior + 1);
+    }
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -134,7 +156,7 @@ function MapCanvas({
       controllerRef.current = null;
       controller?.destroy();
     };
-  }, [center, features, mode, provider]);
+  }, [center, features, mode, provider, tentativa]);
 
   useEffect(() => {
     if (centerRequest > 0) {
@@ -154,6 +176,20 @@ function MapCanvas({
         <div className="operational-map-overlay operational-map-overlay--error">
           <strong>Mapa temporariamente indisponível</strong>
           <span>{error}</span>
+          <button
+            type="button"
+            className="operational-map-retry"
+            disabled={limpando}
+            onClick={() => {
+              void tentarDeNovo();
+            }}
+          >
+            {limpando ? "Limpando…" : "Baixar de novo"}
+          </button>
+          <small>
+            Descarta os tiles guardados neste aparelho e busca outra vez. O
+            painel ao lado continua funcionando enquanto isso.
+          </small>
         </div>
       ) : null}
       {status === "ready" && error ? (

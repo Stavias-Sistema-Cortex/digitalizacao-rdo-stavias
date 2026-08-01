@@ -147,6 +147,27 @@
   inset: 0;
 }
 
+/* Saída de uma falha que se repetiria: apaga o tile guardado quebrado, que o
+   CacheFirst devolveria de novo a cada recarga, e busca outra vez. */
+.operational-map-retry {
+  min-height: 32px;
+  margin-top: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: var(--color-surface);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+
+.operational-map-retry[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
 .operational-map-overlay {
   position: absolute;
   inset: 0;
