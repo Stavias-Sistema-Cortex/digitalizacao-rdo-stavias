@@ -25,8 +25,25 @@ export interface IntegracaoPendingRequest {
   integracaoId: string;
   acao: IntegracaoRequestAction;
   estado: "PENDENTE";
+  /** Código de fila do protocolo; o servidor o exige literal. Não é frase. */
   motivo: "AGUARDANDO_REDE";
   requestedAt: string;
+}
+
+/**
+ * O que dizer a quem espera, conferido contra o estado real do aparelho.
+ *
+ * O código `motivo` é constante de protocolo — o servidor recusa a solicitação
+ * se vier outra coisa — e nunca foi uma leitura de conectividade. Exibi-lo cru
+ * fazia a tela anunciar "aguardando rede... após a reconexão" com o computador
+ * conectado: uma afirmação falsa sobre o sistema, que manda quem lê procurar um
+ * problema de conexão inexistente. Com rede, a solicitação só espera a mesma
+ * janela de sincronização de qualquer lançamento.
+ */
+export function descricaoDaEspera(online: boolean): string {
+  return online
+    ? "na fila; sobe na próxima sincronização"
+    : "sem rede agora; sobe sozinha na reconexão";
 }
 
 async function readJson<T>(

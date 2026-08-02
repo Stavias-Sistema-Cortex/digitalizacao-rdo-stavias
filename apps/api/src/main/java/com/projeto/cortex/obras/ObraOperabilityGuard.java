@@ -24,16 +24,27 @@ public class ObraOperabilityGuard {
         String normalizedId = obraId == null ? "" : obraId.trim();
         // Dentro da janela de convergência do sync, obra arquivada aceita
         // escrita: o lançamento foi vivido em campo e o dispositivo carrega a
-        // única cópia. Fora dela, o arquivamento segue barrando — é a
-        // diferença entre convergir um registro e operar uma obra encerrada.
-        boolean writable = !normalizedId.isEmpty() && (
-                SyncConvergenceWindow.isOpen()
-                        ? obraRepository.findExistingIdForShare(normalizedId)
-                        .isPresent()
-                        : obraRepository.findWritableIdForShare(normalizedId)
-                        .isPresent()
-        );
-        if (!writable) {
+        // única cópia. Só a obra inexistente recusa — e diz exatamente isso.
+        // A mensagem fundida "não encontrada ou arquivada" escondia qual das
+        // duas metades valia, e um dispositivo com quinze registros presos não
+        // tinha como saber se faltava restaurar a obra ou se o identificador
+        // dela nunca existiu neste banco. Recusa sem causa exata não orienta
+        // ninguém.
+        if (SyncConvergenceWindow.isOpen()) {
+            if (normalizedId.isEmpty()
+                    || obraRepository.findExistingIdForShare(normalizedId)
+                    .isEmpty()) {
+                throw new ResponseStatusException(
+                        HttpStatus.NOT_FOUND,
+                        "Obra não encontrada neste servidor."
+                );
+            }
+            return;
+        }
+        // Caminho interativo: contrato inalterado, arquivada segue barrando.
+        if (normalizedId.isEmpty()
+                || obraRepository.findWritableIdForShare(normalizedId)
+                .isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Obra não encontrada ou arquivada."
