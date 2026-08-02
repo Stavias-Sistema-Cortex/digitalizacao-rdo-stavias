@@ -8,6 +8,7 @@ import type { EnderecoDaObra } from "../map/enquadramentoAproximado";
 import { carregarTrechoDaObra, type LeituraTrecho } from "./obraTrechoApi";
 import { TrechoEsquematico } from "./TrechoEsquematico";
 import { TrechoReceitaSection } from "./TrechoReceitaSection";
+import { TrechoEvolucao } from "./TrechoEvolucao";
 import { TrechoPeriodoFiltro } from "./TrechoPeriodoFiltro";
 import { TrechoResumo } from "./TrechoResumo";
 import { recortarProjecao, type Periodo } from "./trechoGeometry";
@@ -77,6 +78,9 @@ export function ObraTrechoSection({
     periodoInicial ?? SEM_PERIODO,
   );
   const [diaSelecionado, setDiaSelecionado] = useState<string | null>(null);
+  // Rolagem no tempo: nulo é a rodovia completa; uma data recorta o desenho
+  // ao acumulado até aquele dia, inclusive — o time-lapse da obra.
+  const [evolucaoAte, setEvolucaoAte] = useState<string | null>(null);
 
   // Cada rodada de sincronização automática relê a projeção, que é como o
   // acompanhamento se mantém atual sem canal dedicado de tempo real. A escrita
@@ -122,10 +126,12 @@ export function ObraTrechoSection({
   const leitura = estado.fase === "pronto" ? estado.leitura : null;
   const recorte = useMemo<Periodo>(
     () =>
-      diaSelecionado
-        ? { de: diaSelecionado, ate: diaSelecionado }
-        : periodo,
-    [diaSelecionado, periodo],
+      evolucaoAte
+        ? { de: null, ate: evolucaoAte }
+        : diaSelecionado
+          ? { de: diaSelecionado, ate: diaSelecionado }
+          : periodo,
+    [evolucaoAte, diaSelecionado, periodo],
   );
   const projecao = useMemo(
     () =>
@@ -176,17 +182,31 @@ export function ObraTrechoSection({
           projecao={projecao}
           procedencia={procedencia(leitura)}
           filtro={
-            <TrechoPeriodoFiltro
-              disponivel={leitura.projecao.periodoDisponivel}
-              valor={periodo}
-              dias={leitura.projecao.diasExecutados}
-              diaSelecionado={diaSelecionado}
-              onAlterarPeriodo={(proximo) => {
-                setDiaSelecionado(null);
-                setPeriodo(proximo);
-              }}
-              onSelecionarDia={setDiaSelecionado}
-            />
+            <>
+              <TrechoEvolucao
+                dias={leitura.projecao.diasExecutados}
+                diaAtivo={evolucaoAte}
+                onMudarDia={(dia) => {
+                  setDiaSelecionado(null);
+                  setEvolucaoAte(dia);
+                }}
+              />
+              <TrechoPeriodoFiltro
+                disponivel={leitura.projecao.periodoDisponivel}
+                valor={periodo}
+                dias={leitura.projecao.diasExecutados}
+                diaSelecionado={diaSelecionado}
+                onAlterarPeriodo={(proximo) => {
+                  setEvolucaoAte(null);
+                  setDiaSelecionado(null);
+                  setPeriodo(proximo);
+                }}
+                onSelecionarDia={(dia) => {
+                  setEvolucaoAte(null);
+                  setDiaSelecionado(dia);
+                }}
+              />
+            </>
           }
         />
       ) : (

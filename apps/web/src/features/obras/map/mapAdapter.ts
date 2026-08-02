@@ -1,4 +1,5 @@
 import {
+  falhaDeBasemap,
   falhaImpedeOMapa,
   mensagemDeFalha,
   type FalhaDoRenderizador,
@@ -34,6 +35,12 @@ interface MountOptions {
   center: [number, number];
   mode: MapViewMode;
   onRuntimeError: (message: string) => void;
+  /**
+   * O basemap não veio e o mapa nunca chegou a pintar. Disparado no máximo uma
+   * vez por montagem, para que o painel possa trocar para o provider reserva
+   * em vez de exibir um retângulo vazio.
+   */
+  onFalhaDeBasemap?: () => void;
 }
 
 const SOURCE_ID = "cortex-operational";
@@ -295,7 +302,21 @@ function prepararMapa(
     let destruido = false;
     let enquadrado = false;
     let ultimaFalha: string | null = null;
+    // O primeiro `idle` é a prova de que algo pintou. Antes dele, uma falha de
+    // rede do basemap significa painel vazio; depois dele, é degradação.
+    let ocioso = false;
+    let basemapAvisado = false;
     const temporizadores: number[] = [];
+
+    map.once("idle", () => {
+      ocioso = true;
+    });
+
+    const avisarBasemap = () => {
+      if (basemapAvisado || destruido) return;
+      basemapAvisado = true;
+      options.onFalhaDeBasemap?.();
+    };
 
     const encerrar = () => {
       if (destruido) return;
@@ -344,11 +365,16 @@ function prepararMapa(
       }
       temporizadores.push(
         window.setTimeout(() => {
-          if (destruido || map.areTilesLoaded()) return;
+          if (destruido) return;
+          // `areTilesLoaded()` responde verdadeiro quando a própria fonte
+          // falhou — fonte quebrada não tem tile pendente. Uma falha já
+          // registrada, portanto, fala mais alto do que esse sinal.
+          if (ultimaFalha === null && map.areTilesLoaded()) return;
           options.onRuntimeError(
-            "O mapa abriu, mas nenhum tile chegou. Pode ser a rede desta obra"
-              + " bloqueando o servidor de mapas, ou um arquivo guardado com"
-              + " defeito neste aparelho.",
+            ultimaFalha ??
+              ("O mapa abriu, mas nenhum tile chegou. Pode ser a rede desta obra"
+                + " bloqueando o servidor de mapas, ou um arquivo guardado com"
+                + " defeito neste aparelho."),
           );
         }, LIMITE_TILES_MS),
       );
@@ -396,6 +422,12 @@ function prepararMapa(
 
     map.on("error", (event) => {
       const mensagem = mensagemDeFalha(event.error?.message);
+      // Falha de rede do basemap antes de qualquer pintura: este é o caminho
+      // do retângulo mudo. O aviso sai daqui — não do vigia — porque a fonte
+      // quebrada satisfaz todos os sinais de "carregado" do renderizador.
+      if (!ocioso && falhaDeBasemap(event.error, options.provider.styleUrl)) {
+        avisarBasemap();
+      }
       if (pronto) {
         options.onRuntimeError(mensagem);
         return;
@@ -466,7 +498,9 @@ async function mountMapLibre(
   await import("maplibre-gl/dist/maplibre-gl.css");
   const map = new maplibre.Map({
     container: options.container,
-    style: options.provider.styleUrl ?? "",
+    style: (options.provider.estiloInline ??
+      options.provider.styleUrl ??
+      "") as never,
     center: options.center,
     zoom: 14,
     pitch: options.mode === "3d" ? 52 : 0,

@@ -20,6 +20,7 @@ import {
 } from "./filtrosDoMapa";
 import {
   availableMapProviders,
+  providerReservaOsm,
   resolveMapProvider,
   resolveMapProviderForId,
   type MapProvider,
@@ -95,6 +96,25 @@ function MapCanvas({
   const [error, setError] = useState<string | null>(null);
   const [tentativa, setTentativa] = useState(0);
   const [limpando, setLimpando] = useState(false);
+  /**
+   * Basemap reserva, acionado sozinho quando a fonte do principal não vem.
+   *
+   * Sem isto o painel subia como um retângulo mudo: o renderizador declara
+   * tudo carregado mesmo com a fonte inteira falhando. O operador vê o mapa
+   * reserva na hora, com um aviso — não um vazio sem explicação.
+   */
+  const [reserva, setReserva] = useState(false);
+  const [providerAnterior, setProviderAnterior] = useState(provider);
+  if (provider !== providerAnterior) {
+    // Troca explícita de provider zera a contingência: a escolha é de quem
+    // opera, e o novo provider merece a primeira tentativa limpa.
+    setProviderAnterior(provider);
+    setReserva(false);
+  }
+  const providerEfetivo = useMemo(
+    () => (reserva ? providerReservaOsm() : provider),
+    [reserva, provider],
+  );
 
   /*
    * O renderizador é criado uma vez e depois atualizado.
@@ -129,6 +149,8 @@ function MapCanvas({
       setLimpando(false);
       setStatus("loading");
       setError(null);
+      // Cache limpo, o principal merece nova chance antes da reserva.
+      setReserva(false);
       setTentativa((anterior) => anterior + 1);
     }
   };
@@ -141,12 +163,20 @@ function MapCanvas({
 
     mountOperationalMap({
       container,
-      provider,
+      provider: providerEfetivo,
       features: featuresRef.current,
       center: centerRef.current,
       mode: modeRef.current,
       onRuntimeError: (message) => {
         if (!cancelled) setError(message);
+      },
+      onFalhaDeBasemap: () => {
+        // A reserva só se aciona uma vez; se ela própria falhar, o aviso de
+        // erro comum assume, em vez de um laço de remontagens.
+        if (!cancelled && !providerEfetivo.reserva) {
+          setError(null);
+          setReserva(true);
+        }
       },
     })
       .then((mounted) => {
@@ -174,7 +204,7 @@ function MapCanvas({
       controllerRef.current = null;
       controller?.destroy();
     };
-  }, [provider, tentativa]);
+  }, [providerEfetivo, tentativa]);
 
   // As geometrias novas entram na fonte que já está no mapa. `status` participa
   // porque uma leitura pode chegar enquanto o mapa ainda abre: sem ele, a
@@ -197,6 +227,24 @@ function MapCanvas({
   return (
     <div className="operational-map-canvas-wrap">
       <div ref={containerRef} className="operational-map-canvas" />
+      {reserva && status === "ready" ? (
+        <div className="operational-map-reserva-notice" role="status">
+          <span>
+            O servidor de mapas principal não respondeu nesta rede — exibindo
+            o mapa reserva (OSM).
+          </span>
+          <button
+            type="button"
+            className="operational-map-retry"
+            disabled={limpando}
+            onClick={() => {
+              void tentarDeNovo();
+            }}
+          >
+            {limpando ? "Limpando…" : "Tentar o principal"}
+          </button>
+        </div>
+      ) : null}
       {status === "loading" ? (
         <div className="operational-map-overlay" role="status">
           Carregando imagens de satélite…
