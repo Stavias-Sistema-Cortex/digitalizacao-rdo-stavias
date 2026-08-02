@@ -8,6 +8,7 @@ import { closeCortexDb, getCortexDb } from "../db/cortexDb";
 import type {
   CanonicalOutboxMutationRecord,
   LocalRdoRecord,
+  ObraGeometriaLocalRecord,
   ObraLocalRecord,
   RdoAttachmentRecord,
 } from "../db/db.types";
@@ -419,6 +420,121 @@ describe("reidentificação da obra que o servidor diz não existir", () => {
       cancelamentoSubstitutoId,
     ]);
     expect(restauracaoSubstituta.obraId).toBe(OBRA_VIVA_ID);
+  });
+
+  it("drena também o trecho desenhado, que é dado de campo igual ao RDO", async () => {
+    // O caso observado em produção: os quinze presos eram geometrias, não
+    // RDOs. O desenho só existe neste dispositivo — quem marcou o trecho
+    // estava lá — e ficar preso a uma obra morta o condenava ao mesmo limbo.
+    const database = await getCortexDb();
+    await database.put("obras", obra(OBRA_MORTA_ID));
+    await database.put("obras", obra(OBRA_VIVA_ID));
+    const geometriaId = crypto.randomUUID();
+    const coordenadas = [
+      [-47.4, -22.5],
+      [-47.3, -22.4],
+    ];
+    const geometria: ObraGeometriaLocalRecord = {
+      id: geometriaId,
+      ownerId: USER_ID,
+      obraId: OBRA_MORTA_ID,
+      categoria: "TRECHO",
+      objetoTipo: "TRECHO",
+      objetoId: crypto.randomUUID(),
+      geometry: { type: "LineString", coordinates: coordenadas },
+      properties: {},
+      fonte: "GESTAO_MAPA",
+      status: "ATIVA",
+      validoDesde: "2026-08-01T10:00:00.000Z",
+      validoAte: null,
+      versao: 0,
+      syncStatus: "PENDING_SYNC",
+      fetchedAt: null,
+      updatedAt: "2026-08-01T10:00:00.000Z",
+    };
+    const committed = await commitLocalMutation({
+      deviceId: DEVICE_ID,
+      userId: USER_ID,
+      obraId: OBRA_MORTA_ID,
+      entityType: "GEOMETRIA_OBRA",
+      entityId: geometriaId,
+      entityName: "TRECHO",
+      operation: "CREATE",
+      transportOperation: "REGISTRAR_GEOMETRIA_OBRA",
+      baseVersion: null,
+      occurredAt: "2026-08-01T10:00:00.000Z",
+      previousSnapshot: {},
+      nextSnapshot: {
+        id: geometriaId,
+        obraId: OBRA_MORTA_ID,
+        categoria: "TRECHO",
+        objetoTipo: "TRECHO",
+        objetoId: geometria.objetoId,
+        geometry: geometria.geometry,
+        properties: {},
+        fonte: "GESTAO_MAPA",
+        validoDesde: geometria.validoDesde,
+        validoAte: null,
+      },
+      principalSnapshot: { ...geometria },
+      expectedPrincipalSnapshot: null,
+      eventType: "GEOMETRIA_CRIADA",
+      colaboradorId: USER_ID,
+      relatedEntities: [{ tipo: "OBRA", id: OBRA_MORTA_ID }],
+      write: () => [
+        { store: "obra_geometrias", value: geometria, principal: true },
+      ],
+    });
+    await markMutationAsSyncing(committed.mutation);
+    await rejectMutationLocally(
+      committed.mutation.clientMutationId,
+      "OBRA_NAO_ENCONTRADA",
+      RECUSA,
+    );
+
+    expect(await reidentificarObrasInexistentesForSync()).toBe(1);
+
+    const original = canonical(
+      await database.get(
+        "outbox_mutations",
+        committed.mutation.clientMutationId,
+      ),
+    );
+    const substitutaId =
+      /^SUPERSEDED_BY:(.+)$/.exec(original.blockedReason ?? "")?.[1];
+    const substituta = canonical(
+      await database.get("outbox_mutations", substitutaId!),
+    );
+    expect(substituta).toMatchObject({
+      status: "PENDING",
+      operacao: "REGISTRAR_GEOMETRIA_OBRA",
+      obraId: OBRA_VIVA_ID,
+      blockedReason: null,
+    });
+    expect(substituta.payload.obraId).toBe(OBRA_VIVA_ID);
+    // O desenho é o dado: nenhum ponto pode ser recalculado na travessia.
+    expect(substituta.payload.geometry).toEqual({
+      type: "LineString",
+      coordinates: coordenadas,
+    });
+
+    const [eventoDaSubstituta] = await database.getAllFromIndex(
+      "operational_events",
+      "by-client-mutation-id",
+      substituta.clientMutationId,
+    );
+    await expect(
+      assertCanonicalMutationEventProvenance(
+        substituta,
+        eventoDaSubstituta as never,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(await database.get("obra_geometrias", geometriaId)).toMatchObject({
+      obraId: OBRA_VIVA_ID,
+      syncStatus: "PENDING_SYNC",
+      geometry: { type: "LineString", coordinates: coordenadas },
+    });
   });
 
   it("não faz nada sem uma gêmea única", async () => {

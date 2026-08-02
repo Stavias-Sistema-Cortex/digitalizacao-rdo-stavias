@@ -1892,23 +1892,32 @@ interface ReidentificacaoPlanejada {
  * outra obra com a mesma identidade (código de contrato, ou nome e cliente),
  * os lançamentos de campo pertencem a ela.
  *
- * Envelopes canônicos são imutáveis; a correção nasce como substituição
- * rastreável (SUPERSEDED_BY), nunca como edição. A criação de RDO não é
- * substituída aqui: ela volta à fila bloqueada por
- * RDO_CREATION_CONTEXT_REQUIRED e o pipeline de hidratação de contexto — que
- * já sabe buscar o recibo novo e cunhar a substituição — faz o resto, agora
- * contra a obra certa. As demais operações da cadeia do mesmo RDO são
- * substituídas aqui mesmo, para que nenhuma continue subindo com o
- * identificador morto.
+ * Vale para o que carrega dado de campo preso a uma obra: o RDO e a geometria
+ * marcada sobre o mapa. O trecho desenhado é tão insubstituível quanto o
+ * lançamento — quem o marcou estava lá, e o desenho só existe neste
+ * dispositivo.
  *
- * Um RDO que já viveu sob a obra de destino não volta a trocar de obra: sem
- * essa trava, duas obras mortas com a mesma identidade fariam os envelopes
+ * Envelopes canônicos são imutáveis; a correção nasce como substituição
+ * rastreável (SUPERSEDED_BY), nunca como edição. A criação de RDO é a única
+ * exceção: ela volta à fila bloqueada por RDO_CREATION_CONTEXT_REQUIRED e o
+ * pipeline de hidratação de contexto — que já sabe buscar o recibo novo e
+ * cunhar a substituição — faz o resto, agora contra a obra certa. As demais
+ * operações da cadeia são substituídas aqui mesmo, para que nenhuma continue
+ * subindo com o identificador morto.
+ *
+ * Uma entidade que já viveu sob a obra de destino não volta a trocar de obra:
+ * sem essa trava, duas obras mortas com a mesma identidade fariam os envelopes
  * quicarem de uma para a outra a cada ciclo, para sempre.
  *
  * As mutações de ciclo de vida da própria OBRA morta (arquivar, restaurar)
  * ficam de fora de propósito: não carregam dado de campo, e transplantá-las
  * aplicaria à obra viva um gesto feito sobre a morta.
  */
+const ENTIDADES_REIDENTIFICAVEIS: ReadonlySet<string> = new Set([
+  "RDO",
+  "GEOMETRIA_OBRA",
+]);
+
 export async function reidentificarObrasInexistentesForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {
@@ -1922,7 +1931,7 @@ export async function reidentificarObrasInexistentesForSync(
   const recusadas = todas.filter(
     (mutation): mutation is CanonicalOutboxMutationRecord =>
       isCanonicalOutboxMutation(mutation) &&
-      mutation.entidadeTipo === "RDO" &&
+      ENTIDADES_REIDENTIFICAVEIS.has(mutation.entidadeTipo) &&
       mutation.status === "REJECTED" &&
       isRejeicaoDeObraInexistenteNoServidor(mutation.ultimoErro) &&
       !(
@@ -1934,24 +1943,27 @@ export async function reidentificarObrasInexistentesForSync(
     return 0;
   }
 
-  const porRdo = new Map<string, CanonicalOutboxMutationRecord[]>();
+  const porEntidade = new Map<string, CanonicalOutboxMutationRecord[]>();
   for (const mutation of recusadas) {
-    const lista = porRdo.get(mutation.entidadeId) ?? [];
+    const chave = `${mutation.entidadeTipo}:${mutation.entidadeId}`;
+    const lista = porEntidade.get(chave) ?? [];
     lista.push(mutation);
-    porRdo.set(mutation.entidadeId, lista);
+    porEntidade.set(chave, lista);
   }
 
   let reidentificadas = 0;
   const baseInstante = Date.parse(nowUtc());
   let deslocamento = 0;
 
-  for (const [rdoId, rejeitadasDoRdo] of porRdo) {
+  for (const rejeitadasDaEntidade of porEntidade.values()) {
     assertSyncSession(guard);
     try {
-      const obraMortaId = rejeitadasDoRdo[0].obraId;
+      const entidadeTipo = rejeitadasDaEntidade[0].entidadeTipo;
+      const entidadeId = rejeitadasDaEntidade[0].entidadeId;
+      const obraMortaId = rejeitadasDaEntidade[0].obraId;
       if (
         !obraMortaId ||
-        rejeitadasDoRdo.some(
+        rejeitadasDaEntidade.some(
           (mutation) => mutation.obraId !== obraMortaId,
         )
       ) {
@@ -1970,8 +1982,8 @@ export async function reidentificarObrasInexistentesForSync(
         .filter(
           (mutation): mutation is CanonicalOutboxMutationRecord =>
             isCanonicalOutboxMutation(mutation) &&
-            mutation.entidadeTipo === "RDO" &&
-            mutation.entidadeId === rdoId,
+            mutation.entidadeTipo === entidadeTipo &&
+            mutation.entidadeId === entidadeId,
         )
         .sort((esquerda, direita) =>
           esquerda.criadaNoClienteEm.localeCompare(
@@ -1979,7 +1991,7 @@ export async function reidentificarObrasInexistentesForSync(
           ),
         );
 
-      // A trava contra o pingue-pongue: se qualquer envelope deste RDO já
+      // A trava contra o pingue-pongue: se qualquer envelope desta entidade já
       // carregou a obra de destino, esta cadeia já foi reidentificada uma vez
       // e a nova recusa significa que o destino também não existe. Trocar de
       // volta só reiniciaria o circuito.
@@ -2006,8 +2018,10 @@ export async function reidentificarObrasInexistentesForSync(
         continue;
       }
 
-      const rdo = await database.get("rdos", rdoId);
-      if (!rdo || rdo.obraId !== obraMortaId) {
+      const registroLocal = entidadeTipo === "RDO"
+        ? await database.get("rdos", entidadeId)
+        : await database.get("obra_geometrias", entidadeId);
+      if (!registroLocal || registroLocal.obraId !== obraMortaId) {
         continue;
       }
 
@@ -2124,8 +2138,8 @@ export async function reidentificarObrasInexistentesForSync(
       }
 
       // Segunda fase: aplicar tudo de uma vez, conferindo que nada mudou
-      // durante a montagem. Cada RDO é atômico por si; um que falhe não pode
-      // segurar a recuperação dos demais.
+      // durante a montagem. Cada entidade é atômica por si; uma que falhe não
+      // pode segurar a recuperação das demais.
       assertSyncSession(guard);
       const timestamp = nowUtc();
       const guardedTransaction = guardSyncTransaction(
@@ -2148,10 +2162,18 @@ export async function reidentificarObrasInexistentesForSync(
           break;
         }
       }
-      const rdoAtual = await transaction
-        .objectStore("rdos")
-        .get(rdoId);
-      if (!coerente || !rdoAtual || rdoAtual.obraId !== obraMortaId) {
+      const rdoAtual = entidadeTipo === "RDO"
+        ? await transaction.objectStore("rdos").get(entidadeId)
+        : null;
+      const geometriaAtual = entidadeTipo === "GEOMETRIA_OBRA"
+        ? await transaction.objectStore("obra_geometrias").get(entidadeId)
+        : null;
+      const principalAtual = rdoAtual ?? geometriaAtual;
+      if (
+        !coerente ||
+        !principalAtual ||
+        principalAtual.obraId !== obraMortaId
+      ) {
         transaction.abort();
         await guardedTransaction.complete().catch(() => undefined);
         continue;
@@ -2223,26 +2245,37 @@ export async function reidentificarObrasInexistentesForSync(
         await eventStore.add(plano.substitutaEvento!);
       }
 
-      const rdoStore = transaction.objectStore("rdos");
-      await rdoStore.put(
-        rdoAfterObraReferenceRepair(rdoAtual, alvo, timestamp),
-      );
-      await updateRdoChildrenSyncStatus(
-        transaction,
-        rdoId,
-        "PENDING_SYNC",
-        timestamp,
-      );
-      await updateRdoAttachmentsObraReference(
-        transaction,
-        rdoId,
-        alvo,
-        timestamp,
-      );
+      if (rdoAtual) {
+        await transaction.objectStore("rdos").put(
+          rdoAfterObraReferenceRepair(rdoAtual, alvo, timestamp),
+        );
+        await updateRdoChildrenSyncStatus(
+          transaction,
+          entidadeId,
+          "PENDING_SYNC",
+          timestamp,
+        );
+        await updateRdoAttachmentsObraReference(
+          transaction,
+          entidadeId,
+          alvo,
+          timestamp,
+        );
+      }
+      if (geometriaAtual) {
+        // O desenho não muda: só a obra a que ele pertence. As coordenadas
+        // marcadas em campo são o dado, e nenhum ponto é recalculado aqui.
+        await transaction.objectStore("obra_geometrias").put({
+          ...geometriaAtual,
+          obraId: alvo.id,
+          syncStatus: "PENDING_SYNC",
+          updatedAt: timestamp,
+        });
+      }
       await guardedTransaction.complete();
       reidentificadas += planos.length;
     } catch {
-      // Este RDO fica como está — visível em revisão — e os demais seguem.
+      // Esta entidade fica como está — visível em revisão — e as demais seguem.
       continue;
     }
   }

@@ -6,7 +6,9 @@ import {
 
 import { OperationalWorkspace } from "../../components/workspace/OperationalWorkspace";
 
+import { SYNC_COMPLETED_EVENT } from "../../lib/sync/syncEvents";
 import {
+  descricaoDaEspera,
   listarIntegracoes,
   listarSolicitacoesIntegracaoPendentes,
   sincronizarIntegracao,
@@ -132,6 +134,27 @@ export function IntegracoesPage({
     };
   }, [load]);
 
+  // A solicitação sobe na mesma janela de qualquer lançamento. Sem ouvir o fim
+  // da sincronização, a tela continuava anunciando como pendente algo que o
+  // servidor já tinha executado — e só um "Atualizar" manual desmentia.
+  useEffect(() => {
+    function aoConcluirSincronizacao() {
+      void load();
+    }
+
+    window.addEventListener(
+      SYNC_COMPLETED_EVENT,
+      aoConcluirSincronizacao,
+    );
+
+    return () => {
+      window.removeEventListener(
+        SYNC_COMPLETED_EVENT,
+        aoConcluirSincronizacao,
+      );
+    };
+  }, [load]);
+
   async function runAction(
     id: string,
     action:
@@ -143,17 +166,17 @@ export function IntegracoesPage({
     setError("");
 
     try {
-      const request =
-        action === "testar"
-          ? await testarConexaoIntegracao(id)
-          : await sincronizarIntegracao(id);
+      if (action === "testar") {
+        await testarConexaoIntegracao(id);
+      } else {
+        await sincronizarIntegracao(id);
+      }
 
       setPendingRequests(
         await listarSolicitacoesIntegracaoPendentes(),
       );
       setMessage(
-        `Solicitação ${request.id} pendente (${request.motivo}). `
-          + "Ela será executada automaticamente após a reconexão.",
+        `Solicitação registrada — ${descricaoDaEspera(navigator.onLine)}.`,
       );
     } catch (actionError: unknown) {
       setError(
@@ -228,11 +251,7 @@ export function IntegracoesPage({
                 {" · "}
                 {request.acao}
                 {" · "}
-                {request.estado}
-                {" · "}
-                {request.motivo}
-                {" · "}
-                <code>{request.id}</code>
+                {descricaoDaEspera(navigator.onLine)}
               </li>
             ))}
           </ul>
