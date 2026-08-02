@@ -900,13 +900,16 @@ public class RdoDraftUpdateService {
     }
 
     private ObraDados buscarObra(String obraId) {
+        // A política de arquivamento é decisão exclusiva da guarda de
+        // operabilidade, aplicada antes desta leitura. Repeti-la aqui fazia a
+        // consulta contradizer a guarda quando a janela de convergência do
+        // sync aceita escrita em obra arquivada.
         try {
             return jdbcTemplate.queryForObject(
                     """
                     SELECT id, codigo_contrato, cliente, cidade, uf, rodovia
                     FROM obra
                     WHERE id = ?
-                      AND arquivado_em IS NULL
                     """,
                     (rs, rowNum) -> new ObraDados(
                             rs.getString("id"),

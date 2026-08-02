@@ -32,6 +32,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.projeto.cortex.auth.CurrentUserService;
+import com.projeto.cortex.common.SyncConvergenceWindow;
 import com.projeto.cortex.financeiro.access.FinancialAccessService;
 import com.projeto.cortex.financeiro.access.FinancialPermission;
 
@@ -744,13 +745,19 @@ public class SyncService {
         );
         validarBaseVersao(mutacao, handler);
 
-        AppliedSyncMutation applied = handler.apply(
-                mutacao,
-                new SyncMutationContext(
-                        currentUserService.requireUserId(),
-                        dispositivoId
-                )
-        );
+        // A janela cobre exatamente a aplicação da mutação: é o único trecho
+        // em que uma escrita recusável por arquivamento representa um dado de
+        // campo cuja única cópia está no dispositivo que o enviou.
+        AppliedSyncMutation applied;
+        try (SyncConvergenceWindow ignored = SyncConvergenceWindow.open()) {
+            applied = handler.apply(
+                    mutacao,
+                    new SyncMutationContext(
+                            currentUserService.requireUserId(),
+                            dispositivoId
+                    )
+            );
+        }
         requireAppliedContract(handler, mutacao, applied);
         long commitSeq = commitSeqEntidade(
                 applied.entityType(),

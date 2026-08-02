@@ -774,7 +774,11 @@ describe("recuperação das recusas por obra arquivada", () => {
     });
   }
 
-  it("mantém parado o que ainda não pode subir, com a obra arquivada", async () => {
+  it("reenvia mesmo com a obra ainda arquivada", async () => {
+    // Decisão de produto: a Lixeira esconde a obra da operação, mas não
+    // barra a convergência do que já foi vivido em campo — o servidor aceita
+    // o lançamento com a obra arquivada. Esperar a restauração deixava a
+    // única cópia dos dados presa no dispositivo.
     const database = await getCortexDb();
     const clientMutationId = await filaRecusadaPorArquivamento();
     const atual = await database.get("obras", OBRA_ID);
@@ -783,10 +787,10 @@ describe("recuperação das recusas por obra arquivada", () => {
       arquivadoEm: "2026-07-28T10:00:00.000Z",
     });
 
-    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(1);
     expect(
       (await database.get("outbox_mutations", clientMutationId))!.status,
-    ).toBe("REJECTED");
+    ).toBe("PENDING");
   });
 
   it("permite restaurar a obra travada pela própria recusa", async () => {
@@ -840,7 +844,7 @@ describe("recuperação das recusas por obra arquivada", () => {
       status: "PENDING",
       retryAttempt: 0,
       nextAttemptAt: null,
-      lastSafeCode: "OBRA_RESTAURADA",
+      lastSafeCode: "CONVERGENCIA_DE_OBRA_ARQUIVADA",
     });
   });
 
@@ -859,16 +863,20 @@ describe("recuperação das recusas por obra arquivada", () => {
     ).toBe("PENDING");
   });
 
-  it("devolve à fila a pedido de quem opera, mesmo com a obra arquivada", async () => {
+  it("devolve à fila a pedido de quem opera o que a automática não reconhece", async () => {
     // A saída manual existe justamente para o que a recuperação automática não
     // reconhece. Ela não julga o motivo: quem pediu leu a recusa na tela.
     const database = await getCortexDb();
-    const clientMutationId = await filaRecusadaPorArquivamento();
-    const atual = await database.get("obras", OBRA_ID);
-    await database.put("obras", {
-      ...atual!,
-      arquivadoEm: "2026-07-28T10:00:00.000Z",
-    });
+    await database.put("obras", obra());
+    await queueDeactivateObra(obra());
+    const [mutacao] = await database.getAll("outbox_mutations");
+    await markMutationAsSyncing(mutacao);
+    await rejectMutationLocally(
+      mutacao.clientMutationId,
+      "PAYLOAD_INVALIDO",
+      "payload.nome deve ser texto.",
+    );
+    const clientMutationId = mutacao.clientMutationId;
 
     expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
     expect(await requeueMutationsInReview()).toBe(1);
@@ -898,7 +906,9 @@ describe("recuperação das recusas por obra arquivada", () => {
     ).toBe("REJECTED");
   });
 
-  it("espera a restauração ser aplicada antes de reenviar", async () => {
+  it("não espera a restauração para reenviar", async () => {
+    // A restauração pode nem vir: o servidor aceita o lançamento com a obra
+    // arquivada, então nada precisa acontecer antes do reenvio.
     const database = await getCortexDb();
     const clientMutationId = await filaRecusadaPorArquivamento();
     const arquivada = {
@@ -906,8 +916,22 @@ describe("recuperação das recusas por obra arquivada", () => {
       arquivadoEm: "2026-07-28T10:00:00.000Z",
     };
     await database.put("obras", arquivada);
-    // Restauração ainda na fila: do lado do servidor a obra segue arquivada.
     await queueRestoreObra(arquivada);
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(1);
+    expect(
+      (await database.get("outbox_mutations", clientMutationId))!.status,
+    ).toBe("PENDING");
+  });
+
+  it("não ressuscita pela via automática a mutação substituída", async () => {
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+    const recusada = await database.get("outbox_mutations", clientMutationId);
+    await database.put("outbox_mutations", {
+      ...recusada!,
+      blockedReason: `SUPERSEDED_BY:${crypto.randomUUID()}`,
+    });
 
     expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
     expect(
