@@ -24,7 +24,12 @@ import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
 import { RdoCreationDialog } from "./RdoCreationDialog";
 import { RdoLocalList } from "./RdoLocalList";
-import { queueCancelRdo, queueRestoreRdo } from "./rdoLifecycle";
+import {
+  descartarRdoLocalNaoSincronizado,
+  queueCancelRdo,
+  queueRestoreRdo,
+  rdoConhecidoPeloServidor,
+} from "./rdoLifecycle";
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import "./RdoWorkspacePage.css";
@@ -224,6 +229,25 @@ export function RdoWorkspacePage() {
 
   async function handleCancelRdo(record: LocalRdoRecord) {
     const rotulo = record.numeroRdo.trim() || record.dataRdo;
+
+    // Um RDO que o servidor nunca aceitou não tem o que marcar lá; some de
+    // vez. A frase precisa dizer isso, porque as duas ações se chamam
+    // "apagar" e só uma delas tem volta.
+    if (!rdoConhecidoPeloServidor(record)) {
+      if (
+        !window.confirm(
+          `Descartar o RDO ${rotulo}? Ele ainda não foi sincronizado, então será removido deste dispositivo definitivamente — não há como recuperar.`,
+        )
+      ) {
+        return;
+      }
+      await runRdoLifecycle(record, async (rdo) => {
+        await descartarRdoLocalNaoSincronizado(rdo);
+        return rdo;
+      });
+      return;
+    }
+
     if (
       !window.confirm(
         `Apagar o RDO ${rotulo}? Ele sai dos números e dos relatórios, mas continua guardado e pode ser recuperado pelo filtro "Apagado".`,

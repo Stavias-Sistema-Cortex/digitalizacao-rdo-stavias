@@ -198,6 +198,96 @@ async function queueRdoLifecycleMutation(
   return next;
 }
 
+const LOJAS_FILHAS_DO_RDO = [
+  "rdoMaoObra",
+  "rdoEquipamentos",
+  "rdoMateriais",
+  "rdoControlesGeometricos",
+] as const;
+
+/**
+ * Um RDO só existe do outro lado depois que o servidor lhe atribui versão.
+ *
+ * Enquanto isso não acontece não há o que marcar como apagado: a marcação vive
+ * numa linha que ainda não foi criada. É o caso mais comum de querer apagar —
+ * o lançamento errado, percebido em campo, antes de qualquer sincronização.
+ */
+export function rdoConhecidoPeloServidor(rdo: LocalRdoRecord): boolean {
+  return Number.isSafeInteger(rdo.versaoEntidade) &&
+    (rdo.versaoEntidade ?? -1) >= 0;
+}
+
+/**
+ * Descarta um RDO que o servidor nunca aceitou.
+ *
+ * Aqui apagar é apagar mesmo: nada foi publicado, nada precisa ser preservado
+ * para auditoria de ninguém além de quem digitou. Some o lançamento, seus
+ * filhos, seus anexos, seus eventos e — decisivo — a criação que ainda
+ * esperava na fila. Sem tirar a criação da fila, a sincronização seguinte
+ * ressuscitaria no servidor exatamente o RDO que acabou de ser descartado.
+ *
+ * Um envio em curso interrompe: dele não se sabe se o servidor aceitou, e
+ * descartar às cegas criaria um registro órfão do outro lado.
+ */
+export async function descartarRdoLocalNaoSincronizado(
+  existing: LocalRdoRecord,
+): Promise<void> {
+  if (rdoConhecidoPeloServidor(existing)) {
+    throw new Error(
+      "Este RDO já foi aceito pelo servidor. Use apagar, que o mantém recuperável.",
+    );
+  }
+
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    [
+      "rdos",
+      "outbox_mutations",
+      "operational_events",
+      "rdo_attachments",
+      ...LOJAS_FILHAS_DO_RDO,
+    ],
+    "readwrite",
+  );
+
+  const outbox = transaction.objectStore("outbox_mutations");
+  const mutacoes = (
+    await outbox.index("by-entity-id").getAll(existing.id)
+  ).filter(isRdoMutation);
+  if (mutacoes.some((mutacao) => mutacao.status === "SYNCING")) {
+    // Abortar rejeita `done`; sem este consumo a rejeição vaza como erro não
+    // tratado e some no console de quem estiver depurando outra coisa.
+    void transaction.done.catch(() => undefined);
+    transaction.abort();
+    throw new Error(
+      "Este RDO está sendo enviado agora. Aguarde a confirmação para decidir o que fazer com ele.",
+    );
+  }
+  for (const mutacao of mutacoes) {
+    await outbox.delete(mutacao.clientMutationId);
+  }
+
+  const eventos = transaction.objectStore("operational_events");
+  for (const evento of await eventos.index("by-rdo-id").getAll(existing.id)) {
+    await eventos.delete(evento.id);
+  }
+
+  const anexos = transaction.objectStore("rdo_attachments");
+  for (const anexo of await anexos.index("by-rdo-id").getAll(existing.id)) {
+    await anexos.delete(anexo.id);
+  }
+
+  for (const nome of LOJAS_FILHAS_DO_RDO) {
+    const loja = transaction.objectStore(nome);
+    for (const filho of await loja.index("by-rdo-id").getAll(existing.id)) {
+      await loja.delete(filho.id);
+    }
+  }
+
+  await transaction.objectStore("rdos").delete(existing.id);
+  await transaction.done;
+}
+
 /**
  * Apaga o RDO sem apagar o que ele registrou.
  *

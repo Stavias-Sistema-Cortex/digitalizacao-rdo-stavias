@@ -1123,7 +1123,9 @@ export function RdoLocalList({
                     >
                       {lifecycleRdoId === record.id
                         ? "Apagando..."
-                        : "Apagar RDO"}
+                        : record.versaoEntidade === null
+                          ? "Descartar RDO"
+                          : "Apagar RDO"}
                     </button>
                   ) : null}
                   {onRestoreRdo && record.canceladoEm ? (

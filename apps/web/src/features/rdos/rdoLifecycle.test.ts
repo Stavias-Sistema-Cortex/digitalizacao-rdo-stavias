@@ -13,7 +13,11 @@ import {
   markMutationAsSyncing,
   rejectMutationLocally,
 } from "../../lib/sync/syncStorage";
-import { queueCancelRdo, queueRestoreRdo } from "./rdoLifecycle";
+import {
+  descartarRdoLocalNaoSincronizado,
+  queueCancelRdo,
+  queueRestoreRdo,
+} from "./rdoLifecycle";
 
 const RDO_ID = "00000000-0000-4000-8000-0000000000a1";
 const OBRA_ID = "00000000-0000-4000-8000-0000000000a2";
@@ -113,7 +117,7 @@ describe("apagar e recuperar RDO", () => {
     expect(fila[1].causationId).toBe(fila[0].clientMutationId);
   });
 
-  it("recusa apagar um RDO que o servidor ainda não conhece", async () => {
+  it("recusa marcar como apagado um RDO que o servidor ainda não conhece", async () => {
     const database = await getCortexDb();
     const local = rdo({ versaoEntidade: null, syncStatus: "PENDING_SYNC" });
     await database.put("rdos", local);
@@ -122,6 +126,83 @@ describe("apagar e recuperar RDO", () => {
       /versão autoritativa/,
     );
     expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+  });
+
+  it("descarta de vez o RDO que nunca foi sincronizado, com a criação na fila", async () => {
+    // O caso mais comum de querer apagar: o lançamento errado, percebido em
+    // campo, antes de qualquer sincronização. Sem tirar a criação da fila, a
+    // rodada seguinte ressuscitaria no servidor o RDO recém-descartado.
+    const database = await getCortexDb();
+    const local = rdo({ versaoEntidade: null, syncStatus: "PENDING_SYNC" });
+    await database.put("rdos", local);
+    await database.put("outbox_mutations", {
+      clientMutationId: crypto.randomUUID(),
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO",
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      ultimoErro: null,
+      baseVersao: null,
+      payload: {},
+      criadaNoClienteEm: BASE_TIME,
+      updatedAt: BASE_TIME,
+      conflito: null,
+    } as never);
+    await database.put("rdoMaoObra", {
+      id: crypto.randomUUID(),
+      rdoId: RDO_ID,
+      syncStatus: "PENDING_SYNC",
+      payload: {},
+      createdAt: BASE_TIME,
+      updatedAt: BASE_TIME,
+    } as never);
+
+    await descartarRdoLocalNaoSincronizado(local);
+
+    expect(await database.get("rdos", RDO_ID)).toBeUndefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(0);
+    expect(await database.getAll("rdoMaoObra")).toHaveLength(0);
+  });
+
+  it("não descarta um RDO que o servidor já aceitou", async () => {
+    const database = await getCortexDb();
+    await database.put("rdos", rdo());
+
+    await expect(
+      descartarRdoLocalNaoSincronizado(rdo()),
+    ).rejects.toThrow(/já foi aceito/);
+    expect(await database.get("rdos", RDO_ID)).toBeDefined();
+  });
+
+  it("não descarta enquanto o envio está em curso", async () => {
+    // De um envio em voo não se sabe se o servidor aceitou; descartar às cegas
+    // deixaria um registro órfão do outro lado.
+    const database = await getCortexDb();
+    const local = rdo({ versaoEntidade: null, syncStatus: "SYNCING" });
+    await database.put("rdos", local);
+    await database.put("outbox_mutations", {
+      clientMutationId: crypto.randomUUID(),
+      entidadeTipo: "RDO",
+      entidadeId: RDO_ID,
+      operacao: "CRIAR_RDO",
+      status: "SYNCING",
+      tentativas: 1,
+      ultimaTentativaEm: BASE_TIME,
+      ultimoErro: null,
+      baseVersao: null,
+      payload: {},
+      criadaNoClienteEm: BASE_TIME,
+      updatedAt: BASE_TIME,
+      conflito: null,
+    } as never);
+
+    await expect(
+      descartarRdoLocalNaoSincronizado(local),
+    ).rejects.toThrow(/sendo enviado/);
+    expect(await database.get("rdos", RDO_ID)).toBeDefined();
+    expect(await database.getAll("outbox_mutations")).toHaveLength(1);
   });
 
   it("não empilha alteração sobre uma recusa não resolvida", async () => {
