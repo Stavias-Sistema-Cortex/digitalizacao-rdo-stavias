@@ -384,7 +384,12 @@ async function verifyScenario({ viewport, sidebar }, protocol) {
 
 async function readDevToolsPort(profile, browser) {
   const portFile = path.join(profile, "DevToolsActivePort");
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  // O runner compartilhado do CI arranca o Chrome frio e sob disputa de
+  // CPU; dez segundos derrubavam o gate por partida lenta, não por defeito
+  // de layout. O laço devolve a porta assim que ela aparece, então um teto
+  // largo não custa nada no caminho normal — e o processo que morre segue
+  // sendo detectado na hora, sem esperar o teto.
+  for (let attempt = 0; attempt < 600; attempt += 1) {
     if (browser.exitCode !== null) {
       throw new Error("O browser encerrou antes de iniciar o protocolo de inspeção.");
     }
@@ -395,7 +400,7 @@ async function readDevToolsPort(profile, browser) {
     await delay(100);
   }
   browser.kill("SIGTERM");
-  throw new Error("O browser não iniciou o protocolo de inspeção em 10 segundos.");
+  throw new Error("O browser não iniciou o protocolo de inspeção em 60 segundos.");
 }
 
 async function connectDevTools(url) {
