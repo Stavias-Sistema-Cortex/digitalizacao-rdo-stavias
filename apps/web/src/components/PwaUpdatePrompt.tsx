@@ -29,7 +29,7 @@ export function PwaUpdatePrompt({
       role="status"
     >
       <p className="pwa-update-prompt__message">
-        Uma nova versão está disponível.
+        Nova versão pronta.
       </p>
       <button
         className="pwa-update-prompt__action"
@@ -38,7 +38,7 @@ export function PwaUpdatePrompt({
         }}
         type="button"
       >
-        Atualizar agora
+        Atualizar
       </button>
     </aside>
   );

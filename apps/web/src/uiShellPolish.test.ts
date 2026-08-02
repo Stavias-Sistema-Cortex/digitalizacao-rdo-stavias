@@ -123,7 +123,7 @@ describe("shell e superfícies operacionais", () => {
       "border-block-end: 1px solid var(--color-brand-yellow, #f2c300);",
     );
     expect(header).toContain(
-      "padding: clamp(18px, 2.2vw, 28px) clamp(18px, 3vw, 40px) 16px;",
+      "padding: 10px clamp(16px, 2.4vw, 32px);",
     );
     expect(rule(headerCss, ".cortex-page-header h1")).toContain(
       "font-weight: 600;",
@@ -158,7 +158,7 @@ describe("shell e superfícies operacionais", () => {
       "box-shadow: none;",
     );
     expect(rule(operationalWorkspaceCss, ".workspace-status-rail")).toContain(
-      "padding: 12px;",
+      "padding: 6px 12px;",
     );
     expect(rule(financeiroCss, ".finance-scope-bar")).toContain(
       "box-shadow: none;",

@@ -106,7 +106,8 @@
 .rdo-workforce-catalog-unavailable {
   margin: 12px 0 0;
   padding: 10px 12px;
-  border-left: 4px solid #a34242;
+  border: 1px solid #e0b9b9;
+  border-radius: var(--radius-control, 8px);
   background: #fbf0f0;
   color: #782d2d;
   font-size: 0.76rem;

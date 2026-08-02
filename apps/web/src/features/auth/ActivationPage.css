@@ -96,8 +96,10 @@
 }
 
 .cortex-activation__complete {
-  padding-left: 18px;
-  border-left: 4px solid #f2c800;
+  padding: 14px 16px;
+  border: 1px solid #e3d48a;
+  border-radius: var(--radius-control, 8px);
+  background: #fffbea;
 }
 
 .cortex-activation__complete h2 {

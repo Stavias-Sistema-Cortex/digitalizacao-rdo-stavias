@@ -125,7 +125,7 @@ describe("normal PWA update bootstrap", () => {
           name: "Atualização disponível",
         }),
       ).toHaveTextContent(
-        "Uma nova versão está disponível.",
+        "Nova versão pronta.",
       );
       expect(
         bootstrapMocks.updateServiceWorker,
@@ -143,7 +143,7 @@ describe("normal PWA update bootstrap", () => {
 
     await user.click(
       screen.getByRole("button", {
-        name: "Atualizar agora",
+        name: "Atualizar",
       }),
     );
 

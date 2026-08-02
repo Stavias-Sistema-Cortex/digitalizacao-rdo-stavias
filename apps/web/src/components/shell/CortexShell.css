@@ -36,11 +36,11 @@
   align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
   height: 100dvh;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 24px 12px;
+  padding: 16px 18px 12px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -227,21 +227,14 @@
 }
 
 .sidebar-nav-item.active {
-  border-color: transparent;
-  background: rgb(255 255 255 / 8%);
-  color: #eef7ef;
-}
-
-.sidebar-nav-item.active::before {
-  content: "";
-  position: absolute;
-  inset: 20% auto 20% 0;
-  width: 1px;
-  background: var(--color-brand-yellow);
+  border-color: rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 10%);
+  color: #fff;
+  font-weight: 600;
 }
 
 .sidebar-nav-item.active img {
-  opacity: 0.86;
+  opacity: 1;
 }
 
 .sidebar-footer button {
