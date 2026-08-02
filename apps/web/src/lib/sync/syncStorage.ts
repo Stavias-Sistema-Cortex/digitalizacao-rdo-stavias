@@ -1768,6 +1768,491 @@ export async function requeueMutationsInReview(): Promise<number> {
   return devolvidas;
 }
 
+const REJEICAO_DE_OBRA_INEXISTENTE_NO_SERVIDOR =
+  "Obra não encontrada neste servidor.";
+
+export function isRejeicaoDeObraInexistenteNoServidor(
+  ultimoErro: string | null | undefined,
+): boolean {
+  return typeof ultimoErro === "string" &&
+    ultimoErro.trim() === REJEICAO_DE_OBRA_INEXISTENTE_NO_SERVIDOR;
+}
+
+const OBRA_REIDENTIFICADA = "OBRA_REIDENTIFICADA_NO_CLIENTE";
+
+/**
+ * Duas obras são a mesma obra quando carregam a mesma identidade de contrato.
+ *
+ * O identificador técnico não serve de identidade aqui — é justamente ele que
+ * morreu. O que sobrevive à perda de um banco é o que está no papel: o código
+ * do contrato, e na falta dele o nome com o cliente.
+ */
+function identidadeDeObraCoincide(
+  esta: ObraLocalRecord,
+  outra: ObraLocalRecord,
+): boolean {
+  const contratoUm = canonicalObraReference(esta.codigoContrato);
+  const contratoOutro = canonicalObraReference(outra.codigoContrato);
+  if (contratoUm && contratoOutro) {
+    return contratoUm === contratoOutro;
+  }
+  const nomeUm = canonicalObraReference(esta.nome);
+  const nomeOutro = canonicalObraReference(outra.nome);
+  const clienteUm = canonicalObraReference(esta.cliente);
+  const clienteOutro = canonicalObraReference(outra.cliente);
+  const mesmoCliente =
+    !clienteUm || !clienteOutro || clienteUm === clienteOutro;
+  return Boolean(
+    nomeUm && nomeOutro && nomeUm === nomeOutro && mesmoCliente,
+  );
+}
+
+function obraGemeaDaFantasma(
+  fantasma: ObraLocalRecord,
+  obras: ObraLocalRecord[],
+): ObraLocalRecord | null {
+  const candidatas = obras.filter(
+    (obra) =>
+      obra.id !== fantasma.id &&
+      identidadeDeObraCoincide(fantasma, obra),
+  );
+  return candidatas.length === 1 ? candidatas[0] : null;
+}
+
+/**
+ * Troca toda referência exata ao identificador morto pelo da obra gêmea.
+ *
+ * A troca é por igualdade completa do valor, nunca por substring: um UUID só
+ * aparece inteiro, e os textos livres (observações, marcadores de origem)
+ * carregam nomes, não identificadores.
+ */
+function substituirReferenciaProfunda(
+  value: unknown,
+  de: string,
+  para: string,
+): unknown {
+  if (typeof value === "string") {
+    return value === de ? para : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      substituirReferenciaProfunda(item, de, para),
+    );
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(
+        ([key, item]) => [
+          key,
+          substituirReferenciaProfunda(item, de, para),
+        ],
+      ),
+    );
+  }
+  return value;
+}
+
+function payloadCanonicoReidentificado(
+  payload: Record<string, unknown>,
+  obraMortaId: string,
+  alvo: ObraLocalRecord,
+): Record<string, unknown> {
+  const trocado = substituirReferenciaProfunda(
+    payload,
+    obraMortaId,
+    alvo.id,
+  ) as Record<string, unknown>;
+  // O contrato acompanha a obra nova; a programação apontava para uma agenda
+  // que só existia no banco perdido e não tem correspondente para onde migrar.
+  if ("contrato" in trocado && alvo.codigoContrato) {
+    trocado.contrato = alvo.codigoContrato;
+  }
+  if ("programacaoId" in trocado) {
+    trocado.programacaoId = null;
+  }
+  return trocado;
+}
+
+interface ReidentificacaoPlanejada {
+  original: CanonicalOutboxMutationRecord;
+  originalJson: string;
+  parqueiaParaContexto: boolean;
+  substituta: CanonicalOutboxMutationRecord | null;
+  substitutaEvento: CanonicalOperationalEventRecord | null;
+}
+
+/**
+ * Reidentifica, para a obra gêmea viva, os envelopes presos numa obra que o
+ * servidor diz não existir.
+ *
+ * É o desfecho da recusa "Obra não encontrada neste servidor.": o identificador
+ * que esses envelopes carregam morreu do outro lado — um banco recriado, uma
+ * obra recadastrada — e nenhum reenvio o ressuscita. Mas a obra, como fato de
+ * contrato, continua existindo: se este dispositivo conhece exatamente uma
+ * outra obra com a mesma identidade (código de contrato, ou nome e cliente),
+ * os lançamentos de campo pertencem a ela.
+ *
+ * Envelopes canônicos são imutáveis; a correção nasce como substituição
+ * rastreável (SUPERSEDED_BY), nunca como edição. A criação de RDO não é
+ * substituída aqui: ela volta à fila bloqueada por
+ * RDO_CREATION_CONTEXT_REQUIRED e o pipeline de hidratação de contexto — que
+ * já sabe buscar o recibo novo e cunhar a substituição — faz o resto, agora
+ * contra a obra certa. As demais operações da cadeia do mesmo RDO são
+ * substituídas aqui mesmo, para que nenhuma continue subindo com o
+ * identificador morto.
+ *
+ * Um RDO que já viveu sob a obra de destino não volta a trocar de obra: sem
+ * essa trava, duas obras mortas com a mesma identidade fariam os envelopes
+ * quicarem de uma para a outra a cada ciclo, para sempre.
+ *
+ * As mutações de ciclo de vida da própria OBRA morta (arquivar, restaurar)
+ * ficam de fora de propósito: não carregam dado de campo, e transplantá-las
+ * aplicaria à obra viva um gesto feito sobre a morta.
+ */
+export async function reidentificarObrasInexistentesForSync(
+  guard: SyncSessionGuard = captureOnlineSyncSession(),
+): Promise<number> {
+  assertSyncSession(guard);
+  const database = await getCortexDb();
+  assertSyncSession(guard);
+  const todas = await database.getAll("outbox_mutations");
+  const obras = await database.getAll("obras");
+  assertSyncSession(guard);
+
+  const recusadas = todas.filter(
+    (mutation): mutation is CanonicalOutboxMutationRecord =>
+      isCanonicalOutboxMutation(mutation) &&
+      mutation.entidadeTipo === "RDO" &&
+      mutation.status === "REJECTED" &&
+      isRejeicaoDeObraInexistenteNoServidor(mutation.ultimoErro) &&
+      !(
+        mutation.blockedReason !== null &&
+        SUPERSEDIDA_POR.test(mutation.blockedReason.trim())
+      ),
+  );
+  if (recusadas.length === 0) {
+    return 0;
+  }
+
+  const porRdo = new Map<string, CanonicalOutboxMutationRecord[]>();
+  for (const mutation of recusadas) {
+    const lista = porRdo.get(mutation.entidadeId) ?? [];
+    lista.push(mutation);
+    porRdo.set(mutation.entidadeId, lista);
+  }
+
+  let reidentificadas = 0;
+  const baseInstante = Date.parse(nowUtc());
+  let deslocamento = 0;
+
+  for (const [rdoId, rejeitadasDoRdo] of porRdo) {
+    assertSyncSession(guard);
+    try {
+      const obraMortaId = rejeitadasDoRdo[0].obraId;
+      if (
+        !obraMortaId ||
+        rejeitadasDoRdo.some(
+          (mutation) => mutation.obraId !== obraMortaId,
+        )
+      ) {
+        continue;
+      }
+      const fantasma = obras.find((obra) => obra.id === obraMortaId);
+      if (!fantasma) {
+        continue;
+      }
+      const alvo = obraGemeaDaFantasma(fantasma, obras);
+      if (!alvo) {
+        continue;
+      }
+
+      const cadeia = todas
+        .filter(
+          (mutation): mutation is CanonicalOutboxMutationRecord =>
+            isCanonicalOutboxMutation(mutation) &&
+            mutation.entidadeTipo === "RDO" &&
+            mutation.entidadeId === rdoId,
+        )
+        .sort((esquerda, direita) =>
+          esquerda.criadaNoClienteEm.localeCompare(
+            direita.criadaNoClienteEm,
+          ),
+        );
+
+      // A trava contra o pingue-pongue: se qualquer envelope deste RDO já
+      // carregou a obra de destino, esta cadeia já foi reidentificada uma vez
+      // e a nova recusa significa que o destino também não existe. Trocar de
+      // volta só reiniciaria o circuito.
+      if (cadeia.some((mutation) => mutation.obraId === alvo.id)) {
+        continue;
+      }
+
+      const ativas = cadeia.filter(
+        (mutation) =>
+          !(
+            mutation.blockedReason !== null &&
+            SUPERSEDIDA_POR.test(mutation.blockedReason.trim())
+          ) &&
+          (
+            mutation.status === "PENDING" ||
+            mutation.status === "ERROR" ||
+            (
+              mutation.status === "REJECTED" &&
+              isRejeicaoDeObraInexistenteNoServidor(mutation.ultimoErro)
+            )
+          ),
+      );
+      if (ativas.length === 0) {
+        continue;
+      }
+
+      const rdo = await database.get("rdos", rdoId);
+      if (!rdo || rdo.obraId !== obraMortaId) {
+        continue;
+      }
+
+      // Primeira fase, fora de transação: montar as substitutas — o hash de
+      // proveniência é assíncrono e uma transação IndexedDB não sobrevive a
+      // um await que não seja dela.
+      const substituicaoPorOriginal = new Map<string, string>();
+      const planos: ReidentificacaoPlanejada[] = [];
+      let plausivel = true;
+
+      for (const original of ativas) {
+        if (original.operacao === "CRIAR_RDO") {
+          planos.push({
+            original,
+            originalJson: canonicalMutationJson(original),
+            parqueiaParaContexto: true,
+            substituta: null,
+            substitutaEvento: null,
+          });
+          continue;
+        }
+
+        const eventos = await database.getAllFromIndex(
+          "operational_events",
+          "by-client-mutation-id",
+          original.clientMutationId,
+        );
+        if (eventos.length !== 1 || eventos[0].schemaVersion !== 13) {
+          plausivel = false;
+          break;
+        }
+        const eventoOriginal =
+          eventos[0] as CanonicalOperationalEventRecord;
+
+        deslocamento += 1;
+        const occurredAt = new Date(
+          baseInstante + deslocamento,
+        ).toISOString();
+        const construida = await buildCanonicalMutation({
+          deviceId: original.deviceId,
+          userId: original.userId,
+          obraId: alvo.id,
+          entityType: original.entityType,
+          entityId: original.entityId,
+          operation: original.operation,
+          transportOperation: original.operacao,
+          baseVersion: original.baseVersion,
+          occurredAt,
+          previousSnapshot: original.payload,
+          nextSnapshot: payloadCanonicoReidentificado(
+            original.payload,
+            obraMortaId,
+            alvo,
+          ),
+          authorizationScope: original.trace.authorizationScope.map(
+            (escopo) => (escopo === obraMortaId ? alvo.id : escopo),
+          ),
+          correlationId: original.correlationId,
+          causationId: original.clientMutationId,
+          transport: original.transport,
+          dependsOnMutationIds: (
+            original.dependsOnMutationIds ?? []
+          ).map(
+            (dependencia) =>
+              substituicaoPorOriginal.get(dependencia) ?? dependencia,
+          ),
+          relatedEntities: substituirReferenciaProfunda(
+            original.relatedEntities ?? [],
+            obraMortaId,
+            alvo.id,
+          ) as OperationalEntityRef[],
+        });
+        substituicaoPorOriginal.set(
+          original.clientMutationId,
+          construida.mutation.clientMutationId,
+        );
+        planos.push({
+          original,
+          originalJson: canonicalMutationJson(original),
+          parqueiaParaContexto: false,
+          substituta: construida.mutation,
+          substitutaEvento: {
+            ...eventoOriginal,
+            id: construida.mutation.trace.ontologyEventId,
+            obraId: alvo.id,
+            principalEntity: substituirReferenciaProfunda(
+              eventoOriginal.principalEntity,
+              obraMortaId,
+              alvo.id,
+            ) as OperationalEventRecord["principalEntity"],
+            relatedEntities: [
+              ...construida.mutation.relatedEntities,
+            ],
+            occurredAt: construida.mutation.occurredAt,
+            syncedAt: null,
+            origin: "OFFLINE",
+            payload: construida.nextSnapshot,
+            syncStatus: "PENDING_SYNC",
+            clientMutationId: construida.mutation.clientMutationId,
+            deviceId: construida.mutation.deviceId,
+            correlationId: construida.mutation.correlationId,
+            causationId: construida.mutation.causationId,
+            previousState: construida.previousSnapshot,
+            newState: construida.nextSnapshot,
+            result: "PENDING",
+            errorCategory: null,
+            entityVersion: construida.mutation.baseVersion,
+            serverCommitSequence: null,
+          },
+        });
+      }
+      if (!plausivel || planos.length === 0) {
+        continue;
+      }
+
+      // Segunda fase: aplicar tudo de uma vez, conferindo que nada mudou
+      // durante a montagem. Cada RDO é atômico por si; um que falhe não pode
+      // segurar a recuperação dos demais.
+      assertSyncSession(guard);
+      const timestamp = nowUtc();
+      const guardedTransaction = guardSyncTransaction(
+        database.transaction(
+          RDO_SYNC_TRANSACTION_STORES,
+          "readwrite",
+        ),
+        guard,
+      );
+      const transaction = guardedTransaction.transaction;
+      const outboxStore = transaction.objectStore("outbox_mutations");
+      const eventStore = transaction.objectStore("operational_events");
+      let coerente = true;
+      for (const plano of planos) {
+        const atual = await outboxStore.get(
+          plano.original.clientMutationId,
+        );
+        if (!atual || canonicalMutationJson(atual) !== plano.originalJson) {
+          coerente = false;
+          break;
+        }
+      }
+      const rdoAtual = await transaction
+        .objectStore("rdos")
+        .get(rdoId);
+      if (!coerente || !rdoAtual || rdoAtual.obraId !== obraMortaId) {
+        transaction.abort();
+        await guardedTransaction.complete().catch(() => undefined);
+        continue;
+      }
+
+      for (const plano of planos) {
+        if (plano.parqueiaParaContexto) {
+          // A criação volta à fila bloqueada pelo recibo de contexto: o
+          // pipeline de hidratação busca o recibo da obra viva e cunha a
+          // substituição com a proveniência completa.
+          await outboxStore.put({
+            ...plano.original,
+            status: "PENDING",
+            tentativas: 0,
+            ultimaTentativaEm: null,
+            nextAttemptAt: null,
+            retryAttempt: 0,
+            conflito: null,
+            blockedReason: "RDO_CREATION_CONTEXT_REQUIRED",
+            lastSafeCode: OBRA_REIDENTIFICADA,
+            ultimoErro:
+              "Obra reidentificada: aguardando o recibo de contexto da obra atual.",
+            updatedAt: timestamp,
+          });
+          const eventosDaCriacao = await eventStore
+            .index("by-client-mutation-id")
+            .getAll(plano.original.clientMutationId);
+          if (
+            eventosDaCriacao.length === 1 &&
+            eventosDaCriacao[0].schemaVersion === 13
+          ) {
+            await eventStore.put({
+              ...eventosDaCriacao[0],
+              result: "PENDING",
+              syncStatus: "PENDING_SYNC",
+              errorCategory: OBRA_REIDENTIFICADA,
+            });
+          }
+          continue;
+        }
+
+        await outboxStore.put({
+          ...plano.original,
+          status: "REJECTED",
+          nextAttemptAt: null,
+          lastSafeCode: OBRA_REIDENTIFICADA,
+          blockedReason:
+            `SUPERSEDED_BY:${plano.substituta!.clientMutationId}`,
+          ultimoErro:
+            "Envelope substituído após a reidentificação da obra.",
+          conflito: null,
+          updatedAt: timestamp,
+        });
+        const eventosDoOriginal = await eventStore
+          .index("by-client-mutation-id")
+          .getAll(plano.original.clientMutationId);
+        if (
+          eventosDoOriginal.length === 1 &&
+          eventosDoOriginal[0].schemaVersion === 13
+        ) {
+          await eventStore.put({
+            ...eventosDoOriginal[0],
+            result: "REJECTED",
+            syncStatus: "SYNC_FAILED",
+            errorCategory: OBRA_REIDENTIFICADA,
+          });
+        }
+        await outboxStore.add(plano.substituta!);
+        await eventStore.add(plano.substitutaEvento!);
+      }
+
+      const rdoStore = transaction.objectStore("rdos");
+      await rdoStore.put(
+        rdoAfterObraReferenceRepair(rdoAtual, alvo, timestamp),
+      );
+      await updateRdoChildrenSyncStatus(
+        transaction,
+        rdoId,
+        "PENDING_SYNC",
+        timestamp,
+      );
+      await updateRdoAttachmentsObraReference(
+        transaction,
+        rdoId,
+        alvo,
+        timestamp,
+      );
+      await guardedTransaction.complete();
+      reidentificadas += planos.length;
+    } catch {
+      // Este RDO fica como está — visível em revisão — e os demais seguem.
+      continue;
+    }
+  }
+
+  if (reidentificadas > 0 && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("cortex:local-mutation-queued"));
+  }
+  return reidentificadas;
+}
+
 export async function repairMissingObraReferencesForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
 ): Promise<number> {

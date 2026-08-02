@@ -15,6 +15,7 @@ import {
   recoverCanonicalConflictReconciliations,
   recoverRejectedArchivedObraMutationsForSync,
   recoverRejectedGeometryMutationsForSync,
+  reidentificarObrasInexistentesForSync,
   repairMissingMaoObraReferencesForSync,
   repairMissingObraReferencesForSync,
   resolveCanonicalUploadReplacements,
@@ -61,6 +62,11 @@ async function executeSync(
     await repairMissingObraReferencesForSync(guard);
     await assertSyncExecution(guard, lease);
     await repairMissingMaoObraReferencesForSync(guard);
+    await assertSyncExecution(guard, lease);
+    // Antes da hidratação de contexto: as criações reidentificadas voltam à
+    // fila bloqueadas pelo recibo, e é a hidratação deste mesmo ciclo que as
+    // destrava contra a obra viva.
+    await reidentificarObrasInexistentesForSync(guard);
     await assertSyncExecution(guard, lease);
     await hydrateBlockedRdoCreationContextsForSync(guard);
     await assertSyncExecution(guard, lease);

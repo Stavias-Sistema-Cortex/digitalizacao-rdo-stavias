@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   }),
   updateSyncState: vi.fn(async () => undefined),
   recover: vi.fn(async () => undefined),
+  reidentificarObras: vi.fn(async () => 0),
   repairObra: vi.fn(async () => 0),
   repairMaoObra: vi.fn(async () => 0),
   hydrateRdo: vi.fn(async () => 0),
@@ -68,6 +69,7 @@ vi.mock("../db/syncStateRepository", () => ({
 }));
 vi.mock("./syncStorage", () => ({
   recoverInterruptedMutations: mocks.recover,
+  reidentificarObrasInexistentesForSync: mocks.reidentificarObras,
   repairMissingMaoObraReferencesForSync: mocks.repairMaoObra,
   repairMissingObraReferencesForSync: mocks.repairObra,
   resolveCanonicalUploadReplacements: mocks.resolveUploads,
