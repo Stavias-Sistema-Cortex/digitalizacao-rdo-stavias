@@ -10,6 +10,7 @@ import {
   type SyncUiStatus,
 } from "../lib/sync/useSyncStatus";
 import { syncNow } from "../lib/sync/syncEngine";
+import { requeueMutationsInReview } from "../lib/sync/syncStorage";
 import "./SyncStatusBanner.css";
 
 interface StatusContent {
@@ -280,6 +281,27 @@ export function SyncStatusBanner() {
     }
   }
 
+  // "Sincronizar agora" não toca em registro recusado, por definição. Sem esta
+  // ação, quem chega em "revisão necessária" não tem o que fazer na tela.
+  async function handleReleaseReview(): Promise<void> {
+    setIsManualSyncing(true);
+    setManualSyncError("");
+
+    try {
+      await requeueMutationsInReview();
+      await syncNow();
+    } catch (error: unknown) {
+      setManualSyncError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao reenviar os registros em revisão.",
+      );
+    } finally {
+      setIsManualSyncing(false);
+      await refresh();
+    }
+  }
+
   const chipTitle = snapshot.isLoading
     ? "Verificando sincronização"
     : content.title;
@@ -366,6 +388,29 @@ export function SyncStatusBanner() {
               ? "Sincronizando..."
               : "Sincronizar agora"}
           </button>
+
+          {snapshot.reviewCount > 0 ? (
+            <>
+              <button
+                type="button"
+                className="sync-chip__action sync-chip__action--secondary"
+                onClick={() => {
+                  void handleReleaseReview();
+                }}
+                disabled={isManualSyncing}
+              >
+                {`Reenviar ${pluralize(
+                  snapshot.reviewCount,
+                  "registro em revisão",
+                  "registros em revisão",
+                )}`}
+              </button>
+              <p className="sync-chip__hint">
+                Se o motivo acima já foi resolvido, o reenvio conclui. Se não,
+                o registro volta para revisão sem perder nada.
+              </p>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>

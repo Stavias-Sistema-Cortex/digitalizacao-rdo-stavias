@@ -180,6 +180,19 @@
   opacity: 0.6;
 }
 
+/* Reenviar o que está em revisão é a saída de um beco, não o caminho comum. */
+.sync-chip__action--secondary {
+  margin-top: 8px;
+  border-style: dashed;
+}
+
+.sync-chip__hint {
+  margin: 8px 0 0;
+  color: #5b6b64;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
 /* ---------- Animações ---------- */
 
 @keyframes sync-chip-spin {
