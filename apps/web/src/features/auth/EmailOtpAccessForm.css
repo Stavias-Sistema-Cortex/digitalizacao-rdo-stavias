@@ -113,7 +113,7 @@
 }
 
 .email-otp-access__notice {
-  border-left: 4px solid var(--otp-yellow);
+  border: 1px solid #ddd7b4;
   background: #f8f7ef;
   color: #3b3d31;
 }

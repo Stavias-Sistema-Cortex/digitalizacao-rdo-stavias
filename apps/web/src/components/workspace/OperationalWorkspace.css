@@ -35,15 +35,16 @@
 
 .workspace-header h1 {
   margin: 0;
-  font-size: clamp(1.65rem, 3vw, 2.6rem);
-  letter-spacing: -0.035em;
+  font-size: clamp(1.15rem, 1.8vw, 1.45rem);
+  letter-spacing: -0.01em;
 }
 
 .workspace-header__description {
-  max-inline-size: 76ch;
-  margin: 8px 0 0;
+  max-inline-size: 88ch;
+  margin: 4px 0 0;
   color: #606664;
-  line-height: 1.5;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .workspace-header__actions,
@@ -99,13 +100,13 @@
 
 .workspace-status-rail {
   min-inline-size: 0;
-  min-block-size: 40px;
+  min-block-size: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 12px var(--workspace-gutter) 0;
-  padding: 12px;
+  margin: 10px var(--workspace-gutter) 0;
+  padding: 6px 12px;
   border: 1px solid #d7dad8;
   border-radius: var(--radius-control);
   background: var(--surface-glass-fallback);

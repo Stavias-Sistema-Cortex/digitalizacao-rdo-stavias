@@ -262,8 +262,7 @@ export function LoginPage() {
 
             {subindo && status === "cpf" ? (
               <p className="login__aguardando" role="status">
-                O Córtex está subindo. A primeira entrada depois de um período
-                parado pode levar cerca de um minuto — não é preciso clicar de
+                O Córtex está subindo — pode levar um minuto. Não clique de
                 novo.
               </p>
             ) : null}

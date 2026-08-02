@@ -98,8 +98,8 @@
 }
 
 .rdo-selected-worksite[data-selected="true"] {
-  border-color: #9db8ae;
-  border-left: 3px solid var(--color-brand-teal);
+  border-color: var(--color-brand-teal);
+  background: #f2f6f4;
 }
 
 .rdo-selected-worksite span,
@@ -155,8 +155,8 @@
 }
 
 .rdo-worksite-option--selected {
-  border-left: 3px solid var(--color-brand-teal);
-  background: #f4f6f4;
+  background: #eaf1ed;
+  font-weight: 600;
 }
 
 .rdo-worksite-option input {

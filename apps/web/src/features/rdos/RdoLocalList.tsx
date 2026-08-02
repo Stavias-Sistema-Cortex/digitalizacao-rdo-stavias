@@ -1177,12 +1177,12 @@ export function RdoLocalList({
           })}
         </div>
 
+        {/* A Memória é um atalho, não uma coluna: 320px de tela voltam
+            para a lista, que é o trabalho. */}
         <aside className="rdo-side-panel">
-          <section className="rdo-memory-link-panel">
-            <span className="eyebrow">Registro central</span>
-            <h2>Memória operacional</h2>
-            <a href={memoryHref()}>Abrir Memória</a>
-          </section>
+          <a className="rdo-memory-shortcut" href={memoryHref()}>
+            Abrir Memória operacional
+          </a>
         </aside>
       </section>
 

@@ -132,9 +132,10 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(sidebar).toContain("overflow-y: visible;");
   });
 
-  it("keeps the selected sidebar item on the dark rail with a yellow locator", () => {
+  it("keeps the selected sidebar item on the dark rail without accent stripes", () => {
+    // O item ativo se declara por peso e superfície, não por um filete
+    // decorativo na borda — a marca de "moldura à esquerda" saiu do sistema.
     const active = lastRule(shellCss, ".sidebar-nav-item.active");
-    const locator = lastRule(shellCss, ".sidebar-nav-item.active::before");
     const icon = rule(
       shellCss,
       ".sidebar-nav-item img,\n.sidebar-footer button img",
@@ -144,14 +145,12 @@ describe("Cortex 3 institutional visual policy", () => {
       ".sidebar-nav-item.active img",
     );
 
-    expect(active).toContain("background: rgb(255 255 255 / 8%);");
-    expect(active).toContain("color: #eef7ef;");
+    expect(shellCss).not.toContain(".sidebar-nav-item.active::before");
+    expect(active).toContain("background: rgb(255 255 255 / 10%);");
+    expect(active).toContain("font-weight: 600;");
     expect(active).not.toContain("background: #fff;");
-    expect(locator).toContain('content: "";');
-    expect(locator).toContain("width: 1px;");
-    expect(locator).toContain("background: var(--color-brand-yellow);");
     expect(icon).toContain("filter: grayscale(1) brightness(0) invert(1);");
-    expect(activeIcon).toContain("opacity: 0.86;");
+    expect(activeIcon).toContain("opacity: 1;");
   });
 
   it("keeps one intentional dark profile control owned by the shell", () => {

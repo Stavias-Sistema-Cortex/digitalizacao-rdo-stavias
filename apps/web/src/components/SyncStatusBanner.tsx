@@ -406,8 +406,7 @@ export function SyncStatusBanner() {
                 )}`}
               </button>
               <p className="sync-chip__hint">
-                Se o motivo acima já foi resolvido, o reenvio conclui. Se não,
-                o registro volta para revisão sem perder nada.
+                Nada se perde: o que não subir volta para revisão.
               </p>
             </>
           ) : null}

@@ -346,7 +346,7 @@ describe("polimento visual da plataforma autenticada", () => {
 
   it("dá escala própria ao comando RDO e alvos práticos aos controles", () => {
     expect(rule(globalCss, ".rdo-command-band h1")).toContain(
-      "font-size: clamp(1.9rem, 3vw, 2.4rem);",
+      "font-size: clamp(1.2rem, 1.8vw, 1.45rem);",
     );
     expect(rule(syncCss, ".sync-chip__button")).toContain("width: 40px;");
     expect(rule(syncCss, ".sync-chip__button")).toContain("height: 40px;");

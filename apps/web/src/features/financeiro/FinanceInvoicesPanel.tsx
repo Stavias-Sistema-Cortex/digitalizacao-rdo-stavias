@@ -403,15 +403,19 @@ function InvoiceDocuments({
     };
   }, [invoice]);
 
+  // Só o identificador dispara a busca: trocar a referência do objeto sem
+  // trocar de documento não deve refazer o download nem piscar o preview.
+  const selectedId = selected?.id ?? null;
+
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
 
-    if (!selected) {
+    if (selectedId === null) {
       return () => undefined;
     }
 
-    void buscarConteudoDocumento(invoice.id, selected.id, invoice.obraId)
+    void buscarConteudoDocumento(invoice.id, selectedId, invoice.obraId)
       .then((content) => {
         objectUrl = URL.createObjectURL(content.blob);
         if (cancelled) {
@@ -436,7 +440,7 @@ function InvoiceDocuments({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [invoice.id, invoice.obraId, selected?.id]);
+  }, [invoice.id, invoice.obraId, selectedId]);
 
   function selectDocument(document: FinanceInvoiceDocument | null) {
     setSelected(document);
