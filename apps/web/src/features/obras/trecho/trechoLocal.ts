@@ -205,7 +205,12 @@ export async function lancamentosLocaisDaObra(
   const database = await getCortexDb();
   const rdos = (
     await database.getAllFromIndex("rdos", "by-obra-id", obraId)
-  ).filter((rdo) => NAO_CONFIRMADO.has(rdo.syncStatus));
+  ).filter((rdo) =>
+    // Um RDO apagado não descreve mais trecho nenhum. O servidor já o exclui
+    // de toda leitura; o desenho local precisa dizer a mesma coisa antes mesmo
+    // de o apagamento subir.
+    !rdo.canceladoEm && NAO_CONFIRMADO.has(rdo.syncStatus)
+  );
 
   if (rdos.length === 0) {
     return { segmentos: [], rodovia: null };

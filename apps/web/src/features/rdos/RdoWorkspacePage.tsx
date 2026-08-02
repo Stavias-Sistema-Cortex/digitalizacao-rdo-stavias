@@ -24,6 +24,12 @@ import { localRecordToDraft } from "./localRecordToDraft";
 import { RdoCreatePage } from "./RdoCreatePage";
 import { RdoCreationDialog } from "./RdoCreationDialog";
 import { RdoLocalList } from "./RdoLocalList";
+import {
+  descartarRdoLocalNaoSincronizado,
+  queueCancelRdo,
+  queueRestoreRdo,
+  rdoConhecidoPeloServidor,
+} from "./rdoLifecycle";
 import type { RdoDraft } from "./rdo.types";
 import type { RdoCreationContextLookup } from "./rdoLookupApi";
 import "./RdoWorkspacePage.css";
@@ -76,6 +82,8 @@ export function RdoWorkspacePage() {
 
   const [loadError, setLoadError] =
     useState("");
+  const [lifecycleRdoId, setLifecycleRdoId] =
+    useState<string | null>(null);
   const [exportSessionGuard, setExportSessionGuard] =
     useState<RdoExportSessionGuard | null>(null);
 
@@ -219,6 +227,62 @@ export function RdoWorkspacePage() {
     }
   }
 
+  async function handleCancelRdo(record: LocalRdoRecord) {
+    const rotulo = record.numeroRdo.trim() || record.dataRdo;
+
+    // Um RDO que o servidor nunca aceitou não tem o que marcar lá; some de
+    // vez. A frase precisa dizer isso, porque as duas ações se chamam
+    // "apagar" e só uma delas tem volta.
+    if (!rdoConhecidoPeloServidor(record)) {
+      if (
+        !window.confirm(
+          `Descartar o RDO ${rotulo}? Ele ainda não foi sincronizado, então será removido deste dispositivo definitivamente — não há como recuperar.`,
+        )
+      ) {
+        return;
+      }
+      await runRdoLifecycle(record, async (rdo) => {
+        await descartarRdoLocalNaoSincronizado(rdo);
+        return rdo;
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Apagar o RDO ${rotulo}? Ele sai dos números e dos relatórios, mas continua guardado e pode ser recuperado pelo filtro "Apagado".`,
+      )
+    ) {
+      return;
+    }
+    await runRdoLifecycle(record, queueCancelRdo);
+  }
+
+  async function handleRestoreRdo(record: LocalRdoRecord) {
+    await runRdoLifecycle(record, queueRestoreRdo);
+  }
+
+  async function runRdoLifecycle(
+    record: LocalRdoRecord,
+    operacao: (rdo: LocalRdoRecord) => Promise<LocalRdoRecord>,
+  ) {
+    setLifecycleRdoId(record.id);
+    setLoadError("");
+
+    try {
+      await operacao(record);
+      await loadRecords();
+    } catch (error: unknown) {
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Falha ao alterar a situação do RDO.",
+      );
+    } finally {
+      setLifecycleRdoId(null);
+    }
+  }
+
   async function handleBackToList() {
     await loadRecords();
 
@@ -274,6 +338,13 @@ export function RdoWorkspacePage() {
         }}
         isImporting={isImporting}
         onOpen={handleOpen}
+        onCancelRdo={(record) => {
+          void handleCancelRdo(record);
+        }}
+        onRestoreRdo={(record) => {
+          void handleRestoreRdo(record);
+        }}
+        lifecycleRdoId={lifecycleRdoId}
         onRefresh={() => {
           void loadRecords();
         }}

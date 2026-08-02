@@ -24,7 +24,9 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
     private static final Set<String> OPERATIONS = Set.of(
             "CRIAR_RDO",
             "ATUALIZAR_RDO_RASCUNHO",
-            "ENVIAR_RDO"
+            "ENVIAR_RDO",
+            "CANCELAR_RDO",
+            "RESTAURAR_RDO"
     );
 
     private final JdbcTemplate jdbcTemplate;
@@ -77,6 +79,8 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
             case "CRIAR_RDO" -> create(mutation);
             case "ATUALIZAR_RDO_RASCUNHO" -> updateDraft(mutation);
             case "ENVIAR_RDO" -> send(mutation);
+            case "CANCELAR_RDO" -> cancel(mutation);
+            case "RESTAURAR_RDO" -> restore(mutation);
             default -> throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Operação RDO não suportada."
@@ -126,6 +130,18 @@ public class RdoSyncOperationHandler implements SyncOperationHandler {
         String entityId = requireEntityId(mutation);
         currentUserService.requireRdoAccess(entityId);
         return rdoWorkflowService.enviar(entityId);
+    }
+
+    private RdoResponse cancel(SyncPushRequest.MutacaoCliente mutation) {
+        String entityId = requireEntityId(mutation);
+        currentUserService.requireRdoAccess(entityId);
+        return rdoWorkflowService.cancelar(entityId);
+    }
+
+    private RdoResponse restore(SyncPushRequest.MutacaoCliente mutation) {
+        String entityId = requireEntityId(mutation);
+        currentUserService.requireRdoAccess(entityId);
+        return rdoWorkflowService.restaurar(entityId);
     }
 
     private ObjectNode requireObjectPayload(SyncPushRequest.MutacaoCliente mutation) {

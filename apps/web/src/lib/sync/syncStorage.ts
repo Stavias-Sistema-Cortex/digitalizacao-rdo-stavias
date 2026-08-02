@@ -1594,9 +1594,15 @@ export async function recoverRejectedArchivedObraMutationsForSync(
   const obraStore = transaction.objectStore("obras");
 
   const todas = await outboxStore.getAll();
-  const obrasComFilaAtiva = new Set(
+  // Só o que altera a própria obra decide se ela está arquivada do outro lado.
+  // Um RDO pendente da mesma obra não diz nada sobre isso — e é o que existe
+  // aos montes num cliente offline. Olhar para a fila inteira travava a
+  // recuperação para sempre: bastava um lançamento qualquer esperando na obra
+  // para as recusas nunca mais serem reavaliadas.
+  const obrasComCicloDeVidaPendente = new Set(
     todas
       .filter((mutation) =>
+        mutation.entidadeTipo === "OBRA" &&
         ["PENDING", "SYNCING", "ERROR", "CONFLICT"].includes(mutation.status))
       .map((mutation) => obraAlvoDaMutacao(mutation))
       .filter((obraId): obraId is string => obraId !== null),
@@ -1621,7 +1627,10 @@ export async function recoverRejectedArchivedObraMutationsForSync(
     // Obra ausente ou ainda arquivada: o servidor recusaria de novo. A
     // restauração ainda na fila também não vale — do lado de lá a obra
     // continua arquivada até ela ser aplicada.
-    if (!obra || obra.arquivadoEm || obrasComFilaAtiva.has(obraId)) {
+    if (
+      !obra || obra.arquivadoEm ||
+      obrasComCicloDeVidaPendente.has(obraId)
+    ) {
       continue;
     }
 
@@ -1664,6 +1673,109 @@ export async function recoverRejectedArchivedObraMutationsForSync(
 
   await guardedTransaction.complete();
   return recuperadas;
+}
+
+const SUPERSEDIDA_POR = /^SUPERSEDED_BY:/i;
+
+/**
+ * Devolve à fila, a pedido explícito de quem opera, tudo o que está em revisão.
+ *
+ * As recuperações automáticas cobrem as recusas que o cliente sabe reconhecer.
+ * O que elas não cobrem ficava sem saída nenhuma: a tela dizia "revisão
+ * necessária" e o único botão à mão — "Sincronizar agora" — não toca em
+ * registro recusado. Quem estava em campo não tinha o que fazer.
+ *
+ * Reenviar pode encontrar a mesma recusa, e isso é aceitável: quem pediu sabe
+ * o motivo exibido e escolheu tentar. O que não é aceitável é a fila não ter
+ * porta de saída. Uma mutação substituída por outra não volta — ela foi
+ * trocada de propósito, e reenviá-la duplicaria o lançamento.
+ */
+export async function requeueMutationsInReview(): Promise<number> {
+  const database = await getCortexDb();
+  const transaction = database.transaction(
+    RDO_SYNC_TRANSACTION_STORES,
+    "readwrite",
+  );
+  const outboxStore = transaction.objectStore("outbox_mutations");
+  const timestamp = nowUtc();
+  let devolvidas = 0;
+
+  for (const mutation of await outboxStore.index("by-status").getAll(
+    "REJECTED",
+  )) {
+    if (
+      !isCanonicalOutboxMutation(mutation) ||
+      (mutation.blockedReason !== null &&
+        SUPERSEDIDA_POR.test(mutation.blockedReason.trim()))
+    ) {
+      continue;
+    }
+
+    let event: CanonicalOperationalEventRecord;
+    try {
+      event = await exactCanonicalEvent(
+        transaction,
+        mutation.clientMutationId,
+      );
+    } catch {
+      continue;
+    }
+
+    await outboxStore.put({
+      ...mutation,
+      status: "PENDING",
+      tentativas: 0,
+      ultimaTentativaEm: null,
+      nextAttemptAt: null,
+      blockedReason: null,
+      retryAttempt: 0,
+      lastSafeCode: "REVISAO_LIBERADA_MANUALMENTE",
+      ultimoErro: "Reenviando a pedido de quem opera o dispositivo.",
+      conflito: null,
+      updatedAt: timestamp,
+    });
+    await putCanonicalEvent(transaction, {
+      ...event,
+      result: "PENDING",
+      syncStatus: "PENDING_SYNC",
+      errorCategory: "REVISAO_LIBERADA_MANUALMENTE",
+    });
+    // O crachá de sincronização do registro é derivado da fila; sem recalcular
+    // aqui, a lista continuaria mostrando falha para algo que voltou a subir.
+    if (mutation.entidadeTipo === "RDO") {
+      const rdoStore = transaction.objectStore("rdos");
+      const rdo = await rdoStore.get(mutation.entidadeId);
+      if (rdo) {
+        await rdoStore.put({
+          ...rdo,
+          syncStatus: await rdoSyncStatusFromOutbox(
+            outboxStore,
+            mutation.entidadeId,
+          ),
+          updatedAt: timestamp,
+        });
+      }
+    }
+    if (mutation.entidadeTipo === "OBRA") {
+      const obraStore = transaction.objectStore("obras");
+      const obra = await obraStore.get(mutation.entidadeId);
+      if (obra) {
+        await obraStore.put({
+          ...obra,
+          syncStatus: await obraSyncStatusFromOutbox(
+            outboxStore,
+            mutation.entidadeId,
+          ),
+          ultimoErro: null,
+          updatedAt: timestamp,
+        });
+      }
+    }
+    devolvidas += 1;
+  }
+
+  await transaction.done;
+  return devolvidas;
 }
 
 export async function repairMissingObraReferencesForSync(
@@ -3861,6 +3973,22 @@ function applySafeRdoEvent(
 
   if (event.tipoEvento === "RDO_ENVIADO") {
     updated.statusRdo = "ENVIADO";
+  }
+
+  if (event.tipoEvento === "RDO_CANCELADO") {
+    updated.statusRdo = "CANCELADA";
+    updated.canceladoEm =
+      textValue(event.ocorridoEmUtc) || updated.updatedAt;
+  }
+
+  if (event.tipoEvento === "RDO_RESTAURADO") {
+    // O estado de volta é o do servidor, derivado de `enviado_em`. O palpite
+    // que o dispositivo tinha gravado ao pedir a recuperação vale só até aqui.
+    updated.canceladoEm = null;
+    updated.statusRdo =
+      textValue(event.payload?.status) === "ENVIADO"
+        ? "ENVIADO"
+        : "RASCUNHO";
   }
 
   return updated;

@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearSession, setSession } from "../auth/authSession";
 import { closeCortexDb, getCortexDb } from "../../lib/db/cortexDb";
-import type { ObraLocalRecord } from "../../lib/db/db.types";
+import type { LocalRdoRecord, ObraLocalRecord } from "../../lib/db/db.types";
 import { databaseNameForScope } from "../../lib/db/localDataNamespace";
 import { updateSyncState } from "../../lib/db/syncStateRepository";
+import { commitLocalMutation } from "../../lib/sync/localMutationCoordinator";
 import {
   applyPulledEventsAtomically,
   applyPushResultAtomically,
@@ -15,6 +16,7 @@ import {
   reconcileCanonicalConflict,
   recoverRejectedArchivedObraMutationsForSync,
   rejectMutationLocally,
+  requeueMutationsInReview,
   returnMutationToPending,
 } from "../../lib/sync/syncStorage";
 import {
@@ -734,6 +736,44 @@ describe("recuperação das recusas por obra arquivada", () => {
     return mutacao.clientMutationId;
   }
 
+  /** Um RDO qualquer esperando na fila, como em qualquer dia de campo. */
+  async function lancamentoPendenteNaObra(): Promise<void> {
+    const rdoId = crypto.randomUUID();
+    const agora = new Date().toISOString();
+    const rdo: LocalRdoRecord = {
+      id: rdoId,
+      obraId: OBRA_ID,
+      programacaoId: null,
+      numeroRdo: "RDO-1",
+      dataRdo: "2026-07-28",
+      statusRdo: "RASCUNHO",
+      syncStatus: "PENDING_SYNC",
+      versaoEntidade: null,
+      payload: { obraId: OBRA_ID },
+      createdAt: agora,
+      updatedAt: agora,
+    };
+    await commitLocalMutation({
+      clientMutationId: crypto.randomUUID(),
+      deviceId: DEVICE_ID,
+      userId: USER_ID,
+      obraId: OBRA_ID,
+      entityType: "RDO",
+      entityId: rdoId,
+      operation: "CREATE",
+      transportOperation: "CRIAR_RDO",
+      baseVersion: null,
+      occurredAt: agora,
+      previousSnapshot: {},
+      nextSnapshot: { id: rdoId, obraId: OBRA_ID },
+      principalSnapshot: { ...rdo },
+      expectedPrincipalSnapshot: null,
+      eventType: "RDO_CRIADO",
+      colaboradorId: USER_ID,
+      write: () => [{ store: "rdos", value: rdo, principal: true }],
+    });
+  }
+
   it("mantém parado o que ainda não pode subir, com a obra arquivada", async () => {
     const database = await getCortexDb();
     const clientMutationId = await filaRecusadaPorArquivamento();
@@ -802,6 +842,60 @@ describe("recuperação das recusas por obra arquivada", () => {
       nextAttemptAt: null,
       lastSafeCode: "OBRA_RESTAURADA",
     });
+  });
+
+  it("reenvia mesmo com outro lançamento da obra esperando na fila", async () => {
+    // O estado real relatado em produção: dezenas de recusas por obra
+    // arquivada convivendo com lançamentos pendentes da mesma obra. Olhar para
+    // a fila inteira fazia a recuperação pular todas elas em todo ciclo, e a
+    // tela ficava permanentemente em "revisão necessária" sem nenhuma saída.
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+    await lancamentoPendenteNaObra();
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(1);
+    expect(
+      (await database.get("outbox_mutations", clientMutationId))!.status,
+    ).toBe("PENDING");
+  });
+
+  it("devolve à fila a pedido de quem opera, mesmo com a obra arquivada", async () => {
+    // A saída manual existe justamente para o que a recuperação automática não
+    // reconhece. Ela não julga o motivo: quem pediu leu a recusa na tela.
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+    const atual = await database.get("obras", OBRA_ID);
+    await database.put("obras", {
+      ...atual!,
+      arquivadoEm: "2026-07-28T10:00:00.000Z",
+    });
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
+    expect(await requeueMutationsInReview()).toBe(1);
+    expect(
+      (await database.get("outbox_mutations", clientMutationId))!,
+    ).toMatchObject({
+      status: "PENDING",
+      retryAttempt: 0,
+      blockedReason: null,
+      lastSafeCode: "REVISAO_LIBERADA_MANUALMENTE",
+    });
+  });
+
+  it("não ressuscita a mutação que já foi substituída por outra", async () => {
+    // Reenviar uma envelope trocada de propósito duplicaria o lançamento.
+    const database = await getCortexDb();
+    const clientMutationId = await filaRecusadaPorArquivamento();
+    const recusada = await database.get("outbox_mutations", clientMutationId);
+    await database.put("outbox_mutations", {
+      ...recusada!,
+      blockedReason: `SUPERSEDED_BY:${crypto.randomUUID()}`,
+    });
+
+    expect(await requeueMutationsInReview()).toBe(0);
+    expect(
+      (await database.get("outbox_mutations", clientMutationId))!.status,
+    ).toBe("REJECTED");
   });
 
   it("espera a restauração ser aplicada antes de reenviar", async () => {

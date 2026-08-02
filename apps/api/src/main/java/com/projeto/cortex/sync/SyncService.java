@@ -97,7 +97,9 @@ public class SyncService {
                     "ATUALIZAR_OBRA",
                     "DESATIVAR_OBRA",
                     "ARQUIVAR_OBRA",
-                    "RESTAURAR_OBRA"
+                    "RESTAURAR_OBRA",
+                    "CANCELAR_RDO",
+                    "RESTAURAR_RDO"
             );
     private static final Map<String, String> CANONICAL_OPERATION_BY_TRANSPORT = Map.ofEntries(
             Map.entry("ATUALIZAR_OBRA", "UPDATE"),
@@ -107,6 +109,8 @@ public class SyncService {
             Map.entry("CRIAR_RDO", "CREATE"),
             Map.entry("ATUALIZAR_RDO_RASCUNHO", "UPDATE"),
             Map.entry("ENVIAR_RDO", "TRANSITION"),
+            Map.entry("CANCELAR_RDO", "DELETE"),
+            Map.entry("RESTAURAR_RDO", "TRANSITION"),
             Map.entry("CRIAR_TAREFA", "CREATE"),
             Map.entry("ATUALIZAR_TAREFA", "UPDATE"),
             Map.entry("CONCLUIR_TAREFA", "TRANSITION"),

@@ -57,6 +57,9 @@ interface RdoLocalListProps {
   onOpen: (record: LocalRdoRecord) => void;
   onDiscardRejected?: (record: LocalRdoRecord) => void;
   discardingRdoId?: string | null;
+  onCancelRdo?: (record: LocalRdoRecord) => void;
+  onRestoreRdo?: (record: LocalRdoRecord) => void;
+  lifecycleRdoId?: string | null;
   onRefresh: () => void;
   createButtonRef?: Ref<HTMLButtonElement>;
 }
@@ -402,6 +405,9 @@ export function RdoLocalList({
   onOpen,
   onDiscardRejected,
   discardingRdoId = null,
+  onCancelRdo,
+  onRestoreRdo,
+  lifecycleRdoId = null,
   onRefresh,
   createButtonRef,
 }: RdoLocalListProps) {
@@ -652,11 +658,21 @@ export function RdoLocalList({
     const trechoNeedle = normalize(trechoFilter);
 
     return records.filter((record) => {
+      // Apagado sai da lista, que é o que apagar significa. Continua alcançável
+      // pelo filtro de status, que é por onde se recupera.
+      if (Boolean(record.canceladoEm) !== (statusFilter === "CANCELADA")) {
+        return false;
+      }
+
       if (!isInPeriod(record, periodFilter)) {
         return false;
       }
 
-      if (statusFilter && record.statusRdo !== statusFilter) {
+      if (
+        statusFilter &&
+        statusFilter !== "CANCELADA" &&
+        record.statusRdo !== statusFilter
+      ) {
         return false;
       }
 
@@ -833,6 +849,7 @@ export function RdoLocalList({
               <option value="">Todos</option>
               <option value="RASCUNHO">Rascunho</option>
               <option value="ENVIADO">Enviado</option>
+              <option value="CANCELADA">Apagado</option>
             </select>
           </label>
 
@@ -1085,16 +1102,44 @@ export function RdoLocalList({
                       {exportState.parts.join(" · ")}
                     </small>
                   </div>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => onOpen(record)}
-                    disabled={record.statusRdo === "ENVIADO"}
-                  >
-                    {record.statusRdo === "ENVIADO"
-                      ? "RDO enviado"
-                      : "Continuar RDO"}
-                  </button>
+                  {record.canceladoEm ? null : (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => onOpen(record)}
+                      disabled={record.statusRdo === "ENVIADO"}
+                    >
+                      {record.statusRdo === "ENVIADO"
+                        ? "RDO enviado"
+                        : "Continuar RDO"}
+                    </button>
+                  )}
+                  {onCancelRdo && !record.canceladoEm ? (
+                    <button
+                      type="button"
+                      className="secondary-button rdo-discard-button"
+                      onClick={() => onCancelRdo(record)}
+                      disabled={lifecycleRdoId === record.id}
+                    >
+                      {lifecycleRdoId === record.id
+                        ? "Apagando..."
+                        : record.versaoEntidade === null
+                          ? "Descartar RDO"
+                          : "Apagar RDO"}
+                    </button>
+                  ) : null}
+                  {onRestoreRdo && record.canceladoEm ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => onRestoreRdo(record)}
+                      disabled={lifecycleRdoId === record.id}
+                    >
+                      {lifecycleRdoId === record.id
+                        ? "Recuperando..."
+                        : "Recuperar RDO"}
+                    </button>
+                  ) : null}
                   {record.syncStatus === "ERROR" &&
                   onDiscardRejected ? (
                     <button

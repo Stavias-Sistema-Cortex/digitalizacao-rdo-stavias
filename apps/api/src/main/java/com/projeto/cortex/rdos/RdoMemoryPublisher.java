@@ -151,6 +151,80 @@ public class RdoMemoryPublisher {
         );
     }
 
+    public void registrarRdoCancelado(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            String numeroRdo
+    ) {
+        registrarCicloDeVida(
+                rdoId,
+                obraId,
+                programacaoId,
+                numeroRdo,
+                "CANCELADA",
+                "RDO_CANCELADO"
+        );
+    }
+
+    public void registrarRdoRestaurado(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            String numeroRdo,
+            String status
+    ) {
+        registrarCicloDeVida(
+                rdoId,
+                obraId,
+                programacaoId,
+                numeroRdo,
+                status,
+                "RDO_RESTAURADO"
+        );
+    }
+
+    private void registrarCicloDeVida(
+            String rdoId,
+            String obraId,
+            String programacaoId,
+            String numeroRdo,
+            String status,
+            String tipoEvento
+    ) {
+        registrarObjetoERelacoes(
+                rdoId,
+                obraId,
+                programacaoId,
+                numeroRdo,
+                status
+        );
+
+        memoryService.registrarEventoDetalhado(
+                null,
+                "RDO",
+                rdoId,
+                tipoEvento,
+                FONTE,
+                obraId,
+                rdoId,
+                null,
+                relatedEntities(rdoId, obraId, programacaoId),
+                "ONLINE",
+                "SYNCED",
+                null,
+                LocalDateTime.now(),
+                1,
+                payloadBase(
+                        rdoId,
+                        obraId,
+                        programacaoId,
+                        numeroRdo,
+                        status
+                )
+        );
+    }
+
     public void registrarRdoImportado(
             String rdoId,
             String obraId,
