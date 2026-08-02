@@ -52,7 +52,10 @@ class ObraOperabilityGuardConvergenceTest {
     }
 
     @Test
-    void syncWindowStillRejectsTheMissingWorksite() {
+    void syncWindowStillRejectsTheMissingWorksiteAndSaysExactlyThat() {
+        // A mensagem fundida escondia a causa. No sync, a única recusa
+        // possível é inexistência — e o dispositivo precisa ler isso para
+        // parar de reenviar em círculo e reidentificar a obra.
         when(repository.findExistingIdForShare("obra-9"))
                 .thenReturn(Optional.empty());
 
@@ -60,8 +63,14 @@ class ObraOperabilityGuardConvergenceTest {
             assertThatThrownBy(() -> guard.requireWritable("obra-9"))
                     .isInstanceOfSatisfying(
                             ResponseStatusException.class,
-                            exception -> assertThat(exception.getStatusCode())
-                                    .isEqualTo(HttpStatus.NOT_FOUND)
+                            exception -> {
+                                assertThat(exception.getStatusCode())
+                                        .isEqualTo(HttpStatus.NOT_FOUND);
+                                assertThat(exception.getReason())
+                                        .isEqualTo(
+                                                "Obra não encontrada neste servidor."
+                                        );
+                            }
                     );
         }
     }

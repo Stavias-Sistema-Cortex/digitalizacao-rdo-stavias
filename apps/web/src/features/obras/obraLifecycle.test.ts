@@ -924,6 +924,30 @@ describe("recuperação das recusas por obra arquivada", () => {
     ).toBe("PENDING");
   });
 
+  it("não entra em laço com a obra que o servidor diz não existir", async () => {
+    // O servidor agora distingue as duas metades da antiga mensagem fundida.
+    // "Obra não encontrada neste servidor." é permanente: reenviar a cada
+    // ciclo era um laço infinito de pushed/errors que nunca drenava. Esse
+    // registro fica em revisão, à espera da reidentificação ou do reenvio
+    // manual — não da repetição automática da mesma negativa.
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    await queueDeactivateObra(obra());
+    const [mutacao] = await database.getAll("outbox_mutations");
+    await markMutationAsSyncing(mutacao);
+    await rejectMutationLocally(
+      mutacao.clientMutationId,
+      "OBRA_NAO_ENCONTRADA",
+      "Obra não encontrada neste servidor.",
+    );
+
+    expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
+    expect(
+      (await database.get("outbox_mutations", mutacao.clientMutationId))!
+        .status,
+    ).toBe("REJECTED");
+  });
+
   it("não ressuscita pela via automática a mutação substituída", async () => {
     const database = await getCortexDb();
     const clientMutationId = await filaRecusadaPorArquivamento();

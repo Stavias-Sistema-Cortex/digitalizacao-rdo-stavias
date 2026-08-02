@@ -1575,6 +1575,11 @@ function obraAlvoDaMutacao(mutation: OutboxMutationRecord): string | null {
  *
  * Servidores antigos ainda recusam; nesse caso o registro apenas volta para
  * revisão e o ciclo seguinte tenta outra vez, até o servidor acompanhar.
+ *
+ * A recusa "Obra não encontrada neste servidor." fica deliberadamente de
+ * fora: ela é permanente — o identificador não existe do outro lado — e
+ * reenviá-la a cada ciclo era um laço infinito que nunca drenava. Esse caso
+ * espera a reidentificação da obra, não a repetição da mesma negativa.
  */
 export async function recoverRejectedArchivedObraMutationsForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
