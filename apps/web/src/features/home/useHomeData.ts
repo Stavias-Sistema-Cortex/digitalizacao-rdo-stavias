@@ -277,7 +277,8 @@ export function useHomeData(
         setEvents(obraEvents);
 
         const obraRdos = rdos
-          .filter((rdo) => rdo.obraId === obraId)
+          // O último RDO da obra é o último que vale; um apagado não é.
+          .filter((rdo) => rdo.obraId === obraId && !rdo.canceladoEm)
           .sort((a, b) =>
             a.dataRdo < b.dataRdo ? 1 : -1,
           );

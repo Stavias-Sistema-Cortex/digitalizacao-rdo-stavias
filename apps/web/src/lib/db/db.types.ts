@@ -10,6 +10,8 @@ export type LocalSyncStatus =
 export type OperationalEventType =
   | "RDO_CRIADO"
   | "RDO_EDITADO"
+  | "RDO_CANCELADO"
+  | "RDO_RESTAURADO"
   | "RDO_SALVO_OFFLINE"
   | "RDO_SINCRONIZADO"
   | "RDO_FALHA_SYNC"
@@ -138,6 +140,8 @@ export type SyncOperation =
   | "CRIAR_RDO"
   | "ATUALIZAR_RDO_RASCUNHO"
   | "ENVIAR_RDO"
+  | "CANCELAR_RDO"
+  | "RESTAURAR_RDO"
   | "CRIAR_TAREFA"
   | "ATUALIZAR_TAREFA"
   | "CONCLUIR_TAREFA"
@@ -188,12 +192,18 @@ export interface LocalRdoRecord {
   programacaoId: string | null;
   numeroRdo: string;
   dataRdo: string;
-  statusRdo: "RASCUNHO" | "ENVIADO";
+  statusRdo: "RASCUNHO" | "ENVIADO" | "CANCELADA";
   syncStatus: LocalSyncStatus;
   versaoEntidade: number | null;
   payload: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Apagamento reversível, espelhando `rdo.cancelado_em` no servidor. Ausente
+   * nos registros gravados antes desta capacidade existir: ler como não
+   * apagado é a leitura verdadeira deles.
+   */
+  canceladoEm?: string | null;
 }
 
 export interface ServiceCatalogLocalRecord {

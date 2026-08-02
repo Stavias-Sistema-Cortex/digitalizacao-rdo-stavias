@@ -34,6 +34,8 @@ const ENTITY_TYPE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const OPERATIONAL_EVENT_TYPES = [
   "RDO_CRIADO",
   "RDO_EDITADO",
+  "RDO_CANCELADO",
+  "RDO_RESTAURADO",
   "RDO_SALVO_OFFLINE",
   "RDO_SINCRONIZADO",
   "RDO_FALHA_SYNC",
@@ -72,6 +74,21 @@ const OPERATIONAL_EVENT_TYPES = [
   "GEOMETRIA_ATUALIZADA",
   "GEOMETRIA_ENCERRADA",
 ] as const satisfies readonly OperationalEventType[];
+
+/**
+ * `satisfies` só cobra que cada item da lista exista na união. O sentido
+ * inverso — cada membro da união estar na lista — passava despercebido, e um
+ * tipo de evento novo só falhava em tempo de execução, dentro de uma transação
+ * já aberta. Aqui a omissão vira erro de compilação com o nome do faltante.
+ */
+type EventoOperacionalSemValidacao = Exclude<
+  OperationalEventType,
+  (typeof OPERATIONAL_EVENT_TYPES)[number]
+>;
+const _TODO_EVENTO_OPERACIONAL_E_VALIDAVEL: [
+  EventoOperacionalSemValidacao,
+] extends [never] ? true : never = true;
+void _TODO_EVENTO_OPERACIONAL_E_VALIDAVEL;
 
 type CanonicalWriteStore = "outbox_mutations" | "operational_events";
 export type LocalDomainStore = Exclude<CortexStoreName, CanonicalWriteStore>;

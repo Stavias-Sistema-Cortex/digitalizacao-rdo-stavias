@@ -3975,6 +3975,22 @@ function applySafeRdoEvent(
     updated.statusRdo = "ENVIADO";
   }
 
+  if (event.tipoEvento === "RDO_CANCELADO") {
+    updated.statusRdo = "CANCELADA";
+    updated.canceladoEm =
+      textValue(event.ocorridoEmUtc) || updated.updatedAt;
+  }
+
+  if (event.tipoEvento === "RDO_RESTAURADO") {
+    // O estado de volta é o do servidor, derivado de `enviado_em`. O palpite
+    // que o dispositivo tinha gravado ao pedir a recuperação vale só até aqui.
+    updated.canceladoEm = null;
+    updated.statusRdo =
+      textValue(event.payload?.status) === "ENVIADO"
+        ? "ENVIADO"
+        : "RASCUNHO";
+  }
+
   return updated;
 }
 

@@ -92,6 +92,130 @@ public class RdoWorkflowService {
         return response;
     }
 
+    /**
+     * Apaga um RDO sem destruir o que ele registrou.
+     *
+     * O apagamento é a marcação de {@code cancelado_em}, que toda leitura do
+     * sistema já respeita — receita, PDOR, frequência, encadeamento do RDO
+     * anterior e importação filtram {@code cancelado_em IS NULL} desde sempre.
+     * Apagar de verdade a linha levaria junto mão de obra, equipamentos,
+     * controle geométrico e fotos, e deixaria a memória operacional apontando
+     * para um registro que não existe mais. Marcado, o lançamento sai de todos
+     * os números e continua auditável — e pode voltar.
+     */
+    @Transactional
+    public RdoResponse cancelar(String rdoId) {
+        if (buscarCanceladoEm(rdoId)) {
+            return queryService.buscarPorId(rdoId);
+        }
+        obraOperabilityGuard.requireWritable(buscarObraId(rdoId));
+
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE rdo
+                SET
+                    status = 'CANCELADA',
+                    cancelado_em = CURRENT_TIMESTAMP(6),
+                    versao_linha = versao_linha + 1
+                WHERE id = ?
+                  AND cancelado_em IS NULL
+                """,
+                rdoId
+        );
+
+        // Outra requisição pode ter apagado o mesmo RDO entre a leitura e o
+        // UPDATE. Quem perdeu a corrida devolve o estado já canônico em vez de
+        // publicar um segundo evento para o mesmo cancelamento.
+        if (updated == 0) {
+            return queryService.buscarPorId(rdoId);
+        }
+
+        RdoResponse response = queryService.buscarPorId(rdoId);
+
+        memoryPublisher.registrarRdoCancelado(
+                rdoId,
+                response.obraId(),
+                response.programacaoId(),
+                response.numeroRdo()
+        );
+
+        previsaoFinanceiraService.recalcularAposMudancaRdo(
+                response.obraId(),
+                response.dataRdo(),
+                null
+        );
+
+        return response;
+    }
+
+    /**
+     * Devolve à operação um RDO apagado.
+     *
+     * O estado de volta não é escolhido: sai de {@code enviado_em}, que o
+     * cancelamento não toca. Um RDO que já tinha sido enviado volta enviado; um
+     * rascunho volta rascunho.
+     */
+    @Transactional
+    public RdoResponse restaurar(String rdoId) {
+        if (!buscarCanceladoEm(rdoId)) {
+            return queryService.buscarPorId(rdoId);
+        }
+        obraOperabilityGuard.requireWritable(buscarObraId(rdoId));
+
+        int updated = jdbcTemplate.update(
+                """
+                UPDATE rdo
+                SET
+                    status = CASE
+                        WHEN enviado_em IS NOT NULL THEN 'ENVIADO'
+                        ELSE 'RASCUNHO'
+                    END,
+                    cancelado_em = NULL,
+                    versao_linha = versao_linha + 1
+                WHERE id = ?
+                  AND cancelado_em IS NOT NULL
+                """,
+                rdoId
+        );
+
+        if (updated == 0) {
+            return queryService.buscarPorId(rdoId);
+        }
+
+        RdoResponse response = queryService.buscarPorId(rdoId);
+
+        memoryPublisher.registrarRdoRestaurado(
+                rdoId,
+                response.obraId(),
+                response.programacaoId(),
+                response.numeroRdo(),
+                response.status()
+        );
+
+        previsaoFinanceiraService.recalcularAposMudancaRdo(
+                response.obraId(),
+                response.dataRdo(),
+                null
+        );
+
+        return response;
+    }
+
+    private boolean buscarCanceladoEm(String rdoId) {
+        try {
+            return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                    "SELECT cancelado_em IS NOT NULL FROM rdo WHERE id = ?",
+                    Boolean.class,
+                    rdoId
+            ));
+        } catch (DataAccessException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "RDO não encontrado: " + rdoId
+            );
+        }
+    }
+
     private String buscarStatus(String rdoId) {
         try {
             return jdbcTemplate.queryForObject(
