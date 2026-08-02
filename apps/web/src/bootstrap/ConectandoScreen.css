@@ -1,0 +1,16 @@
+.conectando {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+/* O contorno padrão do indicador é pensado para o botão amarelo. */
+.conectando .login__spinner {
+  border-color: rgb(255 255 255 / 22%);
+  border-top-color: var(--yellow);
+}

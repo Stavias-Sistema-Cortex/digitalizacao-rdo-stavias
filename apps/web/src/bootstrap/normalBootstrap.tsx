@@ -9,11 +9,22 @@ import {
 } from "../components/pwaUpdatePromptController";
 import { initializeAuthSession } from "../features/auth/authService";
 import { initializeCortexDb } from "../lib/db/cortexDb";
+import { ConectandoScreen } from "./ConectandoScreen";
 
 export async function mountNormalCortex(root: Root): Promise<void> {
   const pwaUpdateController =
     createPwaUpdatePromptController();
   pwaUpdateController.register(registerSW);
+
+  // A consulta de sessão abaixo depende de um serviço que sobe sob demanda e
+  // pode levar dezenas de segundos. Enquanto ela não volta não havia nada na
+  // tela — e nada na tela, para quem precisa abrir o RDO, é o aplicativo
+  // quebrado. A espera continua a mesma; o que muda é ela ser legível.
+  root.render(
+    <StrictMode>
+      <ConectandoScreen />
+    </StrictMode>,
+  );
 
   let authUnavailable = false;
   try {

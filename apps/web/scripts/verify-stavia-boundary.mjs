@@ -49,6 +49,10 @@ const CORPORATE_SOURCE_LINES = new Map([
   ["apps/web/index.html", ["<title>Córtex Stavias</title>"]],
   ["apps/web/vite.config.ts", ["name: \"Córtex Stavias\","]],
   [
+    "apps/web/src/bootstrap/ConectandoScreen.tsx",
+    ["alt=\"Stavias Córtex\""],
+  ],
+  [
     "apps/web/src/components/shell/CortexShell.tsx",
     [
       "import staviasTile from \"../../assets/stavias-s-tile.png\";",

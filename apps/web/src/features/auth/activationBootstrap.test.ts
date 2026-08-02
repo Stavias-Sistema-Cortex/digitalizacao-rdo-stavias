@@ -74,4 +74,44 @@ describe("activation bootstrap", () => {
       expect.objectContaining({ credentials: "omit" }),
     );
   });
+
+  it("desiste da sondagem e segue para a entrada quando o serviço está frio", async () => {
+    // Nada é desenhado enquanto esta sondagem não responde. Sem prazo, um
+    // serviço parado deixava a tela em branco pelo tempo que o navegador
+    // aguentasse, antes mesmo de aparecer o campo de CPF.
+    vi.useFakeTimers();
+    try {
+      const fetchImplementation = vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          }),
+      );
+
+      const sondagem = probeActivationOnly(fetchImplementation);
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      await expect(sondagem).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("passa um sinal de cancelamento junto com a requisição", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue({
+      status: 200,
+      json: vi.fn().mockResolvedValue({}),
+    } as unknown as Response);
+
+    await probeActivationOnly(fetchImplementation);
+
+    const [, options] = fetchImplementation.mock.calls[0] as [
+      RequestInfo,
+      RequestInit,
+    ];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(options.signal?.aborted).toBe(false);
+  });
 });

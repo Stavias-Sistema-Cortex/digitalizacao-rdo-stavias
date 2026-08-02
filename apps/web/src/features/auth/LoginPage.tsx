@@ -14,6 +14,7 @@ import {
   type LoginFieldErrors,
 } from "./loginValidation";
 import { autenticarPorCpf } from "./authService";
+import { despertarApi } from "./despertarApi";
 import { queueOfflineGrantUnavailableNotice } from "./authNotice";
 import { authenticateWithPasskey } from "./passkeyApi";
 
@@ -52,8 +53,31 @@ export function LoginPage() {
     };
   }, [status]);
 
+  /*
+   * A subida do servidor começa aqui, e não no envio do CPF.
+   *
+   * Quem abre a tela ainda vai procurar o campo e digitar onze dígitos. Esse
+   * tempo era desperdiçado com a API parada; usado, ele sai inteiro da espera
+   * que aparecia depois. Volta a tocar quando a aba é reexibida, porque uma
+   * tela esquecida aberta encontra o serviço parado de novo.
+   */
+  useEffect(() => {
+    despertarApi();
+
+    function aoVoltarAoFoco() {
+      if (document.visibilityState === "visible") {
+        despertarApi();
+      }
+    }
+    document.addEventListener("visibilitychange", aoVoltarAoFoco);
+    return () => {
+      document.removeEventListener("visibilitychange", aoVoltarAoFoco);
+    };
+  }, []);
+
   useEffect(() => {
     function handleOnline() {
+      despertarApi();
       setOnline(true);
     }
     function handleOffline() {
