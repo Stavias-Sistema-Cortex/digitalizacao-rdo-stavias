@@ -1564,19 +1564,17 @@ function obraAlvoDaMutacao(mutation: OutboxMutationRecord): string | null {
 }
 
 /**
- * Devolve à fila o que foi recusado só porque a obra estava arquivada.
+ * Devolve à fila o que foi recusado porque a obra estava arquivada.
  *
- * Arquivar uma obra com lançamentos ainda na fila deixava cada um deles
- * recusado para sempre: o servidor não aceita escrita em obra arquivada, e uma
- * mutação recusada nunca mais é tentada. A fila inteira ficava travada em
- * "revisão necessária", inclusive para quem quisesse justamente restaurar a
- * obra e destravá-la.
+ * Arquivar esconde a obra da operação; não desfaz o que já foi vivido em
+ * campo. O servidor aceita a convergência desses lançamentos mesmo com a obra
+ * arquivada — recusá-los prenderia no dispositivo a única cópia do que
+ * aconteceu. A recusa por arquivamento, portanto, nunca é terminal aqui:
+ * enquanto a obra existir neste dispositivo, o lançamento volta a PENDING e
+ * sobe de novo, sem exigir restauração nem gesto de ninguém.
  *
- * A recusa é de circunstância, não de conteúdo. Quando a obra volta a estar
- * ativa — e a restauração já foi confirmada, isto é, não há mais nada dela
- * esperando na fila — o lançamento volta a PENDING e sobe. Enquanto a obra
- * seguir arquivada, nada é reenviado: repetir a negativa a cada ciclo seria
- * pior do que a espera.
+ * Servidores antigos ainda recusam; nesse caso o registro apenas volta para
+ * revisão e o ciclo seguinte tenta outra vez, até o servidor acompanhar.
  */
 export async function recoverRejectedArchivedObraMutationsForSync(
   guard: SyncSessionGuard = captureOnlineSyncSession(),
@@ -1594,20 +1592,6 @@ export async function recoverRejectedArchivedObraMutationsForSync(
   const obraStore = transaction.objectStore("obras");
 
   const todas = await outboxStore.getAll();
-  // Só o que altera a própria obra decide se ela está arquivada do outro lado.
-  // Um RDO pendente da mesma obra não diz nada sobre isso — e é o que existe
-  // aos montes num cliente offline. Olhar para a fila inteira travava a
-  // recuperação para sempre: bastava um lançamento qualquer esperando na obra
-  // para as recusas nunca mais serem reavaliadas.
-  const obrasComCicloDeVidaPendente = new Set(
-    todas
-      .filter((mutation) =>
-        mutation.entidadeTipo === "OBRA" &&
-        ["PENDING", "SYNCING", "ERROR", "CONFLICT"].includes(mutation.status))
-      .map((mutation) => obraAlvoDaMutacao(mutation))
-      .filter((obraId): obraId is string => obraId !== null),
-  );
-
   const timestamp = nowUtc();
   let recuperadas = 0;
 
@@ -1615,7 +1599,11 @@ export async function recoverRejectedArchivedObraMutationsForSync(
     if (
       mutation.status !== "REJECTED" ||
       !isCanonicalOutboxMutation(mutation) ||
-      !isRejeicaoDeObraArquivada(mutation.ultimoErro)
+      !isRejeicaoDeObraArquivada(mutation.ultimoErro) ||
+      // Uma mutação substituída por outra foi trocada de propósito;
+      // ressuscitá-la duplicaria o lançamento.
+      (mutation.blockedReason !== null &&
+        SUPERSEDIDA_POR.test(mutation.blockedReason.trim()))
     ) {
       continue;
     }
@@ -1623,14 +1611,11 @@ export async function recoverRejectedArchivedObraMutationsForSync(
     if (!obraId) {
       continue;
     }
+    // Obra presente no dispositivo é o suficiente: arquivada ou não, o
+    // servidor aceita a convergência. Só a obra ausente segue parada — obra
+    // nenhuma nasce no cliente, então ausência local é anomalia, não estado.
     const obra = await obraStore.get(obraId);
-    // Obra ausente ou ainda arquivada: o servidor recusaria de novo. A
-    // restauração ainda na fila também não vale — do lado de lá a obra
-    // continua arquivada até ela ser aplicada.
-    if (
-      !obra || obra.arquivadoEm ||
-      obrasComCicloDeVidaPendente.has(obraId)
-    ) {
+    if (!obra) {
       continue;
     }
 
@@ -1656,9 +1641,9 @@ export async function recoverRejectedArchivedObraMutationsForSync(
       nextAttemptAt: null,
       blockedReason: null,
       retryAttempt: 0,
-      lastSafeCode: "OBRA_RESTAURADA",
+      lastSafeCode: "CONVERGENCIA_DE_OBRA_ARQUIVADA",
       ultimoErro:
-        "Reenviando depois que a obra voltou a ficar ativa.",
+        "Reenviando: o registro de campo converge mesmo com a obra arquivada.",
       conflito: null,
       updatedAt: timestamp,
     });
@@ -1666,7 +1651,7 @@ export async function recoverRejectedArchivedObraMutationsForSync(
       ...event,
       result: "PENDING",
       syncStatus: "PENDING_SYNC",
-      errorCategory: "OBRA_RESTAURADA",
+      errorCategory: "CONVERGENCIA_DE_OBRA_ARQUIVADA",
     });
     recuperadas += 1;
   }

@@ -993,6 +993,10 @@ public class RdoMemoryPublisher {
     }
 
     private ObraMemoryData buscarObra(String obraId) {
+        // A memória registra o que aconteceu; não policia ciclo de vida. Um
+        // RDO aceito em obra arquivada — a convergência do sync permite —
+        // precisa do seu evento como qualquer outro; filtrar a obra aqui
+        // derrubava a mutação inteira depois de a escrita já ter sido aceita.
         if (obraId == null || obraId.isBlank()) {
             throw new IllegalArgumentException(
                     "A obra deve ser informada para publicar o RDO."
@@ -1014,7 +1018,6 @@ public class RdoMemoryPublisher {
                         status
                     FROM obra
                     WHERE id = ?
-                      AND arquivado_em IS NULL
                     """,
                     (resultSet, rowNumber) ->
                             new ObraMemoryData(

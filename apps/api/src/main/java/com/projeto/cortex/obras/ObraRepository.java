@@ -34,6 +34,24 @@ public interface ObraRepository extends JpaRepository<Obra, String> {
     )
     Optional<String> findWritableIdForShare(@Param("id") String id);
 
+    /**
+     * Existência com o mesmo bloqueio compartilhado de
+     * {@link #findWritableIdForShare(String)}, sem o filtro de arquivamento.
+     * É a leitura da janela de convergência do sync: obra arquivada aceita a
+     * escrita, mas a corrida com um arquivar/restaurar simultâneo continua
+     * serializada pelo FOR SHARE.
+     */
+    @Query(
+            value = """
+                    SELECT o.id
+                    FROM obra o
+                    WHERE o.id = :id
+                    FOR SHARE
+                    """,
+            nativeQuery = true
+    )
+    Optional<String> findExistingIdForShare(@Param("id") String id);
+
     @Query("""
             SELECT o
             FROM Obra o
