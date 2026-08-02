@@ -67,3 +67,23 @@ export function falhaImpedeOMapa(
   }
   return erro?.url === styleUrl || texto.includes(styleUrl);
 }
+
+/**
+ * Reconhece o basemap que não veio: a fonte de tiles inalcançável.
+ *
+ * É o modo de falha mais traiçoeiro do renderizador. O estilo chega, o fundo
+ * pinta, `load` dispara e `areTilesLoaded()` responde verdadeiro — porque uma
+ * fonte que falhou não tem tile pendente. O painel fica um retângulo da cor do
+ * fundo, sem erro visível, exatamente como observado em campo. O estilo em si
+ * e o WebGL ficam de fora: esses têm caminho próprio, que derruba a montagem.
+ */
+export function falhaDeBasemap(
+  erro: FalhaDoRenderizador | undefined,
+  styleUrl: string | null,
+): boolean {
+  if (!erro || falhaImpedeOMapa(erro, styleUrl)) {
+    return false;
+  }
+  const texto = `${erro.message ?? ""} ${erro.url ?? ""}`;
+  return /failed to fetch|networkerror|load failed|ajaxerror/i.test(texto);
+}

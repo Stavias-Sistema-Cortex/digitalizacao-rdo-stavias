@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { falhaImpedeOMapa, mensagemDeFalha } from "./falhasDoMapa";
+import {
+  falhaDeBasemap,
+  falhaImpedeOMapa,
+  mensagemDeFalha,
+} from "./falhasDoMapa";
 
 const ESTILO = "https://api.maptiler.com/maps/satellite/style.json?key=segredo";
 
@@ -73,5 +77,49 @@ describe("mensagemDeFalha", () => {
 
   it("devolve texto utilizável quando sobra apenas a URL", () => {
     expect(mensagemDeFalha(ESTILO)).toBe("Falha ao carregar o mapa.");
+  });
+});
+
+describe("falhaDeBasemap", () => {
+  const ESTILO_ABERTO = "https://tiles.openfreemap.org/styles/liberty";
+
+  it("reconhece a fonte de tiles inalcançável — o retângulo mudo de campo", () => {
+    // O caso reproduzido: o TileJSON da fonte falha, o estilo carrega, `load`
+    // dispara e `areTilesLoaded()` responde verdadeiro. Sem esta classificação
+    // o painel subia vazio e sem uma palavra.
+    expect(
+      falhaDeBasemap(
+        {
+          message: "AJAXError: Failed to fetch (0): https://tiles.openfreemap.org/planet",
+          url: "https://tiles.openfreemap.org/planet",
+        },
+        ESTILO_ABERTO,
+      ),
+    ).toBe(true);
+  });
+
+  it("o estilo que não chega segue no caminho fatal, não na contingência", () => {
+    expect(
+      falhaDeBasemap(
+        { message: "Failed to fetch (0)", url: ESTILO_ABERTO },
+        ESTILO_ABERTO,
+      ),
+    ).toBe(false);
+  });
+
+  it("WebGL indisponível não é problema de basemap", () => {
+    expect(
+      falhaDeBasemap({ message: "Failed to initialize WebGL" }, ESTILO_ABERTO),
+    ).toBe(false);
+  });
+
+  it("erro de conteúdo do estilo não aciona a contingência", () => {
+    expect(
+      falhaDeBasemap(
+        { message: "Image \"marker\" could not be loaded" },
+        ESTILO_ABERTO,
+      ),
+    ).toBe(false);
+    expect(falhaDeBasemap(undefined, ESTILO_ABERTO)).toBe(false);
   });
 });

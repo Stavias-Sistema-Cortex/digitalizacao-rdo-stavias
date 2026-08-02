@@ -310,3 +310,23 @@
     min-height: 320px;
   }
 }
+
+/* Aviso da contingência: o mapa reserva está de pé e diz por quê. */
+.operational-map-reserva-notice {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #d8c46a;
+  border-radius: var(--radius-control);
+  background: rgb(255 251 234 / 96%);
+  color: #5c4d12;
+  font-size: 0.76rem;
+}

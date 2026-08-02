@@ -14,6 +14,14 @@ export interface MapProvider {
   engine: MapEngine;
   configured: boolean;
   styleUrl: string | null;
+  /**
+   * Estilo embutido no aplicativo, usado no lugar de `styleUrl`. Existe para o
+   * provider reserva: quando o servidor de estilo está inalcançável, nenhum
+   * URL resolveria — o estilo precisa já estar aqui dentro.
+   */
+  estiloInline?: Record<string, unknown> | null;
+  /** Verdadeiro no provider de contingência, acionado por falha do principal. */
+  reserva?: boolean;
   missingConfiguration: string | null;
   fallbackReason: string | null;
   /** Verdadeiro quando o provider não exige credencial alguma. */
@@ -166,6 +174,52 @@ export function availableMapProviders(
   return (["maplibre", "maptiler", "mapbox"] as const)
     .map((id) => resolveMapProviderForId(id, environment))
     .filter((provider) => provider.configured);
+}
+
+/**
+ * O basemap de contingência: OSM raster, com o estilo embutido.
+ *
+ * Entra sozinho quando a fonte vetorial do provider principal está
+ * inalcançável — o caso observado em campo, em que o painel subia como um
+ * retângulo mudo. Usa `tile.openstreetmap.org`, o mesmo host que o painel
+ * Leaflet ao lado já consome: se metade da tela desenha, a outra também tem
+ * como desenhar. O estilo vive aqui dentro porque, com o servidor de estilos
+ * fora de alcance, nenhum URL de estilo resolveria. Sem camadas de texto,
+ * nenhum glifo é necessário.
+ */
+export function providerReservaOsm(): MapProvider {
+  return {
+    id: "maplibre",
+    label: "OSM (reserva)",
+    engine: "maplibre",
+    configured: true,
+    styleUrl: null,
+    estiloInline: {
+      version: 8,
+      name: "Córtex reserva OSM",
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: "© OpenStreetMap contributors",
+        },
+      },
+      layers: [{ id: "osm", type: "raster", source: "osm" }],
+    },
+    reserva: true,
+    missingConfiguration: null,
+    fallbackReason: null,
+    keyless: true,
+    capabilities: {
+      perspective3d: false,
+      geoJsonLayers: true,
+      cameraControl: true,
+      buildingExtrusion: false,
+      satellite: false,
+    },
+  };
 }
 
 export function mapboxAccessToken(

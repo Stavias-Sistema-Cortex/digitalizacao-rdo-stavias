@@ -10,16 +10,24 @@ const adaptador = vi.hoisted(() => ({
   colecoes: [] as OperationalFeatureCollection[],
   destruicoes: 0,
   modos: [] as string[],
+  providers: [] as { label: string; reserva?: boolean }[],
+  falhasDeBasemap: [] as (() => void)[],
 }));
 
 vi.mock("./mapAdapter", () => ({
   mountOperationalMap: (opcoes: {
     features: OperationalFeatureCollection;
     mode: string;
+    provider: { label: string; reserva?: boolean };
+    onFalhaDeBasemap?: () => void;
   }) => {
     adaptador.montagens += 1;
     adaptador.colecoes.push(opcoes.features);
     adaptador.modos.push(opcoes.mode);
+    adaptador.providers.push(opcoes.provider);
+    if (opcoes.onFalhaDeBasemap) {
+      adaptador.falhasDeBasemap.push(opcoes.onFalhaDeBasemap);
+    }
     return Promise.resolve({
       centerOn: () => undefined,
       setViewMode: (mode: string) => adaptador.modos.push(mode),
@@ -74,6 +82,8 @@ beforeEach(() => {
   adaptador.colecoes = [];
   adaptador.destruicoes = 0;
   adaptador.modos = [];
+  adaptador.providers = [];
+  adaptador.falhasDeBasemap = [];
 });
 
 afterEach(cleanup);
@@ -177,5 +187,54 @@ describe("OperationalMap", () => {
       screen.getByText("Localização ainda não registrada"),
     ).toBeTruthy();
     expect(adaptador.montagens).toBe(0);
+  });
+
+  it("cai sozinho para o basemap reserva quando a fonte do principal não vem", async () => {
+    // O retângulo mudo de campo: a fonte de tiles falha, o renderizador
+    // declara tudo carregado e nada pinta. O painel deve trocar para o OSM
+    // reserva — o mesmo host que a metade Leaflet já prova funcionar — e
+    // dizer o que aconteceu, em vez de ficar vazio.
+    render(
+      <OperationalMap
+        obra={obra}
+        leitura={leitura(1, 1)}
+        carregando={false}
+        erroLeitura={null}
+      />,
+    );
+
+    await waitFor(() => expect(adaptador.montagens).toBe(1));
+    expect(adaptador.providers[0].reserva).toBeUndefined();
+
+    adaptador.falhasDeBasemap[0]();
+
+    await waitFor(() => expect(adaptador.montagens).toBe(2));
+    expect(adaptador.providers[1].reserva).toBe(true);
+    expect(adaptador.providers[1].label).toContain("reserva");
+    await waitFor(() =>
+      expect(
+        screen.getByText(/exibindo o mapa reserva/i),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("a própria reserva falhando não entra em laço de remontagem", async () => {
+    render(
+      <OperationalMap
+        obra={obra}
+        leitura={leitura(1, 1)}
+        carregando={false}
+        erroLeitura={null}
+      />,
+    );
+
+    await waitFor(() => expect(adaptador.montagens).toBe(1));
+    adaptador.falhasDeBasemap[0]();
+    await waitFor(() => expect(adaptador.montagens).toBe(2));
+
+    // Segunda falha, agora da reserva: nada de terceira montagem.
+    adaptador.falhasDeBasemap[1]();
+    await new Promise((resolver) => setTimeout(resolver, 50));
+    expect(adaptador.montagens).toBe(2);
   });
 });
