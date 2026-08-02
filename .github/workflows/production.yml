@@ -102,7 +102,13 @@ jobs:
     if: github.ref == 'refs/heads/develop'
     needs: [api-gate, web-gate, deployment-gate]
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # As imagens são multi-arquitetura e a arm64 roda sob emulação; com o cache
+    # frio, a da PWA sozinha consumia quase todo o orçamento e o job era morto
+    # no teto — antes de qualquer deploy acontecer. O release publicava a
+    # imagem da API e parava ali, com Render e Pages pulados: a revisão não
+    # chegava a lugar nenhum. A folga existe para que o corte, se vier, caia
+    # sobre um problema real e não sobre a emulação.
+    timeout-minutes: 120
     environment: production
     permissions:
       contents: read
@@ -181,6 +187,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=cortex-api
+          cache-to: type=gha,mode=max,scope=cortex-api
       - name: Attest API provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
@@ -213,6 +221,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=cortex-web
+          cache-to: type=gha,mode=max,scope=cortex-web
       - name: Attest PWA provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
