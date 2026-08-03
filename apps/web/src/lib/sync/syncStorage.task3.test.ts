@@ -376,9 +376,14 @@ describe("atomic canonical push results", () => {
       status: "PENDING",
       payload: expect.objectContaining({ titulo: "B", responsavel: "Bia" }),
     });
+    // A original cedeu lugar à substituta: o desfecho é sucessão, não conflito
+    // aberto. Enquanto ela ficava em CONFLICT, um conflito já resolvido seguia
+    // se apresentando como pendente para sempre.
     expect(await database.get("outbox_mutations", MUTATION_1)).toMatchObject({
-      status: "CONFLICT",
+      status: "REJECTED",
       clientMutationId: MUTATION_1,
+      blockedReason: `SUPERSEDED_BY:${MUTATION_2}`,
+      lastSafeCode: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
     });
     expect(await database.get("operational_events", EVENT_2)).toMatchObject({
       clientMutationId: MUTATION_2,
@@ -426,7 +431,8 @@ describe("atomic canonical push results", () => {
     const all = await database.getAll("outbox_mutations");
     expect(all).toHaveLength(2);
     expect(await database.get("outbox_mutations", MUTATION_1)).toMatchObject({
-      status: "CONFLICT",
+      status: "REJECTED",
+      blockedReason: `SUPERSEDED_BY:${MUTATION_2}`,
     });
     expect(await database.get("outbox_mutations", MUTATION_2)).toMatchObject({
       status: "PENDING",

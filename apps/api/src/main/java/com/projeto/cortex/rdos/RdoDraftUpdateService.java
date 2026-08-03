@@ -572,30 +572,11 @@ public class RdoDraftUpdateService {
     }
 
     private void validarColaboradorDaObra(String collaboratorId, String obraId) {
-        Integer valid = jdbcTemplate.queryForObject(
-                """
-                SELECT CASE WHEN EXISTS (
-                    SELECT 1
-                    FROM colaborador collaborator
-                    JOIN vinculo_colaborador_obra link
-                      ON link.colaborador_id = collaborator.id
-                     AND link.obra_id = ?
-                     AND link.status = 'ATIVO'
-                    WHERE collaborator.id = ?
-                      AND collaborator.ativo = TRUE
-                      AND collaborator.deletado_em IS NULL
-                ) THEN 1 ELSE 0 END
-                """,
-                Integer.class,
-                obraId,
-                collaboratorId
+        ColaboradorNaObraPolicy.require(
+                jdbcTemplate,
+                collaboratorId,
+                obraId
         );
-        if (valid == null || valid != 1) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Colaborador não está ativo e vinculado à obra do RDO."
-            );
-        }
     }
 
     private void validarOrigemItem(

@@ -3824,24 +3824,35 @@ export async function reconcileCanonicalConflict(
     await guardedTransaction.complete();
     return concurrentReplacement;
   }
-  if (original.entityType === "OBRA") {
-    await transaction.objectStore("outbox_mutations").put({
-      ...original,
-      status: "REJECTED",
-      nextAttemptAt: null,
-      lastSafeCode: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
-      blockedReason: `SUPERSEDED_BY:${built.mutation.clientMutationId}`,
-      ultimoErro:
-        "Conflito substituído por envelope canônico reconciliado.",
-      updatedAt: occurredAt,
-    });
-    await transaction.objectStore("operational_events").put({
-      ...originalEvent,
-      result: "REJECTED",
-      syncStatus: "SYNC_FAILED",
-      errorCategory: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
-    });
-  }
+  // A original cedeu lugar, e isso vale para toda entidade.
+  //
+  // A marcação vivia dentro de um `if (entityType === "OBRA")`, sem que nada
+  // justificasse a exceção: para RDO — e para as demais — a original ficava em
+  // `CONFLICT` mesmo depois de a substituta reconciliada ter sido construída e
+  // enfileirada. Um conflito resolvido continuava se apresentando como conflito
+  // aberto, indefinidamente, porque nada jamais tirava a original desse estado.
+  //
+  // Marcar aqui é o que torna o desfecho legível: a original não falhou, foi
+  // sucedida, e o `SUPERSEDED_BY` diz por quem. As rotinas de reenvio já leem
+  // essa marca para não ressuscitar quem foi sucedido, e o laço de
+  // reconciliação pula quem não está mais em `CONFLICT` — de modo que nenhuma
+  // segunda substituta nasce do mesmo conflito.
+  await transaction.objectStore("outbox_mutations").put({
+    ...original,
+    status: "REJECTED",
+    nextAttemptAt: null,
+    lastSafeCode: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
+    blockedReason: `SUPERSEDED_BY:${built.mutation.clientMutationId}`,
+    ultimoErro:
+      "Conflito substituído por envelope canônico reconciliado.",
+    updatedAt: occurredAt,
+  });
+  await transaction.objectStore("operational_events").put({
+    ...originalEvent,
+    result: "REJECTED",
+    syncStatus: "SYNC_FAILED",
+    errorCategory: "SUPERSEDED_BY_CONFLICT_REPLACEMENT",
+  });
   await transaction.objectStore("outbox_mutations").add(built.mutation);
   await transaction
     .objectStore("operational_events")

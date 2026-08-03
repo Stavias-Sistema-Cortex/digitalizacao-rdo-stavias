@@ -1,5 +1,6 @@
 package com.projeto.cortex.rdos;
 
+import com.projeto.cortex.common.SyncConvergenceWindow;
 import com.projeto.cortex.financeiro.revenue.RevenueCalculator;
 import com.projeto.cortex.financeiro.revenue.RevenueEvidence;
 import com.projeto.cortex.financeiro.revenue.RevenueOntologyPublisher;
@@ -1217,6 +1218,14 @@ public class RdoOperationalDetailService {
             String colaboradorId,
             String obraId
     ) {
+        // Na convergência do sync o vínculo deixa de ser exigido: o apontamento
+        // já aconteceu em campo e o dispositivo carrega a única cópia. O
+        // bloqueio de linha abaixo existe para impedir revogação concorrente
+        // durante a escrita — sem exigência a proteger, ele não tem o que
+        // proteger. Ver ColaboradorNaObraPolicy.
+        if (SyncConvergenceWindow.isOpen()) {
+            return;
+        }
         List<String> activeLinks = jdbcTemplate.query(
                 """
                 SELECT link.id
