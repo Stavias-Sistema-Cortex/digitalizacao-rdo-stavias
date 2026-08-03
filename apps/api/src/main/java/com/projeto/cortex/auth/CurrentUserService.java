@@ -6,9 +6,11 @@ import com.projeto.cortex.auth.session.ResolvedAuthSession;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
@@ -39,6 +41,33 @@ public class CurrentUserService implements AuthSessionProfileResolver {
 
     public static final String REQUEST_ATTRIBUTE_USER_ID =
             "cortex.authenticatedUserId";
+
+    /**
+     * Memória de autorização com validade de uma requisição.
+     *
+     * <p>Papel e vínculo eram relidos do banco a cada pergunta, e as perguntas
+     * se repetem: uma única requisição pergunta o papel ao filtro de sessão, de
+     * novo ao autorizar a obra, de novo ao montar o perfil — e serviços que
+     * percorrem participantes perguntam uma vez por pessoa. Cada repetição era
+     * uma ida ao banco para receber a resposta que já se tinha.
+     *
+     * <p>O alcance é o da requisição, e não maior, de propósito. Dentro dela o
+     * papel é constante porque nenhuma escrita de papel ou de vínculo passa por
+     * aqui; fora dela nada é lembrado, então revogar um papel continua valendo
+     * já na requisição seguinte. Guardar por mais tempo trocaria idas ao banco
+     * por acesso revogado que sobrevive — e esse não é um câmbio aceitável.
+     */
+    private static final String REQUEST_ATTRIBUTE_AUTHORIZATION_MEMO =
+            "cortex.authorizationMemo";
+
+    private record ChavePapel(String colaboradorId) {
+    }
+
+    private record ChaveVinculo(String colaboradorId, String obraId) {
+    }
+
+    private record ChaveObras(String colaboradorId) {
+    }
 
     private final JdbcTemplate jdbcTemplate;
     private final Environment environment;
@@ -170,24 +199,28 @@ public class CurrentUserService implements AuthSessionProfileResolver {
             return PapelAcesso.ALFA;
         }
 
-        return jdbcTemplate.query(
-                """
-                SELECT papel_acesso
-                FROM colaborador
-                WHERE id = ?
-                  AND ativo = TRUE
-                  AND deletado_em IS NULL
-                LIMIT 1
-                """,
-                rs -> {
-                    if (!rs.next()) {
-                        return null;
-                    }
-                    return PapelAcesso.fromPersistedExact(
-                            rs.getString("papel_acesso")
-                    ).orElse(null);
-                },
-                colaboradorId.trim()
+        String normalizado = colaboradorId.trim();
+        return lembrarNaRequisicao(
+                new ChavePapel(normalizado),
+                () -> jdbcTemplate.query(
+                        """
+                        SELECT papel_acesso
+                        FROM colaborador
+                        WHERE id = ?
+                          AND ativo = TRUE
+                          AND deletado_em IS NULL
+                        LIMIT 1
+                        """,
+                        rs -> {
+                            if (!rs.next()) {
+                                return null;
+                            }
+                            return PapelAcesso.fromPersistedExact(
+                                    rs.getString("papel_acesso")
+                            ).orElse(null);
+                        },
+                        normalizado
+                )
         );
     }
 
@@ -243,18 +276,20 @@ public class CurrentUserService implements AuthSessionProfileResolver {
             return Optional.empty();
         }
 
-        List<String> ids = jdbcTemplate.queryForList(
-                """
-                SELECT obra_id
-                FROM vinculo_colaborador_obra
-                WHERE LOWER(colaborador_id) = LOWER(?)
-                  AND status = 'ATIVO'
-                """,
-                String.class,
-                colaboradorId.trim()
+        String normalizado = colaboradorId.trim();
+        return lembrarNaRequisicao(
+                new ChaveObras(normalizado),
+                () -> Optional.of(Set.copyOf(jdbcTemplate.queryForList(
+                        """
+                        SELECT obra_id
+                        FROM vinculo_colaborador_obra
+                        WHERE LOWER(colaborador_id) = LOWER(?)
+                          AND status = 'ATIVO'
+                        """,
+                        String.class,
+                        normalizado
+                )))
         );
-
-        return Optional.of(Set.copyOf(ids));
     }
 
     @Override
@@ -297,22 +332,69 @@ public class CurrentUserService implements AuthSessionProfileResolver {
     }
 
     private boolean temVinculoAtivo(String colaboradorId, String obraId) {
-        Integer allowed = jdbcTemplate.queryForObject(
-                """
-                SELECT CASE WHEN EXISTS (
-                    SELECT 1
-                    FROM vinculo_colaborador_obra
-                    WHERE LOWER(colaborador_id) = LOWER(?)
-                      AND obra_id = ?
-                      AND status = 'ATIVO'
-                ) THEN 1 ELSE 0 END
-                """,
-                Integer.class,
-                colaboradorId,
-                obraId
+        return lembrarNaRequisicao(
+                new ChaveVinculo(colaboradorId, obraId),
+                () -> {
+                    Integer allowed = jdbcTemplate.queryForObject(
+                            """
+                            SELECT CASE WHEN EXISTS (
+                                SELECT 1
+                                FROM vinculo_colaborador_obra
+                                WHERE LOWER(colaborador_id) = LOWER(?)
+                                  AND obra_id = ?
+                                  AND status = 'ATIVO'
+                            ) THEN 1 ELSE 0 END
+                            """,
+                            Integer.class,
+                            colaboradorId,
+                            obraId
+                    );
+                    return allowed != null && allowed == 1;
+                }
         );
+    }
 
-        return allowed != null && allowed == 1;
+    /**
+     * Responde uma vez por requisição e reaproveita dentro dela.
+     *
+     * <p>Fora de uma requisição — tarefas agendadas, sincronizações — não há o
+     * que reaproveitar nem onde guardar, e a consulta é feita direto. O mapa é
+     * confinado à thread que atende a requisição, porque o contexto não é
+     * herdado por threads filhas: quem sair dela cai neste mesmo caminho
+     * direto, em vez de compartilhar estado.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> T lembrarNaRequisicao(Object chave, Supplier<T> resolver) {
+        RequestAttributes atributos =
+                RequestContextHolder.getRequestAttributes();
+        if (atributos == null) {
+            return resolver.get();
+        }
+
+        Map<Object, Object> memoria = (Map<Object, Object>)
+                atributos.getAttribute(
+                        REQUEST_ATTRIBUTE_AUTHORIZATION_MEMO,
+                        RequestAttributes.SCOPE_REQUEST
+                );
+        if (memoria == null) {
+            memoria = new HashMap<>();
+            atributos.setAttribute(
+                    REQUEST_ATTRIBUTE_AUTHORIZATION_MEMO,
+                    memoria,
+                    RequestAttributes.SCOPE_REQUEST
+            );
+        }
+
+        // `null` é resposta legítima: significa colaborador inexistente,
+        // inativo ou removido, e o chamador nega o acesso a partir dela. Guardar
+        // por presença de chave, e não por valor não-nulo, é o que impede que
+        // justamente a negativa seja reconsultada a cada pergunta.
+        if (memoria.containsKey(chave)) {
+            return (T) memoria.get(chave);
+        }
+        T valor = resolver.get();
+        memoria.put(chave, valor);
+        return valor;
     }
 
     private boolean isLocalDevAdminEnabled() {

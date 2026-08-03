@@ -21,6 +21,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -213,6 +215,127 @@ class CurrentUserServiceAuthorizationTest {
         assertThatThrownBy(() -> service.requireRdoAccess("rdo-inexistente"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("RDO não encontrado");
+    }
+
+    @Test
+    void papelEConsultadoUmaVezPorRequisicaoAindaQuePerguntadoVarias() {
+        papel("alfa", PapelAcesso.ALFA);
+        autenticarComo("alfa");
+
+        service.isAlfa("alfa");
+        service.isAdmin("alfa");
+        service.requireAdmin();
+        service.podeAcessarObra("alfa", "obra-1");
+        service.allowedObraIds("alfa");
+
+        verify(jdbc, times(1)).query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("alfa")
+        );
+    }
+
+    /**
+     * O alcance da memória é a requisição, e precisa ser exatamente esse: um
+     * papel revogado tem de valer já na requisição seguinte.
+     */
+    @Test
+    void cadaNovaRequisicaoVoltaAConsultarOPapel() {
+        papel("alfa", PapelAcesso.ALFA);
+
+        autenticarComo("alfa");
+        service.isAlfa("alfa");
+        autenticarComo("alfa");
+        service.isAlfa("alfa");
+
+        verify(jdbc, times(2)).query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("alfa")
+        );
+    }
+
+    @Test
+    void foraDeUmaRequisicaoNadaEGuardado() {
+        papel("alfa", PapelAcesso.ALFA);
+
+        service.isAlfa("alfa");
+        service.isAlfa("alfa");
+
+        verify(jdbc, times(2)).query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("alfa")
+        );
+    }
+
+    @Test
+    void colaboradoresDiferentesNaoCompartilhamPapelNaMesmaRequisicao() {
+        papel("alfa", PapelAcesso.ALFA);
+        papel("beta", PapelAcesso.BETA);
+        autenticarComo("alfa");
+
+        assertThat(service.isAlfa("alfa")).isTrue();
+        assertThat(service.isAlfa("beta")).isFalse();
+        assertThat(service.isAlfa("alfa")).isTrue();
+
+        verify(jdbc, times(1)).query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("alfa")
+        );
+        verify(jdbc, times(1)).query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("beta")
+        );
+    }
+
+    @Test
+    void vinculoEConsultadoUmaVezPorObraNaMesmaRequisicao() {
+        papel("beta", PapelAcesso.BETA);
+        vinculoAtivo("beta", "obra-1", true);
+        vinculoAtivo("beta", "obra-2", false);
+        autenticarComo("beta");
+
+        assertThat(service.podeAcessarObra("beta", "obra-1")).isTrue();
+        assertThat(service.podeAcessarObra("beta", "obra-1")).isTrue();
+        assertThat(service.podeAcessarObra("beta", "obra-2")).isFalse();
+
+        verify(jdbc, times(1)).queryForObject(
+                contains("vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq("beta"),
+                eq("obra-1")
+        );
+        verify(jdbc, times(1)).queryForObject(
+                contains("vinculo_colaborador_obra"),
+                eq(Integer.class),
+                eq("beta"),
+                eq("obra-2")
+        );
+    }
+
+    /**
+     * A negativa é resposta, não ausência de resposta: se ela não fosse
+     * lembrada, o colaborador inexistente seria o caso que mais consultaria o
+     * banco — uma ida por pergunta, exatamente no caminho que nega acesso.
+     */
+    @Test
+    void aNegativaTambemELembradaDentroDaRequisicao() {
+        papel("fantasma", null);
+        autenticarComo("fantasma");
+
+        assertThat(service.isAlfa("fantasma")).isFalse();
+        assertThat(service.podeAcessarObra("fantasma", "obra-1")).isFalse();
+        assertThat(service.allowedObraIds("fantasma"))
+                .isEqualTo(Optional.of(Set.of()));
+
+        verify(jdbc, times(1)).query(
+                contains("FROM colaborador"),
+                any(ResultSetExtractor.class),
+                eq("fantasma")
+        );
     }
 
     private void autenticarComo(String userId) {

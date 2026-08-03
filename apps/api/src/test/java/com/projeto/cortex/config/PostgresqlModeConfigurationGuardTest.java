@@ -271,7 +271,7 @@ class PostgresqlModeConfigurationGuardTest {
     }
 
     @Test
-    void refusesAnyCurrentSchemaVersionOtherThanV65() {
+    void refusesAnyCurrentSchemaVersionOtherThanV66() {
         MockEnvironment environment = configuredEnvironment(
                 "postgresql-activation", "servlet", false, true, false
         );
@@ -281,7 +281,7 @@ class PostgresqlModeConfigurationGuardTest {
                 .verifyConfiguration())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cortex.postgresql.required-schema-version")
-                .hasMessageContaining("65");
+                .hasMessageContaining("66");
     }
 
     private PostgresqlModeConfigurationGuard guard(
@@ -339,7 +339,7 @@ class PostgresqlModeConfigurationGuardTest {
                 .withProperty("spring.flyway.create-schemas", "false")
                 .withProperty("spring.flyway.baseline-on-migrate", "false")
                 .withProperty("spring.flyway.clean-disabled", "true")
-                .withProperty("cortex.postgresql.required-schema-version", "65")
+                .withProperty("cortex.postgresql.required-schema-version", "66")
                 .withProperty(
                         "cortex.postgresql.schema-readiness.enabled",
                         Boolean.toString(schemaReadiness)
