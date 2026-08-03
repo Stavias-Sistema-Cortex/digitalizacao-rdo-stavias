@@ -880,14 +880,82 @@ describe("recuperação das recusas por obra arquivada", () => {
 
     expect(await recoverRejectedArchivedObraMutationsForSync()).toBe(0);
     expect(await requeueMutationsInReview()).toBe(1);
-    expect(
-      (await database.get("outbox_mutations", clientMutationId))!,
-    ).toMatchObject({
+
+    /*
+     * A identidade tem de mudar, e é a parte que faz o reenvio valer alguma
+     * coisa. O servidor decide cada clientMutationId uma vez e arquiva o
+     * veredito; reapresentar o mesmo identificador recebe a recusa guardada sem
+     * que a regra volte a ser consultada. Reenviar com a identidade antiga era
+     * pedir de novo a mesma resposta.
+     */
+    expect(await database.get("outbox_mutations", clientMutationId))
+      .toBeUndefined();
+
+    const [reenviada] = await database.getAll("outbox_mutations");
+    expect(reenviada.clientMutationId).not.toBe(clientMutationId);
+    expect(reenviada).toMatchObject({
       status: "PENDING",
       retryAttempt: 0,
       blockedReason: null,
       lastSafeCode: "REVISAO_LIBERADA_MANUALMENTE",
     });
+    // O payload e sua prova de integridade atravessam a troca intactos: a
+    // identidade não entra no hash canônico.
+    expect(reenviada.payload).toEqual(mutacao.payload);
+
+    // O evento canônico acompanha a nova identidade; sem isso o próximo envio
+    // não acharia o evento desta mutação e ela seria descartada na preparação.
+    const eventos = await database.getAllFromIndex(
+      "operational_events",
+      "by-client-mutation-id",
+      reenviada.clientMutationId,
+    );
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0].syncStatus).toBe("PENDING_SYNC");
+  });
+
+  /**
+   * Quem esperava pela mutação renomeada precisa passar a esperar pela
+   * identidade nova — do contrário o servidor responde DEPENDENCY_NOT_APPLIED
+   * para sempre, e o reenvio que devia destravar a fila trava o que vinha
+   * atrás.
+   */
+  it("reaponta quem dependia da mutação reenviada", async () => {
+    const database = await getCortexDb();
+    await database.put("obras", obra());
+    await queueDeactivateObra(obra());
+    const [mutacao] = await database.getAll("outbox_mutations");
+    await markMutationAsSyncing(mutacao);
+    await rejectMutationLocally(
+      mutacao.clientMutationId,
+      "PAYLOAD_INVALIDO",
+      "payload.nome deve ser texto.",
+    );
+    const identidadeAnterior = mutacao.clientMutationId;
+
+    const dependente = {
+      ...mutacao,
+      clientMutationId: "00000000-0000-4000-8000-0000000000dd",
+      status: "PENDING" as const,
+      dependsOnMutationIds: [identidadeAnterior],
+    };
+    await database.put("outbox_mutations", dependente);
+
+    expect(await requeueMutationsInReview()).toBe(1);
+
+    const reapontada = await database.get(
+      "outbox_mutations",
+      dependente.clientMutationId,
+    );
+    expect(reapontada!.dependsOnMutationIds).toHaveLength(1);
+    expect(reapontada!.dependsOnMutationIds![0]).not.toBe(identidadeAnterior);
+
+    const reenviada = (await database.getAll("outbox_mutations")).find(
+      (linha) => linha.clientMutationId !== dependente.clientMutationId,
+    );
+    expect(reapontada!.dependsOnMutationIds![0]).toBe(
+      reenviada!.clientMutationId,
+    );
   });
 
   it("não ressuscita a mutação que já foi substituída por outra", async () => {

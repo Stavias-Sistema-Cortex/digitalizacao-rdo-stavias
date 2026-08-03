@@ -1688,6 +1688,7 @@ export async function requeueMutationsInReview(): Promise<number> {
   );
   const outboxStore = transaction.objectStore("outbox_mutations");
   const timestamp = nowUtc();
+  const identidadesTrocadas = new Map<string, string>();
   let devolvidas = 0;
 
   for (const mutation of await outboxStore.index("by-status").getAll(
@@ -1711,8 +1712,32 @@ export async function requeueMutationsInReview(): Promise<number> {
       continue;
     }
 
+    /*
+     * O reenvio troca a identidade da mutação, e é isso que o faz funcionar.
+     *
+     * O servidor decide cada clientMutationId uma vez só e arquiva o veredito.
+     * Reapresentar o mesmo identificador não repete o julgamento: a segunda
+     * chegada colide na chave, e a resposta vem do arquivo — a regra de negócio
+     * sequer é consultada. Mutações recusadas sob uma regra que depois mudou
+     * ficavam presas por isso, recebendo para sempre a recusa de uma regra que
+     * não existe mais, por mais vezes que se pedisse o reenvio.
+     *
+     * A idempotência existe para impedir que a *mesma entrega* seja aplicada
+     * duas vezes. Um reenvio pedido por quem opera não é a mesma entrega: é uma
+     * tentativa nova, e tentativa nova merece identidade nova.
+     *
+     * É seguro exatamente aqui, e só aqui, porque esta função toca apenas
+     * linhas em REJECTED — que por definição não foram aplicadas. Não há efeito
+     * no servidor para duplicar. O payload e seu hash seguem intactos: a
+     * identidade não entra no hash canônico.
+     */
+    const identidadeAnterior = mutation.clientMutationId;
+    const identidadeNova = crypto.randomUUID();
+
+    await outboxStore.delete(identidadeAnterior);
     await outboxStore.put({
       ...mutation,
+      clientMutationId: identidadeNova,
       status: "PENDING",
       tentativas: 0,
       ultimaTentativaEm: null,
@@ -1724,12 +1749,17 @@ export async function requeueMutationsInReview(): Promise<number> {
       conflito: null,
       updatedAt: timestamp,
     });
+    // O evento canônico conserva a própria chave e a correlação: o que mudou
+    // foi a tentativa, não o fato registrado. Sem reapontá-lo, a busca por
+    // clientMutationId deixaria de achar o evento desta mutação.
     await putCanonicalEvent(transaction, {
       ...event,
+      clientMutationId: identidadeNova,
       result: "PENDING",
       syncStatus: "PENDING_SYNC",
       errorCategory: "REVISAO_LIBERADA_MANUALMENTE",
     });
+    identidadesTrocadas.set(identidadeAnterior, identidadeNova);
     // O crachá de sincronização do registro é derivado da fila; sem recalcular
     // aqui, a lista continuaria mostrando falha para algo que voltou a subir.
     if (mutation.entidadeTipo === "RDO") {
@@ -1762,6 +1792,32 @@ export async function requeueMutationsInReview(): Promise<number> {
       }
     }
     devolvidas += 1;
+  }
+
+  /*
+   * Quem esperava por uma das mutações renomeadas precisa passar a esperar pela
+   * identidade nova. Uma dependência apontando para um identificador que deixou
+   * de existir nunca é satisfeita: o servidor responde DEPENDENCY_NOT_APPLIED
+   * indefinidamente, e o reenvio que deveria destravar a fila travaria o que
+   * vinha atrás dela.
+   */
+  if (identidadesTrocadas.size > 0) {
+    for (const row of await outboxStore.getAll()) {
+      const dependencias = row.dependsOnMutationIds;
+      if (
+        !dependencias?.length ||
+        !dependencias.some((id) => identidadesTrocadas.has(id))
+      ) {
+        continue;
+      }
+      await outboxStore.put({
+        ...row,
+        dependsOnMutationIds: dependencias.map(
+          (id) => identidadesTrocadas.get(id) ?? id,
+        ),
+        updatedAt: timestamp,
+      });
+    }
   }
 
   await transaction.done;
