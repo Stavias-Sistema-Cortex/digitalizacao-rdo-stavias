@@ -104,6 +104,28 @@ function rejectedMutation(
   };
 }
 
+function conflictedMutation(
+  id: string,
+  updatedAt: string,
+): OutboxMutationRecord {
+  return {
+    ...rejectedMutation(id, updatedAt, null, "Conflito de versão."),
+    status: "CONFLICT",
+  };
+}
+
+function pendingReplacement(
+  id: string,
+  causationId: string,
+  updatedAt: string,
+): OutboxMutationRecord {
+  return {
+    ...rejectedMutation(id, updatedAt, null, null),
+    status: "PENDING",
+    causationId,
+  } as OutboxMutationRecord;
+}
+
 beforeEach(() => {
   Object.defineProperty(window.navigator, "onLine", {
     configurable: true,
@@ -188,6 +210,86 @@ describe("useSyncStatus", () => {
       reviewCount: 2,
       reviewReason:
         "Vínculo da obra precisa ser revisado",
+    });
+  });
+
+  /**
+   * Reconciliar um conflito cria uma substituta e deixa a original onde está.
+   * Contá-la prendia a tela em "Conflito de versão" para sempre — e, como o
+   * conflito é consultado antes de tudo, escondia pendência e revisão embaixo.
+   */
+  it("não conta o conflito que já cedeu lugar a uma substituta", async () => {
+    repositoryMocks.listOutboxMutations.mockResolvedValue([
+      conflictedMutation("original", "2026-07-22T10:00:00.000Z"),
+      pendingReplacement(
+        "substituta",
+        "original",
+        "2026-07-22T10:00:01.000Z",
+      ),
+    ]);
+
+    const { result } = renderHook(() =>
+      syncStatusModule.useSyncStatus(),
+    );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    // O trabalho não sumiu: mudou de rótulo, e a substituta responde por ele.
+    expect(result.current.snapshot).toMatchObject({
+      status: "PENDING",
+      conflictCount: 0,
+      pendingCount: 1,
+    });
+  });
+
+  /**
+   * A metade que não pode ceder: sem substituta, a original ainda é a única
+   * cópia do que aconteceu em campo. Silenciá-la faria a tela dizer que subiu o
+   * que não subiu.
+   */
+  it("continua contando o conflito que não tem substituta", async () => {
+    repositoryMocks.listOutboxMutations.mockResolvedValue([
+      conflictedMutation("sozinho", "2026-07-22T10:00:00.000Z"),
+    ]);
+
+    const { result } = renderHook(() =>
+      syncStatusModule.useSyncStatus(),
+    );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.snapshot).toMatchObject({
+      status: "CONFLICT",
+      conflictCount: 1,
+    });
+  });
+
+  it("não conta a original marcada como superada", async () => {
+    repositoryMocks.listOutboxMutations.mockResolvedValue([
+      rejectedMutation(
+        "superada",
+        "2026-07-22T10:00:00.000Z",
+        "SUPERSEDED_BY:11111111-1111-4111-8111-111111111111",
+        "Conflito substituído por envelope canônico reconciliado.",
+      ),
+    ]);
+
+    const { result } = renderHook(() =>
+      syncStatusModule.useSyncStatus(),
+    );
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.snapshot).toMatchObject({
+      status: "SYNCED",
+      reviewCount: 0,
+      reviewReason: null,
     });
   });
 });

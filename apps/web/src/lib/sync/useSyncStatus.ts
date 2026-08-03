@@ -97,8 +97,9 @@ function firstMutationSyncProblem(
   const problem = mutations
     .filter(
       (mutation) =>
-        mutation.status === "ERROR" ||
-        mutation.status === "CONFLICT",
+        (mutation.status === "ERROR" ||
+          mutation.status === "CONFLICT") &&
+        !foiSubstituida(mutation, mutations),
     )
     .sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt),
@@ -111,13 +112,50 @@ function firstMutationSyncProblem(
   return `Motivo: ${problem.ultimoErro}`;
 }
 
+const MARCA_DE_SUPERACAO =
+  /^(?:NON_APPLIED_)?SUPERSEDED_BY:/i;
+
+/**
+ * A mutação já cedeu lugar a outra, e contá-la prende a tela num estado vencido.
+ *
+ * Reconciliar um conflito cria uma substituta e a envia; a original fica onde
+ * está. Para OBRA ela é marcada como superada, para as demais entidades — RDO
+ * inclusive — permanece em `CONFLICT` sem marca nenhuma. Os contadores liam o
+ * status cru, então uma reconciliação bem-sucedida deixava o indicador vermelho
+ * para sempre. E como `determineSyncUiStatus` consulta conflito antes de tudo,
+ * esse resto vencido escondia pendência, revisão e erro por baixo dele.
+ *
+ * Nada é ocultado: quem responde pelo trabalho agora é a substituta, contada em
+ * `pendingCount` até subir. Só por isso a exigência de existir substituta é
+ * inegociável — sem ela, a original continua sendo a única cópia e continua
+ * contando. Esconder conflito sem quem o substitua faria a tela dizer que subiu
+ * o que não subiu, que é o erro caro deste app.
+ */
+function foiSubstituida(
+  mutation: OutboxMutationRecord,
+  todas: OutboxMutationRecord[],
+): boolean {
+  const marca = mutation.blockedReason?.trim();
+  if (marca && MARCA_DE_SUPERACAO.test(marca)) {
+    return true;
+  }
+  // Só o envelope canônico carrega causalidade; o legado não tem o campo, e
+  // por isso nunca substitui ninguém — o que é o lado seguro do engano.
+  return todas.some(
+    (candidata) =>
+      "causationId" in candidata &&
+      candidata.causationId === mutation.clientMutationId,
+  );
+}
+
 function firstMutationReviewReason(
   mutations: OutboxMutationRecord[],
 ): string | null {
   const review = mutations
     .filter(
       (mutation) =>
-        mutation.status === "REJECTED",
+        mutation.status === "REJECTED" &&
+        !foiSubstituida(mutation, mutations),
     )
     .sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt),
@@ -168,13 +206,15 @@ export function useSyncStatus(): {
       const conflictCount =
         mutations.filter(
           (mutation) =>
-            mutation.status === "CONFLICT",
+            mutation.status === "CONFLICT" &&
+            !foiSubstituida(mutation, mutations),
         ).length;
 
       const reviewCount =
         mutations.filter(
           (mutation) =>
-            mutation.status === "REJECTED",
+            mutation.status === "REJECTED" &&
+            !foiSubstituida(mutation, mutations),
         ).length;
 
       const isOnline = navigator.onLine;
