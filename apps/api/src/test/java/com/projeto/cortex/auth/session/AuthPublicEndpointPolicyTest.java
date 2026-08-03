@@ -109,6 +109,41 @@ class AuthPublicEndpointPolicyTest {
         )).isFalse();
     }
 
+    @Test
+    void publishesOnlyTheExactUnauthenticatedProbeGets() {
+        AuthPublicEndpointPolicy policy =
+                new AuthPublicEndpointPolicy(true, false);
+
+        List<String> publicGets = List.of(
+                "/api/health",
+                "/api/wake",
+                "/api/readiness",
+                "/api/wake/extra",
+                "/api/obras",
+                "/api/colaboradores"
+        ).stream()
+                .filter(path -> policy.isPublicAuthenticationRequest(
+                        request("GET", path)
+                ))
+                .toList();
+
+        assertThat(publicGets).containsExactly(
+                "/api/health",
+                "/api/wake",
+                "/api/readiness"
+        );
+    }
+
+    @Test
+    void theWakeProbeStaysReadOnly() {
+        AuthPublicEndpointPolicy policy =
+                new AuthPublicEndpointPolicy(true, false);
+
+        assertThat(policy.isPublicAuthenticationRequest(
+                request("POST", "/api/wake")
+        )).isFalse();
+    }
+
     private MockHttpServletRequest request(String method, String path) {
         MockHttpServletRequest request =
                 new MockHttpServletRequest(method, path);

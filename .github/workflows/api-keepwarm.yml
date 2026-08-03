@@ -5,9 +5,19 @@
 # que o contrato de release precisou acomodar. Quem sente isso é o apontador
 # no primeiro login do dia.
 #
-# Este ping não substitui um plano pago: o agendador do GitHub Actions não é
-# pontual e pode atrasar além da janela de inatividade do Render. Ele reduz a
-# frequência do cold start, não o elimina.
+# ESTE WORKFLOW É REDE DE SEGURANÇA, NÃO O MECANISMO PRINCIPAL.
+#
+# A suspeita registrada abaixo — de que o agendador do GitHub Actions não é
+# pontual — foi medida sobre 27 execuções reais deste repositório, e é pior do
+# que se supunha: o intervalo mediano entre pings foi de 71 minutos, com máximo
+# de 217, apesar do `*/10` pedido. Contra uma janela de inatividade de quinze
+# minutos, isso significa que o serviço passava a maior parte do tempo dormindo
+# e o keep-warm existia sem manter nada aquecido.
+#
+# Quem sustenta a janela é o Cron Trigger em `deploy/keepwarm`, que cumpre
+# horário. Este workflow permanece porque um ping esporádico ainda reduz o pior
+# caso se aquele Worker estiver fora do ar — mas ninguém deve olhar para ele e
+# concluir que a janela está coberta.
 #
 # ATENÇÃO: gatilho `schedule` só dispara a partir do branch padrão do
 # repositório. Este arquivo precisa estar lá — em qualquer outro branch ele é
@@ -33,12 +43,12 @@ jobs:
     name: Acordar a API
     runs-on: ubuntu-latest
     steps:
-      - name: Consultar o readiness público
+      - name: Tocar o aquecimento público
         env:
           # Endereço a aquecer. Serve tanto a origem direta do Render quanto
           # o endereço público do site: o Cloudflare Pages encaminha /api/*
-          # para a API, então bater no readiness por qualquer um dos dois
-          # acorda o mesmo contêiner.
+          # para a API, então tocar por qualquer um dos dois acorda o mesmo
+          # contêiner.
           #
           # Precisa ser variável de repositório. `CORTEX_RENDER_ORIGIN` existe,
           # mas pertence ao ambiente `production`, e esse ambiente tem política
@@ -58,8 +68,8 @@ jobs:
           codigo=$(curl --silent --show-error --output /dev/null \
             --write-out '%{http_code}' \
             --max-time 300 --retry 2 --retry-delay 15 \
-            "${origem%/}/api/readiness" || echo "000")
-          echo "readiness respondeu ${codigo}"
+            "${origem%/}/api/wake" || echo "000")
+          echo "aquecimento respondeu ${codigo}"
           # Qualquer resposta HTTP significa contêiner acordado. Só a ausência
           # de resposta é falha — e nem essa deve derrubar o agendamento.
           if [ "${codigo}" = "000" ]; then

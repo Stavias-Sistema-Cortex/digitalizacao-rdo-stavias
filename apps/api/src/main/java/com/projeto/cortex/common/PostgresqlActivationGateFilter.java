@@ -48,6 +48,7 @@ public final class PostgresqlActivationGateFilter extends OncePerRequestFilter {
         }
         if ("GET".equalsIgnoreCase(method)) {
             return "/api/health".equals(path)
+                    || "/api/wake".equals(path)
                     || "/api/readiness".equals(path);
         }
         return "POST".equalsIgnoreCase(method)

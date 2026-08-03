@@ -79,6 +79,7 @@ public final class AuthPublicEndpointPolicy {
         }
         if ("GET".equalsIgnoreCase(method)
                 && ("/api/health".equals(path)
+                    || "/api/wake".equals(path)
                     || "/api/readiness".equals(path))) {
             return true;
         }

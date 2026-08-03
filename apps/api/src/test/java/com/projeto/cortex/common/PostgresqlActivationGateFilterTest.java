@@ -26,6 +26,7 @@ class PostgresqlActivationGateFilterTest {
         for (MockHttpServletRequest request : new MockHttpServletRequest[] {
             request("OPTIONS", "/api/obras"),
             request("GET", "/api/health"),
+            request("GET", "/api/wake"),
             request("GET", "/api/readiness"),
             request("POST", "/api/auth/email/challenges"),
             request("POST", "/api/auth/email/challenges/" + CHALLENGE_ID
