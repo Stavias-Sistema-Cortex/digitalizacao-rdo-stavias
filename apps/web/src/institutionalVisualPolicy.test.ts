@@ -269,6 +269,13 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(action).toContain("background: var(--color-ink);");
   });
 
+  /**
+   * O redesign do Financeiro aposentou a paleta paralela `--finance-*` e o
+   * chassi próprio (unit-grid, command-context, nav com `.is-active`). O que
+   * esta política prende agora é o contrato novo: superfícies sólidas nos
+   * tokens da marca e o índice de módulos sinalizando página corrente por
+   * `aria-current`, não por classe de estado.
+   */
   it("presents Financeiro as a quiet operational workspace", () => {
     const financeHeader = rule(headerCss, ".cortex-page-header");
     const financeTitle = rule(headerCss, ".cortex-page-header h1");
@@ -278,7 +285,7 @@ describe("Cortex 3 institutional visual policy", () => {
     );
     const financeNavigationActive = rule(
       financeCss,
-      ".finance-module-index button.is-active",
+      '.finance-module-index button[aria-current="page"]',
     );
     const financeNavigationLabel = rule(
       financeCss,
@@ -286,11 +293,7 @@ describe("Cortex 3 institutional visual policy", () => {
     );
     const financeScopeLabel = rule(
       financeCss,
-      ".finance-scope-bar__identity span,\n.finance-scope-bar__selection label",
-    );
-    const financeHeaderDatum = rule(
-      financeCss,
-      ".finance-command-context dt",
+      ".finance-scope-bar__identity span",
     );
     const financeContent = rule(
       financeCss,
@@ -303,36 +306,26 @@ describe("Cortex 3 institutional visual policy", () => {
     expect(financeHeader).toContain("background-attachment: fixed;");
     expect(financeTitle).toContain("color: #fff;");
     expect(financeCss).not.toContain(".finance-page > .workspace-header");
-    expect(financeNavigation).toContain("background: transparent;");
     expect(financeNavigation).toContain("overflow-x: auto;");
-    expect(financeNavigationActive).toContain("background: #e4efea;");
     expect(financeNavigationActive).toContain(
-      "border-bottom: 1px solid var(--finance-yellow);",
+      "background: var(--color-brand-teal);",
     );
-    expect(financeNavigationActive).toContain("box-shadow: none;");
-    expect(financeNavigationLabel).toContain("color: var(--finance-muted);");
-    expect(financeScopeLabel).toContain("color: var(--finance-muted);");
-    expect(financeHeaderDatum).toContain("color: #cbd8d2;");
-    expect(financeContent).toContain("padding:");
-    expect(financeCss).not.toContain("border-top: 2px solid var(--finance-ink);");
+    expect(financeNavigationActive).toContain(
+      "color: var(--color-brand-yellow);",
+    );
+    expect(financeNavigationLabel).toContain("display: none;");
+    expect(financeScopeLabel).toContain("color: var(--color-muted);");
+    expect(financeContent).toContain("gap: 12px;");
   });
 
-  it("keeps Financeiro units as fluid white cards without a gray grid remainder", () => {
-    const grid = rule(financeCss, ".finance-unit-grid");
-    const card = rule(financeCss, ".finance-unit-grid > button");
-    const selectedSpine = rule(
-      financeCss,
-      ".finance-unit-grid > button.is-selected::before",
-    );
+  it("keeps Financeiro on the shared brand palette without a parallel chassis", () => {
+    const moduleButton = rule(financeCss, ".finance-module-index button");
 
-    expect(grid).toContain("grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));");
-    expect(grid).toContain("gap: 12px;");
-    expect(grid).toContain("background: transparent;");
-    expect(card).toContain("border: 1px solid var(--finance-line);");
-    expect(card).toContain("background: #fff;");
-    expect(card).not.toContain("box-shadow:");
-    expect(selectedSpine).toContain("var(--finance-yellow) 0 22%");
-    expect(selectedSpine).toContain("var(--finance-teal) 22% 100%");
+    expect(financeCss).not.toMatch(/var\(--finance-/);
+    expect(financeCss).not.toContain(".finance-unit-grid");
+    expect(financeCss).not.toContain(".finance-command-context");
+    expect(moduleButton).toContain("border: 1px solid var(--color-border);");
+    expect(moduleButton).toContain("background: var(--color-surface);");
   });
 
   it("applies the same restrained controls to RDO, Financeiro and Tarefas", () => {
@@ -340,17 +333,13 @@ describe("Cortex 3 institutional visual policy", () => {
       rdoCss,
       ".rdo-create-workspace .button.primary",
     );
-    const financeScopeActive = lastRule(
+    const financeModuleButton = rule(
       financeCss,
-      ".finance-scope-bar nav button.is-active",
+      ".finance-module-index button",
     );
-    const financePrimary = rule(
+    const financeScopeSelect = rule(
       financeCss,
-      ".finance-primary-action",
-    );
-    const financeAccent = lastRule(
-      financeCss,
-      ".finance-scope-bar::before",
+      ".finance-scope-bar__selection select",
     );
     const taskSubmit = lastRule(tasksCss, ".tarefa-form-enviar");
     const taskGeometry = lastRule(
@@ -359,10 +348,13 @@ describe("Cortex 3 institutional visual policy", () => {
     );
 
     expect(rdoPrimary).toContain("background: var(--color-ink);");
-    expect(financeScopeActive).toContain("color: var(--finance-teal-strong);");
-    expect(financeScopeActive).toContain("background: #fff;");
-    expect(financePrimary).toContain("background: var(--finance-ink);");
-    expect(financeAccent).toContain("content: none;");
+    expect(financeModuleButton).toContain(
+      "border-radius: var(--radius-control);",
+    );
+    expect(financeScopeSelect).toContain(
+      "border-radius: var(--radius-control);",
+    );
+    expect(financeCss).not.toContain(".finance-scope-bar::before");
     expect(taskSubmit).toContain("background: var(--color-ink);");
     expect(taskGeometry).toContain("border-radius: var(--radius-control);");
   });

@@ -134,7 +134,6 @@ describe("polimento visual da plataforma autenticada", () => {
       operationalWorkspaceCss,
       ".workspace-status-rail",
     );
-    const financeScope = rule(financeiroCss, ".finance-scope-bar");
 
     for (const surface of [
       institutionalFrame,
@@ -143,10 +142,14 @@ describe("polimento visual da plataforma autenticada", () => {
       teamsFrame,
       managementColumn,
       workspaceRail,
-      financeScope,
     ]) {
       expect(surface).toContain("background: var(--surface-glass-fallback);");
     }
+    // O Financeiro saiu do sistema de vidro no redesign: a barra de escopo é
+    // superfície sólida da marca, sem fallback translúcido.
+    expect(rule(financeiroCss, ".finance-scope-bar")).toContain(
+      "background: var(--color-surface);",
+    );
     expect(teamsFrame).not.toContain("overflow: hidden;");
     expect(rule(globalCss, ":root")).toContain("--glass-shadow: none;");
     expect(globalCss).not.toContain("backdrop-filter:");
@@ -196,7 +199,7 @@ describe("polimento visual da plataforma autenticada", () => {
       "background: var(--color-canvas);",
     );
     expect(rule(financeiroCss, ".finance-page")).toContain(
-      "background: var(--finance-canvas);",
+      "background: var(--color-canvas);",
     );
   });
 
