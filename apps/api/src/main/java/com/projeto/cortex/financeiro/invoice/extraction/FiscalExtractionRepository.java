@@ -95,7 +95,7 @@ public class FiscalExtractionRepository {
                         texto_original, extrator, extrator_versao,
                         localizacao, confianca, validacao_status,
                         validacao_detalhe
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, CAST(? AS JSONB), ?, ?, ?, ?, ?, ?, ?)
                     """,
                     UUID.randomUUID().toString(), write.id(), candidate.field(),
                     order, candidate.normalizedValue().toString(),

@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -31,9 +33,18 @@ class ObraGeometria {
     @Column(name = "tipo_geometria", nullable = false)
     private String tipoGeometria;
 
+    /*
+     * O JdbcTypeCode é o que faz a gravação existir. A coluna é jsonb, e um
+     * String sem essa anotação é bindado como VARCHAR — o PostgreSQL recusa a
+     * conversão implícita, e cada apontamento de geometria vindo do campo
+     * morria nessa recusa, retentando para sempre. O MySQL aceitava, e foi por
+     * isso que o defeito atravessou os testes que rodavam contra ele.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "geometria_json", nullable = false, columnDefinition = "json")
     private String geometriaJson;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "propriedades_json", nullable = false, columnDefinition = "json")
     private String propriedadesJson;
 

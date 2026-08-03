@@ -906,7 +906,8 @@ public class RdoImportacaoHistoricaService {
                     data_rdo,
                     quantidade_erros,
                     quantidade_warnings
-                ) VALUES (?, ?, ?, ?, ?, ?, 'RDO_TABULAR', ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB),
+                          'RDO_TABULAR', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 lineId,
                 importacaoId,
