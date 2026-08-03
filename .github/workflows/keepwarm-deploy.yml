@@ -43,9 +43,37 @@ jobs:
         with:
           node-version: 22
 
+      # O wrangler só sabe dizer "Authentication error [code: 10000]" quando o
+      # token não alcança Workers — a mesma frase para token errado, permissão
+      # ausente e conta errada. Perguntar direto à API separa esses casos antes
+      # de gastar uma tentativa de implantação em cima da dúvida.
+      - name: Conferir se o token alcança Workers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          USANDO_TOKEN_DEDICADO: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN && 'CLOUDFLARE_WORKERS_API_TOKEN' || 'CLOUDFLARE_API_TOKEN' }}
+        run: |
+          set -uo pipefail
+          echo "Token em uso: ${USANDO_TOKEN_DEDICADO}"
+          codigo=$(curl --silent --output /tmp/cf-workers.json \
+            --write-out '%{http_code}' --max-time 30 \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts" \
+            || echo "000")
+          echo "Listagem de Workers respondeu ${codigo}"
+          if [ "${codigo}" = "200" ]; then
+            echo "O token alcança Workers nesta conta."
+            exit 0
+          fi
+          echo "::error::O token ${USANDO_TOKEN_DEDICADO} não alcança Workers na conta ${CLOUDFLARE_ACCOUNT_ID}. Falta a permissão Account -> Workers Scripts -> Edit, ou a permissão foi adicionada a um token diferente do que está guardado neste secret."
+          # Mensagem da própria Cloudflare, que costuma nomear o que falta.
+          python3 -c "import json,sys; d=json.load(open('/tmp/cf-workers.json')); print('Cloudflare respondeu:', json.dumps(d.get('errors'), ensure_ascii=False))" \
+            2>/dev/null || true
+          exit 1
+
       - name: Implantar o Worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CORTEX_RENDER_ORIGIN: ${{ vars.CORTEX_RENDER_ORIGIN }}
         run: |
