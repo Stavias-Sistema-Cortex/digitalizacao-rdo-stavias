@@ -12,6 +12,8 @@ import {
 import { limitesDaColecao, type OperationalFeatureCollection } from "./mapGeometry";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 
+import type { CameraDaObra } from "./cameraDaObra";
+
 export type MapViewMode = "2d" | "3d";
 
 export interface OperationalMapController {
@@ -25,6 +27,12 @@ export interface OperationalMapController {
    * terminar de abrir, e em campo ele nunca chegava a pintar.
    */
   setFeatures: (features: OperationalFeatureCollection) => void;
+  /** Impõe o enquadramento vindo do outro mapa, sem reemitir movimento. */
+  applyCamera: (camera: CameraDaObra) => void;
+  /** Avisa a cada parada de movimento; devolve o cancelamento da inscrição. */
+  onCameraChange: (
+    listener: (camera: CameraDaObra) => void,
+  ) => () => void;
   destroy: () => void;
 }
 
@@ -236,6 +244,10 @@ interface GlMapaOperacional {
     pitch?: number;
     bearing?: number;
   }): unknown;
+  jumpTo(options: { center?: [number, number]; zoom?: number }): unknown;
+  getCenter(): { lng: number; lat: number };
+  getZoom(): number;
+  off(type: string, listener: (...args: never[]) => void): unknown;
   fitBounds(
     bounds: [[number, number], [number, number]],
     options: { padding: number; maxZoom: number; duration: number },
@@ -358,6 +370,7 @@ function prepararMapa(
     let pronto = false;
     let destruido = false;
     let enquadrado = false;
+  let impondoCamera = false;
     let ultimaFalha: string | null = null;
     // O primeiro `idle` é a prova de que algo pintou. Antes dele, uma falha de
     // rede do basemap significa painel vazio; depois dele, é degradação.
@@ -508,6 +521,39 @@ function prepararMapa(
           if (!enquadrado) {
             enquadrado = enquadrar(map, features);
           }
+        },
+        applyCamera: (camera) => {
+          if (destruido) return;
+          // `jumpTo`, e não `easeTo`: uma animação faria o mapa emitir uma
+          // sequência de paradas intermediárias, e cada uma delas voltaria ao
+          // outro mapa como movimento novo. O espelho precisa ser instantâneo
+          // para não virar conversa.
+          impondoCamera = true;
+          map.jumpTo({
+            center: [camera.longitude, camera.latitude],
+            zoom: camera.zoom,
+          });
+        },
+        onCameraChange: (listener) => {
+          const aoParar = () => {
+            // O movimento que este mapa acabou de sofrer veio do outro: ecoá-lo
+            // de volta faria o par oscilar sem nunca assentar.
+            if (impondoCamera) {
+              impondoCamera = false;
+              return;
+            }
+            if (destruido) return;
+            const centro = map.getCenter();
+            listener({
+              longitude: centro.lng,
+              latitude: centro.lat,
+              zoom: map.getZoom(),
+            });
+          };
+          map.on("moveend", aoParar as never);
+          return () => {
+            map.off("moveend", aoParar as never);
+          };
         },
         destroy: encerrar,
       });

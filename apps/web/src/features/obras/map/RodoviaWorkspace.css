@@ -454,3 +454,45 @@
 .rodovia-workspace-aviso--aproximado strong {
   color: var(--color-ink);
 }
+
+/*
+ * Travamento dos dois mapas.
+ *
+ * Fica entre o recorte e o par de painéis porque governa os dois: posto dentro
+ * de um deles, sugeriria pertencer àquele lado.
+ */
+.rodovia-workspace-trava {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.rodovia-workspace-trava-botao {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rodovia-workspace-trava-botao:hover {
+  border-color: var(--color-border-strong);
+}
+
+.rodovia-workspace-trava-botao.is-ativo {
+  background: var(--color-brand-teal);
+  border-color: var(--color-brand-teal);
+  color: var(--color-brand-yellow);
+}
+
+.rodovia-workspace-trava small {
+  color: var(--color-text-muted, inherit);
+}

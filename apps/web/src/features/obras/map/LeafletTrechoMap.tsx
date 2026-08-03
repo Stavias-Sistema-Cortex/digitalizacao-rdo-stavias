@@ -21,6 +21,12 @@ export type {
   RascunhoDoTrecho,
 } from "./rascunhoDoTrecho";
 
+import {
+  cameraUtilizavel,
+  mesmaCamera,
+  type CameraDaObra,
+} from "./cameraDaObra";
+
 interface LeafletTrechoMapProps {
   features: OperationalFeatureCollection;
   /** Centro no formato GeoJSON `[longitude, latitude]`. */
@@ -31,6 +37,13 @@ interface LeafletTrechoMapProps {
    * município inteiro em vez de abrir num zoom arbitrário sobre o centro.
    */
   limitesIniciais?: [[number, number], [number, number]] | null;
+  /**
+   * Enquadramento imposto pelo painel vetorial enquanto o travamento está
+   * ligado. Nulo quando destravado, que é como este mapa volta a andar só.
+   */
+  camera?: CameraDaObra | null;
+  /** Publica o enquadramento deste mapa; nulo destravado. */
+  onCamera?: ((camera: CameraDaObra) => void) | null;
   /**
    * Extremos que estão sendo marcados, ainda não gravados.
    *
@@ -130,6 +143,8 @@ export function LeafletTrechoMap({
   features,
   center,
   limitesIniciais = null,
+  camera = null,
+  onCamera = null,
   rascunho = RASCUNHO_VAZIO,
   marcando = null,
   onPontoMarcado,
@@ -142,6 +157,8 @@ export function LeafletTrechoMap({
   const marcandoRef = useRef<ExtremoDoTrecho | null>(marcando);
   const aoMarcarRef = useRef(onPontoMarcado);
   const enquadramentoRef = useRef<string | null>(null);
+  // O movimento veio do outro mapa: devolvê-lo faria o par oscilar.
+  const impondoCameraRef = useRef(false);
   const [estado, setEstado] = useState<"carregando" | "pronto" | "erro">(
     "carregando",
   );
@@ -217,6 +234,58 @@ export function LeafletTrechoMap({
   // O centro só reposiciona quando a coordenada muda de fato; o enquadramento
   // pela geometria, logo abaixo, tem precedência quando há trecho desenhado.
   const [longitude, latitude] = center;
+  /*
+   * Publica o enquadramento deste mapa enquanto o travamento estiver ligado.
+   *
+   * A inscrição some quando `onCamera` vira nulo, que é como o destravamento
+   * chega aqui — sem isso, este mapa continuaria empurrando o painel vetorial
+   * depois de solto.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !onCamera || estado !== "pronto") {
+      return undefined;
+    }
+    const aoParar = () => {
+      if (impondoCameraRef.current) {
+        impondoCameraRef.current = false;
+        return;
+      }
+      const centro = map.getCenter();
+      onCamera({
+        longitude: centro.lng,
+        latitude: centro.lat,
+        zoom: map.getZoom(),
+      });
+    };
+    map.on("moveend", aoParar);
+    return () => {
+      map.off("moveend", aoParar);
+    };
+  }, [onCamera, estado]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !cameraUtilizavel(camera) || estado !== "pronto") {
+      return;
+    }
+    const atual = map.getCenter();
+    // Já está onde deveria: reimpor produziria um movimento novo, e com ele o
+    // eco que a tolerância existe para cortar.
+    if (
+      mesmaCamera(
+        { longitude: atual.lng, latitude: atual.lat, zoom: map.getZoom() },
+        camera,
+      )
+    ) {
+      return;
+    }
+    impondoCameraRef.current = true;
+    map.setView([camera.latitude, camera.longitude], camera.zoom, {
+      animate: false,
+    });
+  }, [camera, estado]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (map && estado === "pronto" && enquadramentoRef.current === null) {

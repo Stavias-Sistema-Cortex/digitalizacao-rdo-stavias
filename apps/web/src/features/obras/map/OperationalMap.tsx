@@ -11,6 +11,7 @@ import {
   type MapViewMode,
   type OperationalMapController,
 } from "./mapAdapter";
+import type { CameraDaObra } from "./cameraDaObra";
 import type { LeituraMapaObra } from "./obraMapApi";
 import { descartarCacheDeMapa } from "./cacheDeTiles";
 import {
@@ -41,6 +42,13 @@ interface OperationalMapProps {
   carregando: boolean;
   /** Falha da leitura compartilhada, já explicada no aviso do workspace. */
   erroLeitura: string | null;
+  /**
+   * Enquadramento imposto pelo outro mapa enquanto o travamento está ligado.
+   * Nulo quando destravado, que é como cada metade volta a andar sozinha.
+   */
+  camera?: CameraDaObra | null;
+  /** Publica o enquadramento desta metade; nulo destravado. */
+  onCamera?: ((camera: CameraDaObra) => void) | null;
   /**
    * Recorte decidido pelo workspace. Chega pronto para que esta metade e a
    * metade Leaflet nunca mostrem obras diferentes lado a lado.
@@ -82,12 +90,16 @@ function MapCanvas({
   center,
   mode,
   centerRequest,
+  camera,
+  onCamera,
 }: {
   provider: MapProvider;
   features: OperationalFeatureCollection;
   center: [number, number];
   mode: MapViewMode;
   centerRequest: number;
+  camera: CameraDaObra | null;
+  onCamera: ((camera: CameraDaObra) => void) | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<OperationalMapController | null>(null);
@@ -268,6 +280,27 @@ function MapCanvas({
     }
   }, [centerRequest]);
 
+
+  /*
+   * Publica o enquadramento desta tela enquanto o travamento estiver ligado.
+   *
+   * A inscrição é refeita quando `onCamera` troca — inclusive para nulo, que é
+   * como o travamento desligado chega aqui. Sem desinscrever, o mapa
+   * continuaria empurrando o outro depois de destravado.
+   */
+  useEffect(() => {
+    if (!onCamera || status !== "ready") {
+      return undefined;
+    }
+    return controllerRef.current?.onCameraChange(onCamera);
+  }, [onCamera, status]);
+
+  useEffect(() => {
+    if (!camera || status !== "ready") {
+      return;
+    }
+    controllerRef.current?.applyCamera(camera);
+  }, [camera, status]);
   return (
     <div className="operational-map-canvas-wrap">
       <div ref={containerRef} className="operational-map-canvas" />
@@ -344,6 +377,8 @@ export function OperationalMap({
   leitura,
   carregando,
   erroLeitura,
+  camera = null,
+  onCamera = null,
   filtro = FILTRO_VAZIO,
 }: OperationalMapProps) {
   const defaultProvider = useMemo(() => resolveMapProvider(), []);
@@ -476,6 +511,8 @@ export function OperationalMap({
           center={center}
           mode={mode}
           centerRequest={centerRequest}
+          camera={camera}
+          onCamera={onCamera}
         />
       )}
 

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { CameraDaObra } from "./cameraDaObra";
+
 import { SYNC_COMPLETED_EVENT } from "../../../lib/sync/syncEvents";
 import { CampoDeExtremo } from "./CampoDeExtremo";
 import { LeafletTrechoMap } from "./LeafletTrechoMap";
@@ -151,6 +153,29 @@ export function RodoviaWorkspace({
   const [aproximado, setAproximado] =
     useState<EnquadramentoAproximado | null>(null);
   const [ciclo, setCiclo] = useState(0);
+  /*
+   * Travamento dos dois mapas.
+   *
+   * Eles mostram a mesma obra por meios diferentes, e ler os dois lado a lado
+   * exigia arrastar cada um até coincidirem — trabalho manual refeito a cada
+   * mudança de trecho. Ligado, mover um leva o outro junto.
+   *
+   * A origem viaja com o enquadramento e serve a uma coisa só: um mapa nunca
+   * recebe de volta a câmera que ele mesmo publicou. Sem isso, a devolução
+   * chegaria como movimento novo e o par entraria em oscilação — que é o modo
+   * clássico de dois mapas espelhados travarem a tela.
+   */
+  const [travado, setTravado] = useState(false);
+  const [camera, setCamera] = useState<
+    { valor: CameraDaObra; origem: "vetorial" | "leaflet" } | null
+  >(null);
+
+  const aoMoverVetorial = useCallback((valor: CameraDaObra) => {
+    setCamera({ valor, origem: "vetorial" });
+  }, []);
+  const aoMoverLeaflet = useCallback((valor: CameraDaObra) => {
+    setCamera({ valor, origem: "leaflet" });
+  }, []);
 
   // A rodovia do cadastro da obra abre o formulário já preenchida: quem
   // desenha o trecho está na mesma rodovia que a obra declara, e redigitar o
@@ -790,6 +815,27 @@ export function RodoviaWorkspace({
         </div>
       ) : null}
 
+      <div className="rodovia-workspace-trava">
+        <button
+          type="button"
+          className={
+            travado
+              ? "rodovia-workspace-trava-botao is-ativo"
+              : "rodovia-workspace-trava-botao"
+          }
+          aria-pressed={travado}
+          onClick={() => setTravado((atual) => !atual)}
+        >
+          <span aria-hidden="true">{travado ? "🔒" : "🔓"}</span>
+          {travado ? "Mapas travados" : "Travar mapas"}
+        </button>
+        <small>
+          {travado
+            ? "Mover um mapa leva o outro junto."
+            : "Cada mapa se move por conta própria."}
+        </small>
+      </div>
+
       <div className="rodovia-workspace-split">
         <div className="rodovia-workspace-painel">
           <OperationalMap
@@ -798,6 +844,10 @@ export function RodoviaWorkspace({
             filtro={filtro}
             carregando={estado.fase === "carregando"}
             erroLeitura={estado.fase === "erro" ? estado.mensagem : null}
+            camera={
+              travado && camera?.origem === "leaflet" ? camera.valor : null
+            }
+            onCamera={travado ? aoMoverVetorial : null}
           />
         </div>
         <div className="rodovia-workspace-painel">
@@ -809,6 +859,10 @@ export function RodoviaWorkspace({
               rascunho={rascunho}
               marcando={podeDesenhar ? marcando : null}
               onPontoMarcado={aoMarcarPonto}
+              camera={
+                travado && camera?.origem === "vetorial" ? camera.valor : null
+              }
+              onCamera={travado ? aoMoverLeaflet : null}
             />
           ) : (
             <div className="rodovia-workspace-vazio">
