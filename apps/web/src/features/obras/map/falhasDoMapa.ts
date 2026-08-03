@@ -13,6 +13,8 @@ export interface FalhaDoRenderizador {
   message?: string;
   /** URL do recurso, quando o erro é de rede (`AJAXError`). */
   url?: string;
+  /** Código HTTP, quando o servidor respondeu e recusou (`AJAXError`). */
+  status?: number;
 }
 
 /**
@@ -83,6 +85,13 @@ export function falhaDeBasemap(
 ): boolean {
   if (!erro || falhaImpedeOMapa(erro, styleUrl)) {
     return false;
+  }
+  // O servidor que responde e recusa some tão completamente quanto o que não
+  // responde. Só a rede caída era reconhecida aqui, e o host de mapa aberto
+  // que devolve 403 sob carga ou 404 numa faixa de tiles caía fora da conta —
+  // o painel ficava vazio sem que nada nesta função acusasse.
+  if (typeof erro.status === "number" && erro.status >= 400) {
+    return true;
   }
   const texto = `${erro.message ?? ""} ${erro.url ?? ""}`;
   return /failed to fetch|networkerror|load failed|ajaxerror/i.test(texto);

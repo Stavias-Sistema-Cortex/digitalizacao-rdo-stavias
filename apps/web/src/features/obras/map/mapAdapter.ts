@@ -36,9 +36,9 @@ interface MountOptions {
   mode: MapViewMode;
   onRuntimeError: (message: string) => void;
   /**
-   * O basemap não veio e o mapa nunca chegou a pintar. Disparado no máximo uma
-   * vez por montagem, para que o painel possa trocar para o provider reserva
-   * em vez de exibir um retângulo vazio.
+   * O mapa não chegou a pintar. Disparado no máximo uma vez por montagem, para
+   * que o painel possa trocar para o basemap embutido em vez de exibir um
+   * retângulo vazio.
    */
   onFalhaDeBasemap?: () => void;
 }
@@ -48,6 +48,63 @@ const SOURCE_ID = "cortex-operational";
 const LIMITE_ESTILO_MS = 25_000;
 /** Janela para o primeiro tile chegar depois que o estilo já está de pé. */
 const LIMITE_TILES_MS = 12_000;
+/** Lado da amostra lida do canvas para saber se algo foi pintado. */
+const LADO_DA_AMOSTRA = 12;
+/**
+ * Falhas de fonte que separam o tile perdido da fonte que não serve.
+ *
+ * Um 404 solto numa borda de zoom é rotina e não justifica trocar o basemap;
+ * a repetição, sim — é a rede da obra retendo a malha inteira.
+ */
+const FALHAS_ATE_TROCAR_A_FONTE = 3;
+
+/**
+ * Lê o canvas e diz se ele é um retângulo de uma cor só.
+ *
+ * É a única pergunta que o renderizador nunca responde. `load`, `idle` e
+ * `areTilesLoaded()` descrevem o que ele *tentou* fazer, e todos os três
+ * respondem afirmativamente quando uma fonte inteira falhou — fonte quebrada
+ * não deixa tile pendente. O pixel não tem essa complacência: ou tem imagem,
+ * ou é o retângulo mudo que aparece na tela do operador.
+ *
+ * A amostra é minúscula e a leitura acontece uma vez por montagem. Qualquer
+ * problema na leitura devolve `false`: uma medição que não deu certo não é
+ * motivo para derrubar um mapa que talvez esteja inteiro.
+ */
+export function canvasEstaMudo(canvas: HTMLCanvasElement): boolean {
+  try {
+    if (canvas.width === 0 || canvas.height === 0) {
+      return true;
+    }
+    const amostra = document.createElement("canvas");
+    amostra.width = LADO_DA_AMOSTRA;
+    amostra.height = LADO_DA_AMOSTRA;
+    const contexto = amostra.getContext("2d", { willReadFrequently: true });
+    if (!contexto) {
+      return false;
+    }
+    contexto.drawImage(canvas, 0, 0, LADO_DA_AMOSTRA, LADO_DA_AMOSTRA);
+    const { data } = contexto.getImageData(
+      0,
+      0,
+      LADO_DA_AMOSTRA,
+      LADO_DA_AMOSTRA,
+    );
+    for (let i = 4; i < data.length; i += 4) {
+      if (
+        data[i] !== data[0] ||
+        data[i + 1] !== data[1] ||
+        data[i + 2] !== data[2] ||
+        data[i + 3] !== data[3]
+      ) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * A espessura acompanha o zoom para que o trecho continue legível de longe sem
@@ -306,6 +363,8 @@ function prepararMapa(
     // rede do basemap significa painel vazio; depois dele, é degradação.
     let ocioso = false;
     let basemapAvisado = false;
+    // Um tile perdido é rotina; a fonte inteira mal servida é outra coisa.
+    let falhasDeFonte = 0;
     const temporizadores: number[] = [];
 
     map.once("idle", () => {
@@ -366,6 +425,37 @@ function prepararMapa(
       temporizadores.push(
         window.setTimeout(() => {
           if (destruido) return;
+          /*
+           * O veredito do pixel vem antes de qualquer outro sinal.
+           *
+           * Havendo geometria da obra para desenhar, um canvas de uma cor só
+           * significa que nada pintou — nem a malha, nem o próprio trecho, que
+           * não depende de rede alguma. Nesse estado não há aviso que sirva: o
+           * painel troca para o basemap embutido, que desenha. Sem geometria
+           * não há como distinguir mapa vazio de mapa mudo, e aí a medição não
+           * é usada.
+           */
+          if (
+            options.features.features.length > 0 &&
+            canvasEstaMudo(map.getCanvas())
+          ) {
+            avisarBasemap();
+            return;
+          }
+          /*
+           * O fundo liso: a geometria da obra desenhou e a malha não.
+           *
+           * Acontece quando o estilo passa na sonda e os tiles são barrados
+           * depois — a rede deixa o JSON entrar e retém o resto. O canvas não
+           * fica de uma cor só, porque o trecho pinta sobre ele, e por isso a
+           * medição de pixel não acusa. O que acusa é a insistência: uma fonte
+           * que erra repetidamente não vai entregar mapa, e um trecho flutuando
+           * sobre nada não localiza obra nenhuma. Melhor o basemap embutido.
+           */
+          if (falhasDeFonte >= FALHAS_ATE_TROCAR_A_FONTE) {
+            avisarBasemap();
+            return;
+          }
           // `areTilesLoaded()` responde verdadeiro quando a própria fonte
           // falhou — fonte quebrada não tem tile pendente. Uma falha já
           // registrada, portanto, fala mais alto do que esse sinal.
@@ -425,8 +515,11 @@ function prepararMapa(
       // Falha de rede do basemap antes de qualquer pintura: este é o caminho
       // do retângulo mudo. O aviso sai daqui — não do vigia — porque a fonte
       // quebrada satisfaz todos os sinais de "carregado" do renderizador.
-      if (!ocioso && falhaDeBasemap(event.error, options.provider.styleUrl)) {
-        avisarBasemap();
+      if (falhaDeBasemap(event.error, options.provider.styleUrl)) {
+        falhasDeFonte += 1;
+        if (!ocioso) {
+          avisarBasemap();
+        }
       }
       if (pronto) {
         options.onRuntimeError(mensagem);
@@ -506,6 +599,10 @@ async function mountMapLibre(
     pitch: options.mode === "3d" ? 52 : 0,
     bearing: options.mode === "3d" ? -18 : 0,
     attributionControl: false,
+    // Sem preservar o buffer, o conteúdo desenhado é descartado logo após a
+    // composição e o canvas lido devolve vazio — a medição do retângulo mudo
+    // acusaria toda montagem, inclusive as boas.
+    canvasContextAttributes: { preserveDrawingBuffer: true },
   });
   map.addControl(new maplibre.NavigationControl(), "top-right");
   map.addControl(
@@ -548,6 +645,7 @@ async function mountMapbox(
     pitch: options.mode === "3d" ? 52 : 0,
     bearing: 0,
     attributionControl: false,
+    preserveDrawingBuffer: true,
   });
   map.addControl(new mapbox.NavigationControl(), "top-right");
   map.addControl(

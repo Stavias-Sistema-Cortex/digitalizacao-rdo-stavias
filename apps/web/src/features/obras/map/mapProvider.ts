@@ -20,8 +20,12 @@ export interface MapProvider {
    * URL resolveria — o estilo precisa já estar aqui dentro.
    */
   estiloInline?: Record<string, unknown> | null;
-  /** Verdadeiro no provider de contingência, acionado por falha do principal. */
-  reserva?: boolean;
+  /**
+   * Verdadeiro no basemap que não consulta servidor de estilo nenhum. É o piso
+   * do painel: quando ele está em uso não há mais para onde cair, e nenhuma
+   * falha deve provocar outra remontagem.
+   */
+  embutido?: boolean;
   missingConfiguration: string | null;
   fallbackReason: string | null;
   /** Verdadeiro quando o provider não exige credencial alguma. */
@@ -177,26 +181,32 @@ export function availableMapProviders(
 }
 
 /**
- * O basemap de contingência: OSM raster, com o estilo embutido.
+ * O basemap que não depende de servidor de estilo: OSM raster, embutido.
  *
- * Entra sozinho quando a fonte vetorial do provider principal está
- * inalcançável — o caso observado em campo, em que o painel subia como um
- * retângulo mudo. Usa `tile.openstreetmap.org`, o mesmo host que o painel
- * Leaflet ao lado já consome: se metade da tela desenha, a outra também tem
- * como desenhar. O estilo vive aqui dentro porque, com o servidor de estilos
- * fora de alcance, nenhum URL de estilo resolveria. Sem camadas de texto,
- * nenhum glifo é necessário.
+ * É o piso do painel vetorial, e existe por uma constatação de campo simples:
+ * a metade Leaflet desta tela sempre desenhou e a metade MapLibre nunca
+ * desenhou. A diferença entre as duas nunca foi o renderizador — era o host.
+ * O Leaflet consome `tile.openstreetmap.org`, que a rede da obra entrega; o
+ * estilo vetorial vinha de um servidor de estilos que essa mesma rede não
+ * entrega, e cada tentativa de conserto anterior continuou apostando nele.
+ *
+ * Aqui não há aposta: o estilo já está dentro do pacote, não há JSON a buscar,
+ * e o único host consultado é o que o painel ao lado prova estar de pé. Sem
+ * camadas de texto, nenhum glifo é necessário — o que também elimina o
+ * servidor de fontes como ponto de falha. A inclinação da câmera continua
+ * valendo sobre raster; o que raster não tem é volume de edificação, e nenhum
+ * é inventado.
  */
-export function providerReservaOsm(): MapProvider {
+export function providerRasterOsm(): MapProvider {
   return {
     id: "maplibre",
-    label: "OSM (reserva)",
+    label: "OSM (base)",
     engine: "maplibre",
     configured: true,
     styleUrl: null,
     estiloInline: {
       version: 8,
-      name: "Córtex reserva OSM",
+      name: "Córtex base OSM",
       sources: {
         osm: {
           type: "raster",
@@ -208,18 +218,37 @@ export function providerReservaOsm(): MapProvider {
       },
       layers: [{ id: "osm", type: "raster", source: "osm" }],
     },
-    reserva: true,
+    embutido: true,
     missingConfiguration: null,
     fallbackReason: null,
     keyless: true,
     capabilities: {
-      perspective3d: false,
+      perspective3d: true,
       geoJsonLayers: true,
       cameraControl: true,
       buildingExtrusion: false,
       satellite: false,
     },
   };
+}
+
+/**
+ * Endereços que precisam responder para que um estilo remoto valha a pena.
+ *
+ * São o próprio estilo e as fontes que ele declara por URL — o TileJSON da
+ * malha vetorial, no caso do OpenFreeMap. Um estilo que chega apontando para
+ * uma fonte inalcançável monta um mapa que não pinta, e é exatamente esse
+ * estado que este módulo existe para nunca mais colocar na tela.
+ */
+export function fontesDeclaradas(estilo: unknown): string[] {
+  const sources = (estilo as { sources?: Record<string, unknown> } | null)
+    ?.sources;
+  if (!sources || typeof sources !== "object") {
+    return [];
+  }
+  return Object.values(sources)
+    .map((fonte) => (fonte as { url?: unknown } | null)?.url)
+    .filter((url): url is string => typeof url === "string" && url.length > 0);
 }
 
 export function mapboxAccessToken(
