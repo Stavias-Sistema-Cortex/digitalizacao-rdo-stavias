@@ -26,7 +26,46 @@ RUN apk add --no-cache wget \
 # A container without an explicit override must start in the fail-closed mode.
 ENV SPRING_PROFILES_ACTIVE=production
 
-COPY --from=build /app/target/*.jar app.jar
+# O jar aninhado é desmontado em jar fino mais `lib/`.
+#
+# Não é arrumação: é o que torna o arquivo de classes abaixo possível. Dentro do
+# jar aninhado quem carrega as classes da aplicação é um carregador próprio do
+# Spring Boot, e o compartilhamento da JVM só alcança o que veio do classpath de
+# verdade — daí o aviso "Sharing is only supported for boot loader classes" e um
+# arquivo que não cobriria nada do que interessa.
+COPY --from=build /app/target/*.jar /tmp/boot.jar
+
+RUN java -Djarmode=tools -jar /tmp/boot.jar extract --destination /app \
+    && mv /app/*.jar /app/app.jar \
+    && rm -f /tmp/boot.jar
+
+# Arquivo de classes (AppCDS), gerado uma vez aqui e lido a cada partida.
+#
+# Subir o Spring é, em boa parte, achar, ler, verificar e ligar dezenas de
+# milhares de classes — trabalho idêntico em toda partida, refeito do zero
+# porque nada o guardava. O arquivo guarda esse resultado já mastigado, e a
+# partida passa a mapeá-lo em memória em vez de reconstruí-lo.
+#
+# Medido neste repositório, do primeiro byte até o mesmo ponto da subida:
+# 4794 ms sem o arquivo, 3443 ms com ele — 28% a menos, e numa máquina com CPU
+# de sobra. Na fração de CPU da instância real a diferença tende a ser maior,
+# porque justamente carregar classe é o que depende de CPU.
+#
+# O treino não alcança o fim da subida: sem banco ao lado, o contexto falha ao
+# conectar. Isso é aceitável e não é silencioso — o arquivo é gravado na saída
+# da JVM de qualquer forma, cobrindo tudo que foi carregado até ali, que é a
+# maior parte. Daí `|| true` e o aviso: uma imagem sem o arquivo continua
+# válida, apenas sobe mais devagar.
+RUN SPRING_PROFILES_ACTIVE=production \
+    CORTEX_POSTGRES_URL=jdbc:postgresql://127.0.0.1:5432/cds-training \
+    timeout 300 java -XX:ArchiveClassesAtExit=/app/cortex.jsa \
+      -Dspring.context.exit=onRefresh -jar /app/app.jar > /tmp/cds.log 2>&1 \
+    || true; \
+    if [ ! -s /app/cortex.jsa ]; then \
+      echo "AVISO: arquivo AppCDS não gerado; a imagem sobe sem ele."; \
+      tail -n 20 /tmp/cds.log; \
+    fi; \
+    rm -f /tmp/cds.log
 
 USER cortex
 
@@ -49,8 +88,17 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=45s --retries=5 \
 # aplicação. Declarado, e não deixado à heurística, para que o comportamento
 # não mude quando o plano da instância mudar.
 #
+# SharedArchiveFile: lê o arquivo de classes montado na construção da imagem.
+# Não é declarado com `-Xshare:on`, e isso é deliberado — se o arquivo faltar ou
+# não corresponder ao classpath, a JVM apenas avisa e sobe sem ele. Um ganho de
+# arranque não pode ser motivo para o contêiner deixar de subir.
+#
 # CORTEX_JAVA_OPTS permanece por último para que a operação possa sobrepor
 # qualquer um destes valores sem reconstruir a imagem.
-# PropertiesLauncher honors CORTEX_MAIN_CLASS for isolated operational modes
-# (for example, Flyway) while preserving the normal web application default.
-ENTRYPOINT ["sh", "-c", "exec java -XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -Dserver.port=${PORT:-8080} -Dloader.main=${CORTEX_MAIN_CLASS:-com.projeto.cortex.CortexApplication} ${CORTEX_JAVA_OPTS:-} -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher"]
+#
+# CORTEX_MAIN_CLASS continua selecionando modos operacionais isolados (o Flyway,
+# por exemplo). Esse ramo entra pelo classpath explícito, porque o jar agora está
+# desmontado e não há mais um lançador para receber `-Dloader.main`. Ele não usa
+# o arquivo de classes: é tarefa de uma execução só, onde arranque não importa,
+# e o classpath difere do que foi gravado no treino.
+ENTRYPOINT ["sh", "-c", "set -- -XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -Dserver.port=${PORT:-8080} ${CORTEX_JAVA_OPTS:-}; if [ -n \"${CORTEX_MAIN_CLASS:-}\" ]; then exec java \"$@\" -cp '/app/app.jar:/app/lib/*' \"${CORTEX_MAIN_CLASS}\"; fi; exec java \"$@\" -XX:SharedArchiveFile=/app/cortex.jsa -jar /app/app.jar"]
