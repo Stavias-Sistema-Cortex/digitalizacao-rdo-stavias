@@ -142,9 +142,26 @@
   background: var(--color-surface);
 }
 
-.operational-map-canvas {
+/*
+ * O contêiner do renderizador, blindado contra a folha do próprio renderizador.
+ *
+ * O MapLibre e o Mapbox carimbam `.maplibregl-map` / `.mapboxgl-map` neste
+ * mesmo elemento e declaram `position: relative; overflow: hidden`. A folha
+ * deles entra por `import()` dinâmico, na montagem — depois desta. Com um
+ * seletor de classe única dos dois lados, a especificidade empata e vence quem
+ * chegou por último: o contêiner perdia o posicionamento absoluto, colapsava
+ * para altura zero e o `overflow: hidden` recortava fora o canvas inteiro e os
+ * controles. O mapa continuava sendo desenhado no buffer, e a tela do operador
+ * era um retângulo mudo — sem erro nenhum a exibir, porque nada havia falhado.
+ *
+ * O seletor descendente desempata a favor desta regra, e a altura explícita
+ * garante caixa mesmo se um dia a folha de terceiro voltar a mexer na posição.
+ */
+.operational-map .operational-map-canvas {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* Saída de uma falha que se repetiria: apaga o tile guardado quebrado, que o
