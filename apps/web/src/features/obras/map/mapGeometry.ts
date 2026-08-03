@@ -1,3 +1,5 @@
+import { anotarFasesDeExecucao } from "./execucaoDoTrecho";
+
 export type OperationalGeometryType =
   | "Point"
   | "MultiPoint"
@@ -206,5 +208,8 @@ export function buildOperationalFeatureCollection(
     });
   }
 
-  return { type: "FeatureCollection", features };
+  // A fase de execução nasce aqui, no único funil por onde toda coleção passa,
+  // para que os dois mapas e a evolução da Home leiam a mesma idade do
+  // traçado sem cada um calcular a sua.
+  return anotarFasesDeExecucao({ type: "FeatureCollection", features });
 }

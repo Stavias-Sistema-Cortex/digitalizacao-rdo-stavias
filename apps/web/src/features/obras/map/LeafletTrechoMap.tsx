@@ -6,6 +6,13 @@ import {
   rotuloDaCategoria,
   rotuloDaFonte,
 } from "./mapCategories";
+import {
+  ROTULO_POR_FASE,
+  faseDaFeature,
+  pesoDaFase,
+  servicoDaFeature,
+  TOKEN_POR_FASE,
+} from "./execucaoDoTrecho";
 import type { OperationalFeatureCollection } from "./mapGeometry";
 import {
   RASCUNHO_VAZIO,
@@ -99,7 +106,15 @@ function popupHtml(properties: Record<string, unknown>): string {
     typeof properties.nome === "string" && properties.nome
       ? properties.nome
       : rotuloDaCategoria(properties.categoria);
+  const servico = servicoDaFeature({ properties } as never);
+  const fase = properties.faseExecucao;
   const detalhes = [
+    // O serviço vem antes de qualquer metadado: é o que o segmento REPRESENTA
+    // no campo, e era a informação que existia no dado sem aparecer na tela.
+    servico && servico !== titulo ? servico : null,
+    typeof fase === "string" && fase in ROTULO_POR_FASE
+      ? ROTULO_POR_FASE[fase as keyof typeof ROTULO_POR_FASE]
+      : null,
     typeof properties.numeroRdo === "string"
       ? `RDO ${properties.numeroRdo}`
       : null,
@@ -330,28 +345,46 @@ export function LeafletTrechoMap({
     // sobre ele e o trecho leia como pista, e não como risco solto no mapa.
     leaflet
       .geoJSON(features as never, {
-        style: (feature) => ({
-          color: corDoToken("--color-ink"),
-          weight: feature?.properties?.categoria === "TRECHO" ? 10 : 6,
-          opacity: 0.85,
-          fill: false,
-          lineCap: "round",
-          lineJoin: "round",
-        }),
+        style: (feature) => {
+          const fase = feature
+            ? faseDaFeature(feature as never)
+            : null;
+          return {
+            color: corDoToken("--color-ink"),
+            weight: fase
+              ? pesoDaFase(fase) + 4
+              : feature?.properties?.categoria === "TRECHO" ? 10 : 6,
+            opacity: fase === "ENCERRADA" ? 0.45 : 0.85,
+            fill: false,
+            lineCap: "round",
+            lineJoin: "round",
+          };
+        },
         pointToLayer: () => leaflet.layerGroup(),
         interactive: false,
       })
       .addTo(camada);
 
     const geoJson = leaflet.geoJSON(features as never, {
-      style: (feature) => ({
-        color: corDaCategoria(feature?.properties?.categoria),
-        weight: feature?.properties?.categoria === "TRECHO" ? 6 : 3,
-        opacity: 0.95,
-        fillOpacity: 0.25,
-        lineCap: "round",
-        lineJoin: "round",
-      }),
+      // A fase de execução manda na linha: hoje mais grossa e amarela, a
+      // semana queimada, o consolidado em teal, o encerrado fino e tracejado.
+      // Sem fase, vale a cor da categoria, como sempre valeu.
+      style: (feature) => {
+        const fase = feature ? faseDaFeature(feature as never) : null;
+        return {
+          color: fase
+            ? corDoToken(TOKEN_POR_FASE[fase])
+            : corDaCategoria(feature?.properties?.categoria),
+          weight: fase
+            ? pesoDaFase(fase)
+            : feature?.properties?.categoria === "TRECHO" ? 6 : 3,
+          opacity: 0.95,
+          fillOpacity: 0.25,
+          lineCap: "round",
+          lineJoin: "round",
+          dashArray: fase === "ENCERRADA" ? "6 6" : undefined,
+        };
+      },
       pointToLayer: (feature, latlng) =>
         leaflet.marker(latlng, {
           icon: leaflet.divIcon({

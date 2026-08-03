@@ -89,6 +89,17 @@
   --map-programacao: var(--color-muted);
 
   /*
+   * Fases de execução do traçado no mapa, do mais novo ao mais antigo. O
+   * trecho cresce um pouco por dia e as quatro cores contam essa idade: o
+   * avanço de hoje em amarelo vivo, a semana em amarelo queimado, o
+   * consolidado em teal e o encerrado apagado. Os dois mapas leem daqui.
+   */
+  --map-execucao-hoje: var(--color-brand-yellow);
+  --map-execucao-recente: #c89b00;
+  --map-execucao-consolidada: var(--color-focus);
+  --map-execucao-encerrada: var(--color-muted);
+
+  /*
    * Estados de execução do trecho, na ordem em que a obra avança: programado,
    * em rascunho no RDO do dia, executado, validado, rejeitado.
    */

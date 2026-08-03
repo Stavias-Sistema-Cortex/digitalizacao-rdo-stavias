@@ -280,12 +280,31 @@
 }
 
 .operational-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border-radius: 2px;
   background: var(--color-canvas);
   color: var(--color-muted);
   padding: 4px 8px;
   font-size: 0.58rem;
   font-weight: 600;
+}
+
+/*
+ * O ponto de cor é o que liga a palavra da legenda ao risco no mapa: sem ele a
+ * legenda lista nomes e o mapa lista cores, e quem lê precisa adivinhar a
+ * correspondência.
+ */
+.operational-map-legend span i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.operational-map-legend--execucao {
+  margin-top: 4px;
 }
 
 .operational-map-popup {

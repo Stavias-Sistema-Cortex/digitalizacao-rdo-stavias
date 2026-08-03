@@ -10,6 +10,11 @@ import {
   rotuloDaFonte,
 } from "./mapCategories";
 import { limitesDaColecao, type OperationalFeatureCollection } from "./mapGeometry";
+import {
+  FASES_EM_ORDEM,
+  PROPRIEDADE_FASE,
+  TOKEN_POR_FASE,
+} from "./execucaoDoTrecho";
 import { mapboxAccessToken, type MapProvider } from "./mapProvider";
 
 import type { CameraDaObra } from "./cameraDaObra";
@@ -140,6 +145,52 @@ const LARGURA_LINHA_CASING = [
   18,
   18,
 ];
+
+/**
+ * Cor da linha: fase de execução quando a feição tem uma, cor da categoria
+ * quando não tem. O trecho cresce um pouco por dia, e é a fase que faz o mapa
+ * contar isso — o avanço de hoje em amarelo vivo, a semana em amarelo
+ * queimado, o consolidado em teal. Perímetros e demais linhas sem fase seguem
+ * lidos pela categoria, como sempre.
+ */
+function corDaLinhaExpression(): unknown[] {
+  return [
+    "case",
+    ["has", PROPRIEDADE_FASE],
+    [
+      "match",
+      ["get", PROPRIEDADE_FASE],
+      ...FASES_EM_ORDEM.flatMap((fase) => [
+        fase,
+        corDoToken(TOKEN_POR_FASE[fase]),
+      ]),
+      corDoToken(TOKEN_POR_FASE.CONSOLIDADA),
+    ],
+    categoryColorExpression(),
+  ];
+}
+
+/**
+ * O avanço de hoje é mais grosso que o consolidado: quem abre o mapa no fim do
+ * dia acha a jornada com o olho, sem procurar. O fator multiplica a rampa de
+ * zoom para a hierarquia sobreviver em qualquer aproximação.
+ */
+function larguraDaLinhaExpression(): unknown[] {
+  return [
+    "*",
+    LARGURA_LINHA,
+    [
+      "case",
+      ["==", ["get", PROPRIEDADE_FASE], "HOJE"],
+      1.6,
+      ["==", ["get", PROPRIEDADE_FASE], "RECENTE"],
+      1.25,
+      ["==", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
+      0.6,
+      1,
+    ],
+  ];
+}
 
 /**
  * Enquadra a câmera na extensão real das geometrias da obra.
@@ -297,20 +348,42 @@ function addOperationalLayers(
       "line-opacity": 0.85,
     },
   } as never);
+  /*
+   * Duas camadas de linha porque o tracejado do MapLibre não é dirigível por
+   * dado: encerrado é tracejado, o resto é sólido, e a divisão acontece no
+   * filtro. As duas leem cor e largura da mesma expressão de fase.
+   */
   map.addLayer({
     id: "cortex-lines",
     type: "line",
     source: SOURCE_ID,
     filter: [
-      "in",
-      ["geometry-type"],
-      ["literal", ["LineString", "Polygon"]],
+      "all",
+      ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+      ["!=", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
     ],
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": categoryColorExpression(),
-      "line-width": LARGURA_LINHA,
+      "line-color": corDaLinhaExpression(),
+      "line-width": larguraDaLinhaExpression(),
       "line-opacity": 0.95,
+    },
+  } as never);
+  map.addLayer({
+    id: "cortex-lines-encerradas",
+    type: "line",
+    source: SOURCE_ID,
+    filter: [
+      "all",
+      ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+      ["==", ["get", PROPRIEDADE_FASE], "ENCERRADA"],
+    ],
+    layout: { "line-join": "round" },
+    paint: {
+      "line-color": corDoToken(TOKEN_POR_FASE.ENCERRADA),
+      "line-width": larguraDaLinhaExpression(),
+      "line-opacity": 0.8,
+      "line-dasharray": [2, 2],
     },
   } as never);
   map.addLayer({
@@ -326,7 +399,12 @@ function addOperationalLayers(
     },
   } as never);
 
-  for (const layerId of ["cortex-polygons", "cortex-lines", "cortex-points"]) {
+  for (const layerId of [
+    "cortex-polygons",
+    "cortex-lines",
+    "cortex-lines-encerradas",
+    "cortex-points",
+  ]) {
     map.on("click", layerId, (event) => {
       const properties = event.features?.[0]?.properties ?? {};
       criarPopup()

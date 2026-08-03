@@ -28,6 +28,12 @@ import {
   type MapProviderId,
 } from "./mapProvider";
 import { sondarEstilo } from "./sondaDeEstilo";
+import { corDaCategoria, corDoToken, rotuloDaCategoria } from "./mapCategories";
+import {
+  ROTULO_POR_FASE,
+  TOKEN_POR_FASE,
+  fasesPresentes,
+} from "./execucaoDoTrecho";
 import "./OperationalMap.css";
 
 interface OperationalMapProps {
@@ -434,6 +440,10 @@ export function OperationalMap({
       )],
     [featureCollection.features],
   );
+  const fases = useMemo(
+    () => fasesPresentes(featureCollection),
+    [featureCollection],
+  );
   return (
     <section className="operational-map" aria-labelledby="operational-map-title">
       <header className="operational-map-header">
@@ -520,12 +530,34 @@ export function OperationalMap({
         <div className="operational-map-legend" aria-label="Camadas exibidas">
           {categories.length > 0 ? (
             categories.map((category) => (
-              <span key={category}>{category.replaceAll("_", " ")}</span>
+              <span key={category}>
+                <i
+                  aria-hidden="true"
+                  style={{ background: corDaCategoria(category) }}
+                />
+                {rotuloDaCategoria(category)}
+              </span>
             ))
           ) : (
             <span>Nenhuma camada geoespacial disponível</span>
           )}
         </div>
+        {fases.length > 0 ? (
+          <div
+            className="operational-map-legend operational-map-legend--execucao"
+            aria-label="Fases de execução do traçado"
+          >
+            {fases.map((fase) => (
+              <span key={fase}>
+                <i
+                  aria-hidden="true"
+                  style={{ background: corDoToken(TOKEN_POR_FASE[fase]) }}
+                />
+                {ROTULO_POR_FASE[fase]}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <small>
           {carregando
             ? "Consultando camadas autoritativas…"
