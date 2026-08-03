@@ -234,7 +234,7 @@ public class WebAuthnCredentialRepository implements CredentialRepository {
                     discoverable,
                     backed_up,
                     nome
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
                 """,
                 id,
                 collaboratorId,
