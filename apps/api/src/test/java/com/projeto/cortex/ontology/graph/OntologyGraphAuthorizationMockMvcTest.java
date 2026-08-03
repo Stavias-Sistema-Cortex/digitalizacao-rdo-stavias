@@ -59,9 +59,8 @@ class OntologyGraphAuthorizationMockMvcTest {
         vinculo("beta", WORKSITE_A, true);
         vinculo("beta", WORKSITE_B, false);
         when(jdbcTemplate.queryForList(
-                contains("vinculo_colaborador_obra"),
-                eq(String.class),
-                eq("beta")
+                contains("FROM obra"),
+                eq(String.class)
         )).thenReturn(List.of(WORKSITE_A));
         when(queryService.resolveWorksiteIds(any())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")

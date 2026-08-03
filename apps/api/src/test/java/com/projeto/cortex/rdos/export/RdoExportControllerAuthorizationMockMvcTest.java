@@ -39,15 +39,14 @@ class RdoExportControllerAuthorizationMockMvcTest {
     private RdoPdfExportService pdfService;
 
     @Test
-    void betaCannotExportRdoFromAnotherWorksite() throws Exception {
+    void withoutARoleTheSpreadsheetIsNotExported() throws Exception {
         rdoWorksite("rdo-b", "obra-b");
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-b", false);
+        papel("fantasma", null);
 
         mockMvc.perform(get("/api/rdos/rdo-b/export.xlsx")
                         .requestAttr(
                                 CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
-                                "beta"
+                                "fantasma"
                         ))
                 .andExpect(status().isForbidden());
 
@@ -70,15 +69,14 @@ class RdoExportControllerAuthorizationMockMvcTest {
     }
 
     @Test
-    void betaCannotExportPdfFromAnotherWorksite() throws Exception {
+    void withoutARoleThePdfIsNotExported() throws Exception {
         rdoWorksite("rdo-pdf-b", "obra-b");
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-b", false);
+        papel("fantasma", null);
 
         mockMvc.perform(get("/api/rdos/rdo-pdf-b/export.pdf")
                         .requestAttr(
                                 CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
-                                "beta"
+                                "fantasma"
                         ))
                 .andExpect(status().isForbidden());
 
@@ -116,14 +114,5 @@ class RdoExportControllerAuthorizationMockMvcTest {
                 any(ResultSetExtractor.class),
                 eq(userId)
         )).thenReturn(papel);
-    }
-
-    private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForObject(
-                contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
-                eq(userId),
-                eq(obraId)
-        )).thenReturn(ativo ? 1 : 0);
     }
 }

@@ -28,13 +28,24 @@ import org.springframework.web.server.ResponseStatusException;
  *
  * <p>Regras de acesso:
  * <ul>
- *   <li><b>ALFA</b>: escopo global — enxerga e administra todas as obras.</li>
- *   <li><b>BETA</b>: escopo restrito — acessa apenas as obras com
- *       {@code vinculo_colaborador_obra} ativo.</li>
+ *   <li><b>ALFA</b>: enxerga todas as obras e <em>administra</em> — cadastro de
+ *       obra, Financeiro e PDOR seguem exigindo este papel.</li>
+ *   <li><b>BETA</b>: enxerga todas as obras, sem administrá-las.</li>
  * </ul>
  *
- * <p>O acesso à obra é derivado exclusivamente do vínculo explícito. Não há mais
- * concessão por inferência (alocação operacional ou presença em RDO anterior).
+ * <p>A obra deixou de ser compartimento. O vínculo explícito decidia quem a
+ * enxergava, e o efeito prático era o contrário do pretendido: quem trabalhava
+ * numa frente não achava a obra ao lado, o apontamento de campo esbarrava em
+ * cadastro que ninguém tinha feito ainda, e o Córtex — que existe para ser a
+ * memória da obra — só respondia a quem já sabia onde procurar. Quem é da casa
+ * enxerga a operação inteira.
+ *
+ * <p>O que <em>não</em> se abriu, e não deve se abrir por tabela: Financeiro e
+ * PDOR continuam restritos ao papel ALFA, com porta própria
+ * ({@code FinancialAccessService} e a lista de tipos financeiros em
+ * {@code OperationalEventVisibilityPolicy}), independente do escopo de obra. O
+ * vínculo permanece na base descrevendo quem é da equipe de cada obra — deixou
+ * de ser cerca, não deixou de ser informação.
  */
 @Service
 public class CurrentUserService implements AuthSessionProfileResolver {
@@ -61,9 +72,6 @@ public class CurrentUserService implements AuthSessionProfileResolver {
             "cortex.authorizationMemo";
 
     private record ChavePapel(String colaboradorId) {
-    }
-
-    private record ChaveVinculo(String colaboradorId, String obraId) {
     }
 
     private record ChaveObras(String colaboradorId) {
@@ -237,9 +245,12 @@ public class CurrentUserService implements AuthSessionProfileResolver {
     }
 
     /**
-     * Decisão booleana e não lançadora de acesso à obra. ALFA acessa qualquer
-     * obra; BETA acessa apenas obras com vínculo ativo. Base de authz para a
-     * Stav.IA, o PDOR e demais consultas por obra.
+     * Decisão booleana e não lançadora de acesso à obra. Qualquer colaborador
+     * reconhecido acessa qualquer obra. Base de authz para a Stav.IA e demais
+     * consultas por obra.
+     *
+     * <p>O que continua barrando é ser ou não colaborador: papel nulo é quem o
+     * cadastro não reconhece, e esse não entra em obra nenhuma.
      */
     public boolean podeAcessarObra(String colaboradorId, String obraId) {
         if (colaboradorId == null || colaboradorId.isBlank()
@@ -247,25 +258,25 @@ public class CurrentUserService implements AuthSessionProfileResolver {
             return false;
         }
 
-        PapelAcesso papel = papelAcesso(colaboradorId);
-        if (papel == null) {
-            return false;
-        }
-        if (papel == PapelAcesso.ALFA) {
-            return true;
-        }
-
-        return temVinculoAtivo(colaboradorId.trim(), obraId.trim());
+        return papelAcesso(colaboradorId) != null;
     }
 
     /**
-     * Obras às quais o usuário tem acesso.
+     * Obras às quais o usuário tem acesso — hoje, todas.
      * <ul>
-     *   <li>{@code Optional.empty()} — escopo global (ALFA), sem restrição.</li>
-     *   <li>{@code Optional.of(conjunto)} — BETA, restrito às obras vinculadas
-     *       (conjunto possivelmente vazio).</li>
+     *   <li>{@code Optional.empty()} — escopo global, sem restrição. Reservado
+     *       a quem é ALFA de fato, porque o perfil de sessão lê a ausência de
+     *       restrição como papel administrativo.</li>
+     *   <li>{@code Optional.of(conjunto)} — BETA, com o conjunto de todas as
+     *       obras enumerado.</li>
      * </ul>
      * Usuário inválido recebe {@code Optional.of(Set.of())} (nega tudo).
+     *
+     * <p>Enumerar em vez de devolver vazio é deliberado, e é a parte que não
+     * pode ser "simplificada" depois: {@code AuthSessionResponse} deriva o papel
+     * efetivo da ausência de restrição, então devolver vazio aqui promoveria
+     * todo colaborador a ALFA na sessão — e com ele viriam Financeiro e PDOR,
+     * que não são para vir. O escopo de obra abriu; o papel, não.
      */
     public Optional<Set<String>> allowedObraIds(String colaboradorId) {
         PapelAcesso papel = papelAcesso(colaboradorId);
@@ -276,18 +287,11 @@ public class CurrentUserService implements AuthSessionProfileResolver {
             return Optional.empty();
         }
 
-        String normalizado = colaboradorId.trim();
         return lembrarNaRequisicao(
-                new ChaveObras(normalizado),
+                new ChaveObras(colaboradorId.trim()),
                 () -> Optional.of(Set.copyOf(jdbcTemplate.queryForList(
-                        """
-                        SELECT obra_id
-                        FROM vinculo_colaborador_obra
-                        WHERE LOWER(colaborador_id) = LOWER(?)
-                          AND status = 'ATIVO'
-                        """,
-                        String.class,
-                        normalizado
+                        "SELECT id FROM obra",
+                        String.class
                 )))
         );
     }
@@ -328,29 +332,6 @@ public class CurrentUserService implements AuthSessionProfileResolver {
         return AuthSessionResponse.from(
                 session,
                 allowedObraIds(session.collaboratorId())
-        );
-    }
-
-    private boolean temVinculoAtivo(String colaboradorId, String obraId) {
-        return lembrarNaRequisicao(
-                new ChaveVinculo(colaboradorId, obraId),
-                () -> {
-                    Integer allowed = jdbcTemplate.queryForObject(
-                            """
-                            SELECT CASE WHEN EXISTS (
-                                SELECT 1
-                                FROM vinculo_colaborador_obra
-                                WHERE LOWER(colaborador_id) = LOWER(?)
-                                  AND obra_id = ?
-                                  AND status = 'ATIVO'
-                            ) THEN 1 ELSE 0 END
-                            """,
-                            Integer.class,
-                            colaboradorId,
-                            obraId
-                    );
-                    return allowed != null && allowed == 1;
-                }
         );
     }
 

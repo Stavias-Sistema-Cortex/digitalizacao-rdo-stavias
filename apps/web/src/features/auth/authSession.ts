@@ -1,3 +1,5 @@
+import { LIMITE_DE_OBRAS_NO_ESCOPO } from "./escopoDeObras";
+
 const LEGACY_SESSION_KEY = "cortex.auth.sessao";
 const LEGACY_FILTER_KEY = "cortex.auth.cpfFilter";
 const AUTH_BROADCAST_CHANNEL = "cortex-auth-session-v1";
@@ -175,7 +177,10 @@ function canonicalProfile(session: AuthProfile): AuthProfile {
   if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
     throw new Error("Sessão inválida ou expirada.");
   }
-  if (!UUID_PATTERN.test(session.colaboradorId) || session.obraIds.length > 800) {
+  if (
+    !UUID_PATTERN.test(session.colaboradorId) ||
+    session.obraIds.length > LIMITE_DE_OBRAS_NO_ESCOPO
+  ) {
     throw new Error("Escopo da sessão inválido.");
   }
   const obraIds = [...new Set(session.obraIds)].sort();

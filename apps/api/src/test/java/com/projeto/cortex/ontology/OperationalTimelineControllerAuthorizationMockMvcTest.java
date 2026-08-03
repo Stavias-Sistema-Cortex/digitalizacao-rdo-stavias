@@ -50,23 +50,21 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
         )).thenReturn(papel);
     }
 
-    private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForObject(
-                contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
-                eq(userId),
-                eq(obraId)
-        )).thenReturn(ativo ? 1 : 0);
-    }
-
+    /**
+     * A linha do tempo de uma obra deixou de depender de vínculo. Quem a
+     * fronteira ainda barra é quem o cadastro não reconhece — sem papel não há
+     * leitura de obra nenhuma.
+     */
     @Test
-    void betaNaoLeEventosDeOutraObra() throws Exception {
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-de-outrem", false);
+    void quemNaoTemPapelNaoLeEventos() throws Exception {
+        papel("fantasma", null);
 
         mockMvc.perform(get("/api/ontology/timeline")
-                        .param("obraId", "obra-de-outrem")
-                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                        .param("obraId", "obra-1")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "fantasma"
+                        ))
                 .andExpect(status().isForbidden());
 
         verify(service, never())
@@ -74,13 +72,15 @@ class OperationalTimelineControllerAuthorizationMockMvcTest {
     }
 
     @Test
-    void betaLeEventosDaObraVinculada() throws Exception {
+    void betaLeEventosDeObraSemVinculo() throws Exception {
         papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-vinculada", true);
 
         mockMvc.perform(get("/api/ontology/timeline")
-                        .param("obraId", "obra-vinculada")
-                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                        .param("obraId", "obra-de-outra-frente")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"
+                        ))
                 .andExpect(status().isOk());
     }
 

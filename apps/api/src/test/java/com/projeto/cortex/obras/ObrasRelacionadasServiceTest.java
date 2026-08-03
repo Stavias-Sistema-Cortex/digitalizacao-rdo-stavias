@@ -13,71 +13,88 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * A lista de obras da Home e do RDO.
+ *
+ * <p>Ela filtrava por {@code vinculo_colaborador_obra}, e quem não estivesse
+ * vinculado não via a obra — nem para consultar. Deixou de filtrar: a consulta
+ * é a mesma para todo mundo, e por isso não recebe mais nenhum parâmetro. É
+ * disso que estes testes tomam conta, porque um parâmetro reintroduzido aqui
+ * seria uma cerca voltando sem alarde.
+ */
 class ObrasRelacionadasServiceTest {
 
-    @Test
-    void colaboradorComumFiltraPorVinculo() {
+    private record Montagem(
+            JdbcTemplate jdbc,
+            CurrentUserService users,
+            FinancialAccessService financial,
+            ObrasRelacionadasService service
+    ) {
+    }
+
+    private static Montagem montarPara(String userId, boolean admin) {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         CurrentUserService users = mock(CurrentUserService.class);
         FinancialAccessService financial = mock(FinancialAccessService.class);
-        when(users.requireUserId()).thenReturn("colab-1");
-        when(users.isAdmin("colab-1")).thenReturn(false);
-        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
+        when(users.requireUserId()).thenReturn(userId);
+        when(users.isAdmin(userId)).thenReturn(admin);
+        when(financial.allowedObraIds(anyString(), any())).thenReturn(Set.of());
+        when(jdbc.query(anyString(), any(RowMapper.class)))
                 .thenReturn(List.of());
+        return new Montagem(
+                jdbc,
+                users,
+                financial,
+                new ObrasRelacionadasService(jdbc, users, financial)
+        );
+    }
 
-        ObrasRelacionadasService service =
-                new ObrasRelacionadasService(jdbc, users, financial);
-        List<ObraRelacionadaResponse> result = service.listarParaColaborador();
+    /**
+     * O caso que motivou a mudança: quem não tem vínculo nenhum recebe a mesma
+     * consulta que o administrador, sem condição de vínculo e sem parâmetro que
+     * pudesse recortá-la por pessoa.
+     */
+    @Test
+    void colaboradorSemVinculoRecebeAConsultaSemRecorte() {
+        Montagem montagem = montarPara("colab-1", false);
 
-        assertTrue(result.isEmpty());
-        verify(jdbc).query(
-                anyString(),
-                any(RowMapper.class),
-                eq(0), eq("colab-1")
+        montagem.service().listarParaColaborador();
+
+        verify(montagem.jdbc()).query(
+                argThat((String sql) ->
+                        !sql.contains("vinculo_colaborador_obra")
+                                && sql.contains("o.arquivado_em IS NULL")
+                ),
+                any(RowMapper.class)
         );
     }
 
     @Test
-    void adminVeTodasAsObras() {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        CurrentUserService users = mock(CurrentUserService.class);
-        FinancialAccessService financial = mock(FinancialAccessService.class);
-        when(users.requireUserId()).thenReturn("admin-1");
-        when(users.isAdmin("admin-1")).thenReturn(true);
-        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
-                .thenReturn(List.of());
+    void adminRecebeExatamenteAMesmaConsulta() {
+        Montagem montagem = montarPara("admin-1", true);
 
-        new ObrasRelacionadasService(jdbc, users, financial)
-                .listarParaColaborador();
+        montagem.service().listarParaColaborador();
 
-        verify(jdbc).query(
-                org.mockito.ArgumentMatchers.argThat(
-                        sql -> sql.contains("o.versao_linha")
-                ),
-                any(RowMapper.class),
-                eq(1), eq("admin-1")
+        verify(montagem.jdbc()).query(
+                argThat((String sql) -> sql.contains("o.versao_linha")
+                        && !sql.contains("vinculo_colaborador_obra")),
+                any(RowMapper.class)
         );
     }
 
     @Test
     void projecaoRelacionadaCarregaVersaoAutoritativa() throws Exception {
-        JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        CurrentUserService users = mock(CurrentUserService.class);
-        FinancialAccessService financial = mock(FinancialAccessService.class);
+        Montagem montagem = montarPara("admin-1", true);
         ResultSet row = mock(ResultSet.class);
         LocalDateTime updatedAt = LocalDateTime.of(2026, 7, 28, 19, 55);
 
-        when(users.requireUserId()).thenReturn("admin-1");
-        when(users.isAdmin("admin-1")).thenReturn(true);
-        when(financial.allowedObraIds(anyString(), any())).thenReturn(Set.of());
         when(row.getString("id")).thenReturn("obra-1");
         when(row.getString("codigo_contrato")).thenReturn("CT-1");
         when(row.getString("nome")).thenReturn("Obra 1");
@@ -85,7 +102,7 @@ class ObrasRelacionadasServiceTest {
         when(row.getTimestamp("atualizado_em"))
                 .thenReturn(Timestamp.valueOf(updatedAt));
         when(row.getLong("versao_linha")).thenReturn(7L);
-        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class)))
+        when(montagem.jdbc().query(anyString(), any(RowMapper.class)))
                 .thenAnswer(invocation -> {
                     @SuppressWarnings("unchecked")
                     RowMapper<ObraRelacionadaResponse> mapper =
@@ -94,8 +111,7 @@ class ObrasRelacionadasServiceTest {
                 });
 
         List<ObraRelacionadaResponse> result =
-                new ObrasRelacionadasService(jdbc, users, financial)
-                        .listarParaColaborador();
+                montagem.service().listarParaColaborador();
 
         assertEquals(1, result.size());
         assertEquals(7L, result.getFirst().versaoLinha());

@@ -48,24 +48,21 @@ class RdoContextControllerAuthorizationMockMvcTest {
         )).thenReturn(papel);
     }
 
-    private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForObject(
-                contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
-                eq(userId),
-                eq(obraId)
-        )).thenReturn(ativo ? 1 : 0);
-    }
-
+    /**
+     * O contexto de RDO de uma obra deixou de exigir vínculo. Sem papel, porém,
+     * não há contexto de obra nenhuma.
+     */
     @Test
-    void betaNaoConsultaContextoDeObraSemVinculo() throws Exception {
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-b", false);
+    void quemNaoTemPapelNaoConsultaContexto() throws Exception {
+        papel("fantasma", null);
 
         mockMvc.perform(get("/api/rdos/contexto")
                         .param("obraId", "obra-b")
                         .param("data", "2026-07-22")
-                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "fantasma"
+                        ))
                 .andExpect(status().isForbidden());
 
         verify(service, never()).buscarContexto(any(), any(), any());
@@ -74,7 +71,6 @@ class RdoContextControllerAuthorizationMockMvcTest {
     @Test
     void respostaAutorizadaNaoExpoeEmailNemCpfDoColaborador() throws Exception {
         papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-a", true);
         LocalDate data = LocalDate.of(2026, 7, 22);
         when(service.buscarContexto("obra-a", data, "beta")).thenReturn(new RdoContextResponse(
                 new RdoContextResponse.ObraContexto(

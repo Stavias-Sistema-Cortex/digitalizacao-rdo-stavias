@@ -82,9 +82,8 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
             throws Exception {
         papel("beta", PapelAcesso.BETA);
         when(jdbcTemplate.queryForList(
-                contains("vinculo_colaborador_obra"),
-                eq(String.class),
-                eq("beta")
+                contains("FROM obra"),
+                eq(String.class)
         )).thenReturn(List.of(WORKSITE_A));
         when(financialAccessService.allowedObraIds(
                 "beta",
@@ -116,9 +115,8 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
     void betaReceivesOnlyItsRealAuthorizedWorksiteScope() throws Exception {
         papel("beta", PapelAcesso.BETA);
         when(jdbcTemplate.queryForList(
-                contains("vinculo_colaborador_obra"),
-                eq(String.class),
-                eq("beta")
+                contains("FROM obra"),
+                eq(String.class)
         )).thenReturn(List.of(WORKSITE_A));
 
         mockMvc.perform(get("/api/ontology/memory")
@@ -137,19 +135,40 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
         );
     }
 
+    /**
+     * A memória de uma obra deixou de depender de vínculo, e o que a nega ainda
+     * nega calada: {@code MEMORY_ACCESS_DENIED} sem mensagem, porque detalhar a
+     * recusa contaria ao lado de fora o que existe do lado de dentro. Sem papel
+     * não há memória de obra nenhuma.
+     */
     @Test
-    void betaCannotQueryAnUnauthorizedWorksite() throws Exception {
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", WORKSITE_B, false);
+    void withoutARoleThereIsNoWorksiteMemory() throws Exception {
+        papel("fantasma", null);
 
         mockMvc.perform(get("/api/ontology/memory")
                         .param("obraId", WORKSITE_B)
-                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "fantasma"
+                        ))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("MEMORY_ACCESS_DENIED"))
                 .andExpect(jsonPath("$.message").doesNotExist());
 
         verify(service, never()).search(any(), any(), any(), any());
+    }
+
+    @Test
+    void betaReadsTheMemoryOfAWorksiteItIsNotLinkedTo() throws Exception {
+        papel("beta", PapelAcesso.BETA);
+
+        mockMvc.perform(get("/api/ontology/memory")
+                        .param("obraId", WORKSITE_B)
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "beta"
+                        ))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -179,9 +198,8 @@ class OperationalMemoryControllerAuthorizationMockMvcTest {
                 eq("rdo-1")
         )).thenReturn(WORKSITE_A);
         when(jdbcTemplate.queryForList(
-                contains("vinculo_colaborador_obra"),
-                eq(String.class),
-                eq("beta")
+                contains("FROM obra"),
+                eq(String.class)
         )).thenReturn(List.of(WORKSITE_A));
         when(jdbcTemplate.queryForObject(
                 contains("sync_dispositivo"),

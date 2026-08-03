@@ -51,31 +51,27 @@ class ColaboradorDaObraControllerMockMvcTest {
         )).thenReturn(papel);
     }
 
-    private void vinculo(String userId, String obraId, boolean ativo) {
-        when(jdbcTemplate.queryForObject(
-                contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
-                eq(userId),
-                eq(obraId)
-        )).thenReturn(ativo ? 1 : 0);
-    }
-
+    /**
+     * A equipe de uma obra deixou de ser segredo entre vinculados. Quem a
+     * fronteira ainda barra é quem o cadastro não reconhece.
+     */
     @Test
-    void betaBloqueadoEmObraNaoVinculada() throws Exception {
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-proibida", false);
+    void quemNaoTemPapelNaoListaColaboradores() throws Exception {
+        papel("fantasma", null);
 
-        mockMvc.perform(get("/api/obras/obra-proibida/colaboradores")
-                        .requestAttr(CurrentUserService.REQUEST_ATTRIBUTE_USER_ID, "beta"))
+        mockMvc.perform(get("/api/obras/obra-1/colaboradores")
+                        .requestAttr(
+                                CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
+                                "fantasma"
+                        ))
                 .andExpect(status().isForbidden());
 
         verify(service, never()).listarPorObra(anyString());
     }
 
     @Test
-    void betaRecebeColaboradoresDaObraVinculada() throws Exception {
+    void betaRecebeColaboradoresDeObraSemVinculo() throws Exception {
         papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-vinculada", true);
         when(service.listarPorObra("obra-vinculada")).thenReturn(List.of());
 
         mockMvc.perform(get("/api/obras/obra-vinculada/colaboradores")
@@ -98,15 +94,14 @@ class ColaboradorDaObraControllerMockMvcTest {
     }
 
     @Test
-    void betaBloqueadoNoLookupAutorizadoSemVinculo() throws Exception {
-        papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-proibida", false);
+    void quemNaoTemPapelNaoUsaOLookupAutorizado() throws Exception {
+        papel("fantasma", null);
 
         mockMvc.perform(get(
-                        "/api/obras/obra-proibida/colaboradores/autorizados"
+                        "/api/obras/obra-1/colaboradores/autorizados"
                 ).requestAttr(
                         CurrentUserService.REQUEST_ATTRIBUTE_USER_ID,
-                        "beta"
+                        "fantasma"
                 ))
                 .andExpect(status().isForbidden());
 
@@ -114,9 +109,8 @@ class ColaboradorDaObraControllerMockMvcTest {
     }
 
     @Test
-    void betaVinculadoRecebeLookupAutorizado() throws Exception {
+    void betaRecebeLookupAutorizadoSemVinculo() throws Exception {
         papel("beta", PapelAcesso.BETA);
-        vinculo("beta", "obra-vinculada", true);
         when(service.listarAutorizados("obra-vinculada")).thenReturn(
                 new ColaboradoresAutorizadosObraResponse(
                         List.of("col-1"),

@@ -31,9 +31,22 @@ public class ObrasRelacionadasService {
         this.financialAccessService = financialAccessService;
     }
 
+    /**
+     * Toda obra não arquivada, para qualquer colaborador.
+     *
+     * <p>Aqui existia um {@code EXISTS} sobre {@code vinculo_colaborador_obra}
+     * que decidia o que cada um via. Ele carregava um defeito silencioso além
+     * da regra: comparava {@code colaborador_id} sem normalizar caixa, enquanto
+     * a autorização em {@code CurrentUserService} comparava com {@code LOWER}.
+     * Bastava uma diferença de caixa entre as tabelas para a pessoa passar na
+     * autorização da obra e mesmo assim nunca vê-la na lista — permitida e
+     * invisível ao mesmo tempo. Os dois problemas saem pela mesma porta.
+     *
+     * <p>O valor contratual, esse, continua saindo só para quem tem permissão
+     * financeira: é filtrado depois da consulta, e não por ela.
+     */
     public List<ObraRelacionadaResponse> listarParaColaborador() {
         String userId = currentUserService.requireUserId();
-        int isAdmin = currentUserService.isAdmin(userId) ? 1 : 0;
 
         List<ObraRelacionadaResponse> obras = jdbcTemplate.query(
                 """
@@ -54,16 +67,6 @@ public class ObrasRelacionadasService {
                     NULL AS valor_contratual
                 FROM obra o
                 WHERE o.arquivado_em IS NULL
-                  AND (
-                        ? = 1
-                     OR EXISTS (
-                            SELECT 1
-                            FROM vinculo_colaborador_obra v
-                            WHERE v.colaborador_id = ?
-                              AND v.obra_id = o.id
-                              AND v.status = 'ATIVO'
-                        )
-                  )
                 ORDER BY o.atualizado_em DESC, o.id DESC
                 LIMIT 200
                 """,
@@ -84,8 +87,7 @@ public class ObrasRelacionadasService {
                                 ? null
                                 : rs.getTimestamp("atualizado_em").toLocalDateTime(),
                         rs.getLong("versao_linha")
-                ),
-                isAdmin, userId
+                )
         );
 
         Set<String> financeWorksites = financialAccessService.allowedObraIds(

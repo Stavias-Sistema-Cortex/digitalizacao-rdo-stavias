@@ -16,6 +16,7 @@ import {
   setSession,
   type AuthProfile,
 } from "./authSession";
+import { LIMITE_DE_OBRAS_NO_ESCOPO } from "./escopoDeObras";
 import { clearRemoteSessionIsolation } from "./remoteSessionIsolation";
 import {
   assertionCredentialToJson,
@@ -246,7 +247,7 @@ function parseProfile(value: unknown): AuthProfile {
     typeof source.escopoGlobal !== "boolean" ||
     source.escopoGlobal !== (source.papelAcesso === "ALFA") ||
     obraIds === null ||
-    obraIds.length > 800 ||
+    obraIds.length > LIMITE_DE_OBRAS_NO_ESCOPO ||
     (source.escopoGlobal && obraIds.length > 0) ||
     !Number.isFinite(Date.parse(expiraEm))
   ) {
