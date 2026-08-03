@@ -70,8 +70,15 @@ class RdoAllocationWorksiteScopeIT {
         );
     }
 
+    /**
+     * O vínculo deixou de decidir quem pode constar como mão de obra. Quem está
+     * vinculado só a outra obra trabalhou nesta assim mesmo — remanejar gente
+     * entre frentes é rotina, e o cadastro do vínculo costuma vir depois do
+     * trabalho, não antes. Recusar não desfazia o dia: prendia o apontamento no
+     * aparelho de quem estava em campo.
+     */
     @Test
-    void createRejectsCollaboratorLinkedOnlyToAnotherWorksiteWithoutSinks() {
+    void createAcceptsCollaboratorLinkedOnlyToAnotherWorksite() {
         String targetWorksiteId = id();
         String foreignWorksiteId = id();
         String collaboratorId = id();
@@ -87,28 +94,31 @@ class RdoAllocationWorksiteScopeIT {
 
         RdoOperationalDetailService service = service();
 
-        assertThatThrownBy(() -> transactions.executeWithoutResult(
-                status -> service.substituirDetalhes(
-                        rdoId,
-                        targetWorksiteId,
-                        null,
-                        date,
-                        "DIURNO",
-                        List.of(),
-                        List.of(allocation(allocationId, collaboratorId))
-                )
-        ))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining(
-                        "Colaborador não está ativo e vinculado à obra do RDO."
-                );
+        transactions.executeWithoutResult(status -> service.substituirDetalhes(
+                rdoId,
+                targetWorksiteId,
+                null,
+                date,
+                "DIURNO",
+                List.of(),
+                List.of(allocation(allocationId, collaboratorId))
+        ));
 
-        assertAllocationAbsent(allocationId);
-        assertAllocationMemoryAbsent(allocationId);
+        assertAllocationPresent(
+                allocationId,
+                collaboratorId,
+                targetWorksiteId,
+                rdoId
+        );
     }
 
+    /**
+     * A troca de uma pessoa por outra de fora da obra também passou a valer, e
+     * o método faz jus ao nome: substituir os detalhes deixa no RDO exatamente
+     * quem o último envio declarou, sem sobra do anterior.
+     */
     @Test
-    void draftUpdateRejectsForeignReplacementAndKeepsLegitimateAllocation() {
+    void draftUpdateAcceptsReplacementFromAnotherWorksite() {
         String targetWorksiteId = id();
         String foreignWorksiteId = id();
         String originalCollaboratorId = id();
@@ -140,37 +150,26 @@ class RdoAllocationWorksiteScopeIT {
                 ))
         ));
 
-        assertThatThrownBy(() -> transactions.executeWithoutResult(
-                status -> service.substituirDetalhes(
-                        rdoId,
-                        targetWorksiteId,
-                        null,
-                        date,
-                        "DIURNO",
-                        List.of(),
-                        List.of(allocation(
-                                replacementAllocationId,
-                                foreignCollaboratorId
-                        ))
-                )
-        ))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining(
-                        "Colaborador não está ativo e vinculado à obra do RDO."
-                );
+        transactions.executeWithoutResult(status -> service.substituirDetalhes(
+                rdoId,
+                targetWorksiteId,
+                null,
+                date,
+                "DIURNO",
+                List.of(),
+                List.of(allocation(
+                        replacementAllocationId,
+                        foreignCollaboratorId
+                ))
+        ));
 
-        assertThat(jdbc.queryForObject("""
-                SELECT count(*)
-                FROM alocacao_colaborador
-                WHERE id = ?
-                  AND colaborador_id = ?
-                  AND obra_id = ?
-                  AND rdo_id = ?
-                """, Integer.class, originalAllocationId,
-                originalCollaboratorId, targetWorksiteId, rdoId))
-                .isEqualTo(1);
-        assertAllocationAbsent(replacementAllocationId);
-        assertAllocationMemoryAbsent(replacementAllocationId);
+        assertAllocationPresent(
+                replacementAllocationId,
+                foreignCollaboratorId,
+                targetWorksiteId,
+                rdoId
+        );
+        assertAllocationAbsent(originalAllocationId);
     }
 
     @Test
@@ -213,8 +212,13 @@ class RdoAllocationWorksiteScopeIT {
                 .isEqualTo(1);
     }
 
+    /**
+     * O caso que originou a mudança. O vínculo pode ter sido revogado enquanto
+     * o aparelho estava sem rede — a pessoa trabalhou naquele dia assim mesmo, e
+     * o diário registra o que aconteceu, não quem a obra reconhece hoje.
+     */
     @Test
-    void rejectsRevokedTargetWorksiteMembership() {
+    void acceptsCollaboratorWhoseMembershipWasRevoked() {
         String targetWorksiteId = id();
         String collaboratorId = id();
         String rdoId = id();
@@ -228,24 +232,22 @@ class RdoAllocationWorksiteScopeIT {
 
         RdoOperationalDetailService service = service();
 
-        assertThatThrownBy(() -> transactions.executeWithoutResult(
-                status -> service.substituirDetalhes(
-                        rdoId,
-                        targetWorksiteId,
-                        null,
-                        date,
-                        "DIURNO",
-                        List.of(),
-                        List.of(allocation(allocationId, collaboratorId))
-                )
-        ))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining(
-                        "Colaborador não está ativo e vinculado à obra do RDO."
-                );
+        transactions.executeWithoutResult(status -> service.substituirDetalhes(
+                rdoId,
+                targetWorksiteId,
+                null,
+                date,
+                "DIURNO",
+                List.of(),
+                List.of(allocation(allocationId, collaboratorId))
+        ));
 
-        assertAllocationAbsent(allocationId);
-        assertAllocationMemoryAbsent(allocationId);
+        assertAllocationPresent(
+                allocationId,
+                collaboratorId,
+                targetWorksiteId,
+                rdoId
+        );
     }
 
     @Test
@@ -323,8 +325,17 @@ class RdoAllocationWorksiteScopeIT {
                 .isEqualTo(4);
     }
 
+    /**
+     * A corrida continua importando, só mudou de alvo. O vínculo saiu da
+     * exigência, mas o colaborador ativo não: ele é o que garante que existe
+     * alguém a quem atribuir o trabalho. A desativação que ganha a corrida por
+     * um instante ainda tem de vencer — a validação toma o mesmo registro em
+     * FOR UPDATE, espera o commit de quem chegou antes e relê o que ficou. Sem
+     * essa espera, a alocação leria o valor velho e gravaria mão de obra que o
+     * cadastro já tinha desligado.
+     */
     @Test
-    void concurrentMembershipRevocationWinsBeforeValidationAndFailsClosed()
+    void concurrentDeactivationWinsBeforeValidationAndFailsClosed()
             throws Exception {
         String worksiteId = id();
         String collaboratorId = id();
@@ -332,36 +343,35 @@ class RdoAllocationWorksiteScopeIT {
         String allocationId = id();
         LocalDate date = LocalDate.of(2026, 7, 29);
 
-        insertWorksite(worksiteId, "Concurrent revocation");
+        insertWorksite(worksiteId, "Concurrent deactivation");
         insertCollaborator(collaboratorId, true, false);
         linkToWorksite(collaboratorId, worksiteId, "ATIVO");
         insertRdo(rdoId, worksiteId, date);
 
-        CountDownLatch revocationLocked = new CountDownLatch(1);
-        CountDownLatch allowRevocationCommit = new CountDownLatch(1);
-        CountDownLatch membershipValidationStarted = new CountDownLatch(1);
-        SignallingMembershipQueryJdbcTemplate signallingJdbc =
-                new SignallingMembershipQueryJdbcTemplate(
+        CountDownLatch deactivationLocked = new CountDownLatch(1);
+        CountDownLatch allowDeactivationCommit = new CountDownLatch(1);
+        CountDownLatch collaboratorValidationStarted = new CountDownLatch(1);
+        SignallingCollaboratorQueryJdbcTemplate signallingJdbc =
+                new SignallingCollaboratorQueryJdbcTemplate(
                         dataSource,
-                        membershipValidationStarted
+                        collaboratorValidationStarted
                 );
         RdoOperationalDetailService service = service(signallingJdbc);
         TransactionTemplate signallingTransactions = transactions(dataSource);
 
         try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
-            Future<?> revocation = executor.submit(() ->
+            Future<?> deactivation = executor.submit(() ->
                     transactions.executeWithoutResult(status -> {
                         jdbc.update("""
-                                UPDATE vinculo_colaborador_obra
-                                SET status = 'REVOGADO'
-                                WHERE colaborador_id = ?
-                                  AND obra_id = ?
-                                """, collaboratorId, worksiteId);
-                        revocationLocked.countDown();
-                        await(allowRevocationCommit);
+                                UPDATE colaborador
+                                SET ativo = FALSE
+                                WHERE id = ?
+                                """, collaboratorId);
+                        deactivationLocked.countDown();
+                        await(allowDeactivationCommit);
                     })
             );
-            assertThat(revocationLocked.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(deactivationLocked.await(5, TimeUnit.SECONDS)).isTrue();
 
             Future<?> allocation = executor.submit(() ->
                     signallingTransactions.executeWithoutResult(status ->
@@ -381,32 +391,31 @@ class RdoAllocationWorksiteScopeIT {
             );
 
             assertThat(
-                    membershipValidationStarted.await(5, TimeUnit.SECONDS)
+                    collaboratorValidationStarted.await(5, TimeUnit.SECONDS)
             ).isTrue();
-            awaitMembershipValidationRowLock(allocation);
-            allowRevocationCommit.countDown();
-            revocation.get(5, TimeUnit.SECONDS);
+            awaitCollaboratorValidationRowLock(allocation);
+            allowDeactivationCommit.countDown();
+            deactivation.get(5, TimeUnit.SECONDS);
 
             assertThatThrownBy(() -> allocation.get(5, TimeUnit.SECONDS))
                     .isInstanceOf(ExecutionException.class)
                     .cause()
                     .isInstanceOf(ResponseStatusException.class)
                     .hasMessageContaining(
-                            "Colaborador não está ativo e vinculado à obra do RDO."
+                            "Colaborador inativo não pode ser alocado."
                     );
         } finally {
-            allowRevocationCommit.countDown();
+            allowDeactivationCommit.countDown();
         }
 
         assertAllocationAbsent(allocationId);
         assertAllocationMemoryAbsent(allocationId);
         assertThat(jdbc.queryForObject("""
-                SELECT status
-                FROM vinculo_colaborador_obra
-                WHERE colaborador_id = ?
-                  AND obra_id = ?
-                """, String.class, collaboratorId, worksiteId))
-                .isEqualTo("REVOGADO");
+                SELECT ativo
+                FROM colaborador
+                WHERE id = ?
+                """, Boolean.class, collaboratorId))
+                .isFalse();
     }
 
     private static RdoOperationalDetailService service() {
@@ -509,6 +518,24 @@ class RdoAllocationWorksiteScopeIT {
                 """, rdoId, worksiteId, "RDO-" + rdoId, date);
     }
 
+    private static void assertAllocationPresent(
+            String allocationId,
+            String collaboratorId,
+            String worksiteId,
+            String rdoId
+    ) {
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*)
+                FROM alocacao_colaborador
+                WHERE id = ?
+                  AND colaborador_id = ?
+                  AND obra_id = ?
+                  AND rdo_id = ?
+                """, Integer.class, allocationId, collaboratorId, worksiteId,
+                rdoId))
+                .isEqualTo(1);
+    }
+
     private static void assertAllocationAbsent(String allocationId) {
         assertThat(jdbc.queryForObject("""
                 SELECT count(*)
@@ -535,7 +562,7 @@ class RdoAllocationWorksiteScopeIT {
                 .isZero();
     }
 
-    private static void awaitMembershipValidationRowLock(
+    private static void awaitCollaboratorValidationRowLock(
             Future<?> allocation
     ) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
@@ -547,8 +574,7 @@ class RdoAllocationWorksiteScopeIT {
                     SELECT count(*)
                     FROM pg_stat_activity
                     WHERE pid <> pg_backend_pid()
-                      AND query LIKE
-                          'SELECT link.id%FROM vinculo_colaborador_obra%'
+                      AND query LIKE '%FROM colaborador%FOR UPDATE%'
                       AND wait_event_type = 'Lock'
                     """, Integer.class);
             if (waits != null && waits > 0) {
@@ -557,7 +583,7 @@ class RdoAllocationWorksiteScopeIT {
             Thread.sleep(10);
         }
         throw new AssertionError(
-                "RDO validation did not wait for the membership row lock."
+                "RDO validation did not wait for the collaborator row lock."
         );
     }
 
@@ -622,12 +648,12 @@ class RdoAllocationWorksiteScopeIT {
         }
     }
 
-    private static final class SignallingMembershipQueryJdbcTemplate
+    private static final class SignallingCollaboratorQueryJdbcTemplate
             extends JdbcTemplate {
 
         private final CountDownLatch validationStarted;
 
-        private SignallingMembershipQueryJdbcTemplate(
+        private SignallingCollaboratorQueryJdbcTemplate(
                 DriverManagerDataSource signallingDataSource,
                 CountDownLatch validationStarted
         ) {
@@ -641,7 +667,7 @@ class RdoAllocationWorksiteScopeIT {
                 RowMapper<T> rowMapper,
                 Object... args
         ) {
-            if (sql.contains("FROM vinculo_colaborador_obra")
+            if (sql.contains("FROM colaborador")
                     && sql.contains("FOR UPDATE")) {
                 validationStarted.countDown();
             }
