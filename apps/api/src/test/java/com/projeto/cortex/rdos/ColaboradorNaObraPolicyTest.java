@@ -16,10 +16,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * O apontamento vem do campo, às vezes de um aparelho que passou horas sem
- * rede. O vínculo pode ter sido revogado nesse intervalo, e a pessoa trabalhou
- * assim mesmo — recusar a escrita não desfaz o que foi vivido, só prende o
- * registro no aparelho.
+ * O diário registra o que aconteceu; o vínculo descreve quem a obra reconhece
+ * hoje. São duas perguntas diferentes, e uma deixou de poder anular a resposta
+ * da outra.
  */
 class ColaboradorNaObraPolicyTest {
 
@@ -28,39 +27,36 @@ class ColaboradorNaObraPolicyTest {
 
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
 
-    @Test
-    void oCaminhoInterativoSegueExigindoVinculo() {
-        when(jdbc.queryForObject(
-                contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
-                eq(OBRA),
-                eq(COLABORADOR)
-        )).thenReturn(0);
-
-        assertThatThrownBy(() ->
-                ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA)
-        )
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining(
-                        "Colaborador não está ativo e vinculado à obra do RDO."
-                );
-    }
-
-    @Test
-    void aConvergenciaAceitaQuemPerdeuOVinculo() {
+    private void colaboradorAtivo(boolean ativo) {
         when(jdbc.queryForObject(
                 contains("FROM colaborador collaborator"),
                 eq(Integer.class),
                 eq(COLABORADOR)
-        )).thenReturn(1);
+        )).thenReturn(ativo ? 1 : 0);
+    }
 
+    @Test
+    void quemPerdeuOVinculoContinuaPodendoConstarNoRdo() {
+        colaboradorAtivo(true);
+
+        assertThatCode(() ->
+                ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA)
+        ).doesNotThrowAnyException();
+    }
+
+    /**
+     * A exigência caiu nos dois caminhos, não só na convergência do sync: o
+     * apontamento é o mesmo fato, tenha chegado pela fila ou pela tela.
+     */
+    @Test
+    void oVinculoNaoEConsultadoEmCaminhoNenhum() {
+        colaboradorAtivo(true);
+
+        ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA);
         try (SyncConvergenceWindow ignored = SyncConvergenceWindow.open()) {
-            assertThatCode(() ->
-                    ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA)
-            ).doesNotThrowAnyException();
+            ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA);
         }
 
-        // O vínculo não chega a ser consultado: deixou de ser exigência.
         verify(jdbc, never()).queryForObject(
                 contains("vinculo_colaborador_obra"),
                 eq(Integer.class),
@@ -70,44 +66,19 @@ class ColaboradorNaObraPolicyTest {
     }
 
     /**
-     * A metade que não cede. Afrouxar a autorização é a decisão tomada; abrir
+     * A metade que não cede. Afrouxar a autorização foi a decisão tomada; abrir
      * mão da referência seria outra. Sem colaborador existente não há a quem
      * atribuir o trabalho, e gravar um identificador solto criaria mão de obra
-     * que não corresponde a ninguém.
+     * que não corresponde a ninguém — o RDO deixaria de ser auditável.
      */
     @Test
-    void aConvergenciaAindaRecusaColaboradorInexistenteOuInativo() {
-        when(jdbc.queryForObject(
-                contains("FROM colaborador collaborator"),
-                eq(Integer.class),
-                eq(COLABORADOR)
-        )).thenReturn(0);
-
-        try (SyncConvergenceWindow ignored = SyncConvergenceWindow.open()) {
-            assertThatThrownBy(() ->
-                    ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA)
-            )
-                    .isInstanceOf(ResponseStatusException.class)
-                    .hasMessageContaining("Colaborador não encontrado ou inativo.");
-        }
-    }
-
-    @Test
-    void aJanelaNaoVazaParaAsRequisicoesSeguintes() {
-        try (SyncConvergenceWindow ignored = SyncConvergenceWindow.open()) {
-            // apenas abre e fecha
-        }
-        when(jdbc.queryForObject(
-                contains("vinculo_colaborador_obra"),
-                eq(Integer.class),
-                eq(OBRA),
-                eq(COLABORADOR)
-        )).thenReturn(0);
+    void colaboradorInexistenteOuInativoSegueRecusado() {
+        colaboradorAtivo(false);
 
         assertThatThrownBy(() ->
                 ColaboradorNaObraPolicy.require(jdbc, COLABORADOR, OBRA)
         )
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("vinculado à obra do RDO");
+                .hasMessageContaining("Colaborador não encontrado ou inativo.");
     }
 }

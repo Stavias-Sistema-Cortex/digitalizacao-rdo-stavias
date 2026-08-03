@@ -1207,46 +1207,14 @@ public class RdoOperationalDetailService {
             collaboratorIds.add(collaboratorId.trim());
         }
 
+        // O vínculo com a obra deixou de ser exigido para constar como mão de
+        // obra; ver ColaboradorNaObraPolicy. `buscarColaboradorAtivo` continua
+        // sendo a garantia de que existe alguém a quem atribuir o trabalho.
         for (String collaboratorId : collaboratorIds) {
-            ColaboradorDados collaborator =
-                    buscarColaboradorAtivo(collaboratorId);
-            exigirVinculoAtivoNaObra(collaborator.id(), obraId);
+            buscarColaboradorAtivo(collaboratorId);
         }
     }
 
-    private void exigirVinculoAtivoNaObra(
-            String colaboradorId,
-            String obraId
-    ) {
-        // Na convergência do sync o vínculo deixa de ser exigido: o apontamento
-        // já aconteceu em campo e o dispositivo carrega a única cópia. O
-        // bloqueio de linha abaixo existe para impedir revogação concorrente
-        // durante a escrita — sem exigência a proteger, ele não tem o que
-        // proteger. Ver ColaboradorNaObraPolicy.
-        if (SyncConvergenceWindow.isOpen()) {
-            return;
-        }
-        List<String> activeLinks = jdbcTemplate.query(
-                """
-                SELECT link.id
-                FROM vinculo_colaborador_obra link
-                WHERE link.colaborador_id = ?
-                  AND link.obra_id = ?
-                  AND link.status = 'ATIVO'
-                FOR UPDATE
-                """,
-                (rs, rowNumber) -> rs.getString("id"),
-                colaboradorId,
-                obraId
-        );
-
-        if (activeLinks.isEmpty()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Colaborador não está ativo e vinculado à obra do RDO."
-            );
-        }
-    }
 
     private void validarSemSobreposicao(
             String rdoId,
