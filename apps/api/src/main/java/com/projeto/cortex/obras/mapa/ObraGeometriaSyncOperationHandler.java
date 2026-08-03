@@ -78,13 +78,23 @@ public class ObraGeometriaSyncOperationHandler implements SyncOperationHandler {
         ObraGeometriaResponse response;
         String eventType;
         switch (mutation.operacao()) {
+            // A identidade da criação é do dispositivo: o contrato canônico
+            // confere que a aplicação devolve exatamente o entityId enviado.
+            // Deixar o serviço cunhar id novo aqui quebrava esse contrato e
+            // toda geometria criada offline retentava para sempre.
             case REGISTRAR -> {
-                response = service.criar(obraId, geometryRequest(payload, null));
+                response = service.criar(
+                        obraId,
+                        geometryRequest(payload, null),
+                        requireFeatureId(mutation, payload)
+                );
                 eventType = "GEOMETRIA_CRIADA";
             }
             case REGISTRAR_CAMPO -> {
                 response = service.registrarCapturaCampo(
-                        obraId, geometryRequest(payload, null)
+                        obraId,
+                        geometryRequest(payload, null),
+                        requireFeatureId(mutation, payload)
                 );
                 eventType = "GEOMETRIA_CRIADA";
             }

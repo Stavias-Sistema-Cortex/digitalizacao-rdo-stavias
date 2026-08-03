@@ -160,6 +160,98 @@ class ObraMapaServiceTest {
         assertThat(response.fonte()).isEqualTo("CAPTURA_CAMPO");
     }
 
+    /**
+     * O id da criação vinda do sync é o que o dispositivo cunhou. O contrato
+     * canônico confere a identidade devolvida contra a enviada, e o IndexedDB
+     * reconcilia o registro local por ela — o servidor não pode trocá-la.
+     */
+    @Test
+    void syncCreatePreservesTheDeviceMintedIdentity() throws Exception {
+        String clientId = "60000000-0000-4000-8000-000000000006";
+        when(currentUserService.requireUserId()).thenReturn("apontador-1");
+        when(featureRepository.findById(clientId)).thenReturn(Optional.empty());
+        when(featureRepository.saveAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ObraGeometriaResponse response = service.registrarCapturaCampo(
+                "obra-1",
+                new ObraGeometriaRequest(
+                        "PONTO_OPERACIONAL", "RDO", "rdo-1",
+                        objectMapper.readTree(
+                                "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}"
+                        ),
+                        Map.of(), null, null, null, null
+                ),
+                clientId
+        );
+
+        ArgumentCaptor<ObraGeometria> captor =
+                ArgumentCaptor.forClass(ObraGeometria.class);
+        verify(featureRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getId()).isEqualTo(clientId);
+        assertThat(response.id()).isEqualTo(clientId);
+    }
+
+    /** Reenviar a mesma identidade é replay: devolve o que existe, sem regravar. */
+    @Test
+    void syncCreateReplayReturnsTheExistingRowWithoutRewriting() {
+        String clientId = "60000000-0000-4000-8000-000000000006";
+        ObraGeometria existing = ObraGeometria.criar(
+                clientId, "obra-1", "PONTO_OPERACIONAL", "RDO", "rdo-1", "POINT",
+                "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}",
+                "{}", "CAPTURA_CAMPO", null, "apontador-1"
+        );
+        when(currentUserService.requireUserId()).thenReturn("apontador-1");
+        when(featureRepository.findById(clientId))
+                .thenReturn(Optional.of(existing));
+
+        ObraGeometriaResponse response = service.registrarCapturaCampo(
+                "obra-1",
+                new ObraGeometriaRequest(
+                        "PONTO_OPERACIONAL", "RDO", "rdo-1",
+                        objectMapper.valueToTree(Map.of(
+                                "type", "Point",
+                                "coordinates", List.of(-54.65, -20.44)
+                        )),
+                        Map.of(), null, null, null, null
+                ),
+                clientId
+        );
+
+        assertThat(response.id()).isEqualTo(clientId);
+        verify(featureRepository, never()).saveAndFlush(any());
+        verify(memoryPublisher, never()).criada(any(), any(), any());
+    }
+
+    @Test
+    void syncCreateRejectsAnIdentityAlreadyUsedInAnotherWorksite() {
+        String clientId = "60000000-0000-4000-8000-000000000006";
+        ObraGeometria existing = ObraGeometria.criar(
+                clientId, "obra-2", "PONTO_OPERACIONAL", "RDO", "rdo-1", "POINT",
+                "{\"type\":\"Point\",\"coordinates\":[-54.65,-20.44]}",
+                "{}", "CAPTURA_CAMPO", null, "apontador-1"
+        );
+        when(currentUserService.requireUserId()).thenReturn("apontador-1");
+        when(featureRepository.findById(clientId))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.registrarCapturaCampo(
+                "obra-1",
+                new ObraGeometriaRequest(
+                        "PONTO_OPERACIONAL", "RDO", "rdo-1",
+                        objectMapper.valueToTree(Map.of(
+                                "type", "Point",
+                                "coordinates", List.of(-54.65, -20.44)
+                        )),
+                        Map.of(), null, null, null, null
+                ),
+                clientId
+        )).isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("outra obra");
+
+        verify(featureRepository, never()).saveAndFlush(any());
+    }
+
     @Test
     void fieldCaptureCannotRedrawTheContractualStretch() throws Exception {
         ObraGeometriaRequest request = new ObraGeometriaRequest(
@@ -219,7 +311,7 @@ class ObraMapaServiceTest {
     @Test
     void updateRejectsStaleBaseVersionBeforeWriting() throws Exception {
         ObraGeometria existing = ObraGeometria.criar(
-                "obra-1", "TRECHO", "TRECHO", "trecho-1", "LINESTRING",
+                null, "obra-1", "TRECHO", "TRECHO", "trecho-1", "LINESTRING",
                 "{\"type\":\"LineString\",\"coordinates\":[[-54.65,-20.44],[-54.63,-20.43]]}",
                 "{}", "CAMPO", null, "alfa-1"
         );
@@ -266,7 +358,7 @@ class ObraMapaServiceTest {
         assertThatThrownBy(() -> service.atualizar(
                 "obra-1",
                 existing.getId(),
-                validRequest(0L)
+                validRequest(1L)
         )).isInstanceOf(ResponseStatusException.class);
 
         verify(featureRepository, never()).saveAndFlush(any());
@@ -288,7 +380,7 @@ class ObraMapaServiceTest {
                 "obra-1",
                 existing.getId(),
                 new ObraGeometriaEndRequest(
-                        0L,
+                        1L,
                         "Encerramento",
                         null
                 )
@@ -302,6 +394,7 @@ class ObraMapaServiceTest {
 
     private ObraGeometria existingFeature() {
         return ObraGeometria.criar(
+                null,
                 "obra-1",
                 "TRECHO",
                 "TRECHO",

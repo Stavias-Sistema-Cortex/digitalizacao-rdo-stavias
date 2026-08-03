@@ -357,7 +357,8 @@ public class OperationalGraphProjector {
             case "PRECO_SERVICO", "SERVICE_PRICE" -> "SERVICE_PRICE_VERSION";
             case "EXECUTION", "EXECUCAO_SERVICO_RDO", "RDO_SERVICE_EXECUTED" ->
                     "RDO_EXECUTION";
-            case "GEOMETRIA_OPERACIONAL", "OBRA_GEOMETRIA" -> "WORKSITE_GEOMETRY";
+            case "GEOMETRIA_OPERACIONAL", "OBRA_GEOMETRIA", "GEOMETRIA_OBRA" ->
+                    "WORKSITE_GEOMETRY";
             default -> type;
         };
     }

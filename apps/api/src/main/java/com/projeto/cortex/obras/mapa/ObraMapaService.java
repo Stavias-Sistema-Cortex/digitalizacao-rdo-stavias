@@ -80,8 +80,25 @@ public class ObraMapaService {
 
     @Transactional
     public ObraGeometriaResponse criar(String obraId, ObraGeometriaRequest request) {
+        return criar(obraId, request, null);
+    }
+
+    /**
+     * Variante do sync: {@code idDoCliente} é a identidade cunhada no
+     * dispositivo e precisa sobreviver à travessia — o contrato canônico
+     * confere que a aplicação devolve exatamente o id enviado, e o IndexedDB
+     * reconcilia o registro local por ele. Cunhar id novo aqui fazia toda
+     * criação de geometria vinda do campo falhar o contrato e retentar para
+     * sempre.
+     */
+    @Transactional
+    public ObraGeometriaResponse criar(
+            String obraId,
+            ObraGeometriaRequest request,
+            String idDoCliente
+    ) {
         currentUserService.requireAlfa();
-        return persistirNova(obraId, normalize(request, obraId, false));
+        return persistirNova(obraId, normalize(request, obraId, false), idDoCliente);
     }
 
     /**
@@ -98,6 +115,15 @@ public class ObraMapaService {
             String obraId,
             ObraGeometriaRequest request
     ) {
+        return registrarCapturaCampo(obraId, request, null);
+    }
+
+    @Transactional
+    public ObraGeometriaResponse registrarCapturaCampo(
+            String obraId,
+            ObraGeometriaRequest request,
+            String idDoCliente
+    ) {
         currentUserService.requireWorksiteAccess(obraId);
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geometria obrigatória.");
@@ -110,7 +136,11 @@ public class ObraMapaService {
                     "A captura de campo registra apenas ponto operacional ou frente de trabalho."
             );
         }
-        return persistirNova(obraId, normalize(comOrigemDeCampo(request), obraId, false));
+        return persistirNova(
+                obraId,
+                normalize(comOrigemDeCampo(request), obraId, false),
+                idDoCliente
+        );
     }
 
     private ObraGeometriaRequest comOrigemDeCampo(ObraGeometriaRequest request) {
@@ -121,10 +151,33 @@ public class ObraMapaService {
         );
     }
 
-    private ObraGeometriaResponse persistirNova(String obraId, NormalizedRequest normalized) {
+    private ObraGeometriaResponse persistirNova(
+            String obraId,
+            NormalizedRequest normalized,
+            String idDoCliente
+    ) {
         operabilityGuard.requireWritable(obraId);
         String actorId = currentUserService.requireUserId();
+        if (idDoCliente != null && !idDoCliente.isBlank()) {
+            ObraGeometria existente = featureRepository
+                    .findById(idDoCliente)
+                    .orElse(null);
+            if (existente != null) {
+                // Replay: a identidade é do cliente, então recriá-la é reenviar
+                // o mesmo registro. Devolver o que já existe — sem regravar e
+                // sem republicar evidência — deixa a retentativa da fila
+                // offline convergir em vez de morrer em chave duplicada.
+                if (!obraId.equals(existente.getObraId())) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "Já existe uma geometria com este identificador em outra obra."
+                    );
+                }
+                return toResponse(existente);
+            }
+        }
         ObraGeometria saved = featureRepository.saveAndFlush(ObraGeometria.criar(
+                idDoCliente,
                 obraId, normalized.category(), normalized.objectType(), normalized.objectId(),
                 normalized.geometryType(), normalized.geometryJson(), normalized.propertiesJson(),
                 normalized.source(), normalized.validFrom(), actorId
@@ -282,12 +335,24 @@ public class ObraMapaService {
     }
 
     private void requireMatchingVersion(ObraGeometria feature, long baseVersion) {
-        if (feature.getVersaoLinha() != baseVersion) {
+        if (versaoCanonica(feature) != baseVersion) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "A geometria foi alterada por outra operação. Recarregue antes de continuar."
             );
         }
+    }
+
+    /**
+     * A versão pública da geometria é a versão canônica da entidade na
+     * memória operacional — a mesma régua que o funil de sync confere antes de
+     * qualquer atualização. A linha nasce em zero pelo {@code @Version} do
+     * JPA enquanto o evento de criação já conta um; publicar a versão da linha
+     * deixava cliente e funil permanentemente defasados em um, e toda edição
+     * feita offline morreria em conflito de versão.
+     */
+    private long versaoCanonica(ObraGeometria feature) {
+        return feature.getVersaoLinha() + 1;
     }
 
     private ObraGeometriaResponse toResponse(ObraGeometria feature) {
@@ -300,7 +365,7 @@ public class ObraMapaService {
                     feature.getId(), feature.getCategoria(), feature.getObjetoTipo(),
                     feature.getObjetoId(), geometry, properties, feature.getFonte(),
                     feature.getStatus(), feature.getValidoDesde(), feature.getValidoAte(),
-                    feature.getMotivoEncerramento(), feature.getVersaoLinha(),
+                    feature.getMotivoEncerramento(), versaoCanonica(feature),
                     feature.getCriadoPor(), feature.getAtualizadoPor(),
                     feature.getCriadoEm(), feature.getAtualizadoEm()
             );

@@ -101,20 +101,30 @@ class ObraGeometriaSyncOperationHandlerTest {
         assertThat(handler.requiresBaseVersion("REGISTRAR_GEOMETRIA_CAMPO")).isFalse();
     }
 
+    /**
+     * A identidade da criação é do dispositivo. O contrato canônico confere
+     * que a aplicação devolve exatamente o entityId enviado, então o handler
+     * precisa repassar o id do envelope ao domínio — cunhar id novo no
+     * servidor fazia toda geometria criada offline retentar para sempre.
+     */
     @Test
     void fieldCaptureQueuedOfflineReachesTheScopedDomainMethod() {
-        when(service.registrarCapturaCampo(eq(OBRA_ID), any()))
+        when(service.registrarCapturaCampo(eq(OBRA_ID), any(), eq(FEATURE_ID)))
                 .thenReturn(persisted("PONTO_OPERACIONAL", "CAPTURA_CAMPO", 0L));
 
         AppliedSyncMutation applied = handler.apply(
-                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload()),
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload()),
                 new SyncMutationContext(ACTOR_ID, DEVICE_ID)
         );
 
         ArgumentCaptor<ObraGeometriaRequest> captor =
                 ArgumentCaptor.forClass(ObraGeometriaRequest.class);
-        verify(service).registrarCapturaCampo(eq(OBRA_ID), captor.capture());
-        verify(service, never()).criar(any(), any());
+        verify(service).registrarCapturaCampo(
+                eq(OBRA_ID),
+                captor.capture(),
+                eq(FEATURE_ID)
+        );
+        verify(service, never()).criar(any(), any(), any());
         assertThat(captor.getValue().categoria()).isEqualTo("PONTO_OPERACIONAL");
         assertThat(captor.getValue().objetoTipo()).isEqualTo("RDO");
         assertThat(captor.getValue().geometry().path("type").asText())
@@ -134,16 +144,45 @@ class ObraGeometriaSyncOperationHandlerTest {
         payload.put("categoria", "TRECHO");
         payload.put("objetoTipo", "TRECHO");
         payload.put("objetoId", "trecho-1");
-        when(service.criar(eq(OBRA_ID), any()))
+        when(service.criar(eq(OBRA_ID), any(), eq(FEATURE_ID)))
                 .thenReturn(persisted("TRECHO", "GESTAO_MAPA", 0L));
 
         handler.apply(
-                mutation("REGISTRAR_GEOMETRIA_OBRA", null, null, payload),
+                mutation("REGISTRAR_GEOMETRIA_OBRA", null, FEATURE_ID, payload),
                 new SyncMutationContext(ACTOR_ID, DEVICE_ID)
         );
 
-        verify(service).criar(eq(OBRA_ID), any());
-        verify(service, never()).registrarCapturaCampo(any(), any());
+        verify(service).criar(eq(OBRA_ID), any(), eq(FEATURE_ID));
+        verify(service, never()).registrarCapturaCampo(any(), any(), any());
+    }
+
+    /** Sem identidade do dispositivo não há o que preservar: recusa terminal. */
+    @Test
+    void rejectsACreateWithoutTheDeviceMintedIdentity() {
+        SyncPushRequest.MutacaoCliente mutation =
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload());
+
+        assertThatThrownBy(() ->
+                handler.apply(mutation, new SyncMutationContext(ACTOR_ID, DEVICE_ID)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("entityId da geometria é obrigatório");
+
+        verify(service, never()).registrarCapturaCampo(any(), any(), any());
+    }
+
+    @Test
+    void rejectsACreateWhosePayloadIdentityDivergesFromTheEnvelope() {
+        ObjectNode payload = payload();
+        payload.put("id", "70000000-0000-4000-8000-000000000007");
+        SyncPushRequest.MutacaoCliente mutation =
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload);
+
+        assertThatThrownBy(() ->
+                handler.apply(mutation, new SyncMutationContext(ACTOR_ID, DEVICE_ID)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("diverge do envelope canônico");
+
+        verify(service, never()).registrarCapturaCampo(any(), any(), any());
     }
 
     @Test
@@ -197,38 +236,46 @@ class ObraGeometriaSyncOperationHandlerTest {
      */
     @Test
     void acceptsTheUtcInstantThePwaActuallySends() {
-        when(service.registrarCapturaCampo(eq(OBRA_ID), any()))
+        when(service.registrarCapturaCampo(eq(OBRA_ID), any(), eq(FEATURE_ID)))
                 .thenReturn(persisted("PONTO_OPERACIONAL", "CAPTURA_CAMPO", 0L));
         ObjectNode payload = payload();
         payload.put("validoDesde", "2026-07-28T15:30:00.000Z");
 
         handler.apply(
-                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload),
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload),
                 new SyncMutationContext(ACTOR_ID, DEVICE_ID)
         );
 
         ArgumentCaptor<ObraGeometriaRequest> captor =
                 ArgumentCaptor.forClass(ObraGeometriaRequest.class);
-        verify(service).registrarCapturaCampo(eq(OBRA_ID), captor.capture());
+        verify(service).registrarCapturaCampo(
+                eq(OBRA_ID),
+                captor.capture(),
+                eq(FEATURE_ID)
+        );
         assertThat(captor.getValue().validoDesde())
                 .isEqualTo(LocalDateTime.of(2026, 7, 28, 15, 30));
     }
 
     @Test
     void convertsAnOffsetInstantToUtcBeforePersisting() {
-        when(service.registrarCapturaCampo(eq(OBRA_ID), any()))
+        when(service.registrarCapturaCampo(eq(OBRA_ID), any(), eq(FEATURE_ID)))
                 .thenReturn(persisted("PONTO_OPERACIONAL", "CAPTURA_CAMPO", 0L));
         ObjectNode payload = payload();
         payload.put("validoDesde", "2026-07-28T12:30:00-03:00");
 
         handler.apply(
-                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload),
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload),
                 new SyncMutationContext(ACTOR_ID, DEVICE_ID)
         );
 
         ArgumentCaptor<ObraGeometriaRequest> captor =
                 ArgumentCaptor.forClass(ObraGeometriaRequest.class);
-        verify(service).registrarCapturaCampo(eq(OBRA_ID), captor.capture());
+        verify(service).registrarCapturaCampo(
+                eq(OBRA_ID),
+                captor.capture(),
+                eq(FEATURE_ID)
+        );
         assertThat(captor.getValue().validoDesde())
                 .isEqualTo(LocalDateTime.of(2026, 7, 28, 15, 30));
     }
@@ -259,7 +306,7 @@ class ObraGeometriaSyncOperationHandlerTest {
         ObjectNode payload = payload();
         payload.put("validoDesde", "ontem de manhã");
         SyncPushRequest.MutacaoCliente mutation =
-                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload);
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload);
 
         assertThatThrownBy(() ->
                 handler.apply(mutation, new SyncMutationContext(ACTOR_ID, DEVICE_ID)))
@@ -287,7 +334,7 @@ class ObraGeometriaSyncOperationHandlerTest {
         ObjectNode payload = payload();
         payload.remove("obraId");
         SyncPushRequest.MutacaoCliente mutation =
-                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload);
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload);
 
         assertThatThrownBy(() ->
                 handler.apply(mutation, new SyncMutationContext(ACTOR_ID, DEVICE_ID)))
@@ -300,14 +347,14 @@ class ObraGeometriaSyncOperationHandlerTest {
         ObjectNode payload = payload();
         payload.remove("geometry");
         SyncPushRequest.MutacaoCliente mutation =
-                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, null, payload);
+                mutation("REGISTRAR_GEOMETRIA_CAMPO", null, FEATURE_ID, payload);
 
         assertThatThrownBy(() ->
                 handler.apply(mutation, new SyncMutationContext(ACTOR_ID, DEVICE_ID)))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("payload.geometry");
 
-        verify(service, never()).registrarCapturaCampo(any(), any());
+        verify(service, never()).registrarCapturaCampo(any(), any(), any());
     }
 
     @Test

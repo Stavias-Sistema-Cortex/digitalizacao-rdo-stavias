@@ -141,7 +141,11 @@ final class OperationalGraphPayloadPolicy {
             keys.addAll(WORKSITE_KEYS);
         }
         if (event.startsWith("GEOMETRIA_")
-                || Set.of("GEOMETRIA_OPERACIONAL", "WORKSITE_GEOMETRY").contains(entity)) {
+                || Set.of(
+                        "GEOMETRIA_OPERACIONAL",
+                        "GEOMETRIA_OBRA",
+                        "WORKSITE_GEOMETRY"
+                ).contains(entity)) {
             keys.addAll(GEOMETRY_KEYS);
         }
         if (event.contains("ASSET") || event.contains("EQUIPMENT")

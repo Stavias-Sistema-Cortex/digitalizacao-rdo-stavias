@@ -9,6 +9,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Publica a evidência geoespacial na memória operacional sob o tipo canônico
+ * {@code GEOMETRIA_OBRA} — o mesmo nome que o dispositivo usa nos eventos
+ * locais e que o sync confere em {@code cortex_estado_entidade}. A grafia
+ * antiga {@code GEOMETRIA_OPERACIONAL} deixava o estado da entidade sem linha
+ * no tipo canônico, e a primeira geometria criada via sync morria na busca do
+ * commit — o projetor do grafo segue lendo o nome antigo nos eventos já
+ * gravados.
+ */
 @Service
 class ObraGeometriaMemoryPublisher {
 
@@ -51,11 +60,11 @@ class ObraGeometriaMemoryPublisher {
             String reason
     ) {
         memoryService.encerrarRelacaoAtiva(
-                "GEOMETRIA_OPERACIONAL", after.id(), "OBRA", obraId, "GEOREFERENCIA"
+                "GEOMETRIA_OBRA", after.id(), "OBRA", obraId, "GEOREFERENCIA"
         );
         closeRepresentedObjectRelation(after);
         memoryService.registrarObjeto(
-                "GEOMETRIA_OPERACIONAL", after.id(), after.id(),
+                "GEOMETRIA_OBRA", after.id(), after.id(),
                 after.categoria(), after.status(), SOURCE,
                 "obra_geometria", Map.of("obraId", obraId, "categoria", after.categoria())
         );
@@ -65,17 +74,17 @@ class ObraGeometriaMemoryPublisher {
 
     private void registerObjectAndRelations(ObraGeometriaResponse feature, String obraId) {
         memoryService.registrarObjeto(
-                "GEOMETRIA_OPERACIONAL", feature.id(), feature.id(),
+                "GEOMETRIA_OBRA", feature.id(), feature.id(),
                 feature.categoria(), feature.status(), SOURCE,
                 "obra_geometria", Map.of("obraId", obraId, "categoria", feature.categoria())
         );
         memoryService.registrarRelacaoAtiva(
-                "GEOMETRIA_OPERACIONAL", feature.id(), "OBRA", obraId,
+                "GEOMETRIA_OBRA", feature.id(), "OBRA", obraId,
                 "GEOREFERENCIA", SOURCE, "Geometria operacional vinculada à obra."
         );
         if (feature.objetoTipo() != null && feature.objetoId() != null) {
             memoryService.registrarRelacaoAtiva(
-                    "GEOMETRIA_OPERACIONAL", feature.id(),
+                    "GEOMETRIA_OBRA", feature.id(),
                     feature.objetoTipo(), feature.objetoId(),
                     "REPRESENTA", SOURCE, "Geometria autoritativa do objeto operacional."
             );
@@ -85,7 +94,7 @@ class ObraGeometriaMemoryPublisher {
     private void closeRepresentedObjectRelation(ObraGeometriaResponse feature) {
         if (feature.objetoTipo() != null && feature.objetoId() != null) {
             memoryService.encerrarRelacaoAtiva(
-                    "GEOMETRIA_OPERACIONAL", feature.id(),
+                    "GEOMETRIA_OBRA", feature.id(),
                     feature.objetoTipo(), feature.objetoId(), "REPRESENTA"
             );
         }
@@ -139,7 +148,7 @@ class ObraGeometriaMemoryPublisher {
                 );
         LocalDateTime now = LocalDateTime.now();
         memoryService.registrarEventoDetalhado(
-                UUID.randomUUID().toString(), "GEOMETRIA_OPERACIONAL", feature.id(),
+                UUID.randomUUID().toString(), "GEOMETRIA_OBRA", feature.id(),
                 eventType, SOURCE, obraId, null, null, related,
                 "ONLINE", "SYNCED", now, now, 1, payload
         );

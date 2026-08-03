@@ -93,6 +93,7 @@ class PostgresqlObraGeometriaPersistenceIT {
                 """, actorId, actorId, actorId.substring(0, 8));
 
         ObraGeometria feature = ObraGeometria.criar(
+                null,
                 obraId,
                 "TRECHO",
                 null,

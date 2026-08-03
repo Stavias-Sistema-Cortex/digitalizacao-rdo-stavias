@@ -82,7 +82,15 @@ class ObraGeometria {
     protected ObraGeometria() {
     }
 
+    /**
+     * @param id identidade cunhada no dispositivo, quando a criação chega pelo
+     *           sync; {@code null} na via interativa, que cunha aqui. A fila
+     *           offline exige que o servidor preserve o id do cliente — é ele
+     *           que o contrato canônico confere de volta e que o IndexedDB usa
+     *           para reconciliar o registro local.
+     */
     static ObraGeometria criar(
+            String id,
             String obraId,
             String categoria,
             String objetoTipo,
@@ -96,7 +104,9 @@ class ObraGeometria {
     ) {
         LocalDateTime now = LocalDateTime.now();
         ObraGeometria feature = new ObraGeometria();
-        feature.id = UUID.randomUUID().toString();
+        feature.id = id == null || id.isBlank()
+                ? UUID.randomUUID().toString()
+                : id;
         feature.obraId = obraId;
         feature.categoria = categoria;
         feature.objetoTipo = objetoTipo;
