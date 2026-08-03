@@ -24,6 +24,7 @@ const leaflet = vi.hoisted(() => ({
     | ((extremo: string, ponto: { lat: number; lng: number }) => void)
     | null,
   ultimasFeatures: { features: [] } as { features: { id: string }[] },
+  espelho: undefined as unknown,
 }));
 
 vi.mock("./obraMapApi", () => ({ carregarMapaObra }));
@@ -49,11 +50,13 @@ vi.mock("./LeafletTrechoMap", () => ({
         extremo: string,
         ponto: { lat: number; lng: number },
       ) => void;
+      onCamera?: unknown;
     }) => {
       leaflet.marcando = props.marcando ?? null;
       leaflet.ultimoRascunho = props.rascunho ?? null;
       leaflet.marcar = props.onPontoMarcado ?? null;
       leaflet.ultimasFeatures = props.features;
+      leaflet.espelho = props.onCamera ?? null;
       return (
         <div
           data-testid="mapa-leaflet"
@@ -99,6 +102,7 @@ beforeEach(() => {
   leaflet.marcando = null;
   leaflet.ultimoRascunho = null;
   leaflet.marcar = null;
+  leaflet.espelho = undefined;
   satelite.ultimaLeitura = undefined;
 });
 
@@ -134,6 +138,38 @@ describe("RodoviaWorkspace", () => {
     expect(
       screen.getByText(/dados do dispositivo, sem rede/),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * O rótulo do travamento não acompanha o estado: quem o lê deve saber o que o
+   * clique faz, e o que já está valendo é dito por aria-pressed. Um botão que
+   * troca de nome ao ser apertado anuncia as duas coisas ao mesmo tempo e elas
+   * se contradizem.
+   */
+  it("mantém o rótulo do travamento e diz o estado por aria-pressed", async () => {
+    const user = userEvent.setup();
+    render(<RodoviaWorkspace obra={obra} podeDesenhar={false} />);
+    await screen.findByTestId("mapa-leaflet");
+
+    const botao = screen.getByRole("button", { name: "Travar mapas" });
+    expect(botao).toHaveAttribute("aria-pressed", "false");
+    // Destravado, nenhum mapa escuta o outro: sem isso o par se moveria junto
+    // mesmo com o travamento desligado.
+    expect(leaflet.espelho).toBeNull();
+
+    await user.click(botao);
+
+    expect(
+      screen.getByRole("button", { name: "Travar mapas" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(leaflet.espelho).toBeTypeOf("function"));
+
+    await user.click(screen.getByRole("button", { name: "Travar mapas" }));
+
+    expect(
+      screen.getByRole("button", { name: "Travar mapas" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(leaflet.espelho).toBeNull());
   });
 
   it("não oferece o desenho do trecho a quem não é Alfa", async () => {

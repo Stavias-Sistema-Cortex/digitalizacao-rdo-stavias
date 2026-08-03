@@ -460,39 +460,13 @@
  *
  * Fica entre o recorte e o par de painéis porque governa os dois: posto dentro
  * de um deles, sugeriria pertencer àquele lado.
+ *
+ * Não tem estilo próprio: usa o mesmo botão do resto do mapa. Um controle de
+ * vista não precisa de linguagem visual particular para ser encontrado, e ter
+ * uma só faria a tela parecer montada por duas mãos diferentes.
  */
 .rodovia-workspace-trava {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
-}
-
-.rodovia-workspace-trava-botao {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.85rem;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: inherit;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.rodovia-workspace-trava-botao:hover {
-  border-color: var(--color-border-strong);
-}
-
-.rodovia-workspace-trava-botao.is-ativo {
-  background: var(--color-brand-teal);
-  border-color: var(--color-brand-teal);
-  color: var(--color-brand-yellow);
-}
-
-.rodovia-workspace-trava small {
-  color: var(--color-text-muted, inherit);
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }

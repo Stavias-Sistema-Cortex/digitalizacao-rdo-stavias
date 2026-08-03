@@ -815,25 +815,26 @@ export function RodoviaWorkspace({
         </div>
       ) : null}
 
+      {/*
+        O rótulo não muda com o estado, e o estado vive em aria-pressed. Botão
+        que troca de nome ao ser apertado obriga a ler duas vezes para saber se
+        anuncia o que faz ou o que já é — e, com aria-pressed junto, o leitor de
+        tela diz as duas coisas e elas se contradizem.
+      */}
       <div className="rodovia-workspace-trava">
         <button
           type="button"
           className={
             travado
-              ? "rodovia-workspace-trava-botao is-ativo"
-              : "rodovia-workspace-trava-botao"
+              ? "rodovia-desenho-botao rodovia-desenho-botao--ativo"
+              : "rodovia-desenho-botao"
           }
           aria-pressed={travado}
+          title="Mover um mapa leva o outro junto."
           onClick={() => setTravado((atual) => !atual)}
         >
-          <span aria-hidden="true">{travado ? "🔒" : "🔓"}</span>
-          {travado ? "Mapas travados" : "Travar mapas"}
+          Travar mapas
         </button>
-        <small>
-          {travado
-            ? "Mover um mapa leva o outro junto."
-            : "Cada mapa se move por conta própria."}
-        </small>
       </div>
 
       <div className="rodovia-workspace-split">
