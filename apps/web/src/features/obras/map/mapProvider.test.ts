@@ -2,9 +2,53 @@ import { describe, expect, it } from "vitest";
 
 import {
   availableMapProviders,
+  fontesDeclaradas,
+  providerRasterOsm,
   resolveMapProvider,
   resolveMapProviderForId,
 } from "./mapProvider";
+
+describe("providerRasterOsm", () => {
+  it("desenha sem consultar servidor de estilo nenhum", () => {
+    // É o piso do painel: o estilo viaja no pacote e o único host consultado é
+    // o que a metade Leaflet desta mesma tela já prova estar de pé.
+    const provider = providerRasterOsm();
+
+    expect(provider.styleUrl).toBeNull();
+    expect(provider.embutido).toBe(true);
+    expect(provider.keyless).toBe(true);
+    expect(
+      JSON.stringify(provider.estiloInline),
+    ).toContain("tile.openstreetmap.org");
+  });
+
+  it("mantém a inclinação da câmera, que raster suporta", () => {
+    // Desligar o 3D aqui tirava do operador o recurso que distingue este
+    // painel; o que raster não tem é volume de edificação, e nenhum é forjado.
+    const provider = providerRasterOsm();
+
+    expect(provider.capabilities.perspective3d).toBe(true);
+    expect(provider.capabilities.buildingExtrusion).toBe(false);
+  });
+});
+
+describe("fontesDeclaradas", () => {
+  it("lista as fontes que o estilo aponta por URL", () => {
+    expect(
+      fontesDeclaradas({
+        sources: {
+          malha: { type: "vector", url: "https://tiles.exemplo/planet" },
+          embutida: { type: "raster", tiles: ["https://tiles.exemplo/{z}"] },
+        },
+      }),
+    ).toEqual(["https://tiles.exemplo/planet"]);
+  });
+
+  it("não inventa fontes onde o estilo não declara nenhuma", () => {
+    expect(fontesDeclaradas(null)).toEqual([]);
+    expect(fontesDeclaradas({ version: 8 })).toEqual([]);
+  });
+});
 
 describe("resolveMapProvider", () => {
   it("entrega um mapa utilizável sem chave nenhuma", () => {

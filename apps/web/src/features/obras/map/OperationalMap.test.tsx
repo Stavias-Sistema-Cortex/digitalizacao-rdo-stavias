@@ -10,15 +10,43 @@ const adaptador = vi.hoisted(() => ({
   colecoes: [] as OperationalFeatureCollection[],
   destruicoes: 0,
   modos: [] as string[],
-  providers: [] as { label: string; reserva?: boolean }[],
+  providers: [] as { label: string; embutido?: boolean }[],
   falhasDeBasemap: [] as (() => void)[],
+}));
+
+/**
+ * A sonda decide se o estilo remoto entra; aqui ela é controlada pelo teste.
+ * Sem isto, cada caso dependeria de a máquina de teste alcançar a internet —
+ * exatamente a fragilidade que este painel existe para deixar de ter.
+ */
+const sonda = vi.hoisted(() => ({
+  motivo: null as string | null,
+  segurar: false,
+  liberar: null as null | (() => void),
+  consultas: [] as (string | null)[],
+}));
+
+vi.mock("./sondaDeEstilo", () => ({
+  sondarEstilo: (styleUrl: string | null) => {
+    sonda.consultas.push(styleUrl);
+    const resultado = () =>
+      sonda.motivo === null
+        ? { usavel: true, motivo: null }
+        : { usavel: false, motivo: sonda.motivo };
+    if (!sonda.segurar) {
+      return Promise.resolve(resultado());
+    }
+    return new Promise((resolver) => {
+      sonda.liberar = () => resolver(resultado());
+    });
+  },
 }));
 
 vi.mock("./mapAdapter", () => ({
   mountOperationalMap: (opcoes: {
     features: OperationalFeatureCollection;
     mode: string;
-    provider: { label: string; reserva?: boolean };
+    provider: { label: string; embutido?: boolean };
     onFalhaDeBasemap?: () => void;
   }) => {
     adaptador.montagens += 1;
@@ -84,6 +112,10 @@ beforeEach(() => {
   adaptador.modos = [];
   adaptador.providers = [];
   adaptador.falhasDeBasemap = [];
+  sonda.motivo = null;
+  sonda.segurar = false;
+  sonda.liberar = null;
+  sonda.consultas = [];
 });
 
 afterEach(cleanup);
@@ -189,11 +221,33 @@ describe("OperationalMap", () => {
     expect(adaptador.montagens).toBe(0);
   });
 
-  it("cai sozinho para o basemap reserva quando a fonte do principal não vem", async () => {
-    // O retângulo mudo de campo: a fonte de tiles falha, o renderizador
-    // declara tudo carregado e nada pinta. O painel deve trocar para o OSM
-    // reserva — o mesmo host que a metade Leaflet já prova funcionar — e
-    // dizer o que aconteceu, em vez de ficar vazio.
+  it("não monta nada antes de a sonda responder", async () => {
+    // A montagem às cegas é o que produzia o retângulo mudo: o mapa subia
+    // sobre um estilo que a rede não entrega e se declarava pronto.
+    sonda.segurar = true;
+
+    render(
+      <OperationalMap
+        obra={obra}
+        leitura={leitura(1, 1)}
+        carregando={false}
+        erroLeitura={null}
+      />,
+    );
+
+    expect(screen.getByText(/verificando o servidor de mapas/i)).toBeTruthy();
+    expect(adaptador.montagens).toBe(0);
+
+    sonda.liberar?.();
+    await waitFor(() => expect(adaptador.montagens).toBe(1));
+  });
+
+  it("nem tenta o estilo remoto que a sonda reprovou", async () => {
+    // O caso de campo: o host do estilo não é entregue por esta rede. O painel
+    // abre direto no basemap embutido — o mesmo host que a metade Leaflet já
+    // prova funcionar — em vez de gastar a montagem num estilo mudo.
+    sonda.motivo = "o estilo do mapa não respondeu a tempo";
+
     render(
       <OperationalMap
         obra={obra}
@@ -204,21 +258,41 @@ describe("OperationalMap", () => {
     );
 
     await waitFor(() => expect(adaptador.montagens).toBe(1));
-    expect(adaptador.providers[0].reserva).toBeUndefined();
-
-    adaptador.falhasDeBasemap[0]();
-
-    await waitFor(() => expect(adaptador.montagens).toBe(2));
-    expect(adaptador.providers[1].reserva).toBe(true);
-    expect(adaptador.providers[1].label).toContain("reserva");
+    expect(adaptador.providers[0].embutido).toBe(true);
+    expect(adaptador.providers[0].label).toContain("base");
     await waitFor(() =>
       expect(
-        screen.getByText(/exibindo o mapa reserva/i),
+        screen.getByText(/não respondeu a tempo.*mapa base/i),
       ).toBeInTheDocument(),
     );
   });
 
-  it("a própria reserva falhando não entra em laço de remontagem", async () => {
+  it("cai para o basemap embutido quando o mapa sobe e não pinta", async () => {
+    // O estilo respondeu à sonda e mesmo assim nada foi desenhado — tiles
+    // bloqueados depois do estilo. O vigia do adaptador acusa e o painel troca.
+    render(
+      <OperationalMap
+        obra={obra}
+        leitura={leitura(1, 1)}
+        carregando={false}
+        erroLeitura={null}
+      />,
+    );
+
+    await waitFor(() => expect(adaptador.montagens).toBe(1));
+    expect(adaptador.providers[0].embutido).toBeUndefined();
+
+    adaptador.falhasDeBasemap[0]();
+
+    await waitFor(() => expect(adaptador.montagens).toBe(2));
+    expect(adaptador.providers[1].embutido).toBe(true);
+    expect(adaptador.providers[1].label).toContain("base");
+    await waitFor(() =>
+      expect(screen.getByText(/exibindo o mapa base/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("o próprio embutido falhando não entra em laço de remontagem", async () => {
     render(
       <OperationalMap
         obra={obra}
@@ -232,7 +306,7 @@ describe("OperationalMap", () => {
     adaptador.falhasDeBasemap[0]();
     await waitFor(() => expect(adaptador.montagens).toBe(2));
 
-    // Segunda falha, agora da reserva: nada de terceira montagem.
+    // Segunda falha, agora do embutido: nada de terceira montagem.
     adaptador.falhasDeBasemap[1]();
     await new Promise((resolver) => setTimeout(resolver, 50));
     expect(adaptador.montagens).toBe(2);

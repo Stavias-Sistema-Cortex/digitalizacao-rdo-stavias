@@ -20,12 +20,13 @@ import {
 } from "./filtrosDoMapa";
 import {
   availableMapProviders,
-  providerReservaOsm,
+  providerRasterOsm,
   resolveMapProvider,
   resolveMapProviderForId,
   type MapProvider,
   type MapProviderId,
 } from "./mapProvider";
+import { sondarEstilo } from "./sondaDeEstilo";
 import "./OperationalMap.css";
 
 interface OperationalMapProps {
@@ -97,23 +98,59 @@ function MapCanvas({
   const [tentativa, setTentativa] = useState(0);
   const [limpando, setLimpando] = useState(false);
   /**
-   * Basemap reserva, acionado sozinho quando a fonte do principal não vem.
+   * Basemap embutido, acionado quando o estilo remoto não tem como desenhar.
    *
-   * Sem isto o painel subia como um retângulo mudo: o renderizador declara
-   * tudo carregado mesmo com a fonte inteira falhando. O operador vê o mapa
-   * reserva na hora, com um aviso — não um vazio sem explicação.
+   * Chega por dois caminhos. A sonda reprova o estilo antes da montagem, e o
+   * vigia do adaptador reprova depois, se o mapa subir e o canvas ficar de uma
+   * cor só. Em qualquer um dos dois o operador vê o mapa base na hora, com um
+   * aviso — não um vazio sem explicação.
    */
-  const [reserva, setReserva] = useState(false);
+  const [embutido, setEmbutido] = useState(false);
   const [providerAnterior, setProviderAnterior] = useState(provider);
   if (provider !== providerAnterior) {
     // Troca explícita de provider zera a contingência: a escolha é de quem
     // opera, e o novo provider merece a primeira tentativa limpa.
     setProviderAnterior(provider);
-    setReserva(false);
+    setEmbutido(false);
   }
+
+  /*
+   * A sonda roda antes de qualquer montagem.
+   *
+   * É a inversão que faltava: em vez de montar sobre um estilo remoto e depois
+   * tentar adivinhar, pelos eventos do renderizador, se ele desenhou, pergunta
+   * -se à rede se o estilo responde. Só entra na tela o que tem como pintar; o
+   * resto cede lugar ao basemap embutido, que não depende de servidor nenhum.
+   *
+   * O resultado carrega a chave do que foi sondado. Assim ele expira sozinho
+   * quando o estilo ou a tentativa mudam, sem um segundo estado a zerar — e a
+   * espera nunca é confundida com a aprovação do estilo anterior.
+   */
+  const chaveDaSonda = `${provider.styleUrl ?? "embutido"}#${tentativa}`;
+  const [sondado, setSondado] = useState<{
+    chave: string;
+    motivo: string | null;
+  } | null>(null);
+  useEffect(() => {
+    let cancelada = false;
+    void sondarEstilo(provider.styleUrl).then((resultado) => {
+      if (cancelada) return;
+      setSondado({
+        chave: chaveDaSonda,
+        motivo: resultado.usavel ? null : resultado.motivo,
+      });
+    });
+    return () => {
+      cancelada = true;
+    };
+  }, [chaveDaSonda, provider.styleUrl]);
+
+  const sondaConcluida = sondado?.chave === chaveDaSonda;
+  const motivoDaSonda = sondaConcluida ? sondado.motivo : null;
+  const usarEmbutido = embutido || Boolean(motivoDaSonda);
   const providerEfetivo = useMemo(
-    () => (reserva ? providerReservaOsm() : provider),
-    [reserva, provider],
+    () => (usarEmbutido ? providerRasterOsm() : provider),
+    [usarEmbutido, provider],
   );
 
   /*
@@ -149,16 +186,22 @@ function MapCanvas({
       setLimpando(false);
       setStatus("loading");
       setError(null);
-      // Cache limpo, o principal merece nova chance antes da reserva.
-      setReserva(false);
+      // Cache limpo, o estilo remoto merece nova sonda antes do embutido.
+      setEmbutido(false);
       setTentativa((anterior) => anterior + 1);
     }
   };
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    // Montar antes da sonda seria montar às cegas, que é exatamente o que
+    // deixava o painel mudo. O overlay de carregamento cobre esta espera.
+    if (!container || !sondaConcluida) return;
     let cancelled = false;
+    // Decidida a troca de basemap, o mapa que sai ainda emite erros até ser
+    // desmontado. Publicá-los empilharia um aviso do mapa antigo ao lado do
+    // aviso do novo, sobre a tela do operador.
+    let trocando = false;
     let controller: OperationalMapController | null = null;
 
     mountOperationalMap({
@@ -168,14 +211,15 @@ function MapCanvas({
       center: centerRef.current,
       mode: modeRef.current,
       onRuntimeError: (message) => {
-        if (!cancelled) setError(message);
+        if (!cancelled && !trocando) setError(message);
       },
       onFalhaDeBasemap: () => {
-        // A reserva só se aciona uma vez; se ela própria falhar, o aviso de
-        // erro comum assume, em vez de um laço de remontagens.
-        if (!cancelled && !providerEfetivo.reserva) {
+        // O embutido só se aciona uma vez; se ele próprio não pintar, o aviso
+        // de erro comum assume, em vez de um laço de remontagens.
+        if (!cancelled && !providerEfetivo.embutido) {
+          trocando = true;
           setError(null);
-          setReserva(true);
+          setEmbutido(true);
         }
       },
     })
@@ -204,7 +248,7 @@ function MapCanvas({
       controllerRef.current = null;
       controller?.destroy();
     };
-  }, [providerEfetivo, tentativa]);
+  }, [providerEfetivo, sondaConcluida, tentativa]);
 
   // As geometrias novas entram na fonte que já está no mapa. `status` participa
   // porque uma leitura pode chegar enquanto o mapa ainda abre: sem ele, a
@@ -227,11 +271,12 @@ function MapCanvas({
   return (
     <div className="operational-map-canvas-wrap">
       <div ref={containerRef} className="operational-map-canvas" />
-      {reserva && status === "ready" ? (
+      {usarEmbutido && status === "ready" ? (
         <div className="operational-map-reserva-notice" role="status">
           <span>
-            O servidor de mapas principal não respondeu nesta rede — exibindo
-            o mapa reserva (OSM).
+            {motivoDaSonda
+              ? `Nesta rede, ${motivoDaSonda} — exibindo o mapa base (OpenStreetMap).`
+              : "O mapa do provider abriu sem desenhar nesta rede — exibindo o mapa base (OpenStreetMap)."}
           </span>
           <button
             type="button"
@@ -241,13 +286,15 @@ function MapCanvas({
               void tentarDeNovo();
             }}
           >
-            {limpando ? "Limpando…" : "Tentar o principal"}
+            {limpando ? "Limpando…" : "Tentar o provider"}
           </button>
         </div>
       ) : null}
       {status === "loading" ? (
         <div className="operational-map-overlay" role="status">
-          Carregando imagens de satélite…
+          {sondaConcluida
+            ? "Carregando o mapa da obra…"
+            : "Verificando o servidor de mapas…"}
         </div>
       ) : null}
       {status === "error" ? (

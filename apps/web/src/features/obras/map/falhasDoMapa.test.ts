@@ -98,6 +98,21 @@ describe("falhaDeBasemap", () => {
     ).toBe(true);
   });
 
+  it("reconhece o servidor que responde e recusa a fonte", () => {
+    // O host de mapa aberto nega sob carga em vez de cair. Some da tela do
+    // mesmo jeito, e antes só a rede caída era classificada aqui.
+    expect(
+      falhaDeBasemap(
+        {
+          message: "Forbidden",
+          status: 403,
+          url: "https://tiles.openfreemap.org/planet",
+        },
+        ESTILO_ABERTO,
+      ),
+    ).toBe(true);
+  });
+
   it("o estilo que não chega segue no caminho fatal, não na contingência", () => {
     expect(
       falhaDeBasemap(
